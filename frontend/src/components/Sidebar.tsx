@@ -1,9 +1,20 @@
 import { SidecarStatus } from "./SidecarStatus";
 import type { SidecarStatus as Status } from "../hooks/useSidecarHealth";
 
-const NAV_ITEMS = ["Runs", "Providers", "Datasets", "Reports", "Settings"] as const;
+export const NAV_ITEMS = ["Runs", "Providers", "Datasets", "Reports", "Settings"] as const;
+export type NavItem = (typeof NAV_ITEMS)[number];
 
-export function Sidebar({ status, service }: { status: Status; service: string | null }) {
+export function Sidebar({
+  status,
+  service,
+  active,
+  onSelect,
+}: {
+  status: Status;
+  service: string | null;
+  active: NavItem;
+  onSelect: (item: NavItem) => void;
+}) {
   return (
     <aside className="flex w-56 shrink-0 flex-col border-r border-edge bg-sidebar">
       <div className="px-4 py-4">
@@ -12,11 +23,12 @@ export function Sidebar({ status, service }: { status: Status; service: string |
       </div>
 
       <nav className="flex-1 px-2">
-        {NAV_ITEMS.map((item, idx) => (
+        {NAV_ITEMS.map((item) => (
           <button
             key={item}
+            onClick={() => onSelect(item)}
             className={`mb-1 w-full rounded-md px-3 py-2 text-left text-sm ${
-              idx === 0
+              item === active
                 ? "bg-canvas text-gray-100"
                 : "text-gray-400 hover:bg-canvas hover:text-gray-200"
             }`}

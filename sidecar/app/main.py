@@ -1,30 +1,43 @@
 """FastAPI sidecar entrypoint for Storage Agent Workbench.
 
-Phase 01 implements only ``GET /health``. No S3 tools, no DuckDB analysis,
-no secret storage, no agent runtime. See ``docs/roadmap.md`` for the plan.
+Phase 02 adds a local data layer (SQLite), keyring-based secret storage, and
+model/cloud provider CRUD. There are still no S3 tools, no DuckDB analysis, no
+agent runtime, and no generic shell execution.
 
-Security note: this service is intended to bind to localhost only
-(``127.0.0.1``) and must never receive cloud credentials or secrets in
-Phase 01. There is no generic shell execution endpoint and there are no
-destructive S3 operations.
+Security note: this service binds to localhost only (``127.0.0.1``). Secrets
+submitted to provider endpoints are written to the system keyring; SQLite and
+logs store only ``keyring://`` references. API responses never return plaintext
+secrets.
 """
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-SERVICE_NAME = "storage-agent-sidecar"
+from .db import init_db
+from .routers import cloud_providers, health, model_providers
+
+SERVICE_NAME = health.SERVICE_NAME
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Create the database and apply migrations on startup.
+    init_db()
+    yield
+
 
 app = FastAPI(
     title="Storage Agent Sidecar",
-    version="0.1.0",
-    description="Local-first sidecar for Storage Agent Workbench (Phase 01: health only).",
+    version="0.2.0",
+    description="Local-first sidecar for Storage Agent Workbench (Phase 02: providers).",
+    lifespan=lifespan,
 )
 
-# The desktop frontend runs on a localhost dev origin and talks to this
-# sidecar from the browser/webview, so we allow the common local dev origins.
-# Local-only by design; not intended to be exposed to the network.
+# Local dev origins only; not intended to be exposed to the network.
 _ALLOWED_ORIGINS = [
     "http://localhost:1420",  # Tauri v2 default dev origin
     "http://127.0.0.1:1420",
@@ -37,12 +50,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=False,
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    """Liveness probe used by the frontend to show connected/disconnected."""
-    return {"status": "ok", "service": SERVICE_NAME}
+app.include_router(health.router)
+app.include_router(model_providers.router)
+app.include_router(cloud_providers.router)

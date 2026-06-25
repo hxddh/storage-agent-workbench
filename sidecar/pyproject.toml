@@ -12,12 +12,14 @@ license = { text = "MIT" }
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
+    "keyring>=24",
 ]
 
-# NOTE (Phase 01): Only the health endpoint is implemented. The dependencies for
-# the agent runtime (OpenAI Agents SDK), S3 (boto3/botocore), and analysis
-# (duckdb/pyarrow/pandas) are intentionally NOT added yet. They will be
-# introduced in later phases per docs/roadmap.md.
+# NOTE (Phase 02): Adds local data layer (SQLite, stdlib), keyring-based secret
+# storage, and provider CRUD. The dependencies for the agent runtime (OpenAI
+# Agents SDK), S3 (boto3/botocore), and analysis (duckdb/pyarrow/pandas) are
+# intentionally NOT added yet. They will be introduced in later phases per
+# docs/roadmap.md.
 
 [project.optional-dependencies]
 dev = [

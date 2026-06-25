@@ -1,0 +1,108 @@
+"""Tests for model provider CRUD and secret handling."""
+
+import sqlite3
+
+from app import config
+from app.security import keyring_store
+
+SECRET = "sk-super-secret-model-key-DO-NOT-LEAK"
+
+
+def _create(client, **overrides):
+    body = {
+        "name": "OpenAI prod",
+        "provider_type": "openai",
+        "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o",
+        "api_key": SECRET,
+    }
+    body.update(overrides)
+    return client.post("/model-providers", json=body)
+
+
+def test_create_returns_no_plaintext_secret(client):
+    resp = _create(client)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["has_api_key"] is True
+    assert data["api_key_ref"].startswith("keyring://")
+    # No plaintext secret anywhere in the response.
+    assert SECRET not in resp.text
+    assert "api_key" not in data  # only the ref is exposed
+
+
+def test_secret_not_in_sqlite_but_in_keyring(client):
+    data = _create(client).json()
+    provider_id = data["id"]
+
+    # Inspect the raw DB row: it must contain the ref, never the plaintext.
+    conn = sqlite3.connect(str(config.db_path()))
+    try:
+        row = conn.execute(
+            "SELECT * FROM model_providers WHERE id = ?", (provider_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None
+    assert SECRET not in " ".join(str(c) for c in row)
+
+    # The secret really lives in the keyring.
+    scope, name = keyring_store.parse_ref(data["api_key_ref"])
+    assert keyring_store.get_secret(scope, name) == SECRET
+
+
+def test_list_and_get_consistency(client):
+    _create(client, name="A")
+    _create(client, name="B")
+    resp = client.get("/model-providers")
+    assert resp.status_code == 200
+    names = {p["name"] for p in resp.json()}
+    assert {"A", "B"} <= names
+    assert SECRET not in resp.text
+
+
+def test_update_rotates_secret_without_echo(client):
+    provider_id = _create(client).json()["id"]
+    resp = client.put(
+        f"/model-providers/{provider_id}",
+        json={"model": "gpt-4o-mini", "api_key": "sk-rotated-secret"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["model"] == "gpt-4o-mini"
+    assert "sk-rotated-secret" not in resp.text
+    scope, name = keyring_store.parse_ref(data["api_key_ref"])
+    assert keyring_store.get_secret(scope, name) == "sk-rotated-secret"
+
+
+def test_update_keeps_secret_when_omitted(client):
+    provider_id = _create(client).json()["id"]
+    resp = client.put(f"/model-providers/{provider_id}", json={"name": "renamed"})
+    assert resp.status_code == 200
+    scope, name = keyring_store.parse_ref(resp.json()["api_key_ref"])
+    assert keyring_store.get_secret(scope, name) == SECRET
+
+
+def test_delete_removes_row_and_secret(client):
+    data = _create(client).json()
+    provider_id = data["id"]
+    scope, name = keyring_store.parse_ref(data["api_key_ref"])
+
+    resp = client.delete(f"/model-providers/{provider_id}")
+    assert resp.status_code == 204
+    assert client.get("/model-providers").json() == []
+    assert keyring_store.get_secret(scope, name) is None
+
+
+def test_delete_missing_returns_404(client):
+    assert client.delete("/model-providers/nope").status_code == 404
+
+
+def test_test_endpoint_reports_complete(client):
+    provider_id = _create(client).json()["id"]
+    resp = client.post(f"/model-providers/{provider_id}/test")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["checks"]["api_key_present"] is True
+    assert SECRET not in resp.text
