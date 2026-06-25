@@ -13,6 +13,7 @@ from . import db
 from .events import bus
 from .repositories import runs as runs_repo
 from .runs.access_log_run import execute_access_log_run
+from .runs.config_review_run import execute_config_review_run
 from .runs.diagnostic import execute_diagnostic_run
 from .runs.inventory_run import execute_inventory_run
 
@@ -20,6 +21,7 @@ _EXECUTORS = {
     "diagnostic": execute_diagnostic_run,
     "access_log_analysis": execute_access_log_run,
     "inventory_analysis": execute_inventory_run,
+    "bucket_config_review": execute_config_review_run,
 }
 
 

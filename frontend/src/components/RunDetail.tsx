@@ -65,6 +65,19 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
   }, [events]);
 
   const metricsCards = useMemo<{ label: string; value: string }[]>(() => {
+    // Bucket config review: count findings by category.
+    if (detail?.run_type === "bucket_config_review") {
+      const fs = events.filter((e): e is Extract<RunEvent, { type: "finding" }> => e.type === "finding");
+      const byCat = (cat: string) => fs.filter((f) => f.severity === cat).length;
+      return [
+        { label: "Critical", value: String(byCat("Critical")) },
+        { label: "Warning", value: String(byCat("Warning")) },
+        { label: "Opportunity", value: String(byCat("Opportunity")) },
+        { label: "Provider unsupported", value: String(byCat("Provider unsupported")) },
+        { label: "Access denied", value: String(fs.filter((f) => f.title.startsWith("Access denied")).length) },
+        { label: "Good", value: String(byCat("Good")) },
+      ];
+    }
     const finished = [...events].reverse().find(
       (e): e is Extract<RunEvent, { type: "tool_call_finished" }> =>
         e.type === "tool_call_finished" &&
@@ -99,7 +112,7 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
       { label: "Small-object ratio", value: pct(o.small_object_ratio) },
       { label: "Top prefix (size)", value: topPrefix ? `${topPrefix.value} · ${bytesH(topPrefix.size)}` : "—" },
     ];
-  }, [events]);
+  }, [events, detail]);
 
   const timeline = useMemo<TimelineItem[]>(() => {
     const order: string[] = [];

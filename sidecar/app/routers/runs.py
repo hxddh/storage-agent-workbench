@@ -34,12 +34,14 @@ def list_runs(conn: sqlite3.Connection = Depends(get_conn)):
 
 
 # Run types that actually execute (vs. placeholders).
-_EXECUTABLE = {"diagnostic", "access_log_analysis", "inventory_analysis"}
+_EXECUTABLE = {"diagnostic", "access_log_analysis", "inventory_analysis", "bucket_config_review"}
+# Run types that need a provider + bucket (vs. file-upload analysis runs).
+_NEEDS_BUCKET = {"diagnostic", "bucket_config_review"}
 
 
 @router.post("", response_model=RunCreated, status_code=status.HTTP_201_CREATED)
 def create_run(body: RunCreate, conn: sqlite3.Connection = Depends(get_conn)):
-    if body.run_type == "diagnostic":
+    if body.run_type in _NEEDS_BUCKET:
         missing = [
             field
             for field in ("provider_id", "bucket", "user_prompt")
@@ -48,7 +50,7 @@ def create_run(body: RunCreate, conn: sqlite3.Connection = Depends(get_conn)):
         if missing:
             raise HTTPException(
                 status_code=422,
-                detail=f"diagnostic run requires: {', '.join(missing)}",
+                detail=f"{body.run_type} run requires: {', '.join(missing)}",
             )
         run_id = repo.create(conn, body, status="pending")
         bus.create(run_id)

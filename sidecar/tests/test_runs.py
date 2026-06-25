@@ -97,8 +97,8 @@ def test_diagnostic_requires_fields(client):
 
 
 def test_unsupported_run_type_is_placeholder(client):
-    # bucket_config_review remains a placeholder in Phase 05.
-    r = client.post("/runs", json={"run_type": "bucket_config_review", "title": "later"})
+    # optimization_report remains a placeholder in Phase 06.
+    r = client.post("/runs", json={"run_type": "optimization_report", "title": "later"})
     assert r.status_code == 201
     run_id = r.json()["run_id"]
     assert r.json()["status"] == "not_implemented"

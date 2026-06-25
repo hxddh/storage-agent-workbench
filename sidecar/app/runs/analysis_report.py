@@ -39,6 +39,13 @@ def _findings_md(findings: list[dict[str, str]]) -> str:
     return "\n".join(f"- **[{f['severity']}]** {f['title']} — {f['detail']}" for f in findings)
 
 
+def _cat_findings_md(findings: list[dict[str, str]]) -> str:
+    """Render findings that use a 'category' key (config review)."""
+    if not findings:
+        return "- No findings."
+    return "\n".join(f"- **[{f['category']}]** {f['title']} — {f['detail']}" for f in findings)
+
+
 def write(run_id: str, content: str) -> str:
     path = report_path_for(run_id)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -220,4 +227,86 @@ def render_inventory(
 - No modifying S3 operations were performed; this report only analyzes and
   suggests (e.g. lifecycle opportunities) — it never deletes objects or changes
   lifecycle configuration.
+"""
+
+
+# --- bucket config review ---------------------------------------------------
+
+
+def render_config_review(
+    run: dict[str, Any],
+    summary: dict[str, Any],
+    sections: dict[str, dict[str, Any]],
+    counts: dict[str, int],
+    summary_text: str,
+) -> str:
+    config_rows = [[k, v] for k, v in (summary.get("config_items") or {}).items()]
+    unsupported = summary.get("provider_unsupported_items") or []
+    denied = summary.get("access_denied_items") or []
+    counts_rows = [[cat, str(n)] for cat, n in counts.items()] or [["—", "0"]]
+
+    def sect(title: str, key: str) -> str:
+        s = sections.get(key, {})
+        return f"## {title}\n\n{_cat_findings_md(s.get('findings', []))}\n"
+
+    return f"""# Bucket Configuration Review Report
+
+## Summary
+
+{summary_text}
+
+## Scope
+
+- Provider: {summary.get('provider_id') or '—'}
+- Bucket: {summary.get('bucket') or '—'}
+- Endpoint: {summary.get('endpoint_url') or '—'}
+- Region: {summary.get('region') or '—'}
+- Run ID: {run.get('id')}
+- Created at: {run.get('created_at')}
+
+## Configuration Summary
+
+Overall status: {summary.get('overall_status')}
+
+{_table(["Config item", "Status"], config_rows)}
+
+Findings by category:
+
+{_table(["Category", "Count"], counts_rows)}
+
+{sect("Security Review", "security")}
+{sect("Lifecycle Review", "lifecycle")}
+{sect("Observability Review", "observability")}
+{sect("Cost Optimization Review", "cost")}
+{sect("Performance Profile", "performance")}
+## Provider Unsupported Items
+
+{_table(["Item"], [[i] for i in unsupported]) if unsupported else "- None."}
+
+## Access Denied Items
+
+{_table(["Item"], [[i] for i in denied]) if denied else "- None."}
+
+## Findings
+
+{_cat_findings_md(summary.get("findings", []))}
+
+## Limitations
+
+- All operations are READ-ONLY; no configuration was changed and no
+  auto-remediation was performed.
+- S3-compatible providers may not implement every configuration API; such gaps
+  are reported as `Provider unsupported`, not failures.
+- The performance profile uses a bounded object sample (max_keys ≤ 100, at most
+  {SAMPLE_LIMIT} sample keys) — it is not a full scan. Run inventory_analysis for
+  accurate capacity numbers.
+- Raw bucket policy text is intentionally NOT included.
+
+## Safety
+
+- Read-only review only; no PutBucketPolicy/PutBucketAcl/PutLifecycle/
+  PutBucketCors/Delete* calls are possible in this build.
+- No object bodies were downloaded.
+- Account IDs, ARNs, credentials, signatures, tokens, and presigned-URL
+  parameters are excluded/redacted; only structured facts are reported.
 """

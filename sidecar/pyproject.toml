@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "storage-agent-sidecar"
-version = "0.5.0"
-description = "Local FastAPI sidecar for Storage Agent Workbench (Phase 05: DuckDB analysis)"
+version = "0.6.0"
+description = "Local FastAPI sidecar for Storage Agent Workbench (Phase 06: bucket config review)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
