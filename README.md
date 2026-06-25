@@ -107,9 +107,35 @@ Reports never contain secrets; SSE events and tool outputs are sanitized;
 `list_objects_v2` is bounded (not a full scan) and no object bodies are
 downloaded.
 
+## Phase 05 status
+
+Implemented in Phase 05 (`phase/05-duckdb-analysis`):
+
+- **DuckDB / PyArrow / pandas** local analysis engine. Each run gets its own
+  `data/runs/{run_id}/analysis.duckdb`; SQLite still holds only app metadata.
+- `access_log_analysis` runs: `detect_log_format` → `import_access_logs`
+  (JSONL / text / CSV → DuckDB `access_logs`) → `analyze_access_logs`
+  (status/method distributions, requests-by-hour, top keys/prefixes/UAs, 4xx/5xx
+  rates) + findings + Markdown report.
+- `inventory_analysis` runs: `import_inventory_file` (CSV / Parquet → DuckDB
+  `inventory_objects`) → `analyze_inventory` (size histogram, age distribution,
+  prefix/storage-class distributions, small-object ratio, top large objects) +
+  findings + Markdown report.
+- Dataset upload (`POST /runs/{id}/datasets/upload`, multipart) into
+  `data/runs/{id}/raw/`; `GET /datasets`, `GET /datasets/{id}`.
+- Every analysis action (`detect_log_format`, `import_*`, `analyze_*`,
+  `generate_markdown_report`) is recorded in `tool_calls` + `audit_logs` with
+  `run_id`; inputs/outputs are sanitized and paths recorded relative.
+- Client IPs are masked (`192.0.2.10` → `192.0.2.x`); credential-shaped values
+  are redacted before they reach DuckDB, reports, or events.
+- Frontend: New Run form supports run-type selection + file upload, Run Detail
+  shows metrics cards, and a Datasets page lists imported datasets.
+
+`diagnostic` (Phase 04) is retained; `bucket_config_review` and
+`optimization_report` remain `not_implemented` placeholders.
+
 Not implemented yet:
 
-- DuckDB analysis
 - Agent runtime (LLM / OpenAI Agents SDK)
 - Bucket config review
 - Packaging

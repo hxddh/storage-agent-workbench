@@ -235,3 +235,31 @@ class ReportOut(BaseModel):
     format: str
     created_at: str
     content: str
+
+
+# --- Datasets (Phase 05) ----------------------------------------------------
+
+DatasetType = Literal["access_log", "inventory"]
+
+
+class DatasetOut(BaseModel):
+    id: str
+    run_id: str | None
+    dataset_type: str
+    name: str | None
+    source_filename: str | None
+    stored_path: str | None
+    duckdb_path: str | None
+    table_name: str | None
+    row_count: int | None
+    status: str
+    created_at: str
+
+
+class DatasetUploadResponse(BaseModel):
+    dataset_id: str
+    run_id: str
+    dataset_type: str
+    filename: str
+    status: str
+    row_count: int | None = None

@@ -2,6 +2,7 @@ import { SIDECAR_BASE_URL } from "./config";
 import type {
   CloudProvider,
   CredentialsTestResult,
+  Dataset,
   HeadBucketResult,
   ListObjectsResult,
   ModelProvider,
@@ -151,3 +152,34 @@ export const postRunMessage = (id: string, content: string) =>
 export const getReport = (runId: string) => request<ReportOut>(`/reports/${runId}`);
 
 export const runEventsUrl = (id: string) => `${SIDECAR_BASE_URL}/runs/${id}/events`;
+
+// --- Datasets (Phase 05) ---
+
+export async function uploadDataset(
+  runId: string,
+  file: File,
+  datasetType: "access_log" | "inventory",
+  name?: string,
+): Promise<{ dataset_id: string; status: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("dataset_type", datasetType);
+  if (name) form.append("name", name);
+  const res = await fetch(`${SIDECAR_BASE_URL}/runs/${runId}/datasets/upload`, {
+    method: "POST",
+    body: form, // browser sets multipart boundary; no secrets involved
+  });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const b = await res.json();
+      if (b?.detail) detail = typeof b.detail === "string" ? b.detail : JSON.stringify(b.detail);
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export const listDatasets = () => request<Dataset[]>("/datasets");

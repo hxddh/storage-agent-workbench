@@ -64,6 +64,43 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
     return last && last.type === "agent_message" ? last.content : null;
   }, [events]);
 
+  const metricsCards = useMemo<{ label: string; value: string }[]>(() => {
+    const finished = [...events].reverse().find(
+      (e): e is Extract<RunEvent, { type: "tool_call_finished" }> =>
+        e.type === "tool_call_finished" &&
+        (e.tool_name === "analyze_access_logs" || e.tool_name === "analyze_inventory"),
+    );
+    if (!finished) return [];
+    const o = finished.output as Record<string, any>;
+    const pct = (n: unknown) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
+    const bytesH = (n: unknown) => {
+      let v = Number(n) || 0;
+      const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+      let i = 0;
+      while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+      return i === 0 ? `${v} B` : `${v.toFixed(1)} ${units[i]}`;
+    };
+    if (finished.tool_name === "analyze_access_logs") {
+      const topStatus = (o.status_code_distribution || [])[0];
+      const topMethod = (o.method_distribution || [])[0];
+      return [
+        { label: "Total requests", value: String(o.total_requests ?? 0) },
+        { label: "4xx rate", value: pct(o.error_rate_4xx) },
+        { label: "5xx rate", value: pct(o.error_rate_5xx) },
+        { label: "Top status", value: topStatus ? `${topStatus.value} (${topStatus.count})` : "—" },
+        { label: "Top method", value: topMethod ? `${topMethod.value} (${topMethod.count})` : "—" },
+      ];
+    }
+    const topPrefix = (o.prefix_distribution || [])[0];
+    return [
+      { label: "Objects", value: String(o.object_count ?? 0) },
+      { label: "Total size", value: bytesH(o.total_size) },
+      { label: "Avg size", value: bytesH(o.average_object_size) },
+      { label: "Small-object ratio", value: pct(o.small_object_ratio) },
+      { label: "Top prefix (size)", value: topPrefix ? `${topPrefix.value} · ${bytesH(topPrefix.size)}` : "—" },
+    ];
+  }, [events]);
+
   const timeline = useMemo<TimelineItem[]>(() => {
     const order: string[] = [];
     const map: Record<string, TimelineItem> = {};
@@ -98,7 +135,7 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
         </button>
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold text-gray-100">
-            {detail?.title || "Diagnostic run"}
+            {detail?.title || detail?.run_type || "Run"}
           </h1>
           <span className={`text-sm ${STATUS_COLOR[status] ?? "text-gray-400"}`} data-testid="run-status">
             {status}
@@ -125,6 +162,20 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
             </ol>
           ) : (
             <p className="mb-6 text-xs text-gray-600">Waiting for plan…</p>
+          )}
+
+          {metricsCards.length > 0 && (
+            <>
+              <h2 className="mb-2 text-sm font-semibold text-gray-200">Metrics</h2>
+              <div className="mb-6 grid grid-cols-2 gap-2" data-testid="metrics-cards">
+                {metricsCards.map((c) => (
+                  <div key={c.label} className="rounded-md border border-edge bg-panel p-3">
+                    <div className="text-[11px] text-gray-500">{c.label}</div>
+                    <div className="text-sm font-medium text-gray-100">{c.value}</div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
 
           <h2 className="mb-2 text-sm font-semibold text-gray-200">Findings</h2>

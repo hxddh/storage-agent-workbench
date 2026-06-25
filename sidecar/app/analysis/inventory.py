@@ -1,0 +1,249 @@
+"""Inventory analysis tools (Phase 05).
+
+Reads a user-uploaded inventory file (CSV or Parquet), normalizes it into a
+DuckDB ``inventory_objects`` table, and computes capacity / age / distribution
+metrics. Read-only and analytical: it never deletes objects, changes lifecycle,
+or downloads object bodies.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+
+from ..security.redaction import redact_text
+from . import duck
+
+TABLE_NAME = "inventory_objects"
+SAMPLE_LIMIT = 20
+SMALL_OBJECT_BYTES = 1024 * 1024  # objects under 1 MiB count as "small"
+
+COLUMNS = ["bucket", "key", "prefix", "size", "last_modified", "storage_class", "etag"]
+
+# normalized-name -> target field. Normalization strips spaces/underscores, lowercases.
+_FIELD_CANDIDATES = {
+    "bucket": ["bucket"],
+    "key": ["key"],
+    "size": ["size"],
+    "last_modified": ["lastmodified", "lastmodifieddate"],
+    "storage_class": ["storageclass"],
+    "etag": ["etag"],
+}
+
+
+def _norm(name: str) -> str:
+    return name.lower().replace(" ", "").replace("_", "")
+
+
+def _prefix_of(key: str) -> str:
+    key = (key or "").lstrip("/")
+    return key.split("/", 1)[0] + "/" if "/" in key else "(root)"
+
+
+def _to_int(value: Any) -> int | None:
+    try:
+        if value is None or value == "":
+            return None
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _load_dataframe(raw_path: str | Path) -> tuple[pd.DataFrame, str]:
+    path = Path(raw_path)
+    if path.suffix.lower() in (".parquet", ".pq"):
+        return pd.read_parquet(path), "parquet"  # uses pyarrow
+    return pd.read_csv(path, dtype=str, keep_default_na=False), "csv"
+
+
+# --- import_inventory_file --------------------------------------------------
+
+
+def import_inventory_file(raw_path: str | Path, duckdb_path: str | Path) -> dict[str, Any]:
+    df_in, fmt = _load_dataframe(raw_path)
+    norm_map = {_norm(c): c for c in df_in.columns}
+
+    def col_for(field: str) -> str | None:
+        for cand in _FIELD_CANDIDATES[field]:
+            if cand in norm_map:
+                return norm_map[cand]
+        return None
+
+    cols = {field: col_for(field) for field in _FIELD_CANDIDATES}
+
+    rows: list[dict[str, Any]] = []
+    for _, r in df_in.iterrows():
+        def val(field):
+            c = cols[field]
+            return r[c] if c else None
+
+        # Redact before storing: a key may carry presigned query parameters.
+        key = redact_text(str(val("key") or ""))
+        rows.append({
+            "bucket": val("bucket"),
+            "key": key,
+            "prefix": _prefix_of(key),
+            "size": _to_int(val("size")),
+            "last_modified": (str(val("last_modified")) if val("last_modified") else None),
+            "storage_class": val("storage_class"),
+            "etag": val("etag"),
+        })
+
+    df = pd.DataFrame(rows, columns=COLUMNS)
+    con = duck.connect(duckdb_path)
+    try:
+        con.register("incoming", df)
+        con.execute(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+        con.execute(f"CREATE TABLE {TABLE_NAME} AS SELECT * FROM incoming")
+        con.unregister("incoming")
+        count = con.execute(f"SELECT count(*) FROM {TABLE_NAME}").fetchone()[0]
+    finally:
+        con.close()
+    return {"table_name": TABLE_NAME, "row_count": int(count), "format": fmt}
+
+
+# --- analyze_inventory ------------------------------------------------------
+
+_SIZE_CASE = f"""
+CASE
+  WHEN size IS NULL THEN 'unknown'
+  WHEN size < 4096 THEN '<4KB'
+  WHEN size < 131072 THEN '4KB-128KB'
+  WHEN size < 1048576 THEN '128KB-1MB'
+  WHEN size < 67108864 THEN '1MB-64MB'
+  WHEN size < 536870912 THEN '64MB-512MB'
+  ELSE '512MB+'
+END
+"""
+
+_AGE_CASE = """
+CASE
+  WHEN try_cast(last_modified AS TIMESTAMP) IS NULL THEN 'unknown'
+  WHEN datediff('day', try_cast(last_modified AS TIMESTAMP), current_timestamp) <= 7 THEN '0-7d'
+  WHEN datediff('day', try_cast(last_modified AS TIMESTAMP), current_timestamp) <= 30 THEN '8-30d'
+  WHEN datediff('day', try_cast(last_modified AS TIMESTAMP), current_timestamp) <= 90 THEN '31-90d'
+  WHEN datediff('day', try_cast(last_modified AS TIMESTAMP), current_timestamp) <= 180 THEN '91-180d'
+  WHEN datediff('day', try_cast(last_modified AS TIMESTAMP), current_timestamp) <= 365 THEN '181-365d'
+  ELSE '365d+'
+END
+"""
+
+
+def analyze_inventory(duckdb_path: str | Path) -> dict[str, Any]:
+    con = duck.connect(duckdb_path)
+    try:
+        count = con.execute(f"SELECT count(*) FROM {TABLE_NAME}").fetchone()[0]
+        if count == 0:
+            return {"object_count": 0}
+
+        total_size = con.execute(f"SELECT COALESCE(sum(size), 0) FROM {TABLE_NAME}").fetchone()[0]
+        avg_size = con.execute(f"SELECT COALESCE(avg(size), 0) FROM {TABLE_NAME}").fetchone()[0]
+
+        size_hist = [
+            {"bucket": b, "count": int(c)}
+            for b, c in con.execute(
+                f"SELECT {_SIZE_CASE} AS b, count(*) c FROM {TABLE_NAME} GROUP BY b"
+            ).fetchall()
+        ]
+        age_dist = [
+            {"bucket": b, "count": int(c)}
+            for b, c in con.execute(
+                f"SELECT {_AGE_CASE} AS b, count(*) c FROM {TABLE_NAME} GROUP BY b"
+            ).fetchall()
+        ]
+        prefix_dist = [
+            {"value": str(p), "count": int(c), "size": int(s or 0)}
+            for p, c, s in con.execute(
+                f"SELECT prefix, count(*) c, COALESCE(sum(size), 0) s FROM {TABLE_NAME} "
+                f"GROUP BY prefix ORDER BY s DESC LIMIT {SAMPLE_LIMIT}"
+            ).fetchall()
+        ]
+        storage_dist = [
+            {"value": str(sc), "count": int(c)}
+            for sc, c in con.execute(
+                f"SELECT storage_class, count(*) c FROM {TABLE_NAME} GROUP BY storage_class ORDER BY c DESC"
+            ).fetchall()
+        ]
+        top_large = [
+            {"key": str(k), "size": int(sz or 0), "storage_class": str(sc) if sc is not None else None}
+            for k, sz, sc in con.execute(
+                f"SELECT key, size, storage_class FROM {TABLE_NAME} "
+                f"ORDER BY size DESC NULLS LAST LIMIT {SAMPLE_LIMIT}"
+            ).fetchall()
+        ]
+        small_n = con.execute(
+            f"SELECT count(*) FROM {TABLE_NAME} WHERE size IS NOT NULL AND size < {SMALL_OBJECT_BYTES}"
+        ).fetchone()[0]
+        unknown_age = con.execute(
+            f"SELECT count(*) FROM {TABLE_NAME} WHERE try_cast(last_modified AS TIMESTAMP) IS NULL"
+        ).fetchone()[0]
+
+        return {
+            "object_count": int(count),
+            "total_size": int(total_size),
+            "average_object_size": int(avg_size),
+            "size_histogram": size_hist,
+            "prefix_distribution": prefix_dist,
+            "object_age_distribution": age_dist,
+            "storage_class_distribution": storage_dist,
+            "small_object_ratio": round(small_n / count, 4),
+            "top_large_objects": top_large,
+            "unknown_age_ratio": round(unknown_age / count, 4),
+        }
+    finally:
+        con.close()
+
+
+# --- findings ---------------------------------------------------------------
+
+
+def derive_findings(m: dict[str, Any]) -> list[dict[str, str]]:
+    f: list[dict[str, str]] = []
+    if m.get("object_count", 0) == 0:
+        return [{"severity": "warning", "title": "No objects parsed",
+                 "detail": "The uploaded inventory produced zero rows."}]
+
+    total_size = m.get("total_size", 0) or 1
+
+    if m["small_object_ratio"] > 0.5:
+        f.append({"severity": "warning", "title": "High small-object ratio",
+                  "detail": f"{m['small_object_ratio']:.1%} of objects are under 1 MiB; "
+                            "many tiny objects can hurt request efficiency and cost."})
+
+    prefixes = m.get("prefix_distribution") or []
+    if prefixes and prefixes[0]["size"] / total_size > 0.6:
+        f.append({"severity": "info", "title": "Top prefix dominates capacity",
+                  "detail": f"Prefix '{prefixes[0]['value']}' holds "
+                            f"{prefixes[0]['size'] / total_size:.1%} of total bytes."})
+
+    age = {a["bucket"]: a["count"] for a in m.get("object_age_distribution") or []}
+    old = age.get("365d+", 0)
+    if old / m["object_count"] > 0.3:
+        f.append({"severity": "info", "title": "Lifecycle opportunity",
+                  "detail": f"{old / m['object_count']:.1%} of objects are older than 365 days; "
+                            "consider a lifecycle/tiering policy (no changes were made)."})
+
+    top_large = m.get("top_large_objects") or []
+    large_sum = sum(o["size"] for o in top_large)
+    if large_sum / total_size > 0.5:
+        f.append({"severity": "info", "title": "Large-object concentration",
+                  "detail": f"The {len(top_large)} largest objects hold "
+                            f"{large_sum / total_size:.1%} of total bytes."})
+
+    storage = m.get("storage_class_distribution") or []
+    if storage and storage[0]["count"] / m["object_count"] > 0.9:
+        f.append({"severity": "info", "title": "Storage-class skew",
+                  "detail": f"Storage class '{storage[0]['value']}' covers "
+                            f"{storage[0]['count'] / m['object_count']:.1%} of objects."})
+
+    if m["unknown_age_ratio"] > 0.2:
+        f.append({"severity": "warning", "title": "Missing last_modified",
+                  "detail": f"{m['unknown_age_ratio']:.1%} of objects lack a parseable "
+                            "last_modified, limiting age analysis."})
+
+    if not f:
+        f.append({"severity": "info", "title": "No capacity concerns detected",
+                  "detail": "Object size, age, and prefix distributions look balanced."})
+    return f

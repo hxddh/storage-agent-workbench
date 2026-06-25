@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createRun,
   listCloudProviders,
   listRuns,
   postRunMessage,
+  uploadDataset,
 } from "../api";
-import type { CloudProvider, RunSummary } from "../types";
+import type { CloudProvider, RunSummary, RunType } from "../types";
 import { Button, Field, Select, TextInput } from "../components/ui";
 import { RunDetail } from "../components/RunDetail";
 
@@ -88,7 +89,14 @@ function RunsList({ onNew, onOpen }: { onNew: () => void; onOpen: (id: string) =
   );
 }
 
+const RUN_TYPE_OPTIONS: { value: RunType; label: string }[] = [
+  { value: "diagnostic", label: "Diagnostic" },
+  { value: "access_log_analysis", label: "Access log analysis" },
+  { value: "inventory_analysis", label: "Inventory analysis" },
+];
+
 function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (runId: string) => void }) {
+  const [runType, setRunType] = useState<RunType>("diagnostic");
   const [providers, setProviders] = useState<CloudProvider[]>([]);
   const [providerId, setProviderId] = useState("");
   const [bucket, setBucket] = useState("");
@@ -96,6 +104,11 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const isAnalysis = runType === "access_log_analysis" || runType === "inventory_analysis";
+  const datasetType = runType === "access_log_analysis" ? "access_log" : "inventory";
+  const accept = runType === "inventory_analysis" ? ".csv,.parquet,.pq" : ".log,.jsonl,.json,.txt,.csv";
 
   useEffect(() => {
     listCloudProviders()
@@ -106,24 +119,45 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
       .catch((e) => setError(String(e)));
   }, []);
 
-  const submit = async () => {
-    setError(null);
+  const submitDiagnostic = async () => {
     if (!providerId || !bucket.trim() || !prompt.trim()) {
       setError("Provider, bucket, and prompt are required.");
       return;
     }
+    const created = await createRun({
+      run_type: "diagnostic",
+      provider_id: providerId,
+      bucket: bucket.trim(),
+      prefix: prefix.trim() || undefined,
+      user_prompt: prompt.trim(),
+      title: `Diagnostic: ${bucket.trim()}`,
+    });
+    await postRunMessage(created.run_id, prompt.trim());
+    onCreated(created.run_id);
+  };
+
+  const submitAnalysis = async () => {
+    const file = fileRef.current?.files?.[0];
+    if (!prompt.trim() || !file) {
+      setError("A file upload and a prompt are required.");
+      return;
+    }
+    const created = await createRun({
+      run_type: runType,
+      user_prompt: prompt.trim(),
+      title: `${runType}: ${file.name}`,
+    });
+    await uploadDataset(created.run_id, file, datasetType, file.name);
+    await postRunMessage(created.run_id, prompt.trim());
+    onCreated(created.run_id);
+  };
+
+  const submit = async () => {
+    setError(null);
     setBusy(true);
     try {
-      const created = await createRun({
-        run_type: "diagnostic",
-        provider_id: providerId,
-        bucket: bucket.trim(),
-        prefix: prefix.trim() || undefined,
-        user_prompt: prompt.trim(),
-        title: `Diagnostic: ${bucket.trim()}`,
-      });
-      await postRunMessage(created.run_id, prompt.trim());
-      onCreated(created.run_id);
+      if (isAnalysis) await submitAnalysis();
+      else await submitDiagnostic();
     } catch (e) {
       setError(String(e));
       setBusy(false);
@@ -136,42 +170,73 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
         <button className="mb-2 text-xs text-gray-500 hover:text-gray-300" onClick={onCancel}>
           ← Back to runs
         </button>
-        <h1 className="text-lg font-semibold text-gray-100">New Diagnostic Run</h1>
-        <p className="text-sm text-gray-500">Read-only credential, bucket, and bounded listing checks</p>
+        <h1 className="text-lg font-semibold text-gray-100">New Run</h1>
+        <p className="text-sm text-gray-500">Read-only diagnostics or local DuckDB analysis</p>
       </header>
 
       <div className="max-w-xl p-8">
         {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
-        <Field label="Cloud provider">
-          {providers.length === 0 ? (
-            <p className="text-xs text-gray-600">No cloud providers configured. Add one under Providers first.</p>
-          ) : (
-            <Select value={providerId} onChange={(e) => setProviderId(e.target.value)}>
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.provider_type})
-                </option>
-              ))}
-            </Select>
-          )}
+
+        <Field label="Run type">
+          <Select value={runType} onChange={(e) => setRunType(e.target.value as RunType)}>
+            {RUN_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </Select>
         </Field>
-        <Field label="Bucket">
-          <TextInput value={bucket} onChange={(e) => setBucket(e.target.value)} placeholder="bucket-alpha" />
-        </Field>
-        <Field label="Prefix (optional)">
-          <TextInput value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="logs/" />
-        </Field>
-        <Field label="What do you want to diagnose?">
+
+        {runType === "diagnostic" && (
+          <>
+            <Field label="Cloud provider">
+              {providers.length === 0 ? (
+                <p className="text-xs text-gray-600">No cloud providers configured. Add one under Providers first.</p>
+              ) : (
+                <Select value={providerId} onChange={(e) => setProviderId(e.target.value)}>
+                  {providers.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.provider_type})</option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+            <Field label="Bucket">
+              <TextInput value={bucket} onChange={(e) => setBucket(e.target.value)} placeholder="bucket-alpha" />
+            </Field>
+            <Field label="Prefix (optional)">
+              <TextInput value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="logs/" />
+            </Field>
+          </>
+        )}
+
+        {isAnalysis && (
+          <Field
+            label={runType === "inventory_analysis" ? "Inventory file (CSV / Parquet)" : "Access log file (JSONL / text / CSV)"}
+            hint="Uploaded locally and analyzed with DuckDB. No object bodies are fetched."
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              accept={accept}
+              className="block w-full text-xs text-gray-300 file:mr-3 file:rounded-md file:border file:border-edge file:bg-canvas file:px-3 file:py-1.5 file:text-gray-200"
+            />
+          </Field>
+        )}
+
+        <Field label="What do you want to analyze?">
           <textarea
             className="w-full rounded-md border border-edge bg-canvas px-3 py-2 text-sm text-gray-100 placeholder:text-gray-600 focus:border-gray-500 focus:outline-none"
             rows={3}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Check that credentials work and the bucket is reachable."
+            placeholder={isAnalysis ? "Summarize errors and hot prefixes." : "Check that credentials work and the bucket is reachable."}
           />
         </Field>
+
         <div className="flex gap-2">
-          <Button variant="primary" onClick={submit} disabled={busy || providers.length === 0}>
+          <Button
+            variant="primary"
+            onClick={submit}
+            disabled={busy || (runType === "diagnostic" && providers.length === 0)}
+          >
             {busy ? "Creating…" : "Create run"}
           </Button>
           <Button variant="ghost" onClick={onCancel}>Cancel</Button>

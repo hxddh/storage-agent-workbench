@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "storage-agent-sidecar"
-version = "0.4.0"
-description = "Local FastAPI sidecar for Storage Agent Workbench (Phase 04: runs, timeline, reports)"
+version = "0.5.0"
+description = "Local FastAPI sidecar for Storage Agent Workbench (Phase 05: DuckDB analysis)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -15,12 +15,15 @@ dependencies = [
     "keyring>=24",
     "boto3>=1.34",
     "botocore>=1.34",
+    "duckdb>=0.10",
+    "pyarrow>=14",
+    "pandas>=2.0",
+    "python-multipart>=0.0.9",
 ]
 
-# NOTE (Phase 03): Adds boto3/botocore for a whitelisted, READ-ONLY S3 tool
-# layer. The dependencies for the agent runtime (OpenAI Agents SDK) and analysis
-# (duckdb/pyarrow/pandas) are intentionally NOT added yet. They will be
-# introduced in later phases per docs/roadmap.md.
+# NOTE (Phase 05): Adds DuckDB/PyArrow/pandas for local access-log and inventory
+# analysis, and python-multipart for dataset uploads. The agent runtime (OpenAI
+# Agents SDK) is intentionally still NOT added.
 
 [project.optional-dependencies]
 dev = [

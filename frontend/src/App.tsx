@@ -5,6 +5,7 @@ import { ContextPanel } from "./components/ContextPanel";
 import { ProvidersView } from "./views/ProvidersView";
 import { RunsView } from "./views/RunsView";
 import { ReportsView } from "./views/ReportsView";
+import { DatasetsView } from "./views/DatasetsView";
 import { useSidecarHealth } from "./hooks/useSidecarHealth";
 
 export default function App() {
@@ -20,6 +21,8 @@ export default function App() {
         <RunsView />
       ) : active === "Reports" ? (
         <ReportsView />
+      ) : active === "Datasets" ? (
+        <DatasetsView />
       ) : (
         <MainArea />
       )}

@@ -1,0 +1,312 @@
+"""Access-log analysis tools (Phase 05).
+
+Reads a user-uploaded local access-log file, normalizes it into a DuckDB
+``access_logs`` table, and computes metrics. Client IPs are masked and any
+credential-shaped values are redacted before anything is persisted. No object
+bodies are downloaded; this operates purely on the uploaded file.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+
+from ..security.redaction import mask_ip, redact_text
+from . import duck
+
+TABLE_NAME = "access_logs"
+SAMPLE_LIMIT = 20
+
+COLUMNS = [
+    "timestamp", "method", "key", "path", "prefix", "status_code",
+    "bytes_sent", "latency_ms", "user_agent", "client_ip_masked",
+    "request_id", "error_code", "raw_sanitized",
+]
+
+# App / example format:
+#   2026-06-25T10:00:00Z bucket-alpha GET /path 206 1048576 42 ms user-agent="..." remote_ip="192.0.2.10"
+_TEXT_RE = re.compile(
+    r'^(?P<ts>\S+)\s+(?P<bucket>\S+)\s+(?P<method>[A-Z]+)\s+(?P<path>\S+)\s+'
+    r'(?P<status>\d{3})\s+(?P<bytes>\d+)\s+(?P<latency>\d+)\s*ms\s+'
+    r'user-agent="(?P<ua>[^"]*)"\s+remote_ip="(?P<ip>[^"]*)"'
+)
+# Common / combined log format.
+_CLF_RE = re.compile(
+    r'^(?P<ip>\S+)\s+\S+\s+\S+\s+\[(?P<ts>[^\]]+)\]\s+'
+    r'"(?P<method>[A-Z]+)\s+(?P<path>\S+)[^"]*"\s+(?P<status>\d{3})\s+(?P<bytes>\S+)'
+    r'(?:\s+"[^"]*"\s+"(?P<ua>[^"]*)")?'
+)
+
+
+# --- helpers ----------------------------------------------------------------
+
+
+def _prefix_of(key: str) -> str:
+    key = (key or "").lstrip("/")
+    return key.split("/", 1)[0] + "/" if "/" in key else "(root)"
+
+
+def _to_int(value: Any) -> int | None:
+    try:
+        if value in (None, "", "-"):
+            return None
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _row(ts, method, path, status, nbytes, latency, ua, ip, request_id, raw) -> dict[str, Any]:
+    # Redact BEFORE anything is stored in DuckDB: a path/key may carry presigned
+    # query params and a user-agent may carry a bearer token.
+    path = redact_text(str(path)) if path is not None else None
+    ua = redact_text(str(ua)) if ua is not None else None
+    key = (path or "").lstrip("/")
+    return {
+        "timestamp": ts,
+        "method": method,
+        "key": key,
+        "path": path,
+        "prefix": _prefix_of(key),
+        "status_code": _to_int(status),
+        "bytes_sent": _to_int(nbytes),
+        "latency_ms": _to_int(latency),
+        "user_agent": ua,
+        "client_ip_masked": mask_ip(ip),
+        "request_id": request_id,
+        "error_code": None,
+        "raw_sanitized": redact_text(raw)[:500] if raw else None,
+    }
+
+
+def _nonempty_lines(path: str | Path, limit: int | None = None) -> list[str]:
+    out: list[str] = []
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            s = line.strip()
+            if not s:
+                continue
+            out.append(s)
+            if limit and len(out) >= limit:
+                break
+    return out
+
+
+# --- tool 1: detect_log_format ----------------------------------------------
+
+
+def detect_log_format(path: str | Path) -> dict[str, Any]:
+    sample = _nonempty_lines(path, limit=20)
+    fmt = "unknown"
+    if sample:
+        first = sample[0]
+        if first.startswith("{"):
+            try:
+                json.loads(first)
+                fmt = "jsonl"
+            except json.JSONDecodeError:
+                fmt = "unknown"
+        if fmt == "unknown" and (_TEXT_RE.match(first) or _CLF_RE.match(first)):
+            fmt = "text"
+        if fmt == "unknown" and "," in first:
+            # Heuristic CSV: header-ish first line with known tokens.
+            lowered = first.lower()
+            if any(tok in lowered for tok in ("method", "status", "path", "key", "timestamp", "time")):
+                fmt = "csv"
+    return {"format": fmt, "sampled_lines": len(sample)}
+
+
+# --- parsers ----------------------------------------------------------------
+
+
+def _parse_jsonl(path: str | Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line in _nonempty_lines(path):
+        try:
+            o = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        rows.append(_row(
+            o.get("timestamp") or o.get("time") or o.get("ts"),
+            o.get("method") or o.get("verb"),
+            o.get("path") or o.get("key") or o.get("uri") or o.get("request"),
+            o.get("status") or o.get("status_code"),
+            o.get("bytes") or o.get("bytes_sent") or o.get("size"),
+            o.get("latency_ms") or o.get("latency") or o.get("duration_ms"),
+            o.get("user_agent") or o.get("ua"),
+            o.get("remote_ip") or o.get("client_ip") or o.get("ip"),
+            o.get("request_id") or o.get("req_id"),
+            line,
+        ))
+    return rows
+
+
+def _parse_text(path: str | Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line in _nonempty_lines(path):
+        m = _TEXT_RE.match(line) or _CLF_RE.match(line)
+        if not m:
+            continue
+        g = m.groupdict()
+        rows.append(_row(
+            g.get("ts"), g.get("method"), g.get("path"), g.get("status"),
+            g.get("bytes"), g.get("latency"), g.get("ua"), g.get("ip"), None, line,
+        ))
+    return rows
+
+
+def _parse_csv(path: str | Path) -> list[dict[str, Any]]:
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    lower = {c.lower().strip(): c for c in df.columns}
+
+    def pick(*cands: str):
+        for c in cands:
+            if c in lower:
+                return lower[c]
+        return None
+
+    col_ts = pick("timestamp", "time", "ts")
+    col_method = pick("method", "verb")
+    col_path = pick("path", "key", "uri", "request")
+    col_status = pick("status", "status_code")
+    col_bytes = pick("bytes", "bytes_sent", "size")
+    col_latency = pick("latency_ms", "latency", "duration_ms")
+    col_ua = pick("user_agent", "ua")
+    col_ip = pick("remote_ip", "client_ip", "ip")
+    col_rid = pick("request_id", "req_id")
+
+    rows: list[dict[str, Any]] = []
+    for _, r in df.iterrows():
+        def val(col):
+            return r[col] if col else None
+        rows.append(_row(
+            val(col_ts), val(col_method), val(col_path), val(col_status),
+            val(col_bytes), val(col_latency), val(col_ua), val(col_ip),
+            val(col_rid), None,
+        ))
+    return rows
+
+
+# --- tool 2: import_access_logs ---------------------------------------------
+
+
+def import_access_logs(raw_path: str | Path, duckdb_path: str | Path, fmt: str) -> dict[str, Any]:
+    if fmt == "jsonl":
+        rows = _parse_jsonl(raw_path)
+    elif fmt == "csv":
+        rows = _parse_csv(raw_path)
+    else:  # "text" and fallback
+        rows = _parse_text(raw_path)
+        if not rows:  # last-resort attempts
+            rows = _parse_jsonl(raw_path) or _parse_csv(raw_path)
+
+    df = pd.DataFrame(rows, columns=COLUMNS)
+    con = duck.connect(duckdb_path)
+    try:
+        con.register("incoming", df)
+        con.execute(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+        con.execute(f"CREATE TABLE {TABLE_NAME} AS SELECT * FROM incoming")
+        con.unregister("incoming")
+        count = con.execute(f"SELECT count(*) FROM {TABLE_NAME}").fetchone()[0]
+    finally:
+        con.close()
+    return {"table_name": TABLE_NAME, "row_count": int(count), "format": fmt}
+
+
+# --- tool 3: analyze_access_logs --------------------------------------------
+
+
+def _dist(con, sql: str) -> list[dict[str, Any]]:
+    return [{"value": str(v), "count": int(c)} for v, c in con.execute(sql).fetchall()]
+
+
+def analyze_access_logs(duckdb_path: str | Path) -> dict[str, Any]:
+    con = duck.connect(duckdb_path)
+    try:
+        total = con.execute(f"SELECT count(*) FROM {TABLE_NAME}").fetchone()[0]
+        if total == 0:
+            return {"total_requests": 0}
+
+        def rate(lo: int, hi: int) -> float:
+            n = con.execute(
+                f"SELECT count(*) FROM {TABLE_NAME} WHERE status_code >= {lo} AND status_code <= {hi}"
+            ).fetchone()[0]
+            return round(n / total, 4)
+
+        status_dist = _dist(con, f"SELECT status_code, count(*) c FROM {TABLE_NAME} GROUP BY status_code ORDER BY c DESC")
+        method_dist = _dist(con, f"SELECT method, count(*) c FROM {TABLE_NAME} GROUP BY method ORDER BY c DESC")
+        by_hour = [
+            {"hour": str(h), "count": int(c)}
+            for h, c in con.execute(
+                f"SELECT CASE WHEN try_cast(timestamp AS TIMESTAMP) IS NULL THEN 'unknown' "
+                f"ELSE strftime(try_cast(timestamp AS TIMESTAMP), '%Y-%m-%dT%H:00') END AS hour, "
+                f"count(*) c FROM {TABLE_NAME} GROUP BY hour ORDER BY hour"
+            ).fetchall()
+        ]
+        top_keys = _dist(con, f"SELECT key, count(*) c FROM {TABLE_NAME} GROUP BY key ORDER BY c DESC LIMIT {SAMPLE_LIMIT}")
+        top_prefixes = _dist(con, f"SELECT prefix, count(*) c FROM {TABLE_NAME} GROUP BY prefix ORDER BY c DESC LIMIT {SAMPLE_LIMIT}")
+        top_uas = _dist(con, f"SELECT user_agent, count(*) c FROM {TABLE_NAME} GROUP BY user_agent ORDER BY c DESC LIMIT {SAMPLE_LIMIT}")
+
+        n_206 = con.execute(f"SELECT count(*) FROM {TABLE_NAME} WHERE status_code = 206").fetchone()[0]
+        n_404 = con.execute(f"SELECT count(*) FROM {TABLE_NAME} WHERE status_code = 404").fetchone()[0]
+        n_403 = con.execute(f"SELECT count(*) FROM {TABLE_NAME} WHERE status_code = 403").fetchone()[0]
+
+        return {
+            "total_requests": int(total),
+            "status_code_distribution": status_dist,
+            "method_distribution": method_dist,
+            "requests_by_hour": by_hour,
+            "top_keys": top_keys,
+            "top_prefixes": top_prefixes,
+            "top_user_agents": top_uas,
+            "error_rate_4xx": rate(400, 499),
+            "error_rate_5xx": rate(500, 599),
+            "range_share_206": round(n_206 / total, 4),
+            "share_404": round(n_404 / total, 4),
+            "share_403": round(n_403 / total, 4),
+        }
+    finally:
+        con.close()
+
+
+# --- findings ---------------------------------------------------------------
+
+
+def derive_findings(m: dict[str, Any]) -> list[dict[str, str]]:
+    f: list[dict[str, str]] = []
+    if m.get("total_requests", 0) == 0:
+        return [{"severity": "warning", "title": "No requests parsed",
+                 "detail": "The uploaded log produced zero recognizable request rows."}]
+
+    if m["error_rate_4xx"] > 0.10:
+        f.append({"severity": "warning", "title": "High 4xx error rate",
+                  "detail": f"4xx responses are {m['error_rate_4xx']:.1%} of requests."})
+    if m["error_rate_5xx"] > 0.05:
+        f.append({"severity": "error", "title": "High 5xx error rate",
+                  "detail": f"5xx responses are {m['error_rate_5xx']:.1%} of requests."})
+    if m["share_404"] > 0.20:
+        f.append({"severity": "warning", "title": "Suspicious 404 pattern",
+                  "detail": f"404 responses are {m['share_404']:.1%} of requests."})
+    if m["share_403"] > 0.20:
+        f.append({"severity": "warning", "title": "Suspicious 403 pattern",
+                  "detail": f"403 responses are {m['share_403']:.1%} of requests."})
+
+    top_keys = m.get("top_keys") or []
+    if top_keys and top_keys[0]["count"] / m["total_requests"] > 0.5:
+        f.append({"severity": "info", "title": "Concentrated hot key",
+                  "detail": f"Top key accounts for {top_keys[0]['count']} of {m['total_requests']} requests."})
+    top_pref = m.get("top_prefixes") or []
+    if top_pref and top_pref[0]["count"] / m["total_requests"] > 0.7:
+        f.append({"severity": "info", "title": "Concentrated hot prefix",
+                  "detail": f"Top prefix '{top_pref[0]['value']}' dominates request volume."})
+    if m["range_share_206"] > 0.30:
+        f.append({"severity": "info", "title": "Range-like workload",
+                  "detail": f"206 Partial Content responses are {m['range_share_206']:.1%} of requests."})
+
+    if not f:
+        f.append({"severity": "info", "title": "No anomalies detected",
+                  "detail": "Error rates and access concentration are within normal thresholds."})
+    return f
