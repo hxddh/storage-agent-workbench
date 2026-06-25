@@ -108,3 +108,45 @@ class ModelProviderTestResult(BaseModel):
     ok: bool
     checks: dict[str, bool]
     detail: str
+
+
+# --- S3 tool request bodies (Phase 03) --------------------------------------
+
+
+class TestCredentialsRequest(BaseModel):
+    provider_id: str = Field(min_length=1)
+
+
+class HeadBucketRequest(BaseModel):
+    provider_id: str = Field(min_length=1)
+    bucket: str = Field(min_length=1)
+
+
+class ListObjectsV2Request(BaseModel):
+    provider_id: str = Field(min_length=1)
+    bucket: str = Field(min_length=1)
+    # Required by design; backend additionally clamps to a hard cap.
+    max_keys: int = Field(ge=1)
+    prefix: str | None = None
+
+
+class HeadObjectRequest(BaseModel):
+    provider_id: str = Field(min_length=1)
+    bucket: str = Field(min_length=1)
+    key: str = Field(min_length=1)
+
+
+class TestRangeGetRequest(BaseModel):
+    provider_id: str = Field(min_length=1)
+    bucket: str = Field(min_length=1)
+    key: str = Field(min_length=1)
+    range_header: str = Field(min_length=1)
+
+
+class PathStyleRequest(BaseModel):
+    provider_id: str = Field(min_length=1)
+    bucket: str = Field(min_length=1)
+
+
+class InspectTlsRequest(BaseModel):
+    endpoint_url: str = Field(min_length=1)

@@ -38,3 +38,33 @@ export interface ModelProviderTestResult {
   checks: Record<string, boolean>;
   detail: string;
 }
+
+// --- S3 tool results (Phase 03) ---
+
+export interface CredentialsTestResult {
+  success: boolean;
+  provider_type: string;
+  endpoint_url: string | null;
+  region: string | null;
+  identity_hint: string | null;
+  error_code: string | null;
+  error_message_sanitized: string | null;
+}
+
+export interface HeadBucketResult {
+  success: boolean;
+  status_code: number | null;
+  headers_sanitized: Record<string, string>;
+  error_code: string | null;
+  error_message_sanitized: string | null;
+}
+
+export interface ListObjectsResult {
+  success: boolean;
+  key_count: number;
+  common_prefixes: string[];
+  sample_keys: string[];
+  is_truncated: boolean;
+  error_code: string | null;
+  error_message_sanitized: string | null;
+}

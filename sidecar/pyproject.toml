@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "storage-agent-sidecar"
-version = "0.1.0"
-description = "Local FastAPI sidecar for Storage Agent Workbench (Phase 01: health only)"
+version = "0.3.0"
+description = "Local FastAPI sidecar for Storage Agent Workbench (Phase 03: read-only S3 tools)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -13,13 +13,14 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "keyring>=24",
+    "boto3>=1.34",
+    "botocore>=1.34",
 ]
 
-# NOTE (Phase 02): Adds local data layer (SQLite, stdlib), keyring-based secret
-# storage, and provider CRUD. The dependencies for the agent runtime (OpenAI
-# Agents SDK), S3 (boto3/botocore), and analysis (duckdb/pyarrow/pandas) are
-# intentionally NOT added yet. They will be introduced in later phases per
-# docs/roadmap.md.
+# NOTE (Phase 03): Adds boto3/botocore for a whitelisted, READ-ONLY S3 tool
+# layer. The dependencies for the agent runtime (OpenAI Agents SDK) and analysis
+# (duckdb/pyarrow/pandas) are intentionally NOT added yet. They will be
+# introduced in later phases per docs/roadmap.md.
 
 [project.optional-dependencies]
 dev = [

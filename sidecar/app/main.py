@@ -1,8 +1,9 @@
 """FastAPI sidecar entrypoint for Storage Agent Workbench.
 
-Phase 02 adds a local data layer (SQLite), keyring-based secret storage, and
-model/cloud provider CRUD. There are still no S3 tools, no DuckDB analysis, no
-agent runtime, and no generic shell execution.
+Through Phase 03 this exposes: a local data layer (SQLite), keyring-based secret
+storage, model/cloud provider CRUD, and a whitelisted READ-ONLY S3-compatible
+tool layer. There is still no DuckDB analysis, no agent runtime, no generic
+shell execution, and no destructive/mutating S3 operation.
 
 Security note: this service binds to localhost only (``127.0.0.1``). Secrets
 submitted to provider endpoints are written to the system keyring; SQLite and
@@ -18,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import init_db
-from .routers import cloud_providers, health, model_providers
+from .routers import cloud_providers, health, model_providers, tools
 
 SERVICE_NAME = health.SERVICE_NAME
 
@@ -32,8 +33,8 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="Storage Agent Sidecar",
-    version="0.2.0",
-    description="Local-first sidecar for Storage Agent Workbench (Phase 02: providers).",
+    version="0.3.0",
+    description="Local-first sidecar for Storage Agent Workbench (Phase 03: read-only S3 tools).",
     lifespan=lifespan,
 )
 
@@ -57,3 +58,4 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(model_providers.router)
 app.include_router(cloud_providers.router)
+app.include_router(tools.router)

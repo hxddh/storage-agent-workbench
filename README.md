@@ -60,9 +60,30 @@ Secrets are stored only in the system Keychain via `keyring`. SQLite stores
 only `keyring://...` references. API responses and logs never echo plaintext
 secrets.
 
+## Phase 03 status
+
+Implemented in Phase 03 (`phase/03-s3-tools`):
+
+- Whitelisted, **read-only** S3-compatible tool layer (boto3/botocore):
+  `test_credentials`, `head_bucket`, `list_objects_v2`, `head_object`,
+  `test_range_get`, `test_path_style_vs_virtual_host`, `inspect_tls`
+- Cloud Provider **Test Connection** runs a real read-only credential check
+- Every tool call is recorded in `tool_calls` + `audit_logs`, sanitized
+- Frontend Tool Result Card + per-provider Test Connection panel
+
+Read-only guarantees: no PutObject/DeleteObject/DeleteObjects/DeleteBucket/
+PutBucketPolicy/PutBucketAcl/PutLifecycle, no generic shell, no subprocess.
+`list_objects_v2` requires `max_keys` (hard-capped at 1000, ≤20 sample keys);
+`test_range_get` requires a bounded Range (≤4 MiB) and never downloads full
+objects; `inspect_tls` uses Python `ssl`/`socket` (no `openssl` shell-out).
+
+Tool endpoints (all `POST`): `/cloud-providers/{id}/test`,
+`/tools/test-credentials`, `/tools/head-bucket`, `/tools/list-objects-v2`,
+`/tools/head-object`, `/tools/test-range-get`,
+`/tools/test-path-style-vs-virtual-host`, `/tools/inspect-tls`.
+
 Not implemented yet:
 
-- S3 tools
 - DuckDB analysis
 - Agent runtime
 - Report generation

@@ -41,6 +41,12 @@ _SENSITIVE_KEYS = {
     "bearer",
     # request-body field names used by this app's provider APIs
     "session_token",
+    # HTTP / S3 header names that may carry credentials
+    "xamzsecuritytoken",
+    "xamzcredential",
+    "wwwauthenticate",
+    "proxyauthorization",
+    "credential",
 }
 
 _KEY_NORMALIZE = re.compile(r"[^a-z0-9]")

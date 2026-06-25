@@ -1,6 +1,9 @@
 import { SIDECAR_BASE_URL } from "./config";
 import type {
   CloudProvider,
+  CredentialsTestResult,
+  HeadBucketResult,
+  ListObjectsResult,
   ModelProvider,
   ModelProviderTestResult,
 } from "./types";
@@ -91,3 +94,25 @@ export const updateCloudProvider = (id: string, body: Partial<CloudProviderInput
 
 export const deleteCloudProvider = (id: string) =>
   request<void>(`/cloud-providers/${id}`, { method: "DELETE" });
+
+// --- Read-only S3 tools (Phase 03) ---
+
+export const testCloudProvider = (id: string) =>
+  request<CredentialsTestResult>(`/cloud-providers/${id}/test`, { method: "POST" });
+
+export const toolHeadBucket = (provider_id: string, bucket: string) =>
+  request<HeadBucketResult>("/tools/head-bucket", {
+    method: "POST",
+    body: JSON.stringify({ provider_id, bucket }),
+  });
+
+export const toolListObjectsV2 = (
+  provider_id: string,
+  bucket: string,
+  max_keys: number,
+  prefix?: string,
+) =>
+  request<ListObjectsResult>("/tools/list-objects-v2", {
+    method: "POST",
+    body: JSON.stringify({ provider_id, bucket, max_keys, prefix: prefix || undefined }),
+  });

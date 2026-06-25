@@ -54,3 +54,34 @@ def test_nested_structures():
     out = redact(payload)
     assert out["providers"][0]["secret_key"] == REDACTED
     assert out["providers"][0]["name"] == "x"
+
+
+def test_redacts_x_amz_credential_query_param():
+    url = "https://s3.example.com/b/k?X-Amz-Credential=AKIAEXAMPLE%2F20260625%2Fus-east-1"
+    out = redact_text(url)
+    assert "AKIAEXAMPLE" not in out
+    assert "X-Amz-Credential=" + REDACTED in out
+
+
+def test_redacts_token_and_security_token_keys():
+    payload = {
+        "token": "abc.def.ghi",
+        "x-amz-security-token": "FwoGsessiontoken",
+        "credential": "AKIA/secret/cred",
+    }
+    out = redact(payload)
+    assert out["token"] == REDACTED
+    assert out["x-amz-security-token"] == REDACTED
+    assert out["credential"] == REDACTED
+
+
+def test_redacts_header_dict_like_s3_response():
+    headers = {
+        "content-type": "application/xml",
+        "authorization": "AWS4-HMAC-SHA256 Credential=AKIAEXAMPLE/...",
+        "x-amz-security-token": "sessiontoken-value",
+    }
+    out = redact(headers)
+    assert out["content-type"] == "application/xml"
+    assert out["authorization"] == REDACTED
+    assert out["x-amz-security-token"] == REDACTED

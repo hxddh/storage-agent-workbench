@@ -14,6 +14,7 @@ import {
 } from "../api";
 import type { CloudProvider, ModelProvider } from "../types";
 import { Button, Field, Select, TextInput } from "../components/ui";
+import { CloudProviderTester } from "../components/CloudProviderTester";
 
 const KEYCHAIN_HINT = "已保存到系统 Keychain · 留空表示不修改";
 const parseList = (s: string) =>
@@ -233,6 +234,14 @@ function CloudProvidersPanel() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<CloudForm>(emptyCloudForm);
   const [error, setError] = useState<string | null>(null);
+  const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
+
+  const toggleTesting = (id: string) =>
+    setTestingIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   const reload = () => listCloudProviders().then(setItems).catch((e) => setError(String(e)));
   useEffect(() => {
@@ -387,10 +396,14 @@ function CloudProvidersPanel() {
                 )}
               </div>
               <div className="flex gap-2">
+                <Button variant={testingIds.has(p.id) ? "primary" : "default"} onClick={() => toggleTesting(p.id)}>
+                  Test Connection
+                </Button>
                 <Button onClick={() => openEdit(p)}>Edit</Button>
                 <Button variant="danger" onClick={() => remove(p)}>Delete</Button>
               </div>
             </div>
+            {testingIds.has(p.id) && <CloudProviderTester provider={p} />}
           </li>
         ))}
         {items.length === 0 && !showForm && <li className="text-sm text-gray-600">No cloud providers yet.</li>}

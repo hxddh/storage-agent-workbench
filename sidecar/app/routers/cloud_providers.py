@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from ..db import get_conn
@@ -17,6 +19,8 @@ from ..models.schemas import (
     CloudProviderUpdate,
 )
 from ..repositories import cloud_providers as repo
+from ..s3 import tools
+from ..tool_runner import run_tool
 
 router = APIRouter(prefix="/cloud-providers", tags=["cloud-providers"])
 
@@ -52,3 +56,23 @@ def delete_cloud_provider(
     if not repo.delete(conn, provider_id):
         raise HTTPException(status_code=404, detail="cloud provider not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{provider_id}/test")
+def test_cloud_provider(
+    provider_id: str, conn: sqlite3.Connection = Depends(get_conn)
+) -> dict[str, Any]:
+    """Run a real READ-ONLY connection test (test_credentials) for the provider.
+
+    Reads credentials from the keyring, makes a lightweight read-only call, and
+    returns a sanitized result. Never returns AK/SK. Records a tool_call + audit
+    entry like any other tool invocation.
+    """
+    if repo.get(conn, provider_id) is None:
+        raise HTTPException(status_code=404, detail="cloud provider not found")
+    return run_tool(
+        conn,
+        "test_credentials",
+        {"provider_id": provider_id, "via": "cloud-provider-test"},
+        lambda: tools.test_credentials(conn, provider_id),
+    )
