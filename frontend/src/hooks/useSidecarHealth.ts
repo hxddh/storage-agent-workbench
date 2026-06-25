@@ -1,20 +1,35 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { HEALTH_POLL_INTERVAL_MS, initSidecarBaseUrl, sidecarBaseUrl } from "../config";
 
 export type SidecarStatus = "starting" | "connected" | "disconnected" | "error";
+
+// After this long without a successful health check on first launch, we hint
+// that a cold start (PyInstaller self-extract) can take a while.
+const SLOW_START_MS = 15000;
 
 interface HealthResponse {
   status: string;
   service: string;
 }
 
+export interface SidecarHealth {
+  status: SidecarStatus;
+  service: string | null;
+  /** True while still starting and past the slow-start threshold. */
+  slow: boolean;
+}
+
 /**
- * Resolves the sidecar URL (dev env / Tauri prod), then polls `GET /health` and
- * reports connection status: starting → connected | disconnected | error.
+ * Resolves the sidecar URL (dev env / Tauri prod), then polls `GET /health`.
+ * Reports starting → connected | disconnected | error, plus a `slow` hint when
+ * a first-launch cold start runs long.
  */
-export function useSidecarHealth(): { status: SidecarStatus; service: string | null } {
+export function useSidecarHealth(): SidecarHealth {
   const [status, setStatus] = useState<SidecarStatus>("starting");
   const [service, setService] = useState<string | null>(null);
+  const [slow, setSlow] = useState(false);
+  const everConnected = useRef(false);
+  const startedAt = useRef<number>(Date.now());
 
   useEffect(() => {
     let cancelled = false;
@@ -31,21 +46,30 @@ export function useSidecarHealth(): { status: SidecarStatus; service: string | n
         if (cancelled) return;
 
         if (data.status === "ok") {
+          everConnected.current = true;
           setStatus("connected");
           setService(data.service);
+          setSlow(false);
         } else {
           setStatus("disconnected");
           setService(null);
         }
       } catch {
         if (cancelled) return;
-        setStatus("disconnected");
+        // Before the first successful connection we are still "starting";
+        // afterwards a failure means the sidecar went away ("disconnected").
+        if (everConnected.current) {
+          setStatus("disconnected");
+        } else {
+          setStatus("starting");
+          setSlow(Date.now() - startedAt.current >= SLOW_START_MS);
+        }
         setService(null);
       }
     }
 
     let id: ReturnType<typeof setInterval> | undefined;
-    // Resolve the URL first (Tauri command in prod), then begin polling.
+    startedAt.current = Date.now();
     initSidecarBaseUrl()
       .catch(() => undefined)
       .finally(() => {
@@ -60,5 +84,5 @@ export function useSidecarHealth(): { status: SidecarStatus; service: string | n
     };
   }, []);
 
-  return { status, service };
+  return { status, service, slow };
 }

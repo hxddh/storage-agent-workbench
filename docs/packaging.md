@@ -3,6 +3,9 @@
 How the desktop app is assembled: a PyInstaller-bundled Python sidecar launched
 by the Tauri v2 shell.
 
+> For the end-to-end macOS build flow, build scripts, externalBin naming rule,
+> and release limitations, see **[docs/release.md](release.md)** (Phase 09).
+
 ## Dev mode
 
 Run the sidecar and frontend separately (no packaging needed):
