@@ -44,6 +44,23 @@ def test_no_destructive_s3_operations():
         assert forbidden not in src, f"destructive/mutating op present: {forbidden}"
 
 
+def test_no_duckdb_or_agent_runtime_imports():
+    # Scan for real imports/calls, not doc comments that say "no DuckDB".
+    src = _read_all(APP_DIR)
+    for forbidden in (
+        "import duckdb",
+        "from duckdb",
+        "import pyarrow",
+        "import openai",
+        "from openai",
+        "openai_agents",
+        "agents.Runner",
+        "from agents",
+        "import langgraph",
+    ):
+        assert forbidden not in src, f"forbidden runtime import present: {forbidden}"
+
+
 def test_only_readonly_s3_calls_present():
     src = (S3_DIR / "tools.py").read_text()
     # The only boto3 S3 calls the tools make are read-only.

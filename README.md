@@ -82,11 +82,36 @@ Tool endpoints (all `POST`): `/cloud-providers/{id}/test`,
 `/tools/head-object`, `/tools/test-range-get`,
 `/tools/test-path-style-vs-virtual-host`, `/tools/inspect-tls`.
 
+## Phase 04 status
+
+Implemented in Phase 04 (`phase/04-runs-timeline`):
+
+- **Analysis Runs** with a deterministic (rule-based) planner — no LLM, no
+  OpenAI Agents SDK. Only `diagnostic` runs execute; the other run types are
+  created as `not_implemented` placeholders.
+- A diagnostic run drives the Phase 03 read-only tools (`test_credentials`,
+  `head_bucket`, `list_objects_v2` with bounded `max_keys`) through the shared
+  tool runner, attaching every `tool_calls` / `audit_logs` row to the `run_id`.
+- **Server-Sent Events** stream `agent_plan`, `tool_call_started/finished`,
+  `agent_message`, `finding`, `report_ready`, and `error` (in-memory bus; no
+  Redis/Celery/queue — best-effort, local-only).
+- A local Markdown report is written to `data/runs/{run_id}/report.md` and
+  referenced from the `reports` table.
+- Frontend: Runs list, New Run form, Run Detail (plan + Tool Timeline + findings
+  + report preview + status), and a Reports view.
+
+Run/report endpoints: `GET/POST /runs`, `GET /runs/{id}`,
+`POST /runs/{id}/message`, `GET /runs/{id}/events` (SSE), `GET /reports/{id}`.
+
+Reports never contain secrets; SSE events and tool outputs are sanitized;
+`list_objects_v2` is bounded (not a full scan) and no object bodies are
+downloaded.
+
 Not implemented yet:
 
 - DuckDB analysis
-- Agent runtime
-- Report generation
+- Agent runtime (LLM / OpenAI Agents SDK)
+- Bucket config review
 - Packaging
 
 ## Requirements
