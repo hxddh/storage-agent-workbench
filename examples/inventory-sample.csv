@@ -1,0 +1,6 @@
+bucket,key,size,last_modified,storage_class,etag
+bucket-alpha,datasets/train/part-0001.parquet,536870912,2026-06-20T12:00:00Z,STANDARD,etag-sample-001
+bucket-alpha,datasets/train/part-0002.parquet,536870912,2026-06-20T12:05:00Z,STANDARD,etag-sample-002
+bucket-alpha,logs/2026/06/25/app.log,4096,2026-06-25T10:00:00Z,STANDARD,etag-sample-003
+bucket-alpha,logs/2025/12/01/archive.log,8192,2025-12-01T00:00:00Z,STANDARD_IA,etag-sample-004
+bucket-alpha,tmp/agent-test/readme.txt,1024,2026-06-25T09:00:00Z,STANDARD,etag-sample-005

@@ -1,0 +1,42 @@
+# ---- Node / frontend ----
+node_modules/
+frontend/dist/
+frontend/node_modules/
+*.local
+.vite/
+
+# ---- Python / sidecar ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+build/
+dist/
+
+# ---- Rust / Tauri ----
+src-tauri/target/
+src-tauri/gen/
+
+# ---- Local app data (runtime, never commit) ----
+data/
+*.duckdb
+*.sqlite
+*.sqlite3
+
+# ---- Secrets (never commit; secrets live in system Keychain) ----
+.env
+.env.*
+*.pem
+*.key
+
+# ---- OS / editor ----
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ---- Local tooling (not part of the project) ----
+.claude/

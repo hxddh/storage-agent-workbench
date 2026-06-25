@@ -1,0 +1,22 @@
+[package]
+name = "storage-agent-workbench"
+version = "0.1.0"
+description = "Codex-like desktop workbench for object storage diagnostics and analysis"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "storage_agent_workbench_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# NOTE (Phase 01): No Tauri sidecar (externalBin) is wired up yet. Future phases
+# will package the Python FastAPI sidecar with PyInstaller and launch it through
+# Tauri's sidecar support. See docs/architecture.md and docs/roadmap.md.

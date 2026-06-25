@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Phase 01 CI: frontend install/build + sidecar import/test.
+# Tauri build is intentionally NOT run in CI yet (see "tauri-note" below):
+# it needs the Rust toolchain plus platform webview/system libraries, which is
+# environment-sensitive. It will be added in a later packaging phase.
+
+jobs:
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm install
+      - name: Type check
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+
+  sidecar:
+    name: Sidecar import & tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sidecar
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package (with dev extras)
+        run: pip install -e ".[dev]"
+      - name: Import check
+        run: python -c "import app.main; print(app.main.SERVICE_NAME)"
+      - name: Run tests
+        run: pytest -q
+
+  tauri-note:
+    name: Tauri build (skipped in Phase 01)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Why Tauri build is not in CI yet
+        run: |
+          echo "Tauri build is intentionally skipped in Phase 01 CI."
+          echo "It requires the Rust toolchain and platform webview/system"
+          echo "dependencies (e.g. libwebkit2gtk on Linux), which is"
+          echo "environment-sensitive. It will be enabled in the packaging phase."

@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "storage-agent-sidecar"
+version = "0.1.0"
+description = "Local FastAPI sidecar for Storage Agent Workbench (Phase 01: health only)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+]
+
+# NOTE (Phase 01): Only the health endpoint is implemented. The dependencies for
+# the agent runtime (OpenAI Agents SDK), S3 (boto3/botocore), and analysis
+# (duckdb/pyarrow/pandas) are intentionally NOT added yet. They will be
+# introduced in later phases per docs/roadmap.md.
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+]
+
+[tool.setuptools]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
