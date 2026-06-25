@@ -117,9 +117,45 @@ CREATE INDEX IF NOT EXISTS idx_tool_calls_run   ON tool_calls(run_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_event ON audit_logs(event_type);
 """
 
+# --- Migration 002: allow tool_calls without a run ---------------------------
+#
+# Phase 03 introduces ad-hoc tool invocations (e.g. Test Connection) that are
+# not attached to an Analysis Run. Relax tool_calls.run_id to be nullable. The
+# table is rebuilt (SQLite cannot drop a NOT NULL constraint in place); this is
+# data-preserving via the INSERT ... SELECT copy.
+
+_M002 = """
+PRAGMA foreign_keys = OFF;
+
+CREATE TABLE tool_calls_new (
+    id                    TEXT PRIMARY KEY,
+    run_id                TEXT REFERENCES runs(id) ON DELETE CASCADE,
+    tool_name             TEXT NOT NULL,
+    input_json_sanitized  TEXT,
+    output_json_sanitized TEXT,
+    status                TEXT,
+    duration_ms           INTEGER,
+    created_at            TEXT NOT NULL
+);
+
+INSERT INTO tool_calls_new
+    SELECT id, run_id, tool_name, input_json_sanitized, output_json_sanitized,
+           status, duration_ms, created_at
+    FROM tool_calls;
+
+DROP TABLE tool_calls;
+ALTER TABLE tool_calls_new RENAME TO tool_calls;
+
+CREATE INDEX IF NOT EXISTS idx_tool_calls_run  ON tool_calls(run_id);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_name ON tool_calls(tool_name);
+
+PRAGMA foreign_keys = ON;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
+    (2, "tool_calls_nullable_run", _M002),
 ]
 
 
