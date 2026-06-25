@@ -7,11 +7,13 @@ export type NavItem = (typeof NAV_ITEMS)[number];
 export function Sidebar({
   status,
   service,
+  slow,
   active,
   onSelect,
 }: {
   status: Status;
   service: string | null;
+  slow: boolean;
   active: NavItem;
   onSelect: (item: NavItem) => void;
 }) {
@@ -39,7 +41,7 @@ export function Sidebar({
       </nav>
 
       <div className="p-3">
-        <SidecarStatus status={status} service={service} />
+        <SidecarStatus status={status} service={service} slow={slow} />
       </div>
     </aside>
   );

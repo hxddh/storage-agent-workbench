@@ -6,13 +6,14 @@ on:
   pull_request:
     branches: [main]
 
-# CI: frontend build + sidecar tests are the required gates. Phase 08 adds an
-# informational PyInstaller packaging job (continue-on-error so heavy/flaky
-# bundling never blocks merges). The Tauri desktop build remains skipped: it
-# needs the Rust toolchain + platform webview libs (a documented blocker).
+# CI gates: frontend build + sidecar tests. Phase 08 added an informational
+# PyInstaller packaging job (ubuntu). Phase 09 adds a real macOS desktop build
+# job (Rust + sidecar externalBin + cargo check/build). Full .app bundling and
+# code signing / notarization are intentionally NOT performed (see docs/release.md).
 #
 # CI requires NO AWS/BOS/MinIO credentials, NO OPENAI_API_KEY, NO real keyring
-# secrets, and NO GUI desktop session.
+# secrets, NO signing cert / Apple developer account, NO Vercel token, and NO
+# GUI desktop session.
 
 jobs:
   frontend:
@@ -71,14 +72,37 @@ jobs:
       - name: Smoke test packaged sidecar (no AWS / no OPENAI_API_KEY)
         run: python packaging/smoke_test_sidecar.py
 
-  tauri-note:
-    name: Tauri build (skipped — Rust toolchain blocker)
-    runs-on: ubuntu-latest
+  desktop-build-macos:
+    name: Desktop build (macOS / Apple Silicon)
+    runs-on: macos-14  # Apple Silicon -> target aarch64-apple-darwin
     steps:
-      - name: Why the Tauri desktop build is not run in CI
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install sidecar deps (dev + packaging)
+        run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
+
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build
+
+      - name: Build sidecar + copy externalBin
+        run: python3 scripts/build-sidecar-for-tauri.py
+
+      - name: cargo check
+        run: cd src-tauri && cargo check
+
+      - name: cargo build (compile + link desktop binary)
+        run: cd src-tauri && cargo build
+
+      - name: Note on full bundle / signing
         run: |
-          echo "The Tauri desktop build is intentionally NOT run in CI."
-          echo "It requires the Rust toolchain (cargo/rustc) and platform"
-          echo "webview/system deps (e.g. libwebkit2gtk on Linux). The Phase 08"
-          echo "Rust sidecar integration follows the standard Tauri v2 pattern"
-          echo "and must be built on a machine with Rust installed."
+          echo "cargo check + cargo build verify the desktop app compiles and links."
+          echo "A full .app bundle (cargo tauri build) plus code signing and"
+          echo "notarization are intentionally NOT performed in CI (no Apple"
+          echo "developer account / signing cert). See docs/release.md."

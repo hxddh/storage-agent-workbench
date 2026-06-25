@@ -119,3 +119,19 @@ Expected later:
   a model key; agent missing-key path fails cleanly.
 - Rust/Tauri desktop build status is reported honestly (blocked when the Rust
   toolchain is absent).
+
+## Phase 09 acceptance (desktop release hardening)
+
+- Branch `phase/09-desktop-release-hardening` from latest main.
+- Scripts build the sidecar externalBin and copy it to the Tauri path
+  automatically (`scripts/build-sidecar-for-tauri.py`); `build-desktop-macos.sh`
+  and `verify-desktop-build.sh` drive/verify the desktop build.
+- `cargo check` + `cargo build` pass on macOS arm64; `cargo tauri build` works
+  with the Tauri CLI installed (Option A). Frontend build + sidecar tests +
+  PyInstaller smoke test pass.
+- Startup UX shows a clear slow-start hint (>15s) and sanitized error guidance.
+- CI gains a Rust-enabled `desktop-build-macos` job; full bundle + signing +
+  notarization are intentionally skipped with a clear reason.
+- App data dir behavior documented + tested; no user data in the install dir.
+- No Vercel SDK; no new dangerous execution surface; no S3 mutation; Phase 10
+  not started.

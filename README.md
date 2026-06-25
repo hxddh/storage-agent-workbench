@@ -214,12 +214,40 @@ See `docs/packaging.md` for dev/build/desktop instructions.
 > built on a machine with Rust. No code signing / notarization and no
 > auto-update in Phase 08.
 
+## Phase 09 status
+
+Implemented in Phase 09 (`phase/09-desktop-release-hardening`):
+
+- **Desktop build scripts** in `scripts/`: `build-sidecar-for-tauri.py`
+  (detects the Rust target triple, builds the PyInstaller one-file sidecar, and
+  copies it to `src-tauri/binaries/storage-agent-sidecar-<triple>`),
+  `build-desktop-macos.sh`, and `verify-desktop-build.sh`.
+- **Tauri CLI path** documented (Option A: `cargo install tauri-cli --locked`
+  then `cargo tauri build`); the build script falls back to `cargo build` when
+  the CLI is absent.
+- **Startup UX**: a slow-start hint after 15s ("Sidecar is still starting…")
+  and sanitized disconnected/error guidance (restart / check logs).
+- **App data dir** verified by tests (all artifacts under the app-data dir,
+  never the install dir; relative path recording).
+- **CI**: a real `desktop-build-macos` job (Apple Silicon runner) — Rust +
+  frontend build + sidecar build + externalBin copy + `cargo check` +
+  `cargo build`.
+- **Release docs**: `docs/release.md` (build flow, externalBin naming rule,
+  limitations).
+
+Verified locally on macOS arm64: `cargo check` + `cargo build` link the desktop
+binary; the packaged sidecar serves `/health`.
+
+> No code signing, notarization, or auto-update. macOS x64 / universal builds
+> are not verified yet. The Vercel SDK is not used and is not part of the
+> desktop architecture.
+
 Not implemented yet:
 
 - Agent mode for `access_log_analysis` / `inventory_analysis`
 - `optimization_report` run type
-- Verified Tauri desktop build (needs Rust toolchain)
 - Code signing / notarization / auto-update
+- macOS x64 / universal desktop builds
 
 ## Requirements
 
