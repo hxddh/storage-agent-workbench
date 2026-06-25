@@ -98,6 +98,7 @@ const RUN_TYPE_OPTIONS: { value: RunType; label: string }[] = [
 
 function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (runId: string) => void }) {
   const [runType, setRunType] = useState<RunType>("diagnostic");
+  const [plannerMode, setPlannerMode] = useState<"deterministic" | "agent">("deterministic");
   const [providers, setProviders] = useState<CloudProvider[]>([]);
   const [providerId, setProviderId] = useState("");
   const [bucket, setBucket] = useState("");
@@ -109,6 +110,8 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
 
   const isAnalysis = runType === "access_log_analysis" || runType === "inventory_analysis";
   const needsBucket = runType === "diagnostic" || runType === "bucket_config_review";
+  const agentSupported = needsBucket; // Phase 07: agent mode for diagnostic + config review
+  const agentUnsupportedHere = plannerMode === "agent" && !agentSupported;
   const datasetType = runType === "access_log_analysis" ? "access_log" : "inventory";
   const accept = runType === "inventory_analysis" ? ".csv,.parquet,.pq" : ".log,.jsonl,.json,.txt,.csv";
 
@@ -134,6 +137,7 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
       prefix: prefix.trim() || undefined,
       user_prompt: prompt.trim(),
       title: `${label}: ${bucket.trim()}`,
+      planner_mode: plannerMode,
     });
     await postRunMessage(created.run_id, prompt.trim());
     onCreated(created.run_id);
@@ -149,6 +153,7 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
       run_type: runType,
       user_prompt: prompt.trim(),
       title: `${runType}: ${file.name}`,
+      planner_mode: plannerMode,
     });
     await uploadDataset(created.run_id, file, datasetType, file.name);
     await postRunMessage(created.run_id, prompt.trim());
@@ -187,6 +192,25 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
             ))}
           </Select>
         </Field>
+
+        <Field
+          label="Planner mode"
+          hint={
+            plannerMode === "agent"
+              ? "Agent can plan and explain, but can only call whitelisted read-only tools. Never enter API keys or secrets in the prompt."
+              : "Deterministic uses a fixed rule-based plan (default)."
+          }
+        >
+          <Select value={plannerMode} onChange={(e) => setPlannerMode(e.target.value as "deterministic" | "agent")}>
+            <option value="deterministic">Deterministic</option>
+            <option value="agent">Agent</option>
+          </Select>
+        </Field>
+        {agentUnsupportedHere && (
+          <p className="mb-3 text-xs text-amber-400">
+            Agent mode is not supported yet for this run type. Use Deterministic, or pick Diagnostic / Bucket config review.
+          </p>
+        )}
 
         {needsBucket && (
           <>
@@ -238,7 +262,7 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           <Button
             variant="primary"
             onClick={submit}
-            disabled={busy || (needsBucket && providers.length === 0)}
+            disabled={busy || agentUnsupportedHere || (needsBucket && providers.length === 0)}
           >
             {busy ? "Creating…" : "Create run"}
           </Button>

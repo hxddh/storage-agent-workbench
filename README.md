@@ -159,9 +159,35 @@ Implemented in Phase 06 (`phase/06-config-review`):
 
 `optimization_report` remains a `not_implemented` placeholder.
 
+## Phase 07 status
+
+Implemented in Phase 07 (`phase/07-agents-sdk`):
+
+- **Optional `agent` planner mode** (deterministic remains the default). A
+  controlled LLM agent (OpenAI Agents SDK) can plan, select among the existing
+  whitelisted read-only tools, interpret results, and write a narrative — for
+  `diagnostic` and `bucket_config_review` runs.
+- Strong local guardrails (not just prompt rules): tool allowlist + forbidden
+  tool denial, argument bounds (list max_keys ≤ 100), no-secret-in-context
+  assertion, output sanitization/bounding before results reach the LLM, and
+  report sanitization before saving. Hidden chain-of-thought is stripped and
+  never persisted or shown.
+- Agent tools are thin wrappers that call the EXISTING tools through the shared
+  `tool_runner` (so `tool_calls`/`audit_logs` still carry `run_id`); the agent
+  never sees AK/SK/session tokens or the model API key, and provider/bucket are
+  fixed by the run (no pivoting).
+- New SSE events: `agent_started`, `agent_tool_selected`, `guardrail_passed`,
+  `guardrail_blocked`, `agent_final` (plus existing events). Run Detail shows
+  planner mode, agent activity, and a clean error banner.
+- `POST /runs` accepts `planner_mode` (`deterministic` | `agent`); agent mode
+  for analysis run types returns a clear "not supported yet" error.
+- The Agents SDK is imported lazily; if it is absent or no model API key is
+  configured (read from the keyring model-provider store), agent mode fails
+  cleanly while deterministic mode keeps working. CI does not need `OPENAI_API_KEY`.
+
 Not implemented yet:
 
-- Agent runtime (LLM / OpenAI Agents SDK)
+- Agent mode for `access_log_analysis` / `inventory_analysis`
 - `optimization_report` run type
 - Packaging
 

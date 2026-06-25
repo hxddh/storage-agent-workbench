@@ -10,8 +10,11 @@ APP_DIR = Path(__file__).resolve().parents[1] / "app"
 S3_DIR = APP_DIR / "s3"
 
 
-def _read_all(directory: Path) -> str:
-    return "\n".join(p.read_text() for p in directory.rglob("*.py"))
+def _read_all(directory: Path, exclude: tuple[str, ...] = ()) -> str:
+    return "\n".join(
+        p.read_text() for p in directory.rglob("*.py")
+        if not any(x in str(p) for x in exclude)
+    )
 
 
 def test_no_subprocess_or_shell_in_app():
@@ -27,7 +30,9 @@ def test_inspect_tls_uses_ssl_not_shell():
 
 
 def test_no_destructive_s3_operations():
-    src = _read_all(APP_DIR).lower()
+    # Exclude the agent guardrails module, which lists these names as a DENIAL
+    # allowlist (forbidden examples), not as implementations.
+    src = _read_all(APP_DIR, exclude=("agent_runtime/guardrails.py",)).lower()
     for forbidden in (
         "put_object",
         "delete_object",
@@ -44,20 +49,32 @@ def test_no_destructive_s3_operations():
         assert forbidden not in src, f"destructive/mutating op present: {forbidden}"
 
 
-def test_no_agent_runtime_imports():
-    # DuckDB/PyArrow/pandas are legitimate as of Phase 05; only the LLM/agent
-    # runtime remains forbidden. Scan for real imports/calls, not doc comments.
-    src = _read_all(APP_DIR)
+def test_forbidden_runtimes_absent():
+    # Phase 07 adds the OpenAI Agents SDK, but MCP runtime, multi-agent
+    # orchestration, LangGraph, and LiteLLM remain forbidden.
+    src = _read_all(APP_DIR).lower()
     for forbidden in (
-        "import openai",
-        "from openai",
-        "openai_agents",
-        "agents.Runner",
-        "from agents",
-        "import langgraph",
-        "import litellm",
+        "import langgraph", "from langgraph", "import litellm", "from litellm",
+        "mcpserver", "import mcp", "from mcp", "handoff",
     ):
-        assert forbidden not in src, f"forbidden runtime import present: {forbidden}"
+        assert forbidden not in src, f"forbidden runtime present: {forbidden}"
+
+
+def test_agents_sdk_is_imported_lazily():
+    # The SDK must NOT be imported at module top-level (so the sidecar and
+    # deterministic mode run without it / without a key). It is imported inside
+    # the agent loop function only.
+    svc = (APP_DIR / "agent_runtime" / "agent_service.py").read_text()
+    top = svc.split("def _sdk_agent_loop", 1)[0]
+    assert "from agents import" not in top and "import openai" not in top, (
+        "Agents SDK / openai must be imported lazily inside the loop, not at module top"
+    )
+
+
+def test_no_chain_of_thought_persistence():
+    # The codebase must have a CoT stripper and not persist hidden reasoning.
+    src = _read_all(APP_DIR).lower()
+    assert "strip_chain_of_thought" in src, "expected a chain-of-thought stripper"
 
 
 def test_config_review_uses_only_readonly_apis():

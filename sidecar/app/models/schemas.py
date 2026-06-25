@@ -173,6 +173,8 @@ RunType = Literal[
     "optimization_report",
 ]
 
+PlannerMode = Literal["deterministic", "agent"]
+
 
 class RunCreate(BaseModel):
     run_type: RunType
@@ -181,6 +183,7 @@ class RunCreate(BaseModel):
     bucket: str | None = None
     prefix: str | None = None
     user_prompt: str | None = None
+    planner_mode: PlannerMode = "deterministic"
 
 
 class RunCreated(BaseModel):
@@ -195,6 +198,7 @@ class RunSummary(BaseModel):
     run_type: str
     title: str | None
     status: str
+    planner_mode: str
     provider_id: str | None
     bucket: str | None
     final_summary: str | None
@@ -224,6 +228,7 @@ class RunDetail(BaseModel):
     run_type: str
     title: str | None
     status: str
+    planner_mode: str
     provider_id: str | None
     bucket: str | None
     prefix: str | None = None

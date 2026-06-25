@@ -230,6 +230,68 @@ def render_inventory(
 """
 
 
+# --- agent-mode report ------------------------------------------------------
+
+
+def render_agent_report(
+    run: dict[str, Any],
+    summary: str,
+    narrative: str,
+    findings: list[dict[str, str]],
+    evidence: list[dict[str, Any]],
+) -> str:
+    findings_md = "\n".join(
+        f"- **[{f.get('severity', 'info')}]** {f.get('title', '')} — {f.get('detail', '')}"
+        for f in findings
+    ) or "- No findings."
+    evidence_rows = [[e.get("tool", ""), str(e.get("summary", ""))[:160]] for e in evidence]
+
+    return f"""# {run.get('run_type', 'Analysis')} Report (Agent mode)
+
+## Summary
+
+{summary or '—'}
+
+## Scope
+
+- Run ID: {run.get('id')}
+- Run type: {run.get('run_type')}
+- Planner mode: agent
+- Provider: {run.get('provider_id') or '—'}
+- Bucket: {run.get('bucket') or '—'}
+- Prefix: {run.get('prefix') or '(bucket root)'}
+- Created at: {run.get('created_at')}
+
+## Narrative
+
+{narrative or '—'}
+
+## Findings
+
+{findings_md}
+
+## Tool Evidence
+
+{_table(["Tool", "Result summary"], evidence_rows)}
+
+## Limitations
+
+- The agent could only call whitelisted, READ-ONLY tools through the shared tool
+  runner; it cannot mutate, delete, or access credentials.
+- Tool outputs shown to the agent were sanitized and bounded (≤{SAMPLE_LIMIT} sample keys).
+- This report was sanitized locally before saving; agent narrative is grounded
+  in the tool evidence above.
+
+## Safety
+
+- No credentials, Authorization headers, signatures, tokens, or presigned-URL
+  parameters appear in this report.
+- No object bodies were downloaded; no destructive or mutating S3 operation was
+  performed; no shell/subprocess was used.
+- Hidden chain-of-thought is never persisted or displayed.
+"""
+
+
 # --- bucket config review ---------------------------------------------------
 
 

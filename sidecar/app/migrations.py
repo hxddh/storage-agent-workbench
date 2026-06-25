@@ -197,12 +197,19 @@ CREATE INDEX IF NOT EXISTS idx_datasets_run ON datasets(run_id);
 PRAGMA foreign_keys = ON;
 """
 
+# --- Migration 005: planner mode on runs (Phase 07) --------------------------
+
+_M005 = """
+ALTER TABLE runs ADD COLUMN planner_mode TEXT NOT NULL DEFAULT 'deterministic';
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
     (2, "tool_calls_nullable_run", _M002),
     (3, "runs_add_prefix", _M003),
     (4, "datasets_metadata", _M004),
+    (5, "runs_add_planner_mode", _M005),
 ]
 
 
