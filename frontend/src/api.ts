@@ -1,4 +1,4 @@
-import { SIDECAR_BASE_URL } from "./config";
+import { sidecarBaseUrl } from "./config";
 import type {
   CloudProvider,
   CredentialsTestResult,
@@ -14,7 +14,7 @@ import type {
 } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${SIDECAR_BASE_URL}${path}`, {
+  const res = await fetch(`${sidecarBaseUrl()}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,
   });
@@ -152,7 +152,7 @@ export const postRunMessage = (id: string, content: string) =>
 
 export const getReport = (runId: string) => request<ReportOut>(`/reports/${runId}`);
 
-export const runEventsUrl = (id: string) => `${SIDECAR_BASE_URL}/runs/${id}/events`;
+export const runEventsUrl = (id: string) => `${sidecarBaseUrl()}/runs/${id}/events`;
 
 // --- Datasets (Phase 05) ---
 
@@ -166,7 +166,7 @@ export async function uploadDataset(
   form.append("file", file);
   form.append("dataset_type", datasetType);
   if (name) form.append("name", name);
-  const res = await fetch(`${SIDECAR_BASE_URL}/runs/${runId}/datasets/upload`, {
+  const res = await fetch(`${sidecarBaseUrl()}/runs/${runId}/datasets/upload`, {
     method: "POST",
     body: form, // browser sets multipart boundary; no secrets involved
   });

@@ -104,3 +104,18 @@ Expected later:
 - Tauri sidecar packaging.
 - Demo docs.
 - MVP acceptance review.
+
+## Phase 08 acceptance (packaging)
+
+- PyInstaller sidecar build script + spec exist; packaged entrypoint exists.
+- Packaged sidecar serves `/health` in the smoke test (or a clear environment
+  blocker is reported).
+- Tauri config includes sidecar integration (externalBin + shell plugin +
+  `get_sidecar_url`); frontend resolves the URL in dev and prod.
+- Sidecar status UI handles starting / connected / disconnected / error.
+- App data dir behavior implemented + documented; no secrets bundled or logged;
+  no user data written to the install dir.
+- Existing sidecar tests + frontend build pass; deterministic mode works without
+  a model key; agent missing-key path fails cleanly.
+- Rust/Tauri desktop build status is reported honestly (blocked when the Rust
+  toolchain is absent).

@@ -1,15 +1,17 @@
 import type { SidecarStatus as Status } from "../hooks/useSidecarHealth";
 
 const LABEL: Record<Status, string> = {
-  connecting: "Connecting…",
+  starting: "Starting…",
   connected: "Connected",
   disconnected: "Disconnected",
+  error: "Error",
 };
 
 const DOT: Record<Status, string> = {
-  connecting: "bg-amber-400",
+  starting: "bg-amber-400 animate-pulse",
   connected: "bg-emerald-400",
   disconnected: "bg-red-500",
+  error: "bg-red-600",
 };
 
 export function SidecarStatus({ status, service }: { status: Status; service: string | null }) {

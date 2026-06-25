@@ -98,3 +98,14 @@ Provider unsupported
 ```
 
 They should not be treated as hard failures unless the requested task requires that capability.
+
+## Packaging (Phase 08)
+
+- The application bundle contains code and library data only. It must never
+  include `.env`, the SQLite database, keyring contents, or `data/runs/` output.
+- Secrets remain in the OS keychain (`keyring`); user data lives in the app data
+  dir, never inside the install/app bundle.
+- The packaged sidecar binds localhost only, never enables reload in production,
+  and prints a sanitized startup banner (no secrets, no full paths, no env dump).
+- Tauri spawns only the internal packaged sidecar; no user-controlled shell or
+  subprocess execution is exposed.

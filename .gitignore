@@ -19,6 +19,11 @@ dist/
 # ---- Rust / Tauri ----
 src-tauri/target/
 src-tauri/gen/
+src-tauri/binaries/
+
+# ---- Packaging output (PyInstaller) ----
+sidecar/dist/
+sidecar/build/
 
 # ---- Local app data (runtime, never commit) ----
 data/

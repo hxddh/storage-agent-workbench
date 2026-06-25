@@ -10,6 +10,7 @@
     "beforeBuildCommand": "npm --prefix ../frontend run build"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "Storage Agent Workbench",
@@ -28,6 +29,7 @@
     "targets": "all",
     "category": "DeveloperTool",
     "shortDescription": "Object storage diagnostics workbench",
-    "longDescription": "Local-first, Codex-like desktop workbench for object storage and S3-compatible diagnostics and analysis."
+    "longDescription": "Local-first, Codex-like desktop workbench for object storage and S3-compatible diagnostics and analysis.",
+    "externalBin": ["binaries/storage-agent-sidecar"]
   }
 }

@@ -14,9 +14,11 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# NOTE (Phase 01): No Tauri sidecar (externalBin) is wired up yet. Future phases
-# will package the Python FastAPI sidecar with PyInstaller and launch it through
-# Tauri's sidecar support. See docs/architecture.md and docs/roadmap.md.
+# NOTE (Phase 08): The Python FastAPI sidecar is packaged with PyInstaller and
+# launched through Tauri's sidecar support (tauri-plugin-shell). See
+# docs/packaging.md. This Rust code is unverified in CI when the Rust toolchain
+# is absent (a documented packaging blocker).
