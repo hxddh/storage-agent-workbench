@@ -2,32 +2,48 @@
 
 Tauri v2 desktop shell for Storage Agent Workbench.
 
-Phase 01 is a minimal shell that loads the React/Vite frontend. It does **not**
-yet spawn the Python sidecar; future phases will package the sidecar with
-PyInstaller and launch it via Tauri's sidecar (`externalBin`) support.
+## Phase 08: bundled sidecar
 
-## Requirements
+The desktop app launches the packaged Python sidecar via Tauri's sidecar
+support (`tauri-plugin-shell`):
 
-Tauri requires the Rust toolchain (`cargo`, `rustc`) and the platform webview
-prerequisites. Install Rust via <https://rustup.rs> and the Tauri CLI:
+- On startup it picks a free localhost port, spawns
+  `binaries/storage-agent-sidecar`, and passes `--host 127.0.0.1 --port <free>`
+  plus `STORAGE_AGENT_DATA_DIR` set to the OS app-data dir.
+- The frontend calls the `get_sidecar_url` command to learn the URL (production);
+  in dev it uses `VITE_SIDECAR_URL` / the default `http://127.0.0.1:8765`.
+- The sidecar child process is killed on app exit.
+
+### Placing the sidecar binary
+
+`bundle.externalBin` expects a target-triple-suffixed binary under
+`src-tauri/binaries/`. After building the sidecar:
+
+```bash
+cd ../sidecar && python packaging/build_sidecar.py   # one-file -> dist/storage-agent-sidecar
+# copy the executable to the expected name, e.g. on Apple Silicon:
+mkdir -p ../src-tauri/binaries
+cp dist/storage-agent-sidecar \
+   ../src-tauri/binaries/storage-agent-sidecar-aarch64-apple-darwin
+```
+
+(Use `rustc -Vv | grep host` to get your target triple.)
+
+## Requirements / status
+
+Tauri requires the Rust toolchain (`cargo`, `rustc`) and platform webview
+prerequisites. **As of Phase 08 the Rust toolchain is not installed in this
+environment**, so `cargo tauri dev` / `cargo tauri build` have not been run or
+verified here. The Rust integration code follows the standard Tauri v2 sidecar
+pattern; build it on a machine with Rust installed:
 
 ```bash
 cargo install tauri-cli --version "^2"
+cargo tauri dev    # or: cargo tauri build
 ```
-
-## Run (dev)
-
-From this directory:
-
-```bash
-cargo tauri dev
-```
-
-This runs `beforeDevCommand` (the frontend dev server on `127.0.0.1:1420`) and
-opens the desktop window.
 
 ## Notes
 
-- `bundle.active` is set to `false` in `tauri.conf.json` so a release bundle does
-  not require icon assets during Phase 01.
-- No custom Tauri commands, no shell access, no S3 logic in this phase.
+- `bundle.active` is `false` so a release bundle does not require icon assets yet.
+- No custom Tauri commands beyond `get_sidecar_url`; no user shell access.
+- No code signing / notarization and no auto-update in Phase 08.

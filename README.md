@@ -185,11 +185,41 @@ Implemented in Phase 07 (`phase/07-agents-sdk`):
   configured (read from the keyring model-provider store), agent mode fails
   cleanly while deterministic mode keeps working. CI does not need `OPENAI_API_KEY`.
 
+## Phase 08 status
+
+Implemented in Phase 08 (`phase/08-packaging`):
+
+- **PyInstaller packaging** of the FastAPI sidecar (`sidecar/packaging/`):
+  build script, spec, and a smoke test that starts the bundle and checks
+  `/health` (no AWS / no `OPENAI_API_KEY` / no real keyring secret).
+- **Packaged entrypoint** `app/packaged_main.py` — `storage-agent-sidecar
+  --host --port --data-dir`; localhost by default; production never enables
+  uvicorn reload; sanitized startup banner (no secrets, no full paths).
+- **Tauri v2 sidecar integration** — picks a free localhost port, spawns the
+  bundled sidecar with `STORAGE_AGENT_DATA_DIR` set to the OS app-data dir,
+  exposes the URL via the `get_sidecar_url` command, and kills it on exit.
+- **Frontend URL resolution** — dev `VITE_SIDECAR_URL`, prod Tauri command,
+  fallback default; sidecar status renders **starting / connected /
+  disconnected / error**.
+- **Stable app data dir** — `STORAGE_AGENT_DATA_DIR` → `SAW_DATA_DIR` →
+  `<repo>/data`; user data never written to the install dir or bundled.
+- Packaging docs in [`docs/packaging.md`](docs/packaging.md); CI gains an
+  informational packaging job.
+
+See `docs/packaging.md` for dev/build/desktop instructions.
+
+> **Rust toolchain blocker:** `cargo`/`rustc` are not installed in this
+> environment, so `cargo tauri dev/build` has not been run or verified here. The
+> Tauri Rust integration follows the standard v2 sidecar pattern and must be
+> built on a machine with Rust. No code signing / notarization and no
+> auto-update in Phase 08.
+
 Not implemented yet:
 
 - Agent mode for `access_log_analysis` / `inventory_analysis`
 - `optimization_report` run type
-- Packaging
+- Verified Tauri desktop build (needs Rust toolchain)
+- Code signing / notarization / auto-update
 
 ## Requirements
 

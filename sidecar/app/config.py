@@ -14,8 +14,15 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def data_dir() -> Path:
-    """Directory for local app data (database, run artifacts)."""
-    override = os.environ.get("SAW_DATA_DIR")
+    """Directory for local app data (database, run artifacts).
+
+    Resolution order:
+    1. ``STORAGE_AGENT_DATA_DIR`` — canonical, set by the packaged desktop app
+       (Tauri passes the OS app-data dir here in production).
+    2. ``SAW_DATA_DIR`` — legacy/dev override (kept for back-compat and tests).
+    3. ``<repo>/data`` — dev default.
+    """
+    override = os.environ.get("STORAGE_AGENT_DATA_DIR") or os.environ.get("SAW_DATA_DIR")
     if override:
         return Path(override)
     return _REPO_ROOT / "data"

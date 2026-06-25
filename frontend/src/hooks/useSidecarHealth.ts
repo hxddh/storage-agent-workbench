@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { HEALTH_POLL_INTERVAL_MS, SIDECAR_BASE_URL } from "../config";
+import { HEALTH_POLL_INTERVAL_MS, initSidecarBaseUrl, sidecarBaseUrl } from "../config";
 
-export type SidecarStatus = "connecting" | "connected" | "disconnected";
+export type SidecarStatus = "starting" | "connected" | "disconnected" | "error";
 
 interface HealthResponse {
   status: string;
@@ -9,11 +9,11 @@ interface HealthResponse {
 }
 
 /**
- * Polls the sidecar `GET /health` endpoint and reports connection status.
- * Phase 01: this is the only sidecar interaction the frontend performs.
+ * Resolves the sidecar URL (dev env / Tauri prod), then polls `GET /health` and
+ * reports connection status: starting → connected | disconnected | error.
  */
 export function useSidecarHealth(): { status: SidecarStatus; service: string | null } {
-  const [status, setStatus] = useState<SidecarStatus>("connecting");
+  const [status, setStatus] = useState<SidecarStatus>("starting");
   const [service, setService] = useState<string | null>(null);
 
   useEffect(() => {
@@ -23,9 +23,7 @@ export function useSidecarHealth(): { status: SidecarStatus; service: string | n
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch(`${SIDECAR_BASE_URL}/health`, {
-          signal: controller.signal,
-        });
+        const res = await fetch(`${sidecarBaseUrl()}/health`, { signal: controller.signal });
         clearTimeout(timeout);
 
         if (!res.ok) throw new Error(`status ${res.status}`);
@@ -46,11 +44,19 @@ export function useSidecarHealth(): { status: SidecarStatus; service: string | n
       }
     }
 
-    check();
-    const id = setInterval(check, HEALTH_POLL_INTERVAL_MS);
+    let id: ReturnType<typeof setInterval> | undefined;
+    // Resolve the URL first (Tauri command in prod), then begin polling.
+    initSidecarBaseUrl()
+      .catch(() => undefined)
+      .finally(() => {
+        if (cancelled) return;
+        check();
+        id = setInterval(check, HEALTH_POLL_INTERVAL_MS);
+      });
+
     return () => {
       cancelled = true;
-      clearInterval(id);
+      if (id) clearInterval(id);
     };
   }, []);
 

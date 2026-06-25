@@ -34,6 +34,11 @@ dev = [
     "pytest>=8.0",
     "httpx>=0.27",
 ]
+# Packaging tooling (Phase 08). Kept separate so the core install and CI test
+# job stay lean; `pip install -e ".[packaging]"` to build the bundled sidecar.
+packaging = [
+    "pyinstaller>=6.3",
+]
 
 [tool.setuptools]
 packages = ["app"]

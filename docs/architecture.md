@@ -120,3 +120,16 @@ GET /runs/{run_id}/events
 ```
 
 Do not introduce WebSocket unless explicitly requested.
+
+## Packaging & desktop integration (Phase 08)
+
+- The Python sidecar is bundled with PyInstaller (`sidecar/packaging/`) into a
+  one-dir executable, `storage-agent-sidecar`.
+- The Tauri v2 shell launches the bundled sidecar as a child process on a free
+  localhost port, passes `STORAGE_AGENT_DATA_DIR` (the OS app-data dir), exposes
+  the URL via the `get_sidecar_url` command, and terminates it on app exit.
+- Dev mode runs the sidecar separately; the frontend resolves the URL from
+  `VITE_SIDECAR_URL` (dev) or the Tauri command (prod), with a localhost
+  fallback. The only spawned process is the internal sidecar — there is no
+  user-facing shell/subprocess tool.
+- See `docs/packaging.md`. Rust toolchain is required for the desktop build.

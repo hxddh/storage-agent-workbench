@@ -6,10 +6,13 @@ on:
   pull_request:
     branches: [main]
 
-# Phase 01 CI: frontend install/build + sidecar import/test.
-# Tauri build is intentionally NOT run in CI yet (see "tauri-note" below):
-# it needs the Rust toolchain plus platform webview/system libraries, which is
-# environment-sensitive. It will be added in a later packaging phase.
+# CI: frontend build + sidecar tests are the required gates. Phase 08 adds an
+# informational PyInstaller packaging job (continue-on-error so heavy/flaky
+# bundling never blocks merges). The Tauri desktop build remains skipped: it
+# needs the Rust toolchain + platform webview libs (a documented blocker).
+#
+# CI requires NO AWS/BOS/MinIO credentials, NO OPENAI_API_KEY, NO real keyring
+# secrets, and NO GUI desktop session.
 
 jobs:
   frontend:
@@ -48,13 +51,34 @@ jobs:
       - name: Run tests
         run: pytest -q
 
+  package-sidecar:
+    name: Package sidecar (informational)
+    runs-on: ubuntu-latest
+    # Heavy/environment-sensitive bundling; never block merges on it.
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: sidecar
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package (dev + packaging extras)
+        run: pip install -e ".[dev]" -e ".[packaging]"
+      - name: Build packaged sidecar (PyInstaller)
+        run: python packaging/build_sidecar.py
+      - name: Smoke test packaged sidecar (no AWS / no OPENAI_API_KEY)
+        run: python packaging/smoke_test_sidecar.py
+
   tauri-note:
-    name: Tauri build (skipped in Phase 01)
+    name: Tauri build (skipped — Rust toolchain blocker)
     runs-on: ubuntu-latest
     steps:
-      - name: Why Tauri build is not in CI yet
+      - name: Why the Tauri desktop build is not run in CI
         run: |
-          echo "Tauri build is intentionally skipped in Phase 01 CI."
-          echo "It requires the Rust toolchain and platform webview/system"
-          echo "dependencies (e.g. libwebkit2gtk on Linux), which is"
-          echo "environment-sensitive. It will be enabled in the packaging phase."
+          echo "The Tauri desktop build is intentionally NOT run in CI."
+          echo "It requires the Rust toolchain (cargo/rustc) and platform"
+          echo "webview/system deps (e.g. libwebkit2gtk on Linux). The Phase 08"
+          echo "Rust sidecar integration follows the standard Tauri v2 pattern"
+          echo "and must be built on a machine with Rust installed."
