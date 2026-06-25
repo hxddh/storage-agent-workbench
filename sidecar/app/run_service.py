@@ -26,11 +26,19 @@ _EXECUTORS = {
 
 
 def run_sync(run_id: str) -> None:
-    """Execute a run to completion using a fresh connection, dispatched by type."""
+    """Execute a run to completion using a fresh connection.
+
+    Dispatched by planner_mode first (agent vs deterministic), then by run_type.
+    """
     conn = db.connect()
     try:
         row = runs_repo.get_row(conn, run_id)
         if row is None:
+            return
+        if row["planner_mode"] == "agent":
+            # Controlled LLM planner over the same whitelisted tools.
+            from .agent_runtime.agent_service import run_agent
+            run_agent(conn, run_id)
             return
         executor = _EXECUTORS.get(row["run_type"])
         if executor is None:

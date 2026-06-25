@@ -78,11 +78,14 @@ export type RunType =
   | "bucket_config_review"
   | "optimization_report";
 
+export type PlannerMode = "deterministic" | "agent";
+
 export interface RunSummary {
   id: string;
   run_type: string;
   title: string | null;
   status: string;
+  planner_mode: string;
   provider_id: string | null;
   bucket: string | null;
   final_summary: string | null;
@@ -112,6 +115,7 @@ export interface RunDetail {
   run_type: string;
   title: string | null;
   status: string;
+  planner_mode: string;
   provider_id: string | null;
   bucket: string | null;
   prefix: string | null;
@@ -154,4 +158,10 @@ export type RunEvent =
   | { type: "agent_message"; content: string }
   | { type: "finding"; severity: string; title: string; detail: string }
   | { type: "report_ready"; run_id: string; report_path: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  // Phase 07 agent-mode events
+  | { type: "agent_started"; planner_mode: string }
+  | { type: "agent_tool_selected"; tool_name: string; reason: string }
+  | { type: "guardrail_passed"; name: string }
+  | { type: "guardrail_blocked"; name: string; message: string }
+  | { type: "agent_final"; content: string };

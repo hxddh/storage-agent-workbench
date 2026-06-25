@@ -37,10 +37,21 @@ def list_runs(conn: sqlite3.Connection = Depends(get_conn)):
 _EXECUTABLE = {"diagnostic", "access_log_analysis", "inventory_analysis", "bucket_config_review"}
 # Run types that need a provider + bucket (vs. file-upload analysis runs).
 _NEEDS_BUCKET = {"diagnostic", "bucket_config_review"}
+# Run types where the agent planner is wired up in Phase 07.
+_AGENT_SUPPORTED = {"diagnostic", "bucket_config_review"}
 
 
 @router.post("", response_model=RunCreated, status_code=status.HTTP_201_CREATED)
 def create_run(body: RunCreate, conn: sqlite3.Connection = Depends(get_conn)):
+    if body.planner_mode == "agent" and body.run_type not in _AGENT_SUPPORTED:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Agent planner mode is not supported yet for run_type "
+                f"'{body.run_type}'. Use deterministic mode, or run a "
+                f"diagnostic / bucket_config_review with agent mode."
+            ),
+        )
     if body.run_type in _NEEDS_BUCKET:
         missing = [
             field

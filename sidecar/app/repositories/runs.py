@@ -21,6 +21,7 @@ def _summary(row: sqlite3.Row) -> RunSummary:
         run_type=row["run_type"],
         title=row["title"],
         status=row["status"],
+        planner_mode=row["planner_mode"],
         provider_id=row["provider_id"],
         bucket=row["bucket"],
         final_summary=row["final_summary"],
@@ -34,14 +35,15 @@ def create(conn: sqlite3.Connection, data: RunCreate, status: str) -> str:
     now = utcnow()
     conn.execute(
         "INSERT INTO runs "
-        "(id, run_type, title, status, provider_id, bucket, prefix, user_prompt, "
-        " final_summary, report_path, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
+        "(id, run_type, title, status, planner_mode, provider_id, bucket, prefix, "
+        " user_prompt, final_summary, report_path, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
         (
             run_id,
             data.run_type,
             data.title,
             status,
+            data.planner_mode,
             data.provider_id,
             data.bucket,
             data.prefix,
@@ -92,6 +94,7 @@ def get_detail(conn: sqlite3.Connection, run_id: str) -> RunDetail | None:
         run_type=row["run_type"],
         title=row["title"],
         status=row["status"],
+        planner_mode=row["planner_mode"],
         provider_id=row["provider_id"],
         bucket=row["bucket"],
         prefix=row["prefix"],

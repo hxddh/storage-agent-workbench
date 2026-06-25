@@ -131,6 +131,7 @@ export interface RunCreateInput {
   bucket?: string;
   prefix?: string;
   user_prompt?: string;
+  planner_mode?: "deterministic" | "agent";
 }
 
 export const listRuns = () => request<RunSummary[]>("/runs");

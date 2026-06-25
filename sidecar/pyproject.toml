@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "storage-agent-sidecar"
-version = "0.6.0"
-description = "Local FastAPI sidecar for Storage Agent Workbench (Phase 06: bucket config review)"
+version = "0.7.0"
+description = "Local FastAPI sidecar for Storage Agent Workbench (Phase 07: agent planner mode)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -19,11 +19,15 @@ dependencies = [
     "pyarrow>=14",
     "pandas>=2.0",
     "python-multipart>=0.0.9",
+    "openai>=1.40",
+    "openai-agents>=0.0.1",
 ]
 
-# NOTE (Phase 05): Adds DuckDB/PyArrow/pandas for local access-log and inventory
-# analysis, and python-multipart for dataset uploads. The agent runtime (OpenAI
-# Agents SDK) is intentionally still NOT added.
+# NOTE (Phase 07): Adds the OpenAI Agents SDK (openai-agents) + openai for an
+# OPTIONAL agent planner mode. These are imported LAZILY inside agent_runtime so
+# the sidecar (and deterministic mode) runs even if they are absent or no model
+# API key is configured. Agent mode only calls existing whitelisted, read-only
+# tools through the shared tool_runner.
 
 [project.optional-dependencies]
 dev = [

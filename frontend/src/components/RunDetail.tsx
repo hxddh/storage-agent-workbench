@@ -60,9 +60,23 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
   );
 
   const agentMessage = useMemo(() => {
-    const last = [...events].reverse().find((e) => e.type === "agent_message");
-    return last && last.type === "agent_message" ? last.content : null;
+    const last = [...events].reverse().find((e) => e.type === "agent_message" || e.type === "agent_final");
+    return last && (last.type === "agent_message" || last.type === "agent_final") ? last.content : null;
   }, [events]);
+
+  const errorMessage = useMemo(() => {
+    const last = [...events].reverse().find((e) => e.type === "error");
+    return last && last.type === "error" ? last.message : null;
+  }, [events]);
+
+  const agentActivity = useMemo(
+    () =>
+      events.filter(
+        (e): e is Extract<RunEvent, { type: "agent_tool_selected" | "guardrail_passed" | "guardrail_blocked" }> =>
+          e.type === "agent_tool_selected" || e.type === "guardrail_passed" || e.type === "guardrail_blocked",
+      ),
+    [events],
+  );
 
   const metricsCards = useMemo<{ label: string; value: string }[]>(() => {
     // Bucket config review: count findings by category.
@@ -156,8 +170,25 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
         </div>
         <p className="text-sm text-gray-500">
           {detail?.run_type} · {detail?.bucket || "—"} · {detail?.prefix || "(root)"}
+          {detail?.planner_mode && (
+            <span
+              className={`ml-2 rounded-full border px-2 py-0.5 text-[11px] ${
+                detail.planner_mode === "agent"
+                  ? "border-violet-700 text-violet-300"
+                  : "border-edge text-gray-400"
+              }`}
+            >
+              planner: {detail.planner_mode}
+            </span>
+          )}
         </p>
       </header>
+
+      {errorMessage && (
+        <div className="mx-8 mt-4 rounded-md border border-red-900/60 bg-red-950/40 p-3 text-xs text-red-300" data-testid="run-error">
+          <span className="font-medium">Run error:</span> {errorMessage}
+        </div>
+      )}
 
       <div className="grid flex-1 grid-cols-2 gap-6 p-8">
         <section>
@@ -215,6 +246,31 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
         </section>
 
         <section>
+          {detail?.planner_mode === "agent" && (
+            <div className="mb-6">
+              <h2 className="mb-2 text-sm font-semibold text-gray-200">Agent activity</h2>
+              <ul className="space-y-1">
+                {agentActivity.map((e, i) => (
+                  <li key={i} className="text-xs">
+                    {e.type === "agent_tool_selected" && (
+                      <span className="text-violet-300">
+                        ▸ selected <span className="font-mono">{e.tool_name}</span>
+                        {e.reason ? <span className="text-gray-500"> — {e.reason}</span> : null}
+                      </span>
+                    )}
+                    {e.type === "guardrail_passed" && (
+                      <span className="text-emerald-400">✓ guardrail {e.name}</span>
+                    )}
+                    {e.type === "guardrail_blocked" && (
+                      <span className="text-red-400">✗ guardrail {e.name} — {e.message}</span>
+                    )}
+                  </li>
+                ))}
+                {agentActivity.length === 0 && <li className="text-xs text-gray-600">No agent activity yet.</li>}
+              </ul>
+            </div>
+          )}
+
           <h2 className="mb-2 text-sm font-semibold text-gray-200">Tool / Analysis Timeline</h2>
           <ToolTimeline items={timeline} />
 
