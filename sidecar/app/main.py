@@ -1,11 +1,12 @@
 """FastAPI sidecar entrypoint for Storage Agent Workbench.
 
-Through Phase 04 this exposes: a local data layer (SQLite), keyring-based secret
+Through Phase 05 this exposes: a local data layer (SQLite), keyring-based secret
 storage, model/cloud provider CRUD, a whitelisted READ-ONLY S3-compatible tool
-layer, and deterministic Analysis Runs (diagnostic) with SSE streaming and local
-Markdown reports. There is still no DuckDB analysis, no agent runtime (no LLM /
-OpenAI Agents SDK), no generic shell execution, and no destructive/mutating S3
-operation.
+layer, deterministic Analysis Runs (diagnostic, access_log_analysis,
+inventory_analysis) with SSE streaming, DuckDB-backed local analysis, and local
+Markdown reports. There is still no agent runtime (no LLM / OpenAI Agents SDK),
+no bucket config review, no generic shell execution, and no destructive/mutating
+S3 operation.
 
 Security note: this service binds to localhost only (``127.0.0.1``). Secrets
 submitted to provider endpoints are written to the system keyring; SQLite and
@@ -23,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .db import init_db
 from .routers import (
     cloud_providers,
+    datasets,
     health,
     model_providers,
     reports,
@@ -42,8 +44,8 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="Storage Agent Sidecar",
-    version="0.4.0",
-    description="Local-first sidecar for Storage Agent Workbench (Phase 04: runs + timeline + reports).",
+    version="0.5.0",
+    description="Local-first sidecar for Storage Agent Workbench (Phase 05: DuckDB analysis).",
     lifespan=lifespan,
 )
 
@@ -70,3 +72,4 @@ app.include_router(cloud_providers.router)
 app.include_router(tools.router)
 app.include_router(runs.router)
 app.include_router(reports.router)
+app.include_router(datasets.router)

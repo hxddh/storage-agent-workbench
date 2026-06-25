@@ -132,6 +132,20 @@ export interface ReportOut {
   content: string;
 }
 
+export interface Dataset {
+  id: string;
+  run_id: string | null;
+  dataset_type: string;
+  name: string | null;
+  source_filename: string | null;
+  stored_path: string | null;
+  duckdb_path: string | null;
+  table_name: string | null;
+  row_count: number | null;
+  status: string;
+  created_at: string;
+}
+
 // SSE event payloads (a subset, discriminated by `type`)
 export type RunEvent =
   | { type: "agent_plan"; content: string }

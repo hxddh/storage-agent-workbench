@@ -44,21 +44,34 @@ def test_no_destructive_s3_operations():
         assert forbidden not in src, f"destructive/mutating op present: {forbidden}"
 
 
-def test_no_duckdb_or_agent_runtime_imports():
-    # Scan for real imports/calls, not doc comments that say "no DuckDB".
+def test_no_agent_runtime_imports():
+    # DuckDB/PyArrow/pandas are legitimate as of Phase 05; only the LLM/agent
+    # runtime remains forbidden. Scan for real imports/calls, not doc comments.
     src = _read_all(APP_DIR)
     for forbidden in (
-        "import duckdb",
-        "from duckdb",
-        "import pyarrow",
         "import openai",
         "from openai",
         "openai_agents",
         "agents.Runner",
         "from agents",
         "import langgraph",
+        "import litellm",
     ):
         assert forbidden not in src, f"forbidden runtime import present: {forbidden}"
+
+
+def test_no_bucket_config_review_implementation():
+    # Phase 05 must not implement bucket config review tools.
+    src = _read_all(APP_DIR).lower()
+    for forbidden in (
+        "get_bucket_config_summary",
+        "review_bucket_security",
+        "review_bucket_lifecycle",
+        "review_bucket_observability",
+        "review_bucket_cost_optimization",
+        "review_bucket_performance_profile",
+    ):
+        assert forbidden not in src, f"bucket config review impl present: {forbidden}"
 
 
 def test_only_readonly_s3_calls_present():

@@ -33,6 +33,10 @@ def list_runs(conn: sqlite3.Connection = Depends(get_conn)):
     return repo.list_all(conn)
 
 
+# Run types that actually execute (vs. placeholders).
+_EXECUTABLE = {"diagnostic", "access_log_analysis", "inventory_analysis"}
+
+
 @router.post("", response_model=RunCreated, status_code=status.HTTP_201_CREATED)
 def create_run(body: RunCreate, conn: sqlite3.Connection = Depends(get_conn)):
     if body.run_type == "diagnostic":
@@ -48,8 +52,17 @@ def create_run(body: RunCreate, conn: sqlite3.Connection = Depends(get_conn)):
             )
         run_id = repo.create(conn, body, status="pending")
         bus.create(run_id)
+    elif body.run_type in _EXECUTABLE:
+        # Analysis runs need a user_prompt; the dataset is uploaded separately.
+        if not body.user_prompt:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{body.run_type} run requires: user_prompt",
+            )
+        run_id = repo.create(conn, body, status="pending")
+        bus.create(run_id)
     else:
-        # Placeholder for run types not implemented in Phase 04.
+        # Placeholder for run types not implemented in Phase 05.
         run_id = repo.create(conn, body, status="not_implemented")
 
     row = repo.get_row(conn, run_id)
@@ -76,10 +89,10 @@ def post_message(
     row = repo.get_row(conn, run_id)
     if row is None:
         raise HTTPException(status_code=404, detail="run not found")
-    if row["run_type"] != "diagnostic":
+    if row["run_type"] not in _EXECUTABLE:
         raise HTTPException(
             status_code=409,
-            detail=f"run_type '{row['run_type']}' is not implemented in Phase 04",
+            detail=f"run_type '{row['run_type']}' is not implemented in Phase 05",
         )
 
     repo.add_message(conn, run_id, role="user", content=body.content)

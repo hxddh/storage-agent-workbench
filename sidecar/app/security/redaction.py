@@ -84,6 +84,26 @@ def redact_text(text: str) -> str:
     return out
 
 
+def mask_ip(ip: str | None) -> str | None:
+    """Mask the host portion of an IP address.
+
+    ``192.0.2.10`` -> ``192.0.2.x``; ``2001:db8::1`` -> ``2001:db8::x``.
+    Returns the input unchanged-ish (``masked``) if it is not parseable.
+    """
+    if not ip:
+        return ip
+    ip = ip.strip()
+    if "." in ip:  # IPv4
+        parts = ip.split(".")
+        if len(parts) == 4 and all(p.isdigit() for p in parts):
+            return ".".join(parts[:3] + ["x"])
+        return "masked"
+    if ":" in ip:  # IPv6
+        head, _, _ = ip.rpartition(":")
+        return f"{head}:x" if head else "::x"
+    return "masked"
+
+
 def redact(value: Any) -> Any:
     """Recursively redact a JSON-like structure.
 

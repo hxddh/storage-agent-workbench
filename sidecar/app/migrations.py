@@ -158,11 +158,51 @@ _M003 = """
 ALTER TABLE runs ADD COLUMN prefix TEXT;
 """
 
+# --- Migration 004: richer datasets metadata (Phase 05) ----------------------
+#
+# Rebuild ``datasets`` to carry the metadata an analysis dataset needs:
+# dataset_type, name, source_filename, stored_path, duckdb_path, table_name,
+# row_count, status. Data-preserving copy from the old (kind, source_path)
+# columns. Table rebuild because SQLite cannot add NOT NULL columns in place.
+
+_M004 = """
+PRAGMA foreign_keys = OFF;
+
+CREATE TABLE datasets_new (
+    id              TEXT PRIMARY KEY,
+    run_id          TEXT REFERENCES runs(id) ON DELETE CASCADE,
+    dataset_type    TEXT NOT NULL,
+    name            TEXT,
+    source_filename TEXT,
+    stored_path     TEXT,
+    duckdb_path     TEXT,
+    table_name      TEXT,
+    row_count       INTEGER,
+    status          TEXT NOT NULL DEFAULT 'uploaded',
+    created_at      TEXT NOT NULL
+);
+
+INSERT INTO datasets_new
+    (id, run_id, dataset_type, name, source_filename, stored_path,
+     duckdb_path, table_name, row_count, status, created_at)
+    SELECT id, run_id, kind, NULL, NULL, source_path,
+           NULL, NULL, row_count, 'imported', created_at
+    FROM datasets;
+
+DROP TABLE datasets;
+ALTER TABLE datasets_new RENAME TO datasets;
+
+CREATE INDEX IF NOT EXISTS idx_datasets_run ON datasets(run_id);
+
+PRAGMA foreign_keys = ON;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
     (2, "tool_calls_nullable_run", _M002),
     (3, "runs_add_prefix", _M003),
+    (4, "datasets_metadata", _M004),
 ]
 
 
