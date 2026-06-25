@@ -6,7 +6,11 @@
 #     pyinstaller packaging/storage-agent-sidecar.spec --noconfirm \
 #         --distpath dist --workpath build/pyinstaller
 #
-# Produces a one-dir bundle at: sidecar/dist/storage-agent-sidecar/
+# Produces a ONE-FILE binary at: sidecar/dist/storage-agent-sidecar
+#
+# One-file is used so the binary fits Tauri's `externalBin` (a single
+# target-triple-suffixed file copied to src-tauri/binaries/). Trade-off: a
+# one-file build self-extracts on each launch, so cold start is slower.
 #
 # Security: this spec bundles ONLY code + library data. It must never include
 # .env, the SQLite DB, keyring contents, or data/runs output (see `excludes`
@@ -55,18 +59,13 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    [],
-    exclude_binaries=True,
-    name="storage-agent-sidecar",
-    console=True,
-    disable_windowed_traceback=False,
-)
-
-coll = COLLECT(
-    exe,
     a.binaries,
     a.datas,
+    [],
+    name="storage-agent-sidecar",
+    console=True,
+    onefile=True,
     strip=False,
     upx=False,
-    name="storage-agent-sidecar",
+    disable_windowed_traceback=False,
 )

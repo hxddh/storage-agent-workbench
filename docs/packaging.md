@@ -27,7 +27,7 @@ VITE_SIDECAR_URL=http://127.0.0.1:8765 npm run dev
 
 ```bash
 cd sidecar && pip install -e ".[packaging]"
-python packaging/build_sidecar.py        # -> sidecar/dist/storage-agent-sidecar/
+python packaging/build_sidecar.py        # one-file -> sidecar/dist/storage-agent-sidecar
 python packaging/smoke_test_sidecar.py   # starts it, checks /health, stops it
 ```
 
@@ -46,7 +46,7 @@ Requires the Rust toolchain (`cargo`, `rustc`) and platform webview deps.
 ```bash
 # place the built sidecar where Tauri expects it (target-triple suffix)
 mkdir -p src-tauri/binaries
-cp sidecar/dist/storage-agent-sidecar/storage-agent-sidecar \
+cp sidecar/dist/storage-agent-sidecar \
    src-tauri/binaries/storage-agent-sidecar-$(rustc -Vv | sed -n 's/host: //p')
 
 cd src-tauri && cargo tauri build   # or: cargo tauri dev

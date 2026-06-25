@@ -11,13 +11,13 @@ pip install -e ".[dev]" ".[packaging]"
 python packaging/build_sidecar.py
 ```
 
-Output: `sidecar/dist/storage-agent-sidecar/` (one-dir bundle containing the
-`storage-agent-sidecar` executable).
+Output: `sidecar/dist/storage-agent-sidecar` (a single one-file executable, so it
+fits Tauri's `externalBin`).
 
 ## Run the packaged sidecar
 
 ```bash
-./dist/storage-agent-sidecar/storage-agent-sidecar --host 127.0.0.1 --port 8765 \
+./dist/storage-agent-sidecar --host 127.0.0.1 --port 8765 \
     --data-dir "$HOME/Library/Application Support/StorageAgentWorkbench"
 curl http://127.0.0.1:8765/health
 ```

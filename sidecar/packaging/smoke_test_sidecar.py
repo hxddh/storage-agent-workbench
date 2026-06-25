@@ -31,8 +31,10 @@ HOST = "127.0.0.1"
 
 def _binary() -> Path:
     name = "storage-agent-sidecar"
-    exe = name + (".exe" if os.name == "nt" else "")
-    return SIDECAR_DIR / "dist" / name / exe
+    suffix = ".exe" if os.name == "nt" else ""
+    onefile = SIDECAR_DIR / "dist" / (name + suffix)
+    onedir = SIDECAR_DIR / "dist" / name / (name + suffix)
+    return onefile if onefile.exists() else onedir
 
 
 def _wait_health(timeout: float = 90.0) -> dict | None:

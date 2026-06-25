@@ -20,10 +20,10 @@ support (`tauri-plugin-shell`):
 `src-tauri/binaries/`. After building the sidecar:
 
 ```bash
-cd ../sidecar && python packaging/build_sidecar.py
+cd ../sidecar && python packaging/build_sidecar.py   # one-file -> dist/storage-agent-sidecar
 # copy the executable to the expected name, e.g. on Apple Silicon:
 mkdir -p ../src-tauri/binaries
-cp dist/storage-agent-sidecar/storage-agent-sidecar \
+cp dist/storage-agent-sidecar \
    ../src-tauri/binaries/storage-agent-sidecar-aarch64-apple-darwin
 ```
 
