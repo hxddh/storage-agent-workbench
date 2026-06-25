@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "storage-agent-sidecar"
-version = "0.3.0"
-description = "Local FastAPI sidecar for Storage Agent Workbench (Phase 03: read-only S3 tools)"
+version = "0.4.0"
+description = "Local FastAPI sidecar for Storage Agent Workbench (Phase 04: runs, timeline, reports)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

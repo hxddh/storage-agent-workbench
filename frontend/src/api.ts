@@ -6,6 +6,10 @@ import type {
   ListObjectsResult,
   ModelProvider,
   ModelProviderTestResult,
+  ReportOut,
+  RunDetail,
+  RunSummary,
+  RunType,
 } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -116,3 +120,34 @@ export const toolListObjectsV2 = (
     method: "POST",
     body: JSON.stringify({ provider_id, bucket, max_keys, prefix: prefix || undefined }),
   });
+
+// --- Analysis runs (Phase 04) ---
+
+export interface RunCreateInput {
+  run_type: RunType;
+  title?: string;
+  provider_id?: string;
+  bucket?: string;
+  prefix?: string;
+  user_prompt?: string;
+}
+
+export const listRuns = () => request<RunSummary[]>("/runs");
+
+export const createRun = (body: RunCreateInput) =>
+  request<{ run_id: string; status: string; title: string | null; created_at: string }>("/runs", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const getRun = (id: string) => request<RunDetail>(`/runs/${id}`);
+
+export const postRunMessage = (id: string, content: string) =>
+  request<{ run_id: string; status: string }>(`/runs/${id}/message`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+
+export const getReport = (runId: string) => request<ReportOut>(`/reports/${runId}`);
+
+export const runEventsUrl = (id: string) => `${SIDECAR_BASE_URL}/runs/${id}/events`;

@@ -51,6 +51,8 @@ def client(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     monkeypatch.setenv("SAW_DB_PATH", str(tmp_path / "test_app.db"))
+    # Keep generated artifacts (run reports) inside the temp dir, not the repo.
+    monkeypatch.setenv("SAW_DATA_DIR", str(tmp_path))
 
     from app.main import app
 

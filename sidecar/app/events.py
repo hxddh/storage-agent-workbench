@@ -1,0 +1,77 @@
+"""In-process event bus for run SSE streaming (Phase 04).
+
+Deliberately simple and dependency-free (no Redis/Celery/queue): events for an
+active run are buffered in memory and replayed to any SSE subscriber from the
+beginning, so a client that connects mid-run (or just after it finishes) still
+sees the full timeline. Best-effort and local-only by design — buffers do not
+survive a process restart.
+
+Events must never contain secrets; callers pass already-sanitized payloads.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import threading
+from typing import Any
+
+_STREAM_IDLE_TIMEOUT_S = 120.0
+_POLL_INTERVAL_S = 0.1
+
+
+class EventBus:
+    def __init__(self) -> None:
+        self._runs: dict[str, dict[str, Any]] = {}
+        self._lock = threading.Lock()
+
+    def create(self, run_id: str) -> None:
+        with self._lock:
+            self._runs.setdefault(run_id, {"events": [], "done": False})
+
+    def publish(self, run_id: str, event: dict[str, Any]) -> None:
+        with self._lock:
+            entry = self._runs.setdefault(run_id, {"events": [], "done": False})
+            entry["events"].append(event)
+
+    def mark_done(self, run_id: str) -> None:
+        with self._lock:
+            entry = self._runs.setdefault(run_id, {"events": [], "done": False})
+            entry["done"] = True
+
+    def snapshot(self, run_id: str, cursor: int) -> tuple[list[dict[str, Any]], bool]:
+        """Return (events after cursor, done). Unknown run is treated as done."""
+        with self._lock:
+            entry = self._runs.get(run_id)
+            if entry is None:
+                return [], True
+            return list(entry["events"][cursor:]), bool(entry["done"])
+
+    def all_events(self, run_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            entry = self._runs.get(run_id)
+            return list(entry["events"]) if entry else []
+
+
+# Singleton used across the app.
+bus = EventBus()
+
+
+async def sse_stream(run_id: str):
+    """Async generator yielding SSE 'data:' frames until the run is done."""
+    cursor = 0
+    waited = 0.0
+    while True:
+        events, done = bus.snapshot(run_id, cursor)
+        for event in events:
+            cursor += 1
+            yield f"data: {json.dumps(event)}\n\n"
+        if events:
+            waited = 0.0
+            continue
+        if done:
+            break
+        await asyncio.sleep(_POLL_INTERVAL_S)
+        waited += _POLL_INTERVAL_S
+        if waited >= _STREAM_IDLE_TIMEOUT_S:
+            break

@@ -150,3 +150,88 @@ class PathStyleRequest(BaseModel):
 
 class InspectTlsRequest(BaseModel):
     endpoint_url: str = Field(min_length=1)
+
+
+# --- Analysis runs (Phase 04) -----------------------------------------------
+
+RunType = Literal[
+    "diagnostic",
+    "access_log_analysis",
+    "inventory_analysis",
+    "bucket_config_review",
+    "optimization_report",
+]
+
+
+class RunCreate(BaseModel):
+    run_type: RunType
+    title: str | None = None
+    provider_id: str | None = None
+    bucket: str | None = None
+    prefix: str | None = None
+    user_prompt: str | None = None
+
+
+class RunCreated(BaseModel):
+    run_id: str
+    status: str
+    title: str | None
+    created_at: str
+
+
+class RunSummary(BaseModel):
+    id: str
+    run_type: str
+    title: str | None
+    status: str
+    provider_id: str | None
+    bucket: str | None
+    final_summary: str | None
+    created_at: str
+    updated_at: str
+
+
+class MessageOut(BaseModel):
+    id: str
+    role: str
+    content: str | None
+    created_at: str
+
+
+class ToolCallOut(BaseModel):
+    id: str
+    tool_name: str
+    input_json_sanitized: str | None
+    output_json_sanitized: str | None
+    status: str | None
+    duration_ms: int | None
+    created_at: str
+
+
+class RunDetail(BaseModel):
+    id: str
+    run_type: str
+    title: str | None
+    status: str
+    provider_id: str | None
+    bucket: str | None
+    prefix: str | None = None
+    user_prompt: str | None
+    final_summary: str | None
+    report_path: str | None
+    created_at: str
+    updated_at: str
+    messages: list[MessageOut]
+    tool_calls: list[ToolCallOut]
+
+
+class MessageCreate(BaseModel):
+    content: str = Field(min_length=1)
+
+
+class ReportOut(BaseModel):
+    run_id: str
+    report_path: str
+    format: str
+    created_at: str
+    content: str

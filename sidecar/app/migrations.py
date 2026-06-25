@@ -152,10 +152,17 @@ CREATE INDEX IF NOT EXISTS idx_tool_calls_name ON tool_calls(tool_name);
 PRAGMA foreign_keys = ON;
 """
 
+# --- Migration 003: store the optional prefix scope on a run -----------------
+
+_M003 = """
+ALTER TABLE runs ADD COLUMN prefix TEXT;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
     (2, "tool_calls_nullable_run", _M002),
+    (3, "runs_add_prefix", _M003),
 ]
 
 
