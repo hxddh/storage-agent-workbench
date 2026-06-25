@@ -134,10 +134,35 @@ Implemented in Phase 05 (`phase/05-duckdb-analysis`):
 `diagnostic` (Phase 04) is retained; `bucket_config_review` and
 `optimization_report` remain `not_implemented` placeholders.
 
+## Phase 06 status
+
+Implemented in Phase 06 (`phase/06-config-review`):
+
+- `bucket_config_review` run type with six **read-only** config tools:
+  `get_bucket_config_summary`, `review_bucket_security`,
+  `review_bucket_lifecycle`, `review_bucket_observability`,
+  `review_bucket_cost_optimization`, `review_bucket_performance_profile`.
+- Reads bucket config via read-only APIs only (location, versioning, lifecycle,
+  encryption, logging, policy, CORS, ACL, public access block, replication,
+  notification, tagging). Each read is mapped to a structured status:
+  `available` / `not_configured` / `provider_unsupported` / `access_denied` /
+  `error` — a single failed read never fails the whole run.
+- Findings categorized as Critical / Warning / Opportunity / Good /
+  Not applicable / Provider unsupported. Reports never dump raw bucket policy,
+  account IDs, ARNs, credentials, signatures, or presigned-URL params.
+- Performance profile uses a bounded `list_objects_v2` sample (max_keys ≤ 100,
+  ≤20 sample keys); no full scan, no object body download.
+- Optional read-only tool endpoints under `/tools/*` for each review tool.
+- Frontend: New Run form supports `bucket_config_review`; Run Detail shows
+  config metrics cards (Critical/Warning/Opportunity/Provider unsupported/
+  Access denied/Good counts).
+
+`optimization_report` remains a `not_implemented` placeholder.
+
 Not implemented yet:
 
 - Agent runtime (LLM / OpenAI Agents SDK)
-- Bucket config review
+- `optimization_report` run type
 - Packaging
 
 ## Requirements

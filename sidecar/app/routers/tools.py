@@ -14,15 +14,17 @@ from fastapi import APIRouter, Depends
 
 from ..db import get_conn
 from ..models.schemas import (
+    BucketConfigRequest,
     HeadBucketRequest,
     HeadObjectRequest,
     InspectTlsRequest,
     ListObjectsV2Request,
     PathStyleRequest,
+    PerformanceProfileRequest,
     TestCredentialsRequest,
     TestRangeGetRequest,
 )
-from ..s3 import tools
+from ..s3 import config_tools, tools
 from ..tool_runner import run_tool
 
 router = APIRouter(prefix="/tools", tags=["tools"])
@@ -131,4 +133,62 @@ def tool_inspect_tls(
         "inspect_tls",
         {"endpoint_url": safe_endpoint},
         lambda: tools.inspect_tls(body.endpoint_url),
+    )
+
+
+# --- read-only bucket config review tools (Phase 06) ------------------------
+
+
+def _config_tool(conn, name: str, body: BucketConfigRequest, fn) -> dict[str, Any]:
+    return run_tool(conn, name, {"provider_id": body.provider_id, "bucket": body.bucket}, fn)
+
+
+@router.post("/get-bucket-config-summary")
+def tool_get_bucket_config_summary(
+    body: BucketConfigRequest, conn: sqlite3.Connection = Depends(get_conn)
+) -> dict[str, Any]:
+    return _config_tool(conn, "get_bucket_config_summary", body,
+                        lambda: config_tools.get_bucket_config_summary(conn, body.provider_id, body.bucket))
+
+
+@router.post("/review-bucket-security")
+def tool_review_bucket_security(
+    body: BucketConfigRequest, conn: sqlite3.Connection = Depends(get_conn)
+) -> dict[str, Any]:
+    return _config_tool(conn, "review_bucket_security", body,
+                        lambda: config_tools.review_bucket_security(conn, body.provider_id, body.bucket))
+
+
+@router.post("/review-bucket-lifecycle")
+def tool_review_bucket_lifecycle(
+    body: BucketConfigRequest, conn: sqlite3.Connection = Depends(get_conn)
+) -> dict[str, Any]:
+    return _config_tool(conn, "review_bucket_lifecycle", body,
+                        lambda: config_tools.review_bucket_lifecycle(conn, body.provider_id, body.bucket))
+
+
+@router.post("/review-bucket-observability")
+def tool_review_bucket_observability(
+    body: BucketConfigRequest, conn: sqlite3.Connection = Depends(get_conn)
+) -> dict[str, Any]:
+    return _config_tool(conn, "review_bucket_observability", body,
+                        lambda: config_tools.review_bucket_observability(conn, body.provider_id, body.bucket))
+
+
+@router.post("/review-bucket-cost-optimization")
+def tool_review_bucket_cost_optimization(
+    body: BucketConfigRequest, conn: sqlite3.Connection = Depends(get_conn)
+) -> dict[str, Any]:
+    return _config_tool(conn, "review_bucket_cost_optimization", body,
+                        lambda: config_tools.review_bucket_cost_optimization(conn, body.provider_id, body.bucket))
+
+
+@router.post("/review-bucket-performance-profile")
+def tool_review_bucket_performance_profile(
+    body: PerformanceProfileRequest, conn: sqlite3.Connection = Depends(get_conn)
+) -> dict[str, Any]:
+    return run_tool(
+        conn, "review_bucket_performance_profile",
+        {"provider_id": body.provider_id, "bucket": body.bucket, "prefix": body.prefix},
+        lambda: config_tools.review_bucket_performance_profile(conn, body.provider_id, body.bucket, body.prefix),
     )

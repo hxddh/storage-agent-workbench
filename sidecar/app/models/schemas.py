@@ -148,6 +148,17 @@ class PathStyleRequest(BaseModel):
     bucket: str = Field(min_length=1)
 
 
+class BucketConfigRequest(BaseModel):
+    provider_id: str = Field(min_length=1)
+    bucket: str = Field(min_length=1)
+
+
+class PerformanceProfileRequest(BaseModel):
+    provider_id: str = Field(min_length=1)
+    bucket: str = Field(min_length=1)
+    prefix: str | None = None
+
+
 class InspectTlsRequest(BaseModel):
     endpoint_url: str = Field(min_length=1)
 

@@ -11,11 +11,16 @@ export interface TimelineItem {
 function summarize(output?: Record<string, unknown>): string {
   if (!output) return "";
   const o = output as Record<string, unknown>;
+  if (o.error_code) return `error: ${o.error_code}`;
   if (o.identity_hint) return `identity: ${o.identity_hint}`;
+  if (o.report_path) return "report written";
   if (typeof o.status_code === "number") return `status ${o.status_code}`;
   if (typeof o.key_count === "number") return `key_count ${o.key_count}`;
-  if (o.error_code) return `error: ${o.error_code}`;
-  return o.success ? "ok" : "failed";
+  if (typeof o.object_count === "number") return `objects ${o.object_count}`;
+  if (typeof o.total_requests === "number") return `requests ${o.total_requests}`;
+  if (Array.isArray(o.findings)) return `${o.findings.length} finding(s)`;
+  if (o.overall_status) return String(o.overall_status);
+  return o.success === false ? "failed" : "ok";
 }
 
 function TimelineRow({ item }: { item: TimelineItem }) {

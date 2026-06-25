@@ -60,18 +60,17 @@ def test_no_agent_runtime_imports():
         assert forbidden not in src, f"forbidden runtime import present: {forbidden}"
 
 
-def test_no_bucket_config_review_implementation():
-    # Phase 05 must not implement bucket config review tools.
-    src = _read_all(APP_DIR).lower()
+def test_config_review_uses_only_readonly_apis():
+    # Phase 06 implements bucket config review, but ONLY via read-only get_*/list_*.
+    src = (S3_DIR / "config_tools.py").read_text().lower()
     for forbidden in (
-        "get_bucket_config_summary",
-        "review_bucket_security",
-        "review_bucket_lifecycle",
-        "review_bucket_observability",
-        "review_bucket_cost_optimization",
-        "review_bucket_performance_profile",
+        "put_bucket_policy", "put_bucket_acl", "put_bucket_lifecycle",
+        "put_bucket_cors", "put_bucket_encryption", "delete_bucket",
+        "delete_objects", "put_object",
     ):
-        assert forbidden not in src, f"bucket config review impl present: {forbidden}"
+        assert forbidden not in src, f"mutating API in config_tools: {forbidden}"
+    # The review reads bucket config with get_bucket_* / get_public_access_block.
+    assert "get_bucket_policy" in src and "get_public_access_block" in src
 
 
 def test_only_readonly_s3_calls_present():

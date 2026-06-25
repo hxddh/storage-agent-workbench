@@ -93,6 +93,7 @@ const RUN_TYPE_OPTIONS: { value: RunType; label: string }[] = [
   { value: "diagnostic", label: "Diagnostic" },
   { value: "access_log_analysis", label: "Access log analysis" },
   { value: "inventory_analysis", label: "Inventory analysis" },
+  { value: "bucket_config_review", label: "Bucket config review" },
 ];
 
 function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (runId: string) => void }) {
@@ -107,6 +108,7 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const isAnalysis = runType === "access_log_analysis" || runType === "inventory_analysis";
+  const needsBucket = runType === "diagnostic" || runType === "bucket_config_review";
   const datasetType = runType === "access_log_analysis" ? "access_log" : "inventory";
   const accept = runType === "inventory_analysis" ? ".csv,.parquet,.pq" : ".log,.jsonl,.json,.txt,.csv";
 
@@ -119,18 +121,19 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
       .catch((e) => setError(String(e)));
   }, []);
 
-  const submitDiagnostic = async () => {
+  const submitBucket = async () => {
     if (!providerId || !bucket.trim() || !prompt.trim()) {
       setError("Provider, bucket, and prompt are required.");
       return;
     }
+    const label = runType === "bucket_config_review" ? "Config review" : "Diagnostic";
     const created = await createRun({
-      run_type: "diagnostic",
+      run_type: runType,
       provider_id: providerId,
       bucket: bucket.trim(),
       prefix: prefix.trim() || undefined,
       user_prompt: prompt.trim(),
-      title: `Diagnostic: ${bucket.trim()}`,
+      title: `${label}: ${bucket.trim()}`,
     });
     await postRunMessage(created.run_id, prompt.trim());
     onCreated(created.run_id);
@@ -157,7 +160,7 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
     setBusy(true);
     try {
       if (isAnalysis) await submitAnalysis();
-      else await submitDiagnostic();
+      else await submitBucket();
     } catch (e) {
       setError(String(e));
       setBusy(false);
@@ -185,7 +188,7 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           </Select>
         </Field>
 
-        {runType === "diagnostic" && (
+        {needsBucket && (
           <>
             <Field label="Cloud provider">
               {providers.length === 0 ? (
@@ -235,7 +238,7 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           <Button
             variant="primary"
             onClick={submit}
-            disabled={busy || (runType === "diagnostic" && providers.length === 0)}
+            disabled={busy || (needsBucket && providers.length === 0)}
           >
             {busy ? "Creating…" : "Create run"}
           </Button>
