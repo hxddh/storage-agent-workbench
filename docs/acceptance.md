@@ -135,3 +135,20 @@ Expected later:
 - App data dir behavior documented + tested; no user data in the install dir.
 - No Vercel SDK; no new dangerous execution surface; no S3 mutation; Phase 10
   not started.
+
+## Phase 10 acceptance (macOS app bundle)
+
+- Branch `phase/10-macos-app-bundle` from latest main.
+- Tauri bundle enabled (`bundle.active=true`, targets app+dmg, icon set incl.
+  `icon.icns`); externalBin still packages the sidecar.
+- `cargo tauri build` produces an unsigned `.app` and a DMG; artifacts are not
+  committed (gitignored). CI uploads `.app` (zipped) + DMG.
+- Local launch verified: `.app` starts, Tauri spawns the bundled sidecar on a
+  free port, `/health` is ok; sidecar is cleaned up on exit via a parent-PID
+  watchdog (no orphans). GUI screen verification needs OS Accessibility/Screen
+  Recording grants (not available headlessly) — verified via process + health
+  inspection instead.
+- App data dir never under the install dir; secrets stay in the OS keychain.
+- No signing/notarization/auto-update; macOS x64/universal not verified.
+- No Vercel SDK; no new S3 mutation / shell / subprocess tool surface; Phase 11
+  not started.

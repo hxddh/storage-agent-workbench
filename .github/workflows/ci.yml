@@ -78,6 +78,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -87,6 +90,9 @@ jobs:
 
       - name: Install sidecar deps (dev + packaging)
         run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked --version "^2"
 
       - name: Build frontend
         run: cd frontend && npm install && npm run build
@@ -100,9 +106,29 @@ jobs:
       - name: cargo build (compile + link desktop binary)
         run: cd src-tauri && cargo build
 
-      - name: Note on full bundle / signing
+      - name: cargo tauri build (unsigned .app / dmg)
+        run: cd src-tauri && cargo tauri build
+        # No signing cert / Apple developer account / notarization. The bundle is
+        # UNSIGNED; Gatekeeper warns on first open (see docs/release.md). A
+        # headless CI runner cannot launch the GUI — that is verified manually.
+
+      - name: Package .app artifact
         run: |
-          echo "cargo check + cargo build verify the desktop app compiles and links."
-          echo "A full .app bundle (cargo tauri build) plus code signing and"
-          echo "notarization are intentionally NOT performed in CI (no Apple"
-          echo "developer account / signing cert). See docs/release.md."
+          cd src-tauri/target/release/bundle/macos
+          zip -ry storage-agent-workbench-macos-app.zip ./*.app
+
+      - name: Upload macOS bundle artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: storage-agent-workbench-macos
+          path: |
+            src-tauri/target/release/bundle/macos/*.zip
+            src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: warn
+
+      - name: Note on signing / GUI
+        run: |
+          echo "Built an UNSIGNED macOS .app (+ DMG if the bundler produced one)."
+          echo "No code signing / notarization (no Apple developer account)."
+          echo "GUI launch is not exercised on the headless runner; it is verified"
+          echo "manually on a local macOS machine. See docs/release.md."

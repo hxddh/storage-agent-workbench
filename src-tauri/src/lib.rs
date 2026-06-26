@@ -56,7 +56,10 @@ pub fn run() {
                 .sidecar("storage-agent-sidecar")
                 .expect("failed to create sidecar command")
                 .args(["--host", "127.0.0.1", "--port", &port.to_string()])
-                .env("STORAGE_AGENT_DATA_DIR", data_dir);
+                .env("STORAGE_AGENT_DATA_DIR", data_dir)
+                // The sidecar exits if this PID disappears, so a one-file
+                // PyInstaller child is never orphaned on app exit/crash.
+                .env("STORAGE_AGENT_PARENT_PID", std::process::id().to_string());
 
             let (_rx, child) = sidecar.spawn().expect("failed to spawn sidecar");
 

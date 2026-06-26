@@ -11,14 +11,48 @@ signing, notarization, or auto-update yet.
 - Python 3.12+ with sidecar deps: `pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"`
 - macOS with Xcode Command Line Tools (WebKit ships with the OS)
 
-## One-command macOS build
+## One-command macOS app bundle (Phase 10)
+
+```bash
+bash scripts/build-macos-app-bundle.sh    # builds the unsigned .app (+ DMG)
+bash scripts/verify-macos-app-bundle.sh   # checks the .app + embedded sidecar /health
+```
+
+`build-macos-app-bundle.sh`: frontend build → PyInstaller one-file sidecar +
+copy to the Tauri `externalBin` path → `cargo tauri build` (bundle active).
+
+Artifacts:
+
+```
+src-tauri/target/release/bundle/macos/*.app   # the application bundle
+src-tauri/target/release/bundle/dmg/*.dmg      # disk image (if the bundler produced one)
+```
+
+The bundled sidecar is embedded at `Contents/MacOS/storage-agent-sidecar` inside
+the `.app` (Tauri strips the target-triple suffix on copy).
+
+### Opening the UNSIGNED app (Gatekeeper)
+
+The `.app` is **unsigned and not notarized**, so macOS Gatekeeper will block it
+on first open with a warning. To run it locally:
+
+- **Finder:** right-click the app → **Open** → **Open** in the dialog, **or**
+- **Terminal:** clear the quarantine attribute, then open:
+
+  ```bash
+  xattr -dr com.apple.quarantine "/path/to/Storage Agent Workbench.app"
+  open "/path/to/Storage Agent Workbench.app"
+  ```
+
+This is expected for an unsigned local build; it is not a defect.
+
+## Lower-level build (compile/link only, no bundle)
 
 ```bash
 bash scripts/build-desktop-macos.sh
 ```
 
-This: builds the frontend → builds the PyInstaller one-file sidecar and copies
-it to the Tauri `externalBin` path → `cargo check` → `cargo tauri build` (if the
+This builds the frontend → sidecar → `cargo check` → `cargo tauri build` (if the
 Tauri CLI is installed) or `cargo build --release` as a fallback.
 
 ## Step by step
@@ -67,12 +101,18 @@ binary is a build artifact and must not be committed.
   targets + provide `.icns` when you want a distributable bundle).
 - **macOS x64 / universal**: not built/verified yet (TODO). Build on an Intel
   machine, or set up cross/universal binaries in a later phase.
-- **`.app` bundle**: producible via `cargo tauri build`; `bundle.active` is
-  currently `false`, so enable bundle targets + provide `.icns` when you want a
-  distributable bundle.
-- **Code signing**: NOT done (no Apple Developer cert).
+- **`.app` bundle**: **enabled** (`bundle.active=true`, targets `["app","dmg"]`,
+  icons incl. `icon.icns`). `cargo tauri build` produces an unsigned `.app`
+  (and a DMG when the bundler can build one). CI uploads these as artifacts.
+- **Code signing**: NOT done (no Apple Developer cert) — the bundle is unsigned;
+  see "Opening the UNSIGNED app" above.
 - **Notarization**: NOT done.
 - **Auto-update**: NOT implemented.
+- **Sidecar lifecycle**: Tauri spawns the bundled sidecar on a free localhost
+  port and kills it on app exit. As a safety net (PyInstaller one-file re-execs
+  a child that a parent kill may orphan), the sidecar runs a parent-PID watchdog
+  (`STORAGE_AGENT_PARENT_PID`) and exits when the app process disappears — so no
+  sidecar is left running after the app quits or crashes.
 - **App data dir**: production uses the OS app-data dir (Tauri passes
   `STORAGE_AGENT_DATA_DIR`); dev uses `<repo>/data`. User data is never written
   to the install dir and is never bundled. See `docs/packaging.md`.

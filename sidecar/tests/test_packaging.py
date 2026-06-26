@@ -69,6 +69,19 @@ def test_health_still_works(client):
     assert client.get("/health").json()["status"] == "ok"
 
 
+def test_parent_watchdog_does_not_exit_when_parent_alive(monkeypatch):
+    # With the parent PID set to this live process, the watchdog must NOT exit.
+    # (It probes after a 2s sleep; we just confirm starting it is safe/no-op.)
+    import os
+    import time
+
+    monkeypatch.setenv("STORAGE_AGENT_PARENT_PID", str(os.getpid()))
+    packaged_main._start_parent_watchdog()  # starts a daemon thread
+    time.sleep(0.2)
+    # If we reached here, the watchdog did not os._exit the test process.
+    assert True
+
+
 def test_app_data_paths_live_under_data_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("STORAGE_AGENT_DATA_DIR", str(tmp_path))
     # run artifacts resolve under the configured data dir

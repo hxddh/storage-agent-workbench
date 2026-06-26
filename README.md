@@ -242,6 +242,28 @@ binary; the packaged sidecar serves `/health`.
 > are not verified yet. The Vercel SDK is not used and is not part of the
 > desktop architecture.
 
+## Phase 10 status
+
+Implemented in Phase 10 (`phase/10-macos-app-bundle`):
+
+- **Tauri bundle enabled** (`bundle.active=true`, targets `["app","dmg"]`, full
+  icon set incl. `icon.icns`). `cargo tauri build` produces an **unsigned**
+  macOS `.app` and a **DMG**.
+- **Build/verify scripts**: `scripts/build-macos-app-bundle.sh` and
+  `scripts/verify-macos-app-bundle.sh` (checks the `.app`, embedded sidecar, no
+  user data shipped, and the embedded sidecar `/health`).
+- **Verified locally on macOS arm64:** the `.app` launches, Tauri spawns the
+  bundled sidecar on a free port, and `/health` returns ok.
+- **Sidecar cleanup hardening:** a parent-PID watchdog in the sidecar exits it
+  when the desktop app goes away, so a one-file PyInstaller child is never
+  orphaned (Tauri also passes its PID and kills the child on exit).
+- **CI**: `desktop-build-macos` now runs `cargo tauri build` and uploads the
+  `.app` (zipped) + DMG as artifacts. Unsigned; GUI not exercised on the runner.
+
+Artifacts: `src-tauri/target/release/bundle/{macos/*.app,dmg/*.dmg}`. See
+[`docs/release.md`](docs/release.md) for the build flow and opening the unsigned
+app past Gatekeeper.
+
 Not implemented yet:
 
 - Agent mode for `access_log_analysis` / `inventory_analysis`

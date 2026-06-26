@@ -50,6 +50,37 @@ def configure(args: argparse.Namespace) -> None:
         os.environ["STORAGE_AGENT_DATA_DIR"] = str(args.data_dir)
 
 
+def _start_parent_watchdog() -> None:
+    """Exit if the launching parent (the desktop app) goes away.
+
+    Prevents orphaned sidecar processes: with a PyInstaller one-file bundle the
+    bootloader re-execs a child, and a parent's kill of the bootloader does not
+    always take down that child. Tauri passes its own PID as
+    STORAGE_AGENT_PARENT_PID; we poll it and exit cleanly when it disappears.
+    No-ops in dev/standalone (no parent PID and a normal parent).
+    """
+    import os
+    import threading
+    import time
+
+    parent_pid = os.environ.get("STORAGE_AGENT_PARENT_PID")
+
+    def _watch() -> None:
+        while True:
+            time.sleep(2)
+            if parent_pid:
+                try:
+                    os.kill(int(parent_pid), 0)  # signal 0 = liveness probe
+                except (ProcessLookupError, ValueError):
+                    os._exit(0)  # parent gone -> never orphan
+                except PermissionError:
+                    pass  # exists but not ours; treat as alive
+            elif os.getppid() == 1:
+                os._exit(0)  # reparented to launchd/init -> orphaned
+
+    threading.Thread(target=_watch, daemon=True).start()
+
+
 def _startup_banner(host: str, port: int) -> str:
     # Sanitized: only the bind address and the data-dir *name* (not full path,
     # which could contain a username), never any secret or env dump.
@@ -70,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from app.main import app as fastapi_app
 
+    _start_parent_watchdog()
     print(_startup_banner(args.host, args.port), flush=True)
     # Production: never enable reload; bind localhost only.
     uvicorn.run(fastapi_app, host=args.host, port=args.port, reload=False, log_level="info")
