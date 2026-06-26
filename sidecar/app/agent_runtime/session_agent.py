@@ -40,6 +40,12 @@ SESSION_SAFETY_RULES = [
     "Do not include hidden chain-of-thought; answer concisely.",
 ]
 
+_PROPOSAL_ACTION_TYPES = (
+    "run_account_discovery, run_bucket_config_review, run_diagnostic, "
+    "plan_inventory_import, plan_access_log_import, run_inventory_analysis, "
+    "run_access_log_analysis, generate_session_report, ask_user_for_context"
+)
+
 INSTRUCTIONS = (
     "You are the assistant for a storage-diagnostics work session. You are given "
     "a JSON context: the session goal, a deterministic summary (known facts, "
@@ -48,7 +54,13 @@ INSTRUCTIONS = (
     "that context. Be concise. When you recommend a next step, refer to one of "
     "the existing suggested next actions; never invent an action that downloads "
     "evidence, changes configuration, or runs anything itself. Make clear which "
-    "statements are well-evidenced facts vs. inferences. Follow all safety_rules."
+    "statements are well-evidenced facts vs. inferences. Follow all safety_rules.\n\n"
+    "Optionally, AFTER your prose answer, you MAY append exactly one fenced JSON "
+    "block proposing safe next steps, of the form:\n"
+    "```json\n{\"proposed_actions\": [{\"title\": \"...\", \"reason\": \"...\", "
+    "\"action_type\": \"...\", \"confidence\": \"low|medium|high\"}]}\n```\n"
+    f"action_type MUST be one of: {_PROPOSAL_ACTION_TYPES}. These are PROPOSALS "
+    "only — the user reviews and confirms each one; you never execute them."
 )
 
 
@@ -134,14 +146,41 @@ def _sdk_session_loop(spec: dict[str, Any]) -> Any:
 SESSION_LOOP: Callable[[dict[str, Any]], Any] = _sdk_session_loop
 
 
+def _extract_proposals(text: str) -> tuple[str, list[dict[str, Any]]]:
+    """Split a trailing ```json {proposed_actions:[...]} ``` block off the prose.
+
+    Returns (prose_without_block, raw_proposals). Validation/coercion of the
+    proposals happens in the router via the next_actions allowlist.
+    """
+    import re
+
+    proposals: list[dict[str, Any]] = []
+    prose = text
+    m = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if m:
+        try:
+            data = json.loads(m.group(1))
+            raw = data.get("proposed_actions")
+            if isinstance(raw, list):
+                proposals = [p for p in raw if isinstance(p, dict)]
+        except (json.JSONDecodeError, AttributeError):
+            proposals = []
+        prose = (text[: m.start()] + text[m.end():]).strip()
+    return prose, proposals
+
+
 def answer(
     session: dict[str, Any],
     summary: dict[str, Any],
     recent_messages: list[dict[str, Any]],
     user_message: str,
     creds: dict[str, Any],
-) -> str:
-    """Produce a sanitized, CoT-stripped assistant answer. Raises AgentUnavailable."""
+) -> tuple[str, list[dict[str, Any]]]:
+    """Return (sanitized CoT-stripped answer, raw proposed_actions). Raises AgentUnavailable.
+
+    The raw proposed_actions are NOT trusted: the caller must validate/coerce them
+    through the next_actions allowlist before use.
+    """
     context = build_session_context(session, summary, recent_messages)
     prompt = (
         f"{render_context_text(context)}\n\n"
@@ -150,7 +189,9 @@ def answer(
     spec = {"context": context, "prompt": prompt, "instructions": INSTRUCTIONS, "creds": creds}
     raw = SESSION_LOOP(spec)
     text = raw if isinstance(raw, str) else str(raw or "")
-    return strip_chain_of_thought(redact_text(text))[:_MAX_OUTPUT]
+    prose, proposals = _extract_proposals(text)
+    clean = strip_chain_of_thought(redact_text(prose))[:_MAX_OUTPUT]
+    return clean, proposals
 
 
 __all__ = ["SESSION_LOOP", "build_session_context", "render_context_text", "answer",

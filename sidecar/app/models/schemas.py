@@ -467,6 +467,11 @@ class SessionMessageCreate(BaseModel):
     content: str = Field(min_length=1)
 
 
+class ActionRequest(BaseModel):
+    """A next-action proposal to preview / prepare (Phase 17)."""
+    proposal: dict
+
+
 class SessionMessageOut(BaseModel):
     id: str
     role: str

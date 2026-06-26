@@ -3,6 +3,7 @@ import type {
   AccountProfile,
   EvidenceImport,
   EvidenceImportRunResult,
+  NextAction,
   SessionDetail,
   SessionMessage,
   SessionSummaryData,
@@ -218,9 +219,47 @@ export const getSessionReport = (id: string) =>
   request<{ session_id: string; format: string; content: string }>(`/sessions/${id}/report`);
 
 export const postSessionMessage = (id: string, content: string) =>
-  request<{ session_id: string; messages: SessionMessage[] }>(`/sessions/${id}/messages`, {
+  request<{ session_id: string; messages: SessionMessage[]; proposed_actions: NextAction[] }>(
+    `/sessions/${id}/messages`,
+    { method: "POST", body: JSON.stringify({ content }) },
+  );
+
+export const attachRunToSession = (sessionId: string, runId: string) =>
+  request<SessionDetail>(`/sessions/${sessionId}/runs/${runId}`, { method: "POST" });
+
+// Next-action handoff (Phase 17): validate + prefill only; never executes.
+export interface ActionPrepareResult {
+  proposal: NextAction & { id: string };
+  action_type: string;
+  status: string;
+  open: string | null;
+  missing_inputs: string[];
+  candidates: Record<string, Array<{ account_run_id: string; bucket_name: string }>>;
+  prefill: Record<string, string>;
+  safety_notes: string[];
+}
+
+export interface ActionPreviewResult {
+  proposal: NextAction & { id: string };
+  action_type: string;
+  ready: boolean;
+  missing_inputs: string[];
+  candidates: Record<string, unknown>;
+  prefill: Record<string, string>;
+  safety_notes: string[];
+  will_create: Record<string, unknown> | null;
+}
+
+export const previewSessionAction = (id: string, proposal: NextAction) =>
+  request<ActionPreviewResult>(`/sessions/${id}/actions/preview`, {
     method: "POST",
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ proposal }),
+  });
+
+export const prepareSessionAction = (id: string, proposal: NextAction) =>
+  request<ActionPrepareResult>(`/sessions/${id}/actions/prepare`, {
+    method: "POST",
+    body: JSON.stringify({ proposal }),
   });
 
 export const runEventsUrl = (id: string) => `${sidecarBaseUrl()}/runs/${id}/events`;

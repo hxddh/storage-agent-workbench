@@ -310,3 +310,35 @@ Expected later:
   SQL tool exposed to the LLM; no business object scan / body download; no
   secret or chain-of-thought persistence; no release/signing/auto-update
   changes; no macOS x86/universal; Phase 17 not started.
+
+## Phase 17 acceptance (session next-action handoff)
+
+- Branch `phase/17-session-next-action-handoff` from latest main.
+- Next-action proposals normalized to a canonical sanitized shape with an
+  `action_type` allowlist; `requires_confirmation` always true.
+- Action preview API (`/sessions/{id}/actions/preview`) and prepare API
+  (`/sessions/{id}/actions/prepare`) implemented; both ONLY validate + prefill —
+  no run creation, no evidence download, no confirm, no S3, no LLM.
+- Supported safe action types prepared into existing flows: run_* → NewRunForm
+  (with session_id + prefilled run_type/provider/bucket); plan_*_import →
+  EvidenceImportDialog (prefilled account run + bucket + source_type; imported
+  run attached to the session; import still plan→confirm→run); generate_session_
+  report → session report; ask_user_for_context → message composer. Missing
+  parameters yield `needs_input` (with candidates for ambiguous evidence
+  sources); access-log time range is never auto-filled.
+- Session assistant can return validated/coerced `proposed_actions` (allowlist
+  enforced, invalid dropped, requires_confirmation forced), interpretation-only,
+  sanitized, CoT-stripped, clean failure with no model key.
+- Frontend Session detail has a Review / Prepare & open flow that reuses
+  NewRunForm and EvidenceImportDialog; copy states "proposed next step — review
+  before starting". UI stays Agentic, not a task board.
+- Audit events recorded (next_action_previewed/prepared/opened); no kanban /
+  ticketing / PM tables; existing run + import workflows unaffected.
+- Sidecar tests pass (211); frontend build + cargo check pass; guardrail grep
+  passes.
+- No Vercel SDK / Next.js; no MCP runtime / multi-agent / generic shell /
+  user-controlled subprocess; no destructive/mutating S3; no arbitrary boto3 or
+  SQL tool exposed to the LLM; no business object scan / body download; no hidden
+  auto-run / auto-confirm; no secret or chain-of-thought persistence; no
+  release/signing/auto-update changes; no macOS x86/universal; Phase 18 not
+  started.

@@ -6,12 +6,18 @@ import {
   listCloudProviders,
   listSessions,
   postSessionMessage,
+  prepareSessionAction,
+  previewSessionAction,
   refreshSessionSummary,
+  type ActionPreviewResult,
 } from "../api";
-import type { CloudProvider, SessionDetail, SessionSummaryRow } from "../types";
+import type { CloudProvider, NextAction, RunType, SessionDetail, SessionSummaryRow } from "../types";
 import { Button, Field, Select, TextInput } from "../components/ui";
 import { RunDetail } from "../components/RunDetail";
+import { EvidenceImportDialog } from "../components/EvidenceImportDialog";
 import { NewRunForm } from "./RunsView";
+
+type RunPrefill = { run_type?: RunType; provider_id?: string; bucket?: string };
 
 const STATUS_COLOR: Record<string, string> = {
   pending: "text-gray-400",
@@ -25,7 +31,7 @@ type Mode =
   | { kind: "list" }
   | { kind: "new" }
   | { kind: "detail"; id: string }
-  | { kind: "newRun"; id: string }
+  | { kind: "newRun"; id: string; prefill?: RunPrefill }
   | { kind: "run"; id: string; runId: string };
 
 export function SessionsView() {
@@ -38,6 +44,9 @@ export function SessionsView() {
     return (
       <NewRunForm
         sessionId={mode.id}
+        initialRunType={mode.prefill?.run_type}
+        initialProviderId={mode.prefill?.provider_id}
+        initialBucket={mode.prefill?.bucket}
         onCancel={() => setMode({ kind: "detail", id: mode.id })}
         onCreated={(runId) => setMode({ kind: "run", id: mode.id, runId })}
       />
@@ -51,7 +60,7 @@ export function SessionsView() {
       <SessionDetailView
         sessionId={mode.id}
         onBack={() => setMode({ kind: "list" })}
-        onStartRun={() => setMode({ kind: "newRun", id: mode.id })}
+        onStartRun={(prefill) => setMode({ kind: "newRun", id: mode.id, prefill })}
         onOpenRun={(runId) => setMode({ kind: "run", id: mode.id, runId })}
       />
     );
@@ -192,7 +201,7 @@ function SessionDetailView({
 }: {
   sessionId: string;
   onBack: () => void;
-  onStartRun: () => void;
+  onStartRun: (prefill?: RunPrefill) => void;
   onOpenRun: (runId: string) => void;
 }) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
@@ -200,6 +209,10 @@ function SessionDetailView({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ index: number; result: ActionPreviewResult } | null>(null);
+  const [importHandoff, setImportHandoff] = useState<
+    { sourceType: "inventory" | "access_log"; accountRunId: string; bucketName: string } | null
+  >(null);
 
   const reload = () => getSession(sessionId).then(setDetail).catch((e) => setError(String(e)));
   useEffect(() => {
@@ -237,6 +250,46 @@ function SessionDetailView({
     setReport(r.content);
   };
 
+  const review = async (index: number, proposal: NextAction) => {
+    setError(null);
+    try {
+      const result = await previewSessionAction(sessionId, proposal);
+      setPreview({ index, result });
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const prepareAndOpen = async (proposal: NextAction) => {
+    setError(null);
+    try {
+      const r = await prepareSessionAction(sessionId, proposal);
+      if (r.status !== "ready") {
+        setError(`Needs input: ${r.missing_inputs.join(", ") || "more context"}`);
+        return;
+      }
+      if (r.open === "new_run") {
+        onStartRun({
+          run_type: r.prefill.run_type as RunType | undefined,
+          provider_id: r.prefill.provider_id,
+          bucket: r.prefill.bucket,
+        });
+      } else if (r.open === "evidence_import") {
+        setImportHandoff({
+          sourceType: r.prefill.source_type as "inventory" | "access_log",
+          accountRunId: r.prefill.account_run_id,
+          bucketName: r.prefill.bucket_name,
+        });
+      } else if (r.open === "session_report") {
+        await showReport();
+      } else if (r.open === "message_composer") {
+        setDraft(r.prefill.question || "");
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   const summary = detail?.summary;
   const nextActions = summary?.next_actions ?? [];
 
@@ -250,7 +303,7 @@ function SessionDetailView({
             <p className="text-sm text-gray-500">{detail?.goal || "—"}</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="primary" onClick={onStartRun}>Start run in this session</Button>
+            <Button variant="primary" onClick={() => onStartRun()}>Start run in this session</Button>
             <Button onClick={refresh} disabled={busy}>Refresh summary</Button>
             <Button variant="ghost" onClick={showReport}>Report</Button>
           </div>
@@ -284,12 +337,25 @@ function SessionDetailView({
             {(detail?.findings ?? []).length === 0 && <li className="text-xs text-gray-600">No findings yet.</li>}
           </ul>
 
-          <h2 className="mb-2 text-sm font-semibold text-gray-200">Next actions (proposals)</h2>
+          <h2 className="mb-1 text-sm font-semibold text-gray-200">Next actions (proposals)</h2>
+          <p className="mb-2 text-[11px] text-gray-600">These are proposed next steps. Review before starting — nothing runs automatically.</p>
           <ul className="space-y-1">
             {nextActions.map((a, i) => (
               <li key={i} className="rounded-md border border-edge bg-panel p-2 text-xs">
                 <div className="text-gray-200">{a.title} <span className="text-gray-600">({a.action_type}, {a.confidence})</span></div>
                 {a.reason && <div className="text-gray-500">{a.reason}</div>}
+                <div className="mt-1 flex gap-2">
+                  <button className="rounded border border-edge px-1.5 py-0.5 text-[10px] text-gray-300 hover:text-gray-100" onClick={() => review(i, a)}>Review</button>
+                  <button className="rounded border border-edge px-1.5 py-0.5 text-[10px] text-violet-300 hover:text-violet-200" onClick={() => prepareAndOpen(a)}>Prepare &amp; open</button>
+                </div>
+                {preview?.index === i && (
+                  <div className="mt-2 rounded border border-edge bg-canvas p-2 text-[11px] text-gray-400">
+                    <div>action: <span className="text-gray-300">{preview.result.action_type}</span> · {preview.result.ready ? <span className="text-emerald-400">ready</span> : <span className="text-amber-400">needs input</span>}</div>
+                    {preview.result.missing_inputs.length > 0 && <div>missing: {preview.result.missing_inputs.join(", ")}</div>}
+                    {preview.result.will_create && <div>will open a prefilled run: {String((preview.result.will_create as Record<string, unknown>).run_type ?? "")}</div>}
+                    {preview.result.safety_notes.map((n, k) => <div key={k} className="text-gray-500">• {n}</div>)}
+                  </div>
+                )}
               </li>
             ))}
             {nextActions.length === 0 && <li className="text-xs text-gray-600">No suggestions yet.</li>}
@@ -347,6 +413,20 @@ function SessionDetailView({
           )}
         </section>
       </div>
+
+      {importHandoff && (
+        <EvidenceImportDialog
+          accountRunId={importHandoff.accountRunId}
+          bucketName={importHandoff.bucketName}
+          sourceType={importHandoff.sourceType}
+          sessionId={sessionId}
+          onClose={() => setImportHandoff(null)}
+          onImported={(runId) => {
+            setImportHandoff(null);
+            onOpenRun(runId);
+          }}
+        />
+      )}
     </div>
   );
 }
