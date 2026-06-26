@@ -1,0 +1,232 @@
+# StorageOps Skill Registry v0.7.0
+
+# Machine-readable metadata for all StorageOps skills.
+# Skills are auto-discovered by Pi from the skills/ directory.
+# This registry drives documentation routing and skill metadata.
+
+version: "0.4"
+contract: "StorageOps Skill Contract v6"
+
+skills:
+  - name: storageops-triage
+    path: skills/storageops-triage/SKILL.md
+    maturity: core
+    mode: light_heavy
+    priority: 0
+    auto_route: true
+    description: >
+      First-contact triage for any object storage issue. Classifies the
+      problem domain, assesses severity and evidence completeness, and
+      routes to the appropriate specialist skill.
+    trigger_keywords:
+      - "object storage"
+      - "S3 error"
+      - "storage issue"
+      - "bucket issue"
+    domains: [triage]
+    recommended_tools: [scan_secrets, detect_domain, search_memory]
+
+  - name: storageops-access-log-analysis
+    path: skills/storageops-access-log-analysis/SKILL.md
+    maturity: stable
+    mode: light_heavy
+    trigger_keywords:
+      - "access log"
+      - "server access log"
+      - "error rate"
+      - "403 spike"
+      - "503 spike"
+      - "request analysis"
+      - "traffic analysis"
+      - "cost attribution"
+      - "who is accessing"
+    domains: [access-log, observability]
+    recommended_tools: [scan_secrets, detect_domain, search_memory]
+
+  - name: storageops-security-iam-policy
+    path: skills/storageops-security-iam-policy/SKILL.md
+    maturity: core
+    mode: light_heavy
+    trigger_keywords:
+      - "403"
+      - "AccessDenied"
+      - "IAM"
+      - "KMS"
+      - "permission"
+      - "bucket policy"
+      - "Unauthorized"
+    domains: [security]
+    recommended_tools: [scan_secrets, detect_domain, search_memory]
+
+  - name: storageops-performance-diagnosis
+    path: skills/storageops-performance-diagnosis/SKILL.md
+    maturity: core
+    mode: light_heavy
+    trigger_keywords:
+      - "429"
+      - "SlowDown"
+      - "slow"
+      - "timeout"
+      - "bandwidth"
+      - "throughput"
+      - "throttl"
+    domains: [performance]
+    recommended_tools: [scan_secrets, detect_domain, search_memory, capture_http_trace]
+
+  - name: storageops-cli-sdk-diagnosis
+    path: skills/storageops-cli-sdk-diagnosis/SKILL.md
+    maturity: mature
+    mode: light_heavy
+    trigger_keywords:
+      - "awscli"
+      - "boto3"
+      - "rclone"
+      - "s5cmd"
+      - "bcecmd"
+      - "obsutil"
+      - "corrupted on transfer"
+    domains: [cli-sdk]
+    recommended_tools: [scan_secrets, detect_domain, search_memory, capture_http_trace]
+
+  - name: storageops-network-endpoint-access
+    path: skills/storageops-network-endpoint-access/SKILL.md
+    maturity: core
+    mode: light_heavy
+    trigger_keywords:
+      - "DNS"
+      - "TLS"
+      - "connect"
+      - "endpoint"
+      - "VPC"
+      - "certificate"
+      - "host unreachable"
+    domains: [network]
+    recommended_tools: [scan_secrets, detect_domain, search_memory, capture_http_trace]
+
+  - name: storageops-lifecycle-cost
+    path: skills/storageops-lifecycle-cost/SKILL.md
+    maturity: mature
+    mode: light_heavy
+    trigger_keywords:
+      - "lifecycle"
+      - "cost"
+      - "billing"
+      - "IA"
+      - "Glacier"
+      - "storage class"
+    domains: [lifecycle, cost]
+    recommended_tools: [scan_secrets, detect_domain, search_memory]
+
+  - name: storageops-replication-versioning
+    path: skills/storageops-replication-versioning/SKILL.md
+    maturity: core
+    mode: light_heavy
+    trigger_keywords:
+      - "replicat"
+      - "versioning"
+      - "CRR"
+      - "SRR"
+      - "DeleteMarker"
+      - "Object Lock"
+    domains: [replication]
+    recommended_tools: [scan_secrets, detect_domain, search_memory]
+
+  - name: storageops-mount-filesystem-workspace
+    path: skills/storageops-mount-filesystem-workspace/SKILL.md
+    maturity: mature
+    mode: light_heavy
+    trigger_keywords:
+      - "mount"
+      - "FUSE"
+      - "s3fs"
+      - "goofys"
+      - "filesystem"
+      - "workspace"
+    domains: [mount, filesystem]
+    recommended_tools: [scan_secrets, detect_domain, search_memory]
+
+  - name: storageops-migration-sync
+    path: skills/storageops-migration-sync/SKILL.md
+    maturity: mature
+    mode: light_heavy
+    trigger_keywords:
+      - "migrat"
+      - "sync"
+      - "transfer"
+      - "跨云"
+    domains: [migration]
+    recommended_tools: [scan_secrets, detect_domain, search_memory]
+
+  - name: storageops-data-consistency
+    path: skills/storageops-data-consistency/SKILL.md
+    maturity: mature
+    mode: light_heavy
+    trigger_keywords:
+      - "consistency"
+      - "stale"
+      - "mismatch"
+      - "ETag"
+      - "checksum"
+    domains: [consistency]
+    recommended_tools: [scan_secrets, detect_domain, search_memory]
+
+  - name: storageops-bigdata-pipeline
+    path: skills/storageops-bigdata-pipeline/SKILL.md
+    maturity: mature
+    mode: light_heavy
+    trigger_keywords:
+      - "Spark"
+      - "Hive"
+      - "Hadoop"
+      - "S3A"
+      - "EMR"
+    domains: [bigdata]
+    recommended_tools: [scan_secrets, detect_domain, search_memory]
+
+  - name: storageops-event-notification
+    path: skills/storageops-event-notification/SKILL.md
+    maturity: mature
+    mode: light_heavy
+    trigger_keywords:
+      - "notification"
+      - "event"
+      - "SQS"
+      - "Lambda"
+    domains: [notification]
+    recommended_tools: [scan_secrets, detect_domain, search_memory]
+
+  - name: storageops-s3-protocol-compatibility
+    path: skills/storageops-s3-protocol-compatibility/SKILL.md
+    maturity: core
+    mode: light_heavy
+    trigger_keywords:
+      - "SignatureDoesNotMatch"
+      - "CORS"
+      - "SigV4"
+      - "AuthorizationHeaderMalformed"
+      - "RequestExpired"
+    domains: [protocol, compatibility]
+    recommended_tools: [scan_secrets, detect_domain, search_memory, capture_http_trace]
+
+  - name: storageops-evidence-reporting
+    path: skills/storageops-evidence-reporting/SKILL.md
+    maturity: core
+    mode: light_heavy
+    trigger_keywords:
+      - "report"
+      - "总结"
+      - "诊断报告"
+    domains: [reporting]
+    recommended_tools: [scan_secrets, search_memory]
+
+  - name: storageops-eval-golden-cases
+    path: skills/storageops-eval-golden-cases/SKILL.md
+    maturity: core
+    mode: eval
+    trigger_keywords:
+      - "eval"
+      - "regression"
+      - "验证"
+      - "质量"
+    domains: [eval]
+    recommended_tools: [scan_secrets, search_memory]

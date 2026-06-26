@@ -68,6 +68,12 @@ def _triage_md(cases: list[dict[str, Any]]) -> str:
             checks = "; ".join((cc.get("next_checks") or [])[:3])
             lines.append(f"    - _{cc.get('confidence')}_ {cc.get('title')}"
                          + (f" — next checks: {checks}" if checks else ""))
+        # Lightly absorb skill-grounded Agent output if it was recorded (Phase 19).
+        agent = parsed.get("_agent", {}) or {}
+        if agent.get("skills_used"):
+            lines.append(f"    - Methods (skills): {', '.join(agent['skills_used'][:3])}")
+        if agent.get("evidence_gaps"):
+            lines.append(f"    - Missing evidence: {'; '.join(agent['evidence_gaps'][:3])}")
     return "\n".join(lines)
 
 

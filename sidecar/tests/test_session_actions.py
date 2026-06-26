@@ -222,10 +222,11 @@ def test_assistant_proposed_actions_sanitized_and_coerced(client, monkeypatch):
     _add_model_provider(client)
 
     def fake_loop(spec):
+        # Phase 19: unified contract uses "next_action_proposals".
         return (
             "Looks storage-side. <thinking>secret</thinking>\n"
             "```json\n"
-            '{"proposed_actions": ['
+            '{"answer": "Looks storage-side.", "next_action_proposals": ['
             f'{{"title": "Import logs {ACCESS}", "action_type": "plan_access_log_import", "confidence": "high"}},'
             '{"title": "wipe", "action_type": "delete_everything"}]}'
             "\n```"
@@ -241,7 +242,7 @@ def test_assistant_proposed_actions_sanitized_and_coerced(client, monkeypatch):
     assert ACCESS not in a["title"]  # secret redacted
     # the stored assistant prose has no CoT and no json block
     assistant = [m for m in out["messages"] if m["role"] == "assistant"][-1]
-    assert "secret" not in assistant["content"] and "proposed_actions" not in assistant["content"]
+    assert "secret" not in assistant["content"] and "next_action_proposals" not in assistant["content"]
 
 
 # --- audit + schema ---------------------------------------------------------

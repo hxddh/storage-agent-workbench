@@ -17,6 +17,7 @@ from ..agent_runtime import guardrails
 from ..agent_runtime.agent_service import AgentUnavailable
 from ..agent_runtime.guardrails import strip_chain_of_thought
 from ..security.redaction import redact_text
+from ..skills import contract as skill_contract
 
 _MAX_CAUSES = 8
 _MAX_OUTPUT = 3000
@@ -33,11 +34,14 @@ INSTRUCTIONS = (
     "You are a senior object-storage / S3 support engineer triaging an error. You "
     "are given a JSON context: parsed error signals, deterministic candidate "
     "causes (with confidence), safe next checks, and optional session context. "
-    "Explain the most likely cause(s) in plain language, say which candidate is "
-    "strongest and why, and recommend which SAFE next check to run first. You may "
-    "only reference the provided candidate causes / next checks and the existing "
-    "next-action proposals — never invent a step that downloads data, changes "
-    "configuration, or runs anything itself. Follow all safety_rules."
+    "You may also be given StorageOps skills as PROFESSIONAL DIAGNOSTIC METHODS — "
+    "use them as methods, do not claim any tool/script/CLI was run, and do not "
+    "request helper-script execution. Explain the most likely cause(s) in plain "
+    "language, say which candidate is strongest and why, and recommend which SAFE "
+    "next check to run first. Reference only the provided candidate causes / next "
+    "checks / skills and the existing next-action proposals — never invent a step "
+    "that downloads data, changes configuration, or runs anything itself. If "
+    "evidence is missing, state the gap. Follow all safety_rules."
 )
 
 
@@ -113,14 +117,28 @@ def interpret(
     candidate_causes: list[dict[str, Any]],
     session_context: dict[str, Any] | None,
     creds: dict[str, Any],
-) -> str:
-    """Return a sanitized, CoT-stripped interpretation. Raises AgentUnavailable."""
+    skill_context_text: str = "",
+    skill_names: list[str] | None = None,
+) -> dict[str, Any]:
+    """Skill-grounded triage contract. Raises AgentUnavailable.
+
+    Returns {answer, skills_used, evidence_used, evidence_gaps,
+    next_action_proposals} — all sanitized + CoT-stripped. The raw blob is never
+    sent; StorageOps skills are injected as guidance only.
+    """
     context = build_triage_context(parsed, candidate_causes, session_context)
-    prompt = f"{render_context_text(context)}\n\nExplain the likely cause and the first safe check."
+    parts = [render_context_text(context)]
+    if skill_context_text:
+        parts.append(skill_context_text)
+    parts.append("Explain the likely cause and the first safe check.")
+    parts.append(skill_contract.CONTRACT_INSTRUCTION)
+    prompt = "\n\n".join(parts)
     spec = {"context": context, "prompt": prompt, "instructions": INSTRUCTIONS, "creds": creds}
     raw = TRIAGE_LOOP(spec)
-    text = raw if isinstance(raw, str) else str(raw or "")
-    return strip_chain_of_thought(redact_text(text))[:_MAX_OUTPUT]
+    out = skill_contract.parse_agent_contract(raw, allowed_skill_names=skill_names)
+    out["answer"] = out["answer"][:_MAX_OUTPUT]
+    out["skills_offered"] = skill_names or []
+    return out
 
 
 __all__ = ["TRIAGE_LOOP", "build_triage_context", "render_context_text", "interpret",

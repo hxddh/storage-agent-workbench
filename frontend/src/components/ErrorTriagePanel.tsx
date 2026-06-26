@@ -144,6 +144,12 @@ export function ErrorTriagePanel({
                   <div className="rounded border border-violet-900/60 bg-violet-950/30 p-2 text-gray-300">
                     {result.agent_interpretation}
                   </div>
+                  {result.skills_used.length > 0 && (
+                    <div className="mt-1 text-gray-500">Method: {result.skills_used.join(", ")}</div>
+                  )}
+                  {result.evidence_gaps.length > 0 && (
+                    <div className="mt-1 text-gray-500">Missing evidence: {result.evidence_gaps.join("; ")}</div>
+                  )}
                 </div>
               )}
 

@@ -411,6 +411,23 @@ Cases bind to the session, refresh its summary, and appear in the session
 report; the UI adds an `ErrorTriagePanel` inside Session detail. New tests:
 `sidecar/tests/test_error_triage.py`.
 
+## Phase 19 status
+
+Phase 19 (`phase/19-skills-only-context-injection`) gives the existing Agents
+**professional-method context** from a bundled StorageOps skill pack —
+skills-only, guidance-only. It vendors *only* `skill-registry.yaml` +
+`skills/*/SKILL.md` (16 skills) under `sidecar/app/bundled_skillpacks/storageops/`
+(no tools, scripts, CLI, references, or templates). A lightweight selector picks
+1–3 candidate skills from registry metadata (no diagnosis output, no hard-coded
+error mapping); a context builder wraps each SKILL.md in a **tools-disabled**
+safety preamble and bounds the size; and the session assistant + error-triage
+agent reason with session evidence **plus** that skill context, returning a
+minimal contract `{answer, skills_used, evidence_used, evidence_gaps,
+next_action_proposals}`. StorageOps tools / helper scripts / CLI / Pi runtime are
+never registered or executed; the raw error blob, secrets, and chain-of-thought
+never reach the model; next actions stay Phase 17 proposals. No skill API, DB
+table, migration, or skill UI is added. New tests: `sidecar/tests/test_skills.py`.
+
 Not implemented yet:
 
 - One-click execution of proposals (the user still confirms/starts each flow)
