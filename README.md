@@ -264,12 +264,39 @@ Artifacts: `src-tauri/target/release/bundle/{macos/*.app,dmg/*.dmg}`. See
 [`docs/release.md`](docs/release.md) for the build flow and opening the unsigned
 app past Gatekeeper.
 
+## Phase 11 status
+
+Implemented in Phase 11 (`phase/11-linux-windows-build-matrix`):
+
+- **Cross-platform externalBin**: `scripts/build-sidecar-for-tauri.py` names and
+  copies the sidecar per Rust target triple (incl. Windows `.exe`).
+- **Linux/Windows build scripts**: `scripts/build-desktop-linux.sh`,
+  `scripts/build-desktop-windows.ps1`, and `scripts/verify-desktop-artifacts.py`
+  (macOS scripts unchanged).
+- **CI build matrix**: existing macOS arm64 job (artifact
+  `storage-agent-workbench-macos-arm64`) plus new **experimental**
+  `desktop-build-linux-x64` (`.deb`) and `desktop-build-windows-x64` (NSIS)
+  jobs (`continue-on-error`) that build, smoke-test the sidecar `/health`, and
+  upload artifacts when produced.
+- Bundle `targets` set to `"all"` so each OS builds its native bundles (macOS
+  still produces `.app` + DMG).
+
+Platform support matrix (see [`docs/release.md`](docs/release.md)):
+
+| Platform | Arch | Status |
+|----------|------|--------|
+| macOS | arm64 | supported (unsigned) |
+| macOS | x64 / universal | out of scope |
+| Linux | x64 | experimental (CI) |
+| Windows | x64 | experimental (CI) |
+
 Not implemented yet:
 
 - Agent mode for `access_log_analysis` / `inventory_analysis`
 - `optimization_report` run type
 - Code signing / notarization / auto-update
 - macOS x64 / universal desktop builds
+- Verified Linux / Windows GUI launch (CI builds only)
 
 ## Requirements
 

@@ -152,3 +152,19 @@ Expected later:
 - No signing/notarization/auto-update; macOS x64/universal not verified.
 - No Vercel SDK; no new S3 mutation / shell / subprocess tool surface; Phase 11
   not started.
+
+## Phase 11 acceptance (Linux/Windows build matrix)
+
+- Branch `phase/11-linux-windows-build-matrix` from latest main.
+- macOS arm64 build remains green (unchanged scripts; bundle targets="all" still
+  yields .app + DMG).
+- Linux x64 and Windows x64 CI jobs added (experimental/continue-on-error):
+  frontend + sidecar build + externalBin copy + sidecar /health smoke +
+  cargo check/build + cargo tauri build (.deb / NSIS), with artifact upload.
+  They report pass/partial/blocker honestly and never false-green.
+- externalBin helper supports Linux (`x86_64-unknown-linux-gnu`) and Windows
+  (`x86_64-pc-windows-msvc.exe`) naming.
+- Platform support matrix documented; macOS x86 / universal explicitly out of
+  scope; no signing/notarization/auto-update.
+- No Vercel SDK / Next.js; no new S3 mutation / shell / subprocess tool surface;
+  Phase 12 not started.

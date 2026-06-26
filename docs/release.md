@@ -91,6 +91,52 @@ Examples:
 copies the binary automatically. The `binaries/` dir is **gitignored** — the
 binary is a build artifact and must not be committed.
 
+## Platform support matrix (Phase 11)
+
+| Platform | Arch | Build | Bundle artifact | Sidecar smoke | GUI launch | Signing | Status |
+|----------|------|-------|-----------------|---------------|------------|---------|--------|
+| macOS | arm64 | yes | `.app` + DMG | yes | local verified | no | **supported (unsigned)** |
+| macOS | x64 | no | no | no | no | no | out of scope |
+| macOS | universal | no | no | no | no | no | out of scope |
+| Linux | x64 | CI | `.deb` (attempted) | CI | not in CI | no | experimental |
+| Windows | x64 | CI | NSIS `.exe` (attempted) | CI | not in CI | no | experimental |
+
+- **macOS arm64** is the only locally verified, supported target (unsigned).
+  macOS x64 / Intel and universal builds are **out of scope** for now.
+- **Linux x64** and **Windows x64** are exercised in CI as **experimental**
+  jobs (`continue-on-error`): they run frontend + sidecar build + externalBin
+  copy + sidecar `/health` smoke test + `cargo check`/`cargo build` +
+  `cargo tauri build` (`.deb` / NSIS), and upload artifacts when produced. CI
+  does not launch the GUI. Their pass/partial/blocker status is reported
+  honestly and does not block merges.
+
+### Cross-platform build commands
+
+```bash
+# Linux x64 (on a Linux host with the system deps below)
+bash scripts/build-desktop-linux.sh
+```
+
+```powershell
+# Windows x64 (on a Windows host)
+powershell -ExecutionPolicy Bypass -File scripts/build-desktop-windows.ps1
+```
+
+`scripts/build-sidecar-for-tauri.py` detects the Rust target triple and copies
+the one-file sidecar to the externalBin path:
+
+| Platform | externalBin path |
+|----------|------------------|
+| macOS arm64 | `src-tauri/binaries/storage-agent-sidecar-aarch64-apple-darwin` |
+| Linux x64 | `src-tauri/binaries/storage-agent-sidecar-x86_64-unknown-linux-gnu` |
+| Windows x64 | `src-tauri/binaries/storage-agent-sidecar-x86_64-pc-windows-msvc.exe` |
+
+Linux system deps (Tauri v2): `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev
+patchelf libayatana-appindicator3-dev build-essential libssl-dev`.
+
+PyInstaller does not reliably cross-compile, so each platform's sidecar must be
+built on that platform (the CI matrix does this per-runner).
+
 ## Status / limitations
 
 - **macOS arm64**: builds and links (`cargo check` + `cargo build` verified
