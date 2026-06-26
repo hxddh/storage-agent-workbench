@@ -68,9 +68,31 @@ def test_recommended_tools_not_in_metadata_or_context():
     # loader must not expose recommended_tools, and skill context must not inject them.
     for s in loader.load_registry():
         assert not hasattr(s, "recommended_tools")
-    ctx = skill_context.build_skill_context("403 AccessDenied IAM permission bucket policy")
-    # The wrapper explicitly disables tools; recommended_tools is not surfaced as a tool list.
-    assert "recommended_tools" not in ctx["text"].lower() or "disabled" in ctx["text"].lower()
+
+
+def test_skill_context_strips_frontmatter_and_recommended_tools():
+    # Every bundled SKILL.md begins with a YAML frontmatter carrying
+    # recommended_tools; none of that may reach the Agent prompt (Fix A).
+    raw = loader.load_skill_body("storageops-triage")
+    assert raw.lstrip().startswith("---") and "recommended_tools" in raw  # frontmatter exists in source
+
+    ctx = skill_context.build_skill_context("object storage S3 error triage 403 AccessDenied SlowDown")
+    text = ctx["text"]
+    assert "recommended_tools:" not in text          # frontmatter key gone
+    assert "---\nname:" not in text                  # frontmatter block gone
+    assert "estimated_tokens" not in text            # another frontmatter-only key
+    assert "disabled in this Workbench phase" in text  # wrapper retained
+    assert "Skill metadata:" in text                 # safe header retained
+    assert "YAML frontmatter removed" in text
+
+
+def test_strip_frontmatter_helper():
+    sample = "---\nname: x\nrecommended_tools:\n  - scan_secrets\n---\n# Body\nhello"
+    out = skill_context.strip_frontmatter(sample)
+    assert out.startswith("# Body")
+    assert "recommended_tools" not in out and "scan_secrets" not in out
+    # a body without frontmatter is unchanged
+    assert skill_context.strip_frontmatter("# No frontmatter\nx") == "# No frontmatter\nx"
 
 
 # --- selection --------------------------------------------------------------
@@ -215,3 +237,20 @@ def test_no_public_skills_api(client):
     assert client.get("/skills").status_code == 404
     assert client.get("/skills/storageops-triage").status_code == 404
     assert client.post("/sessions/x/skill-context", json={}).status_code in (404, 405)
+
+
+def test_loader_resolves_via_app_package_path():
+    # The loader resolves the pack relative to the `app` package, which is what
+    # PyInstaller extracts (Fix B). pack_root must sit under .../app/.
+    root = loader.pack_root()
+    assert root.name == "storageops" and root.parent.name == "bundled_skillpacks"
+    assert root.parent.parent.name == "app"
+    assert (root / "skill-registry.yaml").is_file()
+    assert loader.load_skill_body("storageops-triage")
+
+
+def test_pyinstaller_spec_bundles_skillpack():
+    # Fix B: the one-file spec must ship app/bundled_skillpacks as data.
+    spec = (Path(__file__).resolve().parents[1] / "packaging" / "storage-agent-sidecar.spec").read_text()
+    assert "bundled_skillpacks" in spec
+    assert '"app/bundled_skillpacks"' in spec

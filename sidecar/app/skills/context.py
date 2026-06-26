@@ -10,9 +10,37 @@ included (SKILL.md docs are static guidance text only).
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import loader, selection
+
+# Matches a leading YAML frontmatter block: a line of '---', content, then a
+# closing line of '---'. The frontmatter carries recommended_tools etc., which
+# must NEVER reach the Agent prompt — we replace it with a safe metadata header
+# rebuilt from the loader's tool-free metadata.
+_FRONTMATTER = re.compile(r"\A﻿?\s*---\s*\n.*?\n---\s*\n?", re.DOTALL)
+
+
+def strip_frontmatter(body: str) -> str:
+    """Remove a leading YAML frontmatter block from a SKILL.md body, if present."""
+    return _FRONTMATTER.sub("", body or "", count=1).lstrip("\n")
+
+
+def _safe_header(name: str) -> str:
+    """Build a small skill header from tool-free loader metadata only."""
+    meta = loader.get_meta(name)
+    if meta is None:
+        return f"Skill metadata:\n- name: {name}"
+    lines = [
+        "Skill metadata:",
+        f"- name: {meta.name}",
+        f"- description: {meta.description or '—'}",
+        f"- domains: {', '.join(meta.domains) or '—'}",
+        f"- mode: {meta.mode or '—'}",
+        f"- maturity: {meta.maturity or '—'}",
+    ]
+    return "\n".join(lines)
 
 MAX_SKILLS = 3
 MAX_CHARS_PER_SKILL = 6000
@@ -55,9 +83,12 @@ def build_skill_context(
     used: list[dict[str, Any]] = []
     total = 0
     for c in candidates:
-        body = loader.load_skill_body(c["name"])
-        if not body:
+        raw = loader.load_skill_body(c["name"])
+        if not raw:
             continue
+        # Strip the YAML frontmatter (recommended_tools, etc.) before injecting;
+        # rebuild a safe header from tool-free loader metadata.
+        body = strip_frontmatter(raw)
         budget = min(MAX_CHARS_PER_SKILL, max(0, MAX_TOTAL_CHARS - total))
         if budget <= 200:
             break
@@ -65,7 +96,8 @@ def build_skill_context(
             f"=== StorageOps skill: {c['name']} "
             f"(selected by {c.get('selection_basis', 'metadata')}) ===\n"
             f"{WRAPPER_PREAMBLE}\n\n"
-            f"--- BEGIN SKILL.md (guidance only) ---\n"
+            f"{_safe_header(c['name'])}\n\n"
+            f"--- BEGIN SKILL.md body (guidance only; YAML frontmatter removed) ---\n"
             f"{_bounded(body, budget)}\n"
             f"--- END SKILL.md ---"
         )
@@ -82,5 +114,5 @@ def build_skill_context(
     return {"skills": used, "text": text}
 
 
-__all__ = ["build_skill_context", "WRAPPER_PREAMBLE", "MAX_SKILLS",
+__all__ = ["build_skill_context", "strip_frontmatter", "WRAPPER_PREAMBLE", "MAX_SKILLS",
            "MAX_CHARS_PER_SKILL", "MAX_TOTAL_CHARS"]
