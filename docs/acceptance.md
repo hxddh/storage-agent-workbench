@@ -168,3 +168,20 @@ Expected later:
   scope; no signing/notarization/auto-update.
 - No Vercel SDK / Next.js; no new S3 mutation / shell / subprocess tool surface;
   Phase 12 not started.
+
+## Phase 12 acceptance (cross-platform runtime verification)
+
+- Branch `phase/12-cross-platform-runtime-verification` from latest main.
+- macOS arm64 not regressed: .app + DMG build; runtime verifier passes all
+  checks incl. launch lifecycle (verified locally with --require-launch).
+- Runtime verification scripts exist: verify-runtime-common.py +
+  verify-runtime-{macos.sh,linux.sh,windows.ps1}. They check app exe + bundled
+  sidecar presence, direct sidecar /health, app data dir not under install dir,
+  and app launch -> sidecar spawn -> /health -> quit -> cleanup.
+- CI runs runtime verification in all three desktop jobs (macOS required;
+  Linux via xvfb, Windows — both experimental/continue-on-error, honest output).
+- Docs updated with runtime support matrix (build/smoke/launch/cleanup columns)
+  and Linux/Windows promotion criteria.
+- No Vercel SDK / Next.js; no new S3 mutation / shell / subprocess tool surface;
+  no signing/notarization/auto-update; no macOS x86/universal; Phase 13 not
+  started.

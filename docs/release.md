@@ -91,15 +91,33 @@ Examples:
 copies the binary automatically. The `binaries/` dir is **gitignored** — the
 binary is a build artifact and must not be committed.
 
-## Platform support matrix (Phase 11)
+## Platform support matrix (Phase 12)
 
-| Platform | Arch | Build | Bundle artifact | Sidecar smoke | GUI launch | Signing | Status |
-|----------|------|-------|-----------------|---------------|------------|---------|--------|
-| macOS | arm64 | yes | `.app` + DMG | yes | local verified | no | **supported (unsigned)** |
-| macOS | x64 | no | no | no | no | no | out of scope |
-| macOS | universal | no | no | no | no | no | out of scope |
-| Linux | x64 | CI | `.deb` (attempted) | CI | not in CI | no | experimental |
-| Windows | x64 | CI | NSIS `.exe` (attempted) | CI | not in CI | no | experimental |
+| Platform | Arch | Build | Bundle artifact | Sidecar smoke | Runtime launch | Cleanup | Signing | Status |
+|----------|------|-------|-----------------|---------------|----------------|---------|---------|--------|
+| macOS | arm64 | yes | `.app` + DMG | yes | local verified | yes | no | **supported (unsigned)** |
+| macOS | x64 | no | no | no | no | no | no | out of scope |
+| macOS | universal | no | no | no | no | no | no | out of scope |
+| Linux | x64 | yes (CI) | `.deb` | yes (CI) | CI (xvfb, best-effort) | CI | no | experimental / support candidate |
+| Windows | x64 | yes (CI) | NSIS `.exe` | yes (CI) | CI (best-effort) | CI | no | experimental / support candidate |
+
+### Runtime verification
+
+`scripts/verify-runtime-common.py` (driven by `verify-runtime-{macos.sh,linux.sh,windows.ps1}`)
+checks, per platform: app executable present, bundled sidecar present, a direct
+sidecar `/health` smoke, app-data-dir not under the install dir, and a launch
+lifecycle (start app → it spawns the bundled sidecar on a free port → `/health`
+ok → quit → sidecar cleaned up by the parent-PID watchdog). The first four are
+required; the GUI launch is best-effort in CI (hard-gated only with
+`--require-launch`, which is used locally on macOS).
+
+### Linux / Windows promotion criteria (experimental → supported)
+
+To promote a platform from experimental to supported it needs: green CI build +
+sidecar smoke + bundle artifact, **and** a verified launch lifecycle (sidecar
+spawn + `/health` + clean exit) on that platform — ideally on a real desktop
+session, not only the CI/xvfb runner. macOS arm64 meets this (locally verified);
+Linux/Windows currently verify build + sidecar smoke + best-effort CI launch.
 
 - **macOS arm64** is the only locally verified, supported target (unsigned).
   macOS x64 / Intel and universal builds are **out of scope** for now.

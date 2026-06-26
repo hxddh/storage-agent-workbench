@@ -117,6 +117,9 @@ jobs:
           cd src-tauri/target/release/bundle/macos
           zip -ry storage-agent-workbench-macos-app.zip ./*.app
 
+      - name: Runtime verification (structure + sidecar /health + best-effort launch)
+        run: bash scripts/verify-runtime-macos.sh
+
       - name: Upload macOS bundle artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -157,7 +160,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
-            libayatana-appindicator3-dev build-essential curl wget file libssl-dev
+            libayatana-appindicator3-dev build-essential curl wget file libssl-dev \
+            xvfb
 
       - name: Install sidecar deps (dev + packaging)
         run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
@@ -185,6 +189,9 @@ jobs:
 
       - name: Verify artifacts
         run: python3 scripts/verify-desktop-artifacts.py
+
+      - name: Runtime verification (structure + sidecar /health + xvfb launch)
+        run: bash scripts/verify-runtime-linux.sh
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -237,6 +244,9 @@ jobs:
 
       - name: Verify artifacts
         run: python scripts/verify-desktop-artifacts.py
+
+      - name: Runtime verification (structure + sidecar /health + launch)
+        run: powershell -ExecutionPolicy Bypass -File scripts/verify-runtime-windows.ps1
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4

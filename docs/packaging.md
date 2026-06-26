@@ -96,3 +96,7 @@ built on each platform (PyInstaller does not reliably cross-compile) and
 copied to `src-tauri/binaries/storage-agent-sidecar-<target-triple>`
 (`.exe` on Windows). See **[release.md](release.md)** for the platform
 support matrix and build commands.
+
+## Runtime verification (Phase 12)
+
+`scripts/verify-runtime-{macos.sh,linux.sh,windows.ps1}` (over `verify-runtime-common.py`) verify the built app launches, spawns the bundled sidecar, serves `/health`, and cleans up on quit. See **[release.md](release.md)** for the runtime support matrix.

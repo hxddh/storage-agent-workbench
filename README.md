@@ -283,12 +283,22 @@ Implemented in Phase 11 (`phase/11-linux-windows-build-matrix`):
 
 Platform support matrix (see [`docs/release.md`](docs/release.md)):
 
-| Platform | Arch | Status |
-|----------|------|--------|
-| macOS | arm64 | supported (unsigned) |
-| macOS | x64 / universal | out of scope |
-| Linux | x64 | experimental (CI) |
-| Windows | x64 | experimental (CI) |
+| Platform | Arch | Build | Sidecar smoke | Runtime launch | Cleanup | Status |
+|----------|------|-------|---------------|----------------|---------|--------|
+| macOS | arm64 | yes | yes | local verified | yes | supported (unsigned) |
+| macOS | x64 / universal | — | — | — | — | out of scope |
+| Linux | x64 | CI | CI | CI (xvfb, best-effort) | CI | experimental |
+| Windows | x64 | CI | CI | CI (best-effort) | CI | experimental |
+
+## Phase 12 status
+
+Phase 12 (`phase/12-cross-platform-runtime-verification`) adds cross-platform
+**runtime verification**: `scripts/verify-runtime-common.py` + per-OS wrappers
+verify the app launches, spawns the bundled sidecar, serves `/health`, and
+cleans up the sidecar on quit (no orphans), and that app data stays out of the
+install dir. The 3 desktop CI jobs run it (macOS arm64 required; Linux/Windows
+under xvfb/best-effort, experimental). macOS arm64 launch lifecycle is verified
+locally. Linux/Windows promotion criteria are documented in `docs/release.md`.
 
 Not implemented yet:
 
