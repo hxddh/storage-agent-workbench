@@ -87,3 +87,12 @@ via `keyring`. They are never bundled, never written to SQLite, and never logged
 - PyInstaller bundling of `duckdb`/`pyarrow`/`pandas` is heavy; build times and
   bundle size are significant. The Agents SDK is bundled but agent mode still
   fails cleanly without a configured model API key.
+
+## Cross-platform builds (Phase 11)
+
+macOS arm64 is the verified, supported target (unsigned). Linux x64 and
+Windows x64 are experimental, built per-platform in CI. The sidecar is
+built on each platform (PyInstaller does not reliably cross-compile) and
+copied to `src-tauri/binaries/storage-agent-sidecar-<target-triple>`
+(`.exe` on Windows). See **[release.md](release.md)** for the platform
+support matrix and build commands.

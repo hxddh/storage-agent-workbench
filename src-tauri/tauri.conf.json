@@ -26,7 +26,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": "all",
     "category": "DeveloperTool",
     "shortDescription": "Object storage diagnostics workbench",
     "longDescription": "Local-first, Codex-like desktop workbench for object storage and S3-compatible diagnostics and analysis.",
