@@ -37,8 +37,13 @@ def list_runs(conn: sqlite3.Connection = Depends(get_conn)):
 _EXECUTABLE = {"diagnostic", "access_log_analysis", "inventory_analysis", "bucket_config_review"}
 # Run types that need a provider + bucket (vs. file-upload analysis runs).
 _NEEDS_BUCKET = {"diagnostic", "bucket_config_review"}
-# Run types where the agent planner is wired up in Phase 07.
-_AGENT_SUPPORTED = {"diagnostic", "bucket_config_review"}
+# Run types where the agent planner is wired up: diagnostic + config review use
+# the tool-calling planner (Phase 07); the dataset-analysis types use the
+# interpretation-only narrator over deterministic aggregates (Phase 13).
+_AGENT_SUPPORTED = {
+    "diagnostic", "bucket_config_review",
+    "access_log_analysis", "inventory_analysis",
+}
 
 
 @router.post("", response_model=RunCreated, status_code=status.HTTP_201_CREATED)

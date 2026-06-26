@@ -185,3 +185,42 @@ Expected later:
 - No Vercel SDK / Next.js; no new S3 mutation / shell / subprocess tool surface;
   no signing/notarization/auto-update; no macOS x86/universal; Phase 13 not
   started.
+
+## Phase 13 acceptance (agent dataset analysis)
+
+- Branch `phase/13-agent-dataset-analysis` from latest main.
+- Agent planner mode supports `access_log_analysis` and `inventory_analysis` as
+  an interpretation-only narrator; deterministic analysis still runs first and
+  default planner mode stays `deterministic`.
+- The model receives only a bounded, sanitized, aggregated context (run/dataset
+  metadata + deterministic metrics + deterministic findings); lists capped at 20
+  and asserted free of secret-shaped content before leaving the process.
+- No raw log lines / inventory rows / full key lists / arbitrary SQL ever reach
+  the model; the model has no tools, so it cannot run SQL, list objects, read
+  raw data, download bodies, or perform any S3 operation. No new tool is
+  registered; the allowlist is unchanged.
+- ≤20 sample keys; client IPs masked; Authorization/cookies/presigned params /
+  access-secret-session keys / model API keys redacted or absent.
+- access_log output fields: executive_summary, key_observations,
+  possible_root_causes, risk_level, recommended_next_steps,
+  questions_for_operator, limitations. inventory output fields:
+  executive_summary, storage_layout_observations,
+  cost_optimization_opportunities, performance_considerations,
+  lifecycle_policy_candidates, small_object_findings, large_object_findings,
+  risks_and_caveats, recommended_next_steps. The narrator may recommend
+  reviewing lifecycle candidates but never auto-creates/updates/deletes
+  lifecycle rules or emits bulk-delete commands.
+- Missing model provider key fails the agent run cleanly; deterministic mode
+  unaffected. Output is chain-of-thought-stripped, redacted, and length-bounded;
+  no hidden reasoning / raw prompt / raw model reasoning / secrets / raw
+  logs-rows persisted.
+- Report separates Deterministic metrics from the Agent Interpretation section;
+  every agent claim is traceable to a deterministic metric/finding.
+- Frontend New Run exposes agent mode for these two run types; Run Detail shows
+  the planner badge, agent narrative, and unchanged deterministic metrics.
+- Sidecar tests pass (137); frontend build + cargo check pass; guardrail grep
+  passes.
+- No Vercel SDK / Next.js; no MCP runtime / multi-agent / generic shell /
+  user-controlled subprocess; no destructive/mutating S3; no arbitrary boto3 or
+  SQL tool exposed to the LLM; no release/signing/auto-update changes; no macOS
+  x86/universal; Phase 14 not started.

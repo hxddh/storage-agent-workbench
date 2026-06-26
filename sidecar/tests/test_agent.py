@@ -130,8 +130,16 @@ def test_agent_report_has_no_storage_secret(agent_env):
     assert ACCESS not in report and MODEL_KEY not in report
 
 
-def test_api_rejects_agent_for_analysis_types(client):
-    r = client.post("/runs", json={"run_type": "access_log_analysis", "user_prompt": "x", "planner_mode": "agent"})
+def test_api_accepts_agent_for_analysis_types(client):
+    # Phase 13: agent mode is now supported for the dataset-analysis run types
+    # (interpretation-only narrator). See test_agent_analysis.py for behavior.
+    for rt in ("access_log_analysis", "inventory_analysis"):
+        r = client.post("/runs", json={"run_type": rt, "user_prompt": "x", "planner_mode": "agent"})
+        assert r.status_code == 201, r.text
+
+
+def test_api_rejects_agent_for_unimplemented_types(client):
+    r = client.post("/runs", json={"run_type": "optimization_report", "user_prompt": "x", "planner_mode": "agent"})
     assert r.status_code == 422
 
 

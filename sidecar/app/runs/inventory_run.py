@@ -6,13 +6,15 @@ import sqlite3
 from typing import Any
 
 from .. import config
+from ..agent_runtime import analysis_agent
+from ..agent_runtime.agent_service import AgentUnavailable, get_model_credentials
 from ..analysis import inventory
 from ..events import bus
 from ..repositories import datasets as datasets_repo
 from ..repositories import runs as runs_repo
 from ..security.redaction import redact_text
 from ._common import RunError, run_tool_with_events
-from .analysis_report import render_inventory, write
+from .analysis_report import agent_analysis_md, render_inventory, write
 from .report import report_path_for
 
 
@@ -29,9 +31,17 @@ def execute_inventory_run(conn: sqlite3.Connection, run_id: str) -> None:
         bus.mark_done(run_id)
         return
     run = dict(row)
+    agent_mode = run.get("planner_mode") == "agent"
 
     try:
         runs_repo.set_status(conn, run_id, "running")
+        # In agent mode resolve model credentials FIRST so a missing key fails
+        # cleanly before any analysis work; deterministic mode is unaffected.
+        creds = None
+        if agent_mode:
+            creds = get_model_credentials(conn)  # raises AgentUnavailable if missing
+            bus.publish(run_id, {"type": "agent_started", "planner_mode": "agent"})
+
         ds = datasets_repo.latest_for_run(conn, run_id, "inventory")
         if ds is None or not ds.stored_path:
             raise RunError("No inventory dataset uploaded for this run.")
@@ -74,12 +84,30 @@ def execute_inventory_run(conn: sqlite3.Connection, run_id: str) -> None:
         )
         bus.publish(run_id, {"type": "agent_message", "content": summary})
 
+        # Agent mode: interpret the deterministic aggregates only (no tools, no
+        # raw data). The deterministic metrics/findings above stay authoritative.
+        agent_section = ""
+        if agent_mode:
+            ds_meta = {
+                "source_filename": ds.source_filename,
+                "dataset_type": "inventory",
+                "row_count": imp.get("row_count"),
+                "detected_format": None,
+            }
+            agent_result = analysis_agent.interpret(
+                "inventory_analysis", run, ds_meta, metrics, findings, creds,
+            )
+            agent_section = agent_analysis_md("inventory_analysis", agent_result)
+            if agent_result.get("executive_summary"):
+                summary = agent_result["executive_summary"]
+            bus.publish(run_id, {"type": "agent_final", "content": summary})
+
         ds_info = {"source_filename": ds.source_filename}
         _require(run_tool_with_events(
             conn, run_id, "generate_markdown_report", {"run_id": run_id},
             lambda: {
                 "report_path": config.rel_path(
-                    write(run_id, render_inventory(run, ds_info, metrics, findings, summary))
+                    write(run_id, render_inventory(run, ds_info, metrics, findings, summary, agent_section))
                 ),
                 "format": "markdown",
             },
@@ -94,6 +122,9 @@ def execute_inventory_run(conn: sqlite3.Connection, run_id: str) -> None:
         conn.commit()
         runs_repo.set_status(conn, run_id, "completed", final_summary=summary, report_path=report_abs)
         bus.publish(run_id, {"type": "report_ready", "run_id": run_id, "report_path": config.rel_path(report_abs)})
+    except AgentUnavailable as exc:
+        runs_repo.set_status(conn, run_id, "failed", final_summary="Agent analysis unavailable.")
+        bus.publish(run_id, {"type": "error", "message": redact_text(str(exc))})
     except Exception as exc:  # noqa: BLE001 - sanitized below
         runs_repo.set_status(conn, run_id, "failed", final_summary="Inventory analysis failed.")
         bus.publish(run_id, {"type": "error", "message": redact_text(str(exc))})

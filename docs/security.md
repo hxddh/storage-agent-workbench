@@ -99,6 +99,38 @@ Provider unsupported
 
 They should not be treated as hard failures unless the requested task requires that capability.
 
+## Agent dataset analysis (Phase 13)
+
+Agent planner mode is available for `access_log_analysis` and
+`inventory_analysis` as an **interpretation-only narrator** — it explains the
+deterministic results, it does not produce them.
+
+- The deterministic DuckDB analysis runs first and is authoritative. Default
+  planner mode stays `deterministic`; agent mode is opt-in per run.
+- The model is given **only** a bounded, sanitized, aggregated context: run +
+  dataset metadata, the deterministic metrics, and the deterministic findings.
+  Lists are capped at 20 entries and the whole context is asserted to contain no
+  secret-shaped content before it can leave the process.
+- The model has **no tools** in this path. It therefore cannot run SQL, read raw
+  log lines or inventory rows, list a full key set, download object bodies, or
+  call any S3 API. No new tool is registered; the existing allowlist is
+  unchanged. (Forbidden by construction, not just by prompt.)
+- Forbidden in the agent context: raw log lines, raw inventory rows, full key
+  lists / >20 sample keys, Authorization headers, cookies, presigned-URL query
+  params, access/secret/session keys, model API keys, unmasked client IPs, and
+  arbitrary SQL result dumps. Client IPs are masked upstream at import.
+- The model output is redacted, chain-of-thought-stripped, length-bounded, and
+  coerced to a fixed field set before it is shown or saved. Hidden reasoning,
+  raw prompts, and raw model reasoning are never persisted.
+- The inventory narrator may *recommend reviewing* lifecycle-policy candidates,
+  but must never auto-create/update/delete lifecycle rules or emit bulk-delete
+  commands — same destructive-operation ban as the rest of the MVP.
+- Missing model provider key fails the agent run cleanly with a safe message;
+  deterministic mode is unaffected.
+- The report separates **Deterministic metrics** (authoritative) from the
+  **Agent Interpretation** section, so every agent claim is traceable to a
+  deterministic metric or finding shown above it.
+
 ## Packaging (Phase 08)
 
 - The application bundle contains code and library data only. It must never
