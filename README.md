@@ -300,9 +300,24 @@ install dir. The 3 desktop CI jobs run it (macOS arm64 required; Linux/Windows
 under xvfb/best-effort, experimental). macOS arm64 launch lifecycle is verified
 locally. Linux/Windows promotion criteria are documented in `docs/release.md`.
 
+## Phase 13 status
+
+Phase 13 (`phase/13-agent-dataset-analysis`) extends agent planner mode to
+`access_log_analysis` and `inventory_analysis` as an **interpretation-only
+narrator**. The deterministic DuckDB analysis still runs first and is
+authoritative; in agent mode the model then receives **only** a bounded,
+sanitized aggregate context (run/dataset metadata + deterministic metrics +
+findings) and writes a structured narrative (executive summary, observations,
+root causes / cost & lifecycle opportunities, risks, recommended next steps).
+The model has **no tools** — it cannot run SQL, read raw logs/rows, list
+objects, download bodies, or call any S3 API — so no raw or sensitive data can
+reach it. Output is redacted, chain-of-thought-stripped, and bounded; the report
+keeps deterministic metrics and the agent interpretation in separate sections. A
+missing model provider key fails the agent run cleanly and never affects
+deterministic runs. New tests live in `sidecar/tests/test_agent_analysis.py`.
+
 Not implemented yet:
 
-- Agent mode for `access_log_analysis` / `inventory_analysis`
 - `optimization_report` run type
 - Code signing / notarization / auto-update
 - macOS x64 / universal desktop builds

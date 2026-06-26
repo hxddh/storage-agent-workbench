@@ -24,18 +24,26 @@ _EXECUTORS = {
     "bucket_config_review": execute_config_review_run,
 }
 
+# Dataset-analysis run types handle Agent mode INSIDE their deterministic
+# executor (Phase 13): deterministic analysis runs first, then an
+# interpretation-only narrator over the sanitized aggregates. They must NOT be
+# dispatched to the tool-calling ``run_agent`` planner.
+_AGENT_VIA_EXECUTOR = {"access_log_analysis", "inventory_analysis"}
+
 
 def run_sync(run_id: str) -> None:
     """Execute a run to completion using a fresh connection.
 
     Dispatched by planner_mode first (agent vs deterministic), then by run_type.
+    Dataset-analysis run types always go through their executor, which performs
+    the deterministic analysis and (in agent mode) the interpretation narrator.
     """
     conn = db.connect()
     try:
         row = runs_repo.get_row(conn, run_id)
         if row is None:
             return
-        if row["planner_mode"] == "agent":
+        if row["planner_mode"] == "agent" and row["run_type"] not in _AGENT_VIA_EXECUTOR:
             # Controlled LLM planner over the same whitelisted tools.
             from .agent_runtime.agent_service import run_agent
             run_agent(conn, run_id)

@@ -121,6 +121,32 @@ GET /runs/{run_id}/events
 
 Do not introduce WebSocket unless explicitly requested.
 
+## Agent planner modes
+
+Runs carry a `planner_mode` (`deterministic` by default, or `agent`). Two
+distinct agent paths exist:
+
+- **Tool-calling planner** (Phase 07) — for `diagnostic` and
+  `bucket_config_review`. A controlled LLM loop selects from the read-only
+  whitelist tools through the shared tool runner; outputs are sanitized/bounded
+  before reaching the model. Implemented in `agent_runtime/agent_service.py`
+  (seam: `AGENT_LOOP`).
+- **Interpretation-only narrator** (Phase 13) — for `access_log_analysis` and
+  `inventory_analysis`. The deterministic DuckDB analysis runs first and
+  produces metrics + findings; the executor then hands the model **only** a
+  bounded, sanitized aggregate context (run/dataset metadata + metrics +
+  findings) and asks for a structured narrative. The model has **no tools**, so
+  it cannot reach raw logs/rows, SQL, object listings, or any S3 API.
+  Implemented in `agent_runtime/analysis_agent.py` (seam: `ANALYSIS_LOOP`); the
+  analysis executors (`runs/access_log_run.py`, `runs/inventory_run.py`) branch
+  on `planner_mode`. `run_service` routes these run types to their executor (not
+  to the tool-calling planner) regardless of mode.
+
+Both seams are mockable so tests run without the OpenAI Agents SDK or an API
+key. A missing model provider key fails the agent run cleanly and never affects
+deterministic runs. The generated report keeps deterministic metrics and the
+agent interpretation in separate, clearly-labelled sections.
+
 ## Packaging & desktop integration (Phase 08)
 
 - The Python sidecar is bundled with PyInstaller (`sidecar/packaging/`) into a

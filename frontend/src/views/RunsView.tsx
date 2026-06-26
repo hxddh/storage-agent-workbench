@@ -110,7 +110,9 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
 
   const isAnalysis = runType === "access_log_analysis" || runType === "inventory_analysis";
   const needsBucket = runType === "diagnostic" || runType === "bucket_config_review";
-  const agentSupported = needsBucket; // Phase 07: agent mode for diagnostic + config review
+  // Agent mode: diagnostic + config review (Phase 07, tool-calling planner) and
+  // the dataset-analysis types (Phase 13, interpretation-only narrator).
+  const agentSupported = needsBucket || isAnalysis;
   const agentUnsupportedHere = plannerMode === "agent" && !agentSupported;
   const datasetType = runType === "access_log_analysis" ? "access_log" : "inventory";
   const accept = runType === "inventory_analysis" ? ".csv,.parquet,.pq" : ".log,.jsonl,.json,.txt,.csv";
@@ -197,7 +199,9 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           label="Planner mode"
           hint={
             plannerMode === "agent"
-              ? "Agent can plan and explain, but can only call whitelisted read-only tools. Never enter API keys or secrets in the prompt."
+              ? isAnalysis
+                ? "Deterministic analysis runs first; the agent then explains the computed metrics. It gets only sanitized aggregates — no raw logs/rows, no SQL, no model/cloud keys. Requires a model provider key."
+                : "Agent can plan and explain, but can only call whitelisted read-only tools. Never enter API keys or secrets in the prompt."
               : "Deterministic uses a fixed rule-based plan (default)."
           }
         >
