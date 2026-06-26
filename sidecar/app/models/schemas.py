@@ -472,6 +472,54 @@ class ActionRequest(BaseModel):
     proposal: dict
 
 
+# --- Error triage (Phase 18) ------------------------------------------------
+
+ErrorInputKind = Literal["error_code", "http_response", "sdk_stack_trace", "cli_output", "mixed"]
+
+
+class ErrorTriageRequest(BaseModel):
+    content: str = Field(min_length=1)
+    input_kind: ErrorInputKind = "mixed"
+    session_id: str | None = None
+    provider_id: str | None = None
+    bucket: str | None = None
+    planner_mode: PlannerMode = "deterministic"
+
+
+class TriageFindingOut(BaseModel):
+    model_config = {"extra": "ignore"}
+    id: str | None = None
+    category: str | None = None
+    severity: str | None = None
+    confidence: str | None = None
+    title: str | None = None
+    interpretation: str | None = None
+    evidence: list[str] = Field(default_factory=list)
+    next_checks: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+
+
+class TriageCaseOut(BaseModel):
+    model_config = {"extra": "ignore"}
+    id: str
+    session_id: str | None = None
+    provider_id: str | None = None
+    bucket: str | None = None
+    run_id: str | None = None
+    input_kind: str
+    raw_input_redacted: str | None = None
+    parsed: dict = Field(default_factory=dict)
+    summary: str = ""
+    planner_mode: str = "deterministic"
+    status: str = "parsed"
+    candidate_causes: list[TriageFindingOut] = Field(default_factory=list)
+    safe_next_actions: list[dict] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    agent_interpretation: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
 class SessionMessageOut(BaseModel):
     id: str
     role: str

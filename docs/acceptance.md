@@ -342,3 +342,35 @@ Expected later:
   auto-run / auto-confirm; no secret or chain-of-thought persistence; no
   release/signing/auto-update changes; no macOS x86/universal; Phase 18 not
   started.
+
+## Phase 18 acceptance (error triage assistant)
+
+- Branch `phase/18-error-triage-assistant` from latest main.
+- Error-triage data model (error_triage_cases, error_triage_findings),
+  deterministic parser, playbook rules, and engine implemented.
+- API implemented (`POST /error-triage`, `GET /error-triage/{id}`,
+  `GET /sessions/{id}/error-triage`); deterministic is default and needs no
+  model key; agent mode is interpretation-only over sanitized triage context.
+- Session integration: a case binds to its session, refreshes the session
+  summary, and appears in the session report's Error triage section. Frontend
+  ErrorTriagePanel lives inside Session detail.
+- No raw stack trace / secrets in Agent context (only parsed signals +
+  candidate-cause titles/why + next checks); input is redacted before persistence.
+- Triage performs no S3 call, creates no run, downloads no evidence, and mutates
+  nothing; next actions are Phase 17 proposals routed through review/prepare.
+- Supported categories include SignatureDoesNotMatch, AccessDenied,
+  InvalidAccessKeyId, NoSuchBucket/NoSuchKey, PermanentRedirect/
+  AuthorizationHeaderMalformed, RequestTimeTooSkewed, SlowDown/TooManyRequests,
+  RequestTimeout/5xx, InvalidPart/EntityTooSmall, PreconditionFailed,
+  InvalidBucketName, TLS/connection errors, path-style vs virtual-host, and
+  pagination issues.
+- Public-repo hygiene: synthetic examples only (no real customer/endpoint/
+  bucket/credential data) in docs and tests.
+- Sidecar tests pass (232); frontend build + cargo check pass; guardrail grep
+  passes.
+- No Vercel SDK / Next.js; no MCP / multi-agent / shell / subprocess; no
+  destructive/mutating S3; no arbitrary boto3 or SQL-to-LLM; no business object
+  scan / body download; no hidden auto-run / auto-confirm; no secret or
+  chain-of-thought persistence; no FAQ / static error-code dictionary / kanban /
+  ticketing / dashboard expansion; no release/signing/auto-update; Phase 19 not
+  started.

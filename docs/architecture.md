@@ -191,6 +191,40 @@ Next-action proposals become an **Agentic hand-over**, never automation:
   `next_action_opened` — lightweight events, not a task lifecycle (no
   assignee/status-board/ticket state).
 
+## Error triage assistant (Phase 18)
+
+A session-centered capability to triage S3 / object-storage / S3-compatible
+errors — NOT a static FAQ or error-code dictionary page.
+
+    paste error -> redact -> deterministic parse -> playbook match ->
+    candidate causes + evidence + next checks -> (optional) Agent interpretation
+    -> sanitized triage case + next-action proposals
+
+- **`error_triage/parser.py`** extracts bounded signals (error code, HTTP
+  status, region, endpoint, bucket, operation, language, TLS/connection/pagination
+  flags) from an ALREADY-REDACTED blob. It calls no LLM and no S3, and preserves
+  uncertainty. `redact_input` runs the shared redactor plus triage-local extras
+  (SigV4 `Signature=`/`Credential=`, cookies, secret/session/api-key `k=v`,
+  `sk-` model keys).
+- **`error_triage/playbooks.py`** is a small curated rule set (not a dictionary):
+  per category it gives likely causes, evidence to check, safe read-only next
+  checks, related run types, and provider caveats.
+- **`error_triage/engine.py`** runs deterministically: parse → match → candidate
+  causes + safe next checks + next-action proposals (normalized through the
+  Phase 17 allowlist). It performs NO S3 call, run, download, or mutation.
+- **`error_triage/triage_agent.py`** is interpretation-only (seam `TRIAGE_LOOP`,
+  `tools=[]`): the model sees ONLY the sanitized triage context (parsed signals +
+  candidate-cause titles/why + next checks), never the raw blob, never secrets.
+  Output is redacted + chain-of-thought-stripped; a missing model key fails
+  cleanly and the deterministic triage is unaffected.
+- **API**: `POST /error-triage`, `GET /error-triage/{id}`,
+  `GET /sessions/{id}/error-triage`. A case binds to its session and the session
+  summary is refreshed; cases also appear in the session report's Error triage
+  section. Next actions are Phase 17 proposals — the user reviews/prepares them.
+- Persistence (`error_triage_cases`, `error_triage_findings`) stores only the
+  redacted input + sanitized parsed signals/findings — never raw sensitive logs,
+  secrets, or chain-of-thought. This is not a ticketing system.
+
 ## Session-centered agentic workbench (Phase 16)
 
 The product is a **session-centered agentic workbench**, not a cloud-management

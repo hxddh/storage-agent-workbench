@@ -336,3 +336,38 @@ export interface SessionDetail {
   summary: SessionSummaryData | null;
   messages: SessionMessage[];
 }
+
+// --- Error triage (Phase 18) ---
+
+export type ErrorInputKind = "error_code" | "http_response" | "sdk_stack_trace" | "cli_output" | "mixed";
+
+export interface TriageFinding {
+  id?: string | null;
+  category: string | null;
+  severity: string | null;
+  confidence: string | null;
+  title: string | null;
+  interpretation: string | null;
+  evidence: string[];
+  next_checks: string[];
+  source_refs: string[];
+}
+
+export interface TriageCase {
+  id: string;
+  session_id: string | null;
+  provider_id: string | null;
+  bucket: string | null;
+  input_kind: string;
+  raw_input_redacted: string | null;
+  parsed: Record<string, unknown>;
+  summary: string;
+  planner_mode: string;
+  status: string;
+  candidate_causes: TriageFinding[];
+  safe_next_actions: NextAction[];
+  agent_interpretation: string | null;
+  limitations: string[];
+  created_at: string | null;
+  updated_at: string | null;
+}

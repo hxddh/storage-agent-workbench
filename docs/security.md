@@ -222,6 +222,31 @@ Turning a proposal into action is gated and reuses existing safe flows.
   are lightweight; there is no assignee, due date, status board, ticket state, or
   workflow state machine.
 
+## Error triage (Phase 18)
+
+The error-triage assistant adds S3 error diagnosis inside a session without any
+new dangerous capability.
+
+- **Redaction before anything.** Pasted error text is redacted *first* — shared
+  redactor plus triage-local patterns for SigV4 `Signature=`/`Credential=`,
+  cookies, secret/session/API keys in `key=value` form, and `sk-` model keys.
+  Only the redacted input + sanitized parsed signals/findings are persisted.
+- **No raw blob to the model.** The interpretation-only Agent sees only the
+  sanitized triage context (parsed signals + candidate-cause titles/why + next
+  checks). It has no tools, cannot run/download/mutate/call S3/run SQL/shell, and
+  its output is redacted + chain-of-thought-stripped. Missing model key → clean
+  failure; the deterministic triage is unaffected.
+- **Triage performs no S3 call.** Parsing + playbook matching are local and
+  read-only-by-construction. Any actual cloud check happens only later, if the
+  user explicitly starts an existing diagnostic / config-review / import flow via
+  a Phase 17 next-action proposal (review → prepare → confirm).
+- **No automation.** Triage never creates a run, downloads evidence, confirms an
+  import, or changes configuration. Next actions are proposals only.
+- **Not a ticketing system / FAQ / error-code dictionary.** No assignee, board,
+  status machine, or static code-table; just sanitized cases tied to a session.
+- **Public-repo hygiene.** Docs and tests use only synthetic examples
+  (`example.com`, fake buckets/ids) — no real customer/endpoint/credential data.
+
 ## Sessions (Phase 16)
 
 Sessions add a persistent working context over the existing runs without adding
