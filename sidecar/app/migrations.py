@@ -203,6 +203,68 @@ _M005 = """
 ALTER TABLE runs ADD COLUMN planner_mode TEXT NOT NULL DEFAULT 'deterministic';
 """
 
+# --- Migration 006: account discovery (Phase 14) -----------------------------
+#
+# Adds a generic per-run ``options_json`` (bounded discovery options like
+# max_buckets / include / exclude — never secrets) and the account-discovery
+# result tables. Every *_json_sanitized column stores ONLY redaction-passed JSON:
+# never AK/SK/session token/Authorization/cookies/presigned URLs/model keys.
+
+_M006 = """
+ALTER TABLE runs ADD COLUMN options_json TEXT;
+
+CREATE TABLE IF NOT EXISTS account_snapshots (
+    id                     TEXT PRIMARY KEY,
+    run_id                 TEXT REFERENCES runs(id) ON DELETE CASCADE,
+    provider_id            TEXT,
+    bucket_count           INTEGER NOT NULL DEFAULT 0,
+    visible_count          INTEGER NOT NULL DEFAULT 0,
+    processed_count        INTEGER NOT NULL DEFAULT 0,
+    truncated              INTEGER NOT NULL DEFAULT 0,
+    list_status            TEXT,
+    summary_json_sanitized TEXT,
+    created_at             TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS account_snapshot_buckets (
+    id            TEXT PRIMARY KEY,
+    snapshot_id   TEXT REFERENCES account_snapshots(id) ON DELETE CASCADE,
+    run_id        TEXT,
+    provider_id   TEXT,
+    bucket_name   TEXT,
+    region        TEXT,
+    access_status TEXT,
+    created_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bucket_config_snapshots (
+    id                            TEXT PRIMARY KEY,
+    snapshot_id                   TEXT REFERENCES account_snapshots(id) ON DELETE CASCADE,
+    run_id                        TEXT,
+    provider_id                   TEXT,
+    bucket_name                   TEXT,
+    config_summary_json_sanitized TEXT,
+    created_at                    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS evidence_sources (
+    id                    TEXT PRIMARY KEY,
+    snapshot_id           TEXT REFERENCES account_snapshots(id) ON DELETE CASCADE,
+    run_id                TEXT,
+    provider_id           TEXT,
+    bucket_name           TEXT,
+    source_type           TEXT,
+    status                TEXT,
+    detail_json_sanitized TEXT,
+    created_at            TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_account_snapshots_run ON account_snapshots(run_id);
+CREATE INDEX IF NOT EXISTS idx_account_buckets_snap  ON account_snapshot_buckets(snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_bucket_config_snap    ON bucket_config_snapshots(snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_sources_snap ON evidence_sources(snapshot_id);
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -210,6 +272,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (3, "runs_add_prefix", _M003),
     (4, "datasets_metadata", _M004),
     (5, "runs_add_planner_mode", _M005),
+    (6, "account_discovery", _M006),
 ]
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import uuid
 
@@ -30,14 +31,26 @@ def _summary(row: sqlite3.Row) -> RunSummary:
     )
 
 
+def _options_json(data: RunCreate) -> str | None:
+    """Serialize bounded, non-secret run options (e.g. account_discovery)."""
+    options: dict[str, object] = {}
+    if data.max_buckets is not None:
+        options["max_buckets"] = data.max_buckets
+    if data.include_pattern:
+        options["include_pattern"] = data.include_pattern
+    if data.exclude_pattern:
+        options["exclude_pattern"] = data.exclude_pattern
+    return json.dumps(options) if options else None
+
+
 def create(conn: sqlite3.Connection, data: RunCreate, status: str) -> str:
     run_id = uuid.uuid4().hex
     now = utcnow()
     conn.execute(
         "INSERT INTO runs "
         "(id, run_type, title, status, planner_mode, provider_id, bucket, prefix, "
-        " user_prompt, final_summary, report_path, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
+        " user_prompt, final_summary, report_path, options_json, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)",
         (
             run_id,
             data.run_type,
@@ -48,6 +61,7 @@ def create(conn: sqlite3.Connection, data: RunCreate, status: str) -> str:
             data.bucket,
             data.prefix,
             data.user_prompt,
+            _options_json(data),
             now,
             now,
         ),

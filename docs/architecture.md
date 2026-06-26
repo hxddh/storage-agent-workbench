@@ -121,6 +121,40 @@ GET /runs/{run_id}/events
 
 Do not introduce WebSocket unless explicitly requested.
 
+## Account discovery (Phase 14)
+
+The `account_discovery` run type builds an account-level asset picture from
+read-only APIs:
+
+    test_credentials → list_buckets → (per visible bucket, bounded by
+    max_buckets) head_bucket + bucket config snapshot + evidence-source
+    discovery → account profile + report.
+
+- **`list_buckets`** (`s3/tools.py`) is the only listing performed — a read-only
+  ListBuckets. It never calls ListObjectsV2 and never touches object bodies.
+  Capability/permission gaps map to `provider_unsupported` / `access_denied`.
+- **`account_tools.get_bucket_config_snapshot`** reuses the Phase 06 read-only
+  config readers to produce per-bucket status enums (available / not_configured
+  / provider_unsupported / access_denied / error) for versioning, encryption,
+  lifecycle, logging, replication, policy, public-access-block, tagging,
+  inventory.
+- **`account_tools.discover_evidence_sources`** discovers *whether* inventory
+  and server-access-logging are configured (and their destinations) — it never
+  pulls a full inventory report or access log. CloudTrail / Storage Lens /
+  provider access logs are reserved and reported as `not_implemented`, never
+  faked as supported.
+- The executor (`runs/account_discovery_run.py`) is deterministic only. It is
+  bounded by `max_buckets` (default 100, hard cap 500) with optional
+  include/exclude glob patterns; each bucket's reads are isolated so one
+  bucket's failure never fails the whole run. Results persist to four SQLite
+  tables (account_snapshots, account_snapshot_buckets, bucket_config_snapshots,
+  evidence_sources) via `repositories/account_discovery.py`, all JSON
+  redaction-passed. `GET /runs/{id}/account-profile` returns the structured
+  profile the UI renders as a filterable bucket table.
+- Agent mode for `account_discovery` is rejected with a clean 422 — no bucket
+  list or config JSON is ever sent to an LLM. Agent account-level analysis is a
+  future phase.
+
 ## Agent planner modes
 
 Runs carry a `planner_mode` (`deterministic` by default, or `agent`). Two

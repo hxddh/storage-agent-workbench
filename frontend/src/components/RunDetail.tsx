@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getReport, getRun, runEventsUrl } from "../api";
-import type { ReportOut, RunDetail as RunDetailT, RunEvent } from "../types";
+import { getAccountProfile, getReport, getRun, runEventsUrl } from "../api";
+import type { AccountProfile, ReportOut, RunDetail as RunDetailT, RunEvent } from "../types";
 import { ToolTimeline, type TimelineItem } from "./ToolTimeline";
+import { AccountProfilePanel } from "./AccountProfilePanel";
 
 const STATUS_COLOR: Record<string, string> = {
   pending: "text-gray-400",
@@ -15,12 +16,23 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
   const [detail, setDetail] = useState<RunDetailT | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [report, setReport] = useState<ReportOut | null>(null);
+  const [profile, setProfile] = useState<AccountProfile | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     setEvents([]);
     setReport(null);
-    getRun(runId).then(setDetail).catch(() => undefined);
+    setProfile(null);
+    getRun(runId)
+      .then((d) => {
+        setDetail(d);
+        // Opening an already-finished account_discovery run: no SSE will replay,
+        // so fetch the persisted profile directly.
+        if (d.run_type === "account_discovery") {
+          getAccountProfile(runId).then(setProfile).catch(() => undefined);
+        }
+      })
+      .catch(() => undefined);
 
     const es = new EventSource(runEventsUrl(runId));
     esRef.current = es;
@@ -35,6 +47,7 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
       if (ev.type === "report_ready") {
         getReport(runId).then(setReport).catch(() => undefined);
         getRun(runId).then(setDetail).catch(() => undefined);
+        getAccountProfile(runId).then(setProfile).catch(() => undefined);
       }
       if (ev.type === "error") {
         getRun(runId).then(setDetail).catch(() => undefined);
@@ -220,6 +233,12 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
                 ))}
               </div>
             </>
+          )}
+
+          {detail?.run_type === "account_discovery" && profile && (
+            <div className="mb-6">
+              <AccountProfilePanel profile={profile} />
+            </div>
           )}
 
           <h2 className="mb-2 text-sm font-semibold text-gray-200">Findings</h2>

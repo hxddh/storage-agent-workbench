@@ -423,3 +423,157 @@ Findings by category:
 - Account IDs, ARNs, credentials, signatures, tokens, and presigned-URL
   parameters are excluded/redacted; only structured facts are reported.
 """
+
+
+# --- account discovery (Phase 14) -------------------------------------------
+
+
+def _evidence_label(bucket: dict[str, Any]) -> str:
+    labels = []
+    for s in bucket.get("evidence_sources", []) or []:
+        if s.get("status") == "available":
+            if s.get("source_type") == "inventory":
+                labels.append("inventory")
+            elif s.get("source_type") == "server_access_logging":
+                labels.append("logging")
+    return ", ".join(labels) if labels else "—"
+
+
+def render_account_profile(
+    run: dict[str, Any],
+    profile: dict[str, Any],
+    summary_text: str,
+) -> str:
+    s = profile.get("summary", {}) or {}
+    buckets = profile.get("buckets", []) or []
+
+    bucket_rows = [
+        [
+            b.get("bucket_name", "—"),
+            b.get("region") or "—",
+            b.get("access_status") or "—",
+            b.get("encryption_status") or "—",
+            b.get("logging_status") or "—",
+            b.get("inventory_status") or "—",
+            b.get("lifecycle_status") or "—",
+            b.get("public_access_block_status") or "—",
+            _evidence_label(b),
+        ]
+        for b in buckets
+    ]
+
+    def _cap(items: list[str]) -> str:
+        items = items or []
+        shown = ", ".join(items[:SAMPLE_LIMIT])
+        more = f" (+{len(items) - SAMPLE_LIMIT} more)" if len(items) > SAMPLE_LIMIT else ""
+        return (shown + more) if items else "None"
+
+    capability_rows = [
+        ["Buckets visible", str(profile.get("visible_count", 0))],
+        ["Buckets processed", str(profile.get("processed_count", 0))],
+        ["Truncated (max_buckets)", "yes" if profile.get("truncated") else "no"],
+        ["ListBuckets status", profile.get("list_status", "—")],
+    ]
+    security_rows = [
+        ["Encryption configured", str(s.get("encryption_configured", 0))],
+        ["Encryption not configured", str(s.get("encryption_not_configured", 0))],
+        ["Encryption provider-unsupported", str(s.get("encryption_unsupported", 0))],
+        ["Public access block configured", str(s.get("public_access_block_configured", 0))],
+    ]
+    observability_rows = [
+        ["Logging configured", str(s.get("logging_configured", 0))],
+        ["Logging not configured", str(s.get("logging_not_configured", 0))],
+        ["Logging provider-unsupported", str(s.get("logging_unsupported", 0))],
+        ["Inventory configured", str(s.get("inventory_configured", 0))],
+        ["Inventory not configured", str(s.get("inventory_not_configured", 0))],
+        ["Inventory provider-unsupported", str(s.get("inventory_unsupported", 0))],
+    ]
+    cost_rows = [
+        ["Lifecycle configured", str(s.get("lifecycle_configured", 0))],
+        ["Lifecycle not configured", str(s.get("lifecycle_not_configured", 0))],
+    ]
+
+    return f"""# Account Discovery Report
+
+## Executive summary
+
+{summary_text}
+
+## Scope
+
+- Run ID: {run.get('id')}
+- Run type: account_discovery
+- Provider: {profile.get('provider_id') or '—'}
+- Created at: {run.get('created_at')}
+- Data source: account-level read-only ListBuckets + per-bucket read-only config
+  APIs. No objects were scanned and no object bodies were downloaded.
+
+## Bucket inventory
+
+{_table(["Bucket", "Region", "Access", "Encryption", "Logging", "Inventory", "Lifecycle", "Public access block", "Evidence"], bucket_rows)}
+
+## Provider capability summary
+
+{_table(["Item", "Value"], capability_rows)}
+
+## Security posture summary
+
+{_table(["Item", "Count"], security_rows)}
+
+## Observability posture summary
+
+{_table(["Item", "Count"], observability_rows)}
+
+## Cost / lifecycle readiness
+
+{_table(["Item", "Count"], cost_rows)}
+
+## Evidence sources discovered
+
+- Buckets with inventory configuration (importable into inventory_analysis):
+  {_cap(s.get('buckets_with_inventory_evidence', []))}
+- Buckets with server access logging (importable into access_log_analysis):
+  {_cap(s.get('buckets_with_logging_evidence', []))}
+- Reserved evidence sources (cloudtrail / storage_lens / provider_access_log)
+  are **not implemented** in this phase and are reported as such, not faked.
+
+## Buckets needing further review
+
+{_cap(s.get('buckets_needing_review', []))}
+
+## Unsupported / access denied APIs
+
+- Access denied buckets: {_cap(s.get('access_denied_buckets', []))}
+- Errored buckets: {_cap(s.get('error_buckets', []))}
+- Per-bucket provider-unsupported / access-denied configuration items are shown
+  in the bucket inventory status columns above.
+
+## Recommended next steps
+
+- For buckets with inventory evidence, export the inventory file and run
+  `inventory_analysis`.
+- For buckets with server access logging, collect the logs and run
+  `access_log_analysis`.
+- For buckets needing review (no encryption / no public access block), run a
+  `bucket_config_review` to assess details.
+- Pulling the full inventory report / access logs and any remediation are
+  out of scope here (future phases / manual operator action).
+
+## Limitations
+
+- Discovery is bounded by `max_buckets` (default 100); this run processed
+  {profile.get('processed_count', 0)} of {profile.get('visible_count', 0)} visible bucket(s); the rest are not analyzed.
+- This is a read-only snapshot: no objects were scanned, no object bodies were
+  downloaded, no inventory report or access log was pulled, and no configuration
+  was changed or auto-remediated.
+- S3-compatible providers may not implement every API; such gaps are reported as
+  `provider_unsupported`, distinct from `access_denied`.
+
+## Safety
+
+- Cloud credentials are read from the system keyring at call time and never
+  appear in this report, logs, events, or UI state.
+- No AK/SK/session token/Authorization/cookie/presigned-URL value is included;
+  only bucket-level structured facts and evidence-source metadata are reported.
+- account_discovery is deterministic only; no LLM, no agent, no object scan.
+"""

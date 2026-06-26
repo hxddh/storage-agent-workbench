@@ -76,6 +76,7 @@ export type RunType =
   | "access_log_analysis"
   | "inventory_analysis"
   | "bucket_config_review"
+  | "account_discovery"
   | "optimization_report";
 
 export type PlannerMode = "deterministic" | "agent";
@@ -165,3 +166,47 @@ export type RunEvent =
   | { type: "guardrail_passed"; name: string }
   | { type: "guardrail_blocked"; name: string; message: string }
   | { type: "agent_final"; content: string };
+
+// --- Account discovery (Phase 14) ---
+
+export interface EvidenceSource {
+  source_type: string;
+  status: string;
+  configured: boolean | null;
+  detail: Record<string, unknown>;
+}
+
+export interface AccountBucket {
+  bucket_name: string;
+  region: string | null;
+  access_status: string;
+  head_bucket_status: string | null;
+  versioning_status: string | null;
+  versioning_enabled: boolean | null;
+  encryption_status: string | null;
+  lifecycle_status: string | null;
+  logging_status: string | null;
+  logging_enabled: boolean | null;
+  inventory_status: string | null;
+  replication_status: string | null;
+  policy_status: string | null;
+  public_access_block_status: string | null;
+  tagging_status: string | null;
+  provider_unsupported_items: string[];
+  access_denied_items: string[];
+  errors: string[];
+  evidence_sources: EvidenceSource[];
+}
+
+export interface AccountProfile {
+  run_id: string;
+  provider_id: string | null;
+  bucket_count: number;
+  visible_count: number;
+  processed_count: number;
+  truncated: boolean;
+  list_status: string;
+  summary: Record<string, unknown>;
+  buckets: AccountBucket[];
+  created_at: string | null;
+}

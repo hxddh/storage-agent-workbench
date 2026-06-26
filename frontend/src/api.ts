@@ -1,5 +1,6 @@
 import { sidecarBaseUrl } from "./config";
 import type {
+  AccountProfile,
   CloudProvider,
   CredentialsTestResult,
   Dataset,
@@ -132,6 +133,10 @@ export interface RunCreateInput {
   prefix?: string;
   user_prompt?: string;
   planner_mode?: "deterministic" | "agent";
+  // account_discovery options
+  max_buckets?: number;
+  include_pattern?: string;
+  exclude_pattern?: string;
 }
 
 export const listRuns = () => request<RunSummary[]>("/runs");
@@ -151,6 +156,9 @@ export const postRunMessage = (id: string, content: string) =>
   });
 
 export const getReport = (runId: string) => request<ReportOut>(`/reports/${runId}`);
+
+export const getAccountProfile = (runId: string) =>
+  request<AccountProfile>(`/runs/${runId}/account-profile`);
 
 export const runEventsUrl = (id: string) => `${sidecarBaseUrl()}/runs/${id}/events`;
 

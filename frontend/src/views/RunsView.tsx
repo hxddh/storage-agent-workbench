@@ -20,8 +20,25 @@ const STATUS_COLOR: Record<string, string> = {
 
 type Mode = { kind: "list" } | { kind: "new" } | { kind: "detail"; runId: string };
 
-export function RunsView() {
-  const [mode, setMode] = useState<Mode>({ kind: "list" });
+export function RunsView({
+  initialRunId = null,
+  onConsumed,
+}: {
+  initialRunId?: string | null;
+  onConsumed?: () => void;
+} = {}) {
+  const [mode, setMode] = useState<Mode>(
+    initialRunId ? { kind: "detail", runId: initialRunId } : { kind: "list" },
+  );
+
+  // If the app navigated here to open a specific run (e.g. "Discover account").
+  useEffect(() => {
+    if (initialRunId) {
+      setMode({ kind: "detail", runId: initialRunId });
+      onConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialRunId]);
 
   if (mode.kind === "detail") {
     return <RunDetail runId={mode.runId} onBack={() => setMode({ kind: "list" })} />;
@@ -94,6 +111,7 @@ const RUN_TYPE_OPTIONS: { value: RunType; label: string }[] = [
   { value: "access_log_analysis", label: "Access log analysis" },
   { value: "inventory_analysis", label: "Inventory analysis" },
   { value: "bucket_config_review", label: "Bucket config review" },
+  { value: "account_discovery", label: "Account discovery" },
 ];
 
 function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (runId: string) => void }) {
@@ -104,14 +122,20 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
   const [bucket, setBucket] = useState("");
   const [prefix, setPrefix] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [maxBuckets, setMaxBuckets] = useState("100");
+  const [includePat, setIncludePat] = useState("");
+  const [excludePat, setExcludePat] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const isAnalysis = runType === "access_log_analysis" || runType === "inventory_analysis";
   const needsBucket = runType === "diagnostic" || runType === "bucket_config_review";
+  // account_discovery operates at the account level: needs a provider, no bucket.
+  const needsProvider = runType === "account_discovery";
   // Agent mode: diagnostic + config review (Phase 07, tool-calling planner) and
   // the dataset-analysis types (Phase 13, interpretation-only narrator).
+  // account_discovery is deterministic only (Phase 14).
   const agentSupported = needsBucket || isAnalysis;
   const agentUnsupportedHere = plannerMode === "agent" && !agentSupported;
   const datasetType = runType === "access_log_analysis" ? "access_log" : "inventory";
@@ -162,11 +186,31 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
     onCreated(created.run_id);
   };
 
+  const submitAccountDiscovery = async () => {
+    if (!providerId) {
+      setError("A cloud provider is required.");
+      return;
+    }
+    const parsedMax = Number(maxBuckets);
+    const created = await createRun({
+      run_type: "account_discovery",
+      provider_id: providerId,
+      user_prompt: prompt.trim() || "Discover account-level buckets and evidence sources.",
+      title: "Account discovery",
+      max_buckets: maxBuckets.trim() && Number.isFinite(parsedMax) ? parsedMax : undefined,
+      include_pattern: includePat.trim() || undefined,
+      exclude_pattern: excludePat.trim() || undefined,
+    });
+    await postRunMessage(created.run_id, "discover");
+    onCreated(created.run_id);
+  };
+
   const submit = async () => {
     setError(null);
     setBusy(true);
     try {
       if (isAnalysis) await submitAnalysis();
+      else if (needsProvider) await submitAccountDiscovery();
       else await submitBucket();
     } catch (e) {
       setError(String(e));
@@ -216,24 +260,49 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           </p>
         )}
 
+        {(needsBucket || needsProvider) && (
+          <Field label="Cloud provider">
+            {providers.length === 0 ? (
+              <p className="text-xs text-gray-600">No cloud providers configured. Add one under Providers first.</p>
+            ) : (
+              <Select value={providerId} onChange={(e) => setProviderId(e.target.value)}>
+                {providers.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.provider_type})</option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        )}
+
         {needsBucket && (
           <>
-            <Field label="Cloud provider">
-              {providers.length === 0 ? (
-                <p className="text-xs text-gray-600">No cloud providers configured. Add one under Providers first.</p>
-              ) : (
-                <Select value={providerId} onChange={(e) => setProviderId(e.target.value)}>
-                  {providers.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name} ({p.provider_type})</option>
-                  ))}
-                </Select>
-              )}
-            </Field>
             <Field label="Bucket">
               <TextInput value={bucket} onChange={(e) => setBucket(e.target.value)} placeholder="bucket-alpha" />
             </Field>
             <Field label="Prefix (optional)">
               <TextInput value={prefix} onChange={(e) => setPrefix(e.target.value)} placeholder="logs/" />
+            </Field>
+          </>
+        )}
+
+        {needsProvider && (
+          <>
+            <Field
+              label="Max buckets"
+              hint="Bounded account scan (default 100, max 500). Account discovery never scans objects or downloads bodies."
+            >
+              <TextInput
+                value={maxBuckets}
+                onChange={(e) => setMaxBuckets(e.target.value)}
+                placeholder="100"
+                inputMode="numeric"
+              />
+            </Field>
+            <Field label="Include bucket pattern (optional)" hint="glob, e.g. logs-*">
+              <TextInput value={includePat} onChange={(e) => setIncludePat(e.target.value)} placeholder="logs-*" />
+            </Field>
+            <Field label="Exclude bucket pattern (optional)" hint="glob, e.g. *-tmp">
+              <TextInput value={excludePat} onChange={(e) => setExcludePat(e.target.value)} placeholder="*-tmp" />
             </Field>
           </>
         )}
@@ -266,7 +335,7 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           <Button
             variant="primary"
             onClick={submit}
-            disabled={busy || agentUnsupportedHere || (needsBucket && providers.length === 0)}
+            disabled={busy || agentUnsupportedHere || ((needsBucket || needsProvider) && providers.length === 0)}
           >
             {busy ? "Creating…" : "Create run"}
           </Button>

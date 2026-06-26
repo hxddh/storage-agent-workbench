@@ -316,8 +316,29 @@ keeps deterministic metrics and the agent interpretation in separate sections. A
 missing model provider key fails the agent run cleanly and never affects
 deterministic runs. New tests live in `sidecar/tests/test_agent_analysis.py`.
 
+## Phase 14 status
+
+Phase 14 (`phase/14-cloud-account-discovery`) adds **account-level discovery**.
+A new read-only `list_buckets` tool plus an `account_discovery` run type
+enumerate the buckets visible to a cloud provider, capture a per-bucket
+read-only **configuration snapshot** (versioning / encryption / lifecycle /
+logging / replication / policy / public-access-block / tagging / inventory with
+clear status enums), and **discover evidence sources** — whether bucket
+inventory and server access logging are configured (and their destinations),
+without pulling the full inventory report or access log. It builds an
+account-profile report and a filterable bucket table in the UI (with a "Discover
+account" entry on each cloud provider). The scan is bounded by `max_buckets`
+(default 100) with include/exclude globs; it never scans objects (no
+ListObjectsV2), never downloads object bodies, never enables logging/inventory,
+and never modifies any bucket configuration. AK/SK stay in the OS keyring and
+never reach SQLite/logs/reports/UI/LLM. `account_discovery` is deterministic
+only — Agent mode returns a clean 422. New tests:
+`sidecar/tests/test_account_discovery.py`.
+
 Not implemented yet:
 
+- Agent-assisted account-level analysis (account_discovery is deterministic only)
+- Full inventory-report / access-log retrieval from discovered evidence sources
 - `optimization_report` run type
 - Code signing / notarization / auto-update
 - macOS x64 / universal desktop builds
