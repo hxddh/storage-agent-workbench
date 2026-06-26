@@ -210,3 +210,47 @@ export interface AccountProfile {
   buckets: AccountBucket[];
   created_at: string | null;
 }
+
+// --- Managed evidence import (Phase 15) ---
+
+export interface EvidenceImportFile {
+  object_key: string;
+  size_bytes: number;
+  kind: string;
+  selected: boolean;
+  status: string;
+}
+
+export interface EvidenceImport {
+  id: string;
+  provider_id: string | null;
+  account_run_id: string | null;
+  source_type: string;
+  source_bucket: string | null;
+  source_prefix: string | null;
+  evidence_ref: string | null;
+  format: string | null;
+  plan_source: string | null;
+  max_files: number;
+  max_bytes: number;
+  time_range_start: string | null;
+  time_range_end: string | null;
+  planned_file_count: number;
+  planned_total_bytes: number;
+  selected_file_count: number;
+  selected_total_bytes: number;
+  status: string;
+  analysis_run_id: string | null;
+  warnings: string[];
+  created_at: string | null;
+  confirmed_at: string | null;
+  files: EvidenceImportFile[];
+}
+
+export interface EvidenceImportRunResult {
+  import_id: string;
+  status: string;
+  analysis_run_id: string | null;
+  downloaded_file_count: number;
+  downloaded_total_bytes: number;
+}

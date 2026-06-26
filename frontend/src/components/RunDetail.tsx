@@ -12,7 +12,15 @@ const STATUS_COLOR: Record<string, string> = {
   not_implemented: "text-gray-500",
 };
 
-export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void }) {
+export function RunDetail({
+  runId,
+  onBack,
+  onOpenRun,
+}: {
+  runId: string;
+  onBack: () => void;
+  onOpenRun?: (runId: string) => void;
+}) {
   const [detail, setDetail] = useState<RunDetailT | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [report, setReport] = useState<ReportOut | null>(null);
@@ -237,7 +245,7 @@ export function RunDetail({ runId, onBack }: { runId: string; onBack: () => void
 
           {detail?.run_type === "account_discovery" && profile && (
             <div className="mb-6">
-              <AccountProfilePanel profile={profile} />
+              <AccountProfilePanel profile={profile} onOpenRun={onOpenRun} />
             </div>
           )}
 

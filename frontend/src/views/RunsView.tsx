@@ -41,7 +41,13 @@ export function RunsView({
   }, [initialRunId]);
 
   if (mode.kind === "detail") {
-    return <RunDetail runId={mode.runId} onBack={() => setMode({ kind: "list" })} />;
+    return (
+      <RunDetail
+        runId={mode.runId}
+        onBack={() => setMode({ kind: "list" })}
+        onOpenRun={(runId) => setMode({ kind: "detail", runId })}
+      />
+    );
   }
   if (mode.kind === "new") {
     return (

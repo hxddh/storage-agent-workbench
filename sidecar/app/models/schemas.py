@@ -332,3 +332,62 @@ class AccountProfileOut(BaseModel):
     summary: dict = Field(default_factory=dict)
     buckets: list[AccountBucketOut] = Field(default_factory=list)
     created_at: str | None = None
+
+
+# --- Managed evidence import (Phase 15) -------------------------------------
+
+EvidenceSourceType = Literal["inventory", "access_log"]
+
+
+class EvidenceImportPlanRequest(BaseModel):
+    account_run_id: str = Field(min_length=1)
+    bucket_name: str = Field(min_length=1)
+    source_type: EvidenceSourceType
+    max_files: int | None = Field(default=None, ge=1, le=5000)
+    max_bytes: int | None = Field(default=None, ge=1)
+    # Required for access_log; ISO-8601 strings.
+    time_range_start: str | None = None
+    time_range_end: str | None = None
+
+
+class EvidenceImportFileOut(BaseModel):
+    object_key: str
+    size_bytes: int
+    kind: str
+    selected: bool
+    status: str
+
+
+class EvidenceImportOut(BaseModel):
+    model_config = {"extra": "ignore"}
+    id: str
+    provider_id: str | None = None
+    account_run_id: str | None = None
+    source_type: str
+    source_bucket: str | None = None
+    source_prefix: str | None = None
+    evidence_ref: str | None = None
+    format: str | None = None
+    plan_source: str | None = None
+    max_files: int = 0
+    max_bytes: int = 0
+    time_range_start: str | None = None
+    time_range_end: str | None = None
+    planned_file_count: int = 0
+    planned_total_bytes: int = 0
+    selected_file_count: int = 0
+    selected_total_bytes: int = 0
+    status: str = "planned"
+    analysis_run_id: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    created_at: str | None = None
+    confirmed_at: str | None = None
+    files: list[EvidenceImportFileOut] = Field(default_factory=list)
+
+
+class EvidenceImportRunResult(BaseModel):
+    import_id: str
+    status: str
+    analysis_run_id: str | None = None
+    downloaded_file_count: int = 0
+    downloaded_total_bytes: int = 0

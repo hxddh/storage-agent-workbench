@@ -335,10 +335,28 @@ never reach SQLite/logs/reports/UI/LLM. `account_discovery` is deterministic
 only — Agent mode returns a clean 422. New tests:
 `sidecar/tests/test_account_discovery.py`.
 
+## Phase 15 status
+
+Phase 15 (`phase/15-managed-evidence-import`) connects discovered evidence
+sources to the analysis path. From the account-profile bucket table you can
+**Import inventory** or **Import access logs**: the sidecar generates a bounded
+**import plan** (file count / total bytes / format / time range / limits) from
+the *discovered* inventory destination or logging target only, you **confirm**
+it (recorded in `approval_events` + `audit_logs`), and only then are the
+evidence files downloaded — bounded by `max_files` (≤5000) and `max_bytes`
+(≤5 GiB), with a time range required for logs. Downloaded files feed the
+existing deterministic `inventory_analysis` / `access_log_analysis` importers
+and analyzers, and the UI navigates to the resulting analysis run. It never
+scans the business bucket, never downloads business object bodies, never
+imports without confirmation, and never mutates S3. AK/SK stay in the keyring;
+evidence lands in the app data dir; reports carry no raw content or secrets. New
+tests: `sidecar/tests/test_evidence_import.py`.
+
 Not implemented yet:
 
 - Agent-assisted account-level analysis (account_discovery is deterministic only)
-- Full inventory-report / access-log retrieval from discovered evidence sources
+- ORC inventory import (CSV / Parquet supported; ORC detected_but_not_supported)
+- CloudTrail / Storage Lens / provider-access-log evidence sources
 - `optimization_report` run type
 - Code signing / notarization / auto-update
 - macOS x64 / universal desktop builds

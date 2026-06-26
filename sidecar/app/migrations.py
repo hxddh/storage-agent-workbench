@@ -265,6 +265,56 @@ CREATE INDEX IF NOT EXISTS idx_bucket_config_snap    ON bucket_config_snapshots(
 CREATE INDEX IF NOT EXISTS idx_evidence_sources_snap ON evidence_sources(snapshot_id);
 """
 
+# --- Migration 007: managed evidence import (Phase 15) -----------------------
+#
+# Records the bounded, confirmation-gated import of evidence files (inventory /
+# access logs) discovered by account_discovery (Phase 14). Every text column
+# (bucket / prefix / object key / warnings) is redaction-passed before storage:
+# never AK/SK/session token/Authorization/cookies/presigned URL/model key.
+
+_M007 = """
+CREATE TABLE IF NOT EXISTS evidence_imports (
+    id                   TEXT PRIMARY KEY,
+    provider_id          TEXT,
+    account_run_id       TEXT,
+    snapshot_id          TEXT,
+    source_type          TEXT NOT NULL,
+    source_bucket        TEXT,
+    source_prefix        TEXT,
+    evidence_ref         TEXT,
+    format               TEXT,
+    fmt_schema           TEXT,
+    plan_source          TEXT,
+    max_files            INTEGER NOT NULL DEFAULT 0,
+    max_bytes            INTEGER NOT NULL DEFAULT 0,
+    time_range_start     TEXT,
+    time_range_end       TEXT,
+    planned_file_count   INTEGER NOT NULL DEFAULT 0,
+    planned_total_bytes  INTEGER NOT NULL DEFAULT 0,
+    selected_file_count  INTEGER NOT NULL DEFAULT 0,
+    selected_total_bytes INTEGER NOT NULL DEFAULT 0,
+    status               TEXT NOT NULL DEFAULT 'planned',
+    analysis_run_id      TEXT,
+    warnings_json        TEXT,
+    created_at           TEXT NOT NULL,
+    confirmed_at         TEXT
+);
+
+CREATE TABLE IF NOT EXISTS evidence_import_files (
+    id          TEXT PRIMARY KEY,
+    import_id   TEXT REFERENCES evidence_imports(id) ON DELETE CASCADE,
+    object_key  TEXT,
+    size_bytes  INTEGER NOT NULL DEFAULT 0,
+    kind        TEXT,
+    selected    INTEGER NOT NULL DEFAULT 0,
+    status      TEXT NOT NULL DEFAULT 'planned',
+    created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_evidence_imports_run ON evidence_imports(account_run_id);
+CREATE INDEX IF NOT EXISTS idx_evidence_files_import ON evidence_import_files(import_id);
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -273,6 +323,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (4, "datasets_metadata", _M004),
     (5, "runs_add_planner_mode", _M005),
     (6, "account_discovery", _M006),
+    (7, "managed_evidence_import", _M007),
 ]
 
 
