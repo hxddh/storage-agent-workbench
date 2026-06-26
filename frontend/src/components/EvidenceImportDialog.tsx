@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  attachRunToSession,
   confirmEvidenceImport,
   planEvidenceImport,
   runEvidenceImport,
@@ -22,12 +23,14 @@ export function EvidenceImportDialog({
   accountRunId,
   bucketName,
   sourceType,
+  sessionId,
   onClose,
   onImported,
 }: {
   accountRunId: string;
   bucketName: string;
   sourceType: "inventory" | "access_log";
+  sessionId?: string;
   onClose: () => void;
   onImported: (analysisRunId: string) => void;
 }) {
@@ -70,8 +73,19 @@ export function EvidenceImportDialog({
     try {
       await confirmEvidenceImport(plan.id);
       const res = await runEvidenceImport(plan.id);
-      if (res.analysis_run_id) onImported(res.analysis_run_id);
-      else onClose();
+      if (res.analysis_run_id) {
+        // Link the resulting analysis run to the session (Phase 17 handoff).
+        if (sessionId) {
+          try {
+            await attachRunToSession(sessionId, res.analysis_run_id);
+          } catch {
+            /* linkage is best-effort; the run still exists */
+          }
+        }
+        onImported(res.analysis_run_id);
+      } else {
+        onClose();
+      }
     } catch (e) {
       setError(String(e));
       setBusy(false);

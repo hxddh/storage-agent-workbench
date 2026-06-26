@@ -371,9 +371,31 @@ report, "Start run in this session"). It is explicitly **not** a CMDB /
 monitoring wall / kanban / ticketing / PM / multi-user system. New tests:
 `sidecar/tests/test_sessions.py`.
 
+## Phase 17 status
+
+Phase 17 (`phase/17-session-next-action-handoff`) makes a session's next-action
+proposals **actionable as a safe hand-over**, not automation:
+`Agent proposes → user reviews → app prepares a prefilled flow → user confirms →
+existing run/import/report flow`. Proposals are normalized to a canonical
+sanitized shape behind an `action_type` allowlist (always
+`requires_confirmation`). Two endpoints — `actions/preview` and
+`actions/prepare` — **only validate and prefill** (they never create a run,
+download evidence, confirm an import, call S3, or call an LLM). Prepare opens an
+existing flow: `NewRunForm` (with `session_id` + prefilled run type / provider /
+bucket) for run_* actions, `EvidenceImportDialog` (prefilled, still
+plan→confirm→run, then the imported run is attached to the session) for
+plan_*_import, the session report, or the message composer. Missing parameters
+return `needs_input` (with candidate evidence sources when ambiguous); the
+access-log time range is never auto-filled. The session assistant can also
+return validated `proposed_actions` (allowlist enforced, invalid dropped),
+staying interpretation-only. The Session UI gains a **Review / Prepare & open**
+flow ("proposed next step — review before starting"). No hidden auto-run, no
+auto-confirm, no dangerous automation, and still not a task board / kanban /
+ticketing system. New tests: `sidecar/tests/test_session_actions.py`.
+
 Not implemented yet:
 
-- Executable next actions (currently proposals only; the user runs them)
+- One-click execution of proposals (the user still confirms/starts each flow)
 - Agent-assisted account-level analysis (account_discovery is deterministic only)
 - ORC inventory import (CSV / Parquet supported; ORC detected_but_not_supported)
 - CloudTrail / Storage Lens / provider-access-log evidence sources

@@ -199,6 +199,29 @@ confirmation-gated.
   manifests with unusual structures degrade to a clean limitation rather than a
   crash. CloudTrail / Storage Lens / provider access logs remain unimplemented.
 
+## Next-action handoff (Phase 17)
+
+Turning a proposal into action is gated and reuses existing safe flows.
+
+- **Proposals are not automation.** preview/prepare only validate and prefill;
+  they never create a run, download evidence, confirm an import, mutate a bucket,
+  call S3, or call an LLM. There is no hidden auto-run and no hidden
+  auto-confirm.
+- **Allowlist enforced.** Only a fixed set of `action_type`s is accepted; any
+  other value (including assistant-proposed ones) is rejected/dropped. Every
+  proposal carries `requires_confirmation=true`.
+- **Existing safe workflows are reused.** A run still starts only when the user
+  submits `NewRunForm`; evidence import still requires plan → confirm → run in
+  `EvidenceImportDialog`. The handoff just opens those flows prefilled.
+- **No unsafe auto-fill.** Access-log import does not auto-fill the time range;
+  the user enters it in the planner.
+- **Sanitized.** Proposals, prefills, and assistant `proposed_actions` are
+  redaction-passed (no secrets, no raw logs/rows); assistant output is
+  chain-of-thought-stripped; a missing model key still fails cleanly.
+- **Not a task system.** Audit events (`next_action_previewed/prepared/opened`)
+  are lightweight; there is no assignee, due date, status board, ticket state, or
+  workflow state machine.
+
 ## Sessions (Phase 16)
 
 Sessions add a persistent working context over the existing runs without adding

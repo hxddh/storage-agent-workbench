@@ -155,6 +155,42 @@ read-only APIs:
   list or config JSON is ever sent to an LLM. Agent account-level analysis is a
   future phase.
 
+## Next-action handoff (Phase 17)
+
+Next-action proposals become an **Agentic hand-over**, never automation:
+
+    Agent proposes → user reviews (preview) → app prepares a prefilled SAFE flow
+    → user confirms/starts → existing run/import/report flow runs.
+
+- **Normalized proposals** (`sessions/next_actions.py`): every proposal is
+  coerced to a canonical, sanitized shape (`id`, `title`, `reason`,
+  `action_type`, `requires_confirmation=true`, `confidence`, `source_run_ids`,
+  `required_inputs`, `prefill`, `safety_notes`, `status`). Only an allowlisted
+  `action_type` survives (run_account_discovery / run_bucket_config_review /
+  run_diagnostic / plan_inventory_import / plan_access_log_import /
+  run_inventory_analysis / run_access_log_analysis / generate_session_report /
+  ask_user_for_context); anything else is dropped.
+- **Preview** (`POST /sessions/{id}/actions/preview`) and **prepare**
+  (`POST /sessions/{id}/actions/prepare`) ONLY validate + prefill against session
+  state. They never create a run, download evidence, confirm an import, call S3,
+  or call an LLM. Prepare returns which existing flow to `open` (new_run /
+  evidence_import / session_report / message_composer) plus a sanitized prefill;
+  missing parameters yield `needs_input` (and candidate evidence sources when a
+  choice is required) rather than a guess.
+- **Reuse, not a parallel workflow:** the frontend opens the existing
+  `NewRunForm` (with `session_id` + prefilled run_type/provider/bucket) or
+  `EvidenceImportDialog` (prefilled account run + bucket + source_type; the
+  imported analysis run is then attached to the session). Evidence import still
+  goes plan → confirm → run; a new run still starts only when the user clicks.
+  The Agent never executes.
+- **Assistant proposals:** the session assistant may additionally return a
+  fenced-JSON `proposed_actions` block; the backend validates/coerces each
+  through the same allowlist (dropping invalid ones, forcing
+  `requires_confirmation`). It remains interpretation-only with no tools.
+- **Audit:** `next_action_previewed` / `next_action_prepared` /
+  `next_action_opened` — lightweight events, not a task lifecycle (no
+  assignee/status-board/ticket state).
+
 ## Session-centered agentic workbench (Phase 16)
 
 The product is a **session-centered agentic workbench**, not a cloud-management

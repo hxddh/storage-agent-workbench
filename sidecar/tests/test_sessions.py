@@ -176,7 +176,7 @@ def test_next_actions_are_proposals_only(client, sync_runs):
         assert a["action_type"] in {
             "run_account_discovery", "run_bucket_config_review", "plan_inventory_import",
             "plan_access_log_import", "run_inventory_analysis", "run_access_log_analysis",
-            "run_diagnostic", "generate_report", "ask_user_for_context"}
+            "run_diagnostic", "generate_session_report", "ask_user_for_context"}
 
 
 # --- session assistant (interpretation-only, mocked loop) -------------------

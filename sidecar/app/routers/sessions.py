@@ -18,6 +18,7 @@ from ..agent_runtime import session_agent
 from ..agent_runtime.agent_service import AgentUnavailable, get_model_credentials
 from ..db import get_conn
 from ..models.schemas import (
+    ActionRequest,
     SessionCreate,
     SessionDetail,
     SessionMessageCreate,
@@ -27,7 +28,7 @@ from ..models.schemas import (
 from ..repositories import runs as runs_repo
 from ..repositories import sessions as repo
 from ..security.redaction import redact_text
-from ..sessions import session_report, summary_builder
+from ..sessions import next_actions, session_report, summary_builder
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -126,6 +127,47 @@ def get_session_report(session_id: str, conn: sqlite3.Connection = Depends(get_c
     return {"session_id": session_id, "format": "markdown", "content": content}
 
 
+@router.post("/{session_id}/actions/preview")
+def preview_action(session_id: str, body: ActionRequest, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+    """Validate + prefill a next-action proposal. NEVER runs, downloads, or confirms."""
+    row = repo.get_row(conn, session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    proposal = next_actions.normalize_proposal(body.proposal)
+    if proposal is None:
+        raise HTTPException(status_code=422, detail="proposal action_type is not in the allowlist")
+    out = next_actions.preview(conn, dict(row), proposal)
+    audit.record(conn, "next_action_previewed",
+                 {"session_id": session_id, "action_type": proposal["action_type"]}, run_id=None)
+    conn.commit()
+    return {"proposal": proposal, **out}
+
+
+@router.post("/{session_id}/actions/prepare")
+def prepare_action(session_id: str, body: ActionRequest, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+    """Turn a proposal into a prefilled hand-over to an existing safe flow.
+
+    It only prepares; it does NOT create a run, download evidence, confirm an
+    import, or call S3/LLM. The user opens the prefilled flow and acts.
+    """
+    row = repo.get_row(conn, session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    proposal = next_actions.normalize_proposal(body.proposal)
+    if proposal is None:
+        raise HTTPException(status_code=422, detail="proposal action_type is not in the allowlist")
+    out = next_actions.prepare(conn, dict(row), proposal)
+    audit.record(conn, "next_action_prepared",
+                 {"session_id": session_id, "action_type": proposal["action_type"], "status": out["status"]},
+                 run_id=None)
+    if out["status"] == "ready":
+        audit.record(conn, "next_action_opened",
+                     {"session_id": session_id, "action_type": proposal["action_type"], "open": out["open"]},
+                     run_id=None)
+    conn.commit()
+    return {"proposal": proposal, **out}
+
+
 @router.get("/{session_id}/messages")
 def list_session_messages(session_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
     if repo.get_row(conn, session_id) is None:
@@ -150,12 +192,20 @@ def post_session_message(
 
     try:
         creds = get_model_credentials(conn)  # raises AgentUnavailable if missing
-        answer = session_agent.answer(dict(row), summary, recent, body.content, creds)
+        answer_text, raw_proposals = session_agent.answer(dict(row), summary, recent, body.content, creds)
     except AgentUnavailable as exc:
         # Clean failure: the user message is kept; no assistant message is stored.
         raise HTTPException(status_code=422, detail=redact_text(str(exc)))
 
-    repo.add_message(conn, session_id, "assistant", answer)
+    # The model's proposed_actions are untrusted: validate/coerce through the
+    # allowlist, drop anything invalid, force requires_confirmation.
+    proposed_actions = [p for raw in raw_proposals if (p := next_actions.normalize_proposal(raw))]
+
+    repo.add_message(conn, session_id, "assistant", answer_text)
     audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
     conn.commit()
-    return {"session_id": session_id, "messages": repo.list_messages(conn, session_id)}
+    return {
+        "session_id": session_id,
+        "messages": repo.list_messages(conn, session_id),
+        "proposed_actions": proposed_actions,
+    }

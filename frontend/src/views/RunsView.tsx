@@ -124,16 +124,22 @@ export function NewRunForm({
   onCancel,
   onCreated,
   sessionId,
+  initialRunType,
+  initialProviderId,
+  initialBucket,
 }: {
   onCancel: () => void;
   onCreated: (runId: string) => void;
   sessionId?: string;
+  initialRunType?: RunType;
+  initialProviderId?: string;
+  initialBucket?: string;
 }) {
-  const [runType, setRunType] = useState<RunType>("diagnostic");
+  const [runType, setRunType] = useState<RunType>(initialRunType ?? "diagnostic");
   const [plannerMode, setPlannerMode] = useState<"deterministic" | "agent">("deterministic");
   const [providers, setProviders] = useState<CloudProvider[]>([]);
-  const [providerId, setProviderId] = useState("");
-  const [bucket, setBucket] = useState("");
+  const [providerId, setProviderId] = useState(initialProviderId ?? "");
+  const [bucket, setBucket] = useState(initialBucket ?? "");
   const [prefix, setPrefix] = useState("");
   const [prompt, setPrompt] = useState("");
   const [maxBuckets, setMaxBuckets] = useState("100");
@@ -159,7 +165,8 @@ export function NewRunForm({
     listCloudProviders()
       .then((p) => {
         setProviders(p);
-        if (p[0]) setProviderId(p[0].id);
+        // Default to the first provider only when none was prefilled/selected.
+        setProviderId((cur) => cur || (p[0]?.id ?? ""));
       })
       .catch((e) => setError(String(e)));
   }, []);

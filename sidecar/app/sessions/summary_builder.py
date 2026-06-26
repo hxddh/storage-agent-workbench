@@ -136,7 +136,7 @@ def _gaps(have_types: set[str], runs: list[dict[str, Any]]) -> tuple[list[str], 
                         "reason": "Assess security/lifecycle/observability posture of a key bucket.",
                         "confidence": "low", "requires_confirmation": True, "source_run_ids": []})
     if have_types:
-        actions.append({"title": "Generate a session report", "action_type": "generate_report",
+        actions.append({"title": "Generate a session report", "action_type": "generate_session_report",
                         "reason": "Summarize evidence and findings collected so far.",
                         "confidence": "medium", "requires_confirmation": True, "source_run_ids": []})
     return open_q, actions
@@ -212,7 +212,11 @@ def build(conn: sqlite3.Connection, session_id: str) -> dict[str, Any]:
 
     facts = facts[:MAX_FACTS]
     findings = findings[:MAX_FINDINGS]
-    open_q, actions = _gaps(have_types, runs)
+    open_q, raw_actions = _gaps(have_types, runs)
+    # Normalize to the canonical, sanitized proposal shape (drops anything not
+    # on the action_type allowlist; forces requires_confirmation).
+    from . import next_actions
+    actions = [p for a in raw_actions if (p := next_actions.normalize_proposal(a))]
     limitations = [
         "Summary is deterministic and derived only from sanitized run artifacts (no raw logs/rows, no secrets).",
         "Findings reflect threshold/rule-based analysis, not the full dataset.",
