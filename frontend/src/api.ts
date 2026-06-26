@@ -3,11 +3,13 @@ import type {
   AccountProfile,
   EvidenceImport,
   EvidenceImportRunResult,
+  ErrorInputKind,
   NextAction,
   SessionDetail,
   SessionMessage,
   SessionSummaryData,
   SessionSummaryRow,
+  TriageCase,
   CloudProvider,
   CredentialsTestResult,
   Dataset,
@@ -261,6 +263,19 @@ export const prepareSessionAction = (id: string, proposal: NextAction) =>
     method: "POST",
     body: JSON.stringify({ proposal }),
   });
+
+// Error triage (Phase 18): deterministic parse + playbooks (+ optional agent).
+export interface ErrorTriageInput {
+  content: string;
+  input_kind: ErrorInputKind;
+  session_id?: string;
+  provider_id?: string;
+  bucket?: string;
+  planner_mode?: "deterministic" | "agent";
+}
+
+export const submitErrorTriage = (body: ErrorTriageInput) =>
+  request<TriageCase>("/error-triage", { method: "POST", body: JSON.stringify(body) });
 
 export const runEventsUrl = (id: string) => `${sidecarBaseUrl()}/runs/${id}/events`;
 

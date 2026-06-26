@@ -123,7 +123,10 @@ def get_session_report(session_id: str, conn: sqlite3.Connection = Depends(get_c
     if row is None:
         raise HTTPException(status_code=404, detail="session not found")
     summary = repo.get_summary(conn, session_id) or summary_builder.refresh(conn, session_id)
-    content = session_report.render_session_report(dict(row), summary, repo.list_runs(conn, session_id))
+    from ..repositories import error_triage as triage_repo
+    content = session_report.render_session_report(
+        dict(row), summary, repo.list_runs(conn, session_id),
+        triage_cases=triage_repo.list_for_session(conn, session_id))
     return {"session_id": session_id, "format": "markdown", "content": content}
 
 

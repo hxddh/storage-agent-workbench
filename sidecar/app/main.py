@@ -28,6 +28,7 @@ from .db import init_db
 from .routers import (
     cloud_providers,
     datasets,
+    error_triage,
     evidence_imports,
     health,
     model_providers,
@@ -80,3 +81,4 @@ app.include_router(reports.router)
 app.include_router(datasets.router)
 app.include_router(evidence_imports.router)
 app.include_router(sessions.router)
+app.include_router(error_triage.router)

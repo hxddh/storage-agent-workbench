@@ -152,7 +152,9 @@ def _render_md(session: dict[str, Any], facts, findings, open_q, actions, limita
             out.append(f"- {text}")
         return "\n".join(out)
 
-    fact_lines = "\n".join(f"- {f['text']} _(run {f['source_run_id'][:8]}, {f['confidence']})_" for f in facts) or "- —"
+    fact_lines = "\n".join(
+        f"- {f['text']} _(run {str(f.get('source_run_id') or 'n/a')[:8]}, {f.get('confidence', 'medium')})_"
+        for f in facts) or "- —"
     finding_lines = "\n".join(
         f"- **[{f['severity']}]** {f['title']} — {f['interpretation']} _(run {str(f.get('source_run_id') or '')[:8]}, {f['confidence']})_"
         for f in findings) or "- —"
@@ -209,6 +211,24 @@ def build(conn: sqlite3.Connection, session_id: str) -> dict[str, Any]:
             af, ar = _account_facts(conn, r["run_id"])
             facts.extend(af)
             evidence_refs.extend(ar)
+
+    # Fold in recent error-triage cases (Phase 18) — sanitized, bounded.
+    from ..repositories import error_triage as triage_repo
+    for c in triage_repo.list_for_session(conn, session_id)[:10]:
+        facts.append({"text": f"Error triage: {redact_text(str(c.get('summary', '')))[:300]}",
+                      "source_run_id": None, "kind": "fact", "confidence": "medium"})
+        evidence_refs.append({"source_type": "error_triage_case", "source_id": c["id"],
+                              "source_run_id": None, "summary": {"input_kind": c.get("input_kind")}})
+        for cc in (c.get("candidate_causes") or [])[:2]:
+            checks = "; ".join((cc.get("next_checks") or [])[:3])
+            interp = redact_text(str(cc.get("interpretation", "")))[:400]
+            if checks:
+                interp = f"{interp} | Next checks: {checks}"
+            findings.append({"source_run_id": None, "category": "triage",
+                             "severity": cc.get("severity", "info"),
+                             "confidence": cc.get("confidence", "medium"), "kind": "inference",
+                             "title": redact_text(str(cc.get("title", "")))[:300],
+                             "interpretation": interp, "evidence": {"case_id": c["id"]}})
 
     facts = facts[:MAX_FACTS]
     findings = findings[:MAX_FINDINGS]

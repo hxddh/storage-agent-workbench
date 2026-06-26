@@ -15,6 +15,7 @@ import type { CloudProvider, NextAction, RunType, SessionDetail, SessionSummaryR
 import { Button, Field, Select, TextInput } from "../components/ui";
 import { RunDetail } from "../components/RunDetail";
 import { EvidenceImportDialog } from "../components/EvidenceImportDialog";
+import { ErrorTriagePanel } from "../components/ErrorTriagePanel";
 import { NewRunForm } from "./RunsView";
 
 type RunPrefill = { run_type?: RunType; provider_id?: string; bucket?: string };
@@ -378,6 +379,14 @@ function SessionDetailView({
             ))}
             {(detail?.runs ?? []).length === 0 && <li className="text-xs text-gray-600">No runs yet. Start one in this session.</li>}
           </ul>
+
+          <ErrorTriagePanel
+            sessionId={sessionId}
+            providerId={detail?.provider_id}
+            primaryBucket={detail?.primary_bucket}
+            onPrepareProposal={prepareAndOpen}
+            onCaseCreated={reload}
+          />
 
           <h2 className="mb-2 text-sm font-semibold text-gray-200">Ask about this session</h2>
           {error && <p className="mb-2 text-xs text-red-400">{error}</p>}

@@ -393,6 +393,24 @@ flow ("proposed next step — review before starting"). No hidden auto-run, no
 auto-confirm, no dangerous automation, and still not a task board / kanban /
 ticketing system. New tests: `sidecar/tests/test_session_actions.py`.
 
+## Phase 18 status
+
+Phase 18 (`phase/18-error-triage-assistant`) adds a session-centered **error
+triage assistant** for S3 / object-storage / S3-compatible errors — not a static
+FAQ or error-code dictionary. Paste an S3 error code, HTTP response, SDK stack
+trace, or CLI output; the sidecar **redacts it first**, a **deterministic
+parser** extracts signals (error code / HTTP status / region / endpoint /
+operation / flags), and **rule-based playbooks** produce candidate root causes,
+confidence, evidence to check, and safe next checks. An optional
+**interpretation-only Agent** explains the *sanitized* triage context (no raw
+blob, no secrets, no tools, chain-of-thought-stripped; clean failure without a
+model key — deterministic triage still works). Triage performs **no S3 call**,
+creates no run, downloads no evidence, and mutates nothing; its suggested next
+actions are **Phase 17 proposals** routed through review → prepare → confirm.
+Cases bind to the session, refresh its summary, and appear in the session
+report; the UI adds an `ErrorTriagePanel` inside Session detail. New tests:
+`sidecar/tests/test_error_triage.py`.
+
 Not implemented yet:
 
 - One-click execution of proposals (the user still confirms/starts each flow)

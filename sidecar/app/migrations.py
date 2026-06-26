@@ -399,6 +399,49 @@ CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages(sess
 CREATE INDEX IF NOT EXISTS idx_runs_session             ON runs(session_id);
 """
 
+# --- Migration 009: error triage assistant (Phase 18) ------------------------
+#
+# Session-centered S3 / object-storage error triage. A case stores ONLY the
+# redacted pasted input and sanitized parsed signals + findings — never AK/SK/
+# session token/Authorization/cookies/presigned URL/model key, never the full
+# raw sensitive log, and never chain-of-thought. This is NOT a ticketing system:
+# no assignee, status board, due date, or workflow state machine.
+
+_M009 = """
+CREATE TABLE IF NOT EXISTS error_triage_cases (
+    id                 TEXT PRIMARY KEY,
+    session_id         TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+    provider_id        TEXT,
+    bucket             TEXT,
+    run_id             TEXT,
+    input_kind         TEXT NOT NULL,
+    raw_input_redacted TEXT,
+    parsed_json        TEXT,
+    summary            TEXT,
+    planner_mode       TEXT NOT NULL DEFAULT 'deterministic',
+    status             TEXT NOT NULL DEFAULT 'parsed',
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS error_triage_findings (
+    id              TEXT PRIMARY KEY,
+    case_id         TEXT REFERENCES error_triage_cases(id) ON DELETE CASCADE,
+    category        TEXT,
+    severity        TEXT,
+    confidence      TEXT,
+    title           TEXT,
+    evidence_json   TEXT,
+    interpretation  TEXT,
+    next_checks_json TEXT,
+    source_refs_json TEXT,
+    created_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_triage_cases_session ON error_triage_cases(session_id);
+CREATE INDEX IF NOT EXISTS idx_triage_findings_case ON error_triage_findings(case_id);
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -409,6 +452,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (6, "account_discovery", _M006),
     (7, "managed_evidence_import", _M007),
     (8, "session_workspace_context", _M008),
+    (9, "error_triage", _M009),
 ]
 
 

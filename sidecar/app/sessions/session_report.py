@@ -54,10 +54,28 @@ def _timeline_md(runs: list[dict[str, Any]]) -> str:
     )
 
 
+def _triage_md(cases: list[dict[str, Any]]) -> str:
+    if not cases:
+        return "- No error-triage cases."
+    lines: list[str] = []
+    for c in cases:
+        parsed = c.get("parsed", {}) or {}
+        code = parsed.get("error_code") or "unrecognized"
+        http = parsed.get("http_status")
+        head = f"{code}" + (f" / HTTP {http}" if http else "")
+        lines.append(f"- **{head}** — {c.get('summary', '')}")
+        for cc in (c.get("candidate_causes") or [])[:3]:
+            checks = "; ".join((cc.get("next_checks") or [])[:3])
+            lines.append(f"    - _{cc.get('confidence')}_ {cc.get('title')}"
+                         + (f" — next checks: {checks}" if checks else ""))
+    return "\n".join(lines)
+
+
 def render_session_report(
     session: dict[str, Any],
     summary: dict[str, Any],
     runs: list[dict[str, Any]],
+    triage_cases: list[dict[str, Any]] | None = None,
 ) -> str:
     facts = summary.get("known_facts", []) or []
     findings = summary.get("findings", []) or []
@@ -91,6 +109,10 @@ def render_session_report(
 ## Key findings
 
 {_findings_md(findings)}
+
+## Error triage
+
+{_triage_md(triage_cases or [])}
 
 ## Confidence / limitations
 
