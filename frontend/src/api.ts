@@ -1,6 +1,8 @@
 import { sidecarBaseUrl } from "./config";
 import type {
   AccountProfile,
+  EvidenceImport,
+  EvidenceImportRunResult,
   CloudProvider,
   CredentialsTestResult,
   Dataset,
@@ -159,6 +161,33 @@ export const getReport = (runId: string) => request<ReportOut>(`/reports/${runId
 
 export const getAccountProfile = (runId: string) =>
   request<AccountProfile>(`/runs/${runId}/account-profile`);
+
+// --- Managed evidence import (Phase 15) ---
+
+export interface EvidenceImportPlanInput {
+  account_run_id: string;
+  bucket_name: string;
+  source_type: "inventory" | "access_log";
+  max_files?: number;
+  max_bytes?: number;
+  time_range_start?: string;
+  time_range_end?: string;
+}
+
+export const planEvidenceImport = (body: EvidenceImportPlanInput) =>
+  request<EvidenceImport>("/evidence-imports/plan", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const getEvidenceImport = (id: string) =>
+  request<EvidenceImport>(`/evidence-imports/${id}`);
+
+export const confirmEvidenceImport = (id: string) =>
+  request<EvidenceImport>(`/evidence-imports/${id}/confirm`, { method: "POST" });
+
+export const runEvidenceImport = (id: string) =>
+  request<EvidenceImportRunResult>(`/evidence-imports/${id}/run`, { method: "POST" });
 
 export const runEventsUrl = (id: string) => `${sidecarBaseUrl()}/runs/${id}/events`;
 

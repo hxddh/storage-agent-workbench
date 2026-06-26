@@ -163,6 +163,42 @@ rejected with a clean 422 and no bucket list / config is ever sent to an LLM.
   targets pass through the redaction pipeline; reports never contain secrets,
   signatures, raw object listings, raw inventory rows, or raw access-log content.
 
+## Managed evidence import (Phase 15)
+
+Pulling inventory / access-log evidence into the analysis path is bounded and
+confirmation-gated.
+
+- **Discovered sources only.** Imports read only the inventory *destination*
+  (bucket/prefix) or server-access-logging *target* (bucket/prefix) that
+  account_discovery already found and persisted. The caller cannot supply an
+  arbitrary bucket or object key; the business source bucket is never listed.
+- **No business object scan / body download.** The only listing is a bounded
+  `list_objects_v2` over the evidence destination prefix; the only `get_object`
+  calls are for evidence files in the confirmed plan (manifest, inventory data
+  files, log objects). No business object body is ever downloaded, no recursive
+  copy / sync, no full bucket scan.
+- **Bounded.** Selection is capped by `max_files` (default 1000, hard cap 5000)
+  and `max_bytes` (default 1 GiB, hard cap 5 GiB). Access-log import REQUIRES a
+  time range. The byte/file budget is enforced again at download (a file larger
+  than the remaining budget aborts the import as failed).
+- **Explicit confirmation.** A plan downloads nothing. Download happens only
+  after `confirm`, which is recorded in `approval_events` (decision=approved)
+  and `audit_logs`. There is no hidden auto-confirm; a zero-file or over-limit
+  plan is refused.
+- **No mutation.** No S3 put/delete/create, no auto-enable of inventory/logging,
+  no lifecycle/policy/ACL/encryption/replication change.
+- **Secrets & storage.** AK/SK/session token/model key never enter SQLite, logs,
+  reports, UI, or any LLM prompt. Evidence files download to the app data dir
+  (`data/runs/{id}/raw/`), never the install dir; raw file content never appears
+  in reports (only redacted aggregates from the existing analyzers). The two
+  evidence-import tables store redaction-passed bucket/prefix/key/warnings only.
+- **Reuse.** Downloaded files feed the existing deterministic
+  `inventory_analysis` / `access_log_analysis` importers + analyzers; the import
+  is deterministic (no LLM, no agent in this phase).
+- **Support gaps.** ORC inventory is `detected_but_not_supported`; full inventory
+  manifests with unusual structures degrade to a clean limitation rather than a
+  crash. CloudTrail / Storage Lens / provider access logs remain unimplemented.
+
 ## Packaging (Phase 08)
 
 - The application bundle contains code and library data only. It must never

@@ -253,3 +253,30 @@ Expected later:
   user-controlled subprocess; no arbitrary boto3 or SQL tool exposed to the LLM;
   no release/signing/auto-update changes; no macOS x86/universal; Phase 15 not
   started.
+
+## Phase 15 acceptance (managed evidence import)
+
+- Branch `phase/15-managed-evidence-import` from latest main.
+- Inventory import plan implemented (manifest-preferred, bounded prefix-listing
+  fallback, ORC detected_but_not_supported); access-log import plan implemented
+  (time range required, bounded listing of the logging target prefix).
+- Explicit confirmation required before any download; recorded in
+  approval_events + audit_logs; no hidden auto-confirm; zero-file/over-limit
+  plans refused.
+- Evidence download uses only the confirmed files; `max_files` and `max_bytes`
+  respected (and re-enforced at download — overflow aborts as failed).
+- Imports read only the DISCOVERED inventory destination / logging target — the
+  business source bucket is never listed, no business object body is downloaded,
+  no recursive copy/sync, no full object scan, no S3 mutation.
+- Downloaded inventory feeds the existing inventory_analysis; downloaded logs
+  feed the existing access_log_analysis (reused importers/analyzers, dataset
+  name = managed_evidence_import). Reports carry no raw log content and no
+  secrets; evidence files land in the app data dir, not the install dir.
+- Frontend supports the plan → confirm → import flow from the account profile
+  bucket table and navigates to the resulting analysis run.
+- Sidecar tests pass (178); frontend build + cargo check pass; guardrail grep
+  passes.
+- No Vercel SDK / Next.js; no MCP runtime / multi-agent / generic shell /
+  user-controlled subprocess; no arbitrary boto3 or SQL tool exposed to the LLM;
+  no release/signing/auto-update changes; no macOS x86/universal; Phase 16 not
+  started.

@@ -155,6 +155,41 @@ read-only APIs:
   list or config JSON is ever sent to an LLM. Agent account-level analysis is a
   future phase.
 
+## Managed evidence import (Phase 15)
+
+Connects account_discovery (Phase 14) to the Phase 05 DuckDB analysis path,
+under a bounded, confirmation-gated flow:
+
+    discover inventory/logging source → plan → (explicit) confirm → run
+    (download evidence files only) → existing inventory_analysis /
+    access_log_analysis.
+
+- **Endpoints** (`routers/evidence_imports.py`): `POST /evidence-imports/plan`,
+  `GET /evidence-imports/{id}`, `GET /evidence-imports/{id}/files`,
+  `POST /evidence-imports/{id}/confirm`, `POST /evidence-imports/{id}/run`.
+- **Source validation:** a plan request names an account_discovery run + bucket
+  + source type; the server resolves the *discovered* evidence destination from
+  the persisted Phase 14 evidence source (inventory destination bucket/prefix or
+  server-access-logging target bucket/prefix). The caller cannot point the
+  import at an arbitrary bucket/key.
+- **Planning** (`evidence/managed_import.py`): inventory planning prefers a
+  `manifest.json` (parses `files`, `fileFormat`, `fileSchema`) and falls back to
+  a bounded prefix listing of the destination only; ORC is
+  `detected_but_not_supported` (CSV/Parquet supported). Access-log planning
+  requires a time range and does a bounded listing of the logging target prefix,
+  filtering by LastModified. Both bound selection by `max_files` (default 1000,
+  hard cap 5000) and `max_bytes` (default 1 GiB, hard cap 5 GiB).
+- **Confirmation:** nothing downloads until `confirm`, which records an
+  `approval_events` row + audit log. `run` downloads ONLY the confirmed evidence
+  files (re-enforcing the byte/file budget via `get_object`), combines them into
+  a single local file under the new analysis run's data dir, registers a dataset
+  (`name = managed_evidence_import`), and hands off to the existing deterministic
+  executor. No business bucket is listed, no business object body is downloaded,
+  nothing is mutated.
+- **Persistence** (`repositories/evidence_imports.py`, migration 007): tables
+  `evidence_imports` + `evidence_import_files`, redaction-passed (bucket/prefix/
+  key/warnings) — never secrets.
+
 ## Agent planner modes
 
 Runs carry a `planner_mode` (`deterministic` by default, or `agent`). Two
