@@ -17,12 +17,14 @@ from .. import run_service
 from ..db import get_conn
 from ..events import bus, sse_stream
 from ..models.schemas import (
+    AccountProfileOut,
     MessageCreate,
     RunCreate,
     RunCreated,
     RunDetail,
     RunSummary,
 )
+from ..repositories import account_discovery as account_repo
 from ..repositories import runs as repo
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -34,9 +36,14 @@ def list_runs(conn: sqlite3.Connection = Depends(get_conn)):
 
 
 # Run types that actually execute (vs. placeholders).
-_EXECUTABLE = {"diagnostic", "access_log_analysis", "inventory_analysis", "bucket_config_review"}
+_EXECUTABLE = {
+    "diagnostic", "access_log_analysis", "inventory_analysis",
+    "bucket_config_review", "account_discovery",
+}
 # Run types that need a provider + bucket (vs. file-upload analysis runs).
 _NEEDS_BUCKET = {"diagnostic", "bucket_config_review"}
+# Run types that need a provider but operate at the account level (no bucket).
+_NEEDS_PROVIDER_ONLY = {"account_discovery"}
 # Run types where the agent planner is wired up: diagnostic + config review use
 # the tool-calling planner (Phase 07); the dataset-analysis types use the
 # interpretation-only narrator over deterministic aggregates (Phase 13).
@@ -70,6 +77,18 @@ def create_run(body: RunCreate, conn: sqlite3.Connection = Depends(get_conn)):
             )
         run_id = repo.create(conn, body, status="pending")
         bus.create(run_id)
+    elif body.run_type in _NEEDS_PROVIDER_ONLY:
+        # account_discovery enumerates the whole account; it needs a provider but
+        # no bucket. user_prompt is optional (a default is supplied).
+        if not body.provider_id:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{body.run_type} run requires: provider_id",
+            )
+        if not body.user_prompt:
+            body = body.model_copy(update={"user_prompt": "Discover account-level buckets and evidence sources."})
+        run_id = repo.create(conn, body, status="pending")
+        bus.create(run_id)
     elif body.run_type in _EXECUTABLE:
         # Analysis runs need a user_prompt; the dataset is uploaded separately.
         if not body.user_prompt:
@@ -98,6 +117,15 @@ def get_run(run_id: str, conn: sqlite3.Connection = Depends(get_conn)):
     if detail is None:
         raise HTTPException(status_code=404, detail="run not found")
     return detail
+
+
+@router.get("/{run_id}/account-profile", response_model=AccountProfileOut)
+def get_account_profile(run_id: str, conn: sqlite3.Connection = Depends(get_conn)):
+    """Structured account-discovery result (bucket table + evidence sources)."""
+    profile = account_repo.get_profile(conn, run_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="no account profile for this run")
+    return AccountProfileOut(**profile)
 
 
 @router.post("/{run_id}/message")

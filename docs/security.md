@@ -131,6 +131,38 @@ deterministic results, it does not produce them.
   **Agent Interpretation** section, so every agent claim is traceable to a
   deterministic metric or finding shown above it.
 
+## Account discovery (Phase 14)
+
+The `account_discovery` run type enumerates an account's buckets and their
+configuration from read-only APIs only. It is deterministic; Agent mode is
+rejected with a clean 422 and no bucket list / config is ever sent to an LLM.
+
+- **AK/SK/session tokens stay in the OS keyring**, resolved at call time inside
+  the boto3 client factory; they never enter SQLite, logs, reports, UI state, or
+  any LLM prompt.
+- **`list_buckets` is read-only ListBuckets.** It does not call ListObjectsV2,
+  does not scan objects, and does not download object bodies. Object-level
+  listing/`get_object` are never invoked by this run type.
+- **Bucket config snapshot** uses only read-only `get_*` / `list_*` config APIs
+  (no put/delete/create/update). No logging or inventory is auto-enabled; no
+  lifecycle / policy / ACL / encryption / replication is auto-modified or
+  auto-remediated.
+- **Evidence-source discovery only discovers** whether inventory / server access
+  logging are *configured* (plus destination metadata). It never pulls the full
+  inventory report or access log — that is a future phase / manual operator
+  action. Reserved sources (CloudTrail / Storage Lens / provider access logs)
+  are surfaced as `not_implemented`, never faked.
+- **Bounded scan:** processing is capped by `max_buckets` (default 100, hard cap
+  500) with optional include/exclude globs; truncation is reported, not silent.
+- **Capability vs permission:** S3-compatible gaps are `provider_unsupported`;
+  permission gaps are `access_denied` — distinct, and neither crashes the run
+  (per-bucket failures are isolated).
+- **Persistence is sanitized:** the four account-discovery tables store only
+  redaction-passed JSON — never AK/SK/session token/Authorization/cookies/
+  presigned-URL/model key. Bucket names, inventory destinations, and logging
+  targets pass through the redaction pipeline; reports never contain secrets,
+  signatures, raw object listings, raw inventory rows, or raw access-log content.
+
 ## Packaging (Phase 08)
 
 - The application bundle contains code and library data only. It must never

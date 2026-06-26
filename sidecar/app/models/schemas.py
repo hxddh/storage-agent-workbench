@@ -170,6 +170,7 @@ RunType = Literal[
     "access_log_analysis",
     "inventory_analysis",
     "bucket_config_review",
+    "account_discovery",
     "optimization_report",
 ]
 
@@ -184,6 +185,10 @@ class RunCreate(BaseModel):
     prefix: str | None = None
     user_prompt: str | None = None
     planner_mode: PlannerMode = "deterministic"
+    # account_discovery options (bounded; never trigger object scans).
+    max_buckets: int | None = Field(default=None, ge=1, le=500)
+    include_pattern: str | None = None
+    exclude_pattern: str | None = None
 
 
 class RunCreated(BaseModel):
@@ -279,3 +284,51 @@ class DatasetUploadResponse(BaseModel):
     filename: str
     status: str
     row_count: int | None = None
+
+
+# --- Account discovery (Phase 14) -------------------------------------------
+
+
+class EvidenceSourceOut(BaseModel):
+    model_config = {"extra": "ignore"}
+    source_type: str
+    status: str
+    configured: bool | None = None
+    detail: dict = Field(default_factory=dict)
+
+
+class AccountBucketOut(BaseModel):
+    model_config = {"extra": "ignore"}
+    bucket_name: str
+    region: str | None = None
+    access_status: str
+    head_bucket_status: str | None = None
+    versioning_status: str | None = None
+    versioning_enabled: bool | None = None
+    encryption_status: str | None = None
+    lifecycle_status: str | None = None
+    logging_status: str | None = None
+    logging_enabled: bool | None = None
+    inventory_status: str | None = None
+    replication_status: str | None = None
+    policy_status: str | None = None
+    public_access_block_status: str | None = None
+    tagging_status: str | None = None
+    provider_unsupported_items: list[str] = Field(default_factory=list)
+    access_denied_items: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    evidence_sources: list[EvidenceSourceOut] = Field(default_factory=list)
+
+
+class AccountProfileOut(BaseModel):
+    model_config = {"extra": "ignore"}
+    run_id: str
+    provider_id: str | None = None
+    bucket_count: int = 0
+    visible_count: int = 0
+    processed_count: int = 0
+    truncated: bool = False
+    list_status: str = "error"
+    summary: dict = Field(default_factory=dict)
+    buckets: list[AccountBucketOut] = Field(default_factory=list)
+    created_at: str | None = None

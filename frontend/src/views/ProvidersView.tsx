@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import {
   createCloudProvider,
   createModelProvider,
+  createRun,
   deleteCloudProvider,
   deleteModelProvider,
   listCloudProviders,
   listModelProviders,
+  postRunMessage,
   testModelProvider,
   updateCloudProvider,
   updateModelProvider,
@@ -25,7 +27,7 @@ const parseList = (s: string) =>
 
 type Tab = "model" | "cloud";
 
-export function ProvidersView() {
+export function ProvidersView({ onRunCreated }: { onRunCreated?: (runId: string) => void } = {}) {
   const [tab, setTab] = useState<Tab>("model");
   return (
     <div className="flex flex-1 flex-col overflow-auto bg-canvas">
@@ -42,7 +44,7 @@ export function ProvidersView() {
         </div>
       </header>
       <div className="flex-1 p-8">
-        {tab === "model" ? <ModelProvidersPanel /> : <CloudProvidersPanel />}
+        {tab === "model" ? <ModelProvidersPanel /> : <CloudProvidersPanel onRunCreated={onRunCreated} />}
       </div>
     </div>
   );
@@ -228,13 +230,29 @@ const emptyCloudForm: CloudForm = {
   allowed_prefixes: "",
 };
 
-function CloudProvidersPanel() {
+function CloudProvidersPanel({ onRunCreated }: { onRunCreated?: (runId: string) => void }) {
   const [items, setItems] = useState<CloudProvider[]>([]);
   const [editing, setEditing] = useState<CloudProvider | null>(null);
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<CloudForm>(emptyCloudForm);
   const [error, setError] = useState<string | null>(null);
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
+
+  const discoverAccount = async (p: CloudProvider) => {
+    setError(null);
+    try {
+      const created = await createRun({
+        run_type: "account_discovery",
+        provider_id: p.id,
+        user_prompt: "Discover account-level buckets and evidence sources.",
+        title: `Account discovery: ${p.name}`,
+      });
+      await postRunMessage(created.run_id, "discover");
+      onRunCreated?.(created.run_id);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
 
   const toggleTesting = (id: string) =>
     setTestingIds((prev) => {
@@ -399,6 +417,7 @@ function CloudProvidersPanel() {
                 <Button variant={testingIds.has(p.id) ? "primary" : "default"} onClick={() => toggleTesting(p.id)}>
                   Test Connection
                 </Button>
+                <Button onClick={() => discoverAccount(p)}>Discover account</Button>
                 <Button onClick={() => openEdit(p)}>Edit</Button>
                 <Button variant="danger" onClick={() => remove(p)}>Delete</Button>
               </div>

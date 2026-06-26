@@ -13,6 +13,7 @@ from . import db
 from .events import bus
 from .repositories import runs as runs_repo
 from .runs.access_log_run import execute_access_log_run
+from .runs.account_discovery_run import execute_account_discovery_run
 from .runs.config_review_run import execute_config_review_run
 from .runs.diagnostic import execute_diagnostic_run
 from .runs.inventory_run import execute_inventory_run
@@ -22,6 +23,7 @@ _EXECUTORS = {
     "access_log_analysis": execute_access_log_run,
     "inventory_analysis": execute_inventory_run,
     "bucket_config_review": execute_config_review_run,
+    "account_discovery": execute_account_discovery_run,
 }
 
 # Dataset-analysis run types handle Agent mode INSIDE their deterministic

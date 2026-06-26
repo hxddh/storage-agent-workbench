@@ -36,6 +36,13 @@ _AUTH_FAIL_CODES = {
     "UnrecognizedClientException",
 }
 _UNSUPPORTED_CODES = {"NotImplemented", "MethodNotAllowed"}
+_DENIED_CODES = {"AccessDenied", "Forbidden", "AllAccessDisabled", "UnauthorizedAccess"}
+
+# Read status vocabulary shared with config_tools (Phase 14 account discovery).
+AVAILABLE = "available"
+PROVIDER_UNSUPPORTED = "provider_unsupported"
+ACCESS_DENIED = "access_denied"
+ERROR = "error"
 
 
 # --- Error helpers ----------------------------------------------------------
@@ -103,6 +110,67 @@ def test_credentials(conn: sqlite3.Connection, provider_id: str) -> dict[str, An
         return {**base, **fields, "success": False}
     except Exception as exc:  # noqa: BLE001 - sanitized below
         return {**base, **_generic_error_fields(exc), "success": False}
+
+
+# --- 1b. list_buckets (account-level, read-only) ----------------------------
+
+
+def list_buckets(conn: sqlite3.Connection, provider_id: str) -> dict[str, Any]:
+    """Enumerate the buckets visible to the credentials (read-only ListBuckets).
+
+    This is the ONLY listing performed — it never calls ListObjectsV2 and never
+    touches object bodies. Bucket names pass through redaction defensively
+    (normal names are unchanged). Capability/permission gaps are surfaced as
+    ``provider_unsupported`` / ``access_denied`` rather than crashing the run.
+    """
+    base = {
+        "success": False,
+        "status": ERROR,
+        "provider_id": provider_id,
+        "bucket_count": 0,
+        "buckets": [],
+        "warnings": [],
+        "provider_capabilities": {},
+        "error_code": None,
+        "error_message_sanitized": None,
+    }
+    try:
+        client = client_factory.build_s3_client(conn, provider_id)
+        resp = client.list_buckets()
+        buckets = []
+        for b in resp.get("Buckets", []) or []:
+            cd = b.get("CreationDate")
+            buckets.append({
+                "name": redact_text(str(b.get("Name") or "")),
+                "creation_date": cd.isoformat() if hasattr(cd, "isoformat") else cd,
+                "status": "visible",
+            })
+        return {
+            **base,
+            "success": True,
+            "status": AVAILABLE,
+            "bucket_count": len(buckets),
+            "buckets": buckets,
+            "provider_capabilities": {"list_buckets": AVAILABLE},
+        }
+    except ClientError as exc:
+        fields = _client_error_fields(exc)
+        code = fields["error_code"]
+        http = fields["status_code"]
+        if code in _UNSUPPORTED_CODES or http == 501:
+            status = PROVIDER_UNSUPPORTED
+        elif code in _DENIED_CODES or http == 403:
+            status = ACCESS_DENIED
+        else:
+            status = ERROR
+        return {
+            **base, **fields, "success": False, "status": status,
+            "warnings": [f"ListBuckets {status}"],
+            "provider_capabilities": {"list_buckets": status},
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc), "success": False, "status": ERROR,
+                "warnings": ["ListBuckets error"]}
 
 
 # --- 2. head_bucket ---------------------------------------------------------

@@ -11,14 +11,20 @@ import { useSidecarHealth } from "./hooks/useSidecarHealth";
 export default function App() {
   const { status, service, slow } = useSidecarHealth();
   const [active, setActive] = useState<NavItem>("Runs");
+  const [openRunId, setOpenRunId] = useState<string | null>(null);
+
+  const openRun = (runId: string) => {
+    setOpenRunId(runId);
+    setActive("Runs");
+  };
 
   return (
     <div className="flex h-full w-full bg-canvas text-gray-200">
       <Sidebar status={status} service={service} slow={slow} active={active} onSelect={setActive} />
       {active === "Providers" ? (
-        <ProvidersView />
+        <ProvidersView onRunCreated={openRun} />
       ) : active === "Runs" ? (
-        <RunsView />
+        <RunsView initialRunId={openRunId} onConsumed={() => setOpenRunId(null)} />
       ) : active === "Reports" ? (
         <ReportsView />
       ) : active === "Datasets" ? (

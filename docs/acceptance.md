@@ -224,3 +224,32 @@ Expected later:
   user-controlled subprocess; no destructive/mutating S3; no arbitrary boto3 or
   SQL tool exposed to the LLM; no release/signing/auto-update changes; no macOS
   x86/universal; Phase 14 not started.
+
+## Phase 14 acceptance (cloud account discovery)
+
+- Branch `phase/14-cloud-account-discovery` from latest main.
+- `list_buckets` read-only tool implemented (keyring creds, sanitized output,
+  provider_unsupported/access_denied/error statuses, tool_calls + audit_logs).
+- `account_discovery` run type implemented: test_credentials → list_buckets →
+  per-bucket head_bucket + config snapshot + evidence discovery → profile +
+  report. Enumerates visible buckets; respects `max_buckets` (default 100, hard
+  cap 500) with include/exclude globs; per-bucket failures are isolated.
+- Bucket config snapshot collected per bucket with clear status enums.
+- Inventory and server-access-logging evidence-source discovery implemented
+  (discover-only, never pulls full inventory/log); future sources marked
+  `not_implemented`.
+- Account profile report generated; frontend supports the account_discovery run,
+  a "Discover account" entry on cloud providers, and a filterable bucket table
+  with evidence-source status.
+- No full object scan (no ListObjectsV2), no object body download, no mutating
+  S3 API, no auto-enable of logging/inventory, no auto lifecycle/policy/ACL/
+  encryption/replication change.
+- No secret leak to SQLite/log/report/UI/LLM (AK/SK/session token/model key);
+  provider_unsupported vs access_denied handled gracefully.
+- account_discovery is deterministic only; Agent mode returns a clean 422.
+- Sidecar tests pass (159); frontend build + cargo check pass; guardrail grep
+  passes.
+- No Vercel SDK / Next.js; no MCP runtime / multi-agent / generic shell /
+  user-controlled subprocess; no arbitrary boto3 or SQL tool exposed to the LLM;
+  no release/signing/auto-update changes; no macOS x86/universal; Phase 15 not
+  started.
