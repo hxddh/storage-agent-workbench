@@ -254,3 +254,85 @@ export interface EvidenceImportRunResult {
   downloaded_file_count: number;
   downloaded_total_bytes: number;
 }
+
+// --- Sessions (Phase 16) ---
+
+export interface SessionSummaryRow {
+  id: string;
+  title: string;
+  goal: string | null;
+  provider_id: string | null;
+  primary_bucket: string | null;
+  status: string;
+  run_count: number;
+  finding_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionRunLink {
+  run_id: string;
+  run_type: string;
+  role: string | null;
+  status: string;
+  title: string | null;
+  final_summary: string | null;
+  created_at: string;
+}
+
+export interface SessionFinding {
+  id: string;
+  source_run_id: string | null;
+  category: string | null;
+  severity: string | null;
+  confidence: string | null;
+  kind: string | null;
+  title: string | null;
+  interpretation: string | null;
+  status: string;
+  created_at: string | null;
+}
+
+export interface NextAction {
+  title: string;
+  reason: string | null;
+  action_type: string;
+  requires_confirmation: boolean;
+  confidence: string;
+  source_run_ids: string[];
+}
+
+export interface SessionSummaryData {
+  session_id: string;
+  summary_md: string;
+  known_facts: Array<Record<string, unknown>>;
+  open_questions: string[];
+  next_actions: NextAction[];
+  findings: Array<Record<string, unknown>>;
+  limitations: string[];
+  updated_at: string | null;
+}
+
+export interface SessionMessage {
+  id: string;
+  role: string;
+  content: string | null;
+  referenced_run_ids: string[];
+  referenced_evidence_ids: string[];
+  created_at: string;
+}
+
+export interface SessionDetail {
+  id: string;
+  title: string;
+  goal: string | null;
+  provider_id: string | null;
+  primary_bucket: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  runs: SessionRunLink[];
+  findings: SessionFinding[];
+  summary: SessionSummaryData | null;
+  messages: SessionMessage[];
+}

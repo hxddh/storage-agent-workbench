@@ -315,6 +315,90 @@ CREATE INDEX IF NOT EXISTS idx_evidence_imports_run ON evidence_imports(account_
 CREATE INDEX IF NOT EXISTS idx_evidence_files_import ON evidence_import_files(import_id);
 """
 
+# --- Migration 008: session workspace context (Phase 16) ---------------------
+#
+# Session = persistent working context that links runs (auditable execution
+# units), evidence references, evidence-driven findings, a deterministic
+# summary, and a lightweight message thread. This is NOT a project-management /
+# kanban / ticketing system: there is no assignee, board, column, due date,
+# label, or multi-user/permission model. Every *_json / content column is
+# redaction-passed: never AK/SK/session token/Authorization/cookies/presigned
+# URL/model key, and never raw logs / raw inventory rows / chain-of-thought.
+
+_M008 = """
+ALTER TABLE runs ADD COLUMN session_id TEXT;
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id             TEXT PRIMARY KEY,
+    title          TEXT NOT NULL,
+    goal           TEXT,
+    provider_id    TEXT,
+    primary_bucket TEXT,
+    status         TEXT NOT NULL DEFAULT 'active',
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_runs (
+    id         TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    run_id     TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    role       TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_evidence_refs (
+    id            TEXT PRIMARY KEY,
+    session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    source_type   TEXT NOT NULL,
+    source_id     TEXT,
+    source_run_id TEXT,
+    summary_json  TEXT,
+    created_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_findings (
+    id             TEXT PRIMARY KEY,
+    session_id     TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    source_run_id  TEXT,
+    category       TEXT,
+    severity       TEXT,
+    confidence     TEXT,
+    kind           TEXT,
+    title          TEXT,
+    evidence_json  TEXT,
+    interpretation TEXT,
+    status         TEXT NOT NULL DEFAULT 'active',
+    created_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_messages (
+    id                    TEXT PRIMARY KEY,
+    session_id            TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    role                  TEXT NOT NULL,
+    content               TEXT,
+    referenced_run_ids    TEXT,
+    referenced_evidence_ids TEXT,
+    created_at            TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_summaries (
+    session_id        TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+    summary_md        TEXT,
+    known_facts_json  TEXT,
+    open_questions_json TEXT,
+    next_actions_json TEXT,
+    findings_json     TEXT,
+    limitations_json  TEXT,
+    updated_at        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_runs_session     ON session_runs(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_findings_session ON session_findings(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_runs_session             ON runs(session_id);
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -324,6 +408,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (5, "runs_add_planner_mode", _M005),
     (6, "account_discovery", _M006),
     (7, "managed_evidence_import", _M007),
+    (8, "session_workspace_context", _M008),
 ]
 
 

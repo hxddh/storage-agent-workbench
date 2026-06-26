@@ -352,8 +352,28 @@ imports without confirmation, and never mutates S3. AK/SK stay in the keyring;
 evidence lands in the app data dir; reports carry no raw content or secrets. New
 tests: `sidecar/tests/test_evidence_import.py`.
 
+## Phase 16 status
+
+Phase 16 (`phase/16-session-workspace-context`) reshapes the product into a
+**session-centered agentic workbench** (Codex/Claude-app-like), not a dashboard
+or project tracker. A **Session** is a persistent investigation context
+(`Goal → Evidence → Runs → Findings → Agent interpretation → Next actions →
+Report`). Runs can be created with or attached to a `session_id`; when a run
+finishes, the session's **deterministic, sanitized summary** is rebuilt from
+already-sanitized run artifacts (no raw logs/rows, no secrets, no LLM): known
+facts, findings (each tied to a source run, with confidence), open questions,
+and **next-action proposals** (never auto-executed). A session **assistant**
+answers questions over that summary only — interpretation-only, no tools, output
+redacted and chain-of-thought-stripped, clean failure if no model key. Sessions
+also produce a secret-free session report. The UI adds a lightweight **Sessions**
+workbench (goal, summary, run timeline, findings, next actions, message composer,
+report, "Start run in this session"). It is explicitly **not** a CMDB /
+monitoring wall / kanban / ticketing / PM / multi-user system. New tests:
+`sidecar/tests/test_sessions.py`.
+
 Not implemented yet:
 
+- Executable next actions (currently proposals only; the user runs them)
 - Agent-assisted account-level analysis (account_discovery is deterministic only)
 - ORC inventory import (CSV / Parquet supported; ORC detected_but_not_supported)
 - CloudTrail / Storage Lens / provider-access-log evidence sources

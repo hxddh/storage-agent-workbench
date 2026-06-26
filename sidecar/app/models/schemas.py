@@ -189,6 +189,8 @@ class RunCreate(BaseModel):
     max_buckets: int | None = Field(default=None, ge=1, le=500)
     include_pattern: str | None = None
     exclude_pattern: str | None = None
+    # Optional session this run belongs to (Phase 16).
+    session_id: str | None = None
 
 
 class RunCreated(BaseModel):
@@ -240,6 +242,8 @@ class RunDetail(BaseModel):
     user_prompt: str | None
     final_summary: str | None
     report_path: str | None
+    session_id: str | None = None
+    session_title: str | None = None
     created_at: str
     updated_at: str
     messages: list[MessageOut]
@@ -391,3 +395,110 @@ class EvidenceImportRunResult(BaseModel):
     analysis_run_id: str | None = None
     downloaded_file_count: int = 0
     downloaded_total_bytes: int = 0
+
+
+# --- Sessions (Phase 16) ----------------------------------------------------
+
+SessionStatus = Literal["active", "archived"]
+
+
+class SessionCreate(BaseModel):
+    title: str = Field(min_length=1)
+    goal: str | None = None
+    provider_id: str | None = None
+    primary_bucket: str | None = None
+
+
+class SessionUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1)
+    goal: str | None = None
+    provider_id: str | None = None
+    primary_bucket: str | None = None
+    status: SessionStatus | None = None
+
+
+class SessionRunLink(BaseModel):
+    run_id: str
+    run_type: str
+    role: str | None = None
+    status: str
+    title: str | None = None
+    final_summary: str | None = None
+    created_at: str
+
+
+class SessionFindingOut(BaseModel):
+    model_config = {"extra": "ignore"}
+    id: str
+    source_run_id: str | None = None
+    category: str | None = None
+    severity: str | None = None
+    confidence: str | None = None
+    kind: str | None = None
+    title: str | None = None
+    interpretation: str | None = None
+    status: str = "active"
+    created_at: str | None = None
+
+
+class NextAction(BaseModel):
+    model_config = {"extra": "ignore"}
+    title: str
+    reason: str | None = None
+    action_type: str
+    requires_confirmation: bool = True
+    confidence: str = "medium"
+    source_run_ids: list[str] = Field(default_factory=list)
+
+
+class SessionSummaryOut(BaseModel):
+    model_config = {"extra": "ignore"}
+    session_id: str
+    summary_md: str = ""
+    known_facts: list[dict] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    next_actions: list[NextAction] = Field(default_factory=list)
+    findings: list[dict] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    updated_at: str | None = None
+
+
+class SessionMessageCreate(BaseModel):
+    content: str = Field(min_length=1)
+
+
+class SessionMessageOut(BaseModel):
+    id: str
+    role: str
+    content: str | None
+    referenced_run_ids: list[str] = Field(default_factory=list)
+    referenced_evidence_ids: list[str] = Field(default_factory=list)
+    created_at: str
+
+
+class SessionSummary(BaseModel):
+    id: str
+    title: str
+    goal: str | None
+    provider_id: str | None
+    primary_bucket: str | None
+    status: str
+    run_count: int = 0
+    finding_count: int = 0
+    created_at: str
+    updated_at: str
+
+
+class SessionDetail(BaseModel):
+    id: str
+    title: str
+    goal: str | None
+    provider_id: str | None
+    primary_bucket: str | None
+    status: str
+    created_at: str
+    updated_at: str
+    runs: list[SessionRunLink] = Field(default_factory=list)
+    findings: list[SessionFindingOut] = Field(default_factory=list)
+    summary: SessionSummaryOut | None = None
+    messages: list[SessionMessageOut] = Field(default_factory=list)

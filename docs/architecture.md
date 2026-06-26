@@ -155,6 +155,42 @@ read-only APIs:
   list or config JSON is ever sent to an LLM. Agent account-level analysis is a
   future phase.
 
+## Session-centered agentic workbench (Phase 16)
+
+The product is a **session-centered agentic workbench**, not a cloud-management
+dashboard or project tracker. The model is:
+
+    Goal → Evidence → Runs → Findings → Agent interpretation → Next actions → Report
+
+- **Session** = persistent working context (`sessions`). A run is an auditable
+  execution unit; evidence is the factual base; findings are evidence-driven
+  conclusions; the Agent interprets, attributes, and proposes next steps.
+- **Linkage:** a run carries an optional `session_id` (linked into `session_runs`
+  at create time and after completion). `run_service` refreshes the owning
+  session's summary when a run finishes — session bookkeeping never fails a run.
+- **Deterministic summary** (`sessions/summary_builder.py`): rebuilds, from
+  already-sanitized run artifacts (run_type/status/final_summary, sanitized
+  tool_call outputs, the persisted account profile), a bounded set of known
+  facts, findings (each referencing a `source_run_id`, classified fact /
+  inference / suggestion with high/medium/low confidence), open questions, and
+  next-action **proposals**. It reads no raw logs/rows, no secrets, and calls no
+  LLM. Results persist to `session_findings`, `session_evidence_refs`,
+  `session_summaries`.
+- **Interpretation-only assistant** (`agent_runtime/session_agent.py`,
+  `SESSION_LOOP` seam): on a user message, the deterministic summary is built
+  first; the model sees ONLY a sanitized bounded context (goal + summary +
+  recent messages) and answers. It has no tools — it cannot run, download,
+  mutate, query SQL, or call S3 — it only explains and recommends which existing
+  proposal to take. Output is redacted + chain-of-thought-stripped. A missing
+  model key fails cleanly (422) and never affects the deterministic summary.
+- **Next actions** are proposals only (`requires_confirmation: true`); the user
+  acts. They are not a task list / kanban / ticket queue.
+- **Reports** (`sessions/session_report.py`): goal, executive summary, evidence
+  used, run timeline, key findings, confidence/limitations, recommended next
+  actions, appendix of linked runs — secret-free, no raw content.
+- **Not** a CMDB, monitoring wall, ticketing/kanban/PM system, object browser,
+  or multi-user/permission surface. No such tables or endpoints exist.
+
 ## Managed evidence import (Phase 15)
 
 Connects account_discovery (Phase 14) to the Phase 05 DuckDB analysis path,

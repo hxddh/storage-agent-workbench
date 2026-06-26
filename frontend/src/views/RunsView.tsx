@@ -120,7 +120,15 @@ const RUN_TYPE_OPTIONS: { value: RunType; label: string }[] = [
   { value: "account_discovery", label: "Account discovery" },
 ];
 
-function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (runId: string) => void }) {
+export function NewRunForm({
+  onCancel,
+  onCreated,
+  sessionId,
+}: {
+  onCancel: () => void;
+  onCreated: (runId: string) => void;
+  sessionId?: string;
+}) {
   const [runType, setRunType] = useState<RunType>("diagnostic");
   const [plannerMode, setPlannerMode] = useState<"deterministic" | "agent">("deterministic");
   const [providers, setProviders] = useState<CloudProvider[]>([]);
@@ -170,6 +178,7 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
       user_prompt: prompt.trim(),
       title: `${label}: ${bucket.trim()}`,
       planner_mode: plannerMode,
+      session_id: sessionId,
     });
     await postRunMessage(created.run_id, prompt.trim());
     onCreated(created.run_id);
@@ -186,6 +195,7 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
       user_prompt: prompt.trim(),
       title: `${runType}: ${file.name}`,
       planner_mode: plannerMode,
+      session_id: sessionId,
     });
     await uploadDataset(created.run_id, file, datasetType, file.name);
     await postRunMessage(created.run_id, prompt.trim());
@@ -206,6 +216,7 @@ function NewRunForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
       max_buckets: maxBuckets.trim() && Number.isFinite(parsedMax) ? parsedMax : undefined,
       include_pattern: includePat.trim() || undefined,
       exclude_pattern: excludePat.trim() || undefined,
+      session_id: sessionId,
     });
     await postRunMessage(created.run_id, "discover");
     onCreated(created.run_id);

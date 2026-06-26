@@ -26,6 +26,7 @@ from ..models.schemas import (
 )
 from ..repositories import account_discovery as account_repo
 from ..repositories import runs as repo
+from ..repositories import sessions as sessions_repo
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -101,6 +102,10 @@ def create_run(body: RunCreate, conn: sqlite3.Connection = Depends(get_conn)):
     else:
         # Placeholder for run types not implemented in Phase 05.
         run_id = repo.create(conn, body, status="not_implemented")
+
+    # Link the run to its session immediately so it appears in the timeline.
+    if body.session_id and sessions_repo.get_row(conn, body.session_id) is not None:
+        sessions_repo.link_run(conn, body.session_id, run_id, sessions_repo.RUN_ROLE.get(body.run_type))
 
     row = repo.get_row(conn, run_id)
     return RunCreated(

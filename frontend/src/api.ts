@@ -3,6 +3,10 @@ import type {
   AccountProfile,
   EvidenceImport,
   EvidenceImportRunResult,
+  SessionDetail,
+  SessionMessage,
+  SessionSummaryData,
+  SessionSummaryRow,
   CloudProvider,
   CredentialsTestResult,
   Dataset,
@@ -139,6 +143,8 @@ export interface RunCreateInput {
   max_buckets?: number;
   include_pattern?: string;
   exclude_pattern?: string;
+  // session linkage (Phase 16)
+  session_id?: string;
 }
 
 export const listRuns = () => request<RunSummary[]>("/runs");
@@ -188,6 +194,34 @@ export const confirmEvidenceImport = (id: string) =>
 
 export const runEvidenceImport = (id: string) =>
   request<EvidenceImportRunResult>(`/evidence-imports/${id}/run`, { method: "POST" });
+
+// --- Sessions (Phase 16) ---
+
+export interface SessionCreateInput {
+  title: string;
+  goal?: string;
+  provider_id?: string;
+  primary_bucket?: string;
+}
+
+export const listSessions = () => request<SessionSummaryRow[]>("/sessions");
+
+export const createSession = (body: SessionCreateInput) =>
+  request<SessionDetail>("/sessions", { method: "POST", body: JSON.stringify(body) });
+
+export const getSession = (id: string) => request<SessionDetail>(`/sessions/${id}`);
+
+export const refreshSessionSummary = (id: string) =>
+  request<SessionSummaryData>(`/sessions/${id}/refresh-summary`, { method: "POST" });
+
+export const getSessionReport = (id: string) =>
+  request<{ session_id: string; format: string; content: string }>(`/sessions/${id}/report`);
+
+export const postSessionMessage = (id: string, content: string) =>
+  request<{ session_id: string; messages: SessionMessage[] }>(`/sessions/${id}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
 
 export const runEventsUrl = (id: string) => `${sidecarBaseUrl()}/runs/${id}/events`;
 

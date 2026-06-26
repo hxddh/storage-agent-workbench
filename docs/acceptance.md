@@ -280,3 +280,33 @@ Expected later:
   user-controlled subprocess; no arbitrary boto3 or SQL tool exposed to the LLM;
   no release/signing/auto-update changes; no macOS x86/universal; Phase 16 not
   started.
+
+## Phase 16 acceptance (session workspace context)
+
+- Branch `phase/16-session-workspace-context` from latest main.
+- Sessions data model implemented (sessions + session_runs + evidence_refs +
+  findings + messages + summaries; runs gain a `session_id`).
+- A run can be linked to a session (attach endpoint) and New Run can include
+  `session_id`; run detail shows "Belongs to session"; session detail shows
+  linked runs. Run completion refreshes the session summary.
+- Deterministic, sanitized session summary implemented; findings reference a
+  source_run_id and are bounded; facts/inferences/suggestions distinguished with
+  confidence; next actions are proposals only (requires_confirmation).
+- Session assistant implemented as interpretation-only: sanitized bounded context
+  only, no tools, CoT-stripped output, clean failure on missing model key, and
+  the deterministic summary is unaffected by the model key.
+- Session messages persisted sanitized; session report generated with evidence
+  references and no secrets / no raw content.
+- Frontend has a lightweight Sessions entry (list / new / detail with goal,
+  summary, run timeline, findings, next actions, message composer, report,
+  "Start run in this session", "Refresh summary"); UI stays agentic, not a
+  dashboard. Existing run workflows unaffected.
+- No kanban / ticketing / project-management tables; no traditional cloud
+  dashboard expansion; no notifications; no multi-user/permission model.
+- Sidecar tests pass (193); frontend build + cargo check pass; guardrail grep
+  passes.
+- No Vercel SDK / Next.js; no MCP runtime / multi-agent / generic shell /
+  user-controlled subprocess; no destructive/mutating S3; no arbitrary boto3 or
+  SQL tool exposed to the LLM; no business object scan / body download; no
+  secret or chain-of-thought persistence; no release/signing/auto-update
+  changes; no macOS x86/universal; Phase 17 not started.
