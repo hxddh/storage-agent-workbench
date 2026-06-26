@@ -45,19 +45,40 @@ def run_sync(run_id: str) -> None:
         row = runs_repo.get_row(conn, run_id)
         if row is None:
             return
+        session_id = row["session_id"]
         if row["planner_mode"] == "agent" and row["run_type"] not in _AGENT_VIA_EXECUTOR:
             # Controlled LLM planner over the same whitelisted tools.
             from .agent_runtime.agent_service import run_agent
             run_agent(conn, run_id)
-            return
-        executor = _EXECUTORS.get(row["run_type"])
-        if executor is None:
-            bus.publish(run_id, {"type": "error", "message": f"run_type '{row['run_type']}' is not executable"})
-            bus.mark_done(run_id)
-            return
-        executor(conn, run_id)
+        else:
+            executor = _EXECUTORS.get(row["run_type"])
+            if executor is None:
+                bus.publish(run_id, {"type": "error", "message": f"run_type '{row['run_type']}' is not executable"})
+                bus.mark_done(run_id)
+                return
+            executor(conn, run_id)
+        # After the run finishes, refresh its session's deterministic summary.
+        _finalize_session(conn, run_id, session_id)
     finally:
         conn.close()
+
+
+def _finalize_session(conn, run_id: str, session_id: str | None) -> None:
+    """If the run belongs to a session, (re)link it and rebuild the summary.
+
+    Session bookkeeping must never fail the run, so this swallows errors.
+    """
+    if not session_id:
+        return
+    try:
+        from .repositories import sessions as sessions_repo
+        from .sessions import summary_builder
+        run = runs_repo.get_row(conn, run_id)
+        sessions_repo.link_run(conn, session_id, run_id,
+                               sessions_repo.RUN_ROLE.get(run["run_type"]) if run else None)
+        summary_builder.refresh(conn, session_id)
+    except Exception:  # noqa: BLE001 - never break a run over session bookkeeping
+        pass
 
 
 def start(run_id: str) -> None:

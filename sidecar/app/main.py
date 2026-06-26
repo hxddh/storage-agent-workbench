@@ -33,6 +33,7 @@ from .routers import (
     model_providers,
     reports,
     runs,
+    sessions,
     tools,
 )
 
@@ -78,3 +79,4 @@ app.include_router(runs.router)
 app.include_router(reports.router)
 app.include_router(datasets.router)
 app.include_router(evidence_imports.router)
+app.include_router(sessions.router)

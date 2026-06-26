@@ -49,8 +49,8 @@ def create(conn: sqlite3.Connection, data: RunCreate, status: str) -> str:
     conn.execute(
         "INSERT INTO runs "
         "(id, run_type, title, status, planner_mode, provider_id, bucket, prefix, "
-        " user_prompt, final_summary, report_path, options_json, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)",
+        " user_prompt, final_summary, report_path, options_json, session_id, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)",
         (
             run_id,
             data.run_type,
@@ -62,6 +62,7 @@ def create(conn: sqlite3.Connection, data: RunCreate, status: str) -> str:
             data.prefix,
             data.user_prompt,
             _options_json(data),
+            data.session_id,
             now,
             now,
         ),
@@ -115,11 +116,20 @@ def get_detail(conn: sqlite3.Connection, run_id: str) -> RunDetail | None:
         user_prompt=row["user_prompt"],
         final_summary=row["final_summary"],
         report_path=row["report_path"],
+        session_id=row["session_id"],
+        session_title=_session_title(conn, row["session_id"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         messages=messages,
         tool_calls=tool_calls,
     )
+
+
+def _session_title(conn: sqlite3.Connection, session_id: str | None) -> str | None:
+    if not session_id:
+        return None
+    row = conn.execute("SELECT title FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    return row["title"] if row else None
 
 
 def add_message(conn: sqlite3.Connection, run_id: str, role: str, content: str) -> str:

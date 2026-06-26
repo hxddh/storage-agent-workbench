@@ -1,7 +1,7 @@
 import { SidecarStatus } from "./SidecarStatus";
 import type { SidecarStatus as Status } from "../hooks/useSidecarHealth";
 
-export const NAV_ITEMS = ["Runs", "Providers", "Datasets", "Reports", "Settings"] as const;
+export const NAV_ITEMS = ["Sessions", "Runs", "Providers", "Datasets", "Reports", "Settings"] as const;
 export type NavItem = (typeof NAV_ITEMS)[number];
 
 export function Sidebar({

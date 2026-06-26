@@ -199,6 +199,34 @@ confirmation-gated.
   manifests with unusual structures degrade to a clean limitation rather than a
   crash. CloudTrail / Storage Lens / provider access logs remain unimplemented.
 
+## Sessions (Phase 16)
+
+Sessions add a persistent working context over the existing runs without adding
+any new dangerous capability.
+
+- **Deterministic, sanitized summary.** The session summary is built only from
+  already-sanitized run artifacts (run_type/status/final_summary, sanitized
+  tool_call outputs, the persisted account profile). It never reads raw access
+  logs, raw inventory rows, evidence file contents, credentials, or
+  chain-of-thought, and it does not call an LLM.
+- **Interpretation-only assistant.** The session Agent sees ONLY the sanitized,
+  bounded session context (goal + summary facts/findings/open-questions/
+  next-actions + recent messages). It has no tools: it cannot download evidence,
+  change configuration, delete objects, run a shell, run arbitrary SQL, or call
+  any S3 API. It may explain, attribute, weigh evidence, and recommend which
+  existing next-action proposal to take — the user acts. Output is redacted and
+  chain-of-thought-stripped; a missing model key fails cleanly and never affects
+  the deterministic summary.
+- **Proposals only.** Next actions carry `requires_confirmation`; nothing is
+  auto-executed. There is no auto-download, no auto-remediation, no auto-run.
+- **Safe persistence.** Session titles/goals/bucket names, messages, findings,
+  evidence refs, and summaries are all redaction-passed — never AK/SK/session
+  token/Authorization/cookies/presigned URL/model key, never raw logs/rows, never
+  chain-of-thought.
+- **Not a PM/kanban/ticketing system.** There are no boards, columns, tickets,
+  tasks, assignees, sprints, due dates, labels, notifications, or multi-user/
+  permission models — only investigation context.
+
 ## Packaging (Phase 08)
 
 - The application bundle contains code and library data only. It must never
