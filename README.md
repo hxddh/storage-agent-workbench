@@ -285,10 +285,10 @@ Platform support matrix (see [`docs/release.md`](docs/release.md)):
 
 | Platform | Arch | Build | Sidecar smoke | Runtime launch | Cleanup | Status |
 |----------|------|-------|---------------|----------------|---------|--------|
-| macOS | arm64 | yes | yes | local verified | yes | supported (unsigned) |
+| macOS | arm64 | yes | yes | local verified (CI best-effort) | yes | supported (unsigned) |
 | macOS | x64 / universal | — | — | — | — | out of scope |
-| Linux | x64 | CI | CI | CI (xvfb, best-effort) | CI | experimental |
-| Windows | x64 | CI | CI | CI (best-effort) | CI | experimental |
+| Linux | x64 | CI | CI | skipped on headless CI | — | experimental |
+| Windows | x64 | CI | CI | verified (CI) | verified (CI) | experimental |
 
 ## Phase 12 status
 

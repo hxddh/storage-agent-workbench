@@ -136,12 +136,22 @@ def check_direct_sidecar_smoke(sidecar: Path) -> bool:
 
 
 def check_no_user_data_in_install(install_root: Path) -> bool:
-    bad = []
+    # Precise check: the app would create app.db / runs / *.duckdb at the data
+    # dir. We look ONLY at the install root's top level and a .app's Resources —
+    # NOT a deep rglob (a cargo target/ tree contains unrelated dep dirs named
+    # "data", which would be false positives).
+    candidates = [
+        install_root / "app.db",
+        install_root / "runs",
+        install_root / "data",
+        install_root / ".env",
+        install_root / "Contents" / "Resources" / "runs",
+        install_root / "Contents" / "Resources" / "data",
+        install_root / "Contents" / "Resources" / "app.db",
+    ]
+    bad = [c for c in candidates if c.exists()]
     if install_root.exists():
-        for pat in ("app.db", "*.duckdb", ".env"):
-            bad += list(install_root.rglob(pat))
-        for d in ("runs", "data"):
-            bad += list(install_root.rglob(d))
+        bad += list(install_root.glob("*.duckdb"))
     if bad:
         print(f"  install dir contains user data: FAIL ({[str(b) for b in bad[:3]]})")
         return False
@@ -152,55 +162,64 @@ def check_no_user_data_in_install(install_root: Path) -> bool:
 # --- best-effort launch lifecycle ------------------------------------------
 
 
+def _force_cleanup(main_exe: Path, app_bundle: str | None) -> None:
+    """Best-effort: ensure the app and any sidecar processes are gone."""
+    try:
+        _kill_app(main_exe, app_bundle)
+    except Exception:  # noqa: BLE001
+        pass
+    time.sleep(1)
+    for pid, _p in _sidecar_procs():
+        try:
+            os.kill(pid, 9)
+        except OSError:
+            pass
+
+
 def check_launch_lifecycle(main_exe: Path, app_bundle: str | None) -> tuple[str, str]:
-    """Returns (result, detail): result in {PASS, FAIL, SKIP}."""
+    """Returns (result, detail): result in {PASS, FAIL, SKIP}.
+
+    Never hangs and never raises: every path is time-bounded and a finally block
+    force-cleans the app + sidecar so the runner is never left with orphans.
+    """
     if not main_exe.exists():
         return "SKIP", f"app exe not found: {main_exe}"
 
-    # Launch the app.
     try:
-        if IS_MAC and app_bundle:
-            subprocess.run(["open", app_bundle], check=True, capture_output=True)
-        else:
-            subprocess.Popen([str(main_exe)], stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
-    except (FileNotFoundError, subprocess.SubprocessError) as exc:
-        return "SKIP", f"could not launch app (no display?): {exc}"
+        try:
+            if IS_MAC and app_bundle:
+                subprocess.run(["open", app_bundle], check=True, capture_output=True, timeout=30)
+            else:
+                subprocess.Popen([str(main_exe)], stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+        except (FileNotFoundError, subprocess.SubprocessError, OSError) as exc:
+            return "SKIP", f"could not launch app (no display?): {exc}"
 
-    # Wait for the spawned sidecar + port (cold start can be slow).
-    port = None
-    for _ in range(45):
-        procs = _sidecar_procs()
-        if procs:
-            port = procs[0][1]
-            break
-        time.sleep(2)
-    if not port:
+        port = None
+        for _ in range(45):
+            procs = _sidecar_procs()
+            if procs:
+                port = procs[0][1]
+                break
+            time.sleep(2)
+        if not port:
+            return "FAIL", "app did not spawn a bundled sidecar (or display unavailable)"
+
+        health = _health(port, timeout=60)
+        if not (health and health.get("status") == "ok"):
+            return "FAIL", f"app's sidecar /health not ok on port {port}"
+
+        # Quit and confirm cleanup (parent-PID watchdog kills the sidecar).
         _kill_app(main_exe, app_bundle)
-        return "FAIL", "app did not spawn a bundled sidecar (or display unavailable)"
-
-    health = _health(port, timeout=60)
-    if not (health and health.get("status") == "ok"):
-        _kill_app(main_exe, app_bundle)
-        return "FAIL", f"app's sidecar /health not ok on port {port}"
-
-    # Quit and confirm cleanup (parent-PID watchdog kills the sidecar).
-    _kill_app(main_exe, app_bundle)
-    cleaned = False
-    for _ in range(10):
-        time.sleep(2)
-        if not _sidecar_procs():
-            cleaned = True
-            break
-    if not cleaned:
-        # last-resort cleanup so we don't leave orphans on the runner
-        for pid, _p in _sidecar_procs():
-            try:
-                os.kill(pid, 9)
-            except OSError:
-                pass
+        for _ in range(10):
+            time.sleep(2)
+            if not _sidecar_procs():
+                return "PASS", f"launch -> sidecar on :{port} -> /health ok -> quit -> cleaned up"
         return "FAIL", "sidecar not cleaned up after app quit (orphan)"
-    return "PASS", f"launch -> sidecar on :{port} -> /health ok -> quit -> cleaned up"
+    except Exception as exc:  # noqa: BLE001 - never let verification hang/crash
+        return "FAIL", f"launch lifecycle error: {type(exc).__name__}"
+    finally:
+        _force_cleanup(main_exe, app_bundle)
 
 
 def main() -> int:
@@ -210,6 +229,8 @@ def main() -> int:
     ap.add_argument("--install-root", required=True)
     ap.add_argument("--app-bundle", default=None)
     ap.add_argument("--require-launch", action="store_true")
+    ap.add_argument("--skip-launch", action="store_true",
+                    help="skip the GUI launch lifecycle (headless CI; verify on a real desktop)")
     args = ap.parse_args()
 
     main_exe = Path(args.main_exe)
@@ -240,7 +261,10 @@ def main() -> int:
         required_ok = False
 
     print("[5] app launch lifecycle (best-effort unless --require-launch)")
-    result, detail = check_launch_lifecycle(main_exe, args.app_bundle)
+    if args.skip_launch:
+        result, detail = "SKIP", "disabled for this environment (headless CI; verify on a real desktop)"
+    else:
+        result, detail = check_launch_lifecycle(main_exe, args.app_bundle)
     print(f"  LAUNCH: {result} — {detail}")
 
     print("== Summary ==")

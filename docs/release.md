@@ -95,11 +95,11 @@ binary is a build artifact and must not be committed.
 
 | Platform | Arch | Build | Bundle artifact | Sidecar smoke | Runtime launch | Cleanup | Signing | Status |
 |----------|------|-------|-----------------|---------------|----------------|---------|---------|--------|
-| macOS | arm64 | yes | `.app` + DMG | yes | local verified | yes | no | **supported (unsigned)** |
+| macOS | arm64 | yes | `.app` + DMG | yes | local verified (CI best-effort) | yes | no | **supported (unsigned)** |
 | macOS | x64 | no | no | no | no | no | no | out of scope |
 | macOS | universal | no | no | no | no | no | no | out of scope |
-| Linux | x64 | yes (CI) | `.deb` | yes (CI) | CI (xvfb, best-effort) | CI | no | experimental / support candidate |
-| Windows | x64 | yes (CI) | NSIS `.exe` | yes (CI) | CI (best-effort) | CI | no | experimental / support candidate |
+| Linux | x64 | yes (CI) | `.deb` | yes (CI) | skipped on headless CI (real-desktop pending) | n/a in CI | no | experimental / support candidate |
+| Windows | x64 | yes (CI) | NSIS `.exe` | yes (CI) | verified (CI) | verified (CI) | no | experimental / support candidate |
 
 ### Runtime verification
 
@@ -108,8 +108,13 @@ checks, per platform: app executable present, bundled sidecar present, a direct
 sidecar `/health` smoke, app-data-dir not under the install dir, and a launch
 lifecycle (start app → it spawns the bundled sidecar on a free port → `/health`
 ok → quit → sidecar cleaned up by the parent-PID watchdog). The first four are
-required; the GUI launch is best-effort in CI (hard-gated only with
-`--require-launch`, which is used locally on macOS).
+required; the GUI launch is best-effort (hard-gated only with `--require-launch`,
+used locally on macOS). On the **headless Linux CI runner the GUI launch is
+skipped** (`--skip-launch`) — a real WebKitGTK launch under xvfb is unreliable
+(it can hang), so Linux launch-lifecycle is verified on a real desktop, not in
+CI. **Windows CI verifies the full launch lifecycle**; **macOS launch is verified
+locally** (and best-effort on the CI runner). Artifacts are uploaded **before**
+runtime verification so a verification issue never drops the build artifact.
 
 ### Linux / Windows promotion criteria (experimental → supported)
 
