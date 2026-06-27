@@ -1,0 +1,117 @@
+name: Release
+
+# Manual, dispatch-only pre-release publisher. It does NOT run on push or tag.
+# It builds the UNSIGNED macOS arm64 desktop bundle and publishes (by default a
+# draft prerelease) GitHub Release with stable-named assets + SHA256SUMS.txt.
+# No code signing, no notarization, no auto-update. Uses only the default
+# GITHUB_TOKEN.
+#
+# Usage (after this readiness PR is merged), from an up-to-date main:
+#   git tag v0.19.0-pre.1 && git push origin v0.19.0-pre.1
+#   gh workflow run release.yml \
+#     -f version=v0.19.0-pre.1 -f ref=v0.19.0-pre.1 -f prerelease=true -f draft=true
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version / tag name (e.g. v0.19.0-pre.1)"
+        required: true
+        default: "v0.19.0-pre.1"
+      ref:
+        description: "Git ref (branch, tag, or SHA) to build from"
+        required: true
+        default: "main"
+      prerelease:
+        description: "Mark the release as a prerelease"
+        required: true
+        default: "true"
+      draft:
+        description: "Create the release as a draft (review before publishing)"
+        required: true
+        default: "true"
+
+permissions:
+  contents: write
+
+jobs:
+  release-macos-arm64:
+    name: Release macOS arm64 (unsigned)
+    runs-on: macos-14  # Apple Silicon -> target aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install sidecar deps (dev + packaging)
+        run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked --version "^2"
+
+      - name: Build unsigned macOS bundle (.app + DMG if produced)
+        # Runs frontend build -> sidecar externalBin -> cargo tauri build.
+        run: bash scripts/build-macos-app-bundle.sh
+
+      - name: Collect release assets (+ checksums)
+        id: assets
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+          OUT="release-assets"
+          rm -rf "$OUT"; mkdir -p "$OUT"
+
+          APP="$(ls -d src-tauri/target/release/bundle/macos/*.app 2>/dev/null | head -1 || true)"
+          if [ -z "$APP" ]; then
+            echo "ERROR: no .app bundle was produced"; exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$APP" \
+            "$OUT/storage-agent-workbench-$VERSION-macos-arm64.app.zip"
+
+          DMG="$(ls src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)"
+          if [ -n "$DMG" ]; then
+            cp "$DMG" "$OUT/storage-agent-workbench-$VERSION-macos-arm64.dmg"
+          else
+            echo "No DMG produced; publishing .app.zip + checksums only."
+          fi
+
+          ( cd "$OUT" && shasum -a 256 storage-agent-workbench-* > SHA256SUMS.txt && cat SHA256SUMS.txt )
+          echo "Assets:"; ls -la "$OUT"
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+          FLAGS=""
+          if [ "${{ github.event.inputs.draft }}" = "true" ]; then FLAGS="$FLAGS --draft"; fi
+          if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then FLAGS="$FLAGS --prerelease"; fi
+
+          NOTES="Storage Agent Workbench $VERSION (unsigned, pre-1.0, macOS arm64).
+
+          Install: see docs/install.md (Gatekeeper warning expected; right-click Open
+          or clear the quarantine attribute). Verify assets with SHA256SUMS.txt.
+
+          No code signing, notarization, or auto-update. See CHANGELOG.md and
+          docs/release.md for details."
+
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION exists; uploading/clobbering assets."
+            gh release upload "$VERSION" release-assets/* --clobber
+          else
+            echo "Creating release $VERSION (target ${GITHUB_SHA})."
+            gh release create "$VERSION" release-assets/* \
+              --target "$GITHUB_SHA" --title "$VERSION" --notes "$NOTES" $FLAGS
+          fi

@@ -1,8 +1,49 @@
-# Release (desktop) — Phase 09
+# Release (desktop)
 
-Desktop release hardening for Storage Agent Workbench. This documents the
-**local macOS build flow** and current limitations. There is **no** code
+Desktop release flow for Storage Agent Workbench. This documents the
+**local macOS build flow**, the **CI build artifacts**, the **public GitHub
+Releases** channel, and the **manual pre-release workflow**. There is **no** code
 signing, notarization, or auto-update yet.
+
+## Distribution channels
+
+Three distinct things — do not confuse them:
+
+1. **Local build** — what you produce on your own machine via the scripts below.
+   For development and manual verification.
+2. **CI build artifacts** — uploaded by `.github/workflows/ci.yml` on each run
+   (under the GitHub Actions run page). They prove the build compiles and the
+   sidecar smoke-passes. **They are not public releases**: they require a GitHub
+   login to download, they **expire** (artifact retention), and they are not a
+   stable download URL.
+3. **GitHub Releases** — the **intended public download location**. Releases are
+   created by the **manual** `.github/workflows/release.yml` workflow
+   (`workflow_dispatch` only) and carry stable, named assets plus
+   `SHA256SUMS.txt`.
+
+Current public release target: **macOS arm64, unsigned**. Linux x64 and Windows
+x64 remain **experimental** and are only public-release assets if explicitly
+attached by a release workflow. No signing, notarization, or auto-update.
+
+### Manual pre-release (after the readiness PR is merged)
+
+The release workflow is dispatch-only and does not run on push/tag. Publish a
+pre-release like this (run from a clean, up-to-date `main`):
+
+```bash
+git checkout main
+git pull --ff-only
+git tag v0.19.0-pre.1
+git push origin v0.19.0-pre.1
+gh workflow run release.yml \
+  -f version=v0.19.0-pre.1 -f ref=v0.19.0-pre.1 -f prerelease=true -f draft=true
+```
+
+The workflow checks out `ref`, builds the macOS arm64 bundle, computes
+`SHA256SUMS.txt`, and creates/updates a (draft, prerelease) GitHub Release named
+`version` with the assets attached. Tagging is optional — `ref` may be a branch
+or a tag — but tagging the exact commit you release is recommended for
+reproducibility. Review the draft Release, then publish it from the GitHub UI.
 
 ## Prerequisites
 
