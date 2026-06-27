@@ -24,15 +24,17 @@ from ..security.redaction import redact_text
 from ..sessions import next_actions
 
 _BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
-_MAX_ANSWER = 4000
+_MAX_ANSWER = 12000
 
 
 CONTRACT_INSTRUCTION = (
-    "After your prose answer you MAY append exactly one fenced JSON block:\n"
-    "```json\n{\"answer\": \"...\", \"skills_used\": [\"<skill name>\"], "
-    "\"evidence_used\": [\"...\"], \"evidence_gaps\": [\"...\"], "
-    "\"next_action_proposals\": [{\"title\": \"...\", \"action_type\": \"...\", "
-    "\"confidence\": \"low|medium|high\"}]}\n```\n"
+    "Write your FULL answer as normal prose — include every item the user asked "
+    "for (e.g. actually list the bucket names). The prose IS what the user sees. "
+    "Then you MAY append exactly one fenced JSON block with METADATA ONLY (no "
+    "answer field):\n"
+    "```json\n{\"skills_used\": [\"<skill name>\"], \"evidence_used\": [\"...\"], "
+    "\"evidence_gaps\": [\"...\"], \"next_action_proposals\": [{\"title\": \"...\", "
+    "\"action_type\": \"...\", \"confidence\": \"low|medium|high\"}]}\n```\n"
     "skills_used must be chosen ONLY from the provided StorageOps skills. "
     "evidence_used must reference only the provided session/run/finding/triage "
     "evidence. next_action_proposals are PROPOSALS the user must confirm — never "
@@ -66,7 +68,10 @@ def parse_agent_contract(raw: Any, allowed_skill_names: list[str] | None = None)
             data = {}
         prose = (text[: m.start()] + text[m.end():]).strip()
 
-    answer_raw = data.get("answer") if isinstance(data.get("answer"), str) and data.get("answer").strip() else prose
+    # Prefer the human-readable PROSE as the answer (it holds the full content,
+    # e.g. an enumerated list); the JSON block is for metadata. Only fall back to
+    # the JSON "answer" field when there is no prose outside the block.
+    answer_raw = prose if prose.strip() else (data.get("answer") if isinstance(data.get("answer"), str) else "")
     answer = strip_chain_of_thought(redact_text(str(answer_raw or "")))[:_MAX_ANSWER]
 
     skills_used = _strlist(data, "skills_used", cap=3, length=80)
