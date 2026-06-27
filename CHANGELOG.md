@@ -6,6 +6,37 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.0-pre.4] - 2026-06-27
+
+Restores agent mode in the packaged app and adds Codex/Cursor-style
+interactions. Ad-hoc signed (not notarized), pre-1.0, macOS arm64.
+
+### Fixed
+
+- **Agent mode was broken in the packaged app** ("OpenAI Agents SDK is not
+  available in this environment"). The PyInstaller spec listed `agents` /
+  `openai` as bare hidden imports, which isn't enough — they import submodules
+  at import time, so the one-file bundle failed to load them (dev worked because
+  the venv had everything). The spec now collects `agents`, `openai`, and
+  `griffe` in full. Verified on a freshly built bundle.
+- Provider auth/404 failures no longer show "Add a model API key" (which implied
+  none was configured). The needs-key prompt fires only on the real "no model
+  provider configured" case; other failures show an actionable message with an
+  Open settings action.
+
+### Added
+
+- **⌘K command palette** — quick-switch chats, New chat, Settings; type-to-filter
+  with arrow/enter/esc. Global shortcuts ⌘K, ⌘N (new chat), Esc (close overlays).
+- **Composer slash commands** — `/` opens a menu: `/diagnose`, `/logs`,
+  `/inventory`, `/config`, `/account`, `/optimize` seed a prompt; `/report`
+  generates the chat report.
+- **Live "agent is working" state** — the user turn appears instantly and an
+  animated indicator with rotating status replaces the send spinner until the
+  reply lands.
+- **Richer markdown** in agent replies — fenced code blocks with a language label
+  and Copy button, headings, tables, lists; plus a hover Copy on agent messages.
+
 ## [0.19.0-pre.3] - 2026-06-27
 
 UI/UX pass toward Codex/Cursor conventions, plus simpler cloud setup.
@@ -127,7 +158,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.3...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.4...HEAD
+[0.19.0-pre.4]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.4
 [0.19.0-pre.3]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.3
 [0.19.0-pre.2]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.2
 [0.19.0-pre.1]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.1
