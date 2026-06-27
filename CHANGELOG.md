@@ -6,6 +6,34 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.0-pre.7] - 2026-06-27
+
+A more capable agent and a markdown-grade thread. Ad-hoc signed (not
+notarized), pre-1.0, macOS arm64.
+
+### Changed
+
+- **The chat agent gets the full read-only diagnostic toolset.** It called
+  itself a diagnostician but could only list/head/review; it can now also run
+  `test_credentials` (auth/403 root cause), `head_object` (per-key
+  metadata/404), `test_range_get` (range support/latency), `test_addressing_style`
+  (virtual-hosted vs path-style — SignatureDoesNotMatch / endpoint), and
+  `inspect_endpoint_tls` (TLS handshake/expiry), plus the
+  `review_bucket_performance_profile` review that was missing from chat. It
+  chains probes across up to 16 turns (was 8). Every tool stays read-only,
+  scoped, bounded, audited, and secret-safe.
+- **Markdown answers rendered to Codex/Cursor grade.** Horizontal rules now
+  render as dividers (were literal `---`), plus blockquotes, links, italics,
+  refined tables (uppercase headers, zebra rows) and heading rhythm. Tool-trace
+  rows stay on one line with truncation so long bucket names don't wrap.
+
+### Fixed
+
+- Sending the first message in a new chat no longer flashes the empty state —
+  the optimistic user turn + thinking/streaming bubble is preserved when the
+  session is created mid-send. Next-step proposals are hidden while a turn is in
+  flight.
+
 ## [0.19.0-pre.6] - 2026-06-27
 
 Streaming agent answers. Ad-hoc signed (not notarized), pre-1.0, macOS arm64.
@@ -211,7 +239,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.6...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.7...HEAD
+[0.19.0-pre.7]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.7
 [0.19.0-pre.6]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.6
 [0.19.0-pre.5]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.5
 [0.19.0-pre.4]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.4
