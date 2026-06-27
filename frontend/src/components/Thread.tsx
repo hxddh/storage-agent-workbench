@@ -4,6 +4,7 @@ import {
   getSession,
   getSessionReport,
   getSessionTriage,
+  listModelProviders,
   postSessionMessage,
   prepareSessionAction,
   previewSessionAction,
@@ -30,52 +31,22 @@ const looksLikeError = (t: string) =>
     t,
   );
 
-const icon = (d: string) => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    {d.split("|").map((p, i) => <path key={i} d={p} />)}
+// The agent's full capability surface — not just error triage. Each seeds the
+// composer with a natural-language prompt; the agent routes from there.
+const SUGGESTIONS: { label: string; prompt: string }[] = [
+  { label: "Diagnose an error", prompt: "I'm getting a 403 AccessDenied when uploading to my bucket, but reads work. Help me diagnose it." },
+  { label: "Analyze access logs", prompt: "Analyze my S3 access logs for traffic patterns, error rates, and the hottest object keys." },
+  { label: "Inventory & capacity", prompt: "Give me an inventory and capacity breakdown of my bucket by object size and storage class." },
+  { label: "Review bucket config", prompt: "Review my bucket's configuration for security, lifecycle, cost, and performance issues." },
+  { label: "Map account & buckets", prompt: "Discover my account and map out all my buckets, regions, and their configuration." },
+  { label: "Optimize storage", prompt: "Find cost and performance optimization opportunities across my object storage." },
+];
+
+const Spark = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2z" />
   </svg>
 );
-
-// The agent's full capability surface — not just error triage. Each seeds the
-// single composer with a natural-language prompt; the agent routes from there.
-const CAPABILITIES: { label: string; hint: string; prompt: string; svg: React.ReactNode }[] = [
-  {
-    label: "Diagnose an error",
-    hint: "403, signature, endpoint, timeouts",
-    prompt: "I'm getting a 403 AccessDenied when uploading to my bucket, but reads work. Help me diagnose it.",
-    svg: icon("M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z|M12 9v4|M12 17h.01"),
-  },
-  {
-    label: "Analyze access logs",
-    hint: "Traffic, hot and cold objects",
-    prompt: "Analyze my S3 access logs for traffic patterns, error rates, and the hottest object keys.",
-    svg: icon("M3 3v18h18|M7 15l4-4 3 3 5-6"),
-  },
-  {
-    label: "Inventory & capacity",
-    hint: "Counts, sizes, storage classes",
-    prompt: "Give me an inventory and capacity breakdown of my bucket by object size and storage class.",
-    svg: icon("M3 5a9 3 0 1 0 18 0a9 3 0 1 0-18 0|M3 5v14a9 3 0 0 0 18 0V5|M3 12a9 3 0 0 0 18 0"),
-  },
-  {
-    label: "Review bucket config",
-    hint: "Security, lifecycle, cost, perf",
-    prompt: "Review my bucket's configuration for security, lifecycle, cost, and performance issues.",
-    svg: icon("M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"),
-  },
-  {
-    label: "Map account & buckets",
-    hint: "Discover the account layout",
-    prompt: "Discover my account and map out all my buckets, regions, and their configuration.",
-    svg: icon("M9 20 3 17V4l6 3 6-3 6 3v13l-6 3-6-3z|M9 7v13|M15 4v13"),
-  },
-  {
-    label: "Optimize storage",
-    hint: "Find cost & performance wins",
-    prompt: "Find cost and performance optimization opportunities across my object storage.",
-    svg: icon("M13 2 3 14h9l-1 8 10-12h-9l1-8z"),
-  },
-];
 
 export function Thread({
   sessionId,
@@ -101,9 +72,19 @@ export function Thread({
     { sourceType: "inventory" | "access_log"; accountRunId: string; bucketName: string } | null
   >(null);
   const [report, setReport] = useState<string | null>(null);
+  const [modelName, setModelName] = useState<string | null>(null);
   const localId = useRef<string | null>(sessionId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const refreshModel = () =>
+    listModelProviders()
+      .then((ps) => setModelName(ps.length ? ps[0].model || ps[0].name : null))
+      .catch(() => undefined);
+
+  useEffect(() => {
+    refreshModel();
+  }, []);
 
   const reload = async (id: string | null) => {
     if (!id) {
@@ -121,7 +102,7 @@ export function Thread({
 
   useEffect(() => {
     // Thread is not remounted per session (App does not key it by id), so reset
-    // all per-session UI state here when the active session changes.
+    // per-session UI state here when the active session changes.
     localId.current = sessionId;
     setLiveProposals([]);
     setPreviews({});
@@ -132,6 +113,7 @@ export function Thread({
     setImportHandoff(null);
     setReport(null);
     reload(sessionId);
+    refreshModel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
@@ -153,7 +135,7 @@ export function Thread({
     const ta = taRef.current;
     if (!ta) return;
     if (!text) {
-      ta.style.height = "24px";
+      ta.style.height = "22px";
       return;
     }
     ta.style.height = "auto";
@@ -164,7 +146,7 @@ export function Thread({
 
   const ensureSession = async (seed: string): Promise<string> => {
     if (localId.current) return localId.current;
-    const s = await createSession({ title: (seed || "Investigation").slice(0, 80) });
+    const s = await createSession({ title: (seed || "New chat").slice(0, 80) });
     localId.current = s.id;
     onSessionCreated(s.id);
     return s.id;
@@ -175,7 +157,7 @@ export function Thread({
   // still gets value without credentials.
   const send = async () => {
     const t = text.trim();
-    if (!t) return;
+    if (!t || busy) return;
     setBusy(true);
     setError(null);
     setNeedKey(false);
@@ -252,47 +234,56 @@ export function Thread({
 
   const isEmpty = items.length === 0;
 
+  const modelChip = (
+    <button
+      onClick={onOpenSettings}
+      className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11.5px] transition-colors hover:bg-hover ${
+        modelName ? "text-gray-500 hover:text-gray-300" : "text-amber-300/80 hover:text-amber-200"
+      }`}
+    >
+      <Spark size={11} />
+      {modelName ?? "Add a model"}
+    </button>
+  );
+
   return (
     <div className="flex h-full flex-1 flex-col bg-canvas">
-      {/* Only a real, non-empty session gets a header — a fresh thread shows just
-          the canvas + composer, like Codex/Cursor. */}
-      {detail && items.length > 0 && (
-        <header className="flex items-center gap-3 border-b border-edge px-6 py-3">
-          <div className="min-w-0">
-            <div className="truncate text-[13px] font-medium text-gray-100">{detail.title || "Investigation"}</div>
-            {detail.goal ? <div className="truncate text-[11px] text-gray-500">{detail.goal}</div> : null}
+      {/* A real conversation gets a slim header; a fresh chat shows just the
+          canvas + composer (Codex/Cursor). */}
+      {!isEmpty && (
+        <header className="flex items-center gap-3 border-b border-edge px-6 py-2.5">
+          <div className="truncate text-[12.5px] font-medium text-gray-200">{detail?.title || "New chat"}</div>
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-edge px-2 py-1 text-[11px] text-gray-500">
+            <Spark size={11} />
+            <span className="text-gray-400">{modelName ?? "No model"}</span>
           </div>
         </header>
       )}
 
       <div className="flex-1 overflow-auto px-6 py-6">
-        <div className="mx-auto max-w-3xl space-y-4">
+        <div className="mx-auto max-w-3xl space-y-5">
           {isEmpty && (
-            <div className="flex flex-col items-center py-10 animate-fade-in-up">
-              <div className="mb-4 grid h-12 w-12 place-items-center rounded-2xl border border-edge-strong bg-elevated text-accent">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
+            <div className="flex flex-col items-center pt-[12vh] animate-fade-in-up">
+              <div className="mb-5 grid h-11 w-11 place-items-center rounded-xl border border-edge-strong bg-elevated text-accent-soft">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
                   <path d="M12 2 2 7l10 5 10-5-10-5z" />
                   <path d="M2 17l10 5 10-5" />
                   <path d="M2 12l10 5 10-5" />
                 </svg>
               </div>
-              <div className="text-lg font-medium text-gray-100">What can I help with?</div>
-              <p className="mt-1.5 max-w-md text-center text-[13px] leading-relaxed text-gray-500">
-                Your object-storage agent — diagnose issues, analyze logs and inventory, review configuration, and find
-                optimizations. It grounds answers in evidence and asks before running anything.
+              <div className="text-[19px] font-medium tracking-[-0.01em] text-gray-100">How can I help with your storage?</div>
+              <p className="mt-2 max-w-md text-center text-[13px] leading-relaxed text-gray-500">
+                Ask about an issue, an access pattern, or your bucket setup. I ground answers in evidence and confirm
+                with you before running anything.
               </p>
-              <div className="mt-6 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
-                {CAPABILITIES.map((c) => (
+              <div className="mt-6 flex max-w-2xl flex-wrap justify-center gap-2">
+                {SUGGESTIONS.map((s) => (
                   <button
-                    key={c.label}
-                    onClick={() => seed(c.prompt)}
-                    className="group flex items-start gap-3 rounded-xl border border-edge bg-panel px-3.5 py-3 text-left transition-all duration-150 hover:border-edge-strong hover:bg-elevated active:scale-[0.99]"
+                    key={s.label}
+                    onClick={() => seed(s.prompt)}
+                    className="rounded-full border border-edge bg-panel px-3 py-1.5 text-[12px] text-gray-300 transition-colors hover:border-edge-strong hover:bg-hover hover:text-gray-100"
                   >
-                    <span className="mt-0.5 text-gray-500 transition-colors group-hover:text-accent-soft">{c.svg}</span>
-                    <span className="min-w-0">
-                      <span className="block text-[13px] font-medium text-gray-200">{c.label}</span>
-                      <span className="block text-[11.5px] text-gray-500">{c.hint}</span>
-                    </span>
+                    {s.label}
                   </button>
                 ))}
               </div>
@@ -310,26 +301,22 @@ export function Thread({
           )}
 
           {needKey && (
-            <div className="animate-fade-in-up rounded-xl border border-amber-800/50 bg-amber-950/20 p-3.5 text-sm text-amber-200">
-              Add a model API key to get full agent answers. You can still triage pasted S3 errors offline without one.
+            <div className="animate-fade-in-up rounded-xl border border-amber-800/50 bg-amber-950/20 p-3.5 text-[13px] text-amber-200">
+              Add a model API key for full agent answers. Pasted S3 errors are still triaged offline without one.
               <div className="mt-2.5">
                 <Button variant="primary" size="sm" onClick={onOpenSettings}>Add a model API key</Button>
               </div>
             </div>
           )}
           {error && (
-            <div className="animate-fade-in-up rounded-xl border border-red-900/50 bg-red-950/20 p-3.5 text-sm text-red-300">
+            <div className="animate-fade-in-up rounded-xl border border-red-900/50 bg-red-950/20 p-3.5 text-[13px] text-red-300">
               {error}
             </div>
           )}
 
           {proposals.length > 0 && (
             <div className="space-y-2 pt-1">
-              <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-gray-500">
-                <span className="h-px flex-1 bg-edge" />
-                Suggested next steps
-                <span className="h-px flex-1 bg-edge" />
-              </div>
+              <div className="px-0.5 text-[11px] font-medium uppercase tracking-wider text-gray-600">Suggested next steps</div>
               {proposals.map((p, i) => (
                 <ProposalCard
                   key={`${propKey(p)}-${i}`}
@@ -345,13 +332,13 @@ export function Thread({
         </div>
       </div>
 
-      {/* One composer. The agent routes intent. */}
-      <div className="border-t border-edge bg-sidebar/80 px-6 py-4">
+      {/* One composer (Cursor-style): textarea + a row with the model chip and send. */}
+      <div className="px-6 pb-5 pt-1">
         <div className="mx-auto max-w-3xl">
-          <div className="flex items-end gap-2 rounded-2xl border border-edge bg-canvas px-3 py-2.5 transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/20">
+          <div className="rounded-2xl border border-edge bg-panel px-3 pb-2 pt-3 shadow-elev transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/15">
             <textarea
               ref={taRef}
-              className="max-h-[200px] h-6 flex-1 resize-none bg-transparent text-sm leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none"
+              className="block max-h-[200px] h-[22px] w-full resize-none bg-transparent px-1 text-[13.5px] leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none"
               rows={1}
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -361,28 +348,27 @@ export function Thread({
                   send();
                 }
               }}
-              placeholder="Message the agent — describe an issue, ask a question, or paste an error…"
+              placeholder="Ask Storage Agent…"
             />
-            <Button
-              variant="primary"
-              onClick={send}
-              disabled={busy || !text.trim()}
-              className="h-8 w-8 shrink-0 !px-0"
-              aria-label="Send"
-            >
-              {busy ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="19" x2="12" y2="5" />
-                  <polyline points="5 12 12 5 19 12" />
-                </svg>
-              )}
-            </Button>
-          </div>
-          <div className="mt-1.5 px-1 text-[11px] text-gray-600">
-            <kbd className="rounded bg-elevated px-1 py-0.5 font-sans text-gray-400">↵</kbd>
-            <span className="ml-1.5">to send · review and confirm before anything runs</span>
+            <div className="mt-2 flex items-center gap-1">
+              {modelChip}
+              <span className="ml-auto text-[11px] text-gray-600">↵ to send</span>
+              <button
+                onClick={send}
+                disabled={busy || !text.trim()}
+                aria-label="Send"
+                className="ml-2 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent text-white transition-all hover:bg-accent-soft active:scale-95 disabled:opacity-40"
+              >
+                {busy ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="19" x2="12" y2="5" />
+                    <polyline points="5 12 12 5 19 12" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -424,7 +410,7 @@ export function Thread({
         <Overlay onClose={() => setReport(null)}>
           <div className="flex h-full flex-col bg-canvas">
             <header className="flex items-center justify-between border-b border-edge px-6 py-3">
-              <span className="text-sm font-semibold text-gray-100">Session report</span>
+              <span className="text-sm font-semibold text-gray-100">Report</span>
               <Button variant="ghost" onClick={() => setReport(null)}>Close</Button>
             </header>
             <pre className="flex-1 overflow-auto whitespace-pre-wrap p-6 text-[11px] text-gray-300">{report}</pre>
