@@ -55,7 +55,7 @@ body {
 /* Visible keyboard focus only (not on mouse click). */
 :focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #0c0d10, 0 0 0 4px rgba(16, 185, 129, 0.55);
+  box-shadow: 0 0 0 2px #0b0b0d, 0 0 0 4px rgba(109, 139, 255, 0.55);
   border-radius: 0.5rem;
 }
 

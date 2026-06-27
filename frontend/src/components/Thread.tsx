@@ -80,11 +80,13 @@ export function Thread({
   onSessionCreated,
   onOpenSettings,
   onChanged,
+  sidecarReady,
 }: {
   sessionId: string | null;
   onSessionCreated: (id: string) => void;
   onOpenSettings: () => void;
   onChanged: () => void;
+  sidecarReady: boolean;
 }) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [triage, setTriage] = useState<TriageCase[]>([]);
@@ -111,9 +113,12 @@ export function Thread({
       .then((ps) => setModelName(ps.length ? ps[0].model || ps[0].name : null))
       .catch(() => undefined);
 
+  // Fetch the model name once the sidecar is reachable (it isn't during the
+  // ~1 min first-launch cold start, so a single mount-time fetch would miss it).
   useEffect(() => {
-    refreshModel();
-  }, []);
+    if (sidecarReady) refreshModel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sidecarReady]);
 
   const reload = async (id: string | null) => {
     if (!id) {
@@ -414,7 +419,7 @@ export function Thread({
             )}
             <textarea
               ref={taRef}
-              className="block max-h-[200px] h-[22px] w-full resize-none bg-transparent px-1 text-[13.5px] leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none"
+              className="block max-h-[200px] h-[22px] w-full resize-none bg-transparent px-1 text-[13.5px] leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none focus-visible:shadow-none"
               rows={1}
               value={text}
               onChange={(e) => setText(e.target.value)}
