@@ -9,13 +9,8 @@ import {
   previewSessionAction,
   submitErrorTriage,
 } from "../api";
-import type {
-  ErrorInputKind,
-  NextAction,
-  SessionDetail,
-  TriageCase,
-} from "../types";
-import { Button, Select } from "./ui";
+import type { NextAction, SessionDetail, TriageCase } from "../types";
+import { Button } from "./ui";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
 import { NewRunForm } from "../views/RunsView";
 import { MessageCard, ProposalCard, RunCard, TriageCard } from "./ThreadCards";
@@ -29,19 +24,57 @@ type RunPrefill = { run_type?: string; provider_id?: string; bucket?: string };
 
 const propKey = (p: NextAction) => `${p.action_type}::${p.title}`;
 
-const EXAMPLES = [
-  "Reads from my bucket are slow",
-  "Getting 403 AccessDenied on uploads",
-  "SignatureDoesNotMatch errors",
-  "Review my bucket's security & lifecycle",
-];
+// Heuristic: does this message look like a raw error to triage offline?
+const looksLikeError = (t: string) =>
+  /<\?xml|<error>|<code>|accessdenied|signaturedoesnotmatch|nosuchbucket|invalidaccesskey|requesttimeout|slowdown|traceback|botocore|\bhttp\/\d|\b4\d\d\b|\b5\d\d\b/i.test(
+    t,
+  );
 
-const INPUT_KINDS: { value: ErrorInputKind; label: string }[] = [
-  { value: "mixed", label: "Paste anything" },
-  { value: "error_code", label: "S3 error / XML" },
-  { value: "http_response", label: "HTTP response" },
-  { value: "sdk_stack_trace", label: "SDK stack trace" },
-  { value: "cli_output", label: "CLI output" },
+const icon = (d: string) => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    {d.split("|").map((p, i) => <path key={i} d={p} />)}
+  </svg>
+);
+
+// The agent's full capability surface — not just error triage. Each seeds the
+// single composer with a natural-language prompt; the agent routes from there.
+const CAPABILITIES: { label: string; hint: string; prompt: string; svg: React.ReactNode }[] = [
+  {
+    label: "Diagnose an error",
+    hint: "403, signature, endpoint, timeouts",
+    prompt: "I'm getting a 403 AccessDenied when uploading to my bucket, but reads work. Help me diagnose it.",
+    svg: icon("M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z|M12 9v4|M12 17h.01"),
+  },
+  {
+    label: "Analyze access logs",
+    hint: "Traffic, hot and cold objects",
+    prompt: "Analyze my S3 access logs for traffic patterns, error rates, and the hottest object keys.",
+    svg: icon("M3 3v18h18|M7 15l4-4 3 3 5-6"),
+  },
+  {
+    label: "Inventory & capacity",
+    hint: "Counts, sizes, storage classes",
+    prompt: "Give me an inventory and capacity breakdown of my bucket by object size and storage class.",
+    svg: icon("M3 5a9 3 0 1 0 18 0a9 3 0 1 0-18 0|M3 5v14a9 3 0 0 0 18 0V5|M3 12a9 3 0 0 0 18 0"),
+  },
+  {
+    label: "Review bucket config",
+    hint: "Security, lifecycle, cost, perf",
+    prompt: "Review my bucket's configuration for security, lifecycle, cost, and performance issues.",
+    svg: icon("M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"),
+  },
+  {
+    label: "Map account & buckets",
+    hint: "Discover the account layout",
+    prompt: "Discover my account and map out all my buckets, regions, and their configuration.",
+    svg: icon("M9 20 3 17V4l6 3 6-3 6 3v13l-6 3-6-3z|M9 7v13|M15 4v13"),
+  },
+  {
+    label: "Optimize storage",
+    hint: "Find cost & performance wins",
+    prompt: "Find cost and performance optimization opportunities across my object storage.",
+    svg: icon("M13 2 3 14h9l-1 8 10-12h-9l1-8z"),
+  },
 ];
 
 export function Thread({
@@ -59,9 +92,6 @@ export function Thread({
   const [triage, setTriage] = useState<TriageCase[]>([]);
   const [liveProposals, setLiveProposals] = useState<NextAction[]>([]);
   const [text, setText] = useState("");
-  const [mode, setMode] = useState<"chat" | "triage">("chat");
-  const [triageKind, setTriageKind] = useState<ErrorInputKind>("mixed");
-  const [planner, setPlanner] = useState<"deterministic" | "agent">("deterministic");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needKey, setNeedKey] = useState(false);
@@ -90,15 +120,14 @@ export function Thread({
   };
 
   useEffect(() => {
-    // Thread is no longer remounted per session (App does not key it by id), so
-    // reset all per-session UI state here when the active session changes.
+    // Thread is not remounted per session (App does not key it by id), so reset
+    // all per-session UI state here when the active session changes.
     localId.current = sessionId;
     setLiveProposals([]);
     setPreviews({});
     setNeedKey(false);
     setError(null);
     setText("");
-    setMode("chat");
     setRunStarter(null);
     setImportHandoff(null);
     setReport(null);
@@ -118,30 +147,32 @@ export function Thread({
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [items.length, liveProposals.length]);
 
-  // Auto-grow the composer (and shrink back when cleared). When empty we pin a
-  // single line — measuring scrollHeight would otherwise include the wrapping
-  // placeholder (Chrome counts it) and leave the box several lines tall.
+  // Auto-grow the composer (pin one line when empty so the wrapping placeholder
+  // doesn't inflate scrollHeight).
   useEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
     if (!text) {
-      ta.style.height = "36px";
+      ta.style.height = "24px";
       return;
     }
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
-  }, [text, mode]);
+  }, [text]);
 
   const proposals = liveProposals.length ? liveProposals : detail?.summary?.next_actions ?? [];
 
   const ensureSession = async (seed: string): Promise<string> => {
     if (localId.current) return localId.current;
-    const s = await createSession({ title: (seed || "New investigation").slice(0, 80), goal: seed || undefined });
+    const s = await createSession({ title: (seed || "Investigation").slice(0, 80) });
     localId.current = s.id;
     onSessionCreated(s.id);
     return s.id;
   };
 
+  // One input. The agent answers; if no model key is configured and the message
+  // looks like an error, fall back to deterministic offline triage so the user
+  // still gets value without credentials.
   const send = async () => {
     const t = text.trim();
     if (!t) return;
@@ -155,30 +186,19 @@ export function Thread({
         setLiveProposals(r.proposed_actions || []);
       } catch (e) {
         const msg = String(e);
-        if (/model provider|model key|api key/i.test(msg)) setNeedKey(true);
-        else setError(msg);
+        if (/model provider|model key|api key/i.test(msg)) {
+          if (looksLikeError(t)) {
+            await submitErrorTriage({ content: t, input_kind: "mixed", session_id: id, planner_mode: "deterministic" });
+          } else {
+            setNeedKey(true);
+          }
+        } else {
+          setError(msg);
+        }
       }
       setText("");
       await reload(id);
       onChanged();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const sendTriage = async () => {
-    const t = text.trim();
-    if (!t) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const id = await ensureSession("Error triage");
-      await submitErrorTriage({ content: t, input_kind: triageKind, session_id: id, planner_mode: planner });
-      setText("");
-      await reload(id);
-      onChanged();
-    } catch (e) {
-      setError(String(e));
     } finally {
       setBusy(false);
     }
@@ -217,56 +237,62 @@ export function Thread({
         const rep = await getSessionReport(localId.current);
         setReport(rep.content);
       } else if (r.open === "message_composer") {
-        setMode("chat");
         setText(r.prefill.question || "");
+        taRef.current?.focus();
       }
     } catch (e) {
       setError(String(e));
     }
   };
 
-  // --- empty / new thread ---------------------------------------------------
-  const isEmpty = !sessionId && items.length === 0;
+  const seed = (prompt: string) => {
+    setText(prompt);
+    requestAnimationFrame(() => taRef.current?.focus());
+  };
+
+  const isEmpty = items.length === 0;
 
   return (
     <div className="flex h-full flex-1 flex-col bg-canvas">
-      <header className="flex items-center justify-between border-b border-edge px-6 py-3.5">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-gray-100">
-            {detail?.title || "New investigation"}
+      {/* Only a real, non-empty session gets a header — a fresh thread shows just
+          the canvas + composer, like Codex/Cursor. */}
+      {detail && items.length > 0 && (
+        <header className="flex items-center gap-3 border-b border-edge px-6 py-3">
+          <div className="min-w-0">
+            <div className="truncate text-[13px] font-medium text-gray-100">{detail.title || "Investigation"}</div>
+            {detail.goal ? <div className="truncate text-[11px] text-gray-500">{detail.goal}</div> : null}
           </div>
-          <div className="truncate text-xs text-gray-500">{detail?.goal || "Describe a storage issue to begin."}</div>
-        </div>
-      </header>
+        </header>
+      )}
 
       <div className="flex-1 overflow-auto px-6 py-6">
         <div className="mx-auto max-w-3xl space-y-4">
           {isEmpty && (
-            <div className="flex flex-col items-center py-12 text-center animate-fade-in-up">
+            <div className="flex flex-col items-center py-10 animate-fade-in-up">
               <div className="mb-4 grid h-12 w-12 place-items-center rounded-2xl border border-edge-strong bg-elevated text-accent">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
                   <path d="M12 2 2 7l10 5 10-5-10-5z" />
                   <path d="M2 17l10 5 10-5" />
                   <path d="M2 12l10 5 10-5" />
                 </svg>
               </div>
-              <div className="text-base font-medium text-gray-100">Start an investigation</div>
-              <p className="mt-2 max-w-md text-sm leading-relaxed text-gray-500">
-                Describe a storage problem and the agent grounds its answer in evidence, then proposes safe next steps —
-                you review and confirm before anything runs. Or paste an S3 error for offline triage, no credentials needed.
+              <div className="text-lg font-medium text-gray-100">What can I help with?</div>
+              <p className="mt-1.5 max-w-md text-center text-[13px] leading-relaxed text-gray-500">
+                Your object-storage agent — diagnose issues, analyze logs and inventory, review configuration, and find
+                optimizations. It grounds answers in evidence and asks before running anything.
               </p>
-              <div className="mt-5 flex flex-wrap justify-center gap-2">
-                {EXAMPLES.map((ex) => (
+              <div className="mt-6 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
+                {CAPABILITIES.map((c) => (
                   <button
-                    key={ex}
-                    onClick={() => {
-                      setMode("chat");
-                      setText(ex);
-                      taRef.current?.focus();
-                    }}
-                    className="rounded-full border border-edge bg-panel px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-edge-strong hover:bg-hover hover:text-gray-100"
+                    key={c.label}
+                    onClick={() => seed(c.prompt)}
+                    className="group flex items-start gap-3 rounded-xl border border-edge bg-panel px-3.5 py-3 text-left transition-all duration-150 hover:border-edge-strong hover:bg-elevated active:scale-[0.99]"
                   >
-                    {ex}
+                    <span className="mt-0.5 text-gray-500 transition-colors group-hover:text-accent-soft">{c.svg}</span>
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-gray-200">{c.label}</span>
+                      <span className="block text-[11.5px] text-gray-500">{c.hint}</span>
+                    </span>
                   </button>
                 ))}
               </div>
@@ -285,7 +311,7 @@ export function Thread({
 
           {needKey && (
             <div className="animate-fade-in-up rounded-xl border border-amber-800/50 bg-amber-950/20 p-3.5 text-sm text-amber-200">
-              No model API key is configured, so the agent can't interpret yet. Deterministic results still work.
+              Add a model API key to get full agent answers. You can still triage pasted S3 errors offline without one.
               <div className="mt-2.5">
                 <Button variant="primary" size="sm" onClick={onOpenSettings}>Add a model API key</Button>
               </div>
@@ -301,7 +327,7 @@ export function Thread({
             <div className="space-y-2 pt-1">
               <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-gray-500">
                 <span className="h-px flex-1 bg-edge" />
-                Suggested next actions
+                Suggested next steps
                 <span className="h-px flex-1 bg-edge" />
               </div>
               {proposals.map((p, i) => (
@@ -319,62 +345,35 @@ export function Thread({
         </div>
       </div>
 
-      {/* Composer */}
-      <div className="border-t border-edge bg-sidebar/80 px-6 py-3.5">
+      {/* One composer. The agent routes intent. */}
+      <div className="border-t border-edge bg-sidebar/80 px-6 py-4">
         <div className="mx-auto max-w-3xl">
-          <div className="mb-2.5 flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-lg border border-edge bg-canvas p-0.5 text-xs">
-              <button
-                onClick={() => setMode("chat")}
-                className={`rounded-md px-2.5 py-1 transition-colors ${mode === "chat" ? "bg-elevated text-gray-100 shadow-sm" : "text-gray-500 hover:text-gray-300"}`}
-              >
-                Ask the agent
-              </button>
-              <button
-                onClick={() => setMode("triage")}
-                className={`rounded-md px-2.5 py-1 transition-colors ${mode === "triage" ? "bg-elevated text-gray-100 shadow-sm" : "text-gray-500 hover:text-gray-300"}`}
-              >
-                Triage an error
-              </button>
-            </div>
-            {mode === "triage" && (
-              <>
-                <Select value={triageKind} onChange={(e) => setTriageKind(e.target.value as ErrorInputKind)} className="!w-auto py-1 text-xs">
-                  {INPUT_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-                </Select>
-                <Select value={planner} onChange={(e) => setPlanner(e.target.value as "deterministic" | "agent")} className="!w-auto py-1 text-xs">
-                  <option value="deterministic">Deterministic</option>
-                  <option value="agent">Agent</option>
-                </Select>
-              </>
-            )}
-          </div>
-          <div className="flex items-end gap-2 rounded-2xl border border-edge bg-canvas p-2 transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/20">
+          <div className="flex items-end gap-2 rounded-2xl border border-edge bg-canvas px-3 py-2.5 transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/20">
             <textarea
               ref={taRef}
-              className="max-h-[200px] h-9 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none"
+              className="max-h-[200px] h-6 flex-1 resize-none bg-transparent text-sm leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none"
               rows={1}
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  mode === "chat" ? send() : sendTriage();
+                  send();
                 }
               }}
-              placeholder={mode === "chat" ? "Describe the storage issue, or ask about this investigation…" : "Paste an S3 error / HTTP response / stack trace…"}
+              placeholder="Message the agent — describe an issue, ask a question, or paste an error…"
             />
             <Button
               variant="primary"
-              onClick={mode === "chat" ? send : sendTriage}
+              onClick={send}
               disabled={busy || !text.trim()}
-              className="h-9 w-9 !px-0"
-              aria-label={mode === "chat" ? "Send" : "Triage"}
+              className="h-8 w-8 shrink-0 !px-0"
+              aria-label="Send"
             >
               {busy ? (
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
               ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="19" x2="12" y2="5" />
                   <polyline points="5 12 12 5 19 12" />
                 </svg>
@@ -382,10 +381,8 @@ export function Thread({
             </Button>
           </div>
           <div className="mt-1.5 px-1 text-[11px] text-gray-600">
-            <kbd className="rounded bg-elevated px-1 py-0.5 font-sans text-gray-400">⌘</kbd>
-            <kbd className="ml-0.5 rounded bg-elevated px-1 py-0.5 font-sans text-gray-400">↵</kbd>
-            <span className="ml-1.5">to {mode === "chat" ? "send" : "triage"}</span>
-            {mode === "triage" && <span className="ml-1">· runs offline, no cloud credentials</span>}
+            <kbd className="rounded bg-elevated px-1 py-0.5 font-sans text-gray-400">↵</kbd>
+            <span className="ml-1.5">to send · review and confirm before anything runs</span>
           </div>
         </div>
       </div>
