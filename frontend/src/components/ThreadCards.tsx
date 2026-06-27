@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { NextAction, SessionRunLink, TriageCase } from "../types";
 import { RunDetail } from "./RunDetail";
 import { Markdown } from "./Markdown";
@@ -35,12 +35,63 @@ export function MessageCard({ role, content }: { role: string; content: string |
     );
   }
   return (
-    <div className="animate-fade-in-up">
+    <div className="group animate-fade-in-up">
+      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-accent-soft">
+        {Spark}
+        Storage Agent
+        <CopyButton text={content || ""} />
+      </div>
+      <Markdown text={content || ""} />
+    </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() =>
+        navigator.clipboard?.writeText(text).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1400);
+        })
+      }
+      className="ml-1 flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-normal text-gray-600 opacity-0 transition-opacity hover:text-gray-300 group-hover:opacity-100"
+      aria-label="Copy message"
+    >
+      {copied ? (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+      ) : (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+      )}
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
+/** Animated "agent is working" placeholder shown while a reply is in flight. */
+export function ThinkingBubble() {
+  const labels = ["Thinking…", "Consulting StorageOps skills…", "Grounding in evidence…", "Drafting a response…"];
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI((x) => (x + 1) % labels.length), 2200);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div className="animate-fade-in">
       <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-accent-soft">
         {Spark}
         Storage Agent
       </div>
-      <Markdown text={content || ""} />
+      <div className="flex items-center gap-2.5 text-[13px] text-gray-500">
+        <span className="flex gap-1">
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "0ms" }} />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "150ms" }} />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "300ms" }} />
+        </span>
+        <span className="animate-pulse">{labels[i]}</span>
+      </div>
     </div>
   );
 }

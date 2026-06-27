@@ -14,7 +14,7 @@ import type { NextAction, SessionDetail, TriageCase } from "../types";
 import { Button } from "./ui";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
 import { NewRunForm } from "../views/RunsView";
-import { MessageCard, ProposalCard, RunCard, TriageCard } from "./ThreadCards";
+import { MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
 
 type Item =
   | { kind: "message"; ts: string; role: string; content: string | null; id: string }
@@ -24,6 +24,18 @@ type Item =
 type RunPrefill = { run_type?: string; provider_id?: string; bucket?: string };
 
 const propKey = (p: NextAction) => `${p.action_type}::${p.title}`;
+
+// Turn a raw sidecar/provider error into a short, actionable line.
+const cleanError = (raw: string): string => {
+  const s = raw.replace(/^Error:\s*/, "").replace(/^Session assistant failed:\s*/, "");
+  if (/401|authentication|api key.*invalid|invalid.*api key/i.test(s))
+    return "The model provider rejected the request — the API key looks invalid or expired. Update it in Settings.";
+  if (/404|not found|model.*exist/i.test(s))
+    return "The model provider returned 404 — check the model name and base URL in Settings.";
+  if (/timeout|timed out|connection|network/i.test(s))
+    return "Couldn't reach the model provider. Check the network or the base URL in Settings.";
+  return s.length > 280 ? `${s.slice(0, 280)}…` : s;
+};
 
 // Heuristic: does this message look like a raw error to triage offline?
 const looksLikeError = (t: string) =>
@@ -73,6 +85,7 @@ export function Thread({
   >(null);
   const [report, setReport] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
   const localId = useRef<string | null>(sessionId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -127,7 +140,7 @@ export function Thread({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [items.length, liveProposals.length]);
+  }, [items.length, liveProposals.length, pending]);
 
   // Auto-grow the composer (pin one line when empty so the wrapping placeholder
   // doesn't inflate scrollHeight).
@@ -161,6 +174,8 @@ export function Thread({
     setBusy(true);
     setError(null);
     setNeedKey(false);
+    setText("");
+    setPending(t); // show the user's turn + a thinking indicator immediately
     try {
       const id = await ensureSession(t);
       try {
@@ -168,18 +183,19 @@ export function Thread({
         setLiveProposals(r.proposed_actions || []);
       } catch (e) {
         const msg = String(e);
-        if (/model provider|model key|api key/i.test(msg)) {
+        if (/no model provider configured|no api key stored/i.test(msg)) {
+          // No model configured at all → offer to add one (or triage offline).
           if (looksLikeError(t)) {
             await submitErrorTriage({ content: t, input_kind: "mixed", session_id: id, planner_mode: "deterministic" });
           } else {
             setNeedKey(true);
           }
         } else {
-          setError(msg);
+          setError(cleanError(msg));
         }
       }
-      setText("");
       await reload(id);
+      setPending(null);
       onChanged();
     } finally {
       setBusy(false);
@@ -232,7 +248,7 @@ export function Thread({
     requestAnimationFrame(() => taRef.current?.focus());
   };
 
-  const isEmpty = items.length === 0;
+  const isEmpty = items.length === 0 && !pending;
 
   const modelChip = (
     <button
@@ -300,6 +316,13 @@ export function Thread({
             ),
           )}
 
+          {pending && (
+            <>
+              <MessageCard role="user" content={pending} />
+              <ThinkingBubble />
+            </>
+          )}
+
           {needKey && (
             <div className="animate-fade-in-up rounded-xl border border-amber-800/50 bg-amber-950/20 p-3.5 text-[13px] text-amber-200">
               Add a model API key for full agent answers. Pasted S3 errors are still triaged offline without one.
@@ -311,6 +334,9 @@ export function Thread({
           {error && (
             <div className="animate-fade-in-up rounded-xl border border-red-900/50 bg-red-950/20 p-3.5 text-[13px] text-red-300">
               {error}
+              <div className="mt-2.5">
+                <Button variant="default" size="sm" onClick={onOpenSettings}>Open settings</Button>
+              </div>
             </div>
           )}
 
