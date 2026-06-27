@@ -6,6 +6,34 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.0-pre.8] - 2026-06-28
+
+Skills become real Agent Skills. Ad-hoc signed (not notarized), pre-1.0,
+macOS arm64.
+
+### Changed
+
+- **Skills now follow the Agent Skills paradigm (progressive disclosure).** The
+  agent's context carries a compact catalog (name + description for all 16
+  StorageOps skills); it loads a skill's full method on demand via a new
+  read-only `read_skill` tool — instead of a keyword matcher pre-stuffing full
+  skill bodies into every prompt. The model chooses; context stays lean.
+- **Removed the self-contradictory "tools/scripts disabled" skill wrapper.** It
+  pre-dated the tool-using agent and told it not to do what it now does.
+- **Rewrote all 16 SKILL.md bodies + the registry to be app-native.** They were
+  written for a different runtime (helper scripts, `references/` files, foreign
+  tools, a foreign output contract). Each now keeps its decision tree but maps
+  its workflow to the agent's real read-only tools (`test_credentials`,
+  `head_object`, `test_addressing_style`, `inspect_endpoint_tls`,
+  `review_bucket_*`, …) and confirmed runs, and reports facts-vs-inference like
+  the rest of the app.
+
+### Fixed
+
+- Frontmatter trimmed to `name` + `description`; dropped `recommended_tools`,
+  `estimated_tokens`, and other foreign-runtime metadata. A guard test now fails
+  the build if foreign-runtime artifacts reappear in the pack.
+
 ## [0.19.0-pre.7] - 2026-06-27
 
 A more capable agent and a markdown-grade thread. Ad-hoc signed (not
@@ -239,7 +267,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.7...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.8...HEAD
+[0.19.0-pre.8]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.8
 [0.19.0-pre.7]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.7
 [0.19.0-pre.6]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.6
 [0.19.0-pre.5]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.5
