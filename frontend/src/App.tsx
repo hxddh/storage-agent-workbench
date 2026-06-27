@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Sidebar, type NavItem } from "./components/Sidebar";
 import { MainArea } from "./components/MainArea";
 import { ContextPanel } from "./components/ContextPanel";
+import { HomeView } from "./views/HomeView";
 import { ProvidersView } from "./views/ProvidersView";
 import { RunsView } from "./views/RunsView";
 import { SessionsView } from "./views/SessionsView";
@@ -11,19 +12,26 @@ import { useSidecarHealth } from "./hooks/useSidecarHealth";
 
 export default function App() {
   const { status, service, slow } = useSidecarHealth();
-  const [active, setActive] = useState<NavItem>("Sessions");
+  const [active, setActive] = useState<NavItem>("Home");
   const [openRunId, setOpenRunId] = useState<string | null>(null);
+  const [openSessionId, setOpenSessionId] = useState<string | null>(null);
 
   const openRun = (runId: string) => {
     setOpenRunId(runId);
     setActive("Runs");
   };
+  const openSession = (sessionId: string) => {
+    setOpenSessionId(sessionId);
+    setActive("Sessions");
+  };
 
   return (
     <div className="flex h-full w-full bg-canvas text-gray-200">
       <Sidebar status={status} service={service} slow={slow} active={active} onSelect={setActive} />
-      {active === "Sessions" ? (
-        <SessionsView />
+      {active === "Home" ? (
+        <HomeView onNavigate={setActive} onOpenSession={openSession} />
+      ) : active === "Sessions" ? (
+        <SessionsView initialSessionId={openSessionId} onConsumed={() => setOpenSessionId(null)} />
       ) : active === "Providers" ? (
         <ProvidersView onRunCreated={openRun} />
       ) : active === "Runs" ? (
@@ -33,7 +41,7 @@ export default function App() {
       ) : active === "Datasets" ? (
         <DatasetsView />
       ) : (
-        <MainArea />
+        <MainArea onNavigate={setActive} />
       )}
       <ContextPanel />
     </div>

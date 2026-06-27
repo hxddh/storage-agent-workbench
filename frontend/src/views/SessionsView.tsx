@@ -35,8 +35,26 @@ type Mode =
   | { kind: "newRun"; id: string; prefill?: RunPrefill }
   | { kind: "run"; id: string; runId: string };
 
-export function SessionsView() {
-  const [mode, setMode] = useState<Mode>({ kind: "list" });
+export function SessionsView({
+  initialSessionId = null,
+  onConsumed,
+}: {
+  initialSessionId?: string | null;
+  onConsumed?: () => void;
+} = {}) {
+  const [mode, setMode] = useState<Mode>(
+    initialSessionId ? { kind: "detail", id: initialSessionId } : { kind: "list" },
+  );
+
+  // Deep-link: when the app navigates here to open a specific session (e.g. from
+  // the Home composer), jump straight to that session's detail.
+  useEffect(() => {
+    if (initialSessionId) {
+      setMode({ kind: "detail", id: initialSessionId });
+      onConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSessionId]);
 
   if (mode.kind === "new") {
     return <NewSessionForm onCancel={() => setMode({ kind: "list" })} onCreated={(id) => setMode({ kind: "detail", id })} />;

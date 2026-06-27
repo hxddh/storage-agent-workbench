@@ -6,9 +6,32 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
-## [0.19.0-pre.1] - 2026-06-27
+### Changed
 
-First public pre-release. Unsigned, pre-1.0, macOS arm64 primary target.
+- Reworked the desktop UI into an **agent-first workbench**: a Home / investigation
+  workspace is now the entry point (task composer + setup status + quick actions),
+  with Runs / Datasets / Reports as supporting views rather than the starting point.
+- Model-provider and cloud-provider setup are surfaced from Home and reflected in a
+  live Context panel (setup + safety state).
+
+### Fixed
+
+- Removed stale "Phase 01 / bootstrap only" and "credentials arrive in later phases"
+  copy from the Settings and Context panels.
+
+### Notes
+
+- **v0.19.0-pre.1 was withdrawn** (reverted to draft) after product smoke testing:
+  the app launched and the sidecar connected, but the UI was not yet a usable
+  agent-first workbench. A separate diagnosis also found the macOS bundle's ad-hoc
+  code signature was broken (Gatekeeper "is damaged"); track that packaging fix
+  separately.
+- A planned `v0.19.0-pre.2` will carry these fixes once verified.
+
+## [0.19.0-pre.1] - 2026-06-27 [WITHDRAWN]
+
+Withdrawn after product smoke failed (see Unreleased → Notes). Unsigned, pre-1.0,
+macOS arm64.
 
 ### Added
 
