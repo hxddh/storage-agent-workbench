@@ -3,6 +3,7 @@ import { SessionRail } from "./components/SessionRail";
 import { Thread } from "./components/Thread";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { FirstRunWizard } from "./components/FirstRunWizard";
+import { CommandPalette } from "./components/CommandPalette";
 import { listCloudProviders, listModelProviders, listSessions } from "./api";
 import type { SessionSummaryRow } from "./types";
 import { useSidecarHealth } from "./hooks/useSidecarHealth";
@@ -15,6 +16,7 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -52,6 +54,25 @@ export default function App() {
     setShowWizard(false);
   };
 
+  // Global shortcuts: ⌘K command palette, ⌘N new chat, Esc closes overlays.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      } else if (meta && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        setActiveId(null);
+      } else if (e.key === "Escape") {
+        setPaletteOpen(false);
+        setDrawerOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
     <div className="flex h-full w-full bg-canvas text-gray-200">
       <SessionRail
@@ -76,6 +97,15 @@ export default function App() {
       />
 
       <SettingsDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        sessions={sessions}
+        onSelectSession={setActiveId}
+        onNew={() => setActiveId(null)}
+        onOpenSettings={() => setDrawerOpen(true)}
+      />
 
       {showWizard && (
         <FirstRunWizard

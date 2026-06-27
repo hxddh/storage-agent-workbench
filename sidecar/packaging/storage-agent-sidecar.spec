@@ -34,20 +34,23 @@ _skillpack = (Path(SPECPATH) / ".." / "app" / "bundled_skillpacks").resolve()
 if _skillpack.is_dir():
     datas += [(str(_skillpack), "app/bundled_skillpacks")]
 
-# Packages with C extensions / data files that need full collection.
-for pkg in ("duckdb", "pyarrow", "pandas"):
+# Packages with C extensions / data files, or that import submodules lazily and
+# must be collected in FULL (submodules + data + dylibs). The OpenAI Agents SDK
+# (`agents`) and `openai` import submodules at package-import time, so listing
+# them as bare hiddenimports is not enough — the one-file bundle then fails with
+# "OpenAI Agents SDK is not available in this environment." griffe is used by the
+# SDK to build tool schemas from docstrings.
+for pkg in ("duckdb", "pyarrow", "pandas", "openai", "agents", "griffe"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b
     hiddenimports += h
 
-# Dynamically/lazily imported at runtime (e.g. the Agents SDK is imported inside
-# a function, uvicorn loads its loop/protocol implementations by name).
+# Dynamically/lazily imported at runtime (uvicorn loads its loop/protocol
+# implementations by name; keyring resolves backends by name).
 hiddenimports += collect_submodules("uvicorn")
 hiddenimports += [
     "app.main",
-    "openai",
-    "agents",
     "keyring.backends",
 ]
 

@@ -14,7 +14,7 @@ import type { NextAction, SessionDetail, TriageCase } from "../types";
 import { Button } from "./ui";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
 import { NewRunForm } from "../views/RunsView";
-import { MessageCard, ProposalCard, RunCard, TriageCard } from "./ThreadCards";
+import { MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
 
 type Item =
   | { kind: "message"; ts: string; role: string; content: string | null; id: string }
@@ -24,6 +24,20 @@ type Item =
 type RunPrefill = { run_type?: string; provider_id?: string; bucket?: string };
 
 const propKey = (p: NextAction) => `${p.action_type}::${p.title}`;
+
+// Turn a raw sidecar/provider error into a short, actionable line.
+const cleanError = (raw: string): string => {
+  const s = raw.replace(/^Error:\s*/, "").replace(/^Session assistant failed:\s*/, "");
+  if (/agents sdk is not available|agent runtime/i.test(s))
+    return "The agent runtime isn't available in this build. Update to the latest app version.";
+  if (/401|authentication|api key.*invalid|invalid.*api key/i.test(s))
+    return "The model provider rejected the request — the API key looks invalid or expired. Update it in Settings.";
+  if (/404|not found|model.*exist/i.test(s))
+    return "The model provider returned 404 — check the model name and base URL in Settings.";
+  if (/timeout|timed out|connection|network/i.test(s))
+    return "Couldn't reach the model provider. Check the network or the base URL in Settings.";
+  return s.length > 280 ? `${s.slice(0, 280)}…` : s;
+};
 
 // Heuristic: does this message look like a raw error to triage offline?
 const looksLikeError = (t: string) =>
@@ -40,6 +54,19 @@ const SUGGESTIONS: { label: string; prompt: string }[] = [
   { label: "Review bucket config", prompt: "Review my bucket's configuration for security, lifecycle, cost, and performance issues." },
   { label: "Map account & buckets", prompt: "Discover my account and map out all my buckets, regions, and their configuration." },
   { label: "Optimize storage", prompt: "Find cost and performance optimization opportunities across my object storage." },
+];
+
+// Slash commands: "/" in the composer opens this menu. Capability commands seed
+// a prompt; "report" runs the session report.
+type Slash = { cmd: string; label: string; prompt?: string; action?: "report" };
+const SLASH: Slash[] = [
+  { cmd: "diagnose", label: "Diagnose an error", prompt: SUGGESTIONS[0].prompt },
+  { cmd: "logs", label: "Analyze access logs", prompt: SUGGESTIONS[1].prompt },
+  { cmd: "inventory", label: "Inventory & capacity", prompt: SUGGESTIONS[2].prompt },
+  { cmd: "config", label: "Review bucket config", prompt: SUGGESTIONS[3].prompt },
+  { cmd: "account", label: "Map account & buckets", prompt: SUGGESTIONS[4].prompt },
+  { cmd: "optimize", label: "Optimize storage", prompt: SUGGESTIONS[5].prompt },
+  { cmd: "report", label: "Generate a report for this chat", action: "report" },
 ];
 
 const Spark = ({ size = 12 }: { size?: number }) => (
@@ -73,6 +100,8 @@ export function Thread({
   >(null);
   const [report, setReport] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const [slashSel, setSlashSel] = useState(0);
   const localId = useRef<string | null>(sessionId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -127,7 +156,7 @@ export function Thread({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [items.length, liveProposals.length]);
+  }, [items.length, liveProposals.length, pending]);
 
   // Auto-grow the composer (pin one line when empty so the wrapping placeholder
   // doesn't inflate scrollHeight).
@@ -161,6 +190,8 @@ export function Thread({
     setBusy(true);
     setError(null);
     setNeedKey(false);
+    setText("");
+    setPending(t); // show the user's turn + a thinking indicator immediately
     try {
       const id = await ensureSession(t);
       try {
@@ -168,18 +199,19 @@ export function Thread({
         setLiveProposals(r.proposed_actions || []);
       } catch (e) {
         const msg = String(e);
-        if (/model provider|model key|api key/i.test(msg)) {
+        if (/no model provider configured|no api key stored/i.test(msg)) {
+          // No model configured at all → offer to add one (or triage offline).
           if (looksLikeError(t)) {
             await submitErrorTriage({ content: t, input_kind: "mixed", session_id: id, planner_mode: "deterministic" });
           } else {
             setNeedKey(true);
           }
         } else {
-          setError(msg);
+          setError(cleanError(msg));
         }
       }
-      setText("");
       await reload(id);
+      setPending(null);
       onChanged();
     } finally {
       setBusy(false);
@@ -232,7 +264,25 @@ export function Thread({
     requestAnimationFrame(() => taRef.current?.focus());
   };
 
-  const isEmpty = items.length === 0;
+  // Slash commands: open when the composer is exactly "/" + word chars.
+  const slashQ = /^\/(\w*)$/.exec(text)?.[1];
+  const slashItems = slashQ !== undefined ? SLASH.filter((c) => c.cmd.startsWith(slashQ.toLowerCase())) : [];
+  const slashOpen = slashItems.length > 0;
+  const slashIdx = Math.min(slashSel, slashItems.length - 1);
+
+  const selectSlash = (c: Slash) => {
+    if (c.action === "report") {
+      setText("");
+      if (localId.current) getSessionReport(localId.current).then((r) => setReport(r.content)).catch((e) => setError(cleanError(String(e))));
+      else setError("Start a chat first, then generate a report.");
+    } else if (c.prompt) {
+      setText(c.prompt);
+      requestAnimationFrame(() => taRef.current?.focus());
+    }
+    setSlashSel(0);
+  };
+
+  const isEmpty = items.length === 0 && !pending;
 
   const modelChip = (
     <button
@@ -300,6 +350,13 @@ export function Thread({
             ),
           )}
 
+          {pending && (
+            <>
+              <MessageCard role="user" content={pending} />
+              <ThinkingBubble />
+            </>
+          )}
+
           {needKey && (
             <div className="animate-fade-in-up rounded-xl border border-amber-800/50 bg-amber-950/20 p-3.5 text-[13px] text-amber-200">
               Add a model API key for full agent answers. Pasted S3 errors are still triaged offline without one.
@@ -311,6 +368,9 @@ export function Thread({
           {error && (
             <div className="animate-fade-in-up rounded-xl border border-red-900/50 bg-red-950/20 p-3.5 text-[13px] text-red-300">
               {error}
+              <div className="mt-2.5">
+                <Button variant="default" size="sm" onClick={onOpenSettings}>Open settings</Button>
+              </div>
             </div>
           )}
 
@@ -335,7 +395,23 @@ export function Thread({
       {/* One composer (Cursor-style): textarea + a row with the model chip and send. */}
       <div className="px-6 pb-5 pt-1">
         <div className="mx-auto max-w-3xl">
-          <div className="rounded-2xl border border-edge bg-panel px-3 pb-2 pt-3 shadow-elev transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/15">
+          <div className="relative rounded-2xl border border-edge bg-panel px-3 pb-2 pt-3 shadow-elev transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/15">
+            {slashOpen && (
+              <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-edge bg-panel shadow-pop animate-fade-in">
+                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-600">Commands</div>
+                {slashItems.map((c, i) => (
+                  <button
+                    key={c.cmd}
+                    onMouseEnter={() => setSlashSel(i)}
+                    onClick={() => selectSlash(c)}
+                    className={`flex w-full items-center gap-2.5 px-3 py-2 text-left ${i === slashIdx ? "bg-hover" : ""}`}
+                  >
+                    <span className="font-mono text-[12px] text-accent-soft">/{c.cmd}</span>
+                    <span className="text-[13px] text-gray-300">{c.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <textarea
               ref={taRef}
               className="block max-h-[200px] h-[22px] w-full resize-none bg-transparent px-1 text-[13.5px] leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none"
@@ -343,12 +419,18 @@ export function Thread({
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
+                if (slashOpen) {
+                  if (e.key === "ArrowDown") { e.preventDefault(); setSlashSel((s) => Math.min(slashItems.length - 1, s + 1)); return; }
+                  if (e.key === "ArrowUp") { e.preventDefault(); setSlashSel((s) => Math.max(0, s - 1)); return; }
+                  if (e.key === "Enter") { e.preventDefault(); selectSlash(slashItems[slashIdx]); return; }
+                  if (e.key === "Escape") { e.preventDefault(); setText(""); return; }
+                }
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   send();
                 }
               }}
-              placeholder="Ask Storage Agent…"
+              placeholder="Ask Storage Agent…  (/ for commands)"
             />
             <div className="mt-2 flex items-center gap-1">
               {modelChip}
