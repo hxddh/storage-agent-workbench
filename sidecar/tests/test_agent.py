@@ -249,3 +249,34 @@ def test_context_builder_excludes_secrets(agent_env):
 def test_assert_no_secrets_in_context_raises_on_raw_secret():
     with pytest.raises(GuardrailBlocked):
         guardrails.assert_no_secrets_in_context({"x": f"{ACCESS}"})
+
+
+def test_session_investigator_exposes_full_readonly_diagnostic_surface():
+    """The in-chat agent is a real diagnostician: it must reach the whole
+    read-only diagnostic surface (auth, addressing, TLS, range, object, config),
+    and every tool it can call must be read-only (never forbidden/mutating)."""
+    from app.agent_runtime import session_tools
+
+    def fake_function_tool(fn):  # mimic the SDK decorator enough for build()
+        fn.name = fn.__name__
+        return fn
+
+    conn = sqlite3.connect(":memory:")
+    try:
+        tools = session_tools.build(conn, fake_function_tool, [])
+    finally:
+        conn.close()
+    names = {getattr(t, "name", getattr(t, "__name__", "")) for t in tools}
+
+    expected = {
+        "list_providers", "list_buckets", "head_bucket", "list_objects",
+        "test_credentials", "head_object", "test_range_get",
+        "test_addressing_style", "inspect_endpoint_tls",
+        "get_bucket_config_summary", "review_bucket_security",
+        "review_bucket_lifecycle", "review_bucket_observability",
+        "review_bucket_cost_optimization", "review_bucket_performance_profile",
+    }
+    assert expected <= names, f"missing investigator tools: {expected - names}"
+    # No mutating/destructive surface ever leaks into the investigator toolset.
+    for n in names:
+        assert not guardrails.is_forbidden_tool(n), f"forbidden tool exposed: {n}"
