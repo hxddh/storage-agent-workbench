@@ -16,6 +16,7 @@ import uuid
 from typing import Any
 
 from ..repositories import account_discovery as account_repo
+from ..repositories import cloud_providers as cloud_repo
 from ..repositories import sessions as sessions_repo
 from ..security.redaction import redact_text
 
@@ -106,6 +107,14 @@ def _resolve(conn: sqlite3.Connection, session: dict[str, Any], proposal: dict[s
     provider_id = session.get("provider_id")
     bucket = session.get("primary_bucket") or proposal.get("prefill", {}).get("bucket")
 
+    # Fall back to the configured cloud provider(s): if the session has none
+    # bound and exactly one is configured, use it; otherwise offer them as
+    # candidates so the run form can pick. (Chat-created sessions bind none.)
+    cloud_list = cloud_repo.list_all(conn)
+    provider_candidates = [{"id": p.id, "name": p.name} for p in cloud_list]
+    if not provider_id and len(cloud_list) == 1:
+        provider_id = cloud_list[0].id
+
     result: dict[str, Any] = {
         "action_type": action_type,
         "ready": False,
@@ -118,25 +127,32 @@ def _resolve(conn: sqlite3.Connection, session: dict[str, Any], proposal: dict[s
     }
 
     if action_type == "run_account_discovery":
-        if not provider_id:
-            result["missing_inputs"].append("provider_id")
-        else:
-            result.update(ready=True, open="new_run",
-                          prefill={"run_type": "account_discovery", "provider_id": provider_id,
-                                   "session_id": session_id})
+        # Always open the run form; prefill the provider when we have one, else
+        # surface providers as candidates so the user can pick in the form.
+        result.update(open="new_run", prefill={"run_type": "account_discovery", "session_id": session_id})
+        if provider_id:
+            result.update(ready=True)
+            result["prefill"]["provider_id"] = provider_id
             result["will_create"] = {"run_type": "account_discovery", "session_id": session_id,
                                      "requires_confirmation": True}
+        else:
+            result["missing_inputs"].append("provider_id")
+            result["candidates"] = {"providers": provider_candidates}
 
     elif action_type in ("run_bucket_config_review", "run_diagnostic"):
         run_type = _RUN_TYPE[action_type]
-        if not provider_id:
+        result.update(open="new_run", prefill={"run_type": run_type, "session_id": session_id})
+        if provider_id:
+            result["prefill"]["provider_id"] = provider_id
+        else:
             result["missing_inputs"].append("provider_id")
-        if not bucket:
+            result["candidates"] = {"providers": provider_candidates}
+        if bucket:
+            result["prefill"]["bucket"] = bucket
+        else:
             result["missing_inputs"].append("bucket")
         if not result["missing_inputs"]:
-            result.update(ready=True, open="new_run",
-                          prefill={"run_type": run_type, "provider_id": provider_id,
-                                   "bucket": bucket, "session_id": session_id})
+            result.update(ready=True)
             result["will_create"] = {"run_type": run_type, "session_id": session_id,
                                      "requires_confirmation": True}
 

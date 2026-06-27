@@ -530,6 +530,7 @@ class SessionMessageOut(BaseModel):
     content: str | None
     referenced_run_ids: list[str] = Field(default_factory=list)
     referenced_evidence_ids: list[str] = Field(default_factory=list)
+    tool_activity: list[dict[str, str]] = Field(default_factory=list)
     created_at: str
 
 

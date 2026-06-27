@@ -1,12 +1,16 @@
-"""Session assistant — interpretation only (Phase 16).
+"""Session assistant — a live, read-only investigator.
 
-When a user asks a question in a session, the deterministic session summary is
-built first; the model then sees ONLY a bounded, sanitized context (session
-goal + summary facts/findings/open-questions/next-actions + recent messages) and
-answers. It has NO tools: it cannot run anything, download evidence, change
-config, run SQL, call S3, or use a shell. It can explain progress, attribute a
-problem, weigh evidence strength, recommend which next action to take, and draft
-a report — but it only ever proposes; the user acts.
+When a user asks a question, the deterministic session summary is built first
+for grounding; the agent then investigates LIVE using read-only tools
+(list_providers, list_buckets, head_bucket, bounded list_objects, and the
+review_bucket_* config tools — see ``session_tools``) and answers from their
+results. It chooses the provider/bucket itself.
+
+Every tool is read-only, bounded, audited, and secret-safe — there are no
+mutating or destructive operations, and credentials never reach the model.
+Anything that moves data or runs an analysis/large scan (evidence import,
+inventory/access-log analysis, a session report) is NOT done inline; it is
+proposed as a next step the user confirms.
 
 The real LLM call is behind the ``SESSION_LOOP`` seam so tests inject a fake
 (no SDK / no API key). Output is redacted + chain-of-thought-stripped + bounded.
@@ -22,6 +26,7 @@ from ..security.redaction import redact_text
 from ..skills import context as skill_context
 from ..skills import contract as skill_contract
 from . import guardrails
+from . import session_tools
 from .agent_service import AgentUnavailable
 from .guardrails import strip_chain_of_thought
 
@@ -31,12 +36,15 @@ _MAX_MESSAGES = 12
 _MAX_OUTPUT = 4000
 
 SESSION_SAFETY_RULES = [
-    "You receive ONLY a sanitized session summary and recent messages — no raw "
-    "logs, no raw inventory rows, no credentials, no SQL, no tools.",
-    "You cannot execute anything. You may explain, attribute, weigh evidence, and "
-    "recommend which existing next-action proposal to take — the user acts on it.",
-    "Distinguish facts (from runs) from inferences and suggestions; flag low-"
-    "confidence claims.",
+    "Investigate live with your read-only tools (list_providers, list_buckets, "
+    "head_bucket, list_objects, review_bucket_*). Ground every claim in a tool "
+    "result or the session summary — never invent buckets, configs, or numbers.",
+    "All tools are read-only and bounded; there are no destructive or mutating "
+    "operations. For anything that downloads data or runs an analysis/large scan "
+    "(evidence import, inventory/access-log analysis, a report), propose it as a "
+    "next step for the user to confirm — do not imply you did it.",
+    "Distinguish facts (from tools/runs) from inferences and suggestions; flag "
+    "low-confidence claims.",
     "Never output credentials, access/secret/session keys, model API keys, "
     "Authorization headers, cookies, signatures, or presigned-URL parameters.",
     "Do not include hidden chain-of-thought; answer concisely.",
@@ -49,19 +57,24 @@ _PROPOSAL_ACTION_TYPES = (
 )
 
 INSTRUCTIONS = (
-    "You are the assistant for a storage-diagnostics work session. You are given "
-    "a JSON context: the session goal, a deterministic summary (known facts, "
-    "findings, open questions, suggested next actions, limitations), and the "
-    "recent message thread. You may also be given StorageOps skills as "
-    "PROFESSIONAL DIAGNOSTIC METHODS.\n"
-    "Use the StorageOps skills as professional methods. Use session evidence as "
-    "factual grounding. Do not invent evidence. Do not claim any tool/script/CLI "
-    "was run. Do not request helper-script execution. If evidence is "
-    "insufficient, ask for the missing evidence or propose an existing safe next "
-    "action. If no provided skill is applicable, say so in your answer. Make "
-    "clear which statements are well-evidenced facts vs. inferences. Follow all "
-    "safety_rules.\n\n"
-    f"Available next-action types (proposals only): {_PROPOSAL_ACTION_TYPES}."
+    "You are Storage Agent, an expert object-storage diagnostician. Investigate "
+    "the user's question LIVE using your read-only tools, then answer from what "
+    "you find.\n"
+    "Workflow: call list_providers to see the configured providers; if the user "
+    "doesn't name one and exactly one is configured, use it. Then call the tools "
+    "you need — list_buckets to enumerate buckets, head_bucket / list_objects to "
+    "probe, and review_bucket_* / get_bucket_config_summary to assess "
+    "configuration — and base your answer on their results.\n"
+    "You are also given a JSON context (session goal, a deterministic summary, "
+    "recent messages) and StorageOps skills as PROFESSIONAL DIAGNOSTIC METHODS — "
+    "use them as method and grounding. Never invent buckets, configs, numbers, or "
+    "results you didn't obtain from a tool or the summary. Be concise and "
+    "concrete; make clear which statements are tool-verified facts vs. "
+    "inferences.\n"
+    "All tools are read-only. For anything that downloads data or runs an "
+    "analysis/large scan, propose it as a next step (do not imply you ran it). "
+    "Follow all safety_rules.\n\n"
+    f"Next-action types you may propose (for confirmed runs only): {_PROPOSAL_ACTION_TYPES}."
 )
 
 
@@ -118,14 +131,15 @@ def render_context_text(context: dict[str, Any]) -> str:
 
 
 def _sdk_session_loop(spec: dict[str, Any]) -> Any:
-    """Default one-shot loop via the OpenAI Agents SDK (lazy import, no tools)."""
+    """Default loop via the OpenAI Agents SDK (lazy import) with read-only tools."""
     try:
         import openai  # noqa: F401
-        from agents import Agent, Runner, set_default_openai_key, set_tracing_disabled
+        from agents import Agent, Runner, function_tool, set_default_openai_key, set_tracing_disabled
     except Exception as exc:  # noqa: BLE001
         raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
 
     creds = spec["creds"]
+    conn = spec.get("conn")
     try:
         # Never upload traces/prompts to OpenAI's backend (privacy; also avoids a
         # spurious OpenAI auth call that fails when using a third-party provider).
@@ -140,8 +154,9 @@ def _sdk_session_loop(spec: dict[str, Any]) -> Any:
             set_default_openai_api("chat_completions")
         else:
             set_default_openai_key(creds["api_key"])
-        agent = Agent(name="Session Assistant", instructions=spec["instructions"],
-                      tools=[], model=creds.get("model"))
+        tools = session_tools.build(conn, function_tool, spec.get("activity")) if conn is not None else []
+        agent = Agent(name="Storage Agent", instructions=spec["instructions"],
+                      tools=tools, model=creds.get("model"))
         result = Runner.run_sync(agent, spec["prompt"])
         return getattr(result, "final_output", "")
     except AgentUnavailable:
@@ -165,6 +180,7 @@ def answer(
     recent_messages: list[dict[str, Any]],
     user_message: str,
     creds: dict[str, Any],
+    conn: Any = None,
 ) -> dict[str, Any]:
     """Skill-grounded, sanitized session answer contract. Raises AgentUnavailable.
 
@@ -185,12 +201,16 @@ def answer(
     prompt_parts.append(skill_contract.CONTRACT_INSTRUCTION)
     prompt = "\n\n".join(prompt_parts)
 
-    spec = {"context": context, "prompt": prompt, "instructions": INSTRUCTIONS, "creds": creds}
+    activity: list[dict[str, Any]] = []
+    spec = {"context": context, "prompt": prompt, "instructions": INSTRUCTIONS,
+            "creds": creds, "conn": conn, "activity": activity}
     raw = SESSION_LOOP(spec)
     contract = skill_contract.parse_agent_contract(raw, allowed_skill_names=skill_names)
     contract["answer"] = contract["answer"][:_MAX_OUTPUT]
     # Record which skills were offered (selection), distinct from skills_used.
     contract["skills_offered"] = skill_names
+    # Read-only tool calls made this turn (for the UI; sanitized in session_tools).
+    contract["tool_activity"] = activity
     return contract
 
 

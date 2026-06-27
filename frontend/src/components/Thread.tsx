@@ -10,14 +10,14 @@ import {
   previewSessionAction,
   submitErrorTriage,
 } from "../api";
-import type { NextAction, SessionDetail, TriageCase } from "../types";
+import type { NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
 import { Button } from "./ui";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
 import { NewRunForm } from "../views/RunsView";
 import { MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
 
 type Item =
-  | { kind: "message"; ts: string; role: string; content: string | null; id: string }
+  | { kind: "message"; ts: string; role: string; content: string | null; id: string; toolActivity?: ToolActivity[] }
   | { kind: "run"; ts: string; data: SessionDetail["runs"][number] }
   | { kind: "triage"; ts: string; data: TriageCase };
 
@@ -80,11 +80,13 @@ export function Thread({
   onSessionCreated,
   onOpenSettings,
   onChanged,
+  sidecarReady,
 }: {
   sessionId: string | null;
   onSessionCreated: (id: string) => void;
   onOpenSettings: () => void;
   onChanged: () => void;
+  sidecarReady: boolean;
 }) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [triage, setTriage] = useState<TriageCase[]>([]);
@@ -111,9 +113,12 @@ export function Thread({
       .then((ps) => setModelName(ps.length ? ps[0].model || ps[0].name : null))
       .catch(() => undefined);
 
+  // Fetch the model name once the sidecar is reachable (it isn't during the
+  // ~1 min first-launch cold start, so a single mount-time fetch would miss it).
   useEffect(() => {
-    refreshModel();
-  }, []);
+    if (sidecarReady) refreshModel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sidecarReady]);
 
   const reload = async (id: string | null) => {
     if (!id) {
@@ -148,7 +153,7 @@ export function Thread({
 
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
-    for (const m of detail?.messages ?? []) out.push({ kind: "message", ts: m.created_at, role: m.role, content: m.content, id: m.id });
+    for (const m of detail?.messages ?? []) out.push({ kind: "message", ts: m.created_at, role: m.role, content: m.content, id: m.id, toolActivity: m.tool_activity });
     for (const r of detail?.runs ?? []) out.push({ kind: "run", ts: r.created_at, data: r });
     for (const c of triage) out.push({ kind: "triage", ts: c.created_at || "", data: c });
     return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
@@ -235,13 +240,17 @@ export function Thread({
     if (!localId.current) return;
     try {
       const r = await prepareSessionAction(localId.current, p);
+      // Run proposals always open the run form — it collects any missing
+      // provider/bucket/dataset, so "needs input" is never a dead end.
+      if (r.open === "new_run") {
+        setRunStarter({ run_type: r.prefill.run_type, provider_id: r.prefill.provider_id, bucket: r.prefill.bucket });
+        return;
+      }
       if (r.status !== "ready") {
         setPreviews((m) => ({ ...m, [propKey(p)]: `Needs input: ${r.missing_inputs.join(", ") || "more context"}.` }));
         return;
       }
-      if (r.open === "new_run") {
-        setRunStarter({ run_type: r.prefill.run_type, provider_id: r.prefill.provider_id, bucket: r.prefill.bucket });
-      } else if (r.open === "evidence_import") {
+      if (r.open === "evidence_import") {
         setImportHandoff({
           sourceType: r.prefill.source_type as "inventory" | "access_log",
           accountRunId: r.prefill.account_run_id,
@@ -342,7 +351,7 @@ export function Thread({
 
           {items.map((it) =>
             it.kind === "message" ? (
-              <MessageCard key={it.id} role={it.role} content={it.content} />
+              <MessageCard key={it.id} role={it.role} content={it.content} toolActivity={it.toolActivity} />
             ) : it.kind === "run" ? (
               <RunCard key={it.data.run_id} run={it.data} />
             ) : (
@@ -414,7 +423,7 @@ export function Thread({
             )}
             <textarea
               ref={taRef}
-              className="block max-h-[200px] h-[22px] w-full resize-none bg-transparent px-1 text-[13.5px] leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none"
+              className="block max-h-[200px] h-[22px] w-full resize-none bg-transparent px-1 text-[13.5px] leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none focus-visible:shadow-none"
               rows={1}
               value={text}
               onChange={(e) => setText(e.target.value)}

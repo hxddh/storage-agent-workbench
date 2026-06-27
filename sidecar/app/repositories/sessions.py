@@ -225,14 +225,16 @@ def add_message(
     content: str,
     referenced_run_ids: list[str] | None = None,
     referenced_evidence_ids: list[str] | None = None,
+    tool_activity: list[dict[str, Any]] | None = None,
 ) -> str:
     msg_id = uuid.uuid4().hex
     conn.execute(
         "INSERT INTO session_messages "
-        "(id, session_id, role, content, referenced_run_ids, referenced_evidence_ids, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "(id, session_id, role, content, referenced_run_ids, referenced_evidence_ids, tool_activity, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (msg_id, session_id, role, redact_text(content or ""),
-         json.dumps(referenced_run_ids or []), json.dumps(referenced_evidence_ids or []), utcnow()),
+         json.dumps(referenced_run_ids or []), json.dumps(referenced_evidence_ids or []),
+         json.dumps(tool_activity or []), utcnow()),
     )
     _touch(conn, session_id)
     conn.commit()
@@ -243,12 +245,14 @@ def list_messages(conn: sqlite3.Connection, session_id: str) -> list[dict[str, A
     rows = conn.execute(
         "SELECT * FROM session_messages WHERE session_id = ? ORDER BY rowid", (session_id,)
     ).fetchall()
-    return [
-        {
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        keys = r.keys()
+        out.append({
             "id": r["id"], "role": r["role"], "content": r["content"],
             "referenced_run_ids": json.loads(r["referenced_run_ids"] or "[]"),
             "referenced_evidence_ids": json.loads(r["referenced_evidence_ids"] or "[]"),
+            "tool_activity": json.loads((r["tool_activity"] if "tool_activity" in keys else None) or "[]"),
             "created_at": r["created_at"],
-        }
-        for r in rows
-    ]
+        })
+    return out

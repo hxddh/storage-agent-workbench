@@ -94,6 +94,7 @@ export default function App() {
         }}
         onOpenSettings={() => setDrawerOpen(true)}
         onChanged={refreshSessions}
+        sidecarReady={status === "connected"}
       />
 
       <SettingsDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />

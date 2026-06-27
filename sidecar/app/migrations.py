@@ -442,6 +442,13 @@ CREATE INDEX IF NOT EXISTS idx_triage_cases_session ON error_triage_cases(sessio
 CREATE INDEX IF NOT EXISTS idx_triage_findings_case ON error_triage_findings(case_id);
 """
 
+# Persist the read-only tool calls the in-chat agent made for an assistant turn,
+# so the conversation can show "ran list_buckets → 96 buckets" and it survives
+# reloads. JSON array of {tool, target, result}; sanitized, no secrets.
+_M010 = """
+ALTER TABLE session_messages ADD COLUMN tool_activity TEXT;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -453,6 +460,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (7, "managed_evidence_import", _M007),
     (8, "session_workspace_context", _M008),
     (9, "error_triage", _M009),
+    (10, "session_message_tool_activity", _M010),
 ]
 
 

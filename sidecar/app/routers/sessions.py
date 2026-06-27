@@ -195,14 +195,15 @@ def post_session_message(
 
     try:
         creds = get_model_credentials(conn)  # raises AgentUnavailable if missing
-        contract = session_agent.answer(dict(row), summary, recent, body.content, creds)
+        contract = session_agent.answer(dict(row), summary, recent, body.content, creds, conn)
     except AgentUnavailable as exc:
         # Clean failure: the user message is kept; no assistant message is stored.
         raise HTTPException(status_code=422, detail=redact_text(str(exc)))
 
     # The contract is already sanitized + allowlist-coerced inside session_agent.
     proposed_actions = contract["next_action_proposals"]
-    repo.add_message(conn, session_id, "assistant", contract["answer"])
+    repo.add_message(conn, session_id, "assistant", contract["answer"],
+                     tool_activity=contract.get("tool_activity"))
     audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
     conn.commit()
     return {

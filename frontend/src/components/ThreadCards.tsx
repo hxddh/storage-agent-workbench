@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { NextAction, SessionRunLink, TriageCase } from "../types";
+import type { NextAction, SessionRunLink, ToolActivity, TriageCase } from "../types";
 import { RunDetail } from "./RunDetail";
 import { Markdown } from "./Markdown";
 
@@ -24,7 +24,15 @@ const Spark = (
 );
 
 /** A user or agent turn. User = subtle bubble; agent = clean prose with a label. */
-export function MessageCard({ role, content }: { role: string; content: string | null }) {
+export function MessageCard({
+  role,
+  content,
+  toolActivity,
+}: {
+  role: string;
+  content: string | null;
+  toolActivity?: ToolActivity[];
+}) {
   if (role === "user") {
     return (
       <div className="flex justify-end animate-fade-in-up">
@@ -41,7 +49,26 @@ export function MessageCard({ role, content }: { role: string; content: string |
         Storage Agent
         <CopyButton text={content || ""} />
       </div>
+      {toolActivity && toolActivity.length > 0 && <ToolActivityList items={toolActivity} />}
       <Markdown text={content || ""} />
+    </div>
+  );
+}
+
+/** Compact, Codex/Cursor-style trace of the read-only tools the agent ran. */
+function ToolActivityList({ items }: { items: ToolActivity[] }) {
+  return (
+    <div className="mb-2 space-y-1">
+      {items.map((a, i) => (
+        <div key={i} className="flex items-center gap-2 text-[11.5px] text-gray-500">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-gray-600">
+            <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z" />
+          </svg>
+          <span className="font-mono text-accent-soft">{a.tool}</span>
+          {a.target ? <span className="text-gray-600">· {a.target}</span> : null}
+          <span className="text-gray-600">→ {a.result}</span>
+        </div>
+      ))}
     </div>
   );
 }
