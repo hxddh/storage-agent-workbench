@@ -14,36 +14,24 @@ This is not a generic chat assistant. It is a task-oriented workbench built arou
 
 ## Product shape
 
-The UI should follow a Claude/Codex-like three-column workbench layout.
+The UI follows a **thread-first agentic workbench** (Codex-style), not a tabbed
+admin panel. As of the v0.19.0-pre.2 rebuild:
 
-Left sidebar:
+- **Slim session rail** (left): "+ New investigation", the session list, and a
+  settings + sidecar-status footer. No top-level Runs/Datasets/Reports tabs.
+- **Conversation thread** (center, dominant) with a **sticky composer**. The
+  composer has two modes: "Ask the agent" (session message) and "Triage an
+  error" (offline, no credentials). Messages, analysis runs, error-triage cases,
+  and next-action proposals all render as **inline cards** in the thread; a run
+  card expands in place to the full run transcript.
+- **Settings drawer** (right slide-over) embeds model- and cloud-provider
+  management; a one-time **first-run wizard** appears on a fresh install.
 
-- Runs
-- Providers
-- Datasets
-- Reports
-- Settings
-
-Main area:
-
-- Current Analysis Run
-- User input
-- Agent plan
-- Tool / Analysis Timeline
-- Metrics cards
-- Findings
-- Report preview
-
-Right context panel:
-
-- Current Cloud Provider
-- Bucket
-- Endpoint
-- Region
-- Mode
-- Allowed Prefixes
-- Risk Policy
-- Approval status
+> Historical note: earlier phases used a three-column layout (left sidebar
+> Runs/Providers/Datasets/Reports/Settings + main analysis-run area + right
+> context panel). That shell was retired in the pre.2 rebuild — do not restore
+> it. The underlying concepts below (Analysis Runs, run types, providers) are
+> unchanged; only the presentation moved into the thread.
 
 ## Supported run types
 

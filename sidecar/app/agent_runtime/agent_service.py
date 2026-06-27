@@ -139,7 +139,7 @@ def _sdk_agent_loop(spec: dict[str, Any]) -> AgentResult:
     """
     try:
         import openai  # noqa: F401
-        from agents import Agent, Runner, function_tool, set_default_openai_key
+        from agents import Agent, Runner, function_tool, set_default_openai_key, set_tracing_disabled
     except Exception as exc:  # noqa: BLE001
         raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
 
@@ -168,10 +168,14 @@ def _sdk_agent_loop(spec: dict[str, Any]) -> AgentResult:
         return _tool
 
     try:
+        set_tracing_disabled(True)
         if creds.get("base_url"):
-            from agents import set_default_openai_client
+            # Third-party OpenAI-compatible provider (e.g. DeepSeek): use its
+            # base_url + Chat Completions (no OpenAI Responses API).
+            from agents import set_default_openai_client, set_default_openai_api
             client = openai.AsyncOpenAI(api_key=creds["api_key"], base_url=creds["base_url"])
             set_default_openai_client(client)
+            set_default_openai_api("chat_completions")
         else:
             set_default_openai_key(creds["api_key"])
 

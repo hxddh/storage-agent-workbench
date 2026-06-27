@@ -20,7 +20,8 @@ not public release assets (see [release.md](release.md)).
 2. If you downloaded the DMG, open it and drag the app out; if you downloaded the
    zip, unzip it to get `Storage Agent Workbench.app`.
 3. Move the app to `/Applications` if you like.
-4. **First launch may be blocked by Gatekeeper** because the app is unsigned.
+4. **First launch shows a Gatekeeper prompt** ("unidentified developer") because
+   the app is ad-hoc signed and not notarized.
 5. Open it one of two ways:
    - Finder: right-click the app → **Open** → **Open** in the dialog; or
    - Terminal — clear the quarantine attribute, then open:
@@ -29,11 +30,17 @@ not public release assets (see [release.md](release.md)).
      xattr -dr com.apple.quarantine "/path/to/Storage Agent Workbench.app"
      open "/path/to/Storage Agent Workbench.app"
      ```
+6. **The first launch is slow (up to ~1 minute).** The app embeds a one-file
+   Python sidecar, and macOS validates its code signature the first time it is
+   extracted. Subsequent launches are fast. The window shows **Sidecar: Connecting**
+   until it is ready.
 
 Notes:
 
-- This is expected behavior for unsigned pre-release builds; it is not a defect.
-- There is **no Apple notarization** yet.
+- The app is **ad-hoc code-signed** so the bundle seal is valid (no "app is
+  damaged" error). It is **not** signed with an Apple Developer ID and is **not
+  notarized**, so the Gatekeeper "unidentified developer" prompt is expected for
+  these pre-release builds; it is not a defect.
 
 ## Linux x64
 
