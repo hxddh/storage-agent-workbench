@@ -68,18 +68,24 @@ function stripMetaBlock(text: string): string {
   return i >= 0 ? text.slice(0, i).trimEnd() : text;
 }
 
-/** Compact, Codex/Cursor-style trace of the read-only tools the agent ran. */
+/** Compact, Codex/Cursor-style trace of the read-only tools the agent ran. Each
+ * row stays on a single line: tool name + a truncating target, with the result
+ * pinned to the right. */
 function ToolActivityList({ items }: { items: ToolActivity[] }) {
   return (
-    <div className="mb-2 space-y-1">
+    <div className="mb-2.5 space-y-[3px]">
       {items.map((a, i) => (
         <div key={i} className="flex items-center gap-2 text-[11.5px] text-gray-500">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-gray-600">
             <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z" />
           </svg>
-          <span className="font-mono text-accent-soft">{a.tool}</span>
-          {a.target ? <span className="text-gray-600">· {a.target}</span> : null}
-          <span className="text-gray-600">→ {a.result}</span>
+          <span className="shrink-0 font-mono text-accent-soft">{a.tool}</span>
+          {a.target ? (
+            <span className="min-w-0 flex-1 truncate text-gray-600" title={a.target}>· {a.target}</span>
+          ) : (
+            <span className="flex-1" />
+          )}
+          <span className="shrink-0 font-mono text-[11px] text-gray-500" title={a.result}>{a.result}</span>
         </div>
       ))}
     </div>
