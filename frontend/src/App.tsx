@@ -66,7 +66,6 @@ export default function App() {
       />
 
       <Thread
-        key={activeId ?? "new"}
         sessionId={activeId}
         onSessionCreated={(id) => {
           setActiveId(id);

@@ -82,11 +82,18 @@ export function Thread({
   };
 
   useEffect(() => {
+    // Thread is no longer remounted per session (App does not key it by id), so
+    // reset all per-session UI state here when the active session changes.
     localId.current = sessionId;
     setLiveProposals([]);
     setPreviews({});
     setNeedKey(false);
     setError(null);
+    setText("");
+    setMode("chat");
+    setRunStarter(null);
+    setImportHandoff(null);
+    setReport(null);
     reload(sessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
