@@ -6,6 +6,30 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.0-pre.9] - 2026-06-28
+
+A Codex/Cursor-grade start view and agent-driven next steps. Ad-hoc signed
+(not notarized), pre-1.0, macOS arm64.
+
+### Changed
+
+- **New-chat view rebuilt as a centered, composer-forward "start" screen**
+  (Codex/Cursor): the composer is the centerpiece — greeting above, suggestion
+  chips below — instead of a greeting at the top with the composer pinned to the
+  bottom over an empty void. In an active conversation the composer drops to the
+  bottom and turns scroll above it.
+- **Composer refined** to match the references: a model-picker pill (with
+  chevron), `⏎ send · ⇧⏎ newline` hints, and a circular send button that fills
+  with the accent only when there's text.
+
+### Fixed
+
+- **Next-step proposals are now agent-driven, not canned.** A generic
+  "Run account discovery" chip used to reappear after *every* answer when the
+  agent itself proposed nothing — even after a one-line definitional reply. The
+  thread now shows the agent's own proposals once it has answered, and only
+  falls back to the session's default next steps before the first turn.
+
 ## [0.19.0-pre.8] - 2026-06-28
 
 Skills become real Agent Skills. Ad-hoc signed (not notarized), pre-1.0,
@@ -267,7 +291,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.8...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.9...HEAD
+[0.19.0-pre.9]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.9
 [0.19.0-pre.8]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.8
 [0.19.0-pre.7]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.7
 [0.19.0-pre.6]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.6
