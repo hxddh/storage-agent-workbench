@@ -6,6 +6,36 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.0-pre.3] - 2026-06-27
+
+UI/UX pass toward Codex/Cursor conventions, plus simpler cloud setup.
+Ad-hoc signed (not notarized), pre-1.0, macOS arm64 primary target.
+
+### Changed
+
+- Dropped "investigation" terminology — it's "New chat" / "Recent" / chat now.
+- Rail: flat brand mark, quiet New-chat row, recent list with a left accent bar
+  on the active chat + relative time, compact status + settings footer.
+- Thread: slim header with the chat title and a model badge (shows the configured
+  provider model); a fresh chat shows just the canvas and composer.
+- Messages: user turns are a subtle right-aligned bubble; agent turns are clean
+  labeled prose (markdown). Runs are collapsible tool-call blocks, triage is a
+  tool-style block, and next-step proposals are light action chips.
+- Composer (Cursor-style): a rounded panel with a model chip and send row.
+- **One-pick cloud-provider setup.** Choosing a provider (AWS S3, Alibaba OSS,
+  Tencent COS, Baidu BOS, Volcengine TOS, Cloudflare R2, Backblaze B2, Google
+  Cloud Storage, or Custom) fills in endpoint / addressing / signature; you enter
+  region (or the R2 account id) plus access key + secret key. Endpoint override,
+  addressing, signature, session token, mode, and bucket/prefix allowlists move to
+  a collapsed Advanced section. Provider-panel copy is now English throughout.
+
+### Notes
+
+- After configuring read-only S3 credentials, the agent can enumerate the
+  account's buckets and snapshot each bucket's configuration (account discovery),
+  then review security / lifecycle / cost / performance per bucket — listing all
+  buckets requires the `s3:ListAllMyBuckets` permission.
+
 ## [0.19.0-pre.2] - 2026-06-27
 
 Second pre-release; supersedes the withdrawn v0.19.0-pre.1. Ad-hoc signed
@@ -97,6 +127,7 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.2...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.3...HEAD
+[0.19.0-pre.3]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.3
 [0.19.0-pre.2]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.2
 [0.19.0-pre.1]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.1
