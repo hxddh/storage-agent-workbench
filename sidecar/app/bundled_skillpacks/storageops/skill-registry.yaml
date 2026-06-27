@@ -1,232 +1,282 @@
-# StorageOps Skill Registry v0.7.0
+# StorageOps Skill Registry
+#
+# Metadata for the bundled StorageOps skills. The agent sees each skill's name +
+# description as a CATALOG (progressive disclosure) and loads a skill's full
+# SKILL.md body on demand via the read-only read_skill tool. `description` is the
+# routing signal — it tells the model when to load the skill. trigger_keywords /
+# domains / auto_route drive the offline (tool-less) triage selector only.
 
-# Machine-readable metadata for all StorageOps skills.
-# Skills are auto-discovered by Pi from the skills/ directory.
-# This registry drives documentation routing and skill metadata.
-
-version: "0.4"
-contract: "StorageOps Skill Contract v6"
+version: "1.0"
 
 skills:
   - name: storageops-triage
     path: skills/storageops-triage/SKILL.md
-    maturity: core
-    mode: light_heavy
-    priority: 0
     auto_route: true
+    priority: 0
     description: >
-      First-contact triage for any object storage issue. Classifies the
-      problem domain, assesses severity and evidence completeness, and
-      routes to the appropriate specialist skill.
+      First-contact triage for any object-storage issue with no clear category.
+      Classify the domain (permission, performance, protocol, network, cost,
+      mount, CLI/SDK, bigdata, consistency, notification, replication, migration),
+      gauge severity and evidence, then load the matching specialist skill. Use
+      first when a user reports an S3/BOS/OSS/COS/GCS error without an obvious
+      category.
     trigger_keywords:
-      - "object storage"
-      - "S3 error"
-      - "storage issue"
-      - "bucket issue"
+      - object storage
+      - S3 error
+      - storage issue
+      - bucket issue
     domains: [triage]
-    recommended_tools: [scan_secrets, detect_domain, search_memory]
-
-  - name: storageops-access-log-analysis
-    path: skills/storageops-access-log-analysis/SKILL.md
-    maturity: stable
-    mode: light_heavy
-    trigger_keywords:
-      - "access log"
-      - "server access log"
-      - "error rate"
-      - "403 spike"
-      - "503 spike"
-      - "request analysis"
-      - "traffic analysis"
-      - "cost attribution"
-      - "who is accessing"
-    domains: [access-log, observability]
-    recommended_tools: [scan_secrets, detect_domain, search_memory]
 
   - name: storageops-security-iam-policy
     path: skills/storageops-security-iam-policy/SKILL.md
-    maturity: core
-    mode: light_heavy
+    priority: 10
+    description: >
+      Diagnose permission errors (403 AccessDenied, 401 Unauthorized) by tracing
+      the authorization chain — explicit deny, identity vs bucket policy, ACL,
+      public-access block, cross-account, and KMS. Use when access is denied but
+      the credentials themselves are valid.
     trigger_keywords:
-      - "403"
-      - "AccessDenied"
-      - "IAM"
-      - "KMS"
-      - "permission"
-      - "bucket policy"
-      - "Unauthorized"
+      - 403 AccessDenied
+      - 401 Unauthorized
+      - permission denied
+      - access denied
+      - IAM policy
+      - bucket policy
+      - cross-account
+      - KMS
     domains: [security]
-    recommended_tools: [scan_secrets, detect_domain, search_memory]
 
   - name: storageops-performance-diagnosis
     path: skills/storageops-performance-diagnosis/SKILL.md
-    maturity: core
-    mode: light_heavy
+    priority: 10
+    description: >
+      Diagnose throughput and latency problems — throttling (429/503 SlowDown),
+      slow upload/download, multipart inefficiency, small-file overhead, prefix
+      hotspotting, connection-pool exhaustion. Use when transfers are slow or
+      rate-limited or throughput is far below the available bandwidth.
     trigger_keywords:
-      - "429"
-      - "SlowDown"
-      - "slow"
-      - "timeout"
-      - "bandwidth"
-      - "throughput"
-      - "throttl"
+      - 429 SlowDown
+      - 503 SlowDown
+      - slow upload
+      - slow download
+      - throughput
+      - throttling
+      - rate limit
+      - multipart
     domains: [performance]
-    recommended_tools: [scan_secrets, detect_domain, search_memory, capture_http_trace]
-
-  - name: storageops-cli-sdk-diagnosis
-    path: skills/storageops-cli-sdk-diagnosis/SKILL.md
-    maturity: mature
-    mode: light_heavy
-    trigger_keywords:
-      - "awscli"
-      - "boto3"
-      - "rclone"
-      - "s5cmd"
-      - "bcecmd"
-      - "obsutil"
-      - "corrupted on transfer"
-    domains: [cli-sdk]
-    recommended_tools: [scan_secrets, detect_domain, search_memory, capture_http_trace]
-
-  - name: storageops-network-endpoint-access
-    path: skills/storageops-network-endpoint-access/SKILL.md
-    maturity: core
-    mode: light_heavy
-    trigger_keywords:
-      - "DNS"
-      - "TLS"
-      - "connect"
-      - "endpoint"
-      - "VPC"
-      - "certificate"
-      - "host unreachable"
-    domains: [network]
-    recommended_tools: [scan_secrets, detect_domain, search_memory, capture_http_trace]
-
-  - name: storageops-lifecycle-cost
-    path: skills/storageops-lifecycle-cost/SKILL.md
-    maturity: mature
-    mode: light_heavy
-    trigger_keywords:
-      - "lifecycle"
-      - "cost"
-      - "billing"
-      - "IA"
-      - "Glacier"
-      - "storage class"
-    domains: [lifecycle, cost]
-    recommended_tools: [scan_secrets, detect_domain, search_memory]
-
-  - name: storageops-replication-versioning
-    path: skills/storageops-replication-versioning/SKILL.md
-    maturity: core
-    mode: light_heavy
-    trigger_keywords:
-      - "replicat"
-      - "versioning"
-      - "CRR"
-      - "SRR"
-      - "DeleteMarker"
-      - "Object Lock"
-    domains: [replication]
-    recommended_tools: [scan_secrets, detect_domain, search_memory]
-
-  - name: storageops-mount-filesystem-workspace
-    path: skills/storageops-mount-filesystem-workspace/SKILL.md
-    maturity: mature
-    mode: light_heavy
-    trigger_keywords:
-      - "mount"
-      - "FUSE"
-      - "s3fs"
-      - "goofys"
-      - "filesystem"
-      - "workspace"
-    domains: [mount, filesystem]
-    recommended_tools: [scan_secrets, detect_domain, search_memory]
-
-  - name: storageops-migration-sync
-    path: skills/storageops-migration-sync/SKILL.md
-    maturity: mature
-    mode: light_heavy
-    trigger_keywords:
-      - "migrat"
-      - "sync"
-      - "transfer"
-      - "跨云"
-    domains: [migration]
-    recommended_tools: [scan_secrets, detect_domain, search_memory]
-
-  - name: storageops-data-consistency
-    path: skills/storageops-data-consistency/SKILL.md
-    maturity: mature
-    mode: light_heavy
-    trigger_keywords:
-      - "consistency"
-      - "stale"
-      - "mismatch"
-      - "ETag"
-      - "checksum"
-    domains: [consistency]
-    recommended_tools: [scan_secrets, detect_domain, search_memory]
-
-  - name: storageops-bigdata-pipeline
-    path: skills/storageops-bigdata-pipeline/SKILL.md
-    maturity: mature
-    mode: light_heavy
-    trigger_keywords:
-      - "Spark"
-      - "Hive"
-      - "Hadoop"
-      - "S3A"
-      - "EMR"
-    domains: [bigdata]
-    recommended_tools: [scan_secrets, detect_domain, search_memory]
-
-  - name: storageops-event-notification
-    path: skills/storageops-event-notification/SKILL.md
-    maturity: mature
-    mode: light_heavy
-    trigger_keywords:
-      - "notification"
-      - "event"
-      - "SQS"
-      - "Lambda"
-    domains: [notification]
-    recommended_tools: [scan_secrets, detect_domain, search_memory]
 
   - name: storageops-s3-protocol-compatibility
     path: skills/storageops-s3-protocol-compatibility/SKILL.md
-    maturity: core
-    mode: light_heavy
+    priority: 10
+    description: >
+      Diagnose wire-protocol failures — SignatureDoesNotMatch, SigV2 vs SigV4,
+      clock skew, expired presigned URLs, MalformedXML, NotImplemented, CORS, and
+      virtual-hosted vs path-style addressing on S3-compatible providers. Use when
+      a request is rejected at the protocol level though the network is fine and
+      the credentials are valid.
     trigger_keywords:
-      - "SignatureDoesNotMatch"
-      - "CORS"
-      - "SigV4"
-      - "AuthorizationHeaderMalformed"
-      - "RequestExpired"
+      - SignatureDoesNotMatch
+      - CORS
+      - SigV4
+      - SigV2
+      - AuthorizationHeaderMalformed
+      - RequestExpired
     domains: [protocol, compatibility]
-    recommended_tools: [scan_secrets, detect_domain, search_memory, capture_http_trace]
+
+  - name: storageops-network-endpoint-access
+    path: skills/storageops-network-endpoint-access/SKILL.md
+    priority: 10
+    description: >
+      Diagnose transport-layer connectivity — DNS resolution, TCP reachability,
+      TLS/certificate problems, proxies, VPC/private endpoints. Use for connection
+      refused/timeout, name-not-resolved, or TLS/cert errors, i.e. the request
+      never gets a clean HTTP response.
+    trigger_keywords:
+      - DNS
+      - TLS
+      - certificate
+      - connection refused
+      - connection timeout
+      - endpoint
+      - VPC
+    domains: [network]
+
+  - name: storageops-cli-sdk-diagnosis
+    path: skills/storageops-cli-sdk-diagnosis/SKILL.md
+    priority: 20
+    description: >
+      Diagnose tool- and SDK-specific failures — awscli, boto3/botocore, rclone,
+      s5cmd, s3cmd, mc, bcecmd, obsutil. Covers version-specific bugs, signature
+      defaults, clock skew, region/endpoint config, and multipart/ETag
+      incompatibilities. Use when the failure is tied to a particular client.
+    trigger_keywords:
+      - awscli
+      - boto3
+      - rclone
+      - s5cmd
+      - bcecmd
+      - obsutil
+    domains: [cli-sdk]
+
+  - name: storageops-access-log-analysis
+    path: skills/storageops-access-log-analysis/SKILL.md
+    priority: 20
+    description: >
+      Analyze object-storage server access logs for error patterns, traffic
+      profiles, anomaly spikes, hot keys, and request-cost attribution. Use when
+      the user asks who/what is hitting a bucket, why error rates changed over
+      time, or where request cost comes from. Runs as a confirmed import +
+      analysis in the app.
+    trigger_keywords:
+      - access log
+      - error rate
+      - 403 spike
+      - 503 spike
+      - traffic analysis
+      - who is accessing
+    domains: [access-log, observability]
+
+  - name: storageops-lifecycle-cost
+    path: skills/storageops-lifecycle-cost/SKILL.md
+    priority: 20
+    description: >
+      Diagnose higher-than-expected storage cost and recommend lifecycle/storage-
+      class strategy — small-file billing floors, wrong-tier data, accumulating
+      noncurrent versions, orphaned multipart uploads, transition/minimum-duration
+      rules. Use for billed-storage and tiering questions (not transfer speed).
+    trigger_keywords:
+      - lifecycle
+      - cost
+      - billing
+      - storage class
+      - Glacier
+      - IA
+    domains: [lifecycle, cost]
+
+  - name: storageops-replication-versioning
+    path: skills/storageops-replication-versioning/SKILL.md
+    priority: 20
+    description: >
+      Diagnose replication and versioning problems — objects not replicating,
+      delete markers not propagating, replication lag, versioning-state confusion,
+      object-lock/retention behavior. Use for "my replica is missing/stale" or
+      unexpected version state.
+    trigger_keywords:
+      - replication
+      - versioning
+      - CRR
+      - SRR
+      - DeleteMarker
+      - Object Lock
+    domains: [replication]
+
+  - name: storageops-mount-filesystem-workspace
+    path: skills/storageops-mount-filesystem-workspace/SKILL.md
+    priority: 30
+    description: >
+      Diagnose object-storage mount problems — s3fs, goofys, rclone mount,
+      JuiceFS. Most issues are POSIX semantic mismatches (no atomic rename, no
+      file locks, no mmap) or metadata amplification (ls/git stat storms). Use
+      when a mounted bucket is slow, corrupts files, or breaks tools.
+    trigger_keywords:
+      - mount
+      - FUSE
+      - s3fs
+      - goofys
+      - JuiceFS
+      - filesystem
+    domains: [mount, filesystem]
+
+  - name: storageops-migration-sync
+    path: skills/storageops-migration-sync/SKILL.md
+    priority: 30
+    description: >
+      Plan and validate migration and ongoing sync — same-provider server-side
+      copy, cross-provider transfer (AWS↔BOS/OSS/COS/GCS), large/offline
+      transfers. Covers strategy by volume/bandwidth, egress cost, ETag/metadata/
+      ACL compatibility, and post-migration integrity. Use for "how do I move/sync
+      N TB between buckets/providers".
+    trigger_keywords:
+      - migration
+      - sync
+      - transfer
+      - 跨云
+    domains: [migration]
+
+  - name: storageops-data-consistency
+    path: skills/storageops-data-consistency/SKILL.md
+    priority: 30
+    description: >
+      Diagnose stale reads, missing-object-after-write, ETag confusion, and
+      concurrent-overwrite races. Modern object storage is strongly consistent, so
+      the cause is usually client-side caching, an incomplete multipart upload, or
+      last-writer-wins. Use for visibility/staleness questions.
+    trigger_keywords:
+      - consistency
+      - stale
+      - mismatch
+      - ETag
+      - checksum
+    domains: [consistency]
+
+  - name: storageops-bigdata-pipeline
+    path: skills/storageops-bigdata-pipeline/SKILL.md
+    priority: 30
+    description: >
+      Diagnose Spark/Hive/Hadoop/Flink failures against object storage — output
+      committer races (FileOutputCommitter V1 on S3), small-file amplification,
+      partition discovery, connection-pool exhaustion, table-format snapshots. Use
+      for S3A/EMR job errors or slow jobs writing to buckets.
+    trigger_keywords:
+      - Spark
+      - Hive
+      - Hadoop
+      - S3A
+      - EMR
+    domains: [bigdata]
+
+  - name: storageops-event-notification
+    path: skills/storageops-event-notification/SKILL.md
+    priority: 30
+    description: >
+      Diagnose event-delivery failures — bucket notifications not firing or not
+      reaching Lambda/SQS/SNS/EventBridge. Walks the chain: object action → rule
+      (event type + prefix/suffix) → target resource policy → target limits. Use
+      for "my function/queue isn't triggered on upload".
+    trigger_keywords:
+      - notification
+      - event
+      - SQS
+      - Lambda
+      - EventBridge
+    domains: [notification]
 
   - name: storageops-evidence-reporting
     path: skills/storageops-evidence-reporting/SKILL.md
-    maturity: core
-    mode: light_heavy
+    priority: 40
+    description: >
+      Turn a completed diagnosis into a clear, evidence-based report or summary —
+      separating tool-verified facts from inference, scoring confidence, and
+      routing a formal report to the app's report generator. Use when the user
+      asks for a write-up, summary, or diagnostic report.
     trigger_keywords:
-      - "report"
-      - "总结"
-      - "诊断报告"
+      - report
+      - summary
+      - 总结
+      - 诊断报告
     domains: [reporting]
-    recommended_tools: [scan_secrets, search_memory]
 
   - name: storageops-eval-golden-cases
     path: skills/storageops-eval-golden-cases/SKILL.md
-    maturity: core
-    mode: eval
+    priority: 40
+    description: >
+      A self-check rubric for the quality and safety of a diagnosis before you
+      present it — right domain, claims tool-verified, confidence matching the
+      evidence, no unsafe step recommended. Use on high-stakes or low-confidence
+      answers, or when the user questions a result.
     trigger_keywords:
-      - "eval"
-      - "regression"
-      - "验证"
-      - "质量"
+      - eval
+      - quality
+      - 验证
+      - double-check
     domains: [eval]
-    recommended_tools: [scan_secrets, search_memory]

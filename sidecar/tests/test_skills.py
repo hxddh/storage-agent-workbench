@@ -64,26 +64,52 @@ def test_no_references_templates_scripts_vendored():
     assert non_md == [], f"unexpected vendored files: {non_md}"
 
 
+def test_skills_are_app_native_no_foreign_runtime():
+    """SKILL.md bodies + registry must be app-native: no references to a foreign
+    runtime (Pi tools, helper scripts, references/ files, the old output
+    contract). They should speak in terms of THIS app's read-only tools and
+    confirmed runs."""
+    from app.skills import loader
+
+    forbidden = [
+        "scan_secrets", "detect_domain", "search_memory", "capture_http_trace",
+        "recommended_tools", "estimated_tokens", "python3 scripts/", "scripts/",
+        "references/", "Pi runtime", "light_heavy", "root_cause_type",
+    ]
+    registry = (PACK / "skill-registry.yaml").read_text(encoding="utf-8")
+    skills = loader.load_registry()
+    assert len(skills) >= 16
+    for token in forbidden:
+        assert token not in registry, f"foreign token in registry: {token}"
+    # At least one real app tool name appears across the bodies (they reference
+    # the agent's actual read-only surface, not a foreign one).
+    corpus = "\n".join(loader.load_skill_body(m.name) or "" for m in skills)
+    for token in forbidden:
+        assert token not in corpus, f"foreign token in a SKILL.md body: {token}"
+    for app_tool in ("test_credentials", "read_skill", "review_bucket_"):
+        assert app_tool in corpus, f"expected app tool referenced in skills: {app_tool}"
+
+
 def test_recommended_tools_not_in_metadata_or_context():
     # loader must not expose recommended_tools, and skill context must not inject them.
     for s in loader.load_registry():
         assert not hasattr(s, "recommended_tools")
 
 
-def test_skill_context_strips_frontmatter_and_recommended_tools():
-    # Every bundled SKILL.md begins with a YAML frontmatter carrying
-    # recommended_tools; none of that may reach the Agent prompt (Fix A).
+def test_skill_context_strips_frontmatter_for_offline_triage():
+    # SKILL.md begins with a YAML frontmatter; none of it may reach the prompt.
     raw = loader.load_skill_body("storageops-triage")
-    assert raw.lstrip().startswith("---") and "recommended_tools" in raw  # frontmatter exists in source
+    assert raw.lstrip().startswith("---")  # frontmatter block exists in source
 
     ctx = skill_context.build_skill_context("object storage S3 error triage 403 AccessDenied SlowDown")
     text = ctx["text"]
-    assert "recommended_tools:" not in text          # frontmatter key gone
+    assert "recommended_tools" not in text           # frontmatter key gone
     assert "---\nname:" not in text                  # frontmatter block gone
     assert "estimated_tokens" not in text            # another frontmatter-only key
-    assert "disabled in this Workbench phase" in text  # wrapper retained
-    assert "Skill metadata:" in text                 # safe header retained
-    assert "YAML frontmatter removed" in text
+    # Offline-triage wrapper frames skills as method guidance (no live tools),
+    # without the old self-contradictory "tools disabled" language.
+    assert "professional diagnostic method" in text
+    assert "=== StorageOps skill:" in text
 
 
 def test_strip_frontmatter_helper():
@@ -121,13 +147,42 @@ def test_selector_fallback_is_metadata_auto_route():
 # --- context wrapper --------------------------------------------------------
 
 
-def test_skill_context_has_tools_disabled_wrapper():
+def test_offline_triage_skill_context_is_method_guidance():
     ctx = skill_context.build_skill_context("429 SlowDown throttling performance")
     assert ctx["skills"]
-    assert "disabled in this Workbench phase" in ctx["text"]
-    assert "Do not claim to run tools or scripts" in ctx["text"]
+    assert "professional diagnostic method" in ctx["text"]
     assert len(ctx["text"]) <= skill_context.MAX_TOTAL_CHARS + 2000  # bounded
     assert len(ctx["skills"]) <= skill_context.MAX_SKILLS
+
+
+def test_session_agent_uses_progressive_disclosure_catalog():
+    # The live agent gets a CATALOG (name + description for every skill) and a
+    # read_skill tool — not pre-injected full bodies (the Agent Skills paradigm).
+    cat = skill_context.catalog_text()
+    assert "STORAGEOPS SKILLS" in cat and "read_skill(" in cat
+    names = skill_context.skill_names()
+    assert "storageops-triage" in names and len(names) >= 10
+    for n in names:  # every catalogued skill loads on demand
+        assert skill_context.read_skill_text(n)
+    assert skill_context.read_skill_text("does-not-exist") is None
+
+
+def test_read_skill_is_a_readonly_session_tool():
+    import sqlite3
+    from app.agent_runtime import session_tools, guardrails
+
+    def fake_function_tool(fn):
+        fn.name = fn.__name__
+        return fn
+
+    conn = sqlite3.connect(":memory:")
+    try:
+        tools = session_tools.build(conn, fake_function_tool, [])
+    finally:
+        conn.close()
+    names = {getattr(t, "name", "") for t in tools}
+    assert "read_skill" in names
+    assert not guardrails.is_forbidden_tool("read_skill")
 
 
 # --- contract parser --------------------------------------------------------
@@ -165,8 +220,9 @@ def test_session_assistant_prompt_includes_skill_context(client, monkeypatch):
     monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
     out = client.post(f"/sessions/{s['id']}/messages", json={"content": "why 403 AccessDenied?"}).json()
     prompt = captured["spec"]["prompt"]
-    assert "StorageOps skill" in prompt
-    assert "disabled in this Workbench phase" in prompt
+    # Progressive disclosure: the prompt carries the skills CATALOG + read_skill,
+    # not pre-injected full skill bodies.
+    assert "STORAGEOPS SKILLS" in prompt and "read_skill(" in prompt
     # contract surfaced in response
     assert "skills_used" in out and "evidence_gaps" in out
     assert out["evidence_gaps"] == ["need the policy"]
@@ -186,8 +242,9 @@ def test_triage_agent_prompt_includes_skill_context(client, monkeypatch):
             "input_kind": "error_code", "session_id": s["id"], "planner_mode": "agent"}
     out = client.post("/error-triage", json=body).json()
     prompt = captured["spec"]["prompt"]
+    # Offline triage injects a selected skill body as method guidance.
     assert "StorageOps skill" in prompt
-    assert "disabled in this Workbench phase" in prompt
+    assert "professional diagnostic method" in prompt
     assert out["agent_interpretation"]
     assert "skills_offered" in out
 
