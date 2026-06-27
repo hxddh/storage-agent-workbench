@@ -7,8 +7,13 @@ yet failed product smoke, so this checklist gates the product model too.
 ## A. Packaging smoke
 
 - [ ] `bash scripts/build-macos-app-bundle.sh` produces an `.app` (and DMG if available).
-- [ ] `codesign --verify --deep --strict "<.app>"` succeeds (no broken seal).
-- [ ] Launch the app; the sidecar reaches **Connected**.
+- [ ] `codesign --verify --deep --strict "<.app>"` succeeds (no broken seal). The build
+      auto-seals via `scripts/sign-macos-app-bundle.sh` (ad-hoc, **no hardened runtime**);
+      `scripts/verify-macos-app-bundle.sh` also gates on this.
+- [ ] Seal flags are `0x2(adhoc)` (NOT `linker-signed`, NOT `runtime`) — a `runtime`
+      (hardened) seal blocks the PyInstaller sidecar from starting.
+- [ ] Launch the app; the sidecar reaches **Connected**. First launch can take ~1 min
+      (macOS validates the freshly signed sidecar); later launches are fast.
 - [ ] `GET /health` on the sidecar returns `{"status":"ok"}`.
 - [ ] App data is under `~/Library/Application Support/...`, not inside the `.app`.
 

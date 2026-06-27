@@ -25,12 +25,15 @@ if ! cargo tauri --version >/dev/null 2>&1; then
   exit 2
 fi
 
-echo "==> [4/4] cargo tauri build (unsigned bundle)"
+echo "==> [4/5] cargo tauri build (unsigned bundle)"
 ( cd src-tauri && cargo tauri build )
+
+echo "==> [5/5] Ad-hoc seal the .app + rebuild DMG (fixes the 'damaged' seal; no hardened runtime)"
+bash scripts/sign-macos-app-bundle.sh
 
 echo "==> Artifacts:"
 APP_DIR="src-tauri/target/release/bundle/macos"
 DMG_DIR="src-tauri/target/release/bundle/dmg"
 ls -1 "$APP_DIR"/*.app 2>/dev/null || echo "  (no .app found in $APP_DIR)"
 ls -1 "$DMG_DIR"/*.dmg 2>/dev/null || echo "  (no .dmg found in $DMG_DIR — see verify script / docs/release.md)"
-echo "==> Done (unsigned; Gatekeeper will warn on first open — see docs/release.md)."
+echo "==> Done (ad-hoc sealed, not notarized; Gatekeeper warns on first open — see docs/release.md)."

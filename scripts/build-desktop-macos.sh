@@ -27,12 +27,15 @@ echo "==> [3/4] cargo check"
 
 echo "==> [4/4] Tauri / cargo build"
 if cargo tauri --version >/dev/null 2>&1; then
-  echo "Tauri CLI found -> cargo tauri build (bundling; signing/notarization NOT performed)"
-  ( cd src-tauri && cargo tauri build || {
-      echo "NOTE: 'cargo tauri build' failed. The release binary still builds via 'cargo build';"
-      echo "full .app bundling may require additional icon/signing config (intentionally skipped)."
-      ( cd src-tauri && cargo build --release )
-    } )
+  echo "Tauri CLI found -> cargo tauri build (bundling; notarization NOT performed)"
+  if ( cd src-tauri && cargo tauri build ); then
+    echo "==> Ad-hoc seal the .app + rebuild DMG (fixes the 'damaged' seal; no hardened runtime)"
+    bash scripts/sign-macos-app-bundle.sh || echo "NOTE: sealing skipped/failed (non-macOS host or no .app)."
+  else
+    echo "NOTE: 'cargo tauri build' failed. The release binary still builds via 'cargo build';"
+    echo "full .app bundling may require additional icon/signing config (intentionally skipped)."
+    ( cd src-tauri && cargo build --release )
+  fi
 else
   echo "Tauri CLI not installed (install with: cargo install tauri-cli --locked)."
   echo "Falling back to 'cargo build --release' (compiles + links the desktop binary; no .app bundle)."

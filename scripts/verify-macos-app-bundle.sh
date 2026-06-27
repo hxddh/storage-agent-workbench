@@ -30,6 +30,20 @@ SIDECAR="$(ls "$APP_BIN_DIR" | grep 'storage-agent-sidecar' | head -1 || true)"
 [ -n "$SIDECAR" ] && [ -f "$APP_BIN_DIR/$SIDECAR" ] || fail "bundled sidecar not found in $APP_BIN_DIR"
 echo "==> Bundled sidecar: Contents/MacOS/$SIDECAR"
 
+# Code-signature seal must be valid (regression gate). A broken/linker-only seal
+# makes Finder report the app as "damaged"; the build re-signs ad-hoc to fix it.
+# `codesign` only exists on macOS — skip the gate on other hosts.
+if command -v codesign >/dev/null 2>&1; then
+  if codesign --verify --deep --strict "$APP" 2>/dev/null; then
+    echo "==> Code-signature seal valid (codesign --verify --deep --strict): OK"
+  else
+    codesign --verify --deep --strict "$APP" || true
+    fail "code-signature seal is broken (run scripts/sign-macos-app-bundle.sh; Finder would report 'damaged')"
+  fi
+else
+  echo "==> codesign not available; skipping signature gate"
+fi
+
 # The bundle must NOT ship user/app data.
 if find "$APP" -type d -name 'runs' -o -name 'data' 2>/dev/null | grep -q .; then
   fail "bundle unexpectedly contains a data/runs directory"

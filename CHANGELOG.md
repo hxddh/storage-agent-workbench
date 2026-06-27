@@ -30,15 +30,28 @@ follow semantic versioning once it reaches 1.0.
   agentic workbench; replaced wholesale by the thread-first shell above.
 - Removed stale "Phase 01 / bootstrap only" and "credentials arrive in later phases"
   copy (the panels carrying it were retired).
+- **macOS bundle "app is damaged" / broken code-signature seal.** `cargo tauri build`
+  with no signing identity left the main binary linker-signed with no sealed
+  resources, so `codesign --verify --deep --strict` failed and Finder reported the
+  app as damaged. The macOS build now ad-hoc seals the `.app` after bundling
+  (`scripts/sign-macos-app-bundle.sh`) and rebuilds the DMG from the sealed app, and
+  `scripts/verify-macos-app-bundle.sh` gates on `codesign --verify --deep --strict`.
+  Sealing intentionally does **not** enable the hardened runtime — under it the
+  PyInstaller Python sidecar cannot load its bundled framework ("different Team IDs")
+  and never starts. The build remains ad-hoc (not Developer ID, not notarized), so
+  the normal Gatekeeper "unidentified developer" prompt still appears.
 
 ### Notes
 
 - **v0.19.0-pre.1 was withdrawn** (reverted to draft) after product smoke testing:
   the app launched and the sidecar connected, but the UI was not yet a usable
-  agent-first workbench. A separate diagnosis also found the macOS bundle's ad-hoc
-  code signature was broken (Gatekeeper "is damaged"); track that packaging fix
-  separately.
-- A planned `v0.19.0-pre.2` will carry these fixes once verified.
+  agent-first workbench, and the macOS bundle's code-signature seal was broken
+  (Gatekeeper "is damaged"). Both are fixed above for `v0.19.0-pre.2`.
+- **First macOS launch is slow (up to ~1 min):** macOS validates the freshly
+  ad-hoc-signed one-file sidecar's signature on first extraction; later launches are
+  fast. The window shows "Sidecar: Connecting" until ready.
+- Notarization / Apple Developer ID signing remain out of scope for these
+  pre-1.0 builds.
 
 ## [0.19.0-pre.1] - 2026-06-27 [WITHDRAWN]
 
