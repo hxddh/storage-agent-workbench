@@ -28,10 +28,12 @@ export function MessageCard({
   role,
   content,
   toolActivity,
+  streaming,
 }: {
   role: string;
   content: string | null;
   toolActivity?: ToolActivity[];
+  streaming?: boolean;
 }) {
   if (role === "user") {
     return (
@@ -42,17 +44,28 @@ export function MessageCard({
       </div>
     );
   }
+  // While streaming, the raw deltas may include the trailing metadata JSON block
+  // (the backend strips it for the persisted message); hide it from the live view.
+  const shown = streaming ? stripMetaBlock(content || "") : content || "";
   return (
     <div className="group animate-fade-in-up">
       <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-accent-soft">
         {Spark}
         Storage Agent
-        <CopyButton text={content || ""} />
+        {!streaming && <CopyButton text={content || ""} />}
       </div>
       {toolActivity && toolActivity.length > 0 && <ToolActivityList items={toolActivity} />}
-      <Markdown text={content || ""} />
+      <Markdown text={shown} />
+      {streaming && <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-accent-soft align-middle" />}
     </div>
   );
+}
+
+// Drop a trailing (possibly still-open) ```json … ``` metadata block from a
+// partially-streamed answer so it never flashes on screen.
+function stripMetaBlock(text: string): string {
+  const i = text.lastIndexOf("```json");
+  return i >= 0 ? text.slice(0, i).trimEnd() : text;
 }
 
 /** Compact, Codex/Cursor-style trace of the read-only tools the agent ran. */

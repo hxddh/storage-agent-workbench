@@ -8,6 +8,7 @@ import {
   postSessionMessage,
   prepareSessionAction,
   previewSessionAction,
+  streamSessionMessage,
   submitErrorTriage,
 } from "../api";
 import type { NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
@@ -103,6 +104,8 @@ export function Thread({
   const [report, setReport] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  const [streamText, setStreamText] = useState<string | null>(null);
+  const [streamTools, setStreamTools] = useState<ToolActivity[]>([]);
   const [slashSel, setSlashSel] = useState(0);
   const localId = useRef<string | null>(sessionId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -146,6 +149,9 @@ export function Thread({
     setRunStarter(null);
     setImportHandoff(null);
     setReport(null);
+    setPending(null);
+    setStreamText(null);
+    setStreamTools([]);
     reload(sessionId);
     refreshModel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -186,9 +192,30 @@ export function Thread({
     return s.id;
   };
 
-  // One input. The agent answers; if no model key is configured and the message
-  // looks like an error, fall back to deterministic offline triage so the user
-  // still gets value without credentials.
+  // The blocking turn (also the streaming fallback). Returns true on a clean
+  // answer; surfaces needKey / offline triage / error as the blocking path did.
+  const sendBlocking = async (id: string, t: string) => {
+    try {
+      const r = await postSessionMessage(id, t);
+      setLiveProposals(r.proposed_actions || []);
+    } catch (e) {
+      const msg = String(e);
+      if (/no model provider configured|no api key stored/i.test(msg)) {
+        if (looksLikeError(t)) {
+          await submitErrorTriage({ content: t, input_kind: "mixed", session_id: id, planner_mode: "deterministic" });
+        } else {
+          setNeedKey(true);
+        }
+      } else {
+        setError(cleanError(msg));
+      }
+    }
+  };
+
+  // One input. Stream the agent's turn (live tool traces + token deltas); if the
+  // stream fails (e.g. the provider's tool-call streaming is flaky, or no model
+  // is configured → 422), fall back to the reliable blocking turn, which also
+  // handles the no-key / offline-triage cases.
   const send = async () => {
     const t = text.trim();
     if (!t || busy) return;
@@ -196,27 +223,26 @@ export function Thread({
     setError(null);
     setNeedKey(false);
     setText("");
-    setPending(t); // show the user's turn + a thinking indicator immediately
+    setPending(t); // show the user's turn immediately
+    setStreamText(null);
+    setStreamTools([]);
     try {
       const id = await ensureSession(t);
       try {
-        const r = await postSessionMessage(id, t);
+        const r = await streamSessionMessage(id, t, {
+          onDelta: (chunk) => setStreamText((s) => (s ?? "") + chunk),
+          onTool: (rec) => setStreamTools((a) => [...a, rec]),
+        });
         setLiveProposals(r.proposed_actions || []);
-      } catch (e) {
-        const msg = String(e);
-        if (/no model provider configured|no api key stored/i.test(msg)) {
-          // No model configured at all → offer to add one (or triage offline).
-          if (looksLikeError(t)) {
-            await submitErrorTriage({ content: t, input_kind: "mixed", session_id: id, planner_mode: "deterministic" });
-          } else {
-            setNeedKey(true);
-          }
-        } else {
-          setError(cleanError(msg));
-        }
+      } catch {
+        // Stream broke (or 422). The endpoint persists nothing until it
+        // completes, so the blocking turn re-runs cleanly without duplicating.
+        await sendBlocking(id, t);
       }
       await reload(id);
       setPending(null);
+      setStreamText(null);
+      setStreamTools([]);
       onChanged();
     } finally {
       setBusy(false);
@@ -362,7 +388,11 @@ export function Thread({
           {pending && (
             <>
               <MessageCard role="user" content={pending} />
-              <ThinkingBubble />
+              {streamText !== null || streamTools.length ? (
+                <MessageCard role="assistant" content={streamText ?? ""} toolActivity={streamTools} streaming />
+              ) : (
+                <ThinkingBubble />
+              )}
             </>
           )}
 

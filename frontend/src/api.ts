@@ -9,6 +9,7 @@ import type {
   SessionMessage,
   SessionSummaryData,
   SessionSummaryRow,
+  ToolActivity,
   TriageCase,
   CloudProvider,
   CredentialsTestResult,
@@ -225,6 +226,56 @@ export const postSessionMessage = (id: string, content: string) =>
     `/sessions/${id}/messages`,
     { method: "POST", body: JSON.stringify({ content }) },
   );
+
+// Streaming variant (SSE): invokes onDelta/onTool as the agent works and
+// resolves on the `done` event. Throws on a non-OK response (e.g. 422 no model)
+// or a stream `error` event — the caller should then fall back to
+// postSessionMessage (the stream endpoint persists nothing until it completes,
+// so the fallback re-runs the turn without duplicating it).
+export async function streamSessionMessage(
+  id: string,
+  content: string,
+  on: { onDelta: (text: string) => void; onTool: (a: ToolActivity) => void },
+): Promise<{ proposed_actions: NextAction[] }> {
+  const res = await fetch(`${sidecarBaseUrl()}/sessions/${id}/messages/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok || !res.body) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const b = await res.json();
+      if (b?.detail) detail = typeof b.detail === "string" ? b.detail : JSON.stringify(b.detail);
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  let proposed: NextAction[] = [];
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const chunks = buf.split("\n\n");
+    buf = chunks.pop() ?? "";
+    for (const chunk of chunks) {
+      const lines = chunk.split("\n");
+      const type = lines.find((l) => l.startsWith("event:"))?.slice(6).trim();
+      const dataRaw = lines.find((l) => l.startsWith("data:"))?.slice(5).trim();
+      if (!type || !dataRaw) continue;
+      const data = JSON.parse(dataRaw);
+      if (type === "delta") on.onDelta(data.text || "");
+      else if (type === "tool") on.onTool(data as ToolActivity);
+      else if (type === "done") proposed = data.proposed_actions || [];
+      else if (type === "error") throw new Error(data.detail || "stream error");
+    }
+  }
+  return { proposed_actions: proposed };
+}
 
 export const attachRunToSession = (sessionId: string, runId: string) =>
   request<SessionDetail>(`/sessions/${sessionId}/runs/${runId}`, { method: "POST" });

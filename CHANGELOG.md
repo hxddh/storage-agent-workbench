@@ -6,6 +6,28 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.0-pre.6] - 2026-06-27
+
+Streaming agent answers. Ad-hoc signed (not notarized), pre-1.0, macOS arm64.
+
+### Added
+
+- **Streaming chat (SSE).** The agent's turn now streams live: read-only tool
+  traces appear as they run and the answer types in token-by-token, with a
+  caret while it writes (Codex/Cursor-style). New endpoint
+  `POST /sessions/{id}/messages/stream`.
+- **Automatic, lossless fallback.** Some OpenAI-compatible providers (notably
+  DeepSeek) mishandle streaming when a turn makes tool calls and abort mid-stream;
+  on any stream error the client transparently falls back to the blocking turn,
+  so the answer is always correct. The stream endpoint persists nothing until it
+  completes, so the fallback never duplicates the turn. Explanatory (no-tool)
+  answers stream end-to-end on all providers.
+
+### Fixed
+
+- Parallel tool calls are disabled for streaming runs, which avoids a class of
+  malformed follow-up messages with chat-completions providers.
+
 ## [0.19.0-pre.5] - 2026-06-27
 
 The in-chat agent becomes a real agent. Ad-hoc signed (not notarized),
@@ -189,7 +211,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.5...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.6...HEAD
+[0.19.0-pre.6]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.6
 [0.19.0-pre.5]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.5
 [0.19.0-pre.4]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.4
 [0.19.0-pre.3]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.3
