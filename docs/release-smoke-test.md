@@ -12,26 +12,35 @@ yet failed product smoke, so this checklist gates the product model too.
 - [ ] `GET /health` on the sidecar returns `{"status":"ok"}`.
 - [ ] App data is under `~/Library/Application Support/...`, not inside the `.app`.
 
-## B. Agent-first product smoke (required)
+## B. Thread-first product smoke (required)
 
 A fresh-install user must be able to do all of this without reading source:
 
-- [ ] On launch, the **Home / agent workspace** is shown (not an empty admin list).
-- [ ] Home has a task composer: "What do you want to investigate?".
-- [ ] Home shows **setup status** for Model provider and Cloud provider with a Configure action.
-- [ ] **Configure a model provider (LLM API key)** from visible UI (Providers → Model).
-- [ ] **Configure an S3-compatible cloud provider (AK/SK)** from visible UI (Providers → Cloud).
-- [ ] Start an investigation from the composer → it creates and opens a **Session**.
-- [ ] **Start offline error triage** without cloud credentials; paste a synthetic S3 error and get a deterministic result.
-- [ ] If no model key is configured, agent interpretation **fails cleanly** (not a crash); deterministic output still appears.
-- [ ] **Next-action proposals** appear and require review/confirmation before anything runs.
-- [ ] Runs / Datasets / Reports are reachable as **supporting** views, not the starting point.
+- [ ] On launch, the **thread-first workbench** is shown: a slim session rail (left) +
+      a conversation thread with a sticky composer (center). No top-level tabs.
+- [ ] On a fresh install (no providers), the **first-run wizard** appears once, then
+      does not reappear after "Skip for now" or "Configure providers".
+- [ ] "Configure providers" / "⚙ Settings & providers" opens the **settings drawer**.
+- [ ] **Configure a model provider (LLM API key)** in the drawer (Model Providers).
+- [ ] **Configure an S3-compatible cloud provider (AK/SK)** in the drawer (Cloud Providers).
+- [ ] Composer "Ask the agent" → first message **creates and opens a session** that
+      appears in the rail; messages render as inline thread cards.
+- [ ] Composer "Triage an error" works **without cloud credentials**: paste a synthetic
+      S3 error and get a deterministic **triage card** inline in the thread.
+- [ ] If no model key is configured, agent interpretation **fails cleanly** with an inline
+      "Add a model API key" prompt (not a crash); deterministic output still appears.
+- [ ] **Next-action proposals** render as inline cards; Review previews and Prepare opens
+      the run starter / evidence import / report as an in-thread modal — nothing runs
+      without explicit confirmation.
+- [ ] Runs are reachable as **expandable cards inside the thread** (Details), not as a
+      separate top-level page.
 
 ## C. Anti-regressions (must NOT be present)
 
+- [ ] No top-level tabbed admin shell (Home / Sessions / Providers / Runs / Datasets / Reports nav).
 - [ ] No stale "Phase 01 / bootstrap only" copy.
 - [ ] No "credentials … arrive in later phases" copy.
-- [ ] No dead-end top-level page without a next step.
+- [ ] No dead-end view without a next step in the thread.
 - [ ] No plaintext secrets in frontend state/localStorage, logs, reports, or model prompts.
 - [ ] No destructive S3 operation; no hidden auto-run / auto-confirm.
 

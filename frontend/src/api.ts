@@ -277,6 +277,9 @@ export interface ErrorTriageInput {
 export const submitErrorTriage = (body: ErrorTriageInput) =>
   request<TriageCase>("/error-triage", { method: "POST", body: JSON.stringify(body) });
 
+export const getSessionTriage = (sessionId: string) =>
+  request<{ session_id: string; cases: TriageCase[] }>(`/sessions/${sessionId}/error-triage`);
+
 export const runEventsUrl = (id: string) => `${sidecarBaseUrl()}/runs/${id}/events`;
 
 // --- Datasets (Phase 05) ---

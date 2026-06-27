@@ -8,16 +8,28 @@ follow semantic versioning once it reaches 1.0.
 
 ### Changed
 
-- Reworked the desktop UI into an **agent-first workbench**: a Home / investigation
-  workspace is now the entry point (task composer + setup status + quick actions),
-  with Runs / Datasets / Reports as supporting views rather than the starting point.
-- Model-provider and cloud-provider setup are surfaced from Home and reflected in a
-  live Context panel (setup + safety state).
+- **Rebuilt the desktop UI into a thread-first agentic workbench (Codex-style).**
+  The app is now a single conversation thread with a sticky composer and a slim
+  session rail — no top-level tabs. Tool runs, error-triage cases, and next-action
+  proposals all render as inline cards in the thread. The composer has two modes:
+  "Ask the agent" (session message) and "Triage an error" (offline, no credentials).
+- Setup is a **first-run wizard** (shown once on a fresh install with no providers)
+  that leads into an inline **settings drawer** embedding model- and cloud-provider
+  management. Missing-model-key states surface an inline "Add a model API key" prompt
+  instead of failing opaquely.
+- Next-action proposals are reviewed and prepared **inline in the thread** — Review
+  previews, Prepare opens the run starter / evidence import / report as an in-thread
+  modal. Nothing runs without explicit confirmation.
+- Retired the previous tabbed admin-panel shell (Home / Sessions / Providers / Runs /
+  Datasets / Reports navigation, sidebar, and context panel). No backend, API, schema,
+  or agent-runtime changes — all capabilities are reused through the new shell.
 
 ### Fixed
 
+- Removed the multi-view admin-panel interaction model that did not match a modern
+  agentic workbench; replaced wholesale by the thread-first shell above.
 - Removed stale "Phase 01 / bootstrap only" and "credentials arrive in later phases"
-  copy from the Settings and Context panels.
+  copy (the panels carrying it were retired).
 
 ### Notes
 
