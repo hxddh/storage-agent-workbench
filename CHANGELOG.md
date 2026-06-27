@@ -6,6 +6,37 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.0-pre.5] - 2026-06-27
+
+The in-chat agent becomes a real agent. Ad-hoc signed (not notarized),
+pre-1.0, macOS arm64.
+
+### Changed
+
+- **The chat agent now investigates live.** It was interpretation-only (no
+  tools); it now uses read-only tools — `list_providers`, `list_buckets`,
+  `head_bucket`, bounded `list_objects`, `get_bucket_config_summary`, and
+  `review_bucket_*` — choosing the provider/bucket itself and answering from
+  real results (e.g. "列出我的 bucket" lists them directly). All guardrails
+  remain: no destructive/mutating operations exist, scans are bounded, every
+  call is audited, credentials stay in the OS keychain and never reach the
+  model, and anything that moves data or runs a large/analysis job stays a
+  confirmed run.
+- **Inline tool-call transparency** (Codex/Cursor-style): each answer shows the
+  read-only tools it ran, e.g. `list_buckets · Baidu BOS → 96 buckets`,
+  persisted with the message.
+- One-pick cloud setup, ⌘K palette, slash commands, live "thinking" state, and
+  richer markdown (carried from pre.4 line).
+
+### Fixed
+
+- Next-step proposals are actionable: `prepare` falls back to the configured
+  provider (auto-binds the only one) and run proposals always open the run form.
+- Stray green focus ring recolored to the indigo accent; composer double-ring
+  removed; model chip refetches when the sidecar connects.
+- Provider auth/404 failures no longer show "Add a model API key"; they show an
+  actionable message with an Open settings action.
+
 ## [0.19.0-pre.4] - 2026-06-27
 
 Restores agent mode in the packaged app and adds Codex/Cursor-style
@@ -158,7 +189,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.4...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.5...HEAD
+[0.19.0-pre.5]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.5
 [0.19.0-pre.4]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.4
 [0.19.0-pre.3]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.3
 [0.19.0-pre.2]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.2
