@@ -374,3 +374,27 @@ Expected later:
   chain-of-thought persistence; no FAQ / static error-code dictionary / kanban /
   ticketing / dashboard expansion; no release/signing/auto-update; Phase 19 not
   started.
+
+## Phase 19 acceptance (skills-only StorageOps context injection)
+
+- Branch `phase/19-skills-only-context-injection` from latest main.
+- Bundled `skill-registry.yaml` + `skills/*/SKILL.md` are local; no StorageOps
+  tools/CLI/scripts/references/templates copied or imported; `recommended_tools`
+  ignored. No helper script executed, no Pi runtime, no subprocess/shell.
+- No public skill API (`/skills`, `/skills/{name}`, `/sessions/{id}/skill-context`
+  all absent); no new DB table or migration; no skill UI / catalog / marketplace.
+- `skills/loader.py`, `skills/selection.py`, `skills/context.py`, `skills/contract.py`
+  implemented as internal modules. Selector returns ≤3 candidates as name /
+  match_reason / selection_basis only — no diagnosis / remediation / confidence,
+  no hard-coded error-code → skill mapping. Skill context carries a tools/scripts
+  disabled wrapper and is bounded.
+- Session assistant and error-triage agent-mode prompts include the selected
+  SKILL.md context; deterministic triage does not fake a skill-grounded
+  diagnosis. Agent output follows the minimal contract (answer / skills_used /
+  evidence_used / evidence_gaps / next_action_proposals); next actions remain
+  proposals only and reuse the Phase 17 review/prepare flow.
+- No raw logs / stack traces / secrets in Agent context; no chain-of-thought
+  persistence; no hard-coded correlation engine; no dashboard / FAQ / ticketing /
+  kanban. Public-repo hygiene: synthetic examples only.
+- Sidecar tests pass (246); frontend build + cargo check pass; guardrails pass.
+- No Vercel SDK; no release/signing/auto-update; Phase 20 not started.

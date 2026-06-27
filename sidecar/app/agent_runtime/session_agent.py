@@ -19,6 +19,8 @@ from collections.abc import Callable
 from typing import Any
 
 from ..security.redaction import redact_text
+from ..skills import context as skill_context
+from ..skills import contract as skill_contract
 from . import guardrails
 from .agent_service import AgentUnavailable
 from .guardrails import strip_chain_of_thought
@@ -50,17 +52,16 @@ INSTRUCTIONS = (
     "You are the assistant for a storage-diagnostics work session. You are given "
     "a JSON context: the session goal, a deterministic summary (known facts, "
     "findings, open questions, suggested next actions, limitations), and the "
-    "recent message thread. Answer the user's latest question grounded ONLY in "
-    "that context. Be concise. When you recommend a next step, refer to one of "
-    "the existing suggested next actions; never invent an action that downloads "
-    "evidence, changes configuration, or runs anything itself. Make clear which "
-    "statements are well-evidenced facts vs. inferences. Follow all safety_rules.\n\n"
-    "Optionally, AFTER your prose answer, you MAY append exactly one fenced JSON "
-    "block proposing safe next steps, of the form:\n"
-    "```json\n{\"proposed_actions\": [{\"title\": \"...\", \"reason\": \"...\", "
-    "\"action_type\": \"...\", \"confidence\": \"low|medium|high\"}]}\n```\n"
-    f"action_type MUST be one of: {_PROPOSAL_ACTION_TYPES}. These are PROPOSALS "
-    "only — the user reviews and confirms each one; you never execute them."
+    "recent message thread. You may also be given StorageOps skills as "
+    "PROFESSIONAL DIAGNOSTIC METHODS.\n"
+    "Use the StorageOps skills as professional methods. Use session evidence as "
+    "factual grounding. Do not invent evidence. Do not claim any tool/script/CLI "
+    "was run. Do not request helper-script execution. If evidence is "
+    "insufficient, ask for the missing evidence or propose an existing safe next "
+    "action. If no provided skill is applicable, say so in your answer. Make "
+    "clear which statements are well-evidenced facts vs. inferences. Follow all "
+    "safety_rules.\n\n"
+    f"Available next-action types (proposals only): {_PROPOSAL_ACTION_TYPES}."
 )
 
 
@@ -146,27 +147,9 @@ def _sdk_session_loop(spec: dict[str, Any]) -> Any:
 SESSION_LOOP: Callable[[dict[str, Any]], Any] = _sdk_session_loop
 
 
-def _extract_proposals(text: str) -> tuple[str, list[dict[str, Any]]]:
-    """Split a trailing ```json {proposed_actions:[...]} ``` block off the prose.
-
-    Returns (prose_without_block, raw_proposals). Validation/coercion of the
-    proposals happens in the router via the next_actions allowlist.
-    """
-    import re
-
-    proposals: list[dict[str, Any]] = []
-    prose = text
-    m = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
-    if m:
-        try:
-            data = json.loads(m.group(1))
-            raw = data.get("proposed_actions")
-            if isinstance(raw, list):
-                proposals = [p for p in raw if isinstance(p, dict)]
-        except (json.JSONDecodeError, AttributeError):
-            proposals = []
-        prose = (text[: m.start()] + text[m.end():]).strip()
-    return prose, proposals
+def _skill_query_text(session: dict[str, Any], summary: dict[str, Any], user_message: str) -> str:
+    facts = " ".join(str(f.get("text", "")) for f in (summary.get("known_facts") or [])[:10])
+    return " ".join([str(session.get("goal") or ""), facts, user_message or ""])
 
 
 def answer(
@@ -175,23 +158,33 @@ def answer(
     recent_messages: list[dict[str, Any]],
     user_message: str,
     creds: dict[str, Any],
-) -> tuple[str, list[dict[str, Any]]]:
-    """Return (sanitized CoT-stripped answer, raw proposed_actions). Raises AgentUnavailable.
+) -> dict[str, Any]:
+    """Skill-grounded, sanitized session answer contract. Raises AgentUnavailable.
 
-    The raw proposed_actions are NOT trusted: the caller must validate/coerce them
-    through the next_actions allowlist before use.
+    Returns {answer, skills_used, evidence_used, evidence_gaps,
+    next_action_proposals} — all sanitized + CoT-stripped; proposals coerced
+    through the Phase 17 allowlist. StorageOps skills are injected as guidance
+    only (tools/scripts disabled).
     """
     context = build_session_context(session, summary, recent_messages)
-    prompt = (
-        f"{render_context_text(context)}\n\n"
-        f"User question:\n{redact_text(user_message)[:2000]}"
-    )
+    skill_ctx = skill_context.build_skill_context(
+        _skill_query_text(session, summary, user_message))
+    skill_names = [s["name"] for s in skill_ctx["skills"]]
+
+    prompt_parts = [render_context_text(context)]
+    if skill_ctx["text"]:
+        prompt_parts.append(skill_ctx["text"])
+    prompt_parts.append(f"User question:\n{redact_text(user_message)[:2000]}")
+    prompt_parts.append(skill_contract.CONTRACT_INSTRUCTION)
+    prompt = "\n\n".join(prompt_parts)
+
     spec = {"context": context, "prompt": prompt, "instructions": INSTRUCTIONS, "creds": creds}
     raw = SESSION_LOOP(spec)
-    text = raw if isinstance(raw, str) else str(raw or "")
-    prose, proposals = _extract_proposals(text)
-    clean = strip_chain_of_thought(redact_text(prose))[:_MAX_OUTPUT]
-    return clean, proposals
+    contract = skill_contract.parse_agent_contract(raw, allowed_skill_names=skill_names)
+    contract["answer"] = contract["answer"][:_MAX_OUTPUT]
+    # Record which skills were offered (selection), distinct from skills_used.
+    contract["skills_offered"] = skill_names
+    return contract
 
 
 __all__ = ["SESSION_LOOP", "build_session_context", "render_context_text", "answer",

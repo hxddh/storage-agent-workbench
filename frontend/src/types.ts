@@ -367,6 +367,10 @@ export interface TriageCase {
   candidate_causes: TriageFinding[];
   safe_next_actions: NextAction[];
   agent_interpretation: string | null;
+  skills_offered: string[];
+  skills_used: string[];
+  evidence_used: string[];
+  evidence_gaps: string[];
   limitations: string[];
   created_at: string | null;
   updated_at: string | null;

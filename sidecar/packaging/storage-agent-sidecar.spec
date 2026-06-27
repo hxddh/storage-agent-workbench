@@ -16,11 +16,23 @@
 # .env, the SQLite DB, keyring contents, or data/runs output (see `excludes`
 # and the fact that only the `app` package is the entry graph).
 
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas = []
 binaries = []
 hiddenimports = []
+
+# Bundled StorageOps skill pack (Phase 19): registry + SKILL.md guidance docs
+# ONLY (no scripts/references/templates/CLI are vendored in the source tree, so
+# copying the directory cannot pull them in). The loader resolves this at
+# `app/bundled_skillpacks/...` relative to the `app` package, which is where
+# PyInstaller extracts this data entry (matches Path(__file__)/../bundled... at
+# runtime, including under sys._MEIPASS for the one-file build).
+_skillpack = (Path(SPECPATH) / ".." / "app" / "bundled_skillpacks").resolve()
+if _skillpack.is_dir():
+    datas += [(str(_skillpack), "app/bundled_skillpacks")]
 
 # Packages with C extensions / data files that need full collection.
 for pkg in ("duckdb", "pyarrow", "pandas"):

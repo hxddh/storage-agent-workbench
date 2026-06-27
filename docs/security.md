@@ -222,6 +222,35 @@ Turning a proposal into action is gated and reuses existing safe flows.
   are lightweight; there is no assignee, due date, status board, ticket state, or
   workflow state machine.
 
+## StorageOps skill context (Phase 19)
+
+The bundled StorageOps skill pack is professional-method *context only*; it adds
+no executable capability.
+
+- **Vendored content is data, not code.** Only `skill-registry.yaml` +
+  `skills/*/SKILL.md` are bundled. No StorageOps tools, helper scripts, CLI, Pi
+  runtime, `references/`, or `templates/` are copied. If a SKILL.md *mentions*
+  scripts / tools / `capture_http_trace` / `scan_secrets` / `recommended_tools`,
+  that is allowed prose — the Workbench never registers, exposes, imports, or
+  executes them. `recommended_tools` is dropped at load time.
+- **Tools-disabled wrapper.** Every injected SKILL.md is prefixed with a preamble
+  stating the StorageOps tools / scripts / CLI / Pi runtime / external execution
+  are disabled in this phase and that script/tool mentions are conceptual
+  guidance only.
+- **No raw data / secrets to the model.** The selector and context builder feed
+  the Agent only skill docs + the already-sanitized session/triage context.
+  The raw error blob, raw logs/rows, credentials, model keys, and
+  chain-of-thought are never included. Agent output is redacted + CoT-stripped.
+- **Selection is metadata-driven, not a rule engine.** Candidates come from
+  lexical overlap with registry metadata; the selector emits no diagnosis /
+  remediation / confidence and contains no hard-coded error-code → skill mapping.
+- **Human-in-the-loop preserved.** Skill-grounded answers still produce only
+  Phase 17 next-action *proposals* (all require confirmation); nothing
+  auto-runs, auto-confirms, downloads, or mutates. No new tool, API, DB table,
+  subprocess, MCP, or multi-agent runtime is introduced.
+- **Public-repo hygiene.** Vendored skills + docs/tests use generic content; no
+  real customer / endpoint / bucket / credential data is added.
+
 ## Error triage (Phase 18)
 
 The error-triage assistant adds S3 error diagnosis inside a session without any

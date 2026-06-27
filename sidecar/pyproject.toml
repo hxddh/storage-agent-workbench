@@ -21,6 +21,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "openai>=1.40",
     "openai-agents>=0.0.1",
+    "pyyaml>=6.0",
 ]
 
 # NOTE (Phase 07): Adds the OpenAI Agents SDK (openai-agents) + openai for an
@@ -42,6 +43,12 @@ packaging = [
 
 [tool.setuptools]
 packages = ["app"]
+
+# Bundled StorageOps skill pack (Phase 19): registry + SKILL.md guidance docs
+# only. No scripts/references/templates/CLI are vendored. These are read-only
+# professional-method context for the Agent — never executed.
+[tool.setuptools.package-data]
+app = ["bundled_skillpacks/storageops/skill-registry.yaml", "bundled_skillpacks/storageops/skills/*/SKILL.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -191,6 +191,42 @@ Next-action proposals become an **Agentic hand-over**, never automation:
   `next_action_opened` — lightweight events, not a task lifecycle (no
   assignee/status-board/ticket state).
 
+## StorageOps skill context injection (Phase 19)
+
+The existing Agents gain **professional-method context** from the bundled
+StorageOps skill pack — skills-only, guidance-only. It is NOT a skills platform:
+no StorageOps tools, helper scripts, CLI, Pi runtime, subprocess, MCP,
+multi-agent runtime, skill API, skill UI, skill DB tables, or RAG.
+
+- **Vendored** under `sidecar/app/bundled_skillpacks/storageops/`: only
+  `skill-registry.yaml` + `skills/*/SKILL.md` (16 skills). No `references/`,
+  `templates/`, `scripts/`, `storageops_cli/`, or `extensions/` are copied.
+- **`skills/loader.py`** parses minimal registry metadata (name / path /
+  description / maturity / mode / trigger_keywords / domains / auto_route) and
+  loads SKILL.md bodies. `recommended_tools` is deliberately NOT exposed — never
+  registered, shown, or executed.
+- **`skills/selection.py`** is a lightweight lexical selector: it matches the
+  input context (session goal + summary + question + plain-text error signals)
+  against registry metadata and returns 1–3 candidates as
+  `{name, match_reason, selection_basis}` only — no diagnosis / root cause /
+  remediation / confidence / score, and no hard-coded error-code → skill mapping
+  (fallback is the registry's `auto_route` skill, a metadata property).
+- **`skills/context.py`** wraps each selected SKILL.md in a tools-disabled safety
+  preamble ("StorageOps tools / scripts / CLI / Pi runtime … are disabled in
+  this Workbench phase; do not claim to run tools; use mentions as conceptual
+  guidance only"), bounded by a max-char budget and a 1–3 skill cap.
+- **Injection**: `agent_runtime/session_agent.py` and
+  `error_triage/triage_agent.py` add the selected SKILL.md context to the prompt
+  (not to the sanitized evidence context) and emit a minimal contract via
+  `skills/contract.py`: `{answer, skills_used, evidence_used, evidence_gaps,
+  next_action_proposals}` — answer redacted + CoT-stripped, skills_used limited
+  to injected skills, proposals coerced through the Phase 17 allowlist. The raw
+  error blob / secrets / chain-of-thought never reach the model. Deterministic
+  triage (or a missing model key) does not fabricate a skill-grounded diagnosis.
+- No migration / DB table / public skill API was added; skill-grounded fields
+  ride existing session-message responses and the triage case JSON, and the
+  session report lightly absorbs `skills_used` / `evidence_gaps` when present.
+
 ## Error triage assistant (Phase 18)
 
 A session-centered capability to triage S3 / object-storage / S3-compatible

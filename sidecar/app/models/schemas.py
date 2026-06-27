@@ -516,6 +516,10 @@ class TriageCaseOut(BaseModel):
     safe_next_actions: list[dict] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     agent_interpretation: str | None = None
+    skills_offered: list[str] = Field(default_factory=list)
+    skills_used: list[str] = Field(default_factory=list)
+    evidence_used: list[str] = Field(default_factory=list)
+    evidence_gaps: list[str] = Field(default_factory=list)
     created_at: str | None = None
     updated_at: str | None = None
 
