@@ -240,13 +240,17 @@ export function Thread({
     if (!localId.current) return;
     try {
       const r = await prepareSessionAction(localId.current, p);
+      // Run proposals always open the run form — it collects any missing
+      // provider/bucket/dataset, so "needs input" is never a dead end.
+      if (r.open === "new_run") {
+        setRunStarter({ run_type: r.prefill.run_type, provider_id: r.prefill.provider_id, bucket: r.prefill.bucket });
+        return;
+      }
       if (r.status !== "ready") {
         setPreviews((m) => ({ ...m, [propKey(p)]: `Needs input: ${r.missing_inputs.join(", ") || "more context"}.` }));
         return;
       }
-      if (r.open === "new_run") {
-        setRunStarter({ run_type: r.prefill.run_type, provider_id: r.prefill.provider_id, bucket: r.prefill.bucket });
-      } else if (r.open === "evidence_import") {
+      if (r.open === "evidence_import") {
         setImportHandoff({
           sourceType: r.prefill.source_type as "inventory" | "access_log",
           accountRunId: r.prefill.account_run_id,
