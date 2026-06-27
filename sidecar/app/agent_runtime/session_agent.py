@@ -154,7 +154,7 @@ def _sdk_session_loop(spec: dict[str, Any]) -> Any:
             set_default_openai_api("chat_completions")
         else:
             set_default_openai_key(creds["api_key"])
-        tools = session_tools.build(conn, function_tool) if conn is not None else []
+        tools = session_tools.build(conn, function_tool, spec.get("activity")) if conn is not None else []
         agent = Agent(name="Storage Agent", instructions=spec["instructions"],
                       tools=tools, model=creds.get("model"))
         result = Runner.run_sync(agent, spec["prompt"])
@@ -201,12 +201,16 @@ def answer(
     prompt_parts.append(skill_contract.CONTRACT_INSTRUCTION)
     prompt = "\n\n".join(prompt_parts)
 
-    spec = {"context": context, "prompt": prompt, "instructions": INSTRUCTIONS, "creds": creds, "conn": conn}
+    activity: list[dict[str, Any]] = []
+    spec = {"context": context, "prompt": prompt, "instructions": INSTRUCTIONS,
+            "creds": creds, "conn": conn, "activity": activity}
     raw = SESSION_LOOP(spec)
     contract = skill_contract.parse_agent_contract(raw, allowed_skill_names=skill_names)
     contract["answer"] = contract["answer"][:_MAX_OUTPUT]
     # Record which skills were offered (selection), distinct from skills_used.
     contract["skills_offered"] = skill_names
+    # Read-only tool calls made this turn (for the UI; sanitized in session_tools).
+    contract["tool_activity"] = activity
     return contract
 
 

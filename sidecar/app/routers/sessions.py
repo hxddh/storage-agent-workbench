@@ -202,7 +202,8 @@ def post_session_message(
 
     # The contract is already sanitized + allowlist-coerced inside session_agent.
     proposed_actions = contract["next_action_proposals"]
-    repo.add_message(conn, session_id, "assistant", contract["answer"])
+    repo.add_message(conn, session_id, "assistant", contract["answer"],
+                     tool_activity=contract.get("tool_activity"))
     audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
     conn.commit()
     return {

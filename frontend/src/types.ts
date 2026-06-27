@@ -313,12 +313,19 @@ export interface SessionSummaryData {
   updated_at: string | null;
 }
 
+export interface ToolActivity {
+  tool: string;
+  target: string;
+  result: string;
+}
+
 export interface SessionMessage {
   id: string;
   role: string;
   content: string | null;
   referenced_run_ids: string[];
   referenced_evidence_ids: string[];
+  tool_activity?: ToolActivity[];
   created_at: string;
 }
 

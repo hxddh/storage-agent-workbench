@@ -33,14 +33,38 @@ def _err(msg: str) -> str:
     return json.dumps({"error": msg})
 
 
-def build(conn: sqlite3.Connection, function_tool: Callable) -> list[Any]:
-    """Build the read-only investigator tool set bound to this DB connection."""
+def _summarize(result: Any) -> str:
+    if isinstance(result, dict):
+        if result.get("error"):
+            return "error"
+        for key in ("buckets", "objects", "keys", "contents"):
+            if isinstance(result.get(key), list):
+                return f"{len(result[key])} {key}"
+        if result.get("success") is False or result.get("error_code"):
+            return "error"
+    return "done"
 
+
+def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict[str, Any]] | None = None) -> list[Any]:
+    """Build the read-only investigator tool set bound to this DB connection.
+
+    If ``activity`` is given, each tool call appends a sanitized record
+    {tool, target, result} for the UI to show ("ran list_buckets → 96 buckets").
+    """
     def provider(provider_id: str):
         return cloud_repo.get(conn, provider_id)
 
+    def provider_name(provider_id: str) -> str:
+        p = cloud_repo.get(conn, provider_id)
+        return p.name if p else provider_id[:8]
+
     def bucket_ok(p, bucket: str) -> bool:
         return (not p.allowed_buckets) or (bucket in p.allowed_buckets)
+
+    def note(tool: str, target: str, result: Any) -> None:
+        if activity is not None:
+            summary = result if isinstance(result, str) else _summarize(result)
+            activity.append({"tool": tool, "target": target[:80], "result": summary})
 
     def rec(tool: str, **kw: Any) -> None:
         audit.record(conn, "session_tool",
@@ -54,6 +78,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable) -> list[Any]:
                 "endpoint": p.endpoint_url, "region": p.region, "mode": p.mode,
                 "allowed_buckets": p.allowed_buckets}
                for p in cloud_repo.list_all(conn)]
+        note("list_providers", "", f"{len(out)} provider(s)")
         return json.dumps({"providers": out})
 
     @function_tool
@@ -62,7 +87,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable) -> list[Any]:
         if provider(provider_id) is None:
             return _err("Unknown provider_id. Call list_providers first.")
         rec("list_buckets", provider_id=provider_id)
-        return json.dumps(s3.list_buckets(conn, provider_id))
+        res = s3.list_buckets(conn, provider_id)
+        note("list_buckets", provider_name(provider_id), res)
+        return json.dumps(res)
 
     @function_tool
     def head_bucket(provider_id: str, bucket: str) -> str:
@@ -73,7 +100,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable) -> list[Any]:
         if not bucket_ok(p, bucket):
             return _err("That bucket is not in this provider's allow-list.")
         rec("head_bucket", provider_id=provider_id, bucket=bucket)
-        return json.dumps(s3.head_bucket(conn, provider_id, bucket))
+        res = s3.head_bucket(conn, provider_id, bucket)
+        note("head_bucket", bucket, res)
+        return json.dumps(res)
 
     @function_tool
     def list_objects(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 50) -> str:
@@ -85,7 +114,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable) -> list[Any]:
             return _err("That bucket is not in this provider's allow-list.")
         bound = guardrails.bound_tool_args("list_objects_v2", {"max_keys": max_keys})
         rec("list_objects", provider_id=provider_id, bucket=bucket, prefix=prefix, max_keys=bound["max_keys"])
-        return json.dumps(s3.list_objects_v2(conn, provider_id, bucket, bound["max_keys"], prefix or None))
+        res = s3.list_objects_v2(conn, provider_id, bucket, bound["max_keys"], prefix or None)
+        note("list_objects", bucket, res)
+        return json.dumps(res)
 
     tools = [list_providers, list_buckets, head_bucket, list_objects]
 
@@ -112,8 +143,11 @@ def build(conn: sqlite3.Connection, function_tool: Callable) -> list[Any]:
                 return _err("Unknown provider_id. Call list_providers first.")
             if not bucket_ok(p, bucket):
                 return _err("That bucket is not in this provider's allow-list.")
-            rec(getattr(_t, "name", "bucket_config"), provider_id=provider_id, bucket=bucket)
-            return json.dumps(fn(conn, provider_id, bucket))
+            tname = getattr(_t, "name", "bucket_config")
+            rec(tname, provider_id=provider_id, bucket=bucket)
+            res = fn(conn, provider_id, bucket)
+            note(tname, bucket, "reviewed" if not (isinstance(res, dict) and res.get("error")) else "error")
+            return json.dumps(res)
         return _t
 
     for name, fn, desc in config_tools:

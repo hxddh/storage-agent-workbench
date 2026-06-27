@@ -226,11 +226,12 @@ def test_no_storageops_tooling_in_executable_code():
         assert forbidden not in src, f"forbidden in executable code: {forbidden}"
 
 
-def test_no_new_migration_added():
+def test_migrations_are_sequential_and_capped():
     from app import migrations
-    # Phase 18 ended at migration 9; Phase 19 adds no DB migration.
-    assert len(migrations.MIGRATIONS) == 9
-    assert max(v for v, _n, _s in migrations.MIGRATIONS) == 9
+    # Migration 10 adds session_messages.tool_activity (agent tool-call trace).
+    versions = [v for v, _n, _s in migrations.MIGRATIONS]
+    assert versions == list(range(1, len(versions) + 1))  # 1..N, no gaps/dupes
+    assert max(versions) == 10
 
 
 def test_no_public_skills_api(client):

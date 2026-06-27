@@ -10,14 +10,14 @@ import {
   previewSessionAction,
   submitErrorTriage,
 } from "../api";
-import type { NextAction, SessionDetail, TriageCase } from "../types";
+import type { NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
 import { Button } from "./ui";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
 import { NewRunForm } from "../views/RunsView";
 import { MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
 
 type Item =
-  | { kind: "message"; ts: string; role: string; content: string | null; id: string }
+  | { kind: "message"; ts: string; role: string; content: string | null; id: string; toolActivity?: ToolActivity[] }
   | { kind: "run"; ts: string; data: SessionDetail["runs"][number] }
   | { kind: "triage"; ts: string; data: TriageCase };
 
@@ -153,7 +153,7 @@ export function Thread({
 
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
-    for (const m of detail?.messages ?? []) out.push({ kind: "message", ts: m.created_at, role: m.role, content: m.content, id: m.id });
+    for (const m of detail?.messages ?? []) out.push({ kind: "message", ts: m.created_at, role: m.role, content: m.content, id: m.id, toolActivity: m.tool_activity });
     for (const r of detail?.runs ?? []) out.push({ kind: "run", ts: r.created_at, data: r });
     for (const c of triage) out.push({ kind: "triage", ts: c.created_at || "", data: c });
     return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
@@ -351,7 +351,7 @@ export function Thread({
 
           {items.map((it) =>
             it.kind === "message" ? (
-              <MessageCard key={it.id} role={it.role} content={it.content} />
+              <MessageCard key={it.id} role={it.role} content={it.content} toolActivity={it.toolActivity} />
             ) : it.kind === "run" ? (
               <RunCard key={it.data.run_id} run={it.data} />
             ) : (
