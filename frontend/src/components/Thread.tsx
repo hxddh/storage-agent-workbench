@@ -140,18 +140,27 @@ export function Thread({
   useEffect(() => {
     // Thread is not remounted per session (App does not key it by id), so reset
     // per-session UI state here when the active session changes.
+    //
+    // Exception: when we create a session mid-send, ensureSession sets
+    // localId.current to the new id BEFORE the prop catches up. So if the
+    // incoming sessionId already equals localId.current, this is our own
+    // just-created session — don't wipe the in-flight optimistic state
+    // (pending / streaming text / proposals), just sync and reload.
+    const isOwnNewSession = sessionId !== null && sessionId === localId.current;
     localId.current = sessionId;
-    setLiveProposals([]);
-    setPreviews({});
-    setNeedKey(false);
-    setError(null);
-    setText("");
-    setRunStarter(null);
-    setImportHandoff(null);
-    setReport(null);
-    setPending(null);
-    setStreamText(null);
-    setStreamTools([]);
+    if (!isOwnNewSession) {
+      setLiveProposals([]);
+      setPreviews({});
+      setNeedKey(false);
+      setError(null);
+      setText("");
+      setRunStarter(null);
+      setImportHandoff(null);
+      setReport(null);
+      setPending(null);
+      setStreamText(null);
+      setStreamTools([]);
+    }
     reload(sessionId);
     refreshModel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -413,7 +422,7 @@ export function Thread({
             </div>
           )}
 
-          {proposals.length > 0 && (
+          {proposals.length > 0 && !pending && (
             <div className="space-y-2 pt-1">
               <div className="px-0.5 text-[11px] font-medium uppercase tracking-wider text-gray-600">Suggested next steps</div>
               {proposals.map((p, i) => (

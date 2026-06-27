@@ -2,33 +2,72 @@ import { Fragment, useState, type ReactNode } from "react";
 
 /**
  * Dependency-free markdown renderer for agent text. Handles the subset the agent
- * emits: headings, paragraphs, fenced + inline code, **bold**, bullet/numbered
- * lists, and simple pipe tables. No raw HTML is ever injected.
+ * emits: headings (h1–h4), paragraphs, fenced + inline code, **bold**, *italic*,
+ * [links](url), bullet/numbered lists, blockquotes, horizontal rules, and pipe
+ * tables. No raw HTML is ever injected (inline() only emits known elements).
  */
 export function Markdown({ text }: { text: string }) {
   const blocks = parseBlocks(text || "");
   return (
-    <div className="space-y-2.5 text-[13.5px] leading-relaxed text-gray-200">
+    <div className="space-y-3 text-[13.5px] leading-[1.7] text-gray-200">
       {blocks.map((b, i) => {
-        if (b.type === "code") return <CodeBlock key={i} lang={b.lang} content={b.content} />;
-        if (b.type === "heading") {
-          const Cls = b.level === 1 ? "text-[15px]" : b.level === 2 ? "text-[14px]" : "text-[13px]";
-          return <div key={i} className={`mt-1 font-semibold text-gray-100 ${Cls}`}>{inline(b.text)}</div>;
+        switch (b.type) {
+          case "code":
+            return <CodeBlock key={i} lang={b.lang} content={b.content} />;
+          case "heading": {
+            const cls =
+              b.level === 1
+                ? "mt-3 text-[16px]"
+                : b.level === 2
+                  ? "mt-3 text-[14.5px]"
+                  : b.level === 3
+                    ? "mt-2 text-[13.5px]"
+                    : "mt-2 text-[12.5px] uppercase tracking-wide text-gray-400";
+            return (
+              <div key={i} className={`font-semibold text-gray-100 first:mt-0 ${cls}`}>
+                {inline(b.text)}
+              </div>
+            );
+          }
+          case "table":
+            return <TableBlock key={i} headers={b.headers} rows={b.rows} />;
+          case "hr":
+            return <hr key={i} className="border-0 border-t border-edge" />;
+          case "quote":
+            return (
+              <blockquote
+                key={i}
+                className="border-l-2 border-accent/40 bg-elevated/40 py-1.5 pl-3.5 pr-3 text-[13px] text-gray-400"
+              >
+                <div className="space-y-1.5">
+                  {b.lines.map((ln, j) => (
+                    <p key={j}>{inline(ln)}</p>
+                  ))}
+                </div>
+              </blockquote>
+            );
+          case "list":
+            return (
+              <ul key={i} className={b.ordered ? "space-y-1.5" : "space-y-1"}>
+                {b.items.map((it, j) => (
+                  <li key={j} className="flex gap-2.5">
+                    <span
+                      className={`select-none ${
+                        b.ordered
+                          ? "min-w-[1.1rem] text-right font-medium text-gray-500"
+                          : "mt-[9px] h-[3px] w-[3px] shrink-0 rounded-full bg-gray-500"
+                      }`}
+                    >
+                      {b.ordered ? `${j + 1}.` : ""}
+                    </span>
+                    <span className="min-w-0 flex-1">{inline(it)}</span>
+                  </li>
+                ))}
+              </ul>
+            );
+          default:
+            return <p key={i}>{inline(b.content)}</p>;
         }
-        if (b.type === "table") return <TableBlock key={i} headers={b.headers} rows={b.rows} />;
-        if (b.type === "list") {
-          return (
-            <ul key={i} className="ml-1 space-y-1">
-              {b.items.map((it, j) => (
-                <li key={j} className="flex gap-2">
-                  <span className="mt-[2px] select-none text-accent-soft">{b.ordered ? `${j + 1}.` : "•"}</span>
-                  <span className="min-w-0">{inline(it)}</span>
-                </li>
-              ))}
-            </ul>
-          );
-        }
-        return <p key={i}>{inline(b.content)}</p>;
       })}
     </div>
   );
@@ -43,12 +82,12 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
     });
   };
   return (
-    <div className="overflow-hidden rounded-lg border border-edge bg-canvas">
+    <div className="group/code overflow-hidden rounded-lg border border-edge bg-[#0a0a0c]">
       <div className="flex items-center gap-2 border-b border-edge/70 px-3 py-1.5">
         <span className="font-mono text-[10.5px] uppercase tracking-wide text-gray-500">{lang || "code"}</span>
         <button
           onClick={copy}
-          className="ml-auto flex items-center gap-1 text-[11px] text-gray-500 transition-colors hover:text-gray-200"
+          className="ml-auto flex items-center gap-1 text-[11px] text-gray-500 opacity-0 transition-all hover:text-gray-200 group-hover/code:opacity-100"
         >
           {copied ? (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
@@ -58,7 +97,7 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre className="overflow-auto px-3 py-2.5 font-mono text-xs leading-relaxed text-gray-300">{content}</pre>
+      <pre className="overflow-auto px-3.5 py-3 font-mono text-[12px] leading-relaxed text-gray-300">{content}</pre>
     </div>
   );
 }
@@ -70,14 +109,23 @@ function TableBlock({ headers, rows }: { headers: string[]; rows: string[][] }) 
         <thead>
           <tr className="bg-elevated">
             {headers.map((h, i) => (
-              <th key={i} className="border-b border-edge px-3 py-1.5 text-left font-medium text-gray-300">{inline(h)}</th>
+              <th
+                key={i}
+                className="border-b border-edge px-3.5 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400"
+              >
+                {inline(h)}
+              </th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((r, ri) => (
-            <tr key={ri} className="border-b border-edge/50 last:border-0">
-              {r.map((c, ci) => <td key={ci} className="px-3 py-1.5 text-gray-300">{inline(c)}</td>)}
+            <tr key={ri} className="border-b border-edge/40 last:border-0 odd:bg-white/[0.015]">
+              {r.map((c, ci) => (
+                <td key={ci} className="px-3.5 py-2 align-top text-gray-300">
+                  {inline(c)}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
@@ -91,10 +139,14 @@ type Block =
   | { type: "heading"; level: number; text: string }
   | { type: "code"; lang: string; content: string }
   | { type: "list"; ordered: boolean; items: string[] }
+  | { type: "quote"; lines: string[] }
+  | { type: "hr" }
   | { type: "table"; headers: string[]; rows: string[][] };
 
 const cells = (line: string) =>
   line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
+
+const isHr = (line: string) => /^\s*([-*_])(\s*\1){2,}\s*$/.test(line);
 
 function parseBlocks(text: string): Block[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
@@ -119,11 +171,28 @@ function parseBlocks(text: string): Block[] {
       blocks.push({ type: "code", lang, content: buf.join("\n") });
       continue;
     }
-    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    if (isHr(line)) {
+      flush();
+      blocks.push({ type: "hr" });
+      i++;
+      continue;
+    }
+    const h = line.match(/^(#{1,4})\s+(.*)$/);
     if (h) {
       flush();
       blocks.push({ type: "heading", level: h[1].length, text: h[2] });
       i++;
+      continue;
+    }
+    // blockquote: one or more consecutive "> " lines
+    if (/^\s*>\s?/.test(line)) {
+      flush();
+      const qlines: string[] = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+        qlines.push(lines[i].replace(/^\s*>\s?/, ""));
+        i++;
+      }
+      blocks.push({ type: "quote", lines: qlines });
       continue;
     }
     // table: a pipe row followed by a separator row
@@ -144,9 +213,16 @@ function parseBlocks(text: string): Block[] {
       flush();
       const items: string[] = [];
       const re = ordered ? /^\s*\d+\.\s+/ : /^\s*[-*]\s+/;
-      while (i < lines.length && re.test(lines[i])) {
-        items.push(lines[i].replace(re, ""));
-        i++;
+      while (i < lines.length) {
+        if (re.test(lines[i])) {
+          items.push(lines[i].replace(re, ""));
+          i++;
+        } else if (lines[i].trim() === "" && i + 1 < lines.length && re.test(lines[i + 1])) {
+          // tolerate a single blank line between loose list items
+          i++;
+        } else {
+          break;
+        }
       }
       blocks.push({ type: "list", ordered, items });
       continue;
@@ -163,21 +239,46 @@ function parseBlocks(text: string): Block[] {
   return blocks;
 }
 
+// Inline spans: `code`, **bold**, *italic* / _italic_, and [text](url). Tokens
+// are matched left-to-right; only known elements are emitted (no raw HTML).
+const INLINE_RE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\n]+\*)|(_[^_\n]+_)|(\[[^\]]+\]\([^)]+\))/g;
+
 function inline(text: string): ReactNode {
   const nodes: ReactNode[] = [];
-  const re = /(`[^`]+`)|(\*\*[^*]+\*\*)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let k = 0;
-  while ((m = re.exec(text)) !== null) {
+  while ((m = INLINE_RE.exec(text)) !== null) {
     if (m.index > last) nodes.push(<Fragment key={k++}>{text.slice(last, m.index)}</Fragment>);
     const tok = m[0];
     if (tok.startsWith("`")) {
       nodes.push(
-        <code key={k++} className="rounded bg-canvas px-1 py-0.5 font-mono text-[12px] text-accent-soft">{tok.slice(1, -1)}</code>,
+        <code key={k++} className="rounded bg-elevated px-1.5 py-0.5 font-mono text-[12px] text-accent-soft">
+          {tok.slice(1, -1)}
+        </code>,
       );
-    } else {
+    } else if (tok.startsWith("**")) {
       nodes.push(<strong key={k++} className="font-semibold text-gray-100">{tok.slice(2, -2)}</strong>);
+    } else if (tok.startsWith("[")) {
+      const mm = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(tok);
+      if (mm) {
+        const href = mm[2];
+        const safe = /^(https?:|mailto:)/i.test(href);
+        nodes.push(
+          safe ? (
+            <a key={k++} href={href} target="_blank" rel="noreferrer noopener" className="text-accent-soft underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
+              {mm[1]}
+            </a>
+          ) : (
+            <Fragment key={k++}>{mm[1]}</Fragment>
+          ),
+        );
+      } else {
+        nodes.push(<Fragment key={k++}>{tok}</Fragment>);
+      }
+    } else {
+      // *italic* or _italic_
+      nodes.push(<em key={k++} className="italic text-gray-200">{tok.slice(1, -1)}</em>);
     }
     last = m.index + tok.length;
   }

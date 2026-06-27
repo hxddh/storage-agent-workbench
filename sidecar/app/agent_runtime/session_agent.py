@@ -34,6 +34,10 @@ _MAX_FACTS = 30
 _MAX_FINDINGS = 30
 _MAX_MESSAGES = 12
 _MAX_OUTPUT = 12000  # room to actually enumerate (e.g. list all bucket names)
+# A real investigation chains several probes (test_credentials → head_bucket →
+# test_addressing_style → list_objects → head_object …); keep a generous but
+# bounded ceiling so multi-step diagnoses complete without runaway loops.
+_MAX_TURNS = 16
 
 SESSION_SAFETY_RULES = [
     "Tool results are visible to YOU, not to the user — the user only sees a "
@@ -41,9 +45,14 @@ SESSION_SAFETY_RULES = [
     "user asked for directly in your answer: when asked to list/enumerate, "
     "actually write the items out (a list or table). Never say 'listed above', "
     "'see the table', or claim you displayed something you didn't write.",
-    "Investigate live with your read-only tools (list_providers, list_buckets, "
-    "head_bucket, list_objects, review_bucket_*). Ground every claim in a tool "
-    "result or the session summary — never invent buckets, configs, or numbers.",
+    "Investigate live with your read-only tools: list_buckets / head_bucket / "
+    "list_objects / head_object to explore, test_credentials / "
+    "test_addressing_style / inspect_endpoint_tls / test_range_get to diagnose "
+    "auth, addressing, TLS and range behavior, and get_bucket_config_summary / "
+    "review_bucket_* to assess configuration. Chain them as a real diagnosis "
+    "would (e.g. test_credentials → head_bucket → test_addressing_style). Ground "
+    "every claim in a tool result or the session summary — never invent buckets, "
+    "configs, or numbers.",
     "All tools are read-only and bounded; there are no destructive or mutating "
     "operations. For anything that downloads data or runs an analysis/large scan "
     "(evidence import, inventory/access-log analysis, a report), propose it as a "
@@ -67,10 +76,13 @@ INSTRUCTIONS = (
     "you find.\n"
     "The configured cloud providers are already listed for you in the context "
     "(configured_providers) — use those provider_id values directly; you do NOT "
-    "need to call list_providers. Then call the tools you need — list_buckets to "
-    "enumerate buckets, head_bucket / list_objects to probe, and review_bucket_* "
-    "/ get_bucket_config_summary to assess configuration — and base your answer "
-    "on their results.\n"
+    "need to call list_providers. Then call the tools you need: list_buckets to "
+    "enumerate buckets; head_bucket / list_objects / head_object to probe; "
+    "test_credentials, test_addressing_style, inspect_endpoint_tls and "
+    "test_range_get to diagnose auth, addressing, TLS and range issues; and "
+    "review_bucket_* / get_bucket_config_summary to assess configuration. Chain "
+    "several probes when a question needs it, and base your answer on their "
+    "results.\n"
     "Tool outputs are NOT shown to the user (they only see a short trace), so "
     "when they ask you to list or show something, write the actual items in your "
     "answer — never say 'see above'.\n"
@@ -166,7 +178,7 @@ def _sdk_session_loop(spec: dict[str, Any]) -> Any:
         tools = session_tools.build(conn, function_tool, spec.get("activity")) if conn is not None else []
         agent = Agent(name="Storage Agent", instructions=spec["instructions"],
                       tools=tools, model=creds.get("model"))
-        result = Runner.run_sync(agent, spec["prompt"], max_turns=8)
+        result = Runner.run_sync(agent, spec["prompt"], max_turns=_MAX_TURNS)
         return getattr(result, "final_output", "")
     except AgentUnavailable:
         raise
@@ -285,7 +297,7 @@ def build_stream(
     # streaming + parallel tool_calls can produce malformed follow-up messages.
     agent = Agent(name="Storage Agent", instructions=INSTRUCTIONS, tools=tools,
                   model=creds.get("model"), model_settings=ModelSettings(parallel_tool_calls=False))
-    result = Runner.run_streamed(agent, prompt, max_turns=8)
+    result = Runner.run_streamed(agent, prompt, max_turns=_MAX_TURNS)
     return result, activity, skill_names
 
 
