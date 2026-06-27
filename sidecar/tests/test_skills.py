@@ -64,6 +64,32 @@ def test_no_references_templates_scripts_vendored():
     assert non_md == [], f"unexpected vendored files: {non_md}"
 
 
+def test_skills_are_app_native_no_foreign_runtime():
+    """SKILL.md bodies + registry must be app-native: no references to a foreign
+    runtime (Pi tools, helper scripts, references/ files, the old output
+    contract). They should speak in terms of THIS app's read-only tools and
+    confirmed runs."""
+    from app.skills import loader
+
+    forbidden = [
+        "scan_secrets", "detect_domain", "search_memory", "capture_http_trace",
+        "recommended_tools", "estimated_tokens", "python3 scripts/", "scripts/",
+        "references/", "Pi runtime", "light_heavy", "root_cause_type",
+    ]
+    registry = (PACK / "skill-registry.yaml").read_text(encoding="utf-8")
+    skills = loader.load_registry()
+    assert len(skills) >= 16
+    for token in forbidden:
+        assert token not in registry, f"foreign token in registry: {token}"
+    # At least one real app tool name appears across the bodies (they reference
+    # the agent's actual read-only surface, not a foreign one).
+    corpus = "\n".join(loader.load_skill_body(m.name) or "" for m in skills)
+    for token in forbidden:
+        assert token not in corpus, f"foreign token in a SKILL.md body: {token}"
+    for app_tool in ("test_credentials", "read_skill", "review_bucket_"):
+        assert app_tool in corpus, f"expected app tool referenced in skills: {app_tool}"
+
+
 def test_recommended_tools_not_in_metadata_or_context():
     # loader must not expose recommended_tools, and skill context must not inject them.
     for s in loader.load_registry():
