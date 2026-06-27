@@ -8,10 +8,12 @@ project-management / kanban / ticketing surface.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from .. import audit
 from ..agent_runtime import session_agent
@@ -215,3 +217,52 @@ def post_session_message(
         "evidence_used": contract.get("evidence_used", []),
         "evidence_gaps": contract.get("evidence_gaps", []),
     }
+
+
+def _sse(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@router.post("/{session_id}/messages/stream")
+async def post_session_message_stream(
+    session_id: str, body: SessionMessageCreate, conn: sqlite3.Connection = Depends(get_conn)
+):
+    """Streaming variant of the message turn (SSE): emits `tool` events as the
+    agent investigates, `delta` events as the answer is generated, and a final
+    `done` event. Falls back to a 422 (like the blocking path) if no model is
+    configured, so the client can use POST /messages instead."""
+    row = repo.get_row(conn, session_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="session not found")
+
+    # Build context from the prior thread; the new question goes in via the
+    # prompt. Persist nothing until 'final' so that if the stream errors and the
+    # client falls back to POST /messages, the turn isn't double-recorded.
+    summary = repo.get_summary(conn, session_id) or summary_builder.refresh(conn, session_id)
+    recent = repo.list_messages(conn, session_id)
+
+    try:
+        creds = get_model_credentials(conn)
+        result, activity, skill_names = session_agent.build_stream(
+            dict(row), summary, recent, body.content, creds, conn)
+    except AgentUnavailable as exc:
+        raise HTTPException(status_code=422, detail=redact_text(str(exc)))
+
+    async def gen():
+        try:
+            async for kind, data in session_agent.stream_events_for(result, activity, skill_names):
+                if kind == "delta":
+                    yield _sse("delta", {"text": data})
+                elif kind == "tool":
+                    yield _sse("tool", data)
+                elif kind == "final":
+                    repo.add_message(conn, session_id, "user", body.content)
+                    mid = repo.add_message(conn, session_id, "assistant", data["answer"],
+                                           tool_activity=data.get("tool_activity"))
+                    audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
+                    conn.commit()
+                    yield _sse("done", {"message_id": mid, "proposed_actions": data["next_action_proposals"]})
+        except Exception as exc:  # noqa: BLE001
+            yield _sse("error", {"detail": redact_text(str(exc))})
+
+    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

@@ -183,21 +183,14 @@ def _skill_query_text(session: dict[str, Any], summary: dict[str, Any], user_mes
     return " ".join([str(session.get("goal") or ""), facts, user_message or ""])
 
 
-def answer(
+def _build_prompt(
     session: dict[str, Any],
     summary: dict[str, Any],
     recent_messages: list[dict[str, Any]],
     user_message: str,
-    creds: dict[str, Any],
-    conn: Any = None,
-) -> dict[str, Any]:
-    """Skill-grounded, sanitized session answer contract. Raises AgentUnavailable.
-
-    Returns {answer, skills_used, evidence_used, evidence_gaps,
-    next_action_proposals} — all sanitized + CoT-stripped; proposals coerced
-    through the Phase 17 allowlist. StorageOps skills are injected as guidance
-    only (tools/scripts disabled).
-    """
+    conn: Any,
+) -> tuple[str, list[str], dict[str, Any]]:
+    """Build the sanitized prompt + selected skill names + context (shared)."""
     context = build_session_context(session, summary, recent_messages)
     skill_ctx = skill_context.build_skill_context(
         _skill_query_text(session, summary, user_message))
@@ -220,20 +213,99 @@ def answer(
         prompt_parts.append(skill_ctx["text"])
     prompt_parts.append(f"User question:\n{redact_text(user_message)[:2000]}")
     prompt_parts.append(skill_contract.CONTRACT_INSTRUCTION)
-    prompt = "\n\n".join(prompt_parts)
+    return "\n\n".join(prompt_parts), skill_names, context
+
+
+def _finalize_contract(raw: Any, skill_names: list[str], activity: list[dict[str, Any]]) -> dict[str, Any]:
+    contract = skill_contract.parse_agent_contract(raw, allowed_skill_names=skill_names)
+    contract["answer"] = contract["answer"][:_MAX_OUTPUT]
+    contract["skills_offered"] = skill_names
+    contract["tool_activity"] = activity
+    return contract
+
+
+def answer(
+    session: dict[str, Any],
+    summary: dict[str, Any],
+    recent_messages: list[dict[str, Any]],
+    user_message: str,
+    creds: dict[str, Any],
+    conn: Any = None,
+) -> dict[str, Any]:
+    """Skill-grounded, sanitized session answer contract. Raises AgentUnavailable.
+
+    Returns {answer, skills_used, evidence_used, evidence_gaps,
+    next_action_proposals} — all sanitized + CoT-stripped; proposals coerced
+    through the Phase 17 allowlist. StorageOps skills are injected as guidance
+    only (tools/scripts disabled).
+    """
+    prompt, skill_names, context = _build_prompt(session, summary, recent_messages, user_message, conn)
 
     activity: list[dict[str, Any]] = []
     spec = {"context": context, "prompt": prompt, "instructions": INSTRUCTIONS,
             "creds": creds, "conn": conn, "activity": activity}
     raw = SESSION_LOOP(spec)
-    contract = skill_contract.parse_agent_contract(raw, allowed_skill_names=skill_names)
-    contract["answer"] = contract["answer"][:_MAX_OUTPUT]
-    # Record which skills were offered (selection), distinct from skills_used.
-    contract["skills_offered"] = skill_names
-    # Read-only tool calls made this turn (for the UI; sanitized in session_tools).
-    contract["tool_activity"] = activity
-    return contract
+    return _finalize_contract(raw, skill_names, activity)
+
+
+# --- Streaming path (SDK-only; used by the SSE endpoint) --------------------
+
+def build_stream(
+    session: dict[str, Any],
+    summary: dict[str, Any],
+    recent_messages: list[dict[str, Any]],
+    user_message: str,
+    creds: dict[str, Any],
+    conn: Any,
+):
+    """Set up a streaming run. Returns (result_streaming, activity, skill_names).
+
+    Raises AgentUnavailable if the SDK/key is unavailable — caller should then
+    fall back to the blocking endpoint.
+    """
+    try:
+        import openai  # noqa: F401
+        from agents import (Agent, ModelSettings, Runner, function_tool,
+                            set_default_openai_key, set_tracing_disabled)
+    except Exception as exc:  # noqa: BLE001
+        raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
+
+    prompt, skill_names, _context = _build_prompt(session, summary, recent_messages, user_message, conn)
+    set_tracing_disabled(True)
+    if creds.get("base_url"):
+        from agents import set_default_openai_client, set_default_openai_api
+        client = openai.AsyncOpenAI(api_key=creds["api_key"], base_url=creds["base_url"])
+        set_default_openai_client(client)
+        set_default_openai_api("chat_completions")
+    else:
+        set_default_openai_key(creds["api_key"])
+    activity: list[dict[str, Any]] = []
+    tools = session_tools.build(conn, function_tool, activity)
+    # Disable parallel tool calls: with chat-completions providers (e.g. DeepSeek)
+    # streaming + parallel tool_calls can produce malformed follow-up messages.
+    agent = Agent(name="Storage Agent", instructions=INSTRUCTIONS, tools=tools,
+                  model=creds.get("model"), model_settings=ModelSettings(parallel_tool_calls=False))
+    result = Runner.run_streamed(agent, prompt, max_turns=8)
+    return result, activity, skill_names
+
+
+async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_names: list[str]):
+    """Yield ('delta', text) and ('tool', record) during the run, then
+    ('final', contract) when complete."""
+    from openai.types.responses import ResponseTextDeltaEvent
+    emitted = 0
+    async for event in result.stream_events():
+        if getattr(event, "type", "") == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+            if event.data.delta:
+                yield ("delta", event.data.delta)
+        while len(activity) > emitted:
+            yield ("tool", activity[emitted])
+            emitted += 1
+    while len(activity) > emitted:
+        yield ("tool", activity[emitted])
+        emitted += 1
+    yield ("final", _finalize_contract(getattr(result, "final_output", "") or "", skill_names, activity))
 
 
 __all__ = ["SESSION_LOOP", "build_session_context", "render_context_text", "answer",
-           "SESSION_SAFETY_RULES", "INSTRUCTIONS"]
+           "build_stream", "stream_events_for", "SESSION_SAFETY_RULES", "INSTRUCTIONS"]
