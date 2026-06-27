@@ -87,9 +87,11 @@ INSTRUCTIONS = (
     "when they ask you to list or show something, write the actual items in your "
     "answer — never say 'see above'.\n"
     "You are also given a JSON context (session goal, a deterministic summary, "
-    "recent messages) and StorageOps skills as PROFESSIONAL DIAGNOSTIC METHODS — "
-    "use them as method and grounding. Never invent buckets, configs, numbers, or "
-    "results you didn't obtain from a tool or the summary. Be concise and "
+    "recent messages) and a CATALOG of StorageOps expert skills. Treat the "
+    "catalog as progressive disclosure: when a listed skill fits the problem, "
+    "call read_skill(name) to load its full diagnostic method, then follow that "
+    "method using your read-only tools. Never invent buckets, configs, numbers, "
+    "or results you didn't obtain from a tool or the summary. Be concise and "
     "concrete; make clear which statements are tool-verified facts vs. "
     "inferences.\n"
     "All tools are read-only. For anything that downloads data or runs an "
@@ -190,11 +192,6 @@ def _sdk_session_loop(spec: dict[str, Any]) -> Any:
 SESSION_LOOP: Callable[[dict[str, Any]], Any] = _sdk_session_loop
 
 
-def _skill_query_text(session: dict[str, Any], summary: dict[str, Any], user_message: str) -> str:
-    facts = " ".join(str(f.get("text", "")) for f in (summary.get("known_facts") or [])[:10])
-    return " ".join([str(session.get("goal") or ""), facts, user_message or ""])
-
-
 def _build_prompt(
     session: dict[str, Any],
     summary: dict[str, Any],
@@ -202,11 +199,14 @@ def _build_prompt(
     user_message: str,
     conn: Any,
 ) -> tuple[str, list[str], dict[str, Any]]:
-    """Build the sanitized prompt + selected skill names + context (shared)."""
+    """Build the sanitized prompt + skill names + context (shared).
+
+    Skills follow progressive disclosure: the full catalog (name + description)
+    goes in the prompt and the agent loads any relevant skill on demand via the
+    read_skill tool. skill_names is the allow-list of what it may cite as used.
+    """
     context = build_session_context(session, summary, recent_messages)
-    skill_ctx = skill_context.build_skill_context(
-        _skill_query_text(session, summary, user_message))
-    skill_names = [s["name"] for s in skill_ctx["skills"]]
+    skill_names = skill_context.skill_names()
 
     prompt_parts = [render_context_text(context)]
     # Pre-list configured providers so the agent skips a list_providers round
@@ -221,8 +221,9 @@ def _build_prompt(
         except Exception:  # noqa: BLE001
             providers = []
     prompt_parts.append("configured_providers:\n" + json.dumps(providers, ensure_ascii=False))
-    if skill_ctx["text"]:
-        prompt_parts.append(skill_ctx["text"])
+    catalog = skill_context.catalog_text()
+    if catalog:
+        prompt_parts.append(catalog)
     prompt_parts.append(f"User question:\n{redact_text(user_message)[:2000]}")
     prompt_parts.append(skill_contract.CONTRACT_INSTRUCTION)
     return "\n\n".join(prompt_parts), skill_names, context

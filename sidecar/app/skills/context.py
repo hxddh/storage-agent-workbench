@@ -1,11 +1,21 @@
-"""Build bounded, tools-disabled StorageOps skill context (Phase 19).
+"""StorageOps skill context — progressive disclosure (Agent Skills paradigm).
 
-Wraps the selected SKILL.md docs in a safety preamble that makes clear the
-StorageOps tools / helper scripts / CLI / Pi runtime / external execution are
-DISABLED in this Workbench phase, and that script/tool mentions inside the skill
-text are conceptual guidance only. Output is bounded by a max-char budget and a
-1–3 skill cap. No references/scripts/raw logs/secrets/credentials/CoT are ever
-included (SKILL.md docs are static guidance text only).
+Skills follow the Agent Skills pattern: only their metadata (name + one-line
+description) sits in the agent's context as a CATALOG; the agent loads a skill's
+full method ON DEMAND via the read-only ``read_skill`` tool when it judges the
+skill relevant. This avoids stuffing full bodies into every prompt and lets the
+model — not a keyword matcher — choose.
+
+Two entry points:
+- ``catalog_text()`` — the always-in-context list of name + description, used by
+  the live (tool-using) session agent alongside the ``read_skill`` tool.
+- ``build_skill_context()`` — for the OFFLINE error-triage agent, which has no
+  tools/credentials: it injects one or two selected skill bodies directly as
+  method guidance (no progressive disclosure is possible without a tool loop).
+
+In both paths the YAML frontmatter (which carries ``recommended_tools`` and other
+runtime artifacts) is stripped before any text reaches the model, and nothing is
+ever executed — SKILL.md bodies are static guidance text only.
 """
 
 from __future__ import annotations
@@ -21,42 +31,14 @@ from . import loader, selection
 # rebuilt from the loader's tool-free metadata.
 _FRONTMATTER = re.compile(r"\A﻿?\s*---\s*\n.*?\n---\s*\n?", re.DOTALL)
 
+MAX_SKILLS = 3
+MAX_CHARS_PER_SKILL = 8000
+MAX_TOTAL_CHARS = 16000
+
 
 def strip_frontmatter(body: str) -> str:
     """Remove a leading YAML frontmatter block from a SKILL.md body, if present."""
     return _FRONTMATTER.sub("", body or "", count=1).lstrip("\n")
-
-
-def _safe_header(name: str) -> str:
-    """Build a small skill header from tool-free loader metadata only."""
-    meta = loader.get_meta(name)
-    if meta is None:
-        return f"Skill metadata:\n- name: {name}"
-    lines = [
-        "Skill metadata:",
-        f"- name: {meta.name}",
-        f"- description: {meta.description or '—'}",
-        f"- domains: {', '.join(meta.domains) or '—'}",
-        f"- mode: {meta.mode or '—'}",
-        f"- maturity: {meta.maturity or '—'}",
-    ]
-    return "\n".join(lines)
-
-MAX_SKILLS = 3
-MAX_CHARS_PER_SKILL = 6000
-MAX_TOTAL_CHARS = 14000
-
-WRAPPER_PREAMBLE = (
-    "The following StorageOps skill is provided as professional diagnostic "
-    "guidance only.\n"
-    "StorageOps tools, helper scripts, CLI commands, Pi runtime, and external "
-    "execution are disabled in this Workbench phase.\n"
-    "Do not claim to run tools or scripts.\n"
-    "Do not instruct the app to execute scripts.\n"
-    "Use script/tool mentions only as conceptual diagnostic guidance.\n"
-    "If evidence is missing, ask the user or propose an existing safe Workbench "
-    "next action."
-)
 
 
 def _bounded(body: str, limit: int) -> str:
@@ -66,13 +48,74 @@ def _bounded(body: str, limit: int) -> str:
     return body[:limit] + "\n\n…(skill truncated for length)…"
 
 
+# --- progressive disclosure (live session agent) ----------------------------
+
+
+def skill_names() -> list[str]:
+    """All skill names — the allow-list for what the agent may cite as used."""
+    return [m.name for m in loader.load_registry()]
+
+
+def catalog() -> list[dict[str, str]]:
+    """The skill catalog: name + one-line description for every bundled skill."""
+    return [{"name": m.name, "description": m.description} for m in loader.load_registry()]
+
+
+def catalog_text() -> str:
+    """The always-in-context skill catalog for the tool-using agent."""
+    items = catalog()
+    if not items:
+        return ""
+    lines = [
+        "STORAGEOPS SKILLS — expert diagnostic methods available to you.",
+        "Each entry is name: when-to-use. When a skill fits the user's problem, "
+        "call read_skill(name) to load its full method, then apply it using your "
+        "read-only tools and propose confirmed runs where the method calls for a "
+        "heavier analysis. You do not have to use a skill if none applies.",
+        "",
+    ]
+    for it in items:
+        lines.append(f"- {it['name']}: {it['description']}")
+    return "\n".join(lines)
+
+
+def read_skill_text(name: str, limit: int = MAX_CHARS_PER_SKILL) -> str | None:
+    """The frontmatter-stripped, bounded body for one skill, or None if unknown.
+
+    This is what the read-only ``read_skill`` agent tool returns. No execution,
+    no references/scripts — only the bundled SKILL.md guidance text.
+    """
+    raw = loader.load_skill_body(name)
+    if not raw:
+        return None
+    return _bounded(strip_frontmatter(raw), limit)
+
+
+# --- direct injection (offline, tool-less triage agent) ----------------------
+
+WRAPPER_PREAMBLE = (
+    "Apply the following StorageOps skill as a professional diagnostic method. "
+    "This is offline triage: you have no live tools or credentials, so reason "
+    "only from the evidence provided, name the method you used, and recommend "
+    "the safe next checks the user (or the live agent) should run."
+)
+
+
+def _safe_header(name: str) -> str:
+    """Build a small skill header from tool-free loader metadata only."""
+    meta = loader.get_meta(name)
+    if meta is None:
+        return f"Skill: {name}"
+    return f"Skill: {meta.name} — {meta.description or '—'}"
+
+
 def build_skill_context(
     context_text: str,
     candidates: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Select skills (unless provided) and assemble bounded, wrapped context.
+    """Select 1–2 skills and inject their bodies as method guidance (triage only).
 
-    Returns {"skills": [{name, match_reason, selection_basis}], "text": str}.
+    Returns {"skills": [{name, match_reason, selection_basis}], "text": str};
     ``text`` is empty when no skill applies.
     """
     if candidates is None:
@@ -83,23 +126,16 @@ def build_skill_context(
     used: list[dict[str, Any]] = []
     total = 0
     for c in candidates:
-        raw = loader.load_skill_body(c["name"])
-        if not raw:
+        body = read_skill_text(c["name"], MAX_CHARS_PER_SKILL)
+        if not body:
             continue
-        # Strip the YAML frontmatter (recommended_tools, etc.) before injecting;
-        # rebuild a safe header from tool-free loader metadata.
-        body = strip_frontmatter(raw)
         budget = min(MAX_CHARS_PER_SKILL, max(0, MAX_TOTAL_CHARS - total))
         if budget <= 200:
             break
         wrapped = (
-            f"=== StorageOps skill: {c['name']} "
-            f"(selected by {c.get('selection_basis', 'metadata')}) ===\n"
-            f"{WRAPPER_PREAMBLE}\n\n"
+            f"=== StorageOps skill: {c['name']} ===\n"
             f"{_safe_header(c['name'])}\n\n"
-            f"--- BEGIN SKILL.md body (guidance only; YAML frontmatter removed) ---\n"
-            f"{_bounded(body, budget)}\n"
-            f"--- END SKILL.md ---"
+            f"{_bounded(body, budget)}"
         )
         blocks.append(wrapped)
         total += len(wrapped)
@@ -107,12 +143,12 @@ def build_skill_context(
 
     text = ""
     if blocks:
-        text = (
-            "STORAGEOPS SKILL CONTEXT (professional methods — guidance only, "
-            "nothing here is executed):\n\n" + "\n\n".join(blocks)
-        )
+        text = f"{WRAPPER_PREAMBLE}\n\n" + "\n\n".join(blocks)
     return {"skills": used, "text": text}
 
 
-__all__ = ["build_skill_context", "strip_frontmatter", "WRAPPER_PREAMBLE", "MAX_SKILLS",
-           "MAX_CHARS_PER_SKILL", "MAX_TOTAL_CHARS"]
+__all__ = [
+    "strip_frontmatter", "skill_names", "catalog", "catalog_text", "read_skill_text",
+    "build_skill_context", "WRAPPER_PREAMBLE",
+    "MAX_SKILLS", "MAX_CHARS_PER_SKILL", "MAX_TOTAL_CHARS",
+]

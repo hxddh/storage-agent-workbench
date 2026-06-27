@@ -174,6 +174,17 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     @function_tool
+    def read_skill(name: str) -> str:
+        """Load the full method of a StorageOps expert skill by name (progressive disclosure). Pick a name from the StorageOps skills catalog in your context; this returns that skill's diagnostic method as guidance text for you to apply with your read-only tools. Args: name (e.g. 'storageops-security-iam-policy')."""
+        from ..skills import context as skill_context
+        body = skill_context.read_skill_text(name)
+        if body is None:
+            return _err("Unknown skill name. Use a name from the StorageOps skills catalog.")
+        rec("read_skill", name=name)
+        note("read_skill", name, "loaded")
+        return body
+
+    @function_tool
     def inspect_endpoint_tls(provider_id: str) -> str:
         """Inspect the provider endpoint's TLS certificate (version, subject, issuer, validity) over a read-only connection. Use for TLS/SSL handshake, expired-cert, or hostname-mismatch errors. Args: provider_id."""
         p = provider(provider_id)
@@ -191,7 +202,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
 
     tools = [list_providers, list_buckets, head_bucket, list_objects,
              test_credentials, head_object, test_range_get,
-             test_addressing_style, inspect_endpoint_tls]
+             test_addressing_style, inspect_endpoint_tls, read_skill]
 
     # Per-bucket config reviews (read-only). Distinct names/descriptions set on
     # the FunctionTool after decoration (same pattern as the run agent).
