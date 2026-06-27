@@ -91,7 +91,9 @@ export function Thread({
 }) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [triage, setTriage] = useState<TriageCase[]>([]);
-  const [liveProposals, setLiveProposals] = useState<NextAction[]>([]);
+  // null = this session's turn hasn't answered yet (show the session's default
+  // next-steps); [] = the agent answered and proposed nothing (show none).
+  const [liveProposals, setLiveProposals] = useState<NextAction[] | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -149,7 +151,7 @@ export function Thread({
     const isOwnNewSession = sessionId !== null && sessionId === localId.current;
     localId.current = sessionId;
     if (!isOwnNewSession) {
-      setLiveProposals([]);
+      setLiveProposals(null);
       setPreviews({});
       setNeedKey(false);
       setError(null);
@@ -174,9 +176,13 @@ export function Thread({
     return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   }, [detail, triage]);
 
+  // Once the agent has answered this session (liveProposals !== null), show its
+  // own proposals — even if empty — rather than a canned session default.
+  const proposals = liveProposals ?? detail?.summary?.next_actions ?? [];
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [items.length, liveProposals.length, pending]);
+  }, [items.length, proposals.length, pending]);
 
   // Auto-grow the composer (pin one line when empty so the wrapping placeholder
   // doesn't inflate scrollHeight).
@@ -190,8 +196,6 @@ export function Thread({
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
   }, [text]);
-
-  const proposals = liveProposals.length ? liveProposals : detail?.summary?.next_actions ?? [];
 
   const ensureSession = async (seed: string): Promise<string> => {
     if (localId.current) return localId.current;
@@ -331,177 +335,196 @@ export function Thread({
   const modelChip = (
     <button
       onClick={onOpenSettings}
-      className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11.5px] transition-colors hover:bg-hover ${
-        modelName ? "text-gray-500 hover:text-gray-300" : "text-amber-300/80 hover:text-amber-200"
+      className={`group/chip flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11.5px] transition-colors ${
+        modelName
+          ? "border-edge text-gray-400 hover:border-edge-strong hover:text-gray-200"
+          : "border-amber-800/40 text-amber-300/90 hover:border-amber-700/60 hover:text-amber-200"
       }`}
     >
       <Spark size={11} />
-      {modelName ?? "Add a model"}
+      <span className="max-w-[14rem] truncate">{modelName ?? "Add a model"}</span>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-600 group-hover/chip:text-gray-400">
+        <polyline points="6 9 12 15 18 9" />
+      </svg>
     </button>
+  );
+
+  const composer = (
+    <div className="relative rounded-[22px] border border-edge bg-panel px-3.5 pb-2.5 pt-3 shadow-elev transition-all duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
+      {slashOpen && (
+        <div className="absolute bottom-full left-1 right-1 mb-2 overflow-hidden rounded-xl border border-edge bg-panel shadow-pop animate-fade-in">
+          <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-600">Commands</div>
+          {slashItems.map((c, i) => (
+            <button
+              key={c.cmd}
+              onMouseEnter={() => setSlashSel(i)}
+              onClick={() => selectSlash(c)}
+              className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors ${i === slashIdx ? "bg-hover" : "hover:bg-hover/50"}`}
+            >
+              <span className="font-mono text-[12px] text-accent-soft">/{c.cmd}</span>
+              <span className="text-[13px] text-gray-300">{c.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <textarea
+        ref={taRef}
+        className="block max-h-[220px] h-[22px] w-full resize-none bg-transparent px-1 text-[14px] leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none focus-visible:shadow-none"
+        rows={1}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (slashOpen) {
+            if (e.key === "ArrowDown") { e.preventDefault(); setSlashSel((s) => Math.min(slashItems.length - 1, s + 1)); return; }
+            if (e.key === "ArrowUp") { e.preventDefault(); setSlashSel((s) => Math.max(0, s - 1)); return; }
+            if (e.key === "Enter") { e.preventDefault(); selectSlash(slashItems[slashIdx]); return; }
+            if (e.key === "Escape") { e.preventDefault(); setText(""); return; }
+          }
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            send();
+          }
+        }}
+        placeholder="Ask Storage Agent…  ( / for commands )"
+      />
+      <div className="mt-2 flex items-center gap-2">
+        {modelChip}
+        <span className="ml-auto hidden text-[11px] text-gray-600 sm:inline">
+          <kbd className="font-sans">⏎</kbd> send · <kbd className="font-sans">⇧⏎</kbd> newline
+        </span>
+        <button
+          onClick={send}
+          disabled={busy || !text.trim()}
+          aria-label="Send"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-all hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-600"
+        >
+          {busy ? (
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5" />
+              <polyline points="5 12 12 5 19 12" />
+            </svg>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+
+  const banners = (
+    <>
+      {needKey && (
+        <div className="animate-fade-in-up rounded-xl border border-amber-800/50 bg-amber-950/20 p-3.5 text-[13px] text-amber-200">
+          Add a model API key for full agent answers. Pasted S3 errors are still triaged offline without one.
+          <div className="mt-2.5">
+            <Button variant="primary" size="sm" onClick={onOpenSettings}>Add a model API key</Button>
+          </div>
+        </div>
+      )}
+      {error && (
+        <div className="animate-fade-in-up rounded-xl border border-red-900/50 bg-red-950/20 p-3.5 text-[13px] text-red-300">
+          {error}
+          <div className="mt-2.5">
+            <Button variant="default" size="sm" onClick={onOpenSettings}>Open settings</Button>
+          </div>
+        </div>
+      )}
+    </>
   );
 
   return (
     <div className="flex h-full flex-1 flex-col bg-canvas">
-      {/* A real conversation gets a slim header; a fresh chat shows just the
-          canvas + composer (Codex/Cursor). */}
-      {!isEmpty && (
-        <header className="flex items-center gap-3 border-b border-edge px-6 py-2.5">
-          <div className="truncate text-[12.5px] font-medium text-gray-200">{detail?.title || "New chat"}</div>
-          <div className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-edge px-2 py-1 text-[11px] text-gray-500">
-            <Spark size={11} />
-            <span className="text-gray-400">{modelName ?? "No model"}</span>
-          </div>
-        </header>
-      )}
-
-      <div className="flex-1 overflow-auto px-6 py-6">
-        <div className="mx-auto max-w-3xl space-y-5">
-          {isEmpty && (
-            <div className="flex flex-col items-center pt-[12vh] animate-fade-in-up">
-              <div className="mb-5 grid h-11 w-11 place-items-center rounded-xl border border-edge-strong bg-elevated text-accent-soft">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
+      {isEmpty ? (
+        /* New chat: a centered, composer-forward "start" view (Codex/Cursor). */
+        <div className="flex flex-1 items-center justify-center overflow-auto px-6 py-10">
+          <div className="w-full max-w-[44rem] animate-fade-in-up">
+            <div className="mb-7 flex flex-col items-center text-center">
+              <div className="mb-5 grid h-12 w-12 place-items-center rounded-2xl border border-edge-strong bg-elevated text-accent-soft shadow-elev">
+                <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
                   <path d="M12 2 2 7l10 5 10-5-10-5z" />
                   <path d="M2 17l10 5 10-5" />
                   <path d="M2 12l10 5 10-5" />
                 </svg>
               </div>
-              <div className="text-[19px] font-medium tracking-[-0.01em] text-gray-100">How can I help with your storage?</div>
-              <p className="mt-2 max-w-md text-center text-[13px] leading-relaxed text-gray-500">
-                Ask about an issue, an access pattern, or your bucket setup. I ground answers in evidence and confirm
-                with you before running anything.
+              <h1 className="text-[23px] font-semibold tracking-[-0.02em] text-gray-100">How can I help with your storage?</h1>
+              <p className="mt-2.5 max-w-md text-[13.5px] leading-relaxed text-gray-500">
+                Ask about an issue, an access pattern, or your bucket setup. I investigate with read-only tools and
+                confirm with you before running anything.
               </p>
-              <div className="mt-6 flex max-w-2xl flex-wrap justify-center gap-2">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s.label}
-                    onClick={() => seed(s.prompt)}
-                    className="rounded-full border border-edge bg-panel px-3 py-1.5 text-[12px] text-gray-300 transition-colors hover:border-edge-strong hover:bg-hover hover:text-gray-100"
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
             </div>
-          )}
-
-          {items.map((it) =>
-            it.kind === "message" ? (
-              <MessageCard key={it.id} role={it.role} content={it.content} toolActivity={it.toolActivity} />
-            ) : it.kind === "run" ? (
-              <RunCard key={it.data.run_id} run={it.data} />
-            ) : (
-              <TriageCard key={it.data.id} c={it.data} />
-            ),
-          )}
-
-          {pending && (
-            <>
-              <MessageCard role="user" content={pending} />
-              {streamText !== null || streamTools.length ? (
-                <MessageCard role="assistant" content={streamText ?? ""} toolActivity={streamTools} streaming />
-              ) : (
-                <ThinkingBubble />
-              )}
-            </>
-          )}
-
-          {needKey && (
-            <div className="animate-fade-in-up rounded-xl border border-amber-800/50 bg-amber-950/20 p-3.5 text-[13px] text-amber-200">
-              Add a model API key for full agent answers. Pasted S3 errors are still triaged offline without one.
-              <div className="mt-2.5">
-                <Button variant="primary" size="sm" onClick={onOpenSettings}>Add a model API key</Button>
-              </div>
-            </div>
-          )}
-          {error && (
-            <div className="animate-fade-in-up rounded-xl border border-red-900/50 bg-red-950/20 p-3.5 text-[13px] text-red-300">
-              {error}
-              <div className="mt-2.5">
-                <Button variant="default" size="sm" onClick={onOpenSettings}>Open settings</Button>
-              </div>
-            </div>
-          )}
-
-          {proposals.length > 0 && !pending && (
-            <div className="space-y-2 pt-1">
-              <div className="px-0.5 text-[11px] font-medium uppercase tracking-wider text-gray-600">Suggested next steps</div>
-              {proposals.map((p, i) => (
-                <ProposalCard
-                  key={`${propKey(p)}-${i}`}
-                  proposal={p}
-                  preview={previews[propKey(p)]}
-                  onReview={review}
-                  onPrepare={prepare}
-                />
+            {composer}
+            <div className="mt-3.5 flex flex-wrap justify-center gap-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s.label}
+                  onClick={() => seed(s.prompt)}
+                  className="rounded-full border border-edge bg-panel/60 px-3 py-1.5 text-[12px] text-gray-400 transition-colors hover:border-edge-strong hover:bg-hover hover:text-gray-100"
+                >
+                  {s.label}
+                </button>
               ))}
             </div>
-          )}
-          <div ref={bottomRef} />
-        </div>
-      </div>
-
-      {/* One composer (Cursor-style): textarea + a row with the model chip and send. */}
-      <div className="px-6 pb-5 pt-1">
-        <div className="mx-auto max-w-3xl">
-          <div className="relative rounded-2xl border border-edge bg-panel px-3 pb-2 pt-3 shadow-elev transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/15">
-            {slashOpen && (
-              <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-edge bg-panel shadow-pop animate-fade-in">
-                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-600">Commands</div>
-                {slashItems.map((c, i) => (
-                  <button
-                    key={c.cmd}
-                    onMouseEnter={() => setSlashSel(i)}
-                    onClick={() => selectSlash(c)}
-                    className={`flex w-full items-center gap-2.5 px-3 py-2 text-left ${i === slashIdx ? "bg-hover" : ""}`}
-                  >
-                    <span className="font-mono text-[12px] text-accent-soft">/{c.cmd}</span>
-                    <span className="text-[13px] text-gray-300">{c.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <textarea
-              ref={taRef}
-              className="block max-h-[200px] h-[22px] w-full resize-none bg-transparent px-1 text-[13.5px] leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none focus-visible:shadow-none"
-              rows={1}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (slashOpen) {
-                  if (e.key === "ArrowDown") { e.preventDefault(); setSlashSel((s) => Math.min(slashItems.length - 1, s + 1)); return; }
-                  if (e.key === "ArrowUp") { e.preventDefault(); setSlashSel((s) => Math.max(0, s - 1)); return; }
-                  if (e.key === "Enter") { e.preventDefault(); selectSlash(slashItems[slashIdx]); return; }
-                  if (e.key === "Escape") { e.preventDefault(); setText(""); return; }
-                }
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-              placeholder="Ask Storage Agent…  (/ for commands)"
-            />
-            <div className="mt-2 flex items-center gap-1">
-              {modelChip}
-              <span className="ml-auto text-[11px] text-gray-600">↵ to send</span>
-              <button
-                onClick={send}
-                disabled={busy || !text.trim()}
-                aria-label="Send"
-                className="ml-2 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent text-white transition-all hover:bg-accent-soft active:scale-95 disabled:opacity-40"
-              >
-                {busy ? (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="12" y1="19" x2="12" y2="5" />
-                    <polyline points="5 12 12 5 19 12" />
-                  </svg>
-                )}
-              </button>
-            </div>
+            <div className="mt-4 space-y-2">{banners}</div>
           </div>
         </div>
-      </div>
+      ) : (
+        <>
+          <header className="flex items-center gap-3 border-b border-edge px-6 py-2.5">
+            <div className="truncate text-[12.5px] font-medium text-gray-200">{detail?.title || "New chat"}</div>
+            <div className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-edge px-2 py-1 text-[11px] text-gray-500">
+              <Spark size={11} />
+              <span className="text-gray-400">{modelName ?? "No model"}</span>
+            </div>
+          </header>
+
+          <div className="flex-1 overflow-auto px-6 py-7">
+            <div className="mx-auto max-w-3xl space-y-6">
+              {items.map((it) =>
+                it.kind === "message" ? (
+                  <MessageCard key={it.id} role={it.role} content={it.content} toolActivity={it.toolActivity} />
+                ) : it.kind === "run" ? (
+                  <RunCard key={it.data.run_id} run={it.data} />
+                ) : (
+                  <TriageCard key={it.data.id} c={it.data} />
+                ),
+              )}
+
+              {pending && (
+                <>
+                  <MessageCard role="user" content={pending} />
+                  {streamText !== null || streamTools.length ? (
+                    <MessageCard role="assistant" content={streamText ?? ""} toolActivity={streamTools} streaming />
+                  ) : (
+                    <ThinkingBubble />
+                  )}
+                </>
+              )}
+
+              {banners}
+
+              {proposals.length > 0 && !pending && (
+                <div className="space-y-2 pt-1">
+                  <div className="px-0.5 text-[11px] font-medium uppercase tracking-wider text-gray-600">Suggested next steps</div>
+                  {proposals.map((p, i) => (
+                    <ProposalCard
+                      key={`${propKey(p)}-${i}`}
+                      proposal={p}
+                      preview={previews[propKey(p)]}
+                      onReview={review}
+                      onPrepare={prepare}
+                    />
+                  ))}
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
+          </div>
+
+          <div className="px-6 pb-5 pt-1">
+            <div className="mx-auto max-w-3xl">{composer}</div>
+          </div>
+        </>
+      )}
 
       {/* Run starter (reuses the existing run form, prefilled by the proposal) */}
       {runStarter && (
