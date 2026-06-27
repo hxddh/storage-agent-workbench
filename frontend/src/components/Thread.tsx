@@ -243,10 +243,14 @@ export function Thread({
         <div className="mx-auto max-w-3xl space-y-4">
           {isEmpty && (
             <div className="flex flex-col items-center py-12 text-center animate-fade-in-up">
-              <div className="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-accent to-emerald-700 text-2xl font-bold text-white shadow-glow">
-                S
+              <div className="mb-4 grid h-12 w-12 place-items-center rounded-2xl border border-edge-strong bg-elevated text-accent">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round">
+                  <path d="M12 2 2 7l10 5 10-5-10-5z" />
+                  <path d="M2 17l10 5 10-5" />
+                  <path d="M2 12l10 5 10-5" />
+                </svg>
               </div>
-              <div className="text-lg font-semibold text-gray-100">Start an investigation</div>
+              <div className="text-base font-medium text-gray-100">Start an investigation</div>
               <p className="mt-2 max-w-md text-sm leading-relaxed text-gray-500">
                 Describe a storage problem and the agent grounds its answer in evidence, then proposes safe next steps —
                 you review and confirm before anything runs. Or paste an S3 error for offline triage, no credentials needed.

@@ -3,8 +3,8 @@ import type { SidecarStatus as Status } from "../hooks/useSidecarHealth";
 import { SidecarStatus } from "./SidecarStatus";
 
 const STATUS_DOT: Record<string, string> = {
-  active: "bg-emerald-400",
-  open: "bg-emerald-400",
+  active: "bg-accent",
+  open: "bg-accent",
   closed: "bg-gray-600",
   archived: "bg-gray-600",
 };
@@ -43,13 +43,14 @@ export function SessionRail({
   return (
     <aside className="flex w-[264px] shrink-0 flex-col border-r border-edge bg-sidebar">
       <div className="flex items-center gap-2.5 px-4 pb-3 pt-4">
-        <div className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-accent to-emerald-700 text-sm font-bold text-white shadow-glow">
-          S
+        <div className="grid h-8 w-8 place-items-center rounded-lg border border-edge-strong bg-elevated text-accent">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+            <path d="M12 2 2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
         </div>
-        <div className="leading-tight">
-          <div className="text-sm font-semibold text-gray-100">Storage Agent</div>
-          <div className="text-[11px] text-gray-500">Workbench</div>
-        </div>
+        <div className="text-[13px] font-medium tracking-[-0.01em] text-gray-100">Storage Agent</div>
       </div>
 
       <div className="px-3 pb-2">

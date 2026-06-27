@@ -18,13 +18,14 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  background-color: #0c0d10;
-  color: #e6e8ec;
+  letter-spacing: -0.006em;
+  background-color: #0b0b0d;
+  color: #ededf0;
 }
 
 /* Selection */
 ::selection {
-  background: rgba(16, 185, 129, 0.28);
+  background: rgba(109, 139, 255, 0.3);
   color: #fff;
 }
 

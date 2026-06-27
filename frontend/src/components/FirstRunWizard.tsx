@@ -30,11 +30,15 @@ export function FirstRunWizard({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm animate-fade-in">
       <div className="w-[min(540px,94vw)] overflow-hidden rounded-2xl border border-edge bg-panel shadow-pop animate-scale-in">
-        <div className="border-b border-edge bg-gradient-to-b from-elevated to-panel px-7 pb-5 pt-7">
-          <div className="mb-3 grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-accent to-emerald-700 text-lg font-bold text-white shadow-glow">
-            S
+        <div className="border-b border-edge bg-elevated px-7 pb-5 pt-7">
+          <div className="mb-3 grid h-11 w-11 place-items-center rounded-xl border border-edge-strong bg-panel text-accent">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round">
+              <path d="M12 2 2 7l10 5 10-5-10-5z" />
+              <path d="M2 17l10 5 10-5" />
+              <path d="M2 12l10 5 10-5" />
+            </svg>
           </div>
-          <div className="text-lg font-semibold text-gray-100">Welcome to Storage Agent Workbench</div>
+          <div className="text-lg font-medium text-gray-100">Welcome to Storage Agent Workbench</div>
           <p className="mt-1.5 text-sm leading-relaxed text-gray-400">
             A local-first agent for diagnosing object storage and S3-compatible systems. Everything runs on your
             machine; secrets stay in the OS keychain.

@@ -13,22 +13,24 @@ const STATUS_PILL: Record<string, string> = {
 };
 
 const CONF_PILL: Record<string, string> = {
-  high: "bg-emerald-500/15 text-emerald-300",
-  medium: "bg-amber-500/15 text-amber-300",
-  low: "bg-gray-700/50 text-gray-300",
+  high: "bg-accent/15 text-accent-soft",
+  medium: "bg-amber-500/12 text-amber-300/90",
+  low: "bg-gray-700/40 text-gray-400",
 };
 
 function Avatar({ kind }: { kind: "agent" | "user" }) {
   if (kind === "user") {
     return (
-      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-elevated text-xs font-medium text-gray-300">
+      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-edge bg-elevated text-[10px] font-medium text-gray-400">
         You
       </div>
     );
   }
   return (
-    <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-accent to-emerald-700 text-xs font-bold text-white">
-      S
+    <div className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent text-white">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2z" />
+      </svg>
     </div>
   );
 }
@@ -144,7 +146,7 @@ export function TriageCard({ c }: { c: TriageCase }) {
           ))}
         </ul>
         {c.agent_interpretation ? (
-          <div className="mt-3 rounded-lg border border-violet-800/40 bg-violet-950/20 p-2.5 text-xs leading-relaxed text-gray-300">
+          <div className="mt-3 rounded-lg border border-edge bg-elevated p-2.5 text-xs leading-relaxed text-gray-300">
             {c.agent_interpretation}
             {c.skills_used?.length ? (
               <div className="mt-1 text-gray-500">Method: {c.skills_used.join(", ")}</div>
@@ -169,10 +171,10 @@ export function ProposalCard({
   onPrepare: (p: NextAction) => void;
 }) {
   return (
-    <div className="animate-fade-in-up rounded-xl border border-violet-800/40 bg-gradient-to-b from-violet-950/20 to-panel p-3.5 text-sm">
+    <div className="animate-fade-in-up rounded-xl border border-accent/25 bg-accent-dim/40 p-3.5 text-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 gap-2.5">
-          <span className="mt-0.5 text-violet-300">{ProposalIcon}</span>
+          <span className="mt-0.5 text-accent-soft">{ProposalIcon}</span>
           <div className="min-w-0">
             <div className="font-medium text-gray-100">{proposal.title}</div>
             <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-gray-500">
