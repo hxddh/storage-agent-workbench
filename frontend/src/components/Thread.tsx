@@ -29,6 +29,13 @@ type RunPrefill = { run_type?: string; provider_id?: string; bucket?: string };
 
 const propKey = (p: NextAction) => `${p.action_type}::${p.title}`;
 
+const EXAMPLES = [
+  "Reads from my bucket are slow",
+  "Getting 403 AccessDenied on uploads",
+  "SignatureDoesNotMatch errors",
+  "Review my bucket's security & lifecycle",
+];
+
 const INPUT_KINDS: { value: ErrorInputKind; label: string }[] = [
   { value: "mixed", label: "Paste anything" },
   { value: "error_code", label: "S3 error / XML" },
@@ -66,6 +73,7 @@ export function Thread({
   const [report, setReport] = useState<string | null>(null);
   const localId = useRef<string | null>(sessionId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
 
   const reload = async (id: string | null) => {
     if (!id) {
@@ -109,6 +117,20 @@ export function Thread({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [items.length, liveProposals.length]);
+
+  // Auto-grow the composer (and shrink back when cleared). When empty we pin a
+  // single line — measuring scrollHeight would otherwise include the wrapping
+  // placeholder (Chrome counts it) and leave the box several lines tall.
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    if (!text) {
+      ta.style.height = "36px";
+      return;
+    }
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+  }, [text, mode]);
 
   const proposals = liveProposals.length ? liveProposals : detail?.summary?.next_actions ?? [];
 
@@ -208,7 +230,7 @@ export function Thread({
 
   return (
     <div className="flex h-full flex-1 flex-col bg-canvas">
-      <header className="flex items-center justify-between border-b border-edge px-6 py-3">
+      <header className="flex items-center justify-between border-b border-edge px-6 py-3.5">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-gray-100">
             {detail?.title || "New investigation"}
@@ -217,14 +239,33 @@ export function Thread({
         </div>
       </header>
 
-      <div className="flex-1 overflow-auto px-6 py-5">
-        <div className="mx-auto max-w-3xl space-y-3">
+      <div className="flex-1 overflow-auto px-6 py-6">
+        <div className="mx-auto max-w-3xl space-y-4">
           {isEmpty && (
-            <div className="rounded-xl border border-edge bg-panel p-5 text-sm text-gray-400">
-              <div className="mb-1 text-gray-200">Start an investigation</div>
-              Describe a storage problem below (e.g. slow reads, 403s, signature errors). The agent will ground its
-              answer in evidence and propose safe next steps — you review and confirm before anything runs. You can
-              also paste an S3 error for offline triage without any cloud credentials.
+            <div className="flex flex-col items-center py-12 text-center animate-fade-in-up">
+              <div className="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-accent to-emerald-700 text-2xl font-bold text-white shadow-glow">
+                S
+              </div>
+              <div className="text-lg font-semibold text-gray-100">Start an investigation</div>
+              <p className="mt-2 max-w-md text-sm leading-relaxed text-gray-500">
+                Describe a storage problem and the agent grounds its answer in evidence, then proposes safe next steps —
+                you review and confirm before anything runs. Or paste an S3 error for offline triage, no credentials needed.
+              </p>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                {EXAMPLES.map((ex) => (
+                  <button
+                    key={ex}
+                    onClick={() => {
+                      setMode("chat");
+                      setText(ex);
+                      taRef.current?.focus();
+                    }}
+                    className="rounded-full border border-edge bg-panel px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-edge-strong hover:bg-hover hover:text-gray-100"
+                  >
+                    {ex}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -239,18 +280,26 @@ export function Thread({
           )}
 
           {needKey && (
-            <div className="rounded-xl border border-amber-900/50 bg-amber-950/20 p-3 text-sm text-amber-200">
+            <div className="animate-fade-in-up rounded-xl border border-amber-800/50 bg-amber-950/20 p-3.5 text-sm text-amber-200">
               No model API key is configured, so the agent can't interpret yet. Deterministic results still work.
-              <div className="mt-2">
-                <Button onClick={onOpenSettings}>Add a model API key</Button>
+              <div className="mt-2.5">
+                <Button variant="primary" size="sm" onClick={onOpenSettings}>Add a model API key</Button>
               </div>
             </div>
           )}
-          {error && <div className="rounded-xl border border-red-900/50 bg-red-950/20 p-3 text-sm text-red-300">{error}</div>}
+          {error && (
+            <div className="animate-fade-in-up rounded-xl border border-red-900/50 bg-red-950/20 p-3.5 text-sm text-red-300">
+              {error}
+            </div>
+          )}
 
           {proposals.length > 0 && (
             <div className="space-y-2 pt-1">
-              <div className="text-[11px] uppercase tracking-wide text-gray-500">Suggested next actions</div>
+              <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-gray-500">
+                <span className="h-px flex-1 bg-edge" />
+                Suggested next actions
+                <span className="h-px flex-1 bg-edge" />
+              </div>
               {proposals.map((p, i) => (
                 <ProposalCard
                   key={`${propKey(p)}-${i}`}
@@ -267,36 +316,39 @@ export function Thread({
       </div>
 
       {/* Composer */}
-      <div className="border-t border-edge bg-sidebar px-6 py-3">
+      <div className="border-t border-edge bg-sidebar/80 px-6 py-3.5">
         <div className="mx-auto max-w-3xl">
-          <div className="mb-2 flex items-center gap-2 text-xs">
-            <button
-              onClick={() => setMode("chat")}
-              className={`rounded-full px-2 py-0.5 ${mode === "chat" ? "bg-canvas text-gray-100" : "text-gray-500 hover:text-gray-300"}`}
-            >
-              Ask the agent
-            </button>
-            <button
-              onClick={() => setMode("triage")}
-              className={`rounded-full px-2 py-0.5 ${mode === "triage" ? "bg-canvas text-gray-100" : "text-gray-500 hover:text-gray-300"}`}
-            >
-              Triage an error
-            </button>
+          <div className="mb-2.5 flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg border border-edge bg-canvas p-0.5 text-xs">
+              <button
+                onClick={() => setMode("chat")}
+                className={`rounded-md px-2.5 py-1 transition-colors ${mode === "chat" ? "bg-elevated text-gray-100 shadow-sm" : "text-gray-500 hover:text-gray-300"}`}
+              >
+                Ask the agent
+              </button>
+              <button
+                onClick={() => setMode("triage")}
+                className={`rounded-md px-2.5 py-1 transition-colors ${mode === "triage" ? "bg-elevated text-gray-100 shadow-sm" : "text-gray-500 hover:text-gray-300"}`}
+              >
+                Triage an error
+              </button>
+            </div>
             {mode === "triage" && (
               <>
-                <Select value={triageKind} onChange={(e) => setTriageKind(e.target.value as ErrorInputKind)} style={{ width: "auto" }}>
+                <Select value={triageKind} onChange={(e) => setTriageKind(e.target.value as ErrorInputKind)} className="!w-auto py-1 text-xs">
                   {INPUT_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
                 </Select>
-                <Select value={planner} onChange={(e) => setPlanner(e.target.value as "deterministic" | "agent")} style={{ width: "auto" }}>
+                <Select value={planner} onChange={(e) => setPlanner(e.target.value as "deterministic" | "agent")} className="!w-auto py-1 text-xs">
                   <option value="deterministic">Deterministic</option>
                   <option value="agent">Agent</option>
                 </Select>
               </>
             )}
           </div>
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2 rounded-2xl border border-edge bg-canvas p-2 transition-colors focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/20">
             <textarea
-              className="max-h-40 min-h-[44px] flex-1 resize-y rounded-xl border border-edge bg-canvas px-3 py-2.5 text-sm text-gray-100 placeholder:text-gray-600 focus:border-gray-500 focus:outline-none"
+              ref={taRef}
+              className="max-h-[200px] h-9 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none"
               rows={1}
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -306,11 +358,30 @@ export function Thread({
                   mode === "chat" ? send() : sendTriage();
                 }
               }}
-              placeholder={mode === "chat" ? "Describe the storage issue, or ask about this investigation…  (⌘/Ctrl+Enter)" : "Paste an S3 error / HTTP response / stack trace…"}
+              placeholder={mode === "chat" ? "Describe the storage issue, or ask about this investigation…" : "Paste an S3 error / HTTP response / stack trace…"}
             />
-            <Button variant="primary" onClick={mode === "chat" ? send : sendTriage} disabled={busy}>
-              {busy ? "…" : mode === "chat" ? "Send" : "Triage"}
+            <Button
+              variant="primary"
+              onClick={mode === "chat" ? send : sendTriage}
+              disabled={busy || !text.trim()}
+              className="h-9 w-9 !px-0"
+              aria-label={mode === "chat" ? "Send" : "Triage"}
+            >
+              {busy ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="12" y1="19" x2="12" y2="5" />
+                  <polyline points="5 12 12 5 19 12" />
+                </svg>
+              )}
             </Button>
+          </div>
+          <div className="mt-1.5 px-1 text-[11px] text-gray-600">
+            <kbd className="rounded bg-elevated px-1 py-0.5 font-sans text-gray-400">⌘</kbd>
+            <kbd className="ml-0.5 rounded bg-elevated px-1 py-0.5 font-sans text-gray-400">↵</kbd>
+            <span className="ml-1.5">to {mode === "chat" ? "send" : "triage"}</span>
+            {mode === "triage" && <span className="ml-1">· runs offline, no cloud credentials</span>}
           </div>
         </div>
       </div>
@@ -365,8 +436,11 @@ export function Thread({
 
 function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-40 flex bg-black/50" onClick={onClose}>
-      <div className="m-auto h-[88vh] w-[min(900px,92vw)] overflow-hidden rounded-xl border border-edge shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-40 flex bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+      <div
+        className="m-auto h-[88vh] w-[min(900px,92vw)] overflow-hidden rounded-2xl border border-edge bg-canvas shadow-pop animate-scale-in"
+        onClick={(e) => e.stopPropagation()}
+      >
         {children}
       </div>
     </div>

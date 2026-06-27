@@ -9,13 +9,16 @@ import { Button } from "./ui";
 export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/50" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-fade-in"
+      onClick={onClose}
+    >
       <div
-        className="flex h-full w-[min(860px,96vw)] flex-col border-l border-edge bg-canvas"
+        className="flex h-full w-[min(860px,96vw)] flex-col border-l border-edge bg-canvas shadow-pop animate-slide-in-right"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-edge px-6 py-3">
-          <span className="text-sm font-semibold text-gray-100">Settings</span>
+        <div className="flex items-center justify-between border-b border-edge px-6 py-3.5">
+          <span className="text-sm font-semibold text-gray-100">Settings &amp; providers</span>
           <Button variant="ghost" onClick={onClose}>Close</Button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-auto">

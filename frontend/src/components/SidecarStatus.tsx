@@ -43,12 +43,17 @@ export function SidecarStatus({
   return (
     <div data-testid="sidecar-status" data-status={status} data-slow={slow}>
       <div
-        className="flex items-center gap-2 rounded-md border border-edge bg-canvas px-3 py-2 text-xs"
+        className="flex items-center gap-2 rounded-lg border border-edge bg-canvas/60 px-3 py-2 text-xs"
         title={service ? `Sidecar service: ${service}` : "Python FastAPI sidecar"}
       >
-        <span className={`h-2.5 w-2.5 rounded-full ${DOT[status]}`} aria-hidden />
-        <span className="text-gray-300">Sidecar</span>
-        <span className="font-medium text-gray-100">{label}</span>
+        <span className="relative flex h-2 w-2" aria-hidden>
+          <span className={`h-2 w-2 rounded-full ${DOT[status]}`} />
+          {status === "connected" && (
+            <span className="absolute inset-0 rounded-full bg-emerald-400/60 animate-pulse-ring" />
+          )}
+        </span>
+        <span className="text-gray-500">Sidecar</span>
+        <span className="ml-auto font-medium text-gray-200">{label}</span>
       </div>
       {hint && <p className="mt-1 px-1 text-[11px] leading-tight text-gray-500">{hint}</p>}
     </div>
