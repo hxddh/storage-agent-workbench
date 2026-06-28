@@ -191,8 +191,8 @@ def test_sse_emits_required_events(diag):
         if line.startswith("data:"):
             types.append(json.loads(line[len("data:"):].strip())["type"])
 
-    for required in ("agent_plan", "tool_call_started", "tool_call_finished",
-                     "agent_message", "finding", "report_ready"):
+    for required in ("plan", "tool_call_started", "tool_call_finished",
+                     "summary", "finding", "report_ready"):
         assert required in types, f"missing SSE event: {required}"
     # exactly three tool start/finish pairs
     assert types.count("tool_call_started") == 3

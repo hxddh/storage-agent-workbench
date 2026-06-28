@@ -170,31 +170,10 @@ def render_context_text(context: dict[str, Any]) -> str:
 
 
 def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str) -> Any:
-    """Build an Agent with a PER-RUN model client.
-
-    The client is passed explicitly via ``OpenAIChatCompletionsModel`` rather than
-    set on the SDK's process-global default. Mutating the global default per
-    request (``set_default_openai_client``) races across concurrent sessions; a
-    per-run client keeps each session's run fully independent. Chat Completions is
-    used for all providers (third-party OpenAI-compatible endpoints such as
-    DeepSeek don't implement the Responses API the SDK otherwise defaults to).
-    """
-    import openai
-    from agents import (Agent, ModelSettings, OpenAIChatCompletionsModel,
-                        set_tracing_disabled)
-
-    # Never upload traces/prompts (privacy; also avoids a spurious OpenAI auth
-    # call that fails for third-party providers). This is constant, not per-run.
-    set_tracing_disabled(True)
-    kwargs = {"api_key": creds["api_key"]}
-    if creds.get("base_url"):
-        kwargs["base_url"] = creds["base_url"]
-    client = openai.AsyncOpenAI(**kwargs)
-    model = OpenAIChatCompletionsModel(model=creds.get("model") or "gpt-4o-mini",
-                                       openai_client=client)
-    return Agent(name="Storage Agent", instructions=instructions, tools=tools, model=model,
-                 model_settings=ModelSettings(max_tokens=_MAX_COMPLETION_TOKENS,
-                                              parallel_tool_calls=False))
+    """Build the session Agent via the shared per-run builder (no SDK globals)."""
+    from .agent_service import build_agent
+    return build_agent(creds, tools, instructions, name="Storage Agent",
+                       max_tokens=_MAX_COMPLETION_TOKENS, parallel_tool_calls=False)
 
 
 def _sdk_session_loop(spec: dict[str, Any]) -> Any:

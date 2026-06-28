@@ -40,7 +40,7 @@ def execute_inventory_run(conn: sqlite3.Connection, run_id: str) -> None:
         creds = None
         if agent_mode:
             creds = get_model_credentials(conn)  # raises AgentUnavailable if missing
-            bus.publish(run_id, {"type": "agent_started", "planner_mode": "agent"})
+            bus.publish(run_id, {"type": "run_started", "planner_mode": "agent"})
 
         ds = datasets_repo.latest_for_run(conn, run_id, "inventory")
         if ds is None or not ds.stored_path:
@@ -57,7 +57,7 @@ def execute_inventory_run(conn: sqlite3.Connection, run_id: str) -> None:
             "Summarize evidence into findings.",
             "Generate a local Markdown report (generate_markdown_report).",
         ]
-        bus.publish(run_id, {"type": "agent_plan", "content": "\n".join(plan)})
+        bus.publish(run_id, {"type": "plan", "content": "\n".join(plan)})
 
         imp = _require(run_tool_with_events(
             conn, run_id, "import_inventory_file",
@@ -82,7 +82,7 @@ def execute_inventory_run(conn: sqlite3.Connection, run_id: str) -> None:
             f"total {metrics.get('total_size', 0)} bytes; small-object ratio "
             f"{metrics.get('small_object_ratio', 0):.1%}."
         )
-        bus.publish(run_id, {"type": "agent_message", "content": summary})
+        bus.publish(run_id, {"type": "summary", "content": summary})
 
         # Agent mode: interpret the deterministic aggregates only (no tools, no
         # raw data). The deterministic metrics/findings above stay authoritative.
@@ -100,7 +100,7 @@ def execute_inventory_run(conn: sqlite3.Connection, run_id: str) -> None:
             agent_section = agent_analysis_md("inventory_analysis", agent_result)
             if agent_result.get("executive_summary"):
                 summary = agent_result["executive_summary"]
-            bus.publish(run_id, {"type": "agent_final", "content": summary})
+            bus.publish(run_id, {"type": "final_summary", "content": summary})
 
         ds_info = {"source_filename": ds.source_filename}
         _require(run_tool_with_events(

@@ -136,7 +136,7 @@ def execute_account_discovery_run(conn: sqlite3.Connection, run_id: str) -> None
             "Build an account-level asset profile.",
             "Generate a local Markdown report.",
         ]
-        bus.publish(run_id, {"type": "agent_plan", "content": "\n".join(plan)})
+        bus.publish(run_id, {"type": "plan", "content": "\n".join(plan)})
 
         run_tool_with_events(
             conn, run_id, "test_credentials", {"provider_id": provider_id},
@@ -151,14 +151,14 @@ def execute_account_discovery_run(conn: sqlite3.Connection, run_id: str) -> None
         all_names = [b["name"] for b in lb.get("buckets", []) or []]
         visible = len(all_names)
         if list_status != _CONFIGURED:
-            bus.publish(run_id, {"type": "agent_message",
+            bus.publish(run_id, {"type": "summary",
                                  "content": f"ListBuckets {list_status}; cannot enumerate the account."})
 
         filtered = _filter_buckets(all_names, opts["include_pattern"], opts["exclude_pattern"])
         truncated = len(filtered) > max_buckets
         selected = filtered[:max_buckets]
         if truncated:
-            bus.publish(run_id, {"type": "agent_message",
+            bus.publish(run_id, {"type": "summary",
                                  "content": f"{len(filtered)} bucket(s) matched; processing the first "
                                             f"{max_buckets} (max_buckets). The rest are not analyzed."})
 
@@ -241,7 +241,7 @@ def execute_account_discovery_run(conn: sqlite3.Connection, run_id: str) -> None
             f"{len(per_bucket)} processed{' (truncated)' if truncated else ''}. "
             f"Access status: " + (", ".join(f"{n} {s}" for s, n in counts.items()) or "—") + "."
         )
-        bus.publish(run_id, {"type": "agent_message", "content": summary_text})
+        bus.publish(run_id, {"type": "summary", "content": summary_text})
 
         profile = {
             "run_id": run_id, "provider_id": provider_id, "bucket_count": visible,

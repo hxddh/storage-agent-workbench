@@ -71,8 +71,8 @@ export function RunDetail({
   }, [runId]);
 
   const plan = useMemo(() => {
-    const last = [...events].reverse().find((e) => e.type === "agent_plan");
-    return last && last.type === "agent_plan" ? last.content.split("\n") : [];
+    const last = [...events].reverse().find((e) => e.type === "plan");
+    return last && last.type === "plan" ? last.content.split("\n") : [];
   }, [events]);
 
   const findings = useMemo(
@@ -81,8 +81,8 @@ export function RunDetail({
   );
 
   const agentMessage = useMemo(() => {
-    const last = [...events].reverse().find((e) => e.type === "agent_message" || e.type === "agent_final");
-    return last && (last.type === "agent_message" || last.type === "agent_final") ? last.content : null;
+    const last = [...events].reverse().find((e) => e.type === "summary" || e.type === "final_summary");
+    return last && (last.type === "summary" || last.type === "final_summary") ? last.content : null;
   }, [events]);
 
   const errorMessage = useMemo(() => {
@@ -93,8 +93,8 @@ export function RunDetail({
   const agentActivity = useMemo(
     () =>
       events.filter(
-        (e): e is Extract<RunEvent, { type: "agent_tool_selected" | "guardrail_passed" | "guardrail_blocked" }> =>
-          e.type === "agent_tool_selected" || e.type === "guardrail_passed" || e.type === "guardrail_blocked",
+        (e): e is Extract<RunEvent, { type: "tool_selected" | "guardrail_passed" | "guardrail_blocked" }> =>
+          e.type === "tool_selected" || e.type === "guardrail_passed" || e.type === "guardrail_blocked",
       ),
     [events],
   );
@@ -279,7 +279,7 @@ export function RunDetail({
               <ul className="space-y-1">
                 {agentActivity.map((e, i) => (
                   <li key={i} className="text-xs">
-                    {e.type === "agent_tool_selected" && (
+                    {e.type === "tool_selected" && (
                       <span className="text-violet-300">
                         ▸ selected <span className="font-mono">{e.tool_name}</span>
                         {e.reason ? <span className="text-gray-500"> — {e.reason}</span> : null}

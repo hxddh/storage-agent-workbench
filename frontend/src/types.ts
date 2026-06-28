@@ -153,19 +153,19 @@ export interface Dataset {
 
 // SSE event payloads (a subset, discriminated by `type`)
 export type RunEvent =
-  | { type: "agent_plan"; content: string }
+  | { type: "plan"; content: string }
   | { type: "tool_call_started"; tool_name: string; tool_call_id: string }
   | { type: "tool_call_finished"; tool_name: string; tool_call_id: string; status: string; output: Record<string, unknown> }
-  | { type: "agent_message"; content: string }
+  | { type: "summary"; content: string }
   | { type: "finding"; severity: string; title: string; detail: string }
   | { type: "report_ready"; run_id: string; report_path: string }
   | { type: "error"; message: string }
-  // Phase 07 agent-mode events
-  | { type: "agent_started"; planner_mode: string }
-  | { type: "agent_tool_selected"; tool_name: string; reason: string }
+  // Run lifecycle events (shared by deterministic and agent-planner runs)
+  | { type: "run_started"; planner_mode: string }
+  | { type: "tool_selected"; tool_name: string; reason: string }
   | { type: "guardrail_passed"; name: string }
   | { type: "guardrail_blocked"; name: string; message: string }
-  | { type: "agent_final"; content: string };
+  | { type: "final_summary"; content: string };
 
 // --- Account discovery (Phase 14) ---
 
