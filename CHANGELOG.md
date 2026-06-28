@@ -6,6 +6,18 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.19] - 2026-06-29
+
+### Fixed
+
+- **"Key saved" no longer lies after the vault migration.** A provider's
+  `has_api_key` / `has_access_key` / … flags were derived from the leftover
+  reference in SQLite, so after the keychain→vault move (0.19.18) providers
+  showed their keys as present even though the secret wasn't carried over — and
+  the agent would then fail mid-run. The flags now reflect whether the secret
+  actually exists in the vault, so a not-yet-re-entered key correctly shows as
+  missing and prompts you to add it.
+
 ## [0.19.18] - 2026-06-29
 
 ### Changed

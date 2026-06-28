@@ -81,6 +81,18 @@ def test_secret_survives_process_restart():
     assert keyring_store.get_secret("model_provider", "p/api_key") == "persisted"
 
 
+def test_secret_exists_reflects_vault_not_just_ref():
+    """has_*_key flags must check the vault, not just a lingering ref string —
+    otherwise a stale ref (e.g. after the keychain→vault migration) falsely
+    reports a key as present."""
+    ref = keyring_store.save_secret("model_provider", "p/api_key", "sk-1")
+    assert keyring_store.secret_exists(ref) is True
+    keyring_store.delete_secret("model_provider", "p/api_key")
+    assert keyring_store.secret_exists(ref) is False  # ref alone is not enough
+    assert keyring_store.secret_exists(None) is False
+    assert keyring_store.secret_exists("not-a-ref") is False
+
+
 def test_make_and_parse_ref():
     ref = keyring_store.make_ref("cloud_provider", "id1/access_key")
     assert ref == "keyring://cloud_provider/id1/access_key"

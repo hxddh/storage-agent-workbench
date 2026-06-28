@@ -255,6 +255,22 @@ def delete_secret(scope: str, name: str) -> None:
         _negative.add(key)
 
 
+def secret_exists(ref: str | None) -> bool:
+    """Whether the secret behind a ``keyring://`` ref is actually present.
+
+    Use this (not merely ``bool(ref)``) for ``has_*_key`` flags: a ref can linger
+    in SQLite while the secret is gone from the vault (e.g. after the keychain→
+    vault migration, where secrets are not carried over and must be re-entered).
+    """
+    if not ref:
+        return False
+    try:
+        scope, name = parse_ref(ref)
+    except ValueError:
+        return False
+    return get_secret(scope, name) is not None
+
+
 def _reset_for_tests() -> None:
     """Drop the in-process cache + master key. Used by the test harness."""
     global _blob, _master_key
@@ -264,4 +280,5 @@ def _reset_for_tests() -> None:
         _negative.clear()
 
 
-__all__ = ["SERVICE_PREFIX", "make_ref", "parse_ref", "save_secret", "get_secret", "delete_secret"]
+__all__ = ["SERVICE_PREFIX", "make_ref", "parse_ref", "save_secret", "get_secret",
+           "delete_secret", "secret_exists"]
