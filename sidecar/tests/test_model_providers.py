@@ -51,6 +51,19 @@ def test_secret_not_in_sqlite_but_in_keyring(client):
     assert keyring_store.get_secret(scope, name) == SECRET
 
 
+def test_has_api_key_false_when_secret_absent_despite_ref(client):
+    """A provider whose secret is gone from the vault (e.g. after the
+    keychain→vault migration) must report has_api_key False so the user knows to
+    re-enter it — not stay True just because the ref column survives."""
+    data = _create(client).json()
+    scope, name = keyring_store.parse_ref(data["api_key_ref"])
+    keyring_store.delete_secret(scope, name)  # simulate the un-migrated secret
+    listed = client.get("/model-providers").json()
+    match = next(p for p in listed if p["id"] == data["id"])
+    assert match["api_key_ref"] is not None  # ref still in SQLite
+    assert match["has_api_key"] is False     # but flagged as missing
+
+
 def test_list_and_get_consistency(client):
     _create(client, name="A")
     _create(client, name="B")

@@ -29,7 +29,7 @@ def _row_to_out(row: sqlite3.Row) -> ModelProviderOut:
         base_url=row["base_url"],
         model=row["model"],
         api_key_ref=row["api_key_ref"],
-        has_api_key=bool(row["api_key_ref"]),
+        has_api_key=keyring_store.secret_exists(row["api_key_ref"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
