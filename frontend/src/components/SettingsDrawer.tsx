@@ -1,5 +1,4 @@
 import { ProvidersView } from "../views/ProvidersView";
-import { Button } from "./ui";
 import { useI18n, LANGS, type Lang } from "../i18n";
 import { useTheme, type Theme } from "../theme";
 
@@ -29,7 +28,16 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
       >
         <div className="flex items-center justify-between border-b border-edge px-6 py-3.5">
           <span className="text-sm font-semibold text-gray-100">{t("settings.title")}</span>
-          <Button variant="ghost" onClick={onClose}>{t("common.close")}</Button>
+          <button
+            onClick={onClose}
+            aria-label={t("common.close")}
+            className="grid h-7 w-7 place-items-center rounded-md text-gray-500 transition-colors hover:bg-hover hover:text-gray-200"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-auto">
           {/* Appearance: theme + language */}

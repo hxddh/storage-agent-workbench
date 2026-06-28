@@ -427,12 +427,12 @@ export function Thread({
               </p>
             </div>
             {composer}
-            <div className="mt-3.5 flex flex-wrap justify-center gap-2">
+            <div className="mx-auto mt-4 flex max-w-[21rem] flex-wrap justify-center gap-2">
               {suggestions.map((s) => (
                 <button
                   key={s.label}
                   onClick={() => seed(s.prompt)}
-                  className="rounded-full border border-edge bg-panel/60 px-3 py-1.5 text-[12px] text-gray-400 transition-colors hover:border-edge-strong hover:bg-hover hover:text-gray-100"
+                  className="rounded-full border border-edge bg-panel/60 px-3.5 py-1.5 text-[12px] text-gray-400 transition-all duration-150 hover:-translate-y-px hover:border-edge-strong hover:bg-hover hover:text-gray-100 hover:shadow-elev"
                 >
                   {s.label}
                 </button>

@@ -8,7 +8,7 @@ version = "0.7.0"
 description = "Local FastAPI sidecar for Storage Agent Workbench"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "BUSL-1.1" }
+license = { text = "Apache-2.0" }
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
