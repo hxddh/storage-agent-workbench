@@ -249,11 +249,13 @@ export async function streamSessionMessage(
   id: string,
   content: string,
   on: { onDelta: (text: string) => void; onTool: (a: ToolActivity) => void },
+  signal?: AbortSignal,
 ): Promise<{ proposed_actions: NextAction[] }> {
   const res = await fetch(`${sidecarBaseUrl()}/sessions/${id}/messages/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
+    signal,
   });
   if (!res.ok || !res.body) {
     let detail = `HTTP ${res.status}`;

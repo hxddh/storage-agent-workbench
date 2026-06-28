@@ -96,6 +96,9 @@ export function Thread({
   const localId = useRef<string | null>(sessionId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  // Aborts the in-flight stream when the user switches away from a running
+  // session, so the rest of the UI isn't left stuck (busy) on the other session.
+  const abortRef = useRef<AbortController | null>(null);
   const { t } = useI18n();
   const suggestions = SUGGESTION_KEYS.map((k) => ({ key: k, label: t(`sugg.${k}`), prompt: t(`prompt.${k}`) }));
 
@@ -105,7 +108,7 @@ export function Thread({
       .catch(() => undefined);
 
   // Fetch the model name once the sidecar is reachable (it isn't during the
-  // ~1 min first-launch cold start, so a single mount-time fetch would miss it).
+  // brief startup, so a single mount-time fetch could miss it).
   useEffect(() => {
     if (sidecarReady) refreshModel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -137,6 +140,13 @@ export function Thread({
     const isOwnNewSession = sessionId !== null && sessionId === localId.current;
     localId.current = sessionId;
     if (!isOwnNewSession) {
+      // Switching to a different session: cancel any in-flight stream so its
+      // tokens don't bleed into this view and `busy` doesn't stay stuck. The
+      // streaming endpoint persists the turn server-side on completion, so the
+      // cancelled session's answer still lands and shows when you return to it.
+      abortRef.current?.abort();
+      abortRef.current = null;
+      setBusy(false);
       setLiveProposals(null);
       setNeedKey(false);
       setError(null);
@@ -215,6 +225,8 @@ export function Thread({
   // reliable blocking turn, which also handles the no-key / offline-triage cases.
   const submit = async (q: string) => {
     if (!q || busy) return;
+    const ac = new AbortController();
+    abortRef.current = ac;
     setBusy(true);
     setError(null);
     setNeedKey(false);
@@ -228,20 +240,25 @@ export function Thread({
         const r = await streamSessionMessage(id, q, {
           onDelta: (chunk) => setStreamText((s) => (s ?? "") + chunk),
           onTool: (rec) => setStreamTools((a) => [...a, rec]),
-        });
+        }, ac.signal);
         setLiveProposals(r.proposed_actions || []);
       } catch {
+        // Switched away mid-stream: the server finishes + persists the turn on
+        // its own, so just stop here — no fallback, no writing into the new view.
+        if (ac.signal.aborted) return;
         // Stream broke (or 422). The endpoint persists nothing until it
         // completes, so the blocking turn re-runs cleanly without duplicating.
         await sendBlocking(id, q);
       }
+      if (ac.signal.aborted) return;
       await reload(id);
       setPending(null);
       setStreamText(null);
       setStreamTools([]);
       onChanged();
     } finally {
-      setBusy(false);
+      if (abortRef.current === ac) abortRef.current = null;
+      if (!ac.signal.aborted) setBusy(false);
     }
   };
 
