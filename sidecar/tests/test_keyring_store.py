@@ -1,10 +1,20 @@
-"""Tests for the keyring wrapper."""
+"""Tests for the encrypted, cross-platform, zero-prompt secret vault.
 
-import json
+Secrets live in a single AES-256-GCM file (`secrets.enc`) whose master key is
+held in `secrets.key`; nothing prompts. These verify the round-trip + caching
+behaviour and the at-rest invariants (one encrypted file, plaintext never on
+disk, owner-only key file, survives a process restart).
+"""
+
+import stat
+import sys
 
 import pytest
 
+from app import config
 from app.security import keyring_store
+
+SECRET = "sk-DO-NOT-LEAK-PLAINTEXT-1234567890"
 
 
 def test_save_get_delete_roundtrip():
@@ -17,68 +27,58 @@ def test_save_get_delete_roundtrip():
 
 
 def test_delete_missing_is_idempotent():
-    # Should not raise even though nothing is stored.
     keyring_store.delete_secret("model_provider", "does/not-exist")
 
 
-def test_get_secret_is_cached(_in_memory_keyring):
-    """After the first read, get_secret serves from the in-process cache so the
-    OS keychain (and its auth prompt) is hit at most once per secret per launch."""
-    backend = _in_memory_keyring
+def test_get_secret_is_cached():
+    """After the first read the decrypted map is served from memory; tampering
+    with the file on disk is not seen until the cache is reset."""
     keyring_store.save_secret("model_provider", "p/api_key", "sk-1")
-
-    # Prime the cache, then mutate the consolidated item behind its back.
     assert keyring_store.get_secret("model_provider", "p/api_key") == "sk-1"
-    backend._store[("storage-agent-workbench", "secrets-v1")] = json.dumps(
-        {"model_provider/p/api_key": "sk-CHANGED"}
-    )
-    # Cache wins — no second backend read (and so no second prompt in real life).
+
+    config.data_dir().joinpath("secrets.enc").write_bytes(b"garbage-not-a-vault")
+    # Cache wins — no re-read from the (now corrupt) file.
     assert keyring_store.get_secret("model_provider", "p/api_key") == "sk-1"
 
 
-def test_all_secrets_share_one_keychain_item(_in_memory_keyring):
-    """Every secret lives in a single consolidated item, so macOS prompts once
-    ("Always Allow" then covers them all) instead of once per secret."""
-    backend = _in_memory_keyring
+def test_save_and_delete_invalidate_cache():
+    keyring_store.save_secret("model_provider", "p/api_key", "sk-1")
+    assert keyring_store.get_secret("model_provider", "p/api_key") == "sk-1"
+    keyring_store.save_secret("model_provider", "p/api_key", "sk-2")  # rotate
+    assert keyring_store.get_secret("model_provider", "p/api_key") == "sk-2"
+    keyring_store.delete_secret("model_provider", "p/api_key")
+    assert keyring_store.get_secret("model_provider", "p/api_key") is None
+
+
+def test_all_secrets_share_one_encrypted_file():
     keyring_store.save_secret("model_provider", "p/api_key", "sk-1")
     keyring_store.save_secret("cloud_provider", "c/access_key", "AKIA")
     keyring_store.save_secret("cloud_provider", "c/secret_key", "shh")
-
-    # Exactly one keychain item backs all three secrets.
-    assert list(backend._store.keys()) == [("storage-agent-workbench", "secrets-v1")]
-    stored = json.loads(backend._store[("storage-agent-workbench", "secrets-v1")])
-    assert stored == {
-        "model_provider/p/api_key": "sk-1",
-        "cloud_provider/c/access_key": "AKIA",
-        "cloud_provider/c/secret_key": "shh",
-    }
+    data = config.data_dir()
+    assert data.joinpath("secrets.enc").exists()
+    # Only the vault + its key file — no per-secret artifacts.
+    names = {p.name for p in data.iterdir() if p.is_file()}
+    assert names == {"secrets.enc", "secrets.key"}
 
 
-def test_legacy_per_item_secret_is_migrated_on_read(_in_memory_keyring):
-    """A secret left by an older version (one item per secret) is read and
-    copied forward into the consolidated item, so existing keys keep working."""
-    backend = _in_memory_keyring
-    # Simulate the pre-consolidation layout written by an earlier build.
-    backend._store[("storage-agent-workbench:model_provider", "old/api_key")] = "sk-legacy"
-    keyring_store._reset_for_tests()
-
-    assert keyring_store.get_secret("model_provider", "old/api_key") == "sk-legacy"
-    # It now lives in the consolidated item too.
-    stored = json.loads(backend._store[("storage-agent-workbench", "secrets-v1")])
-    assert stored["model_provider/old/api_key"] == "sk-legacy"
+def test_plaintext_never_on_disk():
+    keyring_store.save_secret("model_provider", "p/api_key", SECRET)
+    blob = config.data_dir().joinpath("secrets.enc").read_bytes()
+    assert SECRET.encode() not in blob          # value is encrypted
+    assert b"model_provider" not in blob        # keys are encrypted too
 
 
-def test_save_and_delete_invalidate_cache(_in_memory_keyring):
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX perms (Windows uses DPAPI)")
+def test_key_file_is_owner_only():
     keyring_store.save_secret("model_provider", "p/api_key", "sk-1")
-    assert keyring_store.get_secret("model_provider", "p/api_key") == "sk-1"
+    mode = stat.S_IMODE(config.data_dir().joinpath("secrets.key").stat().st_mode)
+    assert mode == 0o600
 
-    # Re-saving (e.g. rotating the key) must be visible immediately.
-    keyring_store.save_secret("model_provider", "p/api_key", "sk-2")
-    assert keyring_store.get_secret("model_provider", "p/api_key") == "sk-2"
 
-    # Deleting must invalidate the cache too.
-    keyring_store.delete_secret("model_provider", "p/api_key")
-    assert keyring_store.get_secret("model_provider", "p/api_key") is None
+def test_secret_survives_process_restart():
+    keyring_store.save_secret("model_provider", "p/api_key", "persisted")
+    keyring_store._reset_for_tests()  # simulate a fresh sidecar launch
+    assert keyring_store.get_secret("model_provider", "p/api_key") == "persisted"
 
 
 def test_make_and_parse_ref():

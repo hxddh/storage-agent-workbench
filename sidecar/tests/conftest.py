@@ -1,53 +1,26 @@
 """Shared test fixtures.
 
-- Installs an in-memory keyring backend so tests never touch the real OS
-  Keychain and run on CI without a Secret Service / dbus.
-- Points each test at a fresh temporary SQLite database via ``SAW_DB_PATH``.
+- Points the encrypted secret vault at a fresh temp data dir per test (via
+  ``SAW_DATA_DIR``) so tests never touch a real user's vault and stay isolated.
+- The ``client`` fixture overrides ``SAW_DATA_DIR``/``SAW_DB_PATH`` with its own
+  temp dir; it runs after the autouse fixture below, so its paths win.
 """
 
 from __future__ import annotations
 
-import keyring
 import pytest
-from keyring.backend import KeyringBackend
-
-
-class InMemoryKeyring(KeyringBackend):
-    """Volatile keyring backend for tests."""
-
-    priority = 1  # type: ignore[assignment]
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._store: dict[tuple[str, str], str] = {}
-
-    def get_password(self, service, username):
-        return self._store.get((service, username))
-
-    def set_password(self, service, username, password):
-        self._store[(service, username)] = password
-
-    def delete_password(self, service, username):
-        try:
-            del self._store[(service, username)]
-        except KeyError as exc:  # pragma: no cover - mirrors backend contract
-            raise keyring.errors.PasswordDeleteError("not found") from exc
 
 
 @pytest.fixture(autouse=True)
-def _in_memory_keyring():
+def _secret_vault(tmp_path, monkeypatch):
+    """Isolate the encrypted secret vault to a per-test temp directory."""
     from app.security import keyring_store
 
-    backend = InMemoryKeyring()
-    previous = keyring.get_keyring()
-    keyring.set_keyring(backend)
-    # The store mirrors the consolidated secret map in-process; reset it around
-    # each test so a fresh in-memory backend is never shadowed by cached state.
+    monkeypatch.setenv("SAW_DATA_DIR", str(tmp_path / "vault"))
     keyring_store._reset_for_tests()
     try:
-        yield backend
+        yield
     finally:
-        keyring.set_keyring(previous)
         keyring_store._reset_for_tests()
 
 

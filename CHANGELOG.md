@@ -6,6 +6,36 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.18] - 2026-06-29
+
+### Changed
+
+- **Secrets moved from the OS keychain to a cross-platform encrypted vault — no
+  more repeated authorization prompts.** Because the app is ad-hoc-signed, the
+  macOS Keychain re-prompted on every update (and the Linux Secret Service can
+  prompt or be missing). Secrets now live in a single AES-256-GCM file whose
+  master key is protected by the strongest *non-prompting* mechanism per OS
+  (Windows DPAPI; an owner-only `0600` key file on macOS/Linux). The app no
+  longer prompts to authorize key access on any platform. *One-time note: after
+  updating, re-enter your model API key and cloud credentials once — they aren't
+  migrated automatically (migrating would have triggered the very keychain
+  prompt we're removing). They're never prompted for again.*
+- **Settings polish.** The Providers section header no longer dwarfs the other
+  settings sections (consistent type scale); all UI copy uses "Agent" rather
+  than the Chinese "智能体".
+- **Agent autonomy simplified to two options** — 协助 (Assisted: proposes
+  read-only runs to confirm) and 自主 (Autonomous: runs read-only checks itself),
+  defaulting to **Autonomous**. Data-moving work still always requires
+  confirmation.
+
+### Security
+
+- Secrets are still never written to SQLite, logs, reports, traces, or model
+  prompts, and cloud access remains read-only with no write/destructive
+  capability. On macOS/Linux the vault's key file sits beside the data with
+  owner-only perms (a deliberate local-first tradeoff for prompt-free operation;
+  a future Developer-ID signature could re-enable the macOS keychain prompt-free).
+
 ## [0.19.17] - 2026-06-29
 
 ### Added

@@ -1,110 +1,210 @@
-"""Thin wrapper around the system keyring for secret storage.
+"""Cross-platform, zero-prompt secret store (encrypted local vault).
 
 Secrets (model API keys, cloud access/secret keys, session tokens) are stored
-ONLY here, in the OS Keychain. The rest of the app persists only opaque
-references of the form ``keyring://<scope>/<name>`` — never the plaintext.
+ONLY here. The rest of the app persists only opaque references of the form
+``keyring://<scope>/<name>`` — never the plaintext. (The ``keyring://`` scheme
+is kept for backward compatibility; storage is now a local encrypted file, not
+the OS keyring — see below.)
 
-Storage layout — one keychain item for everything
---------------------------------------------------
-All secrets live in a *single* keychain item:
+Why not the OS keychain
+-----------------------
+The app is ad-hoc-signed and cross-platform. The macOS Keychain binds trust to
+a program's code identity, which changes on every ad-hoc build, so it re-prompts
+for authorization on every update (and the Linux Secret Service may prompt or be
+absent on headless installs). To give a frictionless, prompt-free experience on
+macOS, Windows, and Linux alike, secrets live in a single AES-256-GCM file that
+no per-launch prompt ever guards.
 
-    service  = "storage-agent-workbench"
-    username = "secrets-v1"
+Layout (both files in ``config.data_dir()``)
+---------------------------------------------
+- ``secrets.enc`` — AES-256-GCM ciphertext (12-byte nonce ‖ ciphertext) of a
+  JSON object mapping ``"<scope>/<name>"`` to the secret value.
+- ``secrets.key`` — the 32-byte master key, protected by the strongest
+  *non-prompting* mechanism on the platform:
+    * Windows → DPAPI (``CryptProtectData``, current-user scope): the OS
+      encrypts the key to the logged-in user; only that user can decrypt it.
+    * macOS / Linux → a raw key file created ``O_EXCL`` with ``0600`` perms
+      (owner-only).
 
-whose password is a JSON object mapping ``"<scope>/<name>"`` to the secret
-value. The opaque reference (``keyring://<scope>/<name>``) and the public API
-are unchanged; consolidation is purely an internal storage detail.
-
-Why one item instead of one-item-per-secret?
-    On macOS every keychain item carries its own ACL, and an ad-hoc-signed
-    build (whose code identity changes every version) is not on that ACL — so
-    the OS shows an authorization prompt the *first* time each item is read.
-    With a separate item per secret, a user with a model key + cloud
-    access/secret keys + a session token faces a *burst* of prompts, and the
-    "Always Allow" choice only covers the one item it was shown for. Collapsing
-    everything into one item means the user is prompted **once**; "Always Allow"
-    then covers every secret the app will ever read. This removes the keychain
-    friction that made "secrets only in the Keychain" painful in practice —
-    without weakening the guarantee: secrets still never leave the Keychain, are
-    never written to SQLite/logs/reports/model prompts, and are still resolved
-    only server-side.
-
-    (The remaining once-per-app-version prompt is inherent to ad-hoc signing;
-    only a stable Developer ID signature / notarization removes it entirely.)
-
-Legacy migration
------------------
-Earlier versions stored each secret as its own item
-(``service="storage-agent-workbench:<scope>"``, ``username="<name>"``). When a
-secret is missing from the consolidated item, we fall back to its legacy item
-and, if found, copy it forward into the consolidated item — so existing keys
-keep working with no re-entry. (The legacy item is left untouched on read;
-``delete_secret`` removes both layouts.)
+Security posture (honest)
+-------------------------
+On Windows the master key is genuinely protected at rest by the OS (DPAPI). On
+macOS/Linux the key file sits beside the vault with owner-only perms, so a
+process running as the same user can decrypt it — practically the same exposure
+as the keychain while unlocked, but weaker at rest than a *locked* keychain.
+This is the standard local-first tradeoff and the only way to be prompt-free
+cross-platform without a stable (Developer ID) code signature. Secrets are still
+never written to SQLite, logs, reports, traces, or model prompts.
 
 In-process cache
 ----------------
-The consolidated JSON is read from the keychain at most once per sidecar launch
-and then served from memory, so neither the model API key (re-read on every
-agent run) nor any cloud secret triggers repeat prompts. The cache lives only in
-memory; it is never written to disk, logs, or the model context, and is updated
-in place on every save/delete so a rotated key takes effect immediately.
+The decrypted map is held in memory for the sidecar's lifetime and updated in
+place on every save/delete; the file is re-read at most once per launch.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import sys
 import threading
+from pathlib import Path
 
-import keyring
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-SERVICE_PREFIX = "storage-agent-workbench"
+from .. import config
 
-# The single consolidated keychain item holding every secret.
-_INDEX_SERVICE = SERVICE_PREFIX
-_INDEX_USERNAME = "secrets-v1"
+SERVICE_PREFIX = "storage-agent-workbench"  # retained for ref back-compat
 
-# In-memory mirror of the consolidated secret map, loaded lazily on first
-# access. ``None`` means "not yet read from the keychain"; a dict (possibly
-# empty) means "loaded". ``_negative`` records ``"<scope>/<name>"`` keys already
-# confirmed absent (including after a legacy-fallback miss) so we never re-probe
-# the keychain for them. A single re-entrant lock serialises the read-modify-
-# write cycle against concurrent agent runs.
+_VAULT_FILENAME = "secrets.enc"
+_KEY_FILENAME = "secrets.key"
+_NONCE_LEN = 12
+
+# In-memory mirror of the decrypted secret map (None = not yet loaded), a
+# negative cache of keys known absent, the loaded master key, and one lock
+# serialising the read-modify-write cycle against concurrent agent runs.
 _blob: dict[str, str] | None = None
 _negative: set[str] = set()
+_master_key: bytes | None = None
 _lock = threading.RLock()
 
 
-def _service(scope: str) -> str:
-    """Legacy per-scope service name (read-only, for migration)."""
-    return f"{SERVICE_PREFIX}:{scope}"
+def _vault_path() -> Path:
+    return config.data_dir() / _VAULT_FILENAME
+
+
+def _key_path() -> Path:
+    return config.data_dir() / _KEY_FILENAME
 
 
 def _blob_key(scope: str, name: str) -> str:
     return f"{scope}/{name}"
 
 
+# --- master key (per-OS, non-prompting) -------------------------------------
+
+
+def _dpapi_protect(data: bytes) -> bytes:  # pragma: no cover - Windows only
+    import ctypes
+    from ctypes import wintypes
+
+    class _BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+    buf = ctypes.create_string_buffer(data, len(data))
+    blob_in = _BLOB(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+    blob_out = _BLOB()
+    if not ctypes.windll.crypt32.CryptProtectData(
+        ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out)
+    ):
+        raise OSError("CryptProtectData failed")
+    try:
+        return ctypes.string_at(blob_out.pbData, blob_out.cbData)
+    finally:
+        ctypes.windll.kernel32.LocalFree(blob_out.pbData)
+
+
+def _dpapi_unprotect(data: bytes) -> bytes:  # pragma: no cover - Windows only
+    import ctypes
+    from ctypes import wintypes
+
+    class _BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+    buf = ctypes.create_string_buffer(data, len(data))
+    blob_in = _BLOB(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+    blob_out = _BLOB()
+    if not ctypes.windll.crypt32.CryptUnprotectData(
+        ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out)
+    ):
+        raise OSError("CryptUnprotectData failed")
+    try:
+        return ctypes.string_at(blob_out.pbData, blob_out.cbData)
+    finally:
+        ctypes.windll.kernel32.LocalFree(blob_out.pbData)
+
+
+def _is_windows() -> bool:
+    return sys.platform == "win32"
+
+
+def _write_key_file(path: Path, raw_key: bytes) -> None:
+    """Persist the master key, owner-only, never world-readable."""
+    payload = _dpapi_protect(raw_key) if _is_windows() else raw_key
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # O_EXCL so a concurrent creator can't be clobbered; 0600 perms.
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.write(fd, payload)
+    finally:
+        os.close(fd)
+
+
+def _load_master_key() -> bytes:
+    """Load the master key, creating it (once) if absent. Caller holds ``_lock``."""
+    global _master_key
+    if _master_key is not None:
+        return _master_key
+    path = _key_path()
+    if path.exists():
+        raw = path.read_bytes()
+        _master_key = _dpapi_unprotect(raw) if _is_windows() else raw
+        return _master_key
+    key = os.urandom(32)
+    try:
+        _write_key_file(path, key)
+    except FileExistsError:
+        # Lost a creation race; read what the winner wrote.
+        raw = path.read_bytes()
+        _master_key = _dpapi_unprotect(raw) if _is_windows() else raw
+        return _master_key
+    _master_key = key
+    return _master_key
+
+
+# --- vault load / persist ---------------------------------------------------
+
+
 def _ensure_loaded() -> dict[str, str]:
-    """Load the consolidated map from the keychain once. Caller holds ``_lock``."""
+    """Decrypt the vault into memory once. Caller holds ``_lock``."""
     global _blob
-    if _blob is None:
-        raw = keyring.get_password(_INDEX_SERVICE, _INDEX_USERNAME)
-        if raw:
-            try:
-                parsed = json.loads(raw)
-            except (ValueError, TypeError):
-                parsed = {}
-            _blob = parsed if isinstance(parsed, dict) else {}
-        else:
-            _blob = {}
+    if _blob is not None:
+        return _blob
+    path = _vault_path()
+    if not path.exists():
+        _blob = {}
+        return _blob
+    try:
+        token = path.read_bytes()
+        key = _load_master_key()
+        plaintext = AESGCM(key).decrypt(token[:_NONCE_LEN], token[_NONCE_LEN:], None)
+        parsed = json.loads(plaintext.decode("utf-8"))
+        _blob = parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        # Unreadable/corrupt/foreign-key vault → start empty rather than crash.
+        _blob = {}
     return _blob
 
 
 def _persist() -> None:
-    """Write the consolidated map back to the keychain. Caller holds ``_lock``."""
+    """Encrypt the in-memory map and atomically write the vault. Holds ``_lock``."""
     assert _blob is not None
-    keyring.set_password(
-        _INDEX_SERVICE, _INDEX_USERNAME, json.dumps(_blob, separators=(",", ":"))
-    )
+    key = _load_master_key()
+    nonce = os.urandom(_NONCE_LEN)
+    plaintext = json.dumps(_blob, separators=(",", ":")).encode("utf-8")
+    token = nonce + AESGCM(key).encrypt(nonce, plaintext, None)
+    path = _vault_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, token)
+    finally:
+        os.close(fd)
+    os.replace(tmp, path)  # atomic
+
+
+# --- public API (unchanged) -------------------------------------------------
 
 
 def make_ref(scope: str, name: str) -> str:
@@ -135,52 +235,33 @@ def save_secret(scope: str, name: str, value: str) -> str:
 
 
 def get_secret(scope: str, name: str) -> str | None:
-    """Fetch a stored secret, or ``None`` if it does not exist.
-
-    Served from the in-process mirror after the first keychain read (see the
-    module docstring). On a miss, falls back to the legacy per-secret item and
-    migrates it forward so existing keys keep working without re-entry.
-    """
+    """Fetch a stored secret, or ``None`` if it does not exist."""
     key = _blob_key(scope, name)
     with _lock:
         blob = _ensure_loaded()
         if key in blob:
             return blob[key]
-        if key in _negative:
-            return None
-        # Fall back to the pre-consolidation layout and migrate forward.
-        legacy = keyring.get_password(_service(scope), name)
-        if legacy is not None:
-            blob[key] = legacy
-            try:
-                _persist()
-            except Exception:
-                # Keep the in-memory copy even if the keychain write fails; the
-                # secret is still usable this session and we won't re-probe.
-                pass
-            return legacy
         _negative.add(key)
         return None
 
 
 def delete_secret(scope: str, name: str) -> None:
-    """Delete a stored secret from both the consolidated and legacy layouts."""
+    """Delete a stored secret. No error if it does not exist."""
     key = _blob_key(scope, name)
     with _lock:
         blob = _ensure_loaded()
         if blob.pop(key, None) is not None:
             _persist()
         _negative.add(key)
-        # Remove any leftover legacy item so it can't resurrect on a later read.
-        try:
-            keyring.delete_password(_service(scope), name)
-        except keyring.errors.PasswordDeleteError:
-            pass
 
 
 def _reset_for_tests() -> None:
-    """Drop the in-process cache. Used by the test harness between cases."""
-    global _blob
+    """Drop the in-process cache + master key. Used by the test harness."""
+    global _blob, _master_key
     with _lock:
         _blob = None
+        _master_key = None
         _negative.clear()
+
+
+__all__ = ["SERVICE_PREFIX", "make_ref", "parse_ref", "save_secret", "get_secret", "delete_secret"]

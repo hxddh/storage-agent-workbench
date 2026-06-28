@@ -106,7 +106,7 @@ Use the following stack unless explicitly instructed otherwise:
 - S3 SDK: boto3 / botocore
 - Local analysis engine: DuckDB + PyArrow + pandas
 - App metadata storage: SQLite
-- Secrets: Python keyring / system Keychain
+- Secrets: AES-256-GCM encrypted local vault (`security/keyring_store`), key protected per-OS (DPAPI / `0600` key file)
 - Streaming: Server-Sent Events
 - Packaging: Python sidecar via PyInstaller, launched by Tauri sidecar
 
@@ -134,15 +134,21 @@ Do not introduce these unless explicitly requested:
 
 2. Never store plaintext secrets in SQLite, logs, reports, traces, local JSON files, local YAML files, screenshots, or UI state.
 
-3. Store secrets only through system Keychain / Python keyring. All secrets are
-   consolidated into a **single** keychain item (a JSON map, `service=
-   "storage-agent-workbench"`, `username="secrets-v1"`) behind `keyring_store`'s
-   public API — deliberately, so macOS prompts once ("Always Allow" then covers
-   every secret) instead of once per secret. Do not split this back into one
-   item per secret; `keyring_store` migrates legacy per-item secrets forward on
-   read.
+3. Store secrets only through `security/keyring_store` — a single AES-256-GCM
+   **encrypted vault** (`secrets.enc` + master key in `secrets.key`) in the app
+   data dir, behind the unchanged `make_ref/parse_ref/save_secret/get_secret/
+   delete_secret` API. The master key is protected by the strongest *non-
+   prompting* mechanism per OS: DPAPI (current-user) on Windows, an `O_EXCL`
+   `0600` key file on macOS/Linux. This is deliberately **not** the OS keychain:
+   the app is ad-hoc-signed and cross-platform, and the keychain re-prompts on
+   every update (macOS) or is absent/prompts on headless Linux. Do not move
+   secrets back into the keychain (or into SQLite/files in plaintext) — and keep
+   it prompt-free. (A stable Developer-ID signature could later re-enable the
+   keychain on macOS with no prompts.)
 
-4. SQLite may store only secret references such as `keyring://scope/name`.
+4. SQLite may store only secret references such as `keyring://scope/name` (the
+   `keyring://` scheme is a stable opaque ref; storage is the vault, not the OS
+   keyring).
 
 5. Do not implement a generic shell execution tool.
 
