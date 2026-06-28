@@ -17,8 +17,8 @@ import {
 import type { CloudProvider, ModelProvider } from "../types";
 import { Button, Field, Select, TextInput } from "../components/ui";
 import { CloudProviderTester } from "../components/CloudProviderTester";
+import { useI18n } from "../i18n";
 
-const KEYCHAIN_HINT = "Saved in the OS keychain · leave blank to keep";
 const parseList = (s: string) =>
   s
     .split(/[\n,]/)
@@ -28,18 +28,19 @@ const parseList = (s: string) =>
 type Tab = "model" | "cloud";
 
 export function ProvidersView({ onRunCreated }: { onRunCreated?: (runId: string) => void } = {}) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>("model");
   return (
     <div className="flex flex-1 flex-col overflow-auto bg-canvas">
       <header className="border-b border-edge px-8 py-4">
-        <h1 className="text-lg font-semibold text-gray-100">Providers</h1>
-        <p className="text-sm text-gray-500">Configure model and cloud storage providers</p>
+        <h1 className="text-lg font-semibold text-gray-100">{t("prov.title")}</h1>
+        <p className="text-sm text-gray-500">{t("prov.subtitle")}</p>
         <div className="mt-3 flex gap-2">
           <Button variant={tab === "model" ? "primary" : "default"} onClick={() => setTab("model")}>
-            Model Providers
+            {t("prov.tabModel")}
           </Button>
           <Button variant={tab === "cloud" ? "primary" : "default"} onClick={() => setTab("cloud")}>
-            Cloud Providers
+            {t("prov.tabCloud")}
           </Button>
         </div>
       </header>
@@ -61,6 +62,7 @@ const emptyModelForm: ModelProviderInput = {
 };
 
 function ModelProvidersPanel() {
+  const { t } = useI18n();
   const [items, setItems] = useState<ModelProvider[]>([]);
   const [editing, setEditing] = useState<ModelProvider | null>(null);
   const [creating, setCreating] = useState(false);
@@ -117,7 +119,7 @@ function ModelProvidersPanel() {
   };
 
   const remove = async (p: ModelProvider) => {
-    if (!confirm(`Delete model provider "${p.name}"?`)) return;
+    if (!confirm(t("prov.confirmDeleteModel", { name: p.name }))) return;
     await deleteModelProvider(p.id);
     reload();
   };
@@ -126,7 +128,7 @@ function ModelProvidersPanel() {
     setStatus(null);
     try {
       const r = await testModelProvider(p.id);
-      setStatus(`${p.name}: ${r.ok ? "OK" : "incomplete"} — ${r.detail}`);
+      setStatus(`${p.name}: ${r.ok ? t("prov.testOk") : t("prov.testIncomplete")} — ${r.detail}`);
     } catch (e) {
       setStatus(String(e));
     }
@@ -137,38 +139,38 @@ function ModelProvidersPanel() {
   return (
     <div className="max-w-3xl">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-200">Model Providers</h2>
-        {!showForm && <Button variant="primary" onClick={openCreate}>+ Add model provider</Button>}
+        <h2 className="text-sm font-semibold text-gray-200">{t("prov.tabModel")}</h2>
+        {!showForm && <Button variant="primary" onClick={openCreate}>{t("prov.addModel")}</Button>}
       </div>
       {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
       {status && <p className="mb-3 text-xs text-emerald-400" data-testid="model-test-status">{status}</p>}
 
       {showForm ? (
         <div className="mb-6 rounded-lg border border-edge bg-panel p-4">
-          <Field label="Name">
+          <Field label={t("prov.fName")}>
             <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="OpenAI prod" />
           </Field>
-          <Field label="Provider type">
+          <Field label={t("prov.fProviderType")}>
             <TextInput value={form.provider_type} onChange={(e) => setForm({ ...form, provider_type: e.target.value })} placeholder="openai" />
           </Field>
-          <Field label="Base URL">
+          <Field label={t("prov.fBaseUrl")}>
             <TextInput value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} placeholder="https://api.openai.com/v1" />
           </Field>
-          <Field label="Model">
+          <Field label={t("prov.fModel")}>
             <TextInput value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="gpt-4o" />
           </Field>
-          <Field label="API key" hint={editing && editing.has_api_key ? KEYCHAIN_HINT : "Stored only in the OS keychain — never shown again."}>
+          <Field label={t("prov.fApiKey")} hint={editing && editing.has_api_key ? t("prov.hintKeep") : t("prov.hintNew")}>
             <TextInput
               type="password"
               autoComplete="off"
               value={form.api_key}
               onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-              placeholder={editing && editing.has_api_key ? "••••••••（已保存）" : ""}
+              placeholder={editing && editing.has_api_key ? t("prov.savedPlaceholder") : ""}
             />
           </Field>
           <div className="flex gap-2">
-            <Button variant="primary" onClick={submit}>{editing ? "Save" : "Create"}</Button>
-            <Button variant="ghost" onClick={close}>Cancel</Button>
+            <Button variant="primary" onClick={submit}>{editing ? t("prov.save") : t("prov.create")}</Button>
+            <Button variant="ghost" onClick={close}>{t("prov.cancel")}</Button>
           </div>
         </div>
       ) : null}
@@ -181,18 +183,18 @@ function ModelProvidersPanel() {
                 <div className="text-sm font-medium text-gray-100">{p.name}</div>
                 <div className="text-xs text-gray-500">{p.provider_type} · {p.model || "—"} · {p.base_url || "—"}</div>
                 <div className="mt-1 text-xs text-gray-500">
-                  API key: {p.has_api_key ? <span className="text-emerald-400">saved in keychain</span> : <span className="text-gray-600">not set</span>}
+                  {t("prov.apiKeyLabel")}: {p.has_api_key ? <span className="text-emerald-400">{t("prov.savedKeychain")}</span> : <span className="text-gray-600">{t("prov.notSet")}</span>}
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button variant="ghost" onClick={() => runTest(p)}>Test</Button>
-                <Button onClick={() => openEdit(p)}>Edit</Button>
-                <Button variant="danger" onClick={() => remove(p)}>Delete</Button>
+                <Button variant="ghost" onClick={() => runTest(p)}>{t("prov.test")}</Button>
+                <Button onClick={() => openEdit(p)}>{t("prov.edit")}</Button>
+                <Button variant="danger" onClick={() => remove(p)}>{t("prov.delete")}</Button>
               </div>
             </div>
           </li>
         ))}
-        {items.length === 0 && !showForm && <li className="text-sm text-gray-600">No model providers yet.</li>}
+        {items.length === 0 && !showForm && <li className="text-sm text-gray-600">{t("prov.noModel")}</li>}
       </ul>
     </div>
   );
@@ -260,6 +262,7 @@ const CLOUD_PRESETS: Preset[] = [
 ];
 
 function CloudProvidersPanel({ onRunCreated }: { onRunCreated?: (runId: string) => void }) {
+  const { t } = useI18n();
   const [items, setItems] = useState<CloudProvider[]>([]);
   const [editing, setEditing] = useState<CloudProvider | null>(null);
   const [creating, setCreating] = useState(false);
@@ -388,26 +391,26 @@ function CloudProvidersPanel({ onRunCreated }: { onRunCreated?: (runId: string) 
   };
 
   const remove = async (p: CloudProvider) => {
-    if (!confirm(`Delete cloud provider "${p.name}"?`)) return;
+    if (!confirm(t("prov.confirmDeleteCloud", { name: p.name }))) return;
     await deleteCloudProvider(p.id);
     reload();
   };
 
-  const secretHint = (has: boolean) => (editing && has ? "Saved in the OS keychain · leave blank to keep" : "Stored only in the OS keychain — never shown again.");
+  const secretHint = (has: boolean) => (editing && has ? t("prov.hintKeep") : t("prov.hintNew"));
   const showForm = creating || editing;
 
   return (
     <div className="max-w-3xl">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-200">Cloud providers</h2>
-        {!showForm && <Button variant="primary" onClick={openCreate}>Add cloud provider</Button>}
+        <h2 className="text-sm font-semibold text-gray-200">{t("prov.tabCloud")}</h2>
+        {!showForm && <Button variant="primary" onClick={openCreate}>{t("prov.addCloud")}</Button>}
       </div>
       {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
 
       {showForm ? (
         <div className="mb-6 rounded-xl border border-edge bg-panel p-4">
           {!editing && (
-            <Field label="Provider">
+            <Field label={t("prov.fProvider")}>
               <Select value={presetId} onChange={(e) => applyPreset(e.target.value)}>
                 {CLOUD_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
               </Select>
@@ -416,29 +419,29 @@ function CloudProvidersPanel({ onRunCreated }: { onRunCreated?: (runId: string) 
 
           {presetId === "custom" || editing ? (
             <div className="grid grid-cols-2 gap-x-4">
-              <Field label="Endpoint URL">
+              <Field label={t("prov.fEndpoint")}>
                 <TextInput value={form.endpoint_url} onChange={(e) => setForm({ ...form, endpoint_url: e.target.value })} placeholder="https://s3.example.com" />
               </Field>
-              <Field label="Region">
+              <Field label={t("prov.fRegion")}>
                 <TextInput value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} placeholder="us-east-1" />
               </Field>
             </div>
           ) : preset.variable === "account" ? (
-            <Field label="Account ID" hint={preset.hint}>
+            <Field label={t("prov.fAccountId")} hint={preset.hint}>
               <TextInput value={form.account} onChange={(e) => setForm({ ...form, account: e.target.value })} placeholder="a1b2c3d4e5f6…" />
             </Field>
           ) : preset.variable === "region" ? (
-            <Field label="Region" hint={preset.hint}>
+            <Field label={t("prov.fRegion")} hint={preset.hint}>
               <TextInput value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} placeholder={preset.regionPlaceholder || preset.regionDefault} />
             </Field>
           ) : null}
 
           <div className="grid grid-cols-2 gap-x-4">
-            <Field label="Access key ID" hint={secretHint(editing?.has_access_key ?? false)}>
-              <TextInput type="password" autoComplete="off" value={form.access_key} onChange={(e) => setForm({ ...form, access_key: e.target.value })} placeholder={editing?.has_access_key ? "•••••••• (saved)" : ""} />
+            <Field label={t("prov.fAccessKey")} hint={secretHint(editing?.has_access_key ?? false)}>
+              <TextInput type="password" autoComplete="off" value={form.access_key} onChange={(e) => setForm({ ...form, access_key: e.target.value })} placeholder={editing?.has_access_key ? t("prov.savedPlaceholder") : ""} />
             </Field>
-            <Field label="Secret access key" hint={secretHint(editing?.has_secret_key ?? false)}>
-              <TextInput type="password" autoComplete="off" value={form.secret_key} onChange={(e) => setForm({ ...form, secret_key: e.target.value })} placeholder={editing?.has_secret_key ? "•••••••• (saved)" : ""} />
+            <Field label={t("prov.fSecretKey")} hint={secretHint(editing?.has_secret_key ?? false)}>
+              <TextInput type="password" autoComplete="off" value={form.secret_key} onChange={(e) => setForm({ ...form, secret_key: e.target.value })} placeholder={editing?.has_secret_key ? t("prov.savedPlaceholder") : ""} />
             </Field>
           </div>
 
@@ -449,48 +452,48 @@ function CloudProvidersPanel({ onRunCreated }: { onRunCreated?: (runId: string) 
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${advanced ? "rotate-90" : ""}`}>
               <polyline points="9 18 15 12 9 6" />
             </svg>
-            Advanced
+            {t("prov.advanced")}
           </button>
 
           {advanced && (
             <div className="mb-1 rounded-lg border border-edge bg-canvas/50 p-3">
               <div className="grid grid-cols-2 gap-x-4">
-                <Field label="Name">
+                <Field label={t("prov.fName")}>
                   <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={preset.label} />
                 </Field>
-                <Field label="Mode">
+                <Field label={t("prov.fMode")}>
                   <Select value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value as CloudForm["mode"] })}>
                     <option value="readonly">readonly</option>
                     <option value="test-write">test-write</option>
                   </Select>
                 </Field>
-                <Field label="Addressing style">
+                <Field label={t("prov.fAddressing")}>
                   <Select value={form.addressing_style} onChange={(e) => setForm({ ...form, addressing_style: e.target.value })}>
                     <option value="virtual">virtual</option>
                     <option value="path">path</option>
                   </Select>
                 </Field>
-                <Field label="Signature version">
+                <Field label={t("prov.fSignature")}>
                   <TextInput value={form.signature_version} onChange={(e) => setForm({ ...form, signature_version: e.target.value })} placeholder="s3v4" />
                 </Field>
               </div>
-              <Field label="Session token (optional)" hint={secretHint(editing?.has_session_token ?? false)}>
-                <TextInput type="password" autoComplete="off" value={form.session_token} onChange={(e) => setForm({ ...form, session_token: e.target.value })} placeholder={editing?.has_session_token ? "•••••••• (saved)" : ""} />
+              <Field label={t("prov.fSessionToken")} hint={secretHint(editing?.has_session_token ?? false)}>
+                <TextInput type="password" autoComplete="off" value={form.session_token} onChange={(e) => setForm({ ...form, session_token: e.target.value })} placeholder={editing?.has_session_token ? t("prov.savedPlaceholder") : ""} />
               </Field>
-              <Field label="Allowed buckets" hint="comma- or newline-separated; empty = all visible">
+              <Field label={t("prov.fAllowedBuckets")} hint={t("prov.hintBuckets")}>
                 <TextInput value={form.allowed_buckets} onChange={(e) => setForm({ ...form, allowed_buckets: e.target.value })} placeholder="bucket-alpha, bucket-beta" />
               </Field>
-              <Field label="Allowed prefixes" hint="comma- or newline-separated">
+              <Field label={t("prov.fAllowedPrefixes")} hint={t("prov.hintPrefixes")}>
                 <TextInput value={form.allowed_prefixes} onChange={(e) => setForm({ ...form, allowed_prefixes: e.target.value })} placeholder="logs/, datasets/" />
               </Field>
             </div>
           )}
 
           <div className="mt-2 flex gap-2">
-            <Button variant="primary" onClick={submit}>{editing ? "Save" : "Add provider"}</Button>
-            <Button variant="ghost" onClick={close}>Cancel</Button>
+            <Button variant="primary" onClick={submit}>{editing ? t("prov.save") : t("prov.addProvider")}</Button>
+            <Button variant="ghost" onClick={close}>{t("prov.cancel")}</Button>
           </div>
-          <p className="mt-2 text-[11px] text-gray-600">Keys are stored in the OS keychain and used read-only by default.</p>
+          <p className="mt-2 text-[11px] text-gray-600">{t("prov.footerKeys")}</p>
         </div>
       ) : null}
 
@@ -502,29 +505,29 @@ function CloudProvidersPanel({ onRunCreated }: { onRunCreated?: (runId: string) 
                 <div className="text-sm font-medium text-gray-100">{p.name}</div>
                 <div className="text-xs text-gray-500">{p.provider_type} · {p.region || "—"} · {p.endpoint_url || "—"}</div>
                 <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-gray-500">
-                  <span>mode: <span className={p.mode === "readonly" ? "text-emerald-400" : "text-amber-400"}>{p.mode}</span></span>
-                  <span>access key: {p.has_access_key ? <span className="text-emerald-400">saved in keychain</span> : <span className="text-gray-600">not set</span>}</span>
-                  <span>secret key: {p.has_secret_key ? <span className="text-emerald-400">saved in keychain</span> : <span className="text-gray-600">not set</span>}</span>
+                  <span>{t("prov.modeLabel")}: <span className={p.mode === "readonly" ? "text-emerald-400" : "text-amber-400"}>{p.mode}</span></span>
+                  <span>{t("prov.accessKeyLabel")}: {p.has_access_key ? <span className="text-emerald-400">{t("prov.savedKeychain")}</span> : <span className="text-gray-600">{t("prov.notSet")}</span>}</span>
+                  <span>{t("prov.secretKeyLabel")}: {p.has_secret_key ? <span className="text-emerald-400">{t("prov.savedKeychain")}</span> : <span className="text-gray-600">{t("prov.notSet")}</span>}</span>
                 </div>
                 {(p.allowed_buckets.length > 0 || p.allowed_prefixes.length > 0) && (
                   <div className="mt-1 text-xs text-gray-600">
-                    buckets: {p.allowed_buckets.join(", ") || "—"} · prefixes: {p.allowed_prefixes.join(", ") || "—"}
+                    {t("prov.bucketsLabel")}: {p.allowed_buckets.join(", ") || "—"} · {t("prov.prefixesLabel")}: {p.allowed_prefixes.join(", ") || "—"}
                   </div>
                 )}
               </div>
               <div className="flex gap-2">
                 <Button variant={testingIds.has(p.id) ? "primary" : "default"} onClick={() => toggleTesting(p.id)}>
-                  Test Connection
+                  {t("prov.testConnection")}
                 </Button>
-                <Button onClick={() => discoverAccount(p)}>Discover account</Button>
-                <Button onClick={() => openEdit(p)}>Edit</Button>
-                <Button variant="danger" onClick={() => remove(p)}>Delete</Button>
+                <Button onClick={() => discoverAccount(p)}>{t("prov.discover")}</Button>
+                <Button onClick={() => openEdit(p)}>{t("prov.edit")}</Button>
+                <Button variant="danger" onClick={() => remove(p)}>{t("prov.delete")}</Button>
               </div>
             </div>
             {testingIds.has(p.id) && <CloudProviderTester provider={p} />}
           </li>
         ))}
-        {items.length === 0 && !showForm && <li className="text-sm text-gray-600">No cloud providers yet.</li>}
+        {items.length === 0 && !showForm && <li className="text-sm text-gray-600">{t("prov.noCloud")}</li>}
       </ul>
     </div>
   );

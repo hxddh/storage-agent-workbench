@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import type { NextAction, SessionRunLink, ToolActivity, TriageCase } from "../types";
 import { RunDetail } from "./RunDetail";
 import { Markdown } from "./Markdown";
+import { useI18n } from "../i18n";
 
-const RUN_STATUS: Record<string, { cls: string; label: string }> = {
-  pending: { cls: "text-gray-400", label: "queued" },
-  running: { cls: "text-amber-300", label: "running" },
-  completed: { cls: "text-emerald-300", label: "done" },
-  failed: { cls: "text-red-300", label: "failed" },
-  not_implemented: { cls: "text-gray-500", label: "n/a" },
+const RUN_STATUS: Record<string, { cls: string; key: string }> = {
+  pending: { cls: "text-gray-400", key: "run.queued" },
+  running: { cls: "text-amber-300", key: "run.running" },
+  completed: { cls: "text-emerald-300", key: "run.done" },
+  failed: { cls: "text-red-300", key: "run.failed" },
+  not_implemented: { cls: "text-gray-500", key: "run.na" },
 };
 
 const CONF_PILL: Record<string, string> = {
@@ -35,6 +36,7 @@ export function MessageCard({
   toolActivity?: ToolActivity[];
   streaming?: boolean;
 }) {
+  const { t } = useI18n();
   if (role === "user") {
     return (
       <div className="flex justify-end animate-fade-in-up">
@@ -51,7 +53,7 @@ export function MessageCard({
     <div className="group animate-fade-in-up">
       <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-accent-soft">
         {Spark}
-        Storage Agent
+        {t("card.agentName")}
         {!streaming && <CopyButton text={content || ""} />}
       </div>
       {toolActivity && toolActivity.length > 0 && <ToolActivityList items={toolActivity} />}
@@ -93,6 +95,7 @@ function ToolActivityList({ items }: { items: ToolActivity[] }) {
 }
 
 function CopyButton({ text }: { text: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -103,32 +106,33 @@ function CopyButton({ text }: { text: string }) {
         })
       }
       className="ml-1 flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-normal text-gray-600 opacity-0 transition-opacity hover:text-gray-300 group-hover:opacity-100"
-      aria-label="Copy message"
+      aria-label={t("common.copy")}
     >
       {copied ? (
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
       ) : (
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
       )}
-      {copied ? "Copied" : "Copy"}
+      {copied ? t("common.copied") : t("common.copy")}
     </button>
   );
 }
 
 /** Animated "agent is working" placeholder shown while a reply is in flight. */
 export function ThinkingBubble() {
-  const labels = ["Thinking…", "Consulting StorageOps skills…", "Grounding in evidence…", "Drafting a response…"];
+  const { t } = useI18n();
+  const labels = [t("think.0"), t("think.1"), t("think.2"), t("think.3")];
   const [i, setI] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setI((x) => (x + 1) % labels.length), 2200);
-    return () => clearInterval(t);
+    const timer = setInterval(() => setI((x) => (x + 1) % labels.length), 2200);
+    return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
     <div className="animate-fade-in">
       <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-accent-soft">
         {Spark}
-        Storage Agent
+        {t("card.agentName")}
       </div>
       <div className="flex items-center gap-2.5 text-[13px] text-gray-500">
         <span className="flex gap-1">
@@ -144,8 +148,10 @@ export function ThinkingBubble() {
 
 /** A run rendered as a collapsible tool-call block (embeds the full transcript). */
 export function RunCard({ run }: { run: SessionRunLink }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const st = RUN_STATUS[run.status] ?? { cls: "text-gray-400", label: run.status };
+  const st = RUN_STATUS[run.status] ?? { cls: "text-gray-400", key: "" };
+  const statusLabel = st.key ? t(st.key) : run.status;
   return (
     <div className="animate-fade-in-up overflow-hidden rounded-xl border border-edge bg-panel/60">
       <button
@@ -160,7 +166,7 @@ export function RunCard({ run }: { run: SessionRunLink }) {
           {run.status === "completed" && (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
           )}
-          {st.label}
+          {statusLabel}
         </span>
         <span className="min-w-0 flex-1 truncate text-[11.5px] text-gray-500">{run.final_summary || ""}</span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`shrink-0 text-gray-600 transition-transform ${open ? "rotate-180" : ""}`}>
@@ -178,6 +184,7 @@ export function RunCard({ run }: { run: SessionRunLink }) {
 
 /** An error-triage case rendered as a tool-style block. */
 export function TriageCard({ c }: { c: TriageCase }) {
+  const { t } = useI18n();
   return (
     <div className="animate-fade-in-up overflow-hidden rounded-xl border border-edge bg-panel/60">
       <div className="flex items-center gap-2 border-b border-edge/70 px-3.5 py-2">
@@ -185,7 +192,7 @@ export function TriageCard({ c }: { c: TriageCase }) {
           <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
           <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
-        <span className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Error triage</span>
+        <span className="text-[11px] font-medium uppercase tracking-wider text-gray-500">{t("triage.title")}</span>
       </div>
       <div className="px-3.5 py-3 text-[13px]">
         <div className="text-gray-200">{c.summary}</div>
@@ -198,7 +205,7 @@ export function TriageCard({ c }: { c: TriageCase }) {
               <span className="min-w-0">
                 <span className="text-gray-200">{cc.title}</span>
                 {cc.next_checks?.length ? (
-                  <span className="text-gray-500"> — next: {cc.next_checks.slice(0, 3).join("; ")}</span>
+                  <span className="text-gray-500"> — {t("proposal.next")}: {cc.next_checks.slice(0, 3).join("; ")}</span>
                 ) : null}
               </span>
             </li>
@@ -226,6 +233,7 @@ export function ProposalCard({
   onReview: (p: NextAction) => void;
   onPrepare: (p: NextAction) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="animate-fade-in-up rounded-xl border border-accent/25 bg-accent-dim/40 px-3 py-2.5">
       <div className="flex items-center gap-2.5">
@@ -237,13 +245,13 @@ export function ProposalCard({
           onClick={() => onReview(proposal)}
           className="shrink-0 rounded-md px-2 py-1 text-[12px] text-gray-400 transition-colors hover:bg-hover hover:text-gray-200"
         >
-          Review
+          {t("proposal.review")}
         </button>
         <button
           onClick={() => onPrepare(proposal)}
           className="shrink-0 rounded-md bg-accent/15 px-2.5 py-1 text-[12px] font-medium text-accent-soft transition-colors hover:bg-accent/25"
         >
-          Prepare
+          {t("proposal.prepare")}
         </button>
       </div>
       {preview ? <div className="mt-2 pl-6 text-[11px] text-gray-500">{preview}</div> : null}

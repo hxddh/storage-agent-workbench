@@ -2,8 +2,64 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* ---------------------------------------------------------------------------
+ * Theming. All surface/accent/neutral colors are CSS variables so the app can
+ * switch between dark (default) and light without touching component classes.
+ * Tailwind's `gray` ramp is remapped to these vars too (see tailwind.config),
+ * so existing text-gray-100..700 usages invert correctly per theme.
+ * ------------------------------------------------------------------------- */
+
+:root,
+:root[data-theme="dark"] {
   color-scheme: dark;
+  --canvas: #0b0b0d;
+  --sidebar: #0e0f12;
+  --panel: #141519;
+  --elevated: #1a1c21;
+  --hover: #202329;
+  --edge: #1d1f25;
+  --edge-strong: #2a2d35;
+  --accent: #6d8bff;
+  --accent-soft: #84acff;
+  --accent-dim: #161a2b;
+  /* Neutral ramp: 100 = strongest (near-white), 700 = faintest. */
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --scrollbar-thumb: #262a33;
+  --scrollbar-thumb-hover: #3a3f4b;
+  --selection: rgba(109, 139, 255, 0.3);
+  --focus-ring: rgba(109, 139, 255, 0.55);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #ffffff;
+  --sidebar: #f7f7f8;
+  --panel: #ffffff;
+  --elevated: #f3f4f6;
+  --hover: #eceef1;
+  --edge: #e6e7ea;
+  --edge-strong: #d3d5da;
+  --accent: #4f63e0;
+  --accent-soft: #3f52d4;
+  --accent-dim: #eef1fe;
+  /* Neutral ramp inverted: 100 = strongest (near-black), 700 = faintest. */
+  --gray-100: #18181b;
+  --gray-200: #27272a;
+  --gray-300: #3f3f46;
+  --gray-400: #52525b;
+  --gray-500: #6b7280;
+  --gray-600: #9aa0aa;
+  --gray-700: #c4c7ce;
+  --scrollbar-thumb: #d4d4d8;
+  --scrollbar-thumb-hover: #b8b9c0;
+  --selection: rgba(79, 99, 224, 0.22);
+  --focus-ring: rgba(79, 99, 224, 0.55);
 }
 
 html,
@@ -19,20 +75,19 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   letter-spacing: -0.006em;
-  background-color: #0b0b0d;
-  color: #ededf0;
+  background-color: var(--canvas);
+  color: var(--gray-100);
 }
 
 /* Selection */
 ::selection {
-  background: rgba(109, 139, 255, 0.3);
-  color: #fff;
+  background: var(--selection);
 }
 
 /* Thin, unobtrusive scrollbars (the polished-app tell). */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2a2e37 transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 ::-webkit-scrollbar {
   width: 10px;
@@ -42,20 +97,20 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background-color: #262a33;
+  background-color: var(--scrollbar-thumb);
   border-radius: 9999px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background-color: #3a3f4b;
+  background-color: var(--scrollbar-thumb-hover);
   background-clip: content-box;
 }
 
 /* Visible keyboard focus only (not on mouse click). */
 :focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px #0b0b0d, 0 0 0 4px rgba(109, 139, 255, 0.55);
+  box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--focus-ring);
   border-radius: 0.5rem;
 }
 
