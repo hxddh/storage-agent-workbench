@@ -2,16 +2,19 @@
 
 Extends the agent planner to ``access_log_analysis`` and ``inventory_analysis``.
 Unlike the diagnostic/config planner (Phase 07), this path is **interpretation
-only**: the deterministic analysis runs first and produces metrics + findings,
-then the model is given ONLY a bounded, sanitized, aggregated context (run +
-dataset metadata + deterministic metrics + deterministic findings) and asked to
-write a structured narrative.
+first**: the deterministic analysis runs first and produces metrics + findings,
+then the model is given a bounded, sanitized, aggregated context (run + dataset
+metadata + deterministic metrics + deterministic findings) and asked to write a
+structured narrative.
 
-Why no tools: the model never calls a tool here, so it has no path to raw log
-lines, raw inventory rows, full key lists, arbitrary SQL, object bodies, or any
-mutating/destructive S3 operation. The only thing it can read is the sanitized
-aggregate context this module builds. The real LLM call is behind the
-``ANALYSIS_LOOP`` seam so tests inject a fake (no SDK / no API key needed).
+Drill-down (Phase 2): the narrator additionally gets two *bounded, read-only
+aggregate* tools over the already-local DuckDB dataset (``analysis.drilldown``)
+so it can ask follow-up questions ("which prefixes carry the 5xx?") instead of
+being frozen to one pre-computed view. It still has NO path to raw log lines,
+inventory rows, full key lists, arbitrary SQL, object bodies, or any
+mutating/destructive S3 op — only whitelisted GROUP BY / COUNT aggregates run,
+with the filter value always bound, never inlined. The real LLM call is behind
+the ``ANALYSIS_LOOP`` seam so tests inject a fake (no SDK / no API key needed).
 
 Guarantees enforced in code (not just the prompt):
 - context is bounded (lists capped at SAMPLE_LIMIT=20) and redacted, and is
@@ -64,11 +67,16 @@ def fields_for(run_type: str) -> dict[str, str]:
 # --- prompts ----------------------------------------------------------------
 
 ANALYSIS_SAFETY_RULES = [
-    "You receive ONLY pre-computed, aggregated, redacted metrics and findings.",
-    "You have NO tools: you cannot run SQL, read raw logs/rows, list objects, "
-    "download bodies, or call any S3 API.",
-    "Treat the deterministic metrics and findings as the only ground truth; "
-    "every claim you make must be traceable to a number or finding shown to you.",
+    "You receive pre-computed, aggregated, redacted metrics and findings.",
+    "You MAY drill down with two bounded, read-only aggregate tools over the "
+    "already-local dataset — aggregate_by(dimension, metric, limit) and "
+    "count_where(field, op, value) — to investigate the metrics further (e.g. "
+    "which prefixes carry the 5xx errors). You CANNOT run free SQL, read raw "
+    "log lines / inventory rows / object keys, download bodies, or call any S3 "
+    "API; only whitelisted aggregates are available.",
+    "Treat the deterministic metrics, findings, and any drill-down aggregates "
+    "you fetch as the only ground truth; every claim must be traceable to one "
+    "of them.",
     "Do not invent raw log lines, object keys, IPs, byte counts, or timestamps "
     "that are not present in the context.",
     "Never output credentials, access/secret/session keys, model API keys, "
@@ -204,11 +212,62 @@ def parse_analysis_output(run_type: str, raw: Any) -> dict[str, Any]:
     return out
 
 
-# --- the LLM loop seam (no tools) -------------------------------------------
+# --- bounded drill-down tools over the local dataset ------------------------
+
+# run_type -> the DuckDB table the deterministic pass populated.
+_TABLE_FOR = {
+    "access_log_analysis": "access_logs",
+    "inventory_analysis": "inventory_objects",
+}
+
+
+def build_drilldown_tools(function_tool: Any, duckdb_path: str, table: str) -> list[Any]:
+    """Two bounded, read-only aggregate tools over the run's local DuckDB table.
+
+    Returns [] if the table is unknown. Every query is a whitelisted GROUP BY or
+    COUNT (see ``analysis.drilldown``); raw rows / free SQL / bodies are
+    unreachable, and the filter value is always a bound parameter.
+    """
+    from ..analysis import drilldown
+    try:
+        dims = drilldown.dimensions(table)
+        mets = drilldown.metrics(table)
+        flds = drilldown.filters(table)
+    except drilldown.DrillError:
+        return []
+
+    @function_tool
+    def aggregate_by(dimension: str, metric: str = "count", limit: int = 20) -> str:
+        """Group the dataset by one dimension and rank by one aggregate metric (read-only; top results only, no raw rows). Args: dimension (one of the allowed dimensions), metric (one of the allowed metrics, default count), limit (<=50)."""
+        try:
+            rows = drilldown.aggregate_by(duckdb_path, table, dimension, metric, limit)
+        except drilldown.DrillError as exc:
+            return json.dumps({"error": str(exc)})
+        return json.dumps({"dimension": dimension, "metric": metric, "rows": rows})
+
+    @function_tool
+    def count_where(field: str, op: str, value: str) -> str:
+        """Count rows where one field compares to a value (read-only single aggregate). Args: field (one of the allowed fields), op (one of = != < <= > >=), value (the value to compare; bound as a parameter)."""
+        try:
+            n = drilldown.count_where(duckdb_path, table, field, op, value)
+        except drilldown.DrillError as exc:
+            return json.dumps({"error": str(exc)})
+        return json.dumps({"field": field, "op": op, "value": value, "count": n})
+
+    aggregate_by.__doc__ = (
+        (aggregate_by.__doc__ or "")
+        + f"\nAllowed dimensions: {dims}. Allowed metrics: {mets}."
+    )
+    count_where.__doc__ = (count_where.__doc__ or "") + f"\nAllowed fields: {flds}."
+    return [aggregate_by, count_where]
+
+
+# --- the LLM loop seam (interpretation + bounded drill-down) -----------------
 
 
 def _sdk_analysis_loop(spec: dict[str, Any]) -> Any:
-    """Default one-shot loop via the OpenAI Agents SDK (lazy import, no tools).
+    """Default loop via the OpenAI Agents SDK (lazy import) with bounded
+    drill-down aggregate tools over the run's local dataset.
 
     Any failure (missing SDK, client/runtime error) surfaces as AgentUnavailable
     so the run fails cleanly. Tests replace ``ANALYSIS_LOOP`` so this is never
@@ -216,16 +275,22 @@ def _sdk_analysis_loop(spec: dict[str, Any]) -> Any:
     """
     try:
         import openai  # noqa: F401
-        from agents import Runner
+        from agents import Runner, function_tool
     except Exception as exc:  # noqa: BLE001
         raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
 
     creds = spec["creds"]
     try:
-        # No tools: the model can only read the sanitized context we pass in. Uses
-        # the shared per-run client builder (no SDK globals → concurrency-safe).
+        # The model can read the sanitized context plus a few bounded, read-only
+        # aggregates over the already-local dataset. Uses the shared per-run
+        # client builder (no SDK globals → concurrency-safe).
         from .agent_service import build_agent
-        agent = build_agent(creds, [], spec["instructions"], name="Storage Analysis Narrator")
+        tools: list[Any] = []
+        duckdb_path = spec.get("duckdb_path")
+        table = spec.get("table")
+        if duckdb_path and table:
+            tools = build_drilldown_tools(function_tool, duckdb_path, table)
+        agent = build_agent(creds, tools, spec["instructions"], name="Storage Analysis Narrator")
         result = Runner.run_sync(agent, spec["context_text"])
         return getattr(result, "final_output", "")
     except AgentUnavailable:
@@ -248,10 +313,14 @@ def interpret(
     metrics: dict[str, Any],
     findings: list[dict[str, str]],
     creds: dict[str, Any],
+    duckdb_path: str | None = None,
 ) -> dict[str, Any]:
-    """Run the interpretation-only agent over sanitized aggregates.
+    """Run the interpretation narrator over sanitized aggregates.
 
-    Returns the parsed, sanitized field dict. Raises AgentUnavailable on failure.
+    When ``duckdb_path`` is given, the narrator also gets bounded, read-only
+    drill-down aggregate tools over that local dataset (see
+    ``build_drilldown_tools``). Returns the parsed, sanitized field dict. Raises
+    AgentUnavailable on failure.
     """
     if run_type not in ANALYSIS_SUPPORTED_RUN_TYPES:
         raise AgentUnavailable(f"Agent narration is not supported for run_type '{run_type}'.")
@@ -262,6 +331,8 @@ def interpret(
         "instructions": _instructions_for(run_type),
         "run_type": run_type,
         "creds": creds,
+        "duckdb_path": duckdb_path,
+        "table": _TABLE_FOR.get(run_type),
     }
     raw = ANALYSIS_LOOP(spec)
     return parse_analysis_output(run_type, raw)

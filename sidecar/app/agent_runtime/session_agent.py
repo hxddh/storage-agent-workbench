@@ -25,7 +25,9 @@ from typing import Any
 from ..security.redaction import redact_text
 from ..skills import context as skill_context
 from ..skills import contract as skill_contract
+from . import autonomy
 from . import guardrails
+from . import session_action_tools
 from . import session_tools
 from .agent_service import AgentUnavailable
 from .guardrails import strip_chain_of_thought
@@ -110,11 +112,30 @@ INSTRUCTIONS = (
     "or results you didn't obtain from a tool or the summary. Be concise and "
     "concrete; make clear which statements are tool-verified facts vs. "
     "inferences.\n"
-    "All tools are read-only. For anything that downloads data or runs an "
-    "analysis/large scan, propose it as a next step (do not imply you ran it). "
-    "Follow all safety_rules.\n\n"
+    "All investigator tools are read-only. For anything that downloads data or "
+    "runs an analysis/large scan, propose it as a next step (do not imply you "
+    "ran it). Follow all safety_rules.\n\n"
     f"Next-action types you may propose (for confirmed runs only): {_PROPOSAL_ACTION_TYPES}."
 )
+
+# Appended when the autonomy policy lets the agent EXECUTE read-only runs itself.
+_EXECUTION_CLAUSE = (
+    "\n\nAUTONOMY: you may also EXECUTE read-only runs yourself when they help "
+    "answer the question — run_diagnostic(provider_id, bucket), "
+    "run_bucket_config_review(provider_id, bucket), and "
+    "run_account_discovery(provider_id). These actually run and record a real "
+    "(read-only, audited) run, then return its findings; use them to confirm a "
+    "hypothesis rather than only suggesting it, and fold the findings into your "
+    "answer. Expensive/data-moving work (dataset analysis, evidence import) is "
+    "still NOT auto-run — propose those as next steps."
+)
+
+
+def instructions_for(policy: str) -> str:
+    """Base instructions, plus the execution clause when the policy allows it."""
+    if autonomy.executes_inline(policy):
+        return INSTRUCTIONS + _EXECUTION_CLAUSE
+    return INSTRUCTIONS
 
 
 def build_session_context(
@@ -176,6 +197,17 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str) -> A
                        max_tokens=_MAX_COMPLETION_TOKENS, parallel_tool_calls=False)
 
 
+def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, Any]] | None,
+                 policy: str, session_id: str | None) -> list[Any]:
+    """Read-only investigator tools, plus inline run-executors when the policy
+    allows the agent to act on its own."""
+    if conn is None:
+        return []
+    tools = session_tools.build(conn, function_tool, activity)
+    tools += session_action_tools.build(conn, function_tool, policy, activity, session_id)
+    return tools
+
+
 def _sdk_session_loop(spec: dict[str, Any]) -> Any:
     """Default loop via the OpenAI Agents SDK (lazy import) with read-only tools."""
     try:
@@ -187,7 +219,8 @@ def _sdk_session_loop(spec: dict[str, Any]) -> Any:
     creds = spec["creds"]
     conn = spec.get("conn")
     try:
-        tools = session_tools.build(conn, function_tool, spec.get("activity")) if conn is not None else []
+        tools = _build_tools(conn, function_tool, spec.get("activity"),
+                             spec.get("policy", autonomy.DEFAULT_POLICY), spec.get("session_id"))
         agent = _make_agent(creds, tools, spec["instructions"])
         result = Runner.run_sync(agent, spec["prompt"], max_turns=_MAX_TURNS)
         return getattr(result, "final_output", "")
@@ -253,19 +286,22 @@ def answer(
     user_message: str,
     creds: dict[str, Any],
     conn: Any = None,
+    policy: str = autonomy.DEFAULT_POLICY,
 ) -> dict[str, Any]:
     """Skill-grounded, sanitized session answer contract. Raises AgentUnavailable.
 
     Returns {answer, skills_used, evidence_used, evidence_gaps,
     next_action_proposals} — all sanitized + CoT-stripped; proposals coerced
     through the Phase 17 allowlist. StorageOps skills are injected as guidance
-    only (tools/scripts disabled).
+    only (tools/scripts disabled). ``policy`` selects how autonomous the agent
+    is (see ``autonomy``); under assisted+ it may execute read-only runs itself.
     """
     prompt, skill_names, context = _build_prompt(session, summary, recent_messages, user_message, conn)
 
     activity: list[dict[str, Any]] = []
-    spec = {"context": context, "prompt": prompt, "instructions": INSTRUCTIONS,
-            "creds": creds, "conn": conn, "activity": activity}
+    spec = {"context": context, "prompt": prompt, "instructions": instructions_for(policy),
+            "creds": creds, "conn": conn, "activity": activity,
+            "policy": policy, "session_id": session.get("id")}
     raw = SESSION_LOOP(spec)
     return _finalize_contract(raw, skill_names, activity)
 
@@ -279,11 +315,13 @@ def build_stream(
     user_message: str,
     creds: dict[str, Any],
     conn: Any,
+    policy: str = autonomy.DEFAULT_POLICY,
 ):
     """Set up a streaming run. Returns (result_streaming, activity, skill_names).
 
     Raises AgentUnavailable if the SDK/key is unavailable — caller should then
-    fall back to the blocking endpoint.
+    fall back to the blocking endpoint. ``policy`` selects how autonomous the
+    agent is (under assisted+ it may execute read-only runs itself).
     """
     try:
         import openai  # noqa: F401
@@ -293,11 +331,11 @@ def build_stream(
 
     prompt, skill_names, _context = _build_prompt(session, summary, recent_messages, user_message, conn)
     activity: list[dict[str, Any]] = []
-    tools = session_tools.build(conn, function_tool, activity)
+    tools = _build_tools(conn, function_tool, activity, policy, session.get("id"))
     # _make_agent disables parallel tool calls (chat-completions providers like
     # DeepSeek can emit malformed follow-ups with streaming + parallel calls) and
     # uses a per-run client so concurrent sessions don't race on SDK globals.
-    agent = _make_agent(creds, tools, INSTRUCTIONS)
+    agent = _make_agent(creds, tools, instructions_for(policy))
     result = Runner.run_streamed(agent, prompt, max_turns=_MAX_TURNS)
     return result, activity, skill_names
 

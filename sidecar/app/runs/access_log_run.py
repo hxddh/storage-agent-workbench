@@ -101,6 +101,7 @@ def execute_access_log_run(conn: sqlite3.Connection, run_id: str) -> None:
             }
             agent_result = analysis_agent.interpret(
                 "access_log_analysis", run, ds_meta, metrics, findings, creds,
+                duckdb_path=str(duckdb_abs),
             )
             agent_section = agent_analysis_md("access_log_analysis", agent_result)
             if agent_result.get("executive_summary"):

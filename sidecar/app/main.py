@@ -35,6 +35,7 @@ from .routers import (
     reports,
     runs,
     sessions,
+    settings,
     tools,
 )
 
@@ -82,3 +83,4 @@ app.include_router(datasets.router)
 app.include_router(evidence_imports.router)
 app.include_router(sessions.router)
 app.include_router(error_triage.router)
+app.include_router(settings.router)

@@ -96,6 +96,7 @@ def execute_inventory_run(conn: sqlite3.Connection, run_id: str) -> None:
             }
             agent_result = analysis_agent.interpret(
                 "inventory_analysis", run, ds_meta, metrics, findings, creds,
+                duckdb_path=str(duckdb_abs),
             )
             agent_section = agent_analysis_md("inventory_analysis", agent_result)
             if agent_result.get("executive_summary"):

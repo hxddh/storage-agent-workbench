@@ -22,8 +22,19 @@ oversight:
 1. **Conversational session agent** (the main UX, `agent_runtime/session_agent.py`).
    A genuine tool-calling agent: it chooses provider/bucket, calls read-only S3
    tools in a loop, loads StorageOps skills on demand (progressive disclosure via
-   the `read_skill` tool), grounds answers in tool output, and *proposes* next
-   actions the user confirms. This is where "agentic" behavior lives.
+   the `read_skill` tool), and grounds answers in tool output. Under the
+   **autonomy policy** (`agent_runtime/autonomy.py`, default `assisted`) it can
+   also EXECUTE read-only runs itself (diagnostic, bucket_config_review,
+   account_discovery — `agent_runtime/session_action_tools.py`) and fold the
+   findings into its answer, instead of only proposing them. This is where
+   "agentic" behavior lives.
+
+   Autonomy is graded, and the security tiers are enforced *below* it regardless
+   of setting: `advisory` proposes only; `assisted`/`autonomous_readonly`
+   auto-execute SAFE_READONLY runs. EXPENSIVE/data-moving work (dataset
+   analysis, evidence import/download, large scans) and any MUTATING op are
+   never auto-run — they stay confirmed proposals. There is no write/destructive
+   tool in the product at all.
 
 2. **Structured Analysis Runs** (`runs/`, dispatched by `run_service.py`). These
    exist for reproducible, auditable, report-producing work and come in three
@@ -31,14 +42,21 @@ oversight:
    - **deterministic** (rule-based, no LLM) — e.g. `diagnostic`, `account_discovery`;
    - **agent-planner** (`agent_service.run_agent`, `planner_mode="agent"`) — a
      controlled tool-calling LLM over the same whitelist (API-reachable);
-   - **interpretation-only narrators** (`analysis_agent`, `error_triage/triage_agent`)
-     — the deterministic engine (DuckDB / parser) computes first, then the LLM is
-     given ONLY sanitized aggregates **with no tools** and writes the narrative.
+   - **interpretation narrators** (`analysis_agent`, `error_triage/triage_agent`)
+     — the deterministic engine (DuckDB / parser) computes first, then the LLM
+     writes the narrative over sanitized aggregates. The analysis narrator may
+     also **drill down** with two bounded, read-only aggregate tools over the
+     already-local DuckDB dataset (`analysis/drilldown.py`: `aggregate_by`,
+     `count_where`) so it can investigate the metrics rather than being frozen to
+     one view. Triage has no local dataset, so it stays purely interpretive.
 
-   Narrators have no tools **on purpose**: the heavy analysis must be
-   deterministic/reproducible and the model must never reach raw rows, full key
-   lists, arbitrary SQL, or object bodies. This is a safety/altitude choice, not a
-   neutered agent — the interactive agentic path is surface (1).
+   The drill-down envelope is enforced in code, not the prompt: only whitelisted
+   GROUP BY / COUNT shapes run (dimensions/metrics/fields validated against an
+   allow-list, filter values always bound), the connection is read-only, and the
+   model still never reaches raw rows, full key lists, arbitrary SQL, or object
+   bodies. The heavy base analysis stays deterministic/reproducible. This is a
+   safety/altitude choice, not a neutered agent — the interactive agentic path is
+   surface (1).
 
 All LLM seams build their model client through `agent_service.build_agent`
 (per-run client; never the SDK process-global).

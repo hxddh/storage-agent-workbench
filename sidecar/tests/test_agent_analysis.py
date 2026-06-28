@@ -1,12 +1,13 @@
-"""Tests for Phase 13 agent dataset-analysis (interpretation-only narrator).
+"""Tests for agent dataset-analysis (interpretation narrator + Phase 2 drill-down).
 
 The LLM loop is mocked (no OpenAI Agents SDK call, no API key). Deterministic
-analysis always runs first; the agent only interprets the sanitized aggregates.
-These verify: agent mode works for both analysis run types, the context is
-bounded + sanitized (no raw rows, ≤20 samples, masked IPs, redacted secrets, no
-model key), the agent adds no tools / no SQL, output is CoT-stripped + redacted,
-missing key fails cleanly, the report distinguishes deterministic vs agent, and
-deterministic mode is unaffected.
+analysis always runs first; the agent then interprets the sanitized aggregates
+and may drill down via bounded read-only aggregate tools. These verify: agent
+mode works for both analysis run types, the context is bounded + sanitized (no
+raw rows, ≤20 samples, masked IPs, redacted secrets, no model key), the narrator
+exposes only the two bounded aggregate tools (no free SQL / raw / shell), output
+is CoT-stripped + redacted, missing key fails cleanly, the report distinguishes
+deterministic vs agent, and deterministic mode is unaffected.
 """
 
 import json
@@ -148,16 +149,30 @@ def test_deterministic_analysis_runs_first_in_agent_mode(client, monkeypatch):
     assert {"detect_log_format", "import_access_logs", "analyze_access_logs"} <= names
 
 
-def test_agent_adds_no_tools_and_no_sql(client, monkeypatch):
+def test_agent_adds_only_bounded_drilldown_tools_and_no_sql(client, monkeypatch):
     _add_model_provider(client)
     rid = _run_agent_analysis(client, monkeypatch, "inventory_analysis", "inventory",
                               "inv.csv", INVENTORY_CSV, lambda s: _inventory_output())
     detail = client.get(f"/runs/{rid}").json()
     names = [t["tool_name"] for t in detail["tool_calls"]]
     allowed = {"import_inventory_file", "analyze_inventory", "generate_markdown_report"}
-    assert set(names) <= allowed  # agent introduced no extra tool
+    assert set(names) <= allowed  # narration adds no recorded run-tool
     for n in names:
         assert not guardrails.is_forbidden_tool(n)  # no sql/query/raw/shell tool
+
+    # The narrator's drill-down surface is exactly the two bounded aggregate
+    # tools — no free-SQL / raw-row / object-body tool is ever exposed.
+    from app.agent_runtime import analysis_agent
+
+    def fake_ft(fn):
+        fn.name = fn.__name__
+        return fn
+
+    tools = analysis_agent.build_drilldown_tools(fake_ft, "/tmp/x.duckdb", "inventory_objects")
+    tool_names = {t.name for t in tools}
+    assert tool_names == {"aggregate_by", "count_where"}
+    for n in tool_names:
+        assert not guardrails.is_forbidden_tool(n)
 
 
 def test_agent_output_cot_stripped_and_secrets_redacted(client, monkeypatch):
