@@ -12,8 +12,8 @@ yet failed product smoke, so this checklist gates the product model too.
       `scripts/verify-macos-app-bundle.sh` also gates on this.
 - [ ] Seal flags are `0x2(adhoc)` (NOT `linker-signed`, NOT `runtime`) — a `runtime`
       (hardened) seal blocks the PyInstaller sidecar from starting.
-- [ ] Launch the app; the sidecar reaches **Connected**. First launch can take ~1 min
-      (macOS validates the freshly signed sidecar); later launches are fast.
+- [ ] Launch the app; the sidecar reaches **Connected** within a few seconds
+      (the one-dir bundle starts fast — no per-launch extraction).
 - [ ] `GET /health` on the sidecar returns `{"status":"ok"}`.
 - [ ] App data is under `~/Library/Application Support/...`, not inside the `.app`.
 

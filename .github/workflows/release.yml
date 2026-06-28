@@ -50,20 +50,34 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ github.event.inputs.version }}"
+          VER_NO_V="${VERSION#v}"
           FLAGS=""
           if [ "${{ github.event.inputs.draft }}" = "true" ]; then FLAGS="$FLAGS --draft"; fi
           if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then FLAGS="$FLAGS --prerelease"; fi
-          NOTES="Storage Agent Workbench $VERSION — unsigned/ad-hoc (no Apple notarization, no Windows Authenticode). Verify downloads against the SHA256SUMS-*.txt files.
 
-          macOS (arm64): open the .dmg, drag to Applications. First launch shows a Gatekeeper prompt (not notarized): right-click the app -> Open, or run
-            xattr -dr com.apple.quarantine \"/Applications/Storage Agent Workbench.app\"
-          First launch can take ~1 min while macOS validates the bundled sidecar.
+          # Per-version "What's changed" pulled from this version's CHANGELOG section
+          # so each release has its own real notes (not boilerplate).
+          CHANGES="$(awk -v v="## [$VER_NO_V]" '
+            /^## \[/ { if (found) exit; if (index($0, v) == 1) { found=1; next } }
+            found { print }
+          ' CHANGELOG.md)"
+          [ -z "$(printf "%s" "$CHANGES" | tr -d "[:space:]")" ] && CHANGES="See [CHANGELOG.md](CHANGELOG.md)."
 
-          Linux (x64): sudo dpkg -i storage-agent-workbench-$VERSION-linux-x64.deb (or open with your package installer).
+          INSTALL="### Install
 
-          Windows (x64): run the -setup.exe installer. SmartScreen may warn because the build is unsigned — choose More info -> Run anyway.
+          Builds are **unsigned / ad-hoc** (no Apple notarization, no Windows Authenticode). Verify downloads against the \`SHA256SUMS-*.txt\` files.
 
-          Prompt-free (notarized/signed) builds: see docs/signing.md. Full notes: CHANGELOG.md."
+          - **macOS (arm64):** open the .dmg, drag to Applications. First launch shows a Gatekeeper prompt — right-click the app → **Open**, or run \`xattr -dr com.apple.quarantine \"/Applications/Storage Agent Workbench.app\"\`. It starts in a few seconds.
+          - **Linux (x64):** \`sudo apt install ./storage-agent-workbench-$VERSION-linux-x64.deb\`
+          - **Windows (x64):** run the \`-setup.exe\`; if SmartScreen warns, choose **More info → Run anyway**.
+
+          Prompt-free signed builds: see [docs/signing.md](docs/signing.md)."
+
+          NOTES="## What's changed
+          $CHANGES
+
+          $INSTALL"
+
           if gh release view "$VERSION" >/dev/null 2>&1; then
             echo "Release $VERSION already exists; reusing."
           else

@@ -6,6 +6,80 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.11] - 2026-06-28
+
+### Changed
+
+- **Reverted the empty-state suggestions to a single row of chips.** A 2×3
+  icon-card grid was tried and removed — the chips are cleaner and more
+  consistent.
+
+### Fixed
+
+- Documentation: removed stale "first launch ~1 minute" wording (cold start is a
+  few seconds since the one-dir sidecar) and brought the changelog and the
+  GitHub Release notes up to date with accurate, per-version content.
+
+## [0.19.10] - 2026-06-28
+
+### Added
+
+- **Session search.** A search box in the rail filters chats live by title
+  (reveals matching archived chats; clearable; shows a "no matches" state).
+
+### Changed
+
+- **"New chat" restyled** to a quiet rail-consistent row with a `⌘N` shortcut
+  hint, matching Codex/Cursor (replacing a bordered pill that clashed with the
+  flat list).
+
+## [0.19.9] - 2026-06-28
+
+### Changed
+
+- **License is now Apache-2.0** (added `LICENSE` + `NOTICE`).
+- **Positioning broadened** from "diagnostics" to object storage **operations,
+  analytics, and management** across README, app metadata, and the first-run
+  wizard.
+- **Chinese name → 云存储 Agent** (was "存储智能体").
+- Minor UI polish: empty-state spacing and an icon-button settings-drawer close.
+
+## [0.19.8] - 2026-06-28
+
+### Fixed
+
+- **Fewer macOS keychain prompts.** The sidecar now caches resolved secrets in
+  process (invalidated on save/delete), so the keychain — and its authorization
+  prompt — is hit at most once per secret per launch instead of on every agent
+  run. Click **Always Allow** once to silence it for a build.
+
+## [0.19.7] - 2026-06-28
+
+### Fixed
+
+- **Cold start cut from ~60s to a few seconds.** The Python sidecar is now built
+  as a PyInstaller **one-dir** bundle shipped as a Tauri resource (instead of
+  one-file + `externalBin`). One-file self-extracted its whole archive on every
+  launch and macOS Gatekeeper re-scanned it each time; one-dir keeps libraries at
+  a stable path scanned once. macOS sealing switched to a single deep ad-hoc sign
+  (no hardened runtime).
+
+### Changed
+
+- Rewrote README and the `docs/` set for the current shipping state; removed
+  stale phase-era docs.
+
+## [0.19.6] - 2026-06-28
+
+### Fixed
+
+- **Session rename / pin / archive were unresponsive.** The sidecar CORS config
+  rejected the `PATCH` preflight, so those requests never reached the backend;
+  added `PATCH`/`OPTIONS` to the allowed methods.
+- Replaced `window.prompt` (rename) and `window.confirm` (delete) — no-ops in the
+  Tauri webview — with an inline rename field and an inline delete confirm.
+- Removed a redundant brand-mark tile from the empty state.
+
 ## [0.19.5] - 2026-06-28
 
 Session management + elegant next-step chips.
@@ -438,7 +512,13 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.5...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.11...HEAD
+[0.19.11]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.11
+[0.19.10]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.10
+[0.19.9]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.9
+[0.19.8]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.8
+[0.19.7]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.7
+[0.19.6]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.6
 [0.19.5]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.5
 [0.19.4]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.4
 [0.19.3]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.3

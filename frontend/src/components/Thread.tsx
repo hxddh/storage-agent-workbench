@@ -56,23 +56,6 @@ const SLASH: Slash[] = [
   { cmd: "report", labelKey: "slash.report", action: "report" },
 ];
 
-// A small line icon per starter suggestion (16px, strokes currentColor).
-function SuggIcon({ cmd }: { cmd: string }) {
-  const p: Record<string, React.ReactNode> = {
-    diagnose: <><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>,
-    logs: <><line x1="8" y1="7" x2="20" y2="7" /><line x1="8" y1="12" x2="20" y2="12" /><line x1="8" y1="17" x2="16" y2="17" /><line x1="4" y1="7" x2="4.01" y2="7" /><line x1="4" y1="12" x2="4.01" y2="12" /><line x1="4" y1="17" x2="4.01" y2="17" /></>,
-    inventory: <><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5" /><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" /></>,
-    config: <><line x1="4" y1="8" x2="20" y2="8" /><circle cx="9" cy="8" r="2.4" /><line x1="4" y1="16" x2="20" y2="16" /><circle cx="15" cy="16" r="2.4" /></>,
-    account: <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>,
-    optimize: <><path d="M3 17l6-6 4 4 7-7" /><path d="M14 8h6v6" /></>,
-  };
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {p[cmd] ?? p.diagnose}
-    </svg>
-  );
-}
-
 const Spark = ({ size = 12 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2z" />
@@ -444,17 +427,14 @@ export function Thread({
               </p>
             </div>
             {composer}
-            <div className="mx-auto mt-5 grid w-full max-w-[40rem] grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
               {suggestions.map((s) => (
                 <button
                   key={s.key}
                   onClick={() => seed(s.prompt)}
-                  className="group flex items-center gap-3 rounded-xl border border-edge bg-panel/50 px-3.5 py-3 text-left transition-all duration-150 hover:-translate-y-px hover:border-edge-strong hover:bg-hover hover:shadow-elev"
+                  className="rounded-full border border-edge bg-panel/60 px-3.5 py-1.5 text-[12px] text-gray-400 transition-colors hover:border-edge-strong hover:bg-hover hover:text-gray-100"
                 >
-                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-edge bg-elevated text-accent-soft transition-colors group-hover:border-edge-strong">
-                    <SuggIcon cmd={s.key} />
-                  </span>
-                  <span className="truncate text-[13px] text-gray-300 group-hover:text-gray-100">{s.label}</span>
+                  {s.label}
                 </button>
               ))}
             </div>
