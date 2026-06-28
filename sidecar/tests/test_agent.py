@@ -251,6 +251,30 @@ def test_assert_no_secrets_in_context_raises_on_raw_secret():
         guardrails.assert_no_secrets_in_context({"x": f"{ACCESS}"})
 
 
+def test_strip_chain_of_thought_preserves_long_enumerations():
+    """Regression: strip_chain_of_thought must NOT chop a long answer to ~500
+    chars. It once hard-capped at 500, silently truncating a 96-row table to ~8
+    rows. It should strip CoT markers only; length is bounded by callers."""
+    rows = "\n".join(f"| {i} | bucket-{i:03d} | 2026-01-01 |" for i in range(96))
+    table = "Here are all 96 buckets:\n" + rows
+    out = guardrails.strip_chain_of_thought(table)
+    assert out.count("bucket-") == 96  # every row survives
+    assert len(out) > 3000 and "…" not in out  # not truncated
+    # CoT markers are still stripped (reasoning never persisted).
+    stripped = guardrails.strip_chain_of_thought("Answer line.\n<thinking>secret plan</thinking>")
+    assert "secret" not in stripped and stripped.strip() == "Answer line."
+
+
+def test_parse_contract_keeps_full_table(client):
+    """The full pipeline (contract parse → answer) must not truncate a big table."""
+    from app.skills import contract as skill_contract
+
+    rows = "\n".join(f"| {i} | bucket-{i:03d} | 2026-01-01 |" for i in range(96))
+    raw = "你共有 96 个 bucket：\n| # | 名称 | 创建时间 |\n|---|---|---|\n" + rows
+    out = skill_contract.parse_agent_contract(raw, allowed_skill_names=[])
+    assert out["answer"].count("bucket-") == 96
+
+
 def test_session_investigator_exposes_full_readonly_diagnostic_surface():
     """The in-chat agent is a real diagnostician: it must reach the whole
     read-only diagnostic surface (auth, addressing, TLS, range, object, config),
