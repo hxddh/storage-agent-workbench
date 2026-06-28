@@ -415,6 +415,7 @@ class SessionUpdate(BaseModel):
     provider_id: str | None = None
     primary_bucket: str | None = None
     status: SessionStatus | None = None
+    pinned: bool | None = None
 
 
 class SessionRunLink(BaseModel):
@@ -535,12 +536,14 @@ class SessionMessageOut(BaseModel):
 
 
 class SessionSummary(BaseModel):
+    model_config = {"extra": "ignore"}
     id: str
     title: str
     goal: str | None
     provider_id: str | None
     primary_bucket: str | None
     status: str
+    pinned: bool = False
     run_count: int = 0
     finding_count: int = 0
     created_at: str

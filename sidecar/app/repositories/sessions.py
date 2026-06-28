@@ -65,6 +65,8 @@ def update(conn: sqlite3.Connection, session_id: str, data: SessionUpdate) -> No
         sets.append("primary_bucket = ?"); params.append(redact_text(data.primary_bucket))
     if data.status is not None:
         sets.append("status = ?"); params.append(data.status)
+    if data.pinned is not None:
+        sets.append("pinned = ?"); params.append(1 if data.pinned else 0)
     if not sets:
         return
     sets.append("updated_at = ?"); params.append(utcnow())
@@ -73,12 +75,57 @@ def update(conn: sqlite3.Connection, session_id: str, data: SessionUpdate) -> No
     conn.commit()
 
 
+def delete(conn: sqlite3.Connection, session_id: str) -> None:
+    """Delete a session and all its child rows (thread, runs links, findings,
+    evidence refs, summary). Run records themselves are not deleted."""
+    for tbl in ("session_messages", "session_runs", "session_findings",
+                "session_evidence_refs", "session_summaries"):
+        conn.execute(f"DELETE FROM {tbl} WHERE session_id = ?", (session_id,))
+    conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    conn.commit()
+
+
+def fork(conn: sqlite3.Connection, session_id: str) -> str | None:
+    """Create a new session that copies another's title/goal/provider and its
+    full message thread, so the user can branch a conversation. Runs, findings
+    and the derived summary are NOT copied (they belong to the source)."""
+    src = get_row(conn, session_id)
+    if src is None:
+        return None
+    new_id = uuid.uuid4().hex
+    now = utcnow()
+    title = (src["title"] or "Untitled")[:160] + " (fork)"
+    conn.execute(
+        "INSERT INTO sessions (id, title, goal, provider_id, primary_bucket, status, pinned, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, 'active', 0, ?, ?)",
+        (new_id, title, src["goal"], src["provider_id"], src["primary_bucket"], now, now),
+    )
+    msgs = conn.execute(
+        "SELECT role, content, referenced_run_ids, referenced_evidence_ids, tool_activity, created_at "
+        "FROM session_messages WHERE session_id = ? ORDER BY rowid", (session_id,)
+    ).fetchall()
+    for m in msgs:
+        keys = m.keys()
+        conn.execute(
+            "INSERT INTO session_messages "
+            "(id, session_id, role, content, referenced_run_ids, referenced_evidence_ids, tool_activity, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (uuid.uuid4().hex, new_id, m["role"], m["content"],
+             m["referenced_run_ids"], m["referenced_evidence_ids"],
+             (m["tool_activity"] if "tool_activity" in keys else None), m["created_at"]),
+        )
+    conn.commit()
+    return new_id
+
+
 def get_row(conn: sqlite3.Connection, session_id: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
 
 
 def list_all(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    rows = conn.execute("SELECT * FROM sessions ORDER BY updated_at DESC, rowid DESC").fetchall()
+    rows = conn.execute(
+        "SELECT * FROM sessions ORDER BY pinned DESC, updated_at DESC, rowid DESC"
+    ).fetchall()
     out = []
     for r in rows:
         d = dict(r)

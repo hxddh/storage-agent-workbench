@@ -6,6 +6,26 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.5] - 2026-06-28
+
+Session management + elegant next-step chips.
+
+### Added
+
+- **Session management.** Each chat in the rail now has a ⋯ menu: **rename**,
+  **pin/unpin**, **duplicate (fork)**, **archive/unarchive**, and **delete**.
+  Pinned chats sort into a "Pinned" group at the top; archived chats move to a
+  collapsible "Archived" section. Fork copies a chat's full message thread into a
+  new chat so you can branch a conversation. (New `pinned` column; new
+  `DELETE /sessions/{id}` and `POST /sessions/{id}/fork` endpoints.)
+
+### Changed
+
+- **Suggested next steps are now compact chips** (ChatGPT/Cursor-style) instead
+  of stacked full-width bordered cards — a subtle "Suggested next steps" label
+  followed by small clickable pills. One click still hands the task to the agent
+  in the conversation.
+
 ## [0.19.4] - 2026-06-28
 
 Icon fix + Linux & Windows installers.
@@ -418,7 +438,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.4...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.5...HEAD
+[0.19.5]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.5
 [0.19.4]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.4
 [0.19.3]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.3
 [0.19.2]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.2

@@ -288,7 +288,7 @@ def test_migrations_are_sequential_and_capped():
     # Migration 10 adds session_messages.tool_activity (agent tool-call trace).
     versions = [v for v, _n, _s in migrations.MIGRATIONS]
     assert versions == list(range(1, len(versions) + 1))  # 1..N, no gaps/dupes
-    assert max(versions) == 10
+    assert max(versions) == 11
 
 
 def test_no_public_skills_api(client):

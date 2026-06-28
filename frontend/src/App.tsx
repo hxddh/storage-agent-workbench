@@ -4,13 +4,23 @@ import { Thread } from "./components/Thread";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { FirstRunWizard } from "./components/FirstRunWizard";
 import { CommandPalette } from "./components/CommandPalette";
-import { listCloudProviders, listModelProviders, listSessions } from "./api";
+import type { SessionActions } from "./components/SessionRail";
+import {
+  deleteSession,
+  forkSession,
+  listCloudProviders,
+  listModelProviders,
+  listSessions,
+  patchSession,
+} from "./api";
 import type { SessionSummaryRow } from "./types";
 import { useSidecarHealth } from "./hooks/useSidecarHealth";
+import { useI18n } from "./i18n";
 
 const ONBOARDED_KEY = "saw.onboarded";
 
 export default function App() {
+  const { t } = useI18n();
   const { status, service, slow } = useSidecarHealth();
   const [sessions, setSessions] = useState<SessionSummaryRow[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -54,6 +64,36 @@ export default function App() {
     setShowWizard(false);
   };
 
+  // Session management actions (rail ⋯ menu). Optimistic-ish: act, then refresh.
+  const sessionActions: SessionActions = {
+    onRename: async (s) => {
+      const name = window.prompt(t("rail.renamePrompt"), s.title || "");
+      if (name && name.trim() && name.trim() !== s.title) {
+        await patchSession(s.id, { title: name.trim() }).catch(() => undefined);
+        refreshSessions();
+      }
+    },
+    onTogglePin: async (s) => {
+      await patchSession(s.id, { pinned: !s.pinned }).catch(() => undefined);
+      refreshSessions();
+    },
+    onFork: async (s) => {
+      const d = await forkSession(s.id).catch(() => null);
+      if (d) setActiveId(d.id);
+      refreshSessions();
+    },
+    onToggleArchive: async (s) => {
+      await patchSession(s.id, { status: s.status === "archived" ? "active" : "archived" }).catch(() => undefined);
+      refreshSessions();
+    },
+    onDelete: async (s) => {
+      if (!window.confirm(t("rail.deleteConfirm"))) return;
+      await deleteSession(s.id).catch(() => undefined);
+      if (activeId === s.id) setActiveId(null);
+      refreshSessions();
+    },
+  };
+
   // Global shortcuts: ⌘K command palette, ⌘N new chat, Esc closes overlays.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -84,6 +124,7 @@ export default function App() {
         status={status}
         service={service}
         slow={slow}
+        actions={sessionActions}
       />
 
       <Thread

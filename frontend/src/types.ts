@@ -264,6 +264,7 @@ export interface SessionSummaryRow {
   provider_id: string | null;
   primary_bucket: string | null;
   status: string;
+  pinned?: boolean;
   run_count: number;
   finding_count: number;
   created_at: string;

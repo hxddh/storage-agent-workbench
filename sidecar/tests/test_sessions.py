@@ -83,6 +83,45 @@ def test_list_sessions(client):
     assert all("run_count" in r and "finding_count" in r for r in rows)
 
 
+def test_rename_pin_archive_session(client):
+    s = _session(client, title="Original")
+    # rename
+    assert client.patch(f"/sessions/{s['id']}", json={"title": "Renamed"}).json()["title"] == "Renamed"
+    # pin → sorted first in the list
+    client.patch(f"/sessions/{s['id']}", json={"pinned": True})
+    _session(client, title="Newer (unpinned)")  # newer, but should sort below the pinned one
+    rows = client.get("/sessions").json()
+    assert rows[0]["id"] == s["id"] and rows[0]["pinned"] is True
+    # archive
+    assert client.patch(f"/sessions/{s['id']}", json={"status": "archived"}).json()["status"] == "archived"
+
+
+def test_fork_session_copies_thread(client, monkeypatch):
+    from app.agent_runtime import session_agent
+    monkeypatch.setattr(session_agent, "SESSION_LOOP",
+                        lambda spec: "Bucket count is 3.")
+    client.post("/model-providers", json={
+        "name": "m", "provider_type": "openai", "base_url": "https://api.openai.com/v1",
+        "model": "gpt-4o-mini", "api_key": "sk-TESTKEY-DONOTLEAK-0001"})
+    s = _session(client, title="Branch me")
+    client.post(f"/sessions/{s['id']}/messages", json={"content": "how many buckets?"})
+    src_msgs = client.get(f"/sessions/{s['id']}/messages").json()["messages"]
+    assert len(src_msgs) >= 2  # user + assistant
+
+    forked = client.post(f"/sessions/{s['id']}/fork").json()
+    assert forked["id"] != s["id"]
+    assert forked["title"].endswith("(fork)")
+    fork_msgs = client.get(f"/sessions/{forked['id']}/messages").json()["messages"]
+    assert [m["content"] for m in fork_msgs] == [m["content"] for m in src_msgs]
+
+
+def test_delete_session_removes_it(client):
+    s = _session(client, title="Delete me")
+    assert client.delete(f"/sessions/{s['id']}").status_code == 204
+    assert client.get(f"/sessions/{s['id']}").status_code == 404
+    assert all(r["id"] != s["id"] for r in client.get("/sessions").json())
+
+
 def test_attach_existing_run_to_session(client, sync_runs):
     s = _session(client)
     # a standalone run (no session)

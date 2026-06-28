@@ -215,6 +215,18 @@ export const createSession = (body: SessionCreateInput) =>
 
 export const getSession = (id: string) => request<SessionDetail>(`/sessions/${id}`);
 
+// Session management: rename / pin / archive (PATCH), fork, delete.
+export const patchSession = (
+  id: string,
+  body: { title?: string; status?: "active" | "archived"; pinned?: boolean },
+) => request<SessionDetail>(`/sessions/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+
+export const forkSession = (id: string) =>
+  request<SessionDetail>(`/sessions/${id}/fork`, { method: "POST" });
+
+export const deleteSession = (id: string) =>
+  request<void>(`/sessions/${id}`, { method: "DELETE" });
+
 export const refreshSessionSummary = (id: string) =>
   request<SessionSummaryData>(`/sessions/${id}/refresh-summary`, { method: "POST" });
 
