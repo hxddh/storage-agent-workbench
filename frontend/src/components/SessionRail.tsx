@@ -71,11 +71,16 @@ export function SessionRail({
   const [showArchived, setShowArchived] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
-  const active = sessions.filter((s) => s.status !== "archived");
+  const q = query.trim().toLowerCase();
+  const matches = (s: SessionSummaryRow) => !q || (s.title || "").toLowerCase().includes(q);
+  const visible = sessions.filter(matches);
+  const active = visible.filter((s) => s.status !== "archived");
   const pinned = active.filter((s) => s.pinned);
   const recent = active.filter((s) => !s.pinned);
-  const archived = sessions.filter((s) => s.status === "archived");
+  const archived = visible.filter((s) => s.status === "archived");
+  const noResults = q !== "" && visible.length === 0;
 
   const closeAll = () => {
     setMenuId(null);
@@ -185,23 +190,51 @@ export function SessionRail({
         <div className="text-[13px] font-medium tracking-[-0.01em] text-gray-100">{t("app.name")}</div>
       </div>
 
-      <div className="px-2.5 pb-1.5">
+      <div className="px-2.5 pb-1">
         <button
           onClick={onNew}
-          className="group flex w-full items-center gap-2 rounded-lg border border-edge bg-elevated/50 px-2.5 py-2 text-left text-[13px] font-medium text-gray-200 shadow-elev transition-all duration-150 hover:border-edge-strong hover:bg-elevated hover:text-gray-100"
+          className="group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-gray-300 transition-colors hover:bg-hover hover:text-gray-100"
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-accent-soft">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-gray-500 transition-colors group-hover:text-accent-soft">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          {t("rail.newChat")}
+          <span className="flex-1">{t("rail.newChat")}</span>
+          <kbd className="rounded border border-edge bg-elevated/70 px-1.5 py-px text-[10px] font-medium tracking-wide text-gray-500 opacity-0 transition-opacity group-hover:opacity-100">⌘N</kbd>
         </button>
       </div>
 
+      {/* Session search */}
+      <div className="px-2.5 pb-2 pt-0.5">
+        <div className="flex items-center gap-1.5 rounded-lg border border-edge bg-elevated/40 px-2.5 py-1.5 transition-colors focus-within:border-edge-strong focus-within:bg-elevated">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-gray-500">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("rail.searchPlaceholder")}
+            className="w-full bg-transparent text-[12.5px] text-gray-200 placeholder:text-gray-600 focus:outline-none"
+          />
+          {query && (
+            <button
+              onClick={() => setQuery("")}
+              aria-label={t("rail.clearSearch")}
+              className="shrink-0 text-gray-600 transition-colors hover:text-gray-300"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          )}
+        </div>
+      </div>
+
       <nav className="flex-1 overflow-auto px-1.5 pb-2">
-        {active.length === 0 && (
+        {noResults ? (
+          <div className="px-3 py-5 text-[12px] leading-relaxed text-gray-600">{t("rail.noResults")}</div>
+        ) : sessions.length === 0 ? (
           <div className="px-3 py-5 text-[12px] leading-relaxed text-gray-600">{t("rail.noChats")}</div>
-        )}
+        ) : null}
 
         {pinned.length > 0 && (
           <>
@@ -228,7 +261,7 @@ export function SessionRail({
               </svg>
               {t("rail.archived")} ({archived.length})
             </button>
-            {showArchived && archived.map(item)}
+            {(showArchived || q !== "") && archived.map(item)}
           </>
         )}
       </nav>
