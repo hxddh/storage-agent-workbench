@@ -302,6 +302,35 @@ def test_no_kanban_or_project_management_tables(client):
     assert not (names & forbidden), f"unexpected PM/kanban tables: {names & forbidden}"
 
 
+def test_session_search_by_title_and_content(client):
+    from app.repositories import sessions as srepo
+
+    a = _session(client, title="Bucket lifecycle audit", goal="g")
+    b = _session(client, title="Unrelated topic", goal="g")
+    # Give b a message containing a term that is NOT in its title.
+    conn = _db()
+    try:
+        srepo.add_message(conn, b["id"], "user", "investigate SignatureDoesNotMatch on uploads")
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Title match -> only a.
+    ids = {s["id"] for s in client.get("/sessions", params={"q": "lifecycle"}).json()}
+    assert a["id"] in ids and b["id"] not in ids
+
+    # Content match -> only b (term appears only in b's message body).
+    ids = {s["id"] for s in client.get("/sessions", params={"q": "SignatureDoesNotMatch"}).json()}
+    assert b["id"] in ids and a["id"] not in ids
+
+    # No match -> empty.
+    assert client.get("/sessions", params={"q": "zzz-no-such-term"}).json() == []
+
+    # No query -> full list (both present).
+    ids = {s["id"] for s in client.get("/sessions").json()}
+    assert {a["id"], b["id"]} <= ids
+
+
 def test_existing_run_apis_unaffected(client, sync_runs):
     # A run with no session_id still works exactly as before.
     created = client.post("/runs", json={"run_type": "access_log_analysis", "user_prompt": "x"}).json()

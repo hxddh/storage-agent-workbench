@@ -25,9 +25,11 @@ ready.
      open "/Applications/Storage Agent Workbench.app"
      ```
 
-The app is ad-hoc code-signed, so the bundle seal is valid (no "app is damaged"
-error). It is not a Developer ID signature and not notarized, so the Gatekeeper
-prompt is expected. See [signing.md](signing.md).
+The app is ad-hoc code-signed but **not notarized**, so macOS may say either
+*"Apple cannot check it for malicious software"* or *"is damaged and can't be
+opened."* Both just mean the missing Apple signature — the **Terminal** step
+above (clearing the quarantine flag) reliably resolves either; right-click →
+Open only handles the first. See [signing.md](signing.md).
 
 ## Linux (x64)
 

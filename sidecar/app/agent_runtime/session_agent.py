@@ -169,36 +169,47 @@ def render_context_text(context: dict[str, Any]) -> str:
     return json.dumps(context, indent=2, default=str)
 
 
+def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str) -> Any:
+    """Build an Agent with a PER-RUN model client.
+
+    The client is passed explicitly via ``OpenAIChatCompletionsModel`` rather than
+    set on the SDK's process-global default. Mutating the global default per
+    request (``set_default_openai_client``) races across concurrent sessions; a
+    per-run client keeps each session's run fully independent. Chat Completions is
+    used for all providers (third-party OpenAI-compatible endpoints such as
+    DeepSeek don't implement the Responses API the SDK otherwise defaults to).
+    """
+    import openai
+    from agents import (Agent, ModelSettings, OpenAIChatCompletionsModel,
+                        set_tracing_disabled)
+
+    # Never upload traces/prompts (privacy; also avoids a spurious OpenAI auth
+    # call that fails for third-party providers). This is constant, not per-run.
+    set_tracing_disabled(True)
+    kwargs = {"api_key": creds["api_key"]}
+    if creds.get("base_url"):
+        kwargs["base_url"] = creds["base_url"]
+    client = openai.AsyncOpenAI(**kwargs)
+    model = OpenAIChatCompletionsModel(model=creds.get("model") or "gpt-4o-mini",
+                                       openai_client=client)
+    return Agent(name="Storage Agent", instructions=instructions, tools=tools, model=model,
+                 model_settings=ModelSettings(max_tokens=_MAX_COMPLETION_TOKENS,
+                                              parallel_tool_calls=False))
+
+
 def _sdk_session_loop(spec: dict[str, Any]) -> Any:
     """Default loop via the OpenAI Agents SDK (lazy import) with read-only tools."""
     try:
         import openai  # noqa: F401
-        from agents import (Agent, ModelSettings, Runner, function_tool,
-                            set_default_openai_key, set_tracing_disabled)
+        from agents import Runner, function_tool
     except Exception as exc:  # noqa: BLE001
         raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
 
     creds = spec["creds"]
     conn = spec.get("conn")
     try:
-        # Never upload traces/prompts to OpenAI's backend (privacy; also avoids a
-        # spurious OpenAI auth call that fails when using a third-party provider).
-        set_tracing_disabled(True)
-        if creds.get("base_url"):
-            # Third-party OpenAI-compatible provider (e.g. DeepSeek): point the
-            # client at its base_url and use Chat Completions — these providers
-            # don't implement the OpenAI Responses API the SDK defaults to.
-            from agents import set_default_openai_client, set_default_openai_api
-            client = openai.AsyncOpenAI(api_key=creds["api_key"], base_url=creds["base_url"])
-            set_default_openai_client(client)
-            set_default_openai_api("chat_completions")
-        else:
-            set_default_openai_key(creds["api_key"])
         tools = session_tools.build(conn, function_tool, spec.get("activity")) if conn is not None else []
-        agent = Agent(name="Storage Agent", instructions=spec["instructions"],
-                      tools=tools, model=creds.get("model"),
-                      model_settings=ModelSettings(max_tokens=_MAX_COMPLETION_TOKENS,
-                                                   parallel_tool_calls=False))
+        agent = _make_agent(creds, tools, spec["instructions"])
         result = Runner.run_sync(agent, spec["prompt"], max_turns=_MAX_TURNS)
         return getattr(result, "final_output", "")
     except AgentUnavailable:
@@ -297,29 +308,17 @@ def build_stream(
     """
     try:
         import openai  # noqa: F401
-        from agents import (Agent, ModelSettings, Runner, function_tool,
-                            set_default_openai_key, set_tracing_disabled)
+        from agents import Runner, function_tool
     except Exception as exc:  # noqa: BLE001
         raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
 
     prompt, skill_names, _context = _build_prompt(session, summary, recent_messages, user_message, conn)
-    set_tracing_disabled(True)
-    if creds.get("base_url"):
-        from agents import set_default_openai_client, set_default_openai_api
-        client = openai.AsyncOpenAI(api_key=creds["api_key"], base_url=creds["base_url"])
-        set_default_openai_client(client)
-        set_default_openai_api("chat_completions")
-    else:
-        set_default_openai_key(creds["api_key"])
     activity: list[dict[str, Any]] = []
     tools = session_tools.build(conn, function_tool, activity)
-    # Disable parallel tool calls: with chat-completions providers (e.g. DeepSeek)
-    # streaming + parallel tool_calls can produce malformed follow-up messages.
-    # Set a generous max_tokens so long enumerations aren't truncated mid-answer.
-    agent = Agent(name="Storage Agent", instructions=INSTRUCTIONS, tools=tools,
-                  model=creds.get("model"),
-                  model_settings=ModelSettings(max_tokens=_MAX_COMPLETION_TOKENS,
-                                               parallel_tool_calls=False))
+    # _make_agent disables parallel tool calls (chat-completions providers like
+    # DeepSeek can emit malformed follow-ups with streaming + parallel calls) and
+    # uses a per-run client so concurrent sessions don't race on SDK globals.
+    agent = _make_agent(creds, tools, INSTRUCTIONS)
     result = Runner.run_streamed(agent, prompt, max_turns=_MAX_TURNS)
     return result, activity, skill_names
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { SessionSummaryRow } from "../types";
 import type { SidecarStatus as Status } from "../hooks/useSidecarHealth";
 import { useI18n, type TFunc } from "../i18n";
+import { listSessions } from "../api";
 import { BrandMark } from "./ui";
 
 const STATUS_KEY: Record<Status, string> = {
@@ -72,15 +73,31 @@ export function SessionRail({
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // Server-side search (title + message content), debounced. `results` is null
+  // when not searching; otherwise it holds the matching sessions.
+  const [results, setResults] = useState<SessionSummaryRow[] | null>(null);
 
-  const q = query.trim().toLowerCase();
-  const matches = (s: SessionSummaryRow) => !q || (s.title || "").toLowerCase().includes(q);
-  const visible = sessions.filter(matches);
-  const active = visible.filter((s) => s.status !== "archived");
+  const q = query.trim();
+  useEffect(() => {
+    if (!q) {
+      setResults(null);
+      return;
+    }
+    let cancelled = false;
+    const id = setTimeout(() => {
+      listSessions(q)
+        .then((rows) => { if (!cancelled) setResults(rows); })
+        .catch(() => { if (!cancelled) setResults([]); });
+    }, 200);
+    return () => { cancelled = true; clearTimeout(id); };
+  }, [q]);
+
+  const base = q ? (results ?? []) : sessions;
+  const active = base.filter((s) => s.status !== "archived");
   const pinned = active.filter((s) => s.pinned);
   const recent = active.filter((s) => !s.pinned);
-  const archived = visible.filter((s) => s.status === "archived");
-  const noResults = q !== "" && visible.length === 0;
+  const archived = base.filter((s) => s.status === "archived");
+  const noResults = q !== "" && results !== null && results.length === 0;
 
   const closeAll = () => {
     setMenuId(null);
@@ -215,7 +232,7 @@ export function SessionRail({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("rail.searchPlaceholder")}
-            className="w-full bg-transparent text-[12.5px] text-gray-200 placeholder:text-gray-600 focus:outline-none"
+            className="w-full bg-transparent text-[12.5px] text-gray-200 placeholder:text-gray-600 focus:outline-none focus-visible:shadow-none"
           />
           {query && (
             <button

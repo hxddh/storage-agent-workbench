@@ -8,8 +8,10 @@ project-management / kanban / ticketing surface.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
+import threading
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -60,8 +62,11 @@ def create_session(body: SessionCreate, conn: sqlite3.Connection = Depends(get_c
 
 
 @router.get("", response_model=list[SessionSummary])
-def list_sessions(conn: sqlite3.Connection = Depends(get_conn)):
-    return [SessionSummary(**s) for s in repo.list_all(conn)]
+def list_sessions(q: str | None = None, conn: sqlite3.Connection = Depends(get_conn)):
+    """List sessions. With `?q=`, returns sessions whose title or message content
+    matches (substring, case-insensitive)."""
+    rows = repo.search(conn, q) if q else repo.list_all(conn)
+    return [SessionSummary(**s) for s in rows]
 
 
 @router.get("/{session_id}", response_model=SessionDetail)
@@ -265,26 +270,73 @@ async def post_session_message_stream(
 
     try:
         creds = get_model_credentials(conn)
-        result, activity, skill_names = session_agent.build_stream(
-            dict(row), summary, recent, body.content, creds, conn)
     except AgentUnavailable as exc:
         raise HTTPException(status_code=422, detail=redact_text(str(exc)))
 
-    async def gen():
-        try:
+    # Run the whole agent turn (LLM streaming + any sync tool calls) on a
+    # DEDICATED WORKER THREAD with its own event loop, and bridge its events to
+    # this response through a thread-safe queue. The agent loop and boto3 tool
+    # calls are blocking; running them on the main server event loop would freeze
+    # every other request — so one session's run used to stall all the others.
+    # Isolating each run on its own thread lets sessions run concurrently.
+    main_loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    _DONE = object()
+
+    def emit(item: Any) -> None:
+        main_loop.call_soon_threadsafe(queue.put_nowait, item)
+
+    def worker() -> None:
+        wloop = asyncio.new_event_loop()
+        asyncio.set_event_loop(wloop)
+        final: dict[str, Any] = {}
+
+        async def drive() -> None:
+            result, activity, skill_names = session_agent.build_stream(
+                dict(row), summary, recent, body.content, creds, conn)
             async for kind, data in session_agent.stream_events_for(result, activity, skill_names):
-                if kind == "delta":
-                    yield _sse("delta", {"text": data})
-                elif kind == "tool":
-                    yield _sse("tool", data)
-                elif kind == "final":
-                    repo.add_message(conn, session_id, "user", body.content)
-                    mid = repo.add_message(conn, session_id, "assistant", data["answer"],
-                                           tool_activity=data.get("tool_activity"))
-                    audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
-                    conn.commit()
-                    yield _sse("done", {"message_id": mid, "proposed_actions": data["next_action_proposals"]})
+                if kind == "final":
+                    final["data"] = data
+                else:
+                    emit((kind, data))
+
+        try:
+            wloop.run_until_complete(drive())
+            data = final.get("data")
+            if data is not None:
+                # Persist the turn here (worker thread) — the main loop is only
+                # awaiting the queue, so the request-scoped connection is never
+                # used from two threads at once.
+                repo.add_message(conn, session_id, "user", body.content)
+                mid = repo.add_message(conn, session_id, "assistant", data["answer"],
+                                       tool_activity=data.get("tool_activity"))
+                audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
+                conn.commit()
+                emit(("done", {"message_id": mid, "proposed_actions": data["next_action_proposals"]}))
         except Exception as exc:  # noqa: BLE001
-            yield _sse("error", {"detail": redact_text(str(exc))})
+            emit(("error", redact_text(str(exc))))
+        finally:
+            emit(_DONE)
+            try:
+                wloop.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    threading.Thread(target=worker, name=f"sess-stream-{session_id[:8]}", daemon=True).start()
+
+    async def gen():
+        while True:
+            item = await queue.get()
+            if item is _DONE:
+                break
+            kind, data = item
+            if kind == "delta":
+                yield _sse("delta", {"text": data})
+            elif kind == "tool":
+                yield _sse("tool", data)
+            elif kind == "done":
+                yield _sse("done", data)
+            elif kind == "error":
+                yield _sse("error", {"detail": data})
 
     return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
