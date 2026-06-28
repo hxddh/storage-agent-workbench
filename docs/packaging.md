@@ -1,10 +1,10 @@
-# Packaging (Phase 08)
+# Packaging
 
-How the desktop app is assembled: a PyInstaller-bundled Python sidecar launched
-by the Tauri v2 shell.
+How the desktop app is assembled: a PyInstaller-bundled Python sidecar shipped
+inside a Tauri v2 app and launched by the Rust shell.
 
-> For the end-to-end macOS build flow, build scripts, externalBin naming rule,
-> and release limitations, see **[docs/release.md](release.md)** (Phase 09).
+> For the release flow (CI, multi-platform assets, versioning) see
+> **[release.md](release.md)**. For macOS signing see **[signing.md](signing.md)**.
 
 ## Dev mode
 
@@ -12,7 +12,8 @@ Run the sidecar and frontend separately (no packaging needed):
 
 ```bash
 # terminal 1 — sidecar
-cd sidecar && source .venv/bin/activate && pip install -e ".[dev]"
+cd sidecar && python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8765
 
 # terminal 2 — frontend
@@ -20,43 +21,55 @@ cd frontend && npm install && npm run dev   # http://127.0.0.1:1420
 ```
 
 The frontend resolves the sidecar URL from `VITE_SIDECAR_URL` (if set) or the
-default `http://127.0.0.1:8765`:
+default `http://127.0.0.1:8765`.
 
-```bash
-VITE_SIDECAR_URL=http://127.0.0.1:8765 npm run dev
-```
+## Sidecar bundle: one-dir, not one-file
 
-## Build the sidecar
+The sidecar is built with PyInstaller in **one-dir** mode (see
+`sidecar/packaging/storage-agent-sidecar.spec`): the output is a folder
+containing the `storage-agent-sidecar` executable plus an `_internal/` directory
+of libraries.
+
+This is deliberate. A **one-file** build self-extracts its whole archive to a
+fresh temp directory on *every* launch, and on macOS Gatekeeper then re-scans
+every extracted Mach-O at that new path — making cold start ~60s. One-dir keeps
+the libraries at a stable path that Gatekeeper scans once, so cold start drops to
+a few seconds (≈ the Python import time).
 
 ```bash
 cd sidecar && pip install -e ".[packaging]"
-python packaging/build_sidecar.py        # one-file -> sidecar/dist/storage-agent-sidecar
+python packaging/build_sidecar.py        # -> sidecar/dist/storage-agent-sidecar/ (a folder)
 python packaging/smoke_test_sidecar.py   # starts it, checks /health, stops it
 ```
 
-The packaged sidecar CLI:
+Packaged CLI (production never enables uvicorn `--reload`):
 
 ```bash
 storage-agent-sidecar --host 127.0.0.1 --port 8765 --data-dir <path>
 ```
 
-Production mode never enables uvicorn `--reload`.
+## Desktop app: bundle the sidecar as a resource
 
-## Build the desktop app
+Because one-dir is a folder (not a single file), it is shipped as a Tauri
+**resource** rather than an `externalBin`. The build wiring:
 
-Requires the Rust toolchain (`cargo`, `rustc`) and platform webview deps.
+1. `scripts/build-sidecar-for-tauri.py` builds the one-dir bundle and stages it
+   at `src-tauri/sidecar-dist/storage-agent-sidecar/`.
+2. `tauri.conf.json` → `bundle.resources` maps that folder into the app's
+   resource directory (`Contents/Resources/sidecar/` on macOS).
+3. `src-tauri/src/lib.rs` resolves the inner executable under the resource dir
+   and launches it directly with `std::process::Command` — no shell plugin, no
+   shell capability.
 
 ```bash
-# place the built sidecar where Tauri expects it (target-triple suffix)
-mkdir -p src-tauri/binaries
-cp sidecar/dist/storage-agent-sidecar \
-   src-tauri/binaries/storage-agent-sidecar-$(rustc -Vv | sed -n 's/host: //p')
-
-cd src-tauri && cargo tauri build   # or: cargo tauri dev
+# one command does frontend + sidecar one-dir + cargo tauri build + macOS seal:
+scripts/build-desktop-macos.sh
+# (Linux / Windows: scripts/build-desktop-linux.sh, scripts/build-desktop-windows.ps1)
 ```
 
-At runtime the Tauri shell picks a free localhost port, spawns the sidecar with
-`STORAGE_AGENT_DATA_DIR` set to the OS app-data dir, exposes the URL via the
+At runtime the Rust shell picks a free localhost port, spawns the sidecar with
+`STORAGE_AGENT_DATA_DIR` (the OS app-data dir) and `STORAGE_AGENT_PARENT_PID`
+(so the sidecar exits if the app dies, never orphaned), exposes the URL via the
 `get_sidecar_url` command, and kills the sidecar on exit. The frontend shows
 sidecar status: **starting → connected | disconnected | error**.
 
@@ -65,38 +78,30 @@ sidecar status: **starting → connected | disconnected | error**.
 - All user data — SQLite DB, `runs/`, DuckDB files, reports, uploads — lives
   under the app data dir.
 - Resolution: `STORAGE_AGENT_DATA_DIR` → `SAW_DATA_DIR` (legacy/dev) →
-  `<repo>/data` (dev default). In production Tauri sets
-  `STORAGE_AGENT_DATA_DIR` to the OS app-data dir.
-- Paths recorded into reports / `tool_calls` / `audit_logs` remain relative.
-- User data is **never** written to the application install dir, and is **never**
-  bundled into the app.
+  `<repo>/data` (dev default). In production Tauri sets `STORAGE_AGENT_DATA_DIR`
+  to the OS app-data dir.
+- Paths recorded into reports / `tool_calls` / `audit_logs` stay relative.
+- User data is **never** written to the install dir and **never** bundled.
 
 ## Secrets
 
-Secrets (cloud AK/SK, session tokens, model API keys) remain in the OS keychain
-via `keyring`. They are never bundled, never written to SQLite, and never logged.
+Secrets (cloud AK/SK, session tokens, model API keys) live only in the OS
+keychain via `keyring`. They are never bundled, never written to SQLite, and
+never logged.
 
-## Known limitations (Phase 08)
+## Notes & limitations
 
-- **Rust toolchain required for the desktop build.** In the current development
-  environment `cargo`/`rustc` are not installed, so `cargo tauri dev/build` have
-  not been run or verified here. The Tauri Rust integration follows the standard
-  v2 sidecar pattern and must be built on a machine with Rust.
-- **No code signing / notarization.**
-- **No auto-update.**
-- PyInstaller bundling of `duckdb`/`pyarrow`/`pandas` is heavy; build times and
-  bundle size are significant. The Agents SDK is bundled but agent mode still
-  fails cleanly without a configured model API key.
+- The desktop build requires the Rust toolchain (`cargo`, `rustc`) and platform
+  webview deps; sidecar + frontend can be built/tested without Rust.
+- Bundling `duckdb` / `pyarrow` / `pandas` is heavy, so the bundle is large and
+  builds take a few minutes.
+- macOS builds are ad-hoc sealed, **not** notarized; see [signing.md](signing.md).
+- No auto-update yet.
 
-## Cross-platform builds (Phase 11)
+## Cross-platform builds
 
-macOS arm64 is the verified, supported target (unsigned). Linux x64 and
-Windows x64 are experimental, built per-platform in CI. The sidecar is
-built on each platform (PyInstaller does not reliably cross-compile) and
-copied to `src-tauri/binaries/storage-agent-sidecar-<target-triple>`
-(`.exe` on Windows). See **[release.md](release.md)** for the platform
-support matrix and build commands.
-
-## Runtime verification (Phase 12)
-
-`scripts/verify-runtime-{macos.sh,linux.sh,windows.ps1}` (over `verify-runtime-common.py`) verify the built app launches, spawns the bundled sidecar, serves `/health`, and cleans up on quit. See **[release.md](release.md)** for the runtime support matrix.
+macOS arm64, Linux x64, and Windows x64 are built per-platform in CI (PyInstaller
+does not reliably cross-compile, so the sidecar one-dir is produced on each OS).
+`scripts/verify-runtime-{macos.sh,linux.sh,windows.ps1}` confirm the built app
+launches, spawns the sidecar, serves `/health`, and cleans up on quit. See
+**[release.md](release.md)** for the support matrix.

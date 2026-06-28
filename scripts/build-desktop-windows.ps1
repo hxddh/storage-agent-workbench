@@ -1,6 +1,6 @@
 # Build the Windows x64 desktop app for Storage Agent Workbench (Phase 11).
 #
-# Steps: frontend build -> one-file sidecar .exe build + copy externalBin ->
+# Steps: frontend build -> one-dir sidecar build + stage resource ->
 # cargo check -> cargo build -> attempt `cargo tauri build --bundles nsis`.
 # Produces an UNSIGNED installer. No signing, no auto-update.
 #
@@ -13,7 +13,7 @@ Set-Location $Repo
 Write-Host "==> [1/5] Building frontend"
 Push-Location frontend; npm install; npm run build; Pop-Location
 
-Write-Host "==> [2/5] Building sidecar + copying externalBin (x86_64-pc-windows-msvc.exe)"
+Write-Host "==> [2/5] Building sidecar one-dir + staging resource"
 python scripts/build-sidecar-for-tauri.py
 
 Write-Host "==> [3/5] cargo check"

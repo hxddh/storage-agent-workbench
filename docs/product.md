@@ -1,18 +1,16 @@
 # Product
 
-## Product goal
+## Goal
 
-Build a local-first Storage Agent Workbench for object storage and S3-compatible systems.
-
-The app should help users diagnose, analyze, and review object storage workloads through evidence-backed Analysis Runs.
+A local-first Storage Agent Workbench for object storage and S3-compatible
+systems that helps users diagnose, analyze, and review storage workloads through
+evidence-backed analysis runs.
 
 ## Primary users
 
-- Cloud storage engineers
-- SRE / ops engineers
+- Cloud storage / SRE / ops engineers
 - Data infrastructure engineers
-- Developers debugging S3-compatible systems
-- Engineers analyzing object storage access patterns and bucket layout
+- Developers debugging S3-compatible systems and access patterns
 
 ## Core jobs
 
@@ -20,75 +18,41 @@ The app should help users diagnose, analyze, and review object storage workloads
 2. Analyze access logs.
 3. Analyze inventory, capacity, and object distribution.
 4. Review bucket configuration.
-5. Generate evidence-backed Markdown reports.
+5. Triage object-storage errors.
+6. Generate evidence-backed Markdown reports.
 
 ## Product shape
 
-The interface should be Claude/Codex-like: task-oriented, run-oriented, and evidence-oriented.
+A **thread-first agentic workbench** (Codex/Cursor-style), not a tabbed admin
+panel:
 
-It should use a three-column layout.
+- **Session rail** (left): "New investigation", the session list with
+  rename / pin / archive / delete / fork, and a settings + sidecar-status footer.
+- **Conversation thread** (center): a sticky composer with two modes — "Ask the
+  agent" and offline "Triage an error". Messages, analysis runs, error-triage
+  cases, and proposed next actions all render as **inline cards**; a run card
+  expands in place to its full transcript.
+- **Settings drawer** (right slide-over): model- and cloud-provider management,
+  plus a one-time first-run wizard on a fresh install.
 
-Left:
+Dark and light themes; English and 中文.
 
-- Runs
-- Providers
-- Datasets
-- Reports
-- Settings
-
-Middle:
-
-- Current Analysis Run
-- Agent plan
-- Tool / Analysis Timeline
-- Metrics
-- Findings
-- Report preview
-
-Right:
-
-- Provider context
-- Bucket context
-- Endpoint
-- Region
-- Mode
-- Allowed prefixes
-- Risk policy
-- Approval status
+> Earlier phases used a three-column layout (Runs/Providers/Datasets/Reports/
+> Settings + main run area + context panel). That shell was retired in favor of
+> the thread-first design above; the underlying concepts (analysis runs, run
+> types, providers) are unchanged — only the presentation moved into the thread.
 
 ## Run types
-
-Initial run types:
 
 - `diagnostic`
 - `access_log_analysis`
 - `inventory_analysis`
 - `bucket_config_review`
 - `optimization_report`
+- `account_discovery`
 
-## MVP scope
+## Non-goals
 
-MVP should support:
-
-- Local desktop shell
-- Python sidecar
-- Health check
-- Provider configuration in later phases
-- Readonly S3-compatible diagnostics in later phases
-- DuckDB-backed access log and inventory analysis in later phases
-- Bucket config review in later phases
-- Markdown reports in later phases
-
-## Non-goals for MVP
-
-- Generic chat assistant
-- Full S3 file browser
-- Cloud sync
-- Multi-user SaaS
-- Team RBAC
-- Workflow canvas
-- Plugin marketplace
-- Automatic repair
-- Destructive operations
-- Arbitrary shell access
-- GitHub Issues workflow
+A generic chat assistant, a full S3 file browser, cloud sync, multi-user SaaS,
+team RBAC, a workflow canvas, a plugin marketplace, automatic repair, destructive
+operations, or arbitrary shell access.

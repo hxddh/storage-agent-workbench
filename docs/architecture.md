@@ -23,7 +23,7 @@ SQLite / DuckDB / keyring / local files
 Tauri is responsible for:
 
 - Desktop shell
-- Launching the sidecar in later phases
+- Launching the sidecar
 - Packaging
 - Local desktop integration
 
@@ -36,32 +36,25 @@ Tauri is not responsible for:
 
 ## Frontend
 
-The frontend is responsible for:
+A thread-first agentic workbench (Codex/Cursor-style) built with React + Vite +
+TypeScript + Tailwind:
 
-- Claude/Codex-like three-column UI
-- Runs
-- Providers
-- Datasets
-- Reports
-- Settings
-- Tool Timeline
-- Metrics cards
-- Findings
-- Report preview
+- Session rail (new investigation; rename / pin / archive / delete / fork).
+- Conversation thread with a sticky composer; runs, error-triage cases, and
+  proposed next actions render as inline cards.
+- Settings drawer for model/cloud providers; first-run wizard.
+- Tool timeline, findings, and report preview inside run cards.
+- Dark/light themes and English/中文.
 
 ## Sidecar
 
-The Python FastAPI sidecar is responsible for:
+The Python FastAPI sidecar provides the local API:
 
-- Local API
-- Health check
-- SSE streaming in later phases
-- SQLite metadata
-- keyring access in later phases
-- S3 tools in later phases
-- DuckDB analysis in later phases
-- Report generation in later phases
-- Agent runtime integration in later phases
+- Health check and SSE streaming (with a blocking fallback).
+- SQLite metadata; secrets via OS keyring (references only in SQLite).
+- Read-only S3 / S3-compatible diagnostic tools.
+- DuckDB analysis for inventory and access logs.
+- The interpretation-only agent (OpenAI Agents SDK) and report generation.
 
 ## Storage responsibilities
 
@@ -105,23 +98,21 @@ Default sidecar URL:
 http://127.0.0.1:8765
 ```
 
-Phase 01 only implements:
+Health check:
 
 ```text
 GET /health
 ```
 
-## Future streaming
+The sidecar exposes routers for model/cloud providers, S3 diagnostic tools,
+runs, evidence imports, sessions, and reports. See [api.md](api.md).
 
-Use Server-Sent Events for run events:
+## Streaming
 
-```text
-GET /runs/{run_id}/events
-```
+Run events stream over Server-Sent Events, with a blocking fallback when SSE is
+unavailable. WebSocket is intentionally not used.
 
-Do not introduce WebSocket unless explicitly requested.
-
-## Account discovery (Phase 14)
+## Account discovery
 
 The `account_discovery` run type builds an account-level asset picture from
 read-only APIs:
@@ -133,7 +124,7 @@ read-only APIs:
 - **`list_buckets`** (`s3/tools.py`) is the only listing performed — a read-only
   ListBuckets. It never calls ListObjectsV2 and never touches object bodies.
   Capability/permission gaps map to `provider_unsupported` / `access_denied`.
-- **`account_tools.get_bucket_config_snapshot`** reuses the Phase 06 read-only
+- **`account_tools.get_bucket_config_snapshot`** reuses the read-only
   config readers to produce per-bucket status enums (available / not_configured
   / provider_unsupported / access_denied / error) for versioning, encryption,
   lifecycle, logging, replication, policy, public-access-block, tagging,
@@ -155,7 +146,7 @@ read-only APIs:
   list or config JSON is ever sent to an LLM. Agent account-level analysis is a
   future phase.
 
-## Next-action handoff (Phase 17)
+## Next-action handoff
 
 Next-action proposals become an **Agentic hand-over**, never automation:
 
@@ -191,7 +182,7 @@ Next-action proposals become an **Agentic hand-over**, never automation:
   `next_action_opened` — lightweight events, not a task lifecycle (no
   assignee/status-board/ticket state).
 
-## StorageOps skill context injection (Phase 19)
+## StorageOps skill context injection
 
 The existing Agents gain **professional-method context** from the bundled
 StorageOps skill pack — skills-only, guidance-only. It is NOT a skills platform:
@@ -220,14 +211,14 @@ multi-agent runtime, skill API, skill UI, skill DB tables, or RAG.
   (not to the sanitized evidence context) and emit a minimal contract via
   `skills/contract.py`: `{answer, skills_used, evidence_used, evidence_gaps,
   next_action_proposals}` — answer redacted + CoT-stripped, skills_used limited
-  to injected skills, proposals coerced through the Phase 17 allowlist. The raw
+  to injected skills, proposals coerced through the allowlist. The raw
   error blob / secrets / chain-of-thought never reach the model. Deterministic
   triage (or a missing model key) does not fabricate a skill-grounded diagnosis.
 - No migration / DB table / public skill API was added; skill-grounded fields
   ride existing session-message responses and the triage case JSON, and the
   session report lightly absorbs `skills_used` / `evidence_gaps` when present.
 
-## Error triage assistant (Phase 18)
+## Error triage assistant
 
 A session-centered capability to triage S3 / object-storage / S3-compatible
 errors — NOT a static FAQ or error-code dictionary page.
@@ -247,7 +238,7 @@ errors — NOT a static FAQ or error-code dictionary page.
   checks, related run types, and provider caveats.
 - **`error_triage/engine.py`** runs deterministically: parse → match → candidate
   causes + safe next checks + next-action proposals (normalized through the
-  Phase 17 allowlist). It performs NO S3 call, run, download, or mutation.
+  the allowlist). It performs NO S3 call, run, download, or mutation.
 - **`error_triage/triage_agent.py`** is interpretation-only (seam `TRIAGE_LOOP`,
   `tools=[]`): the model sees ONLY the sanitized triage context (parsed signals +
   candidate-cause titles/why + next checks), never the raw blob, never secrets.
@@ -256,12 +247,12 @@ errors — NOT a static FAQ or error-code dictionary page.
 - **API**: `POST /error-triage`, `GET /error-triage/{id}`,
   `GET /sessions/{id}/error-triage`. A case binds to its session and the session
   summary is refreshed; cases also appear in the session report's Error triage
-  section. Next actions are Phase 17 proposals — the user reviews/prepares them.
+  section. Next actions are the proposals — the user reviews/prepares them.
 - Persistence (`error_triage_cases`, `error_triage_findings`) stores only the
   redacted input + sanitized parsed signals/findings — never raw sensitive logs,
   secrets, or chain-of-thought. This is not a ticketing system.
 
-## Session-centered agentic workbench (Phase 16)
+## Session-centered agentic workbench
 
 The product is a **session-centered agentic workbench**, not a cloud-management
 dashboard or project tracker. The model is:
@@ -297,9 +288,9 @@ dashboard or project tracker. The model is:
 - **Not** a CMDB, monitoring wall, ticketing/kanban/PM system, object browser,
   or multi-user/permission surface. No such tables or endpoints exist.
 
-## Managed evidence import (Phase 15)
+## Managed evidence import
 
-Connects account_discovery (Phase 14) to the Phase 05 DuckDB analysis path,
+Connects account_discovery to the DuckDB analysis path,
 under a bounded, confirmation-gated flow:
 
     discover inventory/logging source → plan → (explicit) confirm → run
@@ -311,7 +302,7 @@ under a bounded, confirmation-gated flow:
   `POST /evidence-imports/{id}/confirm`, `POST /evidence-imports/{id}/run`.
 - **Source validation:** a plan request names an account_discovery run + bucket
   + source type; the server resolves the *discovered* evidence destination from
-  the persisted Phase 14 evidence source (inventory destination bucket/prefix or
+  the persisted the evidence source (inventory destination bucket/prefix or
   server-access-logging target bucket/prefix). The caller cannot point the
   import at an arbitrary bucket/key.
 - **Planning** (`evidence/managed_import.py`): inventory planning prefers a
@@ -337,12 +328,12 @@ under a bounded, confirmation-gated flow:
 Runs carry a `planner_mode` (`deterministic` by default, or `agent`). Two
 distinct agent paths exist:
 
-- **Tool-calling planner** (Phase 07) — for `diagnostic` and
+- **Tool-calling planner** — for `diagnostic` and
   `bucket_config_review`. A controlled LLM loop selects from the read-only
   whitelist tools through the shared tool runner; outputs are sanitized/bounded
   before reaching the model. Implemented in `agent_runtime/agent_service.py`
   (seam: `AGENT_LOOP`).
-- **Interpretation-only narrator** (Phase 13) — for `access_log_analysis` and
+- **Interpretation-only narrator** — for `access_log_analysis` and
   `inventory_analysis`. The deterministic DuckDB analysis runs first and
   produces metrics + findings; the executor then hands the model **only** a
   bounded, sanitized aggregate context (run/dataset metadata + metrics +
@@ -358,7 +349,7 @@ key. A missing model provider key fails the agent run cleanly and never affects
 deterministic runs. The generated report keeps deterministic metrics and the
 agent interpretation in separate, clearly-labelled sections.
 
-## Packaging & desktop integration (Phase 08)
+## Packaging & desktop integration
 
 - The Python sidecar is bundled with PyInstaller (`sidecar/packaging/`) into a
   one-dir executable, `storage-agent-sidecar`.

@@ -1,67 +1,53 @@
 # Install
 
-## Status
-
-- **v0.19.0-pre.1** is the planned first public pre-release.
-- Builds are **unsigned** and **pre-1.0** — expect rough edges and Gatekeeper
-  warnings.
-- **macOS arm64** is the primary supported target.
-- Linux x64 and Windows x64 are **experimental** (CI build/smoke only; see below).
-
-Public downloads are published on
+Download the installer for your platform from
 [GitHub Releases](https://github.com/hxddh/storage-agent-workbench/releases).
-CI artifacts under GitHub Actions are for development verification only and are
-not public release assets (see [release.md](release.md)).
+Each release attaches macOS, Linux, and Windows assets plus per-platform
+`SHA256SUMS` files you can use to verify your download.
 
-## macOS arm64
+Builds are **ad-hoc signed and not notarized**, so every platform shows some form
+of "unidentified developer" warning on first launch. This is expected for these
+pre-1.0 builds; it is not a defect. Cold start takes a few seconds while the
+bundled sidecar comes up — the window shows **Sidecar: Connecting** until it is
+ready.
 
-1. Download the macOS asset from the GitHub Release once it is available
-   (`...-macos-arm64.dmg` if present, otherwise `...-macos-arm64.app.zip`).
-2. If you downloaded the DMG, open it and drag the app out; if you downloaded the
-   zip, unzip it to get `Storage Agent Workbench.app`.
-3. Move the app to `/Applications` if you like.
-4. **First launch shows a Gatekeeper prompt** ("unidentified developer") because
-   the app is ad-hoc signed and not notarized.
-5. Open it one of two ways:
-   - Finder: right-click the app → **Open** → **Open** in the dialog; or
-   - Terminal — clear the quarantine attribute, then open:
+## macOS (Apple Silicon)
+
+1. Download `...-macos-arm64.dmg` (or `...-macos-arm64.app.zip`).
+2. From the DMG, drag **Storage Agent Workbench** to `/Applications`; from the
+   zip, unzip and move the app there.
+3. Open it one of two ways:
+   - **Finder:** right-click the app → **Open** → **Open** in the dialog; or
+   - **Terminal:** clear the quarantine attribute, then open:
 
      ```bash
-     xattr -dr com.apple.quarantine "/path/to/Storage Agent Workbench.app"
-     open "/path/to/Storage Agent Workbench.app"
+     xattr -dr com.apple.quarantine "/Applications/Storage Agent Workbench.app"
+     open "/Applications/Storage Agent Workbench.app"
      ```
-6. **The first launch is slow (up to ~1 minute).** The app embeds a one-file
-   Python sidecar, and macOS validates its code signature the first time it is
-   extracted. Subsequent launches are fast. The window shows **Sidecar: Connecting**
-   until it is ready.
 
-Notes:
+The app is ad-hoc code-signed, so the bundle seal is valid (no "app is damaged"
+error). It is not a Developer ID signature and not notarized, so the Gatekeeper
+prompt is expected. See [signing.md](signing.md).
 
-- The app is **ad-hoc code-signed** so the bundle seal is valid (no "app is
-  damaged" error). It is **not** signed with an Apple Developer ID and is **not
-  notarized**, so the Gatekeeper "unidentified developer" prompt is expected for
-  these pre-release builds; it is not a defect.
+## Linux (x64)
 
-## Linux x64
+```bash
+sudo apt install ./storage-agent-workbench-*-linux-x64.deb
+```
 
-Experimental. The CI matrix builds a Linux x64 desktop bundle and runs a sidecar
-smoke test, but a public release asset is **not yet supported** for the first
-release workflow. Until a `.deb` (or equivalent) is explicitly attached to a
-Release, use a local build (`scripts/build-desktop-linux.sh`) or the CI artifact
-for development verification only.
+Or download the `.deb` and install via your package manager. A WebKitGTK runtime
+is required (pulled in as a dependency on most distributions).
 
-## Windows x64
+## Windows (x64)
 
-Experimental. The CI matrix builds a Windows x64 NSIS installer and runs a
-sidecar smoke test, but a public release asset is **not yet supported** for the
-first release workflow. Until an `.exe` is explicitly attached to a Release, use
-a local build (`scripts/build-desktop-windows.ps1`) or the CI artifact for
-development verification only.
+Run `...-windows-x64-setup.exe`. SmartScreen may warn because the installer is
+not Authenticode-signed — choose **More info → Run anyway**. The WebView2 runtime
+is required (preinstalled on current Windows; the installer fetches it if absent).
 
 ## Data and secrets
 
-- **App data** is stored in the OS app-data directory (the desktop app passes
-  `STORAGE_AGENT_DATA_DIR`); in dev it lives under `<repo>/data`.
+- **App data** (SQLite DB, DuckDB files, reports, uploads) is stored in the OS
+  app-data directory; in dev it lives under `<repo>/data`.
 - **Secrets** (cloud access/secret keys, session tokens, model API keys) are
   stored only in the **OS keychain / keyring** — never in plaintext on disk.
 - User data is **never** written into the install directory or bundled into the

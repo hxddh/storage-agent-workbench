@@ -34,15 +34,20 @@ fail() { echo "FAIL: $1" >&2; exit 1; }
 [ -n "$APP" ] && [ -d "$APP" ] || fail "no .app found under $APP_DIR (run the build first)"
 echo "==> Sealing: $APP  (identity: $IDENTITY)"
 
-# Sign inside-out: nested Mach-O binaries first, then the bundle. No
-# --options runtime (that is the hardened runtime that breaks the sidecar).
-while IFS= read -r bin; do
-  [ "$(basename "$bin")" = "$(basename "$APP" .app)" ] && continue  # main binary signed with the bundle
-  echo "    sign nested: $(basename "$bin")"
-  codesign --force --sign "$IDENTITY" "$bin"
-done < <(find "$APP/Contents/MacOS" -type f -perm -111)
-
-codesign --force --sign "$IDENTITY" "$APP"
+# Deep ad-hoc sign the whole bundle in one pass. `--deep` recursively signs all
+# nested code — the main binary, the bundled PyInstaller one-dir sidecar under
+# Contents/Resources/sidecar/ (its launcher, ~180 .so/.dylib, and the embedded
+# Python.framework) — and seals resources, so `codesign --verify --deep --strict`
+# passes and Finder no longer reports the app as "damaged".
+#
+# Crucially there is NO `--options runtime`: the hardened runtime prevents the
+# PyInstaller sidecar from dlopen-ing its bundled libraries, so it would never
+# start. This is a plain ad-hoc seal — valid and verifiable, but NOT a Developer
+# ID signature and NOT notarized (Gatekeeper still shows the normal
+# "unidentified developer" prompt; clear the quarantine attribute or right-click
+# Open). Notarization is out of scope for these unsigned pre-1.0 builds.
+echo "    deep ad-hoc sign (no hardened runtime)"
+codesign --force --deep --sign "$IDENTITY" "$APP"
 
 echo "==> Verifying seal (codesign --verify --deep --strict)"
 codesign --verify --deep --strict --verbose=2 "$APP" || fail "codesign verify failed after sealing"

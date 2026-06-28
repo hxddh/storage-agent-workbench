@@ -32,8 +32,8 @@ it doesn't hit the hardened-runtime problem we do (below).
 ## Our extra wrinkle: the Python sidecar + hardened runtime
 
 Notarization requires the **hardened runtime**. Under it, our bundled PyInstaller
-one-file Python sidecar can't load its embedded framework and never starts (this is
-exactly why the default build is ad-hoc **without** the hardened runtime). So a
+Python sidecar can't load its embedded libraries/framework and never starts (this
+is exactly why the default build is ad-hoc **without** the hardened runtime). So a
 notarized build must also ship entitlements that re-allow what the sidecar needs:
 [`scripts/macos-entitlements.plist`](../scripts/macos-entitlements.plist)
 (`disable-library-validation`, `allow-dyld-environment-variables`,

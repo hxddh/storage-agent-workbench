@@ -16,7 +16,8 @@ if [ -z "$APP" ]; then
   exit 1
 fi
 MAIN_EXE="$APP/Contents/MacOS/storage-agent-workbench"
-SIDECAR="$APP/Contents/MacOS/storage-agent-sidecar"
+# The sidecar is a PyInstaller one-dir bundle shipped as a Tauri resource.
+SIDECAR="$APP/Contents/Resources/sidecar/storage-agent-sidecar"
 
 python3 scripts/verify-runtime-common.py \
   --main-exe "$MAIN_EXE" \

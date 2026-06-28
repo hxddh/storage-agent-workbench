@@ -1,24 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability set for the Phase 08 shell: core + spawning the bundled sidecar only.",
+  "description": "Default capability set: core only. The bundled sidecar (a one-dir resource) is launched directly from Rust via std::process, not the shell plugin, so no shell capability is needed.",
   "windows": ["main"],
   "permissions": [
-    "core:default",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "binaries/storage-agent-sidecar",
-          "sidecar": true,
-          "args": [
-            "--host",
-            "127.0.0.1",
-            "--port",
-            { "validator": "\\d+" }
-          ]
-        }
-      ]
-    }
+    "core:default"
   ]
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the macOS desktop app end to end (Phase 09).
 #
-# Steps: frontend build -> sidecar PyInstaller build + copy externalBin ->
+# Steps: frontend build -> sidecar one-dir build + stage resource ->
 # Tauri build. Uses `cargo tauri build` if the Tauri CLI is installed, otherwise
 # falls back to `cargo build` (compiles + links the desktop binary; no .app
 # bundle). No code signing / notarization / auto-update.
@@ -19,7 +19,7 @@ cd "$REPO"
 echo "==> [1/4] Building frontend"
 ( cd frontend && npm install && npm run build )
 
-echo "==> [2/4] Building sidecar and copying externalBin"
+echo "==> [2/4] Building sidecar one-dir and staging resource"
 python3 scripts/build-sidecar-for-tauri.py
 
 echo "==> [3/4] cargo check"

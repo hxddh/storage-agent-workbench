@@ -1,97 +1,37 @@
-# Roadmap
+# Status & direction
 
-Do not use GitHub Issues for MVP project management.
+## Where it is now
 
-Use phase branches or clear phase commits.
+The workbench is feature-complete for its core loop and ships installers for
+macOS (arm64), Linux (x64), and Windows (x64) on every tagged release.
 
-## Phase 01: Bootstrap
+Working end to end:
 
-Scope:
+- Model + cloud (S3-compatible) provider configuration; secrets in the OS keychain.
+- Read-only S3 diagnostics and account discovery.
+- Bucket configuration review (security / lifecycle / observability / cost).
+- Managed evidence import (plan → confirm → run) for inventory and access logs.
+- Local DuckDB analysis of inventory and access logs.
+- Error triage.
+- Sessions: a persistent investigation workspace with rename / pin / archive /
+  delete / fork.
+- Interpretation-only agent that explains findings and *proposes* next actions
+  for you to confirm — it never runs anything on its own.
+- Markdown reports.
 
-- GitHub private repo
-- Project skeleton
-- Documentation
-- Tauri / React shell
-- FastAPI sidecar
-- GET /health
-- Sidecar status UI
-- Basic CI
-- Example files
+## Known gaps
 
-Do not implement:
+- Builds are ad-hoc signed, **not** notarized (macOS) or Authenticode-signed
+  (Windows); see [signing.md](signing.md).
+- No auto-update.
+- macOS x64 / universal builds are not produced.
+- Inventory import is CSV / Parquet only (no ORC).
+- CloudTrail / Storage Lens / provider-native access-log sources are not yet
+  integrated.
 
-- Agent runtime
-- S3 tools
-- DuckDB analysis
-- keyring
-- Provider CRUD
-- Generic shell
-- Destructive operations
+## Direction
 
-## Phase 02: Providers
-
-Scope:
-
-- SQLite
-- keyring wrapper
-- Model provider CRUD
-- Cloud provider CRUD
-- Redaction utility
-
-## Phase 03: S3 tools
-
-Scope:
-
-- Readonly S3-compatible tool layer
-- Provider test connection
-- Sanitized tool calls
-- Audit logs
-
-## Phase 04: Runs and timeline
-
-Scope:
-
-- Analysis Run model
-- SSE
-- Tool Timeline
-- Diagnostic run
-- Markdown report
-
-## Phase 05: DuckDB analysis
-
-Scope:
-
-- Access log analysis
-- Inventory analysis
-- Metrics cards
-- Findings
-- Analysis reports
-
-## Phase 06: Bucket config review
-
-Scope:
-
-- Readonly config summary
-- Security findings
-- Lifecycle findings
-- Observability findings
-- Provider unsupported handling
-
-## Phase 07: Agents SDK
-
-Scope:
-
-- OpenAI Agents SDK integration
-- Whitelist tools
-- Evidence-backed findings
-- Existing SSE and timeline preserved
-
-## Phase 08: Packaging
-
-Scope:
-
-- Tests
-- Examples
-- Tauri sidecar packaging
-- Demo docs
-- MVP acceptance review
+Likely next steps, in rough priority order: notarization + auto-update, broader
+evidence sources, and richer agent-assisted analysis. None of these change the
+safety model — read-only by default, secrets only in the keychain, and no action
+runs without explicit confirmation.

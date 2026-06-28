@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the macOS .app (and DMG, if the bundler can) for Storage Agent Workbench.
 #
-# Steps: frontend build -> one-file sidecar build + copy externalBin ->
+# Steps: frontend build -> one-dir sidecar build + stage resource ->
 # `cargo tauri build` (bundle active). Produces an UNSIGNED bundle. No code
 # signing, notarization, or auto-update.
 #
@@ -16,7 +16,7 @@ cd "$REPO"
 echo "==> [1/4] Building frontend"
 ( cd frontend && npm install && npm run build )
 
-echo "==> [2/4] Building sidecar + copying externalBin"
+echo "==> [2/4] Building sidecar one-dir + staging resource"
 python3 scripts/build-sidecar-for-tauri.py
 
 echo "==> [3/4] Verifying Tauri CLI"

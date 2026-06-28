@@ -6,11 +6,17 @@
 #     pyinstaller packaging/storage-agent-sidecar.spec --noconfirm \
 #         --distpath dist --workpath build/pyinstaller
 #
-# Produces a ONE-FILE binary at: sidecar/dist/storage-agent-sidecar
+# Produces a ONE-DIR bundle at: sidecar/dist/storage-agent-sidecar/
+# (the `storage-agent-sidecar` executable plus an `_internal/` folder of libs).
 #
-# One-file is used so the binary fits Tauri's `externalBin` (a single
-# target-triple-suffixed file copied to src-tauri/binaries/). Trade-off: a
-# one-file build self-extracts on each launch, so cold start is slower.
+# One-DIR (not one-file) is deliberate: a one-file build self-extracts its whole
+# archive to a fresh temp dir on EVERY launch, and on macOS Gatekeeper then
+# re-scans every extracted Mach-O at that new path — making cold start ~60s.
+# One-dir keeps the libraries at a stable path inside the app bundle (scanned
+# once), so cold start drops to ~the Python import time. The Tauri app bundles
+# this folder as a resource and launches the inner executable directly (see
+# src-tauri/src/lib.rs); it is NOT wired through `externalBin`, which only
+# supports a single file.
 #
 # Security: this spec bundles ONLY code + library data. It must never include
 # .env, the SQLite DB, keyring contents, or data/runs output (see `excludes`
@@ -74,13 +80,20 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,  # one-dir: libraries live in the COLLECT folder
     name="storage-agent-sidecar",
     console=True,
-    onefile=True,
     strip=False,
     upx=False,
     disable_windowed_traceback=False,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name="storage-agent-sidecar",
 )

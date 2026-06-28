@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""Cross-platform desktop artifact verifier (Phase 11).
+"""Cross-platform desktop artifact verifier.
 
-Checks that the sidecar externalBin for the current target triple is present and
+Checks that the staged sidecar one-dir bundle (the Tauri resource) is present and
 lists any desktop bundle artifacts produced under src-tauri/target/release/
 bundle/ (macOS .app/.dmg, Linux .deb/.rpm/.AppImage, Windows .exe/.msi).
 
 Read-only inspection. No GUI launch, no signing, no cloud/keyring access.
 Exit codes:
-    0  externalBin present (artifacts listed; absence of bundles is reported, not failed)
-    1  externalBin missing for the current triple
+    0  staged sidecar present (artifacts listed; absence of bundles is reported, not failed)
+    1  staged sidecar one-dir missing
 """
 
 from __future__ import annotations
 
 import platform
-import subprocess  # fixed internal command (rustc probe) only
 import sys
 from pathlib import Path
 
@@ -23,32 +22,18 @@ BIN_NAME = "storage-agent-sidecar"
 BUNDLE = REPO / "src-tauri" / "target" / "release" / "bundle"
 
 
-def target_triple() -> str:
-    try:
-        out = subprocess.run(["rustc", "-Vv"], capture_output=True, text=True, check=True).stdout
-        for line in out.splitlines():
-            if line.startswith("host:"):
-                return line.split(":", 1)[1].strip()
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        pass
-    machine = platform.machine().lower()
-    arch = {"arm64": "aarch64", "aarch64": "aarch64", "x86_64": "x86_64", "amd64": "x86_64"}.get(machine, machine)
-    system = platform.system().lower()
-    return {"darwin": f"{arch}-apple-darwin", "linux": f"{arch}-unknown-linux-gnu",
-            "windows": f"{arch}-pc-windows-msvc"}.get(system, f"{arch}-unknown")
-
-
 def main() -> int:
-    triple = target_triple()
     suffix = ".exe" if platform.system().lower() == "windows" else ""
-    ext_bin = REPO / "src-tauri" / "binaries" / f"{BIN_NAME}-{triple}{suffix}"
-    print(f"Target triple: {triple}")
+    # build-sidecar-for-tauri.py stages the one-dir bundle here; tauri.conf.json
+    # bundles it via bundle.resources.
+    staged = REPO / "src-tauri" / "sidecar-dist" / BIN_NAME
+    inner = staged / (BIN_NAME + suffix)
 
-    if not ext_bin.exists():
-        print(f"FAIL: externalBin missing: {ext_bin.relative_to(REPO)}")
+    if not inner.exists():
+        print(f"FAIL: staged sidecar one-dir missing: {inner.relative_to(REPO)}")
         print("Run: python3 scripts/build-sidecar-for-tauri.py")
         return 1
-    print(f"OK externalBin: {ext_bin.relative_to(REPO)} ({ext_bin.stat().st_size} bytes)")
+    print(f"OK staged sidecar: {staged.relative_to(REPO)}/ (launcher {inner.stat().st_size} bytes)")
 
     patterns = ["macos/*.app", "dmg/*.dmg", "deb/*.deb", "rpm/*.rpm",
                 "appimage/*.AppImage", "nsis/*.exe", "msi/*.msi"]

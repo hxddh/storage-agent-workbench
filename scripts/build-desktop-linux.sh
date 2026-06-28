@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the Linux x64 desktop app for Storage Agent Workbench (Phase 11).
 #
-# Steps: frontend build -> one-file sidecar build + copy externalBin ->
+# Steps: frontend build -> one-dir sidecar build + stage resource ->
 # cargo check -> cargo build -> attempt `cargo tauri build --bundles deb`.
 # Produces UNSIGNED artifacts. No signing, no auto-update.
 #
@@ -21,7 +21,7 @@ cd "$REPO"
 echo "==> [1/5] Building frontend"
 ( cd frontend && npm install && npm run build )
 
-echo "==> [2/5] Building sidecar + copying externalBin (x86_64-unknown-linux-gnu)"
+echo "==> [2/5] Building sidecar one-dir + staging resource"
 python3 scripts/build-sidecar-for-tauri.py
 
 echo "==> [3/5] cargo check"
