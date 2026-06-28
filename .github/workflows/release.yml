@@ -1,23 +1,23 @@
 name: Release
 
-# Manual, dispatch-only pre-release publisher. It does NOT run on push or tag.
-# It builds the UNSIGNED macOS arm64 desktop bundle and publishes (by default a
-# draft prerelease) GitHub Release with stable-named assets + SHA256SUMS.txt.
-# No code signing, no notarization, no auto-update. Uses only the default
-# GITHUB_TOKEN.
+# Manual, dispatch-only release publisher. Builds the desktop app for macOS
+# (arm64), Linux (x64 .deb) and Windows (x64 NSIS .exe), and uploads them to one
+# GitHub Release with stable-named assets + per-platform SHA256SUMS. Builds are
+# UNSIGNED/ad-hoc (no Apple notarization, no Windows Authenticode) — see
+# docs/signing.md. The bundle version is stamped from the release tag.
 #
-# Usage (after this readiness PR is merged), from an up-to-date main:
-#   git tag v0.19.0-pre.1 && git push origin v0.19.0-pre.1
-#   gh workflow run release.yml \
-#     -f version=v0.19.0-pre.1 -f ref=v0.19.0-pre.1 -f prerelease=true -f draft=true
+# Usage from an up-to-date main:
+#   git tag v0.19.4 && git push origin v0.19.4
+#   gh workflow run release.yml -f version=v0.19.4 -f ref=v0.19.4 \
+#     -f prerelease=false -f draft=false
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version / tag name (e.g. v0.19.0-pre.1)"
+        description: "Release version / tag name (e.g. v0.19.4)"
         required: true
-        default: "v0.19.0-pre.1"
+        default: "v0.19.4"
       ref:
         description: "Git ref (branch, tag, or SHA) to build from"
         required: true
@@ -25,24 +25,59 @@ on:
       prerelease:
         description: "Mark the release as a prerelease"
         required: true
-        default: "true"
+        default: "false"
       draft:
         description: "Create the release as a draft (review before publishing)"
         required: true
-        default: "true"
+        default: "false"
 
 permissions:
   contents: write
 
 jobs:
-  release-macos-arm64:
-    name: Release macOS arm64 (unsigned)
-    runs-on: macos-14  # Apple Silicon -> target aarch64-apple-darwin
+  # Create the (empty) GitHub Release first so the parallel platform jobs only
+  # upload to it — no create race.
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.ref }}
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+          FLAGS=""
+          if [ "${{ github.event.inputs.draft }}" = "true" ]; then FLAGS="$FLAGS --draft"; fi
+          if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then FLAGS="$FLAGS --prerelease"; fi
+          NOTES="Storage Agent Workbench $VERSION — unsigned/ad-hoc (no Apple notarization, no Windows Authenticode). Verify downloads against the SHA256SUMS-*.txt files.
 
+          macOS (arm64): open the .dmg, drag to Applications. First launch shows a Gatekeeper prompt (not notarized): right-click the app -> Open, or run
+            xattr -dr com.apple.quarantine \"/Applications/Storage Agent Workbench.app\"
+          First launch can take ~1 min while macOS validates the bundled sidecar.
+
+          Linux (x64): sudo dpkg -i storage-agent-workbench-$VERSION-linux-x64.deb (or open with your package installer).
+
+          Windows (x64): run the -setup.exe installer. SmartScreen may warn because the build is unsigned — choose More info -> Run anyway.
+
+          Prompt-free (notarized/signed) builds: see docs/signing.md. Full notes: CHANGELOG.md."
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists; reusing."
+          else
+            gh release create "$VERSION" --target "$GITHUB_SHA" --title "$VERSION" --notes "$NOTES" $FLAGS
+          fi
+
+  release-macos-arm64:
+    name: Release macOS arm64 (ad-hoc)
+    needs: prepare
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -53,100 +88,119 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-
       - name: Install sidecar deps (dev + packaging)
         run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
-
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
-
-      - name: Stamp bundle version from the release tag
-        # The macOS bundle version (CFBundleShortVersionString, shown in About)
-        # comes from tauri.conf.json — NOT the release tag. Derive a numeric
-        # version from the tag (strip leading 'v' and any -pre suffix) and write
-        # it into tauri.conf.json + Cargo.toml so the app reports the real
-        # version instead of the static placeholder.
-        run: |
-          set -euo pipefail
-          RAW="${{ github.event.inputs.version }}"
-          VER="${RAW#v}"; VER="${VER%%-*}"
-          case "$VER" in
-            [0-9]*.[0-9]*.[0-9]*) ;;
-            *) echo "Tag '$RAW' has no X.Y.Z version; keeping config default."; exit 0 ;;
-          esac
-          echo "Stamping bundle version: $VER (from tag $RAW)"
-          python3 - "$VER" <<'PY'
-          import json, re, sys, pathlib
-          ver = sys.argv[1]
-          conf = pathlib.Path("src-tauri/tauri.conf.json")
-          data = json.loads(conf.read_text())
-          data["version"] = ver
-          conf.write_text(json.dumps(data, indent=2) + "\n")
-          cargo = pathlib.Path("src-tauri/Cargo.toml")
-          txt = cargo.read_text()
-          txt = re.sub(r'(?m)^version = "[^"]*"', f'version = "{ver}"', txt, count=1)
-          cargo.write_text(txt)
-          print("tauri.conf.json + Cargo.toml set to", ver)
-          PY
-
-      - name: Build unsigned macOS bundle (.app + DMG if produced)
-        # Runs frontend build -> sidecar externalBin -> cargo tauri build.
+      - name: Stamp bundle version from tag
+        run: python3 scripts/stamp-version.py "${{ github.event.inputs.version }}"
+      - name: Build ad-hoc-sealed macOS bundle (.app + DMG)
         run: bash scripts/build-macos-app-bundle.sh
-
-      - name: Collect release assets (+ checksums)
-        id: assets
-        run: |
-          set -euo pipefail
-          VERSION="${{ github.event.inputs.version }}"
-          OUT="release-assets"
-          rm -rf "$OUT"; mkdir -p "$OUT"
-
-          APP="$(ls -d src-tauri/target/release/bundle/macos/*.app 2>/dev/null | head -1 || true)"
-          if [ -z "$APP" ]; then
-            echo "ERROR: no .app bundle was produced"; exit 1
-          fi
-          ditto -c -k --sequesterRsrc --keepParent "$APP" \
-            "$OUT/storage-agent-workbench-$VERSION-macos-arm64.app.zip"
-
-          DMG="$(ls src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)"
-          if [ -n "$DMG" ]; then
-            cp "$DMG" "$OUT/storage-agent-workbench-$VERSION-macos-arm64.dmg"
-          else
-            echo "No DMG produced; publishing .app.zip + checksums only."
-          fi
-
-          ( cd "$OUT" && shasum -a 256 storage-agent-workbench-* > SHA256SUMS.txt && cat SHA256SUMS.txt )
-          echo "Assets:"; ls -la "$OUT"
-
-      - name: Create or update GitHub Release
+      - name: Collect + upload assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           VERSION="${{ github.event.inputs.version }}"
-          FLAGS=""
-          if [ "${{ github.event.inputs.draft }}" = "true" ]; then FLAGS="$FLAGS --draft"; fi
-          if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then FLAGS="$FLAGS --prerelease"; fi
+          OUT="release-assets"; rm -rf "$OUT"; mkdir -p "$OUT"
+          APP="$(ls -d src-tauri/target/release/bundle/macos/*.app 2>/dev/null | head -1 || true)"
+          [ -n "$APP" ] || { echo "ERROR: no .app produced"; exit 1; }
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$OUT/storage-agent-workbench-$VERSION-macos-arm64.app.zip"
+          DMG="$(ls src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)"
+          [ -n "$DMG" ] && cp "$DMG" "$OUT/storage-agent-workbench-$VERSION-macos-arm64.dmg" || echo "no DMG; shipping .app.zip"
+          ( cd "$OUT" && shasum -a 256 storage-agent-workbench-* > SHA256SUMS-macos-arm64.txt && cat SHA256SUMS-macos-arm64.txt )
+          gh release upload "$VERSION" "$OUT"/* --clobber
 
-          NOTES="Storage Agent Workbench $VERSION (ad-hoc signed, not notarized; macOS arm64).
+  release-linux-x64:
+    name: Release Linux x64 (.deb)
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Tauri Linux system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
+            libayatana-appindicator3-dev build-essential curl wget file libssl-dev
+      - name: Install sidecar deps (dev + packaging)
+        run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked --version "^2"
+      - name: Stamp bundle version from tag
+        run: python3 scripts/stamp-version.py "${{ github.event.inputs.version }}"
+      - name: Build frontend
+        run: cd frontend && npm install && npm run build
+      - name: Build sidecar + copy externalBin
+        run: python3 scripts/build-sidecar-for-tauri.py
+      - name: cargo tauri build (.deb; unsigned)
+        run: cd src-tauri && cargo tauri build --bundles deb
+      - name: Collect + upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+          OUT="release-assets"; rm -rf "$OUT"; mkdir -p "$OUT"
+          DEB="$(ls src-tauri/target/release/bundle/deb/*.deb 2>/dev/null | head -1 || true)"
+          [ -n "$DEB" ] || { echo "ERROR: no .deb produced"; exit 1; }
+          cp "$DEB" "$OUT/storage-agent-workbench-$VERSION-linux-x64.deb"
+          ( cd "$OUT" && sha256sum storage-agent-workbench-* > SHA256SUMS-linux-x64.txt && cat SHA256SUMS-linux-x64.txt )
+          gh release upload "$VERSION" "$OUT"/* --clobber
 
-          First launch shows a Gatekeeper prompt because the build is not
-          Apple-notarized. Open it once via either:
-            • Finder: right-click the app -> Open -> Open; or
-            • Terminal:
-                xattr -dr com.apple.quarantine \"/Applications/Storage Agent Workbench.app\"
-                open \"/Applications/Storage Agent Workbench.app\"
-          First launch can take ~1 min while macOS validates the bundled sidecar.
-          Verify downloads against SHA256SUMS.txt.
-
-          Why the prompt, and how to get a notarized (prompt-free) build: see
-          docs/signing.md. Full notes: CHANGELOG.md / docs/release.md."
-
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "Release $VERSION exists; uploading/clobbering assets."
-            gh release upload "$VERSION" release-assets/* --clobber
-          else
-            echo "Creating release $VERSION (target ${GITHUB_SHA})."
-            gh release create "$VERSION" release-assets/* \
-              --target "$GITHUB_SHA" --title "$VERSION" --notes "$NOTES" $FLAGS
-          fi
+  release-windows-x64:
+    name: Release Windows x64 (NSIS)
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install sidecar deps (dev + packaging)
+        run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked --version "^2"
+      - name: Stamp bundle version from tag
+        shell: bash
+        run: python scripts/stamp-version.py "${{ github.event.inputs.version }}"
+      - name: Build frontend
+        run: cd frontend; npm install; npm run build
+      - name: Build sidecar + copy externalBin
+        run: python scripts/build-sidecar-for-tauri.py
+      - name: cargo tauri build (NSIS installer; unsigned)
+        run: cd src-tauri; cargo tauri build --bundles nsis
+      - name: Collect + upload assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+          OUT="release-assets"; rm -rf "$OUT"; mkdir -p "$OUT"
+          EXE="$(ls src-tauri/target/release/bundle/nsis/*.exe 2>/dev/null | head -1 || true)"
+          [ -n "$EXE" ] || { echo "ERROR: no NSIS .exe produced"; exit 1; }
+          cp "$EXE" "$OUT/storage-agent-workbench-$VERSION-windows-x64-setup.exe"
+          ( cd "$OUT" && sha256sum storage-agent-workbench-* > SHA256SUMS-windows-x64.txt && cat SHA256SUMS-windows-x64.txt )
+          gh release upload "$VERSION" "$OUT"/* --clobber

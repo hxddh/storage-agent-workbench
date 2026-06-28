@@ -6,6 +6,33 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.4] - 2026-06-28
+
+Icon fix + Linux & Windows installers.
+
+### Fixed
+
+- **App icon showed a white border/card** in Launchpad/Finder. The icon PNG had
+  been rasterized onto a white background instead of transparent corners, so
+  macOS drew a white square behind the rounded mark. Re-rasterized with proper
+  alpha (transparent corners) and regenerated all bundle icons.
+
+### Added
+
+- **Linux (x64 `.deb`) and Windows (x64 NSIS `-setup.exe`) release builds.** The
+  release workflow now builds and publishes all three desktop platforms
+  (macOS arm64 + Linux + Windows) to one GitHub Release, each with a stable
+  asset name and a per-platform `SHA256SUMS-*.txt`. Linux/Windows builds are
+  unsigned (Windows may trigger a SmartScreen "unknown publisher" prompt — use
+  More info → Run anyway; Linux installs via `dpkg -i`).
+
+### Notes
+
+- Release jobs are decoupled (a `prepare` job creates the release; each platform
+  uploads to it), and every platform stamps its bundle version from the tag via
+  `scripts/stamp-version.py`. Windows/Linux are still pre-1.0 and unsigned; see
+  docs/signing.md for the path to signed/notarized builds.
+
 ## [0.19.3] - 2026-06-28
 
 New brand logo + agent-native next steps. Ad-hoc signed (not notarized), macOS arm64.
@@ -391,7 +418,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.3...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.4...HEAD
+[0.19.4]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.4
 [0.19.3]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.3
 [0.19.2]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.2
 [0.19.1]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.1
