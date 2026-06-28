@@ -112,7 +112,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
 
     @function_tool
     def list_objects(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 50) -> str:
-        """List a bounded sample of object keys (read-only ListObjectsV2, max 100 keys; no object bodies). Args: provider_id, bucket, prefix?, max_keys?."""
+        """List a bounded sample of object keys (read-only ListObjectsV2; no object bodies). Args: provider_id, bucket, prefix?, max_keys? (defaults to 100 if 0/unset; set higher — up to 1000 — for a wider sample). If the result's is_truncated is true there are more keys than returned: raise max_keys (up to 1000) or, for a complete enumeration, propose an inventory/account_discovery run."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")

@@ -16,7 +16,13 @@ from typing import Any
 from ..security.redaction import REDACTED, redact, redact_text
 
 SAMPLE_LIMIT = 20
-AGENT_MAX_LIST_KEYS = 100  # no-approval ceiling for list sampling in agent mode
+# List sampling in agent mode is graded, not silently clamped to a tiny cap:
+# when the caller doesn't ask for a size it gets DEFAULT; it may explicitly
+# request up to MAX (which matches the S3 layer's own hard cap, so a deliberate
+# wider sample is honored instead of dropped to the default); beyond MAX is a
+# full scan and requires an explicit, confirmed run (approval_category).
+AGENT_DEFAULT_LIST_KEYS = 100
+AGENT_MAX_LIST_KEYS = 1000  # bounded no-approval ceiling (== S3 hard cap)
 AGENT_MAX_RANGE_BYTES = 1024 * 1024  # 1 MiB no-approval ceiling
 
 # The ONLY tools an agent may call (the existing whitelist).
@@ -35,15 +41,29 @@ ALLOWED_TOOLS = {
     "generate_markdown_report",
 }
 
-# Names that must never be registered or invoked. Substring match too.
-FORBIDDEN_TOOLS = {
+# Forbidden surface, matched on whole NAME TOKENS (split on non-alphanumeric),
+# not raw substrings — so legitimate names like `test_credentials` or
+# `inspect_endpoint_tls` are never falsely blocked by an incidental substring
+# (the old check forbade anything merely *containing* "client", "sql", "code"…).
+# The tool allowlist (`check_tool_allowed`) remains the primary gate; this is
+# defense-in-depth against a mis-added tool. Single dangerous tokens:
+FORBIDDEN_TOKENS = {
     "shell", "bash", "sh", "subprocess", "exec", "eval", "system", "popen",
-    "python", "code", "sql", "query", "put_object", "delete_object",
-    "delete_objects", "delete_bucket", "put_bucket_policy", "put_bucket_acl",
-    "put_bucket_lifecycle_configuration", "put_lifecycle_configuration",
-    "put_bucket_cors", "put_bucket_encryption", "copy_object", "upload_file",
-    "create_bucket", "boto3", "client",
+    "python", "sql", "query", "boto3", "client",
 }
+# Mutating/destructive S3 operations, matched as a contiguous token sequence so
+# only the actual op is blocked (not any name containing "put"/"delete").
+FORBIDDEN_PHRASES = {
+    ("put", "object"), ("delete", "object"), ("delete", "objects"),
+    ("delete", "bucket"), ("create", "bucket"), ("copy", "object"),
+    ("upload", "file"),
+    ("put", "bucket", "policy"), ("put", "bucket", "acl"),
+    ("put", "bucket", "lifecycle", "configuration"),
+    ("put", "lifecycle", "configuration"),
+    ("put", "bucket", "cors"), ("put", "bucket", "encryption"),
+}
+# Back-compat alias (some callers/tests reference the old name).
+FORBIDDEN_TOOLS = FORBIDDEN_TOKENS
 
 # Approval framework categories (Phase 07: data model only; nothing dangerous runs).
 NO_APPROVAL_REQUIRED = "no_approval_required"
@@ -60,8 +80,21 @@ class GuardrailBlocked(Exception):
 
 
 def is_forbidden_tool(name: str) -> bool:
-    low = (name or "").lower()
-    return any(bad in low for bad in FORBIDDEN_TOOLS)
+    """True if the tool name carries a forbidden token or a mutating-op phrase.
+
+    Matches on whole tokens (split on non-alphanumeric), so an incidental
+    substring (e.g. "sh" inside "refresh", "code" inside "error_code") does not
+    falsely forbid a legitimate read-only tool.
+    """
+    import re
+    tokens = re.findall(r"[a-z0-9]+", (name or "").lower())
+    if set(tokens) & FORBIDDEN_TOKENS:
+        return True
+    for phrase in FORBIDDEN_PHRASES:
+        n = len(phrase)
+        if any(tuple(tokens[i:i + n]) == phrase for i in range(len(tokens) - n + 1)):
+            return True
+    return False
 
 
 def check_tool_allowed(name: str) -> None:
@@ -81,10 +114,15 @@ def approval_category(name: str, args: dict[str, Any]) -> str:
 
 
 def bound_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
-    """Clamp argument bounds for no-approval agent execution."""
+    """Clamp argument bounds for no-approval agent execution.
+
+    Unset ``max_keys`` defaults to ``AGENT_DEFAULT_LIST_KEYS``; an explicit
+    larger request is honored up to ``AGENT_MAX_LIST_KEYS`` (not silently
+    dropped to the default), so a deliberate wider sample works.
+    """
     out = dict(args or {})
     if name in ("list_objects_v2", "sample_bucket_objects"):
-        mk = int(out.get("max_keys", AGENT_MAX_LIST_KEYS) or AGENT_MAX_LIST_KEYS)
+        mk = int(out.get("max_keys", AGENT_DEFAULT_LIST_KEYS) or AGENT_DEFAULT_LIST_KEYS)
         out["max_keys"] = max(1, min(mk, AGENT_MAX_LIST_KEYS))
     return out
 
@@ -154,7 +192,8 @@ def redacted(text: str) -> str:
 
 
 __all__ = [
-    "GuardrailBlocked", "ALLOWED_TOOLS", "FORBIDDEN_TOOLS", "SAMPLE_LIMIT",
+    "GuardrailBlocked", "ALLOWED_TOOLS", "FORBIDDEN_TOOLS", "FORBIDDEN_TOKENS",
+    "FORBIDDEN_PHRASES", "SAMPLE_LIMIT", "AGENT_DEFAULT_LIST_KEYS",
     "AGENT_MAX_LIST_KEYS", "AGENT_MAX_RANGE_BYTES", "REDACTED",
     "check_tool_allowed", "is_forbidden_tool", "approval_category", "bound_tool_args",
     "assert_no_secrets_in_context", "sanitize_output_for_agent",

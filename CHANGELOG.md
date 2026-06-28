@@ -6,6 +6,37 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.17] - 2026-06-29
+
+### Added
+
+- **The agent can now act, not just advise (autonomy policy).** A new setting
+  (Settings → Agent autonomy: advisory / assisted / autonomous read-only,
+  default **assisted**) lets the in-chat agent EXECUTE read-only runs itself —
+  diagnostics, bucket config review, account discovery — and fold the findings
+  into its answer, instead of only proposing a form you then drive. The runs are
+  real, audited, read-only, and appear in the timeline.
+- **The analysis narrator can drill down.** Instead of being frozen to one
+  pre-computed view, it can ask bounded follow-up aggregate questions over the
+  already-local dataset (e.g. "which prefixes carry the 5xx?").
+
+### Changed
+
+- **Graded list sampling instead of a silent 100-key clamp.** A deliberate
+  larger request is honored up to a bounded 1000 (matching the storage layer's
+  own cap); only a full scan beyond that needs a confirmed run.
+
+### Security
+
+- **No weakening — the envelope is unchanged and enforced in code, below the
+  autonomy setting.** Data-moving work (downloads, large scans, dataset
+  analysis) and any mutating op always require confirmation; there is still no
+  write/destructive capability anywhere. Drill-down runs only whitelisted
+  GROUP BY / COUNT shapes with bound parameters (no free SQL, raw rows, or object
+  bodies). The forbidden-tool guard now matches whole name tokens, so legitimate
+  read-only tools aren't blocked by an incidental substring while real dangers
+  still are.
+
 ## [0.19.16] - 2026-06-28
 
 ### Changed
