@@ -60,6 +60,35 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
 
+      - name: Stamp bundle version from the release tag
+        # The macOS bundle version (CFBundleShortVersionString, shown in About)
+        # comes from tauri.conf.json — NOT the release tag. Derive a numeric
+        # version from the tag (strip leading 'v' and any -pre suffix) and write
+        # it into tauri.conf.json + Cargo.toml so the app reports the real
+        # version instead of the static placeholder.
+        run: |
+          set -euo pipefail
+          RAW="${{ github.event.inputs.version }}"
+          VER="${RAW#v}"; VER="${VER%%-*}"
+          case "$VER" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "Tag '$RAW' has no X.Y.Z version; keeping config default."; exit 0 ;;
+          esac
+          echo "Stamping bundle version: $VER (from tag $RAW)"
+          python3 - "$VER" <<'PY'
+          import json, re, sys, pathlib
+          ver = sys.argv[1]
+          conf = pathlib.Path("src-tauri/tauri.conf.json")
+          data = json.loads(conf.read_text())
+          data["version"] = ver
+          conf.write_text(json.dumps(data, indent=2) + "\n")
+          cargo = pathlib.Path("src-tauri/Cargo.toml")
+          txt = cargo.read_text()
+          txt = re.sub(r'(?m)^version = "[^"]*"', f'version = "{ver}"', txt, count=1)
+          cargo.write_text(txt)
+          print("tauri.conf.json + Cargo.toml set to", ver)
+          PY
+
       - name: Build unsigned macOS bundle (.app + DMG if produced)
         # Runs frontend build -> sidecar externalBin -> cargo tauri build.
         run: bash scripts/build-macos-app-bundle.sh
@@ -99,13 +128,19 @@ jobs:
           if [ "${{ github.event.inputs.draft }}" = "true" ]; then FLAGS="$FLAGS --draft"; fi
           if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then FLAGS="$FLAGS --prerelease"; fi
 
-          NOTES="Storage Agent Workbench $VERSION (unsigned, pre-1.0, macOS arm64).
+          NOTES="Storage Agent Workbench $VERSION (ad-hoc signed, not notarized; macOS arm64).
 
-          Install: see docs/install.md (Gatekeeper warning expected; right-click Open
-          or clear the quarantine attribute). Verify assets with SHA256SUMS.txt.
+          First launch shows a Gatekeeper prompt because the build is not
+          Apple-notarized. Open it once via either:
+            • Finder: right-click the app -> Open -> Open; or
+            • Terminal:
+                xattr -dr com.apple.quarantine \"/Applications/Storage Agent Workbench.app\"
+                open \"/Applications/Storage Agent Workbench.app\"
+          First launch can take ~1 min while macOS validates the bundled sidecar.
+          Verify downloads against SHA256SUMS.txt.
 
-          No code signing, notarization, or auto-update. See CHANGELOG.md and
-          docs/release.md for details."
+          Why the prompt, and how to get a notarized (prompt-free) build: see
+          docs/signing.md. Full notes: CHANGELOG.md / docs/release.md."
 
           if gh release view "$VERSION" >/dev/null 2>&1; then
             echo "Release $VERSION exists; uploading/clobbering assets."
