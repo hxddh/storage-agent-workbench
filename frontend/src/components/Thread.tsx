@@ -16,6 +16,7 @@ import { Button } from "./ui";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
 import { NewRunForm } from "../views/RunsView";
 import { MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
+import { useI18n, type TFunc } from "../i18n";
 
 type Item =
   | { kind: "message"; ts: string; role: string; content: string | null; id: string; toolActivity?: ToolActivity[] }
@@ -26,17 +27,13 @@ type RunPrefill = { run_type?: string; provider_id?: string; bucket?: string };
 
 const propKey = (p: NextAction) => `${p.action_type}::${p.title}`;
 
-// Turn a raw sidecar/provider error into a short, actionable line.
-const cleanError = (raw: string): string => {
+// Turn a raw sidecar/provider error into a short, actionable, localized line.
+const cleanError = (raw: string, t: TFunc): string => {
   const s = raw.replace(/^Error:\s*/, "").replace(/^Session assistant failed:\s*/, "");
-  if (/agents sdk is not available|agent runtime/i.test(s))
-    return "The agent runtime isn't available in this build. Update to the latest app version.";
-  if (/401|authentication|api key.*invalid|invalid.*api key/i.test(s))
-    return "The model provider rejected the request — the API key looks invalid or expired. Update it in Settings.";
-  if (/404|not found|model.*exist/i.test(s))
-    return "The model provider returned 404 — check the model name and base URL in Settings.";
-  if (/timeout|timed out|connection|network/i.test(s))
-    return "Couldn't reach the model provider. Check the network or the base URL in Settings.";
+  if (/agents sdk is not available|agent runtime/i.test(s)) return t("thread.agentRuntimeUnavailable");
+  if (/401|authentication|api key.*invalid|invalid.*api key/i.test(s)) return t("thread.errKey");
+  if (/404|not found|model.*exist/i.test(s)) return t("thread.err404");
+  if (/timeout|timed out|connection|network/i.test(s)) return t("thread.errNetwork");
   return s.length > 280 ? `${s.slice(0, 280)}…` : s;
 };
 
@@ -47,27 +44,20 @@ const looksLikeError = (t: string) =>
   );
 
 // The agent's full capability surface — not just error triage. Each seeds the
-// composer with a natural-language prompt; the agent routes from there.
-const SUGGESTIONS: { label: string; prompt: string }[] = [
-  { label: "Diagnose an error", prompt: "I'm getting a 403 AccessDenied when uploading to my bucket, but reads work. Help me diagnose it." },
-  { label: "Analyze access logs", prompt: "Analyze my S3 access logs for traffic patterns, error rates, and the hottest object keys." },
-  { label: "Inventory & capacity", prompt: "Give me an inventory and capacity breakdown of my bucket by object size and storage class." },
-  { label: "Review bucket config", prompt: "Review my bucket's configuration for security, lifecycle, cost, and performance issues." },
-  { label: "Map account & buckets", prompt: "Discover my account and map out all my buckets, regions, and their configuration." },
-  { label: "Optimize storage", prompt: "Find cost and performance optimization opportunities across my object storage." },
-];
+// composer with a natural-language prompt (localized); the agent routes from there.
+const SUGGESTION_KEYS = ["diagnose", "logs", "inventory", "config", "account", "optimize"] as const;
 
 // Slash commands: "/" in the composer opens this menu. Capability commands seed
 // a prompt; "report" runs the session report.
-type Slash = { cmd: string; label: string; prompt?: string; action?: "report" };
+type Slash = { cmd: string; labelKey: string; promptKey?: string; action?: "report" };
 const SLASH: Slash[] = [
-  { cmd: "diagnose", label: "Diagnose an error", prompt: SUGGESTIONS[0].prompt },
-  { cmd: "logs", label: "Analyze access logs", prompt: SUGGESTIONS[1].prompt },
-  { cmd: "inventory", label: "Inventory & capacity", prompt: SUGGESTIONS[2].prompt },
-  { cmd: "config", label: "Review bucket config", prompt: SUGGESTIONS[3].prompt },
-  { cmd: "account", label: "Map account & buckets", prompt: SUGGESTIONS[4].prompt },
-  { cmd: "optimize", label: "Optimize storage", prompt: SUGGESTIONS[5].prompt },
-  { cmd: "report", label: "Generate a report for this chat", action: "report" },
+  { cmd: "diagnose", labelKey: "sugg.diagnose", promptKey: "prompt.diagnose" },
+  { cmd: "logs", labelKey: "sugg.logs", promptKey: "prompt.logs" },
+  { cmd: "inventory", labelKey: "sugg.inventory", promptKey: "prompt.inventory" },
+  { cmd: "config", labelKey: "sugg.config", promptKey: "prompt.config" },
+  { cmd: "account", labelKey: "sugg.account", promptKey: "prompt.account" },
+  { cmd: "optimize", labelKey: "sugg.optimize", promptKey: "prompt.optimize" },
+  { cmd: "report", labelKey: "slash.report", action: "report" },
 ];
 
 const Spark = ({ size = 12 }: { size?: number }) => (
@@ -112,6 +102,8 @@ export function Thread({
   const localId = useRef<string | null>(sessionId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const { t } = useI18n();
+  const suggestions = SUGGESTION_KEYS.map((k) => ({ label: t(`sugg.${k}`), prompt: t(`prompt.${k}`) }));
 
   const refreshModel = () =>
     listModelProviders()
@@ -207,20 +199,20 @@ export function Thread({
 
   // The blocking turn (also the streaming fallback). Returns true on a clean
   // answer; surfaces needKey / offline triage / error as the blocking path did.
-  const sendBlocking = async (id: string, t: string) => {
+  const sendBlocking = async (id: string, q: string) => {
     try {
-      const r = await postSessionMessage(id, t);
+      const r = await postSessionMessage(id, q);
       setLiveProposals(r.proposed_actions || []);
     } catch (e) {
       const msg = String(e);
       if (/no model provider configured|no api key stored/i.test(msg)) {
-        if (looksLikeError(t)) {
-          await submitErrorTriage({ content: t, input_kind: "mixed", session_id: id, planner_mode: "deterministic" });
+        if (looksLikeError(q)) {
+          await submitErrorTriage({ content: q, input_kind: "mixed", session_id: id, planner_mode: "deterministic" });
         } else {
           setNeedKey(true);
         }
       } else {
-        setError(cleanError(msg));
+        setError(cleanError(msg, t));
       }
     }
   };
@@ -230,19 +222,19 @@ export function Thread({
   // is configured → 422), fall back to the reliable blocking turn, which also
   // handles the no-key / offline-triage cases.
   const send = async () => {
-    const t = text.trim();
-    if (!t || busy) return;
+    const q = text.trim();
+    if (!q || busy) return;
     setBusy(true);
     setError(null);
     setNeedKey(false);
     setText("");
-    setPending(t); // show the user's turn immediately
+    setPending(q); // show the user's turn immediately
     setStreamText(null);
     setStreamTools([]);
     try {
-      const id = await ensureSession(t);
+      const id = await ensureSession(q);
       try {
-        const r = await streamSessionMessage(id, t, {
+        const r = await streamSessionMessage(id, q, {
           onDelta: (chunk) => setStreamText((s) => (s ?? "") + chunk),
           onTool: (rec) => setStreamTools((a) => [...a, rec]),
         });
@@ -250,7 +242,7 @@ export function Thread({
       } catch {
         // Stream broke (or 422). The endpoint persists nothing until it
         // completes, so the blocking turn re-runs cleanly without duplicating.
-        await sendBlocking(id, t);
+        await sendBlocking(id, q);
       }
       await reload(id);
       setPending(null);
@@ -267,8 +259,8 @@ export function Thread({
     try {
       const r = await previewSessionAction(localId.current, p);
       const txt = r.ready
-        ? `Ready — opens ${r.will_create ? "a new run" : "a flow"}. ${r.safety_notes?.[0] ?? ""}`
-        : `Needs input: ${r.missing_inputs.join(", ") || "more context"}.`;
+        ? t("preview.ready", { what: r.will_create ? t("preview.newRun") : t("preview.flow"), note: r.safety_notes?.[0] ?? "" })
+        : t("preview.needsInput", { items: r.missing_inputs.join(", ") || t("preview.moreContext") });
       setPreviews((m) => ({ ...m, [propKey(p)]: txt }));
     } catch (e) {
       setPreviews((m) => ({ ...m, [propKey(p)]: String(e) }));
@@ -286,7 +278,7 @@ export function Thread({
         return;
       }
       if (r.status !== "ready") {
-        setPreviews((m) => ({ ...m, [propKey(p)]: `Needs input: ${r.missing_inputs.join(", ") || "more context"}.` }));
+        setPreviews((m) => ({ ...m, [propKey(p)]: t("preview.needsInput", { items: r.missing_inputs.join(", ") || t("preview.moreContext") }) }));
         return;
       }
       if (r.open === "evidence_import") {
@@ -321,10 +313,10 @@ export function Thread({
   const selectSlash = (c: Slash) => {
     if (c.action === "report") {
       setText("");
-      if (localId.current) getSessionReport(localId.current).then((r) => setReport(r.content)).catch((e) => setError(cleanError(String(e))));
-      else setError("Start a chat first, then generate a report.");
-    } else if (c.prompt) {
-      setText(c.prompt);
+      if (localId.current) getSessionReport(localId.current).then((r) => setReport(r.content)).catch((e) => setError(cleanError(String(e), t)));
+      else setError(t("thread.startChatFirst"));
+    } else if (c.promptKey) {
+      setText(t(c.promptKey));
       requestAnimationFrame(() => taRef.current?.focus());
     }
     setSlashSel(0);
@@ -342,7 +334,7 @@ export function Thread({
       }`}
     >
       <Spark size={11} />
-      <span className="max-w-[14rem] truncate">{modelName ?? "Add a model"}</span>
+      <span className="max-w-[14rem] truncate">{modelName ?? t("thread.addModel")}</span>
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-600 group-hover/chip:text-gray-400">
         <polyline points="6 9 12 15 18 9" />
       </svg>
@@ -353,7 +345,7 @@ export function Thread({
     <div className="relative rounded-[22px] border border-edge bg-panel px-3.5 pb-2.5 pt-3 shadow-elev transition-all duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
       {slashOpen && (
         <div className="absolute bottom-full left-1 right-1 mb-2 overflow-hidden rounded-xl border border-edge bg-panel shadow-pop animate-fade-in">
-          <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-600">Commands</div>
+          <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-600">{t("thread.commands")}</div>
           {slashItems.map((c, i) => (
             <button
               key={c.cmd}
@@ -362,7 +354,7 @@ export function Thread({
               className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors ${i === slashIdx ? "bg-hover" : "hover:bg-hover/50"}`}
             >
               <span className="font-mono text-[12px] text-accent-soft">/{c.cmd}</span>
-              <span className="text-[13px] text-gray-300">{c.label}</span>
+              <span className="text-[13px] text-gray-300">{t(c.labelKey)}</span>
             </button>
           ))}
         </div>
@@ -385,17 +377,17 @@ export function Thread({
             send();
           }
         }}
-        placeholder="Ask Storage Agent…  ( / for commands )"
+        placeholder={t("thread.placeholder")}
       />
       <div className="mt-2 flex items-center gap-2">
         {modelChip}
         <span className="ml-auto hidden text-[11px] text-gray-600 sm:inline">
-          <kbd className="font-sans">⏎</kbd> send · <kbd className="font-sans">⇧⏎</kbd> newline
+          <kbd className="font-sans">⏎</kbd> {t("thread.send")} · <kbd className="font-sans">⇧⏎</kbd> {t("thread.newline")}
         </span>
         <button
           onClick={send}
           disabled={busy || !text.trim()}
-          aria-label="Send"
+          aria-label={t("thread.send")}
           className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-all hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-600"
         >
           {busy ? (
@@ -415,9 +407,9 @@ export function Thread({
     <>
       {needKey && (
         <div className="animate-fade-in-up rounded-xl border border-amber-800/50 bg-amber-950/20 p-3.5 text-[13px] text-amber-200">
-          Add a model API key for full agent answers. Pasted S3 errors are still triaged offline without one.
+          {t("thread.needKey")}
           <div className="mt-2.5">
-            <Button variant="primary" size="sm" onClick={onOpenSettings}>Add a model API key</Button>
+            <Button variant="primary" size="sm" onClick={onOpenSettings}>{t("thread.needKeyBtn")}</Button>
           </div>
         </div>
       )}
@@ -425,7 +417,7 @@ export function Thread({
         <div className="animate-fade-in-up rounded-xl border border-red-900/50 bg-red-950/20 p-3.5 text-[13px] text-red-300">
           {error}
           <div className="mt-2.5">
-            <Button variant="default" size="sm" onClick={onOpenSettings}>Open settings</Button>
+            <Button variant="default" size="sm" onClick={onOpenSettings}>{t("common.openSettings")}</Button>
           </div>
         </div>
       )}
@@ -446,15 +438,14 @@ export function Thread({
                   <path d="M2 12l10 5 10-5" />
                 </svg>
               </div>
-              <h1 className="text-[23px] font-semibold tracking-[-0.02em] text-gray-100">How can I help with your storage?</h1>
+              <h1 className="text-[23px] font-semibold tracking-[-0.02em] text-gray-100">{t("thread.greeting")}</h1>
               <p className="mt-2.5 max-w-md text-[13.5px] leading-relaxed text-gray-500">
-                Ask about an issue, an access pattern, or your bucket setup. I investigate with read-only tools and
-                confirm with you before running anything.
+                {t("thread.subtitle")}
               </p>
             </div>
             {composer}
             <div className="mt-3.5 flex flex-wrap justify-center gap-2">
-              {SUGGESTIONS.map((s) => (
+              {suggestions.map((s) => (
                 <button
                   key={s.label}
                   onClick={() => seed(s.prompt)}
@@ -470,10 +461,10 @@ export function Thread({
       ) : (
         <>
           <header className="flex items-center gap-3 border-b border-edge px-6 py-2.5">
-            <div className="truncate text-[12.5px] font-medium text-gray-200">{detail?.title || "New chat"}</div>
+            <div className="truncate text-[12.5px] font-medium text-gray-200">{detail?.title || t("thread.titleNew")}</div>
             <div className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-edge px-2 py-1 text-[11px] text-gray-500">
               <Spark size={11} />
-              <span className="text-gray-400">{modelName ?? "No model"}</span>
+              <span className="text-gray-400">{modelName ?? t("thread.noModel")}</span>
             </div>
           </header>
 
@@ -504,7 +495,7 @@ export function Thread({
 
               {proposals.length > 0 && !pending && (
                 <div className="space-y-2 pt-1">
-                  <div className="px-0.5 text-[11px] font-medium uppercase tracking-wider text-gray-600">Suggested next steps</div>
+                  <div className="px-0.5 text-[11px] font-medium uppercase tracking-wider text-gray-600">{t("thread.suggestedNext")}</div>
                   {proposals.map((p, i) => (
                     <ProposalCard
                       key={`${propKey(p)}-${i}`}
@@ -563,8 +554,8 @@ export function Thread({
         <Overlay onClose={() => setReport(null)}>
           <div className="flex h-full flex-col bg-canvas">
             <header className="flex items-center justify-between border-b border-edge px-6 py-3">
-              <span className="text-sm font-semibold text-gray-100">Report</span>
-              <Button variant="ghost" onClick={() => setReport(null)}>Close</Button>
+              <span className="text-sm font-semibold text-gray-100">{t("thread.report")}</span>
+              <Button variant="ghost" onClick={() => setReport(null)}>{t("common.close")}</Button>
             </header>
             <pre className="flex-1 overflow-auto whitespace-pre-wrap p-6 text-[11px] text-gray-300">{report}</pre>
           </div>

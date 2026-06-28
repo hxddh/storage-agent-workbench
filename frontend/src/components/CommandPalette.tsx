@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionSummaryRow } from "../types";
+import { useI18n } from "../i18n";
 
 type Cmd = { id: string; label: string; hint?: string; icon: React.ReactNode; run: () => void };
 
@@ -25,6 +26,7 @@ export function CommandPalette({
   onNew: () => void;
   onOpenSettings: () => void;
 }) {
+  const { t } = useI18n();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -39,8 +41,8 @@ export function CommandPalette({
 
   const items = useMemo<Cmd[]>(() => {
     const actions: Cmd[] = [
-      { id: "new", label: "New chat", hint: "⌘N", icon: I("M12 5v14|M5 12h14"), run: () => { onNew(); onClose(); } },
-      { id: "settings", label: "Settings & providers", icon: I("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z|M3 12h2|M19 12h2|M12 3v2|M12 19v2"), run: () => { onOpenSettings(); onClose(); } },
+      { id: "new", label: t("palette.newChat"), hint: "⌘N", icon: I("M12 5v14|M5 12h14"), run: () => { onNew(); onClose(); } },
+      { id: "settings", label: t("palette.settings"), icon: I("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z|M3 12h2|M19 12h2|M12 3v2|M12 19v2"), run: () => { onOpenSettings(); onClose(); } },
     ];
     const chats: Cmd[] = sessions.map((s) => ({
       id: `s:${s.id}`,
@@ -52,7 +54,7 @@ export function CommandPalette({
     const all = [...actions, ...chats];
     const query = q.trim().toLowerCase();
     return query ? all.filter((c) => c.label.toLowerCase().includes(query)) : all;
-  }, [q, sessions, onNew, onOpenSettings, onSelectSession, onClose]);
+  }, [q, sessions, onNew, onOpenSettings, onSelectSession, onClose, t]);
 
   useEffect(() => {
     if (sel >= items.length) setSel(Math.max(0, items.length - 1));
@@ -80,12 +82,12 @@ export function CommandPalette({
             value={q}
             onChange={(e) => { setQ(e.target.value); setSel(0); }}
             onKeyDown={onKeyDown}
-            placeholder="Search chats or run a command…"
+            placeholder={t("palette.placeholder")}
             className="w-full bg-transparent py-3.5 text-[14px] text-gray-100 placeholder:text-gray-600 focus:outline-none"
           />
         </div>
         <div className="max-h-[52vh] overflow-auto p-1.5">
-          {items.length === 0 && <div className="px-3 py-6 text-center text-[13px] text-gray-600">No matches</div>}
+          {items.length === 0 && <div className="px-3 py-6 text-center text-[13px] text-gray-600">{t("palette.noResults")}</div>}
           {items.map((c, i) => (
             <button
               key={c.id}

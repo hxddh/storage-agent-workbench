@@ -6,6 +6,37 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-06-28
+
+First formal (non-prerelease) release of the 0.19.0 line. Adds full multi-language
+support and a light theme. Ad-hoc signed (not notarized — Gatekeeper still
+requires a right-click → Open on first launch), macOS arm64.
+
+### Added
+
+- **Multi-language UI (English + 简体中文).** A dependency-free i18n layer with a
+  language switcher in Settings → Appearance. Language is auto-detected from the
+  OS on first run and remembered per device. The whole product surface is
+  localized — session rail, the thread (greeting, composer, suggestions, slash
+  commands, tool/run/triage/proposal cards, errors), command palette, first-run
+  wizard, and the full model/cloud provider settings — and the suggestion prompts
+  themselves localize so a Chinese user sends Chinese.
+- **Light theme.** A second theme alongside dark, switchable in Settings →
+  Appearance and remembered per device (applied before first paint, no flash).
+  All surfaces, the accent, and the neutral text ramp are driven by CSS variables
+  so both themes stay consistent across every screen.
+
+### Notes
+
+- This is a formal release, but signing is unchanged from the pre-releases:
+  **ad-hoc signed, not Apple-notarized.** First launch: right-click the app →
+  Open (or allow it in System Settings → Privacy & Security), then it opens
+  normally. The bundled sidecar is validated on first extraction, so first launch
+  can take up to ~1 minute.
+- A few deep, rarely-used flows (the new-run form, evidence-import dialog,
+  account-profile panel, run transcript) are not yet localized; the i18n layer is
+  in place to extend them.
+
 ## [0.19.0-pre.9] - 2026-06-28
 
 A Codex/Cursor-grade start view and agent-driven next steps. Ad-hoc signed
@@ -291,7 +322,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0-pre.9...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0
 [0.19.0-pre.9]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.9
 [0.19.0-pre.8]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.8
 [0.19.0-pre.7]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.7

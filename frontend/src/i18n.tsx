@@ -1,0 +1,370 @@
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+
+export type Lang = "en" | "zh";
+const KEY = "saw.lang";
+
+export const LANGS: { value: Lang; label: string }[] = [
+  { value: "en", label: "English" },
+  { value: "zh", label: "简体中文" },
+];
+
+type Dict = Record<string, string>;
+
+const en: Dict = {
+  // common
+  "common.close": "Close",
+  "common.cancel": "Cancel",
+  "common.copy": "Copy",
+  "common.copied": "Copied",
+  "common.openSettings": "Open settings",
+  // rail
+  "app.name": "Storage Agent",
+  "rail.newChat": "New chat",
+  "rail.recent": "Recent",
+  "rail.noChats": "No chats yet.",
+  "rail.settingsAria": "Settings and providers",
+  "status.starting": "Connecting…",
+  "status.connected": "Connected",
+  "status.disconnected": "Disconnected",
+  "status.error": "Error",
+  "time.now": "now",
+  "time.mAgo": "{n}m ago",
+  "time.hAgo": "{n}h ago",
+  "time.yesterday": "yesterday",
+  "time.dAgo": "{n}d ago",
+  "time.wAgo": "{n}w ago",
+  // thread
+  "thread.titleNew": "New chat",
+  "thread.noModel": "No model",
+  "thread.addModel": "Add a model",
+  "thread.greeting": "How can I help with your storage?",
+  "thread.subtitle":
+    "Ask about an issue, an access pattern, or your bucket setup. I investigate with read-only tools and confirm with you before running anything.",
+  "thread.placeholder": "Ask Storage Agent…  ( / for commands )",
+  "thread.send": "send",
+  "thread.newline": "newline",
+  "thread.suggestedNext": "Suggested next steps",
+  "thread.commands": "Commands",
+  "thread.needKey": "Add a model API key for full agent answers. Pasted S3 errors are still triaged offline without one.",
+  "thread.needKeyBtn": "Add a model API key",
+  "thread.report": "Report",
+  "thread.startChatFirst": "Start a chat first, then generate a report.",
+  "thread.agentRuntimeUnavailable": "The agent runtime isn't available in this build. Update to the latest app version.",
+  "thread.errKey": "The model provider rejected the request — the API key looks invalid or expired. Update it in Settings.",
+  "thread.err404": "The model provider returned 404 — check the model name and base URL in Settings.",
+  "thread.errNetwork": "Couldn't reach the model provider. Check the network or the base URL in Settings.",
+  // suggestions (labels)
+  "sugg.diagnose": "Diagnose an error",
+  "sugg.logs": "Analyze access logs",
+  "sugg.inventory": "Inventory & capacity",
+  "sugg.config": "Review bucket config",
+  "sugg.account": "Map account & buckets",
+  "sugg.optimize": "Optimize storage",
+  "slash.report": "Generate a report for this chat",
+  // suggestion prompts (sent to the agent)
+  "prompt.diagnose": "I'm getting a 403 AccessDenied when uploading to my bucket, but reads work. Help me diagnose it.",
+  "prompt.logs": "Analyze my S3 access logs for traffic patterns, error rates, and the hottest object keys.",
+  "prompt.inventory": "Give me an inventory and capacity breakdown of my bucket by object size and storage class.",
+  "prompt.config": "Review my bucket's configuration for security, lifecycle, cost, and performance issues.",
+  "prompt.account": "Discover my account and map out all my buckets, regions, and their configuration.",
+  "prompt.optimize": "Find cost and performance optimization opportunities across my object storage.",
+  // thread cards
+  "card.agentName": "Storage Agent",
+  "think.0": "Thinking…",
+  "think.1": "Consulting StorageOps skills…",
+  "think.2": "Grounding in evidence…",
+  "think.3": "Drafting a response…",
+  "run.queued": "queued",
+  "run.running": "running",
+  "run.done": "done",
+  "run.failed": "failed",
+  "run.na": "n/a",
+  "triage.title": "Error triage",
+  "proposal.review": "Review",
+  "proposal.prepare": "Prepare",
+  "proposal.next": "next",
+  "preview.ready": "Ready — opens {what}. {note}",
+  "preview.newRun": "a new run",
+  "preview.flow": "a flow",
+  "preview.needsInput": "Needs input: {items}.",
+  "preview.moreContext": "more context",
+  // settings
+  "settings.title": "Settings & providers",
+  "settings.appearance": "Appearance",
+  "settings.appearanceHint": "Theme and language apply instantly and are remembered on this device.",
+  "settings.theme": "Theme",
+  "settings.themeDark": "Dark",
+  "settings.themeLight": "Light",
+  "settings.language": "Language",
+  "settings.safetyTitle": "Safety",
+  "settings.safety":
+    "Secrets are stored only in the OS keychain — never in the database, logs, reports, or model prompts. Cloud access is read-only by default; the agent proposes next actions but never runs anything without your confirmation.",
+  // providers view
+  "prov.title": "Providers",
+  "prov.subtitle": "Configure model and cloud storage providers",
+  "prov.tabModel": "Model Providers",
+  "prov.tabCloud": "Cloud Providers",
+  "prov.addModel": "+ Add model provider",
+  "prov.addCloud": "Add cloud provider",
+  "prov.noModel": "No model providers yet.",
+  "prov.noCloud": "No cloud providers yet.",
+  "prov.test": "Test",
+  "prov.testConnection": "Test Connection",
+  "prov.discover": "Discover account",
+  "prov.edit": "Edit",
+  "prov.delete": "Delete",
+  "prov.cancel": "Cancel",
+  "prov.save": "Save",
+  "prov.create": "Create",
+  "prov.addProvider": "Add provider",
+  "prov.advanced": "Advanced",
+  "prov.fName": "Name",
+  "prov.fProviderType": "Provider type",
+  "prov.fBaseUrl": "Base URL",
+  "prov.fModel": "Model",
+  "prov.fApiKey": "API key",
+  "prov.fProvider": "Provider",
+  "prov.fEndpoint": "Endpoint URL",
+  "prov.fRegion": "Region",
+  "prov.fAccountId": "Account ID",
+  "prov.fAccessKey": "Access key ID",
+  "prov.fSecretKey": "Secret access key",
+  "prov.fMode": "Mode",
+  "prov.fAddressing": "Addressing style",
+  "prov.fSignature": "Signature version",
+  "prov.fSessionToken": "Session token (optional)",
+  "prov.fAllowedBuckets": "Allowed buckets",
+  "prov.fAllowedPrefixes": "Allowed prefixes",
+  "prov.hintKeep": "Saved in the OS keychain · leave blank to keep",
+  "prov.hintNew": "Stored only in the OS keychain — never shown again.",
+  "prov.hintBuckets": "comma- or newline-separated; empty = all visible",
+  "prov.hintPrefixes": "comma- or newline-separated",
+  "prov.savedKeychain": "saved in keychain",
+  "prov.notSet": "not set",
+  "prov.modeLabel": "mode",
+  "prov.accessKeyLabel": "access key",
+  "prov.secretKeyLabel": "secret key",
+  "prov.bucketsLabel": "buckets",
+  "prov.prefixesLabel": "prefixes",
+  "prov.apiKeyLabel": "API key",
+  "prov.savedPlaceholder": "•••••••• (saved)",
+  "prov.footerKeys": "Keys are stored in the OS keychain and used read-only by default.",
+  "prov.confirmDeleteModel": "Delete model provider \"{name}\"?",
+  "prov.confirmDeleteCloud": "Delete cloud provider \"{name}\"?",
+  "prov.testOk": "OK",
+  "prov.testIncomplete": "incomplete",
+  // command palette
+  "palette.placeholder": "Search chats or run a command…",
+  "palette.newChat": "New chat",
+  "palette.settings": "Open settings",
+  "palette.recent": "Recent chats",
+  "palette.noResults": "No matches.",
+  // first-run wizard
+  "wizard.welcomeTitle": "Welcome to Storage Agent Workbench",
+  "wizard.welcomeBody":
+    "A local-first agent for diagnosing object storage and S3-compatible systems. Everything runs on your machine; secrets stay in the OS keychain.",
+  "wizard.step1Title": "Add a model provider",
+  "wizard.step1Body": "An LLM API key so the agent can interpret evidence and answer questions.",
+  "wizard.step2Title": "Add a cloud provider",
+  "wizard.step2Body": "Read-only S3 credentials to run live diagnostics against a bucket.",
+  "wizard.step3Title": "Start investigating",
+  "wizard.step3Body": "Describe an issue, or paste an S3 error for offline triage — no credentials needed.",
+  "wizard.skip": "Skip for now",
+  "wizard.configure": "Configure providers",
+};
+
+const zh: Dict = {
+  "common.close": "关闭",
+  "common.cancel": "取消",
+  "common.copy": "复制",
+  "common.copied": "已复制",
+  "common.openSettings": "打开设置",
+  "app.name": "存储智能体",
+  "rail.newChat": "新对话",
+  "rail.recent": "最近",
+  "rail.noChats": "还没有对话。",
+  "rail.settingsAria": "设置与提供商",
+  "status.starting": "连接中…",
+  "status.connected": "已连接",
+  "status.disconnected": "未连接",
+  "status.error": "错误",
+  "time.now": "刚刚",
+  "time.mAgo": "{n} 分钟前",
+  "time.hAgo": "{n} 小时前",
+  "time.yesterday": "昨天",
+  "time.dAgo": "{n} 天前",
+  "time.wAgo": "{n} 周前",
+  "thread.titleNew": "新对话",
+  "thread.noModel": "未配置模型",
+  "thread.addModel": "添加模型",
+  "thread.greeting": "我能为你的存储做些什么？",
+  "thread.subtitle":
+    "询问任何问题、访问模式或桶（bucket）配置。我会使用只读工具进行排查，并在执行任何操作前与你确认。",
+  "thread.placeholder": "向存储智能体提问…（输入 / 查看命令）",
+  "thread.send": "发送",
+  "thread.newline": "换行",
+  "thread.suggestedNext": "建议的后续步骤",
+  "thread.commands": "命令",
+  "thread.needKey": "添加模型 API Key 即可获得完整的智能体回答。即使没有，粘贴的 S3 错误仍可离线诊断。",
+  "thread.needKeyBtn": "添加模型 API Key",
+  "thread.report": "报告",
+  "thread.startChatFirst": "请先开始一个对话，再生成报告。",
+  "thread.agentRuntimeUnavailable": "此版本中智能体运行时不可用。请更新到最新版本。",
+  "thread.errKey": "模型提供商拒绝了请求——API Key 可能无效或已过期。请在设置中更新。",
+  "thread.err404": "模型提供商返回 404——请在设置中检查模型名称和 Base URL。",
+  "thread.errNetwork": "无法连接到模型提供商。请检查网络或设置中的 Base URL。",
+  "sugg.diagnose": "诊断错误",
+  "sugg.logs": "分析访问日志",
+  "sugg.inventory": "清单与容量",
+  "sugg.config": "审查桶配置",
+  "sugg.account": "梳理账号与桶",
+  "sugg.optimize": "优化存储",
+  "slash.report": "为此对话生成报告",
+  "prompt.diagnose": "我上传对象到桶时遇到 403 AccessDenied，但读取正常。请帮我诊断原因。",
+  "prompt.logs": "请分析我的 S3 访问日志，找出流量模式、错误率和访问最频繁的对象键。",
+  "prompt.inventory": "请按对象大小和存储类别，给我这个桶的清单与容量分析。",
+  "prompt.config": "请审查我的桶配置，检查安全、生命周期、成本和性能方面的问题。",
+  "prompt.account": "请梳理我的账号，列出所有桶、所在区域及其配置。",
+  "prompt.optimize": "请在我的对象存储中找出成本和性能方面的优化机会。",
+  "card.agentName": "存储智能体",
+  "think.0": "思考中…",
+  "think.1": "正在参考 StorageOps 专业方法…",
+  "think.2": "正在以证据为依据…",
+  "think.3": "正在组织回答…",
+  "run.queued": "排队中",
+  "run.running": "运行中",
+  "run.done": "完成",
+  "run.failed": "失败",
+  "run.na": "不适用",
+  "triage.title": "错误诊断",
+  "proposal.review": "预览",
+  "proposal.prepare": "准备",
+  "proposal.next": "下一步",
+  "settings.title": "设置与提供商",
+  "settings.appearance": "外观",
+  "settings.appearanceHint": "主题和语言会立即生效，并在本设备上记住。",
+  "settings.theme": "主题",
+  "settings.themeDark": "深色",
+  "settings.themeLight": "浅色",
+  "settings.language": "语言",
+  "settings.safetyTitle": "安全",
+  "settings.safety":
+    "密钥仅保存在操作系统钥匙串中——绝不会写入数据库、日志、报告或模型提示词。云访问默认只读；智能体只会建议后续操作，未经你确认绝不执行。",
+  "prov.title": "提供商",
+  "prov.subtitle": "配置模型和云存储提供商",
+  "prov.tabModel": "模型提供商",
+  "prov.tabCloud": "云存储提供商",
+  "prov.addModel": "+ 添加模型提供商",
+  "prov.addCloud": "添加云存储提供商",
+  "prov.noModel": "还没有模型提供商。",
+  "prov.noCloud": "还没有云存储提供商。",
+  "prov.test": "测试",
+  "prov.testConnection": "测试连接",
+  "prov.discover": "梳理账号",
+  "prov.edit": "编辑",
+  "prov.delete": "删除",
+  "prov.cancel": "取消",
+  "prov.save": "保存",
+  "prov.create": "创建",
+  "prov.addProvider": "添加提供商",
+  "prov.advanced": "高级",
+  "prov.fName": "名称",
+  "prov.fProviderType": "提供商类型",
+  "prov.fBaseUrl": "Base URL",
+  "prov.fModel": "模型",
+  "prov.fApiKey": "API Key",
+  "prov.fProvider": "提供商",
+  "prov.fEndpoint": "Endpoint URL",
+  "prov.fRegion": "区域",
+  "prov.fAccountId": "账号 ID",
+  "prov.fAccessKey": "Access Key ID",
+  "prov.fSecretKey": "Secret Access Key",
+  "prov.fMode": "模式",
+  "prov.fAddressing": "寻址方式",
+  "prov.fSignature": "签名版本",
+  "prov.fSessionToken": "会话令牌（可选）",
+  "prov.fAllowedBuckets": "允许的桶",
+  "prov.fAllowedPrefixes": "允许的前缀",
+  "prov.hintKeep": "已保存在操作系统钥匙串 · 留空则保持不变",
+  "prov.hintNew": "仅保存在操作系统钥匙串中——不会再次显示。",
+  "prov.hintBuckets": "用逗号或换行分隔；留空表示全部可见",
+  "prov.hintPrefixes": "用逗号或换行分隔",
+  "prov.savedKeychain": "已存入钥匙串",
+  "prov.notSet": "未设置",
+  "prov.modeLabel": "模式",
+  "prov.accessKeyLabel": "Access Key",
+  "prov.secretKeyLabel": "Secret Key",
+  "prov.bucketsLabel": "桶",
+  "prov.prefixesLabel": "前缀",
+  "prov.apiKeyLabel": "API Key",
+  "prov.savedPlaceholder": "••••••••（已保存）",
+  "prov.footerKeys": "密钥保存在操作系统钥匙串中，默认以只读方式使用。",
+  "prov.confirmDeleteModel": "删除模型提供商“{name}”？",
+  "prov.confirmDeleteCloud": "删除云存储提供商“{name}”？",
+  "prov.testOk": "正常",
+  "prov.testIncomplete": "不完整",
+  "palette.placeholder": "搜索对话或运行命令…",
+  "palette.newChat": "新对话",
+  "palette.settings": "打开设置",
+  "palette.recent": "最近的对话",
+  "palette.noResults": "没有匹配项。",
+  "wizard.welcomeTitle": "欢迎使用存储智能体工作台",
+  "wizard.welcomeBody": "一个本地优先的智能体，用于诊断对象存储与 S3 兼容系统。一切都在本机运行；密钥仅保存在操作系统钥匙串中。",
+  "wizard.step1Title": "添加模型提供商",
+  "wizard.step1Body": "一个大模型 API Key，让智能体能够解读证据并回答问题。",
+  "wizard.step2Title": "添加云存储提供商",
+  "wizard.step2Body": "只读的 S3 凭证，用于对桶进行实时诊断。",
+  "wizard.step3Title": "开始排查",
+  "wizard.step3Body": "描述一个问题，或粘贴一段 S3 错误进行离线诊断——无需凭证。",
+  "wizard.skip": "暂时跳过",
+  "wizard.configure": "配置提供商",
+};
+
+const DICTS: Record<Lang, Dict> = { en, zh };
+
+function detectLang(): Lang {
+  try {
+    const saved = localStorage.getItem(KEY);
+    if (saved === "en" || saved === "zh") return saved;
+  } catch {
+    /* ignore */
+  }
+  const nav = (typeof navigator !== "undefined" && navigator.language) || "en";
+  return nav.toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+export type TFunc = (key: string, vars?: Record<string, string | number>) => string;
+
+function translate(lang: Lang, key: string, vars?: Record<string, string | number>): string {
+  let s = DICTS[lang][key] ?? DICTS.en[key] ?? key;
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v));
+  return s;
+}
+
+type Ctx = { lang: Lang; setLang: (l: Lang) => void; t: TFunc };
+const I18nContext = createContext<Ctx | null>(null);
+
+export function I18nProvider({ children }: { children: ReactNode }) {
+  const [lang, setLangState] = useState<Lang>(() => detectLang());
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(KEY, lang);
+    } catch {
+      /* ignore */
+    }
+    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+  }, [lang]);
+
+  const value = useMemo<Ctx>(
+    () => ({ lang, setLang: setLangState, t: (key, vars) => translate(lang, key, vars) }),
+    [lang],
+  );
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+export function useI18n(): Ctx {
+  const ctx = useContext(I18nContext);
+  if (!ctx) throw new Error("useI18n must be used within I18nProvider");
+  return ctx;
+}

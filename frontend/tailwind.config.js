@@ -4,19 +4,31 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Layered near-monochrome dark surfaces (deepest → most elevated).
-        canvas: "#0b0b0d",
-        sidebar: "#0e0f12",
-        panel: "#141519",
-        elevated: "#1a1c21",
-        hover: "#202329",
-        edge: "#1d1f25",
-        "edge-strong": "#2a2d35",
+        // Layered surfaces (deepest → most elevated). Theme-driven via CSS vars
+        // defined in index.css (dark default + light override).
+        canvas: "var(--canvas)",
+        sidebar: "var(--sidebar)",
+        panel: "var(--panel)",
+        elevated: "var(--elevated)",
+        hover: "var(--hover)",
+        edge: "var(--edge)",
+        "edge-strong": "var(--edge-strong)",
         // Single restrained accent (Cursor/Codex-style indigo-blue).
         accent: {
-          DEFAULT: "#6d8bff",
-          soft: "#84acff",
-          dim: "#161a2b",
+          DEFAULT: "var(--accent)",
+          soft: "var(--accent-soft)",
+          dim: "var(--accent-dim)",
+        },
+        // Remap the neutral ramp to theme vars so text-gray-100..700 inverts
+        // correctly between dark and light (100 = strongest, 700 = faintest).
+        gray: {
+          100: "var(--gray-100)",
+          200: "var(--gray-200)",
+          300: "var(--gray-300)",
+          400: "var(--gray-400)",
+          500: "var(--gray-500)",
+          600: "var(--gray-600)",
+          700: "var(--gray-700)",
         },
       },
       fontFamily: {

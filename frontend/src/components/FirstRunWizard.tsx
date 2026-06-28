@@ -1,19 +1,7 @@
 import { Button } from "./ui";
+import { useI18n } from "../i18n";
 
-const STEPS = [
-  {
-    title: "Add a model provider",
-    body: "An LLM API key so the agent can interpret evidence and answer questions.",
-  },
-  {
-    title: "Add a cloud provider",
-    body: "Read-only S3 credentials to run live diagnostics against a bucket.",
-  },
-  {
-    title: "Start investigating",
-    body: "Describe an issue, or paste an S3 error for offline triage — no credentials needed.",
-  },
-];
+const STEP_KEYS = ["step1", "step2", "step3"] as const;
 
 /**
  * One-time first-run overlay shown on a fresh install (no providers yet).
@@ -27,6 +15,7 @@ export function FirstRunWizard({
   onConfigure: () => void;
   onDismiss: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm animate-fade-in">
       <div className="w-[min(540px,94vw)] overflow-hidden rounded-2xl border border-edge bg-panel shadow-pop animate-scale-in">
@@ -38,30 +27,27 @@ export function FirstRunWizard({
               <path d="M2 12l10 5 10-5" />
             </svg>
           </div>
-          <div className="text-lg font-medium text-gray-100">Welcome to Storage Agent Workbench</div>
-          <p className="mt-1.5 text-sm leading-relaxed text-gray-400">
-            A local-first agent for diagnosing object storage and S3-compatible systems. Everything runs on your
-            machine; secrets stay in the OS keychain.
-          </p>
+          <div className="text-lg font-medium text-gray-100">{t("wizard.welcomeTitle")}</div>
+          <p className="mt-1.5 text-sm leading-relaxed text-gray-400">{t("wizard.welcomeBody")}</p>
         </div>
 
         <ol className="space-y-1 px-5 py-5">
-          {STEPS.map((s, i) => (
-            <li key={i} className="flex gap-3 rounded-xl px-2 py-2">
+          {STEP_KEYS.map((k, i) => (
+            <li key={k} className="flex gap-3 rounded-xl px-2 py-2">
               <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full border border-accent/40 bg-accent/10 text-xs font-semibold text-accent-soft">
                 {i + 1}
               </span>
               <div>
-                <div className="text-sm font-medium text-gray-100">{s.title}</div>
-                <div className="text-[13px] leading-relaxed text-gray-500">{s.body}</div>
+                <div className="text-sm font-medium text-gray-100">{t(`wizard.${k}Title`)}</div>
+                <div className="text-[13px] leading-relaxed text-gray-500">{t(`wizard.${k}Body`)}</div>
               </div>
             </li>
           ))}
         </ol>
 
         <div className="flex justify-end gap-2 border-t border-edge px-5 py-4">
-          <Button variant="ghost" onClick={onDismiss}>Skip for now</Button>
-          <Button variant="primary" onClick={onConfigure}>Configure providers</Button>
+          <Button variant="ghost" onClick={onDismiss}>{t("wizard.skip")}</Button>
+          <Button variant="primary" onClick={onConfigure}>{t("wizard.configure")}</Button>
         </div>
       </div>
     </div>
