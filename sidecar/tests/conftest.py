@@ -41,14 +41,14 @@ def _in_memory_keyring():
     backend = InMemoryKeyring()
     previous = keyring.get_keyring()
     keyring.set_keyring(backend)
-    # The store caches resolved secrets in-process; clear it around each test so a
-    # fresh in-memory backend is never shadowed by another test's cached value.
-    keyring_store._cache.clear()
+    # The store mirrors the consolidated secret map in-process; reset it around
+    # each test so a fresh in-memory backend is never shadowed by cached state.
+    keyring_store._reset_for_tests()
     try:
         yield backend
     finally:
         keyring.set_keyring(previous)
-        keyring_store._cache.clear()
+        keyring_store._reset_for_tests()
 
 
 @pytest.fixture()

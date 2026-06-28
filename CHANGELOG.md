@@ -6,6 +6,32 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.16] - 2026-06-28
+
+### Changed
+
+- **Keychain access no longer floods you with prompts.** All secrets (model API
+  key, cloud access/secret keys, session tokens) are now consolidated into a
+  single OS Keychain item instead of one item per secret. macOS prompts **once**;
+  picking "Always Allow" then covers every secret the app reads — removing the
+  friction that made "secrets only in the Keychain" painful, with no change to
+  the guarantee (secrets never leave the Keychain, never touch SQLite/logs/
+  reports/model prompts). Secrets stored by older versions are migrated forward
+  automatically on first read, so existing keys keep working. (The remaining
+  one prompt per app version is inherent to ad-hoc signing.)
+- **One model-client builder for every LLM path.** The conversational session
+  agent, the agent-planner runs, and the analysis/error-triage narrators now all
+  build their model client through a single `agent_service.build_agent` with a
+  per-run client, eliminating a process-global SDK client that could race across
+  concurrent runs.
+- **Run events renamed to mode-neutral names** (`plan`, `summary`,
+  `final_summary`, `run_started`, `tool_selected`) so deterministic runs no
+  longer emit misleading `agent_*` event names.
+
+### Removed
+
+- Deleted the dead `RunsView` left over from the retired three-column UI.
+
 ## [0.19.11] - 2026-06-28
 
 ### Changed

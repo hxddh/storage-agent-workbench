@@ -116,7 +116,13 @@ Do not introduce these unless explicitly requested:
 
 2. Never store plaintext secrets in SQLite, logs, reports, traces, local JSON files, local YAML files, screenshots, or UI state.
 
-3. Store secrets only through system Keychain / Python keyring.
+3. Store secrets only through system Keychain / Python keyring. All secrets are
+   consolidated into a **single** keychain item (a JSON map, `service=
+   "storage-agent-workbench"`, `username="secrets-v1"`) behind `keyring_store`'s
+   public API — deliberately, so macOS prompts once ("Always Allow" then covers
+   every secret) instead of once per secret. Do not split this back into one
+   item per secret; `keyring_store` migrates legacy per-item secrets forward on
+   read.
 
 4. SQLite may store only secret references such as `keyring://scope/name`.
 
