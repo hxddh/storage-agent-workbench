@@ -216,26 +216,16 @@ def _sdk_analysis_loop(spec: dict[str, Any]) -> Any:
     """
     try:
         import openai  # noqa: F401
-        from agents import Agent, Runner, set_default_openai_key
+        from agents import Runner
     except Exception as exc:  # noqa: BLE001
         raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
 
     creds = spec["creds"]
     try:
-        if creds.get("base_url"):
-            from agents import set_default_openai_client
-            client = openai.AsyncOpenAI(api_key=creds["api_key"], base_url=creds["base_url"])
-            set_default_openai_client(client)
-        else:
-            set_default_openai_key(creds["api_key"])
-
-        # No tools: the model can only read the sanitized context we pass in.
-        agent = Agent(
-            name="Storage Analysis Narrator",
-            instructions=spec["instructions"],
-            tools=[],
-            model=creds.get("model"),
-        )
+        # No tools: the model can only read the sanitized context we pass in. Uses
+        # the shared per-run client builder (no SDK globals → concurrency-safe).
+        from .agent_service import build_agent
+        agent = build_agent(creds, [], spec["instructions"], name="Storage Analysis Narrator")
         result = Runner.run_sync(agent, spec["context_text"])
         return getattr(result, "final_output", "")
     except AgentUnavailable:

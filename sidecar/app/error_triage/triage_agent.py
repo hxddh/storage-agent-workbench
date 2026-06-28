@@ -87,23 +87,15 @@ def _sdk_triage_loop(spec: dict[str, Any]) -> Any:
     """Default one-shot loop via the OpenAI Agents SDK (lazy import, no tools)."""
     try:
         import openai  # noqa: F401
-        from agents import Agent, Runner, set_default_openai_key, set_tracing_disabled
+        from agents import Runner
     except Exception as exc:  # noqa: BLE001
         raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
     creds = spec["creds"]
     try:
-        set_tracing_disabled(True)
-        if creds.get("base_url"):
-            # Third-party OpenAI-compatible provider (e.g. DeepSeek): use its
-            # base_url + Chat Completions (no OpenAI Responses API).
-            from agents import set_default_openai_client, set_default_openai_api
-            client = openai.AsyncOpenAI(api_key=creds["api_key"], base_url=creds["base_url"])
-            set_default_openai_client(client)
-            set_default_openai_api("chat_completions")
-        else:
-            set_default_openai_key(creds["api_key"])
-        agent = Agent(name="Error Triage Assistant", instructions=spec["instructions"],
-                      tools=[], model=creds.get("model"))
+        # No tools (interpretation only). Shared per-run client builder — no SDK
+        # globals, so concurrent triage/analysis/session runs don't race.
+        from ..agent_runtime.agent_service import build_agent
+        agent = build_agent(creds, [], spec["instructions"], name="Error Triage Assistant")
         result = Runner.run_sync(agent, spec["prompt"])
         return getattr(result, "final_output", "")
     except AgentUnavailable:

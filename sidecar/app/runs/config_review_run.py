@@ -46,7 +46,7 @@ def execute_config_review_run(conn: sqlite3.Connection, run_id: str) -> None:
             "Profile performance from a bounded object sample (no full scan).",
             "Generate a local Markdown report.",
         ]
-        bus.publish(run_id, {"type": "agent_plan", "content": "\n".join(plan)})
+        bus.publish(run_id, {"type": "plan", "content": "\n".join(plan)})
 
         all_findings: list[dict[str, str]] = []
 
@@ -85,7 +85,7 @@ def execute_config_review_run(conn: sqlite3.Connection, run_id: str) -> None:
             f"(overall status: {summary_out.get('overall_status')}). "
             f"Findings: " + ", ".join(f"{n} {c}" for c, n in counts.items()) + "."
         )
-        bus.publish(run_id, {"type": "agent_message", "content": summary_text})
+        bus.publish(run_id, {"type": "summary", "content": summary_text})
 
         sections = {
             "security": security,

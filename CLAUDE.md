@@ -10,7 +10,38 @@ The app supports:
 - Bucket configuration review
 - Optimization reporting
 
-This is not a generic chat assistant. It is a task-oriented workbench built around **Analysis Runs**.
+This is not a generic chat assistant. The **primary surface is a thread-first
+conversational agent** (a real tool-calling loop over read-only tools); structured
+**Analysis Runs** are a callable, auditable capability beneath it.
+
+## Agent surfaces (how the LLM is used)
+
+There are deliberately two surfaces, and the split is intentional — not an
+oversight:
+
+1. **Conversational session agent** (the main UX, `agent_runtime/session_agent.py`).
+   A genuine tool-calling agent: it chooses provider/bucket, calls read-only S3
+   tools in a loop, loads StorageOps skills on demand (progressive disclosure via
+   the `read_skill` tool), grounds answers in tool output, and *proposes* next
+   actions the user confirms. This is where "agentic" behavior lives.
+
+2. **Structured Analysis Runs** (`runs/`, dispatched by `run_service.py`). These
+   exist for reproducible, auditable, report-producing work and come in three
+   forms:
+   - **deterministic** (rule-based, no LLM) — e.g. `diagnostic`, `account_discovery`;
+   - **agent-planner** (`agent_service.run_agent`, `planner_mode="agent"`) — a
+     controlled tool-calling LLM over the same whitelist (API-reachable);
+   - **interpretation-only narrators** (`analysis_agent`, `error_triage/triage_agent`)
+     — the deterministic engine (DuckDB / parser) computes first, then the LLM is
+     given ONLY sanitized aggregates **with no tools** and writes the narrative.
+
+   Narrators have no tools **on purpose**: the heavy analysis must be
+   deterministic/reproducible and the model must never reach raw rows, full key
+   lists, arbitrary SQL, or object bodies. This is a safety/altitude choice, not a
+   neutered agent — the interactive agentic path is surface (1).
+
+All LLM seams build their model client through `agent_service.build_agent`
+(per-run client; never the SDK process-global).
 
 ## Product shape
 
@@ -215,73 +246,29 @@ Use local files for large raw inputs and generated reports:
 
 ## Development workflow
 
-1. Keep the MVP simple.
+> Historical note: the project was built in phases (bootstrap → providers → S3
+> tools → runs → DuckDB → config review → Agents SDK → packaging). All of those
+> shipped; the phase plan and `phase/NN-*` branch scheme are history, not current
+> process. Work now lands as focused PRs cut from `main`.
 
+1. Keep changes simple and focused; one concern per PR.
 2. Document before implementing major modules.
-
-3. Follow the phase plan in `docs/roadmap.md`.
-
-4. Do not use GitHub Issues as the project workflow.
-
-5. Do not create `.github/ISSUE_TEMPLATE`.
-
-6. Prefer phase branches or clear phase commits:
-
-   - `phase/01-bootstrap`
-   - `phase/02-providers`
-   - `phase/03-s3-tools`
-   - `phase/04-runs-timeline`
-   - `phase/05-duckdb-analysis`
-   - `phase/06-config-review`
-   - `phase/07-agents-sdk`
-   - `phase/08-packaging`
-
-7. Each phase should end with:
-
-   - Build or test results
-   - A concise change summary
-   - Known limitations
-   - Next recommended phase
-
-8. Do not continue into the next phase without explicit instruction.
-
-## First-phase scope
-
-For `phase/01-bootstrap`, only implement:
-
-- Project skeleton
-- Documentation
-- Tauri + React/Vite shell
-- Python FastAPI sidecar
-- `GET /health`
-- Frontend sidecar connected / disconnected status
-- Basic CI for frontend build and sidecar import/test
-- Small example files
-
-Do not implement in Phase 01:
-
-- Full Agent runtime
-- S3 tools
-- DuckDB analysis
-- Keyring storage logic
-- Provider CRUD
-- Generic shell
-- Destructive S3 operation
+3. Do not use GitHub Issues as the project workflow; do not create
+   `.github/ISSUE_TEMPLATE`.
+4. Releases are cut by dispatching the `Release` workflow against a tag; the
+   version is stamped from the tag (see `docs/release.md`).
 
 ## Verification expectations
 
-Before reporting completion, run the relevant checks for the current phase.
+Before reporting completion, actually run the relevant checks:
 
-For Phase 01, verify at minimum:
+- `cd sidecar && pytest -q` (full suite passes).
+- `cd frontend && npm run build` and `tsc --noEmit` are clean.
+- The security invariants still hold (see the rules above): no generic shell, no
+  plaintext secrets, no destructive S3 op, secrets resolved only server-side and
+  never placed in an LLM prompt.
 
-- Frontend install/build works, or clearly document any environment blocker.
-- Sidecar imports successfully.
-- `GET /health` returns OK.
-- Frontend can display sidecar connected / disconnected status.
-- No generic shell tool exists.
-- No plaintext secret storage exists.
-- No destructive S3 API exists.
-- No GitHub issue templates were created.
+Never claim a check passed unless it was actually run.
 
 ## Review expectations
 

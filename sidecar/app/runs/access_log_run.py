@@ -40,7 +40,7 @@ def execute_access_log_run(conn: sqlite3.Connection, run_id: str) -> None:
         creds = None
         if agent_mode:
             creds = get_model_credentials(conn)  # raises AgentUnavailable if missing
-            bus.publish(run_id, {"type": "agent_started", "planner_mode": "agent"})
+            bus.publish(run_id, {"type": "run_started", "planner_mode": "agent"})
 
         ds = datasets_repo.latest_for_run(conn, run_id, "access_log")
         if ds is None or not ds.stored_path:
@@ -58,7 +58,7 @@ def execute_access_log_run(conn: sqlite3.Connection, run_id: str) -> None:
             "Summarize evidence into findings.",
             "Generate a local Markdown report (generate_markdown_report).",
         ]
-        bus.publish(run_id, {"type": "agent_plan", "content": "\n".join(plan)})
+        bus.publish(run_id, {"type": "plan", "content": "\n".join(plan)})
 
         fmt = _require(run_tool_with_events(
             conn, run_id, "detect_log_format", {"path": raw_rel},
@@ -87,7 +87,7 @@ def execute_access_log_run(conn: sqlite3.Connection, run_id: str) -> None:
             f"'{fmt.get('format')}'. 4xx={metrics.get('error_rate_4xx', 0):.1%}, "
             f"5xx={metrics.get('error_rate_5xx', 0):.1%}."
         )
-        bus.publish(run_id, {"type": "agent_message", "content": summary})
+        bus.publish(run_id, {"type": "summary", "content": summary})
 
         # Agent mode: interpret the deterministic aggregates only (no tools, no
         # raw data). The deterministic metrics/findings above stay authoritative.
@@ -105,7 +105,7 @@ def execute_access_log_run(conn: sqlite3.Connection, run_id: str) -> None:
             agent_section = agent_analysis_md("access_log_analysis", agent_result)
             if agent_result.get("executive_summary"):
                 summary = agent_result["executive_summary"]
-            bus.publish(run_id, {"type": "agent_final", "content": summary})
+            bus.publish(run_id, {"type": "final_summary", "content": summary})
 
         ds_info = {"source_filename": ds.source_filename}
         _require(run_tool_with_events(

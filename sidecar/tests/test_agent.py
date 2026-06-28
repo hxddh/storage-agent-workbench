@@ -115,7 +115,7 @@ def test_agent_events_and_no_chain_of_thought(agent_env):
     import json
     text = agent_env.client.get(f"/runs/{rid}/events").text
     types = [json.loads(l[5:].strip())["type"] for l in text.splitlines() if l.startswith("data:")]
-    for required in ("agent_started", "agent_tool_selected", "guardrail_passed", "agent_final", "report_ready"):
+    for required in ("run_started", "tool_selected", "guardrail_passed", "final_summary", "report_ready"):
         assert required in types, f"missing event {required}"
     # hidden chain-of-thought must not be persisted/shown
     assert "secret private reasoning" not in text

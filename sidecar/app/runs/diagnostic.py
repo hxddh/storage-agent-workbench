@@ -91,7 +91,7 @@ def execute_diagnostic_run(conn: sqlite3.Connection, run_id: str) -> None:
     try:
         runs_repo.set_status(conn, run_id, "running")
         plan = diagnostic_plan(bucket, prefix)
-        bus.publish(run_id, {"type": "agent_plan", "content": "\n".join(plan)})
+        bus.publish(run_id, {"type": "plan", "content": "\n".join(plan)})
 
         evidence: dict[str, dict[str, Any]] = {}
 
@@ -124,7 +124,7 @@ def execute_diagnostic_run(conn: sqlite3.Connection, run_id: str) -> None:
 
         all_ok = all(evidence.get(n, {}).get("success") for n in _TOOLS)
         summary = _summary_text(all_ok, evidence)
-        bus.publish(run_id, {"type": "agent_message", "content": summary})
+        bus.publish(run_id, {"type": "summary", "content": summary})
 
         report_path, _ = write_report(run, plan, evidence, findings, summary)
         conn.execute(

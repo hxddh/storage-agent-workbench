@@ -254,7 +254,7 @@ def test_config_review_sse_events(cfg):
     run_id = _start_review(cfg)
     text = cfg.client.get(f"/runs/{run_id}/events").text
     types = [json.loads(l[5:].strip())["type"] for l in text.splitlines() if l.startswith("data:")]
-    for required in ("agent_plan", "tool_call_started", "tool_call_finished", "finding", "report_ready"):
+    for required in ("plan", "tool_call_started", "tool_call_finished", "finding", "report_ready"):
         assert required in types
 
 

@@ -29,12 +29,60 @@ from .result_parser import AgentResult, parse_agent_output
 
 AGENT_SUPPORTED_RUN_TYPES = {"diagnostic", "bucket_config_review"}
 
+# Default completion budget for a single agent turn (generous so long
+# enumerations aren't truncated; the provider still bounds the actual length).
+_DEFAULT_MAX_TOKENS = 8192
+
 
 class AgentUnavailable(Exception):
     """Agent mode cannot run (no model/key, unsupported type, SDK missing).
 
     The message is safe to surface to the user.
     """
+
+
+def build_agent(
+    creds: dict[str, Any],
+    tools: list[Any] | None = None,
+    instructions: str = "",
+    *,
+    name: str = "Storage Agent",
+    max_tokens: int | None = _DEFAULT_MAX_TOKENS,
+    parallel_tool_calls: bool = False,
+) -> Any:
+    """Build an Agents-SDK Agent with a PER-RUN model client.
+
+    The single place all LLM seams (session chat, run planner, analysis/triage
+    narrators) build their agent. The client is passed explicitly via
+    ``OpenAIChatCompletionsModel`` instead of being set on the SDK's process-wide
+    default (``set_default_openai_client``) — mutating that global per request
+    races across concurrent sessions/runs. A per-run client keeps every run fully
+    independent. Chat Completions is used for all providers (third-party
+    OpenAI-compatible endpoints such as DeepSeek don't implement the Responses
+    API the SDK otherwise defaults to). Raises AgentUnavailable if the SDK is
+    missing so callers can fail cleanly / fall back.
+    """
+    try:
+        import openai  # noqa: F401
+        from agents import (Agent, ModelSettings, OpenAIChatCompletionsModel,
+                            set_tracing_disabled)
+    except Exception as exc:  # noqa: BLE001
+        raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
+
+    # Never upload traces/prompts (privacy; also avoids a spurious OpenAI auth
+    # call that fails for third-party providers). Constant, not per-run.
+    set_tracing_disabled(True)
+    client_kwargs: dict[str, Any] = {"api_key": creds["api_key"]}
+    if creds.get("base_url"):
+        client_kwargs["base_url"] = creds["base_url"]
+    client = openai.AsyncOpenAI(**client_kwargs)
+    model = OpenAIChatCompletionsModel(model=creds.get("model") or "gpt-4o-mini",
+                                       openai_client=client)
+    settings_kwargs: dict[str, Any] = {"parallel_tool_calls": parallel_tool_calls}
+    if max_tokens:
+        settings_kwargs["max_tokens"] = max_tokens
+    return Agent(name=name, instructions=instructions, tools=tools or [], model=model,
+                 model_settings=ModelSettings(**settings_kwargs))
 
 
 # --- model credentials (secret stays local to the LLM client) ----------------
@@ -108,7 +156,7 @@ class ToolInvoker:
             raise GuardrailBlocked("tool_allowlist", f"Tool '{name}' is not available.")
 
         bounded_args = guardrails.bound_tool_args(name, args)
-        bus.publish(self.run_id, {"type": "agent_tool_selected", "tool_name": name,
+        bus.publish(self.run_id, {"type": "tool_selected", "tool_name": name,
                                   "reason": guardrails.strip_chain_of_thought(redact_text(reason))[:160]})
         bus.publish(self.run_id, {"type": "guardrail_passed", "name": "tool_allowlist"})
 
@@ -139,7 +187,7 @@ def _sdk_agent_loop(spec: dict[str, Any]) -> AgentResult:
     """
     try:
         import openai  # noqa: F401
-        from agents import Agent, Runner, function_tool, set_default_openai_key, set_tracing_disabled
+        from agents import Runner, function_tool
     except Exception as exc:  # noqa: BLE001
         raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
 
@@ -168,20 +216,8 @@ def _sdk_agent_loop(spec: dict[str, Any]) -> AgentResult:
         return _tool
 
     try:
-        set_tracing_disabled(True)
-        if creds.get("base_url"):
-            # Third-party OpenAI-compatible provider (e.g. DeepSeek): use its
-            # base_url + Chat Completions (no OpenAI Responses API).
-            from agents import set_default_openai_client, set_default_openai_api
-            client = openai.AsyncOpenAI(api_key=creds["api_key"], base_url=creds["base_url"])
-            set_default_openai_client(client)
-            set_default_openai_api("chat_completions")
-        else:
-            set_default_openai_key(creds["api_key"])
-
         tools = [_make_tool(n) for n in spec.get("tool_names", [])]
-        agent = Agent(name="Storage Agent Workbench", instructions=spec["instructions"],
-                      tools=tools, model=creds.get("model"))
+        agent = build_agent(creds, tools, spec["instructions"], name="Storage Agent Workbench")
         result = Runner.run_sync(agent, spec["context_text"])
         return parse_agent_output(getattr(result, "final_output", ""))
     except AgentUnavailable:
@@ -234,8 +270,8 @@ def run_agent(conn: sqlite3.Connection, run_id: str) -> None:
         context = context_builder.build_context(conn, run)  # asserts no secrets
 
         runs_repo.set_status(conn, run_id, "running")
-        bus.publish(run_id, {"type": "agent_started", "planner_mode": "agent"})
-        bus.publish(run_id, {"type": "agent_plan", "content": _plan_text(run["run_type"])})
+        bus.publish(run_id, {"type": "run_started", "planner_mode": "agent"})
+        bus.publish(run_id, {"type": "plan", "content": _plan_text(run["run_type"])})
 
         invoker = ToolInvoker(conn, run_id, ctx)
         spec = {
@@ -258,7 +294,7 @@ def run_agent(conn: sqlite3.Connection, run_id: str) -> None:
         for f in result.findings:
             bus.publish(run_id, {"type": "finding", "severity": f.get("severity", "info"),
                                  "title": f.get("title", ""), "detail": f.get("detail", "")})
-        bus.publish(run_id, {"type": "agent_final", "content": safe_summary})
+        bus.publish(run_id, {"type": "final_summary", "content": safe_summary})
 
         content = render_agent_report(run, safe_summary, safe_narrative, result.findings, invoker.evidence)
         guardrails.assert_report_sanitized(content)  # raises GuardrailBlocked if not clean

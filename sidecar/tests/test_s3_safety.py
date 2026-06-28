@@ -63,12 +63,16 @@ def test_forbidden_runtimes_absent():
 def test_agents_sdk_is_imported_lazily():
     # The SDK must NOT be imported at module top-level (so the sidecar and
     # deterministic mode run without it / without a key). It is imported inside
-    # the agent loop function only.
+    # functions only (build_agent / the loop seam), which are indented — so a
+    # top-level import would be an UNINDENTED line at column 0.
     svc = (APP_DIR / "agent_runtime" / "agent_service.py").read_text()
-    top = svc.split("def _sdk_agent_loop", 1)[0]
-    assert "from agents import" not in top and "import openai" not in top, (
-        "Agents SDK / openai must be imported lazily inside the loop, not at module top"
-    )
+    for line in svc.splitlines():
+        assert not line.startswith("from agents import"), (
+            "Agents SDK must be imported lazily inside a function, not at module top"
+        )
+        assert not line.startswith("import openai"), (
+            "openai must be imported lazily inside a function, not at module top"
+        )
 
 
 def test_no_chain_of_thought_persistence():
