@@ -21,10 +21,16 @@ def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(
         str(path),
         check_same_thread=False,
-        timeout=5.0,
+        # Busy timeout: with concurrent sessions each running on its own thread,
+        # several connections may try to write at once. Wait for the write lock
+        # instead of failing fast with "database is locked" (a 500). WAL allows
+        # concurrent readers; writers still serialize, so a generous timeout keeps
+        # brief overlaps from surfacing as errors.
+        timeout=30.0,
     )
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
