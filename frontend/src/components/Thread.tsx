@@ -480,8 +480,8 @@ export function Thread({
               {banners}
 
               {proposals.length > 0 && !pending && (
-                <div className="space-y-2 pt-1">
-                  <div className="px-0.5 text-[11px] font-medium uppercase tracking-wider text-gray-600">{t("thread.suggestedNext")}</div>
+                <div className="flex flex-wrap items-center gap-2 pt-1.5">
+                  <span className="text-[11.5px] text-gray-600">{t("thread.suggestedNext")}</span>
                   {proposals.map((p, i) => (
                     <ProposalCard key={`${propKey(p)}-${i}`} proposal={p} onRun={runProposal} />
                   ))}

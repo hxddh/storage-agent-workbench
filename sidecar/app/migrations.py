@@ -449,6 +449,11 @@ _M010 = """
 ALTER TABLE session_messages ADD COLUMN tool_activity TEXT;
 """
 
+# Session management: pin sessions to the top of the rail. 0 = unpinned.
+_M011 = """
+ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -461,6 +466,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (8, "session_workspace_context", _M008),
     (9, "error_triage", _M009),
     (10, "session_message_tool_activity", _M010),
+    (11, "sessions_pinned", _M011),
 ]
 
 

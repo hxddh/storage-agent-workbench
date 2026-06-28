@@ -79,6 +79,28 @@ def patch_session(session_id: str, body: SessionUpdate, conn: sqlite3.Connection
     return _detail(conn, session_id)
 
 
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session(session_id: str, conn: sqlite3.Connection = Depends(get_conn)):
+    if repo.get_row(conn, session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    repo.delete(conn, session_id)
+    audit.record(conn, "session.delete", {"session_id": session_id}, run_id=None)
+    conn.commit()
+    return None
+
+
+@router.post("/{session_id}/fork", response_model=SessionDetail, status_code=status.HTTP_201_CREATED)
+def fork_session(session_id: str, conn: sqlite3.Connection = Depends(get_conn)):
+    if repo.get_row(conn, session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    new_id = repo.fork(conn, session_id)
+    if new_id is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    audit.record(conn, "session.fork", {"session_id": session_id, "new_session_id": new_id}, run_id=None)
+    conn.commit()
+    return _detail(conn, new_id)
+
+
 @router.post("/{session_id}/runs/{run_id}", response_model=SessionDetail)
 def attach_run(session_id: str, run_id: str, conn: sqlite3.Connection = Depends(get_conn)):
     if repo.get_row(conn, session_id) is None:
