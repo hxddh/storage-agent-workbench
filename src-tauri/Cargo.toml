@@ -1,10 +1,10 @@
 [package]
 name = "storage-agent-workbench"
-version = "0.19.8"
-description = "Local-first agent workbench for object storage operations: diagnostics, analysis, config review, and optimization"
+version = "0.19.9"
+description = "Local-first agent for object storage operations, analytics, and management on S3-compatible systems"
 edition = "2021"
 rust-version = "1.77.2"
-license = "BUSL-1.1"
+license = "Apache-2.0"
 
 [lib]
 name = "storage_agent_workbench_lib"

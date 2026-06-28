@@ -188,7 +188,7 @@ export function SessionRail({
       <div className="px-2.5 pb-1.5">
         <button
           onClick={onNew}
-          className="group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-gray-300 transition-colors hover:bg-hover hover:text-gray-100"
+          className="group flex w-full items-center gap-2 rounded-lg border border-edge bg-elevated/50 px-2.5 py-2 text-left text-[13px] font-medium text-gray-200 shadow-elev transition-all duration-150 hover:border-edge-strong hover:bg-elevated hover:text-gray-100"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-accent-soft">
             <line x1="12" y1="5" x2="12" y2="19" />

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Storage Agent Workbench",
-  "version": "0.19.8",
+  "version": "0.19.9",
   "identifier": "com.storageagent.workbench",
   "build": {
     "frontendDist": "../frontend/dist",
@@ -28,8 +28,8 @@
     "active": true,
     "targets": "all",
     "category": "DeveloperTool",
-    "shortDescription": "Object storage operations agent",
-    "longDescription": "Local-first agent workbench for object storage operations on S3-compatible systems: diagnostics, access-log and inventory analysis, account and bucket configuration review, error triage, and optimization.",
+    "shortDescription": "Object storage agent: ops, analytics, management",
+    "longDescription": "Local-first agent for object storage on S3-compatible systems \u2014 operations, analytics, and management: diagnostics, access-log and inventory analysis, account and bucket configuration review, error triage, usage/cost profiling, and optimization.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
