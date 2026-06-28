@@ -11,7 +11,7 @@ import {
   submitErrorTriage,
 } from "../api";
 import type { NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
-import { Button, BrandMark } from "./ui";
+import { Button } from "./ui";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
 import { MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
 import { useI18n, type TFunc } from "../i18n";
@@ -421,9 +421,6 @@ export function Thread({
         <div className="flex flex-1 items-center justify-center overflow-auto px-6 py-10">
           <div className="w-full max-w-[44rem] animate-fade-in-up">
             <div className="mb-7 flex flex-col items-center text-center">
-              <div className="mb-5 grid h-12 w-12 place-items-center rounded-2xl border border-edge-strong bg-elevated text-accent-soft shadow-elev">
-                <BrandMark size={24} />
-              </div>
               <h1 className="text-[23px] font-semibold tracking-[-0.02em] text-gray-100">{t("thread.greeting")}</h1>
               <p className="mt-2.5 max-w-md text-[13.5px] leading-relaxed text-gray-500">
                 {t("thread.subtitle")}

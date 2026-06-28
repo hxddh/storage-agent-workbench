@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SessionSummaryRow } from "../types";
 import type { SidecarStatus as Status } from "../hooks/useSidecarHealth";
 import { useI18n, type TFunc } from "../i18n";
@@ -30,7 +30,8 @@ function relTime(iso: string, t: TFunc): string {
 }
 
 export type SessionActions = {
-  onRename: (s: SessionSummaryRow) => void;
+  /** Persist a new title. The rail handles collecting it via an inline input. */
+  onRename: (s: SessionSummaryRow, title: string) => void;
   onTogglePin: (s: SessionSummaryRow) => void;
   onFork: (s: SessionSummaryRow) => void;
   onToggleArchive: (s: SessionSummaryRow) => void;
@@ -68,21 +69,48 @@ export function SessionRail({
   const { t } = useI18n();
   const [menuId, setMenuId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const active = sessions.filter((s) => s.status !== "archived");
   const pinned = active.filter((s) => s.pinned);
   const recent = active.filter((s) => !s.pinned);
   const archived = sessions.filter((s) => s.status === "archived");
 
+  const closeAll = () => {
+    setMenuId(null);
+    setRenamingId(null);
+    setConfirmId(null);
+  };
+
   const item = (s: SessionSummaryRow) => {
     const isActive = s.id === activeId;
     const isArchived = s.status === "archived";
     const open = menuId === s.id;
+    const renaming = renamingId === s.id;
+    const confirming = confirmId === s.id;
     const act = (fn: () => void) => (e: React.MouseEvent) => {
       e.stopPropagation();
       setMenuId(null);
       fn();
     };
+
+    if (renaming) {
+      return (
+        <div key={s.id} className="mb-px px-1.5 py-1">
+          <RenameInput
+            initial={s.title || ""}
+            onCommit={(name) => {
+              setRenamingId(null);
+              const trimmed = name.trim();
+              if (trimmed && trimmed !== s.title) actions.onRename(s, trimmed);
+            }}
+            onCancel={() => setRenamingId(null)}
+          />
+        </div>
+      );
+    }
+
     return (
       <div
         key={s.id}
@@ -103,23 +131,42 @@ export function SessionRail({
         </div>
         <button
           aria-label={t("menu.more")}
-          onClick={(e) => { e.stopPropagation(); setMenuId(open ? null : s.id); }}
+          onClick={(e) => { e.stopPropagation(); setConfirmId(null); setMenuId(open ? null : s.id); }}
           className={`grid h-6 w-6 shrink-0 place-items-center rounded-md text-gray-500 transition-all hover:bg-hover hover:text-gray-200 ${
-            open ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            open || confirming ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           }`}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
         </button>
         {open && (
           <div className="absolute right-1.5 top-8 z-40 w-40 overflow-hidden rounded-lg border border-edge bg-panel py-1 shadow-pop animate-fade-in">
-            <MenuItem onClick={act(() => actions.onRename(s))}>{t("menu.rename")}</MenuItem>
+            <MenuItem onClick={act(() => setRenamingId(s.id))}>{t("menu.rename")}</MenuItem>
             {!isArchived && (
               <MenuItem onClick={act(() => actions.onTogglePin(s))}>{s.pinned ? t("menu.unpin") : t("menu.pin")}</MenuItem>
             )}
             <MenuItem onClick={act(() => actions.onFork(s))}>{t("menu.duplicate")}</MenuItem>
             <MenuItem onClick={act(() => actions.onToggleArchive(s))}>{isArchived ? t("menu.unarchive") : t("menu.archive")}</MenuItem>
             <div className="my-1 border-t border-edge" />
-            <MenuItem danger onClick={act(() => actions.onDelete(s))}>{t("menu.delete")}</MenuItem>
+            <MenuItem danger onClick={act(() => setConfirmId(s.id))}>{t("menu.delete")}</MenuItem>
+          </div>
+        )}
+        {confirming && (
+          <div className="absolute right-1.5 top-8 z-40 w-48 overflow-hidden rounded-lg border border-edge bg-panel p-3 shadow-pop animate-fade-in" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 text-[12.5px] text-gray-200">{t("rail.deleteConfirmShort")}</div>
+            <div className="flex justify-end gap-1.5">
+              <button
+                onClick={(e) => { e.stopPropagation(); setConfirmId(null); }}
+                className="rounded-md px-2.5 py-1 text-[12px] text-gray-300 transition-colors hover:bg-hover hover:text-gray-100"
+              >
+                {t("rail.cancel")}
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setConfirmId(null); actions.onDelete(s); }}
+                className="rounded-md bg-red-500/90 px-2.5 py-1 text-[12px] font-medium text-white transition-colors hover:bg-red-500"
+              >
+                {t("rail.confirmDelete")}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -128,8 +175,8 @@ export function SessionRail({
 
   return (
     <aside className="flex w-[244px] shrink-0 flex-col border-r border-edge bg-sidebar">
-      {/* click-away backdrop for the open item menu */}
-      {menuId && <div className="fixed inset-0 z-30" onClick={() => setMenuId(null)} />}
+      {/* click-away backdrop for the open item menu / delete confirm */}
+      {(menuId || confirmId) && <div className="fixed inset-0 z-30" onClick={closeAll} />}
 
       <div className="flex items-center gap-2.5 px-3.5 pb-2.5 pt-3.5">
         <div className="grid h-[26px] w-[26px] place-items-center rounded-md border border-edge-strong bg-elevated text-accent-soft">
@@ -201,6 +248,32 @@ export function SessionRail({
         </button>
       </div>
     </aside>
+  );
+}
+
+/** Inline rename field — replaces the session row while editing. Commits on
+ * Enter or blur, cancels on Escape. Used instead of window.prompt, which is a
+ * no-op inside the Tauri WKWebView. */
+function RenameInput({ initial, onCommit, onCancel }: { initial: string; onCommit: (v: string) => void; onCancel: () => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [val, setVal] = useState(initial);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  return (
+    <input
+      ref={ref}
+      value={val}
+      onChange={(e) => setVal(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") { e.preventDefault(); onCommit(val); }
+        else if (e.key === "Escape") { e.preventDefault(); onCancel(); }
+      }}
+      onBlur={() => onCommit(val)}
+      className="w-full rounded-md border border-accent/60 bg-elevated px-2.5 py-[7px] text-[12.5px] text-gray-100 outline-none ring-1 ring-accent/30"
+    />
   );
 }
 
