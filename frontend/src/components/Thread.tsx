@@ -11,6 +11,7 @@ import {
   submitErrorTriage,
 } from "../api";
 import type { NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
+import { useSessionRun, patchSessionRun } from "../sessionRuns";
 import { Button } from "./ui";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
 import { MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
@@ -77,28 +78,30 @@ export function Thread({
 }) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [triage, setTriage] = useState<TriageCase[]>([]);
-  // null = this session's turn hasn't answered yet (show the session's default
-  // next-steps); [] = the agent answered and proposed nothing (show none).
-  const [liveProposals, setLiveProposals] = useState<NextAction[] | null>(null);
   const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [needKey, setNeedKey] = useState(false);
   const [importHandoff, setImportHandoff] = useState<
     { sourceType: "inventory" | "access_log"; accountRunId: string; bucketName: string } | null
   >(null);
   const [report, setReport] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
-  const [pending, setPending] = useState<string | null>(null);
-  const [streamText, setStreamText] = useState<string | null>(null);
-  const [streamTools, setStreamTools] = useState<ToolActivity[]>([]);
   const [slashSel, setSlashSel] = useState(0);
+
+  // Per-session run state lives in a store keyed by session id (see sessionRuns)
+  // so an in-flight turn keeps streaming — and keeps its content — when you
+  // switch away and come back. `run` is the active session's slice; the run loop
+  // writes to the id it started with, never the currently-visible one.
+  // proposals: null = this session's turn hasn't answered yet (show the session's
+  // default next-steps); [] = the agent answered and proposed nothing.
+  const run = useSessionRun(sessionId);
+  const { busy, pending, streamText, streamTools, needKey } = run;
+  const liveProposals = run.proposals;
+  // View-level errors not tied to a turn (e.g. a proposal action failing, or
+  // asking for a report before a chat exists). Combined with the run's error.
+  const [viewError, setViewError] = useState<string | null>(null);
+  const error = run.error ?? viewError;
   const localId = useRef<string | null>(sessionId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
-  // Aborts the in-flight stream when the user switches away from a running
-  // session, so the rest of the UI isn't left stuck (busy) on the other session.
-  const abortRef = useRef<AbortController | null>(null);
   const { t } = useI18n();
   const suggestions = SUGGESTION_KEYS.map((k) => ({ key: k, label: t(`sugg.${k}`), prompt: t(`prompt.${k}`) }));
 
@@ -129,34 +132,16 @@ export function Thread({
   };
 
   useEffect(() => {
-    // Thread is not remounted per session (App does not key it by id), so reset
-    // per-session UI state here when the active session changes.
-    //
-    // Exception: when we create a session mid-send, ensureSession sets
-    // localId.current to the new id BEFORE the prop catches up. So if the
-    // incoming sessionId already equals localId.current, this is our own
-    // just-created session — don't wipe the in-flight optimistic state
-    // (pending / streaming text / proposals), just sync and reload.
-    const isOwnNewSession = sessionId !== null && sessionId === localId.current;
+    // Only VIEW-local state is reset on session change. Run state (busy /
+    // pending / streaming text / proposals / errors) lives per-session in the
+    // sessionRuns store, so an in-flight turn keeps going and keeps its content
+    // when you switch away and back — nothing to reset here.
     localId.current = sessionId;
-    if (!isOwnNewSession) {
-      // Switching to a different session: cancel any in-flight stream so its
-      // tokens don't bleed into this view and `busy` doesn't stay stuck. The
-      // streaming endpoint persists the turn server-side on completion, so the
-      // cancelled session's answer still lands and shows when you return to it.
-      abortRef.current?.abort();
-      abortRef.current = null;
-      setBusy(false);
-      setLiveProposals(null);
-      setNeedKey(false);
-      setError(null);
-      setText("");
-      setImportHandoff(null);
-      setReport(null);
-      setPending(null);
-      setStreamText(null);
-      setStreamTools([]);
-    }
+    setText("");
+    setImportHandoff(null);
+    setReport(null);
+    setSlashSel(0);
+    setViewError(null);
     reload(sessionId);
     refreshModel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -204,17 +189,17 @@ export function Thread({
   const sendBlocking = async (id: string, q: string) => {
     try {
       const r = await postSessionMessage(id, q);
-      setLiveProposals(r.proposed_actions || []);
+      patchSessionRun(id, { proposals: r.proposed_actions || [] });
     } catch (e) {
       const msg = String(e);
       if (/no model provider configured|no api key stored/i.test(msg)) {
         if (looksLikeError(q)) {
           await submitErrorTriage({ content: q, input_kind: "mixed", session_id: id, planner_mode: "deterministic" });
         } else {
-          setNeedKey(true);
+          patchSessionRun(id, { needKey: true });
         }
       } else {
-        setError(cleanError(msg, t));
+        patchSessionRun(id, { error: cleanError(msg, t) });
       }
     }
   };
@@ -223,42 +208,39 @@ export function Thread({
   // turn (live tool traces + token deltas); if the stream fails (provider
   // tool-call streaming is flaky, or no model → 422) it falls back to the
   // reliable blocking turn, which also handles the no-key / offline-triage cases.
+  //
+  // All run state is written to the sessionRuns store keyed by the id the turn
+  // STARTED with — not the currently-visible session — so the turn keeps
+  // streaming (and keeps its content) if the user switches sessions mid-run.
   const submit = async (q: string) => {
     if (!q || busy) return;
-    const ac = new AbortController();
-    abortRef.current = ac;
-    setBusy(true);
-    setError(null);
-    setNeedKey(false);
     setText("");
-    setPending(q); // show the user's turn immediately
-    setStreamText(null);
-    setStreamTools([]);
+    let id: string;
     try {
-      const id = await ensureSession(q);
+      id = await ensureSession(q);
+    } catch {
+      return;
+    }
+    patchSessionRun(id, { busy: true, error: null, needKey: false, pending: q, streamText: null, streamTools: [] });
+    try {
       try {
         const r = await streamSessionMessage(id, q, {
-          onDelta: (chunk) => setStreamText((s) => (s ?? "") + chunk),
-          onTool: (rec) => setStreamTools((a) => [...a, rec]),
-        }, ac.signal);
-        setLiveProposals(r.proposed_actions || []);
+          onDelta: (chunk) => patchSessionRun(id, (s) => ({ streamText: (s.streamText ?? "") + chunk })),
+          onTool: (rec) => patchSessionRun(id, (s) => ({ streamTools: [...s.streamTools, rec] })),
+        });
+        patchSessionRun(id, { proposals: r.proposed_actions || [] });
       } catch {
-        // Switched away mid-stream: the server finishes + persists the turn on
-        // its own, so just stop here — no fallback, no writing into the new view.
-        if (ac.signal.aborted) return;
         // Stream broke (or 422). The endpoint persists nothing until it
         // completes, so the blocking turn re-runs cleanly without duplicating.
         await sendBlocking(id, q);
       }
-      if (ac.signal.aborted) return;
-      await reload(id);
-      setPending(null);
-      setStreamText(null);
-      setStreamTools([]);
+      // Refresh the just-run session's thread only if it's the one on screen;
+      // otherwise its persisted answer loads when the user switches back to it.
+      if (localId.current === id) await reload(id);
+      patchSessionRun(id, { pending: null, streamText: null, streamTools: [] });
       onChanged();
     } finally {
-      if (abortRef.current === ac) abortRef.current = null;
-      if (!ac.signal.aborted) setBusy(false);
+      patchSessionRun(id, { busy: false });
     }
   };
 
@@ -302,7 +284,7 @@ export function Thread({
         submit(p.title);
       }
     } catch (e) {
-      setError(cleanError(String(e), t));
+      setViewError(cleanError(String(e), t));
     }
   };
 
@@ -320,8 +302,8 @@ export function Thread({
   const selectSlash = (c: Slash) => {
     if (c.action === "report") {
       setText("");
-      if (localId.current) getSessionReport(localId.current).then((r) => setReport(r.content)).catch((e) => setError(cleanError(String(e), t)));
-      else setError(t("thread.startChatFirst"));
+      if (localId.current) getSessionReport(localId.current).then((r) => setReport(r.content)).catch((e) => setViewError(cleanError(String(e), t)));
+      else setViewError(t("thread.startChatFirst"));
     } else if (c.promptKey) {
       setText(t(c.promptKey));
       requestAnimationFrame(() => taRef.current?.focus());
