@@ -5,10 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "storage-agent-sidecar"
 version = "0.7.0"
-description = "Local FastAPI sidecar for Storage Agent Workbench (Phase 07: agent planner mode)"
+description = "Local FastAPI sidecar for Storage Agent Workbench"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "BUSL-1.1" }
 dependencies = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",

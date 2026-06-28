@@ -180,11 +180,11 @@ const en: Dict = {
   // first-run wizard
   "wizard.welcomeTitle": "Welcome to Storage Agent Workbench",
   "wizard.welcomeBody":
-    "A local-first agent for diagnosing object storage and S3-compatible systems. Everything runs on your machine; secrets stay in the OS keychain.",
+    "A local-first agent for object storage operations on S3-compatible systems — diagnose, analyze, review configuration, and optimize. Everything runs on your machine; secrets stay in the OS keychain.",
   "wizard.step1Title": "Add a model provider",
   "wizard.step1Body": "An LLM API key so the agent can interpret evidence and answer questions.",
   "wizard.step2Title": "Add a cloud provider",
-  "wizard.step2Body": "Read-only S3 credentials to run live diagnostics against a bucket.",
+  "wizard.step2Body": "Read-only S3 credentials to run live checks and analysis against a bucket.",
   "wizard.step3Title": "Start investigating",
   "wizard.step3Body": "Describe an issue, or paste an S3 error for offline triage — no credentials needed.",
   "wizard.skip": "Skip for now",
@@ -345,7 +345,7 @@ const zh: Dict = {
   "palette.recent": "最近的对话",
   "palette.noResults": "没有匹配项。",
   "wizard.welcomeTitle": "欢迎使用存储智能体工作台",
-  "wizard.welcomeBody": "一个本地优先的智能体，用于诊断对象存储与 S3 兼容系统。一切都在本机运行；密钥仅保存在操作系统钥匙串中。",
+  "wizard.welcomeBody": "一个本地优先的对象存储运维智能体，面向 S3 兼容系统——诊断、分析、配置审查与优化。一切都在本机运行；密钥仅保存在操作系统钥匙串中。",
   "wizard.step1Title": "添加模型提供商",
   "wizard.step1Body": "一个大模型 API Key，让智能体能够解读证据并回答问题。",
   "wizard.step2Title": "添加云存储提供商",

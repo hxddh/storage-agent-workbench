@@ -54,3 +54,17 @@ is required (preinstalled on current Windows; the installer fetches it if absent
   app.
 
 See [security.md](security.md) and [packaging.md](packaging.md) for details.
+
+## macOS keychain prompts
+
+The first time the app reads a stored secret (e.g. your model API key) you may
+see a macOS dialog: *"storage-agent-sidecar wants to use your confidential
+information…"*. Click **Always Allow** — the app then reads that secret without
+prompting again.
+
+If you are re-prompted on later launches, it is because the build is **ad-hoc
+signed**: each new version is a different code identity, so macOS asks again
+after an update (and after a reinstall). The app reads each secret at most once
+per launch, so you will see at most one prompt per secret. A future
+Developer-ID-signed/notarized build would remove the re-prompting entirely
+(see [signing.md](signing.md)).
