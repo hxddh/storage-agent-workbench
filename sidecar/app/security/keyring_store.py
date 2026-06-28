@@ -4,40 +4,107 @@ Secrets (model API keys, cloud access/secret keys, session tokens) are stored
 ONLY here, in the OS Keychain. The rest of the app persists only opaque
 references of the form ``keyring://<scope>/<name>`` — never the plaintext.
 
-A ``(scope, name)`` pair maps to a keyring ``(service, username)`` pair:
+Storage layout — one keychain item for everything
+--------------------------------------------------
+All secrets live in a *single* keychain item:
 
-    service  = "storage-agent-workbench:<scope>"
-    username = "<name>"
+    service  = "storage-agent-workbench"
+    username = "secrets-v1"
+
+whose password is a JSON object mapping ``"<scope>/<name>"`` to the secret
+value. The opaque reference (``keyring://<scope>/<name>``) and the public API
+are unchanged; consolidation is purely an internal storage detail.
+
+Why one item instead of one-item-per-secret?
+    On macOS every keychain item carries its own ACL, and an ad-hoc-signed
+    build (whose code identity changes every version) is not on that ACL — so
+    the OS shows an authorization prompt the *first* time each item is read.
+    With a separate item per secret, a user with a model key + cloud
+    access/secret keys + a session token faces a *burst* of prompts, and the
+    "Always Allow" choice only covers the one item it was shown for. Collapsing
+    everything into one item means the user is prompted **once**; "Always Allow"
+    then covers every secret the app will ever read. This removes the keychain
+    friction that made "secrets only in the Keychain" painful in practice —
+    without weakening the guarantee: secrets still never leave the Keychain, are
+    never written to SQLite/logs/reports/model prompts, and are still resolved
+    only server-side.
+
+    (The remaining once-per-app-version prompt is inherent to ad-hoc signing;
+    only a stable Developer ID signature / notarization removes it entirely.)
+
+Legacy migration
+-----------------
+Earlier versions stored each secret as its own item
+(``service="storage-agent-workbench:<scope>"``, ``username="<name>"``). When a
+secret is missing from the consolidated item, we fall back to its legacy item
+and, if found, copy it forward into the consolidated item — so existing keys
+keep working with no re-entry. (The legacy item is left untouched on read;
+``delete_secret`` removes both layouts.)
+
+In-process cache
+----------------
+The consolidated JSON is read from the keychain at most once per sidecar launch
+and then served from memory, so neither the model API key (re-read on every
+agent run) nor any cloud secret triggers repeat prompts. The cache lives only in
+memory; it is never written to disk, logs, or the model context, and is updated
+in place on every save/delete so a rotated key takes effect immediately.
 """
 
 from __future__ import annotations
 
+import json
 import threading
 
 import keyring
 
 SERVICE_PREFIX = "storage-agent-workbench"
 
-# In-process cache of resolved secrets, keyed by (scope, name).
-#
-# Why: every keyring read can trigger an OS keychain authorization prompt when
-# the requesting binary is not (yet) trusted by the item's ACL — which is the
-# norm for ad-hoc-signed builds, whose code identity changes between versions.
-# Without caching, the model API key is re-read on *every* agent run (i.e. every
-# message in a session), so the user is re-prompted again and again. Reading each
-# secret from the keychain at most once per process collapses that to a single
-# prompt per secret per launch (and none at all once the user picks "Always
-# Allow", or with a stable Developer ID signature).
-#
-# The cache lives only in memory for the sidecar's lifetime; it is never written
-# to disk, logs, or the model context. It is invalidated whenever a secret is
-# saved or deleted, so an updated key takes effect immediately.
-_cache: dict[tuple[str, str], str | None] = {}
-_cache_lock = threading.Lock()
+# The single consolidated keychain item holding every secret.
+_INDEX_SERVICE = SERVICE_PREFIX
+_INDEX_USERNAME = "secrets-v1"
+
+# In-memory mirror of the consolidated secret map, loaded lazily on first
+# access. ``None`` means "not yet read from the keychain"; a dict (possibly
+# empty) means "loaded". ``_negative`` records ``"<scope>/<name>"`` keys already
+# confirmed absent (including after a legacy-fallback miss) so we never re-probe
+# the keychain for them. A single re-entrant lock serialises the read-modify-
+# write cycle against concurrent agent runs.
+_blob: dict[str, str] | None = None
+_negative: set[str] = set()
+_lock = threading.RLock()
 
 
 def _service(scope: str) -> str:
+    """Legacy per-scope service name (read-only, for migration)."""
     return f"{SERVICE_PREFIX}:{scope}"
+
+
+def _blob_key(scope: str, name: str) -> str:
+    return f"{scope}/{name}"
+
+
+def _ensure_loaded() -> dict[str, str]:
+    """Load the consolidated map from the keychain once. Caller holds ``_lock``."""
+    global _blob
+    if _blob is None:
+        raw = keyring.get_password(_INDEX_SERVICE, _INDEX_USERNAME)
+        if raw:
+            try:
+                parsed = json.loads(raw)
+            except (ValueError, TypeError):
+                parsed = {}
+            _blob = parsed if isinstance(parsed, dict) else {}
+        else:
+            _blob = {}
+    return _blob
+
+
+def _persist() -> None:
+    """Write the consolidated map back to the keychain. Caller holds ``_lock``."""
+    assert _blob is not None
+    keyring.set_password(
+        _INDEX_SERVICE, _INDEX_USERNAME, json.dumps(_blob, separators=(",", ":"))
+    )
 
 
 def make_ref(scope: str, name: str) -> str:
@@ -58,36 +125,62 @@ def parse_ref(ref: str) -> tuple[str, str]:
 
 def save_secret(scope: str, name: str, value: str) -> str:
     """Store ``value`` and return its ``keyring://`` reference."""
-    keyring.set_password(_service(scope), name, value)
-    with _cache_lock:
-        _cache[(scope, name)] = value
+    key = _blob_key(scope, name)
+    with _lock:
+        blob = _ensure_loaded()
+        blob[key] = value
+        _persist()
+        _negative.discard(key)
     return make_ref(scope, name)
 
 
 def get_secret(scope: str, name: str) -> str | None:
     """Fetch a stored secret, or ``None`` if it does not exist.
 
-    Cached in-process after the first read (see the module-level note) so the OS
-    keychain — and any authorization prompt — is hit at most once per secret per
-    sidecar launch.
+    Served from the in-process mirror after the first keychain read (see the
+    module docstring). On a miss, falls back to the legacy per-secret item and
+    migrates it forward so existing keys keep working without re-entry.
     """
-    key = (scope, name)
-    with _cache_lock:
-        if key in _cache:
-            return _cache[key]
-    value = keyring.get_password(_service(scope), name)
-    with _cache_lock:
-        _cache[key] = value
-    return value
+    key = _blob_key(scope, name)
+    with _lock:
+        blob = _ensure_loaded()
+        if key in blob:
+            return blob[key]
+        if key in _negative:
+            return None
+        # Fall back to the pre-consolidation layout and migrate forward.
+        legacy = keyring.get_password(_service(scope), name)
+        if legacy is not None:
+            blob[key] = legacy
+            try:
+                _persist()
+            except Exception:
+                # Keep the in-memory copy even if the keychain write fails; the
+                # secret is still usable this session and we won't re-probe.
+                pass
+            return legacy
+        _negative.add(key)
+        return None
 
 
 def delete_secret(scope: str, name: str) -> None:
-    """Delete a stored secret. No error if it does not exist."""
-    try:
-        keyring.delete_password(_service(scope), name)
-    except keyring.errors.PasswordDeleteError:
-        # Already absent — deletion is idempotent for our purposes.
-        pass
-    finally:
-        with _cache_lock:
-            _cache.pop((scope, name), None)
+    """Delete a stored secret from both the consolidated and legacy layouts."""
+    key = _blob_key(scope, name)
+    with _lock:
+        blob = _ensure_loaded()
+        if blob.pop(key, None) is not None:
+            _persist()
+        _negative.add(key)
+        # Remove any leftover legacy item so it can't resurrect on a later read.
+        try:
+            keyring.delete_password(_service(scope), name)
+        except keyring.errors.PasswordDeleteError:
+            pass
+
+
+def _reset_for_tests() -> None:
+    """Drop the in-process cache. Used by the test harness between cases."""
+    global _blob
+    with _lock:
+        _blob = None
+        _negative.clear()
