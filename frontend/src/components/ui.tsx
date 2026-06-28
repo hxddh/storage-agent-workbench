@@ -1,5 +1,29 @@
 import type { ReactNode } from "react";
 
+/** The Storage Agent brand mark — an object-storage bucket with an agent spark.
+ * Stroke uses currentColor; set color via the parent (white on the indigo tile,
+ * indigo on neutral surfaces). */
+export function BrandMark({ size = 24, className = "" }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinejoin="round"
+      strokeLinecap="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <ellipse cx="11.5" cy="9" rx="6.3" ry="1.9" />
+      <path d="M5.2 9 7.4 19.3Q11.5 21 15.6 19.3L17.8 9" />
+      <path d="M18.7 2l.83 2.05 2.05.83-2.05.83-.83 2.05-.83-2.05-2.05-.83 2.05-.83z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 const inputCls =
   "w-full rounded-lg border border-edge bg-canvas px-3 py-2 text-sm text-gray-100 " +
   "placeholder:text-gray-600 transition-colors hover:border-edge-strong " +

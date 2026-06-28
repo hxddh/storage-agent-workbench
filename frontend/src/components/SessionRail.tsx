@@ -1,6 +1,7 @@
 import type { SessionSummaryRow } from "../types";
 import type { SidecarStatus as Status } from "../hooks/useSidecarHealth";
 import { useI18n, type TFunc } from "../i18n";
+import { BrandMark } from "./ui";
 
 const STATUS_KEY: Record<Status, string> = {
   starting: "status.starting",
@@ -50,11 +51,7 @@ export function SessionRail({
     <aside className="flex w-[244px] shrink-0 flex-col border-r border-edge bg-sidebar">
       <div className="flex items-center gap-2.5 px-3.5 pb-2.5 pt-3.5">
         <div className="grid h-[26px] w-[26px] place-items-center rounded-md border border-edge-strong bg-elevated text-accent-soft">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
-            <path d="M12 2 2 7l10 5 10-5-10-5z" />
-            <path d="M2 17l10 5 10-5" />
-            <path d="M2 12l10 5 10-5" />
-          </svg>
+          <BrandMark size={15} />
         </div>
         <div className="text-[13px] font-medium tracking-[-0.01em] text-gray-100">{t("app.name")}</div>
       </div>
