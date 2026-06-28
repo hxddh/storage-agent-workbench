@@ -6,6 +6,36 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-06-28
+
+Correct version display + documented signing path. Ad-hoc signed (not
+notarized), macOS arm64.
+
+### Fixed
+
+- **The app reported version 0.1.0** (e.g. in the About box). The macOS bundle
+  version comes from `tauri.conf.json`, not the release tag, and it was never
+  updated. Bumped it, and the release workflow now stamps the bundle version
+  from the release tag at build time, so the version is always correct.
+
+### Added
+
+- **`docs/signing.md`** — how macOS signing/notarization works here, what a
+  comparable app (omni-macos) does (Developer ID + notarytool, $99/yr Apple
+  Developer Program), the extra hardened-runtime entitlements our Python sidecar
+  needs, and the exact steps + CI secrets to turn on notarized, prompt-free
+  releases. Added `scripts/macos-entitlements.plist` scaffolding for that path.
+- Clearer first-launch instructions in the release notes (the one-time
+  `xattr -dr com.apple.quarantine` / right-click → Open step).
+
+### Notes
+
+- Frictionless (no Gatekeeper prompt) distribution still requires Apple
+  notarization, which needs a paid Apple Developer ID — there is no free
+  workaround. The pipeline is ready to notarize once those credentials are added
+  as CI secrets; until then, builds remain ad-hoc signed with the documented
+  one-time open step.
+
 ## [0.19.1] - 2026-06-28
 
 Fixes a truncation bug in agent answers. Ad-hoc signed (not notarized), macOS arm64.
@@ -340,7 +370,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.2...HEAD
+[0.19.2]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.2
 [0.19.1]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.1
 [0.19.0]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0
 [0.19.0-pre.9]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.9
