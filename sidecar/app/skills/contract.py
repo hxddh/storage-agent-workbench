@@ -24,12 +24,17 @@ from ..security.redaction import redact_text
 from ..sessions import next_actions
 
 _BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
-_MAX_ANSWER = 12000
+# Generous cap so large enumerations (e.g. a 96-row bucket table) are never
+# truncated in post-processing; the model's own completion budget bounds length.
+_MAX_ANSWER = 48000
 
 
 CONTRACT_INSTRUCTION = (
-    "Write your FULL answer as normal prose — include every item the user asked "
-    "for (e.g. actually list the bucket names). The prose IS what the user sees. "
+    "Write your FULL answer as normal prose. If the user asked you to list or "
+    "enumerate items, write out EVERY item the tool returned — all N rows, never "
+    "a sample or 'first few', never abbreviated with '…'. The prose IS what the "
+    "user sees, so a partial list means the user loses data. Finish the entire "
+    "list BEFORE you write the JSON block. "
     "Then you MAY append exactly one fenced JSON block with METADATA ONLY (no "
     "answer field):\n"
     "```json\n{\"skills_used\": [\"<skill name>\"], \"evidence_used\": [\"...\"], "

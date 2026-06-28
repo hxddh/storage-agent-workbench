@@ -33,7 +33,15 @@ from .guardrails import strip_chain_of_thought
 _MAX_FACTS = 30
 _MAX_FINDINGS = 30
 _MAX_MESSAGES = 12
-_MAX_OUTPUT = 12000  # room to actually enumerate (e.g. list all bucket names)
+# Enumerations can be large (e.g. 96+ buckets in a table). Keep our answer cap
+# well above any single model completion so we never truncate a legitimate full
+# answer in post-processing.
+_MAX_OUTPUT = 48000
+# Without an explicit max_tokens the provider applies a small default; for a
+# reasoning model (e.g. deepseek-v4-pro) the thinking budget then leaves almost
+# nothing for the answer, truncating long enumerations mid-table. Set a generous
+# completion budget so the model can list everything it fetched.
+_MAX_COMPLETION_TOKENS = 8192
 # A real investigation chains several probes (test_credentials → head_bucket →
 # test_addressing_style → list_objects → head_object …); keep a generous but
 # bounded ceiling so multi-step diagnoses complete without runaway loops.
@@ -45,6 +53,12 @@ SESSION_SAFETY_RULES = [
     "user asked for directly in your answer: when asked to list/enumerate, "
     "actually write the items out (a list or table). Never say 'listed above', "
     "'see the table', or claim you displayed something you didn't write.",
+    "ENUMERATE COMPLETELY. When the user asks for all/every item, or for a full "
+    "list, output EVERY item the tool returned — never a sample, never 'first N', "
+    "never abbreviate with '…' or 'and so on'. If a tool returned N items (e.g. "
+    "list_buckets → 96 buckets), your table/list MUST contain all N rows. Do not "
+    "stop early and do not propose 're-run the tool' to get the rest — you already "
+    "have the full result; write it all out. Completeness here outweighs brevity.",
     "Investigate live with your read-only tools: list_buckets / head_bucket / "
     "list_objects / head_object to explore, test_credentials / "
     "test_addressing_style / inspect_endpoint_tls / test_range_get to diagnose "
@@ -61,7 +75,9 @@ SESSION_SAFETY_RULES = [
     "low-confidence claims.",
     "Never output credentials, access/secret/session keys, model API keys, "
     "Authorization headers, cookies, signatures, or presigned-URL parameters.",
-    "Do not include hidden chain-of-thought; answer concisely.",
+    "Do not include hidden chain-of-thought. Be concise in prose, but NEVER at "
+    "the cost of completeness — an explicit enumeration the user asked for must "
+    "be written out in full.",
 ]
 
 _PROPOSAL_ACTION_TYPES = (
@@ -157,7 +173,8 @@ def _sdk_session_loop(spec: dict[str, Any]) -> Any:
     """Default loop via the OpenAI Agents SDK (lazy import) with read-only tools."""
     try:
         import openai  # noqa: F401
-        from agents import Agent, Runner, function_tool, set_default_openai_key, set_tracing_disabled
+        from agents import (Agent, ModelSettings, Runner, function_tool,
+                            set_default_openai_key, set_tracing_disabled)
     except Exception as exc:  # noqa: BLE001
         raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
 
@@ -179,7 +196,9 @@ def _sdk_session_loop(spec: dict[str, Any]) -> Any:
             set_default_openai_key(creds["api_key"])
         tools = session_tools.build(conn, function_tool, spec.get("activity")) if conn is not None else []
         agent = Agent(name="Storage Agent", instructions=spec["instructions"],
-                      tools=tools, model=creds.get("model"))
+                      tools=tools, model=creds.get("model"),
+                      model_settings=ModelSettings(max_tokens=_MAX_COMPLETION_TOKENS,
+                                                   parallel_tool_calls=False))
         result = Runner.run_sync(agent, spec["prompt"], max_turns=_MAX_TURNS)
         return getattr(result, "final_output", "")
     except AgentUnavailable:
@@ -296,8 +315,11 @@ def build_stream(
     tools = session_tools.build(conn, function_tool, activity)
     # Disable parallel tool calls: with chat-completions providers (e.g. DeepSeek)
     # streaming + parallel tool_calls can produce malformed follow-up messages.
+    # Set a generous max_tokens so long enumerations aren't truncated mid-answer.
     agent = Agent(name="Storage Agent", instructions=INSTRUCTIONS, tools=tools,
-                  model=creds.get("model"), model_settings=ModelSettings(parallel_tool_calls=False))
+                  model=creds.get("model"),
+                  model_settings=ModelSettings(max_tokens=_MAX_COMPLETION_TOKENS,
+                                               parallel_tool_calls=False))
     result = Runner.run_streamed(agent, prompt, max_turns=_MAX_TURNS)
     return result, activity, skill_names
 

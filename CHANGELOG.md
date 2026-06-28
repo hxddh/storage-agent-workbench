@@ -6,6 +6,24 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-06-28
+
+Fixes a truncation bug in agent answers. Ad-hoc signed (not notarized), macOS arm64.
+
+### Fixed
+
+- **Long enumerations were silently cut to ~8 rows.** Asking the agent to list
+  all buckets (or any long list) returned only the first ~500 characters — a
+  96-row table came back as 8 rows, and the agent would even claim the result
+  was "truncated by a length limit" or propose re-running the tool. Root cause:
+  the chain-of-thought stripper applied to every answer ended with a hard
+  `text[:500]` cap, so it — not the documented answer limit — was the binding
+  constraint. The stripper now only removes reasoning markers and leaves length
+  to the real caps; answer caps were also raised (12000 → 48000 chars) and an
+  explicit generous model `max_tokens` is set. The instructions now explicitly
+  require complete enumeration. Verified live: "list all my buckets" now returns
+  all 96 rows. Regression tests added.
+
 ## [0.19.0] - 2026-06-28
 
 First formal (non-prerelease) release of the 0.19.0 line. Adds full multi-language
@@ -322,7 +340,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.1
 [0.19.0]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0
 [0.19.0-pre.9]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.9
 [0.19.0-pre.8]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0-pre.8

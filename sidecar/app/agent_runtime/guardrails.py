@@ -125,10 +125,17 @@ def assert_report_sanitized(content: str) -> None:
         raise GuardrailBlocked("report_sanitization", "Report failed sanitization; not saved.")
 
 
-def strip_chain_of_thought(text: str | None) -> str:
-    """Keep only a short rationale; never persist hidden reasoning.
+_COT_BACKSTOP = 60000  # defensive only; callers bound the real length (answer
+# caps live in skills.contract / session_agent). Must stay ABOVE those caps so
+# this never silently truncates a legitimate long answer (e.g. a 96-row table).
 
-    Defensive: drop anything after common CoT markers and cap length.
+
+def strip_chain_of_thought(text: str | None, max_len: int = _COT_BACKSTOP) -> str:
+    """Strip hidden reasoning; do NOT cap the visible answer.
+
+    Drops anything after a chain-of-thought marker so reasoning is never
+    persisted. Length is bounded by the caller (answer/list caps); the
+    ``max_len`` here is only a large defensive backstop, never the binding limit.
     """
     if not text:
         return ""
@@ -139,7 +146,7 @@ def strip_chain_of_thought(text: str | None) -> str:
             text = text[:idx]
             break
     text = text.strip()
-    return (text[:500] + "…") if len(text) > 501 else text
+    return (text[:max_len] + "…") if len(text) > max_len + 1 else text
 
 
 def redacted(text: str) -> str:
