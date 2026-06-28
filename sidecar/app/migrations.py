@@ -455,7 +455,7 @@ ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
 """
 
 # Global app settings as a small key/value store. Currently holds the agent
-# autonomy policy (advisory | assisted | autonomous_readonly) that decides
+# autonomy policy (assisted | autonomous_readonly) that decides
 # whether the in-chat agent may execute read-only actions itself or only
 # propose them. Never stores secrets (those live only in the OS keychain).
 _M012 = """

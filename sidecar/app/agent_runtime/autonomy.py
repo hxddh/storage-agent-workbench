@@ -1,53 +1,47 @@
-"""Agent autonomy policy — how much the in-chat agent may do on its own.
+"""Agent autonomy policy — how much the in-chat Agent does on its own.
 
 The security invariants (no secrets to the model, no free shell/SQL, no
 destructive or bucket-wide S3 operations, no object bodies in context) are
 enforced *below* this layer and never change with the policy. The policy only
 decides, for the actions that are already safe-by-construction, whether the
-agent executes them itself or merely proposes them for the user to run.
+Agent executes them itself or proposes them for the user to run.
+
+Two policies (default ``autonomous_readonly``):
+
+- ``autonomous_readonly`` (自主) — the Agent EXECUTES read-only runs itself
+  (diagnostic, bucket_config_review, account_discovery) and folds the findings
+  into its answer.
+- ``assisted`` (协助) — the Agent PROPOSES those runs for the user to confirm,
+  and does not execute them on its own.
+
+Either way, EXPENSIVE/data-moving work (dataset analysis, evidence
+import/download, large scans) and any MUTATING op are never auto-run — they
+always require explicit confirmation — and there is no write/destructive tool in
+the product at all.
 
 Risk tiers (independent of policy):
 
-- ``SAFE_READONLY``  — read-only runs (diagnostic, bucket_config_review,
-  account_discovery) and the sanitized session report. They touch no object
-  bodies, mutate nothing, and are already what a manual run would do.
-- ``EXPENSIVE``      — large scans / evidence download / dataset analysis. These
-  move data or cost real time/money; they always require explicit confirmation
-  with a preview, regardless of policy.
-- ``MUTATING``       — any write. Not implemented in this product (no write tool
-  exists); listed so the tiering is total.
-
-Policies:
-
-- ``advisory``            — the agent executes nothing; it only proposes (the
-  pre-autonomy behavior).
-- ``assisted`` (default)  — the agent executes SAFE_READONLY actions inline;
-  EXPENSIVE/MUTATING stay proposals.
-- ``autonomous_readonly`` — same execution surface as ``assisted`` today (all
-  safe read-only work, including multi-run orchestration, runs without a
-  per-action prompt); EXPENSIVE/MUTATING still require confirmation.
-
-``assisted`` and ``autonomous_readonly`` share the same *capability* surface
-(only SAFE_READONLY auto-executes); they differ in UX intent — ``assisted``
-surfaces each executed step as confirmable activity, ``autonomous_readonly``
-lets the agent chain them freely. Both keep EXPENSIVE/MUTATING gated.
+- ``SAFE_READONLY``  — read-only runs + the sanitized session report.
+- ``EXPENSIVE``      — large scans / evidence download / dataset analysis.
+- ``MUTATING``       — any write (not implemented; listed so tiering is total).
 """
 
 from __future__ import annotations
 
-ADVISORY = "advisory"
 ASSISTED = "assisted"
 AUTONOMOUS_READONLY = "autonomous_readonly"
+# Legacy value (pre-0.19.18 had a third "advisory" tier); maps to ``assisted``.
+_LEGACY_ADVISORY = "advisory"
 
-POLICIES = (ADVISORY, ASSISTED, AUTONOMOUS_READONLY)
-DEFAULT_POLICY = ASSISTED
+POLICIES = (ASSISTED, AUTONOMOUS_READONLY)
+DEFAULT_POLICY = AUTONOMOUS_READONLY
 
 # Risk tiers.
 SAFE_READONLY = "safe_readonly"
 EXPENSIVE = "expensive"
 MUTATING = "mutating"
 
-# The action types the agent may EXECUTE inline (vs. only propose), by tier.
+# The action types the Agent may EXECUTE inline (vs. only propose), by tier.
 # Keep in lockstep with sessions.next_actions.ALLOWED_ACTION_TYPES.
 ACTION_RISK = {
     "run_diagnostic": SAFE_READONLY,
@@ -65,21 +59,29 @@ ACTION_RISK = {
 
 
 def normalize(policy: str | None) -> str:
-    """Coerce an arbitrary value to a known policy (default ``assisted``)."""
+    """Coerce an arbitrary value to a known policy (default ``autonomous_readonly``).
+
+    The retired ``advisory`` value maps to ``assisted`` (propose-only).
+    """
     p = (policy or "").strip().lower()
+    if p == _LEGACY_ADVISORY:
+        return ASSISTED
     return p if p in POLICIES else DEFAULT_POLICY
 
 
 def executes_inline(policy: str) -> bool:
-    """Whether SAFE_READONLY actions execute themselves under this policy."""
-    return normalize(policy) in (ASSISTED, AUTONOMOUS_READONLY)
+    """Whether SAFE_READONLY actions execute themselves under this policy.
+
+    Only ``autonomous_readonly`` auto-executes; ``assisted`` proposes.
+    """
+    return normalize(policy) == AUTONOMOUS_READONLY
 
 
 def may_execute(policy: str, action_type: str) -> bool:
-    """Whether the agent may EXECUTE ``action_type`` itself under ``policy``.
+    """Whether the Agent may EXECUTE ``action_type`` itself under ``policy``.
 
-    Only SAFE_READONLY actions are ever auto-executed, and only when the policy
-    allows inline execution. Everything else is proposed for confirmation.
+    Only SAFE_READONLY actions are ever auto-executed, and only under
+    ``autonomous_readonly``. Everything else is proposed for confirmation.
     """
     if not executes_inline(policy):
         return False
@@ -87,7 +89,7 @@ def may_execute(policy: str, action_type: str) -> bool:
 
 
 __all__ = [
-    "ADVISORY", "ASSISTED", "AUTONOMOUS_READONLY", "POLICIES", "DEFAULT_POLICY",
+    "ASSISTED", "AUTONOMOUS_READONLY", "POLICIES", "DEFAULT_POLICY",
     "SAFE_READONLY", "EXPENSIVE", "MUTATING", "ACTION_RISK",
     "normalize", "executes_inline", "may_execute",
 ]
