@@ -6,6 +6,27 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-06-28
+
+New brand logo + agent-native next steps. Ad-hoc signed (not notarized), macOS arm64.
+
+### Changed
+
+- **New logo** — an object-storage bucket with an agent spark — across the app
+  (session rail, empty-state hero) and all bundle icons (dock / Finder / About).
+- **Next-step suggestions are now agent-native.** Clicking a suggested step used
+  to walk you through "preview → prepare → a full New Run form" (planner mode,
+  max-buckets, glob patterns, a prompt field) — the legacy Analysis-Run admin
+  flow bolted onto the chat. Now a single click hands the task back to the agent
+  in the conversation: it investigates live with its read-only tools and answers
+  inline, no modal. Steps that genuinely need an external file (evidence imports)
+  still open their purpose-built dialog; reports just render.
+
+### Removed
+
+- The New Run configuration modal from the suggestion handoff, and the redundant
+  two-button "preview / prepare" step.
+
 ## [0.19.2] - 2026-06-28
 
 Correct version display + documented signing path. Ad-hoc signed (not
@@ -370,7 +391,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.2...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.3...HEAD
+[0.19.3]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.3
 [0.19.2]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.2
 [0.19.1]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.1
 [0.19.0]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.0

@@ -7,14 +7,12 @@ import {
   listModelProviders,
   postSessionMessage,
   prepareSessionAction,
-  previewSessionAction,
   streamSessionMessage,
   submitErrorTriage,
 } from "../api";
 import type { NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
-import { Button } from "./ui";
+import { Button, BrandMark } from "./ui";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
-import { NewRunForm } from "../views/RunsView";
 import { MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
 import { useI18n, type TFunc } from "../i18n";
 
@@ -22,8 +20,6 @@ type Item =
   | { kind: "message"; ts: string; role: string; content: string | null; id: string; toolActivity?: ToolActivity[] }
   | { kind: "run"; ts: string; data: SessionDetail["runs"][number] }
   | { kind: "triage"; ts: string; data: TriageCase };
-
-type RunPrefill = { run_type?: string; provider_id?: string; bucket?: string };
 
 const propKey = (p: NextAction) => `${p.action_type}::${p.title}`;
 
@@ -88,8 +84,6 @@ export function Thread({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needKey, setNeedKey] = useState(false);
-  const [previews, setPreviews] = useState<Record<string, string>>({});
-  const [runStarter, setRunStarter] = useState<RunPrefill | null>(null);
   const [importHandoff, setImportHandoff] = useState<
     { sourceType: "inventory" | "access_log"; accountRunId: string; bucketName: string } | null
   >(null);
@@ -144,11 +138,9 @@ export function Thread({
     localId.current = sessionId;
     if (!isOwnNewSession) {
       setLiveProposals(null);
-      setPreviews({});
       setNeedKey(false);
       setError(null);
       setText("");
-      setRunStarter(null);
       setImportHandoff(null);
       setReport(null);
       setPending(null);
@@ -217,12 +209,11 @@ export function Thread({
     }
   };
 
-  // One input. Stream the agent's turn (live tool traces + token deltas); if the
-  // stream fails (e.g. the provider's tool-call streaming is flaky, or no model
-  // is configured → 422), fall back to the reliable blocking turn, which also
-  // handles the no-key / offline-triage cases.
-  const send = async () => {
-    const q = text.trim();
+  // Send one turn (from the composer or programmatically). Streams the agent's
+  // turn (live tool traces + token deltas); if the stream fails (provider
+  // tool-call streaming is flaky, or no model → 422) it falls back to the
+  // reliable blocking turn, which also handles the no-key / offline-triage cases.
+  const submit = async (q: string) => {
     if (!q || busy) return;
     setBusy(true);
     setError(null);
@@ -254,34 +245,29 @@ export function Thread({
     }
   };
 
-  const review = async (p: NextAction) => {
-    if (!localId.current) return;
-    try {
-      const r = await previewSessionAction(localId.current, p);
-      const txt = r.ready
-        ? t("preview.ready", { what: r.will_create ? t("preview.newRun") : t("preview.flow"), note: r.safety_notes?.[0] ?? "" })
-        : t("preview.needsInput", { items: r.missing_inputs.join(", ") || t("preview.moreContext") });
-      setPreviews((m) => ({ ...m, [propKey(p)]: txt }));
-    } catch (e) {
-      setPreviews((m) => ({ ...m, [propKey(p)]: String(e) }));
-    }
+  const send = () => submit(text.trim());
+
+  // Agent-native next steps. Anything the agent can do with its read-only tools
+  // is handed straight back to the conversation (one click → the agent does it
+  // and answers inline) — no configuration modal. Only steps that genuinely need
+  // an external file (evidence imports) open a purpose-built dialog; the report
+  // just renders. This replaces the old "preview → prepare → New Run form".
+  const INLINE_ACTION_PROMPT: Record<string, string> = {
+    run_account_discovery: "act.run_account_discovery",
+    run_bucket_config_review: "act.run_bucket_config_review",
+    run_diagnostic: "act.run_diagnostic",
   };
 
-  const prepare = async (p: NextAction) => {
+  const runProposal = async (p: NextAction) => {
+    const inlineKey = INLINE_ACTION_PROMPT[p.action_type];
+    if (inlineKey) {
+      submit(t(inlineKey));
+      return;
+    }
     if (!localId.current) return;
     try {
       const r = await prepareSessionAction(localId.current, p);
-      // Run proposals always open the run form — it collects any missing
-      // provider/bucket/dataset, so "needs input" is never a dead end.
-      if (r.open === "new_run") {
-        setRunStarter({ run_type: r.prefill.run_type, provider_id: r.prefill.provider_id, bucket: r.prefill.bucket });
-        return;
-      }
-      if (r.status !== "ready") {
-        setPreviews((m) => ({ ...m, [propKey(p)]: t("preview.needsInput", { items: r.missing_inputs.join(", ") || t("preview.moreContext") }) }));
-        return;
-      }
-      if (r.open === "evidence_import") {
+      if (r.open === "evidence_import" && r.status === "ready") {
         setImportHandoff({
           sourceType: r.prefill.source_type as "inventory" | "access_log",
           accountRunId: r.prefill.account_run_id,
@@ -293,9 +279,13 @@ export function Thread({
       } else if (r.open === "message_composer") {
         setText(r.prefill.question || "");
         taRef.current?.focus();
+      } else {
+        // Anything else (incl. needs-input or a would-be run form): just ask the
+        // agent to do it conversationally rather than popping a form.
+        submit(p.title);
       }
     } catch (e) {
-      setError(String(e));
+      setError(cleanError(String(e), t));
     }
   };
 
@@ -432,11 +422,7 @@ export function Thread({
           <div className="w-full max-w-[44rem] animate-fade-in-up">
             <div className="mb-7 flex flex-col items-center text-center">
               <div className="mb-5 grid h-12 w-12 place-items-center rounded-2xl border border-edge-strong bg-elevated text-accent-soft shadow-elev">
-                <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round">
-                  <path d="M12 2 2 7l10 5 10-5-10-5z" />
-                  <path d="M2 17l10 5 10-5" />
-                  <path d="M2 12l10 5 10-5" />
-                </svg>
+                <BrandMark size={24} />
               </div>
               <h1 className="text-[23px] font-semibold tracking-[-0.02em] text-gray-100">{t("thread.greeting")}</h1>
               <p className="mt-2.5 max-w-md text-[13.5px] leading-relaxed text-gray-500">
@@ -497,13 +483,7 @@ export function Thread({
                 <div className="space-y-2 pt-1">
                   <div className="px-0.5 text-[11px] font-medium uppercase tracking-wider text-gray-600">{t("thread.suggestedNext")}</div>
                   {proposals.map((p, i) => (
-                    <ProposalCard
-                      key={`${propKey(p)}-${i}`}
-                      proposal={p}
-                      preview={previews[propKey(p)]}
-                      onReview={review}
-                      onPrepare={prepare}
-                    />
+                    <ProposalCard key={`${propKey(p)}-${i}`} proposal={p} onRun={runProposal} />
                   ))}
                 </div>
               )}
@@ -517,23 +497,6 @@ export function Thread({
         </>
       )}
 
-      {/* Run starter (reuses the existing run form, prefilled by the proposal) */}
-      {runStarter && (
-        <Overlay onClose={() => setRunStarter(null)}>
-          <NewRunForm
-            sessionId={localId.current ?? undefined}
-            initialRunType={runStarter.run_type as never}
-            initialProviderId={runStarter.provider_id}
-            initialBucket={runStarter.bucket}
-            onCancel={() => setRunStarter(null)}
-            onCreated={async () => {
-              setRunStarter(null);
-              await reload(localId.current);
-              onChanged();
-            }}
-          />
-        </Overlay>
-      )}
 
       {importHandoff && (
         <EvidenceImportDialog

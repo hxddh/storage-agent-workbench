@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Storage Agent — Logo concepts</title>
+<style>
+  :root{ --indigo:#5b73f0; --indigo2:#4f63e0; }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,"PingFang SC",sans-serif;background:#f6f7f9;color:#16181d;-webkit-font-smoothing:antialiased;}
+  header{padding:32px 32px 8px;}
+  header h1{margin:0;font-size:22px;font-weight:650;letter-spacing:-.01em;}
+  header p{margin:6px 0 0;color:#6b7280;font-size:13.5px;}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;padding:24px 32px 8px;}
+  @media (max-width:900px){.grid{grid-template-columns:repeat(2,1fr);}}
+  @media (max-width:600px){.grid{grid-template-columns:1fr;}}
+  .card{background:#fff;border:1px solid #e6e7ea;border-radius:18px;padding:20px;}
+  .num{font-size:11px;font-weight:700;letter-spacing:.1em;color:#9aa0aa;text-transform:uppercase;}
+  .name{font-size:15px;font-weight:650;margin:4px 0 16px;}
+  .row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+  .tile{width:84px;height:84px;border-radius:20px;display:grid;place-items:center;background:linear-gradient(155deg,#6d8bff,#4f63e0);box-shadow:0 8px 22px -10px rgba(79,99,224,.8);}
+  .tile.dark{background:#0e0f12;border:1px solid #23252c;box-shadow:none;}
+  .tile svg{width:50px;height:50px;}
+  .chip{width:56px;height:56px;border-radius:14px;display:grid;place-items:center;border:1px solid #e6e7ea;background:#fbfbfc;}
+  .chip svg{width:34px;height:34px;}
+  .cap{font-size:11px;color:#9aa0aa;margin-top:6px;text-align:center;}
+  .stack{display:flex;flex-direction:column;align-items:center;}
+  .lockups{display:flex;gap:28px;flex-wrap:wrap;padding:8px 32px 40px;}
+  .lock{display:flex;align-items:center;gap:16px;padding:18px 22px;border-radius:18px;}
+  .lock.l{background:#fff;border:1px solid #e6e7ea;}
+  .lock.d{background:#0b0b0d;color:#ededf0;}
+  .lock .tile{width:60px;height:60px;border-radius:16px;}
+  .lock .tile svg{width:36px;height:36px;}
+  .word b{display:block;font-size:22px;font-weight:650;letter-spacing:-.01em;}
+  .word span{display:block;font-size:12px;letter-spacing:.16em;text-transform:uppercase;opacity:.55;margin-top:4px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>存储智能体 · Storage Agent — Logo 候选</h1>
+  <p>每个概念：深色 App 图标 · 浅色 App 图标 · 单色线条版。点不动，纯预览 — 选好后告诉我编号即可。</p>
+</header>
+
+<!-- mark sprite: stroke uses currentColor so each placement recolors it -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="m1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 12l10 5 10-5"/><path d="M2 17l10 5 10-5"/></symbol>
+  <symbol id="m2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><ellipse cx="11" cy="9.5" rx="6.2" ry="1.9"/><path d="M4.8 9.5 7 19.4Q11 21 15.2 19.4L17.2 9.5"/><path d="M18.4 2.3l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="m3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3 20 7.5 12 12 4 7.5z"/><path d="M4 7.5V16l8 4.5"/><path d="M20 7.5V16l-8 4.5"/><path d="M12 12v8.5"/></symbol>
+  <symbol id="m4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.3"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><path d="M12 12 19 7.6"/><circle cx="19" cy="7.6" r="1.5" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="m5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><ellipse cx="11" cy="5.4" rx="6.6" ry="2.4"/><path d="M4.4 5.4v8.4c0 1.32 2.96 2.4 6.6 2.4s6.6-1.08 6.6-2.4V5.4"/><path d="M4.4 9.6c0 1.32 2.96 2.4 6.6 2.4s6.6-1.08 6.6-2.4"/><path d="M19.2 3l.66 1.64 1.64.66-1.64.66L19.2 7.6l-.66-1.64L16.9 5.3l1.64-.66z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="m6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M12 2.3 20.3 7v10L12 21.7 3.7 17V7z"/><path d="M8.3 9.4h7.4"/><path d="M7.8 12h8.4"/><path d="M8.3 14.6h7.4"/></symbol>
+</svg>
+
+<div class="grid" id="grid"></div>
+
+<div class="lockups">
+  <div class="lock l"><div class="tile"><svg style="color:#fff"><use href="#m1"/></svg></div><div class="word"><b>存储智能体</b><span>Storage Agent</span></div></div>
+  <div class="lock d"><div class="tile"><svg style="color:#fff"><use href="#m1"/></svg></div><div class="word"><b>存储智能体</b><span>Storage Agent</span></div></div>
+</div>
+
+<script>
+  const items=[
+    ["01","分层堆叠 · Layered Stack（当前精修）","m1"],
+    ["02","桶 + 火花 · Bucket + Spark","m2"],
+    ["03","对象立方 · Object Cube","m3"],
+    ["04","探测节点 · Scan Node","m4"],
+    ["05","数据库栈 · Database Stack","m5"],
+    ["06","六边层 · Hex Tiers","m6"],
+  ];
+  document.getElementById('grid').innerHTML = items.map(([n,name,id])=>`
+    <div class="card">
+      <div class="num">${n}</div><div class="name">${name}</div>
+      <div class="row">
+        <div class="stack"><div class="tile"><svg style="color:#fff"><use href="#${id}"/></svg></div><div class="cap">深色图标</div></div>
+        <div class="stack"><div class="tile dark"><svg style="color:#84acff"><use href="#${id}"/></svg></div><div class="cap">深色底</div></div>
+        <div class="stack"><div class="chip"><svg style="color:#4f63e0"><use href="#${id}"/></svg></div><div class="cap">单色线条</div></div>
+      </div>
+    </div>`).join('');
+</script>
+</body>
+</html>
