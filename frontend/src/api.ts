@@ -208,7 +208,8 @@ export interface SessionCreateInput {
   primary_bucket?: string;
 }
 
-export const listSessions = () => request<SessionSummaryRow[]>("/sessions");
+export const listSessions = (q?: string) =>
+  request<SessionSummaryRow[]>(`/sessions${q && q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ""}`);
 
 export const createSession = (body: SessionCreateInput) =>
   request<SessionDetail>("/sessions", { method: "POST", body: JSON.stringify(body) });

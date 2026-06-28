@@ -122,10 +122,7 @@ def get_row(conn: sqlite3.Connection, session_id: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
 
 
-def list_all(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        "SELECT * FROM sessions ORDER BY pinned DESC, updated_at DESC, rowid DESC"
-    ).fetchall()
+def _enrich(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
     out = []
     for r in rows:
         d = dict(r)
@@ -136,6 +133,33 @@ def list_all(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             (r["id"],)).fetchone()[0]
         out.append(d)
     return out
+
+
+def list_all(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT * FROM sessions ORDER BY pinned DESC, updated_at DESC, rowid DESC"
+    ).fetchall()
+    return _enrich(conn, rows)
+
+
+def search(conn: sqlite3.Connection, query: str | None) -> list[dict[str, Any]]:
+    """Sessions whose title OR any message content matches `query` (substring,
+    case-insensitive). Empty query returns the full list."""
+    q = (query or "").strip()
+    if not q:
+        return list_all(conn)
+    # Escape LIKE wildcards so a literal % or _ in the query isn't treated as one.
+    esc = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    like = f"%{esc}%"
+    rows = conn.execute(
+        "SELECT s.* FROM sessions s "
+        "WHERE s.title LIKE ? ESCAPE '\\' "
+        "   OR EXISTS (SELECT 1 FROM session_messages m "
+        "              WHERE m.session_id = s.id AND m.content LIKE ? ESCAPE '\\') "
+        "ORDER BY s.pinned DESC, s.updated_at DESC, s.rowid DESC",
+        (like, like),
+    ).fetchall()
+    return _enrich(conn, rows)
 
 
 def title_for(conn: sqlite3.Connection, session_id: str | None) -> str | None:
