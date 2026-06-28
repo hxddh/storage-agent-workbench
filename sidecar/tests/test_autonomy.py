@@ -1,10 +1,10 @@
 """Tests for Phase 1 agent autonomy: policy, settings, and inline execution.
 
-Under the ``advisory`` policy the agent only proposes (the old behavior). Under
-``assisted``/``autonomous_readonly`` it may EXECUTE read-only runs itself; these
-verify the policy gating, the settings endpoint, and that the inline executor
-tools create + run a real read-only run and return its sanitized summary —
-without exposing any write/destructive capability.
+Under ``assisted`` the Agent only proposes; under ``autonomous_readonly`` (the
+default) it may EXECUTE read-only runs itself. These verify the policy gating,
+the settings endpoint, and that the inline executor tools create + run a real
+read-only run and return its sanitized summary — without exposing any
+write/destructive capability.
 """
 
 import json
@@ -27,26 +27,26 @@ def _tool_names(tools):
 # --- policy unit logic ------------------------------------------------------
 
 
-def test_normalize_defaults_to_assisted():
-    assert autonomy.normalize(None) == autonomy.ASSISTED
-    assert autonomy.normalize("nonsense") == autonomy.ASSISTED
-    assert autonomy.normalize("ADVISORY") == autonomy.ADVISORY
+def test_normalize_defaults_to_autonomous_and_maps_legacy_advisory():
+    assert autonomy.normalize(None) == autonomy.AUTONOMOUS_READONLY
+    assert autonomy.normalize("nonsense") == autonomy.AUTONOMOUS_READONLY
+    assert autonomy.normalize("ADVISORY") == autonomy.ASSISTED  # retired tier → propose-only
 
 
 def test_executes_inline_by_policy():
-    assert autonomy.executes_inline(autonomy.ADVISORY) is False
-    assert autonomy.executes_inline(autonomy.ASSISTED) is True
+    # Only autonomous auto-executes; assisted proposes.
+    assert autonomy.executes_inline(autonomy.ASSISTED) is False
     assert autonomy.executes_inline(autonomy.AUTONOMOUS_READONLY) is True
 
 
-def test_may_execute_only_safe_readonly():
-    # Safe read-only runs execute under assisted+; expensive/data-moving never do.
-    assert autonomy.may_execute(autonomy.ASSISTED, "run_diagnostic") is True
-    assert autonomy.may_execute(autonomy.ASSISTED, "run_account_discovery") is True
-    assert autonomy.may_execute(autonomy.ASSISTED, "run_access_log_analysis") is False
-    assert autonomy.may_execute(autonomy.ASSISTED, "plan_inventory_import") is False
-    # Advisory never executes anything itself.
-    assert autonomy.may_execute(autonomy.ADVISORY, "run_diagnostic") is False
+def test_may_execute_only_safe_readonly_and_only_when_autonomous():
+    # Safe read-only runs execute under autonomous; expensive/data-moving never do.
+    assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "run_diagnostic") is True
+    assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "run_account_discovery") is True
+    assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "run_access_log_analysis") is False
+    assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "plan_inventory_import") is False
+    # Assisted proposes, so it never executes anything itself.
+    assert autonomy.may_execute(autonomy.ASSISTED, "run_diagnostic") is False
 
 
 # --- tool gating ------------------------------------------------------------
@@ -55,11 +55,11 @@ def test_may_execute_only_safe_readonly():
 def test_action_tools_gated_by_policy():
     conn = sqlite3.connect(":memory:")
     try:
-        assert session_action_tools.build(conn, _fake_function_tool, autonomy.ADVISORY) == []
-        assisted = session_action_tools.build(conn, _fake_function_tool, autonomy.ASSISTED)
+        assert session_action_tools.build(conn, _fake_function_tool, autonomy.ASSISTED) == []
+        auto = session_action_tools.build(conn, _fake_function_tool, autonomy.AUTONOMOUS_READONLY)
     finally:
         conn.close()
-    assert _tool_names(assisted) == {
+    assert _tool_names(auto) == {
         "run_diagnostic", "run_bucket_config_review", "run_account_discovery",
     }
 
@@ -76,8 +76,8 @@ def test_no_mutating_tool_ever_exposed():
 
 
 def test_instructions_gain_execution_clause_only_when_inline():
-    assert "EXECUTE read-only runs" not in session_agent.instructions_for(autonomy.ADVISORY)
-    assert "EXECUTE read-only runs" in session_agent.instructions_for(autonomy.ASSISTED)
+    assert "EXECUTE read-only runs" not in session_agent.instructions_for(autonomy.ASSISTED)
+    assert "EXECUTE read-only runs" in session_agent.instructions_for(autonomy.AUTONOMOUS_READONLY)
 
 
 # --- settings endpoint ------------------------------------------------------
@@ -85,12 +85,12 @@ def test_instructions_gain_execution_clause_only_when_inline():
 
 def test_autonomy_setting_defaults_and_updates(client):
     got = client.get("/settings/autonomy").json()
-    assert got["policy"] == autonomy.DEFAULT_POLICY == "assisted"
-    assert set(got["policies"]) == set(autonomy.POLICIES)
+    assert got["policy"] == autonomy.DEFAULT_POLICY == "autonomous_readonly"
+    assert set(got["policies"]) == {"assisted", "autonomous_readonly"}
 
-    put = client.put("/settings/autonomy", json={"policy": "advisory"})
-    assert put.status_code == 200 and put.json()["policy"] == "advisory"
-    assert client.get("/settings/autonomy").json()["policy"] == "advisory"
+    put = client.put("/settings/autonomy", json={"policy": "assisted"})
+    assert put.status_code == 200 and put.json()["policy"] == "assisted"
+    assert client.get("/settings/autonomy").json()["policy"] == "assisted"
 
     bad = client.put("/settings/autonomy", json={"policy": "yolo"})
     assert bad.status_code == 422
@@ -125,7 +125,7 @@ def test_inline_executor_runs_real_readonly_run(client, monkeypatch):
     conn.row_factory = sqlite3.Row
     try:
         activity: list[dict] = []
-        tools = session_action_tools.build(conn, _fake_function_tool, autonomy.ASSISTED,
+        tools = session_action_tools.build(conn, _fake_function_tool, autonomy.AUTONOMOUS_READONLY,
                                            activity, sid)
         run_diagnostic = next(t for t in tools if t.name == "run_diagnostic")
         out = json.loads(run_diagnostic(pid, "bucket-x"))
@@ -149,7 +149,7 @@ def test_inline_executor_rejects_unknown_provider(client, monkeypatch):
     conn = sqlite3.connect(str(config.db_path()))
     conn.row_factory = sqlite3.Row
     try:
-        tools = session_action_tools.build(conn, _fake_function_tool, autonomy.ASSISTED, [], sid)
+        tools = session_action_tools.build(conn, _fake_function_tool, autonomy.AUTONOMOUS_READONLY, [], sid)
         run_diagnostic = next(t for t in tools if t.name == "run_diagnostic")
         out = json.loads(run_diagnostic("no-such-provider", "b"))
     finally:

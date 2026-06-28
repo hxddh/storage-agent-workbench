@@ -32,10 +32,10 @@ export function ProvidersView({ onRunCreated }: { onRunCreated?: (runId: string)
   const [tab, setTab] = useState<Tab>("model");
   return (
     <div className="flex flex-1 flex-col overflow-auto bg-canvas">
-      <header className="border-b border-edge px-8 py-4">
-        <h1 className="text-lg font-semibold text-gray-100">{t("prov.title")}</h1>
-        <p className="text-sm text-gray-500">{t("prov.subtitle")}</p>
-        <div className="mt-3 flex gap-2">
+      <header className="border-b border-edge px-8 py-5">
+        <div className="mb-1 text-sm font-semibold text-gray-100">{t("prov.title")}</div>
+        <p className="mb-4 text-xs leading-relaxed text-gray-500">{t("prov.subtitle")}</p>
+        <div className="flex gap-2">
           <Button variant={tab === "model" ? "primary" : "default"} onClick={() => setTab("model")}>
             {t("prov.tabModel")}
           </Button>
@@ -44,7 +44,7 @@ export function ProvidersView({ onRunCreated }: { onRunCreated?: (runId: string)
           </Button>
         </div>
       </header>
-      <div className="flex-1 p-8">
+      <div className="flex-1 px-8 py-5">
         {tab === "model" ? <ModelProvidersPanel /> : <CloudProvidersPanel onRunCreated={onRunCreated} />}
       </div>
     </div>

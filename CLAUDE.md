@@ -23,18 +23,18 @@ oversight:
    A genuine tool-calling agent: it chooses provider/bucket, calls read-only S3
    tools in a loop, loads StorageOps skills on demand (progressive disclosure via
    the `read_skill` tool), and grounds answers in tool output. Under the
-   **autonomy policy** (`agent_runtime/autonomy.py`, default `assisted`) it can
-   also EXECUTE read-only runs itself (diagnostic, bucket_config_review,
+   **autonomy policy** (`agent_runtime/autonomy.py`, default `autonomous_readonly`)
+   it can also EXECUTE read-only runs itself (diagnostic, bucket_config_review,
    account_discovery — `agent_runtime/session_action_tools.py`) and fold the
    findings into its answer, instead of only proposing them. This is where
    "agentic" behavior lives.
 
-   Autonomy is graded, and the security tiers are enforced *below* it regardless
-   of setting: `advisory` proposes only; `assisted`/`autonomous_readonly`
-   auto-execute SAFE_READONLY runs. EXPENSIVE/data-moving work (dataset
-   analysis, evidence import/download, large scans) and any MUTATING op are
-   never auto-run — they stay confirmed proposals. There is no write/destructive
-   tool in the product at all.
+   Two policies, security tiers enforced *below* the setting regardless:
+   `assisted` proposes read-only runs for the user to confirm;
+   `autonomous_readonly` (default) auto-executes SAFE_READONLY runs.
+   EXPENSIVE/data-moving work (dataset analysis, evidence import/download, large
+   scans) and any MUTATING op are never auto-run under either policy — they stay
+   confirmed proposals. There is no write/destructive tool in the product at all.
 
 2. **Structured Analysis Runs** (`runs/`, dispatched by `run_service.py`). These
    exist for reproducible, auditable, report-producing work and come in three
@@ -106,7 +106,7 @@ Use the following stack unless explicitly instructed otherwise:
 - S3 SDK: boto3 / botocore
 - Local analysis engine: DuckDB + PyArrow + pandas
 - App metadata storage: SQLite
-- Secrets: Python keyring / system Keychain
+- Secrets: AES-256-GCM encrypted local vault (`security/keyring_store`), key protected per-OS (DPAPI / `0600` key file)
 - Streaming: Server-Sent Events
 - Packaging: Python sidecar via PyInstaller, launched by Tauri sidecar
 
@@ -134,15 +134,21 @@ Do not introduce these unless explicitly requested:
 
 2. Never store plaintext secrets in SQLite, logs, reports, traces, local JSON files, local YAML files, screenshots, or UI state.
 
-3. Store secrets only through system Keychain / Python keyring. All secrets are
-   consolidated into a **single** keychain item (a JSON map, `service=
-   "storage-agent-workbench"`, `username="secrets-v1"`) behind `keyring_store`'s
-   public API — deliberately, so macOS prompts once ("Always Allow" then covers
-   every secret) instead of once per secret. Do not split this back into one
-   item per secret; `keyring_store` migrates legacy per-item secrets forward on
-   read.
+3. Store secrets only through `security/keyring_store` — a single AES-256-GCM
+   **encrypted vault** (`secrets.enc` + master key in `secrets.key`) in the app
+   data dir, behind the unchanged `make_ref/parse_ref/save_secret/get_secret/
+   delete_secret` API. The master key is protected by the strongest *non-
+   prompting* mechanism per OS: DPAPI (current-user) on Windows, an `O_EXCL`
+   `0600` key file on macOS/Linux. This is deliberately **not** the OS keychain:
+   the app is ad-hoc-signed and cross-platform, and the keychain re-prompts on
+   every update (macOS) or is absent/prompts on headless Linux. Do not move
+   secrets back into the keychain (or into SQLite/files in plaintext) — and keep
+   it prompt-free. (A stable Developer-ID signature could later re-enable the
+   keychain on macOS with no prompts.)
 
-4. SQLite may store only secret references such as `keyring://scope/name`.
+4. SQLite may store only secret references such as `keyring://scope/name` (the
+   `keyring://` scheme is a stable opaque ref; storage is the vault, not the OS
+   keyring).
 
 5. Do not implement a generic shell execution tool.
 

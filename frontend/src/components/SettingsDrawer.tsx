@@ -88,16 +88,14 @@ function AutonomySection() {
   useEffect(() => {
     getAutonomy()
       .then((s) => setPolicy(s.policy))
-      .catch(() => setPolicy("assisted"));
+      .catch(() => setPolicy("autonomous_readonly"));
   }, []);
 
   const options: { value: AutonomyPolicy; label: string }[] = [
-    { value: "advisory", label: t("settings.autonomyAdvisory") },
     { value: "assisted", label: t("settings.autonomyAssisted") },
     { value: "autonomous_readonly", label: t("settings.autonomyAutonomous") },
   ];
-  const hint: Record<AutonomyPolicy, string> = {
-    advisory: t("settings.autonomyAdvisoryHint"),
+  const hint: Partial<Record<AutonomyPolicy, string>> = {
     assisted: t("settings.autonomyAssistedHint"),
     autonomous_readonly: t("settings.autonomyAutonomousHint"),
   };
@@ -122,7 +120,7 @@ function AutonomySection() {
       <p className="mb-4 text-xs leading-relaxed text-gray-500">{t("settings.autonomyHint")}</p>
       <Segmented
         options={options}
-        value={policy ?? "assisted"}
+        value={policy ?? "autonomous_readonly"}
         onChange={(v) => void choose(v as AutonomyPolicy)}
       />
       {policy && <p className="mt-2 text-xs text-gray-400">{hint[policy]}</p>}
