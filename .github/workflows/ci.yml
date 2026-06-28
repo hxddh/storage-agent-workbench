@@ -8,7 +8,7 @@ on:
 
 # CI gates: frontend build + sidecar tests. Phase 08 added an informational
 # PyInstaller packaging job (ubuntu). Phase 09 adds a real macOS desktop build
-# job (Rust + sidecar externalBin + cargo check/build). Full .app bundling and
+# job (Rust + sidecar one-dir + cargo check/build). Full .app bundling and
 # code signing / notarization are intentionally NOT performed (see docs/release.md).
 #
 # CI requires NO AWS/BOS/MinIO credentials, NO OPENAI_API_KEY, NO real keyring
@@ -97,7 +97,7 @@ jobs:
       - name: Build frontend
         run: cd frontend && npm install && npm run build
 
-      - name: Build sidecar + copy externalBin
+      - name: Build sidecar one-dir + stage resource
         run: python3 scripts/build-sidecar-for-tauri.py
 
       - name: cargo check
@@ -172,7 +172,7 @@ jobs:
       - name: Build frontend
         run: cd frontend && npm install && npm run build
 
-      - name: Build sidecar + copy externalBin (x86_64-unknown-linux-gnu)
+      - name: Build sidecar one-dir + stage resource
         run: python3 scripts/build-sidecar-for-tauri.py
 
       - name: Smoke test packaged sidecar (no AWS / no OPENAI_API_KEY)
@@ -229,7 +229,7 @@ jobs:
       - name: Build frontend
         run: cd frontend; npm install; npm run build
 
-      - name: Build sidecar + copy externalBin (x86_64-pc-windows-msvc.exe)
+      - name: Build sidecar one-dir + stage resource
         run: python scripts/build-sidecar-for-tauri.py
 
       - name: Smoke test packaged sidecar (no AWS / no OPENAI_API_KEY)

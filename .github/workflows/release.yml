@@ -143,7 +143,7 @@ jobs:
         run: python3 scripts/stamp-version.py "${{ github.event.inputs.version }}"
       - name: Build frontend
         run: cd frontend && npm install && npm run build
-      - name: Build sidecar + copy externalBin
+      - name: Build sidecar one-dir + stage resource
         run: python3 scripts/build-sidecar-for-tauri.py
       - name: cargo tauri build (.deb; unsigned)
         run: cd src-tauri && cargo tauri build --bundles deb
@@ -187,7 +187,7 @@ jobs:
         run: python scripts/stamp-version.py "${{ github.event.inputs.version }}"
       - name: Build frontend
         run: cd frontend; npm install; npm run build
-      - name: Build sidecar + copy externalBin
+      - name: Build sidecar one-dir + stage resource
         run: python scripts/build-sidecar-for-tauri.py
       - name: cargo tauri build (NSIS installer; unsigned)
         run: cd src-tauri; cargo tauri build --bundles nsis

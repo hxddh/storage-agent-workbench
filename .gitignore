@@ -20,6 +20,7 @@ dist/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/binaries/
+src-tauri/sidecar-dist/
 
 # ---- Packaging output (PyInstaller) ----
 sidecar/dist/

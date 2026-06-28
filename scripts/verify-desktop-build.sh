@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# Verify the desktop build prerequisites and compile/link the app (Phase 09).
+# Verify the desktop build prerequisites and compile/link the app.
 #
-# Checks the sidecar externalBin is present, then runs cargo check + cargo build.
-# No signing / notarization. No secrets, no cloud credentials needed.
+# Checks the staged sidecar one-dir bundle is present, then runs cargo check +
+# cargo build. No signing / notarization. No secrets, no cloud credentials needed.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 
-echo "==> Checking sidecar externalBin"
-TRIPLE="$(rustc -Vv 2>/dev/null | sed -n 's/^host: //p')"
-if [ -z "${TRIPLE:-}" ]; then
+if ! rustc -Vv >/dev/null 2>&1; then
   echo "ERROR: rustc not found; install Rust (https://rustup.rs)."
   exit 2
 fi
-BIN="src-tauri/binaries/storage-agent-sidecar-${TRIPLE}"
+
+echo "==> Checking staged sidecar one-dir (Tauri resource)"
+BIN="src-tauri/sidecar-dist/storage-agent-sidecar/storage-agent-sidecar"
 if [ ! -f "$BIN" ]; then
-  echo "ERROR: sidecar binary missing at $BIN"
+  echo "ERROR: staged sidecar missing at $BIN"
   echo "Run: python3 scripts/build-sidecar-for-tauri.py"
   exit 1
 fi

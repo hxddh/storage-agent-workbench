@@ -32,9 +32,15 @@ HOST = "127.0.0.1"
 def _binary() -> Path:
     name = "storage-agent-sidecar"
     suffix = ".exe" if os.name == "nt" else ""
-    onefile = SIDECAR_DIR / "dist" / (name + suffix)
+    # One-dir (current mode): dist/storage-agent-sidecar/ is a folder whose inner
+    # executable is what we run. Check it first and use is_file() — the one-file
+    # path (dist/storage-agent-sidecar) is now that *folder*, so .exists() alone
+    # would wrongly match the directory.
     onedir = SIDECAR_DIR / "dist" / name / (name + suffix)
-    return onefile if onefile.exists() else onedir
+    onefile = SIDECAR_DIR / "dist" / (name + suffix)
+    if onedir.is_file():
+        return onedir
+    return onefile
 
 
 def _wait_health(timeout: float = 90.0) -> dict | None:

@@ -1,6 +1,6 @@
 [package]
 name = "storage-agent-workbench"
-version = "0.19.6"
+version = "0.19.7"
 description = "Codex-like desktop workbench for object storage diagnostics and analysis"
 edition = "2021"
 rust-version = "1.77.2"
@@ -14,11 +14,10 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# NOTE (Phase 08): The Python FastAPI sidecar is packaged with PyInstaller and
-# launched through Tauri's sidecar support (tauri-plugin-shell). See
-# docs/packaging.md. This Rust code is unverified in CI when the Rust toolchain
-# is absent (a documented packaging blocker).
+# NOTE: The Python FastAPI sidecar is packaged with PyInstaller as a ONE-DIR
+# bundle, shipped as a Tauri resource, and launched directly from src/lib.rs via
+# std::process. See docs/packaging.md. This Rust code is unverified in CI when
+# the Rust toolchain is absent (a documented packaging blocker).

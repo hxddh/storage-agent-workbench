@@ -1,7 +1,7 @@
 # Release smoke test
 
 Run this before publishing any desktop pre-release. Packaging smoke (build +
-`/health`) is necessary but **not sufficient** — v0.19.0-pre.1 passed packaging
+`/health`) is necessary but **not sufficient** — a packaged build can pass packaging checks
 yet failed product smoke, so this checklist gates the product model too.
 
 ## A. Packaging smoke

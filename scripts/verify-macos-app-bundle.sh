@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Verify the macOS .app bundle (Phase 10).
+# Verify the macOS .app bundle.
 #
 # Checks: the .app exists, the main app binary is present, the bundled sidecar
-# (Tauri externalBin) is embedded, the bundle ships no user/app data, and the
-# embedded sidecar can serve /health. Does NOT require a GUI session, AWS/BOS/
-# OpenAI credentials, signing, or notarization.
+# (a one-dir Tauri resource under Contents/Resources/sidecar) is embedded, the
+# bundle ships no user/app data, and the embedded sidecar can serve /health.
+# Does NOT require a GUI session, AWS/BOS/OpenAI credentials, signing, or
+# notarization.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,11 +25,11 @@ MAIN_BIN="$(ls "$APP_BIN_DIR" | grep -v 'storage-agent-sidecar' | head -1 || tru
 [ -n "$MAIN_BIN" ] && [ -f "$APP_BIN_DIR/$MAIN_BIN" ] || fail "main app binary not found in $APP_BIN_DIR"
 echo "==> Main binary: Contents/MacOS/$MAIN_BIN"
 
-# Embedded sidecar (externalBin). Tauri strips the target-triple suffix when
-# copying it into Contents/MacOS/.
-SIDECAR="$(ls "$APP_BIN_DIR" | grep 'storage-agent-sidecar' | head -1 || true)"
-[ -n "$SIDECAR" ] && [ -f "$APP_BIN_DIR/$SIDECAR" ] || fail "bundled sidecar not found in $APP_BIN_DIR"
-echo "==> Bundled sidecar: Contents/MacOS/$SIDECAR"
+# Embedded sidecar: a PyInstaller one-dir bundle shipped as a Tauri resource.
+SIDECAR_DIR="$APP/Contents/Resources/sidecar"
+SIDECAR="$SIDECAR_DIR/storage-agent-sidecar"
+[ -f "$SIDECAR" ] || fail "bundled sidecar not found at Contents/Resources/sidecar/storage-agent-sidecar"
+echo "==> Bundled sidecar: Contents/Resources/sidecar/storage-agent-sidecar"
 
 # Code-signature seal must be valid (regression gate). A broken/linker-only seal
 # makes Finder report the app as "damaged"; the build re-signs ad-hoc to fix it.
@@ -44,20 +45,21 @@ else
   echo "==> codesign not available; skipping signature gate"
 fi
 
-# The bundle must NOT ship user/app data.
-if find "$APP" -type d -name 'runs' -o -name 'data' 2>/dev/null | grep -q .; then
-  fail "bundle unexpectedly contains a data/runs directory"
-fi
-if find "$APP" -type f \( -name '*.duckdb' -o -name 'app.db' -o -name '.env' \) 2>/dev/null | grep -q .; then
+# The bundle must NOT ship user/app data. Prune the sidecar resource dir — its
+# bundled libraries legitimately contain package folders named data/runs.
+if find "$APP" -path "$SIDECAR_DIR" -prune -o -type f \( -name '*.duckdb' -o -name 'app.db' -o -name '.env' \) -print 2>/dev/null | grep -q .; then
   fail "bundle unexpectedly contains user data / secrets"
+fi
+if [ -e "$APP/Contents/Resources/runs" ] || [ -e "$APP/Contents/Resources/data" ]; then
+  fail "bundle unexpectedly contains a data/runs directory"
 fi
 echo "==> No user/app data shipped in bundle: OK"
 
-# Runtime check: the embedded sidecar serves /health (proves externalBin works).
+# Runtime check: the embedded sidecar serves /health (proves the resource works).
 PORT=8782
 DATA_DIR="$(mktemp -d)"
 echo "==> Launching embedded sidecar for /health check (data_dir in temp, no creds)"
-STORAGE_AGENT_DATA_DIR="$DATA_DIR" "$APP_BIN_DIR/$SIDECAR" --host 127.0.0.1 --port "$PORT" >/tmp/saw-bundle-sidecar.log 2>&1 &
+STORAGE_AGENT_DATA_DIR="$DATA_DIR" "$SIDECAR" --host 127.0.0.1 --port "$PORT" >/tmp/saw-bundle-sidecar.log 2>&1 &
 PID=$!
 ok=0
 for _ in $(seq 1 60); do

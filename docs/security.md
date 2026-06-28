@@ -36,9 +36,9 @@ Rules:
 4. Cloud operations must go through whitelist tools.
 5. Default mode is readonly.
 6. test-write mode must be explicitly enabled and prefix-limited.
-7. Destructive operations are forbidden in MVP.
+7. Destructive operations are forbidden.
 
-Forbidden in MVP:
+Forbidden:
 
 - DeleteBucket
 - PutBucketPolicy
@@ -99,7 +99,7 @@ Provider unsupported
 
 They should not be treated as hard failures unless the requested task requires that capability.
 
-## Agent dataset analysis (Phase 13)
+## Agent dataset analysis
 
 Agent planner mode is available for `access_log_analysis` and
 `inventory_analysis` as an **interpretation-only narrator** — it explains the
@@ -124,14 +124,14 @@ deterministic results, it does not produce them.
   raw prompts, and raw model reasoning are never persisted.
 - The inventory narrator may *recommend reviewing* lifecycle-policy candidates,
   but must never auto-create/update/delete lifecycle rules or emit bulk-delete
-  commands — same destructive-operation ban as the rest of the MVP.
+  commands — same destructive-operation ban as the rest of the app.
 - Missing model provider key fails the agent run cleanly with a safe message;
   deterministic mode is unaffected.
 - The report separates **Deterministic metrics** (authoritative) from the
   **Agent Interpretation** section, so every agent claim is traceable to a
   deterministic metric or finding shown above it.
 
-## Account discovery (Phase 14)
+## Account discovery
 
 The `account_discovery` run type enumerates an account's buckets and their
 configuration from read-only APIs only. It is deterministic; Agent mode is
@@ -163,7 +163,7 @@ rejected with a clean 422 and no bucket list / config is ever sent to an LLM.
   targets pass through the redaction pipeline; reports never contain secrets,
   signatures, raw object listings, raw inventory rows, or raw access-log content.
 
-## Managed evidence import (Phase 15)
+## Managed evidence import
 
 Pulling inventory / access-log evidence into the analysis path is bounded and
 confirmation-gated.
@@ -199,7 +199,7 @@ confirmation-gated.
   manifests with unusual structures degrade to a clean limitation rather than a
   crash. CloudTrail / Storage Lens / provider access logs remain unimplemented.
 
-## Next-action handoff (Phase 17)
+## Next-action handoff
 
 Turning a proposal into action is gated and reuses existing safe flows.
 
@@ -222,7 +222,7 @@ Turning a proposal into action is gated and reuses existing safe flows.
   are lightweight; there is no assignee, due date, status board, ticket state, or
   workflow state machine.
 
-## StorageOps skill context (Phase 19)
+## StorageOps skill context
 
 The bundled StorageOps skill pack is professional-method *context only*; it adds
 no executable capability.
@@ -245,13 +245,13 @@ no executable capability.
   lexical overlap with registry metadata; the selector emits no diagnosis /
   remediation / confidence and contains no hard-coded error-code → skill mapping.
 - **Human-in-the-loop preserved.** Skill-grounded answers still produce only
-  Phase 17 next-action *proposals* (all require confirmation); nothing
+  next-action *proposals* (all require confirmation); nothing
   auto-runs, auto-confirms, downloads, or mutates. No new tool, API, DB table,
   subprocess, MCP, or multi-agent runtime is introduced.
 - **Public-repo hygiene.** Vendored skills + docs/tests use generic content; no
   real customer / endpoint / bucket / credential data is added.
 
-## Error triage (Phase 18)
+## Error triage
 
 The error-triage assistant adds S3 error diagnosis inside a session without any
 new dangerous capability.
@@ -268,7 +268,7 @@ new dangerous capability.
 - **Triage performs no S3 call.** Parsing + playbook matching are local and
   read-only-by-construction. Any actual cloud check happens only later, if the
   user explicitly starts an existing diagnostic / config-review / import flow via
-  a Phase 17 next-action proposal (review → prepare → confirm).
+  a next-action proposal (review → prepare → confirm).
 - **No automation.** Triage never creates a run, downloads evidence, confirms an
   import, or changes configuration. Next actions are proposals only.
 - **Not a ticketing system / FAQ / error-code dictionary.** No assignee, board,
@@ -276,7 +276,7 @@ new dangerous capability.
 - **Public-repo hygiene.** Docs and tests use only synthetic examples
   (`example.com`, fake buckets/ids) — no real customer/endpoint/credential data.
 
-## Sessions (Phase 16)
+## Sessions
 
 Sessions add a persistent working context over the existing runs without adding
 any new dangerous capability.
@@ -304,7 +304,7 @@ any new dangerous capability.
   tasks, assignees, sprints, due dates, labels, notifications, or multi-user/
   permission models — only investigation context.
 
-## Packaging (Phase 08)
+## Packaging
 
 - The application bundle contains code and library data only. It must never
   include `.env`, the SQLite database, keyring contents, or `data/runs/` output.

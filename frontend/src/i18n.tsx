@@ -53,8 +53,7 @@ const en: Dict = {
   "thread.noModel": "No model",
   "thread.addModel": "Add a model",
   "thread.greeting": "How can I help with your storage?",
-  "thread.subtitle":
-    "Ask about an issue, an access pattern, or your bucket setup. I investigate with read-only tools and confirm with you before running anything.",
+  "thread.subtitle": "Read-only by default — I'll ask before running anything.",
   "thread.placeholder": "Ask Storage Agent…  ( / for commands )",
   "thread.send": "send",
   "thread.newline": "newline",
@@ -232,8 +231,7 @@ const zh: Dict = {
   "thread.noModel": "未配置模型",
   "thread.addModel": "添加模型",
   "thread.greeting": "我能为你的存储做些什么？",
-  "thread.subtitle":
-    "询问任何问题、访问模式或桶（bucket）配置。我会使用只读工具进行排查，并在执行任何操作前与你确认。",
+  "thread.subtitle": "默认只读，执行任何操作前都会先与你确认。",
   "thread.placeholder": "向存储智能体提问…（输入 / 查看命令）",
   "thread.send": "发送",
   "thread.newline": "换行",

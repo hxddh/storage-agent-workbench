@@ -48,5 +48,4 @@ shasum -a 256 -c SHA256SUMS.txt
 
 ## Development notes
 
-Link to the relevant CHANGELOG.md section and any notable implementation context
-in [docs/development-history.md](development-history.md).
+Link to the relevant CHANGELOG.md section and any notable context for this release.

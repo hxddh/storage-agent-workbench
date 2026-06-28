@@ -4,9 +4,9 @@
 # sidecar /health, and the app launch -> sidecar spawn -> /health -> quit ->
 # cleanup lifecycle. No GUI screen inspection; no cloud/keyring secrets.
 #
-# Uses the raw release output (target/release): Tauri copies the externalBin
-# sidecar next to the main binary, so this exercises the same spawn path the
-# packaged app uses, without needing a silent NSIS install in CI.
+# Uses the raw release output (target/release) for the main binary, plus the
+# staged one-dir sidecar bundle for the direct sidecar smoke — no need for a
+# silent NSIS install in CI.
 param([switch]$RequireLaunch, [switch]$SkipLaunch)
 $ErrorActionPreference = "Stop"
 $Repo = Split-Path -Parent $PSScriptRoot
@@ -14,11 +14,9 @@ Set-Location $Repo
 
 $Rel = "src-tauri/target/release"
 $MainExe = "$Rel/storage-agent-workbench.exe"
-$Sidecar = "$Rel/storage-agent-sidecar.exe"
-# Fallback to the externalBin source if Tauri did not stage a copy next to the binary.
-if (-not (Test-Path $Sidecar)) {
-  $Sidecar = "src-tauri/binaries/storage-agent-sidecar-x86_64-pc-windows-msvc.exe"
-}
+# The sidecar is a PyInstaller one-dir bundle staged for Tauri's resources; its
+# launcher sits next to its _internal/ libs, so it runs standalone for the smoke.
+$Sidecar = "src-tauri/sidecar-dist/storage-agent-sidecar/storage-agent-sidecar.exe"
 
 if (-not (Test-Path $MainExe)) {
   Write-Error "ERROR: $MainExe not found. Run scripts/build-desktop-windows.ps1 first."
