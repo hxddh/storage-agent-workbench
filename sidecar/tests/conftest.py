@@ -36,13 +36,19 @@ class InMemoryKeyring(KeyringBackend):
 
 @pytest.fixture(autouse=True)
 def _in_memory_keyring():
+    from app.security import keyring_store
+
     backend = InMemoryKeyring()
     previous = keyring.get_keyring()
     keyring.set_keyring(backend)
+    # The store caches resolved secrets in-process; clear it around each test so a
+    # fresh in-memory backend is never shadowed by another test's cached value.
+    keyring_store._cache.clear()
     try:
         yield backend
     finally:
         keyring.set_keyring(previous)
+        keyring_store._cache.clear()
 
 
 @pytest.fixture()

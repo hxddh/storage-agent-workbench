@@ -1,9 +1,10 @@
 [package]
 name = "storage-agent-workbench"
-version = "0.19.7"
-description = "Codex-like desktop workbench for object storage diagnostics and analysis"
+version = "0.19.8"
+description = "Local-first agent workbench for object storage operations: diagnostics, analysis, config review, and optimization"
 edition = "2021"
 rust-version = "1.77.2"
+license = "BUSL-1.1"
 
 [lib]
 name = "storage_agent_workbench_lib"

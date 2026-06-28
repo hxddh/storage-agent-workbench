@@ -1,8 +1,10 @@
 # Storage Agent Workbench
 
-A local-first desktop agent for object storage and S3-compatible diagnostics.
-The UI runs on your machine and talks to a bundled local sidecar — your data and
-credentials never leave your computer.
+A local-first desktop agent for object storage operations on S3-compatible
+systems — diagnostics, access-log and inventory analysis, account and bucket
+configuration review, error triage, and optimization. The UI runs on your
+machine and talks to a bundled local sidecar — your data and credentials never
+leave your computer.
 
 It is **evidence-driven** and **human-in-the-loop**: the agent investigates with
 read-only tools, grounds its conclusions in artifacts you collected, and
@@ -90,4 +92,12 @@ scripts/build-desktop-macos.sh
 
 ## License
 
-MIT.
+[Business Source License 1.1](LICENSE) (BUSL-1.1). The source is public, and you
+may freely read, modify, and use it for **non-production** purposes — evaluation,
+development, testing, research, and personal non-commercial use. **Production or
+commercial use** (including offering it to third parties as a product or hosted
+service) requires a commercial license from the Licensor.
+
+Each released version converts to the **Apache License 2.0** on its Change Date
+(four years after that version's first publication). For commercial licensing,
+open an issue on the repository.
