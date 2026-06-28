@@ -285,10 +285,10 @@ def test_no_storageops_tooling_in_executable_code():
 
 def test_migrations_are_sequential_and_capped():
     from app import migrations
-    # Migration 10 adds session_messages.tool_activity (agent tool-call trace).
+    # Migration 12 adds the app_settings key/value store (autonomy policy).
     versions = [v for v, _n, _s in migrations.MIGRATIONS]
     assert versions == list(range(1, len(versions) + 1))  # 1..N, no gaps/dupes
-    assert max(versions) == 11
+    assert max(versions) == 12
 
 
 def test_no_public_skills_api(client):

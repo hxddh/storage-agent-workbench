@@ -454,6 +454,18 @@ _M011 = """
 ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
 """
 
+# Global app settings as a small key/value store. Currently holds the agent
+# autonomy policy (advisory | assisted | autonomous_readonly) that decides
+# whether the in-chat agent may execute read-only actions itself or only
+# propose them. Never stores secrets (those live only in the OS keychain).
+_M012 = """
+CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -467,6 +479,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (9, "error_triage", _M009),
     (10, "session_message_tool_activity", _M010),
     (11, "sessions_pinned", _M011),
+    (12, "app_settings", _M012),
 ]
 
 

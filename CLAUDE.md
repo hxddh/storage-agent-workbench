@@ -22,8 +22,19 @@ oversight:
 1. **Conversational session agent** (the main UX, `agent_runtime/session_agent.py`).
    A genuine tool-calling agent: it chooses provider/bucket, calls read-only S3
    tools in a loop, loads StorageOps skills on demand (progressive disclosure via
-   the `read_skill` tool), grounds answers in tool output, and *proposes* next
-   actions the user confirms. This is where "agentic" behavior lives.
+   the `read_skill` tool), and grounds answers in tool output. Under the
+   **autonomy policy** (`agent_runtime/autonomy.py`, default `assisted`) it can
+   also EXECUTE read-only runs itself (diagnostic, bucket_config_review,
+   account_discovery — `agent_runtime/session_action_tools.py`) and fold the
+   findings into its answer, instead of only proposing them. This is where
+   "agentic" behavior lives.
+
+   Autonomy is graded, and the security tiers are enforced *below* it regardless
+   of setting: `advisory` proposes only; `assisted`/`autonomous_readonly`
+   auto-execute SAFE_READONLY runs. EXPENSIVE/data-moving work (dataset
+   analysis, evidence import/download, large scans) and any MUTATING op are
+   never auto-run — they stay confirmed proposals. There is no write/destructive
+   tool in the product at all.
 
 2. **Structured Analysis Runs** (`runs/`, dispatched by `run_service.py`). These
    exist for reproducible, auditable, report-producing work and come in three
