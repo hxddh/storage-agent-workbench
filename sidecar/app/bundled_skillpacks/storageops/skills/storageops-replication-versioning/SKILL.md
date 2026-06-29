@@ -48,7 +48,8 @@ Replication / versioning issue →
   it exists on the destination and its state.
 - `list_objects` — compare a prefix sample between source and destination buckets
   (add both as providers/buckets) to localize what's missing.
-- Propose `run_bucket_config_review` for a thorough posture check across buckets.
+- Run `review_bucket_config` (inline, read-only) for a thorough posture check
+  per bucket.
 
 ## Ask the user (only what tools can't reveal)
 

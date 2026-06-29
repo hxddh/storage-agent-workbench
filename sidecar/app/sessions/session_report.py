@@ -132,6 +132,9 @@ Limitations:
 
 ## Recommended next actions
 
+_Deterministic, rule-derived suggestions from the linked runs — not the agent's
+own proposals (those appear in the conversation). Each is a suggestion only._
+
 {_actions_md(actions)}
 
 ## Appendix: linked runs

@@ -50,9 +50,10 @@ Cost concern →
   data, small-object overhead, and version accumulation.
 - `review_bucket_performance_profile` / `list_objects` — sample size
   distribution and storage classes to judge small-file impact.
-- For real numbers across many objects, propose `plan_inventory_import` →
-  `run_inventory_analysis` (capacity & class breakdown), and
-  `run_bucket_config_review` for the full lifecycle posture. Do not invent prices.
+- Run `review_bucket_config` (inline, read-only) for the full lifecycle posture.
+  For real per-object numbers, analyze an uploaded inventory export with
+  `analyze_uploaded_file`; for an inventory still in a bucket, propose
+  `plan_inventory_import` (a confirmed import). Do not invent prices.
 
 ## Ask the user (only what tools can't reveal)
 

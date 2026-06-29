@@ -45,15 +45,16 @@ Slow transfer or 429/503 →
 - `list_objects` (bounded) — sample the key layout to judge small-file vs
   large-file vs hot-prefix workload.
 - `review_bucket_performance_profile` — profile object sizes / storage classes /
-  key distribution for a bucket; for the full picture propose
-  `run_bucket_config_review`.
+  key distribution for a bucket; for the full picture run `review_bucket_config`
+  (inline, read-only).
 - `test_range_get` — measure first-byte latency and confirm ranged reads work
   (relevant for partial-read / CDN-origin workloads).
 - `inspect_endpoint_tls` / `test_addressing_style` — rule out a handshake or
   addressing cost masquerading as "slowness".
 
-For traffic-shaped throughput/error analysis over time, propose
-`plan_access_log_import` → `run_access_log_analysis` rather than guessing from a
+For traffic-shaped throughput/error analysis over time, analyze an attached log
+with `analyze_uploaded_file`, or for logs still in a bucket propose
+`plan_access_log_import` (a confirmed import) — rather than guessing from a
 snapshot.
 
 ## Ask the user (only what tools can't reveal)

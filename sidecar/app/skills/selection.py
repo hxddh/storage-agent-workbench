@@ -40,11 +40,27 @@ def select(context_text: str) -> list[SkillCandidate]:
         return []
 
     blob = (context_text or "").lower()
+    # Punctuation/space-stripped view so an error code matches regardless of how
+    # the log formatted it: keyword "signaturedoesnotmatch" matches "Signature
+    # Does Not Match", "access-denied", "403: AccessDenied", etc. This fixes the
+    # naive substring match's fragility without a hard-coded error→skill map —
+    # matching is still driven entirely by each skill's own trigger_keywords.
+    blob_nospace = re.sub(r"[^a-z0-9]+", "", blob)
     tokens = _tokens(context_text)
+
+    def _kw_match(k: str) -> bool:
+        kl = k.lower()
+        if kl in blob:
+            return True
+        # Punct/space-insensitive fallback for long alphanumeric codes only.
+        # Require length >= 6 so a short token (or a CJK keyword that strips to
+        # "") can't spuriously match across word boundaries in the joined blob.
+        kn = re.sub(r"[^a-z0-9]+", "", kl)
+        return len(kn) >= 6 and kn in blob_nospace
 
     scored: list[tuple[int, list[str], list[str], loader.SkillMeta]] = []
     for m in skills:
-        kw_hits = [k for k in m.trigger_keywords if k.lower() in blob]
+        kw_hits = [k for k in m.trigger_keywords if _kw_match(k)]
         domain_hits = [d for d in m.domains if d.lower() in tokens or d.lower() in blob]
         name_hit = any(t in tokens for t in _tokens(m.name))
         score = 2 * len(kw_hits) + len(domain_hits) + (1 if name_hit else 0)

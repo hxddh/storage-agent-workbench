@@ -71,6 +71,11 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
     def bucket_ok(p, bucket: str) -> bool:
         return (not p.allowed_buckets) or (bucket in p.allowed_buckets)
 
+    # Per-turn budget: cap how many skill bodies the agent can load in one turn,
+    # so a runaway loop can't pull every skill (~8000 chars each) into context.
+    skill_loads = {"n": 0}
+    _MAX_SKILL_LOADS = 6
+
     def note(tool: str, target: str, result: Any) -> None:
         if activity is not None:
             summary = result if isinstance(result, str) else _summarize(result)
@@ -198,9 +203,13 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
     def read_skill(name: str) -> str:
         """Load the full method of a StorageOps expert skill by name (progressive disclosure). Pick a name from the StorageOps skills catalog in your context; this returns that skill's diagnostic method as guidance text for you to apply with your read-only tools. Args: name (e.g. 'storageops-security-iam-policy')."""
         from ..skills import context as skill_context
+        if skill_loads["n"] >= _MAX_SKILL_LOADS:
+            return _err(f"Skill-load budget reached ({_MAX_SKILL_LOADS} per turn). "
+                        "Apply the skills you've already loaded, or proceed with your read-only tools.")
         body = skill_context.read_skill_text(name)
         if body is None:
             return _err("Unknown skill name. Use a name from the StorageOps skills catalog.")
+        skill_loads["n"] += 1
         rec("read_skill", name=name)
         note("read_skill", name, "loaded")
         return body

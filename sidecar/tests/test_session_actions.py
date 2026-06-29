@@ -75,10 +75,6 @@ def _seed_account_run(session_id, provider_id, *, inventory_buckets=(), logging_
         conn.close()
 
 
-def _preview(client, sid, action_type, **proposal):
-    return client.post(f"/sessions/{sid}/actions/preview", json={"proposal": {"action_type": action_type, **proposal}})
-
-
 def _prepare(client, sid, action_type, **proposal):
     return client.post(f"/sessions/{sid}/actions/prepare", json={"proposal": {"action_type": action_type, **proposal}})
 
@@ -98,7 +94,7 @@ def test_run_proposals_route_conversationally_no_form(client):
         assert r["open"] is None, at
         assert r.get("will_create") in (None, {}), at
     # The proposal still normalizes + carries requires_confirmation.
-    assert _preview(client, s["id"], "run_account_discovery").json()["proposal"]["requires_confirmation"] is True
+    assert _prepare(client, s["id"], "run_account_discovery").json()["proposal"]["requires_confirmation"] is True
 
 
 def test_prepare_inventory_import_single_source(client):
@@ -153,7 +149,6 @@ def test_proposal_does_not_create_run(client):
     pid = _provider(client)
     s = _session(client, provider_id=pid, primary_bucket="b")
     before = len(client.get("/runs").json())
-    _preview(client, s["id"], "run_diagnostic")
     _prepare(client, s["id"], "run_diagnostic")
     after = len(client.get("/runs").json())
     assert after == before  # nothing was created
@@ -181,13 +176,13 @@ def test_free_form_action_accepted_but_forbidden_tokens_rejected(client):
     # Free-form next steps are no longer capped to a fixed enum: a benign concrete
     # action is accepted and just routes to the conversational path (not ready,
     # nothing auto-creates).
-    ok = client.post(f"/sessions/{s['id']}/actions/preview",
+    ok = client.post(f"/sessions/{s['id']}/actions/prepare",
                      json={"proposal": {"action_type": "inspect_cors_config"}})
     assert ok.status_code == 200
-    assert ok.json()["will_create"] is None
+    assert ok.json()["open"] is None  # routes back to the agent, opens no flow
     # Defense in depth: a destructive/forbidden token is still rejected outright,
     # even though no destructive capability exists to execute it.
-    bad = client.post(f"/sessions/{s['id']}/actions/preview",
+    bad = client.post(f"/sessions/{s['id']}/actions/prepare",
                       json={"proposal": {"action_type": "run_shell_exec"}})
     assert bad.status_code == 422
 
@@ -237,7 +232,6 @@ def test_assistant_proposed_actions_sanitized_and_coerced(client, monkeypatch):
 def test_audit_events_recorded(client):
     pid = _provider(client)
     s = _session(client, provider_id=pid, primary_bucket="b")
-    _preview(client, s["id"], "generate_session_report")
     _prepare(client, s["id"], "generate_session_report")
     conn = _db()
     try:
@@ -245,7 +239,7 @@ def test_audit_events_recorded(client):
             "SELECT DISTINCT event_type FROM audit_logs WHERE event_type LIKE 'next_action_%'").fetchall()}
     finally:
         conn.close()
-    assert {"next_action_previewed", "next_action_prepared", "next_action_opened"} <= events
+    assert {"next_action_prepared", "next_action_opened"} <= events
 
 
 def test_no_kanban_or_pm_tables(client):
