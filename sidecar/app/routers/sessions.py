@@ -243,7 +243,7 @@ async def upload_session_dataset(
     dest.write_bytes(contents)
 
     stored_rel = config.rel_path(dest)
-    dataset_id = sds_repo.create(conn, session_id, dataset_type, filename, stored_rel)
+    dataset_id = sds_repo.upsert(conn, session_id, dataset_type, filename, stored_rel)
     audit.record(conn, "session.dataset.upload",
                  {"session_id": session_id, "dataset_id": dataset_id,
                   "dataset_type": dataset_type, "bytes": len(contents)}, run_id=None)

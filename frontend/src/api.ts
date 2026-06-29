@@ -273,6 +273,7 @@ export async function streamSessionMessage(
   const dec = new TextDecoder();
   let buf = "";
   let proposed: NextAction[] = [];
+  let sawTerminal = false; // did we receive an explicit 'done' (or 'error')?
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -287,10 +288,16 @@ export async function streamSessionMessage(
       const data = JSON.parse(dataRaw);
       if (type === "delta") on.onDelta(data.text || "");
       else if (type === "tool") on.onTool(data as ToolActivity);
-      else if (type === "done") proposed = data.proposed_actions || [];
+      else if (type === "done") { proposed = data.proposed_actions || []; sawTerminal = true; }
       else if (type === "error") throw new Error(data.detail || "stream error");
     }
   }
+  // The stream closed without an explicit 'done'. The server may still have
+  // persisted the turn — but we can't trust `proposed` here. Throw so the caller
+  // falls back to the blocking POST (idempotent via turn_id): it returns the
+  // persisted result (incl. proposals) instead of leaving the user with an empty
+  // next-steps list until they refresh.
+  if (!sawTerminal) throw new Error("stream ended without completion");
   return { proposed_actions: proposed };
 }
 

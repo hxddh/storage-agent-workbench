@@ -143,3 +143,76 @@ def test_no_run_created_on_session_upload(client, monkeypatch):
     _upload(client, sid, "a.log", ACCESS_LOG_TEXT)
     runs = client.get("/runs").json()
     assert runs == [] or all(r.get("run_type") != "access_log_analysis" for r in runs)
+
+
+def test_reupload_same_filename_dedupes(client):
+    """Re-uploading the same filename reuses the row (overwrites on disk) — no
+    duplicate dataset records pointing at one path (Bug 3)."""
+    sid = client.post("/sessions", json={"title": "t", "goal": "g"}).json()["id"]
+    id1 = _upload(client, sid, "a.log", ACCESS_LOG_TEXT).json()["dataset_id"]
+    id2 = _upload(client, sid, "a.log", GENERIC_LOG_TEXT).json()["dataset_id"]
+    assert id1 == id2
+    conn = _conn()
+    try:
+        from app.repositories import session_datasets as sds
+        assert len(sds.list_for_session(conn, sid)) == 1
+    finally:
+        conn.close()
+
+
+def test_fork_copies_session_datasets(client):
+    """Forking a session copies its uploaded datasets + raw files (Bug 2)."""
+    sid = client.post("/sessions", json={"title": "t", "goal": "g"}).json()["id"]
+    _upload(client, sid, "a.log", ACCESS_LOG_TEXT)
+    forked = client.post(f"/sessions/{sid}/fork").json()["id"]
+    conn = _conn()
+    try:
+        from app.repositories import session_datasets as sds
+        rows = sds.list_for_session(conn, forked)
+        assert len(rows) == 1 and rows[0]["source_filename"] == "a.log"
+        # the raw file was physically copied and exists on disk
+        assert (config.data_dir() / rows[0]["stored_path"]).exists()
+    finally:
+        conn.close()
+
+
+def test_agent_survey_run_is_origin_agent_and_not_a_card(client, monkeypatch):
+    """The agent's survey_account / review_bucket_config run with origin='agent'
+    and are therefore filtered out of the thread's run cards."""
+    from app import run_service
+    from app.agent_runtime import session_action_tools
+    from app.db import connect as db_connect
+
+    pid = client.post("/cloud-providers", json={
+        "name": "demo", "provider_type": "s3-compatible", "endpoint_url": "https://m",
+        "region": "us-east-1", "addressing_style": "path",
+        "access_key": "AKIAIOSFODNN7EXAMPLE", "secret_key": "s"}).json()["id"]
+    sid = client.post("/sessions", json={"title": "t", "goal": "g", "provider_id": pid}).json()["id"]
+
+    def fake_run_sync(run_id):
+        c = db_connect()
+        try:
+            c.execute("UPDATE runs SET status='completed', final_summary='ok' WHERE id=?", (run_id,))
+            c.commit()
+        finally:
+            c.close()
+
+    monkeypatch.setattr(run_service, "run_sync", fake_run_sync)
+    conn = _conn()
+    try:
+        tools = session_action_tools.build(conn, _fake_function_tool, [], sid)
+        assert _tool_names(tools) == {"survey_account", "review_bucket_config"}
+        tool = next(t for t in tools if t.name == "review_bucket_config")
+        out = json.loads(tool(pid, "bucket-x"))
+        assert out["status"] == "completed"
+    finally:
+        conn.close()
+
+    # The run was created with origin='agent' → not shown as a thread card.
+    detail = client.get(f"/sessions/{sid}").json()
+    agent_runs = [r for r in detail["runs"] if r["origin"] == "agent"]
+    assert agent_runs and all(r["origin"] == "agent" for r in agent_runs)
+
+
+def _tool_names(tools):
+    return {getattr(t, "name", getattr(t, "__name__", "")) for t in tools}

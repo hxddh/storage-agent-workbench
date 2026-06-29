@@ -49,6 +49,34 @@ def create(
     return dataset_id
 
 
+def upsert(
+    conn: sqlite3.Connection,
+    session_id: str,
+    dataset_type: str,
+    source_filename: str | None,
+    stored_path_rel: str | None,
+) -> str:
+    """Create a dataset, or REUSE the existing row for the same (session,
+    filename) — re-uploading a file overwrites it on disk, so we must not leave
+    multiple rows pointing at one path. On reuse the row resets to 'uploaded'
+    (dropping any stale imported DuckDB/table) so the next analysis re-derives it.
+    """
+    existing = conn.execute(
+        "SELECT id FROM session_datasets WHERE session_id = ? AND source_filename = ? "
+        "ORDER BY rowid DESC LIMIT 1",
+        (session_id, source_filename),
+    ).fetchone()
+    if existing is not None:
+        conn.execute(
+            "UPDATE session_datasets SET dataset_type = ?, stored_path = ?, "
+            "duckdb_path = NULL, table_name = NULL, row_count = NULL, "
+            "detected_format = NULL, status = 'uploaded' WHERE id = ?",
+            (dataset_type, stored_path_rel, existing["id"]),
+        )
+        return existing["id"]
+    return create(conn, session_id, dataset_type, source_filename, stored_path_rel)
+
+
 def mark_imported(
     conn: sqlite3.Connection,
     dataset_id: str,
