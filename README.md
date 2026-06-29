@@ -8,9 +8,10 @@ machine; your data and credentials never leave your computer.
 
 It is **evidence-driven** and **human-in-the-loop**: the agent investigates with
 read-only tools and grounds its conclusions in artifacts you collected. It
-**never mutates your storage**, and any data-moving step (downloads, large
-scans, dataset analysis) always waits for your confirmation. Read-only checks it
-can run itself or propose, depending on the autonomy setting (see Safety model).
+**never mutates your storage**. Cloud-side data-moving steps (downloads, large
+scans, evidence import from a bucket) always wait for your confirmation; a file
+you attach in the chat is local, so the agent analyzes it inline. Read-only
+investigation always runs autonomously (see Safety model).
 
 ## Install
 
@@ -91,12 +92,12 @@ Dark and light themes; English and 中文.
   tokens, and model API keys live only in an AES-256-GCM vault on your device
   (key protected per-OS) — never in SQLite, logs, reports, or model prompts.
 - **Read-only.** No destructive or mutating S3 operations; no generic shell or
-  arbitrary subprocess tool. The agent investigates with read-only tools and can
-  run read-only checks itself.
-- **You confirm anything that moves data.** Downloads, large scans, and dataset
-  analysis always wait for your confirmation; there is no write tool. (An
-  autonomy setting controls whether the agent auto-runs *read-only* checks or
-  proposes them.)
+  arbitrary subprocess tool. The agent is a fully autonomous read-only
+  investigator — it runs its read-only tools itself (no autonomy toggle).
+- **You confirm anything that moves cloud data.** Downloads, large/full scans,
+  and evidence import from a bucket always wait for your confirmation; there is
+  no write tool. A file you attach in the chat is local, so the agent analyzes it
+  inline without a separate confirmation.
 - Agent context is bounded and sanitized; chain-of-thought is never persisted.
 
 See [docs/security.md](docs/security.md) for the full model.

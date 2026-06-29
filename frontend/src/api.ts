@@ -273,6 +273,7 @@ export async function streamSessionMessage(
   const dec = new TextDecoder();
   let buf = "";
   let proposed: NextAction[] = [];
+  let sawTerminal = false; // did we receive an explicit 'done' (or 'error')?
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -287,10 +288,16 @@ export async function streamSessionMessage(
       const data = JSON.parse(dataRaw);
       if (type === "delta") on.onDelta(data.text || "");
       else if (type === "tool") on.onTool(data as ToolActivity);
-      else if (type === "done") proposed = data.proposed_actions || [];
+      else if (type === "done") { proposed = data.proposed_actions || []; sawTerminal = true; }
       else if (type === "error") throw new Error(data.detail || "stream error");
     }
   }
+  // The stream closed without an explicit 'done'. The server may still have
+  // persisted the turn — but we can't trust `proposed` here. Throw so the caller
+  // falls back to the blocking POST (idempotent via turn_id): it returns the
+  // persisted result (incl. proposals) instead of leaving the user with an empty
+  // next-steps list until they refresh.
+  if (!sawTerminal) throw new Error("stream ended without completion");
   return { proposed_actions: proposed };
 }
 
@@ -319,12 +326,6 @@ export interface ActionPreviewResult {
   safety_notes: string[];
   will_create: Record<string, unknown> | null;
 }
-
-export const previewSessionAction = (id: string, proposal: NextAction) =>
-  request<ActionPreviewResult>(`/sessions/${id}/actions/preview`, {
-    method: "POST",
-    body: JSON.stringify({ proposal }),
-  });
 
 export const prepareSessionAction = (id: string, proposal: NextAction) =>
   request<ActionPrepareResult>(`/sessions/${id}/actions/prepare`, {
@@ -408,17 +409,7 @@ export async function uploadSessionDataset(
 
 export const listDatasets = () => request<Dataset[]>("/datasets");
 
-// --- Settings: agent autonomy policy ---
-
-export type AutonomyPolicy = "advisory" | "assisted" | "autonomous_readonly";
-
-export interface AutonomySetting {
-  policy: AutonomyPolicy;
-  policies: AutonomyPolicy[];
-  default: AutonomyPolicy;
-}
-
-export const getAutonomy = () => request<AutonomySetting>("/settings/autonomy");
+// --- Settings: secret-vault status ---
 
 export interface VaultStatus {
   unreadable: boolean;
@@ -426,9 +417,3 @@ export interface VaultStatus {
 }
 
 export const getVaultStatus = () => request<VaultStatus>("/settings/secret-vault");
-
-export const setAutonomy = (policy: AutonomyPolicy) =>
-  request<AutonomySetting>("/settings/autonomy", {
-    method: "PUT",
-    body: JSON.stringify({ policy }),
-  });

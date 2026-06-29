@@ -43,14 +43,14 @@ def _options_json(data: RunCreate) -> str | None:
     return json.dumps(options) if options else None
 
 
-def create(conn: sqlite3.Connection, data: RunCreate, status: str) -> str:
+def create(conn: sqlite3.Connection, data: RunCreate, status: str, origin: str = "user") -> str:
     run_id = uuid.uuid4().hex
     now = utcnow()
     conn.execute(
         "INSERT INTO runs "
         "(id, run_type, title, status, planner_mode, provider_id, bucket, prefix, "
-        " user_prompt, final_summary, report_path, options_json, session_id, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)",
+        " user_prompt, final_summary, report_path, options_json, session_id, origin, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?)",
         (
             run_id,
             data.run_type,
@@ -63,6 +63,7 @@ def create(conn: sqlite3.Connection, data: RunCreate, status: str) -> str:
             data.user_prompt,
             _options_json(data),
             data.session_id,
+            origin,
             now,
             now,
         ),

@@ -28,10 +28,12 @@ panel:
 
 - **Session rail** (left): "New investigation", the session list with
   rename / pin / archive / delete / fork, and a settings + sidecar-status footer.
-- **Conversation thread** (center): a sticky composer with two modes — "Ask the
-  agent" and offline "Triage an error". Messages, analysis runs, error-triage
-  cases, and proposed next actions all render as **inline cards**; a run card
-  expands in place to its full transcript.
+- **Conversation thread** (center): a single sticky composer — you ask the agent
+  (and can attach a log/inventory file for it to analyze inline). If no model key
+  is configured and you paste a raw error, it falls back to offline deterministic
+  triage. Messages and proposed next actions render as **inline cards**. The
+  agent's own read-only surveys/reviews are narrated inline (not shown as run
+  cards); only an explicit, user-requested auditable report appears as a card.
 - **Settings drawer** (right slide-over): model- and cloud-provider management,
   plus a one-time first-run wizard on a fresh install.
 

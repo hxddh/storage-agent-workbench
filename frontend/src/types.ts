@@ -278,6 +278,10 @@ export interface SessionRunLink {
   status: string;
   title: string | null;
   final_summary: string | null;
+  // 'agent' = the agent's own read-only survey/review (internal compute — not
+  // shown as a structured run card; the agent narrates it). 'user' = an explicit
+  // auditable report the user asked for.
+  origin: string;
   created_at: string;
 }
 

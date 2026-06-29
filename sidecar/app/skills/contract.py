@@ -8,8 +8,9 @@ fenced JSON block:
 
 Everything is sanitized: answer is redacted + chain-of-thought-stripped; lists
 are bounded + redacted; skills_used is restricted to the skills we actually
-injected; next_action_proposals are coerced through the Phase 17 allowlist (all
-require confirmation). No field is mandatory — if the model returns plain prose,
+injected; next_action_proposals are free-form but sanitized to a bounded slug
+with forbidden/destructive tokens dropped (all require confirmation). No field is
+mandatory — if the model returns plain prose,
 that prose becomes ``answer`` and the remaining fields default to empty lists.
 """
 

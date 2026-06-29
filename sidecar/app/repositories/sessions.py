@@ -11,8 +11,10 @@ chain-of-thought.
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import uuid
+from pathlib import Path
 from typing import Any
 
 from ..models.schemas import SessionCreate, SessionUpdate
@@ -129,6 +131,32 @@ def fork(conn: sqlite3.Connection, session_id: str) -> str | None:
             (uuid.uuid4().hex, new_id, r["kind"], r["text"], r["severity"],
              r["confidence"], r["source_run_id"], r["status"], r["created_at"]),
         )
+    # Copy uploaded datasets (rows + the raw files on disk) so a forked
+    # conversation keeps the files the agent analyzed. The copied file lands in
+    # the new session's raw dir and the row points at it; analysis re-derives the
+    # DuckDB table on demand, so duckdb_path/table_name reset to 'uploaded'.
+    from .. import config
+    ds_rows = conn.execute(
+        "SELECT dataset_type, source_filename, stored_path, detected_format "
+        "FROM session_datasets WHERE session_id = ? ORDER BY rowid", (session_id,)
+    ).fetchall()
+    for d in ds_rows:
+        new_stored_rel = d["stored_path"]
+        if d["stored_path"]:
+            src_abs = config.data_dir() / d["stored_path"]
+            if src_abs.exists():
+                dest_dir = config.data_dir() / "sessions" / new_id / "raw"
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest_abs = dest_dir / Path(d["stored_path"]).name
+                shutil.copy2(src_abs, dest_abs)
+                new_stored_rel = config.rel_path(dest_abs)
+        conn.execute(
+            "INSERT INTO session_datasets "
+            "(id, session_id, dataset_type, source_filename, stored_path, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 'uploaded', ?)",
+            (uuid.uuid4().hex, new_id, d["dataset_type"], d["source_filename"],
+             new_stored_rel, now),
+        )
     conn.commit()
     return new_id
 
@@ -204,7 +232,7 @@ def link_run(conn: sqlite3.Connection, session_id: str, run_id: str, role: str |
 def list_runs(conn: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT sr.run_id, sr.role, sr.created_at AS linked_at, "
-        "       r.run_type, r.status, r.title, r.final_summary "
+        "       r.run_type, r.status, r.title, r.final_summary, r.origin "
         "FROM session_runs sr JOIN runs r ON r.id = sr.run_id "
         "WHERE sr.session_id = ? ORDER BY sr.rowid",
         (session_id,),
@@ -213,7 +241,7 @@ def list_runs(conn: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]
         {
             "run_id": r["run_id"], "role": r["role"], "run_type": r["run_type"],
             "status": r["status"], "title": r["title"], "final_summary": r["final_summary"],
-            "created_at": r["linked_at"],
+            "origin": r["origin"], "created_at": r["linked_at"],
         }
         for r in rows
     ]

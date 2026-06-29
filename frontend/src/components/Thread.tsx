@@ -172,14 +172,22 @@ export function Thread({
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
     for (const m of detail?.messages ?? []) out.push({ kind: "message", ts: m.created_at, role: m.role, content: m.content, id: m.id, toolActivity: m.tool_activity });
-    for (const r of detail?.runs ?? []) out.push({ kind: "run", ts: r.created_at, data: r });
+    // Agent-initiated surveys/reviews (origin 'agent') are internal compute the
+    // agent narrates inline — never a standalone run card. Only explicit
+    // user-requested auditable reports surface as cards.
+    for (const r of detail?.runs ?? []) {
+      if (r.origin === "agent") continue;
+      out.push({ kind: "run", ts: r.created_at, data: r });
+    }
     for (const c of triage) out.push({ kind: "triage", ts: c.created_at || "", data: c });
     return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   }, [detail, triage]);
 
-  // Once the agent has answered this session (liveProposals !== null), show its
-  // own proposals — even if empty — rather than a canned session default.
-  const proposals = liveProposals ?? detail?.summary?.next_actions ?? [];
+  // Proposals come ONLY from the agent's own answer (liveProposals). We no longer
+  // fall back to the deterministic summary.next_actions menu — before the agent
+  // has spoken the user sees capability chips, not a rule-engine menu. This keeps
+  // the agent the sole source of suggested next steps.
+  const proposals = liveProposals ?? [];
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -293,15 +301,17 @@ export function Thread({
     const prompt = message || (type === "inventory"
       ? "Analyze this inventory file."
       : "Analyze this log file.");
-    setText("");
-    setAttached(null);
-    setAttachType(null);
+    // Upload FIRST; only clear the composer once the file is safely stored, so a
+    // failed upload doesn't lose the user's selected file.
     try {
       await uploadSessionDataset(id, file, type);
     } catch (e) {
       patchSessionRun(id, { error: cleanError(String(e), t) });
-      return;
+      return;  // keep the attachment + text so the user can retry
     }
+    setText("");
+    setAttached(null);
+    setAttachType(null);
     // Hand the turn to the conversational agent (streams + falls back like any turn).
     await submit(prompt);
   };
@@ -377,6 +387,19 @@ export function Thread({
   const seed = (prompt: string) => {
     setText(prompt);
     requestAnimationFrame(() => taRef.current?.focus());
+  };
+
+  // Capability chip → action. Log/inventory analysis needs a local file, so those
+  // chips open the file picker (preset type) just like an analysis proposal —
+  // rather than seeding a prompt the agent has no file to act on. The rest seed
+  // a starter prompt for the agent.
+  const onSuggestion = (key: string, prompt: string) => {
+    if (key === "logs" || key === "inventory") {
+      presetTypeRef.current = key === "logs" ? "access_log" : "inventory";
+      fileRef.current?.click();
+      return;
+    }
+    seed(prompt);
   };
 
   // Slash commands: open when the composer is exactly "/" + word chars.
@@ -554,7 +577,7 @@ export function Thread({
               {suggestions.map((s) => (
                 <button
                   key={s.key}
-                  onClick={() => seed(s.prompt)}
+                  onClick={() => onSuggestion(s.key, s.prompt)}
                   className="rounded-full border border-edge bg-panel/60 px-3.5 py-1.5 text-[12px] text-gray-400 transition-colors hover:border-edge-strong hover:bg-hover hover:text-gray-100"
                 >
                   {s.label}

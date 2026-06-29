@@ -433,6 +433,7 @@ class SessionRunLink(BaseModel):
     status: str
     title: str | None = None
     final_summary: str | None = None
+    origin: str = "user"
     created_at: str
 
 

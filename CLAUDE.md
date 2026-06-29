@@ -22,29 +22,25 @@ oversight:
 1. **Conversational session agent** (the main UX, `agent_runtime/session_agent.py`).
    A genuine tool-calling agent: it chooses provider/bucket, calls read-only S3
    tools in a loop, loads StorageOps skills on demand (progressive disclosure via
-   the `read_skill` tool), and grounds answers in tool output. Under the
-   **autonomy policy** (`agent_runtime/autonomy.py`, default `autonomous_readonly`)
-   it can also EXECUTE read-only runs itself (bucket_config_review,
-   account_discovery — `agent_runtime/session_action_tools.py`) and fold the
-   findings into its answer, instead of only proposing them. Connectivity/
-   credential/addressing *diagnosis* is intentionally NOT a canned inline run:
-   the agent investigates adaptively with its own read-only tools
+   the `read_skill` tool), and grounds answers in tool output. It is **always a
+   fully autonomous read-only investigator — there is no autonomy toggle.** It
+   diagnoses connectivity/credential/addressing problems adaptively
    (`test_credentials` → addressing/TLS/head-bucket/list/range) and explains the
-   root cause; the deterministic `diagnostic` run remains available as an
-   explicit, auditable report. Likewise, a file the user **attaches in the
-   conversation** is analyzed by the agent itself: it is stored against the
-   session (`POST /sessions/{id}/datasets/upload`) and the agent inspects it with
-   read-only `list_uploaded_files` / `analyze_uploaded_file` tools
+   root cause; it analyzes a file the user **attaches in the conversation** with
+   read-only `list_uploaded_files` / `analyze_uploaded_file`
    (`agent_runtime/session_analysis_tools.py`, same DuckDB engine, sanitized
-   aggregates only) and answers conversationally — it does NOT spawn a fixed
-   deterministic analysis run. This is where "agentic" behavior lives.
+   aggregates only); and it runs the heavier read-only `survey_account` /
+   `review_bucket_config` tools (`agent_runtime/session_action_tools.py`) only
+   when the request is about the account/buckets. Crucially, **nothing the agent
+   does in a conversation surfaces as a structured run card** — those tools
+   record runs with `origin='agent'` that the thread filters out; the agent
+   narrates the result inline. This is where "agentic" behavior lives.
 
-   Two policies, security tiers enforced *below* the setting regardless:
-   `assisted` proposes read-only runs for the user to confirm;
-   `autonomous_readonly` (default) auto-executes SAFE_READONLY runs.
-   EXPENSIVE/data-moving work (dataset analysis, evidence import/download, large
-   scans) and any MUTATING op are never auto-run under either policy — they stay
-   confirmed proposals. There is no write/destructive tool in the product at all.
+   Security tiers are enforced in code regardless: EXPENSIVE/data-moving work
+   (cloud evidence import/download, large/full scans) is never auto-run — it
+   stays a confirmed proposal — and there is no write/destructive tool in the
+   product at all. A *file the user attached* is local, so analyzing it inline is
+   not data-moving and needs no confirmation.
 
 2. **Deterministic compute layer** (`runs/`, dispatched by `run_service.py`) —
    the agent-invoked **security/reproducibility floor**, NOT a user-facing fixed

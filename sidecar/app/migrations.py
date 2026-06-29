@@ -454,10 +454,9 @@ _M011 = """
 ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
 """
 
-# Global app settings as a small key/value store. Currently holds the agent
-# autonomy policy (assisted | autonomous_readonly) that decides
-# whether the in-chat agent may execute read-only actions itself or only
-# propose them. Never stores secrets (those live only in the OS keychain).
+# Global app settings as a small generic key/value store. Never stores secrets
+# (those live only in the encrypted local vault — see security.keyring_store,
+# NOT the OS keychain).
 _M012 = """
 CREATE TABLE IF NOT EXISTS app_settings (
     key        TEXT PRIMARY KEY,
@@ -509,6 +508,16 @@ CREATE TABLE IF NOT EXISTS session_datasets (
 CREATE INDEX IF NOT EXISTS idx_session_datasets_session ON session_datasets(session_id);
 """
 
+# Run origin: who initiated a run. 'agent' runs are the conversational agent's own
+# read-only survey/review tools (account survey, config review) — internal compute
+# that persists a profile but is NEVER surfaced as a structured run card in the
+# thread (the agent narrates the result). 'user' runs are explicitly requested
+# auditable reports. This makes the agent the sole conversational surface while
+# keeping the deterministic engines as the security/reproducibility floor.
+_M015 = """
+ALTER TABLE runs ADD COLUMN origin TEXT NOT NULL DEFAULT 'user';
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -525,6 +534,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (12, "app_settings", _M012),
     (13, "session_agent_memory", _M013),
     (14, "session_datasets", _M014),
+    (15, "runs_add_origin", _M015),
 ]
 
 

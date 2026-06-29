@@ -1,16 +1,9 @@
-"""Global app settings (key/value). Never stores secrets.
-
-Currently holds the agent autonomy policy. Values are small strings; secrets
-live only in the encrypted local vault (see ``security.keyring_store``).
-"""
+"""Global app settings (generic key/value). Never stores secrets — those live
+only in the encrypted local vault (see ``security.keyring_store``)."""
 
 from __future__ import annotations
 
 import sqlite3
-
-from ..agent_runtime import autonomy
-
-_AUTONOMY_KEY = "autonomy_policy"
 
 
 def get(conn: sqlite3.Connection, key: str, default: str | None = None) -> str | None:
@@ -26,16 +19,4 @@ def set(conn: sqlite3.Connection, key: str, value: str) -> None:
     )
 
 
-def get_autonomy_policy(conn: sqlite3.Connection) -> str:
-    """The current autonomy policy, normalized (default ``autonomous_readonly``)."""
-    return autonomy.normalize(get(conn, _AUTONOMY_KEY, autonomy.DEFAULT_POLICY))
-
-
-def set_autonomy_policy(conn: sqlite3.Connection, policy: str) -> str:
-    """Persist a normalized autonomy policy. Returns the stored value."""
-    normalized = autonomy.normalize(policy)
-    set(conn, _AUTONOMY_KEY, normalized)
-    return normalized
-
-
-__all__ = ["get", "set", "get_autonomy_policy", "set_autonomy_policy"]
+__all__ = ["get", "set"]
