@@ -111,16 +111,20 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     @function_tool
-    def list_objects(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 50) -> str:
-        """List a bounded sample of object keys (read-only ListObjectsV2; no object bodies). Args: provider_id, bucket, prefix?, max_keys? (defaults to 100 if 0/unset; set higher — up to 1000 — for a wider sample). If the result's is_truncated is true there are more keys than returned: raise max_keys (up to 1000) or, for a complete enumeration, propose an inventory/account_discovery run."""
+    def list_objects(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 50,
+                     continuation_token: str = "", recursive: bool = False) -> str:
+        """List one page of object keys (read-only ListObjectsV2, up to 1000 per call; no object bodies). To enumerate fully, PAGE: re-call with continuation_token = the previous result's next_token until next_token is null, accumulating result.keys. Set recursive=true to list keys flat under the prefix (no '/' directory grouping). Args: provider_id, bucket, prefix?, max_keys? (up to 1000), continuation_token?, recursive?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
         if not bucket_ok(p, bucket):
             return _err("That bucket is not in this provider's allow-list.")
         bound = guardrails.bound_tool_args("list_objects_v2", {"max_keys": max_keys})
-        rec("list_objects", provider_id=provider_id, bucket=bucket, prefix=prefix, max_keys=bound["max_keys"])
-        res = s3.list_objects_v2(conn, provider_id, bucket, bound["max_keys"], prefix or None)
+        rec("list_objects", provider_id=provider_id, bucket=bucket, prefix=prefix,
+            max_keys=bound["max_keys"], paged=bool(continuation_token))
+        res = s3.list_objects_v2(conn, provider_id, bucket, bound["max_keys"], prefix or None,
+                                 continuation_token=continuation_token or None,
+                                 delimiter=None if recursive else "/")
         note("list_objects", bucket, res)
         return json.dumps(res)
 

@@ -28,6 +28,7 @@ from ..skills import contract as skill_contract
 from . import autonomy
 from . import guardrails
 from . import session_action_tools
+from . import session_memory_tools
 from . import session_tools
 from .agent_service import AgentUnavailable
 from .guardrails import strip_chain_of_thought
@@ -104,8 +105,15 @@ INSTRUCTIONS = (
     "Tool outputs are NOT shown to the user (they only see a short trace), so "
     "when they ask you to list or show something, write the actual items in your "
     "answer — never say 'see above'.\n"
+    "You have working memory for this session: when you establish a durable "
+    "fact, hit a notable finding, or leave a question open, record it with "
+    "note_fact / record_finding / note_open_question so it carries to later "
+    "turns. Reuse what's already in agent_memory (shown in your context) instead "
+    "of re-deriving it; only the most recent messages are replayed, so memory is "
+    "how continuity survives.\n"
     "You are also given a JSON context (session goal, a deterministic summary, "
-    "recent messages) and a CATALOG of StorageOps expert skills. Treat the "
+    "your recorded agent_memory, recent messages) and a CATALOG of StorageOps "
+    "expert skills. Treat the "
     "catalog as progressive disclosure: when a listed skill fits the problem, "
     "call read_skill(name) to load its full diagnostic method, then follow that "
     "method using your read-only tools. Never invent buckets, configs, numbers, "
@@ -138,10 +146,30 @@ def instructions_for(policy: str) -> str:
     return INSTRUCTIONS
 
 
+def _build_agent_memory_block(memory: list[dict[str, Any]] | None) -> dict[str, list[Any]]:
+    """Group agent-authored memory items into recalled facts/findings/questions."""
+    facts: list[dict[str, Any]] = []
+    findings: list[dict[str, Any]] = []
+    questions: list[str] = []
+    for m in (memory or []):
+        kind = m.get("kind")
+        text = redact_text(str(m.get("text", "")))[:300]
+        if not text:
+            continue
+        if kind == "fact" and len(facts) < _MAX_FACTS:
+            facts.append({"text": text, "confidence": m.get("confidence") or "medium"})
+        elif kind == "finding" and len(findings) < _MAX_FINDINGS:
+            findings.append({"title": text, "severity": m.get("severity") or "info"})
+        elif kind == "open_question" and len(questions) < _MAX_FACTS:
+            questions.append(text)
+    return {"recorded_facts": facts, "recorded_findings": findings, "open_questions": questions}
+
+
 def build_session_context(
     session: dict[str, Any],
     summary: dict[str, Any],
     recent_messages: list[dict[str, Any]],
+    agent_memory: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Bounded, redacted context — the ONLY thing the model sees."""
     findings = []
@@ -176,6 +204,9 @@ def build_session_context(
             ],
             "limitations": [redact_text(str(x))[:300] for x in (summary.get("limitations") or [])[:_MAX_FACTS]],
         },
+        # Things YOU recorded in earlier turns of this session (via note_fact /
+        # record_finding / note_open_question). Reuse them; don't re-derive.
+        "agent_memory": _build_agent_memory_block(agent_memory),
         "recent_messages": [
             {"role": m.get("role"), "content": redact_text(str(m.get("content", "")))[:1000]}
             for m in recent_messages[-_MAX_MESSAGES:]
@@ -205,6 +236,8 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
         return []
     tools = session_tools.build(conn, function_tool, activity)
     tools += session_action_tools.build(conn, function_tool, policy, activity, session_id)
+    # Working-memory tools are always available (recording is cloud-read-only).
+    tools += session_memory_tools.build(conn, function_tool, session_id, activity)
     return tools
 
 
@@ -247,7 +280,14 @@ def _build_prompt(
     goes in the prompt and the agent loads any relevant skill on demand via the
     read_skill tool. skill_names is the allow-list of what it may cite as used.
     """
-    context = build_session_context(session, summary, recent_messages)
+    agent_memory: list[dict[str, Any]] = []
+    if conn is not None and session.get("id"):
+        try:
+            from ..repositories import sessions as sessions_repo
+            agent_memory = sessions_repo.list_agent_memory(conn, session["id"])
+        except Exception:  # noqa: BLE001
+            agent_memory = []
+    context = build_session_context(session, summary, recent_messages, agent_memory)
     skill_names = skill_context.skill_names()
 
     prompt_parts = [render_context_text(context)]

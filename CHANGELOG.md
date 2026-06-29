@@ -6,6 +6,21 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.20] - 2026-06-29
+
+### Added
+
+- **The Agent now has working memory.** As it investigates, it can record
+  durable facts, findings, and open questions (`note_fact` / `record_finding` /
+  `note_open_question`) into per-session memory, which is fed back into later
+  turns. Previously its live discoveries evaporated once the message window
+  rolled — only deterministic run artifacts persisted. Memory is sanitized
+  (no secrets/raw rows) and audited like all agent output.
+- **The Agent can enumerate large buckets.** `list_objects` now supports
+  continuation tokens and recursive (delimiter-free) listing, so it can page
+  through a bucket with more than 1000 objects instead of being capped at a
+  single page. Each call is still bounded; paging is explicit, never automatic.
+
 ## [0.19.19] - 2026-06-29
 
 ### Fixed

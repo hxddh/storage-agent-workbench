@@ -312,6 +312,51 @@ def add_message(
     return msg_id
 
 
+# --- agent working memory ---------------------------------------------------
+#
+# Facts/findings/open-questions the in-chat agent records itself as it
+# investigates (kind in {'fact','finding','open_question'}). Kept separate from
+# the deterministic session_findings/session_summaries (which are rebuilt from
+# run artifacts and would wipe these). Always redacted; never secrets/raw rows.
+
+_MEMORY_KINDS = ("fact", "finding", "open_question")
+
+
+def add_agent_memory(
+    conn: sqlite3.Connection,
+    session_id: str,
+    kind: str,
+    text: str,
+    *,
+    severity: str | None = None,
+    confidence: str | None = None,
+    source_run_id: str | None = None,
+) -> str:
+    """Persist one agent-authored memory item (sanitized). Returns its id."""
+    if kind not in _MEMORY_KINDS:
+        raise ValueError(f"unknown agent-memory kind: {kind!r}")
+    mem_id = uuid.uuid4().hex
+    conn.execute(
+        "INSERT INTO session_agent_memory "
+        "(id, session_id, kind, text, severity, confidence, source_run_id, status, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)",
+        (mem_id, session_id, kind, redact_text(str(text))[:600],
+         (severity or None), (confidence or None), (source_run_id or None), utcnow()),
+    )
+    _touch(conn, session_id)
+    conn.commit()
+    return mem_id
+
+
+def list_agent_memory(conn: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]:
+    """All active agent-authored memory items for a session, oldest first."""
+    rows = conn.execute(
+        "SELECT * FROM session_agent_memory WHERE session_id = ? AND status = 'active' ORDER BY rowid",
+        (session_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def list_messages(conn: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT * FROM session_messages WHERE session_id = ? ORDER BY rowid", (session_id,)
