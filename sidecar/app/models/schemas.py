@@ -174,8 +174,6 @@ RunType = Literal[
     "optimization_report",
 ]
 
-PlannerMode = Literal["deterministic", "agent"]
-
 
 class RunCreate(BaseModel):
     run_type: RunType
@@ -493,7 +491,6 @@ class ErrorTriageRequest(BaseModel):
     session_id: str | None = None
     provider_id: str | None = None
     bucket: str | None = None
-    planner_mode: PlannerMode = "deterministic"
 
 
 class TriageFindingOut(BaseModel):
@@ -520,16 +517,10 @@ class TriageCaseOut(BaseModel):
     raw_input_redacted: str | None = None
     parsed: dict = Field(default_factory=dict)
     summary: str = ""
-    planner_mode: str = "deterministic"
     status: str = "parsed"
     candidate_causes: list[TriageFindingOut] = Field(default_factory=list)
     safe_next_actions: list[dict] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
-    agent_interpretation: str | None = None
-    skills_offered: list[str] = Field(default_factory=list)
-    skills_used: list[str] = Field(default_factory=list)
-    evidence_used: list[str] = Field(default_factory=list)
-    evidence_gaps: list[str] = Field(default_factory=list)
     created_at: str | None = None
     updated_at: str | None = None
 

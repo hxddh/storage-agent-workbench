@@ -329,7 +329,6 @@ export interface ErrorTriageInput {
   session_id?: string;
   provider_id?: string;
   bucket?: string;
-  planner_mode?: "deterministic" | "agent";
 }
 
 export const submitErrorTriage = (body: ErrorTriageInput) =>

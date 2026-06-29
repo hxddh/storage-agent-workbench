@@ -15,7 +15,6 @@ import pytest
 
 from app import config
 from app.agent_runtime import session_agent
-from app.error_triage import triage_agent
 from app.skills import context as skill_context
 from app.skills import contract as skill_contract
 from app.skills import loader, selection
@@ -256,35 +255,16 @@ def test_skills_used_bound_to_actual_read_skill(client, monkeypatch):
     assert out["skills_used"] == []  # claimed but never loaded → dropped
 
 
-def test_triage_agent_prompt_includes_skill_context(client, monkeypatch):
-    s = _session(client)
-    _add_model_provider(client)
-    captured = {}
-
-    def fake_loop(spec):
-        captured["spec"] = spec
-        return "Likely a signature/region issue."
-
-    monkeypatch.setattr(triage_agent, "TRIAGE_LOOP", fake_loop)
-    body = {"content": "<Error><Code>SignatureDoesNotMatch</Code></Error> region us-east-1",
-            "input_kind": "error_code", "session_id": s["id"], "planner_mode": "agent"}
-    out = client.post("/error-triage", json=body).json()
-    prompt = captured["spec"]["prompt"]
-    # Offline triage injects a selected skill body as method guidance.
-    assert "StorageOps skill" in prompt
-    assert "professional diagnostic method" in prompt
-    assert out["agent_interpretation"]
-    assert "skills_offered" in out
-
-
-def test_deterministic_triage_does_not_claim_skill_diagnosis(client):
+def test_triage_is_deterministic_only(client):
+    """Triage is the offline deterministic path — no LLM narrator, no agent
+    fields. (When a model key exists, the conversational agent interprets errors
+    in the thread instead.)"""
     s = _session(client)
     out = client.post("/error-triage", json={
         "content": "<Error><Code>AccessDenied</Code></Error>", "input_kind": "error_code",
-        "session_id": s["id"]}).json()  # deterministic default
-    assert out["planner_mode"] == "deterministic"
-    assert out["agent_interpretation"] is None
-    assert out["skills_used"] == []  # no skill-grounded diagnosis without an Agent run
+        "session_id": s["id"]}).json()
+    assert out["candidate_causes"]  # deterministic playbook matched
+    assert "agent_interpretation" not in out and "planner_mode" not in out
 
 
 # --- guardrails: no forbidden surface in executable code --------------------
