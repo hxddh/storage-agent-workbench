@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ProvidersView } from "../views/ProvidersView";
 import { useI18n, LANGS, type Lang } from "../i18n";
 import { useTheme, type Theme } from "../theme";
-import { getAutonomy, getVaultStatus, setAutonomy, type AutonomyPolicy } from "../api";
+import { getVaultStatus } from "../api";
 
 /**
  * Right slide-over for setup. Embeds the existing model + cloud provider CRUD
@@ -85,8 +85,6 @@ export function SettingsDrawer(
             </div>
           </section>
 
-          <AutonomySection />
-
           <ProvidersView />
           <div className="border-t border-edge px-8 py-5 text-xs leading-relaxed text-gray-500">
             <div className="mb-1 font-medium text-gray-400">{t("settings.safetyTitle")}</div>
@@ -95,55 +93,6 @@ export function SettingsDrawer(
         </div>
       </div>
     </div>
-  );
-}
-
-/** Agent autonomy policy selector (advisory / assisted / autonomous read-only). */
-function AutonomySection() {
-  const { t } = useI18n();
-  const [policy, setPolicy] = useState<AutonomyPolicy | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    getAutonomy()
-      .then((s) => setPolicy(s.policy))
-      .catch(() => setPolicy("autonomous_readonly"));
-  }, []);
-
-  const options: { value: AutonomyPolicy; label: string }[] = [
-    { value: "assisted", label: t("settings.autonomyAssisted") },
-    { value: "autonomous_readonly", label: t("settings.autonomyAutonomous") },
-  ];
-  const hint: Partial<Record<AutonomyPolicy, string>> = {
-    assisted: t("settings.autonomyAssistedHint"),
-    autonomous_readonly: t("settings.autonomyAutonomousHint"),
-  };
-
-  async function choose(p: AutonomyPolicy) {
-    if (p === policy || saving) return;
-    const prev = policy;
-    setPolicy(p);
-    setSaving(true);
-    try {
-      await setAutonomy(p);
-    } catch {
-      setPolicy(prev); // revert on failure
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <section className="border-b border-edge px-8 py-5">
-      <div className="mb-1 text-sm font-semibold text-gray-100">{t("settings.autonomy")}</div>
-      <p className="mb-4 text-xs leading-relaxed text-gray-500">{t("settings.autonomyHint")}</p>
-      <Segmented
-        options={options}
-        value={policy ?? "autonomous_readonly"}
-        onChange={(v) => void choose(v as AutonomyPolicy)}
-      />
-      {policy && <p className="mt-2 text-xs text-gray-400">{hint[policy]}</p>}
-    </section>
   );
 }
 

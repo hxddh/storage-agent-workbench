@@ -25,7 +25,6 @@ from typing import Any
 from ..security.redaction import redact_text
 from ..skills import context as skill_context
 from ..skills import contract as skill_contract
-from . import autonomy
 from . import guardrails
 from . import session_action_tools
 from . import session_analysis_tools
@@ -156,35 +155,37 @@ INSTRUCTIONS = (
     f"to you to carry out conversationally with your own tools."
 )
 
-# Appended when the autonomy policy lets the agent EXECUTE read-only runs itself.
+# Always part of the instructions — the agent is a fully autonomous read-only
+# investigator (there is no autonomy toggle). It must, however, act on the user's
+# ACTUAL request and not wander off into unrelated cloud probes.
 _EXECUTION_CLAUSE = (
-    "\n\nAUTONOMY: investigate and act on your own — do not wait to be asked.\n"
-    "DIAGNOSE ADAPTIVELY with YOUR OWN read-only tools; do NOT fire a canned "
-    "pipeline. For a connectivity / credentials / 403 / SignatureDoesNotMatch / "
-    "addressing problem: call test_credentials first; then, based on what it "
-    "returns, BRANCH — test_addressing_style (path vs virtual-host / "
-    "SignatureDoesNotMatch), inspect_endpoint_tls (TLS/handshake/cert), "
-    "head_bucket + list_objects (reachability / permissions / region), "
-    "test_range_get (range/CDN). Reason about each result, chain the next probe "
-    "it implies, and explain the ROOT CAUSE — never just report a list of "
-    "pass/fail checks. If a probe shows credentials aren't configured or are "
-    "rejected, say so plainly and tell the user exactly what to fix.\n"
-    "You may also EXECUTE the structured read-only runs when they're the right "
-    "tool — run_bucket_config_review(provider_id, bucket) for a full config "
-    "report, run_account_discovery(provider_id) to enumerate the account — and "
-    "fold their findings into your answer. (A deterministic `diagnostic` REPORT "
-    "run exists too, but only propose it when the user wants a saved/auditable "
-    "artifact — your live tools are how you actually diagnose.) Expensive/data-"
-    "moving work (dataset analysis, evidence import) is still NOT auto-run — "
-    "propose those as next steps."
+    "\n\nAUTONOMY: investigate and act on your own with your read-only tools — do "
+    "not wait to be asked, and do not narrate a plan before acting.\n"
+    "STAY ON THE USER'S REQUEST. Choose tools by what they actually asked:\n"
+    "- If they attached/uploaded a FILE (or refer to 'this log/file'), analyze "
+    "THAT file with list_uploaded_files → analyze_uploaded_file and answer from "
+    "it. Do NOT call test_credentials, survey_account, list_buckets or any cloud "
+    "tool for a local-file request — the file is local; the cloud is irrelevant "
+    "unless the user explicitly brings it in.\n"
+    "- For a connectivity / credentials / 403 / SignatureDoesNotMatch / addressing "
+    "problem: DIAGNOSE ADAPTIVELY — test_credentials first, then BRANCH on the "
+    "result to test_addressing_style / inspect_endpoint_tls / head_bucket + "
+    "list_objects / test_range_get, reason about each, and explain the ROOT CAUSE "
+    "(never a bare pass/fail list). If credentials aren't configured, say so and "
+    "tell the user exactly what to fix.\n"
+    "- When the request is genuinely about the account or a bucket's "
+    "configuration, you may run the read-only survey_account(provider_id) or "
+    "review_bucket_config(provider_id, bucket) and fold their findings into your "
+    "answer. Use them only when relevant — never reflexively.\n"
+    "Data-moving work (evidence import/download, large scans) is never auto-run — "
+    "propose it as a next step. A deterministic saved REPORT is only created when "
+    "the user explicitly wants an auditable artifact."
 )
 
 
-def instructions_for(policy: str) -> str:
-    """Base instructions, plus the execution clause when the policy allows it."""
-    if autonomy.executes_inline(policy):
-        return INSTRUCTIONS + _EXECUTION_CLAUSE
-    return INSTRUCTIONS
+def instructions_for() -> str:
+    """The full session-agent instructions (no autonomy toggle)."""
+    return INSTRUCTIONS + _EXECUTION_CLAUSE
 
 
 def _build_agent_memory_block(memory: list[dict[str, Any]] | None) -> dict[str, list[Any]]:
@@ -278,13 +279,12 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str) -> A
 
 
 def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, Any]] | None,
-                 policy: str, session_id: str | None, turn_id: str | None = None) -> list[Any]:
-    """Read-only investigator tools, plus inline run-executors when the policy
-    allows the agent to act on its own."""
+                 session_id: str | None, turn_id: str | None = None) -> list[Any]:
+    """The agent's full read-only toolset (no autonomy toggle — always available)."""
     if conn is None:
         return []
     tools = session_tools.build(conn, function_tool, activity)
-    tools += session_action_tools.build(conn, function_tool, policy, activity, session_id, turn_id)
+    tools += session_action_tools.build(conn, function_tool, activity, session_id, turn_id)
     # Working-memory tools are always available (recording is cloud-read-only).
     tools += session_memory_tools.build(conn, function_tool, session_id, activity)
     # Uploaded-file analysis is always available (local, read-only, sanitized) so
@@ -305,8 +305,7 @@ def _sdk_session_loop(spec: dict[str, Any]) -> Any:
     conn = spec.get("conn")
     try:
         tools = _build_tools(conn, function_tool, spec.get("activity"),
-                             spec.get("policy", autonomy.DEFAULT_POLICY), spec.get("session_id"),
-                             spec.get("turn_id"))
+                             spec.get("session_id"), spec.get("turn_id"))
         agent = _make_agent(creds, tools, spec["instructions"])
         result = Runner.run_sync(agent, spec["prompt"], max_turns=_MAX_TURNS)
         return getattr(result, "final_output", "")
@@ -390,25 +389,24 @@ def answer(
     user_message: str,
     creds: dict[str, Any],
     conn: Any = None,
-    policy: str = autonomy.DEFAULT_POLICY,
     turn_id: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Skill-grounded, sanitized session answer contract. Raises AgentUnavailable.
 
     Returns {answer, skills_used, evidence_used, evidence_gaps,
-    next_action_proposals} — all sanitized + CoT-stripped; proposals coerced
-    through the Phase 17 allowlist. StorageOps skills are injected as guidance
-    only (tools/scripts disabled). ``policy`` selects how autonomous the agent
-    is (see ``autonomy``); under autonomous_readonly it may execute read-only runs itself.
+    next_action_proposals} — all sanitized + CoT-stripped; proposals coerced +
+    forbidden-token-filtered. StorageOps skills are injected as guidance only
+    (tools/scripts disabled). The agent is a fully autonomous read-only
+    investigator (no autonomy toggle).
     """
     prompt, skill_names, context = _build_prompt(session, summary, recent_messages, user_message,
                                                  conn, attachments)
 
     activity: list[dict[str, Any]] = []
-    spec = {"context": context, "prompt": prompt, "instructions": instructions_for(policy),
+    spec = {"context": context, "prompt": prompt, "instructions": instructions_for(),
             "creds": creds, "conn": conn, "activity": activity,
-            "policy": policy, "session_id": session.get("id"), "turn_id": turn_id}
+            "session_id": session.get("id"), "turn_id": turn_id}
     raw = SESSION_LOOP(spec)
     return _finalize_contract(raw, skill_names, activity)
 
@@ -422,15 +420,13 @@ def build_stream(
     user_message: str,
     creds: dict[str, Any],
     conn: Any,
-    policy: str = autonomy.DEFAULT_POLICY,
     turn_id: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
 ):
     """Set up a streaming run. Returns (result_streaming, activity, skill_names).
 
     Raises AgentUnavailable if the SDK/key is unavailable — caller should then
-    fall back to the blocking endpoint. ``policy`` selects how autonomous the
-    agent is (under autonomous_readonly it may execute read-only runs itself).
+    fall back to the blocking endpoint.
     """
     try:
         import openai  # noqa: F401
@@ -441,11 +437,11 @@ def build_stream(
     prompt, skill_names, _context = _build_prompt(session, summary, recent_messages, user_message,
                                                   conn, attachments)
     activity: list[dict[str, Any]] = []
-    tools = _build_tools(conn, function_tool, activity, policy, session.get("id"), turn_id)
+    tools = _build_tools(conn, function_tool, activity, session.get("id"), turn_id)
     # _make_agent disables parallel tool calls (chat-completions providers like
     # DeepSeek can emit malformed follow-ups with streaming + parallel calls) and
     # uses a per-run client so concurrent sessions don't race on SDK globals.
-    agent = _make_agent(creds, tools, instructions_for(policy))
+    agent = _make_agent(creds, tools, instructions_for())
     result = Runner.run_streamed(agent, prompt, max_turns=_MAX_TURNS)
     return result, activity, skill_names
 

@@ -172,7 +172,13 @@ export function Thread({
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
     for (const m of detail?.messages ?? []) out.push({ kind: "message", ts: m.created_at, role: m.role, content: m.content, id: m.id, toolActivity: m.tool_activity });
-    for (const r of detail?.runs ?? []) out.push({ kind: "run", ts: r.created_at, data: r });
+    // Agent-initiated surveys/reviews (origin 'agent') are internal compute the
+    // agent narrates inline — never a standalone run card. Only explicit
+    // user-requested auditable reports surface as cards.
+    for (const r of detail?.runs ?? []) {
+      if (r.origin === "agent") continue;
+      out.push({ kind: "run", ts: r.created_at, data: r });
+    }
     for (const c of triage) out.push({ kind: "triage", ts: c.created_at || "", data: c });
     return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   }, [detail, triage]);

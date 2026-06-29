@@ -122,13 +122,6 @@ const en: Dict = {
   "settings.themeDark": "Dark",
   "settings.themeLight": "Light",
   "settings.language": "Language",
-  "settings.autonomy": "Agent autonomy",
-  "settings.autonomyHint":
-    "How much the Agent does on its own. Read-only investigation always runs automatically; this controls whether the Agent also runs read-only checks (diagnostics, config review, account discovery) itself or proposes them for you to confirm. Data-moving work always needs your confirmation.",
-  "settings.autonomyAssisted": "Assisted",
-  "settings.autonomyAutonomous": "Autonomous",
-  "settings.autonomyAssistedHint": "Proposes read-only runs for you to confirm.",
-  "settings.autonomyAutonomousHint": "Runs read-only checks itself; confirms data-moving work.",
   "settings.vaultUnreadable":
     "The secret vault on this device couldn't be opened, so saved keys aren't available. The original was preserved next to it as secrets.enc.unreadable (restore your secrets.key to recover it). Re-enter your keys below to continue.",
   "settings.safetyTitle": "Safety",
@@ -308,13 +301,6 @@ const zh: Dict = {
   "settings.themeDark": "深色",
   "settings.themeLight": "浅色",
   "settings.language": "语言",
-  "settings.autonomy": "Agent 自主度",
-  "settings.autonomyHint":
-    "Agent 可以自行做多少事。只读调查始终自动执行；此项控制 Agent 是自行执行只读运行（诊断、配置审查、账号梳理），还是先给出建议由你确认。涉及搬运数据的操作始终需要你确认。",
-  "settings.autonomyAssisted": "协助",
-  "settings.autonomyAutonomous": "自主",
-  "settings.autonomyAssistedHint": "提出只读运行的建议，由你确认。",
-  "settings.autonomyAutonomousHint": "自行执行只读检查；搬运数据的操作需确认。",
   "settings.vaultUnreadable":
     "本机的密钥保险库无法打开，已保存的密钥暂不可用。原文件已备份为 secrets.enc.unreadable（恢复你的 secrets.key 可找回）。请在下方重新填写密钥以继续。",
   "settings.safetyTitle": "安全",

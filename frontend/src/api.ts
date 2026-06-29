@@ -408,17 +408,7 @@ export async function uploadSessionDataset(
 
 export const listDatasets = () => request<Dataset[]>("/datasets");
 
-// --- Settings: agent autonomy policy ---
-
-export type AutonomyPolicy = "advisory" | "assisted" | "autonomous_readonly";
-
-export interface AutonomySetting {
-  policy: AutonomyPolicy;
-  policies: AutonomyPolicy[];
-  default: AutonomyPolicy;
-}
-
-export const getAutonomy = () => request<AutonomySetting>("/settings/autonomy");
+// --- Settings: secret-vault status ---
 
 export interface VaultStatus {
   unreadable: boolean;
@@ -426,9 +416,3 @@ export interface VaultStatus {
 }
 
 export const getVaultStatus = () => request<VaultStatus>("/settings/secret-vault");
-
-export const setAutonomy = (policy: AutonomyPolicy) =>
-  request<AutonomySetting>("/settings/autonomy", {
-    method: "PUT",
-    body: JSON.stringify({ policy }),
-  });

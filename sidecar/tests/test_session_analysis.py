@@ -12,7 +12,6 @@ import sqlite3
 
 from app import config, run_service
 from app.agent_runtime import session_agent, session_analysis_tools
-from app.agent_runtime import autonomy  # noqa: F401 (kept parallel to other suites)
 
 ACCESS_LOG_TEXT = (
     '2026-06-25T10:00:00Z bucket-alpha GET /a/p1.parquet 206 1048576 42 ms '

@@ -1,24 +1,21 @@
-"""Action tools the in-chat agent can EXECUTE itself (Phase 1 autonomy).
+"""Read-only SURVEY/REVIEW tools the in-chat agent runs itself.
 
-These close the old proposal→execution gap: instead of only *proposing* a
-read-only run for the user to re-drive through a form, the agent — when the
-autonomy policy allows inline execution — can run it and fold the findings into
-its answer. Only SAFE_READONLY *structured* runs live here
-(bucket_config_review, account_discovery); expensive/data-moving work (analysis,
-evidence import) is never auto-run and stays a proposal. Connectivity/credential/
+These run the heavier deterministic compute — an account survey (enumerate
+buckets + detect evidence sources) and a bucket config review — that would be
+clumsy to reproduce probe-by-probe. They exist so the agent can fold a complete
+account/config picture into its answer. There is no autonomy toggle: they are
+always available because they are read-only and bounded. Connectivity/credential/
 addressing diagnosis is deliberately NOT here — the agent does that adaptively
-with its own read-only session tools rather than firing a canned pipeline.
+with its own read-only session tools.
 
-Every run created here is:
-- a REAL, persisted, audited run (identical to a manual one) bound to the
-  session, so it appears in the timeline and the run detail;
-- read-only and deterministic — it uses the same whitelisted read-only S3 path
-  as the manual run; no new capability and nothing mutating is reachable;
-- bounded in what it returns to the model: only the run's already-sanitized
-  ``final_summary`` plus compact counts — never raw rows, keys, or bodies.
-
-The tools are only added to the agent's toolset when ``autonomy.executes_inline``
-is true for the active policy (see ``session_tools`` / ``session_agent``).
+Each survey/review:
+- runs the same whitelisted read-only path as a manual run and persists an
+  account profile (so the evidence-import and summary flows keep working);
+- is recorded with ``origin='agent'`` and is NEVER surfaced as a structured run
+  card in the thread — the agent narrates the result in its own words;
+- returns only the run's sanitized ``final_summary`` + compact counts to the
+  model — never raw rows, keys, or bodies;
+- nothing here is data-moving or mutating.
 """
 
 from __future__ import annotations
@@ -74,7 +71,7 @@ def _execute_run(conn: sqlite3.Connection, body: RunCreate,
         existing = turn_guard.get_run(turn_id, dedup_key)
         if existing:
             return existing
-    run_id = runs_repo.create(conn, body, status="pending")
+    run_id = runs_repo.create(conn, body, status="pending", origin="agent")
     if body.session_id:
         from ..repositories import sessions as sessions_repo
         sessions_repo.link_run(conn, body.session_id, run_id,
@@ -123,20 +120,21 @@ def _run_result(conn: sqlite3.Connection, run_id: str) -> dict[str, Any]:
 def build(
     conn: sqlite3.Connection,
     function_tool: Callable,
-    policy: str,
     activity: list[dict[str, Any]] | None = None,
     session_id: str | None = None,
     turn_id: str | None = None,
 ) -> list[Any]:
-    """Build the inline-execution tool set. Empty unless the policy allows it.
+    """Build the agent's read-only survey/review tools (always available).
 
-    ``turn_id`` (the client turn id) makes inline runs idempotent across a
+    These run the deterministic engine and persist an account profile (so the
+    evidence-import and summary flows keep working), but the run is recorded with
+    ``origin='agent'`` and is NEVER surfaced as a structured run card in the
+    thread — the agent narrates the result. They are read-only and bounded; there
+    is no autonomy toggle and nothing data-moving here.
+
+    ``turn_id`` (the client turn id) makes a survey/review idempotent across a
     streaming attempt and its blocking fallback (see ``turn_guard``).
     """
-    from . import autonomy
-    if not autonomy.executes_inline(policy):
-        return []
-
     def provider(provider_id: str):
         return cloud_repo.get(conn, provider_id)
 
@@ -151,15 +149,16 @@ def build(
         if activity is not None:
             activity.append({"tool": tool, "target": target[:80], "result": result[:80]})
 
-    # NOTE: there is intentionally no run_diagnostic tool here. The agent diagnoses
-    # connectivity/credentials/addressing ADAPTIVELY with its own read-only tools
-    # (session_tools) — test_credentials, then branch to test_addressing_style /
-    # inspect_endpoint_tls / head_bucket / list_objects / test_range_get, reasoning
-    # about each result — instead of firing a canned deterministic pipeline.
+    # NOTE: connectivity/credential/addressing diagnosis is NOT a tool here — the
+    # agent does that adaptively with its own read-only session_tools probes
+    # (test_credentials → test_addressing_style / inspect_endpoint_tls /
+    # head_bucket / list_objects / test_range_get). These two tools exist only to
+    # run the heavier deterministic SURVEY/REVIEW compute (which persists a profile
+    # for evidence/summary) without surfacing a run card.
 
     @function_tool
-    def run_bucket_config_review(provider_id: str, bucket: str) -> str:
-        """Execute a read-only bucket configuration review (security, lifecycle, observability, cost, performance) and return its findings. Actually RUNS and records the run. Args: provider_id, bucket."""
+    def review_bucket_config(provider_id: str, bucket: str) -> str:
+        """Read-only review of one bucket's configuration (security, lifecycle, observability, cost, performance). Runs the deterministic config-review engine and returns its findings for you to interpret and narrate. Does NOT surface a separate card — fold the findings into your own answer. Use only when the user's request is about this bucket's configuration. Args: provider_id, bucket."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Use a configured provider.")
@@ -169,12 +168,12 @@ def build(
                          user_prompt=_DEFAULT_PROMPTS["bucket_config_review"], session_id=session_id)
         run_id = _execute_run(conn, body, turn_id, f"bucket_config_review:{provider_id}:{bucket}")
         result = _run_result(conn, run_id)
-        note("run_bucket_config_review", bucket, result["status"])
+        note("review_bucket_config", bucket, result["status"])
         return json.dumps(result)
 
     @function_tool
-    def run_account_discovery(provider_id: str) -> str:
-        """Execute a read-only account discovery run: enumerate buckets and detect evidence sources (access logs, inventory) across the account. Actually RUNS and records the run; returns a compact summary (counts + final summary), not raw key lists. Args: provider_id."""
+    def survey_account(provider_id: str) -> str:
+        """Read-only account survey: enumerate visible buckets and detect evidence sources (access logs, inventory) across the account, persisting a profile the evidence-import flow can use. Returns a compact summary (counts + summary), not raw key lists, for you to narrate. Does NOT surface a separate card. Use only when the user's request is about the account/buckets — NOT for local-file analysis or unrelated questions. Args: provider_id."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Use a configured provider.")
@@ -186,10 +185,10 @@ def build(
         if profile:
             result["bucket_count"] = profile.get("bucket_count")
             result["visible_count"] = profile.get("visible_count")
-        note("run_account_discovery", provider_name(provider_id), result["status"])
+        note("survey_account", provider_name(provider_id), result["status"])
         return json.dumps(result)
 
-    return [run_bucket_config_review, run_account_discovery]
+    return [review_bucket_config, survey_account]
 
 
 __all__ = ["build"]

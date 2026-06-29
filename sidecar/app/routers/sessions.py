@@ -36,7 +36,6 @@ from ..models.schemas import (
 from ..repositories import runs as runs_repo
 from ..repositories import session_datasets as sds_repo
 from ..repositories import sessions as repo
-from ..repositories import settings as settings_repo
 from ..security.redaction import redact_text
 from ..sessions import next_actions, session_report, summary_builder
 
@@ -281,9 +280,8 @@ def post_session_message(
 
     try:
         creds = get_model_credentials(conn)  # raises AgentUnavailable if missing
-        policy = settings_repo.get_autonomy_policy(conn)
         contract = session_agent.answer(dict(row), summary, recent, body.content, creds, conn,
-                                        policy, body.turn_id, attachments=attachments)
+                                        body.turn_id, attachments=attachments)
     except AgentUnavailable as exc:
         # Clean failure: nothing is persisted — the user keeps their text and sees
         # the error (matches the streaming path's semantics).
@@ -342,7 +340,6 @@ async def post_session_message_stream(
         creds = get_model_credentials(conn)
     except AgentUnavailable as exc:
         raise HTTPException(status_code=422, detail=redact_text(str(exc)))
-    policy = settings_repo.get_autonomy_policy(conn)
 
     # Run the whole agent turn (LLM streaming + any sync tool calls) on a
     # DEDICATED WORKER THREAD with its own event loop, and bridge its events to
@@ -364,7 +361,7 @@ async def post_session_message_stream(
 
         async def drive() -> None:
             result, activity, skill_names = session_agent.build_stream(
-                dict(row), summary, recent, body.content, creds, conn, policy, body.turn_id,
+                dict(row), summary, recent, body.content, creds, conn, body.turn_id,
                 attachments=attachments)
             async for kind, data in session_agent.stream_events_for(result, activity, skill_names):
                 if kind == "final":

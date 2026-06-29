@@ -285,10 +285,10 @@ def test_no_storageops_tooling_in_executable_code():
 
 def test_migrations_are_sequential_and_capped():
     from app import migrations
-    # Migration 14 adds session_datasets (agent-native uploaded-file analysis).
+    # Migration 15 adds runs.origin (agent-initiated runs hidden from the thread).
     versions = [v for v, _n, _s in migrations.MIGRATIONS]
     assert versions == list(range(1, len(versions) + 1))  # 1..N, no gaps/dupes
-    assert max(versions) == 14
+    assert max(versions) == 15
 
 
 def test_no_public_skills_api(client):

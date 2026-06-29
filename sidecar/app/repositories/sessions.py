@@ -204,7 +204,7 @@ def link_run(conn: sqlite3.Connection, session_id: str, run_id: str, role: str |
 def list_runs(conn: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT sr.run_id, sr.role, sr.created_at AS linked_at, "
-        "       r.run_type, r.status, r.title, r.final_summary "
+        "       r.run_type, r.status, r.title, r.final_summary, r.origin "
         "FROM session_runs sr JOIN runs r ON r.id = sr.run_id "
         "WHERE sr.session_id = ? ORDER BY sr.rowid",
         (session_id,),
@@ -213,7 +213,7 @@ def list_runs(conn: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]
         {
             "run_id": r["run_id"], "role": r["role"], "run_type": r["run_type"],
             "status": r["status"], "title": r["title"], "final_summary": r["final_summary"],
-            "created_at": r["linked_at"],
+            "origin": r["origin"], "created_at": r["linked_at"],
         }
         for r in rows
     ]
