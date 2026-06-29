@@ -173,7 +173,7 @@ def preview_action(session_id: str, body: ActionRequest, conn: sqlite3.Connectio
         raise HTTPException(status_code=404, detail="session not found")
     proposal = next_actions.normalize_proposal(body.proposal)
     if proposal is None:
-        raise HTTPException(status_code=422, detail="proposal action_type is not in the allowlist")
+        raise HTTPException(status_code=422, detail="proposal action_type is missing or carries a forbidden token")
     out = next_actions.preview(conn, dict(row), proposal)
     audit.record(conn, "next_action_previewed",
                  {"session_id": session_id, "action_type": proposal["action_type"]}, run_id=None)
@@ -193,7 +193,7 @@ def prepare_action(session_id: str, body: ActionRequest, conn: sqlite3.Connectio
         raise HTTPException(status_code=404, detail="session not found")
     proposal = next_actions.normalize_proposal(body.proposal)
     if proposal is None:
-        raise HTTPException(status_code=422, detail="proposal action_type is not in the allowlist")
+        raise HTTPException(status_code=422, detail="proposal action_type is missing or carries a forbidden token")
     out = next_actions.prepare(conn, dict(row), proposal)
     audit.record(conn, "next_action_prepared",
                  {"session_id": session_id, "action_type": proposal["action_type"], "status": out["status"]},

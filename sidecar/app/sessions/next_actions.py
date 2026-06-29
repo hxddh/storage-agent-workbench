@@ -20,8 +20,15 @@ from ..repositories import cloud_providers as cloud_repo
 from ..repositories import sessions as sessions_repo
 from ..security.redaction import redact_text
 
-# The ONLY action types a proposal may carry. Anything else is dropped/downgraded.
-ALLOWED_ACTION_TYPES = {
+# Action types that have SPECIAL, structured handling in `_resolve` (a confirmed
+# data-moving import flow, the session report, a context question, or a known
+# run). These are NOT a cap on what the agent may propose — any other concrete
+# next step is accepted too (see normalize_proposal) and, when clicked, is simply
+# handed back to the agent conversationally. The set below only decides which
+# proposals get a purpose-built UI affordance vs. a "ask the agent to do it" path.
+# The security-sensitive ones (plan_*_import) MUST stay here so they route through
+# the confirm-before-download planner rather than a free-form prompt.
+SPECIAL_ACTION_TYPES = {
     "run_account_discovery",
     "run_bucket_config_review",
     "run_diagnostic",
@@ -32,6 +39,31 @@ ALLOWED_ACTION_TYPES = {
     "generate_session_report",
     "ask_user_for_context",
 }
+# Back-compat alias (older imports/tests referenced this name).
+ALLOWED_ACTION_TYPES = SPECIAL_ACTION_TYPES
+
+# A free-form action_type must still be a safe, bounded slug.
+_MAX_ACTION_TYPE_LEN = 64
+
+
+def _safe_action_type(value: str) -> str | None:
+    """Accept any concrete next-step label, sanitized to a bounded slug. The
+    agent is no longer capped to a fixed enum — an unrecognized type just routes
+    to the conversational path (the agent does it with its own tools).
+
+    Defense in depth: a label that carries a forbidden/destructive token
+    (shell, exec, sql, delete-object, put-bucket-policy, …) is still rejected,
+    even though no destructive capability exists to execute it — a proposal must
+    never even *suggest* a mutating/dangerous operation.
+    """
+    from ..agent_runtime import guardrails
+    slug = "".join(c for c in str(value).strip().lower() if c.isalnum() or c in ("_", "-"))
+    slug = slug[:_MAX_ACTION_TYPE_LEN]
+    if not slug:
+        return None
+    if guardrails.is_forbidden_tool(slug):
+        return None
+    return slug
 
 # action_type -> the run_type a "run_*" proposal would create.
 _RUN_TYPE = {
@@ -52,8 +84,8 @@ def normalize_proposal(raw: dict[str, Any]) -> dict[str, Any] | None:
     """
     if not isinstance(raw, dict):
         return None
-    action_type = str(raw.get("action_type", "")).strip()
-    if action_type not in ALLOWED_ACTION_TYPES:
+    action_type = _safe_action_type(raw.get("action_type", ""))
+    if action_type is None:
         return None
     confidence = str(raw.get("confidence", "medium")).strip().lower()
     if confidence not in _CONFIDENCE:

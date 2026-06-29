@@ -148,7 +148,12 @@ INSTRUCTIONS = (
     "All investigator tools are read-only. For anything that downloads data from "
     "the cloud or runs a large scan, propose it as a next step (do not imply you "
     "ran it). Follow all safety_rules.\n\n"
-    f"Next-action types you may propose (for confirmed runs only): {_PROPOSAL_ACTION_TYPES}."
+    f"When you propose a concrete next step, write it in your own words — you are "
+    f"NOT limited to a fixed menu. These well-known types get a one-click "
+    f"affordance when you use them: {_PROPOSAL_ACTION_TYPES}; the data-moving "
+    f"imports (plan_inventory_import / plan_access_log_import) always route "
+    f"through a confirm-before-download planner. Any other proposal is handed back "
+    f"to you to carry out conversationally with your own tools."
 )
 
 # Appended when the autonomy policy lets the agent EXECUTE read-only runs itself.

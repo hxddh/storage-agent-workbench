@@ -195,13 +195,13 @@ def test_agent_contract_minimal_shape_and_coercion():
         '{"answer": "Region mismatch is most likely.", "skills_used": ["storageops-s3-protocol-compatibility", "made-up-skill"],'
         ' "evidence_used": ["triage parsed signals"], "evidence_gaps": ["client region config"],'
         ' "next_action_proposals": [{"title": "Run a diagnostic", "action_type": "run_diagnostic"},'
-        ' {"title": "rm -rf", "action_type": "delete_everything"}]}\n```'
+        ' {"title": "rm -rf", "action_type": "exec_shell_wipe"}]}\n```'
     )
     out = skill_contract.parse_agent_contract(raw, allowed_skill_names=["storageops-s3-protocol-compatibility"])
     assert set(out) == {"answer", "skills_used", "evidence_used", "evidence_gaps", "next_action_proposals"}
     assert "secret" not in out["answer"]  # CoT stripped
     assert out["skills_used"] == ["storageops-s3-protocol-compatibility"]  # unknown dropped
-    assert len(out["next_action_proposals"]) == 1  # invalid action_type dropped
+    assert len(out["next_action_proposals"]) == 1  # forbidden-token action_type dropped
     assert out["next_action_proposals"][0]["requires_confirmation"] is True
 
 
