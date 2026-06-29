@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import type { AccountBucket, AccountProfile } from "../types";
-import { EvidenceImportDialog } from "./EvidenceImportDialog";
 
 type Filter = "all" | "has_inventory" | "has_logging" | "issues" | "unsupported";
 
@@ -38,13 +37,10 @@ function Cell({ status }: { status: string | null | undefined }) {
 
 export function AccountProfilePanel({
   profile,
-  onOpenRun,
 }: {
   profile: AccountProfile;
-  onOpenRun?: (runId: string) => void;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
-  const [importing, setImporting] = useState<{ bucket: string; sourceType: "inventory" | "access_log" } | null>(null);
 
   const buckets = useMemo(() => {
     const list = profile.buckets ?? [];
@@ -113,7 +109,6 @@ export function AccountProfilePanel({
               <th className="px-2 py-1">Lifecycle</th>
               <th className="px-2 py-1">Public block</th>
               <th className="px-2 py-1">Evidence</th>
-              <th className="px-2 py-1">Import</th>
             </tr>
           </thead>
           <tbody>
@@ -133,53 +128,17 @@ export function AccountProfilePanel({
                   <td className="px-2 py-1"><Cell status={b.lifecycle_status} /></td>
                   <td className="px-2 py-1"><Cell status={b.public_access_block_status} /></td>
                   <td className="px-2 py-1 text-gray-400">{evidence.length ? evidence.join(", ") : "—"}</td>
-                  <td className="px-2 py-1">
-                    <div className="flex gap-1">
-                      {hasEvidence(b, "inventory") && (
-                        <button
-                          className="rounded border border-edge px-1.5 py-0.5 text-[10px] text-gray-300 hover:border-violet-700 hover:text-violet-300"
-                          onClick={() => setImporting({ bucket: b.bucket_name, sourceType: "inventory" })}
-                        >
-                          Inv
-                        </button>
-                      )}
-                      {hasEvidence(b, "server_access_logging") && (
-                        <button
-                          className="rounded border border-edge px-1.5 py-0.5 text-[10px] text-gray-300 hover:border-violet-700 hover:text-violet-300"
-                          onClick={() => setImporting({ bucket: b.bucket_name, sourceType: "access_log" })}
-                        >
-                          Logs
-                        </button>
-                      )}
-                      {!hasEvidence(b, "inventory") && !hasEvidence(b, "server_access_logging") && (
-                        <span className="text-gray-600">—</span>
-                      )}
-                    </div>
-                  </td>
                 </tr>
               );
             })}
             {buckets.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-2 py-2 text-gray-600">No buckets match this filter.</td>
+                <td colSpan={9} className="px-2 py-2 text-gray-600">No buckets match this filter.</td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
-
-      {importing && (
-        <EvidenceImportDialog
-          accountRunId={profile.run_id}
-          bucketName={importing.bucket}
-          sourceType={importing.sourceType}
-          onClose={() => setImporting(null)}
-          onImported={(runId) => {
-            setImporting(null);
-            onOpenRun?.(runId);
-          }}
-        />
-      )}
     </div>
   );
 }
