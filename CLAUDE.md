@@ -31,7 +31,13 @@ oversight:
    the agent investigates adaptively with its own read-only tools
    (`test_credentials` → addressing/TLS/head-bucket/list/range) and explains the
    root cause; the deterministic `diagnostic` run remains available as an
-   explicit, auditable report. This is where "agentic" behavior lives.
+   explicit, auditable report. Likewise, a file the user **attaches in the
+   conversation** is analyzed by the agent itself: it is stored against the
+   session (`POST /sessions/{id}/datasets/upload`) and the agent inspects it with
+   read-only `list_uploaded_files` / `analyze_uploaded_file` tools
+   (`agent_runtime/session_analysis_tools.py`, same DuckDB engine, sanitized
+   aggregates only) and answers conversationally — it does NOT spawn a fixed
+   deterministic analysis run. This is where "agentic" behavior lives.
 
    Two policies, security tiers enforced *below* the setting regardless:
    `assisted` proposes read-only runs for the user to confirm;
@@ -40,27 +46,34 @@ oversight:
    scans) and any MUTATING op are never auto-run under either policy — they stay
    confirmed proposals. There is no write/destructive tool in the product at all.
 
-2. **Structured Analysis Runs** (`runs/`, dispatched by `run_service.py`). These
-   exist for reproducible, auditable, report-producing work and come in three
-   forms:
-   - **deterministic** (rule-based, no LLM) — e.g. `diagnostic`, `account_discovery`;
+2. **Deterministic compute layer** (`runs/`, dispatched by `run_service.py`) —
+   the agent-invoked **security/reproducibility floor**, NOT a user-facing fixed
+   pipeline. The conversational agent (surface 1) is the sole driver: no UI path
+   creates a run, and the executors no longer publish a canned step "plan" — they
+   expose only their real tool trace, findings, and summary. This layer survives
+   for three reasons, all of them safety/altitude choices rather than ossified
+   flows:
+   - **deterministic engines** (rule-based, no LLM) compute heavy aggregates so
+     the model never touches raw rows — e.g. the DuckDB analysis behind the
+     agent's `analyze_uploaded_file` tool, `diagnostic`, `account_discovery`;
    - **agent-planner** (`agent_service.run_agent`, `planner_mode="agent"`) — a
      controlled tool-calling LLM over the same whitelist (API-reachable);
    - **interpretation narrators** (`analysis_agent`, `error_triage/triage_agent`)
-     — the deterministic engine (DuckDB / parser) computes first, then the LLM
-     writes the narrative over sanitized aggregates. The analysis narrator may
-     also **drill down** with two bounded, read-only aggregate tools over the
-     already-local DuckDB dataset (`analysis/drilldown.py`: `aggregate_by`,
-     `count_where`) so it can investigate the metrics rather than being frozen to
-     one view. Triage has no local dataset, so it stays purely interpretive.
+     — the deterministic engine computes first, then the LLM writes the narrative
+     over sanitized aggregates. The analysis narrator may **drill down** with two
+     bounded, read-only aggregate tools over the local DuckDB dataset
+     (`analysis/drilldown.py`: `aggregate_by`, `count_where`).
 
    The drill-down envelope is enforced in code, not the prompt: only whitelisted
    GROUP BY / COUNT shapes run (dimensions/metrics/fields validated against an
    allow-list, filter values always bound), the connection is read-only, and the
    model still never reaches raw rows, full key lists, arbitrary SQL, or object
-   bodies. The heavy base analysis stays deterministic/reproducible. This is a
-   safety/altitude choice, not a neutered agent — the interactive agentic path is
-   surface (1).
+   bodies. A "run" is now an agent-invoked tool and/or an opt-in **auditable
+   report artifact** — never a reflex the UI fires or a canned plan the agent is
+   marched through. Reproducible runs + the deterministic floor are kept because
+   the non-negotiable security rules require them (no raw rows to the model,
+   bounded scans, confirmed data-moving); they are not a second "surface" the
+   user navigates.
 
 All LLM seams build their model client through `agent_service.build_agent`
 (per-run client; never the SDK process-global).

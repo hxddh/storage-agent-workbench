@@ -37,17 +37,6 @@ def execute_config_review_run(conn: sqlite3.Connection, run_id: str) -> None:
             raise RunError("bucket_config_review requires a provider and bucket.")
         runs_repo.set_status(conn, run_id, "running")
 
-        plan = [
-            "Summarize readable bucket configuration (get_bucket_config_summary).",
-            "Review security posture: policy, CORS, encryption, ACL, public access block.",
-            "Review lifecycle rules and versioning cleanup.",
-            "Review observability: logging, notifications, tagging.",
-            "Review cost-optimization opportunities.",
-            "Profile performance from a bounded object sample (no full scan).",
-            "Generate a local Markdown report.",
-        ]
-        bus.publish(run_id, {"type": "plan", "content": "\n".join(plan)})
-
         all_findings: list[dict[str, str]] = []
 
         def call_and_collect(name: str, raw_input: dict[str, Any], executor) -> dict[str, Any]:

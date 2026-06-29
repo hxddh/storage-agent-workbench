@@ -14,12 +14,13 @@ import asyncio
 import json
 import sqlite3
 import threading
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 
-from .. import audit
+from .. import audit, config
 from ..agent_runtime import session_agent, turn_guard
 from ..agent_runtime.agent_service import AgentUnavailable, get_model_credentials
 from ..db import get_conn
@@ -27,11 +28,13 @@ from ..models.schemas import (
     ActionRequest,
     SessionCreate,
     SessionDetail,
+    SessionDatasetUploadResponse,
     SessionMessageCreate,
     SessionSummary,
     SessionUpdate,
 )
 from ..repositories import runs as runs_repo
+from ..repositories import session_datasets as sds_repo
 from ..repositories import sessions as repo
 from ..repositories import settings as settings_repo
 from ..security.redaction import redact_text
@@ -170,7 +173,7 @@ def preview_action(session_id: str, body: ActionRequest, conn: sqlite3.Connectio
         raise HTTPException(status_code=404, detail="session not found")
     proposal = next_actions.normalize_proposal(body.proposal)
     if proposal is None:
-        raise HTTPException(status_code=422, detail="proposal action_type is not in the allowlist")
+        raise HTTPException(status_code=422, detail="proposal action_type is missing or carries a forbidden token")
     out = next_actions.preview(conn, dict(row), proposal)
     audit.record(conn, "next_action_previewed",
                  {"session_id": session_id, "action_type": proposal["action_type"]}, run_id=None)
@@ -190,7 +193,7 @@ def prepare_action(session_id: str, body: ActionRequest, conn: sqlite3.Connectio
         raise HTTPException(status_code=404, detail="session not found")
     proposal = next_actions.normalize_proposal(body.proposal)
     if proposal is None:
-        raise HTTPException(status_code=422, detail="proposal action_type is not in the allowlist")
+        raise HTTPException(status_code=422, detail="proposal action_type is missing or carries a forbidden token")
     out = next_actions.prepare(conn, dict(row), proposal)
     audit.record(conn, "next_action_prepared",
                  {"session_id": session_id, "action_type": proposal["action_type"], "status": out["status"]},
@@ -208,6 +211,48 @@ def list_session_messages(session_id: str, conn: sqlite3.Connection = Depends(ge
     if repo.get_row(conn, session_id) is None:
         raise HTTPException(status_code=404, detail="session not found")
     return {"session_id": session_id, "messages": repo.list_messages(conn, session_id)}
+
+
+_DATASET_TYPES = {"access_log", "inventory"}
+
+
+def _safe_filename(name: str) -> str:
+    base = Path(name or "upload.dat").name
+    return base or "upload.dat"
+
+
+@router.post("/{session_id}/datasets/upload", response_model=SessionDatasetUploadResponse)
+async def upload_session_dataset(
+    session_id: str,
+    file: UploadFile = File(...),
+    dataset_type: str = Form(...),
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> Any:
+    """Attach a data file (access log / inventory export) to a session. The file
+    is stored locally against the session; the in-chat agent then analyzes it as a
+    tool and answers inline — there is no fixed analysis run. Read-only."""
+    if repo.get_row(conn, session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    if dataset_type not in _DATASET_TYPES:
+        raise HTTPException(status_code=422, detail="dataset_type must be 'access_log' or 'inventory'")
+
+    filename = _safe_filename(file.filename or "upload.dat")
+    raw_dir = config.data_dir() / "sessions" / session_id / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    dest = raw_dir / filename
+    contents = await file.read()
+    dest.write_bytes(contents)
+
+    stored_rel = config.rel_path(dest)
+    dataset_id = sds_repo.create(conn, session_id, dataset_type, filename, stored_rel)
+    audit.record(conn, "session.dataset.upload",
+                 {"session_id": session_id, "dataset_id": dataset_id,
+                  "dataset_type": dataset_type, "bytes": len(contents)}, run_id=None)
+    conn.commit()
+    return SessionDatasetUploadResponse(
+        dataset_id=dataset_id, session_id=session_id, dataset_type=dataset_type,
+        filename=filename, status="uploaded",
+    )
 
 
 @router.post("/{session_id}/messages")
@@ -232,12 +277,13 @@ def post_session_message(
     # thread. answer() takes body.content as the question directly.
     summary = repo.get_summary(conn, session_id) or summary_builder.refresh(conn, session_id)
     recent = repo.list_messages(conn, session_id)
+    attachments = sds_repo.list_pending_for_session(conn, session_id)
 
     try:
         creds = get_model_credentials(conn)  # raises AgentUnavailable if missing
         policy = settings_repo.get_autonomy_policy(conn)
         contract = session_agent.answer(dict(row), summary, recent, body.content, creds, conn,
-                                        policy, body.turn_id)
+                                        policy, body.turn_id, attachments=attachments)
     except AgentUnavailable as exc:
         # Clean failure: nothing is persisted — the user keeps their text and sees
         # the error (matches the streaming path's semantics).
@@ -290,6 +336,7 @@ async def post_session_message_stream(
     # client falls back to POST /messages, the turn isn't double-recorded.
     summary = repo.get_summary(conn, session_id) or summary_builder.refresh(conn, session_id)
     recent = repo.list_messages(conn, session_id)
+    attachments = sds_repo.list_pending_for_session(conn, session_id)
 
     try:
         creds = get_model_credentials(conn)
@@ -317,7 +364,8 @@ async def post_session_message_stream(
 
         async def drive() -> None:
             result, activity, skill_names = session_agent.build_stream(
-                dict(row), summary, recent, body.content, creds, conn, policy, body.turn_id)
+                dict(row), summary, recent, body.content, creds, conn, policy, body.turn_id,
+                attachments=attachments)
             async for kind, data in session_agent.stream_events_for(result, activity, skill_names):
                 if kind == "final":
                     final["data"] = data

@@ -28,6 +28,7 @@ from ..skills import contract as skill_contract
 from . import autonomy
 from . import guardrails
 from . import session_action_tools
+from . import session_analysis_tools
 from . import session_memory_tools
 from . import session_tools
 from .agent_service import AgentUnavailable
@@ -134,10 +135,25 @@ INSTRUCTIONS = (
     "you cannot verify it with a tool, say so explicitly — state it as a "
     "hypothesis with lowered confidence and capture it via note_open_question / "
     "evidence_gaps rather than asserting it as fact.\n"
-    "All investigator tools are read-only. For anything that downloads data or "
-    "runs an analysis/large scan, propose it as a next step (do not imply you "
+    "UPLOADED FILES: when the user attaches a file (you'll see attached_files in "
+    "the context, or they say things like '分析下', 'this log', 'the file I "
+    "uploaded'), analyze it yourself: call list_uploaded_files to find it, then "
+    "analyze_uploaded_file(dataset_id) to compute local aggregates, and answer "
+    "from the result in your own words. Interpret — don't just dump metrics. If "
+    "the file isn't actually a recognized access log or inventory (e.g. a generic "
+    "application log with no HTTP fields → detected_format 'unknown'), say so "
+    "plainly and describe what the lines really contain instead of reporting "
+    "empty/zero HTTP metrics as if they were real. This local analysis is "
+    "read-only and runs without any extra confirmation.\n"
+    "All investigator tools are read-only. For anything that downloads data from "
+    "the cloud or runs a large scan, propose it as a next step (do not imply you "
     "ran it). Follow all safety_rules.\n\n"
-    f"Next-action types you may propose (for confirmed runs only): {_PROPOSAL_ACTION_TYPES}."
+    f"When you propose a concrete next step, write it in your own words — you are "
+    f"NOT limited to a fixed menu. These well-known types get a one-click "
+    f"affordance when you use them: {_PROPOSAL_ACTION_TYPES}; the data-moving "
+    f"imports (plan_inventory_import / plan_access_log_import) always route "
+    f"through a confirm-before-download planner. Any other proposal is handed back "
+    f"to you to carry out conversationally with your own tools."
 )
 
 # Appended when the autonomy policy lets the agent EXECUTE read-only runs itself.
@@ -271,6 +287,9 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
     tools += session_action_tools.build(conn, function_tool, policy, activity, session_id, turn_id)
     # Working-memory tools are always available (recording is cloud-read-only).
     tools += session_memory_tools.build(conn, function_tool, session_id, activity)
+    # Uploaded-file analysis is always available (local, read-only, sanitized) so
+    # the agent can analyze an attached log/inventory itself and answer inline.
+    tools += session_analysis_tools.build(conn, function_tool, session_id, activity)
     return tools
 
 
@@ -307,6 +326,7 @@ def _build_prompt(
     recent_messages: list[dict[str, Any]],
     user_message: str,
     conn: Any,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> tuple[str, list[str], dict[str, Any]]:
     """Build the sanitized prompt + skill names + context (shared).
 
@@ -337,6 +357,16 @@ def _build_prompt(
         except Exception:  # noqa: BLE001
             providers = []
     prompt_parts.append("configured_providers:\n" + json.dumps(providers, ensure_ascii=False))
+    # Files the user attached this turn (uploaded but not yet analyzed). The agent
+    # should analyze the relevant one with analyze_uploaded_file and answer inline.
+    if attachments:
+        att = [{"dataset_id": a.get("id"), "filename": a.get("source_filename"),
+                "type": a.get("dataset_type")} for a in attachments]
+        prompt_parts.append(
+            "attached_files (the user just uploaded these; analyze the relevant one with "
+            "analyze_uploaded_file and base your answer on the result — do NOT ignore them):\n"
+            + json.dumps(att, ensure_ascii=False)
+        )
     catalog = skill_context.catalog_text()
     if catalog:
         prompt_parts.append(catalog)
@@ -362,6 +392,7 @@ def answer(
     conn: Any = None,
     policy: str = autonomy.DEFAULT_POLICY,
     turn_id: str | None = None,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Skill-grounded, sanitized session answer contract. Raises AgentUnavailable.
 
@@ -371,7 +402,8 @@ def answer(
     only (tools/scripts disabled). ``policy`` selects how autonomous the agent
     is (see ``autonomy``); under autonomous_readonly it may execute read-only runs itself.
     """
-    prompt, skill_names, context = _build_prompt(session, summary, recent_messages, user_message, conn)
+    prompt, skill_names, context = _build_prompt(session, summary, recent_messages, user_message,
+                                                 conn, attachments)
 
     activity: list[dict[str, Any]] = []
     spec = {"context": context, "prompt": prompt, "instructions": instructions_for(policy),
@@ -392,6 +424,7 @@ def build_stream(
     conn: Any,
     policy: str = autonomy.DEFAULT_POLICY,
     turn_id: str | None = None,
+    attachments: list[dict[str, Any]] | None = None,
 ):
     """Set up a streaming run. Returns (result_streaming, activity, skill_names).
 
@@ -405,7 +438,8 @@ def build_stream(
     except Exception as exc:  # noqa: BLE001
         raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
 
-    prompt, skill_names, _context = _build_prompt(session, summary, recent_messages, user_message, conn)
+    prompt, skill_names, _context = _build_prompt(session, summary, recent_messages, user_message,
+                                                  conn, attachments)
     activity: list[dict[str, Any]] = []
     tools = _build_tools(conn, function_tool, activity, policy, session.get("id"), turn_id)
     # _make_agent disables parallel tool calls (chat-completions providers like

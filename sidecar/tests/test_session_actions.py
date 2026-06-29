@@ -200,15 +200,25 @@ def test_proposal_does_not_download_or_confirm_evidence(client):
 # --- allowlist / invalid handling -------------------------------------------
 
 
-def test_action_type_allowlist_enforced(client):
+def test_free_form_action_accepted_but_forbidden_tokens_rejected(client):
     s = _session(client)
-    r = client.post(f"/sessions/{s['id']}/actions/preview",
-                    json={"proposal": {"action_type": "delete_all_buckets"}})
-    assert r.status_code == 422
+    # Free-form next steps are no longer capped to a fixed enum: a benign concrete
+    # action is accepted and just routes to the conversational path (not ready,
+    # nothing auto-creates).
+    ok = client.post(f"/sessions/{s['id']}/actions/preview",
+                     json={"proposal": {"action_type": "inspect_cors_config"}})
+    assert ok.status_code == 200
+    assert ok.json()["will_create"] is None
+    # Defense in depth: a destructive/forbidden token is still rejected outright,
+    # even though no destructive capability exists to execute it.
+    bad = client.post(f"/sessions/{s['id']}/actions/preview",
+                      json={"proposal": {"action_type": "run_shell_exec"}})
+    assert bad.status_code == 422
 
 
 def test_invalid_proposal_rejected_cleanly(client):
     s = _session(client)
+    # Forbidden token, empty, and missing action_type are all rejected.
     for bad in ({"action_type": "shell"}, {"action_type": ""}, {}):
         r = client.post(f"/sessions/{s['id']}/actions/prepare", json={"proposal": bad})
         assert r.status_code == 422
@@ -228,14 +238,14 @@ def test_assistant_proposed_actions_sanitized_and_coerced(client, monkeypatch):
             "```json\n"
             '{"answer": "Looks storage-side.", "next_action_proposals": ['
             f'{{"title": "Import logs {ACCESS}", "action_type": "plan_access_log_import", "confidence": "high"}},'
-            '{"title": "wipe", "action_type": "delete_everything"}]}'
+            '{"title": "wipe", "action_type": "exec_shell_wipe"}]}'
             "\n```"
         )
 
     monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
     out = client.post(f"/sessions/{s['id']}/messages", json={"content": "client or storage?"}).json()
     actions = out["proposed_actions"]
-    assert len(actions) == 1  # invalid action_type dropped
+    assert len(actions) == 1  # forbidden-token action_type ("exec"/"shell") dropped
     a = actions[0]
     assert a["action_type"] == "plan_access_log_import"
     assert a["requires_confirmation"] is True

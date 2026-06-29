@@ -6,6 +6,49 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.27] - 2026-06-29
+
+This release removes the ossified, fixed-pipeline flows so the conversational
+agent is the sole driver throughout. The deterministic compute that remains is
+the security/reproducibility floor the agent invokes — never a reflex the UI
+fires or a canned plan the agent is marched through.
+
+### Changed
+
+- **No more canned "plan" pipelines.** Every run executor (access-log, inventory,
+  diagnostic, config-review, account-discovery) used to publish a hardcoded
+  step-list as a "plan" event — the rigid card you'd see regardless of the data
+  or your question. Removed everywhere; runs now expose only their real tool
+  trace, findings, and summary, and the run-detail "Agent plan" card is gone.
+- **The agent proposes free-form next steps, not a fixed menu.** Next-action
+  proposals are no longer capped to 9 hardcoded `action_type`s (anything else
+  used to be silently dropped). The agent now suggests any concrete next step in
+  its own words; well-known ones keep a one-click affordance, the data-moving
+  imports still route through the confirm-before-download planner, and anything
+  else is handed back to the agent to carry out conversationally. A
+  forbidden/destructive token in a proposal is still rejected outright.
+- **Uploading a file is now agent-native — no more canned analysis run.**
+  Attaching a log/inventory file in a session and asking "分析下" used to bypass
+  the conversational agent entirely and fire a fixed deterministic
+  `access_log_analysis` run (a rigid 5-step plan, `planner: deterministic`, a
+  templated one-line summary). The file is now attached to the **session**, and
+  your message goes to the conversational agent as a normal turn. The agent
+  discovers the upload (`list_uploaded_files`), analyzes it locally with a new
+  read-only `analyze_uploaded_file` tool (same DuckDB engine, sanitized
+  aggregates only — ≤20 sample keys, no raw rows), and answers conversationally.
+  If the file isn't actually a recognized access log/inventory (e.g. a generic
+  app log with no HTTP fields), the agent says so instead of reporting empty
+  metrics as if they were real. The deterministic analysis run still exists as an
+  explicit, auditable capability.
+
+### Added
+
+- `POST /sessions/{id}/datasets/upload` — attach a data file to a session for
+  agent-native analysis (migration 14: `session_datasets`).
+- Session agent tools `list_uploaded_files` / `analyze_uploaded_file`
+  (`agent_runtime/session_analysis_tools.py`), always available (local,
+  read-only, sanitized).
+
 ## [0.19.26] - 2026-06-29
 
 ### Fixed

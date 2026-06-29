@@ -16,7 +16,6 @@ from ..repositories import runs as runs_repo
 from ..s3 import tools as s3_tools
 from ..security.redaction import redact_text
 from ..tool_runner import run_tool
-from .planner import diagnostic_plan
 from .report import write_report
 
 # Bounded sample size for the diagnostic listing (never a full scan).
@@ -87,11 +86,13 @@ def execute_diagnostic_run(conn: sqlite3.Connection, run_id: str) -> None:
     provider_id = run["provider_id"]
     bucket = run["bucket"]
     prefix = run["prefix"]
+    from .planner import diagnostic_plan
 
     try:
         runs_repo.set_status(conn, run_id, "running")
+        # Steps recorded in the auditable report only — NOT published as a live
+        # "plan" event (no canned pipeline card; the real tool trace stands in).
         plan = diagnostic_plan(bucket, prefix)
-        bus.publish(run_id, {"type": "plan", "content": "\n".join(plan)})
 
         evidence: dict[str, dict[str, Any]] = {}
 

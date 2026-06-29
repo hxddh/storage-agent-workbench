@@ -51,15 +51,6 @@ def execute_access_log_run(conn: sqlite3.Connection, run_id: str) -> None:
         duckdb_rel = config.rel_path(duckdb_abs)
         raw_rel = ds.stored_path
 
-        plan = [
-            "Detect the access-log format (detect_log_format).",
-            "Import and normalize the log into DuckDB (import_access_logs).",
-            "Compute request, status, method, and concentration metrics (analyze_access_logs).",
-            "Summarize evidence into findings.",
-            "Generate a local Markdown report (generate_markdown_report).",
-        ]
-        bus.publish(run_id, {"type": "plan", "content": "\n".join(plan)})
-
         fmt = _require(run_tool_with_events(
             conn, run_id, "detect_log_format", {"path": raw_rel},
             lambda: access_logs.detect_log_format(raw_abs),

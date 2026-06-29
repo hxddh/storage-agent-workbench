@@ -290,6 +290,14 @@ class DatasetUploadResponse(BaseModel):
     row_count: int | None = None
 
 
+class SessionDatasetUploadResponse(BaseModel):
+    dataset_id: str
+    session_id: str
+    dataset_type: str
+    filename: str
+    status: str
+
+
 # --- Account discovery (Phase 14) -------------------------------------------
 
 

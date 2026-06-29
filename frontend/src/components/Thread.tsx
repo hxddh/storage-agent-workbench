@@ -1,17 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  createRun,
   createSession,
   getSession,
   getSessionReport,
   getSessionTriage,
   listModelProviders,
-  postRunMessage,
   postSessionMessage,
   prepareSessionAction,
   streamSessionMessage,
   submitErrorTriage,
-  uploadDataset,
+  uploadSessionDataset,
 } from "../api";
 import type { NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
 import { useSessionRun, patchSessionRun } from "../sessionRuns";
@@ -279,9 +277,11 @@ export function Thread({
     }
   };
 
-  // Composer file upload → a session-bound analysis run that streams as a thread
-  // card. Reuses the existing createRun → uploadDataset → start(message) flow;
-  // no form. Type is the inferred/picked dataset type.
+  // Composer file upload → agent-native analysis. The file is attached to the
+  // SESSION, then the user's message is sent as a NORMAL agent turn. The agent
+  // discovers the upload and analyzes it with its read-only analyze_uploaded_file
+  // tool, then answers conversationally — no fixed deterministic analysis run, no
+  // canned plan. (Codex/Cursor-style: attach a file, ask, the agent reasons.)
   const submitWithDataset = async (message: string, file: File, type: "inventory" | "access_log") => {
     let id: string;
     try {
@@ -290,25 +290,20 @@ export function Thread({
       setViewError(cleanError(String(e), t));
       return;
     }
-    const runType = type === "inventory" ? "inventory_analysis" : "access_log_analysis";
     const prompt = message || (type === "inventory"
       ? "Analyze this inventory file."
-      : "Analyze these access logs.");
-    patchSessionRun(id, { busy: true, error: null });
+      : "Analyze this log file.");
     setText("");
     setAttached(null);
     setAttachType(null);
     try {
-      const created = await createRun({ run_type: runType, session_id: id, user_prompt: prompt });
-      await uploadDataset(created.run_id, file, type);
-      await postRunMessage(created.run_id, prompt);  // starts the run
-      if (localId.current === id) await reload(id);   // the run card appears in the thread
-      onChanged();
+      await uploadSessionDataset(id, file, type);
     } catch (e) {
       patchSessionRun(id, { error: cleanError(String(e), t) });
-    } finally {
-      patchSessionRun(id, { busy: false });
+      return;
     }
+    // Hand the turn to the conversational agent (streams + falls back like any turn).
+    await submit(prompt);
   };
 
   const send = () => {
