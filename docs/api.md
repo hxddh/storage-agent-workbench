@@ -1,10 +1,9 @@
 # API
 
-Default base URL:
-
-```text
-http://127.0.0.1:8765
-```
+The sidecar binds localhost on a port chosen at launch. In the packaged app the
+Tauri shell starts it on a free port and exposes the URL to the frontend; in dev
+it defaults to `http://127.0.0.1:8765` (override with `VITE_SIDECAR_URL`). Paths
+below are relative to that base.
 
 ## Health
 
@@ -19,7 +18,7 @@ Response:
 }
 ```
 
-## Future model provider APIs
+## Model provider APIs
 
 ```text
 GET /model-providers
@@ -29,7 +28,7 @@ DELETE /model-providers/{id}
 POST /model-providers/{id}/test
 ```
 
-## Future cloud provider APIs
+## Cloud provider APIs
 
 ```text
 GET /cloud-providers
@@ -39,7 +38,7 @@ DELETE /cloud-providers/{id}
 POST /cloud-providers/{id}/test
 ```
 
-## Future run APIs
+## Run APIs
 
 ```text
 GET /runs
@@ -50,7 +49,7 @@ GET /runs/{run_id}/events
 GET /reports/{run_id}
 ```
 
-## Future tool APIs
+## Tool APIs
 
 ```text
 POST /tools/test-credentials
@@ -62,14 +61,26 @@ POST /tools/test-path-style-vs-virtual-host
 POST /tools/inspect-tls
 ```
 
-## Future SSE event types
+## Run SSE event types
+
+Run events use mode-neutral names (the same shape for deterministic and
+agent-planner runs):
 
 ```json
-{"type":"agent_plan","content":"..."}
+{"type":"run_started","planner_mode":"deterministic"}
+{"type":"plan","content":"..."}
+{"type":"tool_selected","tool_name":"head_bucket","reason":"..."}
 {"type":"tool_call_started","tool_name":"head_bucket","tool_call_id":"..."}
 {"type":"tool_call_finished","tool_name":"head_bucket","status":"success","output":{}}
-{"type":"agent_message","content":"..."}
+{"type":"summary","content":"..."}
 {"type":"finding","severity":"warning","title":"...","detail":"..."}
+{"type":"guardrail_passed","name":"..."}
+{"type":"guardrail_blocked","name":"...","message":"..."}
 {"type":"report_ready","run_id":"...","report_path":"..."}
+{"type":"final_summary","content":"..."}
 {"type":"error","message":"..."}
 ```
+
+The session message stream (`POST /sessions/{id}/messages/stream`) emits
+`delta` (answer text), `tool` (a sanitized `{tool, target, result}` trace), and
+a final `done` (`{message_id, proposed_actions}`) — or `error`.

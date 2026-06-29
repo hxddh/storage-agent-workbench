@@ -1,6 +1,6 @@
 # Sidecar packaging
 
-PyInstaller packaging for the Storage Agent sidecar (Phase 08).
+PyInstaller packaging for the Storage Agent sidecar.
 
 ## Build
 
@@ -11,13 +11,17 @@ pip install -e ".[dev]" ".[packaging]"
 python packaging/build_sidecar.py
 ```
 
-Output: `sidecar/dist/storage-agent-sidecar` (a single one-file executable, so it
-fits Tauri's `externalBin`).
+Output: `sidecar/dist/storage-agent-sidecar/` — a **one-dir** bundle with the
+inner executable `storage-agent-sidecar` (+ `_internal/` libraries). One-dir is
+deliberate: Tauri ships the folder as a **resource** and launches the inner
+executable directly via `std::process` (see `src-tauri/src/lib.rs`); it is NOT
+wired through `externalBin`. `scripts/build-sidecar-for-tauri.py` builds this and
+stages it under `src-tauri/sidecar-dist/` for the desktop build.
 
 ## Run the packaged sidecar
 
 ```bash
-./dist/storage-agent-sidecar --host 127.0.0.1 --port 8765 \
+./dist/storage-agent-sidecar/storage-agent-sidecar --host 127.0.0.1 --port 8765 \
     --data-dir "$HOME/Library/Application Support/StorageAgentWorkbench"
 curl http://127.0.0.1:8765/health
 ```
@@ -42,15 +46,15 @@ python packaging/smoke_test_sidecar.py
 - SKIP (exit 0): bundle not built — run `build_sidecar.py` first.
 - FAIL (exit 1): bundle present but unhealthy.
 
-The smoke test does not require AWS/BOS/MinIO, `OPENAI_API_KEY`, or real keyring
+The smoke test does not require AWS/BOS/MinIO, `OPENAI_API_KEY`, or real stored
 secrets.
 
 ## What is NOT bundled
 
 The bundle contains code and library data only. It must never include `.env`,
-the SQLite database, keyring contents, or `data/runs/` output. Secrets always
-remain in the OS keychain; user data lives in the app data dir, never inside the
-application bundle.
+the SQLite database, the secret vault, or `data/runs/` output. Secrets live in
+the encrypted local vault in the app data dir; user data lives in the app data
+dir too, never inside the application bundle.
 
 ## subprocess usage
 

@@ -51,5 +51,13 @@ A fresh-install user must be able to do all of this without reading source:
 
 ## D. Safety spot-checks
 
-- [ ] Provider responses expose only `*_ref` + `has_*` flags, never secret values.
+- [ ] Provider responses expose only `*_ref` + `has_*` flags, never secret values;
+      `has_*_key` reflects the actual vault (a stale ref with no secret reads false).
 - [ ] Generated reports contain no secrets or raw log/inventory rows.
+- [ ] **No** system keychain / secret-service authorization prompt on launch
+      (secrets are in the encrypted vault). On a fresh vault build, providers
+      show keys as **not set** until re-entered once.
+- [ ] Settings → Providers **Delete** removes a model/cloud provider via the
+      inline Cancel / Confirm delete (no native `window.confirm`).
+- [ ] Settings → Agent autonomy shows two options (协助 / 自主), defaulting to 自主;
+      data-moving actions still require confirmation under either.

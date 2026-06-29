@@ -23,8 +23,13 @@ Rules:
 4. Secrets must never be stored in traces.
 5. Secrets must never be stored in reports.
 6. Secrets must never be stored in frontend state longer than needed for submission.
-7. Secrets must be stored only through system Keychain / Python keyring.
-8. SQLite may store only secret references.
+7. Secrets must be stored only through `security/keyring_store` — a single
+   AES-256-GCM encrypted local vault (`secrets.enc`), with the master key
+   protected per-OS by a non-prompting mechanism (Windows DPAPI; an owner-only
+   `0600` key file on macOS/Linux). Not the OS keychain (the ad-hoc-signed,
+   cross-platform app would re-prompt on every update / be absent on headless
+   Linux). Do not move secrets back into the keychain, SQLite, or plaintext.
+8. SQLite may store only secret references (`keyring://scope/name`).
 
 ## Tool safety
 
@@ -102,8 +107,9 @@ They should not be treated as hard failures unless the requested task requires t
 ## Agent dataset analysis
 
 Agent planner mode is available for `access_log_analysis` and
-`inventory_analysis` as an **interpretation-only narrator** — it explains the
-deterministic results, it does not produce them.
+`inventory_analysis` as an **analysis narrator with bounded drill-down** — it
+explains the deterministic results (and may drill into them via whitelisted
+read-only aggregates), it does not produce them.
 
 - The deterministic DuckDB analysis runs first and is authoritative. Default
   planner mode stays `deterministic`; agent mode is opt-in per run.
@@ -111,10 +117,14 @@ deterministic results, it does not produce them.
   dataset metadata, the deterministic metrics, and the deterministic findings.
   Lists are capped at 20 entries and the whole context is asserted to contain no
   secret-shaped content before it can leave the process.
-- The model has **no tools** in this path. It therefore cannot run SQL, read raw
-  log lines or inventory rows, list a full key set, download object bodies, or
-  call any S3 API. No new tool is registered; the existing allowlist is
-  unchanged. (Forbidden by construction, not just by prompt.)
+- The model gets only **bounded, read-only aggregate tools** over the
+  already-local DuckDB dataset (`analysis/drilldown.py`): `aggregate_by` (top-N
+  group-by over a whitelisted dimension/metric) and `count_where` (count over a
+  whitelisted field with a parameterized value). It therefore **cannot** run
+  arbitrary/free SQL, read raw log lines or inventory rows, list a full key set,
+  download object bodies, or call any S3 API — dimensions/fields are whitelisted,
+  values are parameterized, and the connection is read-only. No S3/whitelist tool
+  is added. (Forbidden by construction, not just by prompt.)
 - Forbidden in the agent context: raw log lines, raw inventory rows, full key
   lists / >20 sample keys, Authorization headers, cookies, presigned-URL query
   params, access/secret/session keys, model API keys, unmasked client IPs, and
@@ -137,9 +147,9 @@ The `account_discovery` run type enumerates an account's buckets and their
 configuration from read-only APIs only. It is deterministic; Agent mode is
 rejected with a clean 422 and no bucket list / config is ever sent to an LLM.
 
-- **AK/SK/session tokens stay in the OS keyring**, resolved at call time inside
-  the boto3 client factory; they never enter SQLite, logs, reports, UI state, or
-  any LLM prompt.
+- **AK/SK/session tokens stay in the encrypted secret vault**, resolved at call
+  time inside the boto3 client factory; they never enter SQLite, logs, reports,
+  UI state, or any LLM prompt.
 - **`list_buckets` is read-only ListBuckets.** It does not call ListObjectsV2,
   does not scan objects, and does not download object bodies. Object-level
   listing/`get_object` are never invoked by this run type.
@@ -286,16 +296,22 @@ any new dangerous capability.
   tool_call outputs, the persisted account profile). It never reads raw access
   logs, raw inventory rows, evidence file contents, credentials, or
   chain-of-thought, and it does not call an LLM.
-- **Interpretation-only assistant.** The session Agent sees ONLY the sanitized,
-  bounded session context (goal + summary facts/findings/open-questions/
-  next-actions + recent messages). It has no tools: it cannot download evidence,
-  change configuration, delete objects, run a shell, run arbitrary SQL, or call
-  any S3 API. It may explain, attribute, weigh evidence, and recommend which
-  existing next-action proposal to take — the user acts. Output is redacted and
-  chain-of-thought-stripped; a missing model key fails cleanly and never affects
-  the deterministic summary.
-- **Proposals only.** Next actions carry `requires_confirmation`; nothing is
-  auto-executed. There is no auto-download, no auto-remediation, no auto-run.
+- **Read-only investigator agent.** The session agent investigates live with
+  **read-only** tools (bucket/object listing — bounded + paginated, no bodies —
+  config readers, credential/addressing/TLS/range probes, progressive-disclosure
+  skills) and bounded **working memory** (sanitized facts/findings/open-questions
+  it records itself). Credentials are resolved server-side and **never** enter
+  its context; it **cannot** download object bodies, change configuration, delete
+  or mutate anything, run a shell, run free SQL, reach any destructive S3 op, or
+  see any secret. Output is redacted + chain-of-thought-stripped + bounded; a
+  missing model key fails cleanly and never affects the deterministic summary.
+- **Graded execution, never destructive.** Under the `autonomous_readonly`
+  autonomy policy (default) the agent may EXECUTE read-only runs itself
+  (diagnostic / config-review / account-discovery — real, audited, read-only,
+  wall-clock-bounded); under `assisted` it proposes them. EXPENSIVE/data-moving
+  work (dataset analysis, evidence import/download) and any MUTATING op are
+  **never** auto-run under either policy — they carry `requires_confirmation` and
+  the user acts. There is no auto-download, no auto-remediation, no write tool.
 - **Safe persistence.** Session titles/goals/bucket names, messages, findings,
   evidence refs, and summaries are all redaction-passed — never AK/SK/session
   token/Authorization/cookies/presigned URL/model key, never raw logs/rows, never
@@ -307,9 +323,9 @@ any new dangerous capability.
 ## Packaging
 
 - The application bundle contains code and library data only. It must never
-  include `.env`, the SQLite database, keyring contents, or `data/runs/` output.
-- Secrets remain in the OS keychain (`keyring`); user data lives in the app data
-  dir, never inside the install/app bundle.
+  include `.env`, the SQLite database, the secret vault, or `data/runs/` output.
+- Secrets live in the encrypted vault in the app data dir (never the install/app
+  bundle), alongside the rest of the user data.
 - The packaged sidecar binds localhost only, never enables reload in production,
   and prints a sanitized startup banner (no secrets, no full paths, no env dump).
 - Tauri spawns only the internal packaged sidecar; no user-controlled shell or

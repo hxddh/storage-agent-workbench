@@ -18,6 +18,13 @@ Purpose:
 
 - Validate that a provider can be used.
 
+### list_buckets
+
+Purpose:
+
+- Enumerate the buckets the credentials can see (read-only ListBuckets). Never
+  lists objects or touches object bodies.
+
 ### head_bucket
 
 Purpose:
@@ -28,13 +35,15 @@ Purpose:
 
 Purpose:
 
-- Check listing behavior with explicit max_keys.
+- List object keys with an explicit max_keys. Supports a continuation token and
+  recursive (delimiter-free) listing so the agent can page through a large
+  bucket; paging is always explicit, never an automatic full scan.
 
 Safety:
 
-- Must require max_keys.
-- Must sanitize sample keys.
-- Must limit sample output.
+- Must require max_keys; clamped to a per-call hard cap.
+- Must sanitize sample keys and bound the keys surfaced to the model per call.
+- Never returns object bodies.
 
 ### head_object
 
@@ -93,6 +102,24 @@ Purpose:
 ## Report tools
 
 - generate_markdown_report
+
+## Session agent tools
+
+The conversational session agent uses the read-only diagnostic + config-review
+tools above (choosing provider/bucket itself), plus:
+
+- **read_skill** — load a StorageOps skill's method on demand (progressive
+  disclosure); guidance text only, no skill tools/scripts are executed.
+- **Working memory** — `note_fact` / `record_finding` / `note_open_question`
+  persist sanitized, audited items that are fed back into later turns.
+- **Inline read-only runs** — under the `autonomous_readonly` autonomy policy the
+  agent may execute `run_diagnostic` / `run_bucket_config_review` /
+  `run_account_discovery` itself (real, audited, read-only, wall-clock-bounded);
+  under `assisted` it proposes them. Nothing data-moving or mutating is auto-run.
+
+The analysis narrator additionally gets bounded, read-only **drill-down**
+aggregates over the already-local DuckDB dataset (`aggregate_by`, `count_where`
+over whitelisted dimensions/fields) — no raw rows, no free SQL, no object bodies.
 
 ## Forbidden tools
 

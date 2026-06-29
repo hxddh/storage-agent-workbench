@@ -51,22 +51,24 @@ is required (preinstalled on current Windows; the installer fetches it if absent
 - **App data** (SQLite DB, DuckDB files, reports, uploads) is stored in the OS
   app-data directory; in dev it lives under `<repo>/data`.
 - **Secrets** (cloud access/secret keys, session tokens, model API keys) are
-  stored only in the **OS keychain / keyring** — never in plaintext on disk.
+  stored only in an **encrypted local vault** (`secrets.enc`) in the app-data
+  directory — never in plaintext on disk, SQLite, logs, reports, or model
+  prompts. The vault's master key is protected per-OS by a non-prompting
+  mechanism (Windows DPAPI; an owner-only `0600` key file on macOS/Linux).
 - User data is **never** written into the install directory or bundled into the
   app.
 
 See [security.md](security.md) and [packaging.md](packaging.md) for details.
 
-## macOS keychain prompts
+## Secret storage: no authorization prompts
 
-The first time the app reads a stored secret (e.g. your model API key) you may
-see a macOS dialog: *"storage-agent-sidecar wants to use your confidential
-information…"*. Click **Always Allow** — the app then reads that secret without
-prompting again.
+Secrets live in the encrypted local vault described above, so there is **no**
+system keychain/secret-service authorization prompt on macOS, Windows, or Linux.
 
-If you are re-prompted on later launches, it is because the build is **ad-hoc
-signed**: each new version is a different code identity, so macOS asks again
-after an update (and after a reinstall). The app reads each secret at most once
-per launch, so you will see at most one prompt per secret. A future
-Developer-ID-signed/notarized build would remove the re-prompting entirely
-(see [signing.md](signing.md)).
+The vault is not migrated from the old OS-keychain storage used by builds before
+the vault landed (reading those would have triggered the very prompt we removed),
+so the first time you run a vault build, **re-enter your model API key and cloud
+credentials once** in Settings → Providers. They are never prompted for again.
+(On macOS/Linux the key file sits beside the vault with owner-only permissions —
+the standard local-first tradeoff; a future Developer-ID-signed build could
+re-enable the macOS keychain prompt-free, see [signing.md](signing.md).)

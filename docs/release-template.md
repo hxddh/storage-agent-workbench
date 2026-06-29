@@ -25,8 +25,9 @@ warning on macOS and use right-click → Open or clear the quarantine attribute.
 
 ## Security model
 
-Local-first; secrets in the OS keychain/keyring; read-only diagnostics; no
-destructive S3 operations; no hidden auto-run; sanitized agent context. See
+Local-first; secrets in an encrypted local vault (no system prompts); read-only
+diagnostics and no write/destructive S3 operations; data-moving actions always
+require confirmation; sanitized agent context. See
 [docs/security.md](security.md).
 
 ## Known limitations

@@ -85,9 +85,10 @@ sidecar status: **starting → connected | disconnected | error**.
 
 ## Secrets
 
-Secrets (cloud AK/SK, session tokens, model API keys) live only in the OS
-keychain via `keyring`. They are never bundled, never written to SQLite, and
-never logged.
+Secrets (cloud AK/SK, session tokens, model API keys) live only in the encrypted
+local vault (`security/keyring_store`, `secrets.enc`) in the app data dir, with
+the master key protected per-OS (DPAPI / `0600` key file). They are never
+bundled, never written to SQLite, and never logged.
 
 ## Notes & limitations
 

@@ -90,6 +90,9 @@ Fields:
 
 ## Secret references
 
+A reference is an opaque `keyring://scope/name` string; the secret itself lives
+in the encrypted local vault (`security/keyring_store`), never in SQLite.
+
 SQLite may store:
 
 - api_key_ref
