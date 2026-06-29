@@ -6,6 +6,28 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.24] - 2026-06-29
+
+### Fixed
+
+- **"database is locked" during autonomous turns.** When the agent ran a
+  read-only run itself (e.g. account discovery) during a chat turn, the turn's
+  connection held the SQLite write lock across slow S3 calls (an uncommitted
+  audit row), starving the run's background writes until they failed — which the
+  agent then narrated as "tools locked / database contention." Session tools now
+  commit their audit row immediately, keeping the write transaction tiny.
+  `account_discovery` stays fully inline and autonomous. (Reproduced + regression
+  test.)
+
+### Added
+
+- **Attach a dataset to analyze, right in the chat composer** (Codex/Cursor
+  style). A 📎 button (and the "analyze inventory / access logs" suggestions)
+  let you pick a local inventory (CSV/Parquet) or access-log file; the type is
+  inferred from the file (with an Inventory/Access-logs toggle when ambiguous),
+  and a session-bound analysis run streams inline as a thread card. This replaces
+  the removed run-form file picker — the "analyze inventory/access logs" proposals
+  now actually work end to end instead of dead-ending in a plain message.
 ## [0.19.23] - 2026-06-29
 
 ### Fixed

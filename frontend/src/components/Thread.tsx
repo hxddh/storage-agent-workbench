@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  createRun,
   createSession,
   getSession,
   getSessionReport,
   getSessionTriage,
   listModelProviders,
+  postRunMessage,
   postSessionMessage,
   prepareSessionAction,
   streamSessionMessage,
   submitErrorTriage,
+  uploadDataset,
 } from "../api";
 import type { NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
 import { useSessionRun, patchSessionRun } from "../sessionRuns";
@@ -23,6 +26,15 @@ type Item =
   | { kind: "triage"; ts: string; data: TriageCase };
 
 const propKey = (p: NextAction) => `${p.action_type}::${p.title}`;
+
+// Infer the dataset type for an attached analysis file from its extension.
+// null = ambiguous → the composer shows an Inventory/Access-log toggle.
+const inferDatasetType = (name: string): "inventory" | "access_log" | null => {
+  const n = name.toLowerCase();
+  if (/\.(csv|parquet|tsv)$/.test(n)) return "inventory";
+  if (/\.(log|txt)(\.gz)?$/.test(n) || n.includes("access") || n.includes("log")) return "access_log";
+  return null;
+};
 
 // Turn a raw sidecar/provider error into a short, actionable, localized line.
 const cleanError = (raw: string, t: TFunc): string => {
@@ -102,6 +114,14 @@ export function Thread({
   const localId = useRef<string | null>(sessionId);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  // Composer file attachment (dataset for inventory/access-log analysis). type is
+  // auto-inferred from the extension; null means "ask" (show the 2-option chip).
+  const [attached, setAttached] = useState<File | null>(null);
+  const [attachType, setAttachType] = useState<"inventory" | "access_log" | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  // One-shot: when a proposal opens the picker it presets the type; a plain 📎
+  // attach leaves this null and the type is inferred from the filename.
+  const presetTypeRef = useRef<"inventory" | "access_log" | null>(null);
   const { t } = useI18n();
   const suggestions = SUGGESTION_KEYS.map((k) => ({ key: k, label: t(`sugg.${k}`), prompt: t(`prompt.${k}`) }));
 
@@ -259,7 +279,56 @@ export function Thread({
     }
   };
 
-  const send = () => submit(text.trim());
+  // Composer file upload → a session-bound analysis run that streams as a thread
+  // card. Reuses the existing createRun → uploadDataset → start(message) flow;
+  // no form. Type is the inferred/picked dataset type.
+  const submitWithDataset = async (message: string, file: File, type: "inventory" | "access_log") => {
+    let id: string;
+    try {
+      id = await ensureSession(message || file.name);
+    } catch (e) {
+      setViewError(cleanError(String(e), t));
+      return;
+    }
+    const runType = type === "inventory" ? "inventory_analysis" : "access_log_analysis";
+    const prompt = message || (type === "inventory"
+      ? "Analyze this inventory file."
+      : "Analyze these access logs.");
+    patchSessionRun(id, { busy: true, error: null });
+    setText("");
+    setAttached(null);
+    setAttachType(null);
+    try {
+      const created = await createRun({ run_type: runType, session_id: id, user_prompt: prompt });
+      await uploadDataset(created.run_id, file, type);
+      await postRunMessage(created.run_id, prompt);  // starts the run
+      if (localId.current === id) await reload(id);   // the run card appears in the thread
+      onChanged();
+    } catch (e) {
+      patchSessionRun(id, { error: cleanError(String(e), t) });
+    } finally {
+      patchSessionRun(id, { busy: false });
+    }
+  };
+
+  const send = () => {
+    if (busy) return;
+    if (attached) {
+      const type = attachType ?? inferDatasetType(attached.name);
+      if (!type) return;  // ambiguous + not yet picked — wait for the user to choose
+      void submitWithDataset(text.trim(), attached, type);
+      return;
+    }
+    submit(text.trim());
+  };
+
+  const onPickFile = (f: File | null) => {
+    if (!f) return;
+    const preset = presetTypeRef.current;
+    presetTypeRef.current = null;
+    setAttached(f);
+    setAttachType(preset ?? inferDatasetType(f.name));
+  };
 
   // Agent-native next steps. Anything the agent can do with its read-only tools
   // is handed straight back to the conversation (one click → the agent does it
@@ -276,6 +345,13 @@ export function Thread({
     const inlineKey = INLINE_ACTION_PROMPT[p.action_type];
     if (inlineKey) {
       submit(t(inlineKey));
+      return;
+    }
+    // Dataset analysis needs a local file — open the composer's file picker with
+    // the type preset, rather than the old form handoff.
+    if (p.action_type === "run_inventory_analysis" || p.action_type === "run_access_log_analysis") {
+      presetTypeRef.current = p.action_type === "run_inventory_analysis" ? "inventory" : "access_log";
+      fileRef.current?.click();
       return;
     }
     if (!localId.current) return;
@@ -363,6 +439,33 @@ export function Thread({
           ))}
         </div>
       )}
+      {attached && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-edge bg-elevated px-2.5 py-1.5 text-xs">
+          <span className="text-gray-300">📎 {attached.name}</span>
+          {attachType ? (
+            <span className="rounded-full border border-edge px-2 py-0.5 text-[11px] text-gray-400">
+              {attachType === "inventory" ? t("attach.inventory") : t("attach.accessLog")}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1">
+              <span className="text-gray-500">{t("attach.pickType")}</span>
+              <button className="rounded-full border border-edge px-2 py-0.5 text-[11px] text-gray-300 hover:bg-hover"
+                onClick={() => setAttachType("inventory")}>{t("attach.inventory")}</button>
+              <button className="rounded-full border border-edge px-2 py-0.5 text-[11px] text-gray-300 hover:bg-hover"
+                onClick={() => setAttachType("access_log")}>{t("attach.accessLog")}</button>
+            </span>
+          )}
+          <button className="ml-auto text-gray-500 hover:text-gray-300"
+            onClick={() => { setAttached(null); setAttachType(null); }} aria-label={t("common.cancel")}>✕</button>
+        </div>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".csv,.parquet,.tsv,.log,.txt,.gz"
+        className="hidden"
+        onChange={(e) => { onPickFile(e.target.files?.[0] ?? null); e.target.value = ""; }}
+      />
       <textarea
         ref={taRef}
         className="block max-h-[220px] h-[22px] w-full resize-none bg-transparent px-1 text-[14px] leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none focus-visible:shadow-none"
@@ -384,6 +487,17 @@ export function Thread({
         placeholder={t("thread.placeholder")}
       />
       <div className="mt-2 flex items-center gap-2">
+        <button
+          onClick={() => { presetTypeRef.current = null; fileRef.current?.click(); }}
+          disabled={busy}
+          aria-label={t("attach.button")}
+          title={t("attach.button")}
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-gray-500 transition-colors hover:bg-hover hover:text-gray-300 disabled:cursor-default disabled:opacity-50"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+          </svg>
+        </button>
         {modelChip}
         <span className="ml-auto hidden text-[11px] text-gray-600 sm:inline">
           <kbd className="font-sans">⏎</kbd> {t("thread.send")} · <kbd className="font-sans">⇧⏎</kbd> {t("thread.newline")}
