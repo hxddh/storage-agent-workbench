@@ -127,6 +127,10 @@ export function Thread({
       getSession(id).catch(() => null),
       getSessionTriage(id).then((r) => r.cases).catch(() => []),
     ]);
+    // Guard against a switch race: if the user moved to another session while
+    // this request was in flight, drop the stale result instead of clobbering
+    // the now-current session's view.
+    if (id !== localId.current) return;
     setDetail(d);
     setTriage(t);
   };
@@ -186,9 +190,9 @@ export function Thread({
 
   // The blocking turn (also the streaming fallback). Returns true on a clean
   // answer; surfaces needKey / offline triage / error as the blocking path did.
-  const sendBlocking = async (id: string, q: string) => {
+  const sendBlocking = async (id: string, q: string, turnId?: string) => {
     try {
-      const r = await postSessionMessage(id, q);
+      const r = await postSessionMessage(id, q, turnId);
       patchSessionRun(id, { proposals: r.proposed_actions || [] });
     } catch (e) {
       const msg = String(e);
@@ -218,21 +222,32 @@ export function Thread({
     let id: string;
     try {
       id = await ensureSession(q);
-    } catch {
+    } catch (e) {
+      // Surface the failure (e.g. sidecar not ready) instead of silently dropping
+      // the message, and keep the user's text so they can retry.
+      setViewError(cleanError(String(e), t));
+      setText(q);
       return;
     }
+    // One turn id for this submit; the blocking fallback reuses it so the server
+    // dedups (no duplicate turn or inline run if the stream broke mid-work).
+    const turnId =
+      (typeof crypto !== "undefined" && "randomUUID" in crypto)
+        ? crypto.randomUUID()
+        : `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     patchSessionRun(id, { busy: true, error: null, needKey: false, pending: q, streamText: null, streamTools: [] });
     try {
       try {
         const r = await streamSessionMessage(id, q, {
           onDelta: (chunk) => patchSessionRun(id, (s) => ({ streamText: (s.streamText ?? "") + chunk })),
           onTool: (rec) => patchSessionRun(id, (s) => ({ streamTools: [...s.streamTools, rec] })),
-        });
+        }, undefined, turnId);
         patchSessionRun(id, { proposals: r.proposed_actions || [] });
       } catch {
-        // Stream broke (or 422). The endpoint persists nothing until it
-        // completes, so the blocking turn re-runs cleanly without duplicating.
-        await sendBlocking(id, q);
+        // Stream broke (or 422). Re-run via the blocking turn with the SAME turn
+        // id; the server dedups, so this never duplicates the turn or an inline
+        // run the failed stream had already started.
+        await sendBlocking(id, q, turnId);
       }
       // Refresh the just-run session's thread only if it's the one on screen;
       // otherwise its persisted answer loads when the user switches back to it.

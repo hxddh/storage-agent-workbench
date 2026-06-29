@@ -68,6 +68,10 @@ _blob: dict[str, str] | None = None
 _negative: set[str] = set()
 _master_key: bytes | None = None
 _lock = threading.RLock()
+# Set when an existing vault file could not be decrypted (key lost / data dir
+# copied without the key). Surfaced to the UI so the user knows to recover the
+# .unreadable backup or re-enter keys, instead of silently seeing "not set".
+_unreadable: bool = False
 
 
 def _vault_path() -> Path:
@@ -186,6 +190,8 @@ def _ensure_loaded() -> dict[str, str]:
         # lost/regenerated, or the data dir was copied without it). Don't silently
         # treat it as empty and then overwrite it on the next save — preserve the
         # original ciphertext for manual recovery and make the failure visible.
+        global _unreadable
+        _unreadable = True
         try:
             backup = path.with_suffix(path.suffix + ".unreadable")
             if not backup.exists():
@@ -287,12 +293,29 @@ def secret_exists(ref: str | None) -> bool:
     return get_secret(scope, name) is not None
 
 
+def vault_status() -> dict[str, Any]:
+    """Whether the on-disk vault could not be decrypted this session.
+
+    ``unreadable`` is True when an existing vault file failed to decrypt (the
+    original was preserved as ``<vault>.unreadable``); the UI surfaces this so a
+    user doesn't mistake it for "no keys set".
+    """
+    with _lock:
+        _ensure_loaded()  # trigger a load attempt if not yet done
+        backup = _vault_path().with_suffix(_vault_path().suffix + ".unreadable")
+        return {
+            "unreadable": _unreadable,
+            "backup_present": _unreadable and backup.exists(),
+        }
+
+
 def _reset_for_tests() -> None:
     """Drop the in-process cache + master key. Used by the test harness."""
-    global _blob, _master_key
+    global _blob, _master_key, _unreadable
     with _lock:
         _blob = None
         _master_key = None
+        _unreadable = False
         _negative.clear()
 
 

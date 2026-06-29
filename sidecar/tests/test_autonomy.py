@@ -45,6 +45,8 @@ def test_may_execute_only_safe_readonly_and_only_when_autonomous():
     assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "run_account_discovery") is True
     assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "run_access_log_analysis") is False
     assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "plan_inventory_import") is False
+    # SAFE_READONLY but has NO inline executor tool → only proposable, not auto-run.
+    assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "generate_session_report") is False
     # Assisted proposes, so it never executes anything itself.
     assert autonomy.may_execute(autonomy.ASSISTED, "run_diagnostic") is False
 

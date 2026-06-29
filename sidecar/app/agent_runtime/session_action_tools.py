@@ -26,6 +26,7 @@ import sqlite3
 import threading
 from typing import Any, Callable
 
+from . import turn_guard
 from .. import run_service
 from ..events import bus
 from ..models.schemas import RunCreate
@@ -57,18 +58,29 @@ def _err(msg: str) -> str:
 _INLINE_RUN_TIMEOUT = 60.0
 
 
-def _execute_run(conn: sqlite3.Connection, body: RunCreate) -> str:
+def _execute_run(conn: sqlite3.Connection, body: RunCreate,
+                 turn_id: str | None = None, dedup_key: str | None = None) -> str:
     """Create + run a read-only run and return its id, bounded by a wall clock.
 
     Commits so ``run_service.run_sync`` (which uses its own connection) sees the
     row, then runs it on a daemon thread and waits up to ``_INLINE_RUN_TIMEOUT``.
+
+    Idempotency: if this turn already created a run with ``dedup_key`` (e.g. a
+    streaming attempt that then errored, triggering the blocking fallback), reuse
+    that run instead of creating a duplicate.
     """
+    if turn_id and dedup_key:
+        existing = turn_guard.get_run(turn_id, dedup_key)
+        if existing:
+            return existing
     run_id = runs_repo.create(conn, body, status="pending")
     if body.session_id:
         from ..repositories import sessions as sessions_repo
         sessions_repo.link_run(conn, body.session_id, run_id,
                                sessions_repo.RUN_ROLE.get(body.run_type))
     conn.commit()
+    if turn_id and dedup_key:
+        turn_guard.set_run(turn_id, dedup_key, run_id)
     bus.create(run_id)
 
     done = threading.Event()
@@ -90,11 +102,21 @@ def _run_result(conn: sqlite3.Connection, run_id: str) -> dict[str, Any]:
     if row is None:
         return {"run_id": run_id, "status": "unknown"}
     summary = row["final_summary"] or ""
-    return {
+    result: dict[str, Any] = {
         "run_id": run_id,
         "status": row["status"],
         "final_summary": redact_text(str(summary))[:_MAX_SUMMARY],
     }
+    if row["status"] in ("pending", "running"):
+        # Hit the wall-clock timeout: the run is still going in the background.
+        # Tell the agent NOT to draw conclusions from this incomplete result.
+        result["note"] = (
+            "This run is still in progress (it exceeded the inline time budget and "
+            "continues in the background; it will appear complete in the session "
+            "timeline). Do NOT state findings from it yet — tell the user it is "
+            "still running, or revisit it in a later turn."
+        )
+    return result
 
 
 def build(
@@ -103,8 +125,13 @@ def build(
     policy: str,
     activity: list[dict[str, Any]] | None = None,
     session_id: str | None = None,
+    turn_id: str | None = None,
 ) -> list[Any]:
-    """Build the inline-execution tool set. Empty unless the policy allows it."""
+    """Build the inline-execution tool set. Empty unless the policy allows it.
+
+    ``turn_id`` (the client turn id) makes inline runs idempotent across a
+    streaming attempt and its blocking fallback (see ``turn_guard``).
+    """
     from . import autonomy
     if not autonomy.executes_inline(policy):
         return []
@@ -133,7 +160,7 @@ def build(
             return _err("That bucket is not in this provider's allow-list.")
         body = RunCreate(run_type="diagnostic", provider_id=provider_id, bucket=bucket,
                          user_prompt=_DEFAULT_PROMPTS["diagnostic"], session_id=session_id)
-        run_id = _execute_run(conn, body)
+        run_id = _execute_run(conn, body, turn_id, f"diagnostic:{provider_id}:{bucket}")
         result = _run_result(conn, run_id)
         note("run_diagnostic", bucket, result["status"])
         return json.dumps(result)
@@ -148,7 +175,7 @@ def build(
             return _err("That bucket is not in this provider's allow-list.")
         body = RunCreate(run_type="bucket_config_review", provider_id=provider_id, bucket=bucket,
                          user_prompt=_DEFAULT_PROMPTS["bucket_config_review"], session_id=session_id)
-        run_id = _execute_run(conn, body)
+        run_id = _execute_run(conn, body, turn_id, f"bucket_config_review:{provider_id}:{bucket}")
         result = _run_result(conn, run_id)
         note("run_bucket_config_review", bucket, result["status"])
         return json.dumps(result)
@@ -161,7 +188,7 @@ def build(
             return _err("Unknown provider_id. Use a configured provider.")
         body = RunCreate(run_type="account_discovery", provider_id=provider_id,
                          user_prompt=_DEFAULT_PROMPTS["account_discovery"], session_id=session_id)
-        run_id = _execute_run(conn, body)
+        run_id = _execute_run(conn, body, turn_id, f"account_discovery:{provider_id}")
         result = _run_result(conn, run_id)
         profile = account_repo.get_profile(conn, run_id)
         if profile:

@@ -6,6 +6,36 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.23] - 2026-06-29
+
+### Fixed
+
+- **No more duplicate runs or messages when a stream drops mid-turn.** Each chat
+  turn now carries a client turn id; if the streaming attempt breaks and the
+  blocking fallback re-runs it, the server dedups — it won't re-persist a turn
+  the stream already completed, and the agent reuses (rather than re-creates) any
+  read-only run the failed attempt had already started.
+- **Session-switch race.** Switching sessions while one is still loading no
+  longer lets the slow response overwrite the now-current session's view.
+- **Run detail race + silent load failure.** Opening runs quickly no longer lets
+  a stale fetch overwrite the current run, and a failed load now shows an error
+  instead of hanging on "Waiting for plan…".
+- **Session actions surface failures.** Rename / pin / archive / delete / fork
+  failures now show a banner instead of being silently ignored; a failed
+  send-while-sidecar-not-ready keeps your text and shows the error.
+- **Slow runs keep streaming.** The run event stream now sends heartbeats and
+  stays open while a run is active (with an absolute backstop), instead of
+  dropping the live timeline after 120s of silence on a slow run.
+- **Unreadable secret vault is explained.** If the vault can't be decrypted,
+  Settings now shows a clear warning (and how to recover) instead of just showing
+  keys as "not set".
+- **Inline runs that time out no longer mislead the agent.** When a read-only run
+  exceeds the inline budget and continues in the background, the tool result
+  tells the agent it's still running so it won't state premature findings.
+- Internal: `may_execute` now matches the actually-inline-executable tools
+  (`generate_session_report` is proposable, not auto-run) — no behavior change,
+  removes a latent policy/tool inconsistency.
+
 ## [0.19.22] - 2026-06-29
 
 ### Fixed

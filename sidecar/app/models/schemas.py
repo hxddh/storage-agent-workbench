@@ -466,6 +466,9 @@ class SessionSummaryOut(BaseModel):
 
 class SessionMessageCreate(BaseModel):
     content: str = Field(min_length=1)
+    # Optional client-generated turn id. Lets the streaming endpoint and its
+    # blocking fallback dedup the same turn (idempotency); see turn_guard.
+    turn_id: str | None = None
 
 
 class ActionRequest(BaseModel):

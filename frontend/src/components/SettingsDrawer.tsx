@@ -2,13 +2,28 @@ import { useEffect, useState } from "react";
 import { ProvidersView } from "../views/ProvidersView";
 import { useI18n, LANGS, type Lang } from "../i18n";
 import { useTheme, type Theme } from "../theme";
-import { getAutonomy, setAutonomy, type AutonomyPolicy } from "../api";
+import { getAutonomy, getVaultStatus, setAutonomy, type AutonomyPolicy } from "../api";
 
 /**
  * Right slide-over for setup. Embeds the existing model + cloud provider CRUD
  * (Providers view), plus appearance (theme + language) controls, so all settings
  * live in one place inline with the thread rather than a separate page.
  */
+/** Warns when the encrypted secret vault couldn't be decrypted this session. */
+function VaultWarning() {
+  const { t } = useI18n();
+  const [unreadable, setUnreadable] = useState(false);
+  useEffect(() => {
+    getVaultStatus().then((s) => setUnreadable(s.unreadable)).catch(() => undefined);
+  }, []);
+  if (!unreadable) return null;
+  return (
+    <div className="border-b border-red-500/30 bg-red-950/40 px-8 py-3 text-xs leading-relaxed text-red-300">
+      {t("settings.vaultUnreadable")}
+    </div>
+  );
+}
+
 export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t, lang, setLang } = useI18n();
   const { theme, setTheme } = useTheme();
@@ -42,6 +57,7 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
           </button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+          <VaultWarning />
           {/* Appearance: theme + language */}
           <section className="border-b border-edge px-8 py-5">
             <div className="mb-1 text-sm font-semibold text-gray-100">{t("settings.appearance")}</div>

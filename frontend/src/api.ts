@@ -234,27 +234,29 @@ export const refreshSessionSummary = (id: string) =>
 export const getSessionReport = (id: string) =>
   request<{ session_id: string; format: string; content: string }>(`/sessions/${id}/report`);
 
-export const postSessionMessage = (id: string, content: string) =>
+export const postSessionMessage = (id: string, content: string, turnId?: string) =>
   request<{ session_id: string; messages: SessionMessage[]; proposed_actions: NextAction[] }>(
     `/sessions/${id}/messages`,
-    { method: "POST", body: JSON.stringify({ content }) },
+    { method: "POST", body: JSON.stringify({ content, turn_id: turnId }) },
   );
 
 // Streaming variant (SSE): invokes onDelta/onTool as the agent works and
 // resolves on the `done` event. Throws on a non-OK response (e.g. 422 no model)
 // or a stream `error` event — the caller should then fall back to
-// postSessionMessage (the stream endpoint persists nothing until it completes,
-// so the fallback re-runs the turn without duplicating it).
+// postSessionMessage with the SAME turnId. The server dedups by turn_id, so the
+// fallback never duplicates the turn or any inline run, even if the stream had
+// already done work server-side before the connection broke.
 export async function streamSessionMessage(
   id: string,
   content: string,
   on: { onDelta: (text: string) => void; onTool: (a: ToolActivity) => void },
   signal?: AbortSignal,
+  turnId?: string,
 ): Promise<{ proposed_actions: NextAction[] }> {
   const res = await fetch(`${sidecarBaseUrl()}/sessions/${id}/messages/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, turn_id: turnId }),
     signal,
   });
   if (!res.ok || !res.body) {
@@ -390,6 +392,13 @@ export interface AutonomySetting {
 }
 
 export const getAutonomy = () => request<AutonomySetting>("/settings/autonomy");
+
+export interface VaultStatus {
+  unreadable: boolean;
+  backup_present: boolean;
+}
+
+export const getVaultStatus = () => request<VaultStatus>("/settings/secret-vault");
 
 export const setAutonomy = (policy: AutonomyPolicy) =>
   request<AutonomySetting>("/settings/autonomy", {

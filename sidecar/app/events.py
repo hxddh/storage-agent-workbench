@@ -16,8 +16,14 @@ import json
 import threading
 from typing import Any
 
-_STREAM_IDLE_TIMEOUT_S = 120.0
 _POLL_INTERVAL_S = 0.1
+# Send a comment heartbeat after this much silence so a genuinely slow-but-alive
+# run (e.g. account_discovery pausing on one big bucket) doesn't look idle and
+# get dropped — the stream stays open until the run is marked done.
+_HEARTBEAT_S = 15.0
+# Absolute backstop: stop streaming a run that never marks done (e.g. a hard
+# crash mid-run left no done flag), so the generator can't linger forever.
+_STREAM_MAX_S = 1800.0
 
 
 class EventBus:
@@ -58,20 +64,31 @@ bus = EventBus()
 
 
 async def sse_stream(run_id: str):
-    """Async generator yielding SSE 'data:' frames until the run is done."""
+    """Async generator yielding SSE 'data:' frames until the run is done.
+
+    Stays open while the run is active even across long silences (a heartbeat
+    keeps the connection alive), so a slow run's timeline keeps updating. Ends
+    promptly once the run is marked done; an absolute backstop prevents a
+    never-marked-done run from lingering forever.
+    """
     cursor = 0
-    waited = 0.0
+    idle = 0.0
+    total = 0.0
     while True:
         events, done = bus.snapshot(run_id, cursor)
         for event in events:
             cursor += 1
             yield f"data: {json.dumps(event)}\n\n"
         if events:
-            waited = 0.0
+            idle = 0.0
             continue
         if done:
             break
         await asyncio.sleep(_POLL_INTERVAL_S)
-        waited += _POLL_INTERVAL_S
-        if waited >= _STREAM_IDLE_TIMEOUT_S:
+        idle += _POLL_INTERVAL_S
+        total += _POLL_INTERVAL_S
+        if idle >= _HEARTBEAT_S:
+            idle = 0.0
+            yield ": keepalive\n\n"  # SSE comment; ignored by EventSource
+        if total >= _STREAM_MAX_S:
             break
