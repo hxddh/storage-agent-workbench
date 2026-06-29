@@ -145,21 +145,34 @@ def _parse_jsonl(path: str | Path) -> list[dict[str, Any]]:
 
 
 def _parse_text(path: str | Path) -> list[dict[str, Any]]:
+    """Parse a text log. Known formats (app/S3 + CLF) are structured; any other
+    non-empty line is still INGESTED as a raw row (no structured fields) so a
+    generic .log/.txt yields a usable dataset instead of an empty result or a
+    crash. Always redacted before storage."""
     rows: list[dict[str, Any]] = []
     for line in _nonempty_lines(path):
         m = _TEXT_RE.match(line) or _CLF_RE.match(line)
-        if not m:
-            continue
-        g = m.groupdict()
-        rows.append(_row(
-            g.get("ts"), g.get("method"), g.get("path"), g.get("status"),
-            g.get("bytes"), g.get("latency"), g.get("ua"), g.get("ip"), None, line,
-        ))
+        if m:
+            g = m.groupdict()
+            rows.append(_row(
+                g.get("ts"), g.get("method"), g.get("path"), g.get("status"),
+                g.get("bytes"), g.get("latency"), g.get("ua"), g.get("ip"), None, line,
+            ))
+        else:
+            # Unrecognized line: keep it as a raw (redacted) row, no fake fields.
+            rows.append(_row(None, None, None, None, None, None, None, None, None, line))
     return rows
 
 
 def _parse_csv(path: str | Path) -> list[dict[str, Any]]:
-    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    # Robust + never-crash: the python engine tolerates ragged rows, on_bad_lines
+    # skips malformed ones instead of raising a C tokenizer error, and any other
+    # parse failure yields [] (the caller falls back to the text parser).
+    try:
+        df = pd.read_csv(path, dtype=str, keep_default_na=False,
+                         engine="python", on_bad_lines="skip")
+    except Exception:  # noqa: BLE001
+        return []
     lower = {c.lower().strip(): c for c in df.columns}
 
     def pick(*cands: str):
@@ -195,13 +208,21 @@ def _parse_csv(path: str | Path) -> list[dict[str, Any]]:
 
 def import_access_logs(raw_path: str | Path, duckdb_path: str | Path, fmt: str) -> dict[str, Any]:
     if fmt == "jsonl":
-        rows = _parse_jsonl(raw_path)
+        rows = _parse_jsonl(raw_path) or _parse_csv(raw_path) or _parse_text(raw_path)
     elif fmt == "csv":
-        rows = _parse_csv(raw_path)
-    else:  # "text" and fallback
-        rows = _parse_text(raw_path)
-        if not rows:  # last-resort attempts
-            rows = _parse_jsonl(raw_path) or _parse_csv(raw_path)
+        rows = _parse_csv(raw_path) or _parse_jsonl(raw_path) or _parse_text(raw_path)
+    else:  # "text" and fallback — _parse_text ingests any non-empty line
+        rows = _parse_text(raw_path) or _parse_jsonl(raw_path) or _parse_csv(raw_path)
+
+    if not rows:
+        # Only reachable for an effectively empty input (no non-blank lines).
+        # Raise a clear, friendly message instead of producing an empty table or
+        # letting a downstream parser exception surface as a cryptic crash.
+        raise ValueError(
+            "No log lines could be read from this file. It appears to be empty or "
+            "contains no usable text. Supported inputs: plain-text access logs "
+            "(.log/.txt), CLF/combined, CSV, or JSON lines."
+        )
 
     df = pd.DataFrame(rows, columns=COLUMNS)
     con = duck.connect(duckdb_path)

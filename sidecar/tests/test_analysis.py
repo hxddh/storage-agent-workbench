@@ -86,6 +86,42 @@ def test_analyze_access_logs_metrics(tmp_path):
     assert m["error_rate_4xx"] == 0.5  # one 403, one 404 of 4
 
 
+def test_import_generic_text_log_ingests_raw_lines(tmp_path):
+    """A generic application .log (not CLF/S3 format) must not crash or produce an
+    empty table — every non-blank line is ingested as a raw row."""
+    content = (
+        "2026-06-25 10:00:00 INFO starting up, connecting to s3\n"
+        "2026-06-25 10:00:01 WARN slow response from endpoint\n"
+        "2026-06-25 10:00:02 ERROR upload failed: connection reset\n"
+    )
+    p = _write(tmp_path, "app.log", content)
+    duckdb_path = tmp_path / "g.duckdb"
+    out = access_logs.import_access_logs(p, duckdb_path, "text")
+    assert out["row_count"] == 3  # all lines kept, no crash
+
+
+def test_import_malformed_csv_does_not_crash(tmp_path):
+    """A CSV-detected file with ragged rows must skip bad lines, not raise a
+    ParserError (the original 问题2 crash)."""
+    content = (
+        "timestamp,method,status\n"
+        "2026-06-25T10:00:00Z,GET,200\n"
+        "2026-06-25T10:00:01Z,GET,200,extra,unexpected,columns\n"  # ragged
+        "2026-06-25T10:00:02Z,GET,404\n"
+    )
+    p = _write(tmp_path, "ragged.csv", content)
+    duckdb_path = tmp_path / "c.duckdb"
+    out = access_logs.import_access_logs(p, duckdb_path, "csv")
+    assert out["row_count"] >= 2  # good rows survive; ragged one skipped
+
+
+def test_import_empty_file_raises_clear_error(tmp_path):
+    p = _write(tmp_path, "empty.log", "\n  \n\n")
+    duckdb_path = tmp_path / "e.duckdb"
+    with pytest.raises(ValueError, match="No log lines could be read"):
+        access_logs.import_access_logs(p, duckdb_path, "text")
+
+
 def test_access_log_jsonl_masks_ip_and_redacts_secret(tmp_path):
     p = _write(tmp_path, "a.jsonl", ACCESS_LOG_JSONL)
     duckdb_path = tmp_path / "a.duckdb"

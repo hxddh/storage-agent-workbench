@@ -25,8 +25,8 @@ function VaultWarning() {
 }
 
 export function SettingsDrawer(
-  { open, onClose, onOpenSession }:
-  { open: boolean; onClose: () => void; onOpenSession?: (sessionId: string) => void },
+  { open, onClose }:
+  { open: boolean; onClose: () => void },
 ) {
   const { t, lang, setLang } = useI18n();
   const { theme, setTheme } = useTheme();
@@ -87,7 +87,7 @@ export function SettingsDrawer(
 
           <AutonomySection />
 
-          <ProvidersView onRunCreated={() => onClose()} onOpenSession={onOpenSession} />
+          <ProvidersView />
           <div className="border-t border-edge px-8 py-5 text-xs leading-relaxed text-gray-500">
             <div className="mb-1 font-medium text-gray-400">{t("settings.safetyTitle")}</div>
             {t("settings.safety")}

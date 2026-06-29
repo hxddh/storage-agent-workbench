@@ -3,9 +3,11 @@
 These close the old proposal→execution gap: instead of only *proposing* a
 read-only run for the user to re-drive through a form, the agent — when the
 autonomy policy allows inline execution — can run it and fold the findings into
-its answer. Only SAFE_READONLY runs live here (diagnostic,
-bucket_config_review, account_discovery); expensive/data-moving work
-(analysis, evidence import) is never auto-run and stays a proposal.
+its answer. Only SAFE_READONLY *structured* runs live here
+(bucket_config_review, account_discovery); expensive/data-moving work (analysis,
+evidence import) is never auto-run and stays a proposal. Connectivity/credential/
+addressing diagnosis is deliberately NOT here — the agent does that adaptively
+with its own read-only session tools rather than firing a canned pipeline.
 
 Every run created here is:
 - a REAL, persisted, audited run (identical to a manual one) bound to the
@@ -37,7 +39,6 @@ from ..security.redaction import redact_text
 
 # Run types the agent may execute inline, with the prompt used when it does.
 _DEFAULT_PROMPTS = {
-    "diagnostic": "Diagnose connectivity, credentials, and addressing for this bucket.",
     "bucket_config_review": "Review this bucket's security, lifecycle, observability and cost configuration.",
     "account_discovery": "Discover account-level buckets and evidence sources.",
 }
@@ -150,20 +151,11 @@ def build(
         if activity is not None:
             activity.append({"tool": tool, "target": target[:80], "result": result[:80]})
 
-    @function_tool
-    def run_diagnostic(provider_id: str, bucket: str) -> str:
-        """Execute a read-only diagnostic run on a bucket (credentials, reachability, addressing, TLS, range) and return its findings. This actually RUNS and records the run — use it to confirm a hypothesis, not just to suggest it. Args: provider_id, bucket."""
-        p = provider(provider_id)
-        if p is None:
-            return _err("Unknown provider_id. Use a configured provider.")
-        if not bucket_ok(p, bucket):
-            return _err("That bucket is not in this provider's allow-list.")
-        body = RunCreate(run_type="diagnostic", provider_id=provider_id, bucket=bucket,
-                         user_prompt=_DEFAULT_PROMPTS["diagnostic"], session_id=session_id)
-        run_id = _execute_run(conn, body, turn_id, f"diagnostic:{provider_id}:{bucket}")
-        result = _run_result(conn, run_id)
-        note("run_diagnostic", bucket, result["status"])
-        return json.dumps(result)
+    # NOTE: there is intentionally no run_diagnostic tool here. The agent diagnoses
+    # connectivity/credentials/addressing ADAPTIVELY with its own read-only tools
+    # (session_tools) — test_credentials, then branch to test_addressing_style /
+    # inspect_endpoint_tls / head_bucket / list_objects / test_range_get, reasoning
+    # about each result — instead of firing a canned deterministic pipeline.
 
     @function_tool
     def run_bucket_config_review(provider_id: str, bucket: str) -> str:
@@ -197,7 +189,7 @@ def build(
         note("run_account_discovery", provider_name(provider_id), result["status"])
         return json.dumps(result)
 
-    return [run_diagnostic, run_bucket_config_review, run_account_discovery]
+    return [run_bucket_config_review, run_account_discovery]
 
 
 __all__ = ["build"]
