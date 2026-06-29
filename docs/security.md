@@ -106,46 +106,36 @@ They should not be treated as hard failures unless the requested task requires t
 
 ## Agent dataset analysis
 
-Agent planner mode is available for `access_log_analysis` and
-`inventory_analysis` as an **analysis narrator with bounded drill-down** — it
-explains the deterministic results (and may drill into them via whitelisted
-read-only aggregates), it does not produce them.
+Dataset analysis (`access_log_analysis`, `inventory_analysis`, and the agent's
+`analyze_uploaded_file` tool) is **deterministic** — there is no in-run LLM
+narrator or drill-down agent (both were removed in v0.20.0). The deterministic
+DuckDB engine is authoritative and produces the metrics + findings; the single
+conversational agent narrates the sanitized result if the user asks.
 
-- The deterministic DuckDB analysis runs first and is authoritative. Default
-  planner mode stays `deterministic`; agent mode is opt-in per run.
-- The model is given **only** a bounded, sanitized, aggregated context: run +
-  dataset metadata, the deterministic metrics, and the deterministic findings.
-  Lists are capped at 20 entries and the whole context is asserted to contain no
-  secret-shaped content before it can leave the process.
-- The model gets only **bounded, read-only aggregate tools** over the
-  already-local DuckDB dataset (`analysis/drilldown.py`): `aggregate_by` (top-N
-  group-by over a whitelisted dimension/metric) and `count_where` (count over a
-  whitelisted field with a parameterized value). It therefore **cannot** run
-  arbitrary/free SQL, read raw log lines or inventory rows, list a full key set,
-  download object bodies, or call any S3 API — dimensions/fields are whitelisted,
-  values are parameterized, and the connection is read-only. No S3/whitelist tool
-  is added. (Forbidden by construction, not just by prompt.)
+- The conversational agent is given **only** a bounded, sanitized, aggregated
+  context: run + dataset metadata, the deterministic metrics, and the
+  deterministic findings. Lists are capped at 20 entries and the whole context
+  is asserted to contain no secret-shaped content before it can leave the
+  process. It never reaches raw rows, full key lists, free SQL, or object bodies.
 - Forbidden in the agent context: raw log lines, raw inventory rows, full key
   lists / >20 sample keys, Authorization headers, cookies, presigned-URL query
   params, access/secret/session keys, model API keys, unmasked client IPs, and
   arbitrary SQL result dumps. Client IPs are masked upstream at import.
-- The model output is redacted, chain-of-thought-stripped, length-bounded, and
+- The agent's output is redacted, chain-of-thought-stripped, length-bounded, and
   coerced to a fixed field set before it is shown or saved. Hidden reasoning,
   raw prompts, and raw model reasoning are never persisted.
-- The inventory narrator may *recommend reviewing* lifecycle-policy candidates,
-  but must never auto-create/update/delete lifecycle rules or emit bulk-delete
-  commands — same destructive-operation ban as the rest of the app.
-- Missing model provider key fails the agent run cleanly with a safe message;
-  deterministic mode is unaffected.
-- The report separates **Deterministic metrics** (authoritative) from the
-  **Agent Interpretation** section, so every agent claim is traceable to a
-  deterministic metric or finding shown above it.
+- The agent may *recommend reviewing* lifecycle-policy candidates, but must never
+  auto-create/update/delete lifecycle rules or emit bulk-delete commands — same
+  destructive-operation ban as the rest of the app.
+- A missing model provider key fails only the conversational turn cleanly (422);
+  the deterministic run is unaffected.
 
 ## Account discovery
 
 The `account_discovery` run type enumerates an account's buckets and their
-configuration from read-only APIs only. It is deterministic; Agent mode is
-rejected with a clean 422 and no bucket list / config is ever sent to an LLM.
+configuration from read-only APIs only. It is deterministic; no bucket list /
+config is ever sent to an LLM (the conversational agent sees only the sanitized
+summary + counts via `survey_account`).
 
 - **AK/SK/session tokens stay in the encrypted secret vault**, resolved at call
   time inside the boto3 client factory; they never enter SQLite, logs, reports,

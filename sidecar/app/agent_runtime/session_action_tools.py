@@ -188,7 +188,18 @@ def build(
         note("survey_account", provider_name(provider_id), result["status"])
         return json.dumps(result)
 
-    return [review_bucket_config, survey_account]
+    @function_tool
+    def read_run_result(run_id: str) -> str:
+        """Read the current status + sanitized summary of a run already linked to this session — e.g. a survey/review that exceeded the inline time budget and finished in the background, or an evidence-import analysis. Use this to pick up a result in a LATER turn instead of re-running. Returns status + final_summary (no raw rows/keys). Args: run_id."""
+        from ..repositories import sessions as sessions_repo
+        linked = {r["run_id"] for r in sessions_repo.list_runs(conn, session_id)} if session_id else set()
+        if run_id not in linked:
+            return _err("Unknown run_id for this session. Only runs in this session can be read.")
+        result = _run_result(conn, run_id)
+        note("read_run_result", run_id[:8], result["status"])
+        return json.dumps(result)
+
+    return [review_bucket_config, survey_account, read_run_result]
 
 
 __all__ = ["build"]

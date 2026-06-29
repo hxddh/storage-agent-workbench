@@ -2,9 +2,10 @@
 
 Runs the deterministic pipeline: redact → parse → match playbooks → candidate
 causes + safe next checks + next-action proposals. It performs NO S3 call, run,
-download, or mutation, and calls no LLM. The optional Agent interpretation lives
-in ``triage_agent`` and only ever sees the sanitized triage context produced
-here (never the raw blob).
+download, or mutation, and calls no LLM. Triage is deterministic-only — there is
+no in-run triage narrator; the conversational session agent interprets a case if
+the user asks, and even then only ever sees the sanitized triage context
+produced here (never the raw blob).
 """
 
 from __future__ import annotations

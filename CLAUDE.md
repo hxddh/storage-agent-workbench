@@ -14,12 +14,14 @@ This is not a generic chat assistant. The **primary surface is a thread-first
 conversational agent** (a real tool-calling loop over read-only tools); structured
 **Analysis Runs** are a callable, auditable capability beneath it.
 
-## Agent surfaces (how the LLM is used)
+## Agent architecture (how the LLM is used)
 
-There are deliberately two surfaces, and the split is intentional — not an
-oversight:
+There is exactly **one** LLM in the product: the conversational session agent.
+Everything else is deterministic compute it invokes. The old dual-track design
+(a second "run-planner" LLM, in-run interpretation narrators, a `planner_mode`
+switch) was eliminated in v0.20.0 — do not reintroduce it.
 
-1. **Conversational session agent** (the main UX, `agent_runtime/session_agent.py`).
+1. **Conversational session agent** (the only agent, `agent_runtime/session_agent.py`).
    A genuine tool-calling agent: it chooses provider/bucket, calls read-only S3
    tools in a loop, loads StorageOps skills on demand (progressive disclosure via
    the `read_skill` tool), and grounds answers in tool output. It is **always a
@@ -29,12 +31,13 @@ oversight:
    root cause; it analyzes a file the user **attaches in the conversation** with
    read-only `list_uploaded_files` / `analyze_uploaded_file`
    (`agent_runtime/session_analysis_tools.py`, same DuckDB engine, sanitized
-   aggregates only); and it runs the heavier read-only `survey_account` /
-   `review_bucket_config` tools (`agent_runtime/session_action_tools.py`) only
-   when the request is about the account/buckets. Crucially, **nothing the agent
+   aggregates only); it runs the heavier read-only `survey_account` /
+   `review_bucket_config` tools (`agent_runtime/session_action_tools.py`) when
+   the request is about the account/buckets; and it picks up a backgrounded run's
+   result in a later turn with `read_run_result`. Crucially, **nothing the agent
    does in a conversation surfaces as a structured run card** — those tools
    record runs with `origin='agent'` that the thread filters out; the agent
-   narrates the result inline. This is where "agentic" behavior lives.
+   narrates the result inline.
 
    Security tiers are enforced in code regardless: EXPENSIVE/data-moving work
    (cloud evidence import/download, large/full scans) is never auto-run — it
@@ -44,35 +47,26 @@ oversight:
 
 2. **Deterministic compute layer** (`runs/`, dispatched by `run_service.py`) —
    the agent-invoked **security/reproducibility floor**, NOT a user-facing fixed
-   pipeline. The conversational agent (surface 1) is the sole driver: no UI path
-   creates a run, and the executors no longer publish a canned step "plan" — they
-   expose only their real tool trace, findings, and summary. This layer survives
-   for three reasons, all of them safety/altitude choices rather than ossified
-   flows:
+   pipeline and NOT a second agent. These executors are **pure deterministic
+   compute — there is no LLM planner and no in-run narrator.** The conversational
+   agent (surface 1) is the sole driver: no UI path creates a run, executors
+   publish only their real tool trace, findings, and summary (no canned step
+   "plan", no agent-written prose section), and the agent narrates the result in
+   its own words. This layer survives for one reason — it is the security floor:
    - **deterministic engines** (rule-based, no LLM) compute heavy aggregates so
      the model never touches raw rows — e.g. the DuckDB analysis behind the
-     agent's `analyze_uploaded_file` tool, `diagnostic`, `account_discovery`;
-   - **agent-planner** (`agent_service.run_agent`, `planner_mode="agent"`) — a
-     controlled tool-calling LLM over the same whitelist (API-reachable);
-   - **interpretation narrators** (`analysis_agent`, `error_triage/triage_agent`)
-     — the deterministic engine computes first, then the LLM writes the narrative
-     over sanitized aggregates. The analysis narrator may **drill down** with two
-     bounded, read-only aggregate tools over the local DuckDB dataset
-     (`analysis/drilldown.py`: `aggregate_by`, `count_where`).
+     agent's `analyze_uploaded_file` tool, `diagnostic`, `account_discovery`,
+     `bucket_config_review`, and error triage.
 
-   The drill-down envelope is enforced in code, not the prompt: only whitelisted
-   GROUP BY / COUNT shapes run (dimensions/metrics/fields validated against an
-   allow-list, filter values always bound), the connection is read-only, and the
-   model still never reaches raw rows, full key lists, arbitrary SQL, or object
-   bodies. A "run" is now an agent-invoked tool and/or an opt-in **auditable
-   report artifact** — never a reflex the UI fires or a canned plan the agent is
-   marched through. Reproducible runs + the deterministic floor are kept because
-   the non-negotiable security rules require them (no raw rows to the model,
-   bounded scans, confirmed data-moving); they are not a second "surface" the
-   user navigates.
+   A "run" is an agent-invoked tool and/or an opt-in **auditable report
+   artifact** — never a reflex the UI fires or a canned plan the agent is marched
+   through. Reproducible runs + the deterministic floor are kept because the
+   non-negotiable security rules require them (no raw rows to the model, bounded
+   scans, confirmed data-moving); they are not a second "surface" the user
+   navigates.
 
-All LLM seams build their model client through `agent_service.build_agent`
-(per-run client; never the SDK process-global).
+The session agent builds its model client through `agent_service.build_agent`
+(per-session client; never the SDK process-global).
 
 ## Product shape
 
@@ -97,15 +91,16 @@ admin panel. As of the v0.19.0-pre.2 rebuild:
 
 ## Supported run types
 
-The product should model work as Analysis Runs.
+The deterministic compute layer models heavy work as Analysis Runs that the
+agent invokes.
 
-Initial run types:
+Run types:
 
 - `diagnostic`
 - `access_log_analysis`
 - `inventory_analysis`
 - `bucket_config_review`
-- `optimization_report`
+- `account_discovery`
 
 ## Fixed MVP stack
 

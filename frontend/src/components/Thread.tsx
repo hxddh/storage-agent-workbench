@@ -228,7 +228,7 @@ export function Thread({
       const msg = String(e);
       if (/no model provider configured|no api key stored/i.test(msg)) {
         if (looksLikeError(q)) {
-          await submitErrorTriage({ content: q, input_kind: "mixed", session_id: id, planner_mode: "deterministic" });
+          await submitErrorTriage({ content: q, input_kind: "mixed", session_id: id });
         } else {
           patchSessionRun(id, { needKey: true });
         }

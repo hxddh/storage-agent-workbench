@@ -12,15 +12,15 @@ Working end to end:
 - Read-only S3 diagnostics and account discovery.
 - Bucket configuration review (security / lifecycle / observability / cost).
 - Managed evidence import (plan → confirm → run) for inventory and access logs.
-- Local DuckDB analysis of inventory and access logs (with a bounded-drill-down
-  agent narrator).
-- Error triage.
+- Local DuckDB analysis of inventory and access logs (deterministic engine; the
+  conversational agent narrates the sanitized result).
+- Error triage (deterministic).
 - Sessions: a persistent investigation workspace with rename / pin / archive /
   delete / fork.
-- A thread-first conversational agent that investigates live with read-only
-  tools, keeps working memory across turns, and — per the autonomy setting —
-  either runs read-only checks itself or proposes them. Data-moving actions
-  always wait for your confirmation.
+- A thread-first conversational agent — the single LLM in the product — that
+  investigates live with read-only tools, keeps working memory across turns, and
+  runs read-only checks (S3 probes, account survey, config review, uploaded-file
+  analysis) itself. Data-moving actions always wait for your confirmation.
 - Markdown reports.
 
 ## Known gaps

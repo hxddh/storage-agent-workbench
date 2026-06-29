@@ -6,6 +6,51 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-06-30
+
+**Single-agent architecture.** This release finishes the agent-native migration
+by eliminating the dual-track design: there is now exactly **one** LLM in the
+product — the conversational session agent. Everything under `runs/` is pure
+deterministic compute the agent invokes as a tool or saves as an auditable
+report artifact. No second "run-planner" LLM, no in-run interpretation
+narrators, no `planner_mode` switch. The deterministic engines, DuckDB, the S3
+read-only whitelist, output sanitization, and the confirm gate on data-moving
+work are all kept — they are the security floor.
+
+### Removed
+
+- **The run-planner agent.** Deleted `agent_runtime/tool_registry.py`,
+  `prompts.py`, `context_builder.py`, `result_parser.py`, and the
+  `agent_service.run_agent` / `ToolInvoker` machinery. `agent_service.py` now
+  keeps only `build_agent` / `get_model_credentials` for the conversational
+  agent.
+- **In-run interpretation narrators.** Deleted
+  `agent_runtime/analysis_agent.py` (the `access_log_analysis` /
+  `inventory_analysis` narrator + `analysis/drilldown.py` aggregate tools) and
+  `error_triage/triage_agent.py`. Analysis and triage are deterministic-only;
+  the conversational agent narrates the sanitized result if asked.
+- **`planner_mode`.** Dropped from the API (`RunCreate`/`RunSummary`/`RunDetail`,
+  `ErrorTriageRequest`), the run SSE `run_started` event, the frontend types, and
+  the run-detail UI. `run_service.run_sync` always dispatches a run to its
+  deterministic executor; the `runs.planner_mode` SQLite column is retained
+  (defaulting to `'deterministic'`) only because the schema is append-only and is
+  no longer read or written.
+- **The `optimization_report` run type** (never implemented as a real executor);
+  an unknown `run_type` is now a clean 422.
+
+### Changed
+
+- **Runs expose only their real tool trace, findings, and summary** — no canned
+  step "plan" event and no agent-authored prose section in reports.
+- **Evidence import is reached through the agent**, not a separate panel —
+  `AccountProfilePanel` is now a read-only profile view.
+
+### Added
+
+- **`read_run_result(run_id)`** tool — lets the agent pick up a backgrounded
+  survey/review/import result in a later turn (status + sanitized summary; only
+  runs linked to the current session) instead of re-running.
+
 ## [0.19.29] - 2026-06-30
 
 Cleanup pass resolving the verified-true items from a code/skills review — no

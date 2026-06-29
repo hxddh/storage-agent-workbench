@@ -1,11 +1,11 @@
-"""Tests for Phase 18 error triage (deterministic parser + playbooks + agent).
+"""Tests for error triage (deterministic parser + playbooks).
 
 All inputs are SYNTHETIC (example.com endpoints, fake buckets, fake ids) — no
-real customer/endpoint/credential data (public repo). These verify parsing,
+real customer/endpoint/credential data (public repo). Triage is the offline,
+deterministic path (no LLM narrator): these verify parsing,
 redaction-before-persist, playbook causes/next-checks, proposals-only next
-actions, session binding + summary refresh, the interpretation-only agent
-(sanitized context, CoT-stripped, clean missing-key), and that triage performs
-no S3 call / no run creation / no evidence download.
+actions, session binding + summary refresh, and that triage performs no S3
+call / no run creation / no evidence download.
 """
 
 import sqlite3
@@ -13,7 +13,7 @@ import sqlite3
 import pytest
 
 from app import config, run_service
-from app.error_triage import engine, parser, triage_agent
+from app.error_triage import engine, parser
 from app.s3 import client_factory
 
 ACCESS = "AKIAIOSFODNN7EXAMPLE"
@@ -164,10 +164,11 @@ def test_triage_binds_to_session_and_refreshes_summary(client):
     assert any("Error triage" in str(f.get("text", "")) for f in summary["known_facts"])
 
 
-def test_triage_deterministic_default_no_agent(client):
+def test_triage_is_deterministic_only(client):
     out = _triage(client, ACCESS_DENIED).json()
-    assert out["planner_mode"] == "deterministic"
-    assert out["agent_interpretation"] is None
+    # No LLM narrator: the response carries no agent/planner fields.
+    assert "planner_mode" not in out and "agent_interpretation" not in out
+    assert out["candidate_causes"]  # deterministic playbook matched
 
 
 def test_triage_does_not_create_run_or_download(client):
@@ -189,40 +190,6 @@ def test_triage_does_not_call_s3(client, monkeypatch):
     monkeypatch.setattr(client_factory, "build_s3_client", _boom)
     out = _triage(client, SIG_ERROR)
     assert out.status_code == 200  # triage completed without ever building an S3 client
-
-
-# --- agent (interpretation-only) --------------------------------------------
-
-
-def test_agent_triage_sanitized_context_and_cot_stripped(client, monkeypatch):
-    _add_model_provider(client)
-    captured = {}
-
-    def fake_loop(spec):
-        captured["spec"] = spec
-        return "Most likely region mismatch. <thinking>secret chain</thinking>"
-
-    monkeypatch.setattr(triage_agent, "TRIAGE_LOOP", fake_loop)
-    out = _triage(client, SIG_ERROR, planner_mode="agent").json()
-    assert out["agent_interpretation"]
-    assert "secret chain" not in out["agent_interpretation"]  # CoT stripped
-    spec = captured["spec"]
-    # interpretation-only: no tools, and the RAW blob is never in the context
-    assert "tools" not in spec and "invoker" not in spec
-    import json as _json
-    ctx = _json.dumps(spec["context"])
-    assert ACCESS not in ctx and "deadbeefdeadbeef" not in ctx
-    assert "Authorization:" not in ctx  # raw header text not forwarded
-
-
-def test_agent_triage_missing_model_key_clean_failure(client):
-    # no model provider configured -> deterministic result still returned, agent noted unavailable
-    out = _triage(client, SIG_ERROR, planner_mode="agent")
-    assert out.status_code == 200
-    body = out.json()
-    assert body["agent_interpretation"] is None
-    assert body["candidate_causes"]  # deterministic triage unaffected
-    assert any("unavailable" in lim.lower() for lim in body["limitations"])
 
 
 # --- report + safety --------------------------------------------------------

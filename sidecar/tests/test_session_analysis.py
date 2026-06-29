@@ -201,7 +201,7 @@ def test_agent_survey_run_is_origin_agent_and_not_a_card(client, monkeypatch):
     conn = _conn()
     try:
         tools = session_action_tools.build(conn, _fake_function_tool, [], sid)
-        assert _tool_names(tools) == {"survey_account", "review_bucket_config"}
+        assert _tool_names(tools) == {"survey_account", "review_bucket_config", "read_run_result"}
         tool = next(t for t in tools if t.name == "review_bucket_config")
         out = json.loads(tool(pid, "bucket-x"))
         assert out["status"] == "completed"

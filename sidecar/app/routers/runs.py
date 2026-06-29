@@ -1,8 +1,11 @@
-"""Analysis Run endpoints (Phase 04).
+"""Analysis Run endpoints.
 
-Only ``diagnostic`` runs execute. Other run types are created as placeholders
-with status ``not_implemented`` and are not executed (no DuckDB, no config
-review in this phase).
+Runs are PURE deterministic compute — there is no LLM planner. The implemented
+run types (diagnostic, access_log_analysis, inventory_analysis,
+bucket_config_review, account_discovery) execute via their deterministic
+executors; any other run type is created as a ``not_implemented`` placeholder.
+The conversational agent invokes these engines as tools or proposes a saved
+report; it never plans or narrates inside a run.
 """
 
 from __future__ import annotations
@@ -45,26 +48,8 @@ _EXECUTABLE = {
 _NEEDS_BUCKET = {"diagnostic", "bucket_config_review"}
 # Run types that need a provider but operate at the account level (no bucket).
 _NEEDS_PROVIDER_ONLY = {"account_discovery"}
-# Run types where the agent planner is wired up: diagnostic + config review use
-# the tool-calling planner (Phase 07); the dataset-analysis types use the
-# interpretation-only narrator over deterministic aggregates (Phase 13).
-_AGENT_SUPPORTED = {
-    "diagnostic", "bucket_config_review",
-    "access_log_analysis", "inventory_analysis",
-}
-
-
 @router.post("", response_model=RunCreated, status_code=status.HTTP_201_CREATED)
 def create_run(body: RunCreate, conn: sqlite3.Connection = Depends(get_conn)):
-    if body.planner_mode == "agent" and body.run_type not in _AGENT_SUPPORTED:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"Agent planner mode is not supported yet for run_type "
-                f"'{body.run_type}'. Use deterministic mode, or run a "
-                f"diagnostic / bucket_config_review with agent mode."
-            ),
-        )
     if body.run_type in _NEEDS_BUCKET:
         missing = [
             field

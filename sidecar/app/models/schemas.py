@@ -171,10 +171,7 @@ RunType = Literal[
     "inventory_analysis",
     "bucket_config_review",
     "account_discovery",
-    "optimization_report",
 ]
-
-PlannerMode = Literal["deterministic", "agent"]
 
 
 class RunCreate(BaseModel):
@@ -184,7 +181,6 @@ class RunCreate(BaseModel):
     bucket: str | None = None
     prefix: str | None = None
     user_prompt: str | None = None
-    planner_mode: PlannerMode = "deterministic"
     # account_discovery options (bounded; never trigger object scans).
     max_buckets: int | None = Field(default=None, ge=1, le=500)
     include_pattern: str | None = None
@@ -205,7 +201,6 @@ class RunSummary(BaseModel):
     run_type: str
     title: str | None
     status: str
-    planner_mode: str
     provider_id: str | None
     bucket: str | None
     final_summary: str | None
@@ -235,7 +230,6 @@ class RunDetail(BaseModel):
     run_type: str
     title: str | None
     status: str
-    planner_mode: str
     provider_id: str | None
     bucket: str | None
     prefix: str | None = None
@@ -496,7 +490,6 @@ class ErrorTriageRequest(BaseModel):
     session_id: str | None = None
     provider_id: str | None = None
     bucket: str | None = None
-    planner_mode: PlannerMode = "deterministic"
 
 
 class TriageFindingOut(BaseModel):
@@ -523,16 +516,10 @@ class TriageCaseOut(BaseModel):
     raw_input_redacted: str | None = None
     parsed: dict = Field(default_factory=dict)
     summary: str = ""
-    planner_mode: str = "deterministic"
     status: str = "parsed"
     candidate_causes: list[TriageFindingOut] = Field(default_factory=list)
     safe_next_actions: list[dict] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
-    agent_interpretation: str | None = None
-    skills_offered: list[str] = Field(default_factory=list)
-    skills_used: list[str] = Field(default_factory=list)
-    evidence_used: list[str] = Field(default_factory=list)
-    evidence_gaps: list[str] = Field(default_factory=list)
     created_at: str | None = None
     updated_at: str | None = None
 

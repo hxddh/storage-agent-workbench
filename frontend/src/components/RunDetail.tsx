@@ -15,11 +15,9 @@ const STATUS_COLOR: Record<string, string> = {
 export function RunDetail({
   runId,
   onBack,
-  onOpenRun,
 }: {
   runId: string;
   onBack: () => void;
-  onOpenRun?: (runId: string) => void;
 }) {
   const [detail, setDetail] = useState<RunDetailT | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
@@ -100,15 +98,6 @@ export function RunDetail({
     if (detail && detail.status === "failed" && detail.final_summary) return detail.final_summary;
     return null;
   }, [events, detail]);
-
-  const agentActivity = useMemo(
-    () =>
-      events.filter(
-        (e): e is Extract<RunEvent, { type: "tool_selected" | "guardrail_passed" | "guardrail_blocked" }> =>
-          e.type === "tool_selected" || e.type === "guardrail_passed" || e.type === "guardrail_blocked",
-      ),
-    [events],
-  );
 
   const metricsCards = useMemo<{ label: string; value: string }[]>(() => {
     // Bucket config review: count findings by category.
@@ -213,7 +202,7 @@ export function RunDetail({
     <div className="flex flex-1 flex-col overflow-auto bg-canvas">
       <header className="border-b border-edge px-8 py-4">
         <button className="mb-2 text-xs text-gray-500 hover:text-gray-300" onClick={onBack}>
-          ← Back to runs
+          ← Back
         </button>
         {loadError && (
           <p className="mb-2 rounded border border-red-500/40 bg-red-950/60 px-3 py-1.5 text-xs text-red-300">
@@ -230,17 +219,6 @@ export function RunDetail({
         </div>
         <p className="text-sm text-gray-500">
           {detail?.run_type} · {detail?.bucket || "—"} · {detail?.prefix || "(root)"}
-          {detail?.planner_mode && (
-            <span
-              className={`ml-2 rounded-full border px-2 py-0.5 text-[11px] ${
-                detail.planner_mode === "agent"
-                  ? "border-violet-700 text-violet-300"
-                  : "border-edge text-gray-400"
-              }`}
-            >
-              planner: {detail.planner_mode}
-            </span>
-          )}
         </p>
       </header>
 
@@ -273,7 +251,7 @@ export function RunDetail({
 
           {detail?.run_type === "account_discovery" && profile && (
             <div className="mb-6">
-              <AccountProfilePanel profile={profile} onOpenRun={onOpenRun} />
+              <AccountProfilePanel profile={profile} />
             </div>
           )}
 
@@ -301,31 +279,6 @@ export function RunDetail({
         </section>
 
         <section>
-          {detail?.planner_mode === "agent" && (
-            <div className="mb-6">
-              <h2 className="mb-2 text-sm font-semibold text-gray-200">Agent activity</h2>
-              <ul className="space-y-1">
-                {agentActivity.map((e, i) => (
-                  <li key={i} className="text-xs">
-                    {e.type === "tool_selected" && (
-                      <span className="text-violet-300">
-                        ▸ selected <span className="font-mono">{e.tool_name}</span>
-                        {e.reason ? <span className="text-gray-500"> — {e.reason}</span> : null}
-                      </span>
-                    )}
-                    {e.type === "guardrail_passed" && (
-                      <span className="text-emerald-400">✓ guardrail {e.name}</span>
-                    )}
-                    {e.type === "guardrail_blocked" && (
-                      <span className="text-red-400">✗ guardrail {e.name} — {e.message}</span>
-                    )}
-                  </li>
-                ))}
-                {agentActivity.length === 0 && <li className="text-xs text-gray-600">No agent activity yet.</li>}
-              </ul>
-            </div>
-          )}
-
           <h2 className="mb-2 text-sm font-semibold text-gray-200">Tool / Analysis Timeline</h2>
           <ToolTimeline items={timeline} />
 

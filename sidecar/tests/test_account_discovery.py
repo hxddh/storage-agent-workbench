@@ -373,12 +373,15 @@ def test_account_discovery_never_scans_or_downloads(client, monkeypatch, sync_ru
 # --- agent mode disabled cleanly --------------------------------------------
 
 
-def test_agent_mode_for_account_discovery_rejected(client):
+def test_account_discovery_creates_deterministic_run(client):
+    """There is no LLM planner: account_discovery always runs as a deterministic
+    run (a `planner_mode` field in the body is ignored — the concept is gone)."""
+    pid = _provider(client)
     r = client.post("/runs", json={
-        "run_type": "account_discovery", "provider_id": "x",
-        "user_prompt": "go", "planner_mode": "agent",
+        "run_type": "account_discovery", "provider_id": pid, "user_prompt": "go",
     })
-    assert r.status_code == 422
+    assert r.status_code == 201, r.text
+    assert r.json()["status"] == "pending"
 
 
 def test_account_profile_404_when_absent(client):

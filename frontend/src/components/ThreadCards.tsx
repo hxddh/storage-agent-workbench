@@ -211,11 +211,6 @@ export function TriageCard({ c }: { c: TriageCase }) {
             </li>
           ))}
         </ul>
-        {c.agent_interpretation ? (
-          <div className="mt-3 rounded-lg border border-edge bg-elevated p-2.5 text-[12px] leading-relaxed text-gray-300">
-            {c.agent_interpretation}
-          </div>
-        ) : null}
       </div>
     </div>
   );

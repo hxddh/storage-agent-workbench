@@ -63,13 +63,11 @@ POST /tools/inspect-tls
 
 ## Run SSE event types
 
-Run events use mode-neutral names (the same shape for deterministic and
-agent-planner runs):
+Runs are pure deterministic compute (no LLM planner); events report the real
+tool trace, findings, and summary:
 
 ```json
-{"type":"run_started","planner_mode":"deterministic"}
-{"type":"plan","content":"..."}
-{"type":"tool_selected","tool_name":"head_bucket","reason":"..."}
+{"type":"run_started"}
 {"type":"tool_call_started","tool_name":"head_bucket","tool_call_id":"..."}
 {"type":"tool_call_finished","tool_name":"head_bucket","status":"success","output":{}}
 {"type":"summary","content":"..."}

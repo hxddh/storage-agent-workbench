@@ -20,8 +20,6 @@ import type {
   ModelProviderTestResult,
   ReportOut,
   RunDetail,
-  RunSummary,
-  RunType,
 } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -133,39 +131,11 @@ export const toolListObjectsV2 = (
     body: JSON.stringify({ provider_id, bucket, max_keys, prefix: prefix || undefined }),
   });
 
-// --- Analysis runs (Phase 04) ---
-
-export interface RunCreateInput {
-  run_type: RunType;
-  title?: string;
-  provider_id?: string;
-  bucket?: string;
-  prefix?: string;
-  user_prompt?: string;
-  planner_mode?: "deterministic" | "agent";
-  // account_discovery options
-  max_buckets?: number;
-  include_pattern?: string;
-  exclude_pattern?: string;
-  // session linkage (Phase 16)
-  session_id?: string;
-}
-
-export const listRuns = () => request<RunSummary[]>("/runs");
-
-export const createRun = (body: RunCreateInput) =>
-  request<{ run_id: string; status: string; title: string | null; created_at: string }>("/runs", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
+// --- Analysis runs ---
+// Runs are created by the agent's own tools (server-side) or the evidence-import
+// flow — never by the frontend. Only read endpoints are exposed here.
 
 export const getRun = (id: string) => request<RunDetail>(`/runs/${id}`);
-
-export const postRunMessage = (id: string, content: string) =>
-  request<{ run_id: string; status: string }>(`/runs/${id}/message`, {
-    method: "POST",
-    body: JSON.stringify({ content }),
-  });
 
 export const getReport = (runId: string) => request<ReportOut>(`/reports/${runId}`);
 
@@ -330,7 +300,6 @@ export interface ErrorTriageInput {
   session_id?: string;
   provider_id?: string;
   bucket?: string;
-  planner_mode?: "deterministic" | "agent";
 }
 
 export const submitErrorTriage = (body: ErrorTriageInput) =>

@@ -112,14 +112,15 @@ tools above (choosing provider/bucket itself), plus:
   disclosure); guidance text only, no skill tools/scripts are executed.
 - **Working memory** — `note_fact` / `record_finding` / `note_open_question`
   persist sanitized, audited items that are fed back into later turns.
-- **Inline read-only runs** — under the `autonomous_readonly` autonomy policy the
-  agent may execute `run_diagnostic` / `run_bucket_config_review` /
-  `run_account_discovery` itself (real, audited, read-only, wall-clock-bounded);
-  under `assisted` it proposes them. Nothing data-moving or mutating is auto-run.
+- **Inline read-only runs** — the agent executes the deterministic
+  `survey_account` / `review_bucket_config` engines itself (real, audited,
+  read-only, wall-clock-bounded) and `analyze_uploaded_file` for an attached
+  file; it picks up a backgrounded run later with `read_run_result`. There is no
+  autonomy toggle. Nothing data-moving or mutating is auto-run — cloud evidence
+  import / large scans stay confirmation-gated proposals.
 
-The analysis narrator additionally gets bounded, read-only **drill-down**
-aggregates over the already-local DuckDB dataset (`aggregate_by`, `count_where`
-over whitelisted dimensions/fields) — no raw rows, no free SQL, no object bodies.
+These tools return only the deterministic engine's sanitized summary + counts
+(no raw rows, no full key lists, no object bodies) for the agent to narrate.
 
 ## Forbidden tools
 
