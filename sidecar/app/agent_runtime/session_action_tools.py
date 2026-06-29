@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from typing import Any, Callable
 
 from .. import run_service
@@ -47,11 +48,20 @@ def _err(msg: str) -> str:
     return json.dumps({"error": redact_text(str(msg))[:300]})
 
 
+# Wall-clock ceiling for an inline run during a chat turn. boto3 already bounds
+# each S3 call (connect/read timeout); this bounds the AGGREGATE so a heavy run
+# (e.g. account_discovery over a large account) can't make the chat turn appear
+# hung indefinitely. On timeout the run keeps going in the background and lands
+# in the session timeline; the tool returns the run's current (e.g. "running")
+# status so the agent can move on.
+_INLINE_RUN_TIMEOUT = 60.0
+
+
 def _execute_run(conn: sqlite3.Connection, body: RunCreate) -> str:
-    """Create + run a read-only run synchronously and return its id.
+    """Create + run a read-only run and return its id, bounded by a wall clock.
 
     Commits so ``run_service.run_sync`` (which uses its own connection) sees the
-    row, then runs it inline on this worker thread.
+    row, then runs it on a daemon thread and waits up to ``_INLINE_RUN_TIMEOUT``.
     """
     run_id = runs_repo.create(conn, body, status="pending")
     if body.session_id:
@@ -60,7 +70,17 @@ def _execute_run(conn: sqlite3.Connection, body: RunCreate) -> str:
                                sessions_repo.RUN_ROLE.get(body.run_type))
     conn.commit()
     bus.create(run_id)
-    run_service.run_sync(run_id)
+
+    done = threading.Event()
+
+    def _go() -> None:
+        try:
+            run_service.run_sync(run_id)  # its own connection
+        finally:
+            done.set()
+
+    threading.Thread(target=_go, name=f"inline-run-{run_id[:8]}", daemon=True).start()
+    done.wait(_INLINE_RUN_TIMEOUT)
     conn.commit()  # end any read snapshot so the re-read sees run_sync's writes
     return run_id
 

@@ -186,6 +186,34 @@ def test_list_objects_v2_paginates_and_lists_recursively(client, cloud_id, stub)
     assert res["is_truncated"] is True
 
 
+def test_session_list_objects_caps_keys_in_context(client, cloud_id, monkeypatch):
+    """The session list_objects tool caps the keys it hands the model per call
+    (so paged enumeration can't flood context), while key_count stays exact."""
+    import json as _json
+
+    from app.agent_runtime import session_tools
+    from app.s3 import tools as s3mod
+
+    monkeypatch.setattr(s3mod, "list_objects_v2", lambda *a, **k: {
+        "success": True, "key_count": 300, "keys": [f"k{i}" for i in range(300)],
+        "sample_keys": [], "common_prefixes": [], "is_truncated": True, "next_token": "T",
+    })
+
+    class _FT:
+        def __call__(self, fn):
+            fn.name = fn.__name__
+            return fn
+
+    with _db() as conn:
+        conn.row_factory = sqlite3.Row  # cloud_repo.get expects Row access
+        tools = {t.name: t for t in session_tools.build(conn, _FT(), [])}
+        out = _json.loads(tools["list_objects"](cloud_id, BUCKET))
+    assert out["key_count"] == 300            # exact count preserved
+    assert len(out["keys"]) == 200            # capped for context
+    assert out["keys_truncated_in_context"] is True
+    assert out["next_token"] == "T"           # can still page
+
+
 # --- head_object ------------------------------------------------------------
 
 

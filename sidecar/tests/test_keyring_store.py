@@ -93,6 +93,18 @@ def test_secret_exists_reflects_vault_not_just_ref():
     assert keyring_store.secret_exists("not-a-ref") is False
 
 
+def test_unreadable_vault_is_backed_up_not_silently_lost():
+    """If the vault can't be decrypted (e.g. key file lost), the original is
+    preserved as .unreadable rather than silently overwritten."""
+    keyring_store.save_secret("model_provider", "p/api_key", "sk-1")
+    vault = config.data_dir() / "secrets.enc"
+    vault.write_bytes(b"not-a-valid-aesgcm-token")  # corrupt it
+    keyring_store._reset_for_tests()
+
+    assert keyring_store.get_secret("model_provider", "p/api_key") is None
+    assert (config.data_dir() / "secrets.enc.unreadable").exists()
+
+
 def test_make_and_parse_ref():
     ref = keyring_store.make_ref("cloud_provider", "id1/access_key")
     assert ref == "keyring://cloud_provider/id1/access_key"
