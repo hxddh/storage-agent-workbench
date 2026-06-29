@@ -186,8 +186,7 @@ export function RunDetail({
     }
     // No live SSE events (run already terminated when opened, or the stream
     // replayed nothing) → seed the timeline from the persisted tool_calls so a
-    // finished/failed run still shows what it actually did instead of an empty
-    // "Waiting for plan…" placeholder.
+    // finished/failed run still shows the tools it actually ran.
     return (detail?.tool_calls ?? []).map((tc) => {
       let output: Record<string, unknown> | undefined;
       if (tc.output_json_sanitized) {

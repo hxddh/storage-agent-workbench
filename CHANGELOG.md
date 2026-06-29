@@ -8,8 +8,25 @@ follow semantic versioning once it reaches 1.0.
 
 ## [0.19.27] - 2026-06-29
 
+This release removes the ossified, fixed-pipeline flows so the conversational
+agent is the sole driver throughout. The deterministic compute that remains is
+the security/reproducibility floor the agent invokes — never a reflex the UI
+fires or a canned plan the agent is marched through.
+
 ### Changed
 
+- **No more canned "plan" pipelines.** Every run executor (access-log, inventory,
+  diagnostic, config-review, account-discovery) used to publish a hardcoded
+  step-list as a "plan" event — the rigid card you'd see regardless of the data
+  or your question. Removed everywhere; runs now expose only their real tool
+  trace, findings, and summary, and the run-detail "Agent plan" card is gone.
+- **The agent proposes free-form next steps, not a fixed menu.** Next-action
+  proposals are no longer capped to 9 hardcoded `action_type`s (anything else
+  used to be silently dropped). The agent now suggests any concrete next step in
+  its own words; well-known ones keep a one-click affordance, the data-moving
+  imports still route through the confirm-before-download planner, and anything
+  else is handed back to the agent to carry out conversationally. A
+  forbidden/destructive token in a proposal is still rejected outright.
 - **Uploading a file is now agent-native — no more canned analysis run.**
   Attaching a log/inventory file in a session and asking "分析下" used to bypass
   the conversational agent entirely and fire a fixed deterministic
