@@ -379,6 +379,33 @@ export async function uploadDataset(
   return res.json();
 }
 
+// Attach a data file to a SESSION (agent-native analysis). The in-chat agent
+// then analyzes it as a tool and answers inline — no deterministic analysis run.
+export async function uploadSessionDataset(
+  sessionId: string,
+  file: File,
+  datasetType: "access_log" | "inventory",
+): Promise<{ dataset_id: string; status: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("dataset_type", datasetType);
+  const res = await fetch(`${sidecarBaseUrl()}/sessions/${sessionId}/datasets/upload`, {
+    method: "POST",
+    body: form, // browser sets multipart boundary; no secrets involved
+  });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const b = await res.json();
+      if (b?.detail) detail = typeof b.detail === "string" ? b.detail : JSON.stringify(b.detail);
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 export const listDatasets = () => request<Dataset[]>("/datasets");
 
 // --- Settings: agent autonomy policy ---

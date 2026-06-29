@@ -31,7 +31,13 @@ oversight:
    the agent investigates adaptively with its own read-only tools
    (`test_credentials` → addressing/TLS/head-bucket/list/range) and explains the
    root cause; the deterministic `diagnostic` run remains available as an
-   explicit, auditable report. This is where "agentic" behavior lives.
+   explicit, auditable report. Likewise, a file the user **attaches in the
+   conversation** is analyzed by the agent itself: it is stored against the
+   session (`POST /sessions/{id}/datasets/upload`) and the agent inspects it with
+   read-only `list_uploaded_files` / `analyze_uploaded_file` tools
+   (`agent_runtime/session_analysis_tools.py`, same DuckDB engine, sanitized
+   aggregates only) and answers conversationally — it does NOT spawn a fixed
+   deterministic analysis run. This is where "agentic" behavior lives.
 
    Two policies, security tiers enforced *below* the setting regardless:
    `assisted` proposes read-only runs for the user to confirm;

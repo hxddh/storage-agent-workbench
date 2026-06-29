@@ -486,6 +486,29 @@ CREATE TABLE IF NOT EXISTS session_agent_memory (
 CREATE INDEX IF NOT EXISTS idx_session_agent_memory_session ON session_agent_memory(session_id);
 """
 
+# Session-scoped uploaded datasets (agent-native file analysis). A file the user
+# attaches in the conversation is stored against the SESSION (not a run) so the
+# in-chat agent can analyze it as a tool and answer inline, instead of the upload
+# forcing a fixed deterministic analysis run. status: 'uploaded' → 'imported'.
+# Mirrors the run-scoped ``datasets`` shape but keyed to a session and cascades
+# on session delete. No secrets / no raw rows persist here beyond the file path.
+_M014 = """
+CREATE TABLE IF NOT EXISTS session_datasets (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    dataset_type    TEXT NOT NULL,
+    source_filename TEXT,
+    stored_path     TEXT,
+    duckdb_path     TEXT,
+    table_name      TEXT,
+    row_count       INTEGER,
+    detected_format TEXT,
+    status          TEXT NOT NULL DEFAULT 'uploaded',
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_datasets_session ON session_datasets(session_id);
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -501,6 +524,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (11, "sessions_pinned", _M011),
     (12, "app_settings", _M012),
     (13, "session_agent_memory", _M013),
+    (14, "session_datasets", _M014),
 ]
 
 
