@@ -3,9 +3,10 @@
 Sessions are the persistent working context that links runs, evidence, findings,
 a deterministic summary, and a lightweight message thread. The session agent is a
 read-only tool-calling investigator (bounded, sanitized context; secrets never
-reach it) that also keeps working memory and — under the autonomy policy — can
-run read-only runs itself. This is NOT a project-management / kanban / ticketing
-surface.
+reach it) that also keeps working memory. It is always fully autonomous in its
+read-only investigation (no autonomy toggle); its own surveys/reviews are
+internal compute it narrates, never a surfaced run card. This is NOT a
+project-management / kanban / ticketing surface.
 """
 
 from __future__ import annotations

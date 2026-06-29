@@ -454,10 +454,9 @@ _M011 = """
 ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
 """
 
-# Global app settings as a small key/value store. Currently holds the agent
-# autonomy policy (assisted | autonomous_readonly) that decides
-# whether the in-chat agent may execute read-only actions itself or only
-# propose them. Never stores secrets (those live only in the OS keychain).
+# Global app settings as a small generic key/value store. Never stores secrets
+# (those live only in the encrypted local vault — see security.keyring_store,
+# NOT the OS keychain).
 _M012 = """
 CREATE TABLE IF NOT EXISTS app_settings (
     key        TEXT PRIMARY KEY,

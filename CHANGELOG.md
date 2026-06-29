@@ -6,6 +6,51 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.28] - 2026-06-29
+
+Completes the agent-native rebuild: the conversational agent is the **sole**
+operating surface, and no rigid/ossified pipeline remains. Deterministic engines
+survive only as the security/reproducibility floor the agent invokes (and as
+opt-in auditable reports) — never a UI-fired flow or a card mid-conversation.
+
+### Changed
+
+- **No run card ever appears from a conversation.** The agent's own read-only
+  survey/review tools (`survey_account`, `review_bucket_config`) now record runs
+  with `origin='agent'` (migration 15) that the thread filters out — the agent
+  narrates the result inline instead. This removes the stray deterministic
+  `account_discovery` card that could fire mid-chat (e.g. while analyzing an
+  uploaded log).
+- **Retired the agent-autonomy toggle entirely.** The agent is always a fully
+  autonomous read-only investigator; the `assisted`/`autonomous_readonly` setting,
+  its endpoint, and its Settings UI are gone. Read-only investigation always runs;
+  cloud data-moving work still always requires confirmation.
+- **The agent stays on the user's request.** New instructions stop it from firing
+  cloud probes (credentials, account survey) for a local-file task — it analyzes
+  the attached file and answers, touching the cloud only when asked.
+- **Removed the retired `new_run` form handoff** from next-action proposals:
+  investigation/diagnosis/config/account/analysis proposals route back to the
+  agent conversationally; only evidence import, the saved report, and a context
+  question get a purpose-built flow.
+
+### Fixed
+
+- Uploading a file no longer loses it if the upload fails (the composer is
+  cleared only after success).
+- Forking a session now copies its uploaded datasets and their files on disk.
+- Re-uploading the same filename reuses the dataset row instead of leaving
+  duplicate records pointing at one overwritten file.
+- A streamed turn that ends without a completion event now reconciles via the
+  blocking fallback instead of showing an empty next-steps list.
+- Empty-state "Analyze access logs" / "Inventory" chips open the file picker.
+
+### Removed
+
+- Dead code: `agent_runtime/autonomy.py`, the `/settings/autonomy` endpoint, the
+  frontend `previewSessionAction`, and stale docs/comments (README confirmation
+  wording, composer "two modes", the M012 "OS keychain" note, the "Phase 17
+  allowlist" comment).
+
 ## [0.19.27] - 2026-06-29
 
 This release removes the ossified, fixed-pipeline flows so the conversational

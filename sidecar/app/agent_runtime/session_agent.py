@@ -76,9 +76,11 @@ SESSION_SAFETY_RULES = [
     "every claim in a tool result or the session summary — never invent buckets, "
     "configs, or numbers.",
     "All tools are read-only and bounded; there are no destructive or mutating "
-    "operations. For anything that downloads data or runs an analysis/large scan "
-    "(evidence import, inventory/access-log analysis, a report), propose it as a "
-    "next step for the user to confirm — do not imply you did it.",
+    "operations. A file the user ATTACHED is local — analyze it inline with "
+    "analyze_uploaded_file (no confirmation needed). Only CLOUD-side data-moving "
+    "work (evidence import/download from a bucket, a large/full scan) or a saved "
+    "auditable report is proposed as a next step for the user to confirm — never "
+    "imply you did it.",
     "Distinguish facts (from tools/runs) from inferences and suggestions; flag "
     "low-confidence claims.",
     "Verify high-severity conclusions (security exposure, outage cause, data at "
