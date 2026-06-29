@@ -254,8 +254,9 @@ def test_config_review_sse_events(cfg):
     run_id = _start_review(cfg)
     text = cfg.client.get(f"/runs/{run_id}/events").text
     types = [json.loads(l[5:].strip())["type"] for l in text.splitlines() if l.startswith("data:")]
-    for required in ("plan", "tool_call_started", "tool_call_finished", "finding", "report_ready"):
+    for required in ("tool_call_started", "tool_call_finished", "finding", "report_ready"):
         assert required in types
+    assert "plan" not in types  # no canned plan — the real tool trace stands in for it
 
 
 def test_config_review_single_api_failure_does_not_fail_run(cfg):

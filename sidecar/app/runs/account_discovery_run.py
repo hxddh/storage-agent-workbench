@@ -129,15 +129,6 @@ def execute_account_discovery_run(conn: sqlite3.Connection, run_id: str) -> None
         opts = _parse_options(run)
         max_buckets = opts["max_buckets"]
 
-        plan = [
-            "Verify credentials (test_credentials).",
-            "Enumerate visible buckets (list_buckets — no object scan).",
-            f"For up to {max_buckets} bucket(s): head_bucket, config snapshot, evidence-source discovery.",
-            "Build an account-level asset profile.",
-            "Generate a local Markdown report.",
-        ]
-        bus.publish(run_id, {"type": "plan", "content": "\n".join(plan)})
-
         run_tool_with_events(
             conn, run_id, "test_credentials", {"provider_id": provider_id},
             lambda: s3tools.test_credentials(conn, provider_id),

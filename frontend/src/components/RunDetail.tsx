@@ -79,11 +79,6 @@ export function RunDetail({
     return () => { cancelled = true; es.close(); };
   }, [runId]);
 
-  const plan = useMemo(() => {
-    const last = [...events].reverse().find((e) => e.type === "plan");
-    return last && last.type === "plan" ? last.content.split("\n") : [];
-  }, [events]);
-
   const findings = useMemo(
     () => events.filter((e): e is Extract<RunEvent, { type: "finding" }> => e.type === "finding"),
     [events],
@@ -262,21 +257,6 @@ export function RunDetail({
           <p className="mb-6 rounded-md border border-edge bg-panel p-3 text-xs text-gray-300">
             {detail?.user_prompt || "—"}
           </p>
-
-          <h2 className="mb-2 text-sm font-semibold text-gray-200">Agent plan</h2>
-          {plan.length ? (
-            <ol className="mb-6 list-inside list-decimal space-y-1 text-xs text-gray-400">
-              {plan.map((s, i) => (
-                <li key={i}>{s}</li>
-              ))}
-            </ol>
-          ) : (
-            <p className="mb-6 text-xs text-gray-600">
-              {status === "completed" || status === "failed" || status === "not_implemented"
-                ? "This run recorded no explicit plan."
-                : "Waiting for plan…"}
-            </p>
-          )}
 
           {metricsCards.length > 0 && (
             <>

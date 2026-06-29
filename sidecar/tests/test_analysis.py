@@ -242,8 +242,10 @@ def test_access_log_run_sse_events(client, sync_runs):
                            "a.log", ACCESS_LOG_TEXT, "analyze")
     text = client.get(f"/runs/{run_id}/events").text
     types = [json.loads(l[5:].strip())["type"] for l in text.splitlines() if l.startswith("data:")]
-    for required in ("plan", "tool_call_started", "tool_call_finished", "finding", "report_ready"):
+    # No canned 'plan' event — runs expose their real tool trace, not a fixed plan.
+    for required in ("tool_call_started", "tool_call_finished", "finding", "report_ready"):
         assert required in types
+    assert "plan" not in types
     assert "192.0.2.10" not in text  # masked even in event stream
 
 

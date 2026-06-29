@@ -51,14 +51,6 @@ def execute_inventory_run(conn: sqlite3.Connection, run_id: str) -> None:
         duckdb_rel = config.rel_path(duckdb_abs)
         raw_rel = ds.stored_path
 
-        plan = [
-            "Import and normalize the inventory file into DuckDB (import_inventory_file).",
-            "Compute capacity, size, age, prefix, and storage-class metrics (analyze_inventory).",
-            "Summarize evidence into findings.",
-            "Generate a local Markdown report (generate_markdown_report).",
-        ]
-        bus.publish(run_id, {"type": "plan", "content": "\n".join(plan)})
-
         imp = _require(run_tool_with_events(
             conn, run_id, "import_inventory_file",
             {"path": raw_rel, "duckdb_path": duckdb_rel},

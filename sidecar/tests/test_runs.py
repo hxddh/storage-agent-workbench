@@ -191,9 +191,10 @@ def test_sse_emits_required_events(diag):
         if line.startswith("data:"):
             types.append(json.loads(line[len("data:"):].strip())["type"])
 
-    for required in ("plan", "tool_call_started", "tool_call_finished",
+    for required in ("tool_call_started", "tool_call_finished",
                      "summary", "finding", "report_ready"):
         assert required in types, f"missing SSE event: {required}"
+    assert "plan" not in types  # no canned plan — the real tool trace stands in for it
     # exactly three tool start/finish pairs
     assert types.count("tool_call_started") == 3
     assert types.count("tool_call_finished") == 3
