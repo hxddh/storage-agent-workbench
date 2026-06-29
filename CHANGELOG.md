@@ -6,6 +6,16 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.21] - 2026-06-29
+
+### Fixed
+
+- **Configured model and cloud providers can now be deleted.** The Delete button
+  in Settings → Providers relied on the browser's `window.confirm`, which is a
+  no-op in the Tauri webview, so the confirmation never returned and the delete
+  never fired. Replaced it with the same inline two-step confirm (Cancel /
+  Confirm delete) the session rail already uses, and surfaced any backend error.
+
 ## [0.19.20] - 2026-06-29
 
 ### Added
