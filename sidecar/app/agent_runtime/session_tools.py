@@ -77,8 +77,15 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
             activity.append({"tool": tool, "target": target[:80], "result": summary})
 
     def rec(tool: str, **kw: Any) -> None:
+        # Commit the audit row immediately. audit.record() deliberately doesn't
+        # commit (run executors batch on it), but here the audit row is the only
+        # write on the request connection during a turn. Leaving it uncommitted
+        # makes the connection hold the SQLite/WAL write lock across the next
+        # slow S3 tool call, which can starve a concurrently-running inline run's
+        # writes for >busy_timeout → "database is locked". Keep the write txn tiny.
         audit.record(conn, "session_tool",
                      {"tool": tool, **{k: str(v)[:200] for k, v in kw.items()}}, run_id=None)
+        conn.commit()
 
     @function_tool
     def list_providers() -> str:
