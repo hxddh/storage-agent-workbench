@@ -19,6 +19,7 @@ const en: Dict = {
   "common.openSettings": "Open settings",
   // rail
   "app.name": "Storage Agent",
+  "app.actionFailed": "Action failed:",
   "rail.newChat": "New chat",
   "rail.recent": "Recent",
   "rail.pinned": "Pinned",
@@ -124,6 +125,8 @@ const en: Dict = {
   "settings.autonomyAutonomous": "Autonomous",
   "settings.autonomyAssistedHint": "Proposes read-only runs for you to confirm.",
   "settings.autonomyAutonomousHint": "Runs read-only checks itself; confirms data-moving work.",
+  "settings.vaultUnreadable":
+    "The secret vault on this device couldn't be opened, so saved keys aren't available. The original was preserved next to it as secrets.enc.unreadable (restore your secrets.key to recover it). Re-enter your keys below to continue.",
   "settings.safetyTitle": "Safety",
   "settings.safety":
     "Secrets are stored only in the encrypted local vault — never in the database, logs, reports, or model prompts. Cloud access is read-only and the Agent has no write or destructive capability. Data-moving work (downloads, large scans, dataset analysis) always requires your confirmation regardless of the autonomy setting.",
@@ -209,6 +212,7 @@ const zh: Dict = {
   "common.copied": "已复制",
   "common.openSettings": "打开设置",
   "app.name": "云存储 Agent",
+  "app.actionFailed": "操作失败：",
   "rail.newChat": "新对话",
   "rail.recent": "最近",
   "rail.pinned": "已置顶",
@@ -304,6 +308,8 @@ const zh: Dict = {
   "settings.autonomyAutonomous": "自主",
   "settings.autonomyAssistedHint": "提出只读运行的建议，由你确认。",
   "settings.autonomyAutonomousHint": "自行执行只读检查；搬运数据的操作需确认。",
+  "settings.vaultUnreadable":
+    "本机的密钥保险库无法打开，已保存的密钥暂不可用。原文件已备份为 secrets.enc.unreadable（恢复你的 secrets.key 可找回）。请在下方重新填写密钥以继续。",
   "settings.safetyTitle": "安全",
   "settings.safety":
     "密钥仅保存在本机加密保险库中——绝不会写入数据库、日志、报告或模型提示词。云访问为只读，Agent 没有任何写入或破坏性能力。无论自主度如何设置，涉及搬运数据的操作（下载、大规模扫描、数据集分析）始终需要你确认。",

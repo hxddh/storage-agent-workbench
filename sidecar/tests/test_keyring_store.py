@@ -105,6 +105,23 @@ def test_unreadable_vault_is_backed_up_not_silently_lost():
     assert (config.data_dir() / "secrets.enc.unreadable").exists()
 
 
+def test_vault_status_flags_unreadable(client):
+    """vault_status reports the unreadable state so the UI can warn (Bug F)."""
+    keyring_store.save_secret("model_provider", "p/api_key", "sk-1")
+    assert keyring_store.vault_status()["unreadable"] is False
+
+    (config.data_dir() / "secrets.enc").write_bytes(b"corrupt")  # break it
+    keyring_store._reset_for_tests()
+    keyring_store.get_secret("model_provider", "p/api_key")  # triggers a load attempt
+    status = keyring_store.vault_status()
+    assert status["unreadable"] is True
+    assert status["backup_present"] is True
+
+    # And it's exposed over the API for the settings drawer.
+    body = client.get("/settings/secret-vault").json()
+    assert set(body) == {"unreadable", "backup_present"}
+
+
 def test_make_and_parse_ref():
     ref = keyring_store.make_ref("cloud_provider", "id1/access_key")
     assert ref == "keyring://cloud_provider/id1/access_key"

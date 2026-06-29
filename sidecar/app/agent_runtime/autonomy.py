@@ -57,6 +57,15 @@ ACTION_RISK = {
     "ask_user_for_context": SAFE_READONLY,
 }
 
+# The action types that actually have an inline executor tool
+# (session_action_tools.build). Must stay in sync with that module. Note this is
+# a *subset* of the SAFE_READONLY actions: e.g. generate_session_report is
+# SAFE_READONLY for tiering/proposals but has no inline tool, so the agent can
+# only propose it, never auto-run it.
+INLINE_EXECUTABLE = frozenset(
+    {"run_diagnostic", "run_bucket_config_review", "run_account_discovery"}
+)
+
 
 def normalize(policy: str | None) -> str:
     """Coerce an arbitrary value to a known policy (default ``autonomous_readonly``).
@@ -80,16 +89,18 @@ def executes_inline(policy: str) -> bool:
 def may_execute(policy: str, action_type: str) -> bool:
     """Whether the Agent may EXECUTE ``action_type`` itself under ``policy``.
 
-    Only SAFE_READONLY actions are ever auto-executed, and only under
-    ``autonomous_readonly``. Everything else is proposed for confirmation.
+    True only when the policy auto-executes AND the action both is SAFE_READONLY
+    and has a real inline executor tool. (A SAFE_READONLY action without an inline
+    tool — e.g. ``generate_session_report`` — can only be proposed, so this
+    returns False, matching the tools actually built.)
     """
     if not executes_inline(policy):
         return False
-    return ACTION_RISK.get(action_type) == SAFE_READONLY
+    return action_type in INLINE_EXECUTABLE and ACTION_RISK.get(action_type) == SAFE_READONLY
 
 
 __all__ = [
     "ASSISTED", "AUTONOMOUS_READONLY", "POLICIES", "DEFAULT_POLICY",
-    "SAFE_READONLY", "EXPENSIVE", "MUTATING", "ACTION_RISK",
+    "SAFE_READONLY", "EXPENSIVE", "MUTATING", "ACTION_RISK", "INLINE_EXECUTABLE",
     "normalize", "executes_inline", "may_execute",
 ]

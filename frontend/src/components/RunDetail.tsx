@@ -25,22 +25,26 @@ export function RunDetail({
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [report, setReport] = useState<ReportOut | null>(null);
   const [profile, setProfile] = useState<AccountProfile | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     setEvents([]);
     setReport(null);
     setProfile(null);
+    setLoadError(null);
     getRun(runId)
       .then((d) => {
+        if (cancelled) return;  // a newer runId is now active — drop stale result
         setDetail(d);
         // Opening an already-finished account_discovery run: no SSE will replay,
         // so fetch the persisted profile directly.
         if (d.run_type === "account_discovery") {
-          getAccountProfile(runId).then(setProfile).catch(() => undefined);
+          getAccountProfile(runId).then((p) => { if (!cancelled) setProfile(p); }).catch(() => undefined);
         }
       })
-      .catch(() => undefined);
+      .catch((e) => { if (!cancelled) setLoadError(String(e)); });
 
     const es = new EventSource(runEventsUrl(runId));
     esRef.current = es;
@@ -65,9 +69,9 @@ export function RunDetail({
     // onerror; close to prevent auto-reconnect.
     es.onerror = () => {
       es.close();
-      getRun(runId).then(setDetail).catch(() => undefined);
+      getRun(runId).then((d) => { if (!cancelled) setDetail(d); }).catch(() => undefined);
     };
-    return () => es.close();
+    return () => { cancelled = true; es.close(); };
   }, [runId]);
 
   const plan = useMemo(() => {
@@ -181,6 +185,11 @@ export function RunDetail({
         <button className="mb-2 text-xs text-gray-500 hover:text-gray-300" onClick={onBack}>
           ← Back to runs
         </button>
+        {loadError && (
+          <p className="mb-2 rounded border border-red-500/40 bg-red-950/60 px-3 py-1.5 text-xs text-red-300">
+            Couldn’t load this run: {loadError}
+          </p>
+        )}
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold text-gray-100">
             {detail?.title || detail?.run_type || "Run"}

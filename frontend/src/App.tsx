@@ -15,6 +15,7 @@ import {
 } from "./api";
 import type { SessionSummaryRow } from "./types";
 import { useSidecarHealth } from "./hooks/useSidecarHealth";
+import { useI18n } from "./i18n";
 
 const ONBOARDED_KEY = "saw.onboarded";
 
@@ -25,6 +26,8 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const { t } = useI18n();
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -63,27 +66,34 @@ export default function App() {
   };
 
   // Session management actions (rail ⋯ menu). Optimistic-ish: act, then refresh.
+  // Failures surface a dismissible banner instead of being silently swallowed.
+  const fail = (e: unknown) => setActionError(`${t("app.actionFailed")} ${String(e)}`);
   const sessionActions: SessionActions = {
     onRename: async (s, title) => {
-      await patchSession(s.id, { title }).catch(() => undefined);
+      try { await patchSession(s.id, { title }); } catch (e) { fail(e); }
       refreshSessions();
     },
     onTogglePin: async (s) => {
-      await patchSession(s.id, { pinned: !s.pinned }).catch(() => undefined);
+      try { await patchSession(s.id, { pinned: !s.pinned }); } catch (e) { fail(e); }
       refreshSessions();
     },
     onFork: async (s) => {
-      const d = await forkSession(s.id).catch(() => null);
-      if (d) setActiveId(d.id);
+      try {
+        const d = await forkSession(s.id);
+        if (d) setActiveId(d.id);
+      } catch (e) { fail(e); }
       refreshSessions();
     },
     onToggleArchive: async (s) => {
-      await patchSession(s.id, { status: s.status === "archived" ? "active" : "archived" }).catch(() => undefined);
+      try { await patchSession(s.id, { status: s.status === "archived" ? "active" : "archived" }); }
+      catch (e) { fail(e); }
       refreshSessions();
     },
     onDelete: async (s) => {
-      await deleteSession(s.id).catch(() => undefined);
-      if (activeId === s.id) setActiveId(null);
+      try {
+        await deleteSession(s.id);
+        if (activeId === s.id) setActiveId(null);
+      } catch (e) { fail(e); }
       refreshSessions();
     },
   };
@@ -109,6 +119,12 @@ export default function App() {
 
   return (
     <div className="flex h-full w-full bg-canvas text-gray-200">
+      {actionError && (
+        <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-red-500/40 bg-red-950/90 px-4 py-2 text-sm text-red-200 shadow-lg">
+          <span>{actionError}</span>
+          <button className="text-red-300 hover:text-red-100" onClick={() => setActionError(null)}>✕</button>
+        </div>
+      )}
       <SessionRail
         sessions={sessions}
         activeId={activeId}

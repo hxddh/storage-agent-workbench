@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from .. import audit
-from ..agent_runtime import session_agent
+from ..agent_runtime import session_agent, turn_guard
 from ..agent_runtime.agent_service import AgentUnavailable, get_model_credentials
 from ..db import get_conn
 from ..models.schemas import (
@@ -216,7 +216,14 @@ def post_session_message(
     if row is None:
         raise HTTPException(status_code=404, detail="session not found")
 
-    # Persist the user message first (sanitized).
+    # Idempotency: if this is the blocking fallback for a turn the streaming
+    # attempt already completed, return the persisted result instead of re-running
+    # (which would duplicate the user+assistant messages and any inline run).
+    cached = turn_guard.get_result(body.turn_id)
+    if cached is not None:
+        return {"session_id": session_id, "messages": repo.list_messages(conn, session_id), **cached}
+
+    # Persist the user message first (sanitized; add_message commits).
     repo.add_message(conn, session_id, "user", body.content)
 
     # Build the deterministic, sanitized context — independent of any model key.
@@ -226,9 +233,11 @@ def post_session_message(
     try:
         creds = get_model_credentials(conn)  # raises AgentUnavailable if missing
         policy = settings_repo.get_autonomy_policy(conn)
-        contract = session_agent.answer(dict(row), summary, recent, body.content, creds, conn, policy)
+        contract = session_agent.answer(dict(row), summary, recent, body.content, creds, conn,
+                                        policy, body.turn_id)
     except AgentUnavailable as exc:
-        # Clean failure: the user message is kept; no assistant message is stored.
+        # Clean failure: the user message is kept (add_message committed it above);
+        # no assistant message is stored.
         raise HTTPException(status_code=422, detail=redact_text(str(exc)))
 
     # The contract is already sanitized + allowlist-coerced inside session_agent.
@@ -237,6 +246,13 @@ def post_session_message(
                      tool_activity=contract.get("tool_activity"))
     audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
     conn.commit()
+    turn_guard.set_result(body.turn_id, {
+        "proposed_actions": proposed_actions,
+        "skills_used": contract.get("skills_used", []),
+        "skills_offered": contract.get("skills_offered", []),
+        "evidence_used": contract.get("evidence_used", []),
+        "evidence_gaps": contract.get("evidence_gaps", []),
+    })
     return {
         "session_id": session_id,
         "messages": repo.list_messages(conn, session_id),
@@ -296,7 +312,7 @@ async def post_session_message_stream(
 
         async def drive() -> None:
             result, activity, skill_names = session_agent.build_stream(
-                dict(row), summary, recent, body.content, creds, conn, policy)
+                dict(row), summary, recent, body.content, creds, conn, policy, body.turn_id)
             async for kind, data in session_agent.stream_events_for(result, activity, skill_names):
                 if kind == "final":
                     final["data"] = data
@@ -315,6 +331,15 @@ async def post_session_message_stream(
                                        tool_activity=data.get("tool_activity"))
                 audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
                 conn.commit()
+                # Record the completed turn so the blocking fallback won't re-run
+                # it (and re-persist) if the client missed the 'done' event.
+                turn_guard.set_result(body.turn_id, {
+                    "proposed_actions": data["next_action_proposals"],
+                    "skills_used": data.get("skills_used", []),
+                    "skills_offered": data.get("skills_offered", []),
+                    "evidence_used": data.get("evidence_used", []),
+                    "evidence_gaps": data.get("evidence_gaps", []),
+                })
                 emit(("done", {"message_id": mid, "proposed_actions": data["next_action_proposals"]}))
         except Exception as exc:  # noqa: BLE001
             emit(("error", redact_text(str(exc))))

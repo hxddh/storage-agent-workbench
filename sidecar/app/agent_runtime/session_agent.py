@@ -246,13 +246,13 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str) -> A
 
 
 def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, Any]] | None,
-                 policy: str, session_id: str | None) -> list[Any]:
+                 policy: str, session_id: str | None, turn_id: str | None = None) -> list[Any]:
     """Read-only investigator tools, plus inline run-executors when the policy
     allows the agent to act on its own."""
     if conn is None:
         return []
     tools = session_tools.build(conn, function_tool, activity)
-    tools += session_action_tools.build(conn, function_tool, policy, activity, session_id)
+    tools += session_action_tools.build(conn, function_tool, policy, activity, session_id, turn_id)
     # Working-memory tools are always available (recording is cloud-read-only).
     tools += session_memory_tools.build(conn, function_tool, session_id, activity)
     return tools
@@ -270,7 +270,8 @@ def _sdk_session_loop(spec: dict[str, Any]) -> Any:
     conn = spec.get("conn")
     try:
         tools = _build_tools(conn, function_tool, spec.get("activity"),
-                             spec.get("policy", autonomy.DEFAULT_POLICY), spec.get("session_id"))
+                             spec.get("policy", autonomy.DEFAULT_POLICY), spec.get("session_id"),
+                             spec.get("turn_id"))
         agent = _make_agent(creds, tools, spec["instructions"])
         result = Runner.run_sync(agent, spec["prompt"], max_turns=_MAX_TURNS)
         return getattr(result, "final_output", "")
@@ -344,6 +345,7 @@ def answer(
     creds: dict[str, Any],
     conn: Any = None,
     policy: str = autonomy.DEFAULT_POLICY,
+    turn_id: str | None = None,
 ) -> dict[str, Any]:
     """Skill-grounded, sanitized session answer contract. Raises AgentUnavailable.
 
@@ -358,7 +360,7 @@ def answer(
     activity: list[dict[str, Any]] = []
     spec = {"context": context, "prompt": prompt, "instructions": instructions_for(policy),
             "creds": creds, "conn": conn, "activity": activity,
-            "policy": policy, "session_id": session.get("id")}
+            "policy": policy, "session_id": session.get("id"), "turn_id": turn_id}
     raw = SESSION_LOOP(spec)
     return _finalize_contract(raw, skill_names, activity)
 
@@ -373,6 +375,7 @@ def build_stream(
     creds: dict[str, Any],
     conn: Any,
     policy: str = autonomy.DEFAULT_POLICY,
+    turn_id: str | None = None,
 ):
     """Set up a streaming run. Returns (result_streaming, activity, skill_names).
 
@@ -388,7 +391,7 @@ def build_stream(
 
     prompt, skill_names, _context = _build_prompt(session, summary, recent_messages, user_message, conn)
     activity: list[dict[str, Any]] = []
-    tools = _build_tools(conn, function_tool, activity, policy, session.get("id"))
+    tools = _build_tools(conn, function_tool, activity, policy, session.get("id"), turn_id)
     # _make_agent disables parallel tool calls (chat-completions providers like
     # DeepSeek can emit malformed follow-ups with streaming + parallel calls) and
     # uses a per-run client so concurrent sessions don't race on SDK globals.
