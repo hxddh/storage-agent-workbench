@@ -466,6 +466,26 @@ CREATE TABLE IF NOT EXISTS app_settings (
 );
 """
 
+# Agent-authored working memory for a session: facts/findings/open-questions the
+# in-chat agent records itself as it investigates, so its discoveries persist
+# across turns (the deterministic summary in session_findings/session_summaries
+# is rebuilt from run artifacts and would otherwise wipe them). Sanitized, no
+# secrets, no raw rows — same redaction as everything else the agent emits.
+_M013 = """
+CREATE TABLE IF NOT EXISTS session_agent_memory (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    text        TEXT NOT NULL,
+    severity    TEXT,
+    confidence  TEXT,
+    source_run_id TEXT,
+    status      TEXT NOT NULL DEFAULT 'active',
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_agent_memory_session ON session_agent_memory(session_id);
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -480,6 +500,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (10, "session_message_tool_activity", _M010),
     (11, "sessions_pinned", _M011),
     (12, "app_settings", _M012),
+    (13, "session_agent_memory", _M013),
 ]
 
 

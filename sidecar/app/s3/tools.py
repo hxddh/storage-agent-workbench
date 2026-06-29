@@ -210,35 +210,48 @@ def list_objects_v2(
     bucket: str,
     max_keys: int,
     prefix: str | None = None,
+    continuation_token: str | None = None,
+    delimiter: str | None = "/",
 ) -> dict[str, Any]:
+    """Bounded ListObjectsV2. One page only (no auto-scan); the caller pages by
+    re-calling with ``next_token`` until it is null. ``delimiter`` defaults to
+    ``/`` (directory-style); pass ``""``/``None`` to list keys recursively.
+    """
     base = {
         "success": False,
         "key_count": 0,
         "common_prefixes": [],
         "sample_keys": [],
+        "keys": [],
         "is_truncated": False,
+        "next_token": None,
         "error_code": None,
         "error_message_sanitized": None,
     }
-    # Backend hard cap; no full scans, no auto-pagination.
+    # Per-call hard cap; pagination is explicit (next_token), never automatic.
     clamped = max(1, min(int(max_keys), MAX_LIST_KEYS))
     try:
         client = client_factory.build_s3_client(conn, provider_id)
-        resp = client.list_objects_v2(
-            Bucket=bucket,
-            Prefix=prefix or "",
-            MaxKeys=clamped,
-            Delimiter="/",
-        )
+        kw: dict[str, Any] = {"Bucket": bucket, "Prefix": prefix or "", "MaxKeys": clamped}
+        if delimiter:
+            kw["Delimiter"] = delimiter
+        if continuation_token:
+            kw["ContinuationToken"] = continuation_token
+        resp = client.list_objects_v2(**kw)
         contents = resp.get("Contents", []) or []
         common = [p.get("Prefix") for p in resp.get("CommonPrefixes", []) or []]
+        all_keys = [c.get("Key") for c in contents]
         return {
             **base,
             "success": True,
             "key_count": resp.get("KeyCount", len(contents)),
             "common_prefixes": common,
-            "sample_keys": [c.get("Key") for c in contents[:SAMPLE_KEYS_LIMIT]],
+            # sample_keys: small preview (back-compat); keys: the full page so the
+            # agent can enumerate by paging.
+            "sample_keys": all_keys[:SAMPLE_KEYS_LIMIT],
+            "keys": all_keys[:clamped],
             "is_truncated": bool(resp.get("IsTruncated", False)),
+            "next_token": resp.get("NextContinuationToken"),
         }
     except ClientError as exc:
         return {**base, **_client_error_fields(exc), "success": False}

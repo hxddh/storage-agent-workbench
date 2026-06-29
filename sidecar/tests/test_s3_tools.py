@@ -163,6 +163,29 @@ def test_list_objects_v2_clamped_to_hard_cap(client, cloud_id, stub):
     assert body["success"] is True  # would raise StubAssertionError if MaxKeys != 1000
 
 
+def test_list_objects_v2_paginates_and_lists_recursively(client, cloud_id, stub):
+    """The agent can enumerate a big bucket: pass a continuation token and omit
+    the delimiter to walk keys flat, getting the full page + the next token."""
+    from app.s3 import tools as s3
+
+    c, s = stub
+    s.add_response(
+        "list_objects_v2",
+        {"KeyCount": 3, "Contents": [{"Key": "a"}, {"Key": "b"}, {"Key": "c"}],
+         "IsTruncated": True, "NextContinuationToken": "TOK2"},
+        # recursive → no Delimiter; continuation token threaded through.
+        expected_params={"Bucket": BUCKET, "Prefix": "logs/", "MaxKeys": 1000,
+                         "ContinuationToken": "TOK1"},
+    )
+    with _db() as conn:
+        res = s3.list_objects_v2(conn, cloud_id, BUCKET, 1000, "logs/",
+                                 continuation_token="TOK1", delimiter=None)
+    assert res["success"] is True
+    assert res["keys"] == ["a", "b", "c"]      # full page, not just a 20-sample
+    assert res["next_token"] == "TOK2"          # caller pages until this is null
+    assert res["is_truncated"] is True
+
+
 # --- head_object ------------------------------------------------------------
 
 

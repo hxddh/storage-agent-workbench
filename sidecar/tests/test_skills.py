@@ -285,10 +285,10 @@ def test_no_storageops_tooling_in_executable_code():
 
 def test_migrations_are_sequential_and_capped():
     from app import migrations
-    # Migration 12 adds the app_settings key/value store (autonomy policy).
+    # Migration 13 adds session_agent_memory (the in-chat agent's working memory).
     versions = [v for v, _n, _s in migrations.MIGRATIONS]
     assert versions == list(range(1, len(versions) + 1))  # 1..N, no gaps/dupes
-    assert max(versions) == 12
+    assert max(versions) == 13
 
 
 def test_no_public_skills_api(client):
