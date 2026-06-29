@@ -184,7 +184,6 @@ class RunCreate(BaseModel):
     bucket: str | None = None
     prefix: str | None = None
     user_prompt: str | None = None
-    planner_mode: PlannerMode = "deterministic"
     # account_discovery options (bounded; never trigger object scans).
     max_buckets: int | None = Field(default=None, ge=1, le=500)
     include_pattern: str | None = None
@@ -205,7 +204,6 @@ class RunSummary(BaseModel):
     run_type: str
     title: str | None
     status: str
-    planner_mode: str
     provider_id: str | None
     bucket: str | None
     final_summary: str | None
@@ -235,7 +233,6 @@ class RunDetail(BaseModel):
     run_type: str
     title: str | None
     status: str
-    planner_mode: str
     provider_id: str | None
     bucket: str | None
     prefix: str | None = None

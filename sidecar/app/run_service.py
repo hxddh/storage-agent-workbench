@@ -26,19 +26,13 @@ _EXECUTORS = {
     "account_discovery": execute_account_discovery_run,
 }
 
-# Dataset-analysis run types handle Agent mode INSIDE their deterministic
-# executor (Phase 13): deterministic analysis runs first, then an
-# interpretation-only narrator over the sanitized aggregates. They must NOT be
-# dispatched to the tool-calling ``run_agent`` planner.
-_AGENT_VIA_EXECUTOR = {"access_log_analysis", "inventory_analysis"}
-
 
 def run_sync(run_id: str) -> None:
     """Execute a run to completion using a fresh connection.
 
-    Dispatched by planner_mode first (agent vs deterministic), then by run_type.
-    Dataset-analysis run types always go through their executor, which performs
-    the deterministic analysis and (in agent mode) the interpretation narrator.
+    Runs are PURE deterministic compute — there is no LLM planner. The
+    conversational agent invokes these engines as tools (or proposes a saved
+    report); it never plans or narrates inside a run.
     """
     conn = db.connect()
     try:
@@ -46,17 +40,12 @@ def run_sync(run_id: str) -> None:
         if row is None:
             return
         session_id = row["session_id"]
-        if row["planner_mode"] == "agent" and row["run_type"] not in _AGENT_VIA_EXECUTOR:
-            # Controlled LLM planner over the same whitelisted tools.
-            from .agent_runtime.agent_service import run_agent
-            run_agent(conn, run_id)
-        else:
-            executor = _EXECUTORS.get(row["run_type"])
-            if executor is None:
-                bus.publish(run_id, {"type": "error", "message": f"run_type '{row['run_type']}' is not executable"})
-                bus.mark_done(run_id)
-                return
-            executor(conn, run_id)
+        executor = _EXECUTORS.get(row["run_type"])
+        if executor is None:
+            bus.publish(run_id, {"type": "error", "message": f"run_type '{row['run_type']}' is not executable"})
+            bus.mark_done(run_id)
+            return
+        executor(conn, run_id)
         # After the run finishes, refresh its session's deterministic summary.
         _finalize_session(conn, run_id, session_id)
     finally:

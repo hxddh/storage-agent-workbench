@@ -86,7 +86,6 @@ export interface RunSummary {
   run_type: string;
   title: string | null;
   status: string;
-  planner_mode: string;
   provider_id: string | null;
   bucket: string | null;
   final_summary: string | null;
@@ -116,7 +115,6 @@ export interface RunDetail {
   run_type: string;
   title: string | null;
   status: string;
-  planner_mode: string;
   provider_id: string | null;
   bucket: string | null;
   prefix: string | null;
@@ -161,7 +159,7 @@ export type RunEvent =
   | { type: "report_ready"; run_id: string; report_path: string }
   | { type: "error"; message: string }
   // Run lifecycle events (shared by deterministic and agent-planner runs)
-  | { type: "run_started"; planner_mode: string }
+  | { type: "run_started" }
   | { type: "tool_selected"; tool_name: string; reason: string }
   | { type: "guardrail_passed"; name: string }
   | { type: "guardrail_blocked"; name: string; message: string }

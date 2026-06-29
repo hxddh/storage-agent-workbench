@@ -142,7 +142,6 @@ export interface RunCreateInput {
   bucket?: string;
   prefix?: string;
   user_prompt?: string;
-  planner_mode?: "deterministic" | "agent";
   // account_discovery options
   max_buckets?: number;
   include_pattern?: string;

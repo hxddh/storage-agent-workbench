@@ -249,12 +249,8 @@ def build_session_context(
             ],
             "findings": findings,
             "open_questions": [redact_text(str(q))[:300] for q in (summary.get("open_questions") or [])[:_MAX_FACTS]],
-            "next_actions": [
-                {"title": redact_text(str(a.get("title", "")))[:160],
-                 "action_type": str(a.get("action_type", ""))[:64],
-                 "confidence": a.get("confidence", "medium")}
-                for a in (summary.get("next_actions") or [])[:_MAX_FACTS]
-            ],
+            # NOTE: the deterministic rule-engine "next_actions" menu is intentionally
+            # NOT injected — the agent proposes its own next steps. (Removed in v0.20.)
             "limitations": [redact_text(str(x))[:300] for x in (summary.get("limitations") or [])[:_MAX_FACTS]],
         },
         # Things YOU recorded in earlier turns of this session (via note_fact /

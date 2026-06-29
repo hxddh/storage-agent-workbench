@@ -101,15 +101,6 @@ export function RunDetail({
     return null;
   }, [events, detail]);
 
-  const agentActivity = useMemo(
-    () =>
-      events.filter(
-        (e): e is Extract<RunEvent, { type: "tool_selected" | "guardrail_passed" | "guardrail_blocked" }> =>
-          e.type === "tool_selected" || e.type === "guardrail_passed" || e.type === "guardrail_blocked",
-      ),
-    [events],
-  );
-
   const metricsCards = useMemo<{ label: string; value: string }[]>(() => {
     // Bucket config review: count findings by category.
     if (detail?.run_type === "bucket_config_review") {
@@ -230,17 +221,6 @@ export function RunDetail({
         </div>
         <p className="text-sm text-gray-500">
           {detail?.run_type} · {detail?.bucket || "—"} · {detail?.prefix || "(root)"}
-          {detail?.planner_mode && (
-            <span
-              className={`ml-2 rounded-full border px-2 py-0.5 text-[11px] ${
-                detail.planner_mode === "agent"
-                  ? "border-violet-700 text-violet-300"
-                  : "border-edge text-gray-400"
-              }`}
-            >
-              planner: {detail.planner_mode}
-            </span>
-          )}
         </p>
       </header>
 
@@ -301,31 +281,6 @@ export function RunDetail({
         </section>
 
         <section>
-          {detail?.planner_mode === "agent" && (
-            <div className="mb-6">
-              <h2 className="mb-2 text-sm font-semibold text-gray-200">Agent activity</h2>
-              <ul className="space-y-1">
-                {agentActivity.map((e, i) => (
-                  <li key={i} className="text-xs">
-                    {e.type === "tool_selected" && (
-                      <span className="text-violet-300">
-                        ▸ selected <span className="font-mono">{e.tool_name}</span>
-                        {e.reason ? <span className="text-gray-500"> — {e.reason}</span> : null}
-                      </span>
-                    )}
-                    {e.type === "guardrail_passed" && (
-                      <span className="text-emerald-400">✓ guardrail {e.name}</span>
-                    )}
-                    {e.type === "guardrail_blocked" && (
-                      <span className="text-red-400">✗ guardrail {e.name} — {e.message}</span>
-                    )}
-                  </li>
-                ))}
-                {agentActivity.length === 0 && <li className="text-xs text-gray-600">No agent activity yet.</li>}
-              </ul>
-            </div>
-          )}
-
           <h2 className="mb-2 text-sm font-semibold text-gray-200">Tool / Analysis Timeline</h2>
           <ToolTimeline items={timeline} />
 
