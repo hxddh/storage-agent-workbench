@@ -327,12 +327,6 @@ export interface ActionPreviewResult {
   will_create: Record<string, unknown> | null;
 }
 
-export const previewSessionAction = (id: string, proposal: NextAction) =>
-  request<ActionPreviewResult>(`/sessions/${id}/actions/preview`, {
-    method: "POST",
-    body: JSON.stringify({ proposal }),
-  });
-
 export const prepareSessionAction = (id: string, proposal: NextAction) =>
   request<ActionPrepareResult>(`/sessions/${id}/actions/prepare`, {
     method: "POST",

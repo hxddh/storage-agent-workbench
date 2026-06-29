@@ -1,12 +1,13 @@
-"""Next-action hand-over: normalize, preview, prepare (Phase 17).
+"""Next-action hand-over: normalize + prepare.
 
-A next-action proposal is a *suggestion*, never automation. This module turns a
-proposal into a validated, prefilled hand-over that the UI opens in an existing
-SAFE flow (NewRunForm / EvidenceImportDialog / session report / message
-composer). It performs ONLY validation + prefill: it never creates a run, never
-downloads evidence, never confirms an import, never calls S3, never calls an
-LLM, and never mutates a bucket. Every proposal carries
-``requires_confirmation`` and only an allowlisted action_type survives.
+A next-action proposal is a *suggestion*, never automation. Most proposals are
+just handed back to the conversational agent to carry out with its read-only
+tools (open stays None → the UI re-asks the agent). Only the genuinely-confirmed
+data-moving import (EvidenceImportDialog), the saved session report, and a
+context question get a purpose-built flow. This module performs ONLY validation +
+prefill: it never creates a run, downloads evidence, confirms an import, calls
+S3, calls an LLM, or mutates a bucket. Every proposal carries
+``requires_confirmation``; a forbidden/destructive action_type is dropped.
 """
 
 from __future__ import annotations
@@ -16,7 +17,6 @@ import uuid
 from typing import Any
 
 from ..repositories import account_discovery as account_repo
-from ..repositories import cloud_providers as cloud_repo
 from ..repositories import sessions as sessions_repo
 from ..security.redaction import redact_text
 
@@ -64,15 +64,6 @@ def _safe_action_type(value: str) -> str | None:
     if guardrails.is_forbidden_tool(slug):
         return None
     return slug
-
-# action_type -> the run_type a "run_*" proposal would create.
-_RUN_TYPE = {
-    "run_account_discovery": "account_discovery",
-    "run_bucket_config_review": "bucket_config_review",
-    "run_diagnostic": "diagnostic",
-    "run_inventory_analysis": "inventory_analysis",
-    "run_access_log_analysis": "access_log_analysis",
-}
 
 _CONFIDENCE = {"high", "medium", "low"}
 
@@ -136,16 +127,6 @@ def _resolve(conn: sqlite3.Connection, session: dict[str, Any], proposal: dict[s
     """Validate + prefill a proposal against session state. NO side effects."""
     action_type = proposal["action_type"]
     session_id = session["id"]
-    provider_id = session.get("provider_id")
-    bucket = session.get("primary_bucket") or proposal.get("prefill", {}).get("bucket")
-
-    # Fall back to the configured cloud provider(s): if the session has none
-    # bound and exactly one is configured, use it; otherwise offer them as
-    # candidates so the run form can pick. (Chat-created sessions bind none.)
-    cloud_list = cloud_repo.list_all(conn)
-    provider_candidates = [{"id": p.id, "name": p.name} for p in cloud_list]
-    if not provider_id and len(cloud_list) == 1:
-        provider_id = cloud_list[0].id
 
     result: dict[str, Any] = {
         "action_type": action_type,
@@ -158,45 +139,13 @@ def _resolve(conn: sqlite3.Connection, session: dict[str, Any], proposal: dict[s
         "will_create": None,
     }
 
-    if action_type == "run_account_discovery":
-        # Always open the run form; prefill the provider when we have one, else
-        # surface providers as candidates so the user can pick in the form.
-        result.update(open="new_run", prefill={"run_type": "account_discovery", "session_id": session_id})
-        if provider_id:
-            result.update(ready=True)
-            result["prefill"]["provider_id"] = provider_id
-            result["will_create"] = {"run_type": "account_discovery", "session_id": session_id,
-                                     "requires_confirmation": True}
-        else:
-            result["missing_inputs"].append("provider_id")
-            result["candidates"] = {"providers": provider_candidates}
-
-    elif action_type in ("run_bucket_config_review", "run_diagnostic"):
-        run_type = _RUN_TYPE[action_type]
-        result.update(open="new_run", prefill={"run_type": run_type, "session_id": session_id})
-        if provider_id:
-            result["prefill"]["provider_id"] = provider_id
-        else:
-            result["missing_inputs"].append("provider_id")
-            result["candidates"] = {"providers": provider_candidates}
-        if bucket:
-            result["prefill"]["bucket"] = bucket
-        else:
-            result["missing_inputs"].append("bucket")
-        if not result["missing_inputs"]:
-            result.update(ready=True)
-            result["will_create"] = {"run_type": run_type, "session_id": session_id,
-                                     "requires_confirmation": True}
-
-    elif action_type in ("run_inventory_analysis", "run_access_log_analysis"):
-        run_type = _RUN_TYPE[action_type]
-        # Analysis needs an uploaded dataset; open the existing run form (file picker).
-        result.update(ready=True, open="new_run",
-                      prefill={"run_type": run_type, "session_id": session_id})
-        result["will_create"] = {"run_type": run_type, "session_id": session_id, "requires_confirmation": True}
-        result["safety_notes"].append("Choose the dataset file in the run form; analysis is local (DuckDB).")
-
-    elif action_type in ("plan_inventory_import", "plan_access_log_import"):
+    # NOTE: there is no "new_run" form. Investigation/diagnosis/config review/
+    # account survey and uploaded-file analysis are all things the agent does
+    # itself with its read-only tools — clicking such a proposal just passes the
+    # request back to the agent conversationally (open stays None). Only the
+    # genuinely-confirmed data-moving import, the saved report, and a context
+    # question get a purpose-built flow below.
+    if action_type in ("plan_inventory_import", "plan_access_log_import"):
         source_type = "inventory" if action_type == "plan_inventory_import" else "access_log"
         cands = _evidence_candidates(conn, session_id, source_type)
         if not cands:

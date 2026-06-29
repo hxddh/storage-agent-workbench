@@ -86,43 +86,19 @@ def _prepare(client, sid, action_type, **proposal):
 # --- preview / prepare per action type --------------------------------------
 
 
-def test_preview_account_discovery(client):
-    pid = _provider(client)
-    s = _session(client, provider_id=pid)
-    r = _preview(client, s["id"], "run_account_discovery").json()
-    assert r["ready"] is True
-    assert r["will_create"]["run_type"] == "account_discovery"
-    assert r["proposal"]["requires_confirmation"] is True
-
-
-def test_prepare_account_discovery_with_provider(client):
-    pid = _provider(client)
-    s = _session(client, provider_id=pid)
-    r = _prepare(client, s["id"], "run_account_discovery").json()
-    assert r["status"] == "ready" and r["open"] == "new_run"
-    assert r["prefill"]["provider_id"] == pid and r["prefill"]["session_id"] == s["id"]
-
-
-def test_prepare_account_discovery_missing_provider(client):
-    s = _session(client)  # no provider
-    r = _prepare(client, s["id"], "run_account_discovery").json()
-    assert r["status"] == "needs_input" and "provider_id" in r["missing_inputs"]
-    assert r["open"] is None
-
-
-def test_prepare_bucket_config_review_missing_bucket(client):
-    pid = _provider(client)
-    s = _session(client, provider_id=pid)  # no primary_bucket
-    r = _prepare(client, s["id"], "run_bucket_config_review").json()
-    assert r["status"] == "needs_input" and "bucket" in r["missing_inputs"]
-
-
-def test_prepare_diagnostic_with_session_bucket(client):
+def test_run_proposals_route_conversationally_no_form(client):
+    """Investigation/diagnosis/config/account/analysis proposals no longer open a
+    'new_run' form — there is no form. prepare() leaves open=None so the UI hands
+    the request back to the agent to do with its read-only tools."""
     pid = _provider(client)
     s = _session(client, provider_id=pid, primary_bucket="bucket-alpha")
-    r = _prepare(client, s["id"], "run_diagnostic").json()
-    assert r["status"] == "ready" and r["open"] == "new_run"
-    assert r["prefill"]["bucket"] == "bucket-alpha" and r["prefill"]["run_type"] == "diagnostic"
+    for at in ("run_account_discovery", "run_bucket_config_review", "run_diagnostic",
+               "run_inventory_analysis", "run_access_log_analysis"):
+        r = _prepare(client, s["id"], at).json()
+        assert r["open"] is None, at
+        assert r.get("will_create") in (None, {}), at
+    # The proposal still normalizes + carries requires_confirmation.
+    assert _preview(client, s["id"], "run_account_discovery").json()["proposal"]["requires_confirmation"] is True
 
 
 def test_prepare_inventory_import_single_source(client):
@@ -261,8 +237,8 @@ def test_assistant_proposed_actions_sanitized_and_coerced(client, monkeypatch):
 def test_audit_events_recorded(client):
     pid = _provider(client)
     s = _session(client, provider_id=pid, primary_bucket="b")
-    _preview(client, s["id"], "run_diagnostic")
-    _prepare(client, s["id"], "run_diagnostic")
+    _preview(client, s["id"], "generate_session_report")
+    _prepare(client, s["id"], "generate_session_report")
     conn = _db()
     try:
         events = {r[0] for r in conn.execute(
