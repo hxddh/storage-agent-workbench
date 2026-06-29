@@ -33,7 +33,7 @@ from . import session_tools
 from .agent_service import AgentUnavailable
 from .guardrails import strip_chain_of_thought
 
-_MAX_FACTS = 30
+_MAX_FACTS = 50  # kept in sync with sessions.summary_builder.MAX_FACTS
 _MAX_FINDINGS = 30
 _MAX_MESSAGES = 12
 # Enumerations can be large (e.g. 96+ buckets in a table). Keep our answer cap
@@ -56,12 +56,17 @@ SESSION_SAFETY_RULES = [
     "user asked for directly in your answer: when asked to list/enumerate, "
     "actually write the items out (a list or table). Never say 'listed above', "
     "'see the table', or claim you displayed something you didn't write.",
-    "ENUMERATE COMPLETELY. When the user asks for all/every item, or for a full "
-    "list, output EVERY item the tool returned — never a sample, never 'first N', "
-    "never abbreviate with '…' or 'and so on'. If a tool returned N items (e.g. "
-    "list_buckets → 96 buckets), your table/list MUST contain all N rows. Do not "
-    "stop early and do not propose 're-run the tool' to get the rest — you already "
-    "have the full result; write it all out. Completeness here outweighs brevity.",
+    "ENUMERATE COMPLETELY what a tool returned. When the user asks for all/every "
+    "item, output EVERY item present in the tool result — never a sample, never "
+    "'first N', never '…' or 'and so on'. If list_buckets returned 96 buckets, "
+    "your table MUST contain all 96 rows; write out the full result you have.\n"
+    "Object listings are the one exception by design: list_objects is PAGINATED "
+    "and capped per call (it returns key_count = the true total, up to ~200 keys "
+    "per page, plus next_token). To enumerate more, page with continuation_token "
+    "until next_token is null. But if key_count is large (hundreds+), do NOT try "
+    "to paste thousands of keys into chat or loop endlessly — report the exact "
+    "key_count and a representative sample, and propose an inventory analysis "
+    "(attach/select the inventory file) for a complete, structured breakdown.",
     "Investigate live with your read-only tools: list_buckets / head_bucket / "
     "list_objects / head_object to explore, test_credentials / "
     "test_addressing_style / inspect_endpoint_tls / test_range_get to diagnose "
@@ -353,7 +358,7 @@ def answer(
     next_action_proposals} — all sanitized + CoT-stripped; proposals coerced
     through the Phase 17 allowlist. StorageOps skills are injected as guidance
     only (tools/scripts disabled). ``policy`` selects how autonomous the agent
-    is (see ``autonomy``); under assisted+ it may execute read-only runs itself.
+    is (see ``autonomy``); under autonomous_readonly it may execute read-only runs itself.
     """
     prompt, skill_names, context = _build_prompt(session, summary, recent_messages, user_message, conn)
 
@@ -381,7 +386,7 @@ def build_stream(
 
     Raises AgentUnavailable if the SDK/key is unavailable — caller should then
     fall back to the blocking endpoint. ``policy`` selects how autonomous the
-    agent is (under assisted+ it may execute read-only runs itself).
+    agent is (under autonomous_readonly it may execute read-only runs itself).
     """
     try:
         import openai  # noqa: F401

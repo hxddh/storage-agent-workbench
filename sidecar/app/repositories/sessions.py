@@ -86,9 +86,10 @@ def delete(conn: sqlite3.Connection, session_id: str) -> None:
 
 
 def fork(conn: sqlite3.Connection, session_id: str) -> str | None:
-    """Create a new session that copies another's title/goal/provider and its
-    full message thread, so the user can branch a conversation. Runs, findings
-    and the derived summary are NOT copied (they belong to the source)."""
+    """Create a new session that copies another's title/goal/provider, its full
+    message thread, and the agent's working memory, so a branched conversation
+    keeps its context. Runs, deterministic findings and the derived summary are
+    NOT copied (they belong to the source's runs)."""
     src = get_row(conn, session_id)
     if src is None:
         return None
@@ -113,6 +114,20 @@ def fork(conn: sqlite3.Connection, session_id: str) -> str | None:
             (uuid.uuid4().hex, new_id, m["role"], m["content"],
              m["referenced_run_ids"], m["referenced_evidence_ids"],
              (m["tool_activity"] if "tool_activity" in keys else None), m["created_at"]),
+        )
+    # Copy the agent's working memory so a fork doesn't lose what the agent learned.
+    mem = conn.execute(
+        "SELECT kind, text, severity, confidence, source_run_id, status, created_at "
+        "FROM session_agent_memory WHERE session_id = ? AND status = 'active' ORDER BY rowid",
+        (session_id,),
+    ).fetchall()
+    for r in mem:
+        conn.execute(
+            "INSERT INTO session_agent_memory "
+            "(id, session_id, kind, text, severity, confidence, source_run_id, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (uuid.uuid4().hex, new_id, r["kind"], r["text"], r["severity"],
+             r["confidence"], r["source_run_id"], r["status"], r["created_at"]),
         )
     conn.commit()
     return new_id

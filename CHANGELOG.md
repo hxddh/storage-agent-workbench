@@ -6,6 +6,32 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.25] - 2026-06-29
+
+### Fixed
+
+- **No more dangling user message on a failed turn.** The blocking message path
+  used to persist your message before calling the agent, so a clean failure (no
+  model key → 422) left a question with no answer in the thread. It now persists
+  the message and answer together only on success — matching the streaming path.
+- **Forking a session keeps the agent's memory.** `fork` now copies the agent's
+  recorded facts/findings/open-questions, so a branched conversation doesn't lose
+  context. (Deleting a session already cleaned memory up via cascade.)
+- **Account discovery from Settings lands in a conversation.** The Discover
+  button now spins up a session and opens it, so the run lives in a timeline
+  instead of as an orphaned, invisible run.
+
+### Changed
+
+- README intro reconciled with the autonomy model (it no longer says the agent
+  "never runs an action on its own"; it never *mutates* and always confirms
+  data-moving steps, but can run read-only checks itself).
+- The "enumerate completely" guidance now accounts for paginated object listings
+  (page via the continuation token; for very large buckets report the exact count
+  + a sample and offer an inventory analysis instead of pasting thousands of keys).
+- Agent context fact cap aligned with the summary builder (50); stale
+  "interpretation-only / assisted+" docstrings corrected to the live
+  tool-calling, autonomous-read-only reality.
 ## [0.19.24] - 2026-06-29
 
 ### Fixed
