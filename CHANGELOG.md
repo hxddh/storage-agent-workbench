@@ -6,6 +6,35 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.26] - 2026-06-29
+
+### Fixed
+
+- **Log analysis no longer crashes on plain `.log`/`.txt` files.** Uploading a
+  generic application log and asking the agent to "分析一下" used to surface a
+  `ParserError` (the CSV fallback choked on ragged lines). The access-log parser
+  now ingests any non-empty text line as a raw row, the CSV path skips malformed
+  lines instead of raising, and a truly empty file produces a clear, friendly
+  message instead of a cryptic stack trace. `.txt`/`.log` are fully supported.
+- **Finished/failed runs show what they actually did.** Opening a run that had
+  already terminated (e.g. a failed `diagnostic`) showed an empty timeline and a
+  misleading "Waiting for plan…". The run detail now seeds its timeline from the
+  persisted tool calls and falls back to the saved summary/error and report when
+  no live stream replays, so a terminal run is never blank.
+
+### Changed
+
+- **The agent diagnoses adaptively instead of firing a canned pipeline.** Removed
+  the architectural "ossification" where connectivity/credential/addressing
+  questions reflexively triggered a fixed `diagnostic` run. Under the autonomous
+  policy the in-chat agent now investigates with its own read-only tools
+  (`test_credentials`, then branching to addressing/TLS/head-bucket/list/range
+  checks) and explains the root cause. The deterministic `diagnostic` run still
+  exists as an explicit, auditable report when you want a saved artifact.
+- **Removed the out-of-place "梳理账号" (Discover account) button from Settings.**
+  Account discovery belongs in a conversation, not the provider settings list;
+  the orphaned button and its plumbing are gone.
+
 ## [0.19.25] - 2026-06-29
 
 ### Fixed

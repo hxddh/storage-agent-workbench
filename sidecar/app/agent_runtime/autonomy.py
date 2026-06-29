@@ -9,8 +9,9 @@ Agent executes them itself or proposes them for the user to run.
 Two policies (default ``autonomous_readonly``):
 
 - ``autonomous_readonly`` (自主) — the Agent EXECUTES read-only runs itself
-  (diagnostic, bucket_config_review, account_discovery) and folds the findings
-  into its answer.
+  (bucket_config_review, account_discovery) and folds the findings into its
+  answer. Connectivity/credential/addressing *diagnosis* is not a canned run
+  here: the agent investigates adaptively with its own read-only tools.
 - ``assisted`` (协助) — the Agent PROPOSES those runs for the user to confirm,
   and does not execute them on its own.
 
@@ -58,12 +59,20 @@ ACTION_RISK = {
 }
 
 # The action types that actually have an inline executor tool
-# (session_action_tools.build). Must stay in sync with that module. Note this is
-# a *subset* of the SAFE_READONLY actions: e.g. generate_session_report is
-# SAFE_READONLY for tiering/proposals but has no inline tool, so the agent can
-# only propose it, never auto-run it.
+# (session_action_tools.build). Must stay in sync with that module. This is a
+# *subset* of the SAFE_READONLY actions for two reasons:
+#  - generate_session_report is SAFE_READONLY but has no inline tool (propose-only);
+#  - run_diagnostic is intentionally NOT here: connectivity/credential/addressing
+#    diagnosis is the agent's own ADAPTIVE job using its read-only session tools
+#    (test_credentials → branch to test_addressing_style / inspect_endpoint_tls /
+#    head_bucket / list_objects / test_range_get → reason → explain the root
+#    cause), NOT a canned deterministic test_credentials→head_bucket→list pipeline.
+#    The deterministic `diagnostic` run still exists as an explicit, auditable
+#    report (proposable), but the agent doesn't reflexively fire it.
+# Account discovery (bulk structured enumeration + persisted profile) and config
+# review (the structured multi-reader snapshot) remain inline structured runs.
 INLINE_EXECUTABLE = frozenset(
-    {"run_diagnostic", "run_bucket_config_review", "run_account_discovery"}
+    {"run_bucket_config_review", "run_account_discovery"}
 )
 
 

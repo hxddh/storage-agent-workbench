@@ -24,10 +24,14 @@ oversight:
    tools in a loop, loads StorageOps skills on demand (progressive disclosure via
    the `read_skill` tool), and grounds answers in tool output. Under the
    **autonomy policy** (`agent_runtime/autonomy.py`, default `autonomous_readonly`)
-   it can also EXECUTE read-only runs itself (diagnostic, bucket_config_review,
+   it can also EXECUTE read-only runs itself (bucket_config_review,
    account_discovery — `agent_runtime/session_action_tools.py`) and fold the
-   findings into its answer, instead of only proposing them. This is where
-   "agentic" behavior lives.
+   findings into its answer, instead of only proposing them. Connectivity/
+   credential/addressing *diagnosis* is intentionally NOT a canned inline run:
+   the agent investigates adaptively with its own read-only tools
+   (`test_credentials` → addressing/TLS/head-bucket/list/range) and explains the
+   root cause; the deterministic `diagnostic` run remains available as an
+   explicit, auditable report. This is where "agentic" behavior lives.
 
    Two policies, security tiers enforced *below* the setting regardless:
    `assisted` proposes read-only runs for the user to confirm;

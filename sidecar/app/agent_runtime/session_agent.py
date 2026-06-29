@@ -142,14 +142,25 @@ INSTRUCTIONS = (
 
 # Appended when the autonomy policy lets the agent EXECUTE read-only runs itself.
 _EXECUTION_CLAUSE = (
-    "\n\nAUTONOMY: you may also EXECUTE read-only runs yourself when they help "
-    "answer the question — run_diagnostic(provider_id, bucket), "
-    "run_bucket_config_review(provider_id, bucket), and "
-    "run_account_discovery(provider_id). These actually run and record a real "
-    "(read-only, audited) run, then return its findings; use them to confirm a "
-    "hypothesis rather than only suggesting it, and fold the findings into your "
-    "answer. Expensive/data-moving work (dataset analysis, evidence import) is "
-    "still NOT auto-run — propose those as next steps."
+    "\n\nAUTONOMY: investigate and act on your own — do not wait to be asked.\n"
+    "DIAGNOSE ADAPTIVELY with YOUR OWN read-only tools; do NOT fire a canned "
+    "pipeline. For a connectivity / credentials / 403 / SignatureDoesNotMatch / "
+    "addressing problem: call test_credentials first; then, based on what it "
+    "returns, BRANCH — test_addressing_style (path vs virtual-host / "
+    "SignatureDoesNotMatch), inspect_endpoint_tls (TLS/handshake/cert), "
+    "head_bucket + list_objects (reachability / permissions / region), "
+    "test_range_get (range/CDN). Reason about each result, chain the next probe "
+    "it implies, and explain the ROOT CAUSE — never just report a list of "
+    "pass/fail checks. If a probe shows credentials aren't configured or are "
+    "rejected, say so plainly and tell the user exactly what to fix.\n"
+    "You may also EXECUTE the structured read-only runs when they're the right "
+    "tool — run_bucket_config_review(provider_id, bucket) for a full config "
+    "report, run_account_discovery(provider_id) to enumerate the account — and "
+    "fold their findings into your answer. (A deterministic `diagnostic` REPORT "
+    "run exists too, but only propose it when the user wants a saved/auditable "
+    "artifact — your live tools are how you actually diagnose.) Expensive/data-"
+    "moving work (dataset analysis, evidence import) is still NOT auto-run — "
+    "propose those as next steps."
 )
 
 

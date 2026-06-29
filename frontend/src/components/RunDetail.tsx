@@ -43,6 +43,11 @@ export function RunDetail({
         if (d.run_type === "account_discovery") {
           getAccountProfile(runId).then((p) => { if (!cancelled) setProfile(p); }).catch(() => undefined);
         }
+        // Terminal run with a written report: fetch it now (the report_ready SSE
+        // event won't replay for a run that finished before we opened it).
+        if ((d.status === "completed" || d.status === "failed") && d.report_path) {
+          getReport(runId).then((r) => { if (!cancelled) setReport(r); }).catch(() => undefined);
+        }
       })
       .catch((e) => { if (!cancelled) setLoadError(String(e)); });
 
@@ -86,13 +91,20 @@ export function RunDetail({
 
   const agentMessage = useMemo(() => {
     const last = [...events].reverse().find((e) => e.type === "summary" || e.type === "final_summary");
-    return last && (last.type === "summary" || last.type === "final_summary") ? last.content : null;
-  }, [events]);
+    if (last && (last.type === "summary" || last.type === "final_summary")) return last.content;
+    // Terminal run opened fresh (no SSE replay): fall back to the persisted
+    // summary so a completed run isn't shown without its conclusion.
+    if (detail && detail.status === "completed" && detail.final_summary) return detail.final_summary;
+    return null;
+  }, [events, detail]);
 
   const errorMessage = useMemo(() => {
     const last = [...events].reverse().find((e) => e.type === "error");
-    return last && last.type === "error" ? last.message : null;
-  }, [events]);
+    if (last && last.type === "error") return last.message;
+    // Failed run opened fresh: the failure reason is persisted in final_summary.
+    if (detail && detail.status === "failed" && detail.final_summary) return detail.final_summary;
+    return null;
+  }, [events, detail]);
 
   const agentActivity = useMemo(
     () =>
@@ -171,10 +183,34 @@ export function RunDetail({
         };
       }
     }
-    return order.map((id, i) => ({
-      ...map[id],
-      duration_ms: detail?.tool_calls[i]?.duration_ms ?? null,
-    }));
+    if (order.length > 0) {
+      return order.map((id, i) => ({
+        ...map[id],
+        duration_ms: detail?.tool_calls[i]?.duration_ms ?? null,
+      }));
+    }
+    // No live SSE events (run already terminated when opened, or the stream
+    // replayed nothing) → seed the timeline from the persisted tool_calls so a
+    // finished/failed run still shows what it actually did instead of an empty
+    // "Waiting for plan…" placeholder.
+    return (detail?.tool_calls ?? []).map((tc) => {
+      let output: Record<string, unknown> | undefined;
+      if (tc.output_json_sanitized) {
+        try {
+          const parsed = JSON.parse(tc.output_json_sanitized);
+          if (parsed && typeof parsed === "object") output = parsed as Record<string, unknown>;
+        } catch {
+          // sanitized output isn't JSON — leave it out of the structured summary
+        }
+      }
+      return {
+        id: tc.id,
+        tool_name: tc.tool_name,
+        status: tc.status ?? undefined,
+        output,
+        duration_ms: tc.duration_ms,
+      };
+    });
   }, [events, detail]);
 
   const status = detail?.status ?? "pending";
@@ -235,7 +271,11 @@ export function RunDetail({
               ))}
             </ol>
           ) : (
-            <p className="mb-6 text-xs text-gray-600">Waiting for plan…</p>
+            <p className="mb-6 text-xs text-gray-600">
+              {status === "completed" || status === "failed" || status === "not_implemented"
+                ? "This run recorded no explicit plan."
+                : "Waiting for plan…"}
+            </p>
           )}
 
           {metricsCards.length > 0 && (

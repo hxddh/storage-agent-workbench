@@ -40,15 +40,18 @@ def test_executes_inline_by_policy():
 
 
 def test_may_execute_only_safe_readonly_and_only_when_autonomous():
-    # Safe read-only runs execute under autonomous; expensive/data-moving never do.
-    assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "run_diagnostic") is True
+    # Structured read-only runs execute under autonomous; expensive/data-moving never do.
+    assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "run_bucket_config_review") is True
     assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "run_account_discovery") is True
     assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "run_access_log_analysis") is False
     assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "plan_inventory_import") is False
     # SAFE_READONLY but has NO inline executor tool → only proposable, not auto-run.
     assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "generate_session_report") is False
+    # run_diagnostic is intentionally NOT auto-run: the agent diagnoses adaptively
+    # with its own read-only tools instead of firing the canned pipeline.
+    assert autonomy.may_execute(autonomy.AUTONOMOUS_READONLY, "run_diagnostic") is False
     # Assisted proposes, so it never executes anything itself.
-    assert autonomy.may_execute(autonomy.ASSISTED, "run_diagnostic") is False
+    assert autonomy.may_execute(autonomy.ASSISTED, "run_bucket_config_review") is False
 
 
 # --- tool gating ------------------------------------------------------------
@@ -61,8 +64,10 @@ def test_action_tools_gated_by_policy():
         auto = session_action_tools.build(conn, _fake_function_tool, autonomy.AUTONOMOUS_READONLY)
     finally:
         conn.close()
+    # run_diagnostic is intentionally absent — diagnosis is the agent's adaptive
+    # job with its own read-only tools, not a canned inline run.
     assert _tool_names(auto) == {
-        "run_diagnostic", "run_bucket_config_review", "run_account_discovery",
+        "run_bucket_config_review", "run_account_discovery",
     }
 
 
@@ -78,8 +83,8 @@ def test_no_mutating_tool_ever_exposed():
 
 
 def test_instructions_gain_execution_clause_only_when_inline():
-    assert "EXECUTE read-only runs" not in session_agent.instructions_for(autonomy.ASSISTED)
-    assert "EXECUTE read-only runs" in session_agent.instructions_for(autonomy.AUTONOMOUS_READONLY)
+    assert "DIAGNOSE ADAPTIVELY" not in session_agent.instructions_for(autonomy.ASSISTED)
+    assert "DIAGNOSE ADAPTIVELY" in session_agent.instructions_for(autonomy.AUTONOMOUS_READONLY)
 
 
 # --- settings endpoint ------------------------------------------------------
@@ -102,8 +107,8 @@ def test_autonomy_setting_defaults_and_updates(client):
 
 
 def test_inline_executor_runs_real_readonly_run(client, monkeypatch):
-    """run_diagnostic creates + runs a real (read-only) run, links it to the
-    session, and returns the run's sanitized summary."""
+    """An inline run (bucket_config_review) creates + runs a real (read-only) run,
+    links it to the session, and returns the run's sanitized summary."""
     pid = client.post("/cloud-providers", json={
         "name": "demo", "provider_type": "s3-compatible", "endpoint_url": "https://m",
         "region": "us-east-1", "addressing_style": "path",
@@ -129,20 +134,20 @@ def test_inline_executor_runs_real_readonly_run(client, monkeypatch):
         activity: list[dict] = []
         tools = session_action_tools.build(conn, _fake_function_tool, autonomy.AUTONOMOUS_READONLY,
                                            activity, sid)
-        run_diagnostic = next(t for t in tools if t.name == "run_diagnostic")
-        out = json.loads(run_diagnostic(pid, "bucket-x"))
+        tool = next(t for t in tools if t.name == "run_bucket_config_review")
+        out = json.loads(tool(pid, "bucket-x"))
     finally:
         conn.close()
 
     assert out["status"] == "completed"
     assert out["final_summary"] == "Credentials valid; bucket reachable."
-    assert activity and activity[0]["tool"] == "run_diagnostic"
+    assert activity and activity[0]["tool"] == "run_bucket_config_review"
 
     # A real run was persisted and linked to the session timeline.
     runs = client.get("/runs").json()
-    assert any(r["run_type"] == "diagnostic" for r in runs)
+    assert any(r["run_type"] == "bucket_config_review" for r in runs)
     detail = client.get(f"/sessions/{sid}").json()
-    assert any(r["run_type"] == "diagnostic" for r in detail["runs"])
+    assert any(r["run_type"] == "bucket_config_review" for r in detail["runs"])
 
 
 def test_inline_executor_rejects_unknown_provider(client, monkeypatch):
@@ -152,8 +157,8 @@ def test_inline_executor_rejects_unknown_provider(client, monkeypatch):
     conn.row_factory = sqlite3.Row
     try:
         tools = session_action_tools.build(conn, _fake_function_tool, autonomy.AUTONOMOUS_READONLY, [], sid)
-        run_diagnostic = next(t for t in tools if t.name == "run_diagnostic")
-        out = json.loads(run_diagnostic("no-such-provider", "b"))
+        tool = next(t for t in tools if t.name == "run_bucket_config_review")
+        out = json.loads(tool("no-such-provider", "b"))
     finally:
         conn.close()
     assert "error" in out

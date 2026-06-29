@@ -151,7 +151,6 @@ export default function App() {
       <SettingsDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        onOpenSession={(id) => { setActiveId(id); setDrawerOpen(false); refreshSessions(); }}
       />
 
       <CommandPalette
