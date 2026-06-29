@@ -348,13 +348,20 @@ def add_agent_memory(
     return mem_id
 
 
-def list_agent_memory(conn: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]:
-    """All active agent-authored memory items for a session, oldest first."""
+def list_agent_memory(
+    conn: sqlite3.Connection, session_id: str, limit: int = 200
+) -> list[dict[str, Any]]:
+    """The most recent ``limit`` active agent-memory items, returned oldest-first.
+
+    Bounded so a long-running session can't grow the per-turn context (or its
+    build cost) without limit; the newest items are the ones that survive.
+    """
     rows = conn.execute(
-        "SELECT * FROM session_agent_memory WHERE session_id = ? AND status = 'active' ORDER BY rowid",
-        (session_id,),
+        "SELECT * FROM session_agent_memory WHERE session_id = ? AND status = 'active' "
+        "ORDER BY rowid DESC LIMIT ?",
+        (session_id, max(1, int(limit))),
     ).fetchall()
-    return [dict(r) for r in rows]
+    return [dict(r) for r in reversed(rows)]
 
 
 def list_messages(conn: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]:

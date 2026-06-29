@@ -156,7 +156,11 @@ def instructions_for(policy: str) -> str:
 
 
 def _build_agent_memory_block(memory: list[dict[str, Any]] | None) -> dict[str, list[Any]]:
-    """Group agent-authored memory items into recalled facts/findings/questions."""
+    """Group agent-authored memory into recalled facts/findings/questions.
+
+    ``memory`` is oldest-first; we keep the most RECENT items per kind (the tail)
+    so a long session surfaces its latest learnings rather than stale early ones.
+    """
     facts: list[dict[str, Any]] = []
     findings: list[dict[str, Any]] = []
     questions: list[str] = []
@@ -165,13 +169,17 @@ def _build_agent_memory_block(memory: list[dict[str, Any]] | None) -> dict[str, 
         text = redact_text(str(m.get("text", "")))[:300]
         if not text:
             continue
-        if kind == "fact" and len(facts) < _MAX_FACTS:
+        if kind == "fact":
             facts.append({"text": text, "confidence": m.get("confidence") or "medium"})
-        elif kind == "finding" and len(findings) < _MAX_FINDINGS:
+        elif kind == "finding":
             findings.append({"title": text, "severity": m.get("severity") or "info"})
-        elif kind == "open_question" and len(questions) < _MAX_FACTS:
+        elif kind == "open_question":
             questions.append(text)
-    return {"recorded_facts": facts, "recorded_findings": findings, "open_questions": questions}
+    return {
+        "recorded_facts": facts[-_MAX_FACTS:],
+        "recorded_findings": findings[-_MAX_FINDINGS:],
+        "open_questions": questions[-_MAX_FACTS:],
+    }
 
 
 def build_session_context(

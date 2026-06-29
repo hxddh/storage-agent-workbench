@@ -6,6 +6,28 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.22] - 2026-06-29
+
+### Fixed
+
+- **Agent memory now surfaces the most recent learnings, not the oldest.** In a
+  long session, facts/findings recorded past the per-kind cap were dropped from
+  the agent's context while stale early ones lingered; the context now keeps the
+  newest items, and the memory query is bounded so it can't grow without limit.
+- **Inline read-only runs can no longer make a chat turn hang indefinitely.**
+  When the agent runs a read-only run itself (autonomous mode), it's now bounded
+  by a wall-clock timeout — a heavy/slow run (e.g. account discovery over a large
+  account) keeps going in the background and the turn proceeds instead of
+  stalling.
+- **Object enumeration can't flood the model context.** `list_objects` now caps
+  the number of keys returned to the agent per call (the exact count is still
+  reported and paging via the continuation token still works), so walking a huge
+  bucket page-by-page won't blow up context/cost.
+- **An unreadable secret vault is preserved, not silently discarded.** If the
+  vault can't be decrypted (e.g. the key file was lost), the original is backed
+  up as `secrets.enc.unreadable` and a warning is logged, instead of quietly
+  starting blank and overwriting it on the next save.
+
 ## [0.19.21] - 2026-06-29
 
 ### Fixed

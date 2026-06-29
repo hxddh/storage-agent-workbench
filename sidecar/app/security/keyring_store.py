@@ -45,6 +45,7 @@ place on every save/delete; the file is re-read at most once per launch.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import threading
@@ -180,8 +181,23 @@ def _ensure_loaded() -> dict[str, str]:
         plaintext = AESGCM(key).decrypt(token[:_NONCE_LEN], token[_NONCE_LEN:], None)
         parsed = json.loads(plaintext.decode("utf-8"))
         _blob = parsed if isinstance(parsed, dict) else {}
-    except Exception:
-        # Unreadable/corrupt/foreign-key vault → start empty rather than crash.
+    except Exception as exc:  # noqa: BLE001
+        # The vault exists but can't be decrypted/parsed (e.g. the key file was
+        # lost/regenerated, or the data dir was copied without it). Don't silently
+        # treat it as empty and then overwrite it on the next save — preserve the
+        # original ciphertext for manual recovery and make the failure visible.
+        try:
+            backup = path.with_suffix(path.suffix + ".unreadable")
+            if not backup.exists():
+                backup.write_bytes(path.read_bytes())
+        except Exception:  # noqa: BLE001
+            pass
+        logging.getLogger(__name__).warning(
+            "Secret vault at %s could not be decrypted (%s); treating it as a new "
+            "blank vault. The original is preserved at %s.unreadable — re-enter "
+            "your keys.",
+            path, type(exc).__name__, path,
+        )
         _blob = {}
     return _blob
 

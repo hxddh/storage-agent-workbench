@@ -28,6 +28,10 @@ from ..s3 import config_tools as ct
 from ..s3 import tools as s3
 from . import guardrails
 
+# Max object keys echoed to the model per list_objects call. The bucket may hold
+# far more (key_count is exact); the agent pages via next_token for the rest.
+_LIST_KEYS_CTX_CAP = 200
+
 
 def _err(msg: str) -> str:
     return json.dumps({"error": msg})
@@ -125,6 +129,12 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         res = s3.list_objects_v2(conn, provider_id, bucket, bound["max_keys"], prefix or None,
                                  continuation_token=continuation_token or None,
                                  delimiter=None if recursive else "/")
+        # Cap the keys handed to the model per call so a paged enumeration can't
+        # flood the context; key_count stays accurate and next_token lets the
+        # agent keep paging.
+        if isinstance(res, dict) and isinstance(res.get("keys"), list) and len(res["keys"]) > _LIST_KEYS_CTX_CAP:
+            res["keys"] = res["keys"][:_LIST_KEYS_CTX_CAP]
+            res["keys_truncated_in_context"] = True
         note("list_objects", bucket, res)
         return json.dumps(res)
 

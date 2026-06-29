@@ -60,6 +60,26 @@ def test_memory_secret_is_redacted_before_storage(client):
     assert leak not in mem[0]["text"]  # redacted
 
 
+def test_memory_keeps_most_recent_when_over_limit(client):
+    with _db() as conn:
+        sid = _session(conn)
+        tools = {t.name: t for t in session_memory_tools.build(conn, _FakeFunctionTool(), sid, [])}
+        for i in range(5):
+            tools["note_fact"](f"fact{i}", "medium")
+        mem = sessions_repo.list_agent_memory(conn, sid, limit=3)
+    # The newest 3, returned oldest-first.
+    assert [m["text"] for m in mem] == ["fact2", "fact3", "fact4"]
+
+
+def test_memory_block_surfaces_most_recent_per_kind():
+    # 40 findings recorded; the context block keeps the most recent 30.
+    mem = [{"kind": "finding", "text": f"f{i}", "severity": "info"} for i in range(40)]
+    block = session_agent._build_agent_memory_block(mem)
+    titles = [x["title"] for x in block["recorded_findings"]]
+    assert len(titles) == 30
+    assert titles[0] == "f10" and titles[-1] == "f39"  # newest survive, not f0..f29
+
+
 def test_no_memory_tools_without_session():
     # No session id → nothing to record into; no tools, no DB access.
     assert session_memory_tools.build(object(), _FakeFunctionTool(), None, []) == []
