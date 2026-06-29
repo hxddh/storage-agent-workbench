@@ -171,7 +171,6 @@ RunType = Literal[
     "inventory_analysis",
     "bucket_config_review",
     "account_discovery",
-    "optimization_report",
 ]
 
 

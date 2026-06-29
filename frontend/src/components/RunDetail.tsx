@@ -202,7 +202,7 @@ export function RunDetail({
     <div className="flex flex-1 flex-col overflow-auto bg-canvas">
       <header className="border-b border-edge px-8 py-4">
         <button className="mb-2 text-xs text-gray-500 hover:text-gray-300" onClick={onBack}>
-          ← Back to runs
+          ← Back
         </button>
         {loadError && (
           <p className="mb-2 rounded border border-red-500/40 bg-red-950/60 px-3 py-1.5 text-xs text-red-300">

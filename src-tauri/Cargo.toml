@@ -1,6 +1,6 @@
 [package]
 name = "storage-agent-workbench"
-version = "0.19.29"
+version = "0.20.0"
 description = "Local-first agent for object storage operations, analytics, and management on S3-compatible systems"
 edition = "2021"
 rust-version = "1.77.2"

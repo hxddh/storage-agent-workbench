@@ -50,7 +50,6 @@ Dark and light themes; English and 中文.
 - `access_log_analysis`
 - `inventory_analysis`
 - `bucket_config_review`
-- `optimization_report`
 - `account_discovery`
 
 ## Non-goals

@@ -127,7 +127,7 @@ const en: Dict = {
     "The secret vault on this device couldn't be opened, so saved keys aren't available. The original was preserved next to it as secrets.enc.unreadable (restore your secrets.key to recover it). Re-enter your keys below to continue.",
   "settings.safetyTitle": "Safety",
   "settings.safety":
-    "Secrets are stored only in the encrypted local vault — never in the database, logs, reports, or model prompts. Cloud access is read-only and the Agent has no write or destructive capability. Data-moving work (downloads, large scans, dataset analysis) always requires your confirmation regardless of the autonomy setting.",
+    "Secrets are stored only in the encrypted local vault — never in the database, logs, reports, or model prompts. Cloud access is read-only and the Agent has no write or destructive capability. Cloud data-moving work (downloads, large scans, evidence import) always requires your confirmation; a file you attach in the chat is local and analyzed inline.",
   // providers view
   "prov.title": "Providers",
   "prov.subtitle": "Configure model and cloud storage providers",

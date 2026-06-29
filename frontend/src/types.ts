@@ -76,10 +76,7 @@ export type RunType =
   | "access_log_analysis"
   | "inventory_analysis"
   | "bucket_config_review"
-  | "account_discovery"
-  | "optimization_report";
-
-export type PlannerMode = "deterministic" | "agent";
+  | "account_discovery";
 
 export interface RunSummary {
   id: string;

@@ -59,5 +59,6 @@ A fresh-install user must be able to do all of this without reading source:
       show keys as **not set** until re-entered once.
 - [ ] Settings → Providers **Delete** removes a model/cloud provider via the
       inline Cancel / Confirm delete (no native `window.confirm`).
-- [ ] Settings → Agent autonomy shows two options (协助 / 自主), defaulting to 自主;
-      data-moving actions still require confirmation under either.
+- [ ] The agent runs read-only checks itself (no autonomy toggle exists); cloud
+      data-moving actions (evidence import / large scans) still require explicit
+      confirmation.

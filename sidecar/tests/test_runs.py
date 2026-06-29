@@ -96,15 +96,11 @@ def test_diagnostic_requires_fields(client):
     assert r.status_code == 422
 
 
-def test_unsupported_run_type_is_placeholder(client):
-    # optimization_report remains a placeholder in Phase 06.
+def test_unknown_run_type_is_rejected(client):
+    # optimization_report was removed; an unknown run_type fails validation (422),
+    # rather than being created as a not_implemented placeholder.
     r = client.post("/runs", json={"run_type": "optimization_report", "title": "later"})
-    assert r.status_code == 201
-    run_id = r.json()["run_id"]
-    assert r.json()["status"] == "not_implemented"
-    # message must be cleanly rejected, not crash
-    msg = client.post(f"/runs/{run_id}/message", json={"content": "go"})
-    assert msg.status_code == 409
+    assert r.status_code == 422
 
 
 # --- diagnostic flow --------------------------------------------------------

@@ -222,9 +222,9 @@ multi-agent runtime, skill API, skill UI, skill DB tables, or RAG.
   preamble ("StorageOps tools / scripts / CLI / Pi runtime … are disabled in
   this Workbench phase; do not claim to run tools; use mentions as conceptual
   guidance only"), bounded by a max-char budget and a 1–3 skill cap.
-- **Injection**: `agent_runtime/session_agent.py` and
-  `error_triage/triage_agent.py` add the selected SKILL.md context to the prompt
-  (not to the sanitized evidence context) and emit a minimal contract via
+- **Injection**: `agent_runtime/session_agent.py` adds the selected SKILL.md
+  context to the prompt (not to the sanitized evidence context) and emits a
+  minimal contract via
   `skills/contract.py`: `{answer, skills_used, evidence_used, evidence_gaps,
   next_action_proposals}` — answer redacted + CoT-stripped, skills_used limited
   to skills actually loaded via `read_skill` this turn, proposals sanitized
@@ -256,11 +256,9 @@ errors — NOT a static FAQ or error-code dictionary page.
 - **`error_triage/engine.py`** runs deterministically: parse → match → candidate
   causes + safe next checks + next-action proposals (sanitized via
   `normalize_proposal`). It performs NO S3 call, run, download, or mutation.
-- **`error_triage/triage_agent.py`** is interpretation-only (seam `TRIAGE_LOOP`,
-  `tools=[]`): the model sees ONLY the sanitized triage context (parsed signals +
-  candidate-cause titles/why + next checks), never the raw blob, never secrets.
-  Output is redacted + chain-of-thought-stripped; a missing model key fails
-  cleanly and the deterministic triage is unaffected.
+  Triage is **deterministic-only** — there is no in-run triage LLM narrator (the
+  conversational agent interprets the case if the user asks). The model never
+  sees the raw blob or any secret.
 - **API**: `POST /error-triage`, `GET /error-triage/{id}`,
   `GET /sessions/{id}/error-triage`. A case binds to its session and the session
   summary is refreshed; cases also appear in the session report's Error triage
@@ -302,8 +300,8 @@ dashboard or project tracker. The model is:
   (`session_agent_memory` table via `session_memory_tools.py`): `note_fact` /
   `record_finding` / `note_open_question` persist sanitized, audited items that
   are fed back into later turns. It self-verifies high-severity conclusions with
-  a tool before asserting them. Under the autonomy policy it may also EXECUTE
-  read-only runs (see below). What it still cannot do: download object bodies,
+  a tool before asserting them. It may also EXECUTE read-only runs itself
+  (survey/review — see below). What it still cannot do: download object bodies,
   mutate anything, run free SQL/shell, reach any destructive S3 op, or see any
   secret — credentials are resolved server-side inside the S3 layer and never
   enter the model context. Output is redacted + chain-of-thought-stripped +
@@ -368,35 +366,27 @@ under a bounded, confirmation-gated flow:
   `evidence_imports` + `evidence_import_files`, redaction-passed (bucket/prefix/
   key/warnings) — never secrets.
 
-## Agent planner modes
+## Runs are pure deterministic compute
 
-Runs carry a `planner_mode` (`deterministic` by default, or `agent`). Two
-distinct agent paths exist:
+Runs have **no LLM planner and no in-run narrator** — this was the dual-track
+design removed in v0.20.0. `run_service.run_sync` always dispatches `run_type`
+to its deterministic executor (`_EXECUTORS`); there is no `planner_mode` branch
+and no second tool-calling agent. Each executor (`diagnostic`,
+`account_discovery`, `bucket_config_review`, `access_log_analysis`,
+`inventory_analysis`) runs rule-based compute over the whitelisted read-only S3
+layer / local DuckDB engine and emits a real tool trace, findings, and a
+sanitized summary. It writes no agent-authored prose section.
 
-- **Tool-calling planner** — for `diagnostic` and
-  `bucket_config_review`. A controlled LLM loop selects from the read-only
-  whitelist tools through the shared tool runner; outputs are sanitized/bounded
-  before reaching the model. Implemented in `agent_runtime/agent_service.py`
-  (seam: `AGENT_LOOP`).
-- **Analysis narrator with bounded drill-down** — for `access_log_analysis` and
-  `inventory_analysis`. The deterministic DuckDB analysis runs first and produces
-  metrics + findings; the executor then hands the model a bounded, sanitized
-  aggregate context (run/dataset metadata + metrics + findings) and asks for a
-  structured narrative. The model gets a small set of **bounded, read-only
-  aggregate tools** over the already-local DuckDB dataset (`analysis/drilldown.py`:
-  `aggregate_by(dimension, metric, limit)` and `count_where(field, op, value)`,
-  over whitelisted dimensions/fields with parameterized values) so it can drill
-  into the metrics — but **no raw rows, no free SQL, no object listings, no S3
-  API, no object bodies**. Implemented in `agent_runtime/analysis_agent.py`
-  (seam: `ANALYSIS_LOOP`); the executors (`runs/access_log_run.py`,
-  `runs/inventory_run.py`) branch on `planner_mode` and pass the dataset's
-  `duckdb_path`. `run_service` routes these run types to their executor (not to
-  the tool-calling planner) regardless of mode.
+The conversational session agent is the sole LLM. It invokes these executors as
+tools (`survey_account`, `review_bucket_config`, `analyze_uploaded_file`) and
+narrates their sanitized results in its own words; it reads a backgrounded run's
+result later with `read_run_result`. Executors are mockable so tests run without
+the OpenAI Agents SDK or an API key; a missing model key fails only the
+conversational turn (422) and never affects a deterministic run.
 
-Both seams are mockable so tests run without the OpenAI Agents SDK or an API
-key. A missing model provider key fails the agent run cleanly and never affects
-deterministic runs. The generated report keeps deterministic metrics and the
-agent interpretation in separate, clearly-labelled sections.
+The `runs.planner_mode` SQLite column is retained (defaulting to
+`'deterministic'`) only because the schema is append-only — it is no longer read
+or written by any code path.
 
 ## Packaging & desktop integration
 
