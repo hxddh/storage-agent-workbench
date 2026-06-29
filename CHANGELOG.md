@@ -6,6 +6,49 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.19.29] - 2026-06-30
+
+Cleanup pass resolving the verified-true items from a code/skills review — no
+new behavior, all agent-native consistency, dead-code removal, and small fixes.
+
+### Fixed
+
+- **Slash `/logs` and `/inventory` now open the file picker** (like the
+  empty-state chips), instead of seeding a prompt the agent has no file to act on.
+- **The model chip recovers from a transient sidecar blip** — `refreshModel`
+  retries a few times instead of getting stuck on "Add model" until a refresh.
+- **Sending an ambiguous-type attachment gives feedback** (a "choose a type"
+  hint) rather than a silent no-op.
+
+### Changed
+
+- **`skills_used` is bound to skills actually loaded** via `read_skill` this turn
+  — the model can no longer *claim* a skill it never opened (keeps the report
+  honest).
+- **Skill selection is robust to spacing/punctuation** — a keyword like
+  `SignatureDoesNotMatch` matches `"Signature Does Not Match"` / `"access-denied"`
+  without a hard-coded error→skill map (still metadata-driven).
+- **`read_skill` has a per-turn budget** (max 6 loads) so a loop can't pull every
+  skill body into context.
+- **The deterministic session report labels its "next actions"** as rule-derived
+  suggestions, distinct from the agent's own proposals.
+- Refreshed stale `SKILL.md` guidance (access-log, lifecycle-cost, performance,
+  security-iam, migration, replication) to the current tools: local files →
+  `analyze_uploaded_file` inline; config/account → `review_bucket_config` /
+  `survey_account`; only cloud imports stay confirmed.
+
+### Removed
+
+- Dead `/sessions/{id}/actions/preview` endpoint + `preview()` + the frontend
+  `ActionPreviewResult` type.
+
+### Docs
+
+- Rewrote `docs/architecture.md` to the agent-native model (no autonomy toggle,
+  no `new_run` form, free-form proposals, `origin='agent'` runs hidden from the
+  thread); fixed the `session_agent` module header (attached files analyzed
+  inline) and the inline-survey timeout note.
+
 ## [0.19.28] - 2026-06-29
 
 Completes the agent-native rebuild: the conversational agent is the **sole**

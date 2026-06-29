@@ -50,7 +50,8 @@ first, because the layer names differ.
   object's storage class / SSE state (KMS-encrypted objects need key access).
 - `review_bucket_security` (or `get_bucket_config_summary`) — read the bucket's
   policy/ACL/public-access-block/encryption posture and point to the layer that
-  blocks. For a full account sweep, propose `run_bucket_config_review`.
+  blocks. For a full posture check run `review_bucket_config` (inline,
+  read-only); to enumerate the whole account, run `survey_account`.
 
 You read configuration; you cannot read the caller's IAM/RAM identity policy — so
 identity-side denials must be confirmed from the policy document the user shares.

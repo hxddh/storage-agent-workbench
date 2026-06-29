@@ -123,10 +123,14 @@ export function Thread({
   const { t } = useI18n();
   const suggestions = SUGGESTION_KEYS.map((k) => ({ key: k, label: t(`sugg.${k}`), prompt: t(`prompt.${k}`) }));
 
-  const refreshModel = () =>
+  // Fetch the configured model name, retrying a few times on a transient sidecar
+  // blip so the composer chip doesn't get stuck on "Add model" until a refresh.
+  const refreshModel = (attempt = 0) =>
     listModelProviders()
       .then((ps) => setModelName(ps.length ? ps[0].model || ps[0].name : null))
-      .catch(() => undefined);
+      .catch(() => {
+        if (attempt < 3) setTimeout(() => refreshModel(attempt + 1), 2000);
+      });
 
   // Fetch the model name once the sidecar is reachable (it isn't during the
   // brief startup, so a single mount-time fetch could miss it).
@@ -320,7 +324,12 @@ export function Thread({
     if (busy) return;
     if (attached) {
       const type = attachType ?? inferDatasetType(attached.name);
-      if (!type) return;  // ambiguous + not yet picked — wait for the user to choose
+      if (!type) {
+        // Ambiguous file type and not yet picked — tell the user to choose a
+        // type (the picker chip is shown) instead of silently doing nothing.
+        setViewError(t("attach.pickTypeHint"));
+        return;
+      }
       void submitWithDataset(text.trim(), attached, type);
       return;
     }
@@ -413,6 +422,12 @@ export function Thread({
       setText("");
       if (localId.current) getSessionReport(localId.current).then((r) => setReport(r.content)).catch((e) => setViewError(cleanError(String(e), t)));
       else setViewError(t("thread.startChatFirst"));
+    } else if (c.cmd === "logs" || c.cmd === "inventory") {
+      // Log/inventory analysis needs a local file → open the picker (same as the
+      // empty-state chips), not just seed a prompt the agent has no file for.
+      setText("");
+      presetTypeRef.current = c.cmd === "logs" ? "access_log" : "inventory";
+      fileRef.current?.click();
     } else if (c.promptKey) {
       setText(t(c.promptKey));
       requestAnimationFrame(() => taRef.current?.focus());

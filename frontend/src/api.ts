@@ -316,16 +316,6 @@ export interface ActionPrepareResult {
   safety_notes: string[];
 }
 
-export interface ActionPreviewResult {
-  proposal: NextAction & { id: string };
-  action_type: string;
-  ready: boolean;
-  missing_inputs: string[];
-  candidates: Record<string, unknown>;
-  prefill: Record<string, string>;
-  safety_notes: string[];
-  will_create: Record<string, unknown> | null;
-}
 
 export const prepareSessionAction = (id: string, proposal: NextAction) =>
   request<ActionPrepareResult>(`/sessions/${id}/actions/prepare`, {

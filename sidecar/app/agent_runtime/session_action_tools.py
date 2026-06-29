@@ -50,9 +50,9 @@ def _err(msg: str) -> str:
 # Wall-clock ceiling for an inline run during a chat turn. boto3 already bounds
 # each S3 call (connect/read timeout); this bounds the AGGREGATE so a heavy run
 # (e.g. account_discovery over a large account) can't make the chat turn appear
-# hung indefinitely. On timeout the run keeps going in the background and lands
-# in the session timeline; the tool returns the run's current (e.g. "running")
-# status so the agent can move on.
+# hung indefinitely. On timeout the run keeps going in the background; the tool
+# returns the run's current (e.g. "running") status so the agent can move on and
+# re-read it later (agent runs are origin='agent' and never shown as a card).
 _INLINE_RUN_TIMEOUT = 60.0
 
 
@@ -109,10 +109,10 @@ def _run_result(conn: sqlite3.Connection, run_id: str) -> dict[str, Any]:
         # Hit the wall-clock timeout: the run is still going in the background.
         # Tell the agent NOT to draw conclusions from this incomplete result.
         result["note"] = (
-            "This run is still in progress (it exceeded the inline time budget and "
-            "continues in the background; it will appear complete in the session "
-            "timeline). Do NOT state findings from it yet — tell the user it is "
-            "still running, or revisit it in a later turn."
+            "This survey is still in progress (it exceeded the inline time budget "
+            "and continues in the background). Do NOT state findings from it yet — "
+            "tell the user it is still running and revisit it (call this tool "
+            "again) in a later turn to read the completed result."
         )
     return result
 

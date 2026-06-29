@@ -44,8 +44,10 @@ Migration →
   classic multipart-ETag format mismatch (AWS `-N` suffix vs BOS/OSS) before it
   breaks integrity checks.
 - `list_objects` — compare object counts/keys on a prefix to scope the delta.
-- Propose `run_inventory_analysis` (via `plan_inventory_import`) to size the
-  migration (object count, total bytes, class mix) precisely.
+- To size the migration precisely (object count, total bytes, class mix),
+  analyze an uploaded inventory export with `analyze_uploaded_file`; for an
+  inventory still in a bucket, propose `plan_inventory_import` (a confirmed
+  import).
 
 ## Ask the user (only what tools can't reveal)
 

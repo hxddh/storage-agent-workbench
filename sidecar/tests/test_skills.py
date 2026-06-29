@@ -144,6 +144,18 @@ def test_selector_fallback_is_metadata_auto_route():
     assert cands and cands[0]["selection_basis"] == "auto_route_fallback"
 
 
+def test_selector_matches_error_code_despite_spacing(monkeypatch):
+    """A keyword like 'SignatureDoesNotMatch' matches even when the log spaced or
+    punctuated it (report 5.1), without a hard-coded error→skill map."""
+    spaced = selection.candidate_dicts("error: Signature Does Not Match on PUT")
+    joined = selection.candidate_dicts("SignatureDoesNotMatch")
+    names_spaced = {c["name"] for c in spaced}
+    names_joined = {c["name"] for c in joined}
+    # Same skill is selected either way, and it's a real keyword match (not fallback).
+    assert names_spaced == names_joined and names_spaced
+    assert all(c["selection_basis"] != "auto_route_fallback" for c in spaced)
+
+
 # --- context wrapper --------------------------------------------------------
 
 
@@ -226,6 +238,22 @@ def test_session_assistant_prompt_includes_skill_context(client, monkeypatch):
     # contract surfaced in response
     assert "skills_used" in out and "evidence_gaps" in out
     assert out["evidence_gaps"] == ["need the policy"]
+
+
+def test_skills_used_bound_to_actual_read_skill(client, monkeypatch):
+    """skills_used is filtered to skills the agent actually loaded via read_skill
+    this turn — a mere claim (no read_skill call) is dropped (report 5.3)."""
+    s = _session(client, goal="403 AccessDenied")
+    _add_model_provider(client)
+
+    def fake_loop(spec):
+        # Claims a real skill name but the fake loop never calls read_skill,
+        # so there's no read_skill in tool_activity.
+        return ('{"answer": "ok", "skills_used": ["storageops-security-iam-policy"]}')
+
+    monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
+    out = client.post(f"/sessions/{s['id']}/messages", json={"content": "why 403?"}).json()
+    assert out["skills_used"] == []  # claimed but never loaded → dropped
 
 
 def test_triage_agent_prompt_includes_skill_context(client, monkeypatch):

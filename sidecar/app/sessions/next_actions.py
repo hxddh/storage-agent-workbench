@@ -182,19 +182,6 @@ def _resolve(conn: sqlite3.Connection, session: dict[str, Any], proposal: dict[s
     return result
 
 
-def preview(conn: sqlite3.Connection, session: dict[str, Any], proposal: dict[str, Any]) -> dict[str, Any]:
-    r = _resolve(conn, session, proposal)
-    return {
-        "action_type": r["action_type"],
-        "ready": r["ready"],
-        "missing_inputs": r["missing_inputs"],
-        "candidates": r["candidates"],
-        "prefill": r["prefill"],
-        "safety_notes": r["safety_notes"],
-        "will_create": r["will_create"],
-    }
-
-
 def prepare(conn: sqlite3.Connection, session: dict[str, Any], proposal: dict[str, Any]) -> dict[str, Any]:
     r = _resolve(conn, session, proposal)
     return {

@@ -159,49 +159,44 @@ read-only APIs:
 
 ## Next-action handoff
 
-Next-action proposals become an **Agentic hand-over**, never automation:
-
-    Agent proposes → user reviews (preview) → app prepares a prefilled SAFE flow
-    → user confirms/starts → existing run/import/report flow runs.
+A next-action proposal is a *suggestion*, never automation. The agent is the sole
+driver: most proposals are simply handed back to it to carry out with its
+read-only tools; only genuinely-confirmed data-moving work gets a purpose-built
+flow.
 
 - **Normalized proposals** (`sessions/next_actions.py`): every proposal is
   coerced to a canonical, sanitized shape (`id`, `title`, `reason`,
   `action_type`, `requires_confirmation=true`, `confidence`, `source_run_ids`,
-  `required_inputs`, `prefill`, `safety_notes`, `status`). Only an allowlisted
-  `action_type` survives (run_account_discovery / run_bucket_config_review /
-  run_diagnostic / plan_inventory_import / plan_access_log_import /
-  run_inventory_analysis / run_access_log_analysis / generate_session_report /
-  ask_user_for_context); anything else is dropped.
-- **Preview** (`POST /sessions/{id}/actions/preview`) and **prepare**
-  (`POST /sessions/{id}/actions/prepare`) ONLY validate + prefill against session
-  state. They never create a run, download evidence, confirm an import, call S3,
-  or call an LLM. Prepare returns which existing flow to `open` (new_run /
-  evidence_import / session_report / message_composer) plus a sanitized prefill;
-  missing parameters yield `needs_input` (and candidate evidence sources when a
-  choice is required) rather than a guess.
-- **Reuse, not a parallel workflow:** the frontend opens the existing
-  `NewRunForm` (with `session_id` + prefilled run_type/provider/bucket) or
-  `EvidenceImportDialog` (prefilled account run + bucket + source_type; the
-  imported analysis run is then attached to the session). Evidence import still
-  goes plan → confirm → run. Expensive/data-moving actions (analysis on an
-  uploaded dataset, evidence import) always remain confirmed proposals — the
-  agent never auto-runs them.
-- **Inline execution of safe read-only runs:** under the `autonomous_readonly`
-  autonomy policy (the default), the session agent may EXECUTE the SAFE_READONLY
-  runs itself (`run_diagnostic` / `run_bucket_config_review` /
-  `run_account_discovery` — `agent_runtime/session_action_tools.py`) instead of
-  only proposing them, and fold the findings into its answer. Under `assisted`
-  it proposes them for the user to confirm. Either way these create real,
-  audited, read-only runs; nothing mutating or data-moving is ever auto-run, and
-  inline runs are bounded by a wall-clock timeout so a heavy run can't stall the
-  turn. See "Agent autonomy" below.
+  `prefill`, `safety_notes`, `status`). `action_type` is **free-form** (the agent
+  proposes any concrete next step in its own words), sanitized to a bounded slug;
+  a forbidden/destructive token (shell/exec/sql/delete-object/put-bucket-policy/…)
+  is dropped. A small set of `SPECIAL_ACTION_TYPES` gets a purpose-built flow (see
+  below); everything else routes back to the agent conversationally.
+- **Prepare** (`POST /sessions/{id}/actions/prepare`) ONLY validates + prefills.
+  It never creates a run, downloads evidence, confirms an import, calls S3, or
+  calls an LLM. It returns which flow to `open` for the three special cases —
+  `evidence_import` (a confirmed cloud import), `session_report` (the saved
+  report), `message_composer` (a context question) — or `open=None` for
+  everything else, which the UI hands back to the agent. (There is **no**
+  `new_run` form and no `preview` endpoint; both were retired.)
+- **Agent does it itself, no run card:** investigation, diagnosis, config review
+  (`review_bucket_config`), account survey (`survey_account`), and **uploaded-file
+  analysis** (`analyze_uploaded_file`) are all things the conversational agent
+  performs with its own read-only tools (`agent_runtime/session_action_tools.py`,
+  `session_analysis_tools.py`). The heavier survey/review tools run the
+  deterministic engine and persist a profile, but the run is recorded with
+  `origin='agent'` and is **never shown as a structured run card** — the agent
+  narrates the result inline. Only an explicit, user-requested auditable report
+  surfaces as a card.
+- **Confirmed data-moving only:** cloud evidence import (`EvidenceImportDialog`,
+  plan → confirm → run) and large/full scans always remain confirmed proposals —
+  the agent never auto-runs them. A file the user *attached* is local, so the
+  agent analyzes it inline without a confirmation step.
 - **Assistant proposals:** the session agent may additionally return a
-  fenced-JSON `proposed_actions` block; the backend validates/coerces each
-  through the same allowlist (dropping invalid ones, forcing
-  `requires_confirmation`).
-- **Audit:** `next_action_previewed` / `next_action_prepared` /
-  `next_action_opened` — lightweight events, not a task lifecycle (no
-  assignee/status-board/ticket state).
+  fenced-JSON `proposed_actions` block; the backend sanitizes each the same way
+  (forbidden tokens dropped, `requires_confirmation` forced).
+- **Audit:** `next_action_prepared` / `next_action_opened` — lightweight events,
+  not a task lifecycle (no assignee/status-board/ticket state).
 
 ## StorageOps skill context injection
 
@@ -232,7 +227,8 @@ multi-agent runtime, skill API, skill UI, skill DB tables, or RAG.
   (not to the sanitized evidence context) and emit a minimal contract via
   `skills/contract.py`: `{answer, skills_used, evidence_used, evidence_gaps,
   next_action_proposals}` — answer redacted + CoT-stripped, skills_used limited
-  to injected skills, proposals coerced through the allowlist. The raw
+  to skills actually loaded via `read_skill` this turn, proposals sanitized
+  (forbidden tokens dropped). The raw
   error blob / secrets / chain-of-thought never reach the model. Deterministic
   triage (or a missing model key) does not fabricate a skill-grounded diagnosis.
 - No migration / DB table / public skill API was added; skill-grounded fields
@@ -258,8 +254,8 @@ errors — NOT a static FAQ or error-code dictionary page.
   per category it gives likely causes, evidence to check, safe read-only next
   checks, related run types, and provider caveats.
 - **`error_triage/engine.py`** runs deterministically: parse → match → candidate
-  causes + safe next checks + next-action proposals (normalized through the
-  the allowlist). It performs NO S3 call, run, download, or mutation.
+  causes + safe next checks + next-action proposals (sanitized via
+  `normalize_proposal`). It performs NO S3 call, run, download, or mutation.
 - **`error_triage/triage_agent.py`** is interpretation-only (seam `TRIAGE_LOOP`,
   `tools=[]`): the model sees ONLY the sanitized triage context (parsed signals +
   candidate-cause titles/why + next checks), never the raw blob, never secrets.
@@ -323,22 +319,19 @@ dashboard or project tracker. The model is:
 
 ## Agent autonomy
 
-How much the conversational agent does on its own is a per-install setting
-(`agent_runtime/autonomy.py`, persisted in `app_settings`; `GET`/`PUT
-/settings/autonomy`). The security tiers are enforced *below* this setting and
-never change with it.
+**There is no autonomy toggle.** The conversational agent is always a fully
+autonomous read-only investigator: it runs its read-only tools (S3 probes,
+config review, account survey, uploaded-file analysis) on its own and narrates
+the result. The security tiers are enforced in code and do not depend on any
+setting.
 
-- **`assisted`** — the agent proposes read-only runs for the user to confirm.
-- **`autonomous_readonly`** (the **default**) — the agent executes SAFE_READONLY
-  runs itself (diagnostic, bucket_config_review, account_discovery) and folds the
-  findings into its answer.
-
-Risk tiers, independent of policy: `SAFE_READONLY` (read-only runs + the
-sanitized session report) may auto-run under `autonomous_readonly`;
-`EXPENSIVE`/data-moving work (dataset analysis, evidence import/download, large
-scans) and any `MUTATING` op are **never** auto-run under either policy — they
-stay confirmed proposals. There is no write/destructive tool in the product at
-all. (A retired `advisory` value normalizes to `assisted` on read.)
+What is *never* auto-run, regardless: `EXPENSIVE`/data-moving work — cloud
+evidence import/download and large/full bucket scans — and any `MUTATING` op.
+Those stay confirmed proposals, and there is no write/destructive tool in the
+product at all. A file the user *attached* is local, so analyzing it inline is
+not data-moving and needs no confirmation. The agent's own surveys/reviews run
+the deterministic engine but are recorded `origin='agent'` and never surface as a
+structured run card (see "Next-action handoff").
 
 ## Managed evidence import
 

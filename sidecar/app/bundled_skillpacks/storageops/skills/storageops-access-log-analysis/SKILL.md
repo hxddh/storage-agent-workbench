@@ -38,16 +38,18 @@ Access-log question →
 
 ## How this runs in the app
 
-This is a heavier, evidence-backed analysis — it is a **confirmed run**, not an
-inline probe. Drive it through the managed pipeline:
+Two cases, depending on where the logs live:
 
-1. Propose `plan_access_log_import` to bring the user's access logs in under a
-   reviewed plan, then the user confirms it.
-2. Propose `run_access_log_analysis` to compute error rates, top requesters/keys,
-   operation mix, and time-of-day anomalies over the imported logs.
-3. Read the resulting findings and explain them; route permission decisions to
-   `storageops-security-iam-policy` and cost decisions to
-   `storageops-lifecycle-cost`.
+- **A log file the user attached** — analyze it inline, right now: call
+  `analyze_uploaded_file` (it imports + computes error rates, top
+  requesters/keys, operation mix, time-of-day patterns over the local file) and
+  explain the result conversationally. No confirmation step.
+- **Logs still in a bucket** — this is cloud-side data movement, so it stays a
+  confirmed step: propose `plan_access_log_import` to bring them in under a
+  reviewed plan; once the user confirms, read the resulting findings.
+
+Either way, route permission decisions to `storageops-security-iam-policy` and
+cost decisions to `storageops-lifecycle-cost`.
 
 You can use `list_objects` to help locate where logs are being delivered (e.g. a
 `logs/` prefix) before proposing the import.

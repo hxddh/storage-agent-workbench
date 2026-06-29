@@ -7,10 +7,11 @@ review_bucket_* config tools — see ``session_tools``) and answers from their
 results. It chooses the provider/bucket itself.
 
 Every tool is read-only, bounded, audited, and secret-safe — there are no
-mutating or destructive operations, and credentials never reach the model.
-Anything that moves data or runs an analysis/large scan (evidence import,
-inventory/access-log analysis, a session report) is NOT done inline; it is
-proposed as a next step the user confirms.
+mutating or destructive operations, and credentials never reach the model. A
+file the user ATTACHES is local, so the agent analyzes it inline
+(``analyze_uploaded_file``) and answers from it. Only CLOUD-side data-moving work
+(evidence import/download from a bucket, a large/full scan) or a saved auditable
+report is NOT done inline — it is proposed as a next step the user confirms.
 
 The real LLM call is behind the ``SESSION_LOOP`` seam so tests inject a fake
 (no SDK / no API key). Output is redacted + chain-of-thought-stripped + bounded.
@@ -379,6 +380,11 @@ def _build_prompt(
 def _finalize_contract(raw: Any, skill_names: list[str], activity: list[dict[str, Any]]) -> dict[str, Any]:
     contract = skill_contract.parse_agent_contract(raw, allowed_skill_names=skill_names)
     contract["answer"] = contract["answer"][:_MAX_OUTPUT]
+    # Bind skills_used to skills the agent ACTUALLY loaded via read_skill this
+    # turn — the model can't merely *claim* a skill it never opened (keeps the
+    # report honest). read_skill records {tool, target=skill_name} in activity.
+    read_skills = {a.get("target") for a in activity if a.get("tool") == "read_skill"}
+    contract["skills_used"] = [s for s in contract.get("skills_used", []) if s in read_skills]
     contract["skills_offered"] = skill_names
     contract["tool_activity"] = activity
     return contract
