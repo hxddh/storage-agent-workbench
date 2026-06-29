@@ -1,9 +1,11 @@
 """Session endpoints (Phase 16).
 
 Sessions are the persistent working context that links runs, evidence, findings,
-a deterministic summary, and a lightweight message thread. The session assistant
-is interpretation-only (no tools, sanitized bounded context). This is NOT a
-project-management / kanban / ticketing surface.
+a deterministic summary, and a lightweight message thread. The session agent is a
+read-only tool-calling investigator (bounded, sanitized context; secrets never
+reach it) that also keeps working memory and — under the autonomy policy — can
+run read-only runs itself. This is NOT a project-management / kanban / ticketing
+surface.
 """
 
 from __future__ import annotations
@@ -223,10 +225,11 @@ def post_session_message(
     if cached is not None:
         return {"session_id": session_id, "messages": repo.list_messages(conn, session_id), **cached}
 
-    # Persist the user message first (sanitized; add_message commits).
-    repo.add_message(conn, session_id, "user", body.content)
-
     # Build the deterministic, sanitized context — independent of any model key.
+    # NOTE: the user message is NOT persisted yet. We persist user+assistant
+    # together only on success (same as the streaming path), so a clean failure
+    # (e.g. no model key → 422) doesn't leave a dangling user message in the
+    # thread. answer() takes body.content as the question directly.
     summary = repo.get_summary(conn, session_id) or summary_builder.refresh(conn, session_id)
     recent = repo.list_messages(conn, session_id)
 
@@ -236,12 +239,14 @@ def post_session_message(
         contract = session_agent.answer(dict(row), summary, recent, body.content, creds, conn,
                                         policy, body.turn_id)
     except AgentUnavailable as exc:
-        # Clean failure: the user message is kept (add_message committed it above);
-        # no assistant message is stored.
+        # Clean failure: nothing is persisted — the user keeps their text and sees
+        # the error (matches the streaming path's semantics).
         raise HTTPException(status_code=422, detail=redact_text(str(exc)))
 
+    # Success: persist the user message and the assistant answer together.
     # The contract is already sanitized + allowlist-coerced inside session_agent.
     proposed_actions = contract["next_action_proposals"]
+    repo.add_message(conn, session_id, "user", body.content)
     repo.add_message(conn, session_id, "assistant", contract["answer"],
                      tool_activity=contract.get("tool_activity"))
     audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)

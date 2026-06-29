@@ -148,7 +148,11 @@ export default function App() {
         sidecarReady={status === "connected"}
       />
 
-      <SettingsDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <SettingsDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onOpenSession={(id) => { setActiveId(id); setDrawerOpen(false); refreshSessions(); }}
+      />
 
       <CommandPalette
         open={paletteOpen}

@@ -3,6 +3,7 @@ import {
   createCloudProvider,
   createModelProvider,
   createRun,
+  createSession,
   deleteCloudProvider,
   deleteModelProvider,
   listCloudProviders,
@@ -27,7 +28,10 @@ const parseList = (s: string) =>
 
 type Tab = "model" | "cloud";
 
-export function ProvidersView({ onRunCreated }: { onRunCreated?: (runId: string) => void } = {}) {
+export function ProvidersView(
+  { onRunCreated, onOpenSession }:
+  { onRunCreated?: (runId: string) => void; onOpenSession?: (sessionId: string) => void } = {},
+) {
   const { t } = useI18n();
   const [tab, setTab] = useState<Tab>("model");
   return (
@@ -45,7 +49,7 @@ export function ProvidersView({ onRunCreated }: { onRunCreated?: (runId: string)
         </div>
       </header>
       <div className="flex-1 px-8 py-5">
-        {tab === "model" ? <ModelProvidersPanel /> : <CloudProvidersPanel onRunCreated={onRunCreated} />}
+        {tab === "model" ? <ModelProvidersPanel /> : <CloudProvidersPanel onRunCreated={onRunCreated} onOpenSession={onOpenSession} />}
       </div>
     </div>
   );
@@ -275,7 +279,10 @@ const CLOUD_PRESETS: Preset[] = [
   { id: "custom", label: "Custom (S3-compatible)", providerType: "s3-compatible", endpointTemplate: "", variable: "endpoint", regionDefault: "", addressing: "virtual", signature: "s3v4" },
 ];
 
-function CloudProvidersPanel({ onRunCreated }: { onRunCreated?: (runId: string) => void }) {
+function CloudProvidersPanel(
+  { onRunCreated, onOpenSession }:
+  { onRunCreated?: (runId: string) => void; onOpenSession?: (sessionId: string) => void },
+) {
   const { t } = useI18n();
   const [items, setItems] = useState<CloudProvider[]>([]);
   const [editing, setEditing] = useState<CloudProvider | null>(null);
@@ -292,14 +299,20 @@ function CloudProvidersPanel({ onRunCreated }: { onRunCreated?: (runId: string) 
   const discoverAccount = async (p: CloudProvider) => {
     setError(null);
     try {
+      // Thread-first: discovery from Settings spins up a session and drops you
+      // into it, so the run lives in a conversation timeline rather than as an
+      // orphaned, invisible run.
+      const sess = await createSession({ title: `Account discovery: ${p.name}` });
       const created = await createRun({
         run_type: "account_discovery",
         provider_id: p.id,
+        session_id: sess.id,
         user_prompt: "Discover account-level buckets and evidence sources.",
         title: `Account discovery: ${p.name}`,
       });
       await postRunMessage(created.run_id, "discover");
-      onRunCreated?.(created.run_id);
+      if (onOpenSession) onOpenSession(sess.id);
+      else onRunCreated?.(created.run_id);
     } catch (e) {
       setError(String(e));
     }

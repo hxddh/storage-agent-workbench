@@ -7,9 +7,10 @@ profiles usage and cost, and recommends optimizations. Everything runs on your
 machine; your data and credentials never leave your computer.
 
 It is **evidence-driven** and **human-in-the-loop**: the agent investigates with
-read-only tools, grounds its conclusions in artifacts you collected, and
-*proposes* next steps that you review and confirm. It never mutates your storage
-and never runs an action on its own.
+read-only tools and grounds its conclusions in artifacts you collected. It
+**never mutates your storage**, and any data-moving step (downloads, large
+scans, dataset analysis) always waits for your confirmation. Read-only checks it
+can run itself or propose, depending on the autonomy setting (see Safety model).
 
 ## Install
 

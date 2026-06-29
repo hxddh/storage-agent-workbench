@@ -115,6 +115,18 @@ def test_fork_session_copies_thread(client, monkeypatch):
     assert [m["content"] for m in fork_msgs] == [m["content"] for m in src_msgs]
 
 
+def test_fork_session_copies_agent_memory(client):
+    s = _session(client)
+    with _db() as conn:
+        sessions_repo.add_agent_memory(conn, s["id"], "fact", "bucket acme is path-style only", confidence="high")
+        sessions_repo.add_agent_memory(conn, s["id"], "finding", "public read enabled", severity="high")
+    forked = client.post(f"/sessions/{s['id']}/fork").json()
+    with _db() as conn:
+        mem = sessions_repo.list_agent_memory(conn, forked["id"])
+    texts = sorted(m["text"] for m in mem)
+    assert texts == ["bucket acme is path-style only", "public read enabled"]
+
+
 def test_delete_session_removes_it(client):
     s = _session(client, title="Delete me")
     assert client.delete(f"/sessions/{s['id']}").status_code == 204
@@ -257,10 +269,10 @@ def test_assistant_missing_model_key_clean_failure(client, sync_runs):
     r = client.post(f"/sessions/{s['id']}/messages", json={"content": "status?"})
     assert r.status_code == 422
     assert "model provider" in r.json()["detail"].lower()
-    # user message kept; deterministic summary still works
+    # Clean failure persists NOTHING (no dangling user message) — same as the
+    # streaming path; the deterministic summary still works.
     msgs = client.get(f"/sessions/{s['id']}/messages").json()["messages"]
-    assert any(m["role"] == "user" for m in msgs)
-    assert not any(m["role"] == "assistant" for m in msgs)
+    assert msgs == []
     assert client.get(f"/sessions/{s['id']}/summary").json()["known_facts"]
 
 
