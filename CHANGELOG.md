@@ -21,6 +21,13 @@ follow semantic versioning once it reaches 1.0.
   through a bucket with more than 1000 objects instead of being capped at a
   single page. Each call is still bounded; paging is explicit, never automatic.
 
+### Changed
+
+- **The Agent now self-verifies high-severity conclusions.** Before asserting a
+  security exposure, outage cause, or data-at-risk claim, it confirms it with a
+  tool; if it can't, it presents the claim as a hypothesis with lowered
+  confidence and records the gap rather than stating it as fact.
+
 ## [0.19.19] - 2026-06-29
 
 ### Fixed

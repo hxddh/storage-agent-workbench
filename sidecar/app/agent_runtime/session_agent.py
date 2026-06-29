@@ -76,6 +76,10 @@ SESSION_SAFETY_RULES = [
     "next step for the user to confirm — do not imply you did it.",
     "Distinguish facts (from tools/runs) from inferences and suggestions; flag "
     "low-confidence claims.",
+    "Verify high-severity conclusions (security exposure, outage cause, data at "
+    "risk) with a tool before asserting them. If you cannot verify, present them "
+    "as hypotheses with lowered confidence and record the gap (note_open_question "
+    "/ evidence_gaps) — do not state unverified high-severity claims as fact.",
     "Never output credentials, access/secret/session keys, model API keys, "
     "Authorization headers, cookies, signatures, or presigned-URL parameters.",
     "Do not include hidden chain-of-thought. Be concise in prose, but NEVER at "
@@ -120,6 +124,11 @@ INSTRUCTIONS = (
     "or results you didn't obtain from a tool or the summary. Be concise and "
     "concrete; make clear which statements are tool-verified facts vs. "
     "inferences.\n"
+    "VERIFY before you assert: for any high-severity claim (a security exposure, "
+    "an outage cause, data loss/at-risk), confirm it with a tool call first. If "
+    "you cannot verify it with a tool, say so explicitly — state it as a "
+    "hypothesis with lowered confidence and capture it via note_open_question / "
+    "evidence_gaps rather than asserting it as fact.\n"
     "All investigator tools are read-only. For anything that downloads data or "
     "runs an analysis/large scan, propose it as a next step (do not imply you "
     "ran it). Follow all safety_rules.\n\n"
