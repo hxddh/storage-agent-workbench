@@ -69,6 +69,7 @@ function ModelProvidersPanel() {
   const [form, setForm] = useState<ModelProviderInput>(emptyModelForm);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const reload = () => listModelProviders().then(setItems).catch((e) => setError(String(e)));
   useEffect(() => {
@@ -119,9 +120,15 @@ function ModelProvidersPanel() {
   };
 
   const remove = async (p: ModelProvider) => {
-    if (!confirm(t("prov.confirmDeleteModel", { name: p.name }))) return;
-    await deleteModelProvider(p.id);
-    reload();
+    // Inline confirm (window.confirm is a no-op in the Tauri webview).
+    setError(null);
+    try {
+      await deleteModelProvider(p.id);
+      setConfirmId(null);
+      reload();
+    } catch (e) {
+      setError(String(e));
+    }
   };
 
   const runTest = async (p: ModelProvider) => {
@@ -189,7 +196,14 @@ function ModelProvidersPanel() {
               <div className="flex gap-2">
                 <Button variant="ghost" onClick={() => runTest(p)}>{t("prov.test")}</Button>
                 <Button onClick={() => openEdit(p)}>{t("prov.edit")}</Button>
-                <Button variant="danger" onClick={() => remove(p)}>{t("prov.delete")}</Button>
+                {confirmId === p.id ? (
+                  <>
+                    <Button variant="ghost" onClick={() => setConfirmId(null)}>{t("prov.cancel")}</Button>
+                    <Button variant="danger" onClick={() => remove(p)}>{t("prov.confirmDelete")}</Button>
+                  </>
+                ) : (
+                  <Button variant="danger" onClick={() => { setError(null); setConfirmId(p.id); }}>{t("prov.delete")}</Button>
+                )}
               </div>
             </div>
           </li>
@@ -270,6 +284,7 @@ function CloudProvidersPanel({ onRunCreated }: { onRunCreated?: (runId: string) 
   const [presetId, setPresetId] = useState<string>("aws");
   const [advanced, setAdvanced] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
 
   const preset = CLOUD_PRESETS.find((p) => p.id === presetId) ?? CLOUD_PRESETS[0];
@@ -391,9 +406,15 @@ function CloudProvidersPanel({ onRunCreated }: { onRunCreated?: (runId: string) 
   };
 
   const remove = async (p: CloudProvider) => {
-    if (!confirm(t("prov.confirmDeleteCloud", { name: p.name }))) return;
-    await deleteCloudProvider(p.id);
-    reload();
+    // Inline confirm (window.confirm is a no-op in the Tauri webview).
+    setError(null);
+    try {
+      await deleteCloudProvider(p.id);
+      setConfirmId(null);
+      reload();
+    } catch (e) {
+      setError(String(e));
+    }
   };
 
   const secretHint = (has: boolean) => (editing && has ? t("prov.hintKeep") : t("prov.hintNew"));
@@ -521,7 +542,14 @@ function CloudProvidersPanel({ onRunCreated }: { onRunCreated?: (runId: string) 
                 </Button>
                 <Button onClick={() => discoverAccount(p)}>{t("prov.discover")}</Button>
                 <Button onClick={() => openEdit(p)}>{t("prov.edit")}</Button>
-                <Button variant="danger" onClick={() => remove(p)}>{t("prov.delete")}</Button>
+                {confirmId === p.id ? (
+                  <>
+                    <Button variant="ghost" onClick={() => setConfirmId(null)}>{t("prov.cancel")}</Button>
+                    <Button variant="danger" onClick={() => remove(p)}>{t("prov.confirmDelete")}</Button>
+                  </>
+                ) : (
+                  <Button variant="danger" onClick={() => { setError(null); setConfirmId(p.id); }}>{t("prov.delete")}</Button>
+                )}
               </div>
             </div>
             {testingIds.has(p.id) && <CloudProviderTester provider={p} />}
