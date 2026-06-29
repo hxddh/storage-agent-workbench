@@ -15,7 +15,7 @@ Python FastAPI sidecar
   ↓
 Agent runtime and whitelist tool layer
   ↓
-SQLite / DuckDB / keyring / local files
+SQLite / DuckDB / encrypted secret vault / local files
 ```
 
 ## Tauri
@@ -51,10 +51,12 @@ TypeScript + Tailwind:
 The Python FastAPI sidecar provides the local API:
 
 - Health check and SSE streaming (with a blocking fallback).
-- SQLite metadata; secrets via OS keyring (references only in SQLite).
+- SQLite metadata; secrets in an encrypted local vault (only `keyring://`
+  references in SQLite).
 - Read-only S3 / S3-compatible diagnostic tools.
 - DuckDB analysis for inventory and access logs.
-- The interpretation-only agent (OpenAI Agents SDK) and report generation.
+- The conversational session agent and analysis narrators (OpenAI Agents SDK)
+  and report generation.
 
 ## Storage responsibilities
 
@@ -76,12 +78,21 @@ DuckDB stores analytical data:
 - Sampled object metadata
 - Derived metrics
 
-keyring stores secrets:
+The encrypted secret vault (`security/keyring_store`) stores secrets:
 
 - Model API keys
 - Cloud access keys
 - Secret keys
 - Session tokens
+
+All secrets live in a single AES-256-GCM file (`secrets.enc`) in the app data
+dir; the 32-byte master key is protected by the strongest *non-prompting*
+mechanism per OS (Windows DPAPI; an owner-only `0600` key file on macOS/Linux).
+This is deliberately not the OS keychain — the app is ad-hoc-signed and
+cross-platform, where the keychain re-prompts on every update (macOS) or may be
+absent/prompts on headless Linux. SQLite holds only `keyring://scope/name`
+references; secrets never appear in SQLite, logs, reports, traces, or LLM
+prompts. See [security.md](security.md).
 
 Local files store:
 
@@ -172,12 +183,22 @@ Next-action proposals become an **Agentic hand-over**, never automation:
   `NewRunForm` (with `session_id` + prefilled run_type/provider/bucket) or
   `EvidenceImportDialog` (prefilled account run + bucket + source_type; the
   imported analysis run is then attached to the session). Evidence import still
-  goes plan → confirm → run; a new run still starts only when the user clicks.
-  The Agent never executes.
-- **Assistant proposals:** the session assistant may additionally return a
+  goes plan → confirm → run. Expensive/data-moving actions (analysis on an
+  uploaded dataset, evidence import) always remain confirmed proposals — the
+  agent never auto-runs them.
+- **Inline execution of safe read-only runs:** under the `autonomous_readonly`
+  autonomy policy (the default), the session agent may EXECUTE the SAFE_READONLY
+  runs itself (`run_diagnostic` / `run_bucket_config_review` /
+  `run_account_discovery` — `agent_runtime/session_action_tools.py`) instead of
+  only proposing them, and fold the findings into its answer. Under `assisted`
+  it proposes them for the user to confirm. Either way these create real,
+  audited, read-only runs; nothing mutating or data-moving is ever auto-run, and
+  inline runs are bounded by a wall-clock timeout so a heavy run can't stall the
+  turn. See "Agent autonomy" below.
+- **Assistant proposals:** the session agent may additionally return a
   fenced-JSON `proposed_actions` block; the backend validates/coerces each
   through the same allowlist (dropping invalid ones, forcing
-  `requires_confirmation`). It remains interpretation-only with no tools.
+  `requires_confirmation`).
 - **Audit:** `next_action_previewed` / `next_action_prepared` /
   `next_action_opened` — lightweight events, not a task lifecycle (no
   assignee/status-board/ticket state).
@@ -273,13 +294,25 @@ dashboard or project tracker. The model is:
   next-action **proposals**. It reads no raw logs/rows, no secrets, and calls no
   LLM. Results persist to `session_findings`, `session_evidence_refs`,
   `session_summaries`.
-- **Interpretation-only assistant** (`agent_runtime/session_agent.py`,
-  `SESSION_LOOP` seam): on a user message, the deterministic summary is built
-  first; the model sees ONLY a sanitized bounded context (goal + summary +
-  recent messages) and answers. It has no tools — it cannot run, download,
-  mutate, query SQL, or call S3 — it only explains and recommends which existing
-  proposal to take. Output is redacted + chain-of-thought-stripped. A missing
-  model key fails cleanly (422) and never affects the deterministic summary.
+- **Conversational session agent** (`agent_runtime/session_agent.py`,
+  `SESSION_LOOP` seam): the primary surface, a genuine tool-calling loop. The
+  deterministic summary is built first for grounding; the agent then investigates
+  LIVE with **read-only** tools (`agent_runtime/session_tools.py`: list_buckets,
+  head_bucket, bounded/paginated list_objects, head_object, test_credentials,
+  test_addressing_style, inspect_endpoint_tls, test_range_get, the
+  `review_bucket_*`/`get_bucket_config_summary` config readers, and `read_skill`
+  for progressive-disclosure StorageOps skills), chooses provider/bucket itself,
+  and grounds its answer in tool output. It has **working memory**
+  (`session_agent_memory` table via `session_memory_tools.py`): `note_fact` /
+  `record_finding` / `note_open_question` persist sanitized, audited items that
+  are fed back into later turns. It self-verifies high-severity conclusions with
+  a tool before asserting them. Under the autonomy policy it may also EXECUTE
+  read-only runs (see below). What it still cannot do: download object bodies,
+  mutate anything, run free SQL/shell, reach any destructive S3 op, or see any
+  secret — credentials are resolved server-side inside the S3 layer and never
+  enter the model context. Output is redacted + chain-of-thought-stripped +
+  bounded; a missing model key fails cleanly (422) and never affects the
+  deterministic summary.
 - **Next actions** are proposals only (`requires_confirmation: true`); the user
   acts. They are not a task list / kanban / ticket queue.
 - **Reports** (`sessions/session_report.py`): goal, executive summary, evidence
@@ -287,6 +320,25 @@ dashboard or project tracker. The model is:
   actions, appendix of linked runs — secret-free, no raw content.
 - **Not** a CMDB, monitoring wall, ticketing/kanban/PM system, object browser,
   or multi-user/permission surface. No such tables or endpoints exist.
+
+## Agent autonomy
+
+How much the conversational agent does on its own is a per-install setting
+(`agent_runtime/autonomy.py`, persisted in `app_settings`; `GET`/`PUT
+/settings/autonomy`). The security tiers are enforced *below* this setting and
+never change with it.
+
+- **`assisted`** — the agent proposes read-only runs for the user to confirm.
+- **`autonomous_readonly`** (the **default**) — the agent executes SAFE_READONLY
+  runs itself (diagnostic, bucket_config_review, account_discovery) and folds the
+  findings into its answer.
+
+Risk tiers, independent of policy: `SAFE_READONLY` (read-only runs + the
+sanitized session report) may auto-run under `autonomous_readonly`;
+`EXPENSIVE`/data-moving work (dataset analysis, evidence import/download, large
+scans) and any `MUTATING` op are **never** auto-run under either policy — they
+stay confirmed proposals. There is no write/destructive tool in the product at
+all. (A retired `advisory` value normalizes to `assisted` on read.)
 
 ## Managed evidence import
 
@@ -333,16 +385,20 @@ distinct agent paths exist:
   whitelist tools through the shared tool runner; outputs are sanitized/bounded
   before reaching the model. Implemented in `agent_runtime/agent_service.py`
   (seam: `AGENT_LOOP`).
-- **Interpretation-only narrator** — for `access_log_analysis` and
-  `inventory_analysis`. The deterministic DuckDB analysis runs first and
-  produces metrics + findings; the executor then hands the model **only** a
-  bounded, sanitized aggregate context (run/dataset metadata + metrics +
-  findings) and asks for a structured narrative. The model has **no tools**, so
-  it cannot reach raw logs/rows, SQL, object listings, or any S3 API.
-  Implemented in `agent_runtime/analysis_agent.py` (seam: `ANALYSIS_LOOP`); the
-  analysis executors (`runs/access_log_run.py`, `runs/inventory_run.py`) branch
-  on `planner_mode`. `run_service` routes these run types to their executor (not
-  to the tool-calling planner) regardless of mode.
+- **Analysis narrator with bounded drill-down** — for `access_log_analysis` and
+  `inventory_analysis`. The deterministic DuckDB analysis runs first and produces
+  metrics + findings; the executor then hands the model a bounded, sanitized
+  aggregate context (run/dataset metadata + metrics + findings) and asks for a
+  structured narrative. The model gets a small set of **bounded, read-only
+  aggregate tools** over the already-local DuckDB dataset (`analysis/drilldown.py`:
+  `aggregate_by(dimension, metric, limit)` and `count_where(field, op, value)`,
+  over whitelisted dimensions/fields with parameterized values) so it can drill
+  into the metrics — but **no raw rows, no free SQL, no object listings, no S3
+  API, no object bodies**. Implemented in `agent_runtime/analysis_agent.py`
+  (seam: `ANALYSIS_LOOP`); the executors (`runs/access_log_run.py`,
+  `runs/inventory_run.py`) branch on `planner_mode` and pass the dataset's
+  `duckdb_path`. `run_service` routes these run types to their executor (not to
+  the tool-calling planner) regardless of mode.
 
 Both seams are mockable so tests run without the OpenAI Agents SDK or an API
 key. A missing model provider key fails the agent run cleanly and never affects

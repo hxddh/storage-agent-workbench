@@ -48,9 +48,10 @@ Pick one:
 The app starts in a few seconds. You'll see **Sidecar: Connecting** briefly while
 the local backend comes up.
 
-> The first time the agent reads a stored secret (e.g. your model API key) macOS
-> shows a keychain prompt — click **Always Allow** and it won't ask again for that
-> install.
+> Secrets are kept in an encrypted local vault, so there is **no** system
+> keychain authorization prompt on any platform. After updating to a build that
+> introduced the vault, re-enter your model API key and cloud credentials once
+> (they aren't migrated from the old keychain) — you won't be prompted again.
 
 ### Linux
 
@@ -85,11 +86,16 @@ Dark and light themes; English and 中文.
 
 - **Local-first.** App data lives in the OS app-data directory; nothing is sent
   anywhere except the cloud/model providers you configure.
-- **Secrets only in the OS keychain.** Access keys, secret keys, session tokens,
-  and model API keys are never stored in SQLite, logs, reports, or model prompts.
-- **Read-only by default.** No destructive or mutating S3 operations; no generic
-  shell or arbitrary subprocess tool.
-- **No hidden auto-run.** Proposed next actions stay proposals until you confirm.
+- **Secrets in an encrypted local vault.** Access keys, secret keys, session
+  tokens, and model API keys live only in an AES-256-GCM vault on your device
+  (key protected per-OS) — never in SQLite, logs, reports, or model prompts.
+- **Read-only.** No destructive or mutating S3 operations; no generic shell or
+  arbitrary subprocess tool. The agent investigates with read-only tools and can
+  run read-only checks itself.
+- **You confirm anything that moves data.** Downloads, large scans, and dataset
+  analysis always wait for your confirmation; there is no write tool. (An
+  autonomy setting controls whether the agent auto-runs *read-only* checks or
+  proposes them.)
 - Agent context is bounded and sanitized; chain-of-thought is never persisted.
 
 See [docs/security.md](docs/security.md) for the full model.

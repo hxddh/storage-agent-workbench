@@ -7,16 +7,20 @@ macOS (arm64), Linux (x64), and Windows (x64) on every tagged release.
 
 Working end to end:
 
-- Model + cloud (S3-compatible) provider configuration; secrets in the OS keychain.
+- Model + cloud (S3-compatible) provider configuration; secrets in an encrypted
+  local vault (no system prompts).
 - Read-only S3 diagnostics and account discovery.
 - Bucket configuration review (security / lifecycle / observability / cost).
 - Managed evidence import (plan → confirm → run) for inventory and access logs.
-- Local DuckDB analysis of inventory and access logs.
+- Local DuckDB analysis of inventory and access logs (with a bounded-drill-down
+  agent narrator).
 - Error triage.
 - Sessions: a persistent investigation workspace with rename / pin / archive /
   delete / fork.
-- Interpretation-only agent that explains findings and *proposes* next actions
-  for you to confirm — it never runs anything on its own.
+- A thread-first conversational agent that investigates live with read-only
+  tools, keeps working memory across turns, and — per the autonomy setting —
+  either runs read-only checks itself or proposes them. Data-moving actions
+  always wait for your confirmation.
 - Markdown reports.
 
 ## Known gaps
@@ -33,5 +37,6 @@ Working end to end:
 
 Likely next steps, in rough priority order: notarization + auto-update, broader
 evidence sources, and richer agent-assisted analysis. None of these change the
-safety model — read-only by default, secrets only in the keychain, and no action
-runs without explicit confirmation.
+safety model — read-only (no write/destructive tool), secrets only in the
+encrypted local vault, and no data-moving action runs without explicit
+confirmation.

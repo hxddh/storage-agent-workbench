@@ -2,8 +2,12 @@
 
 Local-only FastAPI sidecar for Storage Agent Workbench.
 
-Phase 01 scope: a single `GET /health` endpoint. No S3 tools, no DuckDB
-analysis, no keyring logic, no provider CRUD, no agent runtime.
+It exposes the full local API: model/cloud provider CRUD (secrets in the
+encrypted vault), read-only S3 diagnostic tools, runs (deterministic + agent
+planner), DuckDB inventory/access-log analysis, account discovery, managed
+evidence import, sessions, error triage, reports, and the conversational session
+agent (SSE streaming). See [../docs/api.md](../docs/api.md) and
+[../docs/architecture.md](../docs/architecture.md).
 
 ## Run
 
