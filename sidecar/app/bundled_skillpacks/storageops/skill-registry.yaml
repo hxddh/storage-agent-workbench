@@ -280,3 +280,41 @@ skills:
       - 验证
       - double-check
     domains: [eval]
+
+  - name: storageops-inventory-analysis
+    path: skills/storageops-inventory-analysis/SKILL.md
+    priority: 20
+    description: >
+      Read an object-storage inventory for capacity and object-shape: total size
+      and object count, size distribution, which prefixes hold the bytes,
+      storage-class mix, small-object ratio, and the largest objects. Use when the
+      user asks how big a bucket is, how objects are distributed, where capacity
+      goes, or whether there are too many small files. Cost/lifecycle decisions go
+      to the lifecycle skill.
+    trigger_keywords:
+      - inventory
+      - capacity
+      - bucket size
+      - object count
+      - storage class
+      - small files
+      - largest objects
+    domains: [inventory, capacity]
+
+  - name: storageops-account-posture
+    path: skills/storageops-account-posture/SKILL.md
+    priority: 20
+    description: >
+      Map an account's storage landscape and configuration posture across buckets
+      — which exist, which have logging / inventory / lifecycle / replication /
+      public-access-block, and where to look first. Use for an account-wide
+      overview or audit entry point with NO specific error. A concrete error
+      symptom goes to triage; one bucket's deep config goes to review_bucket_*.
+    trigger_keywords:
+      - account overview
+      - map my buckets
+      - which buckets
+      - audit
+      - posture
+      - where to start
+    domains: [account, posture, audit]

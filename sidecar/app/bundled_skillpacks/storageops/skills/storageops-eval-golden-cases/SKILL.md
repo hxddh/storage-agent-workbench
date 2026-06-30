@@ -37,6 +37,10 @@ fails. This is how you keep answers correct, grounded, and safe.
 - **Safety** — every remediation that changes anything is marked manual-only for
   the user to apply; nothing destructive/mutating is proposed, and no credential
   appears in the answer.
+- **Coverage honesty** — don't assert a feature is absent when you couldn't read
+  it (`access_denied` / `provider_unsupported`), and don't present a single
+  inventory snapshot or sample listing as a complete or trend view. For an
+  account survey, distinguish total vs `visible` buckets.
 - **Falsifiability** — state what evidence would overturn the diagnosis.
 
 ## When it fails
