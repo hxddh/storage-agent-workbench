@@ -44,7 +44,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
          "presigned URL query was stripped or reordered", "S3-compatible signing incompatibility"],
         ["client region vs bucket region", "configured endpoint vs provider endpoint",
          "addressing style", "request timestamp vs server time"],
-        ["test_credentials", "inspect_tls", "test_path_style_vs_virtual_host",
+        ["test_credentials", "inspect_endpoint_tls", "test_addressing_style",
          "get_bucket_location / head_bucket", "compare client region and endpoint", "check request time skew"],
         ["diagnostic", "bucket_config_review"],
         ["S3-compatible providers may differ in SigV4 canonicalization or require path-style."],
@@ -85,7 +85,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         ["region mismatch", "wrong endpoint", "bucket location differs from client config",
          "virtual-hosted-style routing issue"],
         ["bucket location vs client region", "endpoint used"],
-        ["get_bucket_location", "head_bucket", "test_path_style_vs_virtual_host", "align endpoint/region"],
+        ["get_bucket_location", "head_bucket", "test_addressing_style", "align endpoint/region"],
         ["diagnostic"], ["S3-compatible providers may not emit a redirect; they may just fail."],
         [_DIAG, _ASK]),
     "AuthorizationHeaderMalformed": _entry(
@@ -119,7 +119,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         "RequestTimeout", "availability", "Request timed out", "medium",
         ["client timeout too low", "slow network path", "large multipart part", "provider latency"],
         ["client timeout settings", "object/part size", "network path"],
-        ["retry with backoff", "increase client timeout", "inspect_tls / connectivity"],
+        ["retry with backoff", "increase client timeout", "inspect_endpoint_tls / connectivity"],
         ["diagnostic"], [], [_DIAG, _ASK]),
     "InvalidBucketName": _entry(
         "InvalidBucketName", "client", "Bucket name is invalid", "high",
@@ -153,19 +153,19 @@ _TLS = _entry(
     ["expired/self-signed/untrusted certificate", "SNI/hostname mismatch", "TLS version/cipher mismatch",
      "interception proxy"],
     ["certificate subject/issuer/expiry", "endpoint hostname vs cert"],
-    ["inspect_tls", "verify the endpoint hostname and CA trust"],
+    ["inspect_endpoint_tls", "verify the endpoint hostname and CA trust"],
     ["diagnostic"], ["Custom S3-compatible endpoints may use private CAs."], [_DIAG, _ASK])
 _CONN = _entry(
     "ConnectionError", "connectivity", "Network connection failed", "medium",
     ["DNS/endpoint unreachable", "firewall/proxy blocking", "client timeout too low", "transient network"],
     ["endpoint resolvability", "proxy settings", "timeout configuration"],
-    ["inspect_tls / connectivity to the endpoint", "retry with backoff", "verify endpoint/region"],
+    ["inspect_endpoint_tls / connectivity to the endpoint", "retry with backoff", "verify endpoint/region"],
     ["diagnostic"], [], [_DIAG, _ASK])
 _5XX = _entry(
     "ServerError", "availability", "Provider-side 5xx error", "medium",
     ["transient provider error", "gateway/proxy issue", "large multipart retry", "provider degradation"],
     ["which operation/endpoint", "whether retries succeed"],
-    ["retry with exponential backoff", "inspect_tls / connectivity", "check provider status"],
+    ["retry with exponential backoff", "inspect_endpoint_tls / connectivity", "check provider status"],
     ["diagnostic"], [], [_DIAG, _ASK])
 _PAGINATION = _entry(
     "Pagination", "client", "Listing pagination / continuation-token issue", "low",
