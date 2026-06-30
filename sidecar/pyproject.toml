@@ -25,11 +25,11 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
-# NOTE (Phase 07): Adds the OpenAI Agents SDK (openai-agents) + openai for an
-# OPTIONAL agent planner mode. These are imported LAZILY inside agent_runtime so
-# the sidecar (and deterministic mode) runs even if they are absent or no model
-# API key is configured. Agent mode only calls existing whitelisted, read-only
-# tools through the shared tool_runner.
+# NOTE: Adds the OpenAI Agents SDK (openai-agents) + openai for the conversational
+# session agent. These are imported LAZILY inside agent_runtime so the sidecar
+# (and the deterministic run executors) runs even if they are absent or no model
+# API key is configured. The agent only calls existing whitelisted, read-only
+# tools; it never sees credentials.
 
 [project.optional-dependencies]
 dev = [

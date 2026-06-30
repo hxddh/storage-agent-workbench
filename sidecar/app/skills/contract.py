@@ -1,6 +1,6 @@
-"""Parse + sanitize the minimal skill-grounded Agent output contract.
+"""Parse + sanitize the minimal skill-grounded agent output contract.
 
-Shared by the session assistant and the triage Agent. The model MAY append one
+Used by the conversational session agent (the only LLM). The model MAY append one
 fenced JSON block:
 
     {"answer": "...", "skills_used": [], "evidence_used": [],

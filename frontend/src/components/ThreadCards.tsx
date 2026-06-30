@@ -58,7 +58,22 @@ export function MessageCard({
       </div>
       {toolActivity && toolActivity.length > 0 && <ToolActivityList items={toolActivity} />}
       <Markdown text={shown} />
-      {streaming && <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-accent-soft align-middle" />}
+      {streaming &&
+        (shown.trim() ? (
+          // Mid-answer: a blinking caret after the streamed text.
+          <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-accent-soft align-middle" />
+        ) : (
+          // No answer text yet (model still working after / between tool calls —
+          // often the longest wait). Show explicit progress so it doesn't look frozen.
+          <div className="flex items-center gap-2.5 text-[13px] text-gray-500">
+            <span className="flex gap-1">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "0ms" }} />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "150ms" }} />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "300ms" }} />
+            </span>
+            <span className="animate-pulse">{t("think.working")}</span>
+          </div>
+        ))}
     </div>
   );
 }

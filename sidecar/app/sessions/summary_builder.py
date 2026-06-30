@@ -233,8 +233,9 @@ def build(conn: sqlite3.Connection, session_id: str) -> dict[str, Any]:
     facts = facts[:MAX_FACTS]
     findings = findings[:MAX_FINDINGS]
     open_q, raw_actions = _gaps(have_types, runs)
-    # Normalize to the canonical, sanitized proposal shape (drops anything not
-    # on the action_type allowlist; forces requires_confirmation).
+    # Normalize to the canonical, sanitized proposal shape (accepts any safe
+    # free-form action_type; drops only forbidden/destructive ones; forces
+    # requires_confirmation).
     from . import next_actions
     actions = [p for a in raw_actions if (p := next_actions.normalize_proposal(a))]
     limitations = [

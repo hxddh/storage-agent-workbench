@@ -55,8 +55,7 @@ The Python FastAPI sidecar provides the local API:
   references in SQLite).
 - Read-only S3 / S3-compatible diagnostic tools.
 - DuckDB analysis for inventory and access logs.
-- The conversational session agent and analysis narrators (OpenAI Agents SDK)
-  and report generation.
+- The conversational session agent (OpenAI Agents SDK) and report generation.
 
 ## Storage responsibilities
 
@@ -212,23 +211,20 @@ multi-agent runtime, skill API, skill UI, skill DB tables, or RAG.
   description / maturity / mode / trigger_keywords / domains / auto_route) and
   loads SKILL.md bodies. `recommended_tools` is deliberately NOT exposed — never
   registered, shown, or executed.
-- **`skills/selection.py`** is a lightweight lexical selector: it matches the
-  input context (session goal + summary + question + plain-text error signals)
-  against registry metadata and returns 1–3 candidates as
-  `{name, match_reason, selection_basis}` only — no diagnosis / root cause /
-  remediation / confidence / score, and no hard-coded error-code → skill mapping
-  (fallback is the registry's `auto_route` skill, a metadata property).
-- **`skills/context.py`** wraps each selected SKILL.md in a tools-disabled safety
-  preamble ("StorageOps tools / scripts / CLI / Pi runtime … are disabled in
-  this Workbench phase; do not claim to run tools; use mentions as conceptual
-  guidance only"), bounded by a max-char budget and a 1–3 skill cap.
-- **Injection**: `agent_runtime/session_agent.py` adds the selected SKILL.md
-  context to the prompt (not to the sanitized evidence context) and emits a
-  minimal contract via
-  `skills/contract.py`: `{answer, skills_used, evidence_used, evidence_gaps,
-  next_action_proposals}` — answer redacted + CoT-stripped, skills_used limited
-  to skills actually loaded via `read_skill` this turn, proposals sanitized
-  (forbidden tokens dropped). The raw
+- **Progressive disclosure (the live mechanism)**: `skills/context.py` exposes
+  `catalog_text()` — the always-in-context list of skill `name + description` —
+  and `read_skill_text(name)`, which returns one SKILL.md body wrapped in a
+  tools-disabled safety preamble ("StorageOps tools / scripts / CLI / Pi runtime
+  … are disabled in this Workbench phase; do not claim to run tools; use mentions
+  as conceptual guidance only"). `agent_runtime/session_agent.py` injects the
+  catalog and the agent calls the read-only `read_skill` tool on demand for the
+  skills it judges relevant — there is no eager 1–3 skill pre-selection in the
+  live path. (`skills/selection.py` is a legacy lexical selector retained only
+  for tests; it is not on the agent path.)
+- **Contract**: the agent emits a minimal contract via `skills/contract.py`:
+  `{answer, skills_used, evidence_used, evidence_gaps, next_action_proposals}` —
+  answer redacted + CoT-stripped, `skills_used` limited to skills actually loaded
+  via `read_skill` this turn, proposals sanitized (forbidden tokens dropped). The raw
   error blob / secrets / chain-of-thought never reach the model. Deterministic
   triage (or a missing model key) does not fabricate a skill-grounded diagnosis.
 - No migration / DB table / public skill API was added; skill-grounded fields
@@ -241,7 +237,7 @@ A session-centered capability to triage S3 / object-storage / S3-compatible
 errors — NOT a static FAQ or error-code dictionary page.
 
     paste error -> redact -> deterministic parse -> playbook match ->
-    candidate causes + evidence + next checks -> (optional) Agent interpretation
+    candidate causes + evidence + next checks
     -> sanitized triage case + next-action proposals
 
 - **`error_triage/parser.py`** extracts bounded signals (error code, HTTP
