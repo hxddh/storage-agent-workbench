@@ -183,7 +183,7 @@ export function RunCard({ run }: { run: SessionRunLink }) {
 }
 
 /** An error-triage case rendered as a tool-style block. */
-export function TriageCard({ c }: { c: TriageCase }) {
+export function TriageCard({ c, onRun }: { c: TriageCase; onRun?: (p: NextAction) => void }) {
   const { t } = useI18n();
   return (
     <div className="animate-fade-in-up overflow-hidden rounded-xl border border-edge bg-panel/60">
@@ -211,6 +211,16 @@ export function TriageCard({ c }: { c: TriageCase }) {
             </li>
           ))}
         </ul>
+        {onRun && c.safe_next_actions?.length ? (
+          <div className="mt-3 border-t border-edge/60 pt-2.5">
+            <span className="text-[11px] text-gray-600">{t("thread.suggestedNext")}</span>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {c.safe_next_actions.map((p, i) => (
+                <ProposalCard key={`${p.action_type}-${i}`} proposal={p} onRun={onRun} />
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -109,10 +109,11 @@ def _run_result(conn: sqlite3.Connection, run_id: str) -> dict[str, Any]:
         # Hit the wall-clock timeout: the run is still going in the background.
         # Tell the agent NOT to draw conclusions from this incomplete result.
         result["note"] = (
-            "This survey is still in progress (it exceeded the inline time budget "
-            "and continues in the background). Do NOT state findings from it yet — "
-            "tell the user it is still running and revisit it (call this tool "
-            "again) in a later turn to read the completed result."
+            "This run is still in progress (it exceeded the inline time budget and "
+            "continues in the background). Do NOT state findings from it yet — tell "
+            "the user it is still running, then in a LATER turn call "
+            f"read_run_result(run_id='{run_id}') to read the completed result. Do "
+            "NOT re-run the survey/review — that only restarts the same work."
         )
     return result
 

@@ -6,6 +6,22 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Empty-state subtitle no longer overpromises.** "Read-only by default — I'll
+  ask before running anything" became "Read-only and never destructive — I'll
+  ask before moving any data" (zh equivalent): the agent runs read-only checks
+  itself; only cloud data-moving work is confirmation-gated.
+- **Backgrounded survey/review now resumes via `read_run_result`.** When an
+  inline survey/review exceeds the time budget, the timeout note and the agent
+  instructions now tell the agent to call `read_run_result(run_id)` in a later
+  turn instead of re-running the survey.
+- **Triage `safe_next_actions` are now clickable.** `TriageCard` renders the
+  deterministic next-check proposals as one-click chips (same handoff as agent
+  proposals), instead of dropping a field the API already returned.
+- **Doc residual:** `docs/security.md` "Graded execution" no longer references
+  the removed `autonomous_readonly`/`assisted` autonomy policy.
+
 ## [0.20.0] - 2026-06-30
 
 **Single-agent architecture.** This release finishes the agent-native migration
