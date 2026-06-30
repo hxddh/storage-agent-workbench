@@ -1,4 +1,4 @@
-"""Report retrieval (Phase 04)."""
+"""Report retrieval."""
 
 from __future__ import annotations
 

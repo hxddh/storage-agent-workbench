@@ -7,8 +7,7 @@ The app supports:
 - Object storage diagnostics
 - Access log analysis
 - Inventory and capacity analysis
-- Bucket configuration review
-- Optimization reporting
+- Bucket configuration review (security / lifecycle / observability / cost)
 
 This is not a generic chat assistant. The **primary surface is a thread-first
 conversational agent** (a real tool-calling loop over read-only tools); structured

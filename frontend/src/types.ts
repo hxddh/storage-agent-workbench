@@ -148,16 +148,14 @@ export interface Dataset {
 
 // SSE event payloads (a subset, discriminated by `type`)
 export type RunEvent =
-  | { type: "plan"; content: string }
   | { type: "tool_call_started"; tool_name: string; tool_call_id: string }
   | { type: "tool_call_finished"; tool_name: string; tool_call_id: string; status: string; output: Record<string, unknown> }
   | { type: "summary"; content: string }
   | { type: "finding"; severity: string; title: string; detail: string }
   | { type: "report_ready"; run_id: string; report_path: string }
   | { type: "error"; message: string }
-  // Run lifecycle events (shared by deterministic and agent-planner runs)
+  // Run lifecycle events (runs are pure deterministic compute — no LLM planner)
   | { type: "run_started" }
-  | { type: "tool_selected"; tool_name: string; reason: string }
   | { type: "guardrail_passed"; name: string }
   | { type: "guardrail_blocked"; name: string; message: string }
   | { type: "final_summary"; content: string };

@@ -1,4 +1,4 @@
-"""Lightweight StorageOps skill candidate selector (Phase 19).
+"""Lightweight StorageOps skill candidate selector.
 
 Picks at most 1–3 candidate skills by simple lexical overlap between the input
 context (session goal + summary + user question + plain-text error signals) and

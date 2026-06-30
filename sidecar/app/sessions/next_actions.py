@@ -39,8 +39,6 @@ SPECIAL_ACTION_TYPES = {
     "generate_session_report",
     "ask_user_for_context",
 }
-# Back-compat alias (older imports/tests referenced this name).
-ALLOWED_ACTION_TYPES = SPECIAL_ACTION_TYPES
 
 # A free-form action_type must still be a safe, bounded slug.
 _MAX_ACTION_TYPE_LEN = 64
@@ -71,7 +69,9 @@ _CONFIDENCE = {"high", "medium", "low"}
 def normalize_proposal(raw: dict[str, Any]) -> dict[str, Any] | None:
     """Coerce an arbitrary proposal dict into the canonical, sanitized shape.
 
-    Returns None if the action_type is not allowlisted (caller drops/downgrades).
+    The agent is NOT capped to a fixed menu: any safe, bounded action_type slug is
+    accepted (an unrecognized one just routes to the conversational path). Returns
+    None only if the slug is empty or carries a forbidden/destructive token.
     """
     if not isinstance(raw, dict):
         return None

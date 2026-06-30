@@ -153,9 +153,9 @@ read-only APIs:
   evidence_sources) via `repositories/account_discovery.py`, all JSON
   redaction-passed. `GET /runs/{id}/account-profile` returns the structured
   profile the UI renders as a filterable bucket table.
-- Agent mode for `account_discovery` is rejected with a clean 422 — no bucket
-  list or config JSON is ever sent to an LLM. Agent account-level analysis is a
-  future phase.
+- `account_discovery` is deterministic — no bucket list or config JSON is ever
+  sent to an LLM. The conversational agent triggers it through its read-only
+  `survey_account` tool and narrates only the sanitized summary + counts.
 
 ## Next-action handoff
 

@@ -1,4 +1,4 @@
-"""Account-discovery result repository (Phase 14).
+"""Account-discovery result repository.
 
 Persists the account-level asset picture produced by an ``account_discovery``
 run across four tables (account_snapshots, account_snapshot_buckets,

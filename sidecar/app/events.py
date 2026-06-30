@@ -1,4 +1,4 @@
-"""In-process event bus for run SSE streaming (Phase 04).
+"""In-process event bus for run SSE streaming.
 
 Deliberately simple and dependency-free (no Redis/Celery/queue): events for an
 active run are buffered in memory and replayed to any SSE subscriber from the

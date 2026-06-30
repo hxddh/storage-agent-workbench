@@ -1,4 +1,4 @@
-"""StorageOps skill context injection (Phase 19) — skills-only, guidance-only.
+"""StorageOps skill context injection — skills-only, guidance-only.
 
 This package vendors the StorageOps ``skill-registry.yaml`` + ``skills/*/SKILL.md``
 as PROFESSIONAL DIAGNOSTIC METHOD context for the existing Agent. It is NOT a

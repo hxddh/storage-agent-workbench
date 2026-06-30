@@ -69,6 +69,11 @@ _VALUE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         ),
         r"\1" + REDACTED,
     ),
+    # Model-provider API keys (OpenAI/DeepSeek-style `sk-...`, incl. `sk-proj-...`).
+    # Defense-in-depth: these are resolved server-side and must never reach a
+    # prompt, but a user may paste one into the chat or a provider error may echo
+    # it — scrub it everywhere the shared redactor runs (messages, audit, reports).
+    (re.compile(r"\bsk-[A-Za-z0-9][A-Za-z0-9_\-]{5,}\b"), REDACTED),
 ]
 
 

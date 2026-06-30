@@ -1,4 +1,4 @@
-"""Error-triage case + findings repository (Phase 18).
+"""Error-triage case + findings repository.
 
 Stores ONLY the redacted pasted input and sanitized parsed signals / findings.
 Never AK/SK/session token/Authorization/cookies/presigned URL/model key, never

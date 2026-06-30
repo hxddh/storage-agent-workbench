@@ -1,4 +1,4 @@
-"""Parse + sanitize the minimal skill-grounded Agent output contract (Phase 19).
+"""Parse + sanitize the minimal skill-grounded Agent output contract.
 
 Shared by the session assistant and the triage Agent. The model MAY append one
 fenced JSON block:

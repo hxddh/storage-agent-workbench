@@ -1,4 +1,4 @@
-"""Deterministic error-triage engine (Phase 18).
+"""Deterministic error-triage engine.
 
 Runs the deterministic pipeline: redact → parse → match playbooks → candidate
 causes + safe next checks + next-action proposals. It performs NO S3 call, run,

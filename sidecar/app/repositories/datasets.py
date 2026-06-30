@@ -1,4 +1,4 @@
-"""Dataset metadata repository (Phase 05).
+"""Dataset metadata repository.
 
 Stored paths are kept RELATIVE to the data dir so absolute, possibly
 username-bearing paths never land in the database. Resolve with

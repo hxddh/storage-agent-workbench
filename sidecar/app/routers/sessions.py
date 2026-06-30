@@ -1,4 +1,4 @@
-"""Session endpoints (Phase 16).
+"""Session endpoints.
 
 Sessions are the persistent working context that links runs, evidence, findings,
 a deterministic summary, and a lightweight message thread. The session agent is a

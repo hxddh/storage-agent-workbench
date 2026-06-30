@@ -136,7 +136,7 @@ def tool_inspect_tls(
     )
 
 
-# --- read-only bucket config review tools (Phase 06) ------------------------
+# --- read-only bucket config review tools ------------------------
 
 
 def _config_tool(conn, name: str, body: BucketConfigRequest, fn) -> dict[str, Any]:

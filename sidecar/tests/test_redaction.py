@@ -32,6 +32,21 @@ def test_redacts_aws_access_key_in_text():
     assert REDACTED in out
 
 
+def test_redacts_model_api_key_in_text():
+    # A user might paste a model key into the chat; it must not survive into
+    # persisted messages / audit logs / reports (rule #15).
+    for key in ("sk-abcdef0123456789abcdef", "sk-proj-AbC123_def-456ghi"):
+        out = redact_text(f"my key is {key} ok")
+        assert key not in out
+        assert REDACTED in out
+
+
+def test_does_not_redact_short_sk_prefixed_words():
+    # "sk-" alone or a short token is left alone — only key-shaped runs are masked.
+    out = redact_text("the task-list and sk-1 marker")
+    assert "task-list" in out and "sk-1" in out
+
+
 def test_redacts_presigned_url_query_params():
     url = (
         "https://s3.example.com/bucket/key?X-Amz-Credential=AKIAEXAMPLE%2Fcred"

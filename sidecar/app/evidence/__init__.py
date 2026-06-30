@@ -1,4 +1,4 @@
-"""Managed evidence import (Phase 15).
+"""Managed evidence import.
 
 Bounded, confirmation-gated retrieval of evidence files (inventory reports /
 server access logs) from sources DISCOVERED by account_discovery, fed into the

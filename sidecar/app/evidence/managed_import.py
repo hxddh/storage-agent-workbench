@@ -1,4 +1,4 @@
-"""Plan + download + combine for managed evidence import (Phase 15).
+"""Plan + download + combine for managed evidence import.
 
 All S3 access here is READ-ONLY and confined to a *discovered* evidence
 destination (inventory destination bucket/prefix, or server-access-logging

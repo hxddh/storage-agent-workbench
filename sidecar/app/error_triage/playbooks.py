@@ -1,4 +1,4 @@
-"""Rule-based triage playbooks (Phase 18).
+"""Rule-based triage playbooks.
 
 A small, curated set of rules — NOT an exhaustive error-code dictionary. Each
 rule maps a parsed signal to candidate causes, the evidence to check, safe next

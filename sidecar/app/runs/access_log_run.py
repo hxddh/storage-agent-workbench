@@ -1,4 +1,4 @@
-"""Access-log analysis run executor (Phase 05)."""
+"""Access-log analysis run executor."""
 
 from __future__ import annotations
 
@@ -76,7 +76,7 @@ def execute_access_log_run(conn: sqlite3.Connection, run_id: str) -> None:
             lambda: {
                 "report_path": config.rel_path(
                     write(run_id, render_access_log(
-                        run, ds_info, fmt.get("format"), metrics, findings, summary, ""))
+                        run, ds_info, fmt.get("format"), metrics, findings, summary))
                 ),
                 "format": "markdown",
             },

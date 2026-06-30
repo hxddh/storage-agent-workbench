@@ -38,7 +38,7 @@ _AUTH_FAIL_CODES = {
 _UNSUPPORTED_CODES = {"NotImplemented", "MethodNotAllowed"}
 _DENIED_CODES = {"AccessDenied", "Forbidden", "AllAccessDisabled", "UnauthorizedAccess"}
 
-# Read status vocabulary shared with config_tools (Phase 14 account discovery).
+# Read status vocabulary shared with config_tools.
 AVAILABLE = "available"
 PROVIDER_UNSUPPORTED = "provider_unsupported"
 ACCESS_DENIED = "access_denied"

@@ -1,4 +1,4 @@
-"""Session-centered S3 / object-storage error triage (Phase 18).
+"""Session-centered S3 / object-storage error triage.
 
 A deterministic parser extracts structured signals from a redacted error blob
 (error code / HTTP status / region / endpoint / operation / ...), rule-based
