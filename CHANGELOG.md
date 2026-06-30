@@ -6,6 +6,20 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Error-triage next-step chips survive a reload / session-switch.** The
+  deterministic `safe_next_actions` were only on the POST response, so reopening
+  a session showed empty chips. `GET /error-triage/{id}` and
+  `GET /sessions/{id}/error-triage` now re-derive them deterministically from the
+  stored (already redacted) input — no new storage, no migration.
+
+### Changed
+
+- **`read_run_result` is now listed in the agent's main tool instructions**, not
+  only in the survey-timeout note — so the agent knows it can re-read a
+  backgrounded survey/review/import result in a later turn instead of re-running.
+
 ## [0.20.2] - 2026-06-30
 
 Post-v0.20 review cleanup — no behavior change beyond stronger redaction.

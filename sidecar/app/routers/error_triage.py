@@ -26,6 +26,24 @@ from ..sessions import summary_builder
 router = APIRouter(tags=["error-triage"])
 
 
+def _recompute_safe_actions(case: dict[str, Any]) -> list:
+    """Deterministically re-derive the triage proposals from the stored (already
+    redacted) input so they survive reload / session-switch.
+
+    We never persist proposals; the engine has no LLM / no S3, so re-running it on
+    the stored ``raw_input_redacted`` reproduces the same ``safe_next_actions``.
+    Returns [] if the stored input is missing or re-derivation fails (a read must
+    never error over this).
+    """
+    blob = case.get("raw_input_redacted")
+    if not blob:
+        return []
+    try:
+        return list(engine.analyze(blob, case.get("input_kind") or "mixed")["safe_next_actions"])
+    except Exception:  # noqa: BLE001 - never fail a read over re-derivation
+        return []
+
+
 def _to_out(case: dict[str, Any], *, safe_next_actions=None, limitations=None) -> TriageCaseOut:
     return TriageCaseOut(
         id=case["id"], session_id=case.get("session_id"), provider_id=case.get("provider_id"),
@@ -82,11 +100,20 @@ def get_triage(case_id: str, conn: sqlite3.Connection = Depends(get_conn)):
     case = repo.get_case(conn, case_id)
     if case is None:
         raise HTTPException(status_code=404, detail="triage case not found")
-    return _to_out(case, limitations=list(engine._LIMITATIONS))
+    return _to_out(case, safe_next_actions=_recompute_safe_actions(case),
+                   limitations=list(engine._LIMITATIONS))
 
 
 @router.get("/sessions/{session_id}/error-triage")
 def list_session_triage(session_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
     if sessions_repo.get_row(conn, session_id) is None:
         raise HTTPException(status_code=404, detail="session not found")
-    return {"session_id": session_id, "cases": repo.list_for_session(conn, session_id)}
+    # Re-derive proposals + limitations per case so reload / session-switch keeps
+    # the clickable next-step chips (they aren't persisted; the engine is
+    # deterministic and re-runs on the stored redacted input).
+    cases = [
+        {**c, "safe_next_actions": _recompute_safe_actions(c),
+         "limitations": list(engine._LIMITATIONS)}
+        for c in repo.list_for_session(conn, session_id)
+    ]
+    return {"session_id": session_id, "cases": cases}
