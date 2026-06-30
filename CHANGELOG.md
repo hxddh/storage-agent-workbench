@@ -15,6 +15,11 @@ follow semantic versioning once it reaches 1.0.
   with no streamed text yet) showed only a lone blinking caret. It now shows an
   explicit animated "Working… (still running)" indicator until the answer starts
   streaming.
+- **Error-triage next-step chips survive a reload / session-switch.** The
+  deterministic `safe_next_actions` were only on the POST response, so reopening
+  a session showed empty chips. `GET /error-triage/{id}` and
+  `GET /sessions/{id}/error-triage` now re-derive them deterministically from the
+  stored (already redacted) input — no new storage, no migration.
 
 ### Changed
 
@@ -24,6 +29,9 @@ follow semantic versioning once it reaches 1.0.
   agent instructions already use — so guidance never names a tool the agent
   can't call. (The underlying S3-layer functions keep their names:
   `test_path_style_vs_virtual_host`, `inspect_tls`.)
+- **`read_run_result` is now listed in the agent's main tool instructions**, not
+  only in the survey-timeout note — so the agent knows it can re-read a
+  backgrounded survey/review/import result in a later turn instead of re-running.
 - **Stale docs/docstrings** aligned to the single-agent model: `architecture.md`
   (removed "analysis narrators"; skill context is catalog + `read_skill`
   progressive disclosure, not eager 1–3 selection; triage flow has no "optional

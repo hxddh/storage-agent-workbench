@@ -154,6 +154,24 @@ def test_triage_stores_redacted_input_only(client):
     assert ACCESS not in _json.dumps(case["parsed"])
 
 
+def test_triage_proposals_survive_reload(client):
+    """safe_next_actions aren't persisted, but GET + the session list re-derive
+    them deterministically so the clickable next-step chips survive a reload /
+    session-switch (the POST response is no longer the only place they appear)."""
+    s = _session(client)
+    posted = _triage(client, SIG_ERROR, session_id=s["id"]).json()
+    assert posted["safe_next_actions"], "POST should carry proposals"
+
+    got = client.get(f"/error-triage/{posted['id']}").json()
+    listed = client.get(f"/sessions/{s['id']}/error-triage").json()["cases"]
+    case = next(c for c in listed if c["id"] == posted["id"])
+
+    types = lambda acts: sorted(a["action_type"] for a in acts)  # noqa: E731
+    assert got["safe_next_actions"] and case["safe_next_actions"]
+    assert types(got["safe_next_actions"]) == types(posted["safe_next_actions"])
+    assert types(case["safe_next_actions"]) == types(posted["safe_next_actions"])
+
+
 def test_triage_binds_to_session_and_refreshes_summary(client):
     s = _session(client)
     out = _triage(client, SIG_ERROR, session_id=s["id"]).json()
