@@ -46,7 +46,9 @@ Two cases, depending on where the logs live:
   explain the result conversationally. No confirmation step.
 - **Logs still in a bucket** — this is cloud-side data movement, so it stays a
   confirmed step: propose `plan_access_log_import` to bring them in under a
-  reviewed plan; once the user confirms, read the resulting findings.
+  reviewed plan. Once the user confirms and the import run completes, read its
+  findings; if it finished in the background, pick the result back up later with
+  `read_run_result(run_id)` rather than re-importing.
 
 Either way, route permission decisions to `storageops-security-iam-policy` and
 cost decisions to `storageops-lifecycle-cost`.

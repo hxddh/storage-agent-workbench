@@ -6,6 +6,33 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.20.5] - 2026-06-30
+
+Skill-pack hygiene from a coverage review — agent-native (skills stay on-demand
+knowledge the agent reasons over, never control flow); no new skills yet.
+
+### Changed
+
+- **Protocol skill now routes CORS to a real tool.** `storageops-s3-protocol-compatibility`
+  listed CORS in its triggers but never told the agent how to inspect it; it now
+  points a CORS failure at the read-only `review_bucket_security` (which reads the
+  bucket's CORS rules) — as a conditional capability hint, not a mandatory step.
+- **Access-log skill names `read_run_result`.** When a `plan_access_log_import`
+  finishes in the background, the skill now says to pick the result up with
+  `read_run_result(run_id)` instead of re-importing.
+- **Skill catalog wording is less run-centric** — "run a survey/review inline, or
+  propose a confirmed import" rather than "propose confirmed runs".
+
+### Removed
+
+- **Dead skill-injection path.** Deleted `skills/selection.py` (the lexical
+  selector) and `skills.context.build_skill_context` / `WRAPPER_PREAMBLE` — the
+  legacy eager-injection path superseded by the live catalog + `read_skill`
+  progressive disclosure. Nothing in production used them (offline triage is
+  deterministic and loads no skills); only their own tests did. Tests trimmed
+  accordingly, keeping live-path coverage (catalog, `read_skill`, frontmatter
+  stripping).
+
 ## [0.20.4] - 2026-06-30
 
 ### Fixed
