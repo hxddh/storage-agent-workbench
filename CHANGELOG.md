@@ -6,6 +6,8 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-06-30
+
 ### Fixed
 
 - **Empty-state subtitle no longer overpromises.** "Read-only by default — I'll
