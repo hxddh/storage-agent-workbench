@@ -6,6 +6,27 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.20.6] - 2026-06-30
+
+### Added
+
+- **Two StorageOps skills for gaps the tools already supported** (catalog now 18):
+  - `storageops-inventory-analysis` — how to read an inventory for capacity and
+    object-shape (size/count, size histogram, prefix and storage-class
+    distribution, small-object ratio, largest objects) via `analyze_uploaded_file`
+    (attached file) or a confirmed `plan_inventory_import` (+ `read_run_result`).
+    The fact layer beneath the lifecycle/cost decision.
+  - `storageops-account-posture` — how to use `survey_account` for an account-wide
+    landscape + config posture (logging / inventory / lifecycle / public-access-
+    block per bucket) and where to look first, with `read_run_result` for a
+    backgrounded survey. The no-error audit entry point (vs triage's error path).
+  - Both are written agent-native: on-demand knowledge with adaptive decision
+    trees and capability hints, **not** fixed pipelines (account-posture explicitly
+    says not to reflexively review every bucket); app-native tool names only;
+    guidance-only. `eval-golden-cases` gains a "coverage honesty" check (don't
+    assert a feature absent when `access_denied`; snapshot ≠ trend; visible vs
+    total buckets). Routing relies on the distinct catalog descriptions.
+
 ## [0.20.5] - 2026-06-30
 
 Skill-pack hygiene from a coverage review — agent-native (skills stay on-demand
