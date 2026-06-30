@@ -88,8 +88,10 @@ def normalize_proposal(raw: dict[str, Any]) -> dict[str, Any] | None:
     source_run_ids = [str(x)[:64] for x in (raw.get("source_run_ids") or []) if x][:20]
     return {
         "id": str(raw.get("id") or f"proposal_{uuid.uuid4().hex[:12]}"),
-        "title": redact_text(str(raw.get("title", "")))[:160] or action_type.replace("_", " "),
-        "reason": redact_text(str(raw.get("reason", "")))[:400] or None,
+        # `or ""` (not get(..., "")) so a present-but-null value coerces to "" —
+        # str(None) would otherwise become the literal string "None".
+        "title": redact_text(str(raw.get("title") or ""))[:160] or action_type.replace("_", " "),
+        "reason": redact_text(str(raw.get("reason") or ""))[:400] or None,
         "action_type": action_type,
         "requires_confirmation": True,  # always — proposals never auto-execute
         "confidence": confidence,

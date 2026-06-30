@@ -6,6 +6,18 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.20.7] - 2026-06-30
+
+### Fixed
+
+- **Clicking a suggested next-step no longer drops the literal text "None" into
+  the composer.** A proposal with an explicit null `title`/`reason` was stringified
+  as Python `str(None)` → `"None"` in `normalize_proposal` (the `get(k, "")`
+  default only applies to *absent* keys, not present-but-null ones), which then
+  surfaced as the `ask_user_for_context` composer prefill. Null/None now coerces
+  to `""`, so `title` falls back to the action-type label and `reason` becomes
+  `None` (and the prefilled question is always a real sentence).
+
 ## [0.20.6] - 2026-06-30
 
 ### Added

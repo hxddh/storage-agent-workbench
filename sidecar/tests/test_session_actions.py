@@ -142,6 +142,23 @@ def test_prepare_ask_user_for_context(client):
     assert r["prefill"]["question"]
 
 
+def test_null_title_reason_do_not_become_the_string_none(client):
+    """A proposal with explicit null title/reason must NOT surface the literal
+    'None' (str(None)). Regression: clicking such a proposal put 'None' in the
+    composer."""
+    s = _session(client)
+    # title null → falls back to the action_type label, not "None"
+    r = client.post(f"/sessions/{s['id']}/actions/prepare",
+                    json={"proposal": {"action_type": "ask_user_for_context",
+                                       "title": None, "reason": None}}).json()
+    prop = r["proposal"]
+    assert prop["title"] != "None" and prop["reason"] != "None"
+    assert prop["title"] == "ask user for context"  # action_type label fallback
+    assert prop["reason"] is None
+    # the message-composer prefill is a real question, never "None"
+    assert r["prefill"]["question"] and r["prefill"]["question"] != "None"
+
+
 # --- no automatic execution -------------------------------------------------
 
 
