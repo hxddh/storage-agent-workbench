@@ -295,13 +295,13 @@ any new dangerous capability.
   or mutate anything, run a shell, run free SQL, reach any destructive S3 op, or
   see any secret. Output is redacted + chain-of-thought-stripped + bounded; a
   missing model key fails cleanly and never affects the deterministic summary.
-- **Graded execution, never destructive.** Under the `autonomous_readonly`
-  autonomy policy (default) the agent may EXECUTE read-only runs itself
-  (diagnostic / config-review / account-discovery — real, audited, read-only,
-  wall-clock-bounded); under `assisted` it proposes them. EXPENSIVE/data-moving
-  work (dataset analysis, evidence import/download) and any MUTATING op are
-  **never** auto-run under either policy — they carry `requires_confirmation` and
-  the user acts. There is no auto-download, no auto-remediation, no write tool.
+- **Graded execution, never destructive.** There is no autonomy toggle: the
+  agent always EXECUTES read-only runs itself (config-review / account-survey —
+  real, audited, read-only, wall-clock-bounded) and narrates the result.
+  EXPENSIVE/data-moving work (cloud evidence import/download, large/full scans)
+  and any MUTATING op are **never** auto-run — they carry `requires_confirmation`
+  and the user acts. There is no auto-download, no auto-remediation, no write
+  tool.
 - **Safe persistence.** Session titles/goals/bucket names, messages, findings,
   evidence refs, and summaries are all redaction-passed — never AK/SK/session
   token/Authorization/cookies/presigned URL/model key, never raw logs/rows, never

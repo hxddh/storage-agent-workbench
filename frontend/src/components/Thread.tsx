@@ -620,7 +620,7 @@ export function Thread({
                 ) : it.kind === "run" ? (
                   <RunCard key={it.data.run_id} run={it.data} />
                 ) : (
-                  <TriageCard key={it.data.id} c={it.data} />
+                  <TriageCard key={it.data.id} c={it.data} onRun={runProposal} />
                 ),
               )}
 
