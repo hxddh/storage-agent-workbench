@@ -6,8 +6,15 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.20.3] - 2026-06-30
+
 ### Fixed
 
+- **The thread no longer looks frozen while the agent is generating.** After the
+  tool trace appears, the post-tools / between-rounds wait (often the longest,
+  with no streamed text yet) showed only a lone blinking caret. It now shows an
+  explicit animated "Working… (still running)" indicator until the answer starts
+  streaming.
 - **Error-triage next-step chips survive a reload / session-switch.** The
   deterministic `safe_next_actions` were only on the POST response, so reopening
   a session showed empty chips. `GET /error-triage/{id}` and
@@ -16,9 +23,22 @@ follow semantic versioning once it reaches 1.0.
 
 ### Changed
 
+- **Tool-name consistency (`§2.4`).** The error-triage playbooks, `docs/tools.md`,
+  and the `CLAUDE.md` whitelist now use the agent-facing tool names
+  (`test_addressing_style`, `inspect_endpoint_tls`) that the SKILL.md bodies and
+  agent instructions already use — so guidance never names a tool the agent
+  can't call. (The underlying S3-layer functions keep their names:
+  `test_path_style_vs_virtual_host`, `inspect_tls`.)
 - **`read_run_result` is now listed in the agent's main tool instructions**, not
   only in the survey-timeout note — so the agent knows it can re-read a
   backgrounded survey/review/import result in a later turn instead of re-running.
+- **Stale docs/docstrings** aligned to the single-agent model: `architecture.md`
+  (removed "analysis narrators"; skill context is catalog + `read_skill`
+  progressive disclosure, not eager 1–3 selection; triage flow has no "optional
+  Agent interpretation"); `skills/__init__.py`, `skills/context.py`,
+  `skills/contract.py` (no "triage Agent" / eager-injection framing);
+  `pyproject.toml` (no "agent planner mode"); `summary_builder.py` comment
+  (proposals are free-form, not a fixed allowlist).
 
 ## [0.20.2] - 2026-06-30
 

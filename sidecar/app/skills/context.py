@@ -6,12 +6,13 @@ full method ON DEMAND via the read-only ``read_skill`` tool when it judges the
 skill relevant. This avoids stuffing full bodies into every prompt and lets the
 model — not a keyword matcher — choose.
 
-Two entry points:
+Entry points:
 - ``catalog_text()`` — the always-in-context list of name + description, used by
-  the live (tool-using) session agent alongside the ``read_skill`` tool.
-- ``build_skill_context()`` — for the OFFLINE error-triage agent, which has no
-  tools/credentials: it injects one or two selected skill bodies directly as
-  method guidance (no progressive disclosure is possible without a tool loop).
+  the live (tool-using) session agent alongside the ``read_skill`` tool. This is
+  the live path.
+- ``build_skill_context()`` — a legacy eager-injection helper (selects one or two
+  skill bodies up front). No longer on any production path — retained only for
+  tests; the live agent uses ``catalog_text`` + ``read_skill`` instead.
 
 In both paths the YAML frontmatter (which carries ``recommended_tools`` and other
 runtime artifacts) is stripped before any text reaches the model, and nothing is

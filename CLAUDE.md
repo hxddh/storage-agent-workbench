@@ -225,8 +225,8 @@ Allowed MVP tool groups:
 - `list_objects_v2`
 - `head_object`
 - `test_range_get`
-- `test_path_style_vs_virtual_host`
-- `inspect_tls`
+- `test_addressing_style` (S3 layer: `test_path_style_vs_virtual_host`)
+- `inspect_endpoint_tls` (S3 layer: `inspect_tls`)
 
 ### Access log analysis tools
 

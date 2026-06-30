@@ -66,13 +66,17 @@ Safety:
 - Must limit requested bytes.
 - Must not download full object unless explicitly approved in a future phase.
 
-### test_path_style_vs_virtual_host
+### test_addressing_style
+
+(S3 layer: `test_path_style_vs_virtual_host`)
 
 Purpose:
 
 - Compare path-style and virtual-hosted-style behavior.
 
-### inspect_tls
+### inspect_endpoint_tls
+
+(S3 layer: `inspect_tls`)
 
 Purpose:
 

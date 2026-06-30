@@ -8,8 +8,9 @@ RAG. ``recommended_tools`` and any script/tool mentions inside SKILL.md text are
 treated as conceptual guidance only — the Workbench never registers, exposes, or
 executes them.
 
-Flow: a lightweight selector (`selection`) picks 1–3 candidate skills from
-registry metadata; `context` wraps the selected SKILL.md docs in a bounded,
-tools-disabled wrapper; the existing session / triage Agents reason with session
-evidence + that skill context.
+Flow (progressive disclosure): `context` injects an always-in-context CATALOG
+(skill name + description) and exposes a read-only `read_skill` tool; the single
+conversational session agent loads a SKILL.md body on demand — wrapped in a
+bounded, tools-disabled preamble — and reasons with session evidence + that skill
+context.
 """
