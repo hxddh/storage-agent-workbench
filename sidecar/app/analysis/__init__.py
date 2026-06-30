@@ -1,4 +1,4 @@
-"""Local analysis engine (Phase 05).
+"""Local analysis engine.
 
 DuckDB / PyArrow / pandas back the ``access_log_analysis`` and
 ``inventory_analysis`` run types. SQLite still holds only app metadata; the

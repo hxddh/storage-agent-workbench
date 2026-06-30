@@ -1,4 +1,4 @@
-"""Inventory analysis run executor (Phase 05)."""
+"""Inventory analysis run executor."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def execute_inventory_run(conn: sqlite3.Connection, run_id: str) -> None:
             conn, run_id, "generate_markdown_report", {"run_id": run_id},
             lambda: {
                 "report_path": config.rel_path(
-                    write(run_id, render_inventory(run, ds_info, metrics, findings, summary, ""))
+                    write(run_id, render_inventory(run, ds_info, metrics, findings, summary))
                 ),
                 "format": "markdown",
             },

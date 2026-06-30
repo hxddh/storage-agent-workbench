@@ -1,4 +1,4 @@
-"""Packaged entrypoint for the Storage Agent sidecar (Phase 08).
+"""Packaged entrypoint for the Storage Agent sidecar.
 
 This is the entrypoint PyInstaller bundles and that the Tauri desktop app
 launches as a sidecar process. It is a thin, production-oriented wrapper around

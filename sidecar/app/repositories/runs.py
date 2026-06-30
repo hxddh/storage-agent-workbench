@@ -1,4 +1,4 @@
-"""Run + message repository (Phase 04)."""
+"""Run + message repository."""
 
 from __future__ import annotations
 

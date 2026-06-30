@@ -128,7 +128,7 @@ def post_message(
     if row["run_type"] not in _EXECUTABLE:
         raise HTTPException(
             status_code=409,
-            detail=f"run_type '{row['run_type']}' is not implemented in Phase 05",
+            detail=f"run_type '{row['run_type']}' has no executable message turn",
         )
 
     repo.add_message(conn, run_id, role="user", content=body.content)

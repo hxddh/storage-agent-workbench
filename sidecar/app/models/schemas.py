@@ -110,7 +110,7 @@ class ModelProviderTestResult(BaseModel):
     detail: str
 
 
-# --- S3 tool request bodies (Phase 03) --------------------------------------
+# --- S3 tool request bodies --------------------------------------
 
 
 class TestCredentialsRequest(BaseModel):
@@ -163,7 +163,7 @@ class InspectTlsRequest(BaseModel):
     endpoint_url: str = Field(min_length=1)
 
 
-# --- Analysis runs (Phase 04) -----------------------------------------------
+# --- Analysis runs -----------------------------------------------
 
 RunType = Literal[
     "diagnostic",
@@ -185,7 +185,7 @@ class RunCreate(BaseModel):
     max_buckets: int | None = Field(default=None, ge=1, le=500)
     include_pattern: str | None = None
     exclude_pattern: str | None = None
-    # Optional session this run belongs to (Phase 16).
+    # Optional session this run belongs to.
     session_id: str | None = None
 
 
@@ -256,7 +256,7 @@ class ReportOut(BaseModel):
     content: str
 
 
-# --- Datasets (Phase 05) ----------------------------------------------------
+# --- Datasets ----------------------------------------------------
 
 DatasetType = Literal["access_log", "inventory"]
 
@@ -292,7 +292,7 @@ class SessionDatasetUploadResponse(BaseModel):
     status: str
 
 
-# --- Account discovery (Phase 14) -------------------------------------------
+# --- Account discovery -------------------------------------------
 
 
 class EvidenceSourceOut(BaseModel):
@@ -340,7 +340,7 @@ class AccountProfileOut(BaseModel):
     created_at: str | None = None
 
 
-# --- Managed evidence import (Phase 15) -------------------------------------
+# --- Managed evidence import -------------------------------------
 
 EvidenceSourceType = Literal["inventory", "access_log"]
 
@@ -399,7 +399,7 @@ class EvidenceImportRunResult(BaseModel):
     downloaded_total_bytes: int = 0
 
 
-# --- Sessions (Phase 16) ----------------------------------------------------
+# --- Sessions ----------------------------------------------------
 
 SessionStatus = Literal["active", "archived"]
 
@@ -475,11 +475,11 @@ class SessionMessageCreate(BaseModel):
 
 
 class ActionRequest(BaseModel):
-    """A next-action proposal to preview / prepare (Phase 17)."""
+    """A next-action proposal to preview / prepare."""
     proposal: dict
 
 
-# --- Error triage (Phase 18) ------------------------------------------------
+# --- Error triage ------------------------------------------------
 
 ErrorInputKind = Literal["error_code", "http_response", "sdk_stack_trace", "cli_output", "mixed"]
 

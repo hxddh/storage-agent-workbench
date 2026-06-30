@@ -1,4 +1,4 @@
-"""Access-log analysis tools (Phase 05).
+"""Access-log analysis tools.
 
 Reads a user-uploaded local access-log file, normalizes it into a DuckDB
 ``access_logs`` table, and computes metrics. Client IPs are masked and any

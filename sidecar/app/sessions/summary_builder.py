@@ -1,4 +1,4 @@
-"""Deterministic, sanitized session summary builder (Phase 16).
+"""Deterministic, sanitized session summary builder.
 
 Reads ONLY already-sanitized run artifacts (run_type/status/final_summary,
 sanitized tool_call outputs, the persisted account profile) and produces a
@@ -212,7 +212,7 @@ def build(conn: sqlite3.Connection, session_id: str) -> dict[str, Any]:
             facts.extend(af)
             evidence_refs.extend(ar)
 
-    # Fold in recent error-triage cases (Phase 18) — sanitized, bounded.
+    # Fold in recent error-triage cases — sanitized, bounded.
     from ..repositories import error_triage as triage_repo
     for c in triage_repo.list_for_session(conn, session_id)[:10]:
         facts.append({"text": f"Error triage: {redact_text(str(c.get('summary', '')))[:300]}",

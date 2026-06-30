@@ -1,4 +1,4 @@
-"""Load the bundled StorageOps skill pack (Phase 19).
+"""Load the bundled StorageOps skill pack.
 
 Reads ``bundled_skillpacks/storageops/skill-registry.yaml`` + each
 ``skills/*/SKILL.md`` and exposes minimal metadata for selection plus the raw

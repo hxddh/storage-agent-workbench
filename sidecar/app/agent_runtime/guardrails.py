@@ -1,4 +1,4 @@
-"""Local guardrails for agent planner mode (Phase 07).
+"""Local guardrails for the agent's tool use.
 
 These are enforced in code, NOT merely in the model prompt:
 - tool allowlist + forbidden-tool denial
@@ -65,7 +65,7 @@ FORBIDDEN_PHRASES = {
 # Back-compat alias (some callers/tests reference the old name).
 FORBIDDEN_TOOLS = FORBIDDEN_TOKENS
 
-# Approval framework categories (Phase 07: data model only; nothing dangerous runs).
+# Approval framework categories.
 NO_APPROVAL_REQUIRED = "no_approval_required"
 APPROVAL_REQUIRED = "approval_required"
 ALWAYS_FORBIDDEN = "always_forbidden"

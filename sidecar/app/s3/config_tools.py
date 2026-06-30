@@ -1,4 +1,4 @@
-"""Read-only bucket configuration review tools (Phase 06).
+"""Read-only bucket configuration review tools.
 
 Every function here uses ONLY read-only S3 APIs (``get_*`` / ``list_*``). There
 is no put/delete/create/update of any kind, no auto-remediation, and no object

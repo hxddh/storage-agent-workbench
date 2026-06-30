@@ -1,4 +1,4 @@
-"""Run launch orchestration (Phase 04/05).
+"""Run launch orchestration.
 
 A run executes in a background thread with its own SQLite connection, publishing
 events to the in-memory bus. No Redis/Celery/external queue. Tests monkeypatch

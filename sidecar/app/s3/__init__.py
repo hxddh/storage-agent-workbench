@@ -1,4 +1,4 @@
-"""Whitelisted, READ-ONLY S3-compatible tool layer (Phase 03).
+"""Whitelisted, READ-ONLY S3-compatible tool layer.
 
 This package exposes ONLY non-destructive, read-only operations. There is no
 PutObject, DeleteObject, DeleteObjects, DeleteBucket, PutBucketPolicy,

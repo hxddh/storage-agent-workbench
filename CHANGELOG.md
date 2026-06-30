@@ -6,6 +6,40 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.20.2] - 2026-06-30
+
+Post-v0.20 review cleanup — no behavior change beyond stronger redaction.
+
+### Security
+
+- **Shared redactor now scrubs model API keys (`sk-…`).** Defense-in-depth: a
+  model key pasted into the chat or echoed in a provider error is masked
+  everywhere the shared redactor runs (session messages, audit logs, reports),
+  not just on the triage path. Aligns with security rule #15.
+
+### Removed (dead code from the v0.20 single-agent migration)
+
+- `analysis/drilldown.py` + its test — the bounded-aggregate tools whose only
+  consumer (the deleted in-run analysis narrator) is gone.
+- `runs/analysis_report.py`: `agent_analysis_md` + `render_agent_report` (the
+  "Agent Interpretation" / "Agent mode" report sections) and the now-empty
+  `agent_section` parameter on the dataset-report renderers.
+- Frontend dead API: `uploadDataset` (run-scoped upload) and `listDatasets`.
+- `next_actions.ALLOWED_ACTION_TYPES` dead back-compat alias.
+
+### Changed (stale docs / comments)
+
+- `docs/architecture.md`: `account_discovery` description no longer claims an
+  "Agent mode 422 / future phase" — it's the agent's `survey_account` tool.
+- `CLAUDE.md`: dropped the dead `optimization_report` capability bullet.
+- `agent_runtime/__init__.py`, `guardrails.py`, `main.py`: docstrings no longer
+  describe an "agent planner mode" (there is one conversational agent).
+- `next_actions.normalize_proposal` docstring: clarified it accepts any safe
+  free-form action_type (not a fixed allowlist).
+- Frontend `RunEvent`: removed the never-emitted `plan` / `tool_selected` types.
+- Stripped historical "(Phase NN)" provenance tags from module docstrings
+  (migration provenance comments kept).
+
 ## [0.20.1] - 2026-06-30
 
 ### Fixed
@@ -44,9 +78,10 @@ work are all kept — they are the security floor.
   agent.
 - **In-run interpretation narrators.** Deleted
   `agent_runtime/analysis_agent.py` (the `access_log_analysis` /
-  `inventory_analysis` narrator + `analysis/drilldown.py` aggregate tools) and
-  `error_triage/triage_agent.py`. Analysis and triage are deterministic-only;
-  the conversational agent narrates the sanitized result if asked.
+  `inventory_analysis` narrator, which used the `analysis/drilldown.py` aggregate
+  tools) and `error_triage/triage_agent.py`. Analysis and triage are
+  deterministic-only; the conversational agent narrates the sanitized result if
+  asked. (`analysis/drilldown.py` was left orphaned and is removed in 0.20.2.)
 - **`planner_mode`.** Dropped from the API (`RunCreate`/`RunSummary`/`RunDetail`,
   `ErrorTriageRequest`), the run SSE `run_started` event, the frontend types, and
   the run-detail UI. `run_service.run_sync` always dispatches a run to its

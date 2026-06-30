@@ -1,9 +1,9 @@
-"""Managed evidence-import endpoints (Phase 15).
+"""Managed evidence-import endpoints.
 
 Flow: plan -> (explicit) confirm -> run. Nothing is downloaded until a plan is
 explicitly confirmed; confirmation is recorded in approval_events + audit_logs.
 Import targets are validated against the evidence sources DISCOVERED by
-account_discovery (Phase 14) — the caller cannot point this at an arbitrary
+account_discovery — the caller cannot point this at an arbitrary
 bucket/key. On run, only the confirmed evidence files are downloaded (bounded by
 max_files / max_bytes) and fed into the existing inventory_analysis /
 access_log_analysis path.
@@ -35,7 +35,7 @@ from ..security.redaction import redact_text
 router = APIRouter(prefix="/evidence-imports", tags=["evidence-imports"])
 
 
-# The import API uses "access_log"; the discovered evidence source (Phase 14)
+# The import API uses "access_log"; the discovered evidence source
 # is named "server_access_logging".
 _SOURCE_TYPE_ALIAS = {"access_log": "server_access_logging", "inventory": "inventory"}
 

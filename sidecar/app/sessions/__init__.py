@@ -1,4 +1,4 @@
-"""Session-centered workspace context (Phase 16).
+"""Session-centered workspace context.
 
 A Session ties together the auditable runs, the evidence behind them, the
 evidence-driven findings, a deterministic sanitized summary, and a lightweight

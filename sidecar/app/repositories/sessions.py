@@ -1,4 +1,4 @@
-"""Session repository (Phase 16).
+"""Session repository.
 
 A Session is a persistent working context linking runs, evidence references,
 findings, a deterministic summary, and a lightweight message thread. NOT a

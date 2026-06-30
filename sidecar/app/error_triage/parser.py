@@ -1,4 +1,4 @@
-"""Deterministic parser for pasted S3 / object-storage errors (Phase 18).
+"""Deterministic parser for pasted S3 / object-storage errors.
 
 Extracts structured signals from an ALREADY-REDACTED error blob. It never calls
 an LLM or S3; it only pattern-matches. Uncertainty is preserved — unknown fields

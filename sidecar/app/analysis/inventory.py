@@ -1,4 +1,4 @@
-"""Inventory analysis tools (Phase 05).
+"""Inventory analysis tools.
 
 Reads a user-uploaded inventory file (CSV or Parquet), normalizes it into a
 DuckDB ``inventory_objects`` table, and computes capacity / age / distribution

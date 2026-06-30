@@ -1,4 +1,4 @@
-"""Account-level read-only discovery tools (Phase 14).
+"""Account-level read-only discovery tools.
 
 Builds on the Phase 06 read-only config readers (``config_tools._read``) to
 produce, per bucket:

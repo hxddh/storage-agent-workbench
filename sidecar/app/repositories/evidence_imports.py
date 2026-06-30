@@ -1,4 +1,4 @@
-"""Managed evidence-import repository (Phase 15).
+"""Managed evidence-import repository.
 
 Records bounded, confirmation-gated imports of evidence files (inventory /
 access logs) discovered by account_discovery. Bucket / prefix / object key and

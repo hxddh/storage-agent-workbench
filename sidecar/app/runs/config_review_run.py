@@ -1,4 +1,4 @@
-"""Bucket configuration review run executor (Phase 06).
+"""Bucket configuration review run executor.
 
 Drives the six READ-ONLY config review tools through the shared tool runner so
 every call is recorded against the run. No mutation, no auto-remediation, no

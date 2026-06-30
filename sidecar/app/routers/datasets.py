@@ -1,4 +1,4 @@
-"""Dataset endpoints (Phase 05): upload + list + get.
+"""Dataset endpoints: upload + list + get.
 
 Uploaded files are copied into the per-run raw directory
 (``data/runs/{run_id}/raw/``). Only the stored RELATIVE path is recorded.

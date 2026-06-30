@@ -1,4 +1,4 @@
-"""Deterministic diagnostic run executor (Phase 04).
+"""Deterministic diagnostic run executor.
 
 Drives the existing Phase 03 read-only tools through the shared tool runner so
 every call is recorded against the run. Emits SSE events as it goes. No LLM,

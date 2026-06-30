@@ -13,7 +13,6 @@ import type {
   TriageCase,
   CloudProvider,
   CredentialsTestResult,
-  Dataset,
   HeadBucketResult,
   ListObjectsResult,
   ModelProvider,
@@ -310,34 +309,9 @@ export const getSessionTriage = (sessionId: string) =>
 
 export const runEventsUrl = (id: string) => `${sidecarBaseUrl()}/runs/${id}/events`;
 
-// --- Datasets (Phase 05) ---
-
-export async function uploadDataset(
-  runId: string,
-  file: File,
-  datasetType: "access_log" | "inventory",
-  name?: string,
-): Promise<{ dataset_id: string; status: string }> {
-  const form = new FormData();
-  form.append("file", file);
-  form.append("dataset_type", datasetType);
-  if (name) form.append("name", name);
-  const res = await fetch(`${sidecarBaseUrl()}/runs/${runId}/datasets/upload`, {
-    method: "POST",
-    body: form, // browser sets multipart boundary; no secrets involved
-  });
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try {
-      const b = await res.json();
-      if (b?.detail) detail = typeof b.detail === "string" ? b.detail : JSON.stringify(b.detail);
-    } catch {
-      /* ignore */
-    }
-    throw new Error(detail);
-  }
-  return res.json();
-}
+// --- Datasets ---
+// Datasets are attached to a SESSION (the agent analyzes them as a tool). There
+// is no run-scoped upload or dataset-list surface in the agent-native UI.
 
 // Attach a data file to a SESSION (agent-native analysis). The in-chat agent
 // then analyzes it as a tool and answers inline — no deterministic analysis run.
@@ -365,8 +339,6 @@ export async function uploadSessionDataset(
   }
   return res.json();
 }
-
-export const listDatasets = () => request<Dataset[]>("/datasets");
 
 // --- Settings: secret-vault status ---
 

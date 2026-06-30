@@ -1,4 +1,4 @@
-"""Account discovery run executor (Phase 14).
+"""Account discovery run executor.
 
 Deterministic, account-level read-only discovery:
 
