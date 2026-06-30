@@ -1,10 +1,11 @@
-"""Tests for Phase 19 skills-only StorageOps context injection.
+"""Tests for the skills-only StorageOps context.
 
 Skills are vendored SKILL.md + registry used as PROFESSIONAL METHOD context for
-the existing Agent — no tools, scripts, CLI, runtime, API, DB, or RAG. These
-verify loading, metadata-driven selection (no hard-coded error mapping, no
-diagnosis output), the tools-disabled context wrapper, injection into both
-agents, the minimal output contract, and that no forbidden surface is added.
+the single conversational agent — no tools, scripts, CLI, runtime, API, DB, or
+RAG. These verify loading, the always-in-context catalog + on-demand `read_skill`
+progressive disclosure (the agent self-routes; no hard-coded error→skill
+mapping), frontmatter stripping, the minimal output contract, and that no
+forbidden surface is added.
 """
 
 import json
@@ -17,7 +18,7 @@ from app import config
 from app.agent_runtime import session_agent
 from app.skills import context as skill_context
 from app.skills import contract as skill_contract
-from app.skills import loader, selection
+from app.skills import loader
 
 ACCESS = "AKIAIOSFODNN7EXAMPLE"
 MODEL_KEY = "sk-MODELSECRETDONOTLEAK1234"
@@ -95,20 +96,16 @@ def test_recommended_tools_not_in_metadata_or_context():
         assert not hasattr(s, "recommended_tools")
 
 
-def test_skill_context_strips_frontmatter_for_offline_triage():
-    # SKILL.md begins with a YAML frontmatter; none of it may reach the prompt.
+def test_read_skill_strips_frontmatter():
+    # SKILL.md begins with a YAML frontmatter; none of it may reach the prompt via
+    # the live read_skill path (recommended_tools etc. must never be exposed).
     raw = loader.load_skill_body("storageops-triage")
     assert raw.lstrip().startswith("---")  # frontmatter block exists in source
 
-    ctx = skill_context.build_skill_context("object storage S3 error triage 403 AccessDenied SlowDown")
-    text = ctx["text"]
-    assert "recommended_tools" not in text           # frontmatter key gone
-    assert "---\nname:" not in text                  # frontmatter block gone
-    assert "estimated_tokens" not in text            # another frontmatter-only key
-    # Offline-triage wrapper frames skills as method guidance (no live tools),
-    # without the old self-contradictory "tools disabled" language.
-    assert "professional diagnostic method" in text
-    assert "=== StorageOps skill:" in text
+    text = skill_context.read_skill_text("storageops-triage")
+    assert text and "recommended_tools" not in text  # frontmatter key gone
+    assert "---\nname:" not in text                   # frontmatter block gone
+    assert "estimated_tokens" not in text             # another frontmatter-only key
 
 
 def test_strip_frontmatter_helper():
@@ -118,52 +115,6 @@ def test_strip_frontmatter_helper():
     assert "recommended_tools" not in out and "scan_secrets" not in out
     # a body without frontmatter is unchanged
     assert skill_context.strip_frontmatter("# No frontmatter\nx") == "# No frontmatter\nx"
-
-
-# --- selection --------------------------------------------------------------
-
-
-def test_selector_returns_candidates_from_metadata():
-    cands = selection.candidate_dicts("403 AccessDenied bucket policy IAM permission")
-    assert 1 <= len(cands) <= selection.MAX_CANDIDATES
-    assert all(set(c.keys()) == {"name", "match_reason", "selection_basis"} for c in cands)
-
-
-def test_selector_output_has_no_diagnosis_fields():
-    cands = selection.candidate_dicts("SignatureDoesNotMatch region endpoint")
-    for c in cands:
-        for forbidden in ("diagnosis", "root_cause", "remediation", "confidence",
-                          "score", "next_check", "fix"):
-            assert forbidden not in c
-
-
-def test_selector_fallback_is_metadata_auto_route():
-    cands = selection.candidate_dicts("zzzznomatchatall qwerty")
-    # Falls back to the registry auto_route skill, not a hard-coded mapping.
-    assert cands and cands[0]["selection_basis"] == "auto_route_fallback"
-
-
-def test_selector_matches_error_code_despite_spacing(monkeypatch):
-    """A keyword like 'SignatureDoesNotMatch' matches even when the log spaced or
-    punctuated it (report 5.1), without a hard-coded error→skill map."""
-    spaced = selection.candidate_dicts("error: Signature Does Not Match on PUT")
-    joined = selection.candidate_dicts("SignatureDoesNotMatch")
-    names_spaced = {c["name"] for c in spaced}
-    names_joined = {c["name"] for c in joined}
-    # Same skill is selected either way, and it's a real keyword match (not fallback).
-    assert names_spaced == names_joined and names_spaced
-    assert all(c["selection_basis"] != "auto_route_fallback" for c in spaced)
-
-
-# --- context wrapper --------------------------------------------------------
-
-
-def test_offline_triage_skill_context_is_method_guidance():
-    ctx = skill_context.build_skill_context("429 SlowDown throttling performance")
-    assert ctx["skills"]
-    assert "professional diagnostic method" in ctx["text"]
-    assert len(ctx["text"]) <= skill_context.MAX_TOTAL_CHARS + 2000  # bounded
-    assert len(ctx["skills"]) <= skill_context.MAX_SKILLS
 
 
 def test_session_agent_uses_progressive_disclosure_catalog():
