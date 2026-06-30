@@ -345,10 +345,11 @@ async def post_session_message_stream(
         final: dict[str, Any] = {}
 
         async def drive() -> None:
-            result, activity, skill_names = session_agent.build_stream(
+            result, activity, skill_names, finalize = session_agent.build_stream(
                 dict(row), summary, recent, body.content, creds, conn, body.turn_id,
                 attachments=attachments)
-            async for kind, data in session_agent.stream_events_for(result, activity, skill_names):
+            async for kind, data in session_agent.stream_events_for(
+                result, activity, skill_names, finalize):
                 if kind == "final":
                     final["data"] = data
                 else:

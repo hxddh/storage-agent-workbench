@@ -188,7 +188,12 @@ _EXECUTION_CLAUSE = (
     "completed result.\n"
     "Data-moving work (evidence import/download, large scans) is never auto-run — "
     "propose it as a next step. A deterministic saved REPORT is only created when "
-    "the user explicitly wants an auditable artifact."
+    "the user explicitly wants an auditable artifact.\n"
+    "CONVERGE: your investigation has a bounded number of steps. Don't sprawl — "
+    "probe what the question needs, and as you establish durable conclusions "
+    "record them with record_finding / note_fact so they are never lost. Aim to "
+    "answer well within your budget; if a complete answer would need more steps, "
+    "give your best grounded answer so far and say what remains."
 )
 
 
@@ -283,6 +288,49 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str) -> A
                        max_tokens=_MAX_COMPLETION_TOKENS, parallel_tool_calls=False)
 
 
+# --- graceful step-budget finalize -----------------------------------------
+# When the agent exhausts its turn budget (max_turns) the OpenAI Agents SDK
+# raises MaxTurnsExceeded. That must NOT surface as a hard error: instead we make
+# ONE tool-less model call that synthesizes a best-effort answer from the work
+# already done. Tools are disabled, so the model can only emit text — the call is
+# guaranteed to terminate with a grounded answer. The turn budget is preserved
+# (N tool-loop turns + 1 tool-less finalize); nothing new can be probed here.
+
+_FINALIZE_FALLBACK = (
+    "I reached my investigation step budget before I could finish this. The steps "
+    "I completed are shown above — tell me to continue and I'll pick up from there."
+)
+
+
+def _is_max_turns(exc: BaseException) -> bool:
+    """True if exc is the SDK's max-turns signal. Matched by class name + message
+    so we don't couple to the SDK's exception import path."""
+    return type(exc).__name__ == "MaxTurnsExceeded" or "max turns" in str(exc).lower()
+
+
+def _finalize_directive(activity: list[dict[str, Any]] | None) -> str:
+    rows = activity or []
+    trace = "\n".join(
+        f"- {a.get('tool', '')} {a.get('target', '')}: {a.get('result', '')}".strip()
+        for a in rows[-40:]
+    ) or "- (no tool calls completed)"
+    return (
+        "\n\n[STEP BUDGET REACHED] You have used your investigation step budget — "
+        "do NOT attempt any more tools. Using the context above and the "
+        "investigation trace below, write your BEST answer now from what you "
+        "already gathered. Be explicit that it is based on the investigation so "
+        "far and may be incomplete, and offer to continue if the user wants a "
+        "deeper look.\nInvestigation trace so far:\n" + trace
+    )
+
+
+def _finalize_agent_and_prompt(creds: dict[str, Any], prompt: str,
+                               activity: list[dict[str, Any]] | None):
+    """A TOOL-LESS agent + the original prompt augmented with a finalize directive
+    and the investigation trace. Tools=[] guarantees the next call emits text."""
+    return _make_agent(creds, [], instructions_for()), prompt + _finalize_directive(activity)
+
+
 def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, Any]] | None,
                  session_id: str | None, turn_id: str | None = None) -> list[Any]:
     """The agent's full read-only toolset (no autonomy toggle — always available)."""
@@ -312,8 +360,19 @@ def _sdk_session_loop(spec: dict[str, Any]) -> Any:
         tools = _build_tools(conn, function_tool, spec.get("activity"),
                              spec.get("session_id"), spec.get("turn_id"))
         agent = _make_agent(creds, tools, spec["instructions"])
-        result = Runner.run_sync(agent, spec["prompt"], max_turns=_MAX_TURNS)
-        return getattr(result, "final_output", "")
+        try:
+            result = Runner.run_sync(agent, spec["prompt"], max_turns=_MAX_TURNS)
+            return getattr(result, "final_output", "")
+        except Exception as exc:  # noqa: BLE001
+            if not _is_max_turns(exc):
+                raise
+            # Step budget hit → one tool-less call to synthesize a grounded answer.
+            try:
+                fa, fp = _finalize_agent_and_prompt(creds, spec["prompt"], spec.get("activity"))
+                fr = Runner.run_sync(fa, fp, max_turns=2)
+                return getattr(fr, "final_output", "") or _FINALIZE_FALLBACK
+            except Exception:  # noqa: BLE001 - finalize must never re-raise
+                return _FINALIZE_FALLBACK
     except AgentUnavailable:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -453,21 +512,51 @@ def build_stream(
     # uses a per-run client so concurrent sessions don't race on SDK globals.
     agent = _make_agent(creds, tools, instructions_for())
     result = Runner.run_streamed(agent, prompt, max_turns=_MAX_TURNS)
-    return result, activity, skill_names
+
+    async def _finalize() -> str:
+        """One tool-less call to synthesize a grounded answer when the step budget
+        is hit mid-stream. Never raises — returns a safe fallback on any error."""
+        try:
+            fa, fp = _finalize_agent_and_prompt(creds, prompt, activity)
+            fr = await Runner.run(fa, fp, max_turns=2)
+            return getattr(fr, "final_output", "") or _FINALIZE_FALLBACK
+        except Exception:  # noqa: BLE001
+            return _FINALIZE_FALLBACK
+
+    return result, activity, skill_names, _finalize
 
 
-async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_names: list[str]):
+async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_names: list[str],
+                            finalize=None):
     """Yield ('delta', text) and ('tool', record) during the run, then
-    ('final', contract) when complete."""
+    ('final', contract) when complete.
+
+    If the run hits its step budget (max_turns) and a ``finalize`` callable was
+    provided, the cap is NOT surfaced as an error: we flush the tool trace, run a
+    tool-less finalize to synthesize a grounded answer, and end with a normal
+    'final'. The client therefore never sees a max-turns error (and never
+    double-runs via the blocking fallback)."""
     from openai.types.responses import ResponseTextDeltaEvent
     emitted = 0
-    async for event in result.stream_events():
-        if getattr(event, "type", "") == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
-            if event.data.delta:
-                yield ("delta", event.data.delta)
+    try:
+        async for event in result.stream_events():
+            if getattr(event, "type", "") == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+                if event.data.delta:
+                    yield ("delta", event.data.delta)
+            while len(activity) > emitted:
+                yield ("tool", activity[emitted])
+                emitted += 1
+    except Exception as exc:  # noqa: BLE001
+        if finalize is None or not _is_max_turns(exc):
+            raise
         while len(activity) > emitted:
             yield ("tool", activity[emitted])
             emitted += 1
+        text = await finalize()
+        if text:
+            yield ("delta", text)
+        yield ("final", _finalize_contract(text or "", skill_names, activity))
+        return
     while len(activity) > emitted:
         yield ("tool", activity[emitted])
         emitted += 1

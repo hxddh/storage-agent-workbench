@@ -6,6 +6,28 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.20.4] - 2026-06-30
+
+### Fixed
+
+- **A step-budget (`max_turns`) limit no longer breaks the session.** Previously
+  a complex investigation that exhausted the turn budget surfaced a hard
+  "Max turns (16) exceeded" error, lost the whole turn, showed a misleading "open
+  settings" action, and (because the failed stream fell back to the blocking
+  turn) re-ran the entire agent a second time. Now, when the budget is reached,
+  the agent makes one **tool-less finalize call** that synthesizes a grounded
+  best-effort answer from the investigation so far (explicitly marked as possibly
+  incomplete, with an offer to continue). The turn budget is unchanged and still
+  bounded (N tool-loop turns + 1 tool-less finalize); the client never sees a
+  max-turns error and never double-runs. The agent is also instructed to converge
+  and checkpoint findings (`record_finding` / `note_fact`) as it works, so a
+  "continue" follow-up resumes from real context.
+- **The model chip refreshes after first-run configuration.** Adding the first
+  model provider through the Settings drawer (e.g. via the first-run wizard)
+  changed neither sidecar-readiness nor the active session, so the composer chip
+  stayed on "Add model" until a session switch — even though chat already worked.
+  The chip now re-fetches when the Settings drawer closes.
+
 ## [0.20.3] - 2026-06-30
 
 ### Fixed

@@ -79,12 +79,14 @@ export function Thread({
   onOpenSettings,
   onChanged,
   sidecarReady,
+  settingsOpen,
 }: {
   sessionId: string | null;
   onSessionCreated: (id: string) => void;
   onOpenSettings: () => void;
   onChanged: () => void;
   sidecarReady: boolean;
+  settingsOpen: boolean;
 }) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [triage, setTriage] = useState<TriageCase[]>([]);
@@ -138,6 +140,16 @@ export function Thread({
     if (sidecarReady) refreshModel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sidecarReady]);
+
+  // Re-fetch when the Settings drawer CLOSES: adding the first model provider
+  // there (e.g. via the first-run wizard) changes neither sidecarReady nor
+  // sessionId, so the composer chip would otherwise stay on "Add model" until a
+  // session switch — even though chat already works (the backend resolves the
+  // provider per turn). Refetching on close keeps the chip in sync.
+  useEffect(() => {
+    if (!settingsOpen && sidecarReady) refreshModel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsOpen]);
 
   const reload = async (id: string | null) => {
     if (!id) {
