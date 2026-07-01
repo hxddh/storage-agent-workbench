@@ -26,9 +26,8 @@ def test_request_above_ceiling_is_clamped_to_max():
     assert g.bound_tool_args("list_objects_v2", {"max_keys": 999999})["max_keys"] == g.AGENT_MAX_LIST_KEYS == 1000
 
 
-def test_full_scan_above_ceiling_requires_approval():
-    assert g.approval_category("list_objects_v2", {"max_keys": 5000}) == g.APPROVAL_REQUIRED
-    assert g.approval_category("list_objects_v2", {"max_keys": 1000}) == g.NO_APPROVAL_REQUIRED
+# Note: there is no `approval_category` gate — a request above the ceiling is
+# CLAMPED (bounds, not gates), never converted into a human-approval requirement.
 
 
 # --- token-precise forbidden matching --------------------------------------

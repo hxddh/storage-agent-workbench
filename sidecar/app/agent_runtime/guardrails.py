@@ -1,11 +1,20 @@
 """Local guardrails for the agent's tool use.
 
 These are enforced in code, NOT merely in the model prompt:
-- tool allowlist + forbidden-tool denial
+- forbidden-tool denial (defense-in-depth: `is_forbidden_tool` rejects any name
+  carrying a dangerous token or a mutating-op phrase — used to sanitize proposed
+  action slugs, and asserted over the agent's registered tools in tests)
 - tool argument bounds (e.g. list max_keys, range size)
 - no-secret assertions on context and outputs
 - output sanitization/bounding before results reach the LLM
 - report sanitization before a report is saved
+
+The tool *allowlist* is the curated set of `@function_tool`-decorated functions
+registered in `session_tools` / `session_action_tools` / `session_analysis_tools`
+/ `session_memory_tools` — that registration IS the whitelist (there is no second
+static name-set to keep in sync, and no runtime name-match gate: adding a
+read-only tool must not require editing a second list). The forbidden-token
+denylist below is the belt-and-suspenders that catches a mis-added mutating tool.
 """
 
 from __future__ import annotations
@@ -19,34 +28,18 @@ SAMPLE_LIMIT = 20
 # List sampling in agent mode is graded, not silently clamped to a tiny cap:
 # when the caller doesn't ask for a size it gets DEFAULT; it may explicitly
 # request up to MAX (which matches the S3 layer's own hard cap, so a deliberate
-# wider sample is honored instead of dropped to the default); beyond MAX is a
-# full scan and requires an explicit, confirmed run (approval_category).
+# wider sample is honored instead of dropped to the default); a request beyond
+# MAX is CLAMPED to MAX (bounds, not gates) — there is no human-approval path.
 AGENT_DEFAULT_LIST_KEYS = 100
 AGENT_MAX_LIST_KEYS = 1000  # bounded no-approval ceiling (== S3 hard cap)
 AGENT_MAX_RANGE_BYTES = 1024 * 1024  # 1 MiB no-approval ceiling
-
-# The ONLY tools an agent may call (the existing whitelist).
-ALLOWED_TOOLS = {
-    # diagnostic / read-only S3
-    "test_credentials", "head_bucket", "list_objects_v2", "head_object",
-    "test_path_style_vs_virtual_host", "inspect_tls",
-    # analysis
-    "detect_log_format", "import_access_logs", "analyze_access_logs",
-    "import_inventory_file", "analyze_inventory",
-    # config review
-    "get_bucket_config_summary", "review_bucket_security", "review_bucket_lifecycle",
-    "review_bucket_observability", "review_bucket_cost_optimization",
-    "review_bucket_performance_profile",
-    # report
-    "generate_markdown_report",
-}
 
 # Forbidden surface, matched on whole NAME TOKENS (split on non-alphanumeric),
 # not raw substrings — so legitimate names like `test_credentials` or
 # `inspect_endpoint_tls` are never falsely blocked by an incidental substring
 # (the old check forbade anything merely *containing* "client", "sql", "code"…).
-# The tool allowlist (`check_tool_allowed`) remains the primary gate; this is
-# defense-in-depth against a mis-added tool. Single dangerous tokens:
+# The curated tool registration is the primary whitelist; this denylist is
+# defense-in-depth against a mis-added mutating tool. Single dangerous tokens:
 FORBIDDEN_TOKENS = {
     "shell", "bash", "sh", "subprocess", "exec", "eval", "system", "popen",
     "python", "sql", "query", "boto3", "client",
@@ -64,11 +57,6 @@ FORBIDDEN_PHRASES = {
 }
 # Back-compat alias (some callers/tests reference the old name).
 FORBIDDEN_TOOLS = FORBIDDEN_TOKENS
-
-# Approval framework categories.
-NO_APPROVAL_REQUIRED = "no_approval_required"
-APPROVAL_REQUIRED = "approval_required"
-ALWAYS_FORBIDDEN = "always_forbidden"
 
 
 class GuardrailBlocked(Exception):
@@ -95,22 +83,6 @@ def is_forbidden_tool(name: str) -> bool:
         if any(tuple(tokens[i:i + n]) == phrase for i in range(len(tokens) - n + 1)):
             return True
     return False
-
-
-def check_tool_allowed(name: str) -> None:
-    """Raise GuardrailBlocked unless ``name`` is explicitly allowlisted."""
-    if is_forbidden_tool(name):
-        raise GuardrailBlocked("no_destructive_tool", f"Tool '{name}' is forbidden.")
-    if name not in ALLOWED_TOOLS:
-        raise GuardrailBlocked("tool_allowlist", f"Tool '{name}' is not in the allowlist.")
-
-
-def approval_category(name: str, args: dict[str, Any]) -> str:
-    if is_forbidden_tool(name):
-        return ALWAYS_FORBIDDEN
-    if name in ("list_objects_v2", "sample_bucket_objects") and int(args.get("max_keys", 0) or 0) > AGENT_MAX_LIST_KEYS:
-        return APPROVAL_REQUIRED
-    return NO_APPROVAL_REQUIRED
 
 
 def bound_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -192,10 +164,10 @@ def redacted(text: str) -> str:
 
 
 __all__ = [
-    "GuardrailBlocked", "ALLOWED_TOOLS", "FORBIDDEN_TOOLS", "FORBIDDEN_TOKENS",
+    "GuardrailBlocked", "FORBIDDEN_TOOLS", "FORBIDDEN_TOKENS",
     "FORBIDDEN_PHRASES", "SAMPLE_LIMIT", "AGENT_DEFAULT_LIST_KEYS",
     "AGENT_MAX_LIST_KEYS", "AGENT_MAX_RANGE_BYTES", "REDACTED",
-    "check_tool_allowed", "is_forbidden_tool", "approval_category", "bound_tool_args",
+    "is_forbidden_tool", "bound_tool_args",
     "assert_no_secrets_in_context", "sanitize_output_for_agent",
     "assert_report_sanitized", "strip_chain_of_thought", "redacted",
 ]

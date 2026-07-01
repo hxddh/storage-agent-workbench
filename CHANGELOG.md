@@ -6,6 +6,24 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Removed
+
+- **Dead guardrail ceremony (`check_tool_allowed`, `ALLOWED_TOOLS`,
+  `approval_category`).** These were never called on the live agent path — a
+  redundant static allowlist that had to be hand-synced with the real tool
+  registration, plus a `max_keys > 1000` "approval" category that could never
+  trigger (the agent's list size is clamped by `bound_tool_args`, not gated).
+  Keeping them would have re-introduced an ossification point (adding a read-only
+  tool would require editing a second list) that violates the project's
+  "bounds, not gates" line. The tool **whitelist is the curated
+  `@function_tool` registration** in `session_tools` / `session_action_tools` /
+  `session_analysis_tools` / `session_memory_tools`; the forbidden-token/phrase
+  **denylist** (`is_forbidden_tool`, still live in proposal-slug sanitization) is
+  the defense-in-depth net and is now asserted over the *real registered* tool
+  set in `test_agent.py` (which also gained the 0.20.9–11 tools). `bound_tool_args`
+  and all sanitization/secret-assertion helpers are unchanged. No runtime
+  behavior change for the agent.
+
 ### Documentation
 
 - **Truth-up pass on stale docs (no behavior change).** A third-party review
