@@ -34,6 +34,28 @@ _LOGS = {"action_type": "plan_access_log_import", "title": "Import recent access
 _ASK = {"action_type": "ask_user_for_context", "title": "Ask for more context",
         "reason": "A few details would disambiguate the likely cause.", "confidence": "low"}
 
+# Bridge from a triage category to the StorageOps specialist skill whose method
+# applies. Deterministic triage has no model, so it can't `read_skill` itself —
+# but surfacing the pointer lets a session agent (which does have the catalog)
+# jump straight to the right method, and tells an offline user which skill covers
+# their case. Categories are stable; anything unmapped falls back to triage.
+_CATEGORY_SKILL: dict[str, str] = {
+    "auth": "storageops-s3-protocol-compatibility",
+    "authz": "storageops-security-iam-policy",
+    "availability": "storageops-performance-diagnosis",
+    "client": "storageops-data-consistency",
+    "connectivity": "storageops-network-endpoint-access",
+    "routing": "storageops-s3-protocol-compatibility",
+    "throttling": "storageops-performance-diagnosis",
+    "unknown": "storageops-triage",
+}
+
+
+def skill_for_category(category: str) -> str:
+    """The specialist skill a triage category maps to (defaults to triage)."""
+    return _CATEGORY_SKILL.get(category, "storageops-triage")
+
+
 # Keyed by S3 error code.
 _BY_CODE: dict[str, dict[str, Any]] = {
     "SignatureDoesNotMatch": _entry(
@@ -45,7 +67,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         ["client region vs bucket region", "configured endpoint vs provider endpoint",
          "addressing style", "request timestamp vs server time"],
         ["test_credentials", "inspect_endpoint_tls", "test_addressing_style",
-         "get_bucket_location / head_bucket", "compare client region and endpoint", "check request time skew"],
+         "get_bucket_config_summary / head_bucket", "compare client region and endpoint", "check request time skew"],
         ["diagnostic", "bucket_config_review"],
         ["S3-compatible providers may differ in SigV4 canonicalization or require path-style."],
         [_DIAG, _ASK]),
@@ -71,7 +93,7 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         "NoSuchBucket", "routing", "Bucket does not exist (from this endpoint/region)", "medium",
         ["bucket name typo", "wrong region/endpoint so the bucket is not visible", "bucket deleted"],
         ["exact bucket name", "endpoint + region targeted"],
-        ["head_bucket", "get_bucket_location", "verify endpoint/region"],
+        ["head_bucket", "get_bucket_config_summary", "verify endpoint/region"],
         ["diagnostic"], ["On some providers a region/endpoint mismatch surfaces as NoSuchBucket."],
         [_DIAG, _ASK]),
     "NoSuchKey": _entry(
@@ -85,14 +107,14 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         ["region mismatch", "wrong endpoint", "bucket location differs from client config",
          "virtual-hosted-style routing issue"],
         ["bucket location vs client region", "endpoint used"],
-        ["get_bucket_location", "head_bucket", "test_addressing_style", "align endpoint/region"],
+        ["get_bucket_config_summary", "head_bucket", "test_addressing_style", "align endpoint/region"],
         ["diagnostic"], ["S3-compatible providers may not emit a redirect; they may just fail."],
         [_DIAG, _ASK]),
     "AuthorizationHeaderMalformed": _entry(
         "AuthorizationHeaderMalformed", "routing", "Authorization header region/format mismatch", "high",
         ["region in the request differs from the bucket region", "malformed/altered Authorization header"],
         ["region declared in the request vs bucket region"],
-        ["get_bucket_location", "align the signing region", "test_credentials"],
+        ["get_bucket_config_summary", "align the signing region", "test_credentials"],
         ["diagnostic"], [], [_DIAG, _ASK]),
     "RequestTimeTooSkewed": _entry(
         "RequestTimeTooSkewed", "auth", "Client clock skew", "high",
