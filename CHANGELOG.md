@@ -6,6 +6,24 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.20.8] - 2026-06-30
+
+### Fixed
+
+- **Interrupted runs no longer report as forever-running.** A run left
+  `pending`/`running` when the app quit mid-flight (in-process run threads can't
+  survive a restart) is now reconciled to `failed` (interrupted) on startup, so
+  `read_run_result` and run cards don't show it as perpetually running.
+
+### Added
+
+- **The agent now shows what its answer is grounded in.** A compact, collapsed
+  "Why this answer" affordance under a turn surfaces the contract's
+  `evidence_used`, `evidence_gaps` ("not yet verified" — what the agent couldn't
+  confirm / needs from you), and `skills_used`. The backend already produced
+  these; they were being dropped. Transparency only — no new capability, and the
+  agent stays a read-only investigator.
+
 ## [0.20.7] - 2026-06-30
 
 ### Fixed

@@ -204,7 +204,14 @@ export const getSessionReport = (id: string) =>
   request<{ session_id: string; format: string; content: string }>(`/sessions/${id}/report`);
 
 export const postSessionMessage = (id: string, content: string, turnId?: string) =>
-  request<{ session_id: string; messages: SessionMessage[]; proposed_actions: NextAction[] }>(
+  request<{
+    session_id: string;
+    messages: SessionMessage[];
+    proposed_actions: NextAction[];
+    evidence_used?: string[];
+    evidence_gaps?: string[];
+    skills_used?: string[];
+  }>(
     `/sessions/${id}/messages`,
     { method: "POST", body: JSON.stringify({ content, turn_id: turnId }) },
   );
@@ -221,7 +228,7 @@ export async function streamSessionMessage(
   on: { onDelta: (text: string) => void; onTool: (a: ToolActivity) => void },
   signal?: AbortSignal,
   turnId?: string,
-): Promise<{ proposed_actions: NextAction[] }> {
+): Promise<{ proposed_actions: NextAction[]; evidence_used: string[]; evidence_gaps: string[]; skills_used: string[] }> {
   const res = await fetch(`${sidecarBaseUrl()}/sessions/${id}/messages/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -242,6 +249,7 @@ export async function streamSessionMessage(
   const dec = new TextDecoder();
   let buf = "";
   let proposed: NextAction[] = [];
+  let grounding = { evidence_used: [] as string[], evidence_gaps: [] as string[], skills_used: [] as string[] };
   let sawTerminal = false; // did we receive an explicit 'done' (or 'error')?
   for (;;) {
     const { value, done } = await reader.read();
@@ -257,7 +265,15 @@ export async function streamSessionMessage(
       const data = JSON.parse(dataRaw);
       if (type === "delta") on.onDelta(data.text || "");
       else if (type === "tool") on.onTool(data as ToolActivity);
-      else if (type === "done") { proposed = data.proposed_actions || []; sawTerminal = true; }
+      else if (type === "done") {
+        proposed = data.proposed_actions || [];
+        grounding = {
+          evidence_used: data.evidence_used || [],
+          evidence_gaps: data.evidence_gaps || [],
+          skills_used: data.skills_used || [],
+        };
+        sawTerminal = true;
+      }
       else if (type === "error") throw new Error(data.detail || "stream error");
     }
   }
@@ -267,7 +283,7 @@ export async function streamSessionMessage(
   // persisted result (incl. proposals) instead of leaving the user with an empty
   // next-steps list until they refresh.
   if (!sawTerminal) throw new Error("stream ended without completion");
-  return { proposed_actions: proposed };
+  return { proposed_actions: proposed, ...grounding };
 }
 
 export const attachRunToSession = (sessionId: string, runId: string) =>

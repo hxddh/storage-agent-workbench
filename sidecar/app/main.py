@@ -45,6 +45,10 @@ SERVICE_NAME = health.SERVICE_NAME
 async def lifespan(_app: FastAPI):
     # Create the database and apply migrations on startup.
     init_db()
+    # Fail any run left pending/running by a prior process — in-process run
+    # threads don't survive a restart, so such rows are orphans.
+    from . import run_service
+    run_service.reconcile_interrupted_runs()
     yield
 
 
