@@ -6,6 +6,21 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Frontend
+
+- **Attach-only send.** The composer's send button (and Enter) were disabled
+  whenever the text was empty, even with a file attached — so "analyze this file"
+  with no typed message was impossible. Send is now enabled when either text or an
+  attachment is present.
+- **Session findings surface in the thread.** A read-only, collapsible
+  `FindingsCard` renders the persisted deterministic session findings the API
+  already held — previously visible only in the report.
+- **EvidenceImportDialog is localized.** Its ~25 hard-coded English strings now go
+  through `t()` with full en/zh entries (title, plan fields, buttons, hints).
+- **Removed the dead `SidecarStatus` component.** The `.tsx` component was never
+  rendered (only the same-named *type* from `useSidecarHealth` is used); deleted
+  to cut confusion. The health hook itself is unchanged.
+
 ### Fixed
 
 - **Stale tool name in triage playbooks.** The offline error-triage `next_checks`

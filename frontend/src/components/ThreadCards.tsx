@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Grounding, NextAction, SessionRunLink, ToolActivity, TriageCase } from "../types";
+import type { Grounding, NextAction, SessionFinding, SessionRunLink, ToolActivity, TriageCase } from "../types";
 import { RunDetail } from "./RunDetail";
 import { Markdown } from "./Markdown";
 import { useI18n } from "../i18n";
@@ -198,6 +198,50 @@ export function GroundingCard({ g }: { g: Grounding }) {
           <Section label={t("grounding.gaps")} items={gaps} tone="text-amber-300/80" />
           <Section label={t("grounding.skills")} items={skills} tone="text-accent-soft/80" />
         </div>
+      )}
+    </div>
+  );
+}
+
+const FINDING_TONE: Record<string, string> = {
+  critical: "text-red-300", high: "text-red-300", warning: "text-amber-300/90",
+  medium: "text-amber-300/90", opportunity: "text-accent-soft/90",
+  low: "text-gray-400", info: "text-gray-400",
+};
+
+// Persisted, deterministic session findings (rebuilt from run artifacts). Read-only
+// and collapsible — surfaces what the API already holds so the user can see them
+// in the thread rather than only in the report.
+export function FindingsCard({ findings }: { findings: SessionFinding[] }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const items = (findings ?? []).filter((f) => f.title || f.interpretation);
+  if (!items.length) return null;
+  return (
+    <div className="animate-fade-in rounded-lg border border-edge bg-panel/60 p-3">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-1.5 text-[12px] font-medium text-gray-300 transition-colors hover:text-gray-100"
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+             className={`transition-transform ${open ? "rotate-90" : ""}`}><polyline points="9 18 15 12 9 6" /></svg>
+        {t("findings.title")}
+        <span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] text-gray-400">{items.length}</span>
+      </button>
+      {open && (
+        <ul className="mt-2 space-y-1.5 border-l border-edge/70 pl-3">
+          {items.map((f) => (
+            <li key={f.id} className="text-[12px]">
+              <div className="flex items-baseline gap-1.5">
+                <span className={`text-[10px] font-medium uppercase tracking-wider ${FINDING_TONE[(f.severity || f.kind || "info").toLowerCase()] || "text-gray-400"}`}>
+                  {f.severity || f.kind || "info"}
+                </span>
+                <span className="text-gray-200">{f.title || "—"}</span>
+              </div>
+              {f.interpretation && <p className="mt-0.5 text-gray-400">{f.interpretation}</p>}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
