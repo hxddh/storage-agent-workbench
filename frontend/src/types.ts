@@ -332,6 +332,10 @@ export interface SessionMessage {
   referenced_run_ids: string[];
   referenced_evidence_ids: string[];
   tool_activity?: ToolActivity[];
+  // Persisted per assistant turn (v0.21.0) so grounding + proposals survive a
+  // reload; null/empty for user messages and pre-0.21.0 history.
+  grounding?: Grounding | null;
+  proposed_actions?: NextAction[];
   created_at: string;
 }
 

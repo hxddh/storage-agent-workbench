@@ -6,6 +6,21 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Added
+
+- **Grounding + proposed actions now persist per assistant turn (survive
+  reload).** Migration 16 adds `session_messages.grounding` and
+  `.proposed_actions` (sanitized JSON). Previously the transparency payload
+  (`evidence_used` / `evidence_gaps` / `skills_used`) and the turn's next-action
+  proposals rode only the transient SSE `done` event, so a page reload dropped
+  them and a historical turn could no longer show *why* it said what it said. The
+  backend now stores them on the assistant message and returns them from
+  `GET /sessions/{id}/messages`; the frontend renders the grounding card +
+  proposal chips **per assistant message** from the persisted data (a single
+  source of truth) instead of a transient bottom block. `tool_activity` (already
+  persisted) is unchanged; `evidence_used` remains the model's self-report, kept
+  distinct from the mechanical tool trace.
+
 ### Removed
 
 - **Dead guardrail ceremony (`check_tool_allowed`, `ALLOWED_TOOLS`,

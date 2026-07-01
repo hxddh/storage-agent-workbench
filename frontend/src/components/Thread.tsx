@@ -11,7 +11,7 @@ import {
   submitErrorTriage,
   uploadSessionDataset,
 } from "../api";
-import type { NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
+import type { Grounding, NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
 import { useSessionRun, patchSessionRun } from "../sessionRuns";
 import { Button } from "./ui";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
@@ -19,7 +19,16 @@ import { GroundingCard, MessageCard, ProposalCard, RunCard, ThinkingBubble, Tria
 import { useI18n, type TFunc } from "../i18n";
 
 type Item =
-  | { kind: "message"; ts: string; role: string; content: string | null; id: string; toolActivity?: ToolActivity[] }
+  | {
+      kind: "message";
+      ts: string;
+      role: string;
+      content: string | null;
+      id: string;
+      toolActivity?: ToolActivity[];
+      grounding?: Grounding | null;
+      proposals?: NextAction[];
+    }
   | { kind: "run"; ts: string; data: SessionDetail["runs"][number] }
   | { kind: "triage"; ts: string; data: TriageCase };
 
@@ -107,7 +116,6 @@ export function Thread({
   const run = useSessionRun(sessionId);
   const { busy, pending, streamText, streamTools, needKey } = run;
   const liveProposals = run.proposals;
-  const grounding = run.grounding;
   // View-level errors not tied to a turn (e.g. a proposal action failing, or
   // asking for a report before a chat exists). Combined with the run's error.
   const [viewError, setViewError] = useState<string | null>(null);
@@ -188,7 +196,11 @@ export function Thread({
 
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
-    for (const m of detail?.messages ?? []) out.push({ kind: "message", ts: m.created_at, role: m.role, content: m.content, id: m.id, toolActivity: m.tool_activity });
+    for (const m of detail?.messages ?? [])
+      out.push({
+        kind: "message", ts: m.created_at, role: m.role, content: m.content, id: m.id,
+        toolActivity: m.tool_activity, grounding: m.grounding, proposals: m.proposed_actions,
+      });
     // Agent-initiated surveys/reviews (origin 'agent') are internal compute the
     // agent narrates inline — never a standalone run card. Only explicit
     // user-requested auditable reports surface as cards.
@@ -639,7 +651,21 @@ export function Thread({
             <div className="mx-auto max-w-3xl space-y-6">
               {items.map((it) =>
                 it.kind === "message" ? (
-                  <MessageCard key={it.id} role={it.role} content={it.content} toolActivity={it.toolActivity} />
+                  <div key={it.id} className="space-y-3">
+                    <MessageCard role={it.role} content={it.content} toolActivity={it.toolActivity} />
+                    {/* Persisted grounding + proposals (v0.21.0) — survive reload,
+                        so a historical assistant turn still shows why it said that
+                        and what it proposed next. */}
+                    {it.grounding && <GroundingCard g={it.grounding} />}
+                    {it.proposals && it.proposals.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                        <span className="text-[11.5px] text-gray-600">{t("thread.suggestedNext")}</span>
+                        {it.proposals.map((p, i) => (
+                          <ProposalCard key={`${propKey(p)}-${i}`} proposal={p} onRun={runProposal} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ) : it.kind === "run" ? (
                   <RunCard key={it.data.run_id} run={it.data} />
                 ) : (
@@ -660,16 +686,8 @@ export function Thread({
 
               {banners}
 
-              {grounding && !pending && <GroundingCard g={grounding} />}
-
-              {proposals.length > 0 && !pending && (
-                <div className="flex flex-wrap items-center gap-2 pt-1.5">
-                  <span className="text-[11.5px] text-gray-600">{t("thread.suggestedNext")}</span>
-                  {proposals.map((p, i) => (
-                    <ProposalCard key={`${propKey(p)}-${i}`} proposal={p} onRun={runProposal} />
-                  ))}
-                </div>
-              )}
+              {/* Grounding + proposals now render per assistant message (above),
+                  sourced from the persisted turn so they survive a reload. */}
               <div ref={bottomRef} />
             </div>
           </div>

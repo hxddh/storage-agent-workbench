@@ -244,10 +244,11 @@ def test_no_storageops_tooling_in_executable_code():
 
 def test_migrations_are_sequential_and_capped():
     from app import migrations
-    # Migration 15 adds runs.origin (agent-initiated runs hidden from the thread).
+    # Migration 16 persists assistant-turn grounding + proposed_actions on the
+    # message row (so they survive a reload).
     versions = [v for v, _n, _s in migrations.MIGRATIONS]
     assert versions == list(range(1, len(versions) + 1))  # 1..N, no gaps/dupes
-    assert max(versions) == 15
+    assert max(versions) == 16
 
 
 def test_no_public_skills_api(client):
