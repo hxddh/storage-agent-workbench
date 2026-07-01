@@ -46,6 +46,10 @@ and let the user compare their client against it:
   you can tell the user the correct `--endpoint-url` / path-style flag.
 - `head_bucket` / `list_objects` — confirm the same operation the client failed
   on succeeds with valid config, isolating a tool bug from a service problem.
+- `preview_object` — when the client "downloads" a file that looks wrong (HTML
+  error body saved as data, a truncated/garbled config), read a bounded, sanitized
+  preview of the object's head to see what actually landed vs. what the tool
+  reported. Binary/oversized objects are reported, not decoded.
 
 ## Ask the user (only what tools can't reveal)
 

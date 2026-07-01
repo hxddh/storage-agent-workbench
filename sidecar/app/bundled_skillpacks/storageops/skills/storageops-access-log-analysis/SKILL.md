@@ -41,9 +41,10 @@ Access-log question →
 Two cases, depending on where the logs live:
 
 - **A log file the user attached** — analyze it inline, right now: call
-  `analyze_uploaded_file` (it imports + computes error rates, top
-  requesters/keys, operation mix, time-of-day patterns over the local file) and
-  explain the result conversationally. No confirmation step.
+  `list_uploaded_files` first to get the `dataset_id` of what's actually attached
+  (don't assume one), then `analyze_uploaded_file` on it (it imports + computes
+  error rates, top requesters/keys, operation mix, time-of-day patterns over the
+  local file) and explain the result conversationally. No confirmation step.
 - **Logs still in a bucket** — this is cloud-side data movement, so it stays a
   confirmed step: propose `plan_access_log_import` to bring them in under a
   reviewed plan. Once the user confirms and the import run completes, read its

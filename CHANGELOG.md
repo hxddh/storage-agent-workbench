@@ -6,6 +6,26 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Skills
+
+- **Filled the verified skill gaps (18 → 20 skills).** Two genuinely-missing
+  methods added: `storageops-workbench-investigation` (the general observe →
+  probe → verify → ground → propose loop, previously only implicit in the agent
+  prompt) and `storageops-observability-audit` (logging + notifications + metrics
+  + inventory + tagging as one coherent audit, catching "logging enabled but
+  delivered nowhere" gaps). The two partially-covered areas were **expanded in
+  place, not fragmented**: a public-exposure pass added to
+  `storageops-security-iam-policy` and a provider capability matrix added to
+  `storageops-s3-protocol-compatibility` (with registry routing updated).
+- **Tool hints where they were missing.** `preview_object` referenced from
+  `cli-sdk-diagnosis` + `data-consistency`; `list_uploaded_files` referenced from
+  `access-log-analysis` + `inventory-analysis`; `storageops-triage` decision tree
+  now routes to account-posture / inventory / observability / evidence-reporting /
+  workbench-investigation.
+- **`skills_used` cap raised 3 → 6** to match the per-turn `read_skill` budget, so
+  a turn that legitimately loaded several skills reports all of them (the
+  bound-to-actual-`read_skill` honesty filter is unchanged).
+
 ### Added
 
 - **Grounding + proposed actions now persist per assistant turn (survive

@@ -35,8 +35,10 @@ skills:
     description: >
       Diagnose permission errors (403 AccessDenied, 401 Unauthorized) by tracing
       the authorization chain — explicit deny, identity vs bucket policy, ACL,
-      public-access block, cross-account, and KMS. Use when access is denied but
-      the credentials themselves are valid.
+      public-access block, cross-account, and KMS. Also runs the mirror-image
+      public-exposure pass: is a bucket/object exposed to the world (missing
+      public-access block, wildcard policy, AllUsers ACL)? Use when access is
+      denied but the credentials are valid, or to check for public exposure.
     trigger_keywords:
       - 403 AccessDenied
       - 401 Unauthorized
@@ -46,6 +48,9 @@ skills:
       - bucket policy
       - cross-account
       - KMS
+      - public bucket
+      - publicly accessible
+      - public exposure
     domains: [security]
 
   - name: storageops-performance-diagnosis
@@ -73,9 +78,12 @@ skills:
     description: >
       Diagnose wire-protocol failures — SignatureDoesNotMatch, SigV2 vs SigV4,
       clock skew, expired presigned URLs, MalformedXML, NotImplemented, CORS, and
-      virtual-hosted vs path-style addressing on S3-compatible providers. Use when
-      a request is rejected at the protocol level though the network is fine and
-      the credentials are valid.
+      virtual-hosted vs path-style addressing on S3-compatible providers. Also
+      carries the provider capability matrix — which S3 APIs a non-AWS provider
+      (MinIO, Ceph/RGW, R2, B2, Wasabi, OSS, COS, BOS, GCS) does or doesn't
+      implement, reported as `Provider unsupported` rather than a hard failure.
+      Use when a request is rejected at the protocol level though the network is
+      fine and the credentials are valid, or when an API may not be supported.
     trigger_keywords:
       - SignatureDoesNotMatch
       - CORS
@@ -83,6 +91,9 @@ skills:
       - SigV2
       - AuthorizationHeaderMalformed
       - RequestExpired
+      - NotImplemented
+      - provider compatibility
+      - not supported
     domains: [protocol, compatibility]
 
   - name: storageops-network-endpoint-access
@@ -320,3 +331,39 @@ skills:
       - posture
       - where to start
     domains: [account, posture, audit]
+
+  - name: storageops-workbench-investigation
+    path: skills/storageops-workbench-investigation/SKILL.md
+    priority: 5
+    description: >
+      The general method for running any object-storage investigation in this
+      workbench: turn a vague ask into a grounded answer by chaining read-only
+      tools, recording findings, and proposing next steps. Load when the request
+      has no single obvious category, spans several buckets/providers, or you must
+      decide which specialist skill to open next.
+    trigger_keywords:
+      - investigate
+      - where do I start
+      - overall health
+      - audit my storage
+      - not sure what's wrong
+    domains: [method]
+
+  - name: storageops-observability-audit
+    path: skills/storageops-observability-audit/SKILL.md
+    priority: 20
+    description: >
+      Audit whether a bucket/account is observable — server access logging, event
+      notifications, request metrics, inventory reports, and tagging — as one
+      coherent method, so gaps that would blind an incident investigation are
+      found before they matter. Interpreting the logs themselves belongs to
+      storageops-access-log-analysis.
+    trigger_keywords:
+      - access logging
+      - server log
+      - event notification
+      - request metrics
+      - inventory report
+      - observability
+      - who deleted
+    domains: [observability]

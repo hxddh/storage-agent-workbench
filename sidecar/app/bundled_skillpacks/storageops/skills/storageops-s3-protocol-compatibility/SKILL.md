@@ -68,6 +68,26 @@ Protocol error →
 For write-side failures (PUT/copy), do not re-send the write to reproduce — read
 the request from the client's own debug dump and the server error body.
 
+## Provider capability matrix (treat AWS-isms as assumptions elsewhere)
+
+S3-compatible providers (MinIO, Ceph/RGW, R2, B2, Backblaze, Wasabi, OSS, COS,
+BOS, GCS-XML…) implement a *subset* of the S3 API with their own quirks. Never
+assume an AWS behavior holds until confirmed against the provider:
+
+- **Addressing** — many require path-style; virtual-hosted may not resolve.
+  `test_addressing_style` decides it empirically.
+- **Unimplemented APIs** — object-lock, replication, inventory, some tagging /
+  versioning calls often return `NotImplemented` / `MethodNotAllowed`. Surface
+  these as **`Provider unsupported`**, not a hard failure — the read-only tools
+  already normalize to that status; carry it through to the user.
+- **Signature / region** — some need a specific signing region string or only
+  SigV2; a valid-looking SigV4 can still be rejected.
+- **Semantics** — ETag isn't always MD5 (multipart, server-side encryption);
+  conditional headers, `ListObjectsV2`, and delimiter behavior vary.
+
+When a capability is missing, say which provider, which API, and the practical
+alternative — don't present an AWS-only workflow as universal.
+
 ## What to report
 
 The protocol-level root cause (signature version / clock / region / addressing /

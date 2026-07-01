@@ -45,6 +45,10 @@ Consistency concern →
   consistent), ruling out "wrong prefix" and pagination illusions.
 - `test_range_get` — confirm the current bytes are readable directly from the
   store, separating real object state from a stale cache.
+- `preview_object` — when "the content is wrong/old" for a text object, read a
+  bounded, sanitized preview of its head to see the actual current bytes from the
+  store (vs. what the client shows) — direct evidence of whether staleness is
+  client-side. Text-only, per-turn budgeted; binary/oversized objects aren't decoded.
 
 ## Ask the user (only what tools can't reveal)
 

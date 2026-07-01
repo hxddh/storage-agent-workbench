@@ -42,6 +42,11 @@ User reports a storage issue →
   ├─ Stale read / missing object / ETag mismatch      → storageops-data-consistency
   ├─ Migration / cross-cloud sync question            → storageops-migration-sync
   ├─ Access-log / traffic / who-is-accessing question → storageops-access-log-analysis
+  ├─ Account-wide overview / "map my buckets" / audit  → storageops-account-posture
+  ├─ Object count / size distribution / capacity        → storageops-inventory-analysis
+  ├─ Logging/notification/metrics coverage gaps         → storageops-observability-audit
+  ├─ "How do I write this up / report it?"              → storageops-evidence-reporting
+  ├─ Vague / multi-bucket / where-do-I-start            → storageops-workbench-investigation
   └─ No usable evidence → ask clarifying questions; do NOT guess the domain
 ```
 
