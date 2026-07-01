@@ -81,4 +81,6 @@ tool trace, findings, and summary:
 
 The session message stream (`POST /sessions/{id}/messages/stream`) emits
 `delta` (answer text), `tool` (a sanitized `{tool, target, result}` trace), and
-a final `done` (`{message_id, proposed_actions}`) — or `error`.
+a final `done` (`{message_id, proposed_actions, evidence_used, evidence_gaps,
+skills_used}`) — or `error`. The three grounding fields (added in 0.20.8) mirror
+the blocking `POST /sessions/{id}/messages` response.

@@ -3,8 +3,10 @@
 # Metadata for the bundled StorageOps skills. The agent sees each skill's name +
 # description as a CATALOG (progressive disclosure) and loads a skill's full
 # SKILL.md body on demand via the read-only read_skill tool. `description` is the
-# routing signal — it tells the model when to load the skill. trigger_keywords /
-# domains / auto_route drive the offline (tool-less) triage selector only.
+# ONLY routing signal the live agent uses — it tells the model when to load the
+# skill. trigger_keywords / domains / auto_route are parsed by loader.py but are
+# currently UNCONSUMED (no offline selector reads them); they are retained as
+# descriptive metadata only.
 
 version: "1.0"
 

@@ -31,9 +31,12 @@ panel:
 - **Conversation thread** (center): a single sticky composer — you ask the agent
   (and can attach a log/inventory file for it to analyze inline). If no model key
   is configured and you paste a raw error, it falls back to offline deterministic
-  triage. Messages and proposed next actions render as **inline cards**. The
-  agent's own read-only surveys/reviews are narrated inline (not shown as run
-  cards); only an explicit, user-requested auditable report appears as a card.
+  triage. Messages and proposed next actions render as **inline cards**, and each
+  answer carries a **grounding card** (the evidence it used, any evidence gaps,
+  and which StorageOps skills it applied) so you can see *why* it said what it
+  said. The agent's own read-only surveys/reviews are narrated inline (not shown
+  as run cards); only an explicit, user-requested auditable report appears as a
+  card.
 - **Settings drawer** (right slide-over): model- and cloud-provider management,
   plus a one-time first-run wizard on a fresh install.
 

@@ -10,7 +10,7 @@ executes them.
 
 Flow (progressive disclosure): `context` injects an always-in-context CATALOG
 (skill name + description) and exposes a read-only `read_skill` tool; the single
-conversational session agent loads a SKILL.md body on demand — wrapped in a
-bounded, tools-disabled preamble — and reasons with session evidence + that skill
-context.
+conversational session agent loads a SKILL.md body on demand — frontmatter-
+stripped and length-bounded (no wrapper preamble) — and reasons with session
+evidence + that skill context.
 """

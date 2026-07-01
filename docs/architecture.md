@@ -41,7 +41,9 @@ TypeScript + Tailwind:
 
 - Session rail (new investigation; rename / pin / archive / delete / fork).
 - Conversation thread with a sticky composer; runs, error-triage cases, and
-  proposed next actions render as inline cards.
+  proposed next actions render as inline cards. Only user/deterministic runs card
+  in the thread — the agent's own inline surveys/reviews (`origin === 'agent'`)
+  are filtered out; the agent narrates their result in prose instead.
 - Settings drawer for model/cloud providers; first-run wizard.
 - Tool timeline, findings, and report preview inside run cards.
 - Dark/light themes and English/中文.
@@ -205,22 +207,22 @@ no StorageOps tools, helper scripts, CLI, Pi runtime, subprocess, MCP,
 multi-agent runtime, skill API, skill UI, skill DB tables, or RAG.
 
 - **Vendored** under `sidecar/app/bundled_skillpacks/storageops/`: only
-  `skill-registry.yaml` + `skills/*/SKILL.md` (16 skills). No `references/`,
+  `skill-registry.yaml` + `skills/*/SKILL.md` (18 skills). No `references/`,
   `templates/`, `scripts/`, `storageops_cli/`, or `extensions/` are copied.
 - **`skills/loader.py`** parses minimal registry metadata (name / path /
   description / maturity / mode / trigger_keywords / domains / auto_route) and
   loads SKILL.md bodies. `recommended_tools` is deliberately NOT exposed — never
-  registered, shown, or executed.
+  registered, shown, or executed. (`trigger_keywords` / `domains` / `auto_route`
+  are parsed but currently **unconsumed** — no offline selector reads them;
+  `description` is the only routing signal the live agent sees.)
 - **Progressive disclosure (the live mechanism)**: `skills/context.py` exposes
   `catalog_text()` — the always-in-context list of skill `name + description` —
-  and `read_skill_text(name)`, which returns one SKILL.md body wrapped in a
-  tools-disabled safety preamble ("StorageOps tools / scripts / CLI / Pi runtime
-  … are disabled in this Workbench phase; do not claim to run tools; use mentions
-  as conceptual guidance only"). `agent_runtime/session_agent.py` injects the
-  catalog and the agent calls the read-only `read_skill` tool on demand for the
-  skills it judges relevant — there is no eager 1–3 skill pre-selection in the
-  live path. (`skills/selection.py` is a legacy lexical selector retained only
-  for tests; it is not on the agent path.)
+  and `read_skill_text(name)`, which returns one SKILL.md body, frontmatter-
+  stripped and length-bounded (no wrapper preamble). `agent_runtime/session_agent.py`
+  injects the catalog and the agent calls the read-only `read_skill` tool on
+  demand for the skills it judges relevant — there is no eager 1–3 skill
+  pre-selection in the live path, and there is no lexical `selection.py` (it was
+  removed; the catalog + agent-chosen `read_skill` is the whole mechanism).
 - **Contract**: the agent emits a minimal contract via `skills/contract.py`:
   `{answer, skills_used, evidence_used, evidence_gaps, next_action_proposals}` —
   answer redacted + CoT-stripped, `skills_used` limited to skills actually loaded
@@ -266,9 +268,15 @@ errors — NOT a static FAQ or error-code dictionary page.
 ## Session-centered agentic workbench
 
 The product is a **session-centered agentic workbench**, not a cloud-management
-dashboard or project tracker. The model is:
+dashboard or project tracker. The flow is **agent-first** — the conversational
+agent drives, calling read-only tools inline and, only when a heavy/auditable
+artifact is warranted, invoking a deterministic run:
 
-    Goal → Evidence → Runs → Findings → Agent interpretation → Next actions → Report
+    Goal → Agent (inline read-only tools) → [optional artifact run] → Findings → Next actions → Report
+
+Runs are the **auditable/security floor beneath** the agent, not a pipeline the
+user navigates. The older "Goal → Evidence → Runs → …" phrasing described a
+runs-first product that no longer exists.
 
 - **Session** = persistent working context (`sessions`). A run is an auditable
   execution unit; evidence is the factual base; findings are evidence-driven
@@ -288,19 +296,23 @@ dashboard or project tracker. The model is:
   `SESSION_LOOP` seam): the primary surface, a genuine tool-calling loop. The
   deterministic summary is built first for grounding; the agent then investigates
   LIVE with **read-only** tools (`agent_runtime/session_tools.py`: list_buckets,
-  head_bucket, bounded/paginated list_objects, head_object, test_credentials,
-  test_addressing_style, inspect_endpoint_tls, test_range_get, the
-  `review_bucket_*`/`get_bucket_config_summary` config readers, and `read_skill`
-  for progressive-disclosure StorageOps skills), chooses provider/bucket itself,
-  and grounds its answer in tool output. It has **working memory**
-  (`session_agent_memory` table via `session_memory_tools.py`): `note_fact` /
-  `record_finding` / `note_open_question` persist sanitized, audited items that
-  are fed back into later turns. It self-verifies high-severity conclusions with
-  a tool before asserting them. It may also EXECUTE read-only runs itself
-  (survey/review — see below). What it still cannot do: download object bodies,
-  mutate anything, run free SQL/shell, reach any destructive S3 op, or see any
-  secret — credentials are resolved server-side inside the S3 layer and never
-  enter the model context. Output is redacted + chain-of-thought-stripped +
+  head_bucket, bounded/paginated list_objects, list_object_versions,
+  list_multipart_uploads, head_object, get_object_lock_status, test_credentials,
+  test_addressing_style, inspect_endpoint_tls, test_range_get, preview_object
+  (bounded ≤1 MiB text preview), measure_request_latency (bounded latency probe),
+  the `review_bucket_*`/`get_bucket_config_summary` config readers, and
+  `read_skill` for progressive-disclosure StorageOps skills), chooses
+  provider/bucket itself, and grounds its answer in tool output. It has **working
+  memory** (`session_agent_memory` table via `session_memory_tools.py`):
+  `note_fact` / `record_finding` / `note_open_question` persist sanitized, audited
+  items that are fed back into later turns. It self-verifies high-severity
+  conclusions with a tool before asserting them. It may also EXECUTE read-only
+  runs itself (survey/review — see below). What it still cannot do: bulk-download
+  object bodies (the sole bounded exception is `preview_object` / `test_range_get`
+  — a single sanitized, per-turn-budgeted read, never a full or recursive
+  download), mutate anything, run free SQL/shell, reach any destructive S3 op, or
+  see any secret — credentials are resolved server-side inside the S3 layer and
+  never enter the model context. Output is redacted + chain-of-thought-stripped +
   bounded; a missing model key fails cleanly (422) and never affects the
   deterministic summary.
 - **Next actions** are proposals only (`requires_confirmation: true`); the user
