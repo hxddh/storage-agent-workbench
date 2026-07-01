@@ -46,6 +46,11 @@ Replication / versioning issue →
   the source and destination buckets; mismatched versioning is the #1 cause.
 - `head_object` — inspect a specific object's version/metadata to confirm whether
   it exists on the destination and its state.
+- `get_object_lock_status` — when the confusion is "why can't I delete/overwrite
+  this object?", this reads the OBJECT's actual retention mode + retain-until date
+  and legal-hold status (COMPLIANCE can't be shortened; a legal hold blocks delete
+  regardless of retention). Bucket config review only shows whether object-lock is
+  enabled — this shows the specific object's lock.
 - `list_object_versions` — when the confusion is about version STATE (unexpected
   noncurrent versions, lingering delete markers not propagating), this reads the
   actual versions + delete markers on a prefix, not just the on/off config.

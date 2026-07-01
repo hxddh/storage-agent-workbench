@@ -84,6 +84,13 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
     _MAX_PREVIEWS = 8
     _MAX_PREVIEW_BYTES = 8 * 1024 * 1024
 
+    # Per-turn latency-probe budget: measure_request_latency fires several live
+    # round-trips per call, so cap how many probe RUNS a turn can do — the tool's
+    # own per-call sample cap plus this keeps it a diagnostic probe, not a load
+    # test. Bounds, not a gate.
+    latency_budget = {"n": 0}
+    _MAX_LATENCY_RUNS = 6
+
     def note(tool: str, target: str, result: Any) -> None:
         if activity is not None:
             summary = result if isinstance(result, str) else _summarize(result)
@@ -210,6 +217,19 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     @function_tool
+    def get_object_lock_status(provider_id: str, bucket: str, key: str, version_id: str = "") -> str:
+        """Read ONE object's Object-Lock state — retention mode + retain-until date and legal-hold status (read-only GetObjectRetention + GetObjectLegalHold; no body). Use for "why can't I delete/overwrite this object?" — bucket-level config review shows only whether object-lock is enabled, not a specific object's lock. A missing lock (or a provider that doesn't implement object-lock) is reported as a normal 'none'/'provider_unsupported' state, not an error. Args: provider_id, bucket, key, version_id? (a specific version)."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Call list_providers first.")
+        if not bucket_ok(p, bucket):
+            return _err("That bucket is not in this provider's allow-list.")
+        rec("get_object_lock_status", provider_id=provider_id, bucket=bucket, key=key)
+        res = s3.get_object_lock_status(conn, provider_id, bucket, key, version_id or None)
+        note("get_object_lock_status", f"{bucket}/{key}", res)
+        return json.dumps(res)
+
+    @function_tool
     def test_range_get(provider_id: str, bucket: str, key: str, range_header: str = "bytes=0-1023") -> str:
         """Test a bounded ranged read of one object (read-only GET with a Range header; reads at most the requested bytes). Use to verify range-GET support, partial-read latency, or CDN/range behavior. Args: provider_id, bucket, key, range_header? (default bytes=0-1023)."""
         p = provider(provider_id)
@@ -258,6 +278,24 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     @function_tool
+    def measure_request_latency(provider_id: str, bucket: str, key: str = "", samples: int = 5) -> str:
+        """Measure LIVE request latency to the endpoint — the only tool that turns "it's slow" into numbers. Fires a BOUNDED number of lightweight round-trips (HeadBucket, or HeadObject if key is given; no object bodies) and returns min/p50/p95/max/mean milliseconds. Use for performance complaints (high TTFB, slow ops, cross-region latency) before reasoning about causes. Bounded per turn — a diagnostic probe, not a load test. Args: provider_id, bucket, key? (probe a specific object), samples? (default 5, max 10)."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Call list_providers first.")
+        if not bucket_ok(p, bucket):
+            return _err("That bucket is not in this provider's allow-list.")
+        if latency_budget["n"] >= _MAX_LATENCY_RUNS:
+            return _err(f"Latency-probe budget for this turn is used up ({_MAX_LATENCY_RUNS} runs). "
+                        "Report the measurements you have, or ask the user which target matters most.")
+        rec("measure_request_latency", provider_id=provider_id, bucket=bucket, key=key, samples=samples)
+        res = s3.measure_request_latency(conn, provider_id, bucket, key or None, samples)
+        latency_budget["n"] += 1
+        note("measure_request_latency", f"{bucket}/{key}" if key else bucket,
+             f"p50 {res.get('p50_ms')}ms" if res.get("success") else "error")
+        return json.dumps(res)
+
+    @function_tool
     def read_skill(name: str) -> str:
         """Load the full method of a StorageOps expert skill by name (progressive disclosure). Pick a name from the StorageOps skills catalog in your context; this returns that skill's diagnostic method as guidance text for you to apply with your read-only tools. Args: name (e.g. 'storageops-security-iam-policy')."""
         from ..skills import context as skill_context
@@ -290,7 +328,8 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
 
     tools = [list_providers, list_buckets, head_bucket, list_objects,
              list_object_versions, list_multipart_uploads,
-             test_credentials, head_object, test_range_get, preview_object,
+             test_credentials, head_object, get_object_lock_status,
+             test_range_get, preview_object, measure_request_latency,
              test_addressing_style, inspect_endpoint_tls, read_skill]
 
     # Per-bucket config reviews (read-only). Distinct names/descriptions set on

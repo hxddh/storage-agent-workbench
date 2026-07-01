@@ -6,6 +6,33 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.20.11] - 2026-07-01
+
+### Added
+
+- **`measure_request_latency` — the agent can now MEASURE latency, not just guess
+  at it.** Performance diagnosis previously had no way to time anything: the
+  bucket performance profile only inferred small-file overhead from object-size
+  metadata. This tool fires a bounded set of lightweight head round-trips
+  (HeadBucket, or HeadObject on a named key — never an object body) and returns
+  min/p50/p95/max/mean milliseconds, turning "it's slow" into numbers. It is a
+  diagnostic probe, not a load test: the per-call sample count is hard-capped
+  (≤10) and probe runs are bounded per turn. The `storageops-performance-diagnosis`
+  skill now points at it as the first step for any speed complaint.
+- **`get_object_lock_status` — object-level retention + legal-hold read.** Answers
+  "why can't I delete/overwrite this object?" by reading one object's actual
+  retention mode + retain-until date (`GetObjectRetention`) and legal-hold status
+  (`GetObjectLegalHold`). Bucket config review could only show *whether*
+  object-lock is enabled on the bucket, never a specific object's lock. Read-only;
+  a missing lock, or a provider that doesn't implement object-lock, is reported as
+  a normal `none` / `provider_unsupported` state rather than a hard failure. The
+  `storageops-replication-versioning` skill references it for object-lock puzzles.
+
+Both tools are read-only, sanitized, and enforce safety through code-level bounds
+(sample caps, per-turn budgets) rather than confirmation gates — the agent-native
+"bounds not gates" line. No object bodies are read by either; no write path is
+added. 9 new tests (Stubber-backed); full suite 295 passing.
+
 ## [0.20.10] - 2026-06-30
 
 ### Added

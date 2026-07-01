@@ -25,6 +25,8 @@ MAX_LIST_KEYS = 1000          # backend hard cap for list_objects_v2 MaxKeys
 SAMPLE_KEYS_LIMIT = 20        # max object keys echoed back
 MAX_RANGE_BYTES = 4 * 1024 * 1024   # hard cap on a single range read (4 MiB)
 TLS_TIMEOUT = 5
+LATENCY_DEFAULT_SAMPLES = 5   # default round-trips for measure_request_latency
+LATENCY_MAX_SAMPLES = 10      # hard cap on latency probe round-trips
 
 _AUTH_FAIL_CODES = {
     "InvalidAccessKeyId",
@@ -632,3 +634,168 @@ def inspect_tls(endpoint_url: str) -> dict[str, Any]:
             "sni_used": host,
             "error_message_sanitized": redact_text(str(exc)),
         }
+
+
+# --- 8. measure_request_latency ---------------------------------------------
+
+
+def _percentile(sorted_vals: list[float], pct: float) -> float | None:
+    """Nearest-rank percentile over a small sorted sample."""
+    if not sorted_vals:
+        return None
+    idx = int(round((pct / 100.0) * (len(sorted_vals) - 1)))
+    idx = max(0, min(len(sorted_vals) - 1, idx))
+    return sorted_vals[idx]
+
+
+def measure_request_latency(
+    conn: sqlite3.Connection,
+    provider_id: str,
+    bucket: str,
+    key: str | None = None,
+    samples: int = LATENCY_DEFAULT_SAMPLES,
+) -> dict[str, Any]:
+    """Measure live request latency to the endpoint with a BOUNDED number of
+    lightweight round-trips. No object bodies are read: each probe is a HeadBucket
+    (or HeadObject when ``key`` is given). The hard cap on ``samples`` makes this
+    a diagnostic probe, not a load test — the bounds ARE the safety. This is the
+    only tool that turns "it's slow" into measured min/p50/p95/max evidence.
+    """
+    n = max(1, min(int(samples), LATENCY_MAX_SAMPLES))
+    op = "head_object" if key else "head_bucket"
+    base = {
+        "success": False, "operation": op, "samples_requested": n,
+        "samples_ok": 0, "samples_failed": 0,
+        "min_ms": None, "p50_ms": None, "p95_ms": None, "max_ms": None, "mean_ms": None,
+        "error_code": None, "error_message_sanitized": None,
+    }
+    try:
+        client = client_factory.build_s3_client(conn, provider_id)
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc), "success": False}
+
+    def _one() -> None:
+        if key:
+            client.head_object(Bucket=bucket, Key=key)
+        else:
+            client.head_bucket(Bucket=bucket)
+
+    latencies: list[float] = []
+    failed = 0
+    first_error: dict[str, Any] | None = None
+    for _ in range(n):
+        try:
+            started = time.monotonic()
+            _one()
+            latencies.append((time.monotonic() - started) * 1000.0)
+        except ClientError as exc:
+            failed += 1
+            if first_error is None:
+                first_error = _client_error_fields(exc)
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            if first_error is None:
+                first_error = _generic_error_fields(exc)
+
+    # No probe succeeded → surface the (sanitized) error rather than empty stats.
+    if not latencies:
+        return {**base, **(first_error or {}), "success": False, "samples_failed": failed}
+
+    latencies.sort()
+    result = {
+        **base, "success": True,
+        "samples_ok": len(latencies), "samples_failed": failed,
+        "min_ms": round(latencies[0], 1),
+        "p50_ms": round(_percentile(latencies, 50) or 0.0, 1),
+        "p95_ms": round(_percentile(latencies, 95) or 0.0, 1),
+        "max_ms": round(latencies[-1], 1),
+        "mean_ms": round(sum(latencies) / len(latencies), 1),
+    }
+    # If some probes failed, keep the first sanitized error for context.
+    if first_error:
+        result["error_code"] = first_error.get("error_code")
+        result["error_message_sanitized"] = first_error.get("error_message_sanitized")
+    return result
+
+
+# --- 9. get_object_lock_status ----------------------------------------------
+
+
+def get_object_lock_status(
+    conn: sqlite3.Connection,
+    provider_id: str,
+    bucket: str,
+    key: str,
+    version_id: str | None = None,
+) -> dict[str, Any]:
+    """Read one object's Object-Lock state: retention mode + retain-until date
+    and legal-hold status. Answers "why can't I delete/overwrite this object?" at
+    the OBJECT level, which bucket-level config review can't. Read-only; a missing
+    retention/hold (or a provider that doesn't implement it) is reported as a
+    normal state, not a hard failure.
+    """
+    base = {
+        "success": False,
+        "retention_mode": None, "retain_until_date": None, "retention_status": None,
+        "legal_hold_status": None,
+        "error_code": None, "error_message_sanitized": None,
+    }
+    # Codes meaning "no lock configured on this object", which is a valid answer.
+    _NONE_CODES = {"NoSuchObjectLockConfiguration", "ObjectLockConfigurationNotFoundError"}
+    try:
+        client = client_factory.build_s3_client(conn, provider_id)
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc), "success": False}
+
+    kw: dict[str, Any] = {"Bucket": bucket, "Key": key}
+    if version_id:
+        kw["VersionId"] = version_id
+
+    result = {**base, "success": True, "retention_status": "none", "legal_hold_status": "none"}
+    hard_error: dict[str, Any] | None = None
+
+    # Retention (mode + retain-until).
+    try:
+        resp = client.get_object_retention(**kw)
+        ret = resp.get("Retention") or {}
+        mode = ret.get("Mode")
+        until = ret.get("RetainUntilDate")
+        if mode:
+            result["retention_mode"] = mode
+            result["retain_until_date"] = until.isoformat() if hasattr(until, "isoformat") else until
+            result["retention_status"] = "active"
+    except ClientError as exc:
+        code = (exc.response or {}).get("Error", {}).get("Code")
+        if code in _NONE_CODES:
+            result["retention_status"] = "none"
+        elif code in _UNSUPPORTED_CODES:
+            result["retention_status"] = PROVIDER_UNSUPPORTED
+        else:
+            hard_error = _client_error_fields(exc)
+    except Exception as exc:  # noqa: BLE001
+        hard_error = _generic_error_fields(exc)
+
+    # Legal hold (on/off).
+    try:
+        resp = client.get_object_legal_hold(**kw)
+        status = (resp.get("LegalHold") or {}).get("Status")
+        result["legal_hold_status"] = status.lower() if isinstance(status, str) else "none"
+    except ClientError as exc:
+        code = (exc.response or {}).get("Error", {}).get("Code")
+        if code in _NONE_CODES:
+            result["legal_hold_status"] = "none"
+        elif code in _UNSUPPORTED_CODES:
+            result["legal_hold_status"] = PROVIDER_UNSUPPORTED
+        elif hard_error is None:
+            hard_error = _client_error_fields(exc)
+    except Exception as exc:  # noqa: BLE001
+        if hard_error is None:
+            hard_error = _generic_error_fields(exc)
+
+    # A definite access/credential error (not a "no lock" answer) → report it.
+    if hard_error and hard_error.get("error_code") in (_AUTH_FAIL_CODES | _DENIED_CODES):
+        return {**base, **hard_error, "success": False}
+    if hard_error:
+        result["error_code"] = hard_error.get("error_code")
+        result["error_message_sanitized"] = hard_error.get("error_message_sanitized")
+    return result
