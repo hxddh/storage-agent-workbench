@@ -76,6 +76,14 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
     skill_loads = {"n": 0}
     _MAX_SKILL_LOADS = 6
 
+    # Per-turn object-preview budget: preview_object reads bounded object CONTENT
+    # (unlike the metadata-only probes), so bound it in code — a few small objects
+    # per turn — so it can't be looped into a bulk download. This is the
+    # agent-native equivalent of a gate: fluid within a code-enforced budget.
+    preview_budget = {"n": 0, "bytes": 0}
+    _MAX_PREVIEWS = 8
+    _MAX_PREVIEW_BYTES = 8 * 1024 * 1024
+
     def note(tool: str, target: str, result: Any) -> None:
         if activity is not None:
             summary = result if isinstance(result, str) else _summarize(result)
@@ -187,6 +195,28 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     @function_tool
+    def preview_object(provider_id: str, bucket: str, key: str, max_bytes: int = 262144) -> str:
+        """Read a BOUNDED, read-only, sanitized preview of ONE text object's content (its first bytes, capped at 1 MiB). Use when the user asks what is INSIDE an object — a manifest, a small config/JSON/YAML, or a sample of a log/data object. Binary or oversized objects are reported, not decoded; secrets are redacted. Bounded per turn (a few objects); NOT a way to bulk-download. For metadata only, use head_object instead. Args: provider_id, bucket, key, max_bytes? (default 256 KiB, capped at 1 MiB)."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Call list_providers first.")
+        if not bucket_ok(p, bucket):
+            return _err("That bucket is not in this provider's allow-list.")
+        if preview_budget["n"] >= _MAX_PREVIEWS or preview_budget["bytes"] >= _MAX_PREVIEW_BYTES:
+            return _err(
+                f"Object-preview budget for this turn is used up ({_MAX_PREVIEWS} objects / "
+                f"{_MAX_PREVIEW_BYTES // (1024 * 1024)} MiB). Summarize what you found, or ask the "
+                "user which object matters most."
+            )
+        rec("preview_object", provider_id=provider_id, bucket=bucket, key=key)
+        res = s3.preview_object(conn, provider_id, bucket, key, max_bytes)
+        preview_budget["n"] += 1
+        preview_budget["bytes"] += int(res.get("bytes_read") or 0)
+        note("preview_object", f"{bucket}/{key}",
+             "binary" if res.get("binary") else f"{res.get('bytes_read', 0)} bytes")
+        return json.dumps(res)
+
+    @function_tool
     def test_addressing_style(provider_id: str, bucket: str) -> str:
         """Probe virtual-hosted vs. path-style addressing (two read-only HeadBucket calls) and recommend which works. Key for SignatureDoesNotMatch / endpoint / 'bucket not found on S3-compatible provider' diagnosis. Args: provider_id, bucket."""
         p = provider(provider_id)
@@ -231,7 +261,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     tools = [list_providers, list_buckets, head_bucket, list_objects,
-             test_credentials, head_object, test_range_get,
+             test_credentials, head_object, test_range_get, preview_object,
              test_addressing_style, inspect_endpoint_tls, read_skill]
 
     # Per-bucket config reviews (read-only). Distinct names/descriptions set on

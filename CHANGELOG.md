@@ -6,6 +6,26 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.20.9] - 2026-06-30
+
+### Added
+
+- **`preview_object` — the agent can now read a bounded preview of an object's
+  content.** Previously the agent could enumerate keys and read metadata
+  (`head_object`) but could not look *inside* an object. It now has a read-only
+  `preview_object(provider_id, bucket, key)` tool: a single bounded Range GET
+  (hard cap 1 MiB/call), text-only (binary/oversized objects are reported, not
+  decoded), redaction-passed, never persisted, and bounded per turn (a few
+  objects / a few MiB) so it can't be looped into a bulk download. This makes
+  "what's inside this manifest / config / log object?" answerable inline.
+  - **Agent-native by bounds, not a gate:** no per-call confirmation (that would
+    ossify the loop) — safety is code-enforced caps + sanitization + audit, the
+    same model as the other read-only probes.
+  - **Security rule #11 updated** accordingly: from "no object bodies by default"
+    to "no *bulk* body downloads, with `preview_object` as the one bounded,
+    audited, per-turn-capped exception." Bulk/recursive/full-object downloads
+    remain prohibited; evidence import (GB-scale) still requires confirmation.
+
 ## [0.20.8] - 2026-06-30
 
 ### Fixed

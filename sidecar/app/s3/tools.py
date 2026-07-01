@@ -378,6 +378,65 @@ def test_range_get(
         return {**base, **_generic_error_fields(exc), "success": False}
 
 
+# --- 5b. preview_object -----------------------------------------------------
+
+PREVIEW_MAX_BYTES = 1 * 1024 * 1024  # hard cap on a single content preview (1 MiB)
+# Content-type prefixes/markers we treat as binary and never decode as text.
+_BINARY_CONTENT_MARKERS = (
+    "image/", "video/", "audio/", "font/", "application/octet-stream",
+    "application/zip", "application/gzip", "application/x-tar", "application/pdf",
+    "application/x-parquet", "application/vnd.apache.parquet",
+)
+
+
+def preview_object(
+    conn: sqlite3.Connection,
+    provider_id: str,
+    bucket: str,
+    key: str,
+    max_bytes: int | None = None,
+) -> dict[str, Any]:
+    """Read a BOUNDED, read-only, sanitized text preview of one object's head.
+
+    A single bounded Range GET (≤ ``PREVIEW_MAX_BYTES``) of one named object. The
+    body is never persisted; binary/oversized objects are reported, not decoded;
+    the returned text is redaction-passed. This is the deliberate, bounded
+    exception to "no object bodies" — the bounds ARE the safety.
+    """
+    cap = PREVIEW_MAX_BYTES if not max_bytes else max(1, min(int(max_bytes), PREVIEW_MAX_BYTES))
+    base = {
+        "success": False, "content": None, "bytes_read": 0, "object_size": None,
+        "content_type": None, "truncated": False, "binary": False,
+        "error_code": None, "error_message_sanitized": None,
+    }
+    try:
+        client = client_factory.build_s3_client(conn, provider_id)
+        resp = client.get_object(Bucket=bucket, Key=key, Range=f"bytes=0-{cap - 1}")
+        ctype = (resp.get("ContentType") or "").lower()
+        body = resp.get("Body")
+        data = body.read(cap) if body is not None else b""
+        if body is not None and hasattr(body, "close"):
+            body.close()
+        object_size = None
+        cr = resp.get("ContentRange") or ""  # e.g. "bytes 0-1023/50000"
+        if "/" in cr:
+            tail = cr.rsplit("/", 1)[1]
+            object_size = int(tail) if tail.isdigit() else None
+        is_binary = b"\x00" in data or any(m in ctype for m in _BINARY_CONTENT_MARKERS)
+        if is_binary:
+            return {**base, "success": True, "binary": True, "content_type": ctype or None,
+                    "object_size": object_size, "bytes_read": len(data),
+                    "error_message_sanitized": "Object looks binary; content not previewed (text only)."}
+        text = redact_text(data.decode("utf-8", errors="replace"))
+        truncated = object_size is not None and object_size > len(data)
+        return {**base, "success": True, "content": text, "bytes_read": len(data),
+                "object_size": object_size, "content_type": ctype or None, "truncated": truncated}
+    except ClientError as exc:
+        return {**base, **_client_error_fields(exc), "success": False}
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc), "success": False}
+
+
 # --- 6. test_path_style_vs_virtual_host -------------------------------------
 
 
