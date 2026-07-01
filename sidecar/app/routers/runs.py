@@ -1,11 +1,17 @@
 """Analysis Run endpoints.
 
-Runs are PURE deterministic compute — there is no LLM planner. The implemented
-run types (diagnostic, access_log_analysis, inventory_analysis,
-bucket_config_review, account_discovery) execute via their deterministic
-executors; any other run type is created as a ``not_implemented`` placeholder.
-The conversational agent invokes these engines as tools or proposes a saved
-report; it never plans or narrates inside a run.
+Runs are PURE deterministic compute — there is no LLM planner. All five run
+types (diagnostic, access_log_analysis, inventory_analysis, bucket_config_review,
+account_discovery) execute via their deterministic executors. The conversational
+agent invokes these engines as tools or proposes a saved report; it never plans
+or narrates inside a run.
+
+`POST /runs` (`create_run`) is an INTERNAL / testing entry point for the
+deterministic run layer — it is NOT a user-facing surface (the frontend never
+calls it; the agent uses `run_service` directly, and evidence import creates its
+run server-side). It stays because the deterministic layer is the reproducibility
+/ security floor and the test suite creates runs through it. Do not wire it into
+the UI as a "new run" form — that runs-first flow was removed.
 """
 
 from __future__ import annotations
@@ -85,8 +91,10 @@ def create_run(body: RunCreate, conn: sqlite3.Connection = Depends(get_conn)):
         run_id = repo.create(conn, body, status="pending")
         bus.create(run_id)
     else:
-        # Placeholder for run types not implemented in Phase 05.
-        run_id = repo.create(conn, body, status="not_implemented")
+        # Unreachable: run_type is a RunType Literal (FastAPI 422s anything else
+        # before this handler), and _EXECUTABLE covers every RunType value. Kept
+        # as a defensive guard rather than a silent fall-through.
+        raise HTTPException(status_code=422, detail=f"run_type '{body.run_type}' is not executable")
 
     # Link the run to its session immediately so it appears in the timeline.
     if body.session_id and sessions_repo.get_row(conn, body.session_id) is not None:
