@@ -275,9 +275,15 @@ def post_session_message(
     # Success: persist the user message and the assistant answer together.
     # The contract is already sanitized + allowlist-coerced inside session_agent.
     proposed_actions = contract["next_action_proposals"]
+    grounding = {
+        "evidence_used": contract.get("evidence_used", []),
+        "evidence_gaps": contract.get("evidence_gaps", []),
+        "skills_used": contract.get("skills_used", []),
+    }
     repo.add_message(conn, session_id, "user", body.content)
     repo.add_message(conn, session_id, "assistant", contract["answer"],
-                     tool_activity=contract.get("tool_activity"))
+                     tool_activity=contract.get("tool_activity"),
+                     grounding=grounding, proposed_actions=proposed_actions)
     audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
     conn.commit()
     turn_guard.set_result(body.turn_id, {
@@ -364,7 +370,13 @@ async def post_session_message_stream(
                 # used from two threads at once.
                 repo.add_message(conn, session_id, "user", body.content)
                 mid = repo.add_message(conn, session_id, "assistant", data["answer"],
-                                       tool_activity=data.get("tool_activity"))
+                                       tool_activity=data.get("tool_activity"),
+                                       grounding={
+                                           "evidence_used": data.get("evidence_used", []),
+                                           "evidence_gaps": data.get("evidence_gaps", []),
+                                           "skills_used": data.get("skills_used", []),
+                                       },
+                                       proposed_actions=data["next_action_proposals"])
                 audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
                 conn.commit()
                 # Record the completed turn so the blocking fallback won't re-run

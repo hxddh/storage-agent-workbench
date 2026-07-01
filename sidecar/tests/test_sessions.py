@@ -75,6 +75,33 @@ def test_create_and_get_session(client):
     assert client.get(f"/sessions/{s['id']}/messages").json()["messages"] == []
 
 
+def test_grounding_and_proposals_persist_across_reload(client):
+    """An assistant turn's grounding + proposed actions are stored on the message
+    row and returned by GET /messages — so they survive a reload (regression:
+    they used to ride only the transient SSE `done` event and vanished)."""
+    s = _session(client)
+    with sqlite3.connect(str(config.db_path())) as conn:
+        sessions_repo.add_message(conn, s["id"], "user", "why is my bucket so big?")
+        sessions_repo.add_message(
+            conn, s["id"], "assistant", "Old versions dominate.",
+            tool_activity=[{"tool": "list_object_versions", "target": "b", "result": "3 versions"}],
+            grounding={"evidence_used": ["list_object_versions"], "evidence_gaps": ["no lifecycle rule"],
+                       "skills_used": ["storageops-lifecycle-cost"]},
+            proposed_actions=[{"action_type": "review_bucket_config", "title": "Review lifecycle",
+                               "reason": "", "requires_confirmation": True}],
+        )
+    # Reload via the HTTP endpoint (what the frontend does on mount).
+    msgs = client.get(f"/sessions/{s['id']}/messages").json()["messages"]
+    assistant = [m for m in msgs if m["role"] == "assistant"][0]
+    assert assistant["grounding"]["evidence_used"] == ["list_object_versions"]
+    assert assistant["grounding"]["evidence_gaps"] == ["no lifecycle rule"]
+    assert assistant["grounding"]["skills_used"] == ["storageops-lifecycle-cost"]
+    assert assistant["proposed_actions"][0]["action_type"] == "review_bucket_config"
+    # User message carries no grounding.
+    user = [m for m in msgs if m["role"] == "user"][0]
+    assert user["grounding"] is None and user["proposed_actions"] == []
+
+
 def test_list_sessions(client):
     _session(client, title="S1")
     _session(client, title="S2")

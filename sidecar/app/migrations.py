@@ -518,6 +518,17 @@ _M015 = """
 ALTER TABLE runs ADD COLUMN origin TEXT NOT NULL DEFAULT 'user';
 """
 
+# Persist an assistant turn's grounding + proposed next actions on the message
+# row, so they survive a reload (previously they only rode the transient SSE
+# `done` event and were lost when the thread was re-fetched — a historical turn
+# then couldn't show "why it said that"). Both are sanitized JSON:
+# grounding = {evidence_used, evidence_gaps, skills_used}; proposed_actions =
+# the same normalized proposal list the `done` event carries. No secrets/raw rows.
+_M016 = """
+ALTER TABLE session_messages ADD COLUMN grounding TEXT;
+ALTER TABLE session_messages ADD COLUMN proposed_actions TEXT;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -535,6 +546,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (13, "session_agent_memory", _M013),
     (14, "session_datasets", _M014),
     (15, "runs_add_origin", _M015),
+    (16, "session_message_grounding", _M016),
 ]
 
 

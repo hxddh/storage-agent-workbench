@@ -340,15 +340,21 @@ def add_message(
     referenced_run_ids: list[str] | None = None,
     referenced_evidence_ids: list[str] | None = None,
     tool_activity: list[dict[str, Any]] | None = None,
+    grounding: dict[str, Any] | None = None,
+    proposed_actions: list[dict[str, Any]] | None = None,
 ) -> str:
     msg_id = uuid.uuid4().hex
     conn.execute(
         "INSERT INTO session_messages "
-        "(id, session_id, role, content, referenced_run_ids, referenced_evidence_ids, tool_activity, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "(id, session_id, role, content, referenced_run_ids, referenced_evidence_ids, "
+        " tool_activity, grounding, proposed_actions, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (msg_id, session_id, role, redact_text(content or ""),
          json.dumps(referenced_run_ids or []), json.dumps(referenced_evidence_ids or []),
-         json.dumps(tool_activity or []), utcnow()),
+         json.dumps(tool_activity or []),
+         json.dumps(grounding) if grounding is not None else None,
+         json.dumps(proposed_actions) if proposed_actions is not None else None,
+         utcnow()),
     )
     _touch(conn, session_id)
     conn.commit()
@@ -419,6 +425,8 @@ def list_messages(conn: sqlite3.Connection, session_id: str) -> list[dict[str, A
             "referenced_run_ids": json.loads(r["referenced_run_ids"] or "[]"),
             "referenced_evidence_ids": json.loads(r["referenced_evidence_ids"] or "[]"),
             "tool_activity": json.loads((r["tool_activity"] if "tool_activity" in keys else None) or "[]"),
+            "grounding": json.loads(r["grounding"]) if ("grounding" in keys and r["grounding"]) else None,
+            "proposed_actions": json.loads(r["proposed_actions"]) if ("proposed_actions" in keys and r["proposed_actions"]) else [],
             "created_at": r["created_at"],
         })
     return out
