@@ -6,6 +6,17 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-02
+
+_"还债与收敛" — closes every finding verified in a third-party v0.20.11 review:
+documentation debt, dead guardrail ceremony, grounding-lost-on-reload, skill
+gaps, stale triage names, four frontend UX gaps, and legacy-API/dependency
+hygiene. Two findings were closed the agent-native way rather than as the review
+literally suggested — the dead tool-allowlist ceremony was **deleted** (not
+wired), and the proposal `action_type` naming was **documented** (not renamed) —
+both to avoid re-introducing churn/ossification. No change to the single-agent
+loop, the bounds-not-gates safety model, or the read-only security floor._
+
 ### Build / API hygiene
 
 - **Pinned the fast-moving AI SDKs for reproducibility.** `openai` and
