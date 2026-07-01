@@ -103,6 +103,36 @@ def test_unknown_run_type_is_rejected(client):
     assert r.status_code == 422
 
 
+def test_interrupted_runs_reconciled_on_startup(client):
+    """A run left pending/running by a prior process (in-process threads can't
+    survive a restart) is failed on boot, so it never reports as forever-running."""
+    from app import db, run_service
+    from app.models.schemas import RunCreate
+    from app.repositories import runs as runs_repo
+
+    body = RunCreate(run_type="diagnostic", provider_id="p1", bucket=BUCKET, user_prompt="x")
+    conn = db.connect()
+    try:
+        r_running = runs_repo.create(conn, body, status="running")
+        r_pending = runs_repo.create(conn, body, status="pending")
+        r_done = runs_repo.create(conn, body, status="completed")
+        conn.commit()
+    finally:
+        conn.close()
+
+    n = run_service.reconcile_interrupted_runs()
+    assert n >= 2
+
+    conn = db.connect()
+    try:
+        assert runs_repo.get_row(conn, r_running)["status"] == "failed"
+        assert runs_repo.get_row(conn, r_pending)["status"] == "failed"
+        assert "Interrupted" in (runs_repo.get_row(conn, r_running)["final_summary"] or "")
+        assert runs_repo.get_row(conn, r_done)["status"] == "completed"  # untouched
+    finally:
+        conn.close()
+
+
 # --- diagnostic flow --------------------------------------------------------
 
 

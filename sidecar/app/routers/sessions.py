@@ -376,7 +376,10 @@ async def post_session_message_stream(
                     "evidence_used": data.get("evidence_used", []),
                     "evidence_gaps": data.get("evidence_gaps", []),
                 })
-                emit(("done", {"message_id": mid, "proposed_actions": data["next_action_proposals"]}))
+                emit(("done", {"message_id": mid, "proposed_actions": data["next_action_proposals"],
+                               "evidence_used": data.get("evidence_used", []),
+                               "evidence_gaps": data.get("evidence_gaps", []),
+                               "skills_used": data.get("skills_used", [])}))
         except Exception as exc:  # noqa: BLE001
             emit(("error", redact_text(str(exc))))
         finally:

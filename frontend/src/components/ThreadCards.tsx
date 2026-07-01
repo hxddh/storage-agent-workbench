@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { NextAction, SessionRunLink, ToolActivity, TriageCase } from "../types";
+import type { Grounding, NextAction, SessionRunLink, ToolActivity, TriageCase } from "../types";
 import { RunDetail } from "./RunDetail";
 import { Markdown } from "./Markdown";
 import { useI18n } from "../i18n";
@@ -157,6 +157,48 @@ export function ThinkingBubble() {
         </span>
         <span className="animate-pulse">{labels[i]}</span>
       </div>
+    </div>
+  );
+}
+
+/** Transparency for the last answer: what it's grounded in and what the agent
+ * couldn't verify. Collapsed by default — subtle, not a wall of text. */
+export function GroundingCard({ g }: { g: Grounding }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const evidence = g.evidence_used ?? [];
+  const gaps = g.evidence_gaps ?? [];
+  const skills = g.skills_used ?? [];
+  if (!evidence.length && !gaps.length && !skills.length) return null;
+  const Section = ({ label, items, tone }: { label: string; items: string[]; tone: string }) =>
+    items.length ? (
+      <div className="mt-1.5">
+        <span className={`text-[10.5px] font-medium uppercase tracking-wider ${tone}`}>{label}</span>
+        <ul className="mt-0.5 space-y-0.5">
+          {items.map((s, i) => (
+            <li key={i} className="text-[12px] text-gray-400">· {s}</li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
+  return (
+    <div className="animate-fade-in">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 text-[11px] text-gray-600 transition-colors hover:text-gray-400"
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+             className={`transition-transform ${open ? "rotate-90" : ""}`}><polyline points="9 18 15 12 9 6" /></svg>
+        {t("grounding.title")}
+        {gaps.length ? <span className="rounded bg-amber-500/12 px-1.5 py-0.5 text-[10px] text-amber-300/90">{gaps.length}</span> : null}
+      </button>
+      {open && (
+        <div className="mt-1 border-l border-edge/70 pl-3">
+          <Section label={t("grounding.evidence")} items={evidence} tone="text-gray-500" />
+          <Section label={t("grounding.gaps")} items={gaps} tone="text-amber-300/80" />
+          <Section label={t("grounding.skills")} items={skills} tone="text-accent-soft/80" />
+        </div>
+      )}
     </div>
   );
 }

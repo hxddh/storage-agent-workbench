@@ -15,7 +15,7 @@ import type { NextAction, SessionDetail, ToolActivity, TriageCase } from "../typ
 import { useSessionRun, patchSessionRun } from "../sessionRuns";
 import { Button } from "./ui";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
-import { MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
+import { GroundingCard, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
 import { useI18n, type TFunc } from "../i18n";
 
 type Item =
@@ -107,6 +107,7 @@ export function Thread({
   const run = useSessionRun(sessionId);
   const { busy, pending, streamText, streamTools, needKey } = run;
   const liveProposals = run.proposals;
+  const grounding = run.grounding;
   // View-level errors not tied to a turn (e.g. a proposal action failing, or
   // asking for a report before a chat exists). Combined with the run's error.
   const [viewError, setViewError] = useState<string | null>(null);
@@ -235,7 +236,14 @@ export function Thread({
   const sendBlocking = async (id: string, q: string, turnId?: string) => {
     try {
       const r = await postSessionMessage(id, q, turnId);
-      patchSessionRun(id, { proposals: r.proposed_actions || [] });
+      patchSessionRun(id, {
+        proposals: r.proposed_actions || [],
+        grounding: {
+          evidence_used: r.evidence_used || [],
+          evidence_gaps: r.evidence_gaps || [],
+          skills_used: r.skills_used || [],
+        },
+      });
     } catch (e) {
       const msg = String(e);
       if (/no model provider configured|no api key stored/i.test(msg)) {
@@ -284,7 +292,10 @@ export function Thread({
           onDelta: (chunk) => patchSessionRun(id, (s) => ({ streamText: (s.streamText ?? "") + chunk })),
           onTool: (rec) => patchSessionRun(id, (s) => ({ streamTools: [...s.streamTools, rec] })),
         }, undefined, turnId);
-        patchSessionRun(id, { proposals: r.proposed_actions || [] });
+        patchSessionRun(id, {
+          proposals: r.proposed_actions || [],
+          grounding: { evidence_used: r.evidence_used, evidence_gaps: r.evidence_gaps, skills_used: r.skills_used },
+        });
       } catch {
         // Stream broke (or 422). Re-run via the blocking turn with the SAME turn
         // id; the server dedups, so this never duplicates the turn or an inline
@@ -648,6 +659,8 @@ export function Thread({
               )}
 
               {banners}
+
+              {grounding && !pending && <GroundingCard g={grounding} />}
 
               {proposals.length > 0 && !pending && (
                 <div className="flex flex-wrap items-center gap-2 pt-1.5">

@@ -12,7 +12,7 @@
  * the currently-visible session, so streams never bleed across sessions.
  */
 import { useSyncExternalStore } from "react";
-import type { NextAction, ToolActivity } from "./types";
+import type { Grounding, NextAction, ToolActivity } from "./types";
 
 export type SessionRun = {
   busy: boolean;
@@ -20,6 +20,7 @@ export type SessionRun = {
   streamText: string | null; // streaming assistant text so far
   streamTools: ToolActivity[];
   proposals: NextAction[] | null; // agent's proposed next steps (null = not answered yet)
+  grounding: Grounding | null; // what the last answer was grounded in / couldn't verify
   needKey: boolean;
   error: string | null;
 };
@@ -30,6 +31,7 @@ const EMPTY: SessionRun = {
   streamText: null,
   streamTools: [],
   proposals: null,
+  grounding: null,
   needKey: false,
   error: null,
 };

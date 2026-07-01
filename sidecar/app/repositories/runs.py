@@ -161,3 +161,22 @@ def set_status(
     params.append(run_id)
     conn.execute(f"UPDATE runs SET {', '.join(fields)} WHERE id = ?", params)
     conn.commit()
+
+
+def mark_interrupted(conn: sqlite3.Connection) -> int:
+    """Fail any run still pending/running at startup.
+
+    Runs execute on in-process threads, so none can survive a sidecar restart —
+    a row still `pending`/`running` on boot is an orphan from a prior process
+    (e.g. the app quit mid-survey). Left as-is it would report as forever-running
+    to ``read_run_result`` and in run cards. Returns the number reconciled.
+    """
+    cur = conn.execute(
+        "UPDATE runs SET status = 'failed', updated_at = ?, "
+        "final_summary = COALESCE(final_summary, "
+        "'Interrupted: the app restarted while this run was in progress.') "
+        "WHERE status IN ('pending', 'running')",
+        (utcnow(),),
+    )
+    conn.commit()
+    return cur.rowcount

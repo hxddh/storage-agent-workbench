@@ -300,6 +300,14 @@ export interface NextAction {
   source_run_ids: string[];
 }
 
+// What the agent's answer is grounded in, and what it couldn't verify. Produced
+// per turn by the skill contract; surfaced as a transparency affordance.
+export interface Grounding {
+  evidence_used: string[];
+  evidence_gaps: string[];
+  skills_used: string[];
+}
+
 export interface SessionSummaryData {
   session_id: string;
   summary_md: string;

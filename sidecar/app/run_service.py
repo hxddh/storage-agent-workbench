@@ -27,6 +27,19 @@ _EXECUTORS = {
 }
 
 
+def reconcile_interrupted_runs() -> int:
+    """On startup, fail any run left pending/running by a prior process.
+
+    In-process run threads can't survive a restart, so such rows are orphans that
+    would otherwise report as forever-running. Called from the app lifespan.
+    """
+    conn = db.connect()
+    try:
+        return runs_repo.mark_interrupted(conn)
+    finally:
+        conn.close()
+
+
 def run_sync(run_id: str) -> None:
     """Execute a run to completion using a fresh connection.
 
