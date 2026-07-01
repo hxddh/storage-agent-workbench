@@ -80,7 +80,10 @@ def parse_agent_contract(raw: Any, allowed_skill_names: list[str] | None = None)
     answer_raw = prose if prose.strip() else (data.get("answer") if isinstance(data.get("answer"), str) else "")
     answer = strip_chain_of_thought(redact_text(str(answer_raw or "")))[:_MAX_ANSWER]
 
-    skills_used = _strlist(data, "skills_used", cap=3, length=80)
+    # Cap matches the per-turn read_skill budget (session_tools._MAX_SKILL_LOADS)
+    # so a turn that legitimately loaded several skills can report all of them
+    # instead of under-reporting its method.
+    skills_used = _strlist(data, "skills_used", cap=6, length=80)
     if allowed_skill_names is not None:
         allowed = set(allowed_skill_names)
         skills_used = [s for s in skills_used if s in allowed]

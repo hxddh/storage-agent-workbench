@@ -49,6 +49,8 @@ def test_registry_and_skill_md_load():
     assert len(skills) >= 10
     names = {s.name for s in skills}
     assert "storageops-triage" in names
+    # The v0.21.0 additions: a method skill + an observability-audit skill.
+    assert {"storageops-workbench-investigation", "storageops-observability-audit"} <= names
     # every registry skill resolves to a readable SKILL.md
     for s in skills:
         body = loader.load_skill_body(s.name)
@@ -204,6 +206,17 @@ def test_skills_used_bound_to_actual_read_skill(client, monkeypatch):
     monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
     out = client.post(f"/sessions/{s['id']}/messages", json={"content": "why 403?"}).json()
     assert out["skills_used"] == []  # claimed but never loaded → dropped
+
+
+def test_skills_used_cap_matches_read_skill_budget():
+    """The contract keeps up to 6 skills_used (was 3), matching the per-turn
+    read_skill budget, so a turn that loaded several skills reports all of them."""
+    from app.skills import contract as skill_contract
+
+    six = str([f"storageops-skill-{i}" for i in range(6)]).replace("'", '"')
+    raw = 'ok\n```json\n{"answer": "ok", "skills_used": ' + six + "}\n```"
+    out = skill_contract.parse_agent_contract(raw)  # no allowlist filter
+    assert len(out["skills_used"]) == 6
 
 
 def test_triage_is_deterministic_only(client):

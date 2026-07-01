@@ -63,6 +63,25 @@ identity-side denials must be confirmed from the policy document the user shares
 - The identity policy and/or bucket policy JSON (account ids redacted).
 - Whether it's cross-account, and whether a VPC endpoint is involved.
 
+## Public-exposure pass (the mirror image of "access denied")
+
+The same authorization chain answers the opposite question — "is this bucket/
+object exposed to the world?" — which is worth a deliberate pass on any security
+review, not just when a 403 is reported:
+
+- **Public-access block** — is it ON at both account and bucket level? A missing
+  block is the single biggest exposure risk; `review_bucket_security` /
+  `get_bucket_config_summary` read it.
+- **Bucket policy** — any `Principal: "*"` / `AWS: "*"` allow without a tight
+  condition (VPCE, source IP, aws:SecureTransport) is effectively public.
+- **ACL** — `AllUsers` / `AuthenticatedUsers` grants are legacy public access
+  that a policy review alone misses; the security reader flags them.
+- **Website / unauthenticated GET** — if anonymous reads are expected (static
+  hosting), say so explicitly and scope it; if not, it's a finding.
+
+Report exposure with the same tool-verified-vs-inferred honesty as a denial, and
+propose manual remediation (enable BPA, tighten the policy/ACL) — never a script.
+
 ## Credential safety
 
 If shared logs contain an Authorization header, AK/SK pair, session token, or a
