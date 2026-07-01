@@ -81,6 +81,56 @@ Safety:
 - Bounded per turn (a few objects / a few MiB) so it can't be looped into a bulk
   download. No full-object download, no bulk/recursive body reads.
 
+### list_object_versions
+
+Purpose:
+
+- Surface the actual version / delete-marker pileup on a versioned bucket (the
+  real storage/cost driver that config review can't see).
+
+Safety:
+
+- Read-only ListObjectVersions; one bounded page (markers for paging). No bodies.
+- At most 20 sample keys echoed back.
+
+### list_multipart_uploads
+
+Purpose:
+
+- Surface in-progress / abandoned multipart uploads (a silent cost leak whose
+  parts are billed but invisible in a normal object listing).
+
+Safety:
+
+- Read-only ListMultipartUploads; listing only. Aborting is a mutation and is
+  NOT available — propose a lifecycle rule instead. At most 20 sample keys.
+
+### measure_request_latency
+
+Purpose:
+
+- Measure live request latency (min/p50/p95/max/mean ms) with a bounded set of
+  head round-trips, so a "slow" complaint becomes numbers.
+
+Safety:
+
+- HeadBucket, or HeadObject when a key is given — never an object body.
+- Per-call sample count hard-capped (≤10); probe runs bounded per turn. A
+  diagnostic probe, not a load test.
+
+### get_object_lock_status
+
+Purpose:
+
+- Read one object's Object-Lock state — retention mode + retain-until date and
+  legal-hold status — to answer "why can't I delete/overwrite this object?".
+
+Safety:
+
+- Read-only GetObjectRetention + GetObjectLegalHold; single object, no body.
+- A missing lock, or a provider that doesn't implement object-lock, is reported
+  as a normal `none` / `provider_unsupported` state, not a hard failure.
+
 ### test_addressing_style
 
 (S3 layer: `test_path_style_vs_virtual_host`)

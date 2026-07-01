@@ -206,22 +206,25 @@ confirmation-gated.
 
 Turning a proposal into action is gated and reuses existing safe flows.
 
-- **Proposals are not automation.** preview/prepare only validate and prefill;
-  they never create a run, download evidence, confirm an import, mutate a bucket,
-  call S3, or call an LLM. There is no hidden auto-run and no hidden
-  auto-confirm.
+- **Proposals are not automation.** The single `/actions/prepare` endpoint only
+  validates and prefills; it never creates a run, downloads evidence, confirms an
+  import, mutates a bucket, calls S3, or calls an LLM. There is no hidden auto-run
+  and no hidden auto-confirm. (There is no separate "preview" endpoint — that was
+  removed; `prepare` is the only handoff step.)
 - **Allowlist enforced.** Only a fixed set of `action_type`s is accepted; any
   other value (including assistant-proposed ones) is rejected/dropped. Every
   proposal carries `requires_confirmation=true`.
-- **Existing safe workflows are reused.** A run still starts only when the user
-  submits `NewRunForm`; evidence import still requires plan → confirm → run in
-  `EvidenceImportDialog`. The handoff just opens those flows prefilled.
-- **No unsafe auto-fill.** Access-log import does not auto-fill the time range;
-  the user enters it in the planner.
+- **Existing safe workflows are reused.** Most proposals just seed the composer
+  with a natural-language prompt that the conversational agent then handles inline
+  with read-only tools — there is no `NewRunForm` (it was removed). The one flow
+  that still creates a run is evidence import, which keeps its plan → confirm →
+  run gate in `EvidenceImportDialog`.
+- **No unsafe auto-fill.** Access-log evidence import does not auto-fill the time
+  range; the user enters it in the import plan.
 - **Sanitized.** Proposals, prefills, and assistant `proposed_actions` are
   redaction-passed (no secrets, no raw logs/rows); assistant output is
   chain-of-thought-stripped; a missing model key still fails cleanly.
-- **Not a task system.** Audit events (`next_action_previewed/prepared/opened`)
+- **Not a task system.** Audit events (`next_action_prepared` / `next_action_opened`)
   are lightweight; there is no assignee, due date, status board, ticket state, or
   workflow state machine.
 
@@ -236,17 +239,19 @@ no executable capability.
   scripts / tools / `capture_http_trace` / `scan_secrets` / `recommended_tools`,
   that is allowed prose — the Workbench never registers, exposes, imports, or
   executes them. `recommended_tools` is dropped at load time.
-- **Tools-disabled wrapper.** Every injected SKILL.md is prefixed with a preamble
-  stating the StorageOps tools / scripts / CLI / Pi runtime / external execution
-  are disabled in this phase and that script/tool mentions are conceptual
-  guidance only.
-- **No raw data / secrets to the model.** The selector and context builder feed
-  the Agent only skill docs + the already-sanitized session/triage context.
-  The raw error blob, raw logs/rows, credentials, model keys, and
-  chain-of-thought are never included. Agent output is redacted + CoT-stripped.
-- **Selection is metadata-driven, not a rule engine.** Candidates come from
-  lexical overlap with registry metadata; the selector emits no diagnosis /
-  remediation / confidence and contains no hard-coded error-code → skill mapping.
+- **No wrapper execution.** `read_skill` returns a SKILL.md body frontmatter-
+  stripped and length-bounded — no tools, scripts, CLI, or external execution are
+  ever wired up. Script/tool mentions inside a SKILL.md are conceptual prose only;
+  the Workbench never registers or runs them.
+- **No raw data / secrets to the model.** The catalog + context builder feed the
+  Agent only skill docs + the already-sanitized session/triage context. The raw
+  error blob, raw logs/rows, credentials, model keys, and chain-of-thought are
+  never included. Agent output is redacted + CoT-stripped.
+- **Routing is the model's, not a rule engine.** The agent sees the catalog
+  (name + one-line description) and chooses which skill to `read_skill` on demand;
+  there is no lexical selector (it was removed) and no hard-coded error-code →
+  skill mapping. Registry `trigger_keywords` / `auto_route` are parsed but
+  currently unconsumed.
 - **Human-in-the-loop preserved.** Skill-grounded answers still produce only
   next-action *proposals* (all require confirmation); nothing
   auto-runs, auto-confirms, downloads, or mutates. No new tool, API, DB table,
@@ -263,11 +268,11 @@ new dangerous capability.
   redactor plus triage-local patterns for SigV4 `Signature=`/`Credential=`,
   cookies, secret/session/API keys in `key=value` form, and `sk-` model keys.
   Only the redacted input + sanitized parsed signals/findings are persisted.
-- **No raw blob to the model.** The interpretation-only Agent sees only the
-  sanitized triage context (parsed signals + candidate-cause titles/why + next
-  checks). It has no tools, cannot run/download/mutate/call S3/run SQL/shell, and
-  its output is redacted + chain-of-thought-stripped. Missing model key → clean
-  failure; the deterministic triage is unaffected.
+- **Triage is deterministic — no LLM.** Error triage is pure pattern-matching +
+  playbook lookup; there is no interpretation-only triage Agent (that was
+  removed). Interpretation, when wanted, comes from the conversational session
+  agent in-thread over the already-sanitized triage context. Triage itself has no
+  tools and calls no model.
 - **Triage performs no S3 call.** Parsing + playbook matching are local and
   read-only-by-construction. Any actual cloud check happens only later, if the
   user explicitly starts an existing diagnostic / config-review / import flow via
@@ -294,10 +299,13 @@ any new dangerous capability.
   config readers, credential/addressing/TLS/range probes, progressive-disclosure
   skills) and bounded **working memory** (sanitized facts/findings/open-questions
   it records itself). Credentials are resolved server-side and **never** enter
-  its context; it **cannot** download object bodies, change configuration, delete
-  or mutate anything, run a shell, run free SQL, reach any destructive S3 op, or
-  see any secret. Output is redacted + chain-of-thought-stripped + bounded; a
-  missing model key fails cleanly and never affects the deterministic summary.
+  its context; it **cannot** bulk-download object bodies (the sole bounded
+  exception is `preview_object` / `test_range_get` — one sanitized, per-turn-
+  budgeted, text-only read, never a full or recursive download), change
+  configuration, delete or mutate anything, run a shell, run free SQL, reach any
+  destructive S3 op, or see any secret. Output is redacted + chain-of-thought-
+  stripped + bounded; a missing model key fails cleanly and never affects the
+  deterministic summary.
 - **Graded execution, never destructive.** There is no autonomy toggle: the
   agent always EXECUTES read-only runs itself (config-review / account-survey —
   real, audited, read-only, wall-clock-bounded) and narrates the result.

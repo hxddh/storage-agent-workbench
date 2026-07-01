@@ -6,6 +6,30 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Documentation
+
+- **Truth-up pass on stale docs (no behavior change).** A third-party review
+  found the docs describing an older, runs-first design. Corrected across
+  `architecture.md`, `security.md`, `tools.md`, `api.md`, `product.md`, the skill
+  registry header, and three module docstrings:
+  - Skill count 16 → 18; removed references to the deleted `skills/selection.py`
+    lexical selector and the removed `read_skill` "tools-disabled preamble"
+    (`read_skill` returns a frontmatter-stripped, length-bounded body).
+  - Reframed the product flow from "Goal → Evidence → Runs → …" to agent-first
+    (agent drives; runs are the auditable/security floor beneath it); noted that
+    only `origin !== 'agent'` runs card in the thread.
+  - Documented the 0.20.9–0.20.11 tools in `tools.md`
+    (`list_object_versions`, `list_multipart_uploads`, `measure_request_latency`,
+    `get_object_lock_status`) and corrected "cannot download object bodies" to the
+    bounded `preview_object` / `test_range_get` exception.
+  - `api.md`: SSE `done` event documents the grounding fields
+    (`evidence_used` / `evidence_gaps` / `skills_used`, added 0.20.8).
+  - Removed stale mentions of a preview endpoint / `NewRunForm` / an
+    interpretation-only triage Agent (triage is deterministic; interpretation is
+    the session agent in-thread).
+  - Noted registry `trigger_keywords` / `domains` / `auto_route` are parsed but
+    currently unconsumed (no offline selector).
+
 ## [0.20.11] - 2026-07-01
 
 ### Added
