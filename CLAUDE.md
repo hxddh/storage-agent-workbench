@@ -231,6 +231,8 @@ Allowed MVP tool groups:
 - `head_object`
 - `test_range_get`
 - `preview_object` (bounded ≤1 MiB, read-only, sanitized, text-only, per-turn budget)
+- `list_object_versions` (read-only, bounded, sample keys ≤20 — version/delete-marker pileup)
+- `list_multipart_uploads` (read-only, bounded — incomplete/abandoned uploads; list only, no abort)
 - `test_addressing_style` (S3 layer: `test_path_style_vs_virtual_host`)
 - `inspect_endpoint_tls` (S3 layer: `inspect_tls`)
 

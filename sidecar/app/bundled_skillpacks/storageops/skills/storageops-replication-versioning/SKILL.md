@@ -46,6 +46,9 @@ Replication / versioning issue →
   the source and destination buckets; mismatched versioning is the #1 cause.
 - `head_object` — inspect a specific object's version/metadata to confirm whether
   it exists on the destination and its state.
+- `list_object_versions` — when the confusion is about version STATE (unexpected
+  noncurrent versions, lingering delete markers not propagating), this reads the
+  actual versions + delete markers on a prefix, not just the on/off config.
 - `list_objects` — compare a prefix sample between source and destination buckets
   (add both as providers/buckets) to localize what's missing.
 - Run `review_bucket_config` (inline, read-only) for a thorough posture check

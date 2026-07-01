@@ -259,6 +259,107 @@ def list_objects_v2(
         return {**base, **_generic_error_fields(exc), "success": False}
 
 
+# --- 3b. list_object_versions -----------------------------------------------
+
+
+def list_object_versions(
+    conn: sqlite3.Connection,
+    provider_id: str,
+    bucket: str,
+    prefix: str | None = None,
+    max_keys: int = MAX_LIST_KEYS,
+    key_marker: str | None = None,
+    version_id_marker: str | None = None,
+) -> dict[str, Any]:
+    """Bounded ListObjectVersions — surfaces the ACTUAL version/delete-marker
+    pileup a versioned bucket carries (which config review can't see). One page;
+    the caller pages via the returned markers. No object bodies.
+    """
+    base = {
+        "success": False, "version_count": 0, "noncurrent_version_count": 0,
+        "delete_marker_count": 0, "current_bytes": 0, "noncurrent_bytes": 0,
+        "sample_keys": [], "is_truncated": False,
+        "next_key_marker": None, "next_version_id_marker": None,
+        "error_code": None, "error_message_sanitized": None,
+    }
+    clamped = max(1, min(int(max_keys), MAX_LIST_KEYS))
+    try:
+        client = client_factory.build_s3_client(conn, provider_id)
+        kw: dict[str, Any] = {"Bucket": bucket, "Prefix": prefix or "", "MaxKeys": clamped}
+        if key_marker:
+            kw["KeyMarker"] = key_marker
+        if version_id_marker:
+            kw["VersionIdMarker"] = version_id_marker
+        resp = client.list_object_versions(**kw)
+        versions = resp.get("Versions", []) or []
+        markers = resp.get("DeleteMarkers", []) or []
+        noncurrent = [v for v in versions if not v.get("IsLatest")]
+        return {
+            **base, "success": True,
+            "version_count": len(versions),
+            "noncurrent_version_count": len(noncurrent),
+            "delete_marker_count": len(markers),
+            "current_bytes": sum(int(v.get("Size") or 0) for v in versions if v.get("IsLatest")),
+            "noncurrent_bytes": sum(int(v.get("Size") or 0) for v in noncurrent),
+            "sample_keys": [v.get("Key") for v in versions[:SAMPLE_KEYS_LIMIT]],
+            "is_truncated": bool(resp.get("IsTruncated", False)),
+            "next_key_marker": resp.get("NextKeyMarker"),
+            "next_version_id_marker": resp.get("NextVersionIdMarker"),
+        }
+    except ClientError as exc:
+        return {**base, **_client_error_fields(exc), "success": False}
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc), "success": False}
+
+
+# --- 3c. list_multipart_uploads ---------------------------------------------
+
+
+def list_multipart_uploads(
+    conn: sqlite3.Connection,
+    provider_id: str,
+    bucket: str,
+    max_uploads: int = MAX_LIST_KEYS,
+    key_marker: str | None = None,
+    upload_id_marker: str | None = None,
+) -> dict[str, Any]:
+    """Bounded ListMultipartUploads — surfaces incomplete/abandoned multipart
+    uploads (a common silent cost leak: parts are billed but invisible in a normal
+    object listing). Read-only; listing only — aborting is a mutation and is out.
+    """
+    base = {
+        "success": False, "upload_count": 0, "oldest_initiated": None,
+        "sample_keys": [], "is_truncated": False,
+        "next_key_marker": None, "next_upload_id_marker": None,
+        "error_code": None, "error_message_sanitized": None,
+    }
+    clamped = max(1, min(int(max_uploads), MAX_LIST_KEYS))
+    try:
+        client = client_factory.build_s3_client(conn, provider_id)
+        kw: dict[str, Any] = {"Bucket": bucket, "MaxUploads": clamped}
+        if key_marker:
+            kw["KeyMarker"] = key_marker
+        if upload_id_marker:
+            kw["UploadIdMarker"] = upload_id_marker
+        resp = client.list_multipart_uploads(**kw)
+        uploads = resp.get("Uploads", []) or []
+        initiated = [u.get("Initiated") for u in uploads if u.get("Initiated")]
+        oldest = min(initiated) if initiated else None
+        return {
+            **base, "success": True,
+            "upload_count": len(uploads),
+            "oldest_initiated": oldest.isoformat() if hasattr(oldest, "isoformat") else (str(oldest) if oldest else None),
+            "sample_keys": [u.get("Key") for u in uploads[:SAMPLE_KEYS_LIMIT]],
+            "is_truncated": bool(resp.get("IsTruncated", False)),
+            "next_key_marker": resp.get("NextKeyMarker"),
+            "next_upload_id_marker": resp.get("NextUploadIdMarker"),
+        }
+    except ClientError as exc:
+        return {**base, **_client_error_fields(exc), "success": False}
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc), "success": False}
+
+
 # --- 4. head_object ---------------------------------------------------------
 
 

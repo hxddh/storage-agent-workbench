@@ -48,6 +48,13 @@ Cost concern →
   risky early transitions.
 - `review_bucket_cost_optimization` — the cost-focused review: flags wrong-tier
   data, small-object overhead, and version accumulation.
+- `list_object_versions` — when config shows versioning on but the bill is
+  unexplained, this reads the ACTUAL pileup (noncurrent-version count + bytes,
+  delete markers) that the config review can't see. The concrete "your bucket is
+  huge because of old versions" evidence.
+- `list_multipart_uploads` — surfaces abandoned incomplete uploads whose parts
+  are billed but invisible in a normal listing. If present, propose an "abort
+  incomplete multipart upload" lifecycle rule (manual — the app never aborts).
 - `review_bucket_performance_profile` / `list_objects` — sample size
   distribution and storage classes to judge small-file impact.
 - Run `review_bucket_config` (inline, read-only) for the full lifecycle posture.
