@@ -6,6 +6,17 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **Loosened the AI-SDK upper bounds so new agent-SDK features flow in.** Dropped
+  the redundant `openai<3` (`openai-agents` already constrains openai to
+  `<3,>=2.36`) → now `openai>=2.40`. Relaxed `openai-agents>=0.17,<0.18` →
+  `>=0.17,<1`: every 0.x feature minor (0.18, 0.19, …) is adopted automatically,
+  and only the 1.0 boundary — a pre-1.0 SDK's likely rewrite — stays a
+  human-reviewed bump. Trade-off accepted: a breaking 0.x minor could land
+  silently (tests stub the agent loop, so CI may not catch a real Runner API
+  break); the `<1` guard blocks only the single most-likely-to-break jump.
+
 ## [0.21.0] - 2026-07-02
 
 _"还债与收敛" — closes every finding verified in a third-party v0.20.11 review:
