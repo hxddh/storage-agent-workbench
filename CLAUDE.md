@@ -181,7 +181,12 @@ Do not introduce these unless explicitly requested:
    - `tmp/agent-test/*`
    - `diagnose/*`
 
-11. Analysis tasks must not download object bodies by default.
+11. Bulk analysis must not download object bodies. The one bounded exception is
+    the `preview_object` tool: a single, read-only, sanitized preview of one named
+    object's head (hard cap 1 MiB/call), bounded per turn (a few objects) so it
+    can't be looped into a bulk download, and never persisted. Binary/oversized
+    objects are reported, not decoded. The bounds are the safety — there is still
+    no full-object download and no bulk/recursive body reads.
 
 12. Large bucket scans must require one of:
 
@@ -225,6 +230,7 @@ Allowed MVP tool groups:
 - `list_objects_v2`
 - `head_object`
 - `test_range_get`
+- `preview_object` (bounded ≤1 MiB, read-only, sanitized, text-only, per-turn budget)
 - `test_addressing_style` (S3 layer: `test_path_style_vs_virtual_host`)
 - `inspect_endpoint_tls` (S3 layer: `inspect_tls`)
 

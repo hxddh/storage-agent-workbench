@@ -58,7 +58,10 @@ Forbidden:
 
 Rules:
 
-1. Do not download object bodies by default.
+1. No bulk object-body downloads. The one bounded exception is `preview_object`:
+   a single, read-only, sanitized preview of one named object's head (hard cap
+   1 MiB/call), bounded per turn so it can't be looped into a bulk download, and
+   never persisted. Binary/oversized objects are reported, not decoded.
 2. Full bucket scans require explicit user approval.
 3. Large scans require max_objects or prefix limits.
 4. Reports should show at most 20 sample object keys by default.

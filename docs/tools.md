@@ -66,6 +66,21 @@ Safety:
 - Must limit requested bytes.
 - Must not download full object unless explicitly approved in a future phase.
 
+### preview_object
+
+Purpose:
+
+- Read a bounded, read-only, sanitized preview of one text object's content (a
+  manifest, small config, or log/data sample) so the agent can answer "what's
+  inside this object".
+
+Safety:
+
+- Single named object; hard cap 1 MiB per call (bounded Range GET); never persisted.
+- Binary or oversized objects are reported, not decoded; output is redaction-passed.
+- Bounded per turn (a few objects / a few MiB) so it can't be looped into a bulk
+  download. No full-object download, no bulk/recursive body reads.
+
 ### test_addressing_style
 
 (S3 layer: `test_path_style_vs_virtual_host`)

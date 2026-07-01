@@ -363,3 +363,81 @@ def test_tool_calls_and_audit_recorded_without_secrets(client, cloud_id, stub):
     blob = " ".join(str(c) for row in tc for c in row) + " ".join(str(r[0]) for r in al)
     for leaked in (ACCESS, SECRET, TOKEN):
         assert leaked not in blob
+
+
+# --- preview_object (bounded, read-only content preview) --------------------
+
+
+def test_preview_object_returns_sanitized_text(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    c, s = stub
+    body = b"config: ok\nsecret_key=AKIAIOSFODNN7EXAMPLE\n"
+    s.add_response(
+        "get_object",
+        {"Body": StreamingBody(BytesIO(body), len(body)), "ContentType": "text/plain",
+         "ContentRange": f"bytes 0-{len(body) - 1}/{len(body)}"},
+        expected_params={"Bucket": BUCKET, "Key": "cfg.txt", "Range": "bytes=0-262143"},
+    )
+    with _db() as conn:
+        res = s3.preview_object(conn, cloud_id, BUCKET, "cfg.txt", 262144)
+    assert res["success"] is True and res["binary"] is False
+    assert "config: ok" in res["content"]
+    assert "AKIAIOSFODNN7EXAMPLE" not in res["content"]  # redacted
+    assert res["object_size"] == len(body)
+
+
+def test_preview_object_rejects_binary(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    c, s = stub
+    body = b"\x89PNG\r\n\x00\x00binary-bytes"
+    s.add_response(
+        "get_object",
+        {"Body": StreamingBody(BytesIO(body), len(body)), "ContentType": "image/png"},
+        expected_params={"Bucket": BUCKET, "Key": "img.png", "Range": "bytes=0-262143"},
+    )
+    with _db() as conn:
+        res = s3.preview_object(conn, cloud_id, BUCKET, "img.png", 262144)
+    assert res["success"] is True and res["binary"] is True and res["content"] is None
+
+
+def test_preview_object_clamps_request_to_hard_cap(client, cloud_id, stub):
+    """A max_bytes above the 1 MiB hard cap is clamped in the Range header."""
+    from app.s3 import tools as s3
+
+    c, s = stub
+    body = b"x" * 100
+    s.add_response(
+        "get_object",
+        {"Body": StreamingBody(BytesIO(body), len(body)), "ContentType": "text/plain"},
+        expected_params={"Bucket": BUCKET, "Key": "big.txt", "Range": f"bytes=0-{s3.PREVIEW_MAX_BYTES - 1}"},
+    )
+    with _db() as conn:
+        res = s3.preview_object(conn, cloud_id, BUCKET, "big.txt", 999_999_999)
+    assert res["success"] is True  # StubAssertionError would fire if Range wasn't clamped
+
+
+def test_preview_object_per_turn_budget(client, cloud_id, monkeypatch):
+    """preview_object reads content, so it's bounded per turn — a few objects,
+    then the budget is exhausted (can't be looped into a bulk download)."""
+    import json as _json
+
+    from app.agent_runtime import session_tools
+    from app.s3 import tools as s3mod
+
+    monkeypatch.setattr(s3mod, "preview_object",
+                        lambda *a, **k: {"success": True, "content": "x", "bytes_read": 10, "binary": False})
+
+    class _FT:
+        def __call__(self, fn):
+            fn.name = fn.__name__
+            return fn
+
+    with _db() as conn:
+        conn.row_factory = sqlite3.Row
+        tools = {t.name: t for t in session_tools.build(conn, _FT(), [])}
+        pv = tools["preview_object"]
+        results = [_json.loads(pv(cloud_id, BUCKET, f"k{i}.txt")) for i in range(9)]
+    assert all("error" not in r for r in results[:8])           # first 8 succeed
+    assert "error" in results[8] and "budget" in results[8]["error"].lower()  # 9th blocked
