@@ -441,3 +441,77 @@ def test_preview_object_per_turn_budget(client, cloud_id, monkeypatch):
         results = [_json.loads(pv(cloud_id, BUCKET, f"k{i}.txt")) for i in range(9)]
     assert all("error" not in r for r in results[:8])           # first 8 succeed
     assert "error" in results[8] and "budget" in results[8]["error"].lower()  # 9th blocked
+
+
+# --- list_object_versions / list_multipart_uploads (data-level, read-only) --
+
+
+def test_list_object_versions_counts_pileup(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    c, s = stub
+    s.add_response(
+        "list_object_versions",
+        {"Versions": [
+            {"Key": "a", "IsLatest": True, "Size": 100},
+            {"Key": "a", "IsLatest": False, "Size": 90},
+            {"Key": "a", "IsLatest": False, "Size": 80},
+         ],
+         "DeleteMarkers": [{"Key": "b", "IsLatest": True}],
+         "IsTruncated": False},
+        expected_params={"Bucket": BUCKET, "Prefix": "", "MaxKeys": 1000},
+    )
+    with _db() as conn:
+        res = s3.list_object_versions(conn, cloud_id, BUCKET, None, 1000)
+    assert res["success"] is True
+    assert res["version_count"] == 3
+    assert res["noncurrent_version_count"] == 2
+    assert res["delete_marker_count"] == 1
+    assert res["current_bytes"] == 100 and res["noncurrent_bytes"] == 170
+
+
+def test_list_object_versions_caps_sample_keys(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    c, s = stub
+    s.add_response(
+        "list_object_versions",
+        {"Versions": [{"Key": f"k{i}", "IsLatest": True, "Size": 1} for i in range(50)],
+         "IsTruncated": True, "NextKeyMarker": "k49"},
+        expected_params={"Bucket": BUCKET, "Prefix": "", "MaxKeys": 1000},
+    )
+    with _db() as conn:
+        res = s3.list_object_versions(conn, cloud_id, BUCKET, None, 1000)
+    assert len(res["sample_keys"]) <= 20  # rule 16: ≤20 sample keys
+    assert res["is_truncated"] is True and res["next_key_marker"] == "k49"
+
+
+def test_list_multipart_uploads_reports_abandoned(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    c, s = stub
+    s.add_response(
+        "list_multipart_uploads",
+        {"Uploads": [
+            {"Key": "big.bin", "Initiated": datetime(2026, 1, 1, tzinfo=timezone.utc)},
+            {"Key": "big2.bin", "Initiated": datetime(2026, 6, 1, tzinfo=timezone.utc)},
+         ], "IsTruncated": False},
+        expected_params={"Bucket": BUCKET, "MaxUploads": 1000},
+    )
+    with _db() as conn:
+        res = s3.list_multipart_uploads(conn, cloud_id, BUCKET, 1000)
+    assert res["success"] is True and res["upload_count"] == 2
+    assert res["oldest_initiated"].startswith("2026-01-01")  # earliest
+
+
+def test_list_object_versions_provider_unsupported(client, cloud_id, stub):
+    """A provider that doesn't implement ListObjectVersions surfaces as a clean
+    error, not a crash (rule 18)."""
+    from app.s3 import tools as s3
+
+    c, s = stub
+    s.add_client_error("list_object_versions", service_error_code="NotImplemented",
+                       http_status_code=501)
+    with _db() as conn:
+        res = s3.list_object_versions(conn, cloud_id, BUCKET, None, 1000)
+    assert res["success"] is False and res["error_code"] == "NotImplemented"

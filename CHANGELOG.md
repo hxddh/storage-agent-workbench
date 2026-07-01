@@ -6,6 +6,27 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.20.10] - 2026-06-30
+
+### Added
+
+- **Two read-only data-level tools the agent was missing — version pileup and
+  abandoned multipart uploads.** Config review could only see *whether* versioning
+  and cleanup rules exist, never the actual data behind unexplained bucket
+  size/cost. The agent now has:
+  - `list_object_versions` — the real noncurrent-version + delete-marker pileup
+    (counts, current vs noncurrent bytes, ≤20 sample keys) — the concrete answer
+    to "why is my versioned bucket so large/expensive?".
+  - `list_multipart_uploads` — incomplete/abandoned multipart uploads (a common
+    silent cost leak: parts billed but invisible in a normal listing). **List
+    only** — aborting is a mutation and stays out; the agent proposes a lifecycle
+    rule instead.
+  - Both are read-only, bounded (≤1000/page + paging, ≤20 sample keys), sanitized,
+    inline (no confirmation — same tier as `list_objects`), and report
+    `Provider unsupported` cleanly on S3-compatible providers that lack them. The
+    lifecycle-cost and replication-versioning skills gained capability hints
+    pointing at them.
+
 ## [0.20.9] - 2026-06-30
 
 ### Added

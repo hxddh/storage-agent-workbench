@@ -159,6 +159,34 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     @function_tool
+    def list_object_versions(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 1000) -> str:
+        """List one page of object VERSIONS + delete markers (read-only ListObjectVersions; no bodies). Surfaces the actual noncurrent-version / delete-marker pileup a versioned bucket carries — which config review can't see (it only shows whether versioning + a cleanup rule exist). Use for "why is my versioned bucket so large/expensive?". Returns version/noncurrent/delete-marker counts, current vs noncurrent bytes, ≤20 sample keys, and paging markers. Args: provider_id, bucket, prefix?, max_keys? (up to 1000)."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Call list_providers first.")
+        if not bucket_ok(p, bucket):
+            return _err("That bucket is not in this provider's allow-list.")
+        bound = guardrails.bound_tool_args("list_objects_v2", {"max_keys": max_keys})
+        rec("list_object_versions", provider_id=provider_id, bucket=bucket, prefix=prefix, max_keys=bound["max_keys"])
+        res = s3.list_object_versions(conn, provider_id, bucket, prefix or None, bound["max_keys"])
+        note("list_object_versions", bucket, res)
+        return json.dumps(res)
+
+    @function_tool
+    def list_multipart_uploads(provider_id: str, bucket: str, max_uploads: int = 1000) -> str:
+        """List one page of in-progress / incomplete multipart uploads (read-only ListMultipartUploads; no bodies). Surfaces abandoned uploads — a common silent cost leak (parts are billed but invisible in a normal object listing). Use for unexplained storage/cost. Returns upload count, oldest initiation time, ≤20 sample keys, and paging markers. Listing only — aborting is a mutation and is not available; propose a lifecycle rule instead. Args: provider_id, bucket, max_uploads? (up to 1000)."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Call list_providers first.")
+        if not bucket_ok(p, bucket):
+            return _err("That bucket is not in this provider's allow-list.")
+        bound = guardrails.bound_tool_args("list_objects_v2", {"max_keys": max_uploads})
+        rec("list_multipart_uploads", provider_id=provider_id, bucket=bucket, max_uploads=bound["max_keys"])
+        res = s3.list_multipart_uploads(conn, provider_id, bucket, bound["max_keys"])
+        note("list_multipart_uploads", bucket, res)
+        return json.dumps(res)
+
+    @function_tool
     def test_credentials(provider_id: str) -> str:
         """Validate the provider's credentials with a read-only call — the first step for any auth/403/SignatureDoesNotMatch diagnosis. Returns whether the keys work and the identity/endpoint reached (no secrets). Args: provider_id."""
         if provider(provider_id) is None:
@@ -261,6 +289,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     tools = [list_providers, list_buckets, head_bucket, list_objects,
+             list_object_versions, list_multipart_uploads,
              test_credentials, head_object, test_range_get, preview_object,
              test_addressing_style, inspect_endpoint_tls, read_skill]
 
