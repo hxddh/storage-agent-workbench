@@ -20,8 +20,12 @@ dependencies = [
     "pyarrow>=14",
     "pandas>=2.0",
     "python-multipart>=0.0.9",
-    "openai>=1.40",
-    "openai-agents>=0.0.1",
+    # The two AI SDKs move fast and can break across releases, so pin them with
+    # upper bounds to the tested majors/minors (openai-agents is pre-1.0, so a
+    # minor bump can be breaking → cap at the next minor). CI installs from this
+    # file with no lockfile, so these bounds ARE the reproducibility guard.
+    "openai>=2.40,<3",
+    "openai-agents>=0.17,<0.18",
     "pyyaml>=6.0",
 ]
 

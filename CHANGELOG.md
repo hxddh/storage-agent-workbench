@@ -6,6 +6,22 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Build / API hygiene
+
+- **Pinned the fast-moving AI SDKs for reproducibility.** `openai` and
+  `openai-agents` had only `>=` floors far below the installed versions, so CI
+  (which installs from `pyproject`, no lockfile) could silently pull a breaking
+  release. Bounded to the tested range: `openai>=2.40,<3`,
+  `openai-agents>=0.17,<0.18` (pre-1.0 → cap at the next minor).
+- **`POST /runs` documented as internal/testing.** It is not a user surface (the
+  frontend never calls it; the agent drives runs via `run_service`, evidence
+  import creates its run server-side). Clarified in the `runs` router docstring
+  and `docs/api.md`; kept because the deterministic run layer is the
+  reproducibility/security floor and the test suite creates runs through it.
+- **Removed the dead `not_implemented` run branch.** `run_type` is a `RunType`
+  Literal (FastAPI 422s anything else) and every value is executable, so the
+  fall-through placeholder was unreachable; replaced with a defensive 422.
+
 ### Frontend
 
 - **Attach-only send.** The composer's send button (and Enter) were disabled

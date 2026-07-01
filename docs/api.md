@@ -42,12 +42,18 @@ POST /cloud-providers/{id}/test
 
 ```text
 GET /runs
-POST /runs
+POST /runs                     # INTERNAL / testing — not a user surface
 GET /runs/{run_id}
 POST /runs/{run_id}/message
 GET /runs/{run_id}/events
 GET /reports/{run_id}
 ```
+
+`POST /runs` creates a deterministic run directly. It is **internal / testing
+only** — the frontend never calls it (the conversational agent drives runs via
+`run_service`, and evidence import creates its run server-side). It stays because
+the deterministic run layer is the reproducibility / security floor and the test
+suite creates runs through it; it is not wired into the UI as a "new run" form.
 
 ## Tool APIs
 
