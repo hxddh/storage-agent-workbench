@@ -47,6 +47,11 @@ Slow transfer or 429/503 →
 - `review_bucket_performance_profile` — profile object sizes / storage classes /
   key distribution for a bucket; for the full picture run `review_bucket_config`
   (inline, read-only).
+- `measure_request_latency` — the one tool that MEASURES it: a bounded set of
+  head round-trips returning min/p50/p95/max/mean milliseconds against the
+  endpoint (optionally on a specific key). Run this FIRST when the complaint is
+  "slow" — it turns a vibe into numbers and tells you whether the floor is
+  per-request latency at all before you reason about object size or concurrency.
 - `test_range_get` — measure first-byte latency and confirm ranged reads work
   (relevant for partial-read / CDN-origin workloads).
 - `inspect_endpoint_tls` / `test_addressing_style` — rule out a handshake or

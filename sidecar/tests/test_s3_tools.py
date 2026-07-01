@@ -214,6 +214,21 @@ def test_session_list_objects_caps_keys_in_context(client, cloud_id, monkeypatch
     assert out["next_token"] == "T"           # can still page
 
 
+def test_session_tools_register_new_diagnostics():
+    """The two new diagnostics are wired into the read-only investigator tool set."""
+    from app.agent_runtime import session_tools
+
+    class _FT:
+        def __call__(self, fn):
+            fn.name = fn.__name__
+            return fn
+
+    with _db() as conn:
+        conn.row_factory = sqlite3.Row
+        names = {t.name for t in session_tools.build(conn, _FT(), [])}
+    assert {"measure_request_latency", "get_object_lock_status"} <= names
+
+
 # --- head_object ------------------------------------------------------------
 
 
@@ -515,3 +530,126 @@ def test_list_object_versions_provider_unsupported(client, cloud_id, stub):
     with _db() as conn:
         res = s3.list_object_versions(conn, cloud_id, BUCKET, None, 1000)
     assert res["success"] is False and res["error_code"] == "NotImplemented"
+
+
+# --- measure_request_latency (live probe, read-only, bounded) ---------------
+
+
+def test_measure_request_latency_head_bucket(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    c, s = stub
+    for _ in range(3):
+        s.add_response("head_bucket", {}, expected_params={"Bucket": BUCKET})
+    with _db() as conn:
+        res = s3.measure_request_latency(conn, cloud_id, BUCKET, None, 3)
+    assert res["success"] is True and res["operation"] == "head_bucket"
+    assert res["samples_ok"] == 3 and res["samples_failed"] == 0
+    # Stats are present and ordered.
+    for k in ("min_ms", "p50_ms", "p95_ms", "max_ms", "mean_ms"):
+        assert isinstance(res[k], (int, float))
+    assert res["min_ms"] <= res["p50_ms"] <= res["max_ms"]
+
+
+def test_measure_request_latency_uses_head_object_for_key(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    c, s = stub
+    for _ in range(2):
+        s.add_response("head_object", {"ContentLength": 10},
+                       expected_params={"Bucket": BUCKET, "Key": "some/key"})
+    with _db() as conn:
+        res = s3.measure_request_latency(conn, cloud_id, BUCKET, "some/key", 2)
+    assert res["success"] is True and res["operation"] == "head_object"
+    assert res["samples_ok"] == 2
+
+
+def test_measure_request_latency_clamps_samples(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    c, s = stub
+    for _ in range(s3.LATENCY_MAX_SAMPLES):  # only the capped count of round-trips is made
+        s.add_response("head_bucket", {}, expected_params={"Bucket": BUCKET})
+    with _db() as conn:
+        res = s3.measure_request_latency(conn, cloud_id, BUCKET, None, 100)
+    assert res["samples_requested"] == s3.LATENCY_MAX_SAMPLES
+    assert res["samples_ok"] == s3.LATENCY_MAX_SAMPLES
+
+
+def test_measure_request_latency_all_fail_surfaces_error(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    c, s = stub
+    for _ in range(2):
+        s.add_client_error("head_bucket", service_error_code="AccessDenied",
+                           http_status_code=403)
+    with _db() as conn:
+        res = s3.measure_request_latency(conn, cloud_id, BUCKET, None, 2)
+    assert res["success"] is False
+    assert res["samples_failed"] == 2 and res["error_code"] == "AccessDenied"
+
+
+# --- get_object_lock_status (object-level retention + legal hold) -----------
+
+
+def test_get_object_lock_status_active(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    c, s = stub
+    until = datetime(2030, 1, 1, tzinfo=timezone.utc)
+    s.add_response("get_object_retention",
+                   {"Retention": {"Mode": "COMPLIANCE", "RetainUntilDate": until}},
+                   expected_params={"Bucket": BUCKET, "Key": "locked"})
+    s.add_response("get_object_legal_hold", {"LegalHold": {"Status": "ON"}},
+                   expected_params={"Bucket": BUCKET, "Key": "locked"})
+    with _db() as conn:
+        res = s3.get_object_lock_status(conn, cloud_id, BUCKET, "locked")
+    assert res["success"] is True
+    assert res["retention_mode"] == "COMPLIANCE" and res["retention_status"] == "active"
+    assert res["retain_until_date"].startswith("2030-01-01")
+    assert res["legal_hold_status"] == "on"
+
+
+def test_get_object_lock_status_none_is_normal(client, cloud_id, stub):
+    """No lock configured on the object is a valid answer, not a hard failure."""
+    from app.s3 import tools as s3
+
+    c, s = stub
+    s.add_client_error("get_object_retention",
+                       service_error_code="NoSuchObjectLockConfiguration",
+                       http_status_code=404)
+    s.add_client_error("get_object_legal_hold",
+                       service_error_code="NoSuchObjectLockConfiguration",
+                       http_status_code=404)
+    with _db() as conn:
+        res = s3.get_object_lock_status(conn, cloud_id, BUCKET, "plain")
+    assert res["success"] is True
+    assert res["retention_status"] == "none" and res["legal_hold_status"] == "none"
+
+
+def test_get_object_lock_status_provider_unsupported(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    c, s = stub
+    s.add_client_error("get_object_retention", service_error_code="NotImplemented",
+                       http_status_code=501)
+    s.add_client_error("get_object_legal_hold", service_error_code="NotImplemented",
+                       http_status_code=501)
+    with _db() as conn:
+        res = s3.get_object_lock_status(conn, cloud_id, BUCKET, "k")
+    assert res["success"] is True
+    assert res["retention_status"] == "provider_unsupported"
+    assert res["legal_hold_status"] == "provider_unsupported"
+
+
+def test_get_object_lock_status_access_denied_is_hard_error(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    c, s = stub
+    s.add_client_error("get_object_retention", service_error_code="AccessDenied",
+                       http_status_code=403)
+    s.add_client_error("get_object_legal_hold", service_error_code="AccessDenied",
+                       http_status_code=403)
+    with _db() as conn:
+        res = s3.get_object_lock_status(conn, cloud_id, BUCKET, "k")
+    assert res["success"] is False and res["error_code"] == "AccessDenied"
