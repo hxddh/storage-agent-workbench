@@ -2,9 +2,10 @@
 
 The Run-planner agent path was removed in v0.20 (single conversational agent),
 so this file no longer exercises a second tool-calling LLM. What remains are the
-still-load-bearing safety units: the tool allow-list, output sanitization,
-report/context secret checks, chain-of-thought stripping, the skill-contract
-parser, and the read-only investigator toolset the in-chat agent exposes.
+still-load-bearing safety units: the forbidden-tool denylist, output
+sanitization, report/context secret checks, chain-of-thought stripping, the
+skill-contract parser, and the read-only investigator toolset the in-chat agent
+exposes (whose registration IS the tool whitelist).
 """
 
 import sqlite3
@@ -20,15 +21,16 @@ ACCESS = "AKIAIOSFODNN7EXAMPLE"
 # --- guardrail units --------------------------------------------------------
 
 
-def test_guardrail_blocks_forbidden_and_shell_tools():
+def test_guardrail_forbids_destructive_and_shell_tool_names():
+    # Defense-in-depth denylist (the allowlist is the curated tool registration,
+    # asserted separately over the real registered investigator tools below).
     for bad in ("delete_bucket", "put_bucket_policy", "shell", "subprocess", "run_sql", "boto3_client"):
-        with pytest.raises(GuardrailBlocked):
-            guardrails.check_tool_allowed(bad)
+        assert guardrails.is_forbidden_tool(bad), f"should be forbidden: {bad}"
 
 
-def test_guardrail_allows_whitelisted_tools():
+def test_guardrail_does_not_forbid_legit_readonly_tool_names():
     for ok in ("test_credentials", "head_bucket", "get_bucket_config_summary"):
-        guardrails.check_tool_allowed(ok)  # no raise
+        assert not guardrails.is_forbidden_tool(ok)
 
 
 def test_output_sanitization_bounds_and_redacts():
@@ -96,12 +98,15 @@ def test_session_investigator_exposes_full_readonly_diagnostic_surface():
 
     expected = {
         "list_providers", "list_buckets", "head_bucket", "list_objects",
-        "test_credentials", "head_object", "test_range_get",
-        "test_addressing_style", "inspect_endpoint_tls",
+        "list_object_versions", "list_multipart_uploads",
+        "test_credentials", "head_object", "get_object_lock_status",
+        "test_range_get", "preview_object", "measure_request_latency",
+        "test_addressing_style", "inspect_endpoint_tls", "read_skill",
         "get_bucket_config_summary", "review_bucket_security",
         "review_bucket_lifecycle", "review_bucket_observability",
         "review_bucket_cost_optimization", "review_bucket_performance_profile",
     }
     assert expected <= names, f"missing investigator tools: {expected - names}"
+    # The curated registration IS the whitelist; assert none of it is forbidden.
     for n in names:
         assert not guardrails.is_forbidden_tool(n), f"forbidden tool exposed: {n}"
