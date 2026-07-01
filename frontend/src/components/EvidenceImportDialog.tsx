@@ -7,6 +7,7 @@ import {
 } from "../api";
 import type { EvidenceImport } from "../types";
 import { Button, Field, TextInput } from "./ui";
+import { useI18n } from "../i18n";
 
 function bytesH(n: number): string {
   let v = n || 0;
@@ -34,7 +35,10 @@ export function EvidenceImportDialog({
   onClose: () => void;
   onImported: (analysisRunId: string) => void;
 }) {
+  const { t } = useI18n();
   const isLog = sourceType === "access_log";
+  const what = isLog ? t("imp.whatLog") : t("imp.whatInv");
+  const target = isLog ? t("imp.targetLog") : t("imp.targetInv");
   const [maxFiles, setMaxFiles] = useState("1000");
   const [maxBytes, setMaxBytes] = useState("1073741824"); // 1 GiB
   const [start, setStart] = useState("");
@@ -100,31 +104,27 @@ export function EvidenceImportDialog({
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-100">
-            Import {isLog ? "access logs" : "inventory"} — <span className="font-mono">{bucketName}</span>
+            {t("imp.title", { what })} <span className="font-mono">{bucketName}</span>
           </h2>
           <button className="text-xs text-gray-500 hover:text-gray-300" onClick={onClose}>✕</button>
         </div>
 
         {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
 
-        <p className="mb-3 text-xs text-gray-500">
-          Only the discovered {isLog ? "logging target" : "inventory destination"} is read. No business objects are
-          scanned and no object bodies are downloaded. Files are bounded by the limits below; nothing downloads until
-          you confirm the plan.
-        </p>
+        <p className="mb-3 text-xs text-gray-500">{t("imp.intro", { target })}</p>
 
-        <Field label="Max files">
+        <Field label={t("imp.maxFiles")}>
           <TextInput value={maxFiles} onChange={(e) => setMaxFiles(e.target.value)} inputMode="numeric" />
         </Field>
-        <Field label="Max bytes" hint="Hard cap 5 GiB">
+        <Field label={t("imp.maxBytes")} hint={t("imp.maxBytesHint")}>
           <TextInput value={maxBytes} onChange={(e) => setMaxBytes(e.target.value)} inputMode="numeric" />
         </Field>
         {isLog && (
           <>
-            <Field label="Time range start (ISO, required)" hint="e.g. 2026-06-01T00:00:00">
+            <Field label={t("imp.rangeStart")} hint={t("imp.rangeStartHint")}>
               <TextInput value={start} onChange={(e) => setStart(e.target.value)} placeholder="2026-06-01T00:00:00" />
             </Field>
-            <Field label="Time range end (ISO, required)">
+            <Field label={t("imp.rangeEnd")}>
               <TextInput value={end} onChange={(e) => setEnd(e.target.value)} placeholder="2026-06-08T00:00:00" />
             </Field>
           </>
@@ -132,26 +132,26 @@ export function EvidenceImportDialog({
 
         <div className="mb-4 flex gap-2">
           <Button variant="primary" onClick={generatePlan} disabled={busy}>
-            {busy && !plan ? "Planning…" : "Generate plan"}
+            {busy && !plan ? t("imp.planning") : t("imp.generatePlan")}
           </Button>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose}>{t("imp.cancel")}</Button>
         </div>
 
         {plan && (
           <div className="rounded-md border border-edge bg-canvas p-3 text-xs text-gray-300" data-testid="import-plan">
-            <div className="mb-2 font-medium text-gray-100">Import plan</div>
+            <div className="mb-2 font-medium text-gray-100">{t("imp.plan")}</div>
             <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
-              <dt className="text-gray-500">Source bucket</dt>
+              <dt className="text-gray-500">{t("imp.sourceBucket")}</dt>
               <dd className="font-mono">{plan.source_bucket || "—"}</dd>
-              <dt className="text-gray-500">Source prefix</dt>
-              <dd className="font-mono">{plan.source_prefix || "(root)"}</dd>
-              <dt className="text-gray-500">Format</dt>
+              <dt className="text-gray-500">{t("imp.sourcePrefix")}</dt>
+              <dd className="font-mono">{plan.source_prefix || t("imp.rootPrefix")}</dd>
+              <dt className="text-gray-500">{t("imp.format")}</dt>
               <dd>{plan.format || "—"}</dd>
-              <dt className="text-gray-500">Plan source</dt>
+              <dt className="text-gray-500">{t("imp.planSource")}</dt>
               <dd>{plan.plan_source || "—"}</dd>
-              <dt className="text-gray-500">Files (selected / found)</dt>
+              <dt className="text-gray-500">{t("imp.filesSelFound")}</dt>
               <dd>{plan.selected_file_count} / {plan.planned_file_count}</dd>
-              <dt className="text-gray-500">Bytes (selected)</dt>
+              <dt className="text-gray-500">{t("imp.bytesSel")}</dt>
               <dd>{bytesH(plan.selected_total_bytes)}</dd>
             </dl>
 
@@ -169,10 +169,10 @@ export function EvidenceImportDialog({
                 onClick={confirmAndImport}
                 disabled={busy || plan.selected_file_count === 0}
               >
-                {busy ? "Importing…" : "Confirm and import"}
+                {busy ? t("imp.importing") : t("imp.confirmImport")}
               </Button>
               {plan.selected_file_count === 0 && (
-                <span className="self-center text-amber-400">Nothing to import for this plan.</span>
+                <span className="self-center text-amber-400">{t("imp.nothingToImport")}</span>
               )}
             </div>
           </div>

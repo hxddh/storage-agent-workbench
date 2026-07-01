@@ -15,7 +15,7 @@ import type { Grounding, NextAction, SessionDetail, ToolActivity, TriageCase } f
 import { useSessionRun, patchSessionRun } from "../sessionRuns";
 import { Button } from "./ui";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
-import { GroundingCard, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
+import { FindingsCard, GroundingCard, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
 import { useI18n, type TFunc } from "../i18n";
 
 type Item =
@@ -572,7 +572,7 @@ export function Thread({
         </span>
         <button
           onClick={send}
-          disabled={busy || !text.trim()}
+          disabled={busy || (!text.trim() && !attached)}
           aria-label={t("thread.send")}
           className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-all hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-600"
         >
@@ -685,6 +685,12 @@ export function Thread({
               )}
 
               {banners}
+
+              {/* Persisted deterministic session findings (read-only) — surfaced
+                  in-thread, not just in the report. */}
+              {detail?.findings && detail.findings.length > 0 && !pending && (
+                <FindingsCard findings={detail.findings} />
+              )}
 
               {/* Grounding + proposals now render per assistant message (above),
                   sourced from the persisted turn so they survive a reload. */}
