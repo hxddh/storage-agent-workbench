@@ -28,6 +28,21 @@ from ..security.redaction import redact_text
 # proposals get a purpose-built UI affordance vs. a "ask the agent to do it" path.
 # The security-sensitive ones (plan_*_import) MUST stay here so they route through
 # the confirm-before-download planner rather than a free-form prompt.
+# action_type → what actually executes (the names are internal/audit-only; the
+# user only ever sees the proposal title + a localized prompt, never these slugs,
+# so they are kept stable rather than renamed). The `run_*` prefix is historical:
+# these no longer start a deterministic run — most just hand the request back to
+# the conversational agent, which does it with its own read-only tools:
+#   run_account_discovery    → agent calls the read-only survey_account tool
+#   run_bucket_config_review → agent calls the read-only review_bucket_config tool
+#   run_diagnostic           → agent's adaptive test_credentials/addressing/TLS/…
+#                              probe chain (NOT execute_diagnostic_run)
+#   run_inventory_analysis   → opens the file picker → analyze_uploaded_file
+#   run_access_log_analysis  → opens the file picker → analyze_uploaded_file
+#   plan_inventory_import    → confirmed evidence-import planner (data-moving)
+#   plan_access_log_import   → confirmed evidence-import planner (data-moving)
+#   generate_session_report  → renders the saved session report
+#   ask_user_for_context     → seeds the composer with a clarifying question
 SPECIAL_ACTION_TYPES = {
     "run_account_discovery",
     "run_bucket_config_review",

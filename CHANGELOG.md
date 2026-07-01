@@ -6,6 +6,28 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stale tool name in triage playbooks.** The offline error-triage `next_checks`
+  suggested `get_bucket_location`, which is not a tool the agent exposes;
+  replaced with `get_bucket_config_summary` (which reads region/location) across
+  all affected playbook entries.
+
+### Changed
+
+- **Offline triage now points at the specialist skill.** Each triage category
+  maps to the StorageOps skill whose method applies (`authz` →
+  security-iam-policy, `routing`/`auth` → s3-protocol-compatibility, etc.), and
+  the triage result carries a `suggested_skills` pointer (derived, not persisted).
+  Deterministic triage can't `read_skill` itself, but this lets a session agent
+  jump straight to the right method and tells an offline user which skill covers
+  their case. Unmapped categories fall back to `storageops-triage`.
+- **Documented the proposal `action_type` → execution mapping** in
+  `next_actions.py` (report §P3). The `run_*` slugs are internal/audit-only (the
+  user only ever sees the proposal title + a localized prompt), so they are kept
+  stable rather than renamed — a comment now records what each actually does
+  (e.g. `run_diagnostic` → the agent's adaptive probe chain, not a run).
+
 ### Skills
 
 - **Filled the verified skill gaps (18 → 20 skills).** Two genuinely-missing

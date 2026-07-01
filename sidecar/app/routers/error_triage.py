@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from .. import audit
 from ..db import get_conn
-from ..error_triage import engine, parser
+from ..error_triage import engine, parser, playbooks
 from ..models.schemas import ErrorTriageRequest, TriageCaseOut
 from ..repositories import error_triage as repo
 from ..repositories import sessions as sessions_repo
@@ -45,6 +45,13 @@ def _recompute_safe_actions(case: dict[str, Any]) -> list:
 
 
 def _to_out(case: dict[str, Any], *, safe_next_actions=None, limitations=None) -> TriageCaseOut:
+    # Derive the specialist-skill pointers from the stored candidate categories,
+    # so a case reloaded from the DB (no re-run) still carries them. No new column.
+    suggested: list[str] = []
+    for c in case.get("candidate_causes", []) or []:
+        skill = playbooks.skill_for_category(c.get("category", "") if isinstance(c, dict) else "")
+        if skill not in suggested:
+            suggested.append(skill)
     return TriageCaseOut(
         id=case["id"], session_id=case.get("session_id"), provider_id=case.get("provider_id"),
         bucket=case.get("bucket"), run_id=case.get("run_id"), input_kind=case["input_kind"],
@@ -52,6 +59,7 @@ def _to_out(case: dict[str, Any], *, safe_next_actions=None, limitations=None) -
         summary=case.get("summary", ""),
         status=case.get("status", "triaged"), candidate_causes=case.get("candidate_causes", []),
         safe_next_actions=safe_next_actions or [],
+        suggested_skills=suggested,
         limitations=limitations or [], created_at=case.get("created_at"),
         updated_at=case.get("updated_at"),
     )

@@ -35,6 +35,7 @@ def analyze(redacted_input: str, input_kind: str = "mixed") -> dict[str, Any]:
 
     candidate_causes: list[dict[str, Any]] = []
     raw_proposals: list[dict[str, Any]] = []
+    suggested_skills: list[str] = []
     for e in entries:
         candidate_causes.append({
             "category": e["category"],
@@ -46,6 +47,9 @@ def analyze(redacted_input: str, input_kind: str = "mixed") -> dict[str, Any]:
             "next_checks": e["next_checks"],
             "source_refs": [e["code"]] if e.get("code") else [],
         })
+        skill = playbooks.skill_for_category(e["category"])
+        if skill not in suggested_skills:
+            suggested_skills.append(skill)
         for p in e.get("proposals", []):
             raw_proposals.append({**p, "source_run_ids": []})
 
@@ -74,5 +78,8 @@ def analyze(redacted_input: str, input_kind: str = "mixed") -> dict[str, Any]:
         "summary": summary,
         "candidate_causes": candidate_causes,
         "safe_next_actions": safe_next_actions,
+        # Which specialist StorageOps skill(s) cover the matched categories — a
+        # pointer for the session agent (or an offline user) to the full method.
+        "suggested_skills": suggested_skills,
         "limitations": list(_LIMITATIONS),
     }

@@ -119,6 +119,17 @@ def test_triage_access_denied_causes():
     cats = {c["category"] for c in r["candidate_causes"]}
     assert "authz" in cats
     assert any(a["action_type"] == "run_bucket_config_review" for a in r["safe_next_actions"])
+    # Bridge: an authz error points at the security-iam-policy specialist skill.
+    assert "storageops-security-iam-policy" in r["suggested_skills"]
+
+
+def test_triage_next_checks_use_real_tool_names():
+    """next_checks must reference tools the agent actually has — not the stale
+    get_bucket_location (report 2.6); get_bucket_config_summary reads location."""
+    from app.error_triage import playbooks
+    for entry in playbooks._BY_CODE.values():
+        joined = " ".join(entry["next_checks"])
+        assert "get_bucket_location" not in joined, entry["code"]
 
 
 def test_triage_region_mismatch_suggests_diagnostic():

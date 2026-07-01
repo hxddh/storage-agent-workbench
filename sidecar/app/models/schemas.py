@@ -519,6 +519,9 @@ class TriageCaseOut(BaseModel):
     status: str = "parsed"
     candidate_causes: list[TriageFindingOut] = Field(default_factory=list)
     safe_next_actions: list[dict] = Field(default_factory=list)
+    # Specialist StorageOps skill(s) covering the matched categories — a pointer
+    # to the full method (derived from candidate_causes; not persisted).
+    suggested_skills: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     created_at: str | None = None
     updated_at: str | None = None
