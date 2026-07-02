@@ -71,6 +71,11 @@ def execute_access_log_run(conn: sqlite3.Connection, run_id: str) -> None:
             f"'{fmt.get('format')}'. 4xx={metrics.get('error_rate_4xx', 0):.1%}, "
             f"5xx={metrics.get('error_rate_5xx', 0):.1%}."
         )
+        if imp.get("truncated"):
+            summary += (
+                f" NOTE: the file exceeded the ingest cap ({imp.get('ingest_cap'):,} rows); "
+                "metrics cover only the analyzed rows (a lower bound, not the whole file)."
+            )
         bus.publish(run_id, {"type": "summary", "content": summary})
 
         ds_info = {"source_filename": ds.source_filename}

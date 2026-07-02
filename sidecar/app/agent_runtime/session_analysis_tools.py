@@ -87,7 +87,7 @@ def build(
 
     @function_tool
     def analyze_uploaded_file(dataset_id: str) -> str:
-        """Analyze one uploaded file (access log or inventory export) locally with DuckDB and return SANITIZED aggregates: for access logs — total requests, status/method distributions, 4xx/5xx rates, top keys/prefixes/user-agents, requests-by-hour, plus rule-based findings; for inventory — object count, total/avg size, storage-class and prefix distributions, small-object ratio. Use the result to answer the user in your own words; if the data is not actually a recognized access log or inventory (e.g. a generic application log with no HTTP fields), say so plainly and describe what the file does contain rather than reporting meaningless zeros. Args: dataset_id (from list_uploaded_files)."""
+        """Analyze one uploaded file (access log or inventory export) locally with DuckDB and return SANITIZED aggregates: for access logs — total requests, status/method distributions, 4xx/5xx rates, top keys/prefixes/user-agents, requests-by-hour, plus rule-based findings; for inventory — object count, total/avg size, storage-class and prefix distributions, small-object ratio. Use the result to answer the user in your own words; if the data is not actually a recognized access log or inventory (e.g. a generic application log with no HTTP fields), say so plainly and describe what the file does contain rather than reporting meaningless zeros. Very large files are analyzed up to a row cap: when the result has "truncated": true, the metrics cover only the first rows_analyzed rows — report them as a lower bound, not the whole file. Args: dataset_id (from list_uploaded_files)."""
         ds = ds_repo.get(conn, dataset_id)
         if ds is None or ds.get("session_id") != session_id:
             return _err("Unknown dataset_id for this session. Call list_uploaded_files first.")
@@ -144,6 +144,21 @@ def build(
         except Exception as exc:  # noqa: BLE001 — surface a clean, redacted message
             note("analyze_uploaded_file", ds.get("source_filename") or dataset_id, "error")
             return _err(f"Could not analyze the file: {exc}")
+
+        # No silent cap: if ingestion hit the row ceiling, tell the model the
+        # metrics are a lower bound over the first N rows, not the whole file.
+        if imp.get("truncated"):
+            cap = int(imp.get("ingest_cap") or 0)
+            result["truncated"] = True
+            result["rows_analyzed"] = int(imp.get("row_count") or 0)
+            cap_note = (
+                f"This file exceeded the analysis ingest cap ({cap:,} rows); only the "
+                f"first {result['rows_analyzed']:,} rows were analyzed. Report the metrics "
+                "as a LOWER BOUND over the analyzed rows — NOT the whole file — and, if the "
+                "user needs full coverage, suggest splitting the file or a narrower slice."
+            )
+            prior = result.get("note")
+            result["note"] = (prior + " " + cap_note) if prior else cap_note
 
         ds_repo.mark_imported(conn, dataset_id, duckdb_rel,
                               imp.get("table_name") or "", int(imp.get("row_count") or 0),

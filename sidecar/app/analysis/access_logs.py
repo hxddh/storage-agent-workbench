@@ -229,6 +229,13 @@ def import_access_logs(raw_path: str | Path, duckdb_path: str | Path, fmt: str) 
             "(.log/.txt), CLF/combined, CSV, or JSON lines."
         )
 
+    # The parsers cap at MAX_INGEST_ROWS; if we're at the cap, the source almost
+    # certainly had more. Report it (no silent cap) so the analysis is presented
+    # as a lower bound, not the whole log. (The universal text fallback ingests
+    # one row per line, so `== cap` is exact there; jsonl/csv may skip malformed
+    # lines, making this a conservative best-effort signal.)
+    truncated = len(rows) >= MAX_INGEST_ROWS
+
     df = pd.DataFrame(rows, columns=COLUMNS)
     con = duck.connect(duckdb_path)
     try:
@@ -239,7 +246,10 @@ def import_access_logs(raw_path: str | Path, duckdb_path: str | Path, fmt: str) 
         count = con.execute(f"SELECT count(*) FROM {TABLE_NAME}").fetchone()[0]
     finally:
         con.close()
-    return {"table_name": TABLE_NAME, "row_count": int(count), "format": fmt}
+    return {
+        "table_name": TABLE_NAME, "row_count": int(count), "format": fmt,
+        "truncated": truncated, "ingest_cap": MAX_INGEST_ROWS,
+    }
 
 
 # --- tool 3: analyze_access_logs --------------------------------------------
