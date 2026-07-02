@@ -43,6 +43,10 @@ class ModelProviderOut(BaseModel):
     model: str | None
     api_key_ref: str | None
     has_api_key: bool
+    # True for the provider the agent actually uses. Selected explicitly via
+    # POST /model-providers/{id}/activate; when none is selected the oldest
+    # configured provider is the implicit default (matching the agent runtime).
+    active: bool = False
     created_at: str
     updated_at: str
 

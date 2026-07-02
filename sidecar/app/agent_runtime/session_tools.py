@@ -29,8 +29,11 @@ from ..s3 import tools as s3
 from . import guardrails
 
 # Max object keys echoed to the model per list_objects call. The bucket may hold
-# far more (key_count is exact); the agent pages via next_token for the rest.
-_LIST_KEYS_CTX_CAP = 200
+# far more; the agent pages via next_token for the rest. 500 (was 200): the S3
+# layer already caps a page at 1000, and a fuller echo lets an enumeration finish
+# in fewer turns; keys_truncated_in_context still tells the agent when the echo
+# was cut (never a silent cap).
+_LIST_KEYS_CTX_CAP = 500
 
 
 def _err(msg: str) -> str:
@@ -73,23 +76,28 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
 
     # Per-turn budget: cap how many skill bodies the agent can load in one turn,
     # so a runaway loop can't pull every skill (~8000 chars each) into context.
+    # 8 (was 6): a cross-domain investigation legitimately spans several skills;
+    # keep the cap above what a real diagnosis needs, below "load everything".
     skill_loads = {"n": 0}
-    _MAX_SKILL_LOADS = 6
+    _MAX_SKILL_LOADS = 8
 
     # Per-turn object-preview budget: preview_object reads bounded object CONTENT
-    # (unlike the metadata-only probes), so bound it in code — a few small objects
-    # per turn — so it can't be looped into a bulk download. This is the
+    # (unlike the metadata-only probes), so bound it in code — a handful of small
+    # objects per turn — so it can't be looped into a bulk download. This is the
     # agent-native equivalent of a gate: fluid within a code-enforced budget.
+    # 12 calls / 16 MiB (was 8 / 8 MiB): deep forensics comparing objects across
+    # prefixes needs more than 8 looks; still far below anything bulk-shaped.
     preview_budget = {"n": 0, "bytes": 0}
-    _MAX_PREVIEWS = 8
-    _MAX_PREVIEW_BYTES = 8 * 1024 * 1024
+    _MAX_PREVIEWS = 12
+    _MAX_PREVIEW_BYTES = 16 * 1024 * 1024
 
     # Per-turn latency-probe budget: measure_request_latency fires several live
     # round-trips per call, so cap how many probe RUNS a turn can do — the tool's
     # own per-call sample cap plus this keeps it a diagnostic probe, not a load
-    # test. Bounds, not a gate.
+    # test. Bounds, not a gate. 8 (was 6): enough to compare a few endpoints/
+    # addressing styles in one turn.
     latency_budget = {"n": 0}
-    _MAX_LATENCY_RUNS = 6
+    _MAX_LATENCY_RUNS = 8
 
     def note(tool: str, target: str, result: Any) -> None:
         if activity is not None:
@@ -244,7 +252,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
 
     @function_tool
     def preview_object(provider_id: str, bucket: str, key: str, max_bytes: int = 262144) -> str:
-        """Read a BOUNDED, read-only, sanitized preview of ONE text object's content (its first bytes, capped at 1 MiB). Use when the user asks what is INSIDE an object — a manifest, a small config/JSON/YAML, or a sample of a log/data object. Binary or oversized objects are reported, not decoded; secrets are redacted. Bounded per turn (a few objects); NOT a way to bulk-download. For metadata only, use head_object instead. Args: provider_id, bucket, key, max_bytes? (default 256 KiB, capped at 1 MiB)."""
+        """Read a BOUNDED, read-only, sanitized preview of ONE object's content (its first bytes, capped at 1 MiB). Use when the user asks what is INSIDE an object — a manifest, a small config/JSON/YAML, or a sample of a log/data object. Gzip objects (.gz) are decompressed within the same bound ("decompressed": true); .parquet objects return a STRUCTURE preview (schema, row counts — footer only, never the body). Other binary or oversized objects are reported, not decoded; secrets are redacted. Bounded per turn (a few objects); NOT a way to bulk-download. For metadata only, use head_object instead. Args: provider_id, bucket, key, max_bytes? (default 256 KiB, capped at 1 MiB)."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -260,8 +268,15 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         res = s3.preview_object(conn, provider_id, bucket, key, max_bytes)
         preview_budget["n"] += 1
         preview_budget["bytes"] += int(res.get("bytes_read") or 0)
-        note("preview_object", f"{bucket}/{key}",
-             "binary" if res.get("binary") else f"{res.get('bytes_read', 0)} bytes")
+        if res.get("parquet"):
+            trace = f"parquet schema ({len(res['parquet'].get('columns', []))} cols)"
+        elif res.get("binary"):
+            trace = "binary"
+        elif res.get("decompressed"):
+            trace = f"{res.get('bytes_read', 0)} bytes (gzip)"
+        else:
+            trace = f"{res.get('bytes_read', 0)} bytes"
+        note("preview_object", f"{bucket}/{key}", trace)
         return json.dumps(res)
 
     @function_tool

@@ -6,6 +6,8 @@ export interface ModelProvider {
   model: string | null;
   api_key_ref: string | null;
   has_api_key: boolean;
+  /** True for the provider the agent uses (explicitly activated; otherwise the oldest is the implicit default). */
+  active: boolean;
   created_at: string;
   updated_at: string;
 }

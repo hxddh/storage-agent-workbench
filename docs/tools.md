@@ -83,9 +83,12 @@ Safety:
 
 Purpose:
 
-- Read a bounded, read-only, sanitized preview of one text object's content (a
+- Read a bounded, read-only, sanitized preview of one object's content (a
   manifest, small config, or log/data sample) so the agent can answer "what's
-  inside this object".
+  inside this object". Gzip objects (`.gz`) are decompressed within the same byte
+  bound; `.parquet` objects return a STRUCTURE preview (schema + row counts from
+  the footer via one bounded suffix-range GET — never the object body). Other
+  binary/oversized objects are reported, not decoded.
 
 Safety:
 
@@ -195,6 +198,14 @@ tools above (choosing provider/bucket itself), plus:
 - **list_uploaded_files** — list the data files the user attached to this
   session (from `session_datasets`) so the agent can discover and then
   `analyze_uploaded_file` them. Local, read-only, always available.
+- **aggregate_uploaded_file** — one CONSTRAINED aggregation over an uploaded file
+  when the fixed `analyze_uploaded_file` metrics don't answer the question (e.g.
+  "top masked IPs by 4xx count", "total bytes per storage class"). The agent
+  chooses a metric + group-by dimension + equality/status-range filters **from a
+  hard whitelist** (`analysis/aggregate.py`); it can never supply SQL, and only
+  grouped aggregates (≤50 groups, redacted labels) come back — never raw rows.
+  All filter VALUES are bound as DuckDB parameters; the real SQL + params are
+  recorded in the audit log (rule 17). Over-limit results report `truncated`.
 - **read_skill** — load a StorageOps skill's method on demand (progressive
   disclosure); guidance text only, no skill tools/scripts are executed.
 - **Working memory** — `note_fact` / `record_finding` / `note_open_question`
