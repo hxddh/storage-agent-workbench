@@ -18,8 +18,9 @@ gh workflow run release.yml \
 ```
 
 The bundle version is stamped from the tag by `scripts/stamp-version.py`
-(writes `src-tauri/tauri.conf.json` and `Cargo.toml`), so the app reports the
-release version rather than a hardcoded one.
+(writes `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`,
+`src-tauri/Cargo.lock`, `sidecar/pyproject.toml`, and `frontend/package.json`),
+so the app and sidecar report the release version rather than a hardcoded one.
 
 ## Local builds
 

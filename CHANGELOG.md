@@ -6,10 +6,14 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-07-02
+
 _Architecture-review remediation: closes the findings from the deep v0.21.1
 review across the security layer, agent runtime, S3/runs layer, API/data layer,
 frontend, and docs/CI. No change to the single-agent loop or the read-only
-security floor._
+security floor. Minor-bumped (not a patch) because the packaged sidecar now
+**requires** the launcher's auth token — a behavior change for any external
+caller._
 
 ### Security
 
@@ -1433,7 +1437,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.21.1...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/hxddh/storage-agent-workbench/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/hxddh/storage-agent-workbench/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.11...v0.21.0
 [0.20.11]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.10...v0.20.11
