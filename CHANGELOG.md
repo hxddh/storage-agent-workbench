@@ -6,9 +6,14 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-02
+
 _Agent-autonomy pass: closes the capability ceilings and last silent-truncation
 found in the agent-native review — without loosening any security floor (no write
-tool, no raw SQL, no raw rows to the model, data-moving work still confirmed)._
+tool, no raw SQL, no raw rows to the model, data-moving work still confirmed).
+Also fixes two Codex-review P2s: re-uploads now rebuild the DuckDB table (no stale
+aggregate), and the implicit oldest-provider is flagged `active` so the UI badge
+matches the agent's choice._
 
 ### Added
 
@@ -1492,7 +1497,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.22.1...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/hxddh/storage-agent-workbench/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/hxddh/storage-agent-workbench/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/hxddh/storage-agent-workbench/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/hxddh/storage-agent-workbench/compare/v0.21.0...v0.21.1
