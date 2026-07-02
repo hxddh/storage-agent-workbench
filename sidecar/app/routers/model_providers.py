@@ -52,6 +52,22 @@ def delete_model_provider(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/{provider_id}/activate", response_model=ModelProviderOut)
+def activate_model_provider(
+    provider_id: str, conn: sqlite3.Connection = Depends(get_conn)
+):
+    """Select the model provider the agent uses.
+
+    With several providers configured, the agent previously always used the
+    oldest one (adding a second provider silently did nothing). Activation makes
+    the selection explicit; with no explicit selection the oldest remains the
+    default, so existing single-provider installs behave unchanged.
+    """
+    if not repo.set_active(conn, provider_id):
+        raise HTTPException(status_code=404, detail="model provider not found")
+    return repo.get(conn, provider_id)
+
+
 @router.post("/{provider_id}/test", response_model=ModelProviderTestResult)
 def test_model_provider(
     provider_id: str, conn: sqlite3.Connection = Depends(get_conn)

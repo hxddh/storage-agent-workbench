@@ -74,14 +74,28 @@ def build_agent(
 
 
 def get_model_credentials(conn: sqlite3.Connection) -> dict[str, Any]:
-    """Resolve a model provider + its API key from the keyring.
+    """Resolve the ACTIVE model provider + its API key from the vault.
+
+    Selection: the explicitly activated provider (POST /model-providers/{id}/
+    activate) wins; with no selection — or a stale selection pointing at a
+    deleted provider — the oldest configured provider is the default (the
+    pre-existing behavior, so single-provider installs are unchanged).
 
     The API key is a SECRET: it is used only to configure the LLM client and is
     never placed in the context, SSE events, reports, or logs.
     """
-    row = conn.execute(
-        "SELECT * FROM model_providers ORDER BY created_at, rowid LIMIT 1"
-    ).fetchone()
+    from ..repositories import model_providers as mp_repo
+
+    row = None
+    active_id = mp_repo.active_provider_id(conn)
+    if active_id:
+        row = conn.execute(
+            "SELECT * FROM model_providers WHERE id = ?", (active_id,)
+        ).fetchone()
+    if row is None:
+        row = conn.execute(
+            "SELECT * FROM model_providers ORDER BY created_at, rowid LIMIT 1"
+        ).fetchone()
     if row is None:
         raise AgentUnavailable("No model provider configured. Add one under Providers to use Agent mode.")
     api_key = None

@@ -11,6 +11,7 @@ import socket
 import sqlite3
 import ssl
 import time
+import zlib
 from typing import Any
 from urllib.parse import urlparse
 
@@ -499,6 +500,148 @@ _BINARY_CONTENT_MARKERS = (
 )
 
 
+def _gunzip_bounded(data: bytes, cap: int) -> tuple[bytes | None, bool]:
+    """Decompress a gzip prefix, emitting at most ``cap`` output bytes.
+
+    Returns (output, complete). ``complete`` is True only when the whole gzip
+    stream was consumed — a False means the preview is a prefix. None output
+    means the bytes weren't actually a valid gzip stream.
+    """
+    try:
+        d = zlib.decompressobj(wbits=31)  # gzip container
+        out = d.decompress(data, cap)
+        return out, bool(d.eof)
+    except zlib.error:
+        return None, False
+
+
+class _TailFile:
+    """Minimal seekable file-like over the LAST bytes of an object.
+
+    Lets pyarrow parse a parquet FOOTER (schema/row counts) from one bounded
+    suffix-range GET, without ever downloading the object body. Any access
+    before the fetched tail raises — parsing then falls back to the plain
+    "binary" report instead of fetching more.
+    """
+
+    closed = False
+    mode = "rb"
+
+    def __init__(self, data: bytes, total: int) -> None:
+        self._data = data
+        self._total = int(total)
+        self._start = self._total - len(data)
+        self._pos = 0
+
+    def size(self) -> int:
+        return self._total
+
+    def seekable(self) -> bool:
+        return True
+
+    def readable(self) -> bool:
+        return True
+
+    def writable(self) -> bool:
+        return False
+
+    def tell(self) -> int:
+        return self._pos
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        if whence == 0:
+            pos = offset
+        elif whence == 1:
+            pos = self._pos + offset
+        elif whence == 2:
+            pos = self._total + offset
+        else:  # pragma: no cover - defensive
+            raise ValueError(f"bad whence {whence}")
+        if pos < self._start:
+            raise OSError("seek before the fetched tail (footer larger than preview cap)")
+        self._pos = pos
+        return pos
+
+    def read(self, n: int = -1) -> bytes:
+        i = self._pos - self._start
+        if i < 0:
+            raise OSError("read before the fetched tail")
+        chunk = self._data[i:] if n is None or n < 0 else self._data[i:i + n]
+        self._pos += len(chunk)
+        return chunk
+
+    def close(self) -> None:  # pragma: no cover - no-op
+        pass
+
+    def flush(self) -> None:  # pragma: no cover - no-op
+        pass
+
+
+def _preview_parquet(client, bucket: str, key: str, cap: int,
+                     base: dict[str, Any]) -> dict[str, Any]:
+    """Bounded parquet STRUCTURE preview: schema + row counts from the footer.
+
+    One suffix-range GET (≤ cap bytes, the same preview budget) — never the
+    object body. Falls back to the plain binary report if the footer can't be
+    parsed within the cap.
+    """
+    binary_fallback = {
+        **base, "success": True, "binary": True,
+        "error_message_sanitized": (
+            "Object looks binary; content not previewed (text only). "
+            "(Parquet footer could not be parsed within the preview cap.)"
+        ),
+    }
+    try:
+        resp = client.get_object(Bucket=bucket, Key=key, Range=f"bytes=-{cap}")
+    except ClientError as exc:
+        fields = _client_error_fields(exc)
+        if fields.get("error_code") in ("InvalidRange", "416") or fields.get("status_code") == 416:
+            return {**base, "success": True, "content": "", "bytes_read": 0,
+                    "object_size": 0, "truncated": False}
+        return {**base, **fields, "success": False}
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc), "success": False}
+
+    try:
+        body = resp.get("Body")
+        data = body.read(cap) if body is not None else b""
+        if body is not None and hasattr(body, "close"):
+            body.close()
+        cr = resp.get("ContentRange") or ""  # e.g. "bytes 900-999/1000"
+        total = None
+        if "/" in cr:
+            tail = cr.rsplit("/", 1)[1]
+            total = int(tail) if tail.isdigit() else None
+        if total is None:
+            if len(data) < cap:
+                total = len(data)  # provider returned the whole (small) object
+            else:
+                return binary_fallback  # size unknown; can't trust tail math
+
+        import pyarrow.parquet as pq  # bundled dependency (analysis engine)
+
+        md = pq.read_metadata(_TailFile(data, total))
+        schema = md.schema.to_arrow_schema()
+        cols = [{"name": f.name, "type": str(f.type)} for f in schema][:100]
+        return {
+            **base, "success": True, "binary": True,
+            "content_type": (resp.get("ContentType") or "").lower() or None,
+            "object_size": total, "bytes_read": len(data), "truncated": False,
+            "parquet": {
+                "num_rows": int(md.num_rows),
+                "num_row_groups": int(md.num_row_groups),
+                "columns": cols,
+            },
+            "error_message_sanitized": (
+                "Parquet structure preview (footer/schema only; object bodies "
+                "are never downloaded)."
+            ),
+        }
+    except Exception:  # noqa: BLE001 — any parse issue → honest binary report
+        return binary_fallback
+
+
 def preview_object(
     conn: sqlite3.Connection,
     provider_id: str,
@@ -517,10 +660,15 @@ def preview_object(
     base = {
         "success": False, "content": None, "bytes_read": 0, "object_size": None,
         "content_type": None, "truncated": False, "binary": False,
+        "decompressed": False,
         "error_code": None, "error_message_sanitized": None,
     }
     try:
         client = client_factory.build_s3_client(conn, provider_id)
+        # Parquet: a bounded STRUCTURE preview (schema from the footer via one
+        # suffix-range GET) instead of a flat "binary, not previewed" dead end.
+        if key.lower().endswith((".parquet", ".pq")):
+            return _preview_parquet(client, bucket, key, cap, base)
         resp = client.get_object(Bucket=bucket, Key=key, Range=f"bytes=0-{cap - 1}")
         ctype = (resp.get("ContentType") or "").lower()
         body = resp.get("Body")
@@ -532,6 +680,17 @@ def preview_object(
         if "/" in cr:
             tail = cr.rsplit("/", 1)[1]
             object_size = int(tail) if tail.isdigit() else None
+        # Gzip (e.g. rotated .log.gz): decompress the fetched prefix, bounded to
+        # the same cap on OUTPUT bytes — still no full-object read; the safety
+        # bound is unchanged, only the dead end ("binary, not previewed") goes.
+        if data[:2] == b"\x1f\x8b":
+            out, complete = _gunzip_bounded(data, cap)
+            if out is not None and b"\x00" not in out:
+                text = redact_text(out.decode("utf-8", errors="replace"))
+                more = (object_size is not None and object_size > len(data)) or not complete
+                return {**base, "success": True, "content": text, "bytes_read": len(data),
+                        "object_size": object_size, "content_type": ctype or None,
+                        "truncated": more, "decompressed": True}
         is_binary = b"\x00" in data or any(m in ctype for m in _BINARY_CONTENT_MARKERS)
         if is_binary:
             return {**base, "success": True, "binary": True, "content_type": ctype or None,

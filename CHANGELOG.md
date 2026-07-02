@@ -6,6 +6,49 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+_Agent-autonomy pass: closes the capability ceilings and last silent-truncation
+found in the agent-native review — without loosening any security floor (no write
+tool, no raw SQL, no raw rows to the model, data-moving work still confirmed)._
+
+### Added
+
+- **`aggregate_uploaded_file` — constrained, parameterized analysis.** The agent
+  can now answer arbitrary aggregate questions about an uploaded log/inventory
+  ("top masked IPs by 4xx count", "total bytes per storage class") by choosing a
+  metric + group-by + equality/status-range filters **from a hard whitelist**
+  (`analysis/aggregate.py`). It never supplies SQL; only grouped aggregates
+  (≤50 groups, redacted labels) return — never raw rows. All values are bound as
+  DuckDB parameters and the real SQL is audited (rule 17). Removes the biggest
+  residual ossification: the agent was locked to a fixed metric set.
+- **Active model-provider selection.** `POST /model-providers/{id}/activate` and
+  an `active` flag let the agent use a chosen provider; previously it always used
+  the oldest one, so adding a second provider silently did nothing. With no
+  selection the oldest remains the default (unchanged for single-provider
+  installs); deleting the active provider clears the selection.
+- **Parquet + gzip previews.** `preview_object` decompresses `.gz` objects within
+  the same byte bound and returns a `.parquet` STRUCTURE preview (schema + row
+  counts from the footer via one bounded suffix-range GET — never the body),
+  instead of dead-ending at "binary, not previewed".
+- `read_run_result(wait_seconds)` — the agent can wait in-turn (≤60s) for a
+  backgrounded survey/review to finish instead of asking the user to send another
+  message.
+
+### Changed
+
+- **The user's message is no longer silently truncated.** A long paste is cut at
+  16000 chars (was a silent 2000) with an explicit `[TRUNCATED: N more…]` marker
+  so the agent knows it saw a prefix — the same "no silent caps" rule as ingestion.
+- **Raised the autonomy ceilings** that were forcing deep investigations to give
+  up early: agent turn budget 16→24; per-turn object-preview budget 8→12 calls /
+  8→16 MiB; latency-probe budget 6→8; skill-load budget 6→8; list-objects context
+  echo 200→500 keys. All remain code-enforced bounds (never human-approval gates).
+- **Inline survey/review timeout 60s→180s** so a real account survey completes in
+  one turn instead of being split across two; the session SSE stream now emits
+  keepalives during the wait so the client connection stays alive.
+- The forbidden-tool denylist no longer bare-blocks the tokens `sql`/`query`
+  (which would ossify against the constrained aggregate tool); only genuine
+  raw-SQL-execution phrases (`run_sql`, `execute_query`, …) are blocked.
+
 ## [0.22.1] - 2026-07-02
 
 ### Changed

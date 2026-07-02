@@ -26,11 +26,12 @@ Liveness probe.
 Router prefix `/model-providers` (`routers/model_providers.py`).
 
 ```text
-GET    /model-providers               # list configured model providers
+GET    /model-providers               # list configured model providers (each has `active`)
 POST   /model-providers               # create a model provider (api key stored as a keyring:// ref)
 PUT    /model-providers/{provider_id} # update a model provider
-DELETE /model-providers/{provider_id} # delete a model provider
-POST   /model-providers/{provider_id}/test  # validate the provider (a bounded model call)
+DELETE /model-providers/{provider_id} # delete a model provider (clears the active selection if it pointed here)
+POST   /model-providers/{provider_id}/activate  # select the provider the agent uses (else oldest is the default)
+POST   /model-providers/{provider_id}/test      # validate the provider (a bounded model call)
 ```
 
 ## Cloud providers

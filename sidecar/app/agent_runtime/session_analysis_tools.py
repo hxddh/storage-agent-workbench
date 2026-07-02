@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import Path
 from typing import Any, Callable
 
 from .. import audit, config
-from ..analysis import access_logs, inventory
+from ..analysis import access_logs, aggregate as agg, inventory
 from ..repositories import session_datasets as ds_repo
 from ..security.redaction import redact_text
 
@@ -175,7 +176,108 @@ def build(
         # Redact defensively before it reaches the model.
         return redact_text(json.dumps(result, default=str))
 
-    return [list_uploaded_files, analyze_uploaded_file]
+    def _ensure_imported(ds: dict[str, Any]) -> Path:
+        """Return the dataset's DuckDB path, importing the raw upload if needed.
+
+        Lets aggregate_uploaded_file work directly (the agent shouldn't be
+        forced to call analyze_uploaded_file first just to build the table).
+        """
+        dataset_id = ds["id"]
+        duckdb_abs = config.data_dir() / "sessions" / str(session_id) / f"{dataset_id}.duckdb"
+        if duckdb_abs.exists():
+            return duckdb_abs
+        raw_abs = config.data_dir() / (ds.get("stored_path") or "")
+        if not ds.get("stored_path") or not raw_abs.exists():
+            raise FileNotFoundError("The uploaded file is no longer available on disk.")
+        duckdb_abs.parent.mkdir(parents=True, exist_ok=True)
+        if ds["dataset_type"] == "access_log":
+            fmt = access_logs.detect_log_format(raw_abs)
+            imp = access_logs.import_access_logs(raw_abs, duckdb_abs, fmt.get("format"))
+            detected = fmt.get("format")
+        else:
+            imp = inventory.import_inventory_file(raw_abs, duckdb_abs)
+            detected = imp.get("format")
+        ds_repo.mark_imported(conn, dataset_id, config.rel_path(duckdb_abs),
+                              imp.get("table_name") or "", int(imp.get("row_count") or 0),
+                              detected_format=detected)
+        conn.commit()
+        return duckdb_abs
+
+    @function_tool
+    def aggregate_uploaded_file(
+        dataset_id: str,
+        metric: str,
+        group_by: str = "",
+        filters_json: str = "",
+        status_min: int = -1,
+        status_max: int = -1,
+        limit: int = 20,
+    ) -> str:
+        """Run ONE custom aggregation over an uploaded file when the fixed analyze_uploaded_file metrics don't answer the user's question (e.g. "which masked IP got the most 403s between status 400-499", "total bytes per storage class"). You choose metric + group_by + equality filters from a whitelist; raw rows and arbitrary SQL are never available. access_log metrics: count, sum_bytes, avg_bytes, avg_latency_ms, p50_latency_ms, p95_latency_ms, max_latency_ms; group_by: status_code, method, key, path, prefix, user_agent, client_ip_masked, error_code, hour. inventory metrics: count, total_size, avg_size, max_size, min_size; group_by: bucket, prefix, storage_class. filters_json: optional JSON object of column->value equality filters (same columns as group_by, except hour). status_min/status_max: optional status-code range (access logs; pass -1 to skip). limit: max groups returned (<=50); a "truncated": true means more groups exist. Args: dataset_id (from list_uploaded_files), metric, group_by (empty for a single scalar), filters_json, status_min, status_max, limit."""
+        ds = ds_repo.get(conn, dataset_id)
+        if ds is None or ds.get("session_id") != session_id:
+            return _err("Unknown dataset_id for this session. Call list_uploaded_files first.")
+        if ds["dataset_type"] not in ("access_log", "inventory"):
+            return _err(f"Unsupported dataset type: {ds['dataset_type']}")
+
+        filters: dict[str, Any] = {}
+        if filters_json.strip():
+            try:
+                parsed = json.loads(filters_json)
+            except json.JSONDecodeError:
+                return _err("filters_json must be a JSON object like {\"method\": \"GET\"}.")
+            if not isinstance(parsed, dict):
+                return _err("filters_json must be a JSON object of column -> value.")
+            filters = parsed
+
+        try:
+            duckdb_abs = _ensure_imported(ds)
+            out = agg.aggregate(
+                duckdb_abs, ds["dataset_type"], metric,
+                group_by=group_by or None, filters=filters,
+                status_min=None if status_min < 0 else status_min,
+                status_max=None if status_max < 0 else status_max,
+                limit=limit,
+            )
+        except agg.AggregateError as exc:
+            # The message lists the allowed values so the agent self-corrects.
+            return _err(str(exc))
+        except Exception as exc:  # noqa: BLE001 — surface a clean, redacted message
+            note("aggregate_uploaded_file", ds.get("source_filename") or dataset_id, "error")
+            return _err(f"Could not aggregate the file: {exc}")
+
+        # Rule 17: record the ACTUAL SQL + bound params in the audit trail.
+        audit.record(conn, "session.aggregate_uploaded_file", {
+            "session_id": session_id, "dataset_id": dataset_id,
+            "sql": out["sql"], "params": [redact_text(str(p))[:100] for p in out["params"]],
+            "groups": len(out.get("groups", [])),
+        }, run_id=None)
+        conn.commit()
+
+        result = {
+            "dataset_id": dataset_id,
+            "filename": ds["source_filename"],
+            "type": ds["dataset_type"],
+            "metric": out["metric"],
+            "group_by": out["group_by"],
+            "truncated": out["truncated"],
+        }
+        if "groups" in out:
+            result["groups"] = out["groups"]
+            if out["truncated"]:
+                result["note"] = (
+                    "More groups exist beyond this limit — the list is the top "
+                    f"{len(out['groups'])} by the metric, not the full set."
+                )
+        else:
+            result["value"] = out["value"]
+        summary = (f"{len(out['groups'])} groups" if "groups" in out
+                   else f"value={out.get('value')}")
+        note("aggregate_uploaded_file", ds.get("source_filename") or dataset_id,
+             f"{metric} by {group_by or '(all)'} → {summary}")
+        return redact_text(json.dumps(result, default=str))
+
+    return [list_uploaded_files, analyze_uploaded_file, aggregate_uploaded_file]
 
 
 __all__ = ["build"]

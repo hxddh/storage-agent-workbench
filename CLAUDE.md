@@ -28,9 +28,11 @@ switch) was eliminated in v0.20.0 — do not reintroduce it.
    diagnoses connectivity/credential/addressing problems adaptively
    (`test_credentials` → addressing/TLS/head-bucket/list/range) and explains the
    root cause; it analyzes a file the user **attaches in the conversation** with
-   read-only `list_uploaded_files` / `analyze_uploaded_file`
-   (`agent_runtime/session_analysis_tools.py`, same DuckDB engine, sanitized
-   aggregates only); it runs the heavier read-only `survey_account` /
+   read-only `list_uploaded_files` / `analyze_uploaded_file` /
+   `aggregate_uploaded_file` (`agent_runtime/session_analysis_tools.py`, same
+   DuckDB engine, sanitized aggregates only — `aggregate_uploaded_file` lets the
+   agent pick a metric + group-by + filters from a hard whitelist, never SQL and
+   never raw rows); it runs the heavier read-only `survey_account` /
    `review_bucket_config` tools (`agent_runtime/session_action_tools.py`) when
    the request is about the account/buckets; and it picks up a backgrounded run's
    result in a later turn with `read_run_result`. Crucially, **nothing the agent

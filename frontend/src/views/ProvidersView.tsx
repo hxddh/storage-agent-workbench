@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  activateModelProvider,
   createCloudProvider,
   createModelProvider,
   deleteCloudProvider,
@@ -139,6 +140,16 @@ function ModelProvidersPanel() {
     }
   };
 
+  const activate = async (p: ModelProvider) => {
+    setError(null);
+    try {
+      await activateModelProvider(p.id);
+      reload();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   const showForm = creating || editing;
 
   return (
@@ -185,13 +196,23 @@ function ModelProvidersPanel() {
           <li key={p.id} className="rounded-lg border border-edge bg-panel p-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-medium text-gray-100">{p.name}</div>
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-100">
+                  {p.name}
+                  {p.active && (
+                    <span className="rounded-full border border-emerald-700 bg-emerald-950/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400" data-testid="active-model-badge">
+                      {t("prov.active")}
+                    </span>
+                  )}
+                </div>
                 <div className="text-xs text-gray-500">{p.provider_type} · {p.model || "—"} · {p.base_url || "—"}</div>
                 <div className="mt-1 text-xs text-gray-500">
                   {t("prov.apiKeyLabel")}: {p.has_api_key ? <span className="text-emerald-400">{t("prov.savedKeychain")}</span> : <span className="text-gray-600">{t("prov.notSet")}</span>}
                 </div>
               </div>
               <div className="flex gap-2">
+                {!p.active && items.length > 1 && (
+                  <Button variant="ghost" onClick={() => activate(p)}>{t("prov.setActive")}</Button>
+                )}
                 <Button variant="ghost" onClick={() => runTest(p)}>{t("prov.test")}</Button>
                 <Button onClick={() => openEdit(p)}>{t("prov.edit")}</Button>
                 {confirmId === p.id ? (

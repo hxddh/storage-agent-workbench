@@ -415,15 +415,24 @@ async def post_session_message_stream(
     threading.Thread(target=worker, name=f"sess-stream-{session_id[:8]}", daemon=True).start()
 
     async def gen():
+        idle = 0.0
         while True:
             try:
                 item = await asyncio.wait_for(queue.get(), timeout=1.0)
+                idle = 0.0
             except asyncio.TimeoutError:
                 # No event this second — if the client is gone, stop forwarding.
                 # The worker keeps running on its own connection and still
                 # persists the turn (and records it in turn_guard) server-side.
                 if await request.is_disconnected():
                     break
+                # Keepalive during long silent tool calls (e.g. an inline
+                # survey run waiting up to _INLINE_RUN_TIMEOUT): an SSE comment
+                # resets the client's idle watchdog without emitting an event.
+                idle += 1.0
+                if idle >= 15.0:
+                    idle = 0.0
+                    yield ": keepalive\n\n"
                 continue
             if item is _DONE:
                 break

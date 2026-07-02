@@ -219,3 +219,260 @@ def test_inventory_ingest_cap_is_reported(tmp_path, monkeypatch):
     imp = inventory.import_inventory_file(csv, tmp_path / "inv.duckdb")
     assert imp["truncated"] is True and imp["ingest_cap"] == 2
     assert imp["row_count"] == 2
+
+
+# --- A1: constrained aggregation — agent-chosen, whitelisted, no raw rows -----
+
+
+_LOG_LINES = "\n".join(
+    f'2026-06-25T10:0{i % 10}:00Z bucket-a GET /logs/f{i}.log {403 if i % 3 == 0 else 200} '
+    f'{100 * (i + 1)} {10 + i} ms user-agent="ua-{i % 2}" remote_ip="192.0.2.{i}"'
+    for i in range(9)
+)
+
+
+def _agg_db(tmp_path):
+    from app.analysis import access_logs
+
+    log = tmp_path / "a.log"
+    log.write_text(_LOG_LINES)
+    db = tmp_path / "a.duckdb"
+    access_logs.import_access_logs(log, db, "text")
+    return db
+
+
+def test_aggregate_group_by_with_status_range(tmp_path):
+    from app.analysis import aggregate
+
+    out = aggregate.aggregate(_agg_db(tmp_path), "access_log", "count",
+                              group_by="user_agent", status_min=400, status_max=499)
+    assert out["group_by"] == "user_agent" and out["groups"]
+    # 403s land on i % 3 == 0 → i in {0,3,6} → ua-0 twice (0,6), ua-1 once (3).
+    got = {g["group"]: g["value"] for g in out["groups"]}
+    assert got == {"ua-0": 2, "ua-1": 1}
+    assert "?" in out["sql"] and len(out["params"]) == 2  # values are BOUND
+
+
+def test_aggregate_scalar_and_equality_filter(tmp_path):
+    from app.analysis import aggregate
+
+    out = aggregate.aggregate(_agg_db(tmp_path), "access_log", "count",
+                              filters={"method": "GET"})
+    assert out["value"] == 9 and out["group_by"] is None
+    assert out["params"] == ["GET"]  # bound, not interpolated
+
+
+def test_aggregate_rejects_non_whitelisted_identifiers(tmp_path):
+    from app.analysis import aggregate
+
+    db = _agg_db(tmp_path)
+    with pytest.raises(aggregate.AggregateError, match="Unknown group_by"):
+        aggregate.aggregate(db, "access_log", "count", group_by="raw_sanitized; DROP TABLE x")
+    with pytest.raises(aggregate.AggregateError, match="Unknown metric"):
+        aggregate.aggregate(db, "access_log", "count(*)--")
+    with pytest.raises(aggregate.AggregateError, match="Unknown filter column"):
+        aggregate.aggregate(db, "access_log", "count", filters={"1=1": "x"})
+
+
+def test_aggregate_filter_value_injection_is_inert(tmp_path):
+    from app.analysis import aggregate
+
+    db = _agg_db(tmp_path)
+    # A hostile VALUE rides through as a bound parameter — matches nothing,
+    # drops nothing.
+    out = aggregate.aggregate(db, "access_log", "count",
+                              filters={"method": "GET'; DROP TABLE access_logs; --"})
+    assert out["value"] == 0
+    out2 = aggregate.aggregate(db, "access_log", "count")
+    assert out2["value"] == 9  # table intact
+
+
+def test_aggregate_limit_reports_truncation(tmp_path):
+    from app.analysis import aggregate
+
+    out = aggregate.aggregate(_agg_db(tmp_path), "access_log", "count",
+                              group_by="key", limit=3)
+    assert len(out["groups"]) == 3 and out["truncated"] is True
+
+
+def test_aggregate_tool_registered_and_audited(client):
+    """The agent-facing tool exists with a real description under the REAL SDK
+    decorator, auto-imports the upload, and records the ACTUAL SQL in the audit
+    log (rule 17)."""
+    from agents import function_tool
+
+    from app.agent_runtime import session_analysis_tools
+    from app.db import connect
+
+    sid = client.post("/sessions", json={"title": "agg"}).json()["id"]
+    up = client.post(f"/sessions/{sid}/datasets/upload",
+                     files={"file": ("x.log", _LOG_LINES.encode(), "text/plain")},
+                     data={"dataset_type": "access_log"})
+    assert up.status_code == 200, up.text
+    dataset_id = up.json()["dataset_id"]
+
+    # Real SDK registration: name + non-empty description.
+    conn = connect()
+    try:
+        tools = session_analysis_tools.build(conn, function_tool, sid)
+        by_name = {t.name: t for t in tools}
+        assert "aggregate_uploaded_file" in by_name
+        assert by_name["aggregate_uploaded_file"].description.strip()
+    finally:
+        conn.close()
+
+    # Invoke through a plain decorator so we can call the inner function directly.
+    class _FT:
+        def __call__(self, fn):
+            fn.name = fn.__name__
+            return fn
+
+    conn = connect()
+    try:
+        tools = session_analysis_tools.build(conn, _FT(), sid)
+        agg_tool = next(t for t in tools if t.name == "aggregate_uploaded_file")
+        res = json.loads(agg_tool(dataset_id, "count", "status_code"))
+        assert res.get("groups"), res
+        # Group labels are strings; the 403 bucket must be present.
+        assert any(str(g["group"]) == "403" for g in res["groups"])
+        row = conn.execute(
+            "SELECT payload_json_sanitized FROM audit_logs "
+            "WHERE event_type = 'session.aggregate_uploaded_file' ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        assert row is not None
+        assert "SELECT" in row[0]  # the real SQL, not a descriptor
+    finally:
+        conn.close()
+
+
+def test_aggregate_tool_error_lists_allowed_values(client, tmp_path):
+    from app.agent_runtime import session_analysis_tools
+    from app.db import connect
+
+    class _FT:
+        def __call__(self, fn):
+            fn.name = fn.__name__
+            return fn
+
+    sid = client.post("/sessions", json={"title": "agg2"}).json()["id"]
+    up = client.post(f"/sessions/{sid}/datasets/upload",
+                     files={"file": ("x.log", _LOG_LINES.encode(), "text/plain")},
+                     data={"dataset_type": "access_log"})
+    dataset_id = up.json()["dataset_id"]
+    conn = connect()
+    try:
+        tools = session_analysis_tools.build(conn, _FT(), sid)
+        agg_tool = next(t for t in tools if t.name == "aggregate_uploaded_file")
+        res = json.loads(agg_tool(dataset_id, "count", "not_a_column"))
+        assert "Allowed:" in res["error"]  # self-correcting error surface
+    finally:
+        conn.close()
+
+
+# --- A4: active model provider selection --------------------------------------
+
+
+def test_active_model_provider_selected_and_fallback(client):
+    from app.agent_runtime.agent_service import get_model_credentials
+    from app.db import connect
+
+    a = client.post("/model-providers", json={
+        "name": "first", "provider_type": "openai", "model": "m-a", "api_key": "sk-aaaaaaaa1"}).json()
+    b = client.post("/model-providers", json={
+        "name": "second", "provider_type": "openai", "model": "m-b", "api_key": "sk-bbbbbbbb2"}).json()
+
+    conn = connect()
+    try:
+        # Default: oldest wins (pre-existing behavior).
+        assert get_model_credentials(conn)["model"] == "m-a"
+    finally:
+        conn.close()
+
+    # Activate the newer provider → the agent now uses it.
+    r = client.post(f"/model-providers/{b['id']}/activate")
+    assert r.status_code == 200 and r.json()["active"] is True
+    listed = {p["name"]: p["active"] for p in client.get("/model-providers").json()}
+    assert listed == {"first": False, "second": True}
+
+    conn = connect()
+    try:
+        assert get_model_credentials(conn)["model"] == "m-b"
+    finally:
+        conn.close()
+
+    # Deleting the active provider clears the selection → oldest again.
+    client.delete(f"/model-providers/{b['id']}")
+    conn = connect()
+    try:
+        assert get_model_credentials(conn)["model"] == "m-a"
+    finally:
+        conn.close()
+    assert client.post(f"/model-providers/{a['id']}/activate").status_code == 200
+    assert client.post("/model-providers/nope/activate").status_code == 404
+
+
+# --- A5: user-message truncation is explicit, never silent --------------------
+
+
+def test_long_user_message_truncation_is_marked(client):
+    from app.agent_runtime import session_agent
+    from app.db import connect
+
+    sid = client.post("/sessions", json={"title": "long"}).json()["id"]
+    conn = connect()
+    try:
+        row = dict(conn.execute("SELECT * FROM sessions WHERE id = ?", (sid,)).fetchone())
+        long_msg = "x" * (session_agent._MAX_USER_MSG + 500)
+        prompt, _, _ = session_agent._build_prompt(row, {}, [], long_msg, conn)
+        assert "[TRUNCATED:" in prompt and "500 more characters" in prompt
+        short_prompt, _, _ = session_agent._build_prompt(row, {}, [], "hi", conn)
+        assert "[TRUNCATED:" not in short_prompt
+    finally:
+        conn.close()
+
+
+# --- A3/A6/A7: raised ceilings stay wired to their consumers ------------------
+
+
+def test_raised_budgets_and_caps():
+    from app.agent_runtime import session_agent, session_tools
+    from app.skills import contract
+
+    assert session_agent._MAX_TURNS >= 24
+    assert session_tools._LIST_KEYS_CTX_CAP >= 500
+    # skills_used contract cap must match the per-turn read_skill budget; the
+    # budget constants live inside build(), so pin the contract-side value.
+    src = open("app/agent_runtime/session_tools.py").read()
+    assert "_MAX_SKILL_LOADS = 8" in src
+    assert "_MAX_PREVIEWS = 12" in src
+    assert "_MAX_LATENCY_RUNS = 8" in src
+    raw = "answer\n```json\n" + json.dumps(
+        {"skills_used": [f"s{i}" for i in range(10)], "next_action_proposals": []}
+    ) + "\n```"
+    assert len(contract.parse_agent_contract(raw)["skills_used"]) == 8
+
+
+# --- B3: denylist no longer ossifies against a constrained aggregate tool -----
+
+
+def test_denylist_allows_aggregate_but_blocks_raw_sql():
+    from app.agent_runtime import guardrails as g
+
+    assert not g.is_forbidden_tool("aggregate_uploaded_file")
+    assert not g.is_forbidden_tool("aggregate")
+    for bad in ("run_sql", "sql_query", "execute_sql", "raw_sql", "execute_query"):
+        assert g.is_forbidden_tool(bad), bad
+
+
+# --- B1: redaction precision — benign text must survive -----------------------
+
+
+def test_redaction_precision_benign_text_untouched():
+    from app.security.redaction import redact_text
+
+    benign = (
+        "The signature dish arrived; check the cookie jar. "
+        "Bucket data-backups-prod-2026 has 40 characters exactly here: "
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN and a normal sentence."
+    )
+    assert redact_text(benign) == benign

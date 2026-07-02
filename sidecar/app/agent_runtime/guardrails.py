@@ -40,13 +40,18 @@ AGENT_MAX_RANGE_BYTES = 1024 * 1024  # 1 MiB no-approval ceiling
 # `inspect_endpoint_tls` are never falsely blocked by an incidental substring
 # (the old check forbade anything merely *containing* "client", "sql", "code"…).
 # The curated tool registration is the primary whitelist; this denylist is
-# defense-in-depth against a mis-added mutating tool. Single dangerous tokens:
+# defense-in-depth against a mis-added mutating tool. Single dangerous tokens.
+# NOTE: "sql"/"query" are deliberately NOT bare tokens — a constrained,
+# parameterized read-only aggregation tool is a legitimate capability, and a
+# bare token here would ossify against ever adding one. Only the genuinely
+# dangerous SQL-execution *phrases* below are blocked.
 FORBIDDEN_TOKENS = {
     "shell", "bash", "sh", "subprocess", "exec", "eval", "system", "popen",
-    "python", "sql", "query", "boto3", "client",
+    "python", "boto3", "client",
 }
-# Mutating/destructive S3 operations, matched as a contiguous token sequence so
-# only the actual op is blocked (not any name containing "put"/"delete").
+# Mutating/destructive S3 operations and raw-SQL execution, matched as a
+# contiguous token sequence so only the actual op is blocked (not any name
+# containing "put"/"delete"/"sql").
 FORBIDDEN_PHRASES = {
     ("put", "object"), ("delete", "object"), ("delete", "objects"),
     ("delete", "bucket"), ("create", "bucket"), ("copy", "object"),
@@ -55,6 +60,10 @@ FORBIDDEN_PHRASES = {
     ("put", "bucket", "lifecycle", "configuration"),
     ("put", "lifecycle", "configuration"),
     ("put", "bucket", "cors"), ("put", "bucket", "encryption"),
+    # Raw/arbitrary SQL execution (the constrained aggregate tool never matches:
+    # it carries neither an execution verb nor the word "sql" in its name).
+    ("run", "sql"), ("execute", "sql"), ("raw", "sql"), ("sql", "query"),
+    ("execute", "query"), ("run", "query"), ("sql", "exec"),
 }
 # Back-compat alias (some callers/tests reference the old name).
 FORBIDDEN_TOOLS = FORBIDDEN_TOKENS

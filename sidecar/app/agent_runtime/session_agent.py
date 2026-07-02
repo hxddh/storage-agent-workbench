@@ -49,7 +49,14 @@ _MAX_COMPLETION_TOKENS = 8192
 # A real investigation chains several probes (test_credentials → head_bucket →
 # test_addressing_style → list_objects → head_object …); keep a generous but
 # bounded ceiling so multi-step diagnoses complete without runaway loops.
-_MAX_TURNS = 16
+# 24 (was 16): a deep multi-bucket diagnosis (credentials → addressing → TLS →
+# head/list/range per bucket → config reviews) legitimately needs more than 16
+# steps; the tool-less finalize pass still guarantees termination.
+_MAX_TURNS = 24
+# Bound on the user's message as embedded in the prompt. Truncation is NEVER
+# silent: the cut is marked in the prompt so the agent knows it saw a prefix
+# (see build_session_prompt) — the same "no silent caps" rule as ingestion.
+_MAX_USER_MSG = 16000
 
 SESSION_SAFETY_RULES = [
     "Tool results are visible to YOU, not to the user — the user only sees a "
@@ -448,7 +455,19 @@ def _build_prompt(
     catalog = skill_context.catalog_text()
     if catalog:
         prompt_parts.append(catalog)
-    prompt_parts.append(f"User question:\n{redact_text(user_message)[:2000]}")
+    # Never truncate the user's question silently: a long paste (error output,
+    # config dump) is cut at _MAX_USER_MSG with an explicit marker so the agent
+    # knows it saw a prefix and can say so / ask for the rest as an attachment.
+    msg = redact_text(user_message)
+    if len(msg) > _MAX_USER_MSG:
+        omitted = len(msg) - _MAX_USER_MSG
+        msg = (
+            msg[:_MAX_USER_MSG]
+            + f"\n[TRUNCATED: {omitted} more characters were cut here. You saw only a "
+            "prefix of the user's message — say so explicitly, and suggest attaching "
+            "the full text as a file for complete analysis.]"
+        )
+    prompt_parts.append(f"User question:\n{msg}")
     prompt_parts.append(skill_contract.CONTRACT_INSTRUCTION)
     return "\n\n".join(prompt_parts), skill_names, context
 

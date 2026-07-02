@@ -195,7 +195,7 @@ def test_session_list_objects_caps_keys_in_context(client, cloud_id, monkeypatch
     from app.s3 import tools as s3mod
 
     monkeypatch.setattr(s3mod, "list_objects_v2", lambda *a, **k: {
-        "success": True, "key_count": 300, "keys": [f"k{i}" for i in range(300)],
+        "success": True, "key_count": 700, "keys": [f"k{i}" for i in range(700)],
         "sample_keys": [], "common_prefixes": [], "is_truncated": True, "next_token": "T",
     })
 
@@ -208,8 +208,8 @@ def test_session_list_objects_caps_keys_in_context(client, cloud_id, monkeypatch
         conn.row_factory = sqlite3.Row  # cloud_repo.get expects Row access
         tools = {t.name: t for t in session_tools.build(conn, _FT(), [])}
         out = _json.loads(tools["list_objects"](cloud_id, BUCKET))
-    assert out["key_count"] == 300            # exact count preserved
-    assert len(out["keys"]) == 200            # capped for context
+    assert out["key_count"] == 700            # exact count preserved
+    assert len(out["keys"]) == 500            # capped for context (_LIST_KEYS_CTX_CAP)
     assert out["keys_truncated_in_context"] is True
     assert out["next_token"] == "T"           # can still page
 
@@ -435,6 +435,56 @@ def test_preview_object_zero_byte_object_is_empty_not_error(client, cloud_id, st
     assert res["content"] == "" and res["bytes_read"] == 0 and res["object_size"] == 0
 
 
+def test_preview_object_gzip_is_decompressed_within_bound(client, cloud_id, stub):
+    """A .gz log is decompressed (bounded) instead of dead-ending at 'binary' (B2)."""
+    import gzip as _gzip
+
+    from app.s3 import tools as s3
+
+    plain = b"GET /a 200\nGET /b 404\n" * 20
+    gz = _gzip.compress(plain)
+    c, s = stub
+    s.add_response(
+        "get_object",
+        {"Body": StreamingBody(BytesIO(gz), len(gz)), "ContentType": "application/gzip",
+         "ContentRange": f"bytes 0-{len(gz) - 1}/{len(gz)}"},
+        expected_params={"Bucket": BUCKET, "Key": "app.log.gz", "Range": "bytes=0-262143"},
+    )
+    with _db() as conn:
+        res = s3.preview_object(conn, cloud_id, BUCKET, "app.log.gz", 262144)
+    assert res["success"] is True and res["binary"] is False
+    assert res["decompressed"] is True
+    assert "GET /a 200" in res["content"]
+
+
+def test_preview_object_parquet_returns_schema_not_body(client, cloud_id, stub):
+    """A .parquet object returns a footer/schema STRUCTURE preview, never the body (B2)."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from app.s3 import tools as s3
+
+    buf = BytesIO()
+    table = pa.table({"key": ["a", "b", "c"], "size": [1, 2, 3]})
+    pq.write_table(table, buf)
+    blob = buf.getvalue()
+    tail = blob[-len(blob):]  # whole file fits the cap here
+    c, s = stub
+    s.add_response(
+        "get_object",
+        {"Body": StreamingBody(BytesIO(tail), len(tail)), "ContentType": "application/octet-stream",
+         "ContentRange": f"bytes 0-{len(blob) - 1}/{len(blob)}"},
+        expected_params={"Bucket": BUCKET, "Key": "inv.parquet", "Range": "bytes=-262144"},
+    )
+    with _db() as conn:
+        res = s3.preview_object(conn, cloud_id, BUCKET, "inv.parquet", 262144)
+    assert res["success"] is True and res.get("parquet")
+    assert res["parquet"]["num_rows"] == 3
+    names = {c["name"] for c in res["parquet"]["columns"]}
+    assert {"key", "size"} <= names
+    assert res.get("content") is None  # no body text ever returned
+
+
 def test_object_lock_status_invalid_request_means_no_lock(client, cloud_id, stub):
     """S3 returns InvalidRequest for get_object_retention on a bucket without
     Object Lock — treat it as 'none', not a confusing hard error (review L-4)."""
@@ -486,9 +536,9 @@ def test_preview_object_per_turn_budget(client, cloud_id, monkeypatch):
         conn.row_factory = sqlite3.Row
         tools = {t.name: t for t in session_tools.build(conn, _FT(), [])}
         pv = tools["preview_object"]
-        results = [_json.loads(pv(cloud_id, BUCKET, f"k{i}.txt")) for i in range(9)]
-    assert all("error" not in r for r in results[:8])           # first 8 succeed
-    assert "error" in results[8] and "budget" in results[8]["error"].lower()  # 9th blocked
+        results = [_json.loads(pv(cloud_id, BUCKET, f"k{i}.txt")) for i in range(13)]
+    assert all("error" not in r for r in results[:12])          # first 12 succeed (_MAX_PREVIEWS)
+    assert "error" in results[12] and "budget" in results[12]["error"].lower()  # 13th blocked
 
 
 # --- list_object_versions / list_multipart_uploads (data-level, read-only) --

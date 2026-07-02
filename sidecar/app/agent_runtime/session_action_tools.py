@@ -53,7 +53,14 @@ def _err(msg: str) -> str:
 # hung indefinitely. On timeout the run keeps going in the background; the tool
 # returns the run's current (e.g. "running") status so the agent can move on and
 # re-read it later (agent runs are origin='agent' and never shown as a card).
-_INLINE_RUN_TIMEOUT = 60.0
+# 180s (was 60): a survey over a real account routinely needs >60s, and the old
+# value force-split one investigation across two user turns. The session SSE
+# stream emits keepalives during the wait, so the client connection stays alive.
+_INLINE_RUN_TIMEOUT = 180.0
+# Ceiling on read_run_result's optional in-turn wait (seconds). Lets the agent
+# pick up a backgrounded run's result within the SAME turn instead of asking the
+# user to send another message. Bounded so a wait can't hang a turn.
+_MAX_RESULT_WAIT = 60
 
 
 def _execute_run(conn: sqlite3.Connection, body: RunCreate,
@@ -190,13 +197,24 @@ def build(
         return json.dumps(result)
 
     @function_tool
-    def read_run_result(run_id: str) -> str:
-        """Read the current status + sanitized summary of a run already linked to this session — e.g. a survey/review that exceeded the inline time budget and finished in the background, or an evidence-import analysis. Use this to pick up a result in a LATER turn instead of re-running. Returns status + final_summary (no raw rows/keys). Args: run_id."""
+    def read_run_result(run_id: str, wait_seconds: int = 0) -> str:
+        """Read the current status + sanitized summary of a run already linked to this session — e.g. a survey/review that exceeded the inline time budget and finished in the background, or an evidence-import analysis. Set wait_seconds (up to 60) to wait in-turn for a still-running run to finish instead of asking the user to send another message; 0 returns immediately. Returns status + final_summary (no raw rows/keys). Args: run_id; wait_seconds (optional)."""
+        import time as _time
+
         from ..repositories import sessions as sessions_repo
         linked = {r["run_id"] for r in sessions_repo.list_runs(conn, session_id)} if session_id else set()
         if run_id not in linked:
             return _err("Unknown run_id for this session. Only runs in this session can be read.")
         result = _run_result(conn, run_id)
+        # Bounded in-turn wait: poll until the run leaves pending/running or the
+        # budget elapses. This whole turn already runs on a dedicated worker
+        # thread (boto3 tools block it by design), so sleeping here stalls only
+        # this session's turn — the SSE keepalive keeps the client alive.
+        deadline = _time.monotonic() + max(0, min(int(wait_seconds), _MAX_RESULT_WAIT))
+        while result["status"] in ("pending", "running") and _time.monotonic() < deadline:
+            _time.sleep(1.0)
+            conn.commit()  # end the read snapshot so run_sync's writes are visible
+            result = _run_result(conn, run_id)
         audit.record(conn, "session.read_run_result",
                      {"session_id": session_id, "run_id": run_id, "status": result["status"]},
                      run_id=run_id)

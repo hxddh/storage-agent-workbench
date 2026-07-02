@@ -112,6 +112,12 @@ export const testModelProvider = (id: string) =>
     method: "POST",
   });
 
+/** Select which model provider the agent uses (with several configured). */
+export const activateModelProvider = (id: string) =>
+  request<ModelProvider>(`/model-providers/${id}/activate`, {
+    method: "POST",
+  });
+
 // --- Cloud providers ---
 
 export interface CloudProviderInput {

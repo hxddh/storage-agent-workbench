@@ -13,15 +13,37 @@ from ..models.schemas import (
 )
 from ..security import keyring_store
 from . import has_value, utcnow
+from . import settings as settings_repo
 
 KEYRING_SCOPE = "model_provider"
+# app_settings key naming the provider the agent uses. Unset → the oldest
+# configured provider (the pre-existing implicit behavior) stays the default.
+ACTIVE_SETTING_KEY = "active_model_provider_id"
 
 
 def _secret_name(provider_id: str) -> str:
     return f"{provider_id}/api_key"
 
 
-def _row_to_out(row: sqlite3.Row) -> ModelProviderOut:
+def active_provider_id(conn: sqlite3.Connection) -> str | None:
+    """The explicitly selected provider id, or None (→ oldest wins)."""
+    return settings_repo.get(conn, ACTIVE_SETTING_KEY)
+
+
+def set_active(conn: sqlite3.Connection, provider_id: str) -> bool:
+    """Mark one provider as the agent's active model. False if it doesn't exist."""
+    row = conn.execute(
+        "SELECT id FROM model_providers WHERE id = ?", (provider_id,)
+    ).fetchone()
+    if row is None:
+        return False
+    settings_repo.set(conn, ACTIVE_SETTING_KEY, provider_id)
+    audit.record(conn, "model_provider.activate", {"id": provider_id})
+    conn.commit()
+    return True
+
+
+def _row_to_out(row: sqlite3.Row, active_id: str | None = None) -> ModelProviderOut:
     return ModelProviderOut(
         id=row["id"],
         name=row["name"],
@@ -30,23 +52,25 @@ def _row_to_out(row: sqlite3.Row) -> ModelProviderOut:
         model=row["model"],
         api_key_ref=row["api_key_ref"],
         has_api_key=keyring_store.secret_exists(row["api_key_ref"]),
+        active=(row["id"] == active_id),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
 
 
 def list_all(conn: sqlite3.Connection) -> list[ModelProviderOut]:
+    active_id = active_provider_id(conn)
     rows = conn.execute(
         "SELECT * FROM model_providers ORDER BY created_at DESC, id"
     ).fetchall()
-    return [_row_to_out(r) for r in rows]
+    return [_row_to_out(r, active_id) for r in rows]
 
 
 def get(conn: sqlite3.Connection, provider_id: str) -> ModelProviderOut | None:
     row = conn.execute(
         "SELECT * FROM model_providers WHERE id = ?", (provider_id,)
     ).fetchone()
-    return _row_to_out(row) if row else None
+    return _row_to_out(row, active_provider_id(conn)) if row else None
 
 
 def create(conn: sqlite3.Connection, data: ModelProviderCreate) -> ModelProviderOut:
@@ -128,6 +152,10 @@ def delete(conn: sqlite3.Connection, provider_id: str) -> bool:
 
     keyring_store.delete_secret(KEYRING_SCOPE, _secret_name(provider_id))
     conn.execute("DELETE FROM model_providers WHERE id = ?", (provider_id,))
+    # Deleting the active provider clears the selection → the oldest remaining
+    # provider becomes the implicit default again (never a dangling pointer).
+    if active_provider_id(conn) == provider_id:
+        conn.execute("DELETE FROM app_settings WHERE key = ?", (ACTIVE_SETTING_KEY,))
     audit.record(conn, "model_provider.delete", {"id": provider_id})
     conn.commit()
     return True
