@@ -18,13 +18,13 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from .. import audit, config
 from ..agent_runtime import session_agent, turn_guard
 from ..agent_runtime.agent_service import AgentUnavailable, get_model_credentials
-from ..db import get_conn
+from ..db import connect, get_conn
 from ..models.schemas import (
     ActionRequest,
     SessionCreate,
@@ -310,7 +310,8 @@ def _sse(event: str, data: dict[str, Any]) -> str:
 
 @router.post("/{session_id}/messages/stream")
 async def post_session_message_stream(
-    session_id: str, body: SessionMessageCreate, conn: sqlite3.Connection = Depends(get_conn)
+    session_id: str, body: SessionMessageCreate, request: Request,
+    conn: sqlite3.Connection = Depends(get_conn)
 ):
     """Streaming variant of the message turn (SSE): emits `tool` events as the
     agent investigates, `delta` events as the answer is generated, and a final
@@ -365,20 +366,30 @@ async def post_session_message_stream(
             wloop.run_until_complete(drive())
             data = final.get("data")
             if data is not None:
-                # Persist the turn here (worker thread) — the main loop is only
-                # awaiting the queue, so the request-scoped connection is never
-                # used from two threads at once.
-                repo.add_message(conn, session_id, "user", body.content)
-                mid = repo.add_message(conn, session_id, "assistant", data["answer"],
-                                       tool_activity=data.get("tool_activity"),
-                                       grounding={
-                                           "evidence_used": data.get("evidence_used", []),
-                                           "evidence_gaps": data.get("evidence_gaps", []),
-                                           "skills_used": data.get("skills_used", []),
-                                       },
-                                       proposed_actions=data["next_action_proposals"])
-                audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
-                conn.commit()
+                # Persist on the worker's OWN connection — NOT the request-scoped
+                # `conn`. The request handler returns as soon as StreamingResponse
+                # is constructed, and its Depends(get_conn) closes that connection
+                # in its finally; a client disconnect tears the generator down the
+                # same way. Writing to the shared connection from this thread then
+                # races the close (and hits "closed database" on disconnect),
+                # losing the turn. A dedicated connection makes the turn complete
+                # server-side regardless of what the client does — the guarantee
+                # turn_guard's blocking fallback depends on.
+                wconn = connect()
+                try:
+                    repo.add_message(wconn, session_id, "user", body.content)
+                    mid = repo.add_message(wconn, session_id, "assistant", data["answer"],
+                                           tool_activity=data.get("tool_activity"),
+                                           grounding={
+                                               "evidence_used": data.get("evidence_used", []),
+                                               "evidence_gaps": data.get("evidence_gaps", []),
+                                               "skills_used": data.get("skills_used", []),
+                                           },
+                                           proposed_actions=data["next_action_proposals"])
+                    audit.record(wconn, "session.message", {"session_id": session_id}, run_id=None)
+                    wconn.commit()
+                finally:
+                    wconn.close()
                 # Record the completed turn so the blocking fallback won't re-run
                 # it (and re-persist) if the client missed the 'done' event.
                 turn_guard.set_result(body.turn_id, {
@@ -405,7 +416,15 @@ async def post_session_message_stream(
 
     async def gen():
         while True:
-            item = await queue.get()
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                # No event this second — if the client is gone, stop forwarding.
+                # The worker keeps running on its own connection and still
+                # persists the turn (and records it in turn_guard) server-side.
+                if await request.is_disconnected():
+                    break
+                continue
             if item is _DONE:
                 break
             kind, data = item

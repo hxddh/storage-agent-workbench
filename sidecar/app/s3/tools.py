@@ -107,8 +107,7 @@ def test_credentials(conn: sqlite3.Connection, provider_id: str) -> dict[str, An
         if code == "AccessDenied":
             # Credentials are valid; the account just cannot ListBuckets.
             return {**base, "success": True, "identity_hint": "authenticated (ListBuckets denied)"}
-        if code in _AUTH_FAIL_CODES:
-            return {**base, **fields, "success": False}
+        # Everything else (auth failures included) is a genuine failure.
         return {**base, **fields, "success": False}
     except Exception as exc:  # noqa: BLE001 - sanitized below
         return {**base, **_generic_error_fields(exc), "success": False}
@@ -121,9 +120,10 @@ def list_buckets(conn: sqlite3.Connection, provider_id: str) -> dict[str, Any]:
     """Enumerate the buckets visible to the credentials (read-only ListBuckets).
 
     This is the ONLY listing performed — it never calls ListObjectsV2 and never
-    touches object bodies. Bucket names pass through redaction defensively
-    (normal names are unchanged). Capability/permission gaps are surfaced as
-    ``provider_unsupported`` / ``access_denied`` rather than crashing the run.
+    touches object bodies. Bucket names are returned verbatim (they are DNS-style
+    identifiers reused as ``Bucket=`` arguments downstream, not secret material).
+    Capability/permission gaps are surfaced as ``provider_unsupported`` /
+    ``access_denied`` rather than crashing the run.
     """
     base = {
         "success": False,
@@ -142,8 +142,15 @@ def list_buckets(conn: sqlite3.Connection, provider_id: str) -> dict[str, Any]:
         buckets = []
         for b in resp.get("Buckets", []) or []:
             cd = b.get("CreationDate")
+            # A bucket name is a DNS-style resource identifier, not secret
+            # material — and account discovery reuses it verbatim as the
+            # `Bucket=` argument for head_bucket / config snapshots. Running it
+            # through redact_text can mangle a legitimately-named bucket (e.g.
+            # one that trips a token-shaped pattern) into "***REDACTED***", which
+            # then makes every per-bucket follow-up call fail. Keep the raw name;
+            # secrets in error messages/headers are still redacted elsewhere.
             buckets.append({
-                "name": redact_text(str(b.get("Name") or "")),
+                "name": str(b.get("Name") or ""),
                 "creation_date": cd.isoformat() if hasattr(cd, "isoformat") else cd,
                 "status": "visible",
             })
@@ -531,11 +538,23 @@ def preview_object(
                     "object_size": object_size, "bytes_read": len(data),
                     "error_message_sanitized": "Object looks binary; content not previewed (text only)."}
         text = redact_text(data.decode("utf-8", errors="replace"))
-        truncated = object_size is not None and object_size > len(data)
+        # Known size and more remains → truncated. If the provider ignored the
+        # Range header (200, no ContentRange) we can't know the true size, so
+        # treat a full-cap read as possibly-truncated rather than reporting False.
+        truncated = (
+            (object_size is not None and object_size > len(data))
+            or (object_size is None and len(data) >= cap)
+        )
         return {**base, "success": True, "content": text, "bytes_read": len(data),
                 "object_size": object_size, "content_type": ctype or None, "truncated": truncated}
     except ClientError as exc:
-        return {**base, **_client_error_fields(exc), "success": False}
+        fields = _client_error_fields(exc)
+        # A Range GET on a zero-byte object returns 416 InvalidRange — that's an
+        # empty object, not a failure. Report an empty, successful preview.
+        if fields.get("error_code") in ("InvalidRange", "416") or fields.get("status_code") == 416:
+            return {**base, "success": True, "content": "", "bytes_read": 0,
+                    "object_size": 0, "truncated": False}
+        return {**base, **fields, "success": False}
     except Exception as exc:  # noqa: BLE001
         return {**base, **_generic_error_fields(exc), "success": False}
 
@@ -741,7 +760,15 @@ def get_object_lock_status(
         "error_code": None, "error_message_sanitized": None,
     }
     # Codes meaning "no lock configured on this object", which is a valid answer.
-    _NONE_CODES = {"NoSuchObjectLockConfiguration", "ObjectLockConfigurationNotFoundError"}
+    # Real S3 returns `InvalidRequest` ("Bucket is missing Object Lock
+    # Configuration") from get_object_retention/legal_hold on a bucket without
+    # Object Lock — the overwhelmingly common case — so treat it as "none" here
+    # (these two calls are object-lock-specific) rather than a confusing hard error.
+    _NONE_CODES = {
+        "NoSuchObjectLockConfiguration",
+        "ObjectLockConfigurationNotFoundError",
+        "InvalidRequest",
+    }
     try:
         client = client_factory.build_s3_client(conn, provider_id)
     except Exception as exc:  # noqa: BLE001

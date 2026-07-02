@@ -31,17 +31,26 @@ Purpose:
 
 - Check bucket existence and access.
 
-### list_objects_v2
+### list_objects
+
+(The registered agent tool is `list_objects`; the internal S3 helper it calls is
+`s3.list_objects_v2`. The `list_objects_v2` name is only that S3-layer function
+and the `/tools/list-objects-v2` HTTP endpoint, not an agent tool.)
 
 Purpose:
 
-- List object keys with an explicit max_keys. Supports a continuation token and
-  recursive (delimiter-free) listing so the agent can page through a large
-  bucket; paging is always explicit, never an automatic full scan.
+- List one page of object keys (read-only ListObjectsV2). Supports a
+  continuation token and recursive (delimiter-free) listing so the agent can
+  page through a large bucket; paging is always explicit, never an automatic
+  full scan.
 
 Safety:
 
-- Must require max_keys; clamped to a per-call hard cap.
+- `max_keys` is NOT required — the agent tool defaults it (`AGENT_DEFAULT_LIST_KEYS`
+  = 100) when unset. An explicit larger request is honored but clamped to
+  `AGENT_MAX_LIST_KEYS` = 1000 (which matches the S3 layer's own `MAX_LIST_KEYS`
+  hard cap), so a deliberate wider sample works while a full scan can't be
+  requested. Bounds, not gates — there is no approval path.
 - Must sanitize sample keys and bound the keys surfaced to the model per call.
 - Never returns object bodies.
 
@@ -63,8 +72,12 @@ Purpose:
 
 Safety:
 
-- Must limit requested bytes.
-- Must not download full object unless explicitly approved in a future phase.
+- Must limit requested bytes. The guardrails module defines
+  `AGENT_MAX_RANGE_BYTES` (1 MiB) as a no-approval ceiling constant, but
+  `test_range_get` is not routed through `bound_tool_args`, so the effective
+  hard cap on a single range read is the S3 layer's `MAX_RANGE_BYTES` (4 MiB) in
+  `s3/tools.py` — a request beyond that is refused.
+- Must not download a full object. There is no full-object download path.
 
 ### preview_object
 
@@ -177,6 +190,11 @@ Purpose:
 The conversational session agent uses the read-only diagnostic + config-review
 tools above (choosing provider/bucket itself), plus:
 
+- **list_providers** — enumerate the configured cloud providers (ids + safe
+  metadata, no secrets) so the agent can pick one before any bucket operation.
+- **list_uploaded_files** — list the data files the user attached to this
+  session (from `session_datasets`) so the agent can discover and then
+  `analyze_uploaded_file` them. Local, read-only, always available.
 - **read_skill** — load a StorageOps skill's method on demand (progressive
   disclosure); guidance text only, no skill tools/scripts are executed.
 - **Working memory** — `note_fact` / `record_finding` / `note_open_question`

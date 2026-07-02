@@ -11,11 +11,12 @@ import sqlite3
 import uuid
 from typing import Any
 
+from .. import config
 from ..events import bus
 from ..repositories import runs as runs_repo
 from ..s3 import tools as s3_tools
 from ..security.redaction import redact_text
-from ..tool_runner import run_tool
+from ._common import run_tool_with_events
 from .report import write_report
 
 # Bounded sample size for the diagnostic listing (never a full scan).
@@ -97,17 +98,9 @@ def execute_diagnostic_run(conn: sqlite3.Connection, run_id: str) -> None:
         evidence: dict[str, dict[str, Any]] = {}
 
         def call(name: str, raw_input: dict[str, Any], executor) -> dict[str, Any]:
-            tool_call_id = uuid.uuid4().hex
-            bus.publish(run_id, {"type": "tool_call_started", "tool_name": name, "tool_call_id": tool_call_id})
-            out = run_tool(conn, name, raw_input, executor, run_id=run_id)
-            status = "success" if out.get("success", True) else "error"
-            bus.publish(run_id, {
-                "type": "tool_call_finished",
-                "tool_name": name,
-                "tool_call_id": tool_call_id,
-                "status": status,
-                "output": out,  # already sanitized by the tool layer
-            })
+            # Uses the shared started/finished event helper (identical event
+            # shape) so the diagnostic executor doesn't drift from the others.
+            out = run_tool_with_events(conn, run_id, name, raw_input, executor)
             evidence[name] = out
             return out
 
@@ -137,7 +130,10 @@ def execute_diagnostic_run(conn: sqlite3.Connection, run_id: str) -> None:
 
         final_status = "completed" if all_ok else "failed"
         runs_repo.set_status(conn, run_id, final_status, final_summary=summary, report_path=report_path)
-        bus.publish(run_id, {"type": "report_ready", "run_id": run_id, "report_path": report_path})
+        # Publish the RELATIVE report path, matching the other executors (they all
+        # emit config.rel_path(...); the reports table still holds the absolute).
+        bus.publish(run_id, {"type": "report_ready", "run_id": run_id,
+                             "report_path": config.rel_path(report_path)})
     except Exception as exc:  # noqa: BLE001 - sanitized below
         runs_repo.set_status(conn, run_id, "failed", final_summary="Diagnostic run failed.")
         bus.publish(run_id, {"type": "error", "message": redact_text(str(exc))})

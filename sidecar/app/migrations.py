@@ -571,7 +571,7 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
     for version, name, sql in MIGRATIONS:
         if version in applied:
             continue
-        conn.executescript(sql)
+        _apply_one(conn, sql)
         conn.execute(
             "INSERT INTO schema_migrations (version, name, applied_at) "
             "VALUES (?, ?, datetime('now'))",
@@ -580,3 +580,38 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
         conn.commit()
         count += 1
     return count
+
+
+# Errors that mean a schema element this migration creates is ALREADY present —
+# i.e. the migration was partially applied before a crash (executescript commits
+# implicitly and cannot roll back), and its version row was never written. On a
+# retry these are safe to skip; a genuinely new error is not swallowed.
+_IDEMPOTENT_ERROR_MARKERS = ("duplicate column name", "already exists")
+
+
+def _apply_one(conn: sqlite3.Connection, sql: str) -> None:
+    """Apply one migration's SQL, recovering from a partial prior application.
+
+    Fast path: a single ``executescript`` (unchanged behavior). Only if that
+    fails with an "already applied" marker — a retry after a mid-migration crash,
+    since ``ALTER TABLE ... ADD COLUMN`` has no ``IF NOT EXISTS`` — do we re-run
+    the statements individually, skipping the ones that report the schema element
+    already exists. Any other error propagates.
+    """
+    try:
+        conn.executescript(sql)
+        return
+    except sqlite3.OperationalError as exc:
+        if not any(m in str(exc).lower() for m in _IDEMPOTENT_ERROR_MARKERS):
+            raise
+    # Recovery: replay statement-by-statement, tolerating only the idempotent
+    # "already exists / duplicate column" errors. (Migration DDL here has no
+    # semicolons inside string literals, so a simple split is safe.)
+    for stmt in (s.strip() for s in sql.split(";")):
+        if not stmt:
+            continue
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as exc:
+            if not any(m in str(exc).lower() for m in _IDEMPOTENT_ERROR_MARKERS):
+                raise

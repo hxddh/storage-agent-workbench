@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { HEALTH_POLL_INTERVAL_MS, initSidecarBaseUrl, sidecarBaseUrl } from "../config";
+import { HEALTH_POLL_INTERVAL_MS, initSidecarBaseUrl, sidecarBaseUrl, sidecarToken } from "../config";
 
 export type SidecarStatus = "starting" | "connected" | "disconnected" | "error";
 
@@ -38,7 +38,11 @@ export function useSidecarHealth(): SidecarHealth {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3000);
-        const res = await fetch(`${sidecarBaseUrl()}/health`, { signal: controller.signal });
+        const token = sidecarToken();
+        const res = await fetch(`${sidecarBaseUrl()}/health`, {
+          signal: controller.signal,
+          headers: token ? { "X-Sidecar-Token": token } : undefined,
+        });
         clearTimeout(timeout);
 
         if (!res.ok) throw new Error(`status ${res.status}`);

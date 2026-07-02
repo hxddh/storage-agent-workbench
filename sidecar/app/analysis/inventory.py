@@ -19,6 +19,9 @@ from . import duck
 TABLE_NAME = "inventory_objects"
 SAMPLE_LIMIT = 20
 SMALL_OBJECT_BYTES = 1024 * 1024  # objects under 1 MiB count as "small"
+# Bound rows materialized in memory during import (see analysis/access_logs.py).
+# A huge inventory export must not OOM the sidecar; rows beyond this are dropped.
+MAX_INGEST_ROWS = 2_000_000
 
 COLUMNS = ["bucket", "key", "prefix", "size", "last_modified", "storage_class", "etag"]
 
@@ -63,6 +66,10 @@ def _load_dataframe(raw_path: str | Path) -> tuple[pd.DataFrame, str]:
 
 def import_inventory_file(raw_path: str | Path, duckdb_path: str | Path) -> dict[str, Any]:
     df_in, fmt = _load_dataframe(raw_path)
+    # Bound the in-memory row explosion (the per-row dict loop below) so a huge
+    # export can't OOM the sidecar. Rows beyond the cap are dropped.
+    if len(df_in) > MAX_INGEST_ROWS:
+        df_in = df_in.head(MAX_INGEST_ROWS)
     norm_map = {_norm(c): c for c in df_in.columns}
 
     def col_for(field: str) -> str | None:

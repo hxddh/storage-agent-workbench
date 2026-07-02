@@ -58,10 +58,6 @@ export function patchSessionRun(
   notify(id);
 }
 
-export function clearSessionRun(id: string): void {
-  if (store.delete(id)) notify(id);
-}
-
 /** Subscribe a component to one session's run state (re-renders on change). */
 export function useSessionRun(id: string | null): SessionRun {
   return useSyncExternalStore(

@@ -56,3 +56,40 @@ def test_put_or_delete_alone_not_forbidden_only_the_op_phrase():
     # only the actual mutating op phrases are.
     assert not g.is_forbidden_tool("put_dataset_label")
     assert g.is_forbidden_tool("s3_put_object")
+
+
+# --- chain-of-thought stripping --------------------------------------------
+
+
+def test_strip_removes_both_think_and_thinking_blocks():
+    # Both spellings of paired hidden-reasoning blocks are removed entirely,
+    # keeping the surrounding answer text.
+    out = g.strip_chain_of_thought(
+        "Before.<think>secret plan A</think> Middle. "
+        "<thinking>\nsecret plan B\n</thinking> After."
+    )
+    assert "secret plan" not in out
+    assert "Before." in out and "Middle." in out and "After." in out
+
+
+def test_strip_does_not_truncate_answer_that_mentions_reasoning():
+    # A legit answer that merely contains "Reasoning:" mid-text must survive
+    # intact (the old code chopped everything after the first marker).
+    answer = "The bucket is public. Reasoning: the ACL grants READ to AllUsers."
+    assert g.strip_chain_of_thought(answer) == answer
+
+
+def test_strip_drops_leading_cot_preamble_up_to_answer():
+    text = (
+        "Reasoning: first I check the ACL, then the policy.\n"
+        "Answer: the bucket is public."
+    )
+    out = g.strip_chain_of_thought(text)
+    assert out == "the bucket is public."
+    assert "Reasoning" not in out
+
+
+def test_strip_drops_leading_cot_preamble_up_to_blank_line():
+    text = "Chain of thought: I inspect the config.\n\nThe bucket is private."
+    out = g.strip_chain_of_thought(text)
+    assert out == "The bucket is private."

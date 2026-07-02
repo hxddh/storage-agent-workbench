@@ -174,8 +174,16 @@ def execute_account_discovery_run(conn: sqlite3.Connection, run_id: str) -> None
                     lambda n=name: account_tools.discover_evidence_sources(conn, provider_id, n),
                 )
                 head = snap.get("head_bucket_status")
-                if head in (_DENIED, "error") and not snap.get("region"):
-                    access_status = head
+                # A denied/errored HeadBucket means the bucket itself is
+                # inaccessible — report that regardless of whether a region is
+                # set. (The snapshot falls back to the provider's configured
+                # region, so `region` is almost always truthy even for a fully
+                # denied bucket; gating on `not region` made this branch dead and
+                # denied buckets were mis-reported as "available".)
+                if head == _DENIED:
+                    access_status = _DENIED
+                elif head == "error":
+                    access_status = "error"
                 elif snap.get("access_denied_items"):
                     access_status = _CONFIGURED  # partial; reads mostly worked
                 sources = ev.get("sources", []) or []

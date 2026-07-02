@@ -25,7 +25,7 @@ import json
 import sqlite3
 from typing import Any, Callable
 
-from .. import config
+from .. import audit, config
 from ..analysis import access_logs, inventory
 from ..repositories import session_datasets as ds_repo
 from ..security.redaction import redact_text
@@ -148,6 +148,12 @@ def build(
         ds_repo.mark_imported(conn, dataset_id, duckdb_rel,
                               imp.get("table_name") or "", int(imp.get("row_count") or 0),
                               detected_format=detected)
+        # Rule 17: a data import + analysis must leave an audit trail.
+        audit.record(conn, "session.analyze_uploaded_file", {
+            "session_id": session_id, "dataset_id": dataset_id,
+            "type": ds["dataset_type"], "detected_format": detected,
+            "row_count": int(imp.get("row_count") or 0),
+        }, run_id=None)
         conn.commit()
         note("analyze_uploaded_file", ds.get("source_filename") or dataset_id,
              f"{imp.get('row_count', 0)} rows")

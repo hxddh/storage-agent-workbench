@@ -58,6 +58,12 @@ _AllUsers = "http://acs.amazonaws.com/groups/global/AllUsers"
 
 def _read(client, method: str, **kwargs) -> dict[str, Any]:
     """Call a read-only client method, mapping failures to a structured status."""
+    # Defense-in-depth: this is the one spot that resolves a client method by name
+    # (getattr), which the static safety scan (tests/test_s3_safety.py) can't see.
+    # Hard-assert the read-only prefix so a future dynamic method name can never
+    # smuggle a mutating operation through here.
+    if not method.startswith(("get_", "list_", "head_")):
+        raise ValueError(f"_read only permits read-only S3 operations, got: {method!r}")
     try:
         resp = getattr(client, method)(**kwargs)
         return {"status": AVAILABLE, "data": resp}

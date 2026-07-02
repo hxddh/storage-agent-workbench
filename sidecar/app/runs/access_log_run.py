@@ -54,8 +54,11 @@ def execute_access_log_run(conn: sqlite3.Connection, run_id: str) -> None:
 
         metrics = _require(run_tool_with_events(
             conn, run_id, "analyze_access_logs",
+            # Honest descriptor of the deterministic analysis — NOT a SQL string.
+            # The real DuckDB statements live in analysis/access_logs.py; recording
+            # a fake "SELECT ..." here would misrepresent the audit trail (rule 17).
             {"duckdb_path": duckdb_rel,
-             "sql": "SELECT status_code/method/key/prefix/user_agent aggregates FROM access_logs"},
+             "analysis": "fixed access-log aggregate set (status/method/key/prefix/user-agent, hourly, error rates)"},
             lambda: access_logs.analyze_access_logs(duckdb_abs),
         ))
 

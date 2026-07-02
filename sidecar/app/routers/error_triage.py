@@ -109,7 +109,7 @@ def get_triage(case_id: str, conn: sqlite3.Connection = Depends(get_conn)):
     if case is None:
         raise HTTPException(status_code=404, detail="triage case not found")
     return _to_out(case, safe_next_actions=_recompute_safe_actions(case),
-                   limitations=list(engine._LIMITATIONS))
+                   limitations=engine.limitations())
 
 
 @router.get("/sessions/{session_id}/error-triage")
@@ -121,7 +121,7 @@ def list_session_triage(session_id: str, conn: sqlite3.Connection = Depends(get_
     # deterministic and re-runs on the stored redacted input).
     cases = [
         {**c, "safe_next_actions": _recompute_safe_actions(c),
-         "limitations": list(engine._LIMITATIONS)}
+         "limitations": engine.limitations()}
         for c in repo.list_for_session(conn, session_id)
     ]
     return {"session_id": session_id, "cases": cases}

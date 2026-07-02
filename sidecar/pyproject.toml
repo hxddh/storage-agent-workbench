@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "storage-agent-sidecar"
-version = "0.7.0"
+version = "0.21.1"
 description = "Local FastAPI sidecar for Storage Agent Workbench"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -42,6 +42,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "httpx>=0.27",
+    "ruff>=0.6",
 ]
 # Packaging tooling (Phase 08). Kept separate so the core install and CI test
 # job stay lean; `pip install -e ".[packaging]"` to build the bundled sidecar.
@@ -60,3 +61,31 @@ app = ["bundled_skillpacks/storageops/skill-registry.yaml", "bundled_skillpacks/
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# Lint gate (CI runs `ruff check app`). Intentionally a small, high-signal rule
+# set — this is a green gate, not a cleanup crusade. line-length 100 matches the
+# tree. E501 (line length) is not enforced because long descriptive
+# strings/docstrings are pervasive and deliberate. Import sorting (`I`) is not
+# enforced because the existing import blocks don't follow ruff's isort ordering
+# and reformatting them is out of scope for a docs/CI pass. A handful of
+# pre-existing findings are pinned to per-file-ignores so the gate stays green
+# for new code without a tree-wide cleanup (each is a real but intentional/inert
+# case: F821 names are only referenced inside `from __future__ import
+# annotations` string annotations, F401/F541/E702 are cosmetic).
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/agent_runtime/guardrails.py" = ["F821"]
+"app/agent_runtime/session_agent.py" = ["F401"]
+"app/analysis/inventory.py" = ["F541"]
+"app/evidence/managed_import.py" = ["F401"]
+"app/repositories/sessions.py" = ["E702"]
+"app/routers/datasets.py" = ["F401"]
+"app/security/keyring_store.py" = ["F821"]
+"app/skills/loader.py" = ["F401"]

@@ -90,6 +90,90 @@ def test_redacts_token_and_security_token_keys():
     assert out["credential"] == REDACTED
 
 
+def test_redacts_labeled_aws_secret_access_key_in_text():
+    secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"  # 40-char AWS secret
+    for line in (
+        f"aws_secret_access_key={secret}",
+        f"AWS_SECRET_ACCESS_KEY={secret}",
+        f"secret_access_key: {secret}",
+        f'secret_key = "{secret}"',
+    ):
+        out = redact_text(line)
+        assert secret not in out, line
+        assert REDACTED in out
+
+
+def test_redacts_labeled_session_token_in_text():
+    tok = "FwoGZXIvYXdzEExampleSessionTokenValue12345"
+    for line in (
+        f"aws_session_token={tok}",
+        f"AWS_SESSION_TOKEN={tok}",
+        f"x-amz-security-token: {tok}",
+    ):
+        out = redact_text(line)
+        assert tok not in out, line
+        assert REDACTED in out
+
+
+def test_does_not_over_redact_ordinary_bucket_names_or_prose():
+    # No secret-ish label → the new labeled/40-char rules mask nothing. A long
+    # object key and ordinary prose (including a bare 40-char token) survive.
+    text = (
+        "bucket analytics-prod holds "
+        "report-2026-01-01-final-quarterly-summary-archived.csv and the "
+        "commit is 1234567890abcdef1234567890abcdef12345678"
+    )
+    assert redact_text(text) == text
+
+
+def test_redacts_cookie_header_text():
+    out = redact_text("Cookie: sessionid=abc123secret; theme=dark")
+    assert "abc123secret" not in out
+    assert REDACTED in out
+    out2 = redact_text("Set-Cookie: token=deadbeefdeadbeef; Path=/; HttpOnly")
+    assert "deadbeefdeadbeef" not in out2
+    assert REDACTED in out2
+    # Prose that merely mentions "cookie" (no key=value) is left intact.
+    assert redact_text("the cookie jar was empty") == "the cookie jar was empty"
+
+
+def test_redacts_bare_signature_not_in_query_context():
+    out = redact_text("computed Signature=deadbeefcafef00d for the request")
+    assert "deadbeefcafef00d" not in out
+    assert "Signature=" + REDACTED in out
+
+
+def test_redacts_third_party_tokens():
+    # Tokens are assembled from parts so no contiguous secret-shaped literal
+    # lives in the source (keeps push-protection/secret-scanners quiet). These
+    # are synthetic and match only the redaction regexes, not any real service.
+    samples = [
+        "ghp_" + "A" * 36,
+        "gho_" + "b" * 36,
+        "ghs_" + "c" * 36,
+        "ghr_" + "d" * 36,
+        "github_pat_" + "e" * 30,
+        "xoxb-" + "1" * 12 + "-" + "A" * 20,
+        "xoxp-" + "2" * 10 + "-" + "3" * 10 + "-" + "z" * 12,
+        "AIza" + "Z" * 35,
+    ]
+    for token in samples:
+        out = redact_text(f"leaked token {token} here")
+        assert token not in out, token
+        assert REDACTED in out
+
+
+def test_redacts_jwt():
+    jwt = (
+        "eyJhbGciOiJIUzI1NiJ9"
+        ".eyJzdWIiOiIxMjM0NSIsIm5hbWUiOiJib2IifQ"
+        ".dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+    )
+    out = redact_text(f"authorization token {jwt} received")
+    assert jwt not in out
+    assert REDACTED in out
+
+
 def test_redacts_header_dict_like_s3_response():
     headers = {
         "content-type": "application/xml",

@@ -1,4 +1,4 @@
-import { sidecarBaseUrl } from "./config";
+import { sidecarBaseUrl, sidecarToken } from "./config";
 import type {
   AccountProfile,
   EvidenceImport,
@@ -21,11 +21,50 @@ import type {
   RunDetail,
 } from "./types";
 
+// Default client-side timeout for plain (non-streaming) requests. Guards against
+// a sidecar that accepted the connection but never responds.
+const REQUEST_TIMEOUT_MS = 120_000;
+
+// Abort a stream that has gone silent this long (no deltas/tools/heartbeat), so
+// the turn falls back to the blocking POST rather than spinning indefinitely.
+const STREAM_IDLE_TIMEOUT_MS = 120_000;
+
+/**
+ * Auth header for the local sidecar. Empty in dev/browser (no Tauri token),
+ * where the sidecar leaves auth open. See config.ts / the Tauri shell.
+ */
+export function authHeaders(): Record<string, string> {
+  const token = sidecarToken();
+  return token ? { "X-Sidecar-Token": token } : {};
+}
+
+/** Append the auth token as a query param (for SSE/EventSource, which can't set
+ * headers). No-op when there is no token. */
+export function withToken(url: string): string {
+  const token = sidecarToken();
+  if (!token) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${sidecarBaseUrl()}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+  // Attach a timeout via AbortController, chaining any caller-supplied signal.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const external = init?.signal;
+  if (external) {
+    if (external.aborted) controller.abort();
+    else external.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${sidecarBaseUrl()}${path}`, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...authHeaders(), ...(init?.headers ?? {}) },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
     try {
@@ -229,13 +268,28 @@ export async function streamSessionMessage(
   signal?: AbortSignal,
   turnId?: string,
 ): Promise<{ proposed_actions: NextAction[]; evidence_used: string[]; evidence_gaps: string[]; skills_used: string[] }> {
+  // Idle watchdog: if no bytes arrive for STREAM_IDLE_TIMEOUT_MS, abort so the
+  // caller falls back to the blocking POST instead of hanging forever. Chained
+  // onto the caller's signal (the Stop button) so either can abort the stream.
+  const localCtl = new AbortController();
+  if (signal) {
+    if (signal.aborted) localCtl.abort();
+    else signal.addEventListener("abort", () => localCtl.abort(), { once: true });
+  }
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const kickIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => localCtl.abort(), STREAM_IDLE_TIMEOUT_MS);
+  };
+  kickIdle();
   const res = await fetch(`${sidecarBaseUrl()}/sessions/${id}/messages/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ content, turn_id: turnId }),
-    signal,
+    signal: localCtl.signal,
   });
   if (!res.ok || !res.body) {
+    if (idleTimer) clearTimeout(idleTimer);
     let detail = `HTTP ${res.status}`;
     try {
       const b = await res.json();
@@ -251,9 +305,11 @@ export async function streamSessionMessage(
   let proposed: NextAction[] = [];
   let grounding = { evidence_used: [] as string[], evidence_gaps: [] as string[], skills_used: [] as string[] };
   let sawTerminal = false; // did we receive an explicit 'done' (or 'error')?
+  try {
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
+    kickIdle(); // reset the idle watchdog on every chunk received
     buf += dec.decode(value, { stream: true });
     const chunks = buf.split("\n\n");
     buf = chunks.pop() ?? "";
@@ -276,6 +332,9 @@ export async function streamSessionMessage(
       }
       else if (type === "error") throw new Error(data.detail || "stream error");
     }
+  }
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer);
   }
   // The stream closed without an explicit 'done'. The server may still have
   // persisted the turn — but we can't trust `proposed` here. Throw so the caller
@@ -323,7 +382,9 @@ export const submitErrorTriage = (body: ErrorTriageInput) =>
 export const getSessionTriage = (sessionId: string) =>
   request<{ session_id: string; cases: TriageCase[] }>(`/sessions/${sessionId}/error-triage`);
 
-export const runEventsUrl = (id: string) => `${sidecarBaseUrl()}/runs/${id}/events`;
+// EventSource can't set headers, so the auth token rides as a query param
+// (?token=…). The sidecar accepts the token there for SSE endpoints.
+export const runEventsUrl = (id: string) => withToken(`${sidecarBaseUrl()}/runs/${id}/events`);
 
 // --- Datasets ---
 // Datasets are attached to a SESSION (the agent analyzes them as a tool). There
@@ -341,7 +402,8 @@ export async function uploadSessionDataset(
   form.append("dataset_type", datasetType);
   const res = await fetch(`${sidecarBaseUrl()}/sessions/${sessionId}/datasets/upload`, {
     method: "POST",
-    body: form, // browser sets multipart boundary; no secrets involved
+    headers: authHeaders(), // browser sets the multipart boundary; no secrets involved
+    body: form,
   });
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;

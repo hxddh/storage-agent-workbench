@@ -11,6 +11,7 @@ access_log_analysis path.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import uuid
 from typing import Any
@@ -144,13 +145,19 @@ def confirm_import(import_id: str, conn: sqlite3.Connection = Depends(get_conn))
         raise HTTPException(status_code=422, detail="selection exceeds hard limits; lower max_files / max_bytes")
 
     repo.set_status(conn, import_id, "confirmed")
-    # Record the explicit approval (approval_events + audit_logs).
+    # Record the explicit approval (approval_events + audit_logs). Build the JSON
+    # with json.dumps bound as a parameter — never hand-interpolated into SQL —
+    # so it stays correct (and injection-proof) if any field ever becomes
+    # user-influenced.
+    approval_detail = json.dumps({
+        "import_id": import_id,
+        "selected_files": data["selected_file_count"],
+        "selected_bytes": data["selected_total_bytes"],
+    })
     conn.execute(
         "INSERT INTO approval_events (id, run_id, action, decision, detail_json_sanitized, created_at) "
         "VALUES (?, NULL, 'evidence_import.download', 'approved', ?, datetime('now'))",
-        (uuid.uuid4().hex,
-         f'{{"import_id":"{import_id}","selected_files":{data["selected_file_count"]},'
-         f'"selected_bytes":{data["selected_total_bytes"]}}}'),
+        (uuid.uuid4().hex, approval_detail),
     )
     audit.record(conn, "evidence_import.confirm",
                  {"import_id": import_id, "selected_files": data["selected_file_count"],
@@ -196,7 +203,7 @@ def run_import(import_id: str, conn: sqlite3.Connection = Depends(get_conn)):
             data.get("format"), data.get("fmt_schema"),
             files, data["max_files"], data["max_bytes"], dest_dir,
         )
-    except (mi.ImportError_, Exception) as exc:  # noqa: BLE001 - sanitized
+    except Exception as exc:  # noqa: BLE001 - any download/combine failure is sanitized + surfaced as 400
         repo.set_status(conn, import_id, "failed")
         repo.mark_files(conn, import_id, "failed")
         audit.record(conn, "evidence_import.failed",

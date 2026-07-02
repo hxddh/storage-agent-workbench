@@ -28,13 +28,37 @@ export function RunDetail({
 
   useEffect(() => {
     let cancelled = false;
+    let poll: ReturnType<typeof setInterval> | undefined;
+    const isTerminal = (s?: string) => s === "completed" || s === "failed" || s === "not_implemented";
+    // Latest known status, so onerror can decide whether the run is done (and the
+    // stream should be closed for good) without relying on stale closure state.
+    let lastStatus: string | undefined;
+
     setEvents([]);
     setReport(null);
     setProfile(null);
     setLoadError(null);
+
+    // Refresh the persisted run (+ profile/report), guarded so an in-flight
+    // request for an old runId can't clobber the newly-selected run's view.
+    const refreshDetail = () => {
+      getRun(runId)
+        .then((d) => {
+          if (cancelled) return;
+          lastStatus = d.status;
+          setDetail(d);
+          if (isTerminal(d.status)) {
+            if (poll) { clearInterval(poll); poll = undefined; }
+            esRef.current?.close();
+          }
+        })
+        .catch(() => undefined);
+    };
+
     getRun(runId)
       .then((d) => {
         if (cancelled) return;  // a newer runId is now active — drop stale result
+        lastStatus = d.status;
         setDetail(d);
         // Opening an already-finished account_discovery run: no SSE will replay,
         // so fetch the persisted profile directly.
@@ -58,23 +82,37 @@ export function RunDetail({
       } catch {
         return;
       }
+      if (cancelled) return;
       setEvents((prev) => [...prev, ev]);
       if (ev.type === "report_ready") {
-        getReport(runId).then(setReport).catch(() => undefined);
-        getRun(runId).then(setDetail).catch(() => undefined);
-        getAccountProfile(runId).then(setProfile).catch(() => undefined);
+        getReport(runId).then((r) => { if (!cancelled) setReport(r); }).catch(() => undefined);
+        getRun(runId).then((d) => { if (!cancelled) { lastStatus = d.status; setDetail(d); } }).catch(() => undefined);
+        getAccountProfile(runId).then((p) => { if (!cancelled) setProfile(p); }).catch(() => undefined);
       }
       if (ev.type === "error") {
-        getRun(runId).then(setDetail).catch(() => undefined);
+        getRun(runId).then((d) => { if (!cancelled) { lastStatus = d.status; setDetail(d); } }).catch(() => undefined);
       }
     };
-    // The server closes the stream when the run is done → EventSource fires
-    // onerror; close to prevent auto-reconnect.
+    // A transient onerror on a still-running run must NOT permanently close the
+    // stream — let EventSource auto-reconnect, and start a bounded poll as a
+    // fallback in case it can't. Only close for good once the run is terminal
+    // (the server closes the stream when the run finishes).
     es.onerror = () => {
-      es.close();
-      getRun(runId).then((d) => { if (!cancelled) setDetail(d); }).catch(() => undefined);
+      if (cancelled) return;
+      if (isTerminal(lastStatus)) {
+        es.close();
+        return;
+      }
+      // Kick a status refresh now, and poll until terminal (poll clears itself
+      // and closes the stream when it observes a terminal status).
+      refreshDetail();
+      if (!poll) poll = setInterval(refreshDetail, 4000);
     };
-    return () => { cancelled = true; es.close(); };
+    return () => {
+      cancelled = true;
+      if (poll) clearInterval(poll);
+      es.close();
+    };
   }, [runId]);
 
   const findings = useMemo(

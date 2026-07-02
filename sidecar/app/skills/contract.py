@@ -25,6 +25,11 @@ from ..security.redaction import redact_text
 from ..sessions import next_actions
 
 _BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
+# The keys that mark a fenced block as the metadata CONTRACT (vs. a JSON example
+# the answer legitimately contains — a bucket policy, CORS/lifecycle rule, etc.).
+_CONTRACT_KEYS = frozenset(
+    {"answer", "skills_used", "evidence_used", "evidence_gaps", "next_action_proposals"}
+)
 # Generous cap so large enumerations (e.g. a 96-row bucket table) are never
 # truncated in post-processing; the model's own completion budget bounds length.
 _MAX_ANSWER = 48000
@@ -64,15 +69,19 @@ def parse_agent_contract(raw: Any, allowed_skill_names: list[str] | None = None)
     text = raw if isinstance(raw, str) else str(raw or "")
     data: dict[str, Any] = {}
     prose = text
-    m = _BLOCK.search(text)
-    if m:
+    # The contract is APPENDED, and a domain answer often contains its own earlier
+    # ```json examples (bucket policies, CORS/lifecycle rules). Scan blocks from
+    # the LAST to the first and pick the last one that actually parses to a dict
+    # carrying a known contract key — leaving JSON examples untouched in the prose.
+    for m in reversed(list(_BLOCK.finditer(text))):
         try:
             parsed = json.loads(m.group(1))
-            if isinstance(parsed, dict):
-                data = parsed
         except (json.JSONDecodeError, ValueError):
-            data = {}
-        prose = (text[: m.start()] + text[m.end():]).strip()
+            continue
+        if isinstance(parsed, dict) and (_CONTRACT_KEYS & parsed.keys()):
+            data = parsed
+            prose = (text[: m.start()] + text[m.end():]).strip()
+            break
 
     # Prefer the human-readable PROSE as the answer (it holds the full content,
     # e.g. an enumerated list); the JSON block is for metadata. Only fall back to

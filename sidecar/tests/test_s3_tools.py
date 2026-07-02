@@ -214,8 +214,13 @@ def test_session_list_objects_caps_keys_in_context(client, cloud_id, monkeypatch
     assert out["next_token"] == "T"           # can still page
 
 
-def test_session_tools_register_new_diagnostics():
-    """The two new diagnostics are wired into the read-only investigator tool set."""
+def test_session_tools_register_new_diagnostics(client):
+    """The two new diagnostics are wired into the read-only investigator tool set.
+
+    Requests the ``client`` fixture so the temp data dir + DB exist regardless of
+    test ordering (``_db()`` opens ``config.db_path()``); without it this test
+    passed only when an earlier test happened to create the database first.
+    """
     from app.agent_runtime import session_tools
 
     class _FT:
@@ -415,6 +420,34 @@ def test_preview_object_rejects_binary(client, cloud_id, stub):
     with _db() as conn:
         res = s3.preview_object(conn, cloud_id, BUCKET, "img.png", 262144)
     assert res["success"] is True and res["binary"] is True and res["content"] is None
+
+
+def test_preview_object_zero_byte_object_is_empty_not_error(client, cloud_id, stub):
+    """A Range GET on a zero-byte object returns 416 InvalidRange — that's an
+    empty object, not a failure (review L-5)."""
+    from app.s3 import tools as s3
+
+    c, s = stub
+    s.add_client_error("get_object", service_error_code="InvalidRange", http_status_code=416)
+    with _db() as conn:
+        res = s3.preview_object(conn, cloud_id, BUCKET, "empty.txt", 262144)
+    assert res["success"] is True
+    assert res["content"] == "" and res["bytes_read"] == 0 and res["object_size"] == 0
+
+
+def test_object_lock_status_invalid_request_means_no_lock(client, cloud_id, stub):
+    """S3 returns InvalidRequest for get_object_retention on a bucket without
+    Object Lock — treat it as 'none', not a confusing hard error (review L-4)."""
+    from app.s3 import tools as s3
+
+    c, s = stub
+    s.add_client_error("get_object_retention", service_error_code="InvalidRequest")
+    s.add_client_error("get_object_legal_hold", service_error_code="InvalidRequest")
+    with _db() as conn:
+        res = s3.get_object_lock_status(conn, cloud_id, BUCKET, "obj.bin")
+    assert res["success"] is True
+    assert res["retention_status"] == "none" and res["legal_hold_status"] == "none"
+    assert res["error_code"] is None
 
 
 def test_preview_object_clamps_request_to_hard_cap(client, cloud_id, stub):

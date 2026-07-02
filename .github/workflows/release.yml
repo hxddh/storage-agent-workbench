@@ -50,6 +50,10 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ github.event.inputs.version }}"
+          # Tag the built commit: every platform job checks out `inputs.ref`, so the
+          # release target must be that same ref — not the workflow's own $GITHUB_SHA
+          # (the commit the dispatch ran against), which can differ from `ref`.
+          REF="${{ github.event.inputs.ref }}"
           VER_NO_V="${VERSION#v}"
           FLAGS=""
           if [ "${{ github.event.inputs.draft }}" = "true" ]; then FLAGS="$FLAGS --draft"; fi
@@ -81,7 +85,7 @@ jobs:
           if gh release view "$VERSION" >/dev/null 2>&1; then
             echo "Release $VERSION already exists; reusing."
           else
-            gh release create "$VERSION" --target "$GITHUB_SHA" --title "$VERSION" --notes "$NOTES" $FLAGS
+            gh release create "$VERSION" --target "$REF" --title "$VERSION" --notes "$NOTES" $FLAGS
           fi
 
   release-macos-arm64:
@@ -156,7 +160,7 @@ jobs:
       - name: Stamp bundle version from tag
         run: python3 scripts/stamp-version.py "${{ github.event.inputs.version }}"
       - name: Build frontend
-        run: cd frontend && npm install && npm run build
+        run: cd frontend && npm ci && npm run build
       - name: Build sidecar one-dir + stage resource
         run: python3 scripts/build-sidecar-for-tauri.py
       - name: cargo tauri build (.deb; unsigned)
@@ -200,7 +204,7 @@ jobs:
         shell: bash
         run: python scripts/stamp-version.py "${{ github.event.inputs.version }}"
       - name: Build frontend
-        run: cd frontend; npm install; npm run build
+        run: cd frontend; npm ci; npm run build
       - name: Build sidecar one-dir + stage resource
         run: python scripts/build-sidecar-for-tauri.py
       - name: cargo tauri build (NSIS installer; unsigned)

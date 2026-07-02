@@ -46,7 +46,13 @@ if _skillpack.is_dir():
 # them as bare hiddenimports is not enough — the one-file bundle then fails with
 # "OpenAI Agents SDK is not available in this environment." griffe is used by the
 # SDK to build tool schemas from docstrings.
-for pkg in ("duckdb", "pyarrow", "pandas", "openai", "agents", "griffe"):
+# boto3/botocore are the core S3 SDK: botocore ships a large `botocore/data`
+# tree of service JSON models loaded lazily by name, and both packages import
+# submodules dynamically. Collect them in FULL rather than relying solely on
+# PyInstaller's built-in hooks, so a bundle can never be missing an S3 service
+# model at runtime (the smoke test's /health check wouldn't catch that).
+for pkg in ("duckdb", "pyarrow", "pandas", "openai", "agents", "griffe",
+            "boto3", "botocore"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b

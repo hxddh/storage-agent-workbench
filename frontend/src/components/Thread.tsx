@@ -120,7 +120,16 @@ export function Thread({
   // asking for a report before a chat exists). Combined with the run's error.
   const [viewError, setViewError] = useState<string | null>(null);
   const error = run.error ?? viewError;
+  // Set when loading an EXISTING session fails, so we show an explicit error +
+  // retry instead of silently rendering the empty new-chat surface (M6).
+  const [loadError, setLoadError] = useState<string | null>(null);
   const localId = useRef<string | null>(sessionId);
+  // Per-session AbortController for the in-flight turn, so the Stop button can
+  // cancel the current turn's stream (M3). Keyed by the id the turn started with.
+  const abortRef = useRef<Map<string, AbortController>>(new Map());
+  // Tracks which session id the loaded `detail` belongs to, so a failed refresh
+  // for the current session doesn't get mistaken for a first-load failure.
+  const loadedIdRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   // Composer file attachment (dataset for inventory/access-log analysis). type is
@@ -164,18 +173,33 @@ export function Thread({
     if (!id) {
       setDetail(null);
       setTriage([]);
+      setLoadError(null);
       return;
     }
-    const [d, t] = await Promise.all([
-      getSession(id).catch(() => null),
-      getSessionTriage(id).then((r) => r.cases).catch(() => []),
-    ]);
+    let d: SessionDetail | null = null;
+    let failed: string | null = null;
+    const [dRes, tRes] = await Promise.allSettled([getSession(id), getSessionTriage(id)]);
+    if (dRes.status === "fulfilled") d = dRes.value;
+    else failed = cleanError(String(dRes.reason), t);
+    const triageCases = tRes.status === "fulfilled" ? tRes.value.cases : [];
     // Guard against a switch race: if the user moved to another session while
     // this request was in flight, drop the stale result instead of clobbering
     // the now-current session's view.
     if (id !== localId.current) return;
-    setDetail(d);
-    setTriage(t);
+    if (d) {
+      loadedIdRef.current = id;
+      setDetail(d);
+      setLoadError(null);
+    } else if (failed) {
+      // A transient refresh blip for the session we're already showing shouldn't
+      // wipe the populated thread — keep it. Otherwise (no content for this id)
+      // surface an explicit error + retry instead of the empty new-chat surface.
+      if (loadedIdRef.current !== id) {
+        setDetail(null);
+        setLoadError(failed);
+      }
+    }
+    setTriage(triageCases);
   };
 
   useEffect(() => {
@@ -189,6 +213,7 @@ export function Thread({
     setReport(null);
     setSlashSel(0);
     setViewError(null);
+    setLoadError(null);
     reload(sessionId);
     refreshModel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -218,9 +243,17 @@ export function Thread({
   // the agent the sole source of suggested next steps.
   const proposals = liveProposals ?? [];
 
+  // Follow the conversation as it grows — including while tokens/tools stream in
+  // (M2: streamText/streamTools length must be in the deps or the view freezes
+  // mid-stream). Don't yank the view down if the user has scrolled up to read
+  // back; only auto-scroll when they're already near the bottom.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [items.length, proposals.length, pending]);
+    const el = scrollRef.current;
+    const nearBottom =
+      !el || el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+    if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [items.length, proposals.length, pending, streamText?.length, streamTools.length]);
 
   // Auto-grow the composer (pin one line when empty so the wrapping placeholder
   // doesn't inflate scrollHeight).
@@ -298,21 +331,27 @@ export function Thread({
         ? crypto.randomUUID()
         : `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     patchSessionRun(id, { busy: true, error: null, needKey: false, pending: q, streamText: null, streamTools: [] });
+    // AbortController for this turn's stream so the Stop button can cancel it.
+    const controller = new AbortController();
+    abortRef.current.set(id, controller);
     try {
       try {
         const r = await streamSessionMessage(id, q, {
           onDelta: (chunk) => patchSessionRun(id, (s) => ({ streamText: (s.streamText ?? "") + chunk })),
           onTool: (rec) => patchSessionRun(id, (s) => ({ streamTools: [...s.streamTools, rec] })),
-        }, undefined, turnId);
+        }, controller.signal, turnId);
         patchSessionRun(id, {
           proposals: r.proposed_actions || [],
           grounding: { evidence_used: r.evidence_used, evidence_gaps: r.evidence_gaps, skills_used: r.skills_used },
         });
       } catch {
-        // Stream broke (or 422). Re-run via the blocking turn with the SAME turn
-        // id; the server dedups, so this never duplicates the turn or an inline
-        // run the failed stream had already started.
-        await sendBlocking(id, q, turnId);
+        // If the USER aborted (Stop button), don't fall back to the blocking
+        // turn — just stop cleanly. Otherwise the stream broke (or 422): re-run
+        // via the blocking turn with the SAME turn id; the server dedups, so this
+        // never duplicates the turn or an inline run the failed stream started.
+        if (!controller.signal.aborted) {
+          await sendBlocking(id, q, turnId);
+        }
       }
       // Refresh the just-run session's thread only if it's the one on screen;
       // otherwise its persisted answer loads when the user switches back to it.
@@ -320,8 +359,17 @@ export function Thread({
       patchSessionRun(id, { pending: null, streamText: null, streamTools: [] });
       onChanged();
     } finally {
+      abortRef.current.delete(id);
       patchSessionRun(id, { busy: false });
     }
+  };
+
+  // Stop the visible session's in-flight turn: abort its stream (the run loop
+  // sees the abort, skips the blocking fallback, and resets busy in its finally).
+  const stop = () => {
+    const id = localId.current;
+    if (!id) return;
+    abortRef.current.get(id)?.abort();
   };
 
   // Composer file upload → agent-native analysis. The file is attached to the
@@ -470,7 +518,29 @@ export function Thread({
     setSlashSel(0);
   };
 
-  const isEmpty = items.length === 0 && !pending;
+  const isEmpty = items.length === 0 && !pending && !loadError;
+
+  // Live-store fallback for the just-completed turn (H1): the SSE `done` event
+  // writes proposals/grounding into the run store, so we can show the chips +
+  // "why this answer" card immediately — before the reload persists them onto
+  // the message. Once the reloaded assistant message carries persisted
+  // grounding/proposals, the per-message render takes over and we suppress this
+  // live block to avoid a duplicate.
+  const lastAssistant = useMemo(() => {
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it.kind === "message" && it.role === "assistant") return it;
+      if (it.kind === "message" && it.role === "user") break;
+    }
+    return undefined;
+  }, [items]);
+  const lastPersisted = !!(
+    lastAssistant &&
+    (lastAssistant.grounding ||
+      (lastAssistant.proposals && lastAssistant.proposals.length > 0))
+  );
+  const showLiveGrounding =
+    !pending && !lastPersisted && (!!run.grounding || proposals.length > 0);
 
   const modelChip = (
     <button
@@ -570,21 +640,35 @@ export function Thread({
         <span className="ml-auto hidden text-[11px] text-gray-600 sm:inline">
           <kbd className="font-sans">⏎</kbd> {t("thread.send")} · <kbd className="font-sans">⇧⏎</kbd> {t("thread.newline")}
         </span>
-        <button
-          onClick={send}
-          disabled={busy || (!text.trim() && !attached)}
-          aria-label={t("thread.send")}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-all hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-600"
-        >
-          {busy ? (
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-          ) : (
+        {busy ? (
+          <button
+            onClick={stop}
+            aria-label={t("thread.stop")}
+            title={t("thread.stop")}
+            className="group/stop grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-all hover:bg-accent-soft active:scale-95"
+          >
+            {/* Stop square inside a subtle spinner ring so it reads as "running,
+                click to cancel". */}
+            <span className="relative grid h-4 w-4 place-items-center">
+              <span className="absolute inset-0 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+            </span>
+          </button>
+        ) : (
+          <button
+            onClick={send}
+            disabled={!text.trim() && !attached}
+            aria-label={t("thread.send")}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-all hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-600"
+          >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="19" x2="12" y2="5" />
               <polyline points="5 12 12 5 19 12" />
             </svg>
-          )}
-        </button>
+          </button>
+        )}
       </div>
     </div>
   );
@@ -612,7 +696,21 @@ export function Thread({
 
   return (
     <div className="flex h-full flex-1 flex-col bg-canvas">
-      {isEmpty ? (
+      {loadError ? (
+        /* Loading an existing session failed — show an explicit error + retry
+           instead of silently presenting the empty new-chat surface (M6). */
+        <div className="flex flex-1 items-center justify-center px-6 py-10">
+          <div className="w-full max-w-md animate-fade-in-up rounded-xl border border-red-900/50 bg-red-950/20 p-5 text-center">
+            <div className="text-[14px] font-medium text-red-200">{t("thread.loadFailed")}</div>
+            <div className="mt-1.5 text-[12.5px] text-red-300/80">{loadError}</div>
+            <div className="mt-3.5 flex justify-center">
+              <Button variant="primary" size="sm" onClick={() => reload(localId.current)}>
+                {t("thread.retry")}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : isEmpty ? (
         /* New chat: a centered, composer-forward "start" view (Codex/Cursor). */
         <div className="flex flex-1 items-center justify-center overflow-auto px-6 py-10">
           <div className="w-full max-w-[44rem] animate-fade-in-up">
@@ -647,7 +745,7 @@ export function Thread({
             </div>
           </header>
 
-          <div className="flex-1 overflow-auto px-6 py-7">
+          <div ref={scrollRef} className="flex-1 overflow-auto px-6 py-7">
             <div className="mx-auto max-w-3xl space-y-6">
               {items.map((it) =>
                 it.kind === "message" ? (
@@ -692,8 +790,23 @@ export function Thread({
                 <FindingsCard findings={detail.findings} />
               )}
 
-              {/* Grounding + proposals now render per assistant message (above),
-                  sourced from the persisted turn so they survive a reload. */}
+              {/* Grounding + proposals normally render per assistant message
+                  (above), sourced from the persisted turn so they survive a
+                  reload. This live block covers the just-completed turn before
+                  the reload persists those fields onto the message (H1). */}
+              {showLiveGrounding && (
+                <div className="space-y-3">
+                  {run.grounding && <GroundingCard g={run.grounding} />}
+                  {proposals.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                      <span className="text-[11.5px] text-gray-600">{t("thread.suggestedNext")}</span>
+                      {proposals.map((p, i) => (
+                        <ProposalCard key={`${propKey(p)}-${i}`} proposal={p} onRun={runProposal} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div ref={bottomRef} />
             </div>
           </div>
