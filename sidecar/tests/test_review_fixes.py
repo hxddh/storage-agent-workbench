@@ -189,3 +189,33 @@ def test_event_bus_evicts_finished_runs():
         bus.mark_done(rid)
     # Finished runs beyond the cap are evicted; total retained stays bounded.
     assert len(bus._runs) <= events._MAX_RETAINED_RUNS
+
+
+# --- Ingestion row cap is reported, not silent (agent-native "no silent caps")
+
+
+def test_access_log_ingest_cap_is_reported(tmp_path, monkeypatch):
+    from app.analysis import access_logs
+
+    monkeypatch.setattr(access_logs, "MAX_INGEST_ROWS", 3)
+    log = tmp_path / "big.log"
+    log.write_text("\n".join(f"line number {i}" for i in range(10)))
+    imp = access_logs.import_access_logs(log, tmp_path / "a.duckdb", "text")
+    assert imp["truncated"] is True and imp["ingest_cap"] == 3
+    assert imp["row_count"] == 3
+
+    small = tmp_path / "small.log"
+    small.write_text("only one line")
+    imp2 = access_logs.import_access_logs(small, tmp_path / "b.duckdb", "text")
+    assert imp2["truncated"] is False
+
+
+def test_inventory_ingest_cap_is_reported(tmp_path, monkeypatch):
+    from app.analysis import inventory
+
+    monkeypatch.setattr(inventory, "MAX_INGEST_ROWS", 2)
+    csv = tmp_path / "inv.csv"
+    csv.write_text("Key,Size\n" + "\n".join(f"k{i},{i * 10}" for i in range(6)))
+    imp = inventory.import_inventory_file(csv, tmp_path / "inv.duckdb")
+    assert imp["truncated"] is True and imp["ingest_cap"] == 2
+    assert imp["row_count"] == 2

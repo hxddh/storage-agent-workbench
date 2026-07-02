@@ -67,6 +67,11 @@ def execute_inventory_run(conn: sqlite3.Connection, run_id: str) -> None:
             f"total {metrics.get('total_size', 0)} bytes; small-object ratio "
             f"{metrics.get('small_object_ratio', 0):.1%}."
         )
+        if imp.get("truncated"):
+            summary += (
+                f" NOTE: the inventory exceeded the ingest cap ({imp.get('ingest_cap'):,} rows); "
+                "metrics cover only the analyzed rows (a lower bound, not the whole object set)."
+            )
         bus.publish(run_id, {"type": "summary", "content": summary})
 
         ds_info = {"source_filename": ds.source_filename}

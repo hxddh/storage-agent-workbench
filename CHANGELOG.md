@@ -6,6 +6,16 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **The file-ingestion row cap is no longer silent.** `import_access_logs` /
+  `import_inventory_file` now return `truncated` + `ingest_cap`, and the
+  `analyze_uploaded_file` tool surfaces a `truncated`/`rows_analyzed` note (and
+  the deterministic run summaries a matching line) when a file exceeds the
+  in-memory cap — so the agent reports the metrics as a lower bound over the
+  analyzed rows, never as the whole file. Honors the agent-native "no silent
+  caps" rule that the v0.22.0 memory bound had brushed against.
+
 ## [0.22.0] - 2026-07-02
 
 _Architecture-review remediation: closes the findings from the deep v0.21.1

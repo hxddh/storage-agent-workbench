@@ -67,8 +67,12 @@ def _load_dataframe(raw_path: str | Path) -> tuple[pd.DataFrame, str]:
 def import_inventory_file(raw_path: str | Path, duckdb_path: str | Path) -> dict[str, Any]:
     df_in, fmt = _load_dataframe(raw_path)
     # Bound the in-memory row explosion (the per-row dict loop below) so a huge
-    # export can't OOM the sidecar. Rows beyond the cap are dropped.
-    if len(df_in) > MAX_INGEST_ROWS:
+    # export can't OOM the sidecar. Rows beyond the cap are dropped — and we
+    # report that (no silent cap): a truncated analysis is a lower bound, not the
+    # whole object set.
+    source_rows = len(df_in)
+    truncated = source_rows > MAX_INGEST_ROWS
+    if truncated:
         df_in = df_in.head(MAX_INGEST_ROWS)
     norm_map = {_norm(c): c for c in df_in.columns}
 
@@ -108,7 +112,10 @@ def import_inventory_file(raw_path: str | Path, duckdb_path: str | Path) -> dict
         count = con.execute(f"SELECT count(*) FROM {TABLE_NAME}").fetchone()[0]
     finally:
         con.close()
-    return {"table_name": TABLE_NAME, "row_count": int(count), "format": fmt}
+    return {
+        "table_name": TABLE_NAME, "row_count": int(count), "format": fmt,
+        "truncated": truncated, "ingest_cap": MAX_INGEST_ROWS,
+    }
 
 
 # --- analyze_inventory ------------------------------------------------------
