@@ -6,6 +6,7 @@ version. Stamps, in one pass and idempotently:
 
 - ``src-tauri/tauri.conf.json``  — the macOS/Windows bundle version (About box)
 - ``src-tauri/Cargo.toml``       — the Rust crate version
+- ``src-tauri/Cargo.lock``       — the crate's own locked version (kept in sync)
 - ``sidecar/pyproject.toml``     — the Python sidecar package version
 - ``frontend/package.json``      — the frontend package version
 
@@ -70,9 +71,31 @@ def stamp_toml_version(path: pathlib.Path) -> str:
     return m.group(1) if m else ""
 
 
+def stamp_cargo_lock_version(path: pathlib.Path, crate: str) -> str:
+    """Update the locked version of OUR crate's ``[[package]]`` block.
+
+    Only the block whose ``name = "<crate>"`` is touched; dependency blocks keep
+    their pinned versions. If the lock file isn't present yet (fresh checkout
+    before a cargo build), that's fine — cargo will generate it — so skip.
+    """
+    if not path.exists():
+        return ver
+    txt = path.read_text()
+    pattern = re.compile(
+        r'(?m)^(name = "' + re.escape(crate) + r'"\nversion = ")[^"]*(")'
+    )
+    new_txt, n = pattern.subn(rf"\g<1>{ver}\g<2>", txt, count=1)
+    if n != 1:
+        _die(f'{path}: expected exactly one [[package]] for "{crate}", found {n}')
+    path.write_text(new_txt)
+    return ver
+
+
 targets = {
     "src-tauri/tauri.conf.json": stamp_json_version(root / "src-tauri" / "tauri.conf.json"),
     "src-tauri/Cargo.toml": stamp_toml_version(root / "src-tauri" / "Cargo.toml"),
+    "src-tauri/Cargo.lock": stamp_cargo_lock_version(
+        root / "src-tauri" / "Cargo.lock", "storage-agent-workbench"),
     "sidecar/pyproject.toml": stamp_toml_version(root / "sidecar" / "pyproject.toml"),
     "frontend/package.json": stamp_json_version(root / "frontend" / "package.json"),
 }
