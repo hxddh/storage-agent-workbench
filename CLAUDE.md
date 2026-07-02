@@ -227,7 +227,7 @@ Allowed MVP tool groups:
 
 - `test_credentials`
 - `head_bucket`
-- `list_objects_v2`
+- `list_objects` (agent tool; internal S3 helper is `list_objects_v2`)
 - `head_object`
 - `get_object_lock_status` (read-only, one object — retention mode + retain-until + legal hold; "why can't I delete this object?")
 - `test_range_get`

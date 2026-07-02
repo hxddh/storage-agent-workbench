@@ -55,6 +55,7 @@ export function SessionRail({
   onNew,
   onOpenSettings,
   status,
+  slow,
   actions,
 }: {
   sessions: SessionSummaryRow[];
@@ -285,7 +286,9 @@ export function SessionRail({
 
       <div className="flex items-center gap-2 border-t border-edge px-3.5 py-2.5">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[status]} ${status === "starting" ? "animate-pulse" : ""}`} />
-        <span className="text-[11.5px] text-gray-500">{t(STATUS_KEY[status])}</span>
+        <span className="text-[11.5px] text-gray-500">
+          {status === "starting" && slow ? t("status.slowStart") : t(STATUS_KEY[status])}
+        </span>
         <button
           onClick={onOpenSettings}
           aria-label={t("rail.settingsAria")}

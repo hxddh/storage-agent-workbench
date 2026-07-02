@@ -51,8 +51,10 @@ def execute_inventory_run(conn: sqlite3.Connection, run_id: str) -> None:
 
         metrics = _require(run_tool_with_events(
             conn, run_id, "analyze_inventory",
+            # Honest descriptor of the deterministic analysis — NOT a SQL string
+            # (the real DuckDB statements live in analysis/inventory.py). Rule 17.
             {"duckdb_path": duckdb_rel,
-             "sql": "SELECT size/age/prefix/storage_class aggregates FROM inventory_objects"},
+             "analysis": "fixed inventory aggregate set (size/age/prefix/storage-class distributions, small-object ratio)"},
             lambda: inventory.analyze_inventory(duckdb_abs),
         ))
 

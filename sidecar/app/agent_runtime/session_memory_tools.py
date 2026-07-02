@@ -56,6 +56,11 @@ def build(
         mem_id = sessions_repo.add_agent_memory(
             conn, session_id, "fact", text, confidence=_norm(confidence, _CONFIDENCES))
         audit.record(conn, "session_memory", {"kind": "fact", "text": redact_text(text)[:200]}, run_id=None)
+        # add_agent_memory already committed; commit again so the audit INSERT
+        # doesn't leave a write transaction open on this shared per-turn
+        # connection across model latency (the "database is locked" hazard
+        # session_tools.rec guards against).
+        conn.commit()
         note("note_fact", text)
         return json.dumps({"ok": True, "id": mem_id, "kind": "fact"})
 
@@ -65,6 +70,7 @@ def build(
         mem_id = sessions_repo.add_agent_memory(
             conn, session_id, "finding", title, severity=_norm(severity, _SEVERITIES) or "info")
         audit.record(conn, "session_memory", {"kind": "finding", "text": redact_text(title)[:200]}, run_id=None)
+        conn.commit()
         note("record_finding", title)
         return json.dumps({"ok": True, "id": mem_id, "kind": "finding"})
 
@@ -73,6 +79,7 @@ def build(
         """Record an unresolved question to revisit later in this session. Use when something needs more evidence or a user decision. Args: text."""
         mem_id = sessions_repo.add_agent_memory(conn, session_id, "open_question", text)
         audit.record(conn, "session_memory", {"kind": "open_question", "text": redact_text(text)[:200]}, run_id=None)
+        conn.commit()
         note("note_open_question", text)
         return json.dumps({"ok": True, "id": mem_id, "kind": "open_question"})
 

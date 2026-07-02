@@ -20,6 +20,11 @@ from . import duck
 
 TABLE_NAME = "access_logs"
 SAMPLE_LIMIT = 20
+# Bound how many rows a single ingest materializes in memory. The parsers build a
+# list[dict] and hand it to DuckDB; without a cap a multi-GB log would OOM the
+# sidecar. Rows beyond this are dropped and the result is flagged truncated. Large
+# datasets belong in a proper inventory/analysis run, not the in-memory parser.
+MAX_INGEST_ROWS = 2_000_000
 
 COLUMNS = [
     "timestamp", "method", "key", "path", "prefix", "status_code",
@@ -124,7 +129,7 @@ def detect_log_format(path: str | Path) -> dict[str, Any]:
 
 def _parse_jsonl(path: str | Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for line in _nonempty_lines(path):
+    for line in _nonempty_lines(path, limit=MAX_INGEST_ROWS):
         try:
             o = json.loads(line)
         except json.JSONDecodeError:
@@ -150,7 +155,7 @@ def _parse_text(path: str | Path) -> list[dict[str, Any]]:
     generic .log/.txt yields a usable dataset instead of an empty result or a
     crash. Always redacted before storage."""
     rows: list[dict[str, Any]] = []
-    for line in _nonempty_lines(path):
+    for line in _nonempty_lines(path, limit=MAX_INGEST_ROWS):
         m = _TEXT_RE.match(line) or _CLF_RE.match(line)
         if m:
             g = m.groupdict()
@@ -170,7 +175,7 @@ def _parse_csv(path: str | Path) -> list[dict[str, Any]]:
     # parse failure yields [] (the caller falls back to the text parser).
     try:
         df = pd.read_csv(path, dtype=str, keep_default_na=False,
-                         engine="python", on_bad_lines="skip")
+                         engine="python", on_bad_lines="skip", nrows=MAX_INGEST_ROWS)
     except Exception:  # noqa: BLE001
         return []
     lower = {c.lower().strip(): c for c in df.columns}

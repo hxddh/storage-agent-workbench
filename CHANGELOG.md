@@ -6,6 +6,79 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+_Architecture-review remediation: closes the findings from the deep v0.21.1
+review across the security layer, agent runtime, S3/runs layer, API/data layer,
+frontend, and docs/CI. No change to the single-agent loop or the read-only
+security floor._
+
+### Security
+
+- **Sidecar now requires a shared-secret token when the launcher sets one.** The
+  local API bound `127.0.0.1` but relied on CORS alone, so any other local
+  process could drive cloud operations with the user's stored credentials. Tauri
+  now generates a per-launch token, passes it via `STORAGE_AGENT_AUTH_TOKEN`, and
+  the sidecar rejects any request missing it (`X-Sidecar-Token` header, or a
+  `token` query param for header-less SSE). Auth stays open when the variable is
+  unset (dev/browser/tests).
+- **Redaction closes value-level gaps (rule 15).** `redact_text` now also masks
+  labeled AWS secret keys / session tokens, cookies, bare `Signature=…`, and
+  common third-party tokens (GitHub/Slack/Google/JWT) in free-text — so a
+  previewed `.env`-style object body can't leak them into the model context.
+- **Vault key-file creation is now crash/race-safe** (fsync + complete-read
+  retry so a losing creator never adopts a partial key), and
+  `strip_chain_of_thought` strips paired `<think>…</think>` blocks without
+  truncating a legitimate answer that merely contains "reasoning:".
+
+### Fixed
+
+- **Reloaded threads keep their grounding + proposed-action chips.**
+  `SessionMessageOut` was silently dropping the `grounding`/`proposed_actions`
+  columns migration 016 persists, so the v0.21.0 transparency cards never
+  rendered after reload; both fields are now serialized (frontend also renders
+  them live from the stream).
+- **Streaming turns persist on a dedicated DB connection.** The worker thread had
+  been writing through the request-scoped connection, which a client disconnect
+  could close mid-write and lose the turn; it now opens its own connection and
+  completes server-side regardless of the client, and the client stream ends
+  promptly on disconnect (Stop button + timeout on the frontend).
+- **The six bucket-config-review tools reach the model with real descriptions**
+  (setting `__doc__` after `function_tool` was a no-op; now sets the FunctionTool
+  fields directly) so tool selection no longer runs on names alone.
+- **The answer contract parser no longer eats a JSON example in the prose** — it
+  now consumes the last fenced block that actually carries contract keys, leaving
+  bucket-policy/CORS/lifecycle JSON examples intact in the answer.
+- **Account discovery reports denied buckets correctly.** `access_status` was
+  gated on `not region`, which is almost never true (region falls back to the
+  provider's), so fully-denied buckets showed as "available"; the mapping now
+  keys off the HeadBucket status directly.
+- **Bucket names are no longer run through redaction** before being reused as
+  `Bucket=` API arguments (a token-shaped name could be mangled to
+  `***REDACTED***`, breaking every per-bucket follow-up).
+- `preview_object` reports a zero-byte object (416 InvalidRange) as an empty
+  preview, and `get_object_lock_status` treats `InvalidRequest` (bucket without
+  Object Lock) as "no lock" rather than a hard error.
+- Corrected the agent prompt that described `list_objects.key_count` as "the true
+  total" — it is the per-page count, and reporting it as the bucket total misled.
+- Frontend: RunDetail SSE reconnect + stale-fetch guards, and a failed session
+  load now shows an explicit error/retry instead of an empty new-chat surface.
+
+### Changed
+
+- **Run SSE event buffers are bounded** (per-run event cap with offset-preserving
+  eviction, plus eviction of finished runs) so a chatty run or reconnect loop
+  can't grow memory without limit.
+- Memory-recording and uploaded-file-analysis tools now commit their audit rows
+  (no lingering write transaction across model latency) and audit the analysis /
+  `read_run_result` invocations (rule 17). Run executors record an honest
+  analysis descriptor instead of a fake `SELECT …` string.
+- Evidence-import approval JSON is built with `json.dumps` bound as a parameter;
+  `_read` hard-asserts a read-only method prefix; the migration runner recovers
+  idempotently from a partial-apply retry; file ingestion is row-bounded.
+- A strict Content-Security-Policy replaces the null CSP in the Tauri shell.
+- Docs realigned with code (api.md, data-model.md, tools.md, CLAUDE.md tool
+  name), version stamping covers all four manifests, CI uses `npm ci` + a ruff
+  gate, and the release tag targets the built commit.
+
 ## [0.21.1] - 2026-07-02
 
 ### Changed
@@ -851,6 +924,9 @@ fires or a canned plan the agent is marched through.
 
 - Deleted the dead `RunsView` left over from the retired three-column UI.
 
+> Note: versions 0.19.12–0.19.15 were never released — there are no entries for
+> them and the history jumps from 0.19.16 straight back to 0.19.11.
+
 ## [0.19.11] - 2026-06-28
 
 ### Changed
@@ -1357,7 +1433,35 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.11...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.21.1...HEAD
+[0.21.1]: https://github.com/hxddh/storage-agent-workbench/compare/v0.21.0...v0.21.1
+[0.21.0]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.11...v0.21.0
+[0.20.11]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.10...v0.20.11
+[0.20.10]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.9...v0.20.10
+[0.20.9]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.8...v0.20.9
+[0.20.8]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.7...v0.20.8
+[0.20.7]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.6...v0.20.7
+[0.20.6]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.5...v0.20.6
+[0.20.5]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.4...v0.20.5
+[0.20.4]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.3...v0.20.4
+[0.20.3]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.2...v0.20.3
+[0.20.2]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.1...v0.20.2
+[0.20.1]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.0...v0.20.1
+[0.20.0]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.29...v0.20.0
+[0.19.29]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.28...v0.19.29
+[0.19.28]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.27...v0.19.28
+[0.19.27]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.26...v0.19.27
+[0.19.26]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.25...v0.19.26
+[0.19.25]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.24...v0.19.25
+[0.19.24]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.23...v0.19.24
+[0.19.23]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.22...v0.19.23
+[0.19.22]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.21...v0.19.22
+[0.19.21]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.20...v0.19.21
+[0.19.20]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.19...v0.19.20
+[0.19.19]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.18...v0.19.19
+[0.19.18]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.17...v0.19.18
+[0.19.17]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.16...v0.19.17
+[0.19.16]: https://github.com/hxddh/storage-agent-workbench/compare/v0.19.11...v0.19.16
 [0.19.11]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.11
 [0.19.10]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.10
 [0.19.9]: https://github.com/hxddh/storage-agent-workbench/releases/tag/v0.19.9

@@ -7,7 +7,10 @@ Two layers:
 
 1. Key-name based: dict keys that look like secrets have their values masked.
 2. Value/pattern based: strings are scrubbed of known credential shapes
-   (AWS keys, bearer/authorization values, presigned-URL query parameters).
+   (AWS access keys, labeled AWS secret keys / session tokens, bearer/
+   authorization values, cookies, presigned-URL query parameters + bare
+   signatures, and common third-party tokens: GitHub, Slack, Google API
+   keys, JWTs).
 
 ``keyring://`` references are intentionally NOT redacted — they are safe
 pointers, not secrets.
@@ -61,6 +64,31 @@ _VALUE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         re.compile(r"(?i)(authorization\s*[:=]\s*)(\S+)"),
         r"\1" + REDACTED,
     ),
+    # Labeled AWS secret keys / session tokens in free text (env vars, config
+    # lines, query strings): keep the label, mask the value. Anchored to a
+    # secret-ish label so ordinary 40-char strings / bucket names are NOT
+    # blanket-redacted. Covers `aws_secret_access_key=...`,
+    # `AWS_SECRET_ACCESS_KEY: ...`, `secret_access_key = "..."`,
+    # `aws_session_token=...`, `AWS_SESSION_TOKEN=...`, and the
+    # `x-amz-security-token: ...` header form.
+    (
+        re.compile(
+            r"(?i)\b((?:aws[_-]?)?secret[_-]?access[_-]?key"
+            r"|aws[_-]?secret[_-]?key"
+            r"|secret[_-]?key"
+            r"|aws[_-]?session[_-]?token"
+            r"|session[_-]?token"
+            r"|security[_-]?token)(\s*[:=]\s*)(['\"]?)"
+            r"[A-Za-z0-9/+=_\-]{8,}"
+        ),
+        r"\1\2\3" + REDACTED,
+    ),
+    # Cookie header text (rule 15). Requires a `key=value` shape so ordinary
+    # prose ("the cookie: it was...") isn't mangled.
+    (
+        re.compile(r"(?i)\b((?:set-)?cookie:\s*)[^\r\n]*=[^\r\n]*"),
+        r"\1" + REDACTED,
+    ),
     # Presigned-URL / SigV4 query parameters
     (
         re.compile(
@@ -69,11 +97,28 @@ _VALUE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         ),
         r"\1" + REDACTED,
     ),
+    # Bare `Signature=...` not in a query-param context (rule 15 lists signatures
+    # generally, not only presigned-URL params). Runs after the presigned rule,
+    # so an already-masked value stays masked and standalone ones get caught too.
+    (re.compile(r"(?i)\b(Signature=)[^&\s]+"), r"\1" + REDACTED),
     # Model-provider API keys (OpenAI/DeepSeek-style `sk-...`, incl. `sk-proj-...`).
     # Defense-in-depth: these are resolved server-side and must never reach a
     # prompt, but a user may paste one into the chat or a provider error may echo
     # it — scrub it everywhere the shared redactor runs (messages, audit, reports).
     (re.compile(r"\bsk-[A-Za-z0-9][A-Za-z0-9_\-]{5,}\b"), REDACTED),
+    # Common non-AWS provider tokens (defense-in-depth for pasted/echoed creds).
+    # GitHub personal/OAuth/app tokens.
+    (re.compile(r"\b(?:gh[pousr])_[A-Za-z0-9]{20,}\b"), REDACTED),
+    (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"), REDACTED),
+    # Slack tokens (bot/user/app/refresh/legacy: xoxb-/xoxa-/xoxp-/xoxr-/xoxs-).
+    (re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"), REDACTED),
+    # Google API keys (`AIza` + 35 chars).
+    (re.compile(r"\bAIza[A-Za-z0-9_\-]{35}\b"), REDACTED),
+    # JSON Web Tokens (`header.payload.signature`, each base64url).
+    (
+        re.compile(r"\beyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+"),
+        REDACTED,
+    ),
 ]
 
 

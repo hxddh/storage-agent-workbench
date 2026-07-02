@@ -20,6 +20,7 @@ denylist below is the belt-and-suspenders that catches a mis-added mutating tool
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from ..security.redaction import REDACTED, redact, redact_text
@@ -140,21 +141,44 @@ _COT_BACKSTOP = 60000  # defensive only; callers bound the real length (answer
 # this never silently truncates a legitimate long answer (e.g. a 96-row table).
 
 
-def strip_chain_of_thought(text: str | None, max_len: int = _COT_BACKSTOP) -> str:
-    """Strip hidden reasoning; do NOT cap the visible answer.
+# Paired hidden-reasoning blocks: <think>…</think> / <thinking>…</thinking>
+# (case-insensitive, spanning newlines). Removed entirely, surrounding text kept.
+_THINK_BLOCK = re.compile(r"(?is)<(think|thinking)\b[^>]*>.*?</\1\s*>")
+# A leading chain-of-thought preamble (only at the very start of the message).
+_LEADING_COT = re.compile(r"(?is)^\s*(chain[\s\-]?of[\s\-]?thought|reasoning|thinking)\s*:")
+# Where a leading preamble transitions into the real answer.
+_ANSWER_MARKER = re.compile(r"(?is)\n\s*(?:final\s+answer|answer)\s*:\s*")
 
-    Drops anything after a chain-of-thought marker so reasoning is never
-    persisted. Length is bounded by the caller (answer/list caps); the
-    ``max_len`` here is only a large defensive backstop, never the binding limit.
+
+def strip_chain_of_thought(text: str | None, max_len: int = _COT_BACKSTOP) -> str:
+    """Strip hidden reasoning; do NOT cap or drop the visible answer.
+
+    Two moves, both conservative:
+    1. Remove paired ``<think>…</think>`` / ``<thinking>…</thinking>`` blocks
+       entirely, keeping the surrounding text.
+    2. If the message *opens* with a chain-of-thought preamble
+       (``Reasoning:``/``Chain of thought:``/``Thinking:``), drop just that
+       preamble up to the answer marker or the first blank-line paragraph
+       break. A legitimate answer that merely *contains* the word "reasoning:"
+       mid-sentence is never truncated.
+
+    Length is bounded by the caller (answer/list caps); ``max_len`` here is only a
+    large defensive backstop, never the binding limit.
     """
     if not text:
         return ""
-    lowered = text.lower()
-    for marker in ("chain of thought", "chain-of-thought", "<thinking", "reasoning:"):
-        idx = lowered.find(marker)
-        if idx != -1:
-            text = text[:idx]
-            break
+    # 1. Never persist hidden reasoning blocks.
+    text = _THINK_BLOCK.sub("", text)
+    # 2. Strip a leading CoT preamble only — never mid-answer content.
+    if _LEADING_COT.match(text):
+        answer_at = _ANSWER_MARKER.search(text)
+        if answer_at:
+            text = text[answer_at.end():]
+        else:
+            para = re.search(r"\n\s*\n", text)
+            if para:
+                text = text[para.end():]
+            # else: no separable answer — keep the text rather than drop it all.
     text = text.strip()
     return (text[:max_len] + "…") if len(text) > max_len + 1 else text
 

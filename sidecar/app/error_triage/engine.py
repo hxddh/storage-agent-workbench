@@ -28,6 +28,12 @@ _LIMITATIONS = [
 ]
 
 
+def limitations() -> list[str]:
+    """Public accessor for the triage limitations (callers shouldn't reach into
+    the private ``_LIMITATIONS`` list)."""
+    return list(_LIMITATIONS)
+
+
 def analyze(redacted_input: str, input_kind: str = "mixed") -> dict[str, Any]:
     """Deterministic triage. Returns parsed signals + candidate causes + proposals."""
     parsed = parser.parse(redacted_input, input_kind)

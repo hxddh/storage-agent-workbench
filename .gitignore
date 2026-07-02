@@ -32,7 +32,8 @@ data/
 *.sqlite
 *.sqlite3
 
-# ---- Secrets (never commit; secrets live in system Keychain) ----
+# ---- Secrets (never commit; secrets live in an AES-256-GCM encrypted vault:
+#      secrets.enc + secrets.key in the app data dir, NOT the OS keychain) ----
 .env
 .env.*
 *.pem

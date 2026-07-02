@@ -366,8 +366,16 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
 
     for name, fn, desc in config_tools:
         t = make_cfg(fn)
+        # `function_tool` freezes name/description/schema from the decorated
+        # inner `_t` at decoration time. Assigning `__doc__` afterwards is a
+        # no-op on the already-built FunctionTool — the model would see a blank
+        # description and a schema titled "_t", so it would pick these six tools
+        # on name alone. Set the FunctionTool fields directly instead.
         t.name = name  # type: ignore[attr-defined]
-        t.__doc__ = desc
+        t.description = desc  # type: ignore[attr-defined]
+        params = getattr(t, "params_json_schema", None)
+        if isinstance(params, dict) and params.get("title") == "_t":
+            params["title"] = name
         tools.append(t)
 
     return tools

@@ -26,7 +26,7 @@ import threading
 from typing import Any, Callable
 
 from . import turn_guard
-from .. import run_service
+from .. import audit, run_service
 from ..events import bus
 from ..models.schemas import RunCreate
 from ..repositories import account_discovery as account_repo
@@ -197,6 +197,10 @@ def build(
         if run_id not in linked:
             return _err("Unknown run_id for this session. Only runs in this session can be read.")
         result = _run_result(conn, run_id)
+        audit.record(conn, "session.read_run_result",
+                     {"session_id": session_id, "run_id": run_id, "status": result["status"]},
+                     run_id=run_id)
+        conn.commit()
         note("read_run_result", run_id[:8], result["status"])
         return json.dumps(result)
 

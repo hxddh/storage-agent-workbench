@@ -67,8 +67,11 @@ def get_bucket_config_snapshot(
         client.head_bucket(Bucket=bucket)
     except Exception as exc:  # noqa: BLE001 - mapped, never raised
         head_status = ct.ERROR
-        code = getattr(exc, "response", {}).get("Error", {}).get("Code") if hasattr(exc, "response") else None
-        http = (getattr(exc, "response", {}) or {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
+        # `response` may exist but be None (some botocore/urllib exceptions), so
+        # `getattr(..., {})` alone isn't enough — coerce with `or {}` before .get.
+        resp = (getattr(exc, "response", {}) or {})
+        code = resp.get("Error", {}).get("Code")
+        http = resp.get("ResponseMetadata", {}).get("HTTPStatusCode")
         if code in ct._DENIED_CODES or http == 403:
             head_status = ct.ACCESS_DENIED
         elif code in ct._UNSUPPORTED_CODES or http == 501:

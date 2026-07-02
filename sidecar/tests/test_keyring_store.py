@@ -122,6 +122,56 @@ def test_vault_status_flags_unreadable(client):
     assert set(body) == {"unreadable", "backup_present"}
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX raw key (Windows uses DPAPI)")
+def test_key_read_retries_until_complete(monkeypatch):
+    """A racing reader must not adopt a partial/empty key file: the winner may
+    have created the file (O_EXCL) but not yet finished writing. The reader
+    retries until it sees a complete 32-byte key."""
+    path = config.data_dir() / "secrets.key"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"")  # exists but empty — mid-write by the "winner"
+
+    full = b"\x11" * 32
+    calls = {"n": 0}
+
+    def fake_sleep(_seconds):
+        # On the first retry, simulate the winner finishing its write.
+        calls["n"] += 1
+        if calls["n"] == 1:
+            path.write_bytes(full)
+
+    monkeypatch.setattr(keyring_store.time, "sleep", fake_sleep)
+    assert keyring_store._read_existing_key(path) == full
+    assert calls["n"] >= 1  # it actually had to retry
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX raw key (Windows uses DPAPI)")
+def test_lost_creation_race_recovers_winner_key(monkeypatch):
+    """If _write_key_file loses the O_EXCL race (FileExistsError), the loser
+    reads the winner's fully-written key rather than failing."""
+    keyring_store._reset_for_tests()
+    path = config.data_dir() / "secrets.key"
+    winner_key = b"\x22" * 32
+
+    real_write = keyring_store._write_key_file
+
+    def racing_write(p, raw):
+        # Simulate the winner having created + written the file first.
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(winner_key)
+        raise FileExistsError
+
+    monkeypatch.setattr(keyring_store, "_write_key_file", racing_write)
+    assert not path.exists()
+    loaded = keyring_store._load_master_key()
+    assert loaded == winner_key
+
+    # And the vault round-trips under the recovered key.
+    monkeypatch.setattr(keyring_store, "_write_key_file", real_write)
+    keyring_store.save_secret("model_provider", "p/api_key", "sk-1")
+    assert keyring_store.get_secret("model_provider", "p/api_key") == "sk-1"
+
+
 def test_make_and_parse_ref():
     ref = keyring_store.make_ref("cloud_provider", "id1/access_key")
     assert ref == "keyring://cloud_provider/id1/access_key"

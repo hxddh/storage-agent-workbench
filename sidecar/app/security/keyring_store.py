@@ -49,6 +49,7 @@ import logging
 import os
 import sys
 import threading
+import time
 from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -133,16 +134,63 @@ def _is_windows() -> bool:
     return sys.platform == "win32"
 
 
+def _fsync_dir(directory: Path) -> None:
+    """Best-effort fsync of a directory so a create/rename is durable."""
+    try:
+        dfd = os.open(str(directory), os.O_RDONLY)
+    except OSError:  # e.g. Windows can't open a dir for fsync
+        return
+    try:
+        os.fsync(dfd)
+    except OSError:
+        pass
+    finally:
+        os.close(dfd)
+
+
 def _write_key_file(path: Path, raw_key: bytes) -> None:
-    """Persist the master key, owner-only, never world-readable."""
+    """Persist the master key, owner-only, never world-readable.
+
+    Creates the file ``O_EXCL`` so a concurrent creator can't be clobbered (the
+    loser gets ``FileExistsError``), and ``fsync``s the data before closing so a
+    racing reader on the loser path never observes a partially-written key.
+    """
     payload = _dpapi_protect(raw_key) if _is_windows() else raw_key
     path.parent.mkdir(parents=True, exist_ok=True)
     # O_EXCL so a concurrent creator can't be clobbered; 0600 perms.
     fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         os.write(fd, payload)
+        os.fsync(fd)  # durable before any loser reads it
     finally:
         os.close(fd)
+    _fsync_dir(path.parent)
+
+
+def _read_existing_key(path: Path) -> bytes:
+    """Read + unprotect an already-created key file, tolerating a racing writer.
+
+    ``O_EXCL`` creation is not atomic with the subsequent write, so a process
+    that lost the creation race can momentarily see an empty/partial file. Retry
+    briefly until the file yields a complete key (32 raw bytes on POSIX; any
+    DPAPI-decryptable blob on Windows); raise if it never does.
+    """
+    last_exc: Exception | None = None
+    for _ in range(200):
+        try:
+            raw = path.read_bytes()
+            key = _dpapi_unprotect(raw) if _is_windows() else raw
+        except Exception as exc:  # noqa: BLE001 - partial DPAPI blob mid-write
+            last_exc = exc
+        else:
+            # POSIX keys are exactly 32 bytes; on Windows the DPAPI blob just
+            # needs to decrypt to a non-empty key.
+            if (_is_windows() and key) or (not _is_windows() and len(key) == 32):
+                return key
+        time.sleep(0.005)
+    if last_exc is not None:
+        raise last_exc
+    raise OSError(f"master key at {path} never became fully readable")
 
 
 def _load_master_key() -> bytes:
@@ -152,16 +200,15 @@ def _load_master_key() -> bytes:
         return _master_key
     path = _key_path()
     if path.exists():
-        raw = path.read_bytes()
-        _master_key = _dpapi_unprotect(raw) if _is_windows() else raw
+        _master_key = _read_existing_key(path)
         return _master_key
     key = os.urandom(32)
     try:
         _write_key_file(path, key)
     except FileExistsError:
-        # Lost a creation race; read what the winner wrote.
-        raw = path.read_bytes()
-        _master_key = _dpapi_unprotect(raw) if _is_windows() else raw
+        # Lost a creation race; read what the winner wrote (retrying until the
+        # winner's write is complete, so we never adopt a partial/empty key).
+        _master_key = _read_existing_key(path)
         return _master_key
     _master_key = key
     return _master_key
@@ -221,9 +268,11 @@ def _persist() -> None:
     fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
         os.write(fd, token)
+        os.fsync(fd)  # ciphertext durable before the atomic swap
     finally:
         os.close(fd)
     os.replace(tmp, path)  # atomic
+    _fsync_dir(path.parent)  # make the rename itself durable
 
 
 # --- public API (unchanged) -------------------------------------------------

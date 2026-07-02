@@ -534,6 +534,13 @@ class SessionMessageOut(BaseModel):
     referenced_run_ids: list[str] = Field(default_factory=list)
     referenced_evidence_ids: list[str] = Field(default_factory=list)
     tool_activity: list[dict[str, str]] = Field(default_factory=list)
+    # Persisted per-message transparency (migration 016): the grounding
+    # ("why this answer") and the proposed next actions. These MUST be surfaced
+    # on GET /sessions/{id} so a reloaded thread can re-render the chips/card —
+    # without them pydantic would silently drop the columns the migration exists
+    # to preserve.
+    grounding: dict | None = None
+    proposed_actions: list[dict] = Field(default_factory=list)
     created_at: str
 
 
