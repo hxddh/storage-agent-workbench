@@ -369,6 +369,58 @@ def test_aggregate_tool_error_lists_allowed_values(client, tmp_path):
         conn.close()
 
 
+# --- Codex P2: re-upload must not aggregate from the stale DuckDB table --------
+
+
+def test_aggregate_reimports_after_same_filename_reupload(client):
+    """Re-uploading the same filename resets the dataset to 'uploaded' but the old
+    <id>.duckdb lingers; aggregate must rebuild, not answer from the stale table."""
+    from app.agent_runtime import session_analysis_tools
+    from app.db import connect
+
+    class _FT:
+        def __call__(self, fn):
+            fn.name = fn.__name__
+            return fn
+
+    sid = client.post("/sessions", json={"title": "reup"}).json()["id"]
+    five = "\n".join(
+        f'2026-06-25T10:00:0{i}Z b GET /f{i} 200 10 5 ms user-agent="u" remote_ip="192.0.2.{i}"'
+        for i in range(5)
+    )
+    r1 = client.post(f"/sessions/{sid}/datasets/upload",
+                     files={"file": ("same.log", five.encode(), "text/plain")},
+                     data={"dataset_type": "access_log"})
+    dataset_id = r1.json()["dataset_id"]
+
+    conn = connect()
+    try:
+        agg_tool = next(t for t in session_analysis_tools.build(conn, _FT(), sid)
+                        if t.name == "aggregate_uploaded_file")
+        assert json.loads(agg_tool(dataset_id, "count"))["value"] == 5
+    finally:
+        conn.close()
+
+    # Re-upload the SAME filename with only two rows → same dataset id, status reset.
+    two = "\n".join(
+        f'2026-06-25T10:00:0{i}Z b GET /f{i} 200 10 5 ms user-agent="u" remote_ip="192.0.2.{i}"'
+        for i in range(2)
+    )
+    r2 = client.post(f"/sessions/{sid}/datasets/upload",
+                     files={"file": ("same.log", two.encode(), "text/plain")},
+                     data={"dataset_type": "access_log"})
+    assert r2.json()["dataset_id"] == dataset_id  # reused row
+    assert r2.json()["status"] == "uploaded"
+
+    conn = connect()
+    try:
+        agg_tool = next(t for t in session_analysis_tools.build(conn, _FT(), sid)
+                        if t.name == "aggregate_uploaded_file")
+        assert json.loads(agg_tool(dataset_id, "count"))["value"] == 2  # rebuilt, not stale 5
+    finally:
+        conn.close()
+
+
 # --- A4: active model provider selection --------------------------------------
 
 
@@ -378,6 +430,9 @@ def test_active_model_provider_selected_and_fallback(client):
 
     a = client.post("/model-providers", json={
         "name": "first", "provider_type": "openai", "model": "m-a", "api_key": "sk-aaaaaaaa1"}).json()
+    # With no explicit selection, the single provider must be flagged active
+    # (Codex P2: UI badge must match the agent's implicit oldest-provider choice).
+    assert client.get("/model-providers").json()[0]["active"] is True
     b = client.post("/model-providers", json={
         "name": "second", "provider_type": "openai", "model": "m-b", "api_key": "sk-bbbbbbbb2"}).json()
 
@@ -387,6 +442,9 @@ def test_active_model_provider_selected_and_fallback(client):
         assert get_model_credentials(conn)["model"] == "m-a"
     finally:
         conn.close()
+    # And the oldest ('first') shows active even though nothing was activated.
+    implicit = {p["name"]: p["active"] for p in client.get("/model-providers").json()}
+    assert implicit == {"first": True, "second": False}
 
     # Activate the newer provider → the agent now uses it.
     r = client.post(f"/model-providers/{b['id']}/activate")

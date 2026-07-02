@@ -86,15 +86,13 @@ def get_model_credentials(conn: sqlite3.Connection) -> dict[str, Any]:
     """
     from ..repositories import model_providers as mp_repo
 
+    # Single source of truth shared with the serialized `active` flag (explicit
+    # selection, else oldest) — so the UI badge and the agent never disagree.
     row = None
-    active_id = mp_repo.active_provider_id(conn)
+    active_id = mp_repo.effective_active_id(conn)
     if active_id:
         row = conn.execute(
             "SELECT * FROM model_providers WHERE id = ?", (active_id,)
-        ).fetchone()
-    if row is None:
-        row = conn.execute(
-            "SELECT * FROM model_providers ORDER BY created_at, rowid LIMIT 1"
         ).fetchone()
     if row is None:
         raise AgentUnavailable("No model provider configured. Add one under Providers to use Agent mode.")

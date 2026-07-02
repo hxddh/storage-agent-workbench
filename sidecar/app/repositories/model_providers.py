@@ -26,8 +26,29 @@ def _secret_name(provider_id: str) -> str:
 
 
 def active_provider_id(conn: sqlite3.Connection) -> str | None:
-    """The explicitly selected provider id, or None (→ oldest wins)."""
+    """The EXPLICITLY selected provider id, or None (→ oldest is the default)."""
     return settings_repo.get(conn, ACTIVE_SETTING_KEY)
+
+
+def effective_active_id(conn: sqlite3.Connection) -> str | None:
+    """The provider the agent ACTUALLY uses — the single source of truth shared
+    by ``get_model_credentials`` and the serialized ``active`` flag.
+
+    The explicit selection wins when it still points at a real provider;
+    otherwise (fresh/single-provider install, or the selected one was deleted)
+    the oldest provider is the implicit default. Keeping the UI flag and the
+    agent's choice on the same rule avoids the "no badge but the agent is using
+    one" mismatch.
+    """
+    explicit = active_provider_id(conn)
+    if explicit and conn.execute(
+        "SELECT 1 FROM model_providers WHERE id = ?", (explicit,)
+    ).fetchone():
+        return explicit
+    row = conn.execute(
+        "SELECT id FROM model_providers ORDER BY created_at, rowid LIMIT 1"
+    ).fetchone()
+    return row["id"] if row else None
 
 
 def set_active(conn: sqlite3.Connection, provider_id: str) -> bool:
@@ -59,7 +80,7 @@ def _row_to_out(row: sqlite3.Row, active_id: str | None = None) -> ModelProvider
 
 
 def list_all(conn: sqlite3.Connection) -> list[ModelProviderOut]:
-    active_id = active_provider_id(conn)
+    active_id = effective_active_id(conn)
     rows = conn.execute(
         "SELECT * FROM model_providers ORDER BY created_at DESC, id"
     ).fetchall()
@@ -70,7 +91,7 @@ def get(conn: sqlite3.Connection, provider_id: str) -> ModelProviderOut | None:
     row = conn.execute(
         "SELECT * FROM model_providers WHERE id = ?", (provider_id,)
     ).fetchone()
-    return _row_to_out(row, active_provider_id(conn)) if row else None
+    return _row_to_out(row, effective_active_id(conn)) if row else None
 
 
 def create(conn: sqlite3.Connection, data: ModelProviderCreate) -> ModelProviderOut:

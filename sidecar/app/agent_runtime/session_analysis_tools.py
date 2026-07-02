@@ -184,7 +184,13 @@ def build(
         """
         dataset_id = ds["id"]
         duckdb_abs = config.data_dir() / "sessions" / str(session_id) / f"{dataset_id}.duckdb"
-        if duckdb_abs.exists():
+        # Reuse the built table ONLY when the dataset row says it's imported —
+        # NOT on mere file existence. Re-uploading the same filename reuses the
+        # row id and resets status to 'uploaded' (upsert) while the old
+        # <dataset_id>.duckdb lingers on disk; keying on the file would answer
+        # from the previous upload's (possibly wrong-typed) table. When status
+        # isn't 'imported' we re-import, which DROPs and rebuilds the table.
+        if ds.get("status") == "imported" and duckdb_abs.exists():
             return duckdb_abs
         raw_abs = config.data_dir() / (ds.get("stored_path") or "")
         if not ds.get("stored_path") or not raw_abs.exists():
