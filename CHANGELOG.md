@@ -6,6 +6,8 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-07-02
+
 ### Changed
 
 - **The file-ingestion row cap is no longer silent.** `import_access_logs` /
@@ -1447,7 +1449,8 @@ macOS arm64.
 - Manual `workflow_dispatch` GitHub Release workflow added for pre-release
   publication (no signing, no notarization).
 
-[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/hxddh/storage-agent-workbench/compare/v0.22.1...HEAD
+[0.22.1]: https://github.com/hxddh/storage-agent-workbench/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/hxddh/storage-agent-workbench/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/hxddh/storage-agent-workbench/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/hxddh/storage-agent-workbench/compare/v0.20.11...v0.21.0
