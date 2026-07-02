@@ -6,6 +6,8 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-07-02
+
 ### Changed
 
 - **Loosened the AI-SDK upper bounds so new agent-SDK features flow in.** Dropped
