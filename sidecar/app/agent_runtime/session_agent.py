@@ -511,9 +511,13 @@ def _streamed_session_loop(spec: dict[str, Any]) -> dict[str, Any]:
     return plain text; ``answer`` handles both shapes.
     """
     try:
-        result, finalize, clients = _start_streamed_run(spec)
-
         async def _drive() -> dict[str, Any]:
+            # Runner.run_streamed schedules the agent loop via asyncio.create_task,
+            # so it MUST be started from WITHIN the running loop — not before it.
+            # Calling _start_streamed_run() outside run_until_complete raises
+            # "no running event loop" (the blocking-fallback crash a client hit
+            # when it fell back to POST /messages after switching sessions).
+            result, finalize, clients = _start_streamed_run(spec)
             final: dict[str, Any] = {}
             async for kind, data in stream_events_for(
                     result, spec["activity"], spec.get("skill_names") or [], finalize,

@@ -6,6 +6,23 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-07-07
+
+_Patch: fixes a crash introduced in 0.24.0._
+
+### Fixed
+
+- **Blocking-fallback turn crashed with "no running event loop".** 0.24.0
+  converged the blocking `POST /messages` turn onto the streaming implementation,
+  but started the Agents SDK run (`Runner.run_streamed`, which schedules its loop
+  via `asyncio.create_task`) *before* entering the event loop. Any turn that used
+  the blocking path — most visibly when the SSE stream dropped because the user
+  switched sessions mid-turn, so the client fell back to `POST /messages` — failed
+  with `Session assistant failed: no running event loop`. The SDK run is now
+  started from inside the running loop. (The whole loop path is monkeypatched in
+  tests, which is why this shipped; a regression test now drives the real loop and
+  pins the invariant.)
+
 ## [0.24.0] - 2026-07-07
 
 _Architecture / code / docs review remediation: closes a turn-lifecycle
