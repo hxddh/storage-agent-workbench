@@ -6,6 +6,50 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.2] - 2026-07-07
+
+_Patch: reliability + correctness fixes from a second adversarial bug hunt
+targeting the paths that unit tests stub out (the same blind spot that hid the
+0.24.1 crash). No behavior/API changes for the happy path._
+
+### Fixed
+
+- **Multi-session concurrency was silently single-threaded (frontend).** The
+  turn-runner used instance-global flags (`submittingRef`, `uploading`) shared
+  across all sessions: while session A ran a turn (or uploaded a file), sending
+  in session B was dropped with no error/spinner, or B's composer was locked.
+  Both are now per-session; the double-submit guard releases the instant the turn
+  registers instead of being held for the whole turn — sessions run concurrently
+  again, as designed.
+- **Blocking fallback could hang 150 s and report a bogus "turn still in
+  progress".** When the streaming worker errored after the SSE stream dropped, it
+  only removed the turn registration without waking the attached fallback waiter,
+  which then blocked the full in-progress timeout. `turn_guard` now has an
+  explicit `fail()` state that wakes waiters immediately with the error. The
+  blocking handler is also wrapped so any unexpected exception always resolves the
+  turn (no dangling "running" handle that would hang a later same-turn retry).
+- **A still-running turn could be evicted from the turn registry** under high
+  turn volume (>256 concurrent turns between start and finish), letting a fallback
+  re-run it concurrently (duplicate messages, double spend). Running handles are
+  now protected from eviction, and recorded results are session-bound even after a
+  recreate, closing a cross-session read.
+- **Multi-member (concatenated) gzip evidence was silently truncated** — the
+  bounded gunzip decoded only the first gzip member and dropped the rest (a
+  regression from the old `gzip.decompress`), yielding a confidently partial
+  analysis. It now decodes every member. The decompression-bomb ratio guard was
+  also raised (200→1000) so legitimately high-ratio files aren't false-positived.
+- **`allowed_prefixes` scope was bypassable by an empty/None listing prefix** —
+  a `list_objects` with no prefix enumerated the whole bucket root, outside the
+  allowed prefixes, on the `/tools` endpoint and in the diagnostic run. An
+  unprefixed listing is now denied when `allowed_prefixes` is set (bucket-level
+  ops like head-bucket are unaffected).
+- Smaller fixes: a per-turn AsyncOpenAI client no longer leaks if the SDK run
+  fails during setup (caller now owns closing it); deleting a session mid-turn
+  aborts its stream instead of leaking an orphan turn and resurrecting store
+  state; the 409/in-progress path no longer clears the user's message before the
+  turn actually persists; a 0-byte inventory CSV imports as empty instead of
+  erroring; a stale run-detail poll interval is cleared on SSE reconnect.
+
 ## [0.24.1] - 2026-07-07
 
 _Patch: fixes a crash introduced in 0.24.0._

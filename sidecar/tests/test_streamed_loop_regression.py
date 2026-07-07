@@ -20,7 +20,7 @@ from app.agent_runtime import session_agent
 def test_streamed_loop_starts_run_inside_running_loop(monkeypatch):
     started_with_running_loop = {}
 
-    def fake_start(spec):
+    def fake_start(spec, clients=None):
         # This is where Runner.run_streamed() lives. It MUST see a running loop.
         try:
             asyncio.get_running_loop()

@@ -17,6 +17,7 @@ import type { Grounding, NextAction, ToolActivity } from "./types";
 
 export type SessionRun = {
   busy: boolean;
+  uploading: boolean; // a dataset upload is in flight for THIS session (per-session, F2)
   pending: string | null; // the user's in-flight message
   streamText: string | null; // streaming assistant text so far
   streamTools: ToolActivity[];
@@ -29,6 +30,7 @@ export type SessionRun = {
 
 const EMPTY: SessionRun = {
   busy: false,
+  uploading: false,
   pending: null,
   streamText: null,
   streamTools: [],
@@ -41,6 +43,14 @@ const EMPTY: SessionRun = {
 
 const store = new Map<string, SessionRun>();
 const listeners = new Map<string, Set<() => void>>();
+// Sessions the user has deleted. Late writes for a dropped session are ignored
+// so an in-flight turn can't resurrect a store entry for a session that's gone
+// (F3). Session ids are server UUIDs and never reused, so this only grows by one
+// per delete over a run — negligible.
+const dropped = new Set<string>();
+// How to abort a session's in-flight turn, registered by the turn runner. Lets
+// dropSessionRun stop the stream when a session is deleted mid-turn (F3).
+const aborters = new Map<string, () => void>();
 
 function notify(id: string) {
   listeners.get(id)?.forEach((l) => l());
@@ -55,15 +65,37 @@ export function patchSessionRun(
   id: string,
   patch: Partial<SessionRun> | ((s: SessionRun) => Partial<SessionRun>),
 ): void {
+  // A deleted session's in-flight turn keeps trying to patch (busy:false, a
+  // stopped marker, …). Ignore those so it can't re-create a store entry for a
+  // session that's gone (F3).
+  if (dropped.has(id)) return;
   const cur = store.get(id) ?? EMPTY;
   const delta = typeof patch === "function" ? patch(cur) : patch;
   store.set(id, { ...cur, ...delta });
   notify(id);
 }
 
+/** Register how to abort a session's in-flight turn so dropSessionRun can stop
+ * the stream when the session is deleted (F3). Called by the turn runner when a
+ * turn starts. */
+export function registerTurnAbort(id: string, abort: () => void): void {
+  aborters.set(id, abort);
+}
+
+/** Unregister a turn's aborter (called when the turn ends). Identity-checked so
+ * a finished turn can't clear a newer turn's aborter for the same session. */
+export function unregisterTurnAbort(id: string, abort: () => void): void {
+  if (aborters.get(id) === abort) aborters.delete(id);
+}
+
 /** Forget a session's run state and listeners (call when a session is deleted)
- * so the module-level maps don't accumulate entries for dead sessions. */
+ * so the module-level maps don't accumulate entries for dead sessions. Aborts
+ * any in-flight turn first and marks the session dropped so late writes from
+ * that turn are ignored — no orphan stream, no resurrected entry (F3). */
 export function dropSessionRun(id: string): void {
+  dropped.add(id);
+  aborters.get(id)?.();
+  aborters.delete(id);
   store.delete(id);
   listeners.delete(id);
 }

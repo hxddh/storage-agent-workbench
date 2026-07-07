@@ -44,7 +44,7 @@ _CHUNK = 1024 * 1024
 # gzip runs well under 100:1; a crafted bomb (KBs expanding to GBs) trips this
 # long before it exhausts disk. Tied to the confirmed byte budget: the budget
 # bounds the compressed input, and this ratio bounds the decompressed output.
-_GUNZIP_MAX_RATIO = 200
+_GUNZIP_MAX_RATIO = 1000
 _GUNZIP_MIN_OUT_CAP = 4 * _CHUNK
 
 
@@ -418,10 +418,15 @@ def _append_maybe_gunzip(src: Path, out) -> None:
         out_cap = _gunzip_out_cap(size)
         d = zlib.decompressobj(wbits=31)  # gzip container
         written = 0
+        had_eof = False  # decoded at least one complete gzip member
         try:
-            buf = fh.read(_CHUNK)
-            while buf:
-                data = buf
+            # `data` is the input still to feed. Concatenated (multi-member) gzip
+            # must be decoded member by member — a single decompressobj stops at
+            # the first member's end (d.eof) and exposes the rest via unused_data.
+            # The old gzip.decompress handled this; decoding only the first member
+            # silently DROPS every later member.
+            data = fh.read(_CHUNK)
+            while True:
                 while data:
                     piece = d.decompress(data, _CHUNK)
                     written += len(piece)
@@ -433,12 +438,24 @@ def _append_maybe_gunzip(src: Path, out) -> None:
                         )
                     out.write(piece)
                     data = d.unconsumed_tail
-                if d.eof:
-                    return  # single-member gzip; ignore any trailing bytes
-                buf = fh.read(_CHUNK)
-            # Truncated/invalid gzip stream: fall back to the raw bytes,
-            # matching the old gzip.decompress-failure behavior.
-            raise zlib.error("truncated gzip stream")
+                    if d.eof:
+                        had_eof = True
+                        rest = d.unused_data
+                        if rest[:2] == b"\x1f\x8b":
+                            d = zlib.decompressobj(wbits=31)  # next member
+                            data = rest
+                        elif rest:
+                            return  # trailing non-gzip bytes: stop (like gzip)
+                        else:
+                            d = zlib.decompressobj(wbits=31)  # maybe more in file
+                            data = b""
+                nxt = fh.read(_CHUNK)
+                if not nxt:
+                    break
+                data = nxt
+            if not had_eof:
+                # No complete member decoded → truncated/invalid gzip.
+                raise zlib.error("truncated gzip stream")
         except zlib.error:
             if written:
                 # Partial decompressed output already streamed; mixing raw bytes

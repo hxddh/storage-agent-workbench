@@ -91,7 +91,7 @@ def _diagnostic_body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any])
     provider = cloud_repo.get(conn, provider_id) if provider_id else None
     if provider is not None:
         denial = check_scope(provider.allowed_buckets, provider.allowed_prefixes,
-                             bucket, prefix=prefix)
+                             bucket, prefix=prefix, listing=True)
         if denial:
             raise RunError(denial)
 

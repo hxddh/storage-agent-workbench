@@ -31,13 +31,13 @@ router = APIRouter(prefix="/tools", tags=["tools"])
 
 
 def _enforce_scope(conn: sqlite3.Connection, provider_id: str, bucket: str,
-                   *, prefix: str | None = None) -> None:
+                   *, prefix: str | None = None, listing: bool = False) -> None:
     """Deny an out-of-scope bucket/prefix for a provider (403), if restricted."""
     provider = cloud_repo.get(conn, provider_id)
     if provider is None:
         return  # unknown provider surfaces downstream as a tool error, not here
     denial = check_scope(provider.allowed_buckets, provider.allowed_prefixes,
-                         bucket, prefix=prefix)
+                         bucket, prefix=prefix, listing=listing)
     if denial:
         raise HTTPException(status_code=403, detail=denial)
 
@@ -59,7 +59,7 @@ def tool_head_bucket(
 def tool_list_objects_v2(
     body: ListObjectsV2Request, conn: sqlite3.Connection = Depends(get_conn)
 ) -> dict[str, Any]:
-    _enforce_scope(conn, body.provider_id, body.bucket, prefix=body.prefix)
+    _enforce_scope(conn, body.provider_id, body.bucket, prefix=body.prefix, listing=True)
     return run_tool(
         conn,
         "list_objects_v2",

@@ -7,19 +7,25 @@
  * STARTED with — not the currently-visible session — so a turn keeps streaming
  * (and keeps its content) if the user switches sessions mid-run.
  */
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import {
   ApiError,
   cancelSessionTurn,
   createSession,
+  getSession,
   postSessionMessage,
   streamSessionMessage,
   submitErrorTriage,
   uploadSessionDataset,
 } from "../api";
-import { getSessionRun, patchSessionRun } from "../sessionRuns";
+import {
+  getSessionRun,
+  patchSessionRun,
+  registerTurnAbort,
+  unregisterTurnAbort,
+} from "../sessionRuns";
 import { useI18n, type TFunc } from "../i18n";
-import type { ToolActivity } from "../types";
+import type { SessionDetail, ToolActivity } from "../types";
 
 // Turn a raw sidecar/provider error into a short, actionable, localized line.
 // The model-provider hints (bad key / unknown model / provider unreachable)
@@ -94,12 +100,40 @@ export function useTurnRunner(opts: {
   // Per-session in-flight turn (AbortController + turn id) so Stop can abort the
   // stream AND ask the server to cancel. Keyed by the id the turn started with.
   const turnsRef = useRef<Map<string, InFlight>>(new Map());
-  // Synchronous double-submit guard: `busy` only flips after async work starts,
-  // so a double-click/double-Enter could start two turns without this (M5).
-  const submittingRef = useRef(false);
+  // PER-SESSION synchronous double-submit latch (F1). `busy` in the store only
+  // flips after async work begins, so within one session a double-Enter could
+  // start two turns before busy is observable. This latch bridges that gap and
+  // is released the instant the turn registers busy for the session — it is NOT
+  // held for the whole turn, so a DIFFERENT session can start its own turn
+  // concurrently. Keyed by session id; a not-yet-created session (the visible
+  // composer submitting into a fresh session) has no id, so its single creation
+  // is latched separately.
+  const submitLatch = useRef<Set<string>>(new Set());
+  const newSessionLatch = useRef(false);
   // Single-flight session creation, so a double-invoke can't create two sessions.
   const ensureFlight = useRef<Promise<string> | null>(null);
-  const [uploading, setUploading] = useState(false);
+
+  // Acquire the double-submit latch for `startId` (null = the pending new
+  // session) synchronously. Returns a release fn, or null when a submit for that
+  // session is already starting/in flight so the caller no-ops (F1). Combined
+  // with the store's `busy`, this coalesces a same-session double-submit while
+  // letting other sessions run concurrently.
+  const acquireSubmit = (startId: string | null): (() => void) | null => {
+    if (startId) {
+      if (submitLatch.current.has(startId) || getSessionRun(startId).busy) return null;
+      submitLatch.current.add(startId);
+    } else {
+      if (newSessionLatch.current) return null;
+      newSessionLatch.current = true;
+    }
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      if (startId) submitLatch.current.delete(startId);
+      else newSessionLatch.current = false;
+    };
+  };
 
   const ensureSession = (seed: string): Promise<string> => {
     if (localId.current) return Promise.resolve(localId.current);
@@ -155,10 +189,57 @@ export function useTurnRunner(opts: {
     }
   };
 
+  // The blocking fallback returned 409: the turn is still running server-side
+  // and NOTHING is persisted yet. Poll (bounded, backing off) until the
+  // assistant answer for THIS turn is actually persisted, then reload. Returns
+  // "ok" once the persisted answer is visible, or "inprogress" if it gives up —
+  // in which case the caller keeps the pending bubble rather than dropping the
+  // user's message (F4).
+  const waitForPersistedTurn = async (id: string): Promise<Outcome> => {
+    // The assistant answer for this turn is a NEW assistant message. The 409
+    // guarantees it isn't persisted yet, so the first successful fetch is a safe
+    // baseline; later fetches detect a new assistant id.
+    let baseline: Set<string> | null = null;
+    const captureOrDetect = (d: SessionDetail): boolean => {
+      const asstIds = d.messages.filter((m) => m.role === "assistant").map((m) => m.id);
+      if (baseline === null) {
+        baseline = new Set(asstIds);
+        return false;
+      }
+      return asstIds.some((mid) => !baseline!.has(mid));
+    };
+    try {
+      captureOrDetect(await getSession(id));
+    } catch {
+      /* the loop retries the fetch; baseline stays null until one succeeds */
+    }
+    // Bounded backoff aligned with the server's own turn budget (its blocking
+    // wait is ~150 s), then give up polling — but never drop the message.
+    const delays = [3000, 4000, 5000, 6000, 8000, 10000, 12000, 15000, 15000, 20000, 20000, 30000];
+    for (const delay of delays) {
+      await sleep(delay);
+      let d: SessionDetail;
+      try {
+        d = await getSession(id);
+      } catch {
+        continue;
+      }
+      if (captureOrDetect(d)) {
+        // Persisted — reload the thread if this session is on screen (otherwise
+        // its answer loads when the user switches back).
+        if (localId.current === id) await reload(id);
+        return "ok";
+      }
+    }
+    return "inprogress";
+  };
+
   // One full turn: stream (live tool traces + token deltas); if the stream
   // fails (provider tool-call streaming is flaky, or no model → 422) fall back
   // to the reliable blocking turn with the SAME turn id (the server dedups).
-  const runTurn = async (q: string) => {
+  // `onRegistered` fires the instant this turn sets `busy` for its session, so
+  // the caller's double-submit latch can release without waiting out the turn.
+  const runTurn = async (q: string, onRegistered?: () => void) => {
     setText("");
     let id: string;
     try {
@@ -175,9 +256,16 @@ export function useTurnRunner(opts: {
       busy: true, error: null, needKey: false, pending: q,
       streamText: null, streamTools: [], stopped: false,
     });
+    // busy is set for this session → the synchronous double-submit latch can
+    // release now; further same-session submits are gated by `busy` (F1).
+    onRegistered?.();
     const controller = new AbortController();
     const flight: InFlight = { controller, turnId, cancelPromise: null };
     turnsRef.current.set(id, flight);
+    // Let a session-delete abort this turn's stream (F3). Identity-checked on
+    // unregister so a newer turn's aborter isn't clobbered.
+    const abort = () => controller.abort();
+    registerTurnAbort(id, abort);
     let outcome: Outcome = "failed";
     try {
       try {
@@ -220,14 +308,17 @@ export function useTurnRunner(opts: {
         }
         await sleep(800); // give the server a beat to persist the partial
       } else if (outcome === "inprogress") {
-        // The turn is still running server-side. Keep the pending bubble and
-        // retry the reload a few times so the persisted result appears when it
-        // completes — never show this as a failure.
-        for (let i = 0; i < 3; i++) {
-          await sleep(4000);
-          if (localId.current === id) await reload(id);
+        // The turn is still running server-side (nothing persisted yet). Poll
+        // until this turn's assistant answer is actually persisted, then clear
+        // the pending bubble — never on a fixed timer (F4).
+        outcome = await waitForPersistedTurn(id);
+        if (outcome === "inprogress") {
+          // Gave up waiting, but the turn may still be running. Keep the pending
+          // bubble (the user's message must never silently disappear); busy is
+          // released by the finally so the composer isn't locked. Do NOT clear
+          // pending here.
+          return;
         }
-        outcome = "ok";
       }
 
       if (outcome === "failed") {
@@ -246,19 +337,21 @@ export function useTurnRunner(opts: {
       onChanged();
     } finally {
       turnsRef.current.delete(id);
+      unregisterTurnAbort(id, abort);
       patchSessionRun(id, { busy: false });
     }
   };
 
   // Send one turn (from the composer or programmatically).
   const submit = async (q: string) => {
-    if (!q || submittingRef.current) return;
-    if (getSessionRun(localId.current).busy) return;
-    submittingRef.current = true;
+    if (!q) return;
+    const release = acquireSubmit(localId.current);
+    if (!release) return; // a submit for this session is already in flight (F1)
     try {
-      await runTurn(q);
+      // runTurn releases the latch once busy is set; the finally is a safety net.
+      await runTurn(q, release);
     } finally {
-      submittingRef.current = false;
+      release();
     }
   };
 
@@ -266,9 +359,11 @@ export function useTurnRunner(opts: {
   // SESSION, then the user's message is sent as a NORMAL agent turn. The agent
   // discovers the upload and analyzes it with its read-only tools.
   const submitWithDataset = async (message: string, file: File, type: "inventory" | "access_log") => {
-    if (submittingRef.current || uploading) return;
-    if (getSessionRun(localId.current).busy) return;
-    submittingRef.current = true;
+    const startId = localId.current;
+    // The upload holds the latch until the follow-up turn registers busy, so a
+    // same-session double-submit is coalesced; other sessions are unaffected (F1).
+    const release = acquireSubmit(startId);
+    if (!release) return;
     try {
       let id: string;
       try {
@@ -279,20 +374,21 @@ export function useTurnRunner(opts: {
       }
       const prompt = message || (type === "inventory" ? t("attach.promptInventory") : t("attach.promptLog"));
       // Upload FIRST; only clear the composer once the file is safely stored, so
-      // a failed upload doesn't lose the user's selected file.
-      setUploading(true);
+      // a failed upload doesn't lose the user's selected file. `uploading` is
+      // stored PER SESSION so only this session's composer shows the spinner (F2).
+      patchSessionRun(id, { uploading: true });
       try {
         await uploadSessionDataset(id, file, type);
       } catch (e) {
         patchSessionRun(id, { error: cleanError(String(e), t) });
         return; // keep the attachment + text so the user can retry
       } finally {
-        setUploading(false);
+        patchSessionRun(id, { uploading: false });
       }
       onUploaded();
-      await runTurn(prompt);
+      await runTurn(prompt, release);
     } finally {
-      submittingRef.current = false;
+      release();
     }
   };
 
@@ -309,5 +405,5 @@ export function useTurnRunner(opts: {
     flight.controller.abort();
   };
 
-  return { submit, submitWithDataset, stop, uploading };
+  return { submit, submitWithDataset, stop };
 }
