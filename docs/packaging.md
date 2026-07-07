@@ -67,11 +67,16 @@ scripts/build-desktop-macos.sh
 # (Linux / Windows: scripts/build-desktop-linux.sh, scripts/build-desktop-windows.ps1)
 ```
 
-At runtime the Rust shell picks a free localhost port, spawns the sidecar with
-`STORAGE_AGENT_DATA_DIR` (the OS app-data dir) and `STORAGE_AGENT_PARENT_PID`
-(so the sidecar exits if the app dies, never orphaned), exposes the URL via the
-`get_sidecar_url` command, and kills the sidecar on exit. The frontend shows
-sidecar status: **starting → connected | disconnected | error**.
+At runtime the Rust shell picks a free localhost port and spawns the sidecar
+with three env vars: `STORAGE_AGENT_DATA_DIR` (the OS app-data dir),
+`STORAGE_AGENT_AUTH_TOKEN` (a random per-launch shared secret — the sidecar then
+rejects any request without it; the frontend fetches it via the
+`get_sidecar_token` command and sends it as the `X-Sidecar-Token` header, or
+`?token=` for SSE), and `STORAGE_AGENT_PARENT_PID` (so the sidecar exits if the
+app dies, never orphaned). It exposes the URL via the `get_sidecar_url` command
+and kills the sidecar on exit. The packaged sidecar runs uvicorn with access
+logging disabled so the `?token=` query param can't leak into logs. The frontend
+shows sidecar status: **starting → connected | disconnected | error**.
 
 ## App data dir behavior
 
@@ -80,6 +85,9 @@ sidecar status: **starting → connected | disconnected | error**.
 - Resolution: `STORAGE_AGENT_DATA_DIR` → `SAW_DATA_DIR` (legacy/dev) →
   `<repo>/data` (dev default). In production Tauri sets `STORAGE_AGENT_DATA_DIR`
   to the OS app-data dir.
+- `SAW_DB_PATH` overrides just the SQLite database path (default
+  `<data dir>/app.db`) — a dev/test hook so tests can redirect the DB without
+  moving the whole data dir; production never sets it.
 - Paths recorded into reports / `tool_calls` / `audit_logs` stay relative.
 - User data is **never** written to the install dir and **never** bundled.
 

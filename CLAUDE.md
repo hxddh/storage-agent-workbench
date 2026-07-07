@@ -76,11 +76,13 @@ admin panel. As of the v0.19.0-pre.2 rebuild:
 
 - **Slim session rail** (left): "+ New investigation", the session list, and a
   settings + sidecar-status footer. No top-level Runs/Datasets/Reports tabs.
-- **Conversation thread** (center, dominant) with a **sticky composer**. The
-  composer has two modes: "Ask the agent" (session message) and "Triage an
-  error" (offline, no credentials). Messages, analysis runs, error-triage cases,
-  and next-action proposals all render as **inline cards** in the thread; a run
-  card expands in place to the full run transcript.
+- **Conversation thread** (center, dominant) with a single **sticky composer**.
+  You just ask the agent; there is no mode switch. Pasting an S3 error works
+  even with no model provider/key configured — deterministic offline triage
+  (no credentials, no LLM) is the automatic fallback, not a separate composer
+  mode. Messages, analysis runs, error-triage cases, and next-action proposals
+  all render as **inline cards** in the thread; a run card expands in place to
+  the full run transcript.
 - **Settings drawer** (right slide-over) embeds model- and cloud-provider
   management; a one-time **first-run wizard** appears on a fresh install.
 
@@ -178,17 +180,21 @@ Do not introduce these unless explicitly requested:
 
 9. Default cloud provider mode is `readonly`.
 
-10. `test-write` mode may only write under explicitly allowed test prefixes, such as:
+10. `test-write` mode is **reserved**: it exists only as a provider-mode enum —
+    the MVP ships no write tool at all, so nothing can write even with the mode
+    set. Any future write tool may only write under explicitly allowed test
+    prefixes, such as:
 
    - `tmp/agent-test/*`
    - `diagnose/*`
 
 11. Bulk analysis must not download object bodies. The one bounded exception is
     the `preview_object` tool: a single, read-only, sanitized preview of one named
-    object's head (hard cap 1 MiB/call), bounded per turn (a few objects) so it
-    can't be looped into a bulk download, and never persisted. Binary/oversized
-    objects are reported, not decoded. The bounds are the safety — there is still
-    no full-object download and no bulk/recursive body reads.
+    object's head (hard cap 1 MiB/call), budgeted per turn (12 previews / 16 MiB)
+    so it can't be looped into a bulk download, and never persisted.
+    Binary/oversized objects are reported, not decoded. The bounds are the
+    safety — there is still no full-object download and no bulk/recursive body
+    reads.
 
 12. Large bucket scans must require one of:
 
@@ -250,7 +256,6 @@ Allowed MVP tool groups:
 
 - `import_inventory_file`
 - `analyze_inventory`
-- `sample_bucket_objects`
 
 ### Bucket config review tools
 

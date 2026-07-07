@@ -191,7 +191,8 @@ Fields: id, run_id, report_path, format (defaults `'markdown'`), created_at.
 ## Error triage (migration 009)
 
 - `error_triage_cases` — id, session_id, provider_id, bucket, run_id,
-  input_kind, raw_input_redacted, parsed_json, summary, planner_mode, status,
+  input_kind, raw_input_redacted, parsed_json, summary, planner_mode (retained
+  but no longer written — triage stopped stamping it), status,
   created_at, updated_at.
 - `error_triage_findings` — id, case_id, category, severity, confidence, title,
   evidence_json, interpretation, next_checks_json, source_refs_json, created_at.

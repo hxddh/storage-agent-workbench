@@ -28,13 +28,20 @@ curl http://127.0.0.1:8765/health
 
 Configuration (CLI args take precedence over env):
 
-| Setting   | CLI            | Env                        | Default     |
-|-----------|----------------|----------------------------|-------------|
-| host      | `--host`       | `STORAGE_AGENT_HOST`       | `127.0.0.1` |
-| port      | `--port`       | `STORAGE_AGENT_PORT`       | `8765`      |
-| data dir  | `--data-dir`   | `STORAGE_AGENT_DATA_DIR`   | `<repo>/data` (dev) |
+| Setting    | CLI            | Env                         | Default     |
+|------------|----------------|-----------------------------|-------------|
+| host       | `--host`       | `STORAGE_AGENT_HOST`        | `127.0.0.1` |
+| port       | `--port`       | `STORAGE_AGENT_PORT`        | `8765`      |
+| data dir   | `--data-dir`   | `STORAGE_AGENT_DATA_DIR`    | `<repo>/data` (dev) |
+| auth token | —              | `STORAGE_AGENT_AUTH_TOKEN`  | unset (auth open) |
+| DB path    | —              | `SAW_DB_PATH`               | `<data dir>/app.db` |
 
-Production mode never enables uvicorn `--reload`.
+`STORAGE_AGENT_AUTH_TOKEN` is the per-launch shared secret Tauri sets in
+production; when set, every request must carry it (`X-Sidecar-Token` header, or
+`?token=` for SSE) except `/health`. `SAW_DB_PATH` is a dev/test hook that
+redirects only the SQLite database. Production mode never enables uvicorn
+`--reload`, and the packaged sidecar disables uvicorn access logging so the
+`?token=` query param never lands in logs.
 
 ## Smoke test
 

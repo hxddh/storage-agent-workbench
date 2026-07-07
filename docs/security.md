@@ -40,8 +40,14 @@ Rules:
 3. No raw boto3 client exposed to the Agent.
 4. Cloud operations must go through whitelist tools.
 5. Default mode is readonly.
-6. test-write mode must be explicitly enabled and prefix-limited.
+6. `test-write` is a **reserved** mode: it exists only as a schema enum — no
+   write tool exists anywhere in the MVP, so nothing can write even with the
+   mode set. Any future write tool must enforce the allowed test prefixes
+   (e.g. `tmp/agent-test/*`, `diagnose/*`) before performing any write.
 7. Destructive operations are forbidden.
+8. A provider's `allowed_buckets` / `allowed_prefixes` scope is enforced
+   server-side — in the agent session tools, the surviving `/tools` endpoints,
+   and the run executors.
 
 Forbidden:
 
@@ -183,7 +189,10 @@ confirmation-gated.
 - **Bounded.** Selection is capped by `max_files` (default 1000, hard cap 5000)
   and `max_bytes` (default 1 GiB, hard cap 5 GiB). Access-log import REQUIRES a
   time range. The byte/file budget is enforced again at download (a file larger
-  than the remaining budget aborts the import as failed).
+  than the remaining budget aborts the import as failed). Downloads stream to
+  disk (never buffered whole in memory) and gzip evidence is decompressed with
+  an explicit expansion bound — a decompression bomb aborts, it doesn't exhaust
+  the machine.
 - **Explicit confirmation.** A plan downloads nothing. Download happens only
   after `confirm`, which is recorded in `approval_events` (decision=approved)
   and `audit_logs`. There is no hidden auto-confirm; a zero-file or over-limit
@@ -211,9 +220,17 @@ Turning a proposal into action is gated and reuses existing safe flows.
   import, mutates a bucket, calls S3, or calls an LLM. There is no hidden auto-run
   and no hidden auto-confirm. (There is no separate "preview" endpoint — that was
   removed; `prepare` is the only handoff step.)
-- **Allowlist enforced.** Only a fixed set of `action_type`s is accepted; any
-  other value (including assistant-proposed ones) is rejected/dropped. Every
-  proposal carries `requires_confirmation=true`.
+- **Bounds, not gates.** `action_type` is **free-form** — the agent proposes any
+  concrete next step in its own words; there is deliberately no fixed
+  `action_type` allowlist (`sessions/next_actions.py`). Each value is sanitized
+  to a bounded slug (lowercase alphanumeric/`_`/`-`, max 64 chars), and a slug
+  carrying a forbidden/destructive token (shell / exec / sql / delete-object /
+  put-bucket-policy / …) is dropped — a proposal must never even *suggest* a
+  mutating operation. `SPECIAL_ACTION_TYPES` only selects the purpose-built UI
+  flows (evidence import, session report, composer seeding); it is explicitly
+  **not** a cap — an unrecognized type simply routes back to the conversational
+  agent, which carries it out with its own read-only tools. Every proposal
+  carries `requires_confirmation=true`.
 - **Existing safe workflows are reused.** Most proposals just seed the composer
   with a natural-language prompt that the conversational agent then handles inline
   with read-only tools — there is no `NewRunForm` (it was removed). The one flow
@@ -320,6 +337,26 @@ any new dangerous capability.
 - **Not a PM/kanban/ticketing system.** There are no boards, columns, tickets,
   tasks, assignees, sprints, due dates, labels, notifications, or multi-user/
   permission models — only investigation context.
+
+## Sidecar local authentication
+
+The sidecar binds localhost only — but loopback is not process isolation: any
+*other* process on the same machine could reach the port, and CORS does nothing
+against non-browser clients. A shared-secret gate closes that gap:
+
+- The Tauri shell generates a random per-launch token (`src-tauri/src/lib.rs`)
+  and passes it to the sidecar as `STORAGE_AGENT_AUTH_TOKEN`; the frontend
+  fetches it via the `get_sidecar_token` command.
+- When the variable is set, every request must present the token — the
+  `X-Sidecar-Token` header, or `?token=` for the header-less SSE `EventSource`
+  — except `GET /health` and CORS `OPTIONS` preflight. Anything else gets 401.
+  Token comparison is constant-time.
+- The packaged sidecar runs uvicorn with **access logging disabled**, so the
+  `?token=` query parameter can never leak into request logs.
+- When the variable is unset (plain dev/browser runs, the test suite), auth
+  stays open so the local workflow keeps working. The token is defense in
+  depth, not the sole boundary — secrets still never transit the API in
+  plaintext.
 
 ## Packaging
 
