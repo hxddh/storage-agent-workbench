@@ -17,6 +17,11 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# OS CSPRNG for the per-launch sidecar auth token. Already present transitively
+# (Tauri depends on it); pinned to the 0.2 line that is in Cargo.lock. Do NOT
+# hand-roll the token from clock/pid/ports — those are locally observable and
+# low-entropy (see gen_token in src/lib.rs).
+getrandom = "0.2"
 
 # NOTE: The Python FastAPI sidecar is packaged with PyInstaller as a ONE-DIR
 # bundle, shipped as a Tauri resource, and launched directly from src/lib.rs via

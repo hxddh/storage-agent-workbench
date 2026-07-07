@@ -26,6 +26,12 @@ MAX_GROUPS = 50
 DEFAULT_GROUPS = 20
 _LABEL_LEN = 300
 
+# Object-key-like dimensions are near-unique, so a GROUP BY on them degenerates
+# into enumerating individual object keys one-per-group. Rule 16 caps sample
+# object keys at 20, so these dimensions are clamped to DEFAULT_GROUPS regardless
+# of the requested limit (other, genuinely-aggregating dimensions keep MAX_GROUPS).
+_KEYLIKE_DIMENSIONS = {"key", "path"}
+
 # Whitelisted GROUP BY dimensions per dataset type. Values are the exact SQL
 # expressions used — constants defined HERE, never caller input. "hour" mirrors
 # the derivation used by the fixed metric set.
@@ -153,6 +159,8 @@ def aggregate(
             }
         _require("group_by", group_by, _DIMENSIONS[dataset_type])
         dim_sql = _DIMENSIONS[dataset_type][group_by]
+        if group_by in _KEYLIKE_DIMENSIONS:
+            limit = min(limit, DEFAULT_GROUPS)  # rule 16: don't stream 50 raw keys
         # Fetch limit+1 to report (not silently drop) an over-limit tail.
         sql = (
             f"SELECT {dim_sql} AS g, {metric_sql} AS v FROM {table}{where_sql} "

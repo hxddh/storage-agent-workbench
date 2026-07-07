@@ -13,6 +13,24 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def ensure_secure_dir(path: Path) -> Path:
+    """Create ``path`` (and parents) and tighten it to owner-only (0700) on POSIX.
+
+    ``mkdir``'s mode is masked by the process umask, so a permissive umask would
+    otherwise leave the app-data dir world-readable (umask 022) or world-writable
+    (umask 000). That dir holds the SQLite DB (object keys, derived analysis rows,
+    keyring:// refs) and the vault ciphertext — so chmod AFTER creation forces
+    0700 regardless of umask. Best-effort; on Windows (ACL-based) this is a no-op.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    if os.name == "posix":
+        try:
+            os.chmod(path, 0o700)
+        except OSError:
+            pass
+    return path
+
+
 def data_dir() -> Path:
     """Directory for local app data (database, run artifacts).
 

@@ -62,9 +62,14 @@ def stamp_toml_version(path: pathlib.Path) -> str:
     if not path.exists():
         _die(f"{path} not found")
     txt = path.read_text()
-    new_txt, n = re.subn(r'(?m)^version = "[^"]*"', f'version = "{ver}"', txt, count=1)
-    if n != 1:
-        _die(f'{path}: expected exactly one `version = "..."` line, found {n}')
+    # Count FIRST (subn with count=1 caps its return at 1, so it can never report
+    # a duplicate) — a second top-level `version = "..."` line (e.g. a `[tool.*]`
+    # section before `[package]`) means we'd stamp the wrong line and leave the
+    # real one stale. Require exactly one before touching the file.
+    matches = re.findall(r'(?m)^version = "[^"]*"', txt)
+    if len(matches) != 1:
+        _die(f'{path}: expected exactly one `version = "..."` line, found {len(matches)}')
+    new_txt = re.sub(r'(?m)^version = "[^"]*"', f'version = "{ver}"', txt, count=1)
     path.write_text(new_txt)
     # Read back the value we just wrote, to feed the consistency assertion.
     m = re.search(r'(?m)^version = "([^"]*)"', new_txt)
