@@ -386,11 +386,27 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         note("inspect_endpoint_tls", provider_name(provider_id), res)
         return json.dumps(res)
 
+    @function_tool
+    def get_bucket_config_detail(provider_id: str, bucket: str, aspect: str) -> str:
+        """Read the SANITIZED RULE DETAIL of one bucket-config aspect (read-only GET). The config review tools return only a status/boolean for these; this returns the actual rules a diagnosis needs — so you don't have to ask the user for the config. `aspect` is one of: 'replication' (per-rule status, prefix/tag filter, delete-marker replication, destination bucket), 'notification' (per-target type topic/queue/lambda/eventbridge + resource name, events, prefix/suffix filter — use for "my event/Lambda isn't firing"), 'cors' (allowed origins/methods/headers — use for browser CORS failures), 'logging' (the access-log target bucket/prefix). ARNs are reduced (no account IDs), values redacted, ≤20 rules. A provider lacking the API returns status='provider_unsupported', not an error. Args: provider_id, bucket, aspect."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Call list_providers first.")
+        denial = scope_denial(p, bucket)
+        if denial:
+            return _err(denial)
+        rec("get_bucket_config_detail", provider_id=provider_id, bucket=bucket, aspect=aspect)
+        res = ct.get_bucket_config_detail(conn, provider_id, bucket, aspect)
+        note("get_bucket_config_detail", f"{bucket} · {aspect}",
+             res.get("status") if res.get("success") else "error")
+        return json.dumps(res)
+
     tools = [list_providers, list_buckets, head_bucket, list_objects,
              list_object_versions, list_multipart_uploads,
              test_credentials, head_object, get_object_lock_status,
              test_range_get, preview_object, measure_request_latency,
-             test_addressing_style, inspect_endpoint_tls, read_skill]
+             test_addressing_style, inspect_endpoint_tls,
+             get_bucket_config_detail, read_skill]
 
     # Per-bucket config reviews (read-only). Distinct names/descriptions set on
     # the FunctionTool after decoration (same pattern as the run agent).

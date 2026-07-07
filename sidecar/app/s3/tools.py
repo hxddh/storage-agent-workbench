@@ -390,6 +390,13 @@ def head_object(
         client = client_factory.build_s3_client(conn, provider_id)
         resp = client.head_object(Bucket=bucket, Key=key)
         lm = resp.get("LastModified")
+        # Server-side encryption state: the security skill needs this to reason
+        # about "why can't I read this object" (KMS-encrypted objects require key
+        # access). The KMS key id is reduced to its last segment (alias/key-id) so
+        # no account id / full ARN leaks; the value is redacted defensively.
+        sse = resp.get("ServerSideEncryption")
+        kms_key = resp.get("SSEKMSKeyId")
+        kms_key_ref = redact(str(kms_key).split("/")[-1].split(":")[-1]) if kms_key else None
         return {
             **base,
             "success": True,
@@ -397,6 +404,8 @@ def head_object(
             "etag": resp.get("ETag"),
             "last_modified": lm.isoformat() if hasattr(lm, "isoformat") else lm,
             "storage_class": resp.get("StorageClass"),
+            "server_side_encryption": sse,
+            "sse_kms_key_ref": kms_key_ref,
             "metadata_sanitized": redact(resp.get("Metadata", {}) or {}),
         }
     except ClientError as exc:

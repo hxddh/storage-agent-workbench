@@ -17,6 +17,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
+from ..security.redaction import redact_text
 from . import client_factory
 
 PERF_MAX_KEYS = 100
@@ -152,6 +153,150 @@ def get_bucket_config_summary(conn: sqlite3.Connection, provider_id: str, bucket
         "access_denied_items": access_denied_items,
         "overall_status": overall,
         "findings": findings,
+    }
+
+
+# --- get_bucket_config_detail: sanitized RULE detail (replication/notification/
+#     cors/logging) that the summary/review tools collapse to a status/boolean.
+#     The underlying GETs already run in the review path; this just surfaces the
+#     rule detail three skills' decision trees need, so the agent stops asking the
+#     user for config JSON it can read itself. Read-only; ≤20 rules; ARNs reduced
+#     to a resource label (account id stripped) and every value redacted. -------
+
+_DETAIL_ASPECTS = {
+    "replication": "get_bucket_replication",
+    "notification": "get_bucket_notification_configuration",
+    "cors": "get_bucket_cors",
+    "logging": "get_bucket_logging",
+}
+_MAX_DETAIL_RULES = 20
+
+
+def _arn_resource(value: Any) -> str | None:
+    """Reduce an ARN to ``service:resource`` (account id + region stripped), then
+    redact. A plain name passes through redacted. Never leaks an account id."""
+    if not value:
+        return None
+    s = str(value)
+    if s.startswith("arn:"):
+        parts = s.split(":")  # arn:partition:service:region:account:resource...
+        if len(parts) >= 6:
+            svc = parts[2]
+            resource = parts[5].split("/")[-1] if len(parts) == 6 else parts[-1]
+            # An S3 bucket ARN (arn:aws:s3:::name) reduces to the bare bucket name;
+            # other services keep a 'service:resource' label so the target's kind
+            # (sqs/sns/lambda) stays visible.
+            s = resource if svc == "s3" else f"{svc}:{resource}"
+    return redact_text(s)
+
+
+def _filter_kv(filter_obj: Any) -> dict[str, str]:
+    """Extract prefix/suffix (S3 key FilterRules) as a small redacted dict."""
+    out: dict[str, str] = {}
+    rules = (((filter_obj or {}).get("Key") or {}).get("FilterRules")) or []
+    for r in rules if isinstance(rules, list) else []:
+        name = str(r.get("Name", "")).lower()
+        if name in ("prefix", "suffix"):
+            out[name] = redact_text(str(r.get("Value", "")))
+    return out
+
+
+def _detail_replication(data: dict[str, Any]) -> list[dict[str, Any]]:
+    rules = ((data.get("ReplicationConfiguration") or {}).get("Rules")) or []
+    out = []
+    for r in rules[:_MAX_DETAIL_RULES]:
+        flt = r.get("Filter") or {}
+        prefix = flt.get("Prefix") if "Prefix" in flt else r.get("Prefix")
+        dest = r.get("Destination") or {}
+        out.append({
+            "id": redact_text(str(r.get("ID", "")))[:120] or None,
+            "status": r.get("Status"),
+            "priority": r.get("Priority"),
+            "prefix": redact_text(str(prefix)) if prefix else None,
+            "has_tag_filter": bool(flt.get("Tag") or (flt.get("And") or {}).get("Tags")),
+            "delete_marker_replication": (r.get("DeleteMarkerReplication") or {}).get("Status"),
+            "existing_object_replication": (r.get("ExistingObjectReplication") or {}).get("Status"),
+            "destination_bucket": _arn_resource(dest.get("Bucket")),
+            "destination_storage_class": dest.get("StorageClass"),
+        })
+    return out
+
+
+def _detail_notification(data: dict[str, Any]) -> list[dict[str, Any]]:
+    out = []
+    for key, kind, arn_field in (
+        ("TopicConfigurations", "topic", "TopicArn"),
+        ("QueueConfigurations", "queue", "QueueArn"),
+        ("LambdaFunctionConfigurations", "lambda", "LambdaFunctionArn"),
+    ):
+        for c in (data.get(key) or [])[:_MAX_DETAIL_RULES]:
+            out.append({
+                "type": kind,
+                "target": _arn_resource(c.get(arn_field)),
+                "events": [str(e) for e in (c.get("Events") or [])][:20],
+                "filter": _filter_kv(c.get("Filter")),
+            })
+    if data.get("EventBridgeConfiguration") is not None:
+        out.append({"type": "eventbridge", "target": "eventbridge", "events": [], "filter": {}})
+    return out[:_MAX_DETAIL_RULES]
+
+
+def _detail_cors(data: dict[str, Any]) -> list[dict[str, Any]]:
+    out = []
+    for r in (data.get("CORSRules") or [])[:_MAX_DETAIL_RULES]:
+        out.append({
+            "allowed_origins": [redact_text(str(x)) for x in (r.get("AllowedOrigins") or [])][:20],
+            "allowed_methods": [str(x) for x in (r.get("AllowedMethods") or [])][:20],
+            "allowed_headers": [redact_text(str(x)) for x in (r.get("AllowedHeaders") or [])][:20],
+            "expose_headers": [redact_text(str(x)) for x in (r.get("ExposeHeaders") or [])][:20],
+            "max_age_seconds": r.get("MaxAgeSeconds"),
+        })
+    return out
+
+
+def _detail_logging(data: dict[str, Any]) -> list[dict[str, Any]]:
+    le = data.get("LoggingEnabled")
+    if not le:
+        return []
+    return [{
+        "target_bucket": redact_text(str(le.get("TargetBucket") or "")) or None,
+        "target_prefix": redact_text(str(le.get("TargetPrefix") or "")) or None,
+    }]
+
+
+_DETAIL_EXTRACTORS = {
+    "replication": _detail_replication,
+    "notification": _detail_notification,
+    "cors": _detail_cors,
+    "logging": _detail_logging,
+}
+
+
+def get_bucket_config_detail(conn: sqlite3.Connection, provider_id: str, bucket: str,
+                             aspect: str) -> dict[str, Any]:
+    """Sanitized RULE detail for one config aspect (read-only GET).
+
+    ``aspect`` ∈ replication | notification | cors | logging. Returns
+    ``{aspect, status, rules}`` where ``status`` is available / not_configured /
+    provider_unsupported / access_denied / error (rule 18: a provider that lacks
+    the API is 'provider_unsupported', not a failure) and ``rules`` is the bounded,
+    sanitized detail (empty on any non-available status).
+    """
+    if aspect not in _DETAIL_ASPECTS:
+        return {"success": False, "bucket": bucket, "aspect": aspect,
+                "error": f"unknown aspect '{aspect}'; choose one of "
+                         f"{', '.join(sorted(_DETAIL_ASPECTS))}."}
+    client = client_factory.build_s3_client(conn, provider_id)
+    read = _read(client, _DETAIL_ASPECTS[aspect], Bucket=bucket)
+    rules = _DETAIL_EXTRACTORS[aspect](read["data"]) if read["status"] == AVAILABLE else []
+    return {
+        "success": True,
+        "bucket": bucket,
+        "provider_id": provider_id,
+        "aspect": aspect,
+        "status": read["status"],
+        "rules": rules,
+        "rule_count": len(rules),
     }
 
 
