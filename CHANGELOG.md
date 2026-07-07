@@ -6,6 +6,35 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.4] - 2026-07-07
+
+_Autonomy: lets the read-only agent run a genuinely DEEP investigation in a single
+turn instead of being cut short by conservative per-turn caps — a bounds
+recalibration, not new architecture. No security floor changed; no write tool
+added._
+
+### Changed
+
+- **Turn depth is now governed by the elastic tool-output budget, not an arbitrary
+  step count.** The per-turn cumulative tool-output budget (raised 150k → 200k
+  chars) is the real, usage-elastic governor of how deep a turn goes; the raw
+  step-count ceiling (`_MAX_TURNS` 24 → 40) is demoted to a runaway-loop safety
+  stop set well above what a real investigation needs. Net effect: a shallow-output
+  but deep probe (many small `head_object`/`list`/latency calls across buckets) is
+  no longer terminated at an arbitrary step number, while a heavy-output turn is
+  still bounded by real context use — and the context-overflow → finalize path
+  added in 0.24.0 remains the backstop, so going deeper can't become a hard
+  failure.
+- **Forensic per-turn tool budgets raised** for deep comparisons in one turn:
+  `preview_object` 12 → 16 objects and 16 → 24 MiB; `test_range_get` 8 → 12 calls;
+  `read_skill` 8 → 10 skills (with the `skills_used` contract cap raised to match).
+  The 1 MiB-per-call preview cap, the no-recursion / no-bulk-download rules, and
+  the per-call range cap are unchanged — these stay probes, not downloaders.
+
+_These are bounds, not gates: every one still enforces a code-level ceiling; they
+are tuned upward now that the turn's context-overflow path fails safe. The
+categorical read-only posture and all rule 1–18 security invariants are unchanged._
+
 ## [0.24.3] - 2026-07-07
 
 _Patch: security + correctness fixes from a third bug hunt targeting three

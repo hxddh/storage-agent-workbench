@@ -106,7 +106,7 @@ def parse_agent_contract(raw: Any, allowed_skill_names: list[str] | None = None)
     # Cap matches the per-turn read_skill budget (session_tools._MAX_SKILL_LOADS)
     # so a turn that legitimately loaded several skills can report all of them
     # instead of under-reporting its method.
-    skills_used = _strlist(data, "skills_used", cap=8, length=80)
+    skills_used = _strlist(data, "skills_used", cap=10, length=80)
     if allowed_skill_names is not None:
         allowed = set(allowed_skill_names)
         skills_used = [s for s in skills_used if s in allowed]

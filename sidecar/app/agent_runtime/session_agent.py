@@ -58,10 +58,15 @@ _MAX_COMPLETION_TOKENS = 16384
 # A real investigation chains several probes (test_credentials → head_bucket →
 # test_addressing_style → list_objects → head_object …); keep a generous but
 # bounded ceiling so multi-step diagnoses complete without runaway loops.
-# 24 (was 16): a deep multi-bucket diagnosis (credentials → addressing → TLS →
-# head/list/range per bucket → config reviews) legitimately needs more than 16
-# steps; the tool-less finalize pass still guarantees termination.
-_MAX_TURNS = 24
+# 40 (was 24/16): the RIGHT governor of turn depth is the tool-OUTPUT budget
+# below (elastic on the context the model actually consumes), not this raw step
+# count. This ceiling is now demoted to a runaway-loop SAFETY stop set well above
+# what a real deep investigation needs — so a shallow-output but deep probe (many
+# small head/list/latency calls across buckets) is no longer cut short at an
+# arbitrary step number, while a heavy-output one is still bounded by real context
+# use. The tool-less finalize pass still guarantees termination, and the
+# context-overflow → finalize path is the backstop if a provider window is hit.
+_MAX_TURNS = 40
 # Bound on the user's message as embedded in the prompt. Truncation is NEVER
 # silent: the cut is marked in the prompt so the agent knows it saw a prefix
 # (see build_session_prompt) — the same "no silent caps" rule as ingestion.
@@ -69,10 +74,15 @@ _MAX_USER_MSG = 16000
 # Bound on each replayed prior message in the context. Also never silent.
 _MAX_REPLAY_MSG = 1000
 # Per-turn cumulative budget on tool OUTPUT characters handed to the model.
-# A bound, not a gate: once exhausted, further tool calls return a short note
-# telling the model to synthesize — preventing a context-window overflow from
-# ever becoming a hard failure mid-investigation.
-_MAX_TOOL_OUTPUT_CHARS = 150_000
+# This is the PRIMARY, elastic governor of how deep a turn goes: it tracks the
+# context the model actually consumes, so a turn runs as deep as it needs until
+# real context pressure (not an arbitrary step count) says to synthesize. A
+# bound, not a gate — once exhausted, further tool calls return a short note
+# telling the model to synthesize, so a context-window overflow never becomes a
+# hard failure mid-investigation. 200k chars ≈ 50k tokens of tool output, which
+# leaves ample room under a modern 200k-token context for the prompt + reasoning;
+# the overflow → finalize path is the backstop above it.
+_MAX_TOOL_OUTPUT_CHARS = 200_000
 _TOOL_BUDGET_EXHAUSTED = (
     "tool output budget for this turn is exhausted — synthesize your findings now"
 )

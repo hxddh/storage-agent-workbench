@@ -496,18 +496,23 @@ def test_raised_budgets_and_caps():
     from app.agent_runtime import session_agent, session_tools
     from app.skills import contract
 
-    assert session_agent._MAX_TURNS >= 24
+    # Depth: the step count is a runaway SAFETY ceiling; the elastic tool-output
+    # budget is the primary governor of how deep a turn goes (context-size, not an
+    # arbitrary step number). Both raised so a deep read-only investigation runs to
+    # completion in one turn instead of being cut short.
+    assert session_agent._MAX_TURNS >= 40
+    assert session_agent._MAX_TOOL_OUTPUT_CHARS >= 200_000
     assert session_tools._LIST_KEYS_CTX_CAP >= 500
     # skills_used contract cap must match the per-turn read_skill budget; the
     # budget constants live inside build(), so pin the contract-side value.
     src = open("app/agent_runtime/session_tools.py").read()
-    assert "_MAX_SKILL_LOADS = 8" in src
-    assert "_MAX_PREVIEWS = 12" in src
+    assert "_MAX_SKILL_LOADS = 10" in src
+    assert "_MAX_PREVIEWS = 16" in src
     assert "_MAX_LATENCY_RUNS = 8" in src
     raw = "answer\n```json\n" + json.dumps(
-        {"skills_used": [f"s{i}" for i in range(10)], "next_action_proposals": []}
+        {"skills_used": [f"s{i}" for i in range(12)], "next_action_proposals": []}
     ) + "\n```"
-    assert len(contract.parse_agent_contract(raw)["skills_used"]) == 8
+    assert len(contract.parse_agent_contract(raw)["skills_used"]) == 10
 
 
 # --- B3: denylist no longer ossifies against a constrained aggregate tool -----
