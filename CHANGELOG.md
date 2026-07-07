@@ -6,6 +6,33 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.7] - 2026-07-07
+
+_Autonomy: cross-turn continuity of what the agent already probed — the last
+remaining high-leverage, non-bloat lever. Each turn now sees a bounded trace of
+earlier turns' read-only tool calls, so it stops re-running the same checks._
+
+### Changed
+
+- **Prior assistant turns replay a `tools_run` trace into the next turn's
+  context.** Each message already persists its `tool_activity` (the one-line
+  per-call trace the UI shows); it was thrown away on replay, so a new turn
+  couldn't see what earlier turns had already checked and re-derived / re-probed.
+  The context now surfaces a bounded (≤15 lines/turn, `started`-records excluded)
+  `tools_run` trace per recent assistant message, and the instructions tell the
+  agent to consult it and re-fetch only when it needs fuller detail than the
+  one-line result. This is cheap continuity — already-persisted, already-sanitized
+  data (redacted again defensively), no summarization / compaction / new
+  subsystem — and it makes the 0.24.5 "continue investigation" resume actually
+  aware of the prior turn's work. It also lightens the reliance on the agent
+  manually curating memory for continuity.
+
+_Assessment note: a capability audit found the read-only tool set otherwise
+complete and the depth bounds already recalibrated (0.24.4); this closes the last
+non-bloat autonomy gap. Further autonomy gains (within-turn context compaction,
+a confirmed-write "operator" path) require either the compaction subsystem or a
+policy change to the read-only floor — both deliberately out of scope here._
+
 ## [0.24.6] - 2026-07-07
 
 _Autonomy: fills the one real capability gap in the read-only tool set — the

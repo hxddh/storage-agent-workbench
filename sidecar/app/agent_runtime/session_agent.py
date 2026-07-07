@@ -42,6 +42,12 @@ from .guardrails import strip_chain_of_thought, strip_chain_of_thought_stream
 _MAX_FACTS = 50  # kept in sync with sessions.summary_builder.MAX_FACTS
 _MAX_FINDINGS = 30
 _MAX_MESSAGES = 12
+# Tool-trace lines replayed per prior assistant turn. Each message already
+# persists its tool_activity (the one-line-per-call trace shown in the UI); we
+# surface it into the next turn's context so the agent sees WHAT it already
+# probed and doesn't re-run the same checks. Cheap continuity — already-persisted,
+# already-sanitized data; not summarization/compaction.
+_MAX_REPLAY_TOOLS = 15
 # Enumerations can be large (e.g. 96+ buckets in a table). Keep our answer cap
 # well above any single model completion so we never truncate a legitimate full
 # answer in post-processing.
@@ -149,9 +155,11 @@ INSTRUCTIONS = (
     "re-run it — read it later with read_run_result(run_id).\n"
     "Record durable facts, notable findings, and open questions with note_fact "
     "/ record_finding / note_open_question (update_memory_item / "
-    "resolve_memory_item to correct or close them). Only recent messages are "
-    "replayed, so memory is how continuity survives; reuse what agent_memory "
-    "already holds instead of re-deriving it.\n"
+    "resolve_memory_item to correct or close them). Each recent assistant message "
+    "carries a tools_run trace of the read-only probes that turn already ran — "
+    "consult it and DON'T re-run a check you've already done; re-fetch only when "
+    "you need fuller detail than the one-line result. Between that trace and "
+    "agent_memory, reuse what earlier turns established instead of re-deriving it.\n"
     "Your step budget is bounded: probe what the question needs, and if a "
     "complete answer would need more steps, give your best grounded answer and "
     "say what remains.\n\n"
@@ -203,6 +211,40 @@ def _clip_marked(text: str, cap: int) -> str:
     return text[:cap] + f" [TRUNCATED: {omitted} more characters cut]"
 
 
+def _replay_tools(activity: list[dict[str, Any]] | None) -> list[str]:
+    """Compact 'what I already checked' trace from a prior turn's persisted
+    tool_activity, so the next turn doesn't re-probe. Completed records only
+    (the transient 'started' markers are UI-only), one bounded line per call,
+    already sanitized on write and redacted again defensively."""
+    lines: list[str] = []
+    for a in (activity or []):
+        if a.get("status") == "started":
+            continue
+        tool = str(a.get("tool", ""))[:40]
+        if not tool:
+            continue
+        target = str(a.get("target", ""))[:80]
+        result = str(a.get("result", ""))[:60]
+        line = f"{tool} · {target} → {result}" if target else f"{tool} → {result}"
+        lines.append(redact_text(line))
+    if len(lines) > _MAX_REPLAY_TOOLS:
+        extra = len(lines) - _MAX_REPLAY_TOOLS
+        lines = lines[:_MAX_REPLAY_TOOLS] + [f"[+{extra} more tool calls this turn]"]
+    return lines
+
+
+def _replay_message(m: dict[str, Any]) -> dict[str, Any]:
+    """One replayed message: role + clipped content, plus a bounded tools_run
+    trace for assistant turns (cross-turn continuity of what was already probed)."""
+    out = {"role": m.get("role"),
+           "content": _clip_marked(redact_text(str(m.get("content", ""))), _MAX_REPLAY_MSG)}
+    if m.get("role") == "assistant":
+        tools = _replay_tools(m.get("tool_activity"))
+        if tools:
+            out["tools_run"] = tools
+    return out
+
+
 def build_session_context(
     session: dict[str, Any],
     summary: dict[str, Any],
@@ -241,11 +283,10 @@ def build_session_context(
         # Things YOU recorded in earlier turns of this session (via note_fact /
         # record_finding / note_open_question). Reuse them; don't re-derive.
         "agent_memory": _build_agent_memory_block(agent_memory),
-        "recent_messages": [
-            {"role": m.get("role"),
-             "content": _clip_marked(redact_text(str(m.get("content", ""))), _MAX_REPLAY_MSG)}
-            for m in recent_messages[-_MAX_MESSAGES:]
-        ],
+        # Prior assistant turns carry a `tools_run` trace of the read-only probes
+        # they already ran (bounded) — so this turn sees what was checked and
+        # re-fetches only what it needs fuller detail on, instead of re-probing.
+        "recent_messages": [_replay_message(m) for m in recent_messages[-_MAX_MESSAGES:]],
         # NOTE: safety rules live ONCE in the instructions — not re-injected here.
     }
     guardrails.assert_no_secrets_in_context(context)
