@@ -6,6 +6,8 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-07-07
+
 _Architecture / code / docs review remediation: closes a turn-lifecycle
 correctness class (connection ownership, cancellation, fallback races), hardens
 every large-file path against OOM, plugs redaction/secret-in-log gaps, and removes
