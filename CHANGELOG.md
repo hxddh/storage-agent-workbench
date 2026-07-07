@@ -6,6 +6,39 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.6] - 2026-07-07
+
+_Autonomy: fills the one real capability gap in the read-only tool set — the
+config-review tools already read replication / notification / CORS config but
+collapsed it to a status/boolean, forcing the agent to ask the user for JSON it
+could read itself. One new sanitized reader closes it. No new attack surface (the
+GETs already ran); no write tool._
+
+### Added
+
+- **`get_bucket_config_detail(provider_id, bucket, aspect)`** — one read-only tool
+  returning the sanitized RULE detail for `aspect ∈ {replication, notification,
+  cors, logging}`: per-rule status / filter / delete-marker replication /
+  destination for replication; target type + resource + events + prefix/suffix
+  filter for notification; allowed origins/methods/headers for CORS; the access-log
+  target for logging. This is the detail three StorageOps skills'
+  (replication-versioning, event-notification, s3-protocol-compatibility) decision
+  trees depend on and previously couldn't obtain. ARNs are reduced to a resource
+  label (account id stripped), every value is redacted, output is bounded to 20
+  rules, and a provider lacking the API returns `status='provider_unsupported'`
+  (rule 18). Reuses the proven `config_tools._read` path (hard-asserts a
+  `get_`/`list_`/`head_` prefix) — the underlying GETs already run in the config
+  review, so this adds no new S3 surface.
+- **`head_object` now reports server-side-encryption state** (`server_side_encryption`
+  + a reduced `sse_kms_key_ref` — KMS key id/alias only, no account id/ARN), which
+  the security-iam-policy skill needs to reason about "why can't I read this
+  KMS-encrypted object".
+
+_A capability audit found the read-only tool set otherwise ~85% complete (17/20
+skills fully served); everything else on the usual "add get_X?" list (public-access
+-block, versioning flag, encryption on/off, object-lock, tagging, object ACL) is
+already covered, so nothing redundant was added._
+
 ## [0.24.5] - 2026-07-07
 
 _Autonomy: a turn cut short by its depth/context ceiling now offers a one-click

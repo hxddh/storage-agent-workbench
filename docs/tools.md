@@ -181,6 +181,12 @@ Purpose:
 ## Bucket config review tools
 
 - get_bucket_config_summary
+- get_bucket_config_detail — read-only, sanitized RULE detail for one aspect
+  (`replication` / `notification` / `cors` / `logging`) that the review tools
+  return only a status/boolean for. ARNs reduced to a resource label (account id
+  stripped), values redacted, ≤20 rules; a provider lacking the API returns
+  `status='provider_unsupported'`. Fills the replication/event-notification/CORS
+  skills' decision trees so the agent reads the config instead of asking for it.
 - review_bucket_security
 - review_bucket_lifecycle
 - review_bucket_observability

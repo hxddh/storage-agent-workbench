@@ -260,6 +260,9 @@ Allowed MVP tool groups:
 ### Bucket config review tools
 
 - `get_bucket_config_summary`
+- `get_bucket_config_detail` (read-only; sanitized RULE detail for one aspect —
+  `replication` / `notification` / `cors` / `logging` — that the review tools
+  collapse to a status; ARNs reduced, ≤20 rules, `provider_unsupported` on gap)
 - `review_bucket_security`
 - `review_bucket_lifecycle`
 - `review_bucket_observability`
