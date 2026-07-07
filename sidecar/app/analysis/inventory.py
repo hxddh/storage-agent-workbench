@@ -49,7 +49,13 @@ def _to_int(value: Any) -> int | None:
     try:
         if value is None or value == "":
             return None
-        return int(float(value))
+        s = str(value).strip()
+        # int() directly so an int64 size > 2^53 (up to ~9 PB) doesn't lose
+        # precision through a float round-trip; float only for fractional strings.
+        try:
+            return int(s)
+        except ValueError:
+            return int(float(s))
     except (TypeError, ValueError):
         return None
 

@@ -26,6 +26,7 @@ from .. import audit
 from ..repositories import cloud_providers as cloud_repo
 from ..s3 import config_tools as ct
 from ..s3 import tools as s3
+from ..s3.scope import check_scope
 from . import guardrails
 
 # Max object keys echoed to the model per list_objects call. The bucket may hold
@@ -71,8 +72,18 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         p = cloud_repo.get(conn, provider_id)
         return p.name if p else provider_id[:8]
 
-    def bucket_ok(p, bucket: str) -> bool:
-        return (not p.allowed_buckets) or (bucket in p.allowed_buckets)
+    def scope_denial(p, bucket: str, *, key: str | None = None,
+                     prefix: str | None = None, listing: bool = False) -> str | None:
+        """Enforce BOTH allowed_buckets and allowed_prefixes on the agent surface.
+
+        Previously the agent tools checked allowed_buckets only, so a
+        prefix-scoped provider (allowed_prefixes=["logs/"]) gave the agent zero
+        protection — it could preview_object/head_object/list outside the prefix.
+        The agent is the only surface that reads object CONTENT, so it must honor
+        the same scope as the /tools endpoints and run executors (check_scope).
+        """
+        return check_scope(p.allowed_buckets, p.allowed_prefixes, bucket,
+                           key=key, prefix=prefix, listing=listing)
 
     # Per-turn budget: cap how many skill bodies the agent can load in one turn,
     # so a runaway loop can't pull every skill (~8000 chars each) into context.
@@ -160,8 +171,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
-        if not bucket_ok(p, bucket):
-            return _err("That bucket is not in this provider's allow-list.")
+        denial = scope_denial(p, bucket)
+        if denial:
+            return _err(denial)
         rec("head_bucket", provider_id=provider_id, bucket=bucket)
         res = s3.head_bucket(conn, provider_id, bucket)
         note("head_bucket", bucket, res)
@@ -174,8 +186,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
-        if not bucket_ok(p, bucket):
-            return _err("That bucket is not in this provider's allow-list.")
+        denial = scope_denial(p, bucket, prefix=prefix or None, listing=True)
+        if denial:
+            return _err(denial)
         bound = guardrails.bound_tool_args("list_objects_v2", {"max_keys": max_keys})
         rec("list_objects", provider_id=provider_id, bucket=bucket, prefix=prefix,
             max_keys=bound["max_keys"], paged=bool(continuation_token))
@@ -197,8 +210,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
-        if not bucket_ok(p, bucket):
-            return _err("That bucket is not in this provider's allow-list.")
+        denial = scope_denial(p, bucket, prefix=prefix or None, listing=True)
+        if denial:
+            return _err(denial)
         bound = guardrails.bound_tool_args("list_objects_v2", {"max_keys": max_keys})
         rec("list_object_versions", provider_id=provider_id, bucket=bucket, prefix=prefix, max_keys=bound["max_keys"])
         res = s3.list_object_versions(conn, provider_id, bucket, prefix or None, bound["max_keys"])
@@ -211,8 +225,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
-        if not bucket_ok(p, bucket):
-            return _err("That bucket is not in this provider's allow-list.")
+        denial = scope_denial(p, bucket, listing=True)
+        if denial:
+            return _err(denial)
         bound = guardrails.bound_tool_args("list_objects_v2", {"max_keys": max_uploads})
         rec("list_multipart_uploads", provider_id=provider_id, bucket=bucket, max_uploads=bound["max_keys"])
         res = s3.list_multipart_uploads(conn, provider_id, bucket, bound["max_keys"])
@@ -235,8 +250,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
-        if not bucket_ok(p, bucket):
-            return _err("That bucket is not in this provider's allow-list.")
+        denial = scope_denial(p, bucket, key=key)
+        if denial:
+            return _err(denial)
         rec("head_object", provider_id=provider_id, bucket=bucket, key=key)
         res = s3.head_object(conn, provider_id, bucket, key)
         note("head_object", f"{bucket}/{key}", res)
@@ -248,8 +264,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
-        if not bucket_ok(p, bucket):
-            return _err("That bucket is not in this provider's allow-list.")
+        denial = scope_denial(p, bucket, key=key)
+        if denial:
+            return _err(denial)
         rec("get_object_lock_status", provider_id=provider_id, bucket=bucket, key=key)
         res = s3.get_object_lock_status(conn, provider_id, bucket, key, version_id or None)
         note("get_object_lock_status", f"{bucket}/{key}", res)
@@ -261,8 +278,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
-        if not bucket_ok(p, bucket):
-            return _err("That bucket is not in this provider's allow-list.")
+        denial = scope_denial(p, bucket, key=key)
+        if denial:
+            return _err(denial)
         if range_budget["n"] >= _MAX_RANGE_GETS:
             return _err(f"Ranged-read budget for this turn is used up ({_MAX_RANGE_GETS} calls). "
                         "Report the range behavior you already measured, or ask the user "
@@ -279,8 +297,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
-        if not bucket_ok(p, bucket):
-            return _err("That bucket is not in this provider's allow-list.")
+        denial = scope_denial(p, bucket, key=key)
+        if denial:
+            return _err(denial)
         if preview_budget["n"] >= _MAX_PREVIEWS or preview_budget["bytes"] >= _MAX_PREVIEW_BYTES:
             return _err(
                 f"Object-preview budget for this turn is used up ({_MAX_PREVIEWS} objects / "
@@ -308,8 +327,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
-        if not bucket_ok(p, bucket):
-            return _err("That bucket is not in this provider's allow-list.")
+        denial = scope_denial(p, bucket)
+        if denial:
+            return _err(denial)
         rec("test_addressing_style", provider_id=provider_id, bucket=bucket)
         res = s3.test_path_style_vs_virtual_host(conn, provider_id, bucket)
         note("test_addressing_style", bucket, res)
@@ -321,8 +341,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
-        if not bucket_ok(p, bucket):
-            return _err("That bucket is not in this provider's allow-list.")
+        denial = scope_denial(p, bucket, key=key or None)
+        if denial:
+            return _err(denial)
         if latency_budget["n"] >= _MAX_LATENCY_RUNS:
             return _err(f"Latency-probe budget for this turn is used up ({_MAX_LATENCY_RUNS} runs). "
                         "Report the measurements you have, or ask the user which target matters most.")
@@ -393,8 +414,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
             p = provider(provider_id)
             if p is None:
                 return _err("Unknown provider_id. Call list_providers first.")
-            if not bucket_ok(p, bucket):
-                return _err("That bucket is not in this provider's allow-list.")
+            denial = scope_denial(p, bucket)
+            if denial:
+                return _err(denial)
             tname = getattr(_t, "name", "bucket_config")
             rec(tname, provider_id=provider_id, bucket=bucket)
             res = fn(conn, provider_id, bucket)

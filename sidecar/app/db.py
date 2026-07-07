@@ -7,6 +7,7 @@ from the dev server well-behaved.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from collections.abc import Iterator
 
@@ -17,7 +18,8 @@ from .migrations import apply_migrations
 def connect() -> sqlite3.Connection:
     """Open a configured connection to the app database."""
     path = config.db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    config.ensure_secure_dir(path.parent)  # 0700 data dir (not umask-dependent)
+    db_existed = path.exists()
     conn = sqlite3.connect(
         str(path),
         check_same_thread=False,
@@ -32,6 +34,14 @@ def connect() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute("PRAGMA foreign_keys = ON")
+    if not db_existed and os.name == "posix":
+        # The DB holds object keys, derived rows and keyring:// refs — keep it
+        # owner-only rather than the umask default (0644 world-readable).
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                os.chmod(f"{path}{suffix}", 0o600)
+            except OSError:
+                pass
     return conn
 
 

@@ -6,9 +6,11 @@ allow/deny decision for the deterministic surfaces (the two surviving
 ``/tools`` HTTP endpoints and the run executors). Empty/None lists mean
 unrestricted.
 
-Note: the conversational session agent's tools enforce ``allowed_buckets``
-separately (see ``agent_runtime/session_tools.py``); this module covers the
-non-agent paths so scoping is not merely decorative outside the agent.
+All surfaces that address a bucket route through this one check: the agent's
+session tools (``agent_runtime/session_tools.py``), the surviving ``/tools``
+endpoints, and the run executors — so ``allowed_buckets`` AND ``allowed_prefixes``
+are enforced identically everywhere (the agent previously enforced only buckets,
+which let a prefix-scoped provider read outside its prefix via preview_object).
 """
 
 from __future__ import annotations

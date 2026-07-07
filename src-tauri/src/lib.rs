@@ -36,41 +36,25 @@ fn free_port() -> u16 {
         .unwrap_or(8765)
 }
 
-/// Generate a random 128-bit auth token as 32 lowercase hex chars, WITHOUT
-/// pulling in an extra crate. This token is a defense-in-depth measure that
-/// binds the webview to this app's own sidecar on loopback (the sidecar only
-/// enforces it when the env var is set); it is not the sole security boundary.
+/// Generate a random 128-bit auth token as 32 lowercase hex chars from the OS
+/// CSPRNG. This token gates the webview↔sidecar loopback API (the sidecar
+/// enforces it when the env var is set); for a *different local user* who can
+/// reach 127.0.0.1 but cannot read this process's `/proc/<pid>/environ`, it is
+/// the only barrier, so it must be unpredictable.
 ///
-/// Entropy is mixed from the high-resolution clock, the process id, and a couple
-/// of ephemeral OS-assigned TCP ports (each an independent kernel choice) via a
-/// splitmix64 stream. If the Rust toolchain later gains `getrandom`/`uuid` as a
-/// dep, prefer that; kept dependency-free here to keep the packaging story simple.
+/// Uses `getrandom` (the OS CSPRNG: `getrandom(2)`/`/dev/urandom` on Unix,
+/// `BCryptGenRandom` on Windows). Do NOT reconstruct this from the clock, pid,
+/// or ephemeral ports — all are locally observable/low-entropy, which would make
+/// the token guessable. If the CSPRNG is somehow unavailable we fail closed by
+/// panicking rather than emitting a predictable token.
 fn gen_token() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0);
-    let pid = std::process::id() as u64;
-    let p1 = free_port() as u64;
-    let p2 = free_port() as u64;
-    let anchor = 0u8; // stack local; its address adds a little ASLR entropy
-    let mut seed = nanos
-        ^ pid.rotate_left(21)
-        ^ (p1 << 32)
-        ^ p2.rotate_left(11)
-        ^ (&anchor as *const u8 as u64);
-    // splitmix64: produce two 64-bit words → 128 bits of token material.
-    let mut next = || -> u64 {
-        seed = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = seed;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
-    };
-    let hi = next();
-    let lo = next();
-    format!("{hi:016x}{lo:016x}")
+    let mut bytes = [0u8; 16]; // 128 bits
+    getrandom::getrandom(&mut bytes).expect("OS CSPRNG unavailable for auth token");
+    let mut out = String::with_capacity(32);
+    for b in bytes {
+        out.push_str(&format!("{b:02x}"));
+    }
+    out
 }
 
 /// Frontend calls this (in production) to learn where the sidecar is listening.

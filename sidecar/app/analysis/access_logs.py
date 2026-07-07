@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -59,9 +60,48 @@ def _to_int(value: Any) -> int | None:
     try:
         if value in (None, "", "-"):
             return None
-        return int(float(value))
+        s = str(value).strip()
+        # Parse as an integer directly so int64 values > 2^53 don't lose
+        # precision through a float round-trip; fall back to float for genuinely
+        # fractional strings (e.g. a latency "12.5").
+        try:
+            return int(s)
+        except ValueError:
+            return int(float(s))
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_ts(ts: Any) -> str | None:
+    """Normalize a log timestamp to a canonical naive-UTC ISO-8601 string.
+
+    Both the CLF/combined format (``25/Jun/2026:10:00:00 +0000``) and tz-aware
+    ISO-8601 are converted to UTC wall-clock, so DuckDB ``try_cast(... AS
+    TIMESTAMP)`` succeeds and hour-bucketing is correct and timezone-consistent
+    (previously CLF timestamps cast to NULL → every hour bucket was 'unknown',
+    and tz offsets were silently dropped → events bucketed by local wall-clock).
+    Unrecognized values are returned unchanged (downstream still yields 'unknown').
+    """
+    if ts is None:
+        return None
+    s = str(ts).strip()
+    if not s:
+        return None
+    for fmt in ("%d/%b/%Y:%H:%M:%S %z", "%d/%b/%Y:%H:%M:%S"):
+        try:
+            return _to_utc_iso(datetime.strptime(s, fmt))
+        except ValueError:
+            pass
+    try:
+        return _to_utc_iso(datetime.fromisoformat(s.replace("Z", "+00:00")))
+    except ValueError:
+        return s
+
+
+def _to_utc_iso(dt: datetime) -> str:
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _row(ts, method, path, status, nbytes, latency, ua, ip, request_id, raw) -> dict[str, Any]:
@@ -71,7 +111,7 @@ def _row(ts, method, path, status, nbytes, latency, ua, ip, request_id, raw) -> 
     ua = redact_text(str(ua)) if ua is not None else None
     key = (path or "").lstrip("/")
     return {
-        "timestamp": ts,
+        "timestamp": _normalize_ts(ts),
         "method": method,
         "key": key,
         "path": path,

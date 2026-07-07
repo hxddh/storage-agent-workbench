@@ -6,6 +6,55 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.3] - 2026-07-07
+
+_Patch: security + correctness fixes from a third bug hunt targeting three
+subsystems not deeply audited before — the DuckDB analysis engine, the S3 tool
+layer, and packaging/sidecar launch. The bounds, redaction, whitelist, and
+destructive-op blocking all held up under direct testing; these fix the gaps that
+didn't._
+
+### Security
+
+- **The agent's tools now enforce `allowed_prefixes`, not just `allowed_buckets`.**
+  A provider scoped with `allowed_prefixes=["logs/"]` gave the conversational
+  agent — the only surface that reads object *content* — zero prefix protection:
+  it could `preview_object`/`head_object`/`list` outside the prefix and stream that
+  content into the model. All agent tools now route through the same `check_scope`
+  as the `/tools` endpoints and run executors (bucket + prefix, listing-aware).
+- **The per-launch sidecar auth token is now from the OS CSPRNG** (`getrandom`),
+  not a splitmix64 stream seeded from the clock, PID, and ephemeral ports — those
+  are locally observable/low-entropy, so the token that gates the loopback API
+  against a *different local user* was guessable. It is now 128 real bits.
+- **The app-data directory is created `0700` and the SQLite DB `0600`** regardless
+  of the process umask (previously the DB was world-readable at umask 022 and the
+  whole dir world-writable at umask 000); the vault `.unreadable` ciphertext backup
+  is written `0600` (was `0644`). The vault key/ciphertext themselves were already
+  `0600`.
+- **Aggregate group-bys on object-key-like dimensions (`key`, `path`) are clamped
+  to 20 groups** — a group-by on a near-unique column otherwise returned up to 50
+  individual object keys to the model, above the rule-16 sample cap.
+
+### Fixed
+
+- **CLF / combined access-log timestamps are normalized**, so hour-bucketing works
+  for that (documented, supported) format — previously every hour bucket came back
+  `'unknown'` because the CLF date failed the DuckDB timestamp cast. Timezone-aware
+  timestamps are now bucketed by UTC instead of by local wall-clock.
+- **Large object sizes keep full int64 precision** — sizes/bytes were parsed via
+  `int(float(...))`, losing precision above 2^53 (~9 PB); they now parse as integers
+  directly (float only for genuinely fractional values like a latency).
+- `stamp-version.py`'s "exactly one version line" guard now actually counts matches
+  first (the previous `count=1` substitution could never report a duplicate, so a
+  stray `version = "…"` line could get stamped instead of the package version).
+
+### Verified sound (no change needed)
+The aggregate whitelist (no SQL injection / no raw-SQL path — identifiers only from
+constants, values always bound), the S3 bounds (preview 1 MiB + gzip-bomb + parquet
+footer, range 4 MiB, list caps, per-turn budgets), destructive-op blocking, secret
+redaction, the auth-gate exempt-path matching and constant-time compare, and the
+vault `0600` files were all attacked directly and held.
+
 ## [0.24.2] - 2026-07-07
 
 _Patch: reliability + correctness fixes from a second adversarial bug hunt

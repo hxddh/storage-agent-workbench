@@ -156,7 +156,7 @@ def _write_key_file(path: Path, raw_key: bytes) -> None:
     racing reader on the loser path never observes a partially-written key.
     """
     payload = _dpapi_protect(raw_key) if _is_windows() else raw_key
-    path.parent.mkdir(parents=True, exist_ok=True)
+    config.ensure_secure_dir(path.parent)
     # O_EXCL so a concurrent creator can't be clobbered; 0600 perms.
     fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
@@ -242,7 +242,15 @@ def _ensure_loaded() -> dict[str, str]:
         try:
             backup = path.with_suffix(path.suffix + ".unreadable")
             if not backup.exists():
-                backup.write_bytes(path.read_bytes())
+                # 0600 like the vault itself — this backup IS the vault ciphertext;
+                # write_bytes would create it 0644 (world-readable) under the
+                # default umask.
+                data = path.read_bytes()
+                fd = os.open(str(backup), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                try:
+                    os.write(fd, data)
+                finally:
+                    os.close(fd)
         except Exception:  # noqa: BLE001
             pass
         logging.getLogger(__name__).warning(
@@ -266,7 +274,7 @@ def _persist(blob: dict[str, str]) -> None:
     plaintext = json.dumps(blob, separators=(",", ":")).encode("utf-8")
     token = nonce + AESGCM(key).encrypt(nonce, plaintext, None)
     path = _vault_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    config.ensure_secure_dir(path.parent)
     tmp = path.with_suffix(path.suffix + ".tmp")
     fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
