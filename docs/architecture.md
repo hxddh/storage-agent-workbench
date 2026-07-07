@@ -306,8 +306,9 @@ runs-first product that no longer exists.
   list_multipart_uploads, head_object, get_object_lock_status, test_credentials,
   test_addressing_style, inspect_endpoint_tls, test_range_get, preview_object
   (bounded ≤1 MiB text preview), measure_request_latency (bounded latency probe),
-  the `review_bucket_*`/`get_bucket_config_summary` config readers, and
-  `read_skill` for progressive-disclosure StorageOps skills), chooses
+  the `review_bucket_*`/`get_bucket_config_summary`/`get_bucket_config_detail`
+  config readers, and `read_skill` for progressive-disclosure StorageOps skills),
+  chooses
   provider/bucket itself, and grounds its answer in tool output. It has **working
   memory** (`session_agent_memory` table via `session_memory_tools.py`):
   `note_fact` / `record_finding` / `note_open_question` persist sanitized, audited
@@ -359,7 +360,7 @@ under a bounded, confirmation-gated flow:
   `POST /evidence-imports/{id}/confirm`, `POST /evidence-imports/{id}/run`.
 - **Source validation:** a plan request names an account_discovery run + bucket
   + source type; the server resolves the *discovered* evidence destination from
-  the persisted the evidence source (inventory destination bucket/prefix or
+  the persisted evidence source (inventory destination bucket/prefix or
   server-access-logging target bucket/prefix). The caller cannot point the
   import at an arbitrary bucket/key.
 - **Planning** (`evidence/managed_import.py`): inventory planning prefers a

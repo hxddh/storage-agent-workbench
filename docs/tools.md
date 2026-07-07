@@ -74,13 +74,11 @@ Purpose:
 
 Safety:
 
-- Must limit requested bytes. The guardrails module defines
-  `AGENT_MAX_RANGE_BYTES` (1 MiB) as a no-approval ceiling constant, but
-  `test_range_get` is not routed through `bound_tool_args`, so the effective
-  hard cap on a single range read is the S3 layer's `MAX_RANGE_BYTES` (4 MiB) in
-  `s3/tools.py` — a request beyond that is refused.
-- Budgeted per turn: at most 8 calls, after which the tool asks the agent to
-  work with what it has.
+- Must limit requested bytes. The hard cap on a single range read is the S3
+  layer's `MAX_RANGE_BYTES` (4 MiB) in `s3/tools.py` — a request beyond that is
+  refused.
+- Budgeted per turn: at most 12 calls (`_MAX_RANGE_GETS` in `session_tools.py`),
+  after which the tool asks the agent to work with what it has.
 - Must not download a full object. There is no full-object download path.
 
 ### preview_object

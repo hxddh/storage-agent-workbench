@@ -6,6 +6,31 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.8] - 2026-07-07
+
+_Documentation-only: a full review of the docs cleared the stale/inaccurate
+spots. No app or sidecar behavior changes._
+
+### Documentation
+
+- **sidecar/README:** "runs (deterministic + agent planner)" → "deterministic
+  runs (rule-based — no LLM planner)"; the run-planner LLM was removed in 0.20.0
+  and every other doc already reflected that.
+- **tools.md (`test_range_get`):** dropped the reference to the removed
+  `AGENT_MAX_RANGE_BYTES` guardrails constant (only the S3-layer `MAX_RANGE_BYTES`
+  4 MiB cap applies now), and corrected the per-turn budget from 8 to 12 to match
+  `_MAX_RANGE_GETS`.
+- **release-template.md:** fixed the checksum filenames (per-platform
+  `SHA256SUMS-<platform>.txt`, not a single `SHA256SUMS.txt`) and the verify
+  command; dropped the stale "Linux/Windows experimental / attached only when
+  produced" framing (all three platforms ship every release); noted that
+  `release.yml` auto-generates the notes from the CHANGELOG.
+- **security.md:** reframed "that is a future phase / manual operator action" to
+  point at the already-implemented, confirmation-gated managed evidence import
+  flow; "no agent in this phase" → "deterministic by design".
+- **architecture.md:** fixed a "the persisted the evidence source" typo and added
+  `get_bucket_config_detail` (0.24.6) to the session tool list.
+
 ## [0.24.7] - 2026-07-07
 
 _Autonomy: cross-turn continuity of what the agent already probed — the last
