@@ -54,26 +54,36 @@ def _to_int(value: Any) -> int | None:
         return None
 
 
-def _load_dataframe(raw_path: str | Path) -> tuple[pd.DataFrame, str]:
+def _load_dataframe(raw_path: str | Path) -> tuple[pd.DataFrame, bool, str]:
+    """Load at most MAX_INGEST_ROWS rows, reporting whether the source had more.
+
+    CSV is capped AT READ TIME (``nrows``) — reading one row past the cap only
+    to detect overflow — so a multi-GB export never materializes in memory just
+    to be thrown away (mirrors access_logs.py's capped parsers). Parquet is
+    loaded via pyarrow and trimmed after; its columnar in-memory form is far
+    smaller than the per-row Python structures the cap exists to bound.
+    """
     path = Path(raw_path)
     if path.suffix.lower() in (".parquet", ".pq"):
-        return pd.read_parquet(path), "parquet"  # uses pyarrow
-    return pd.read_csv(path, dtype=str, keep_default_na=False), "csv"
+        df = pd.read_parquet(path)  # uses pyarrow
+        truncated = len(df) > MAX_INGEST_ROWS
+        if truncated:
+            df = df.head(MAX_INGEST_ROWS)
+        return df, truncated, "parquet"
+    df = pd.read_csv(path, dtype=str, keep_default_na=False, nrows=MAX_INGEST_ROWS + 1)
+    truncated = len(df) > MAX_INGEST_ROWS
+    if truncated:
+        df = df.head(MAX_INGEST_ROWS)
+    return df, truncated, "csv"
 
 
 # --- import_inventory_file --------------------------------------------------
 
 
 def import_inventory_file(raw_path: str | Path, duckdb_path: str | Path) -> dict[str, Any]:
-    df_in, fmt = _load_dataframe(raw_path)
-    # Bound the in-memory row explosion (the per-row dict loop below) so a huge
-    # export can't OOM the sidecar. Rows beyond the cap are dropped — and we
-    # report that (no silent cap): a truncated analysis is a lower bound, not the
-    # whole object set.
-    source_rows = len(df_in)
-    truncated = source_rows > MAX_INGEST_ROWS
-    if truncated:
-        df_in = df_in.head(MAX_INGEST_ROWS)
+    # The read itself is bounded (no silent cap: a truncated analysis is a lower
+    # bound, not the whole object set, and the result says so).
+    df_in, truncated, fmt = _load_dataframe(raw_path)
     norm_map = {_norm(c): c for c in df_in.columns}
 
     def col_for(field: str) -> str | None:
@@ -84,25 +94,25 @@ def import_inventory_file(raw_path: str | Path, duckdb_path: str | Path) -> dict
 
     cols = {field: col_for(field) for field in _FIELD_CANDIDATES}
 
-    rows: list[dict[str, Any]] = []
-    for _, r in df_in.iterrows():
-        def val(field):
-            c = cols[field]
-            return r[c] if c else None
+    # Column-wise normalization: builds one Series per target column instead of
+    # a list[dict] with one dict per row (which roughly tripled peak memory).
+    def series_for(field: str) -> pd.Series:
+        c = cols[field]
+        if c is None:
+            return pd.Series([None] * len(df_in), index=df_in.index, dtype=object)
+        return df_in[c]
 
-        # Redact before storing: a key may carry presigned query parameters.
-        key = redact_text(str(val("key") or ""))
-        rows.append({
-            "bucket": val("bucket"),
-            "key": key,
-            "prefix": _prefix_of(key),
-            "size": _to_int(val("size")),
-            "last_modified": (str(val("last_modified")) if val("last_modified") else None),
-            "storage_class": val("storage_class"),
-            "etag": val("etag"),
-        })
-
-    df = pd.DataFrame(rows, columns=COLUMNS)
+    # Redact before storing: a key may carry presigned query parameters.
+    keys = series_for("key").map(lambda v: redact_text(str(v or "")))
+    df = pd.DataFrame({
+        "bucket": series_for("bucket"),
+        "key": keys,
+        "prefix": keys.map(_prefix_of),
+        "size": series_for("size").map(_to_int),
+        "last_modified": series_for("last_modified").map(lambda v: str(v) if v else None),
+        "storage_class": series_for("storage_class"),
+        "etag": series_for("etag"),
+    }, columns=COLUMNS)
     con = duck.connect(duckdb_path)
     try:
         con.register("incoming", df)

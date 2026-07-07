@@ -37,7 +37,8 @@ def test_memory_tools_persist_and_list(client):
         sid = _session(conn)
         tools = session_memory_tools.build(conn, _FakeFunctionTool(), sid, [])
         by_name = {t.name: t for t in tools}
-        assert set(by_name) == {"note_fact", "record_finding", "note_open_question"}
+        assert set(by_name) == {"note_fact", "record_finding", "note_open_question",
+                                "update_memory_item", "resolve_memory_item"}
 
         by_name["note_fact"]("bucket acme is path-style only", "high")
         by_name["record_finding"]("bucket is world-readable", "critical")
@@ -48,6 +49,36 @@ def test_memory_tools_persist_and_list(client):
     assert kinds == ["fact", "finding", "open_question"]
     finding = next(m for m in mem if m["kind"] == "finding")
     assert finding["severity"] == "critical"
+
+
+def test_memory_update_and_resolve_lifecycle(client):
+    """Fix 9: memory items are not write-only. They can be corrected (update)
+    and closed (resolve); a resolved item stops being replayed and no longer
+    counts against the tail cap. Exact-duplicate adds are deduped."""
+    with _db() as conn:
+        sid = _session(conn)
+        tools = {t.name: t for t in session_memory_tools.build(conn, _FakeFunctionTool(), sid, [])}
+        r = json.loads(tools["note_fact"]("region is us-west-1", "medium"))
+        fact_id = r["id"]
+        # Dedup: an identical add returns the SAME id, no second row.
+        r2 = json.loads(tools["note_fact"]("region is us-west-1", "medium"))
+        assert r2["id"] == fact_id
+        assert len(sessions_repo.list_agent_memory(conn, sid)) == 1
+
+        # Correct it.
+        upd = json.loads(tools["update_memory_item"](fact_id, "region is us-east-1"))
+        assert upd["action"] == "updated"
+        mem = sessions_repo.list_agent_memory(conn, sid)
+        assert mem[0]["text"] == "region is us-east-1"
+
+        # Resolve it → excluded from the active replay set.
+        res = json.loads(tools["resolve_memory_item"](fact_id, "confirmed by user"))
+        assert res["action"] == "resolved"
+        assert sessions_repo.list_agent_memory(conn, sid) == []
+
+        # Updating/resolving an unknown id is a clean error, not a crash.
+        assert "error" in json.loads(tools["update_memory_item"]("nope", "x"))
+        assert "error" in json.loads(tools["resolve_memory_item"]("nope"))
 
 
 def test_memory_secret_is_redacted_before_storage(client):

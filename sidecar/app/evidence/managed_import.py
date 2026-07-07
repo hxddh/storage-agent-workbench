@@ -17,19 +17,18 @@ returned, logged, or persisted.
 
 from __future__ import annotations
 
-import gzip
-import io
 import json
+import shutil
 import sqlite3
+import zlib
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from botocore.exceptions import ClientError
 
 from ..s3 import client_factory
-from ..s3 import config_tools as ct
 from ..security.redaction import redact_text
 
 # Bounds (caller may lower; never raise above the hard caps).
@@ -40,6 +39,13 @@ HARD_MAX_BYTES = 5 * 1024 * 1024 * 1024  # 5 GiB
 _LIST_HARD_CAP = 5000  # max objects we will ever enumerate under the prefix
 _MANIFEST_MAX_BYTES = 8 * 1024 * 1024  # inventory manifest.json is small
 _CHUNK = 1024 * 1024
+# Decompression-bomb guard: a gzip member may emit at most this many bytes per
+# compressed byte (plus a small floor for tiny files). Real inventory/access-log
+# gzip runs well under 100:1; a crafted bomb (KBs expanding to GBs) trips this
+# long before it exhausts disk. Tied to the confirmed byte budget: the budget
+# bounds the compressed input, and this ratio bounds the decompressed output.
+_GUNZIP_MAX_RATIO = 200
+_GUNZIP_MIN_OUT_CAP = 4 * _CHUNK
 
 
 class ImportError_(Exception):
@@ -134,12 +140,22 @@ def _get_object_bytes(client, bucket: str, key: str, cap: int) -> bytes:
 
 
 def parse_iso(value: str | None) -> datetime | None:
+    """Parse an ISO-8601 timestamp, normalizing naive inputs to UTC.
+
+    Users (and providers' LastModified serializations) mix naive and offset-
+    aware timestamps; comparing the two raises TypeError, which used to surface
+    as a 500 on ``POST /evidence-imports/plan``. A missing offset is treated as
+    UTC so ``_within_range`` always compares aware datetimes.
+    """
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _within_range(lm_iso: str | None, start: datetime | None, end: datetime | None) -> bool:
@@ -306,67 +322,206 @@ def _limitation_plan(source_type, bucket, prefix, ref, max_files, max_bytes, mes
 
 
 # --- download + combine -----------------------------------------------------
+#
+# Memory safety: downloads STREAM to per-part temp files on disk (never a list
+# of blobs in RAM — the old approach could hold up to the full 5 GiB hard cap in
+# memory), gzip decompression is BOUNDED (a crafted decompression bomb raises
+# LimitExceeded instead of exhausting RAM/disk; see _GUNZIP_MAX_RATIO), and the
+# combine step is streaming/out-of-core. A legitimate import never needs RAM
+# proportional to its size.
 
 
-def _maybe_gunzip(data: bytes) -> bytes:
-    if data[:2] == b"\x1f\x8b":
+def _stream_object_to_file(client, bucket: str, key: str, dest: Path, cap: int) -> int:
+    """Stream one object body to ``dest``, refusing to read more than ``cap`` bytes."""
+    resp = client.get_object(Bucket=bucket, Key=key)
+    body = resp.get("Body")
+    got = 0
+    try:
+        with dest.open("wb") as fh:
+            if body is None:
+                return 0
+            while True:
+                chunk = body.read(_CHUNK)
+                if not chunk:
+                    break
+                got += len(chunk)
+                if got > cap:
+                    raise LimitExceeded(f"object exceeds the {cap}-byte budget")
+                fh.write(chunk)
+    finally:
+        if body is not None and hasattr(body, "close"):
+            body.close()
+    return got
+
+
+def _gunzip_out_cap(compressed_size: int) -> int:
+    return max(_GUNZIP_MIN_OUT_CAP, _GUNZIP_MAX_RATIO * compressed_size)
+
+
+class _TrackedWriter:
+    """Wrap a binary writer, remembering the last byte written (newline bookkeeping)."""
+
+    def __init__(self, fh: BinaryIO) -> None:
+        self._fh = fh
+        self.last: bytes | None = None
+        self.wrote = False
+
+    def write(self, data: bytes) -> None:
+        if not data:
+            return
+        self._fh.write(data)
+        self.last = data[-1:]
+        self.wrote = True
+
+
+class _SkipFirstLineWriter:
+    """Writer adapter that drops everything up to and including the first newline."""
+
+    def __init__(self, inner: _TrackedWriter) -> None:
+        self._inner = inner
+        self._skipping = True
+
+    @property
+    def last(self) -> bytes | None:
+        return self._inner.last
+
+    @property
+    def wrote(self) -> bool:
+        return self._inner.wrote
+
+    def write(self, data: bytes) -> None:
+        if self._skipping:
+            i = data.find(b"\n")
+            if i == -1:
+                return
+            self._skipping = False
+            data = data[i + 1:]
+        self._inner.write(data)
+
+
+def _append_maybe_gunzip(src: Path, out) -> None:
+    """Stream ``src`` into ``out``, transparently gunzipping (bounded).
+
+    Non-gzip content (and content that merely starts with the gzip magic but is
+    not a valid stream) is copied through verbatim, matching the old
+    best-effort behavior. Decompressed output is capped at
+    ``_GUNZIP_MAX_RATIO`` x the compressed size — beyond that it is treated as
+    a decompression bomb and the import fails with LimitExceeded.
+    """
+    size = src.stat().st_size
+    with src.open("rb") as fh:
+        magic = fh.read(2)
+        fh.seek(0)
+        if magic != b"\x1f\x8b":
+            _copy_stream(fh, out)
+            return
+        out_cap = _gunzip_out_cap(size)
+        d = zlib.decompressobj(wbits=31)  # gzip container
+        written = 0
         try:
-            return gzip.decompress(data)
-        except OSError:
-            return data
-    return data
+            buf = fh.read(_CHUNK)
+            while buf:
+                data = buf
+                while data:
+                    piece = d.decompress(data, _CHUNK)
+                    written += len(piece)
+                    if written > out_cap:
+                        raise LimitExceeded(
+                            "gzip evidence file expands beyond the decompression "
+                            f"bound ({out_cap} bytes for {size} compressed bytes); "
+                            "refusing a possible decompression bomb"
+                        )
+                    out.write(piece)
+                    data = d.unconsumed_tail
+                if d.eof:
+                    return  # single-member gzip; ignore any trailing bytes
+                buf = fh.read(_CHUNK)
+            # Truncated/invalid gzip stream: fall back to the raw bytes,
+            # matching the old gzip.decompress-failure behavior.
+            raise zlib.error("truncated gzip stream")
+        except zlib.error:
+            if written:
+                # Partial decompressed output already streamed; mixing raw bytes
+                # after it would corrupt the combined file. Fail cleanly instead.
+                raise ImportError_("gzip evidence file is corrupt (stream failed mid-way)")
+            fh.seek(0)
+            _copy_stream(fh, out)
 
 
-def _combine_access_logs(blobs: list[bytes], dest_dir: Path) -> Path:
-    out = dest_dir / "combined.log"
-    with out.open("wb") as fh:
-        for b in blobs:
-            text = _maybe_gunzip(b)
-            fh.write(text)
-            if not text.endswith(b"\n"):
-                fh.write(b"\n")
-    return out
+def _copy_stream(fh: BinaryIO, out) -> None:
+    while True:
+        chunk = fh.read(_CHUNK)
+        if not chunk:
+            break
+        out.write(chunk)
 
 
-def _combine_inventory(blobs: list[bytes], fmt: str, schema: str | None, dest_dir: Path) -> Path:
+def _append_with_newline(src: Path, out: _TrackedWriter) -> None:
+    _append_maybe_gunzip(src, out)
+    if out.wrote and out.last != b"\n":
+        out.write(b"\n")
+
+
+def _combine_access_logs(parts: list[Path], dest_dir: Path) -> Path:
+    out_path = dest_dir / "combined.log"
+    with out_path.open("wb") as fh:
+        for part in parts:
+            writer = _TrackedWriter(fh)
+            _append_with_newline(part, writer)
+    return out_path
+
+
+def _combine_inventory(parts: list[Path], fmt: str, schema: str | None, dest_dir: Path) -> Path:
     if fmt == "parquet":
-        import pandas as pd
+        # Combine out-of-core via DuckDB (never all frames in RAM at once).
+        # Parts may be gzip-wrapped parquet; unwrap those to disk first.
+        import duckdb
 
-        frames = [pd.read_parquet(io.BytesIO(_maybe_gunzip(b))) for b in blobs]
-        combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-        out = dest_dir / "combined.parquet"
-        combined.to_parquet(out, index=False)
-        return out
+        plain: list[Path] = []
+        for i, part in enumerate(parts):
+            with part.open("rb") as fh:
+                is_gz = fh.read(2) == b"\x1f\x8b"
+            if is_gz:
+                unpacked = part.with_name(part.name + ".parquet")
+                with unpacked.open("wb") as fh:
+                    _append_maybe_gunzip(part, fh)
+                plain.append(unpacked)
+            else:
+                plain.append(part)
+        out_path = dest_dir / "combined.parquet"
+        con = duckdb.connect()
+        try:
+            files_sql = ", ".join("'" + str(p).replace("'", "''") + "'" for p in plain)
+            out_sql = str(out_path).replace("'", "''")
+            con.execute(
+                f"COPY (SELECT * FROM read_parquet([{files_sql}])) "
+                f"TO '{out_sql}' (FORMAT PARQUET)"
+            )
+        finally:
+            con.close()
+        return out_path
 
     # CSV (default). S3 inventory CSVs are headerless; the manifest fileSchema
     # provides the column names, which we write as the header so the existing
     # header-based importer can map columns.
-    out = dest_dir / "combined.csv"
-    with out.open("wb") as fh:
+    out_path = dest_dir / "combined.csv"
+    with out_path.open("wb") as fh:
         if schema:
             header = ",".join(c.strip() for c in schema.split(","))
             fh.write(header.encode("utf-8") + b"\n")
-            for b in blobs:
-                text = _maybe_gunzip(b)
-                fh.write(text)
-                if not text.endswith(b"\n"):
-                    fh.write(b"\n")
+            for part in parts:
+                writer = _TrackedWriter(fh)
+                _append_with_newline(part, writer)
         else:
             # No schema: assume each file carries its own header; keep the first
             # file's header and drop subsequent header lines.
-            for i, b in enumerate(blobs):
-                text = _maybe_gunzip(b)
-                if i == 0:
-                    fh.write(text)
-                    if not text.endswith(b"\n"):
-                        fh.write(b"\n")
-                else:
-                    lines = text.split(b"\n", 1)
-                    body = lines[1] if len(lines) > 1 else b""
-                    fh.write(body)
-                    if body and not body.endswith(b"\n"):
-                        fh.write(b"\n")
-    return out
+            for i, part in enumerate(parts):
+                tracked = _TrackedWriter(fh)
+                writer = tracked if i == 0 else _SkipFirstLineWriter(tracked)
+                _append_maybe_gunzip(part, writer)
+                if writer.wrote and writer.last != b"\n":
+                    tracked.write(b"\n")
+    return out_path
 
 
 def download_and_combine(
@@ -385,25 +540,32 @@ def download_and_combine(
 
     Returns (combined_path, downloaded_total_bytes). Enforces max_files /
     max_bytes a second time at download (defense in depth) and refuses anything
-    not in the confirmed list.
+    not in the confirmed list. Bodies stream to per-part temp files under the
+    run's raw dir and are combined from disk (see the memory-safety note above);
+    the parts are removed once the combined file exists.
     """
     if len(files) > max_files:
         raise LimitExceeded(f"{len(files)} files exceeds max_files={max_files}")
     client = client_factory.build_s3_client(conn, provider_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    blobs: list[bytes] = []
-    total = 0
-    for f in files:
-        remaining = max_bytes - total
-        if remaining <= 0:
-            raise LimitExceeded("byte budget exhausted")
-        data = _get_object_bytes(client, source_bucket, f["object_key"], remaining)
-        total += len(data)
-        blobs.append(data)
+    parts_dir = dest_dir / "parts"
+    parts_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        parts: list[Path] = []
+        total = 0
+        for i, f in enumerate(files):
+            remaining = max_bytes - total
+            if remaining <= 0:
+                raise LimitExceeded("byte budget exhausted")
+            part = parts_dir / f"part_{i:05d}"
+            total += _stream_object_to_file(client, source_bucket, f["object_key"], part, remaining)
+            parts.append(part)
 
-    if source_type == "inventory":
-        combined = _combine_inventory(blobs, (fmt or "csv"), schema, dest_dir)
-    else:
-        combined = _combine_access_logs(blobs, dest_dir)
+        if source_type == "inventory":
+            combined = _combine_inventory(parts, (fmt or "csv"), schema, dest_dir)
+        else:
+            combined = _combine_access_logs(parts, dest_dir)
+    finally:
+        shutil.rmtree(parts_dir, ignore_errors=True)
     return combined, total

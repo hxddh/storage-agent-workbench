@@ -3,6 +3,7 @@ import { getAccountProfile, getReport, getRun, runEventsUrl } from "../api";
 import type { AccountProfile, ReportOut, RunDetail as RunDetailT, RunEvent } from "../types";
 import { ToolTimeline, type TimelineItem } from "./ToolTimeline";
 import { AccountProfilePanel } from "./AccountProfilePanel";
+import { useI18n } from "../i18n";
 
 const STATUS_COLOR: Record<string, string> = {
   pending: "text-gray-400",
@@ -25,6 +26,7 @@ export function RunDetail({
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
+  const { t } = useI18n();
 
   useEffect(() => {
     let cancelled = false;
@@ -33,6 +35,13 @@ export function RunDetail({
     // Latest known status, so onerror can decide whether the run is done (and the
     // stream should be closed for good) without relying on stale closure state.
     let lastStatus: string | undefined;
+    // Set synchronously when a terminal SSE event (report_ready / error) arrives.
+    // The server closes the stream right after the run finishes, which fires
+    // onerror — but the getRun() refresh that would set lastStatus="completed"
+    // is async and may not have resolved yet, so onerror would otherwise treat
+    // the close as transient and reconnect, replaying the whole buffer forever
+    // (M1). This flag closes the stream for good the moment we saw the run end.
+    let streamDone = false;
 
     setEvents([]);
     setReport(null);
@@ -75,6 +84,12 @@ export function RunDetail({
 
     const es = new EventSource(runEventsUrl(runId));
     esRef.current = es;
+    // The server replays the run's whole event buffer from cursor 0 on every
+    // (re)connect. Reset the local list when a connection opens so a reconnect
+    // replay doesn't append duplicates (M1).
+    es.onopen = () => {
+      if (!cancelled) setEvents([]);
+    };
     es.onmessage = (e) => {
       let ev: RunEvent;
       try {
@@ -85,11 +100,13 @@ export function RunDetail({
       if (cancelled) return;
       setEvents((prev) => [...prev, ev]);
       if (ev.type === "report_ready") {
+        streamDone = true;
         getReport(runId).then((r) => { if (!cancelled) setReport(r); }).catch(() => undefined);
         getRun(runId).then((d) => { if (!cancelled) { lastStatus = d.status; setDetail(d); } }).catch(() => undefined);
         getAccountProfile(runId).then((p) => { if (!cancelled) setProfile(p); }).catch(() => undefined);
       }
       if (ev.type === "error") {
+        streamDone = true;
         getRun(runId).then((d) => { if (!cancelled) { lastStatus = d.status; setDetail(d); } }).catch(() => undefined);
       }
     };
@@ -99,7 +116,10 @@ export function RunDetail({
     // (the server closes the stream when the run finishes).
     es.onerror = () => {
       if (cancelled) return;
-      if (isTerminal(lastStatus)) {
+      // Close for good if we already saw the run end — either via a terminal
+      // SSE event (streamDone, set synchronously) or a refreshed terminal
+      // status. This prevents the completed-run reconnect/replay loop (M1).
+      if (streamDone || isTerminal(lastStatus)) {
         es.close();
         return;
       }
@@ -121,8 +141,8 @@ export function RunDetail({
   );
 
   const agentMessage = useMemo(() => {
-    const last = [...events].reverse().find((e) => e.type === "summary" || e.type === "final_summary");
-    if (last && (last.type === "summary" || last.type === "final_summary")) return last.content;
+    const last = [...events].reverse().find((e) => e.type === "summary");
+    if (last && last.type === "summary") return last.content;
     // Terminal run opened fresh (no SSE replay): fall back to the persisted
     // summary so a completed run isn't shown without its conclusion.
     if (detail && detail.status === "completed" && detail.final_summary) return detail.final_summary;
@@ -143,12 +163,12 @@ export function RunDetail({
       const fs = events.filter((e): e is Extract<RunEvent, { type: "finding" }> => e.type === "finding");
       const byCat = (cat: string) => fs.filter((f) => f.severity === cat).length;
       return [
-        { label: "Critical", value: String(byCat("Critical")) },
-        { label: "Warning", value: String(byCat("Warning")) },
-        { label: "Opportunity", value: String(byCat("Opportunity")) },
-        { label: "Provider unsupported", value: String(byCat("Provider unsupported")) },
-        { label: "Access denied", value: String(fs.filter((f) => f.title.startsWith("Access denied")).length) },
-        { label: "Good", value: String(byCat("Good")) },
+        { label: t("metric.critical"), value: String(byCat("Critical")) },
+        { label: t("metric.warning"), value: String(byCat("Warning")) },
+        { label: t("metric.opportunity"), value: String(byCat("Opportunity")) },
+        { label: t("metric.providerUnsupported"), value: String(byCat("Provider unsupported")) },
+        { label: t("metric.accessDenied"), value: String(fs.filter((f) => f.title.startsWith("Access denied")).length) },
+        { label: t("metric.good"), value: String(byCat("Good")) },
       ];
     }
     const finished = [...events].reverse().find(
@@ -170,22 +190,22 @@ export function RunDetail({
       const topStatus = (o.status_code_distribution || [])[0];
       const topMethod = (o.method_distribution || [])[0];
       return [
-        { label: "Total requests", value: String(o.total_requests ?? 0) },
-        { label: "4xx rate", value: pct(o.error_rate_4xx) },
-        { label: "5xx rate", value: pct(o.error_rate_5xx) },
-        { label: "Top status", value: topStatus ? `${topStatus.value} (${topStatus.count})` : "—" },
-        { label: "Top method", value: topMethod ? `${topMethod.value} (${topMethod.count})` : "—" },
+        { label: t("metric.totalRequests"), value: String(o.total_requests ?? 0) },
+        { label: t("metric.rate4xx"), value: pct(o.error_rate_4xx) },
+        { label: t("metric.rate5xx"), value: pct(o.error_rate_5xx) },
+        { label: t("metric.topStatus"), value: topStatus ? `${topStatus.value} (${topStatus.count})` : "—" },
+        { label: t("metric.topMethod"), value: topMethod ? `${topMethod.value} (${topMethod.count})` : "—" },
       ];
     }
     const topPrefix = (o.prefix_distribution || [])[0];
     return [
-      { label: "Objects", value: String(o.object_count ?? 0) },
-      { label: "Total size", value: bytesH(o.total_size) },
-      { label: "Avg size", value: bytesH(o.average_object_size) },
-      { label: "Small-object ratio", value: pct(o.small_object_ratio) },
-      { label: "Top prefix (size)", value: topPrefix ? `${topPrefix.value} · ${bytesH(topPrefix.size)}` : "—" },
+      { label: t("metric.objects"), value: String(o.object_count ?? 0) },
+      { label: t("metric.totalSize"), value: bytesH(o.total_size) },
+      { label: t("metric.avgSize"), value: bytesH(o.average_object_size) },
+      { label: t("metric.smallRatio"), value: pct(o.small_object_ratio) },
+      { label: t("metric.topPrefix"), value: topPrefix ? `${topPrefix.value} · ${bytesH(topPrefix.size)}` : "—" },
     ];
-  }, [events, detail]);
+  }, [events, detail, t]);
 
   const timeline = useMemo<TimelineItem[]>(() => {
     const order: string[] = [];
@@ -206,10 +226,21 @@ export function RunDetail({
       }
     }
     if (order.length > 0) {
-      return order.map((id, i) => ({
-        ...map[id],
-        duration_ms: detail?.tool_calls[i]?.duration_ms ?? null,
-      }));
+      // Mid-run the persisted tool_calls list lags the SSE list, so a raw
+      // positional join attaches durations to the wrong rows. Join by (tool
+      // name, per-name occurrence index) so each row picks up the duration of
+      // the matching persisted call, not whatever sits at the same index (M-dur).
+      const durationsByName: Record<string, (number | null)[]> = {};
+      for (const tc of detail?.tool_calls ?? []) {
+        (durationsByName[tc.tool_name] ??= []).push(tc.duration_ms ?? null);
+      }
+      const seen: Record<string, number> = {};
+      return order.map((id) => {
+        const item = map[id];
+        const occ = seen[item.tool_name] ?? 0;
+        seen[item.tool_name] = occ + 1;
+        return { ...item, duration_ms: durationsByName[item.tool_name]?.[occ] ?? null };
+      });
     }
     // No live SSE events (run already terminated when opened, or the stream
     // replayed nothing) → seed the timeline from the persisted tool_calls so a
@@ -240,42 +271,42 @@ export function RunDetail({
     <div className="flex flex-1 flex-col overflow-auto bg-canvas">
       <header className="border-b border-edge px-8 py-4">
         <button className="mb-2 text-xs text-gray-500 hover:text-gray-300" onClick={onBack}>
-          ← Back
+          ← {t("run.back")}
         </button>
         {loadError && (
           <p className="mb-2 rounded border border-red-500/40 bg-red-950/60 px-3 py-1.5 text-xs text-red-300">
-            Couldn’t load this run: {loadError}
+            {t("run.loadFailed")} {loadError}
           </p>
         )}
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold text-gray-100">
-            {detail?.title || detail?.run_type || "Run"}
+            {detail?.title || detail?.run_type || t("run.fallbackTitle")}
           </h1>
           <span className={`text-sm ${STATUS_COLOR[status] ?? "text-gray-400"}`} data-testid="run-status">
             {status}
           </span>
         </div>
         <p className="text-sm text-gray-500">
-          {detail?.run_type} · {detail?.bucket || "—"} · {detail?.prefix || "(root)"}
+          {detail?.run_type} · {detail?.bucket || "—"} · {detail?.prefix || t("run.rootPrefix")}
         </p>
       </header>
 
       {errorMessage && (
         <div className="mx-8 mt-4 rounded-md border border-red-900/60 bg-red-950/40 p-3 text-xs text-red-300" data-testid="run-error">
-          <span className="font-medium">Run error:</span> {errorMessage}
+          <span className="font-medium">{t("run.errorLabel")}</span> {errorMessage}
         </div>
       )}
 
       <div className="grid flex-1 grid-cols-2 gap-6 p-8">
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-gray-200">User prompt</h2>
+          <h2 className="mb-2 text-sm font-semibold text-gray-200">{t("run.userPrompt")}</h2>
           <p className="mb-6 rounded-md border border-edge bg-panel p-3 text-xs text-gray-300">
             {detail?.user_prompt || "—"}
           </p>
 
           {metricsCards.length > 0 && (
             <>
-              <h2 className="mb-2 text-sm font-semibold text-gray-200">Metrics</h2>
+              <h2 className="mb-2 text-sm font-semibold text-gray-200">{t("run.metrics")}</h2>
               <div className="mb-6 grid grid-cols-2 gap-2" data-testid="metrics-cards">
                 {metricsCards.map((c) => (
                   <div key={c.label} className="rounded-md border border-edge bg-panel p-3">
@@ -293,7 +324,7 @@ export function RunDetail({
             </div>
           )}
 
-          <h2 className="mb-2 text-sm font-semibold text-gray-200">Findings</h2>
+          <h2 className="mb-2 text-sm font-semibold text-gray-200">{t("run.findings")}</h2>
           <ul className="space-y-1">
             {findings.map((f, i) => (
               <li key={i} className="text-xs">
@@ -312,24 +343,24 @@ export function RunDetail({
                 <span className="text-gray-500">— {f.detail}</span>
               </li>
             ))}
-            {findings.length === 0 && <li className="text-xs text-gray-600">No findings yet.</li>}
+            {findings.length === 0 && <li className="text-xs text-gray-600">{t("run.noFindings")}</li>}
           </ul>
         </section>
 
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-gray-200">Tool / Analysis Timeline</h2>
+          <h2 className="mb-2 text-sm font-semibold text-gray-200">{t("run.timeline")}</h2>
           <ToolTimeline items={timeline} />
 
           {agentMessage && (
             <div className="mt-6">
-              <h2 className="mb-2 text-sm font-semibold text-gray-200">Summary</h2>
+              <h2 className="mb-2 text-sm font-semibold text-gray-200">{t("run.summary")}</h2>
               <p className="rounded-md border border-edge bg-panel p-3 text-xs text-gray-300">{agentMessage}</p>
             </div>
           )}
 
           {report && (
             <div className="mt-6">
-              <h2 className="mb-2 text-sm font-semibold text-gray-200">Report preview</h2>
+              <h2 className="mb-2 text-sm font-semibold text-gray-200">{t("run.reportPreview")}</h2>
               <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md border border-edge bg-sidebar p-3 text-[11px] text-gray-300">
                 {report.content}
               </pre>

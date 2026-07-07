@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "../i18n";
 
 export interface TimelineItem {
   id: string;
@@ -24,6 +25,7 @@ function summarize(output?: Record<string, unknown>): string {
 }
 
 function TimelineRow({ item }: { item: TimelineItem }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const finished = item.status !== undefined;
   const ok = item.status === "success";
@@ -38,13 +40,13 @@ function TimelineRow({ item }: { item: TimelineItem }) {
         />
         <span className="font-mono text-gray-200">{item.tool_name}</span>
         <span className={!finished ? "text-amber-400" : ok ? "text-emerald-400" : "text-red-400"}>
-          {!finished ? "running…" : item.status}
+          {!finished ? t("tool.running") : item.status}
         </span>
         {item.duration_ms != null && <span className="text-gray-600">{item.duration_ms} ms</span>}
         <span className="ml-auto text-gray-500">{summarize(item.output)}</span>
         {item.output && (
           <button className="ml-2 text-gray-500 hover:text-gray-300" onClick={() => setOpen((v) => !v)}>
-            {open ? "▾ hide" : "▸ output"}
+            {open ? `▾ ${t("timeline.hideOutput")}` : `▸ ${t("timeline.showOutput")}`}
           </button>
         )}
       </div>
@@ -58,8 +60,9 @@ function TimelineRow({ item }: { item: TimelineItem }) {
 }
 
 export function ToolTimeline({ items }: { items: TimelineItem[] }) {
+  const { t } = useI18n();
   if (items.length === 0) {
-    return <p className="text-xs text-gray-600">No tool calls yet.</p>;
+    return <p className="text-xs text-gray-600">{t("timeline.noCalls")}</p>;
   }
   return (
     <ul className="space-y-2">

@@ -25,11 +25,25 @@ from ..security.redaction import redact_text
 from ..sessions import next_actions
 
 _BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
+# The sentinel that OPENS a candidate contract block. The streaming path holds
+# back everything from this sentinel until the fence closes and it can decide
+# (via is_contract_json) whether the block is the metadata contract or a JSON
+# example that belongs in the visible answer.
+CONTRACT_SENTINEL = "```json"
 # The keys that mark a fenced block as the metadata CONTRACT (vs. a JSON example
 # the answer legitimately contains — a bucket policy, CORS/lifecycle rule, etc.).
 _CONTRACT_KEYS = frozenset(
     {"answer", "skills_used", "evidence_used", "evidence_gaps", "next_action_proposals"}
 )
+
+
+def is_contract_json(payload: str) -> bool:
+    """True if ``payload`` (a fenced block's body) is the metadata contract."""
+    try:
+        parsed = json.loads(payload)
+    except (json.JSONDecodeError, ValueError):
+        return False
+    return isinstance(parsed, dict) and bool(_CONTRACT_KEYS & parsed.keys())
 # Generous cap so large enumerations (e.g. a 96-row bucket table) are never
 # truncated in post-processing; the model's own completion budget bounds length.
 _MAX_ANSWER = 48000
@@ -113,4 +127,5 @@ def parse_agent_contract(raw: Any, allowed_skill_names: list[str] | None = None)
     }
 
 
-__all__ = ["parse_agent_contract", "CONTRACT_INSTRUCTION"]
+__all__ = ["parse_agent_contract", "CONTRACT_INSTRUCTION", "CONTRACT_SENTINEL",
+           "is_contract_json"]

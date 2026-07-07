@@ -81,6 +81,38 @@ def test_secret_survives_process_restart():
     assert keyring_store.get_secret("model_provider", "p/api_key") == "persisted"
 
 
+def test_no_write_only_negative_cache():
+    """The write-only _negative cache was removed (it had no readers)."""
+    assert not hasattr(keyring_store, "_negative")
+
+
+def test_save_persists_before_mutating_memory():
+    """save_secret writes to disk FIRST and only swaps the in-memory blob on
+    success, so a failed persist can't leave memory ahead of disk (fix 13).
+
+    Restores ``_persist`` by hand rather than via monkeypatch.undo(): the
+    conftest autouse fixture shares this function's monkeypatch instance, so
+    undo() would also revert its SAW_DATA_DIR redirect.
+    """
+    keyring_store.save_secret("model_provider", "p/api_key", "before")
+
+    orig = keyring_store._persist
+
+    def boom(_blob):
+        raise OSError("disk full")
+
+    keyring_store._persist = boom
+    try:
+        with pytest.raises(OSError):
+            keyring_store.save_secret("model_provider", "p/api_key", "after")
+    finally:
+        keyring_store._persist = orig
+    # Memory still holds the pre-failure value (never diverged from disk).
+    assert keyring_store.get_secret("model_provider", "p/api_key") == "before"
+    keyring_store._reset_for_tests()
+    assert keyring_store.get_secret("model_provider", "p/api_key") == "before"
+
+
 def test_secret_exists_reflects_vault_not_just_ref():
     """has_*_key flags must check the vault, not just a lingering ref string —
     otherwise a stale ref (e.g. after the keychain→vault migration) falsely

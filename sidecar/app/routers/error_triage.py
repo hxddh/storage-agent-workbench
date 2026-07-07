@@ -79,11 +79,14 @@ def create_triage(body: ErrorTriageRequest, conn: sqlite3.Connection = Depends(g
     limitations = list(result["limitations"])
     safe_next_actions = list(result["safe_next_actions"])
 
-    # 3) Persist the sanitized case + findings (redacted input only).
+    # 3) Persist the sanitized case + findings (redacted input only). No planner
+    # concept exists anymore (there is one conversational agent + deterministic
+    # compute); write NULL rather than the vestigial 'deterministic' marker. The
+    # column stays for back-compat (migrations are append-only).
     case_id = repo.create_case(
         conn, session_id=body.session_id, provider_id=body.provider_id, bucket=body.bucket,
         run_id=None, input_kind=body.input_kind, raw_input_redacted=redacted,
-        parsed=dict(result["parsed"]), summary=result["summary"], planner_mode="deterministic",
+        parsed=dict(result["parsed"]), summary=result["summary"], planner_mode=None,
     )
     for f in result["candidate_causes"]:
         repo.add_finding(conn, case_id, f)

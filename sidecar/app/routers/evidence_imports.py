@@ -189,9 +189,18 @@ def run_import(import_id: str, conn: sqlite3.Connection = Depends(get_conn)):
         ),
         status="pending",
     )
+    # Atomically claim the confirmed→importing transition. Two concurrent runs
+    # would otherwise both pass the status check above and double-download; the
+    # single conditional UPDATE lets exactly one win. The loser's just-created
+    # analysis run stays a harmless unstarted 'pending' row.
+    if not repo.claim_for_import(conn, import_id, analysis_run_id):
+        current = repo.get(conn, import_id)
+        raise HTTPException(
+            status_code=409,
+            detail=f"import is already being processed (is '{current['status'] if current else 'unknown'}')",
+        )
     from ..events import bus
     bus.create(analysis_run_id)
-    repo.set_status(conn, import_id, "importing", analysis_run_id=analysis_run_id)
 
     selected = repo.selected_files(conn, import_id)
     files = [{"object_key": f["object_key"], "size": f["size_bytes"]} for f in selected]

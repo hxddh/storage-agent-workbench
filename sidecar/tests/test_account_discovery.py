@@ -187,6 +187,19 @@ def test_account_discovery_empty_account(client, monkeypatch, sync_runs):
     assert profile["visible_count"] == 0 and profile["buckets"] == []
 
 
+def test_account_discovery_total_list_failure_marks_failed(client, monkeypatch, sync_runs):
+    """When ListBuckets fails outright, the account can't be enumerated — the run
+    must finish 'failed' (not a misleading 'completed'), with the reason (and the
+    credential verdict) captured in the persisted final_summary."""
+    pid = _provider(client)
+    _use_fake(monkeypatch, FakeS3(list_error=_cerr("AccessDenied", 403)))
+    rid = _run_discovery(client, pid)
+    detail = client.get(f"/runs/{rid}").json()
+    assert detail["status"] == "failed"
+    summ = (detail["final_summary"] or "").lower()
+    assert "listbuckets" in summ and "access_denied" in summ
+
+
 def test_account_discovery_enumerates_and_snapshots(client, monkeypatch, sync_runs):
     pid = _provider(client)
     _use_fake(monkeypatch, FakeS3(buckets=["b-one", "b-two"]))

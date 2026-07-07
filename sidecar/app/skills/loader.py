@@ -10,10 +10,9 @@ exposed, or executed by the Workbench.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -23,23 +22,21 @@ _REGISTRY = _PACK_ROOT / "skill-registry.yaml"
 
 @dataclass(frozen=True)
 class SkillMeta:
+    """Minimal skill metadata: what the catalog and read_skill need, nothing more.
+
+    Other frontmatter/registry keys (recommended_tools, trigger_keywords,
+    auto_route, priority, …) are deliberately IGNORED: recommended_tools must
+    never reach the Agent prompt/UI/tool registry, and the keyword-router fields
+    died with the keyword router (the model self-routes via the catalog).
+    Unknown frontmatter keys in a SKILL.md are fine — they are simply not parsed.
+    """
+
     name: str
     path: str
     description: str = ""
     maturity: str = ""
     mode: str = ""
-    trigger_keywords: tuple[str, ...] = ()
     domains: tuple[str, ...] = ()
-    auto_route: bool = False
-    priority: int = 100
-    # NOTE: recommended_tools is intentionally NOT stored — it must never reach
-    # the Agent prompt, the UI, or any tool registry.
-
-    @property
-    def keyword_blob(self) -> str:
-        parts = [self.name, self.description, " ".join(self.trigger_keywords),
-                 " ".join(self.domains)]
-        return " ".join(p for p in parts if p).lower()
 
 
 def pack_root() -> Path:
@@ -62,10 +59,7 @@ def load_registry() -> list[SkillMeta]:
             description=" ".join(str(entry.get("description") or "").split()),
             maturity=str(entry.get("maturity") or ""),
             mode=str(entry.get("mode") or ""),
-            trigger_keywords=tuple(str(k) for k in (entry.get("trigger_keywords") or [])),
             domains=tuple(str(d) for d in (entry.get("domains") or [])),
-            auto_route=bool(entry.get("auto_route", False)),
-            priority=int(entry.get("priority", 100)),
         ))
     return out
 

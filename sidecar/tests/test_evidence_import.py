@@ -314,6 +314,21 @@ def test_access_log_plan_requires_time_range(client, monkeypatch):
     assert r.status_code == 422
 
 
+def test_access_log_plan_accepts_naive_timestamp(client, monkeypatch):
+    """A naive (offset-less) timestamp must be normalized to UTC, not raise a
+    naive/aware TypeError → 500 when compared to a tz-aware LastModified."""
+    pid = _provider(client)
+    run_id = _seed_profile(pid)
+    # LastModified is offset-aware here; the request time range is naive.
+    fake = _logging_fake(n=2, lm="2026-06-25T10:00:00+00:00")
+    _use(monkeypatch, fake)
+    r = _plan(client, run_id, "access_log",
+              time_range_start="2026-07-01T00:00:00", time_range_end="2026-07-02T00:00:00")
+    assert r.status_code == 201, r.text  # not a 500
+    # The naive window is before the log timestamps → nothing selected, cleanly.
+    assert r.json()["selected_file_count"] == 0
+
+
 def test_access_log_plan_bounded_to_target_prefix(client, monkeypatch):
     pid = _provider(client)
     run_id = _seed_profile(pid)
@@ -428,3 +443,53 @@ def test_evidence_import_404s(client):
     assert client.get("/evidence-imports/nope").status_code == 404
     assert client.post("/evidence-imports/nope/confirm").status_code == 404
     assert client.post("/evidence-imports/nope/run").status_code == 404
+
+
+# --- memory-safety: bounded gunzip + streaming combine (fix 3) ---------------
+
+
+def test_gunzip_bomb_is_refused(tmp_path):
+    """A gzip file that expands far beyond the ratio bound is refused as a
+    possible decompression bomb instead of exhausting memory/disk."""
+    from app.evidence import managed_import as mi
+
+    # 8 MiB of zeros compresses to a few KB → >200x ratio and >4 MiB output.
+    part = tmp_path / "part_00000"
+    part.write_bytes(gzip.compress(b"\x00" * (8 * 1024 * 1024)))
+    out_path = tmp_path / "out.log"
+    with out_path.open("wb") as fh:
+        writer = mi._TrackedWriter(fh)
+        with pytest.raises(mi.LimitExceeded):
+            mi._append_maybe_gunzip(part, writer)
+
+
+def test_combine_access_logs_streams_and_gunzips(tmp_path):
+    """Parts stream from disk and gzip parts are transparently decompressed."""
+    from app.evidence import managed_import as mi
+
+    p1 = tmp_path / "part_00000"
+    p1.write_bytes(gzip.compress(b"GET /a 200\nGET /b 404\n"))
+    p2 = tmp_path / "part_00001"
+    p2.write_bytes(b"GET /c 200\n")  # plain, no trailing newline handling exercised
+    combined = mi._combine_access_logs([p1, p2], tmp_path)
+    text = combined.read_text()
+    assert "GET /a 200" in text and "GET /c 200" in text
+
+
+def test_claim_for_import_is_atomic(client, monkeypatch):
+    """Two concurrent confirmed→importing claims: exactly one wins."""
+    from app.repositories import evidence_imports as repo
+
+    pid = _provider(client)
+    run_id = _seed_profile(pid)
+    _use(monkeypatch, _inventory_fake())
+    p = _plan(client, run_id, "inventory").json()
+    client.post(f"/evidence-imports/{p['id']}/confirm")
+
+    conn = _db()
+    try:
+        first = repo.claim_for_import(conn, p["id"], "run-a")
+        second = repo.claim_for_import(conn, p["id"], "run-b")
+    finally:
+        conn.close()
+    assert first is True and second is False

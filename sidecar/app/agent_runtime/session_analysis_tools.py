@@ -86,101 +86,14 @@ def build(
         note("list_uploaded_files", session_id or "", f"{len(items)} file(s)")
         return json.dumps({"files": items})
 
-    @function_tool
-    def analyze_uploaded_file(dataset_id: str) -> str:
-        """Analyze one uploaded file (access log or inventory export) locally with DuckDB and return SANITIZED aggregates: for access logs — total requests, status/method distributions, 4xx/5xx rates, top keys/prefixes/user-agents, requests-by-hour, plus rule-based findings; for inventory — object count, total/avg size, storage-class and prefix distributions, small-object ratio. Use the result to answer the user in your own words; if the data is not actually a recognized access log or inventory (e.g. a generic application log with no HTTP fields), say so plainly and describe what the file does contain rather than reporting meaningless zeros. Very large files are analyzed up to a row cap: when the result has "truncated": true, the metrics cover only the first rows_analyzed rows — report them as a lower bound, not the whole file. Args: dataset_id (from list_uploaded_files)."""
-        ds = ds_repo.get(conn, dataset_id)
-        if ds is None or ds.get("session_id") != session_id:
-            return _err("Unknown dataset_id for this session. Call list_uploaded_files first.")
-        if not ds.get("stored_path"):
-            return _err("That upload has no stored file.")
+    def _ensure_imported(ds: dict[str, Any]) -> tuple[Path, dict[str, Any] | None, str | None]:
+        """Return ``(duckdb_path, imp_or_none, detected_format)`` for a dataset,
+        importing the raw upload only if needed.
 
-        raw_abs = config.data_dir() / ds["stored_path"]
-        if not raw_abs.exists():
-            return _err("The uploaded file is no longer available on disk.")
-
-        duckdb_abs = config.data_dir() / "sessions" / session_id / f"{dataset_id}.duckdb"
-        duckdb_abs.parent.mkdir(parents=True, exist_ok=True)
-        duckdb_rel = config.rel_path(duckdb_abs)
-
-        try:
-            if ds["dataset_type"] == "access_log":
-                fmt = access_logs.detect_log_format(raw_abs)
-                imp = access_logs.import_access_logs(raw_abs, duckdb_abs, fmt.get("format"))
-                metrics = access_logs.analyze_access_logs(duckdb_abs)
-                findings = access_logs.derive_findings(metrics)
-                detected = fmt.get("format")
-                result: dict[str, Any] = {
-                    "dataset_id": dataset_id,
-                    "filename": ds["source_filename"],
-                    "type": "access_log",
-                    "detected_format": detected,
-                    "row_count": imp.get("row_count"),
-                    "metrics": _clamp_lists(metrics),
-                    "findings": findings[:_MAX_DIST],
-                }
-                if detected == "unknown":
-                    result["note"] = (
-                        "The log format was NOT recognized as an access log (no parseable "
-                        "HTTP method/status/path fields). The rows were ingested as raw text, "
-                        "so request/status metrics will be empty or zero. Tell the user this is "
-                        "not a standard access log and describe what the lines actually look like "
-                        "instead of reporting the empty HTTP metrics as if they were real."
-                    )
-            elif ds["dataset_type"] == "inventory":
-                imp = inventory.import_inventory_file(raw_abs, duckdb_abs)
-                metrics = inventory.analyze_inventory(duckdb_abs)
-                findings = inventory.derive_findings(metrics)
-                result = {
-                    "dataset_id": dataset_id,
-                    "filename": ds["source_filename"],
-                    "type": "inventory",
-                    "row_count": imp.get("row_count"),
-                    "metrics": _clamp_lists(metrics),
-                    "findings": findings[:_MAX_DIST],
-                }
-                detected = imp.get("format")
-            else:
-                return _err(f"Unsupported dataset type: {ds['dataset_type']}")
-        except Exception as exc:  # noqa: BLE001 — surface a clean, redacted message
-            note("analyze_uploaded_file", ds.get("source_filename") or dataset_id, "error")
-            return _err(f"Could not analyze the file: {exc}")
-
-        # No silent cap: if ingestion hit the row ceiling, tell the model the
-        # metrics are a lower bound over the first N rows, not the whole file.
-        if imp.get("truncated"):
-            cap = int(imp.get("ingest_cap") or 0)
-            result["truncated"] = True
-            result["rows_analyzed"] = int(imp.get("row_count") or 0)
-            cap_note = (
-                f"This file exceeded the analysis ingest cap ({cap:,} rows); only the "
-                f"first {result['rows_analyzed']:,} rows were analyzed. Report the metrics "
-                "as a LOWER BOUND over the analyzed rows — NOT the whole file — and, if the "
-                "user needs full coverage, suggest splitting the file or a narrower slice."
-            )
-            prior = result.get("note")
-            result["note"] = (prior + " " + cap_note) if prior else cap_note
-
-        ds_repo.mark_imported(conn, dataset_id, duckdb_rel,
-                              imp.get("table_name") or "", int(imp.get("row_count") or 0),
-                              detected_format=detected)
-        # Rule 17: a data import + analysis must leave an audit trail.
-        audit.record(conn, "session.analyze_uploaded_file", {
-            "session_id": session_id, "dataset_id": dataset_id,
-            "type": ds["dataset_type"], "detected_format": detected,
-            "row_count": int(imp.get("row_count") or 0),
-        }, run_id=None)
-        conn.commit()
-        note("analyze_uploaded_file", ds.get("source_filename") or dataset_id,
-             f"{imp.get('row_count', 0)} rows")
-        # Redact defensively before it reaches the model.
-        return redact_text(json.dumps(result, default=str))
-
-    def _ensure_imported(ds: dict[str, Any]) -> Path:
-        """Return the dataset's DuckDB path, importing the raw upload if needed.
-
-        Lets aggregate_uploaded_file work directly (the agent shouldn't be
-        forced to call analyze_uploaded_file first just to build the table).
+        Shared by analyze_uploaded_file and aggregate_uploaded_file so neither
+        re-imports on every call. ``imp_or_none`` is the fresh import metadata
+        when a (re)import happened, else None (the table was reused); ``detected``
+        is the reused row's stored format in that case.
         """
         dataset_id = ds["id"]
         duckdb_abs = config.data_dir() / "sessions" / str(session_id) / f"{dataset_id}.duckdb"
@@ -191,7 +104,7 @@ def build(
         # from the previous upload's (possibly wrong-typed) table. When status
         # isn't 'imported' we re-import, which DROPs and rebuilds the table.
         if ds.get("status") == "imported" and duckdb_abs.exists():
-            return duckdb_abs
+            return duckdb_abs, None, ds.get("detected_format")
         raw_abs = config.data_dir() / (ds.get("stored_path") or "")
         if not ds.get("stored_path") or not raw_abs.exists():
             raise FileNotFoundError("The uploaded file is no longer available on disk.")
@@ -207,7 +120,85 @@ def build(
                               imp.get("table_name") or "", int(imp.get("row_count") or 0),
                               detected_format=detected)
         conn.commit()
-        return duckdb_abs
+        return duckdb_abs, imp, detected
+
+    @function_tool
+    def analyze_uploaded_file(dataset_id: str) -> str:
+        """Analyze one uploaded file (access log or inventory export) locally with DuckDB and return SANITIZED aggregates: for access logs — total requests, status/method distributions, 4xx/5xx rates, top keys/prefixes/user-agents, requests-by-hour, plus rule-based findings; for inventory — object count, total/avg size, storage-class and prefix distributions, small-object ratio. Use the result to answer the user in your own words; if the data is not actually a recognized access log or inventory (e.g. a generic application log with no HTTP fields), say so plainly and describe what the file does contain rather than reporting meaningless zeros. Very large files are analyzed up to a row cap: when the result has "truncated": true, the metrics cover only the first rows_analyzed rows — report them as a lower bound, not the whole file. Args: dataset_id (from list_uploaded_files)."""
+        ds = ds_repo.get(conn, dataset_id)
+        if ds is None or ds.get("session_id") != session_id:
+            return _err("Unknown dataset_id for this session. Call list_uploaded_files first.")
+        if not ds.get("stored_path"):
+            return _err("That upload has no stored file.")
+
+        try:
+            # Same reuse + staleness logic as aggregate_uploaded_file — import
+            # only when the table isn't already built (was: re-imported every call).
+            duckdb_abs, imp, detected = _ensure_imported(ds)
+            if ds["dataset_type"] == "access_log":
+                metrics = access_logs.analyze_access_logs(duckdb_abs)
+                findings = access_logs.derive_findings(metrics)
+                result: dict[str, Any] = {
+                    "dataset_id": dataset_id,
+                    "filename": ds["source_filename"],
+                    "type": "access_log",
+                    "detected_format": detected,
+                    "row_count": (imp.get("row_count") if imp else ds.get("row_count")),
+                    "metrics": _clamp_lists(metrics),
+                    "findings": findings[:_MAX_DIST],
+                }
+                if detected == "unknown":
+                    result["note"] = (
+                        "The log format was NOT recognized as an access log (no parseable "
+                        "HTTP method/status/path fields). The rows were ingested as raw text, "
+                        "so request/status metrics will be empty or zero. Tell the user this is "
+                        "not a standard access log and describe what the lines actually look like "
+                        "instead of reporting the empty HTTP metrics as if they were real."
+                    )
+            elif ds["dataset_type"] == "inventory":
+                metrics = inventory.analyze_inventory(duckdb_abs)
+                findings = inventory.derive_findings(metrics)
+                result = {
+                    "dataset_id": dataset_id,
+                    "filename": ds["source_filename"],
+                    "type": "inventory",
+                    "detected_format": detected,
+                    "row_count": (imp.get("row_count") if imp else ds.get("row_count")),
+                    "metrics": _clamp_lists(metrics),
+                    "findings": findings[:_MAX_DIST],
+                }
+            else:
+                return _err(f"Unsupported dataset type: {ds['dataset_type']}")
+        except Exception as exc:  # noqa: BLE001 — surface a clean, redacted message
+            note("analyze_uploaded_file", ds.get("source_filename") or dataset_id, "error")
+            return _err(f"Could not analyze the file: {exc}")
+
+        # No silent cap: if THIS import hit the row ceiling, tell the model the
+        # metrics are a lower bound over the first N rows, not the whole file.
+        if imp and imp.get("truncated"):
+            cap = int(imp.get("ingest_cap") or 0)
+            result["truncated"] = True
+            result["rows_analyzed"] = int(imp.get("row_count") or 0)
+            cap_note = (
+                f"This file exceeded the analysis ingest cap ({cap:,} rows); only the "
+                f"first {result['rows_analyzed']:,} rows were analyzed. Report the metrics "
+                "as a LOWER BOUND over the analyzed rows — NOT the whole file — and, if the "
+                "user needs full coverage, suggest splitting the file or a narrower slice."
+            )
+            prior = result.get("note")
+            result["note"] = (prior + " " + cap_note) if prior else cap_note
+
+        # Rule 17: a data import + analysis must leave an audit trail.
+        audit.record(conn, "session.analyze_uploaded_file", {
+            "session_id": session_id, "dataset_id": dataset_id,
+            "type": ds["dataset_type"], "detected_format": detected,
+            "row_count": int(result.get("row_count") or 0),
+        }, run_id=None)
+        conn.commit()
+        note("analyze_uploaded_file", ds.get("source_filename") or dataset_id,
+             f"{result.get('row_count', 0)} rows")
+        # Redact defensively before it reaches the model.
+        return redact_text(json.dumps(result, default=str))
 
     @function_tool
     def aggregate_uploaded_file(
@@ -237,7 +228,7 @@ def build(
             filters = parsed
 
         try:
-            duckdb_abs = _ensure_imported(ds)
+            duckdb_abs, _imp, _detected = _ensure_imported(ds)
             out = agg.aggregate(
                 duckdb_abs, ds["dataset_type"], metric,
                 group_by=group_by or None, filters=filters,

@@ -64,7 +64,6 @@ export function SessionRail({
   onNew: () => void;
   onOpenSettings: () => void;
   status: Status;
-  service: string | null;
   slow: boolean;
   actions: SessionActions;
 }) {
@@ -147,7 +146,7 @@ export function SessionRail({
           <div className="flex items-center gap-1">
             {s.pinned && <PinIcon size={10} />}
             <span className={`truncate text-[12.5px] ${isActive ? "text-gray-100" : "text-gray-300 group-hover:text-gray-200"}`}>
-              {s.title || "Untitled"}
+              {s.title || t("common.untitled")}
             </span>
           </div>
           <span className="mt-0.5 block truncate text-[11px] text-gray-600">{relTime(s.updated_at, t)}</span>

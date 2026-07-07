@@ -34,6 +34,7 @@ def build_agent(
     name: str = "Storage Agent",
     max_tokens: int | None = _DEFAULT_MAX_TOKENS,
     parallel_tool_calls: bool = False,
+    client_registry: list[Any] | None = None,
 ) -> Any:
     """Build an Agents-SDK Agent with a PER-RUN model client.
 
@@ -46,6 +47,10 @@ def build_agent(
     OpenAI-compatible endpoints such as DeepSeek don't implement the Responses
     API the SDK otherwise defaults to). Raises AgentUnavailable if the SDK is
     missing so callers can fail cleanly / fall back.
+
+    ``client_registry``: when given, the AsyncOpenAI client created here is
+    appended so the caller can CLOSE it when the turn ends (per-turn clients
+    hold open HTTP connection pools; without this they leak until GC).
     """
     try:
         import openai  # noqa: F401
@@ -61,6 +66,8 @@ def build_agent(
     if creds.get("base_url"):
         client_kwargs["base_url"] = creds["base_url"]
     client = openai.AsyncOpenAI(**client_kwargs)
+    if client_registry is not None:
+        client_registry.append(client)
     model = OpenAIChatCompletionsModel(model=creds.get("model") or "gpt-4o-mini",
                                        openai_client=client)
     settings_kwargs: dict[str, Any] = {"parallel_tool_calls": parallel_tool_calls}

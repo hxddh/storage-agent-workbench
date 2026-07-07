@@ -6,6 +6,125 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+_Architecture / code / docs review remediation: closes a turn-lifecycle
+correctness class (connection ownership, cancellation, fallback races), hardens
+every large-file path against OOM, plugs redaction/secret-in-log gaps, and removes
+the last carcasses of the retired dual-track design — without loosening any
+security floor. Adds real turn cancellation and live-delta redaction as new
+agent-native capabilities._
+
+### Added
+
+- **Real turn cancellation.** `POST /sessions/{id}/turns/{turn_id}/cancel` stops a
+  running turn: the streaming worker observes a cancel event, cancels the Agents
+  SDK run, and persists the **partial** answer (sanitized) with a `_[stopped by
+  user]_` marker; the `done` SSE event carries `stopped: true`. The frontend Stop
+  button now drives this instead of only aborting the local fetch, and keeps the
+  partial answer visible. Inline-run waits and `read_run_result` polling also break
+  out early on cancel.
+- **In-progress turn registry.** `turn_guard` now tracks running turns (not only
+  completed ones) and is session-bound. The blocking fallback for a turn that is
+  still streaming server-side **waits** for it (up to 150 s) and returns the
+  persisted result, or `409 "turn still in progress"` on timeout — instead of
+  re-running the whole turn concurrently (which duplicated messages and doubled
+  model/S3 spend).
+- **Live-delta sanitization.** Streamed answer tokens are now redacted and
+  chain-of-thought-stripped in flight (streaming-safe: unclosed `<think>` blocks
+  and the answer-contract JSON are held back, plus a short tail so a secret
+  completing across deltas can't leak an un-redacted prefix) — the UI stream now
+  honors the same rule-15 invariant the persisted answer already did.
+- **Per-turn cumulative tool-output budget** (~150k chars): once a turn's tool
+  results exceed it, further tool calls ask the agent to synthesize instead of
+  returning more data. Context-length overflow now triggers the tool-less finalize
+  pass (a partial, marked answer) rather than a hard failure the fallback repeats.
+- **Agent-memory lifecycle.** `update_memory_item` / `resolve_memory_item` tools
+  (plus dedup of exact-duplicate adds and ids in replay) let the agent correct a
+  wrong fact or close an answered question — memory is no longer write-only.
+- **Live tool-start events.** `tool` SSE records now carry `status: "started"`
+  before `"completed"`, so the UI shows "running <tool>…" instead of only a
+  keepalive during long tool calls.
+- **Provider scope enforcement outside the agent.** New `s3/scope.py::check_scope`
+  is enforced in the surviving `/tools` endpoints (403) and the run executors
+  (per-bucket for account discovery); `allowed_buckets`/`allowed_prefixes` were
+  previously honored only by the agent's session tools.
+- Sidecar local authentication is now documented (previously only in the
+  CHANGELOG); `SAW_DB_PATH` and the auth env var are documented in packaging docs.
+
+### Fixed
+
+- **CRITICAL — request-scoped SQLite connection closed under running tools.** The
+  streaming worker opened its own connection only for the final persist; every
+  in-flight tool call still bound the request-scoped connection, which FastAPI
+  closes on client disconnect / Stop / idle-watchdog. The worker now owns its
+  connection for the whole turn (tools included), so a disconnect can no longer
+  silently strip the agent of all tools mid-investigation and persist a degraded
+  answer.
+- **Auth token leaked into access logs.** The packaged sidecar now runs uvicorn
+  with `access_log=False` (the SSE `?token=` query param was being logged in
+  plaintext); the token check is constant-time (`hmac.compare_digest`); redaction
+  now masks bare `token=`/`api_key=` values.
+- **Large-file OOM paths.** Inventory import now caps rows *at read time*
+  (`nrows`) instead of after loading the whole CSV into RAM; evidence import
+  streams parts to disk, combines out-of-core (DuckDB), and uses a bounded gunzip
+  that refuses decompression bombs; dataset upload streams to disk in chunks with
+  a 2 GiB cap (413 over limit).
+- **Turn failure no longer eats the user's message.** On a clean failure the
+  composer text is restored (was cleared and lost). The blocking-fallback timeout
+  was raised past the server's wait window so a long multi-tool turn isn't aborted
+  client-side while the server is still finishing it.
+- **Run-card SSE no longer doubles on reconnect** (events reset on each connect;
+  the completion close-race is fixed); the model chip shows the **active** provider
+  instead of the newest; duplicate submits (double-Enter during upload / fresh
+  session) are guarded; auto-scroll no longer detaches mid-stream.
+- **Naive-timestamp evidence-import plan** no longer 500s (inputs normalized to
+  UTC). **account_discovery** now fails the run when `list_buckets` fails (was
+  reported as a healthy empty account); **diagnostic** reports `completed` when its
+  probes ran even if the target is unhealthy (`failed` = executor failure only).
+- **Redaction gaps:** base64 Bearer tokens are fully masked (charset now includes
+  `/ + =`); `X-Goog-Signature`/`X-Goog-Credential` presigned params are covered.
+  Object keys / bucket names are stored verbatim (redaction could mangle a key so
+  the later fetch 404s).
+- **keyring_store** persists to disk before mutating the in-memory blob (no
+  memory/disk divergence on a failed write); the write-only negative cache was
+  removed. Cross-table timestamps are unified to ISO-8601 `Z`; report paths are
+  stored relative to the data dir (readers still accept legacy absolute rows).
+- **Concurrency guards:** re-executing a running/completed run returns 409; the
+  evidence-import confirmed→importing transition is atomic; unknown run types and
+  pre-executor exceptions now mark the run `failed` instead of leaving it `pending`
+  forever. `analyze_uploaded_file` reuses an already-imported dataset instead of
+  re-ingesting every call; per-turn AsyncOpenAI clients are closed.
+
+### Changed
+
+- **Slimmed the session-agent system prompt.** Safety rules are stated once
+  (no longer injected a second time as context JSON), tool-by-tool advice that
+  merely restated tool descriptions was removed, and prescriptive routing
+  decision-trees that second-guessed the model were dropped — keeping the security
+  constraints and answer-contract requirements. Less ossification, more autonomy.
+- **Converged the two turn implementations.** The blocking `answer()` path now
+  drives the same streaming implementation to completion instead of a duplicate
+  loop, removing the divergence that caused the fallback races.
+- **Extracted a shared run-executor harness** (`runs/_common.py`): all five
+  executors now share status-transition / report / SSE / failure scaffolding
+  instead of copy-pasting ~30 lines each.
+- Frontend `Thread` split into a `Composer` component and a `useTurnRunner` hook;
+  the run-transcript UI is now fully translated (en/zh).
+
+### Removed
+
+- **The planner vestige of the retired dual-track design:** `runs/planner.py` and
+  the canned "Plan" section it injected into diagnostic reports; error-triage no
+  longer stamps `planner_mode`. Dead guard constants/functions
+  (`AGENT_MAX_RANGE_BYTES`, `sanitize_output_for_agent`, `assert_report_sanitized`,
+  the `FORBIDDEN_TOOLS` alias, the `sample_bucket_objects` branch) and the
+  parsed-but-unused keyword-router frontmatter (`trigger_keywords`/`auto_route`/
+  `priority`/`keyword_blob`) are gone.
+- **Shrank the legacy `/tools` HTTP surface** to the two endpoints the UI actually
+  uses (`head-bucket`, `list-objects-v2`, both now scope-checked); the underlying
+  read-only S3 functions remain as agent tools.
+- Frontend dead code: unused `refreshSessionSummary`, the `service` prop, and
+  retired i18n keys.
+
 ## [0.23.0] - 2026-07-02
 
 _Agent-autonomy pass: closes the capability ceilings and last silent-truncation

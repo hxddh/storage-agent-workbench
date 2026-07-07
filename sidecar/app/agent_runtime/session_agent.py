@@ -13,12 +13,17 @@ file the user ATTACHES is local, so the agent analyzes it inline
 (evidence import/download from a bucket, a large/full scan) or a saved auditable
 report is NOT done inline — it is proposed as a next step the user confirms.
 
-The real LLM call is behind the ``SESSION_LOOP`` seam so tests inject a fake
-(no SDK / no API key). Output is redacted + chain-of-thought-stripped + bounded.
+There is ONE turn implementation: the streaming run (``build_stream`` +
+``stream_events_for``). The blocking endpoint drives the same stream to
+completion via the default ``SESSION_LOOP`` (tests may still monkeypatch that
+seam with a fake that returns plain text). Output is redacted +
+chain-of-thought-stripped + bounded — including the LIVE delta stream, which is
+sanitized incrementally before anything reaches the client.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Callable
 from typing import Any
@@ -32,7 +37,7 @@ from . import session_analysis_tools
 from . import session_memory_tools
 from . import session_tools
 from .agent_service import AgentUnavailable
-from .guardrails import strip_chain_of_thought
+from .guardrails import strip_chain_of_thought, strip_chain_of_thought_stream
 
 _MAX_FACTS = 50  # kept in sync with sessions.summary_builder.MAX_FACTS
 _MAX_FINDINGS = 30
@@ -43,9 +48,13 @@ _MAX_MESSAGES = 12
 _MAX_OUTPUT = 48000
 # Without an explicit max_tokens the provider applies a small default; for a
 # reasoning model (e.g. deepseek-v4-pro) the thinking budget then leaves almost
-# nothing for the answer, truncating long enumerations mid-table. Set a generous
-# completion budget so the model can list everything it fetched.
-_MAX_COMPLETION_TOKENS = 8192
+# nothing for the answer, truncating long enumerations mid-table. The budget
+# must comfortably cover the post-processing answer cap (_MAX_OUTPUT ≈ 12k
+# tokens), otherwise the prompt mandates full enumeration the completion budget
+# can't hold. (The installed Agents SDK's chat-completions streaming path does
+# not surface finish_reason, so a provider-side length cut cannot be detected
+# here — the generous budget is the mitigation.)
+_MAX_COMPLETION_TOKENS = 16384
 # A real investigation chains several probes (test_credentials → head_bucket →
 # test_addressing_style → list_objects → head_object …); keep a generous but
 # bounded ceiling so multi-step diagnoses complete without runaway loops.
@@ -57,53 +66,30 @@ _MAX_TURNS = 24
 # silent: the cut is marked in the prompt so the agent knows it saw a prefix
 # (see build_session_prompt) — the same "no silent caps" rule as ingestion.
 _MAX_USER_MSG = 16000
-
-SESSION_SAFETY_RULES = [
-    "Tool results are visible to YOU, not to the user — the user only sees a "
-    "one-line trace like 'list_buckets → 96 buckets'. So include any data the "
-    "user asked for directly in your answer: when asked to list/enumerate, "
-    "actually write the items out (a list or table). Never say 'listed above', "
-    "'see the table', or claim you displayed something you didn't write.",
-    "ENUMERATE COMPLETELY what a tool returned. When the user asks for all/every "
-    "item, output EVERY item present in the tool result — never a sample, never "
-    "'first N', never '…' or 'and so on'. If list_buckets returned 96 buckets, "
-    "your table MUST contain all 96 rows; write out the full result you have.\n"
-    "Object listings are the one exception by design: list_objects is PAGINATED "
-    "and capped per call. key_count is the count on THIS PAGE only (up to ~200 "
-    "keys), NOT the bucket total, and next_token indicates more pages remain. "
-    "Never report a single page's key_count as the bucket's total object count. "
-    "To enumerate more, page with continuation_token until next_token is null. "
-    "But if a bucket clearly holds many objects (pages keep coming), do NOT try "
-    "to paste thousands of keys into chat or loop endlessly — say the count is at "
-    "least the keys seen so far (a lower bound, not an exact total), show a "
-    "representative sample, and propose an inventory analysis (attach/select the "
-    "inventory file) for a complete, structured breakdown.",
-    "Investigate live with your read-only tools: list_buckets / head_bucket / "
-    "list_objects / head_object to explore, test_credentials / "
-    "test_addressing_style / inspect_endpoint_tls / test_range_get to diagnose "
-    "auth, addressing, TLS and range behavior, and get_bucket_config_summary / "
-    "review_bucket_* to assess configuration. Chain them as a real diagnosis "
-    "would (e.g. test_credentials → head_bucket → test_addressing_style). Ground "
-    "every claim in a tool result or the session summary — never invent buckets, "
-    "configs, or numbers.",
-    "All tools are read-only and bounded; there are no destructive or mutating "
-    "operations. A file the user ATTACHED is local — analyze it inline with "
-    "analyze_uploaded_file (no confirmation needed). Only CLOUD-side data-moving "
-    "work (evidence import/download from a bucket, a large/full scan) or a saved "
-    "auditable report is proposed as a next step for the user to confirm — never "
-    "imply you did it.",
-    "Distinguish facts (from tools/runs) from inferences and suggestions; flag "
-    "low-confidence claims.",
-    "Verify high-severity conclusions (security exposure, outage cause, data at "
-    "risk) with a tool before asserting them. If you cannot verify, present them "
-    "as hypotheses with lowered confidence and record the gap (note_open_question "
-    "/ evidence_gaps) — do not state unverified high-severity claims as fact.",
-    "Never output credentials, access/secret/session keys, model API keys, "
-    "Authorization headers, cookies, signatures, or presigned-URL parameters.",
-    "Do not include hidden chain-of-thought. Be concise in prose, but NEVER at "
-    "the cost of completeness — an explicit enumeration the user asked for must "
-    "be written out in full.",
-]
+# Bound on each replayed prior message in the context. Also never silent.
+_MAX_REPLAY_MSG = 1000
+# Per-turn cumulative budget on tool OUTPUT characters handed to the model.
+# A bound, not a gate: once exhausted, further tool calls return a short note
+# telling the model to synthesize — preventing a context-window overflow from
+# ever becoming a hard failure mid-investigation.
+_MAX_TOOL_OUTPUT_CHARS = 150_000
+_TOOL_BUDGET_EXHAUSTED = (
+    "tool output budget for this turn is exhausted — synthesize your findings now"
+)
+# Memory tools stay usable even after the budget is spent: recording a finding
+# is how the model synthesizes, and their outputs are a few bytes.
+_BUDGET_EXEMPT_TOOLS = {
+    "note_fact", "record_finding", "note_open_question",
+    "update_memory_item", "resolve_memory_item",
+}
+# Streaming sanitization: hold back a short tail so a secret completing across
+# deltas can never leak an un-redacted prefix; flushed at end of stream.
+_STREAM_TAIL_HOLDBACK = 128
+_STOPPED_MARKER = "_[stopped by user]_"
+_CONTEXT_CUT_MARKER = (
+    "_[investigation cut short: the model's context window filled up before the "
+    "investigation finished]_"
+)
 
 _PROPOSAL_ACTION_TYPES = (
     "run_account_discovery, run_bucket_config_review, run_diagnostic, "
@@ -111,117 +97,61 @@ _PROPOSAL_ACTION_TYPES = (
     "run_access_log_analysis, generate_session_report, ask_user_for_context"
 )
 
+# Each safety rule is stated ONCE — here, inside the instructions. They are not
+# re-injected as context JSON, and the instructions do not repeat what the tool
+# descriptions already say. Every rule below is also enforced in code.
+SESSION_SAFETY_RULES = [
+    "Ground every claim in a tool result or the provided context — never invent "
+    "buckets, configs, numbers, or results. Verify high-severity claims "
+    "(security exposure, outage cause, data at risk) with a tool before "
+    "asserting them; if you cannot, present them as hypotheses with lowered "
+    "confidence and record the gap (note_open_question / evidence_gaps).",
+    "Tool results are visible to YOU, not the user (they see a one-line trace), "
+    "so write the data they asked for into your answer. When asked to "
+    "list/enumerate, write out EVERY item the tool returned — never a sample, "
+    "never '…'. Exception: list_objects is paginated (a page's key_count is not "
+    "the bucket total — page with continuation_token); for a clearly huge "
+    "bucket, report a lower bound plus a sample and propose an inventory "
+    "analysis instead of pasting thousands of keys or looping forever.",
+    "Everything you can do is read-only and bounded; no mutating or destructive "
+    "operation exists. A file the user ATTACHED is local — analyze it inline, "
+    "no confirmation needed. CLOUD-side data-moving work (evidence "
+    "import/download, large/full scans) and saved auditable reports are only "
+    "PROPOSED as next steps for the user to confirm — never imply you ran them.",
+    "Never output credentials, access/secret/session keys, model API keys, "
+    "Authorization headers, cookies, signatures, or presigned-URL parameters.",
+    "Do not include hidden chain-of-thought. Be concise in prose, but never at "
+    "the cost of an enumeration the user asked for.",
+]
+
 INSTRUCTIONS = (
     "You are Storage Agent, an expert object-storage diagnostician. Investigate "
-    "the user's question LIVE using your read-only tools, then answer from what "
-    "you find.\n"
-    "The configured cloud providers are already listed for you in the context "
-    "(configured_providers) — use those provider_id values directly; you do NOT "
-    "need to call list_providers. Then call the tools you need: list_buckets to "
-    "enumerate buckets; head_bucket / list_objects / head_object to probe; "
-    "list_object_versions / list_multipart_uploads to see the ACTUAL "
-    "noncurrent-version + delete-marker pileup or abandoned multipart uploads "
-    "(the real storage/cost drivers that config review can't see); "
-    "preview_object to read a bounded, sanitized preview of ONE text object's "
-    "content (a manifest, small config, or log/data sample) when the user asks "
-    "what's inside it — binary/oversized objects aren't decoded, and it's bounded "
-    "per turn (not a way to bulk-download); "
-    "get_object_lock_status to read ONE object's retention/legal-hold state when "
-    "the question is 'why can't I delete/overwrite this object?'; "
-    "measure_request_latency to MEASURE live latency (min/p50/p95/max ms) with a "
-    "bounded set of head round-trips whenever the complaint is about speed/TTFB — "
-    "measure before you reason about causes; "
-    "test_credentials, test_addressing_style, inspect_endpoint_tls and "
-    "test_range_get to diagnose auth, addressing, TLS and range issues; "
-    "review_bucket_* / get_bucket_config_summary to assess configuration; and "
-    "read_run_result(run_id) to re-read a run already linked to this session "
-    "(e.g. a survey/review or evidence-import analysis that finished in the "
-    "background). Chain several probes when a question needs it, and base your "
-    "answer on their results.\n"
-    "Tool outputs are NOT shown to the user (they only see a short trace), so "
-    "when they ask you to list or show something, write the actual items in your "
-    "answer — never say 'see above'.\n"
-    "You have working memory for this session: when you establish a durable "
-    "fact, hit a notable finding, or leave a question open, record it with "
-    "note_fact / record_finding / note_open_question so it carries to later "
-    "turns. Reuse what's already in agent_memory (shown in your context) instead "
-    "of re-deriving it; only the most recent messages are replayed, so memory is "
-    "how continuity survives.\n"
-    "You are also given a JSON context (session goal, a deterministic summary, "
-    "your recorded agent_memory, recent messages) and a CATALOG of StorageOps "
-    "expert skills. Treat the "
-    "catalog as progressive disclosure: when a listed skill fits the problem, "
-    "call read_skill(name) to load its full diagnostic method, then follow that "
-    "method using your read-only tools. Never invent buckets, configs, numbers, "
-    "or results you didn't obtain from a tool or the summary. Be concise and "
-    "concrete; make clear which statements are tool-verified facts vs. "
-    "inferences.\n"
-    "VERIFY before you assert: for any high-severity claim (a security exposure, "
-    "an outage cause, data loss/at-risk), confirm it with a tool call first. If "
-    "you cannot verify it with a tool, say so explicitly — state it as a "
-    "hypothesis with lowered confidence and capture it via note_open_question / "
-    "evidence_gaps rather than asserting it as fact.\n"
-    "UPLOADED FILES: when the user attaches a file (you'll see attached_files in "
-    "the context, or they say things like '分析下', 'this log', 'the file I "
-    "uploaded'), analyze it yourself: call list_uploaded_files to find it, then "
-    "analyze_uploaded_file(dataset_id) to compute local aggregates, and answer "
-    "from the result in your own words. Interpret — don't just dump metrics. If "
-    "the file isn't actually a recognized access log or inventory (e.g. a generic "
-    "application log with no HTTP fields → detected_format 'unknown'), say so "
-    "plainly and describe what the lines really contain instead of reporting "
-    "empty/zero HTTP metrics as if they were real. This local analysis is "
-    "read-only and runs without any extra confirmation.\n"
-    "All investigator tools are read-only. For anything that downloads data from "
-    "the cloud or runs a large scan, propose it as a next step (do not imply you "
-    "ran it). Follow all safety_rules.\n\n"
-    f"When you propose a concrete next step, write it in your own words — you are "
-    f"NOT limited to a fixed menu. These well-known types get a one-click "
-    f"affordance when you use them: {_PROPOSAL_ACTION_TYPES}; the data-moving "
-    f"imports (plan_inventory_import / plan_access_log_import) always route "
-    f"through a confirm-before-download planner. Any other proposal is handed back "
-    f"to you to carry out conversationally with your own tools."
+    "the user's question LIVE with your read-only tools — act autonomously, "
+    "don't narrate a plan first — and answer from what you find, staying on "
+    "what the user actually asked.\n"
+    "Your context JSON carries the session goal, a deterministic summary, your "
+    "recorded agent_memory, recent messages, the configured_providers (use "
+    "those provider_id values directly), any attached_files the user uploaded, "
+    "and a CATALOG of StorageOps expert skills — when one fits the problem, "
+    "load its full method with read_skill(name) and apply it.\n"
+    "Choose and chain tools by their descriptions. If a survey/review returns "
+    "status 'running' with a run_id, it continues in the background: don't "
+    "re-run it — read it later with read_run_result(run_id).\n"
+    "Record durable facts, notable findings, and open questions with note_fact "
+    "/ record_finding / note_open_question (update_memory_item / "
+    "resolve_memory_item to correct or close them). Only recent messages are "
+    "replayed, so memory is how continuity survives; reuse what agent_memory "
+    "already holds instead of re-deriving it.\n"
+    "Your step budget is bounded: probe what the question needs, and if a "
+    "complete answer would need more steps, give your best grounded answer and "
+    "say what remains.\n\n"
+    "SAFETY RULES:\n" + "\n".join(f"- {r}" for r in SESSION_SAFETY_RULES) + "\n\n"
+    f"When you propose a concrete next step, write it in your own words — you "
+    f"are NOT limited to a fixed menu. These well-known types get a one-click "
+    f"affordance: {_PROPOSAL_ACTION_TYPES}; the data-moving imports always "
+    f"route through a confirm-before-download planner; any other proposal is "
+    f"handed back to you to carry out with your own tools."
 )
-
-# Always part of the instructions — the agent is a fully autonomous read-only
-# investigator (there is no autonomy toggle). It must, however, act on the user's
-# ACTUAL request and not wander off into unrelated cloud probes.
-_EXECUTION_CLAUSE = (
-    "\n\nAUTONOMY: investigate and act on your own with your read-only tools — do "
-    "not wait to be asked, and do not narrate a plan before acting.\n"
-    "STAY ON THE USER'S REQUEST. Choose tools by what they actually asked:\n"
-    "- If they attached/uploaded a FILE (or refer to 'this log/file'), analyze "
-    "THAT file with list_uploaded_files → analyze_uploaded_file and answer from "
-    "it. Do NOT call test_credentials, survey_account, list_buckets or any cloud "
-    "tool for a local-file request — the file is local; the cloud is irrelevant "
-    "unless the user explicitly brings it in.\n"
-    "- For a connectivity / credentials / 403 / SignatureDoesNotMatch / addressing "
-    "problem: DIAGNOSE ADAPTIVELY — test_credentials first, then BRANCH on the "
-    "result to test_addressing_style / inspect_endpoint_tls / head_bucket + "
-    "list_objects / test_range_get, reason about each, and explain the ROOT CAUSE "
-    "(never a bare pass/fail list). If credentials aren't configured, say so and "
-    "tell the user exactly what to fix.\n"
-    "- When the request is genuinely about the account or a bucket's "
-    "configuration, you may run the read-only survey_account(provider_id) or "
-    "review_bucket_config(provider_id, bucket) and fold their findings into your "
-    "answer. Use them only when relevant — never reflexively. If such a run "
-    "exceeds the inline time budget it finishes in the BACKGROUND and returns a "
-    "'running' status with a run_id: do NOT re-run it — tell the user it is still "
-    "running and, in a LATER turn, call read_run_result(run_id) to read the "
-    "completed result.\n"
-    "Data-moving work (evidence import/download, large scans) is never auto-run — "
-    "propose it as a next step. A deterministic saved REPORT is only created when "
-    "the user explicitly wants an auditable artifact.\n"
-    "CONVERGE: your investigation has a bounded number of steps. Don't sprawl — "
-    "probe what the question needs, and as you establish durable conclusions "
-    "record them with record_finding / note_fact so they are never lost. Aim to "
-    "answer well within your budget; if a complete answer would need more steps, "
-    "give your best grounded answer so far and say what remains."
-)
-
-
-def instructions_for() -> str:
-    """The full session-agent instructions (no autonomy toggle)."""
-    return INSTRUCTIONS + _EXECUTION_CLAUSE
 
 
 def _build_agent_memory_block(memory: list[dict[str, Any]] | None) -> dict[str, list[Any]]:
@@ -229,26 +159,38 @@ def _build_agent_memory_block(memory: list[dict[str, Any]] | None) -> dict[str, 
 
     ``memory`` is oldest-first; we keep the most RECENT items per kind (the tail)
     so a long session surfaces its latest learnings rather than stale early ones.
+    Each item carries its id so the agent can update/resolve it later.
     """
     facts: list[dict[str, Any]] = []
     findings: list[dict[str, Any]] = []
-    questions: list[str] = []
+    questions: list[dict[str, Any]] = []
     for m in (memory or []):
         kind = m.get("kind")
         text = redact_text(str(m.get("text", "")))[:300]
         if not text:
             continue
+        mem_id = str(m.get("id") or "")
         if kind == "fact":
-            facts.append({"text": text, "confidence": m.get("confidence") or "medium"})
+            facts.append({"id": mem_id, "text": text,
+                          "confidence": m.get("confidence") or "medium"})
         elif kind == "finding":
-            findings.append({"title": text, "severity": m.get("severity") or "info"})
+            findings.append({"id": mem_id, "title": text,
+                             "severity": m.get("severity") or "info"})
         elif kind == "open_question":
-            questions.append(text)
+            questions.append({"id": mem_id, "text": text})
     return {
         "recorded_facts": facts[-_MAX_FACTS:],
         "recorded_findings": findings[-_MAX_FINDINGS:],
         "open_questions": questions[-_MAX_FACTS:],
     }
+
+
+def _clip_marked(text: str, cap: int) -> str:
+    """Bound text with an EXPLICIT truncation marker (never a silent cut)."""
+    if len(text) <= cap:
+        return text
+    omitted = len(text) - cap
+    return text[:cap] + f" [TRUNCATED: {omitted} more characters cut]"
 
 
 def build_session_context(
@@ -290,10 +232,11 @@ def build_session_context(
         # record_finding / note_open_question). Reuse them; don't re-derive.
         "agent_memory": _build_agent_memory_block(agent_memory),
         "recent_messages": [
-            {"role": m.get("role"), "content": redact_text(str(m.get("content", "")))[:1000]}
+            {"role": m.get("role"),
+             "content": _clip_marked(redact_text(str(m.get("content", ""))), _MAX_REPLAY_MSG)}
             for m in recent_messages[-_MAX_MESSAGES:]
         ],
-        "safety_rules": SESSION_SAFETY_RULES,
+        # NOTE: safety rules live ONCE in the instructions — not re-injected here.
     }
     guardrails.assert_no_secrets_in_context(context)
     return context
@@ -303,11 +246,13 @@ def render_context_text(context: dict[str, Any]) -> str:
     return json.dumps(context, indent=2, default=str)
 
 
-def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str) -> Any:
+def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str,
+                client_registry: list[Any] | None = None) -> Any:
     """Build the session Agent via the shared per-run builder (no SDK globals)."""
     from .agent_service import build_agent
     return build_agent(creds, tools, instructions, name="Storage Agent",
-                       max_tokens=_MAX_COMPLETION_TOKENS, parallel_tool_calls=False)
+                       max_tokens=_MAX_COMPLETION_TOKENS, parallel_tool_calls=False,
+                       client_registry=client_registry)
 
 
 # --- graceful step-budget finalize -----------------------------------------
@@ -317,6 +262,9 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str) -> A
 # already done. Tools are disabled, so the model can only emit text — the call is
 # guaranteed to terminate with a grounded answer. The turn budget is preserved
 # (N tool-loop turns + 1 tool-less finalize); nothing new can be probed here.
+# The SAME pass handles a provider context-length overflow: the finalize call is
+# a fresh, small request (prompt + trace), so it fits where the overloaded
+# tool-loop conversation no longer did.
 
 _FINALIZE_FALLBACK = (
     "I reached my investigation step budget before I could finish this. The steps "
@@ -325,13 +273,37 @@ _FINALIZE_FALLBACK = (
 
 
 def _is_max_turns(exc: BaseException) -> bool:
-    """True if exc is the SDK's max-turns signal. Matched by class name + message
-    so we don't couple to the SDK's exception import path."""
+    """True if exc is the SDK's max-turns signal. The SDK's MaxTurnsExceeded
+    type is checked first; the class-name/message match is only a fallback for
+    exceptions re-raised through other layers."""
+    try:
+        from agents.exceptions import MaxTurnsExceeded
+        if isinstance(exc, MaxTurnsExceeded):
+            return True
+    except Exception:  # noqa: BLE001 — SDK not installed (test envs)
+        pass
     return type(exc).__name__ == "MaxTurnsExceeded" or "max turns" in str(exc).lower()
 
 
+_CONTEXT_OVERFLOW_NEEDLES = (
+    "context length", "context_length_exceeded", "maximum context length",
+    "context window", "input is too long", "prompt is too long",
+)
+
+
+def _is_context_overflow(exc: BaseException) -> bool:
+    """True if exc is a provider context-length error (openai.BadRequestError
+    carrying a context-length message, or an equivalent message from a
+    compatible provider)."""
+    msg = str(exc).lower()
+    if any(n in msg for n in _CONTEXT_OVERFLOW_NEEDLES):
+        return True
+    code = str(getattr(exc, "code", "") or "").lower()
+    return code == "context_length_exceeded"
+
+
 def _finalize_directive(activity: list[dict[str, Any]] | None) -> str:
-    rows = activity or []
+    rows = [a for a in (activity or []) if a.get("status") != "started"]
     trace = "\n".join(
         f"- {a.get('tool', '')} {a.get('target', '')}: {a.get('result', '')}".strip()
         for a in rows[-40:]
@@ -347,19 +319,23 @@ def _finalize_directive(activity: list[dict[str, Any]] | None) -> str:
 
 
 def _finalize_agent_and_prompt(creds: dict[str, Any], prompt: str,
-                               activity: list[dict[str, Any]] | None):
+                               activity: list[dict[str, Any]] | None,
+                               client_registry: list[Any] | None = None):
     """A TOOL-LESS agent + the original prompt augmented with a finalize directive
     and the investigation trace. Tools=[] guarantees the next call emits text."""
-    return _make_agent(creds, [], instructions_for()), prompt + _finalize_directive(activity)
+    return (_make_agent(creds, [], INSTRUCTIONS, client_registry),
+            prompt + _finalize_directive(activity))
 
 
 def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, Any]] | None,
-                 session_id: str | None, turn_id: str | None = None) -> list[Any]:
+                 session_id: str | None, turn_id: str | None = None,
+                 cancel_event: Any = None) -> list[Any]:
     """The agent's full read-only toolset (no autonomy toggle — always available)."""
     if conn is None:
         return []
     tools = session_tools.build(conn, function_tool, activity)
-    tools += session_action_tools.build(conn, function_tool, activity, session_id, turn_id)
+    tools += session_action_tools.build(conn, function_tool, activity, session_id, turn_id,
+                                        cancel_event=cancel_event)
     # Working-memory tools are always available (recording is cloud-read-only).
     tools += session_memory_tools.build(conn, function_tool, session_id, activity)
     # Uploaded-file analysis is always available (local, read-only, sanitized) so
@@ -368,41 +344,36 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
     return tools
 
 
-def _sdk_session_loop(spec: dict[str, Any]) -> Any:
-    """Default loop via the OpenAI Agents SDK (lazy import) with read-only tools."""
-    try:
-        import openai  # noqa: F401
-        from agents import Runner, function_tool
-    except Exception as exc:  # noqa: BLE001
-        raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
+def _install_tool_output_budget(tools: list[Any],
+                                limit: int = _MAX_TOOL_OUTPUT_CHARS) -> dict[str, int]:
+    """Cap the CUMULATIVE characters of tool output handed to the model per turn.
 
-    creds = spec["creds"]
-    conn = spec.get("conn")
-    try:
-        tools = _build_tools(conn, function_tool, spec.get("activity"),
-                             spec.get("session_id"), spec.get("turn_id"))
-        agent = _make_agent(creds, tools, spec["instructions"])
+    A bound, not a gate: once ``limit`` is spent, every further (non-memory)
+    tool call returns a short structured note telling the model to synthesize —
+    so a sprawling investigation degrades into an answer instead of blowing the
+    provider's context window. Wraps each SDK FunctionTool's ``on_invoke_tool``;
+    fake tools in tests (plain callables) are left untouched.
+    """
+    spent = {"chars": 0}
+    for t in tools:
+        orig = getattr(t, "on_invoke_tool", None)
+        if orig is None or getattr(t, "name", "") in _BUDGET_EXEMPT_TOOLS:
+            continue
+
+        def _make(_orig):
+            async def wrapped(ctx: Any, args: Any) -> Any:
+                if spent["chars"] >= limit:
+                    return json.dumps({"error": _TOOL_BUDGET_EXHAUSTED})
+                out = await _orig(ctx, args)
+                spent["chars"] += len(str(out or ""))
+                return out
+            return wrapped
+
         try:
-            result = Runner.run_sync(agent, spec["prompt"], max_turns=_MAX_TURNS)
-            return getattr(result, "final_output", "")
-        except Exception as exc:  # noqa: BLE001
-            if not _is_max_turns(exc):
-                raise
-            # Step budget hit → one tool-less call to synthesize a grounded answer.
-            try:
-                fa, fp = _finalize_agent_and_prompt(creds, spec["prompt"], spec.get("activity"))
-                fr = Runner.run_sync(fa, fp, max_turns=2)
-                return getattr(fr, "final_output", "") or _FINALIZE_FALLBACK
-            except Exception:  # noqa: BLE001 - finalize must never re-raise
-                return _FINALIZE_FALLBACK
-    except AgentUnavailable:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        raise AgentUnavailable(f"Session assistant failed: {redact_text(str(exc))}") from exc
-
-
-# Monkeypatch in tests to inject a fake loop (no SDK / no API key).
-SESSION_LOOP: Callable[[dict[str, Any]], Any] = _sdk_session_loop
+            t.on_invoke_tool = _make(orig)
+        except Exception:  # noqa: BLE001 — frozen/foreign tool object: skip the wrap
+            pass
+    return spent
 
 
 def _build_prompt(
@@ -478,11 +449,92 @@ def _finalize_contract(raw: Any, skill_names: list[str], activity: list[dict[str
     # Bind skills_used to skills the agent ACTUALLY loaded via read_skill this
     # turn — the model can't merely *claim* a skill it never opened (keeps the
     # report honest). read_skill records {tool, target=skill_name} in activity.
-    read_skills = {a.get("target") for a in activity if a.get("tool") == "read_skill"}
+    read_skills = {a.get("target") for a in activity
+                   if a.get("tool") == "read_skill" and a.get("status") != "started"}
     contract["skills_used"] = [s for s in contract.get("skills_used", []) if s in read_skills]
     contract["skills_offered"] = skill_names
-    contract["tool_activity"] = activity
+    # Persist only COMPLETED tool records; transient "started" markers are for
+    # the live SSE stream, not the durable transcript.
+    contract["tool_activity"] = [a for a in activity if a.get("status") != "started"]
     return contract
+
+
+# --- the single (streaming) turn implementation ------------------------------
+
+
+def _start_streamed_run(spec: dict[str, Any]):
+    """Start the SDK streaming run for a prepared spec.
+
+    Returns (result_streaming, finalize, clients). ``clients`` collects every
+    AsyncOpenAI client created for this turn so the driver can close them when
+    the turn ends. Raises AgentUnavailable if the SDK is missing.
+    """
+    try:
+        import openai  # noqa: F401
+        from agents import Runner, function_tool
+    except Exception as exc:  # noqa: BLE001
+        raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
+
+    creds = spec["creds"]
+    activity: list[dict[str, Any]] = spec["activity"]
+    clients: list[Any] = []
+    tools = _build_tools(spec.get("conn"), function_tool, activity,
+                         spec.get("session_id"), spec.get("turn_id"),
+                         spec.get("cancel_event"))
+    _install_tool_output_budget(tools)
+    # _make_agent disables parallel tool calls (chat-completions providers like
+    # DeepSeek can emit malformed follow-ups with streaming + parallel calls) and
+    # uses a per-run client so concurrent sessions don't race on SDK globals.
+    agent = _make_agent(creds, tools, INSTRUCTIONS, clients)
+    result = Runner.run_streamed(agent, spec["prompt"], max_turns=_MAX_TURNS)
+
+    async def _finalize() -> str:
+        """One tool-less call to synthesize a grounded answer when the step
+        budget (or the context window) is hit mid-stream. Never raises —
+        returns a safe fallback on any error."""
+        try:
+            fa, fp = _finalize_agent_and_prompt(creds, spec["prompt"], activity, clients)
+            fr = await Runner.run(fa, fp, max_turns=2)
+            return getattr(fr, "final_output", "") or _FINALIZE_FALLBACK
+        except Exception:  # noqa: BLE001
+            return _FINALIZE_FALLBACK
+
+    return result, _finalize, clients
+
+
+def _streamed_session_loop(spec: dict[str, Any]) -> dict[str, Any]:
+    """Default SESSION_LOOP: drive the SAME streaming implementation to
+    completion on a private event loop and return the final contract dict.
+
+    This is the blocking endpoint's turn — there is no second, parallel
+    tool-loop implementation. Tests monkeypatch SESSION_LOOP with fakes that
+    return plain text; ``answer`` handles both shapes.
+    """
+    try:
+        result, finalize, clients = _start_streamed_run(spec)
+
+        async def _drive() -> dict[str, Any]:
+            final: dict[str, Any] = {}
+            async for kind, data in stream_events_for(
+                    result, spec["activity"], spec.get("skill_names") or [], finalize,
+                    cancel_event=spec.get("cancel_event"), clients=clients):
+                if kind == "final":
+                    final = data
+            return final
+
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(_drive())
+        finally:
+            loop.close()
+    except AgentUnavailable:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise AgentUnavailable(f"Session assistant failed: {redact_text(str(exc))}") from exc
+
+
+# Monkeypatch in tests to inject a fake loop (no SDK / no API key).
+SESSION_LOOP: Callable[[dict[str, Any]], Any] = _streamed_session_loop
 
 
 def answer(
@@ -494,23 +546,26 @@ def answer(
     conn: Any = None,
     turn_id: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
+    cancel_event: Any = None,
 ) -> dict[str, Any]:
     """Skill-grounded, sanitized session answer contract. Raises AgentUnavailable.
 
     Returns {answer, skills_used, evidence_used, evidence_gaps,
     next_action_proposals} — all sanitized + CoT-stripped; proposals coerced +
-    forbidden-token-filtered. StorageOps skills are injected as guidance only
-    (tools/scripts disabled). The agent is a fully autonomous read-only
-    investigator (no autonomy toggle).
+    forbidden-token-filtered. Drives the same streaming implementation as the
+    SSE endpoint (via SESSION_LOOP) to completion.
     """
     prompt, skill_names, context = _build_prompt(session, summary, recent_messages, user_message,
                                                  conn, attachments)
 
     activity: list[dict[str, Any]] = []
-    spec = {"context": context, "prompt": prompt, "instructions": instructions_for(),
+    spec = {"context": context, "prompt": prompt, "instructions": INSTRUCTIONS,
             "creds": creds, "conn": conn, "activity": activity,
-            "session_id": session.get("id"), "turn_id": turn_id}
+            "session_id": session.get("id"), "turn_id": turn_id,
+            "skill_names": skill_names, "cancel_event": cancel_event}
     raw = SESSION_LOOP(spec)
+    if isinstance(raw, dict):  # the real (streamed) loop returns the contract
+        return raw
     return _finalize_contract(raw, skill_names, activity)
 
 
@@ -525,76 +580,169 @@ def build_stream(
     conn: Any,
     turn_id: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
+    cancel_event: Any = None,
 ):
-    """Set up a streaming run. Returns (result_streaming, activity, skill_names).
+    """Set up a streaming run.
 
+    Returns (result_streaming, activity, skill_names, finalize, clients).
     Raises AgentUnavailable if the SDK/key is unavailable — caller should then
     fall back to the blocking endpoint.
     """
-    try:
-        import openai  # noqa: F401
-        from agents import Runner, function_tool
-    except Exception as exc:  # noqa: BLE001
-        raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
-
     prompt, skill_names, _context = _build_prompt(session, summary, recent_messages, user_message,
                                                   conn, attachments)
     activity: list[dict[str, Any]] = []
-    tools = _build_tools(conn, function_tool, activity, session.get("id"), turn_id)
-    # _make_agent disables parallel tool calls (chat-completions providers like
-    # DeepSeek can emit malformed follow-ups with streaming + parallel calls) and
-    # uses a per-run client so concurrent sessions don't race on SDK globals.
-    agent = _make_agent(creds, tools, instructions_for())
-    result = Runner.run_streamed(agent, prompt, max_turns=_MAX_TURNS)
+    spec = {"prompt": prompt, "creds": creds, "conn": conn, "activity": activity,
+            "session_id": session.get("id"), "turn_id": turn_id,
+            "cancel_event": cancel_event}
+    result, finalize, clients = _start_streamed_run(spec)
+    return result, activity, skill_names, finalize, clients
 
-    async def _finalize() -> str:
-        """One tool-less call to synthesize a grounded answer when the step budget
-        is hit mid-stream. Never raises — returns a safe fallback on any error."""
+
+def _hold_back_contract(text: str) -> str:
+    """Hold back everything from the answer-contract JSON sentinel.
+
+    A legitimate ```json example in the answer is released once its fence
+    closes and it turns out NOT to be the contract; the contract block itself
+    (and any still-open fence) never streams as visible text.
+    """
+    sentinel = skill_contract.CONTRACT_SENTINEL
+    pos = 0
+    while True:
+        i = text.find(sentinel, pos)
+        if i == -1:
+            return text
+        close = text.find("```", i + len(sentinel))
+        if close == -1:
+            return text[:i]  # fence not closed yet — hold back until it is
+        if skill_contract.is_contract_json(text[i + len(sentinel):close].strip()):
+            return text[:i]
+        pos = close + 3
+
+
+class _StreamSanitizer:
+    """Incrementally sanitize the live delta stream.
+
+    Maintains the accumulated raw text; each push computes the sanitized view
+    (streaming-safe CoT strip → contract-block holdback → redaction), holds back
+    a ~128-char tail (flushed at the end) so a secret completing across deltas
+    can't leak an un-redacted prefix, and emits only the monotonic extension of
+    what was already emitted. When the sanitized view diverges from the emitted
+    prefix, nothing more is emitted — the persisted final answer corrects the
+    client's view.
+    """
+
+    def __init__(self) -> None:
+        self.emitted = ""
+
+    @staticmethod
+    def _visible(raw: str) -> str:
+        return redact_text(_hold_back_contract(strip_chain_of_thought_stream(raw)))
+
+    def push(self, raw_acc: str, final: bool = False) -> str:
+        visible = self._visible(raw_acc)
+        if not final:
+            if len(visible) <= _STREAM_TAIL_HOLDBACK:
+                return ""
+            visible = visible[:len(visible) - _STREAM_TAIL_HOLDBACK]
+        if len(visible) <= len(self.emitted) or not visible.startswith(self.emitted):
+            return ""
+        out = visible[len(self.emitted):]
+        self.emitted = visible
+        return out
+
+
+def _cancel_streaming(result: Any) -> None:
+    """Best-effort cancel of the SDK's RunResultStreaming (0.17.x: .cancel())."""
+    cancel = getattr(result, "cancel", None)
+    if callable(cancel):
         try:
-            fa, fp = _finalize_agent_and_prompt(creds, prompt, activity)
-            fr = await Runner.run(fa, fp, max_turns=2)
-            return getattr(fr, "final_output", "") or _FINALIZE_FALLBACK
-        except Exception:  # noqa: BLE001
-            return _FINALIZE_FALLBACK
+            cancel()
+        except Exception:  # noqa: BLE001 — cancellation is best-effort
+            pass
 
-    return result, activity, skill_names, _finalize
+
+async def _close_clients(clients: list[Any] | None) -> None:
+    """Close every per-turn AsyncOpenAI client (they hold open HTTP pools)."""
+    for c in (clients or []):
+        try:
+            await c.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_names: list[str],
-                            finalize=None):
+                            finalize=None, *, cancel_event: Any = None,
+                            clients: list[Any] | None = None):
     """Yield ('delta', text) and ('tool', record) during the run, then
     ('final', contract) when complete.
 
-    If the run hits its step budget (max_turns) and a ``finalize`` callable was
-    provided, the cap is NOT surfaced as an error: we flush the tool trace, run a
-    tool-less finalize to synthesize a grounded answer, and end with a normal
-    'final'. The client therefore never sees a max-turns error (and never
-    double-runs via the blocking fallback)."""
+    - Deltas are SANITIZED live (see _StreamSanitizer): CoT-stripped, redacted,
+      contract-block held back, tail held back until the end of the stream.
+    - If the run hits its step budget (max_turns) or the provider's context
+      window and a ``finalize`` callable was provided, the failure is NOT
+      surfaced as an error: the tool trace is flushed, a tool-less finalize
+      synthesizes a grounded answer, and the stream ends with a normal 'final'
+      (marked as cut short in the context-overflow case).
+    - If ``cancel_event`` is set mid-run, the SDK run is cancelled and the
+      stream ends with a 'final' contract carrying the PARTIAL sanitized answer
+      + a "stopped by user" marker and ``stopped: True``.
+    - Every client in ``clients`` is closed when the turn ends, however it ends.
+    """
     from openai.types.responses import ResponseTextDeltaEvent
-    emitted = 0
+    emitted_tools = 0
+    raw_acc = ""
+    sanitizer = _StreamSanitizer()
     try:
-        async for event in result.stream_events():
-            if getattr(event, "type", "") == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
-                if event.data.delta:
-                    yield ("delta", event.data.delta)
-            while len(activity) > emitted:
-                yield ("tool", activity[emitted])
-                emitted += 1
-    except Exception as exc:  # noqa: BLE001
-        if finalize is None or not _is_max_turns(exc):
-            raise
-        while len(activity) > emitted:
-            yield ("tool", activity[emitted])
-            emitted += 1
-        text = await finalize()
-        if text:
-            yield ("delta", text)
-        yield ("final", _finalize_contract(text or "", skill_names, activity))
-        return
-    while len(activity) > emitted:
-        yield ("tool", activity[emitted])
-        emitted += 1
-    yield ("final", _finalize_contract(getattr(result, "final_output", "") or "", skill_names, activity))
+        try:
+            async for event in result.stream_events():
+                if cancel_event is not None and cancel_event.is_set():
+                    _cancel_streaming(result)
+                    while len(activity) > emitted_tools:
+                        yield ("tool", activity[emitted_tools])
+                        emitted_tools += 1
+                    partial = strip_chain_of_thought(redact_text(raw_acc)).strip()
+                    answer_text = (partial + "\n\n" if partial else "") + _STOPPED_MARKER
+                    contract = _finalize_contract(answer_text, skill_names, activity)
+                    contract["stopped"] = True
+                    yield ("final", contract)
+                    return
+                if getattr(event, "type", "") == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+                    if event.data.delta:
+                        raw_acc += event.data.delta
+                        out = sanitizer.push(raw_acc)
+                        if out:
+                            yield ("delta", out)
+                while len(activity) > emitted_tools:
+                    yield ("tool", activity[emitted_tools])
+                    emitted_tools += 1
+        except Exception as exc:  # noqa: BLE001
+            cut_short = _is_context_overflow(exc) and not _is_max_turns(exc)
+            if finalize is None or not (_is_max_turns(exc) or cut_short):
+                raise
+            while len(activity) > emitted_tools:
+                yield ("tool", activity[emitted_tools])
+                emitted_tools += 1
+            text = await finalize() or _FINALIZE_FALLBACK
+            if cut_short:
+                text = text + "\n\n" + _CONTEXT_CUT_MARKER
+            # If sanitized deltas already streamed, the finalize text REPLACES
+            # them — skip the delta and let 'final' correct the client's view.
+            if not sanitizer.emitted:
+                flushed = sanitizer.push(text, final=True)
+                if flushed:
+                    yield ("delta", flushed)
+            yield ("final", _finalize_contract(text, skill_names, activity))
+            return
+        while len(activity) > emitted_tools:
+            yield ("tool", activity[emitted_tools])
+            emitted_tools += 1
+        # Flush the held-back tail now that the stream is complete.
+        tail = sanitizer.push(raw_acc, final=True)
+        if tail:
+            yield ("delta", tail)
+        yield ("final", _finalize_contract(getattr(result, "final_output", "") or "", skill_names, activity))
+    finally:
+        await _close_clients(clients)
 
 
 __all__ = ["SESSION_LOOP", "build_session_context", "render_context_text", "answer",

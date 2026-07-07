@@ -29,12 +29,12 @@ def _evidence_block(name: str, output: dict[str, Any] | None) -> str:
 
 def render(
     run: dict[str, Any],
-    plan: list[str],
     evidence: dict[str, dict[str, Any]],
     findings: list[dict[str, str]],
     summary: str,
 ) -> str:
-    plan_md = "\n".join(f"{i}. {step}" for i, step in enumerate(plan, 1))
+    # No canned "Plan" section: the report publishes the REAL tool trace
+    # (evidence blocks) — a fixed step list would misrepresent the run.
     evidence_md = "\n".join(_evidence_block(n, evidence.get(n)) for n in _TOOL_ORDER)
     if findings:
         findings_md = "\n".join(
@@ -56,10 +56,6 @@ def render(
 - Prefix: {run.get('prefix') or '(bucket root)'}
 - Run ID: {run.get('id')}
 - Created at: {run.get('created_at')}
-
-## Plan
-
-{plan_md}
 
 ## Evidence
 
@@ -89,13 +85,12 @@ def render(
 
 def write_report(
     run: dict[str, Any],
-    plan: list[str],
     evidence: dict[str, dict[str, Any]],
     findings: list[dict[str, str]],
     summary: str,
 ) -> tuple[str, str]:
     """Render and write the report; return (path, content)."""
-    content = render(run, plan, evidence, findings, summary)
+    content = render(run, evidence, findings, summary)
     path = report_path_for(run["id"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")

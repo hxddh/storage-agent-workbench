@@ -99,10 +99,23 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
     latency_budget = {"n": 0}
     _MAX_LATENCY_RUNS = 8
 
+    # Per-turn ranged-read budget: test_range_get is the one download-shaped
+    # probe (it reads real object bytes, capped per call in the S3 layer), so
+    # bound how many ranged reads a turn can fire — a probe, not a downloader.
+    range_budget = {"n": 0}
+    _MAX_RANGE_GETS = 8
+
     def note(tool: str, target: str, result: Any) -> None:
         if activity is not None:
             summary = result if isinstance(result, str) else _summarize(result)
-            activity.append({"tool": tool, "target": target[:80], "result": summary})
+            activity.append({"tool": tool, "target": target[:80], "result": summary,
+                             "status": "completed"})
+
+    def _target_of(kw: dict[str, Any]) -> str:
+        bucket, key = kw.get("bucket"), kw.get("key")
+        if bucket and key:
+            return f"{bucket}/{key}"
+        return str(bucket or kw.get("name") or kw.get("provider_id") or kw.get("endpoint") or "")
 
     def rec(tool: str, **kw: Any) -> None:
         # Commit the audit row immediately. audit.record() deliberately doesn't
@@ -114,6 +127,11 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         audit.record(conn, "session_tool",
                      {"tool": tool, **{k: str(v)[:200] for k, v in kw.items()}}, run_id=None)
         conn.commit()
+        # Emit a START record so the live stream can show "running <tool>…"
+        # while the (possibly slow) call executes. Only "completed" records are
+        # persisted on the message; the UI ignores fields it doesn't know.
+        if activity is not None:
+            activity.append({"tool": tool, "target": _target_of(kw)[:80], "status": "started"})
 
     @function_tool
     def list_providers() -> str:
@@ -245,8 +263,13 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
             return _err("Unknown provider_id. Call list_providers first.")
         if not bucket_ok(p, bucket):
             return _err("That bucket is not in this provider's allow-list.")
+        if range_budget["n"] >= _MAX_RANGE_GETS:
+            return _err(f"Ranged-read budget for this turn is used up ({_MAX_RANGE_GETS} calls). "
+                        "Report the range behavior you already measured, or ask the user "
+                        "which object matters most.")
         rec("test_range_get", provider_id=provider_id, bucket=bucket, key=key, range_header=range_header)
         res = s3.test_range_get(conn, provider_id, bucket, key, range_header)
+        range_budget["n"] += 1
         note("test_range_get", f"{bucket}/{key}", res)
         return json.dumps(res)
 

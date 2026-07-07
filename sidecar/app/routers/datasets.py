@@ -17,7 +17,6 @@ from fastapi import (
     Form,
     HTTPException,
     UploadFile,
-    status,
 )
 
 from .. import audit, config
@@ -29,6 +28,10 @@ from ..repositories import runs as runs_repo
 router = APIRouter(tags=["datasets"])
 
 _VALID_TYPES = {"access_log", "inventory"}
+# Upload streams to disk in this chunk size, capped at this total. Bounds the
+# memory footprint (never a full read into RAM) and refuses a runaway upload.
+_UPLOAD_CHUNK = 1024 * 1024  # 1 MiB
+MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
 
 
 def _safe_filename(name: str) -> str:
@@ -55,8 +58,23 @@ async def upload_dataset(
     raw_dir.mkdir(parents=True, exist_ok=True)
     dest = raw_dir / filename
 
-    contents = await file.read()
-    dest.write_bytes(contents)
+    # Stream to disk in bounded chunks (never a single in-memory read) and cap
+    # the total so a huge/runaway upload can't exhaust memory or disk.
+    total = 0
+    with dest.open("wb") as fh:
+        while True:
+            chunk = await file.read(_UPLOAD_CHUNK)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_UPLOAD_BYTES:
+                fh.close()
+                dest.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB limit",
+                )
+            fh.write(chunk)
 
     stored_rel = config.rel_path(dest)
     dataset_id = repo.create(conn, run_id, dataset_type, name, filename, stored_rel)
@@ -64,7 +82,7 @@ async def upload_dataset(
         conn,
         "dataset.upload",
         {"dataset_id": dataset_id, "dataset_type": dataset_type, "stored_path": stored_rel,
-         "bytes": len(contents)},
+         "bytes": total},
         run_id=run_id,
     )
     conn.commit()

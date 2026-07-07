@@ -381,15 +381,28 @@ def add_agent_memory(
     confidence: str | None = None,
     source_run_id: str | None = None,
 ) -> str:
-    """Persist one agent-authored memory item (sanitized). Returns its id."""
+    """Persist one agent-authored memory item (sanitized). Returns its id.
+
+    Deduped: an exact-duplicate ACTIVE item of the same kind/text is not
+    re-inserted — the existing id is returned instead, so a re-derived fact
+    doesn't pile up identical rows against the tail cap.
+    """
     if kind not in _MEMORY_KINDS:
         raise ValueError(f"unknown agent-memory kind: {kind!r}")
+    clean = redact_text(str(text))[:600]
+    existing = conn.execute(
+        "SELECT id FROM session_agent_memory "
+        "WHERE session_id = ? AND kind = ? AND text = ? AND status = 'active' LIMIT 1",
+        (session_id, kind, clean),
+    ).fetchone()
+    if existing is not None:
+        return existing["id"]
     mem_id = uuid.uuid4().hex
     conn.execute(
         "INSERT INTO session_agent_memory "
         "(id, session_id, kind, text, severity, confidence, source_run_id, status, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)",
-        (mem_id, session_id, kind, redact_text(str(text))[:600],
+        (mem_id, session_id, kind, clean,
          (severity or None), (confidence or None), (source_run_id or None), utcnow()),
     )
     _touch(conn, session_id)
@@ -397,13 +410,58 @@ def add_agent_memory(
     return mem_id
 
 
-def list_agent_memory(
-    conn: sqlite3.Connection, session_id: str, limit: int = 200
-) -> list[dict[str, Any]]:
-    """The most recent ``limit`` active agent-memory items, returned oldest-first.
+def update_agent_memory(
+    conn: sqlite3.Connection, session_id: str, mem_id: str, new_text: str
+) -> bool:
+    """Correct an active memory item's text (sanitized). Returns True if updated."""
+    clean = redact_text(str(new_text))[:600]
+    cur = conn.execute(
+        "UPDATE session_agent_memory SET text = ? "
+        "WHERE id = ? AND session_id = ? AND status = 'active'",
+        (clean, mem_id, session_id),
+    )
+    _touch(conn, session_id)
+    conn.commit()
+    return cur.rowcount > 0
 
-    Bounded so a long-running session can't grow the per-turn context (or its
-    build cost) without limit; the newest items are the ones that survive.
+
+def resolve_agent_memory(
+    conn: sqlite3.Connection, session_id: str, mem_id: str, reason: str | None = None
+) -> bool:
+    """Close/resolve a memory item so it stops being replayed and no longer
+    counts against the active tail cap. Returns True if a row was resolved.
+
+    The optional ``reason`` is appended (sanitized) to the item's text so the
+    resolution stays auditable even though the item leaves the active set.
+    """
+    row = conn.execute(
+        "SELECT text FROM session_agent_memory "
+        "WHERE id = ? AND session_id = ? AND status = 'active'",
+        (mem_id, session_id),
+    ).fetchone()
+    if row is None:
+        return False
+    text = row["text"]
+    if reason:
+        text = f"{text} [resolved: {redact_text(str(reason))[:200]}]"[:600]
+    conn.execute(
+        "UPDATE session_agent_memory SET status = 'resolved', text = ? "
+        "WHERE id = ? AND session_id = ?",
+        (text, mem_id, session_id),
+    )
+    _touch(conn, session_id)
+    conn.commit()
+    return True
+
+
+def list_agent_memory(
+    conn: sqlite3.Connection, session_id: str, limit: int = 50
+) -> list[dict[str, Any]]:
+    """The most recent ``limit`` ACTIVE agent-memory items, returned oldest-first.
+
+    Resolved/closed items are excluded (they neither replay into context nor
+    count against the tail cap). Bounded so a long-running session can't grow the
+    per-turn context (or its build cost) without limit; the newest items survive.
     """
     rows = conn.execute(
         "SELECT * FROM session_agent_memory WHERE session_id = ? AND status = 'active' "

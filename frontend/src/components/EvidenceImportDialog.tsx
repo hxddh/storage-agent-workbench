@@ -49,6 +49,17 @@ export function EvidenceImportDialog({
 
   const generatePlan = async () => {
     setError(null);
+    // Access-log imports require a valid ISO time range. Validate client-side
+    // (Date.parse) and show an inline hint instead of round-tripping to a raw
+    // 422 String(e) from the server.
+    if (isLog) {
+      const s = Date.parse(start);
+      const e = Date.parse(end);
+      if (!start || !end || Number.isNaN(s) || Number.isNaN(e) || e <= s) {
+        setError(t("imp.invalidRange"));
+        return;
+      }
+    }
     setBusy(true);
     try {
       const mf = Number(maxFiles);

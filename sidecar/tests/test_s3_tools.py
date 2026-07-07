@@ -1,10 +1,16 @@
-"""Tests for the READ-ONLY S3 tools, exercised through the HTTP API.
+"""Tests for the READ-ONLY S3 tools.
 
 A botocore Stubber stands in for the real S3 endpoint, so no live AWS / MinIO /
 BOS credentials are needed. ``build_s3_client`` is monkeypatched to return the
 stubbed client; ``load_provider`` still reads the real (test) DB row.
+
+Only the two S3 tools with a surviving HTTP surface (``/tools/head-bucket`` and
+``/tools/list-objects-v2``) are exercised through the API; the rest call the
+s3-layer functions directly (their bespoke ``/tools/*`` wrappers were removed —
+the agent and run executors call the same functions directly).
 """
 
+import json
 import sqlite3
 from datetime import datetime, timezone
 from io import BytesIO
@@ -16,6 +22,8 @@ from botocore.stub import Stubber
 
 from app import config
 from app.s3 import client_factory
+from app.s3 import tools as s3
+from app.tool_runner import run_tool
 
 ACCESS = "AKIAIOSFODNN7EXAMPLE"
 SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
@@ -57,7 +65,12 @@ def stub(monkeypatch):
 
 
 def _db():
-    return sqlite3.connect(str(config.db_path()))
+    conn = sqlite3.connect(str(config.db_path()))
+    # Row factory so s3-layer helpers that read the provider row (load_provider
+    # uses row["id"]) work when called directly, not only via the HTTP layer.
+    # sqlite3.Row still supports integer indexing, so existing r[0] uses hold.
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
 # --- test_credentials -------------------------------------------------------
@@ -66,19 +79,20 @@ def _db():
 def test_credentials_success(client, cloud_id, stub):
     _, s = stub
     s.add_response("list_buckets", {"Buckets": [{"Name": "b1"}], "Owner": {"DisplayName": "acct"}})
-    resp = client.post("/tools/test-credentials", json={"provider_id": cloud_id})
-    body = resp.json()
+    with _db() as conn:
+        body = s3.test_credentials(conn, cloud_id)
     assert body["success"] is True
     assert body["identity_hint"] == "acct"
     assert body["provider_type"] == "s3-compatible"
     for leaked in (ACCESS, SECRET, TOKEN):
-        assert leaked not in resp.text
+        assert leaked not in json.dumps(body)
 
 
 def test_credentials_unsupported_is_not_hard_failure(client, cloud_id, stub):
     _, s = stub
     s.add_client_error("list_buckets", service_error_code="NotImplemented", http_status_code=501)
-    body = client.post("/tools/test-credentials", json={"provider_id": cloud_id}).json()
+    with _db() as conn:
+        body = s3.test_credentials(conn, cloud_id)
     assert body["success"] is True
     assert body["identity_hint"] == "Provider unsupported"
 
@@ -86,7 +100,8 @@ def test_credentials_unsupported_is_not_hard_failure(client, cloud_id, stub):
 def test_credentials_auth_failure(client, cloud_id, stub):
     _, s = stub
     s.add_client_error("list_buckets", service_error_code="InvalidAccessKeyId", http_status_code=403)
-    body = client.post("/tools/test-credentials", json={"provider_id": cloud_id}).json()
+    with _db() as conn:
+        body = s3.test_credentials(conn, cloud_id)
     assert body["success"] is False
     assert body["error_code"] == "InvalidAccessKeyId"
 
@@ -101,6 +116,66 @@ def test_cloud_provider_test_endpoint_runs_real_check(client, cloud_id, stub):
 
 def test_cloud_provider_test_missing_is_404(client):
     assert client.post("/cloud-providers/nope/test").status_code == 404
+
+
+# --- legacy /tools/* surface shrunk to the two used endpoints (fix 15) -------
+
+
+def test_removed_tools_endpoints_are_gone(client, cloud_id):
+    """Only /tools/head-bucket and /tools/list-objects-v2 survive; the former
+    per-tool HTTP wrappers were deleted (their s3-layer fns are called directly
+    by the agent/executors)."""
+    for path in ("/tools/test-credentials", "/tools/head-object", "/tools/test-range-get",
+                 "/tools/test-path-style-vs-virtual-host", "/tools/inspect-tls",
+                 "/tools/get-bucket-config-summary", "/tools/review-bucket-security"):
+        resp = client.post(path, json={"provider_id": cloud_id, "bucket": BUCKET,
+                                        "endpoint_url": "https://x", "key": "k",
+                                        "range_header": "bytes=0-1"})
+        assert resp.status_code == 404, path
+
+
+# --- provider bucket/prefix scope enforcement (fix 11) -----------------------
+
+
+def test_head_bucket_denies_out_of_scope_bucket(client, monkeypatch):
+    """A provider restricted to allowed_buckets rejects an out-of-scope bucket
+    at the surviving HTTP surface (scope isn't only enforced inside the agent)."""
+    pid = client.post("/cloud-providers", json={
+        "name": "scoped", "provider_type": "s3-compatible",
+        "endpoint_url": "https://minio.example.com", "region": "us-east-1",
+        "addressing_style": "path", "access_key": ACCESS, "secret_key": SECRET,
+        "allowed_buckets": ["only-this-one"],
+    }).json()["id"]
+    r = client.post("/tools/head-bucket", json={"provider_id": pid, "bucket": BUCKET})
+    assert r.status_code == 403
+    assert "scope" in r.json()["detail"].lower()
+
+
+def test_list_objects_denies_out_of_scope_prefix(client, monkeypatch):
+    pid = client.post("/cloud-providers", json={
+        "name": "scoped2", "provider_type": "s3-compatible",
+        "endpoint_url": "https://minio.example.com", "region": "us-east-1",
+        "addressing_style": "path", "access_key": ACCESS, "secret_key": SECRET,
+        "allowed_prefixes": ["logs/"],
+    }).json()["id"]
+    r = client.post("/tools/list-objects-v2",
+                    json={"provider_id": pid, "bucket": BUCKET, "max_keys": 10, "prefix": "secret/"})
+    assert r.status_code == 403
+
+
+def test_check_scope_unit():
+    from app.s3.scope import check_scope
+
+    # Unrestricted (empty lists) → always allowed.
+    assert check_scope([], [], "any-bucket", prefix="x/") is None
+    # Bucket not in allowed_buckets → denied.
+    assert check_scope(["a"], [], "b") is not None
+    # Bucket allowed, no prefix restriction → allowed.
+    assert check_scope(["a"], [], "a", prefix="anything/") is None
+    # Prefix restriction: object key must match; bucket-level (no key/prefix) ok.
+    assert check_scope([], ["logs/"], "a") is None
+    assert check_scope([], ["logs/"], "a", key="logs/f") is None
+    assert check_scope([], ["logs/"], "a", key="data/f") is not None
 
 
 # --- head_bucket ------------------------------------------------------------
@@ -249,34 +324,28 @@ def test_head_object_sanitizes_metadata(client, cloud_id, stub):
             "Metadata": {"team": "infra", "authorization": "Bearer leaky-token"},
         },
     )
-    resp = client.post(
-        "/tools/head-object", json={"provider_id": cloud_id, "bucket": BUCKET, "key": "a.txt"}
-    )
-    body = resp.json()
+    with _db() as conn:
+        body = s3.head_object(conn, cloud_id, BUCKET, "a.txt")
     assert body["success"] is True
     assert body["size"] == 1024
     assert body["metadata_sanitized"]["team"] == "infra"
     assert body["metadata_sanitized"]["authorization"] == "***REDACTED***"
-    assert "leaky-token" not in resp.text
+    assert "leaky-token" not in json.dumps(body)
 
 
 # --- test_range_get ---------------------------------------------------------
 
 
 def test_range_get_rejects_open_ended(client, cloud_id, stub):
-    body = client.post(
-        "/tools/test-range-get",
-        json={"provider_id": cloud_id, "bucket": BUCKET, "key": "a", "range_header": "bytes=0-"},
-    ).json()
+    with _db() as conn:
+        body = s3.test_range_get(conn, cloud_id, BUCKET, "a", "bytes=0-")
     assert body["success"] is False
     assert body["error_code"] == "RangeRequired"
 
 
 def test_range_get_rejects_too_large(client, cloud_id, stub):
-    body = client.post(
-        "/tools/test-range-get",
-        json={"provider_id": cloud_id, "bucket": BUCKET, "key": "a", "range_header": "bytes=0-5242880"},
-    ).json()
+    with _db() as conn:
+        body = s3.test_range_get(conn, cloud_id, BUCKET, "a", "bytes=0-5242880")
     assert body["success"] is False
     assert body["error_code"] == "RangeTooLarge"
 
@@ -293,10 +362,8 @@ def test_range_get_bounded_read(client, cloud_id, stub):
         },
         expected_params={"Bucket": BUCKET, "Key": "a", "Range": "bytes=0-9"},
     )
-    body = client.post(
-        "/tools/test-range-get",
-        json={"provider_id": cloud_id, "bucket": BUCKET, "key": "a", "range_header": "bytes=0-9"},
-    ).json()
+    with _db() as conn:
+        body = s3.test_range_get(conn, cloud_id, BUCKET, "a", "bytes=0-9")
     assert body["success"] is True
     assert body["bytes_returned"] == 10
     assert body["content_range"] == "bytes 0-9/100"
@@ -326,9 +393,8 @@ def test_path_style_vs_virtual_host_recommendation(client, cloud_id, monkeypatch
         return path_client if addressing_style_override == "path" else virtual_client
 
     monkeypatch.setattr(client_factory, "build_s3_client", fake_build)
-    body = client.post(
-        "/tools/test-path-style-vs-virtual-host", json={"provider_id": cloud_id, "bucket": BUCKET}
-    ).json()
+    with _db() as conn:
+        body = s3.test_path_style_vs_virtual_host(conn, cloud_id, BUCKET)
     assert body["recommendation"] == "path"
     assert body["path_style_result"]["success"] is True
     assert body["virtual_hosted_result"]["success"] is False
@@ -339,26 +405,28 @@ def test_path_style_vs_virtual_host_recommendation(client, cloud_id, monkeypatch
 
 def test_inspect_tls_graceful_error_no_network(client):
     # Port 1 refuses fast; no DNS egress, no subprocess.
-    resp = client.post("/tools/inspect-tls", json={"endpoint_url": "https://127.0.0.1:1"})
-    body = resp.json()
+    body = s3.inspect_tls("https://127.0.0.1:1")
     assert body["tls_version"] is None
     assert body["error_message_sanitized"] is not None
 
 
-def test_inspect_tls_strips_query_from_recorded_input(client):
-    client.post(
-        "/tools/inspect-tls",
-        json={"endpoint_url": "https://127.0.0.1:1/p?X-Amz-Signature=abc123&X-Amz-Credential=AKIA/cred"},
-    )
+def test_inspect_tls_redacts_presigned_query_in_recorded_input(client):
+    # The shared redaction layer masks presigned query params in a recorded
+    # tool input (run_tool sanitizes before persistence — defense in depth now
+    # that the endpoint's own query-strip helper is gone).
     conn = _db()
     try:
+        run_tool(
+            conn, "inspect_tls",
+            {"endpoint_url": "https://127.0.0.1:1/p?X-Amz-Signature=abc123&X-Amz-Credential=AKIA/cred"},
+            lambda: s3.inspect_tls("https://127.0.0.1:1"),
+        )
         row = conn.execute(
             "SELECT input_json_sanitized FROM tool_calls WHERE tool_name='inspect_tls'"
         ).fetchone()
     finally:
         conn.close()
     recorded = row[0]
-    assert "X-Amz-Signature" not in recorded
     assert "abc123" not in recorded
 
 
@@ -368,7 +436,12 @@ def test_inspect_tls_strips_query_from_recorded_input(client):
 def test_tool_calls_and_audit_recorded_without_secrets(client, cloud_id, stub):
     _, s = stub
     s.add_response("list_buckets", {"Buckets": [], "Owner": {"DisplayName": "acct"}})
-    client.post("/tools/test-credentials", json={"provider_id": cloud_id})
+    conn0 = _db()
+    try:
+        run_tool(conn0, "test_credentials", {"provider_id": cloud_id},
+                 lambda: s3.test_credentials(conn0, cloud_id))
+    finally:
+        conn0.close()
 
     conn = _db()
     try:

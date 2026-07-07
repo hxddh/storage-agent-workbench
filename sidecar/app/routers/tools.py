@@ -1,57 +1,52 @@
 """HTTP endpoints for the whitelisted READ-ONLY S3 tools.
 
-Each endpoint records a sanitized tool_call + audit entry via ``run_tool``.
-Responses never contain credentials. There are no write/delete endpoints.
+Only the two endpoints the frontend actually calls survive here —
+``/tools/head-bucket`` and ``/tools/list-objects-v2``. Every other former
+``/tools/*`` HTTP wrapper was removed: those S3-layer functions are still used
+by the conversational agent and the run executors (which call them directly),
+they just no longer need a bespoke, unscoped HTTP surface. Tests exercise the
+deleted wrappers by calling the s3-layer functions directly.
+
+Each endpoint records a sanitized tool_call + audit entry via ``run_tool`` and
+enforces the provider's ``allowed_buckets`` / ``allowed_prefixes`` scope (so the
+restriction isn't decorative outside the agent). Responses never contain
+credentials. There are no write/delete endpoints.
 """
 
 from __future__ import annotations
 
 import sqlite3
 from typing import Any
-from urllib.parse import urlparse, urlunparse
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from ..db import get_conn
-from ..models.schemas import (
-    BucketConfigRequest,
-    HeadBucketRequest,
-    HeadObjectRequest,
-    InspectTlsRequest,
-    ListObjectsV2Request,
-    PathStyleRequest,
-    PerformanceProfileRequest,
-    TestCredentialsRequest,
-    TestRangeGetRequest,
-)
-from ..s3 import config_tools, tools
+from ..models.schemas import HeadBucketRequest, ListObjectsV2Request
+from ..repositories import cloud_providers as cloud_repo
+from ..s3 import tools
+from ..s3.scope import check_scope
 from ..tool_runner import run_tool
 
 router = APIRouter(prefix="/tools", tags=["tools"])
 
 
-def _strip_query(url: str) -> str:
-    """Drop the query string so sensitive presigned params are never recorded."""
-    p = urlparse(url if "://" in url else f"https://{url}")
-    return urlunparse((p.scheme, p.netloc, p.path, "", "", ""))
-
-
-@router.post("/test-credentials")
-def tool_test_credentials(
-    body: TestCredentialsRequest, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
-    return run_tool(
-        conn,
-        "test_credentials",
-        {"provider_id": body.provider_id},
-        lambda: tools.test_credentials(conn, body.provider_id),
-    )
+def _enforce_scope(conn: sqlite3.Connection, provider_id: str, bucket: str,
+                   *, prefix: str | None = None) -> None:
+    """Deny an out-of-scope bucket/prefix for a provider (403), if restricted."""
+    provider = cloud_repo.get(conn, provider_id)
+    if provider is None:
+        return  # unknown provider surfaces downstream as a tool error, not here
+    denial = check_scope(provider.allowed_buckets, provider.allowed_prefixes,
+                         bucket, prefix=prefix)
+    if denial:
+        raise HTTPException(status_code=403, detail=denial)
 
 
 @router.post("/head-bucket")
 def tool_head_bucket(
     body: HeadBucketRequest, conn: sqlite3.Connection = Depends(get_conn)
 ) -> dict[str, Any]:
+    _enforce_scope(conn, body.provider_id, body.bucket)
     return run_tool(
         conn,
         "head_bucket",
@@ -64,6 +59,7 @@ def tool_head_bucket(
 def tool_list_objects_v2(
     body: ListObjectsV2Request, conn: sqlite3.Connection = Depends(get_conn)
 ) -> dict[str, Any]:
+    _enforce_scope(conn, body.provider_id, body.bucket, prefix=body.prefix)
     return run_tool(
         conn,
         "list_objects_v2",
@@ -76,119 +72,4 @@ def tool_list_objects_v2(
         lambda: tools.list_objects_v2(
             conn, body.provider_id, body.bucket, body.max_keys, body.prefix
         ),
-    )
-
-
-@router.post("/head-object")
-def tool_head_object(
-    body: HeadObjectRequest, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
-    return run_tool(
-        conn,
-        "head_object",
-        {"provider_id": body.provider_id, "bucket": body.bucket, "key": body.key},
-        lambda: tools.head_object(conn, body.provider_id, body.bucket, body.key),
-    )
-
-
-@router.post("/test-range-get")
-def tool_test_range_get(
-    body: TestRangeGetRequest, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
-    return run_tool(
-        conn,
-        "test_range_get",
-        {
-            "provider_id": body.provider_id,
-            "bucket": body.bucket,
-            "key": body.key,
-            "range_header": body.range_header,
-        },
-        lambda: tools.test_range_get(
-            conn, body.provider_id, body.bucket, body.key, body.range_header
-        ),
-    )
-
-
-@router.post("/test-path-style-vs-virtual-host")
-def tool_test_path_style(
-    body: PathStyleRequest, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
-    return run_tool(
-        conn,
-        "test_path_style_vs_virtual_host",
-        {"provider_id": body.provider_id, "bucket": body.bucket},
-        lambda: tools.test_path_style_vs_virtual_host(conn, body.provider_id, body.bucket),
-    )
-
-
-@router.post("/inspect-tls")
-def tool_inspect_tls(
-    body: InspectTlsRequest, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
-    # Record only the query-stripped endpoint.
-    safe_endpoint = _strip_query(body.endpoint_url)
-    return run_tool(
-        conn,
-        "inspect_tls",
-        {"endpoint_url": safe_endpoint},
-        lambda: tools.inspect_tls(body.endpoint_url),
-    )
-
-
-# --- read-only bucket config review tools ------------------------
-
-
-def _config_tool(conn, name: str, body: BucketConfigRequest, fn) -> dict[str, Any]:
-    return run_tool(conn, name, {"provider_id": body.provider_id, "bucket": body.bucket}, fn)
-
-
-@router.post("/get-bucket-config-summary")
-def tool_get_bucket_config_summary(
-    body: BucketConfigRequest, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
-    return _config_tool(conn, "get_bucket_config_summary", body,
-                        lambda: config_tools.get_bucket_config_summary(conn, body.provider_id, body.bucket))
-
-
-@router.post("/review-bucket-security")
-def tool_review_bucket_security(
-    body: BucketConfigRequest, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
-    return _config_tool(conn, "review_bucket_security", body,
-                        lambda: config_tools.review_bucket_security(conn, body.provider_id, body.bucket))
-
-
-@router.post("/review-bucket-lifecycle")
-def tool_review_bucket_lifecycle(
-    body: BucketConfigRequest, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
-    return _config_tool(conn, "review_bucket_lifecycle", body,
-                        lambda: config_tools.review_bucket_lifecycle(conn, body.provider_id, body.bucket))
-
-
-@router.post("/review-bucket-observability")
-def tool_review_bucket_observability(
-    body: BucketConfigRequest, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
-    return _config_tool(conn, "review_bucket_observability", body,
-                        lambda: config_tools.review_bucket_observability(conn, body.provider_id, body.bucket))
-
-
-@router.post("/review-bucket-cost-optimization")
-def tool_review_bucket_cost_optimization(
-    body: BucketConfigRequest, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
-    return _config_tool(conn, "review_bucket_cost_optimization", body,
-                        lambda: config_tools.review_bucket_cost_optimization(conn, body.provider_id, body.bucket))
-
-
-@router.post("/review-bucket-performance-profile")
-def tool_review_bucket_performance_profile(
-    body: PerformanceProfileRequest, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
-    return run_tool(
-        conn, "review_bucket_performance_profile",
-        {"provider_id": body.provider_id, "bucket": body.bucket, "prefix": body.prefix},
-        lambda: config_tools.review_bucket_performance_profile(conn, body.provider_id, body.bucket, body.prefix),
     )

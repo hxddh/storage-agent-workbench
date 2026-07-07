@@ -33,23 +33,15 @@ def test_guardrail_does_not_forbid_legit_readonly_tool_names():
         assert not guardrails.is_forbidden_tool(ok)
 
 
-def test_output_sanitization_bounds_and_redacts():
-    big = {
-        "success": True,
-        "sample_keys": [f"k{i}" for i in range(100)],
-        "headers_sanitized": {"authorization": "Bearer x"},
-        "leak": f"creds {ACCESS} here",
-    }
-    out = guardrails.sanitize_output_for_agent(big)
-    assert len(out["sample_keys"]) == guardrails.SAMPLE_LIMIT  # bounded to 20
-    assert "headers_sanitized" not in out  # raw headers dropped
-    assert ACCESS not in str(out)  # secret redacted
-
-
-def test_assert_report_sanitized_blocks_secrets():
-    guardrails.assert_report_sanitized("# Clean report\n\nNo secrets here.")  # ok
-    with pytest.raises(GuardrailBlocked):
-        guardrails.assert_report_sanitized(f"contains {ACCESS} key")
+def test_dead_guardrail_helpers_removed():
+    # Fix 8: sanitize_output_for_agent / assert_report_sanitized had no
+    # production callers (S3-layer sanitization + redact cover tool outputs;
+    # reports go through redact_text). The dead helpers, the never-enforced
+    # AGENT_MAX_RANGE_BYTES, and the unused FORBIDDEN_TOOLS alias were removed —
+    # assert they're gone so they don't creep back as guards nothing wears.
+    for gone in ("sanitize_output_for_agent", "assert_report_sanitized",
+                 "AGENT_MAX_RANGE_BYTES", "FORBIDDEN_TOOLS"):
+        assert not hasattr(guardrails, gone), f"expected {gone} to be removed"
 
 
 def test_assert_no_secrets_in_context_raises_on_raw_secret():

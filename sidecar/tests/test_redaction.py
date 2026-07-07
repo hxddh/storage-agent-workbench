@@ -64,6 +64,43 @@ def test_redacts_bearer_token():
     assert REDACTED in out
 
 
+def test_redacts_base64_bearer_token_fully():
+    # A base64 JWT-ish bearer contains '/', '+', '=' — the charset must include
+    # them so no recoverable tail is left behind.
+    tok = "ab12CD/ef+gh34IJ==klMN"
+    out = redact_text(f"authorization: bearer {tok}")
+    assert tok not in out
+    assert "klMN" not in out
+    assert REDACTED in out
+
+
+def test_redacts_bare_token_and_api_key_params():
+    # The local SSE auth uses ?token=<shared secret>; a pasted config line may
+    # carry api_key=<value>. Both must be masked (label kept, value gone).
+    out = redact_text("GET /sessions?token=s3cr3t-shared-value-1 HTTP/1.1")
+    assert "s3cr3t-shared-value-1" not in out
+    assert REDACTED in out
+    out2 = redact_text("api_key=sk-not-a-real-key-000111")
+    assert "sk-not-a-real-key-000111" not in out2
+    assert REDACTED in out2
+
+
+def test_token_pattern_leaves_compound_labels_alone():
+    # next_token= / continuation tokens are pagination cursors, not secrets, and
+    # are preceded by a word char so the \b-anchored `token=` rule won't fire.
+    text = "next_token=WEsdfPageCursor123"
+    assert redact_text(text) == text
+
+
+def test_redacts_google_presigned_query_params():
+    url = ("https://storage.googleapis.com/b/o?X-Goog-Credential=svc%40proj"
+           "&X-Goog-Signature=deadbeefgcs123&X-Goog-SignedHeaders=host")
+    out = redact_text(url)
+    assert "deadbeefgcs123" not in out
+    assert "X-Goog-Signature=" + REDACTED in out
+    assert "X-Goog-Credential=" + REDACTED in out
+
+
 def test_nested_structures():
     payload = {"providers": [{"name": "x", "secret_key": "topsecret"}]}
     out = redact(payload)

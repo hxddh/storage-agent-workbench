@@ -18,6 +18,7 @@ from collections.abc import Callable
 from typing import Any
 
 from . import audit
+from .repositories import utcnow
 from .security.redaction import redact
 
 
@@ -49,7 +50,11 @@ def run_tool(
         "INSERT INTO tool_calls "
         "(id, run_id, tool_name, input_json_sanitized, output_json_sanitized, "
         " status, duration_ms, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+        # ISO-8601 UTC "Z" via utcnow() — the same format the repositories use —
+        # so created_at string-sorts coherently across tables (SQLite's
+        # datetime('now') emits "YYYY-MM-DD HH:MM:SS", which sorts before any
+        # same-second "...T...Z" value).
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             uuid.uuid4().hex,
             run_id,
@@ -58,6 +63,7 @@ def run_tool(
             json.dumps(sanitized_output),
             status,
             duration_ms,
+            utcnow(),
         ),
     )
     audit.record(

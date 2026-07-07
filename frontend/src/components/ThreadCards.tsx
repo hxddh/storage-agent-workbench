@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import type { Grounding, NextAction, SessionFinding, SessionRunLink, ToolActivity, TriageCase } from "../types";
 import { RunDetail } from "./RunDetail";
 import { Markdown } from "./Markdown";
@@ -24,8 +24,10 @@ const Spark = (
   </svg>
 );
 
-/** A user or agent turn. User = subtle bubble; agent = clean prose with a label. */
-export function MessageCard({
+/** A user or agent turn. User = subtle bubble; agent = clean prose with a label.
+ * Memoized: historical messages have stable props, so re-renders during a fast
+ * stream skip everything except the actively-streaming card (UX1). */
+export const MessageCard = memo(function MessageCard({
   role,
   content,
   toolActivity,
@@ -76,7 +78,7 @@ export function MessageCard({
         ))}
     </div>
   );
-}
+});
 
 // Drop a trailing (possibly still-open) ```json … ``` metadata block from a
 // partially-streamed answer so it never flashes on screen.
@@ -87,8 +89,10 @@ function stripMetaBlock(text: string): string {
 
 /** Compact, Codex/Cursor-style trace of the read-only tools the agent ran. Each
  * row stays on a single line: tool name + a truncating target, with the result
- * pinned to the right. */
+ * pinned to the right. A streamed "started" record renders as an in-progress
+ * row (spinner) that resolves in place when the completed record arrives. */
 function ToolActivityList({ items }: { items: ToolActivity[] }) {
+  const { t } = useI18n();
   return (
     <div className="mb-2.5 space-y-[3px]">
       {items.map((a, i) => (
@@ -102,7 +106,14 @@ function ToolActivityList({ items }: { items: ToolActivity[] }) {
           ) : (
             <span className="flex-1" />
           )}
-          <span className="shrink-0 font-mono text-[11px] text-gray-500" title={a.result}>{a.result}</span>
+          {a.status === "started" ? (
+            <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-amber-300/80">
+              <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              {t("tool.running")}
+            </span>
+          ) : (
+            <span className="shrink-0 font-mono text-[11px] text-gray-500" title={a.result}>{a.result}</span>
+          )}
         </div>
       ))}
     </div>

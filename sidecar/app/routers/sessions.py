@@ -239,6 +239,21 @@ async def upload_session_dataset(
     )
 
 
+# How long the blocking fallback waits to ATTACH to a still-running streaming
+# worker for the same turn before giving up with a 409 (the worker keeps going).
+_IN_PROGRESS_WAIT_S = 150.0
+
+
+def _result_envelope(cached: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "proposed_actions": cached.get("proposed_actions", []),
+        "skills_used": cached.get("skills_used", []),
+        "skills_offered": cached.get("skills_offered", []),
+        "evidence_used": cached.get("evidence_used", []),
+        "evidence_gaps": cached.get("evidence_gaps", []),
+    }
+
+
 @router.post("/{session_id}/messages")
 def post_session_message(
     session_id: str, body: SessionMessageCreate, conn: sqlite3.Connection = Depends(get_conn)
@@ -247,12 +262,20 @@ def post_session_message(
     if row is None:
         raise HTTPException(status_code=404, detail="session not found")
 
-    # Idempotency: if this is the blocking fallback for a turn the streaming
-    # attempt already completed, return the persisted result instead of re-running
-    # (which would duplicate the user+assistant messages and any inline run).
-    cached = turn_guard.get_result(body.turn_id)
-    if cached is not None:
-        return {"session_id": session_id, "messages": repo.list_messages(conn, session_id), **cached}
+    # Idempotency / attach: this may be the blocking fallback for a turn the
+    # streaming attempt is still running (SSE dropped) or already completed.
+    #  - completed  → return the persisted result, don't re-run.
+    #  - in-progress → WAIT for the SAME worker (up to _IN_PROGRESS_WAIT_S) and
+    #    return its result, rather than re-running the turn CONCURRENTLY with the
+    #    still-alive worker (which duplicated messages + doubled spend).
+    handle, created = turn_guard.begin(body.turn_id, session_id)
+    if handle is not None and not created:
+        if not handle.done:
+            handle.done_event.wait(_IN_PROGRESS_WAIT_S)
+        if handle.done and handle.payload is not None:
+            return {"session_id": session_id, "messages": repo.list_messages(conn, session_id),
+                    **_result_envelope(handle.payload)}
+        raise HTTPException(status_code=409, detail="turn still in progress")
 
     # Build the deterministic, sanitized context — independent of any model key.
     # NOTE: the user message is NOT persisted yet. We persist user+assistant
@@ -266,10 +289,13 @@ def post_session_message(
     try:
         creds = get_model_credentials(conn)  # raises AgentUnavailable if missing
         contract = session_agent.answer(dict(row), summary, recent, body.content, creds, conn,
-                                        body.turn_id, attachments=attachments)
+                                        body.turn_id, attachments=attachments,
+                                        cancel_event=(handle.cancel_event if handle else None))
     except AgentUnavailable as exc:
         # Clean failure: nothing is persisted — the user keeps their text and sees
-        # the error (matches the streaming path's semantics).
+        # the error (matches the streaming path's semantics). Drop the turn
+        # registration so a genuine retry isn't blocked as "in progress".
+        turn_guard.discard(body.turn_id)
         raise HTTPException(status_code=422, detail=redact_text(str(exc)))
 
     # Success: persist the user message and the assistant answer together.
@@ -301,7 +327,32 @@ def post_session_message(
         "skills_offered": contract.get("skills_offered", []),
         "evidence_used": contract.get("evidence_used", []),
         "evidence_gaps": contract.get("evidence_gaps", []),
+        "stopped": contract.get("stopped", False),
     }
+
+
+@router.post("/{session_id}/turns/{turn_id}/cancel")
+def cancel_turn(session_id: str, turn_id: str,
+                conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+    """Ask a running turn to stop. Contract (the frontend wires against this):
+
+    - 200 {"status": "cancelling"} — the turn is running; its cancel_event was
+      set. The worker observes it, cancels the model run, persists the PARTIAL
+      answer, and emits a done event with "stopped": true.
+    - 200 {"status": "completed"} — the turn already finished; nothing to cancel.
+    - 404 — no such turn is (or was) registered.
+    """
+    if repo.get_row(conn, session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    handle = turn_guard.get_handle(turn_id, session_id)
+    if handle is None:
+        raise HTTPException(status_code=404, detail="unknown turn")
+    if handle.done:
+        return {"status": "completed"}
+    handle.cancel_event.set()
+    audit.record(conn, "session.turn.cancel", {"session_id": session_id, "turn_id": turn_id}, run_id=None)
+    conn.commit()
+    return {"status": "cancelling"}
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:
@@ -333,6 +384,17 @@ async def post_session_message_stream(
     except AgentUnavailable as exc:
         raise HTTPException(status_code=422, detail=redact_text(str(exc)))
 
+    # Register this turn as running (owner of the handle). A blocking fallback
+    # for the same turn_id then ATTACHES to this handle instead of re-running,
+    # and the cancel endpoint sets this handle's cancel_event.
+    handle, _created = turn_guard.begin(body.turn_id, session_id)
+    cancel_event = handle.cancel_event if handle else None
+    # Snapshot the request-scoped reads into plain data so the worker never
+    # touches `conn` (the request handler closes it once StreamingResponse is
+    # constructed). The worker opens its OWN connection below (fix: request-scoped
+    # conn closed under running tools).
+    row_d = dict(row)
+
     # Run the whole agent turn (LLM streaming + any sync tool calls) on a
     # DEDICATED WORKER THREAD with its own event loop, and bridge its events to
     # this response through a thread-safe queue. The agent loop and boto3 tool
@@ -350,13 +412,20 @@ async def post_session_message_stream(
         wloop = asyncio.new_event_loop()
         asyncio.set_event_loop(wloop)
         final: dict[str, Any] = {}
+        # The worker owns its OWN sqlite connection for its ENTIRE lifetime —
+        # every tool closure binds THIS connection (passed into build_stream) and
+        # the final persist uses it too. The request-scoped Depends(get_conn) conn
+        # is closed as soon as the handler returns (and torn down on client
+        # disconnect); binding tools to it would hit "closed database" mid-run.
+        wconn = connect()
 
         async def drive() -> None:
-            result, activity, skill_names, finalize = session_agent.build_stream(
-                dict(row), summary, recent, body.content, creds, conn, body.turn_id,
-                attachments=attachments)
+            result, activity, skill_names, finalize, clients = session_agent.build_stream(
+                row_d, summary, recent, body.content, creds, wconn, body.turn_id,
+                attachments=attachments, cancel_event=cancel_event)
             async for kind, data in session_agent.stream_events_for(
-                result, activity, skill_names, finalize):
+                    result, activity, skill_names, finalize,
+                    cancel_event=cancel_event, clients=clients):
                 if kind == "final":
                     final["data"] = data
                 else:
@@ -366,16 +435,7 @@ async def post_session_message_stream(
             wloop.run_until_complete(drive())
             data = final.get("data")
             if data is not None:
-                # Persist on the worker's OWN connection — NOT the request-scoped
-                # `conn`. The request handler returns as soon as StreamingResponse
-                # is constructed, and its Depends(get_conn) closes that connection
-                # in its finally; a client disconnect tears the generator down the
-                # same way. Writing to the shared connection from this thread then
-                # races the close (and hits "closed database" on disconnect),
-                # losing the turn. A dedicated connection makes the turn complete
-                # server-side regardless of what the client does — the guarantee
-                # turn_guard's blocking fallback depends on.
-                wconn = connect()
+                stopped = bool(data.get("stopped"))
                 try:
                     repo.add_message(wconn, session_id, "user", body.content)
                     mid = repo.add_message(wconn, session_id, "assistant", data["answer"],
@@ -386,26 +446,34 @@ async def post_session_message_stream(
                                                "skills_used": data.get("skills_used", []),
                                            },
                                            proposed_actions=data["next_action_proposals"])
-                    audit.record(wconn, "session.message", {"session_id": session_id}, run_id=None)
+                    audit.record(wconn, "session.message",
+                                 {"session_id": session_id, "stopped": stopped}, run_id=None)
                     wconn.commit()
                 finally:
-                    wconn.close()
-                # Record the completed turn so the blocking fallback won't re-run
-                # it (and re-persist) if the client missed the 'done' event.
+                    pass
+                # Record the completed turn so the blocking fallback attaches (and
+                # won't re-run/re-persist) if the client missed the 'done' event.
                 turn_guard.set_result(body.turn_id, {
                     "proposed_actions": data["next_action_proposals"],
                     "skills_used": data.get("skills_used", []),
                     "skills_offered": data.get("skills_offered", []),
                     "evidence_used": data.get("evidence_used", []),
                     "evidence_gaps": data.get("evidence_gaps", []),
+                    "stopped": stopped,
                 })
                 emit(("done", {"message_id": mid, "proposed_actions": data["next_action_proposals"],
                                "evidence_used": data.get("evidence_used", []),
                                "evidence_gaps": data.get("evidence_gaps", []),
-                               "skills_used": data.get("skills_used", [])}))
+                               "skills_used": data.get("skills_used", []),
+                               "stopped": stopped}))
         except Exception as exc:  # noqa: BLE001
+            turn_guard.discard(body.turn_id)
             emit(("error", redact_text(str(exc))))
         finally:
+            try:
+                wconn.close()
+            except Exception:  # noqa: BLE001
+                pass
             emit(_DONE)
             try:
                 wloop.close()

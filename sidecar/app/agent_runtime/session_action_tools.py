@@ -64,11 +64,14 @@ _MAX_RESULT_WAIT = 60
 
 
 def _execute_run(conn: sqlite3.Connection, body: RunCreate,
-                 turn_id: str | None = None, dedup_key: str | None = None) -> str:
+                 turn_id: str | None = None, dedup_key: str | None = None,
+                 cancel_event: Any = None) -> str:
     """Create + run a read-only run and return its id, bounded by a wall clock.
 
     Commits so ``run_service.run_sync`` (which uses its own connection) sees the
     row, then runs it on a daemon thread and waits up to ``_INLINE_RUN_TIMEOUT``.
+    If ``cancel_event`` fires (the user stopped the turn) the wait ends early —
+    the run itself keeps completing in the background like a timeout would.
 
     Idempotency: if this turn already created a run with ``dedup_key`` (e.g. a
     streaming attempt that then errored, triggering the blocking fallback), reuse
@@ -97,7 +100,12 @@ def _execute_run(conn: sqlite3.Connection, body: RunCreate,
             done.set()
 
     threading.Thread(target=_go, name=f"inline-run-{run_id[:8]}", daemon=True).start()
-    done.wait(_INLINE_RUN_TIMEOUT)
+    import time as _time
+    deadline = _time.monotonic() + _INLINE_RUN_TIMEOUT
+    while not done.is_set() and _time.monotonic() < deadline:
+        if cancel_event is not None and cancel_event.is_set():
+            break  # user stopped the turn — return the run's current status now
+        done.wait(1.0)
     conn.commit()  # end any read snapshot so the re-read sees run_sync's writes
     return run_id
 
@@ -131,6 +139,7 @@ def build(
     activity: list[dict[str, Any]] | None = None,
     session_id: str | None = None,
     turn_id: str | None = None,
+    cancel_event: Any = None,
 ) -> list[Any]:
     """Build the agent's read-only survey/review tools (always available).
 
@@ -142,6 +151,8 @@ def build(
 
     ``turn_id`` (the client turn id) makes a survey/review idempotent across a
     streaming attempt and its blocking fallback (see ``turn_guard``).
+    ``cancel_event`` lets the 180 s inline-run wait return early when the user
+    stops the turn.
     """
     def provider(provider_id: str):
         return cloud_repo.get(conn, provider_id)
@@ -153,9 +164,16 @@ def build(
     def bucket_ok(p, bucket: str) -> bool:
         return (not p.allowed_buckets) or (bucket in p.allowed_buckets)
 
+    def start(tool: str, target: str) -> None:
+        # Emit a START marker so the live stream can show "running <tool>…"
+        # while the (slow) inline run executes. Only "completed" records persist.
+        if activity is not None:
+            activity.append({"tool": tool, "target": target[:80], "status": "started"})
+
     def note(tool: str, target: str, result: str) -> None:
         if activity is not None:
-            activity.append({"tool": tool, "target": target[:80], "result": result[:80]})
+            activity.append({"tool": tool, "target": target[:80], "result": result[:80],
+                             "status": "completed"})
 
     # NOTE: connectivity/credential/addressing diagnosis is NOT a tool here — the
     # agent does that adaptively with its own read-only session_tools probes
@@ -172,9 +190,11 @@ def build(
             return _err("Unknown provider_id. Use a configured provider.")
         if not bucket_ok(p, bucket):
             return _err("That bucket is not in this provider's allow-list.")
+        start("review_bucket_config", bucket)
         body = RunCreate(run_type="bucket_config_review", provider_id=provider_id, bucket=bucket,
                          user_prompt=_DEFAULT_PROMPTS["bucket_config_review"], session_id=session_id)
-        run_id = _execute_run(conn, body, turn_id, f"bucket_config_review:{provider_id}:{bucket}")
+        run_id = _execute_run(conn, body, turn_id, f"bucket_config_review:{provider_id}:{bucket}",
+                              cancel_event=cancel_event)
         result = _run_result(conn, run_id)
         note("review_bucket_config", bucket, result["status"])
         return json.dumps(result)
@@ -185,9 +205,11 @@ def build(
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Use a configured provider.")
+        start("survey_account", provider_name(provider_id))
         body = RunCreate(run_type="account_discovery", provider_id=provider_id,
                          user_prompt=_DEFAULT_PROMPTS["account_discovery"], session_id=session_id)
-        run_id = _execute_run(conn, body, turn_id, f"account_discovery:{provider_id}")
+        run_id = _execute_run(conn, body, turn_id, f"account_discovery:{provider_id}",
+                              cancel_event=cancel_event)
         result = _run_result(conn, run_id)
         profile = account_repo.get_profile(conn, run_id)
         if profile:
@@ -212,6 +234,8 @@ def build(
         # this session's turn — the SSE keepalive keeps the client alive.
         deadline = _time.monotonic() + max(0, min(int(wait_seconds), _MAX_RESULT_WAIT))
         while result["status"] in ("pending", "running") and _time.monotonic() < deadline:
+            if cancel_event is not None and cancel_event.is_set():
+                break  # user stopped the turn — stop waiting on the background run
             _time.sleep(1.0)
             conn.commit()  # end the read snapshot so run_sync's writes are visible
             result = _run_result(conn, run_id)
