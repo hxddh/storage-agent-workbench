@@ -286,6 +286,9 @@ export function Thread({
     run_account_discovery: "act.run_account_discovery",
     run_bucket_config_review: "act.run_bucket_config_review",
     run_diagnostic: "act.run_diagnostic",
+    // Cut-short-turn continuation (server injects this proposal): one click
+    // sends a localized "carry on where you left off" prompt to the agent.
+    continue_investigation: "act.continueInvestigation",
   };
 
   const runProposal = async (p: NextAction) => {

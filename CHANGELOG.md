@@ -6,6 +6,26 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.5] - 2026-07-07
+
+_Autonomy: a turn cut short by its depth/context ceiling now offers a one-click
+"continue investigation" so a deep investigation can be resumed instead of
+silently stopping — a suggestion the user confirms, reusing the existing
+next-action-proposal machinery. No new subsystem; no security change._
+
+### Added
+
+- **"Continue investigation" on a cut-short turn.** When a turn ends via the
+  finalize pass (it hit the step ceiling or the model's context window before the
+  agent naturally concluded), the result now carries a `continue_investigation`
+  next-action proposal. One click sends a localized "pick up where you left off"
+  prompt back to the agent, which resumes from its own (marked cut-short) prior
+  answer. It's a proposal — nothing runs automatically; the user confirms by
+  clicking, and it's deduped so a turn never doubles it. Implemented by reusing the
+  proposal → conversational-handoff path (the frontend already one-clicks an
+  unrecognized action_type); the only new surface is the injected proposal + its
+  localized label.
+
 ## [0.24.4] - 2026-07-07
 
 _Autonomy: lets the read-only agent run a genuinely DEEP investigation in a single

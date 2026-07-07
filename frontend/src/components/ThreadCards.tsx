@@ -348,16 +348,24 @@ export function ProposalCard({
   proposal: NextAction;
   onRun: (p: NextAction) => void;
 }) {
+  const { t } = useI18n();
+  // The server-injected cut-short continuation carries a fixed English title;
+  // localize its chip label (agent-authored proposals are already in the user's
+  // language). Everything else shows the agent's own title verbatim.
+  const label =
+    proposal.action_type === "continue_investigation"
+      ? t("proposal.continueTitle")
+      : proposal.title;
   return (
     <button
       onClick={() => onRun(proposal)}
-      title={proposal.reason || proposal.title}
+      title={proposal.reason || label}
       className="group/prop inline-flex max-w-full animate-fade-in items-center gap-1.5 rounded-full border border-edge bg-panel/60 px-3 py-1.5 text-[12.5px] text-gray-300 transition-colors hover:border-accent/45 hover:bg-accent-dim/60 hover:text-gray-100"
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" className="shrink-0 text-accent-soft">
         <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
       </svg>
-      <span className="truncate">{proposal.title}</span>
+      <span className="truncate">{label}</span>
     </button>
   );
 }

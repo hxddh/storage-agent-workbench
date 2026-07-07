@@ -453,6 +453,34 @@ def _build_prompt(
     return "\n\n".join(prompt_parts), skill_names, context
 
 
+_CONTINUE_ACTION = "continue_investigation"
+
+
+def _with_continue_proposal(contract: dict[str, Any]) -> dict[str, Any]:
+    """Offer a one-click 'continue investigation' next-step on a CUT-SHORT turn.
+
+    When a turn ends via the finalize pass (it hit the step ceiling or the context
+    window before the agent naturally concluded), the investigation isn't
+    finished. Rather than silently stopping, surface a proposal the user can click
+    to resume — a suggestion, not automation (the user still confirms by clicking).
+    Deduped so we never double it if the agent already proposed a continuation.
+    """
+    from ..sessions import next_actions
+    proposals = contract.get("next_action_proposals") or []
+    if any(p.get("action_type") == _CONTINUE_ACTION for p in proposals):
+        return contract
+    norm = next_actions.normalize_proposal({
+        "action_type": _CONTINUE_ACTION,
+        "title": "Continue the investigation",
+        "reason": "The previous turn reached its depth limit before finishing — "
+                  "resume and pursue the threads it hadn't reached yet.",
+        "confidence": "high",
+    })
+    if norm:
+        contract["next_action_proposals"] = [norm, *proposals]
+    return contract
+
+
 def _finalize_contract(raw: Any, skill_names: list[str], activity: list[dict[str, Any]]) -> dict[str, Any]:
     contract = skill_contract.parse_agent_contract(raw, allowed_skill_names=skill_names)
     contract["answer"] = contract["answer"][:_MAX_OUTPUT]
@@ -762,7 +790,10 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
                 flushed = sanitizer.push(text, final=True)
                 if flushed:
                     yield ("delta", flushed)
-            yield ("final", _finalize_contract(text, skill_names, activity))
+            # Cut short by the step ceiling or the context window → offer a
+            # one-click "continue investigation" next step.
+            yield ("final", _with_continue_proposal(
+                _finalize_contract(text, skill_names, activity)))
             return
         while len(activity) > emitted_tools:
             yield ("tool", activity[emitted_tools])
