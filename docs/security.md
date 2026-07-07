@@ -158,8 +158,9 @@ summary + counts via `survey_account`).
   auto-remediated.
 - **Evidence-source discovery only discovers** whether inventory / server access
   logging are *configured* (plus destination metadata). It never pulls the full
-  inventory report or access log — that is a future phase / manual operator
-  action. Reserved sources (CloudTrail / Storage Lens / provider access logs)
+  inventory report or access log — pulling that evidence is the separate,
+  confirmation-gated managed evidence import flow (see below), never part of
+  discovery. Reserved sources (CloudTrail / Storage Lens / provider access logs)
   are surfaced as `not_implemented`, never faked.
 - **Bounded scan:** processing is capped by `max_buckets` (default 100, hard cap
   500) with optional include/exclude globs; truncation is reported, not silent.
@@ -206,7 +207,7 @@ confirmation-gated.
   evidence-import tables store redaction-passed bucket/prefix/key/warnings only.
 - **Reuse.** Downloaded files feed the existing deterministic
   `inventory_analysis` / `access_log_analysis` importers + analyzers; the import
-  is deterministic (no LLM, no agent in this phase).
+  is deterministic by design (no LLM, no agent).
 - **Support gaps.** ORC inventory is `detected_but_not_supported`; full inventory
   manifests with unusual structures degrade to a clean limitation rather than a
   crash. CloudTrail / Storage Lens / provider access logs remain unimplemented.
