@@ -609,9 +609,9 @@ def test_preview_object_per_turn_budget(client, cloud_id, monkeypatch):
         conn.row_factory = sqlite3.Row
         tools = {t.name: t for t in session_tools.build(conn, _FT(), [])}
         pv = tools["preview_object"]
-        results = [_json.loads(pv(cloud_id, BUCKET, f"k{i}.txt")) for i in range(13)]
-    assert all("error" not in r for r in results[:12])          # first 12 succeed (_MAX_PREVIEWS)
-    assert "error" in results[12] and "budget" in results[12]["error"].lower()  # 13th blocked
+        results = [_json.loads(pv(cloud_id, BUCKET, f"k{i}.txt")) for i in range(17)]
+    assert all("error" not in r for r in results[:16])          # first 16 succeed (_MAX_PREVIEWS)
+    assert "error" in results[16] and "budget" in results[16]["error"].lower()  # 17th blocked
 
 
 # --- list_object_versions / list_multipart_uploads (data-level, read-only) --

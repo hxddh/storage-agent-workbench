@@ -87,20 +87,21 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
 
     # Per-turn budget: cap how many skill bodies the agent can load in one turn,
     # so a runaway loop can't pull every skill (~8000 chars each) into context.
-    # 8 (was 6): a cross-domain investigation legitimately spans several skills;
+    # 10 (was 8/6): a cross-domain investigation legitimately spans several skills;
     # keep the cap above what a real diagnosis needs, below "load everything".
     skill_loads = {"n": 0}
-    _MAX_SKILL_LOADS = 8
+    _MAX_SKILL_LOADS = 10
 
     # Per-turn object-preview budget: preview_object reads bounded object CONTENT
     # (unlike the metadata-only probes), so bound it in code — a handful of small
     # objects per turn — so it can't be looped into a bulk download. This is the
     # agent-native equivalent of a gate: fluid within a code-enforced budget.
-    # 12 calls / 16 MiB (was 8 / 8 MiB): deep forensics comparing objects across
-    # prefixes needs more than 8 looks; still far below anything bulk-shaped.
+    # 16 calls / 24 MiB (was 12/16, 8/8): deep forensics comparing objects across
+    # prefixes in one deep turn needs more looks; still far below anything
+    # bulk-shaped (the 1 MiB/call cap and no-recursion rule keep it a probe).
     preview_budget = {"n": 0, "bytes": 0}
-    _MAX_PREVIEWS = 12
-    _MAX_PREVIEW_BYTES = 16 * 1024 * 1024
+    _MAX_PREVIEWS = 16
+    _MAX_PREVIEW_BYTES = 24 * 1024 * 1024
 
     # Per-turn latency-probe budget: measure_request_latency fires several live
     # round-trips per call, so cap how many probe RUNS a turn can do — the tool's
@@ -114,7 +115,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
     # probe (it reads real object bytes, capped per call in the S3 layer), so
     # bound how many ranged reads a turn can fire — a probe, not a downloader.
     range_budget = {"n": 0}
-    _MAX_RANGE_GETS = 8
+    _MAX_RANGE_GETS = 12
 
     def note(tool: str, target: str, result: Any) -> None:
         if activity is not None:

@@ -190,7 +190,7 @@ Do not introduce these unless explicitly requested:
 
 11. Bulk analysis must not download object bodies. The one bounded exception is
     the `preview_object` tool: a single, read-only, sanitized preview of one named
-    object's head (hard cap 1 MiB/call), budgeted per turn (12 previews / 16 MiB)
+    object's head (hard cap 1 MiB/call), budgeted per turn (16 previews / 24 MiB)
     so it can't be looped into a bulk download, and never persisted.
     Binary/oversized objects are reported, not decoded. The bounds are the
     safety — there is still no full-object download and no bulk/recursive body

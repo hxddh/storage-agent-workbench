@@ -98,7 +98,7 @@ Safety:
 
 - Single named object; hard cap 1 MiB per call (bounded Range GET); never persisted.
 - Binary or oversized objects are reported, not decoded; output is redaction-passed.
-- Budgeted per turn (12 objects / 16 MiB) so it can't be looped into a bulk
+- Budgeted per turn (16 objects / 24 MiB) so it can't be looped into a bulk
   download. No full-object download, no bulk/recursive body reads.
 
 ### list_object_versions
@@ -225,7 +225,7 @@ These tools return only the deterministic engine's sanitized summary + counts
 (no raw rows, no full key lists, no object bodies) for the agent to narrate.
 
 On top of the per-tool bounds there is a **per-turn cumulative tool-output
-budget** (~150k chars): once a turn's tool results have consumed it, further
+budget** (~200k chars): once a turn's tool results have consumed it, further
 tool calls return a notice asking the agent to synthesize from what it already
 has instead of more data.
 

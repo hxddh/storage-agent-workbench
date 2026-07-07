@@ -67,5 +67,5 @@ def test_test_range_get_has_per_turn_budget():
     import inspect
 
     src = inspect.getsource(session_tools.build)
-    assert "_MAX_RANGE_GETS = 8" in src
+    assert "_MAX_RANGE_GETS" in src  # the budget exists (value is tuned, not pinned)
     assert "range_budget" in src
