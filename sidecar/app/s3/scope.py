@@ -21,6 +21,7 @@ def check_scope(
     *,
     key: str | None = None,
     prefix: str | None = None,
+    listing: bool = False,
 ) -> str | None:
     """Return None when the operation is in scope, else a short denial message.
 
@@ -28,8 +29,11 @@ def check_scope(
     - ``allowed_buckets`` non-empty: ``bucket`` must be one of them.
     - ``allowed_prefixes`` non-empty: an explicit object ``key`` or listing
       ``prefix`` must start with one of them. A bucket-level operation (no
-      key/prefix, e.g. head_bucket or config reads) is allowed — prefix scoping
-      constrains object addressing, not bucket metadata.
+      key/prefix, e.g. head_bucket or config reads — ``listing=False``) is
+      allowed: prefix scoping constrains object addressing, not bucket metadata.
+      But a LISTING (``listing=True``) with no/empty prefix would enumerate the
+      whole bucket root, OUTSIDE the allowed prefixes, so it is denied — the
+      caller must list within an allowed prefix.
     """
     if allowed_buckets and bucket not in allowed_buckets:
         return (
@@ -38,10 +42,19 @@ def check_scope(
         )
     if allowed_prefixes:
         target = key if key is not None else prefix
-        if target and not any(target.startswith(p) for p in allowed_prefixes):
-            kind = "key" if key is not None else "prefix"
+        if target:
+            if not any(target.startswith(p) for p in allowed_prefixes):
+                kind = "key" if key is not None else "prefix"
+                return (
+                    f"The {kind} '{target}' is outside this provider's "
+                    f"allowed_prefixes scope."
+                )
+        elif listing:
+            # No/empty prefix on a listing → would enumerate the bucket root,
+            # bypassing the prefix restriction. Require an in-scope prefix.
             return (
-                f"The {kind} '{target}' is outside this provider's "
-                f"allowed_prefixes scope."
+                "Listing the bucket root is outside this provider's "
+                "allowed_prefixes scope; list within an allowed prefix "
+                f"({', '.join(allowed_prefixes)})."
             )
     return None

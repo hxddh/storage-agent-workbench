@@ -88,7 +88,12 @@ export function RunDetail({
     // (re)connect. Reset the local list when a connection opens so a reconnect
     // replay doesn't append duplicates (M1).
     es.onopen = () => {
-      if (!cancelled) setEvents([]);
+      if (cancelled) return;
+      // A successful (re)connect makes the fallback poll redundant — stop it so a
+      // transient onerror that started polling doesn't leave it running once the
+      // stream is back (F5).
+      if (poll) { clearInterval(poll); poll = undefined; }
+      setEvents([]);
     };
     es.onmessage = (e) => {
       let ev: RunEvent;

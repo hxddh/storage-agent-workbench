@@ -81,7 +81,7 @@ export function Thread({
   // proposals: null = this session's turn hasn't answered yet (show the session's
   // default next-steps); [] = the agent answered and proposed nothing.
   const run = useSessionRun(sessionId);
-  const { busy, pending, streamText, streamTools, needKey } = run;
+  const { busy, uploading, pending, streamText, streamTools, needKey } = run;
   const liveProposals = run.proposals;
   // View-level errors not tied to a turn (e.g. a proposal action failing, or
   // asking for a report before a chat exists). Combined with the run's error.
@@ -246,7 +246,7 @@ export function Thread({
   }, [items.length, proposals.length, pending, streamText?.length, streamTools.length]);
 
   const send = () => {
-    if (busy || runner.uploading) return;
+    if (busy || uploading) return;
     if (attached) {
       const type = attachType ?? inferDatasetType(attached.name);
       if (!type) {
@@ -381,7 +381,7 @@ export function Thread({
       fileRef={fileRef}
       taRef={taRef}
       busy={busy}
-      uploading={runner.uploading}
+      uploading={uploading}
       onSend={send}
       onStop={runner.stop}
       modelName={modelName}

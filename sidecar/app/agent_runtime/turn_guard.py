@@ -17,7 +17,14 @@ The registry, keyed by the client ``turn_id``, tracks each turn's lifecycle:
 - ``get_result(turn_id, session_id)`` is SESSION-BOUND: a result recorded for
   another session's turn is never returned (fixes the cross-session cache
   collision when two sessions reuse a turn_id).
-- ``discard(turn_id)`` drops a failed attempt so a clean retry can run.
+- ``fail(turn_id, error)`` marks the turn terminally FAILED and wakes waiters
+  (with the error), so an attached fallback returns promptly instead of blocking
+  the whole ``_IN_PROGRESS_WAIT_S`` and then reporting a bogus "still running".
+- ``discard(turn_id)`` drops a registration entirely so a clean retry can run.
+
+A still-running handle is never evicted by the ``_MAX`` cap: evicting it would
+let a fallback see ``created=True`` and re-run the turn CONCURRENTLY with the
+live worker — the exact duplication the registry prevents.
 
 Process-local and best-effort by design: the fallback always happens within the
 same sidecar process seconds later, so in-memory state is sufficient and nothing
@@ -39,7 +46,8 @@ _runs: "OrderedDict[str, dict[str, str]]" = OrderedDict()
 class TurnHandle:
     """In-process state of one client turn (streaming or blocking attempt)."""
 
-    __slots__ = ("turn_id", "session_id", "done_event", "cancel_event", "payload")
+    __slots__ = ("turn_id", "session_id", "done_event", "cancel_event", "payload",
+                 "failed", "error")
 
     def __init__(self, turn_id: str, session_id: str | None):
         self.turn_id = turn_id
@@ -47,6 +55,8 @@ class TurnHandle:
         self.done_event = threading.Event()
         self.cancel_event = threading.Event()
         self.payload: dict[str, Any] | None = None
+        self.failed = False
+        self.error: str | None = None
 
     @property
     def done(self) -> bool:
@@ -55,8 +65,19 @@ class TurnHandle:
 
 def _bump(od: "OrderedDict[str, Any]", key: str) -> None:
     od.move_to_end(key)
-    while len(od) > _MAX:
-        od.popitem(last=False)
+    if len(od) <= _MAX:
+        return
+    # Evict oldest-first, but NEVER a still-running TurnHandle (a fallback would
+    # then re-run it concurrently with the live worker). `_runs` holds plain
+    # dicts, which are always evictable. If everything over the cap is running,
+    # allow temporary overflow rather than break the dedup guarantee.
+    for k in list(od.keys()):
+        if len(od) <= _MAX:
+            break
+        v = od[k]
+        if isinstance(v, TurnHandle) and not v.done:
+            continue
+        del od[k]
 
 
 def begin(turn_id: str | None, session_id: str | None) -> tuple["TurnHandle | None", bool]:
@@ -107,16 +128,43 @@ def get_result(turn_id: str | None, session_id: str | None = None) -> dict[str, 
     return h.payload
 
 
-def set_result(turn_id: str | None, payload: dict[str, Any]) -> None:
-    """Record that this turn completed (so a fallback won't re-run it)."""
+def set_result(turn_id: str | None, payload: dict[str, Any],
+               session_id: str | None = None) -> None:
+    """Record that this turn completed (so a fallback won't re-run it).
+
+    ``session_id`` binds a handle recreated after eviction so a payload can never
+    be read across sessions that reused a turn_id.
+    """
     if not turn_id:
         return
     with _lock:
         h = _turns.get(turn_id)
         if h is None:
-            h = TurnHandle(turn_id, None)
+            h = TurnHandle(turn_id, session_id)
             _turns[turn_id] = h
         h.payload = payload
+        h.done_event.set()
+        _bump(_turns, turn_id)
+
+
+def fail(turn_id: str | None, error: str | None = None,
+         session_id: str | None = None) -> None:
+    """Mark this turn terminally FAILED and wake any attached waiter.
+
+    Unlike ``discard`` (which removes the registration silently), ``fail`` keeps
+    a terminal handle whose ``done_event`` is set, so a blocking fallback parked
+    on ``done_event`` wakes immediately and can surface the error instead of
+    blocking the full ``_IN_PROGRESS_WAIT_S`` and then reporting "still running".
+    """
+    if not turn_id:
+        return
+    with _lock:
+        h = _turns.get(turn_id)
+        if h is None:
+            h = TurnHandle(turn_id, session_id)
+            _turns[turn_id] = h
+        h.failed = True
+        h.error = error
         h.done_event.set()
         _bump(_turns, turn_id)
 
@@ -157,4 +205,4 @@ def _reset_for_tests() -> None:
 
 
 __all__ = ["TurnHandle", "begin", "get_handle", "get_result", "set_result",
-           "discard", "get_run", "set_run"]
+           "fail", "discard", "get_run", "set_run"]

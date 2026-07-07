@@ -272,31 +272,46 @@ def post_session_message(
     if handle is not None and not created:
         if not handle.done:
             handle.done_event.wait(_IN_PROGRESS_WAIT_S)
-        if handle.done and handle.payload is not None:
-            return {"session_id": session_id, "messages": repo.list_messages(conn, session_id),
-                    **_result_envelope(handle.payload)}
+        if handle.done:
+            if handle.payload is not None:
+                return {"session_id": session_id, "messages": repo.list_messages(conn, session_id),
+                        **_result_envelope(handle.payload)}
+            if handle.failed:
+                # The streaming attempt for this turn failed server-side (nothing
+                # persisted). Surface its error promptly instead of a bogus 409.
+                raise HTTPException(status_code=502,
+                                    detail=redact_text(handle.error or "the turn failed"))
         raise HTTPException(status_code=409, detail="turn still in progress")
 
-    # Build the deterministic, sanitized context — independent of any model key.
-    # NOTE: the user message is NOT persisted yet. We persist user+assistant
-    # together only on success (same as the streaming path), so a clean failure
-    # (e.g. no model key → 422) doesn't leave a dangling user message in the
-    # thread. answer() takes body.content as the question directly.
-    summary = repo.get_summary(conn, session_id) or summary_builder.refresh(conn, session_id)
-    recent = repo.list_messages(conn, session_id)
-    attachments = sds_repo.list_pending_for_session(conn, session_id)
-
+    # We own this turn (created=True). GUARANTEE the handle is resolved on every
+    # exit — otherwise a same-turn_id fallback attaches to a running handle whose
+    # done_event is never set and blocks the full _IN_PROGRESS_WAIT_S.
     try:
-        creds = get_model_credentials(conn)  # raises AgentUnavailable if missing
-        contract = session_agent.answer(dict(row), summary, recent, body.content, creds, conn,
-                                        body.turn_id, attachments=attachments,
-                                        cancel_event=(handle.cancel_event if handle else None))
-    except AgentUnavailable as exc:
-        # Clean failure: nothing is persisted — the user keeps their text and sees
-        # the error (matches the streaming path's semantics). Drop the turn
-        # registration so a genuine retry isn't blocked as "in progress".
-        turn_guard.discard(body.turn_id)
-        raise HTTPException(status_code=422, detail=redact_text(str(exc)))
+        # Build the deterministic, sanitized context — independent of any model key.
+        # NOTE: the user message is NOT persisted yet. We persist user+assistant
+        # together only on success (same as the streaming path), so a clean failure
+        # (e.g. no model key → 422) doesn't leave a dangling user message in the
+        # thread. answer() takes body.content as the question directly.
+        summary = repo.get_summary(conn, session_id) or summary_builder.refresh(conn, session_id)
+        recent = repo.list_messages(conn, session_id)
+        attachments = sds_repo.list_pending_for_session(conn, session_id)
+
+        try:
+            creds = get_model_credentials(conn)  # raises AgentUnavailable if missing
+            contract = session_agent.answer(dict(row), summary, recent, body.content, creds, conn,
+                                            body.turn_id, attachments=attachments,
+                                            cancel_event=(handle.cancel_event if handle else None))
+        except AgentUnavailable as exc:
+            # Clean failure: nothing is persisted — the user keeps their text and
+            # sees the error. Drop the registration so a genuine retry isn't
+            # blocked as "in progress".
+            turn_guard.discard(body.turn_id)
+            raise HTTPException(status_code=422, detail=redact_text(str(exc)))
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 — any other failure MUST resolve the handle
+        turn_guard.fail(body.turn_id, redact_text(str(exc)), session_id)
+        raise HTTPException(status_code=500, detail=redact_text(str(exc)))
 
     # Success: persist the user message and the assistant answer together.
     # The contract is already sanitized + allowlist-coerced inside session_agent.
@@ -318,7 +333,7 @@ def post_session_message(
         "skills_offered": contract.get("skills_offered", []),
         "evidence_used": contract.get("evidence_used", []),
         "evidence_gaps": contract.get("evidence_gaps", []),
-    })
+    }, session_id)
     return {
         "session_id": session_id,
         "messages": repo.list_messages(conn, session_id),
@@ -420,9 +435,17 @@ async def post_session_message_stream(
         wconn = connect()
 
         async def drive() -> None:
-            result, activity, skill_names, finalize, clients = session_agent.build_stream(
-                row_d, summary, recent, body.content, creds, wconn, body.turn_id,
-                attachments=attachments, cancel_event=cancel_event)
+            # Own the client list so a build_stream failure after a client was
+            # created still closes it (stream_events_for, the normal closer, only
+            # runs once we reach the async-for below).
+            clients: list[Any] = []
+            try:
+                result, activity, skill_names, finalize, _ = session_agent.build_stream(
+                    row_d, summary, recent, body.content, creds, wconn, body.turn_id,
+                    attachments=attachments, cancel_event=cancel_event, clients=clients)
+            except BaseException:
+                await session_agent._close_clients(clients)
+                raise
             async for kind, data in session_agent.stream_events_for(
                     result, activity, skill_names, finalize,
                     cancel_event=cancel_event, clients=clients):
@@ -460,14 +483,17 @@ async def post_session_message_stream(
                     "evidence_used": data.get("evidence_used", []),
                     "evidence_gaps": data.get("evidence_gaps", []),
                     "stopped": stopped,
-                })
+                }, session_id)
                 emit(("done", {"message_id": mid, "proposed_actions": data["next_action_proposals"],
                                "evidence_used": data.get("evidence_used", []),
                                "evidence_gaps": data.get("evidence_gaps", []),
                                "skills_used": data.get("skills_used", []),
                                "stopped": stopped}))
         except Exception as exc:  # noqa: BLE001
-            turn_guard.discard(body.turn_id)
+            # Mark FAILED (not just discard) so a blocking fallback parked on this
+            # turn's done_event wakes immediately with the error instead of
+            # blocking the full _IN_PROGRESS_WAIT_S and reporting a bogus 409.
+            turn_guard.fail(body.turn_id, redact_text(str(exc)), session_id)
             emit(("error", redact_text(str(exc))))
         finally:
             try:

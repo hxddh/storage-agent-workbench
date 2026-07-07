@@ -70,7 +70,11 @@ def _load_dataframe(raw_path: str | Path) -> tuple[pd.DataFrame, bool, str]:
         if truncated:
             df = df.head(MAX_INGEST_ROWS)
         return df, truncated, "parquet"
-    df = pd.read_csv(path, dtype=str, keep_default_na=False, nrows=MAX_INGEST_ROWS + 1)
+    try:
+        df = pd.read_csv(path, dtype=str, keep_default_na=False, nrows=MAX_INGEST_ROWS + 1)
+    except pd.errors.EmptyDataError:
+        # A 0-byte / header-less CSV is an empty inventory, not a failure.
+        return pd.DataFrame(), False, "csv"
     truncated = len(df) > MAX_INGEST_ROWS
     if truncated:
         df = df.head(MAX_INGEST_ROWS)

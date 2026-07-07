@@ -462,7 +462,7 @@ def _finalize_contract(raw: Any, skill_names: list[str], activity: list[dict[str
 # --- the single (streaming) turn implementation ------------------------------
 
 
-def _start_streamed_run(spec: dict[str, Any]):
+def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     """Start the SDK streaming run for a prepared spec.
 
     Returns (result_streaming, finalize, clients). ``clients`` collects every
@@ -477,7 +477,12 @@ def _start_streamed_run(spec: dict[str, Any]):
 
     creds = spec["creds"]
     activity: list[dict[str, Any]] = spec["activity"]
-    clients: list[Any] = []
+    # ``clients`` is CALLER-OWNED: _make_agent registers each per-turn client in
+    # it BEFORE run_streamed, so if anything here raises the caller's finally can
+    # still close it (otherwise a client created just before a run_streamed error
+    # would leak its HTTP pool, since stream_events_for's close never runs).
+    if clients is None:
+        clients = []
     tools = _build_tools(spec.get("conn"), function_tool, activity,
                          spec.get("session_id"), spec.get("turn_id"),
                          spec.get("cancel_event"))
@@ -517,7 +522,14 @@ def _streamed_session_loop(spec: dict[str, Any]) -> dict[str, Any]:
             # Calling _start_streamed_run() outside run_until_complete raises
             # "no running event loop" (the blocking-fallback crash a client hit
             # when it fell back to POST /messages after switching sessions).
-            result, finalize, clients = _start_streamed_run(spec)
+            clients: list[Any] = []
+            try:
+                result, finalize, _ = _start_streamed_run(spec, clients)
+            except BaseException:
+                # _start_streamed_run raised after creating a client → close it
+                # here, since stream_events_for (the normal closer) never runs.
+                await _close_clients(clients)
+                raise
             final: dict[str, Any] = {}
             async for kind, data in stream_events_for(
                     result, spec["activity"], spec.get("skill_names") or [], finalize,
@@ -585,20 +597,25 @@ def build_stream(
     turn_id: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
     cancel_event: Any = None,
+    clients: list[Any] | None = None,
 ):
     """Set up a streaming run.
 
     Returns (result_streaming, activity, skill_names, finalize, clients).
+    ``clients`` may be passed in so the CALLER owns closing them even if this
+    setup raises after a client was created (see _start_streamed_run).
     Raises AgentUnavailable if the SDK/key is unavailable — caller should then
     fall back to the blocking endpoint.
     """
+    if clients is None:
+        clients = []
     prompt, skill_names, _context = _build_prompt(session, summary, recent_messages, user_message,
                                                   conn, attachments)
     activity: list[dict[str, Any]] = []
     spec = {"prompt": prompt, "creds": creds, "conn": conn, "activity": activity,
             "session_id": session.get("id"), "turn_id": turn_id,
             "cancel_event": cancel_event}
-    result, finalize, clients = _start_streamed_run(spec)
+    result, finalize, _ = _start_streamed_run(spec, clients)
     return result, activity, skill_names, finalize, clients
 
 
