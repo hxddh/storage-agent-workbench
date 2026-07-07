@@ -55,10 +55,27 @@ def run_sync(run_id: str) -> None:
         session_id = row["session_id"]
         executor = _EXECUTORS.get(row["run_type"])
         if executor is None:
+            # Unknown run_type: mark the run failed (not left forever-pending) so
+            # a reader/UI sees a terminal state, then surface the error + close.
+            runs_repo.set_status(conn, run_id, "failed",
+                                 final_summary=f"run_type '{row['run_type']}' is not executable")
             bus.publish(run_id, {"type": "error", "message": f"run_type '{row['run_type']}' is not executable"})
             bus.mark_done(run_id)
             return
-        executor(conn, run_id)
+        try:
+            executor(conn, run_id)
+        except Exception as exc:  # noqa: BLE001 - executor scaffolding failed before its own guard
+            # A failure BEFORE the executor's internal try (e.g. get_row raising)
+            # would otherwise die silently on this thread, leaving the run pending
+            # and the SSE stream open. Mark it failed and close the stream.
+            from .security.redaction import redact_text
+            try:
+                runs_repo.set_status(conn, run_id, "failed", final_summary="Run failed to start.")
+            except Exception:  # noqa: BLE001 - best effort; never mask the original
+                pass
+            bus.publish(run_id, {"type": "error", "message": redact_text(str(exc))})
+            bus.mark_done(run_id)
+            return
         # After the run finishes, refresh its session's deterministic summary.
         _finalize_session(conn, run_id, session_id)
     finally:

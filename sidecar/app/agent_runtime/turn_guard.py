@@ -1,18 +1,23 @@
-"""Per-turn idempotency guard for session message turns (in-process).
+"""Per-turn registry for session message turns (in-process).
 
-A session turn can be attempted twice: the streaming endpoint runs it, and if the
-SSE connection breaks the frontend falls back to the blocking endpoint with the
-SAME client ``turn_id``. Without dedup the fallback re-runs the agent — which
-(a) re-persists the turn if the stream had actually completed server-side
-(duplicate user+assistant messages), and (b) re-executes any inline read-only run
-the agent had already started during the failed attempt (duplicate run + S3
-calls + timeline entries).
+A session turn can be attempted twice: the streaming endpoint runs it, and if
+the SSE connection breaks the frontend falls back to the blocking endpoint with
+the SAME client ``turn_id``. Without a registry the fallback re-runs the agent
+concurrently with the still-alive streaming worker — duplicate user+assistant
+messages, duplicate inline runs, double model spend.
 
-This guard, keyed by the client ``turn_id``, lets the blocking fallback:
-- short-circuit a turn the stream already completed (return the persisted result
-  instead of re-running), and
-- reuse an inline run the (failed) stream already created, instead of creating a
-  second one.
+The registry, keyed by the client ``turn_id``, tracks each turn's lifecycle:
+
+- ``begin(turn_id, session_id)`` registers a RUNNING turn and returns its
+  :class:`TurnHandle` (``done_event`` to wait on completion, ``cancel_event``
+  the user can set to stop it). If the same turn is already registered for the
+  same session, the existing handle is returned with ``created=False`` so the
+  caller ATTACHES (waits) instead of re-running.
+- ``set_result(turn_id, payload)`` marks the turn done and wakes waiters.
+- ``get_result(turn_id, session_id)`` is SESSION-BOUND: a result recorded for
+  another session's turn is never returned (fixes the cross-session cache
+  collision when two sessions reuse a turn_id).
+- ``discard(turn_id)`` drops a failed attempt so a clean retry can run.
 
 Process-local and best-effort by design: the fallback always happens within the
 same sidecar process seconds later, so in-memory state is sufficient and nothing
@@ -27,8 +32,25 @@ from typing import Any
 
 _MAX = 256
 _lock = threading.RLock()
-_results: "OrderedDict[str, dict[str, Any]]" = OrderedDict()
+_turns: "OrderedDict[str, TurnHandle]" = OrderedDict()
 _runs: "OrderedDict[str, dict[str, str]]" = OrderedDict()
+
+
+class TurnHandle:
+    """In-process state of one client turn (streaming or blocking attempt)."""
+
+    __slots__ = ("turn_id", "session_id", "done_event", "cancel_event", "payload")
+
+    def __init__(self, turn_id: str, session_id: str | None):
+        self.turn_id = turn_id
+        self.session_id = session_id
+        self.done_event = threading.Event()
+        self.cancel_event = threading.Event()
+        self.payload: dict[str, Any] | None = None
+
+    @property
+    def done(self) -> bool:
+        return self.done_event.is_set()
 
 
 def _bump(od: "OrderedDict[str, Any]", key: str) -> None:
@@ -37,15 +59,52 @@ def _bump(od: "OrderedDict[str, Any]", key: str) -> None:
         od.popitem(last=False)
 
 
-def get_result(turn_id: str | None) -> dict[str, Any] | None:
-    """The completed result of a prior attempt of this turn, if any."""
+def begin(turn_id: str | None, session_id: str | None) -> tuple["TurnHandle | None", bool]:
+    """Register a turn as running. Returns ``(handle, created)``.
+
+    ``created=False`` means this turn is already registered for the SAME session
+    (running or completed) — the caller must attach to the existing handle
+    (wait on ``done_event`` / read the payload) instead of re-running the turn.
+    A same-turn_id registration from a DIFFERENT session is a collision between
+    unrelated turns and is replaced by a fresh handle.
+    """
+    if not turn_id:
+        return None, True
+    with _lock:
+        h = _turns.get(turn_id)
+        if h is not None and h.session_id == session_id:
+            _bump(_turns, turn_id)
+            return h, False
+        h = TurnHandle(turn_id, session_id)
+        _turns[turn_id] = h
+        _bump(_turns, turn_id)
+        return h, True
+
+
+def get_handle(turn_id: str | None, session_id: str | None = None) -> "TurnHandle | None":
+    """The registered handle for this turn, if any (session-bound when given)."""
     if not turn_id:
         return None
     with _lock:
-        r = _results.get(turn_id)
-        if r is not None:
-            _results.move_to_end(turn_id)
-        return r
+        h = _turns.get(turn_id)
+        if h is None:
+            return None
+        if session_id is not None and h.session_id is not None and h.session_id != session_id:
+            return None
+        _turns.move_to_end(turn_id)
+        return h
+
+
+def get_result(turn_id: str | None, session_id: str | None = None) -> dict[str, Any] | None:
+    """The completed result of a prior attempt of this turn, if any.
+
+    Session-bound: a payload recorded for a different session's turn (turn_id
+    collision) is never returned.
+    """
+    h = get_handle(turn_id, session_id)
+    if h is None or not h.done:
+        return None
+    return h.payload
 
 
 def set_result(turn_id: str | None, payload: dict[str, Any]) -> None:
@@ -53,8 +112,21 @@ def set_result(turn_id: str | None, payload: dict[str, Any]) -> None:
     if not turn_id:
         return
     with _lock:
-        _results[turn_id] = payload
-        _bump(_results, turn_id)
+        h = _turns.get(turn_id)
+        if h is None:
+            h = TurnHandle(turn_id, None)
+            _turns[turn_id] = h
+        h.payload = payload
+        h.done_event.set()
+        _bump(_turns, turn_id)
+
+
+def discard(turn_id: str | None) -> None:
+    """Drop a turn registration (a failed attempt) so a clean retry can run."""
+    if not turn_id:
+        return
+    with _lock:
+        _turns.pop(turn_id, None)
 
 
 def get_run(turn_id: str | None, key: str) -> str | None:
@@ -80,8 +152,9 @@ def set_run(turn_id: str | None, key: str, run_id: str) -> None:
 
 def _reset_for_tests() -> None:
     with _lock:
-        _results.clear()
+        _turns.clear()
         _runs.clear()
 
 
-__all__ = ["get_result", "set_result", "get_run", "set_run"]
+__all__ = ["TurnHandle", "begin", "get_handle", "get_result", "set_result",
+           "discard", "get_run", "set_run"]

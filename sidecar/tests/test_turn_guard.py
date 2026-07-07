@@ -17,6 +17,41 @@ def test_result_roundtrip():
     assert turn_guard.get_result("t1") == {"proposed_actions": [1]}
 
 
+def test_begin_registers_running_turn_and_attach_semantics():
+    turn_guard._reset_for_tests()
+    handle, created = turn_guard.begin("t1", "sessA")
+    assert created is True and handle is not None
+    assert not handle.done  # running, no payload yet
+    # A second begin for the SAME session attaches to the SAME handle.
+    h2, created2 = turn_guard.begin("t1", "sessA")
+    assert created2 is False and h2 is handle
+    # Completing it wakes waiters and exposes the payload (session-bound).
+    turn_guard.set_result("t1", {"proposed_actions": ["x"]})
+    assert handle.done_event.is_set()
+    assert turn_guard.get_result("t1", "sessA") == {"proposed_actions": ["x"]}
+
+
+def test_get_result_is_session_bound():
+    """Regression: a turn_id collision across two sessions must NOT return one
+    session's result for the other (the old cross-session cache bug)."""
+    turn_guard._reset_for_tests()
+    turn_guard.begin("dup", "sessA")
+    turn_guard.set_result("dup", {"proposed_actions": ["A"]})
+    assert turn_guard.get_result("dup", "sessA") == {"proposed_actions": ["A"]}
+    assert turn_guard.get_result("dup", "sessB") is None  # different session → miss
+
+
+def test_cancel_event_and_discard():
+    turn_guard._reset_for_tests()
+    handle, _ = turn_guard.begin("t2", "sessA")
+    assert not handle.cancel_event.is_set()
+    handle.cancel_event.set()
+    assert turn_guard.get_handle("t2", "sessA").cancel_event.is_set()
+    # discard drops a failed attempt so a clean retry can register anew.
+    turn_guard.discard("t2")
+    assert turn_guard.get_handle("t2", "sessA") is None
+
+
 def test_run_roundtrip():
     turn_guard._reset_for_tests()
     assert turn_guard.get_run("t1", "k") is None

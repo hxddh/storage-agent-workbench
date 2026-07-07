@@ -39,3 +39,33 @@ def test_session_tool_leaves_no_open_write_txn(client):
         assert n >= 1
     finally:
         conn.close()
+
+
+def test_tool_emits_started_then_completed_records(client):
+    """Fix 12: a tool call appends a 'started' activity record when it begins
+    (so the SSE stream can show "running <tool>…") and a 'completed' record when
+    it returns. Both share the {tool, target} shape; the UI ignores 'status'."""
+    conn = db.connect()
+    try:
+        activity: list = []
+        tools = {t.name: t for t in session_tools.build(conn, _FT(), activity)}
+        tools["list_providers"]()
+        statuses = [a.get("status") for a in activity]
+        assert "started" in statuses and "completed" in statuses
+        # The started record precedes the completed one for the same tool.
+        started = next(a for a in activity if a.get("status") == "started")
+        completed = next(a for a in activity if a.get("status") == "completed")
+        assert started["tool"] == completed["tool"] == "list_providers"
+        assert activity.index(started) < activity.index(completed)
+    finally:
+        conn.close()
+
+
+def test_test_range_get_has_per_turn_budget():
+    """Fix 8: test_range_get — the only download-shaped probe without one — now
+    has a per-turn call budget, mirroring preview_object / measure_request_latency."""
+    import inspect
+
+    src = inspect.getsource(session_tools.build)
+    assert "_MAX_RANGE_GETS = 8" in src
+    assert "range_budget" in src

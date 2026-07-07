@@ -14,13 +14,14 @@ import {
   patchSession,
 } from "./api";
 import type { SessionSummaryRow } from "./types";
+import { dropSessionRun } from "./sessionRuns";
 import { useSidecarHealth } from "./hooks/useSidecarHealth";
 import { useI18n } from "./i18n";
 
 const ONBOARDED_KEY = "saw.onboarded";
 
 export default function App() {
-  const { status, service, slow } = useSidecarHealth();
+  const { status, slow } = useSidecarHealth();
   const [sessions, setSessions] = useState<SessionSummaryRow[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -93,6 +94,9 @@ export default function App() {
       try {
         await deleteSession(s.id);
         if (activeId === s.id) setActiveId(null);
+        // Drop the deleted session's run state + listeners so the sessionRuns
+        // module maps don't accumulate entries for dead sessions.
+        dropSessionRun(s.id);
       } catch (e) { fail(e); }
       refreshSessions();
     },
@@ -100,6 +104,17 @@ export default function App() {
 
   // Global shortcuts: ⌘K command palette, ⌘N new chat, Esc closes overlays.
   useEffect(() => {
+    // Editable target: an Escape here belongs to whatever the user is typing in
+    // (a settings-drawer field, a rail rename box, etc.), not the global "close
+    // overlays" shortcut — otherwise a stray Escape while typing in the drawer
+    // would slam it shut mid-edit. Overlays with their own input (the command
+    // palette) handle Escape in their own onKeyDown.
+    const isEditable = (el: EventTarget | null): boolean => {
+      const node = el as HTMLElement | null;
+      if (!node) return false;
+      const tag = node.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || node.isContentEditable;
+    };
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey;
       if (meta && e.key.toLowerCase() === "k") {
@@ -109,6 +124,7 @@ export default function App() {
         e.preventDefault();
         setActiveId(null);
       } else if (e.key === "Escape") {
+        if (isEditable(e.target)) return;
         setPaletteOpen(false);
         setDrawerOpen(false);
       }
@@ -132,7 +148,6 @@ export default function App() {
         onNew={() => setActiveId(null)}
         onOpenSettings={() => setDrawerOpen(true)}
         status={status}
-        service={service}
         slow={slow}
         actions={sessionActions}
       />

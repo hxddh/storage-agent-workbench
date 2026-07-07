@@ -32,18 +32,27 @@ def create_case(
     raw_input_redacted: str,
     parsed: dict[str, Any],
     summary: str,
-    planner_mode: str,
+    planner_mode: str | None = None,
     status: str = "triaged",
 ) -> str:
     case_id = uuid.uuid4().hex
     now = utcnow()
+    # The planner concept is gone: the caller no longer passes a value. The
+    # column is NOT NULL DEFAULT 'deterministic' (append-only migration), so we
+    # OMIT it from the INSERT to let the schema default apply rather than write a
+    # meaningful 'deterministic' marker. If a legacy caller passes one, honor it.
+    cols = ["id", "session_id", "provider_id", "bucket", "run_id", "input_kind",
+            "raw_input_redacted", "parsed_json", "summary", "status",
+            "created_at", "updated_at"]
+    vals: list[Any] = [case_id, session_id, provider_id, bucket, run_id, input_kind,
+                       raw_input_redacted, _dumps(parsed), summary, status, now, now]
+    if planner_mode is not None:
+        cols.insert(9, "planner_mode")
+        vals.insert(9, planner_mode)
+    placeholders = ", ".join("?" for _ in cols)
     conn.execute(
-        "INSERT INTO error_triage_cases "
-        "(id, session_id, provider_id, bucket, run_id, input_kind, raw_input_redacted, "
-        " parsed_json, summary, planner_mode, status, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (case_id, session_id, provider_id, bucket, run_id, input_kind,
-         raw_input_redacted, _dumps(parsed), summary, planner_mode, status, now, now),
+        f"INSERT INTO error_triage_cases ({', '.join(cols)}) VALUES ({placeholders})",
+        vals,
     )
     conn.commit()
     return case_id

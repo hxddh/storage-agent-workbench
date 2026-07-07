@@ -273,3 +273,25 @@ def test_datasets_endpoint_lists_uploaded(client, sync_runs):
                            "inv.csv", INVENTORY_CSV, "x")
     ds = client.get("/datasets").json()
     assert any(d["run_id"] == run_id and d["dataset_type"] == "inventory" for d in ds)
+
+
+def test_dataset_upload_over_cap_is_413(client, monkeypatch):
+    """The upload streams to disk with a size cap; exceeding it → 413, not an
+    unbounded in-memory read (fix 6)."""
+    from app.routers import datasets as datasets_router
+
+    monkeypatch.setattr(datasets_router, "MAX_UPLOAD_BYTES", 1024)  # 1 KiB for the test
+    created = client.post(
+        "/runs", json={"run_type": "inventory_analysis", "user_prompt": "x", "title": "cap"}
+    ).json()
+    run_id = created["run_id"]
+    big = b"k,v\n" + b"x" * 5000
+    up = client.post(
+        f"/runs/{run_id}/datasets/upload",
+        files={"file": ("big.csv", big, "text/csv")},
+        data={"dataset_type": "inventory"},
+    )
+    assert up.status_code == 413
+    # nothing persisted for this run
+    ds = client.get("/datasets").json()
+    assert not any(d["run_id"] == run_id for d in ds)

@@ -46,11 +46,13 @@ Purpose:
 
 Safety:
 
-- `max_keys` is NOT required — the agent tool defaults it (`AGENT_DEFAULT_LIST_KEYS`
-  = 100) when unset. An explicit larger request is honored but clamped to
-  `AGENT_MAX_LIST_KEYS` = 1000 (which matches the S3 layer's own `MAX_LIST_KEYS`
-  hard cap), so a deliberate wider sample works while a full scan can't be
-  requested. Bounds, not gates — there is no approval path.
+- `max_keys` is NOT required — the agent-tool signature defaults it to **50**
+  (`session_tools.py`; the guardrails `AGENT_DEFAULT_LIST_KEYS = 100` fallback
+  is unreachable because the signature default always supplies a value). An
+  explicit larger request is honored but clamped to `AGENT_MAX_LIST_KEYS` = 1000
+  (which matches the S3 layer's own `MAX_LIST_KEYS` hard cap), so a deliberate
+  wider sample works while a full scan can't be requested. Bounds, not gates —
+  there is no approval path.
 - Must sanitize sample keys and bound the keys surfaced to the model per call.
 - Never returns object bodies.
 
@@ -77,6 +79,8 @@ Safety:
   `test_range_get` is not routed through `bound_tool_args`, so the effective
   hard cap on a single range read is the S3 layer's `MAX_RANGE_BYTES` (4 MiB) in
   `s3/tools.py` — a request beyond that is refused.
+- Budgeted per turn: at most 8 calls, after which the tool asks the agent to
+  work with what it has.
 - Must not download a full object. There is no full-object download path.
 
 ### preview_object
@@ -94,7 +98,7 @@ Safety:
 
 - Single named object; hard cap 1 MiB per call (bounded Range GET); never persisted.
 - Binary or oversized objects are reported, not decoded; output is redaction-passed.
-- Bounded per turn (a few objects / a few MiB) so it can't be looped into a bulk
+- Budgeted per turn (12 objects / 16 MiB) so it can't be looped into a bulk
   download. No full-object download, no bulk/recursive body reads.
 
 ### list_object_versions
@@ -173,7 +177,6 @@ Purpose:
 
 - import_inventory_file
 - analyze_inventory
-- sample_bucket_objects
 
 ## Bucket config review tools
 
@@ -209,7 +212,8 @@ tools above (choosing provider/bucket itself), plus:
 - **read_skill** — load a StorageOps skill's method on demand (progressive
   disclosure); guidance text only, no skill tools/scripts are executed.
 - **Working memory** — `note_fact` / `record_finding` / `note_open_question`
-  persist sanitized, audited items that are fed back into later turns.
+  persist sanitized, audited items that are fed back into later turns, plus
+  update/resolve lifecycle tools so stale memory can be corrected or closed out.
 - **Inline read-only runs** — the agent executes the deterministic
   `survey_account` / `review_bucket_config` engines itself (real, audited,
   read-only, wall-clock-bounded) and `analyze_uploaded_file` for an attached
@@ -219,6 +223,11 @@ tools above (choosing provider/bucket itself), plus:
 
 These tools return only the deterministic engine's sanitized summary + counts
 (no raw rows, no full key lists, no object bodies) for the agent to narrate.
+
+On top of the per-tool bounds there is a **per-turn cumulative tool-output
+budget** (~150k chars): once a turn's tool results have consumed it, further
+tool calls return a notice asking the agent to synthesize from what it already
+has instead of more data.
 
 ## Forbidden tools
 

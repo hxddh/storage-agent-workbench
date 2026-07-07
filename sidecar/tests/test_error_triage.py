@@ -200,6 +200,25 @@ def test_triage_is_deterministic_only(client):
     assert out["candidate_causes"]  # deterministic playbook matched
 
 
+def test_triage_omits_planner_mode(client):
+    """The planner concept is gone; the router no longer passes a planner_mode,
+    so the INSERT omits the column and the schema default fills it (the column is
+    NOT NULL under an append-only migration, so it can't be NULL). The point is
+    the app no longer writes a meaningful 'deterministic' marker of its own."""
+    out = _triage(client, ACCESS_DENIED).json()
+    # The response never surfaces the vestigial field.
+    assert "planner_mode" not in out
+    conn = _db()
+    try:
+        row = conn.execute(
+            "SELECT planner_mode FROM error_triage_cases WHERE id = ?", (out["id"],)
+        ).fetchone()
+    finally:
+        conn.close()
+    # Value comes from the schema DEFAULT, not an explicit app write.
+    assert row["planner_mode"] == "deterministic"
+
+
 def test_triage_does_not_create_run_or_download(client):
     before = len(client.get("/runs").json())
     _triage(client, SIG_ERROR)

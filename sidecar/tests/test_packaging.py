@@ -54,6 +54,9 @@ def test_production_main_runs_uvicorn_without_reload(monkeypatch, tmp_path):
     assert captured["kwargs"]["reload"] is False  # production: never reload
     assert captured["kwargs"]["host"] == "127.0.0.1"
     assert captured["kwargs"]["port"] == 9002
+    # Access logging OFF: the SSE EventSource authenticates with ?token=<secret>,
+    # and uvicorn's access log would otherwise write that secret to the app log.
+    assert captured["kwargs"]["access_log"] is False
 
 
 def test_startup_banner_is_sanitized(monkeypatch):

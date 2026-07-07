@@ -8,10 +8,11 @@
  * state here, keyed by session id, lets each session's run keep going and keep
  * its live content while you work in another session; switching back restores it.
  *
- * The run loop (in Thread) writes to the entry for the id it started with, not
- * the currently-visible session, so streams never bleed across sessions.
+ * The run loop (in useTurnRunner) writes to the entry for the id it started
+ * with, not the currently-visible session, so streams never bleed across
+ * sessions.
  */
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import type { Grounding, NextAction, ToolActivity } from "./types";
 
 export type SessionRun = {
@@ -23,6 +24,7 @@ export type SessionRun = {
   grounding: Grounding | null; // what the last answer was grounded in / couldn't verify
   needKey: boolean;
   error: string | null;
+  stopped: boolean; // the user cancelled the turn; keep the partial text visible
 };
 
 const EMPTY: SessionRun = {
@@ -34,6 +36,7 @@ const EMPTY: SessionRun = {
   grounding: null,
   needKey: false,
   error: null,
+  stopped: false,
 };
 
 const store = new Map<string, SessionRun>();
@@ -58,19 +61,34 @@ export function patchSessionRun(
   notify(id);
 }
 
+/** Forget a session's run state and listeners (call when a session is deleted)
+ * so the module-level maps don't accumulate entries for dead sessions. */
+export function dropSessionRun(id: string): void {
+  store.delete(id);
+  listeners.delete(id);
+}
+
+function subscribe(id: string | null, cb: () => void): () => void {
+  if (!id) return () => {};
+  let set = listeners.get(id);
+  if (!set) {
+    set = new Set();
+    listeners.set(id, set);
+  }
+  set.add(cb);
+  return () => {
+    set!.delete(cb);
+    // Prune the (now empty) listener set so the map doesn't grow forever.
+    if (set!.size === 0 && listeners.get(id) === set) listeners.delete(id);
+  };
+}
+
 /** Subscribe a component to one session's run state (re-renders on change). */
 export function useSessionRun(id: string | null): SessionRun {
-  return useSyncExternalStore(
-    (cb) => {
-      if (!id) return () => {};
-      let set = listeners.get(id);
-      if (!set) {
-        set = new Set();
-        listeners.set(id, set);
-      }
-      set.add(cb);
-      return () => set!.delete(cb);
-    },
-    () => getSessionRun(id),
-  );
+  // Stable subscribe callback per id: an inline closure would get a new
+  // identity on every render, making useSyncExternalStore unsubscribe and
+  // resubscribe each time.
+  const sub = useCallback((cb: () => void) => subscribe(id, cb), [id]);
+  const getSnapshot = useCallback(() => getSessionRun(id), [id]);
+  return useSyncExternalStore(sub, getSnapshot);
 }

@@ -8,6 +8,22 @@ below are relative to that base.
 This lists the real routers under `sidecar/app/routers/`. Method + path + a
 one-line purpose; request/response schemas live in `sidecar/app/models/schemas.py`.
 
+## Authentication
+
+The sidecar enforces a shared-secret gate when the launcher sets
+`STORAGE_AGENT_AUTH_TOKEN` (the Tauri shell generates a random per-launch token,
+spawns the sidecar with it, and exposes it to the frontend via the
+`get_sidecar_token` command). When set, every request must carry the token or it
+gets `401 {"detail": "unauthorized"}`:
+
+- `X-Sidecar-Token: <token>` header (normal requests), or
+- `?token=<token>` query param (for the header-less SSE `EventSource`).
+
+Exempt: `GET /health` (liveness) and `OPTIONS` (CORS preflight). Comparison is
+constant-time, and the packaged sidecar disables uvicorn access logging so the
+`?token=` param never lands in logs. When the variable is unset (dev runs, the
+test suite) auth is open.
+
 ## Health
 
 ### GET /health
@@ -84,6 +100,10 @@ GET  /datasets                        # list dataset metadata
 GET  /datasets/{dataset_id}           # dataset metadata detail
 ```
 
+Uploads are streamed to disk (never buffered whole in memory) and rejected with
+`413` over an explicit max-size cap — same for the session attachment upload
+below.
+
 ## Evidence imports
 
 Router prefix `/evidence-imports` (`routers/evidence_imports.py`). The
@@ -116,10 +136,19 @@ POST   /sessions/{session_id}/refresh-summary  # rebuild the summary from run ar
 GET    /sessions/{session_id}/report        # generate/fetch the session report (markdown)
 POST   /sessions/{session_id}/actions/prepare  # prepare a proposed next action for execution
 GET    /sessions/{session_id}/messages      # thread messages (with persisted grounding + proposals)
-POST   /sessions/{session_id}/datasets/upload  # attach a data file to the session for agent-native analysis
-POST   /sessions/{session_id}/messages      # send a message (blocking agent turn)
+POST   /sessions/{session_id}/datasets/upload  # attach a data file to the session for agent-native analysis (413 over the size cap)
+POST   /sessions/{session_id}/messages      # send a message (blocking agent turn / streaming fallback)
 POST   /sessions/{session_id}/messages/stream  # send a message (SSE-streamed agent turn)
+POST   /sessions/{session_id}/turns/{turn_id}/cancel  # cancel a streaming turn (Stop button)
 ```
+
+Turn semantics: the client sends a `turn_id` with each turn. The blocking
+`POST /messages` doubles as the streaming fallback — if an identical `turn_id`
+is already in flight it **waits** for that turn instead of re-running the agent,
+and returns `409 "turn still in progress"` after ~150 s if it hasn't finished.
+`POST /turns/{turn_id}/cancel` returns `200 {"status": "cancelling"}` (or
+`"completed"` if the turn already finished) and `404` for an unknown turn; the
+partial answer is persisted with a stopped marker.
 
 ## Error triage
 
@@ -144,24 +173,18 @@ GET /settings/secret-vault   # whether the encrypted secret vault failed to decr
 ## Tools
 
 Router prefix `/tools` (`routers/tools.py`). Direct, typed, whitelisted
-read-only S3 / config-review tool endpoints (used by tests and internal callers;
-the agent calls the equivalent in-process tools).
+read-only S3 tool endpoints (used by tests and internal callers). Only two
+survive — the rest of the old `/tools/*` endpoints were deleted; their
+underlying S3-layer functions remain available to the agent as in-process tools,
+just not as HTTP routes.
 
 ```text
-POST /tools/test-credentials
 POST /tools/head-bucket
 POST /tools/list-objects-v2
-POST /tools/head-object
-POST /tools/test-range-get
-POST /tools/test-path-style-vs-virtual-host
-POST /tools/inspect-tls
-POST /tools/get-bucket-config-summary
-POST /tools/review-bucket-security
-POST /tools/review-bucket-lifecycle
-POST /tools/review-bucket-observability
-POST /tools/review-bucket-cost-optimization
-POST /tools/review-bucket-performance-profile
 ```
+
+Both enforce the provider's `allowed_buckets` / `allowed_prefixes` scope (as do
+the run executors and the agent session tools).
 
 ## Run SSE event types
 
@@ -186,8 +209,10 @@ events — those were removed and are not emitted.
 ## Session message stream
 
 `POST /sessions/{id}/messages/stream` emits `delta` (answer text), `tool` (a
-sanitized `{tool, target, result}` trace), and a final `done`
+sanitized `{tool, target, result}` trace — a tool may first appear as a
+`"status": "started"` record, the live tool-start signal, before its completed
+record), and a final `done`
 (`{message_id, proposed_actions, evidence_used, evidence_gaps, skills_used}`) —
-or `error`. The three grounding fields mirror the blocking
-`POST /sessions/{id}/messages` response and are also persisted on the message
-row (see `docs/data-model.md`).
+or `error`. A cancelled turn's `done` event may carry `"stopped": true`. The
+three grounding fields mirror the blocking `POST /sessions/{id}/messages`
+response and are also persisted on the message row (see `docs/data-model.md`).

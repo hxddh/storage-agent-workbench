@@ -8,6 +8,7 @@ import type {
 } from "../types";
 import { Button, TextInput } from "./ui";
 import { ToolResultCard } from "./ToolResultCard";
+import { useI18n } from "../i18n";
 
 const DEFAULT_MAX_KEYS = 100; // backend additionally clamps to a hard cap
 
@@ -19,6 +20,7 @@ const DEFAULT_MAX_KEYS = 100; // backend additionally clamps to a hard cap
  * No secret is ever entered or stored here.
  */
 export function CloudProviderTester({ provider }: { provider: CloudProvider }) {
+  const { t } = useI18n();
   const [bucket, setBucket] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,23 +45,23 @@ export function CloudProviderTester({ provider }: { provider: CloudProvider }) {
     <div className="mt-3 rounded-md border border-edge/70 bg-canvas/60 p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Button onClick={() => run("cred", async () => setCred(await testCloudProvider(provider.id)))} disabled={busy !== null}>
-          {busy === "cred" ? "Testing…" : "Test Connection"}
+          {busy === "cred" ? t("tester.testing") : t("tester.testConnection")}
         </Button>
-        <span className="text-xs text-gray-600">read-only</span>
+        <span className="text-xs text-gray-600">{t("tester.readonly")}</span>
       </div>
 
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <TextInput
           value={bucket}
           onChange={(e) => setBucket(e.target.value)}
-          placeholder="bucket name"
+          placeholder={t("tester.bucketPlaceholder")}
           style={{ maxWidth: 220 }}
         />
         <Button
           onClick={() => run("head", async () => setHead(await toolHeadBucket(provider.id, bucket)))}
           disabled={busy !== null || !bucket.trim()}
         >
-          {busy === "head" ? "…" : "Head Bucket"}
+          {busy === "head" ? "…" : t("tester.headBucket")}
         </Button>
         <Button
           onClick={() =>
@@ -67,7 +69,7 @@ export function CloudProviderTester({ provider }: { provider: CloudProvider }) {
           }
           disabled={busy !== null || !bucket.trim()}
         >
-          {busy === "list" ? "…" : "List Objects"}
+          {busy === "list" ? "…" : t("tester.listObjects")}
         </Button>
       </div>
 
@@ -78,10 +80,10 @@ export function CloudProviderTester({ provider }: { provider: CloudProvider }) {
           title="test_credentials"
           success={cred.success}
           rows={[
-            { label: "provider", value: cred.provider_type },
-            { label: "endpoint", value: cred.endpoint_url ?? "—" },
-            { label: "region", value: cred.region ?? "—" },
-            { label: "identity", value: cred.identity_hint ?? "—" },
+            { label: t("tester.provider"), value: cred.provider_type },
+            { label: t("tester.endpoint"), value: cred.endpoint_url ?? "—" },
+            { label: t("tester.region"), value: cred.region ?? "—" },
+            { label: t("tester.identity"), value: cred.identity_hint ?? "—" },
           ]}
           errorCode={cred.error_code}
           errorMessage={cred.error_message_sanitized}
@@ -92,7 +94,7 @@ export function CloudProviderTester({ provider }: { provider: CloudProvider }) {
         <ToolResultCard
           title="head_bucket"
           success={head.success}
-          rows={[{ label: "status", value: head.status_code != null ? String(head.status_code) : "—" }]}
+          rows={[{ label: t("tester.status"), value: head.status_code != null ? String(head.status_code) : "—" }]}
           errorCode={head.error_code}
           errorMessage={head.error_message_sanitized}
         />
@@ -103,10 +105,10 @@ export function CloudProviderTester({ provider }: { provider: CloudProvider }) {
           title="list_objects_v2"
           success={list.success}
           rows={[
-            { label: "key count", value: String(list.key_count) },
-            { label: "truncated", value: String(list.is_truncated) },
-            { label: "common prefixes", value: list.common_prefixes.join(", ") || "—" },
-            { label: "sample keys", value: list.sample_keys.join(", ") || "—" },
+            { label: t("tester.keyCount"), value: String(list.key_count) },
+            { label: t("tester.truncated"), value: String(list.is_truncated) },
+            { label: t("tester.commonPrefixes"), value: list.common_prefixes.join(", ") || "—" },
+            { label: t("tester.sampleKeys"), value: list.sample_keys.join(", ") || "—" },
           ]}
           errorCode={list.error_code}
           errorMessage={list.error_message_sanitized}

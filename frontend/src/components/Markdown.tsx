@@ -1,13 +1,17 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, memo, useMemo, useState, type ReactNode } from "react";
+import { useI18n } from "../i18n";
 
 /**
  * Dependency-free markdown renderer for agent text. Handles the subset the agent
  * emits: headings (h1–h4), paragraphs, fenced + inline code, **bold**, *italic*,
  * [links](url), bullet/numbered lists, blockquotes, horizontal rules, and pipe
  * tables. No raw HTML is ever injected (inline() only emits known elements).
+ *
+ * Memoized (component + parse): during a fast stream only the card whose text
+ * actually changed re-parses; historical messages skip both parse and render.
  */
-export function Markdown({ text }: { text: string }) {
-  const blocks = parseBlocks(text || "");
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
+  const blocks = useMemo(() => parseBlocks(text || ""), [text]);
   return (
     <div className="space-y-3 text-[13.5px] leading-[1.7] text-gray-200">
       {blocks.map((b, i) => {
@@ -71,9 +75,10 @@ export function Markdown({ text }: { text: string }) {
       })}
     </div>
   );
-}
+});
 
 function CodeBlock({ lang, content }: { lang: string; content: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const copy = () => {
     navigator.clipboard?.writeText(content).then(() => {
@@ -94,7 +99,7 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
           ) : (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
           )}
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("common.copied") : t("common.copy")}
         </button>
       </div>
       <pre className="overflow-auto px-3.5 py-3 font-mono text-[12px] leading-relaxed text-gray-300">{content}</pre>

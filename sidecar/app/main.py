@@ -26,6 +26,7 @@ test suite — auth is left open so the local workflow keeps working.
 
 from __future__ import annotations
 
+import hmac
 import os
 from contextlib import asynccontextmanager
 from importlib import metadata
@@ -102,7 +103,9 @@ async def _require_sidecar_token(request: Request, call_next):
     if _AUTH_TOKEN is not None and request.method != "OPTIONS":
         if request.url.path not in _AUTH_EXEMPT_PATHS:
             presented = request.headers.get("x-sidecar-token") or request.query_params.get("token")
-            if presented != _AUTH_TOKEN:
+            # Constant-time comparison: a plain `!=` short-circuits on the first
+            # differing byte, which lets a local prober time-oracle the token.
+            if presented is None or not hmac.compare_digest(presented, _AUTH_TOKEN):
                 return JSONResponse({"detail": "unauthorized"}, status_code=401)
     return await call_next(request)
 

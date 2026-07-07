@@ -28,15 +28,20 @@ A fresh-install user must be able to do all of this without reading source:
 - [ ] "Configure providers" / "⚙ Settings & providers" opens the **settings drawer**.
 - [ ] **Configure a model provider (LLM API key)** in the drawer (Model Providers).
 - [ ] **Configure an S3-compatible cloud provider (AK/SK)** in the drawer (Cloud Providers).
-- [ ] Composer "Ask the agent" → first message **creates and opens a session** that
-      appears in the rail; messages render as inline thread cards.
-- [ ] Composer "Triage an error" works **without cloud credentials**: paste a synthetic
-      S3 error and get a deterministic **triage card** inline in the thread.
-- [ ] If no model key is configured, agent interpretation **fails cleanly** with an inline
-      "Add a model API key" prompt (not a crash); deterministic output still appears.
-- [ ] **Next-action proposals** render as inline cards; Review previews and Prepare opens
-      the run starter / evidence import / report as an in-thread modal — nothing runs
-      without explicit confirmation.
+- [ ] The **single composer** (no mode switch) → first message **creates and opens a
+      session** that appears in the rail; messages render as inline thread cards.
+- [ ] Offline triage fallback: with **no model provider/key configured**, paste a
+      synthetic S3 error into the composer — a deterministic **triage card** still
+      appears inline (no credentials, no LLM), alongside an inline "Add a model API key"
+      prompt (not a crash).
+- [ ] While the agent is streaming an answer, **Stop** cancels the turn: the stream ends
+      promptly, the **partial answer is kept** in the thread with a stopped marker, and
+      the composer is immediately usable for the next message.
+- [ ] **Next-action proposals** render as inline cards; **Prepare** opens only the three
+      purpose-built flows — evidence import (`evidence_import`), the session report
+      (`session_report`), or a composer-seeded question (`message_composer`) — and every
+      other proposal routes back to the agent conversationally. There is no "Review
+      previews" step and no run-starter form; nothing runs without explicit confirmation.
 - [ ] Runs are reachable as **expandable cards inside the thread** (Details), not as a
       separate top-level page.
 

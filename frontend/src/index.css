@@ -114,6 +114,14 @@ body {
   border-radius: 0.5rem;
 }
 
+/* Long conversation histories: let the browser skip layout/paint for
+ * off-screen thread items while the stream mutates the DOM (UX1). The
+ * intrinsic-size fallback keeps the scrollbar stable for unrendered items. */
+.thread-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+}
+
 /* Respect reduced-motion. */
 @media (prefers-reduced-motion: reduce) {
   *,

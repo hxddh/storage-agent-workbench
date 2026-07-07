@@ -282,9 +282,14 @@ def test_assistant_sanitized_context_no_tools_and_cot_stripped(client, sync_runs
     spec = captured["spec"]
     # interpretation-only: no tools/invoker handed to the model
     assert "invoker" not in spec and "tools" not in spec and "tool_names" not in spec
-    # context carries only sanitized aggregates
+    # context carries only sanitized aggregates. Safety rules are now stated ONCE
+    # in the instructions (prompt), not re-injected as a context field — the
+    # duplicate injection was removed (finding 16). Verify the single-source shape.
     ctx = spec["context"]
-    assert "summary" in ctx and "safety_rules" in ctx
+    assert "summary" in ctx and "agent_memory" in ctx
+    assert "safety_rules" not in ctx  # no longer duplicated into the context JSON
+    # The rules still exist, once, in the instructions the agent is given.
+    assert "SAFETY RULES" in spec["instructions"]
     assert MODEL_KEY not in json.dumps(ctx)
     assert "sk-LEAK-TOKEN-123" not in json.dumps(ctx)
 
@@ -312,6 +317,56 @@ def test_messages_persist_sanitized_content(client, monkeypatch):
     msgs = client.get(f"/sessions/{s['id']}/messages").json()["messages"]
     user_msg = [m for m in msgs if m["role"] == "user"][-1]
     assert ACCESS not in user_msg["content"]
+
+
+# --- turn registry: cancel + in-progress attach -----------------------------
+
+
+def test_cancel_unknown_turn_is_404(client):
+    s = _session(client)
+    r = client.post(f"/sessions/{s['id']}/turns/never-ran/cancel")
+    assert r.status_code == 404
+
+
+def test_cancel_completed_turn_reports_completed(client, monkeypatch):
+    from app.agent_runtime import turn_guard
+    s = _session(client)
+    _add_model_provider(client)
+    monkeypatch.setattr(session_agent, "SESSION_LOOP", lambda spec: "done")
+    client.post(f"/sessions/{s['id']}/messages", json={"content": "hi", "turn_id": "turnDone"})
+    r = client.post(f"/sessions/{s['id']}/turns/turnDone/cancel")
+    assert r.status_code == 200 and r.json()["status"] == "completed"
+
+
+def test_cancel_running_turn_sets_cancel_event(client):
+    from app.agent_runtime import turn_guard
+    s = _session(client)
+    # Register a turn as running (as the streaming worker would) without finishing.
+    handle, created = turn_guard.begin("turnRun", s["id"])
+    assert created
+    r = client.post(f"/sessions/{s['id']}/turns/turnRun/cancel")
+    assert r.status_code == 200 and r.json()["status"] == "cancelling"
+    assert handle.cancel_event.is_set()
+
+
+def test_in_progress_turn_blocks_concurrent_rerun_with_409(client, monkeypatch):
+    """A blocking POST for a turn already registered as running (by a streaming
+    worker) must NOT re-run concurrently. With no result yet it returns 409 —
+    the frontend fallback attaches instead of doubling the work/spend."""
+    from app.agent_runtime import session_agent as sa, turn_guard
+    s = _session(client)
+    _add_model_provider(client)
+    # Simulate the streaming worker having registered this turn as in-flight.
+    turn_guard.begin("turnBusy", s["id"])
+    # Shrink the attach wait so the test doesn't block for 150s.
+    monkeypatch.setattr(sa, "SESSION_LOOP", lambda spec: "should not run")
+    from app.routers import sessions as sessions_router
+    monkeypatch.setattr(sessions_router, "_IN_PROGRESS_WAIT_S", 0.2)
+    r = client.post(f"/sessions/{s['id']}/messages", json={"content": "hi", "turn_id": "turnBusy"})
+    assert r.status_code == 409
+    assert "in progress" in r.json()["detail"].lower()
+    # And no message was persisted (the concurrent re-run was prevented).
+    assert client.get(f"/sessions/{s['id']}/messages").json()["messages"] == []
 
 
 # --- report -----------------------------------------------------------------

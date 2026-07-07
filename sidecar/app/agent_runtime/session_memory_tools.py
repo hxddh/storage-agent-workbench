@@ -83,4 +83,29 @@ def build(
         note("note_open_question", text)
         return json.dumps({"ok": True, "id": mem_id, "kind": "open_question"})
 
-    return [note_fact, record_finding, note_open_question]
+    @function_tool
+    def update_memory_item(id: str, new_content: str) -> str:
+        """Correct a memory item you recorded earlier (fact, finding, or open question) when new evidence changes it — instead of adding a contradictory duplicate. Pass the item id shown in your agent_memory context. Args: id (the memory item id); new_content (the corrected text)."""
+        ok = sessions_repo.update_agent_memory(conn, session_id, id, new_content)
+        if not ok:
+            return json.dumps({"error": "Unknown or already-resolved memory item id for this session."})
+        audit.record(conn, "session_memory_update",
+                     {"id": id, "text": redact_text(new_content)[:200]}, run_id=None)
+        conn.commit()
+        note("update_memory_item", id)
+        return json.dumps({"ok": True, "id": id, "action": "updated"})
+
+    @function_tool
+    def resolve_memory_item(id: str, reason: str = "") -> str:
+        """Close/resolve a memory item you recorded earlier once it is answered or no longer relevant, so it stops being replayed to you next turn. Pass the item id from your agent_memory context. Args: id (the memory item id); reason (optional short note on how it was resolved)."""
+        ok = sessions_repo.resolve_agent_memory(conn, session_id, id, reason or None)
+        if not ok:
+            return json.dumps({"error": "Unknown or already-resolved memory item id for this session."})
+        audit.record(conn, "session_memory_resolve",
+                     {"id": id, "reason": redact_text(reason)[:200]}, run_id=None)
+        conn.commit()
+        note("resolve_memory_item", id)
+        return json.dumps({"ok": True, "id": id, "action": "resolved"})
+
+    return [note_fact, record_finding, note_open_question,
+            update_memory_item, resolve_memory_item]

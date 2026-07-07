@@ -3,20 +3,22 @@
 Drives the existing Phase 03 read-only tools through the shared tool runner so
 every call is recorded against the run. Emits SSE events as it goes. No LLM,
 no DuckDB, no direct boto3 — and no destructive operations.
+
+A diagnostic that successfully ran its probes COMPLETES even when the target is
+unhealthy: the verdict lives in the summary/findings, and 'failed' is reserved
+for the executor itself failing (see the shared harness in ``_common``).
 """
 
 from __future__ import annotations
 
 import sqlite3
-import uuid
 from typing import Any
 
-from .. import config
 from ..events import bus
-from ..repositories import runs as runs_repo
+from ..repositories import cloud_providers as cloud_repo
 from ..s3 import tools as s3_tools
-from ..security.redaction import redact_text
-from ._common import run_tool_with_events
+from ..s3.scope import check_scope
+from ._common import RunError, run_executor, run_tool_with_events
 from .report import write_report
 
 # Bounded sample size for the diagnostic listing (never a full scan).
@@ -77,65 +79,46 @@ def _summary_text(all_ok: bool, evidence: dict[str, dict[str, Any]]) -> str:
 
 
 def execute_diagnostic_run(conn: sqlite3.Connection, run_id: str) -> None:
-    row = runs_repo.get_row(conn, run_id)
-    if row is None:
-        bus.publish(run_id, {"type": "error", "message": "run not found"})
-        bus.mark_done(run_id)
-        return
+    run_executor(conn, run_id, "Diagnostic run failed.",
+                 lambda run: _diagnostic_body(conn, run_id, run))
 
-    run = dict(row)
+
+def _diagnostic_body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
     provider_id = run["provider_id"]
     bucket = run["bucket"]
     prefix = run["prefix"]
-    from .planner import diagnostic_plan
 
-    try:
-        runs_repo.set_status(conn, run_id, "running")
-        # Steps recorded in the auditable report only — NOT published as a live
-        # "plan" event (no canned pipeline card; the real tool trace stands in).
-        plan = diagnostic_plan(bucket, prefix)
+    provider = cloud_repo.get(conn, provider_id) if provider_id else None
+    if provider is not None:
+        denial = check_scope(provider.allowed_buckets, provider.allowed_prefixes,
+                             bucket, prefix=prefix)
+        if denial:
+            raise RunError(denial)
 
-        evidence: dict[str, dict[str, Any]] = {}
+    evidence: dict[str, dict[str, Any]] = {}
 
-        def call(name: str, raw_input: dict[str, Any], executor) -> dict[str, Any]:
-            # Uses the shared started/finished event helper (identical event
-            # shape) so the diagnostic executor doesn't drift from the others.
-            out = run_tool_with_events(conn, run_id, name, raw_input, executor)
-            evidence[name] = out
-            return out
+    def call(name: str, raw_input: dict[str, Any], executor) -> dict[str, Any]:
+        # Uses the shared started/finished event helper (identical event
+        # shape) so the diagnostic executor doesn't drift from the others.
+        out = run_tool_with_events(conn, run_id, name, raw_input, executor)
+        evidence[name] = out
+        return out
 
-        call("test_credentials", {"provider_id": provider_id},
-             lambda: s3_tools.test_credentials(conn, provider_id))
-        call("head_bucket", {"provider_id": provider_id, "bucket": bucket},
-             lambda: s3_tools.head_bucket(conn, provider_id, bucket))
-        call("list_objects_v2",
-             {"provider_id": provider_id, "bucket": bucket, "max_keys": DIAGNOSTIC_MAX_KEYS, "prefix": prefix},
-             lambda: s3_tools.list_objects_v2(conn, provider_id, bucket, DIAGNOSTIC_MAX_KEYS, prefix))
+    call("test_credentials", {"provider_id": provider_id},
+         lambda: s3_tools.test_credentials(conn, provider_id))
+    call("head_bucket", {"provider_id": provider_id, "bucket": bucket},
+         lambda: s3_tools.head_bucket(conn, provider_id, bucket))
+    call("list_objects_v2",
+         {"provider_id": provider_id, "bucket": bucket, "max_keys": DIAGNOSTIC_MAX_KEYS, "prefix": prefix},
+         lambda: s3_tools.list_objects_v2(conn, provider_id, bucket, DIAGNOSTIC_MAX_KEYS, prefix))
 
-        findings = _derive_findings(evidence)
-        for f in findings:
-            bus.publish(run_id, {"type": "finding", **f})
+    findings = _derive_findings(evidence)
+    for f in findings:
+        bus.publish(run_id, {"type": "finding", **f})
 
-        all_ok = all(evidence.get(n, {}).get("success") for n in _TOOLS)
-        summary = _summary_text(all_ok, evidence)
-        bus.publish(run_id, {"type": "summary", "content": summary})
+    all_ok = all(evidence.get(n, {}).get("success") for n in _TOOLS)
+    summary = _summary_text(all_ok, evidence)
+    bus.publish(run_id, {"type": "summary", "content": summary})
 
-        report_path, _ = write_report(run, plan, evidence, findings, summary)
-        conn.execute(
-            "INSERT INTO reports (id, run_id, report_path, format, created_at) "
-            "VALUES (?, ?, ?, 'markdown', datetime('now'))",
-            (uuid.uuid4().hex, run_id, report_path),
-        )
-        conn.commit()
-
-        final_status = "completed" if all_ok else "failed"
-        runs_repo.set_status(conn, run_id, final_status, final_summary=summary, report_path=report_path)
-        # Publish the RELATIVE report path, matching the other executors (they all
-        # emit config.rel_path(...); the reports table still holds the absolute).
-        bus.publish(run_id, {"type": "report_ready", "run_id": run_id,
-                             "report_path": config.rel_path(report_path)})
-    except Exception as exc:  # noqa: BLE001 - sanitized below
-        runs_repo.set_status(conn, run_id, "failed", final_summary="Diagnostic run failed.")
-        bus.publish(run_id, {"type": "error", "message": redact_text(str(exc))})
-    finally:
-        bus.mark_done(run_id)
+    write_report(run, evidence, findings, summary)
+    return summary

@@ -103,8 +103,13 @@ def main(argv: list[str] | None = None) -> int:
 
     _start_parent_watchdog()
     print(_startup_banner(args.host, args.port), flush=True)
-    # Production: never enable reload; bind localhost only.
-    uvicorn.run(fastapi_app, host=args.host, port=args.port, reload=False, log_level="info")
+    # Production: never enable reload; bind localhost only. Access logging is
+    # OFF: the launcher authenticates the header-less SSE EventSource with a
+    # `?token=<shared secret>` query param, and uvicorn's access log would print
+    # the full request line — writing the secret to the app log on every SSE
+    # connect. Startup/error logs remain on.
+    uvicorn.run(fastapi_app, host=args.host, port=args.port, reload=False,
+                log_level="info", access_log=False)
     return 0
 
 

@@ -148,19 +148,16 @@ export interface Dataset {
   created_at: string;
 }
 
-// SSE event payloads (a subset, discriminated by `type`)
+// SSE event payloads (discriminated by `type`). This is the exact set the
+// sidecar's run executors publish via bus.publish — keep in sync with
+// sidecar/app/runs/* (there is no run_started/guardrail/final_summary event).
 export type RunEvent =
   | { type: "tool_call_started"; tool_name: string; tool_call_id: string }
   | { type: "tool_call_finished"; tool_name: string; tool_call_id: string; status: string; output: Record<string, unknown> }
   | { type: "summary"; content: string }
   | { type: "finding"; severity: string; title: string; detail: string }
   | { type: "report_ready"; run_id: string; report_path: string }
-  | { type: "error"; message: string }
-  // Run lifecycle events (runs are pure deterministic compute — no LLM planner)
-  | { type: "run_started" }
-  | { type: "guardrail_passed"; name: string }
-  | { type: "guardrail_blocked"; name: string; message: string }
-  | { type: "final_summary"; content: string };
+  | { type: "error"; message: string };
 
 // --- Account discovery (Phase 14) ---
 
@@ -325,6 +322,23 @@ export interface ToolActivity {
   tool: string;
   target: string;
   result: string;
+  // Streaming only: a "started" record may arrive before the completed record
+  // for the same call, so the UI can show an in-progress row that resolves in
+  // place. Absent/other values mean the call is finished.
+  status?: string;
+}
+
+// The per-turn result shared by the blocking POST and the SSE `done` event.
+export interface TurnResult {
+  proposed_actions: NextAction[];
+  evidence_used?: string[];
+  evidence_gaps?: string[];
+  skills_used?: string[];
+  skills_offered?: string[];
+  /** Persisted assistant message id (streaming `done` event). */
+  message_id?: string;
+  /** True when the turn was cancelled and a partial answer was persisted. */
+  stopped?: boolean;
 }
 
 export interface SessionMessage {
@@ -377,6 +391,7 @@ export interface TriageCase {
   session_id: string | null;
   provider_id: string | null;
   bucket: string | null;
+  run_id: string | null;
   input_kind: string;
   raw_input_redacted: string | null;
   parsed: Record<string, unknown>;

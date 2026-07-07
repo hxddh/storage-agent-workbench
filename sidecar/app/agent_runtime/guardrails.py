@@ -4,10 +4,9 @@ These are enforced in code, NOT merely in the model prompt:
 - forbidden-tool denial (defense-in-depth: `is_forbidden_tool` rejects any name
   carrying a dangerous token or a mutating-op phrase — used to sanitize proposed
   action slugs, and asserted over the agent's registered tools in tests)
-- tool argument bounds (e.g. list max_keys, range size)
-- no-secret assertions on context and outputs
-- output sanitization/bounding before results reach the LLM
-- report sanitization before a report is saved
+- tool argument bounds (e.g. list max_keys; range size is capped in the S3 layer)
+- no-secret assertions on the LLM context
+- chain-of-thought stripping (complete-message and streaming-safe variants)
 
 The tool *allowlist* is the curated set of `@function_tool`-decorated functions
 registered in `session_tools` / `session_action_tools` / `session_analysis_tools`
@@ -23,9 +22,8 @@ import json
 import re
 from typing import Any
 
-from ..security.redaction import REDACTED, redact, redact_text
+from ..security.redaction import REDACTED, redact_text
 
-SAMPLE_LIMIT = 20
 # List sampling in agent mode is graded, not silently clamped to a tiny cap:
 # when the caller doesn't ask for a size it gets DEFAULT; it may explicitly
 # request up to MAX (which matches the S3 layer's own hard cap, so a deliberate
@@ -33,7 +31,8 @@ SAMPLE_LIMIT = 20
 # MAX is CLAMPED to MAX (bounds, not gates) — there is no human-approval path.
 AGENT_DEFAULT_LIST_KEYS = 100
 AGENT_MAX_LIST_KEYS = 1000  # bounded no-approval ceiling (== S3 hard cap)
-AGENT_MAX_RANGE_BYTES = 1024 * 1024  # 1 MiB no-approval ceiling
+# NOTE: range-GET size is capped in the S3 layer (s3/tools.py MAX_RANGE_BYTES);
+# there is deliberately no second, unenforced constant here.
 
 # Forbidden surface, matched on whole NAME TOKENS (split on non-alphanumeric),
 # not raw substrings — so legitimate names like `test_credentials` or
@@ -65,8 +64,6 @@ FORBIDDEN_PHRASES = {
     ("run", "sql"), ("execute", "sql"), ("raw", "sql"), ("sql", "query"),
     ("execute", "query"), ("run", "query"), ("sql", "exec"),
 }
-# Back-compat alias (some callers/tests reference the old name).
-FORBIDDEN_TOOLS = FORBIDDEN_TOKENS
 
 
 class GuardrailBlocked(Exception):
@@ -84,7 +81,6 @@ def is_forbidden_tool(name: str) -> bool:
     substring (e.g. "sh" inside "refresh", "code" inside "error_code") does not
     falsely forbid a legitimate read-only tool.
     """
-    import re
     tokens = re.findall(r"[a-z0-9]+", (name or "").lower())
     if set(tokens) & FORBIDDEN_TOKENS:
         return True
@@ -103,7 +99,7 @@ def bound_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
     dropped to the default), so a deliberate wider sample works.
     """
     out = dict(args or {})
-    if name in ("list_objects_v2", "sample_bucket_objects"):
+    if name == "list_objects_v2":
         mk = int(out.get("max_keys", AGENT_DEFAULT_LIST_KEYS) or AGENT_DEFAULT_LIST_KEYS)
         out["max_keys"] = max(1, min(mk, AGENT_MAX_LIST_KEYS))
     return out
@@ -122,29 +118,6 @@ def assert_no_secrets_in_context(context: Any) -> None:
         raise GuardrailBlocked("no_secret_in_context", "Refusing to send secret-shaped content to the LLM.")
 
 
-_DROP_KEYS = {"headers_sanitized", "raw", "raw_sanitized", "policy", "acl", "data"}
-
-
-def sanitize_output_for_agent(output: dict[str, Any]) -> dict[str, Any]:
-    """Return a bounded, redacted summary safe to hand back to the LLM."""
-    safe = redact(output)  # mask any secret-shaped values defensively
-
-    def _bound(value: Any, key: str | None = None) -> Any:
-        if isinstance(value, dict):
-            return {k: _bound(v, k) for k, v in value.items() if k not in _DROP_KEYS}
-        if isinstance(value, list):
-            return [_bound(v) for v in value[:SAMPLE_LIMIT]]
-        return value
-
-    return _bound(safe)
-
-
-def assert_report_sanitized(content: str) -> None:
-    """Raise GuardrailBlocked if the report still contains secret-shaped content."""
-    if _contains_secret(content):
-        raise GuardrailBlocked("report_sanitization", "Report failed sanitization; not saved.")
-
-
 _COT_BACKSTOP = 60000  # defensive only; callers bound the real length (answer
 # caps live in skills.contract / session_agent). Must stay ABOVE those caps so
 # this never silently truncates a legitimate long answer (e.g. a 96-row table).
@@ -153,6 +126,8 @@ _COT_BACKSTOP = 60000  # defensive only; callers bound the real length (answer
 # Paired hidden-reasoning blocks: <think>…</think> / <thinking>…</thinking>
 # (case-insensitive, spanning newlines). Removed entirely, surrounding text kept.
 _THINK_BLOCK = re.compile(r"(?is)<(think|thinking)\b[^>]*>.*?</\1\s*>")
+# An OPENING hidden-reasoning tag with no closing pair yet (streaming case).
+_THINK_OPEN = re.compile(r"(?is)<(think|thinking)\b[^>]*>")
 # A leading chain-of-thought preamble (only at the very start of the message).
 _LEADING_COT = re.compile(r"(?is)^\s*(chain[\s\-]?of[\s\-]?thought|reasoning|thinking)\s*:")
 # Where a leading preamble transitions into the real answer.
@@ -192,15 +167,44 @@ def strip_chain_of_thought(text: str | None, max_len: int = _COT_BACKSTOP) -> st
     return (text[:max_len] + "…") if len(text) > max_len + 1 else text
 
 
+def strip_chain_of_thought_stream(text: str | None) -> str:
+    """Streaming-safe hidden-reasoning strip over a growing PREFIX of a message.
+
+    Like :func:`strip_chain_of_thought`, but conservative in the incomplete
+    direction: an UNCLOSED ``<think>``/``<thinking>`` block holds back everything
+    from its opening tag (until the close arrives and the paired-block strip can
+    apply), and a leading CoT preamble with no answer marker / paragraph break
+    yet holds back the whole text instead of leaking the preamble live. The
+    result only ever grows monotonically as ``text`` grows, and never leaks a
+    reasoning block that a later, complete strip would remove.
+    """
+    if not text:
+        return ""
+    text = _THINK_BLOCK.sub("", text)
+    m = _THINK_OPEN.search(text)
+    if m:
+        text = text[:m.start()]
+    if _LEADING_COT.match(text):
+        answer_at = _ANSWER_MARKER.search(text)
+        if answer_at:
+            text = text[answer_at.end():]
+        else:
+            para = re.search(r"\n\s*\n", text)
+            # No separable answer yet: hold everything back (the complete-message
+            # strip may still drop this preamble once the separator arrives).
+            text = text[para.end():] if para else ""
+    return text
+
+
 def redacted(text: str) -> str:
     return redact_text(text)
 
 
 __all__ = [
-    "GuardrailBlocked", "FORBIDDEN_TOOLS", "FORBIDDEN_TOKENS",
-    "FORBIDDEN_PHRASES", "SAMPLE_LIMIT", "AGENT_DEFAULT_LIST_KEYS",
-    "AGENT_MAX_LIST_KEYS", "AGENT_MAX_RANGE_BYTES", "REDACTED",
+    "GuardrailBlocked", "FORBIDDEN_TOKENS",
+    "FORBIDDEN_PHRASES", "AGENT_DEFAULT_LIST_KEYS",
+    "AGENT_MAX_LIST_KEYS", "REDACTED",
     "is_forbidden_tool", "bound_tool_args",
-    "assert_no_secrets_in_context", "sanitize_output_for_agent",
-    "assert_report_sanitized", "strip_chain_of_thought", "redacted",
+    "assert_no_secrets_in_context",
+    "strip_chain_of_thought", "strip_chain_of_thought_stream", "redacted",
 ]

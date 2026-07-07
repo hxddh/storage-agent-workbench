@@ -12,9 +12,9 @@ Authenticode); see [signing.md](signing.md).
 
 ```bash
 # from an up-to-date main
-git tag v0.19.7 && git push origin v0.19.7
+git tag v0.23.0 && git push origin v0.23.0
 gh workflow run release.yml \
-  -f version=v0.19.7 -f ref=v0.19.7 -f prerelease=false -f draft=false
+  -f version=v0.23.0 -f ref=v0.23.0 -f prerelease=false -f draft=false
 ```
 
 The bundle version is stamped from the tag by `scripts/stamp-version.py`
@@ -60,8 +60,9 @@ jobs:
 
 Each job stamps the version from the tag, builds the platform's one-dir sidecar,
 builds the Tauri bundle, and uploads stable-named assets with a per-platform
-`SHA256SUMS`. A separate CI workflow runs the frontend build and sidecar tests on
-every push/PR.
+`SHA256SUMS`. A separate CI workflow runs the frontend build, sidecar tests, and
+a gating macOS desktop build on every push/PR (Linux/Windows desktop builds and
+sidecar packaging run informationally with `continue-on-error`).
 
 ## Runtime verification
 

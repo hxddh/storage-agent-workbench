@@ -51,6 +51,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -62,11 +63,10 @@ _VAULT_FILENAME = "secrets.enc"
 _KEY_FILENAME = "secrets.key"
 _NONCE_LEN = 12
 
-# In-memory mirror of the decrypted secret map (None = not yet loaded), a
-# negative cache of keys known absent, the loaded master key, and one lock
-# serialising the read-modify-write cycle against concurrent agent runs.
+# In-memory mirror of the decrypted secret map (None = not yet loaded), the
+# loaded master key, and one lock serialising the read-modify-write cycle
+# against concurrent agent runs.
 _blob: dict[str, str] | None = None
-_negative: set[str] = set()
 _master_key: bytes | None = None
 _lock = threading.RLock()
 # Set when an existing vault file could not be decrypted (key lost / data dir
@@ -255,12 +255,15 @@ def _ensure_loaded() -> dict[str, str]:
     return _blob
 
 
-def _persist() -> None:
-    """Encrypt the in-memory map and atomically write the vault. Holds ``_lock``."""
-    assert _blob is not None
+def _persist(blob: dict[str, str]) -> None:
+    """Encrypt ``blob`` and atomically write the vault. Caller holds ``_lock``.
+
+    Takes the map explicitly so writers can persist FIRST and only then swap the
+    in-memory blob — a failed write leaves memory and disk consistent.
+    """
     key = _load_master_key()
     nonce = os.urandom(_NONCE_LEN)
-    plaintext = json.dumps(_blob, separators=(",", ":")).encode("utf-8")
+    plaintext = json.dumps(blob, separators=(",", ":")).encode("utf-8")
     token = nonce + AESGCM(key).encrypt(nonce, plaintext, None)
     path = _vault_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -295,13 +298,18 @@ def parse_ref(ref: str) -> tuple[str, str]:
 
 
 def save_secret(scope: str, name: str, value: str) -> str:
-    """Store ``value`` and return its ``keyring://`` reference."""
+    """Store ``value`` and return its ``keyring://`` reference.
+
+    Persists to disk FIRST and only mutates the in-memory blob on success, so a
+    failed write can't leave memory claiming a secret the vault never got.
+    """
+    global _blob
     key = _blob_key(scope, name)
     with _lock:
-        blob = _ensure_loaded()
-        blob[key] = value
-        _persist()
-        _negative.discard(key)
+        updated = dict(_ensure_loaded())
+        updated[key] = value
+        _persist(updated)
+        _blob = updated
     return make_ref(scope, name)
 
 
@@ -309,21 +317,23 @@ def get_secret(scope: str, name: str) -> str | None:
     """Fetch a stored secret, or ``None`` if it does not exist."""
     key = _blob_key(scope, name)
     with _lock:
-        blob = _ensure_loaded()
-        if key in blob:
-            return blob[key]
-        _negative.add(key)
-        return None
+        return _ensure_loaded().get(key)
 
 
 def delete_secret(scope: str, name: str) -> None:
-    """Delete a stored secret. No error if it does not exist."""
+    """Delete a stored secret. No error if it does not exist.
+
+    Same persist-first ordering as :func:`save_secret`.
+    """
+    global _blob
     key = _blob_key(scope, name)
     with _lock:
-        blob = _ensure_loaded()
-        if blob.pop(key, None) is not None:
-            _persist()
-        _negative.add(key)
+        current = _ensure_loaded()
+        if key not in current:
+            return
+        updated = {k: v for k, v in current.items() if k != key}
+        _persist(updated)
+        _blob = updated
 
 
 def secret_exists(ref: str | None) -> bool:
@@ -365,7 +375,6 @@ def _reset_for_tests() -> None:
         _blob = None
         _master_key = None
         _unreadable = False
-        _negative.clear()
 
 
 __all__ = ["SERVICE_PREFIX", "make_ref", "parse_ref", "save_secret", "get_secret",

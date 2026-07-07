@@ -121,8 +121,14 @@ runs, evidence imports, sessions, and reports. See [api.md](api.md).
 
 ## Streaming
 
-Run events stream over Server-Sent Events, with a blocking fallback when SSE is
-unavailable. WebSocket is intentionally not used.
+Run events and session agent turns stream over Server-Sent Events, with a
+blocking fallback when SSE is unavailable. WebSocket is intentionally not used.
+Each streaming agent turn is tracked in an in-process turn registry keyed by the
+client `turn_id`: `POST /sessions/{id}/turns/{turn_id}/cancel` stops the turn
+mid-flight (the partial answer is persisted with a stopped marker, and the SSE
+`done` event may carry `stopped: true`), and a blocking request for an
+already-in-flight `turn_id` waits for that turn instead of re-running the agent
+(409 after ~150 s). See [api.md](api.md).
 
 ## Account discovery
 
@@ -207,7 +213,7 @@ no StorageOps tools, helper scripts, CLI, Pi runtime, subprocess, MCP,
 multi-agent runtime, skill API, skill UI, skill DB tables, or RAG.
 
 - **Vendored** under `sidecar/app/bundled_skillpacks/storageops/`: only
-  `skill-registry.yaml` + `skills/*/SKILL.md` (18 skills). No `references/`,
+  `skill-registry.yaml` + `skills/*/SKILL.md` (20 skills). No `references/`,
   `templates/`, `scripts/`, `storageops_cli/`, or `extensions/` are copied.
 - **`skills/loader.py`** parses minimal registry metadata (name / path /
   description / maturity / mode / trigger_keywords / domains / auto_route) and
@@ -383,7 +389,9 @@ and no second tool-calling agent. Each executor (`diagnostic`,
 `account_discovery`, `bucket_config_review`, `access_log_analysis`,
 `inventory_analysis`) runs rule-based compute over the whitelisted read-only S3
 layer / local DuckDB engine and emits a real tool trace, findings, and a
-sanitized summary. It writes no agent-authored prose section.
+sanitized summary. It writes no agent-authored prose section; the vestigial
+`runs/planner.py` module is deleted and diagnostic reports carry no canned
+"Plan" section — only the real tool trace.
 
 The conversational session agent is the sole LLM. It invokes these executors as
 tools (`survey_account`, `review_bucket_config`, `analyze_uploaded_file`) and

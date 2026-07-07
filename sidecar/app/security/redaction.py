@@ -8,9 +8,9 @@ Two layers:
 1. Key-name based: dict keys that look like secrets have their values masked.
 2. Value/pattern based: strings are scrubbed of known credential shapes
    (AWS access keys, labeled AWS secret keys / session tokens, bearer/
-   authorization values, cookies, presigned-URL query parameters + bare
-   signatures, and common third-party tokens: GitHub, Slack, Google API
-   keys, JWTs).
+   authorization values, cookies, presigned-URL query parameters — AWS and
+   Google-style — bare signatures, bare ``token=`` / ``api_key=`` values,
+   and common third-party tokens: GitHub, Slack, Google API keys, JWTs).
 
 ``keyring://`` references are intentionally NOT redacted — they are safe
 pointers, not secrets.
@@ -58,8 +58,9 @@ _KEY_NORMALIZE = re.compile(r"[^a-z0-9]")
 _VALUE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # AWS access key IDs (AKIA/ASIA/AGPA/AIDA... + 16 base32 chars)
     (re.compile(r"\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA|ANVA)[A-Z0-9]{16}\b"), REDACTED),
-    # Authorization / Bearer header values
-    (re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._\-]+"), r"\1 " + REDACTED),
+    # Authorization / Bearer header values. Charset includes / + = so base64
+    # tokens are masked in full, not left with a recoverable tail.
+    (re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._\-/+=]+"), r"\1 " + REDACTED),
     (
         re.compile(r"(?i)(authorization\s*[:=]\s*)(\S+)"),
         r"\1" + REDACTED,
@@ -89,13 +90,22 @@ _VALUE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         re.compile(r"(?i)\b((?:set-)?cookie:\s*)[^\r\n]*=[^\r\n]*"),
         r"\1" + REDACTED,
     ),
-    # Presigned-URL / SigV4 query parameters
+    # Presigned-URL / SigV4 query parameters (AWS + Google-style GCS SigV4).
     (
         re.compile(
             r"(?i)([?&](?:X-Amz-Signature|X-Amz-Credential|X-Amz-Security-Token|"
+            r"X-Goog-Signature|X-Goog-Credential|"
             r"Signature|AWSAccessKeyId|X-Amz-SignedHeaders)=)([^&\s]+)"
         ),
         r"\1" + REDACTED,
+    ),
+    # Bare `token=` / `api_key=` in free text or query strings (e.g. the local
+    # SSE auth `?token=...`, a pasted `api_key=...` config line). Label kept,
+    # value masked. `\b` keeps compound labels like `next_token=` (preceded by a
+    # word character) from matching.
+    (
+        re.compile(r"(?i)\b(api[_-]?key|token)(\s*[:=]\s*)(['\"]?)[A-Za-z0-9/+=_.\-]{4,}"),
+        r"\1\2\3" + REDACTED,
     ),
     # Bare `Signature=...` not in a query-param context (rule 15 lists signatures
     # generally, not only presigned-URL params). Runs after the presigned rule,

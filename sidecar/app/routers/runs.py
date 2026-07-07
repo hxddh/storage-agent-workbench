@@ -138,6 +138,15 @@ def post_message(
             status_code=409,
             detail=f"run_type '{row['run_type']}' has no executable message turn",
         )
+    # Refuse to spawn a second executor over a run that is already in flight or
+    # finished — a concurrent/duplicate POST would otherwise start a racing
+    # thread on the same run row. A fresh ('pending') or 'failed' run may start;
+    # 'running'/'completed' must not.
+    if row["status"] in ("running", "completed"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"run is '{row['status']}'; cannot start another executor for it",
+        )
 
     repo.add_message(conn, run_id, role="user", content=body.content)
     bus.create(run_id)

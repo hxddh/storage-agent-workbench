@@ -24,12 +24,12 @@ from typing import Any
 from .. import config
 from ..events import bus
 from ..repositories import account_discovery as account_repo
-from ..repositories import runs as runs_repo
+from ..repositories import cloud_providers as cloud_repo
 from ..s3 import account_tools, tools as s3tools
+from ..s3.scope import check_scope
 from ..security.redaction import redact_text
-from ._common import RunError, run_tool_with_events
+from ._common import RunError, run_executor, run_tool_with_events
 from .analysis_report import render_account_profile, write
-from .report import report_path_for
 
 DEFAULT_MAX_BUCKETS = 100
 HARD_MAX_BUCKETS = 500
@@ -114,157 +114,169 @@ def _build_summary(buckets: list[dict[str, Any]], visible: int, processed: int, 
 
 
 def execute_account_discovery_run(conn: sqlite3.Connection, run_id: str) -> None:
-    row = runs_repo.get_row(conn, run_id)
-    if row is None:
-        bus.publish(run_id, {"type": "error", "message": "run not found"})
-        bus.mark_done(run_id)
-        return
-    run = dict(row)
+    run_executor(conn, run_id, "Account discovery failed.",
+                 lambda run: _body(conn, run_id, run))
+
+
+def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
     provider_id = run["provider_id"]
+    if not provider_id:
+        raise RunError("account_discovery requires a cloud provider.")
+    opts = _parse_options(run)
+    max_buckets = opts["max_buckets"]
 
-    try:
-        if not provider_id:
-            raise RunError("account_discovery requires a cloud provider.")
-        runs_repo.set_status(conn, run_id, "running")
-        opts = _parse_options(run)
-        max_buckets = opts["max_buckets"]
+    provider = cloud_repo.get(conn, provider_id)
+    allowed_buckets = provider.allowed_buckets if provider else None
+    allowed_prefixes = provider.allowed_prefixes if provider else None
 
-        run_tool_with_events(
-            conn, run_id, "test_credentials", {"provider_id": provider_id},
-            lambda: s3tools.test_credentials(conn, provider_id),
+    cred = run_tool_with_events(
+        conn, run_id, "test_credentials", {"provider_id": provider_id},
+        lambda: s3tools.test_credentials(conn, provider_id),
+    )
+    # Reflect the credential probe in the findings instead of discarding it.
+    if cred.get("success"):
+        bus.publish(run_id, {"type": "finding", "severity": "info",
+                             "title": "Provider credentials valid",
+                             "detail": f"Identity: {cred.get('identity_hint') or 'unknown'}."})
+    else:
+        bus.publish(run_id, {"type": "finding", "severity": "error",
+                             "title": "Credential check failed",
+                             "detail": cred.get("error_message_sanitized")
+                             or cred.get("error_code") or "unknown error"})
+
+    lb = run_tool_with_events(
+        conn, run_id, "list_buckets", {"provider_id": provider_id},
+        lambda: s3tools.list_buckets(conn, provider_id),
+    )
+    list_status = lb.get("status", "error")
+    all_names = [b["name"] for b in lb.get("buckets", []) or []]
+    visible = len(all_names)
+    if list_status != _CONFIGURED:
+        # Total failure: ListBuckets could not enumerate the account, so there is
+        # nothing to profile. Fail the run (not a misleading "completed") and let
+        # the harness persist the reason — including the credential verdict — in
+        # final_summary. A per-bucket failure below is different: it is isolated
+        # and the run still completes.
+        cred_note = ("credentials valid" if cred.get("success")
+                     else f"credential check {'failed' if not cred.get('success') else 'ok'} "
+                          f"({cred.get('error_code') or 'unknown'})")
+        raise RunError(
+            f"ListBuckets {list_status}; cannot enumerate the account "
+            f"({cred_note}). "
+            + (redact_text(lb.get("error_message_sanitized") or "") or "").strip()
         )
 
-        lb = run_tool_with_events(
-            conn, run_id, "list_buckets", {"provider_id": provider_id},
-            lambda: s3tools.list_buckets(conn, provider_id),
-        )
-        list_status = lb.get("status", "error")
-        all_names = [b["name"] for b in lb.get("buckets", []) or []]
-        visible = len(all_names)
-        if list_status != _CONFIGURED:
-            bus.publish(run_id, {"type": "summary",
-                                 "content": f"ListBuckets {list_status}; cannot enumerate the account."})
+    filtered = _filter_buckets(all_names, opts["include_pattern"], opts["exclude_pattern"])
+    # Provider scoping (fix): honor allowed_buckets on the deterministic path too,
+    # not only inside the agent's tools. Empty/None list means unrestricted.
+    if allowed_buckets or allowed_prefixes:
+        filtered = [n for n in filtered
+                    if check_scope(allowed_buckets, allowed_prefixes, n) is None]
+    truncated = len(filtered) > max_buckets
+    selected = filtered[:max_buckets]
+    if truncated:
+        bus.publish(run_id, {"type": "summary",
+                             "content": f"{len(filtered)} bucket(s) matched; processing the first "
+                                        f"{max_buckets} (max_buckets). The rest are not analyzed."})
 
-        filtered = _filter_buckets(all_names, opts["include_pattern"], opts["exclude_pattern"])
-        truncated = len(filtered) > max_buckets
-        selected = filtered[:max_buckets]
-        if truncated:
-            bus.publish(run_id, {"type": "summary",
-                                 "content": f"{len(filtered)} bucket(s) matched; processing the first "
-                                            f"{max_buckets} (max_buckets). The rest are not analyzed."})
+    snapshot_id = account_repo.create_snapshot(
+        conn, run_id, provider_id,
+        bucket_count=visible, visible_count=visible, processed_count=len(selected),
+        truncated=truncated, list_status=list_status, summary={},
+    )
 
-        snapshot_id = account_repo.create_snapshot(
-            conn, run_id, provider_id,
-            bucket_count=visible, visible_count=visible, processed_count=len(selected),
-            truncated=truncated, list_status=list_status, summary={},
-        )
-
-        per_bucket: list[dict[str, Any]] = []
-        for name in selected:
-            access_status = _CONFIGURED
-            try:
-                snap = run_tool_with_events(
-                    conn, run_id, "get_bucket_config_snapshot",
-                    {"provider_id": provider_id, "bucket": name},
-                    lambda n=name: account_tools.get_bucket_config_snapshot(conn, provider_id, n),
-                )
-                ev = run_tool_with_events(
-                    conn, run_id, "discover_evidence_sources",
-                    {"provider_id": provider_id, "bucket": name},
-                    lambda n=name: account_tools.discover_evidence_sources(conn, provider_id, n),
-                )
-                head = snap.get("head_bucket_status")
-                # A denied/errored HeadBucket means the bucket itself is
-                # inaccessible — report that regardless of whether a region is
-                # set. (The snapshot falls back to the provider's configured
-                # region, so `region` is almost always truthy even for a fully
-                # denied bucket; gating on `not region` made this branch dead and
-                # denied buckets were mis-reported as "available".)
-                if head == _DENIED:
-                    access_status = _DENIED
-                elif head == "error":
-                    access_status = "error"
-                elif snap.get("access_denied_items"):
-                    access_status = _CONFIGURED  # partial; reads mostly worked
-                sources = ev.get("sources", []) or []
-                bucket_entry = {
-                    **{k: v for k, v in snap.items() if k not in ("success", "bucket")},
-                    "bucket_name": name,
-                    "access_status": access_status,
-                    "evidence_sources": sources,
-                }
-            except Exception as exc:  # noqa: BLE001 - per-bucket isolation
-                bus.publish(run_id, {"type": "finding", "severity": "warning",
-                                     "title": f"Bucket {name}: discovery error",
-                                     "detail": redact_text(str(exc))})
-                bucket_entry = {
-                    "bucket_name": name, "access_status": "error", "region": None,
-                    "errors": ["snapshot"], "evidence_sources": [],
-                }
-
-            per_bucket.append(bucket_entry)
-            account_repo.add_bucket(conn, snapshot_id, run_id, provider_id, name,
-                                    bucket_entry.get("region"), bucket_entry["access_status"])
-            account_repo.add_config_snapshot(conn, snapshot_id, run_id, provider_id, name, bucket_entry)
-            for src in bucket_entry.get("evidence_sources", []):
-                account_repo.add_evidence_source(conn, snapshot_id, run_id, provider_id, name, src)
-            conn.commit()
-
-        summary = _build_summary(per_bucket, visible, len(per_bucket), truncated)
-        # Persist the computed summary onto the snapshot row.
-        conn.execute(
-            "UPDATE account_snapshots SET summary_json_sanitized = ? WHERE id = ?",
-            (json.dumps(summary), snapshot_id),
-        )
-        conn.commit()
-
-        # A few account-level findings (bounded; no per-object detail).
-        if summary["encryption_not_configured"]:
+    per_bucket: list[dict[str, Any]] = []
+    for name in selected:
+        access_status = _CONFIGURED
+        try:
+            snap = run_tool_with_events(
+                conn, run_id, "get_bucket_config_snapshot",
+                {"provider_id": provider_id, "bucket": name},
+                lambda n=name: account_tools.get_bucket_config_snapshot(conn, provider_id, n),
+            )
+            ev = run_tool_with_events(
+                conn, run_id, "discover_evidence_sources",
+                {"provider_id": provider_id, "bucket": name},
+                lambda n=name: account_tools.discover_evidence_sources(conn, provider_id, n),
+            )
+            head = snap.get("head_bucket_status")
+            # A denied/errored HeadBucket means the bucket itself is
+            # inaccessible — report that regardless of whether a region is
+            # set. (The snapshot falls back to the provider's configured
+            # region, so `region` is almost always truthy even for a fully
+            # denied bucket; gating on `not region` made this branch dead and
+            # denied buckets were mis-reported as "available".)
+            if head == _DENIED:
+                access_status = _DENIED
+            elif head == "error":
+                access_status = "error"
+            elif snap.get("access_denied_items"):
+                access_status = _CONFIGURED  # partial; reads mostly worked
+            sources = ev.get("sources", []) or []
+            bucket_entry = {
+                **{k: v for k, v in snap.items() if k not in ("success", "bucket")},
+                "bucket_name": name,
+                "access_status": access_status,
+                "evidence_sources": sources,
+            }
+        except Exception as exc:  # noqa: BLE001 - per-bucket isolation
             bus.publish(run_id, {"type": "finding", "severity": "warning",
-                                 "title": "Buckets without default encryption",
-                                 "detail": f"{summary['encryption_not_configured']} bucket(s) have no default encryption."})
-        if summary["buckets_with_inventory_evidence"]:
-            bus.publish(run_id, {"type": "finding", "severity": "info",
-                                 "title": "Inventory evidence available",
-                                 "detail": f"{len(summary['buckets_with_inventory_evidence'])} bucket(s) have an "
-                                           "inventory configuration that can feed inventory_analysis."})
-        if summary["buckets_with_logging_evidence"]:
-            bus.publish(run_id, {"type": "finding", "severity": "info",
-                                 "title": "Access-log evidence available",
-                                 "detail": f"{len(summary['buckets_with_logging_evidence'])} bucket(s) have server "
-                                           "access logging that can feed access_log_analysis."})
+                                 "title": f"Bucket {name}: discovery error",
+                                 "detail": redact_text(str(exc))})
+            bucket_entry = {
+                "bucket_name": name, "access_status": "error", "region": None,
+                "errors": ["snapshot"], "evidence_sources": [],
+            }
 
-        counts = dict(Counter(b["access_status"] for b in per_bucket))
-        summary_text = (
-            f"Account discovery via provider '{provider_id}': {visible} bucket(s) visible, "
-            f"{len(per_bucket)} processed{' (truncated)' if truncated else ''}. "
-            f"Access status: " + (", ".join(f"{n} {s}" for s, n in counts.items()) or "—") + "."
-        )
-        bus.publish(run_id, {"type": "summary", "content": summary_text})
-
-        profile = {
-            "run_id": run_id, "provider_id": provider_id, "bucket_count": visible,
-            "visible_count": visible, "processed_count": len(per_bucket),
-            "truncated": truncated, "list_status": list_status,
-            "summary": summary, "buckets": per_bucket,
-        }
-        content = render_account_profile(run, profile, summary_text)
-        run_tool_with_events(
-            conn, run_id, "generate_markdown_report", {"run_id": run_id},
-            lambda: {"report_path": config.rel_path(write(run_id, content)), "format": "markdown"},
-        )
-
-        report_abs = str(report_path_for(run_id))
-        conn.execute(
-            "INSERT INTO reports (id, run_id, report_path, format, created_at) "
-            "VALUES (lower(hex(randomblob(16))), ?, ?, 'markdown', datetime('now'))",
-            (run_id, report_abs),
-        )
+        per_bucket.append(bucket_entry)
+        account_repo.add_bucket(conn, snapshot_id, run_id, provider_id, name,
+                                bucket_entry.get("region"), bucket_entry["access_status"])
+        account_repo.add_config_snapshot(conn, snapshot_id, run_id, provider_id, name, bucket_entry)
+        for src in bucket_entry.get("evidence_sources", []):
+            account_repo.add_evidence_source(conn, snapshot_id, run_id, provider_id, name, src)
         conn.commit()
-        runs_repo.set_status(conn, run_id, "completed", final_summary=summary_text, report_path=report_abs)
-        bus.publish(run_id, {"type": "report_ready", "run_id": run_id, "report_path": config.rel_path(report_abs)})
-    except Exception as exc:  # noqa: BLE001 - sanitized below
-        runs_repo.set_status(conn, run_id, "failed", final_summary="Account discovery failed.")
-        bus.publish(run_id, {"type": "error", "message": redact_text(str(exc))})
-    finally:
-        bus.mark_done(run_id)
+
+    summary = _build_summary(per_bucket, visible, len(per_bucket), truncated)
+    # Persist the computed summary onto the snapshot row.
+    conn.execute(
+        "UPDATE account_snapshots SET summary_json_sanitized = ? WHERE id = ?",
+        (json.dumps(summary), snapshot_id),
+    )
+    conn.commit()
+
+    # A few account-level findings (bounded; no per-object detail).
+    if summary["encryption_not_configured"]:
+        bus.publish(run_id, {"type": "finding", "severity": "warning",
+                             "title": "Buckets without default encryption",
+                             "detail": f"{summary['encryption_not_configured']} bucket(s) have no default encryption."})
+    if summary["buckets_with_inventory_evidence"]:
+        bus.publish(run_id, {"type": "finding", "severity": "info",
+                             "title": "Inventory evidence available",
+                             "detail": f"{len(summary['buckets_with_inventory_evidence'])} bucket(s) have an "
+                                       "inventory configuration that can feed inventory_analysis."})
+    if summary["buckets_with_logging_evidence"]:
+        bus.publish(run_id, {"type": "finding", "severity": "info",
+                             "title": "Access-log evidence available",
+                             "detail": f"{len(summary['buckets_with_logging_evidence'])} bucket(s) have server "
+                                       "access logging that can feed access_log_analysis."})
+
+    counts = dict(Counter(b["access_status"] for b in per_bucket))
+    summary_text = (
+        f"Account discovery via provider '{provider_id}': {visible} bucket(s) visible, "
+        f"{len(per_bucket)} processed{' (truncated)' if truncated else ''}. "
+        f"Access status: " + (", ".join(f"{n} {s}" for s, n in counts.items()) or "—") + "."
+    )
+    bus.publish(run_id, {"type": "summary", "content": summary_text})
+
+    profile = {
+        "run_id": run_id, "provider_id": provider_id, "bucket_count": visible,
+        "visible_count": visible, "processed_count": len(per_bucket),
+        "truncated": truncated, "list_status": list_status,
+        "summary": summary, "buckets": per_bucket,
+    }
+    content = render_account_profile(run, profile, summary_text)
+    run_tool_with_events(
+        conn, run_id, "generate_markdown_report", {"run_id": run_id},
+        lambda: {"report_path": config.rel_path(write(run_id, content)), "format": "markdown"},
+    )
+    return summary_text

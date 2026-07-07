@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n";
+
 interface Row {
   label: string;
   value: string;
@@ -20,13 +22,14 @@ export function ToolResultCard({
   errorCode?: string | null;
   errorMessage?: string | null;
 }) {
+  const { t } = useI18n();
   return (
     <div className="mt-2 rounded-md border border-edge bg-canvas p-3 text-xs" data-testid="tool-result-card">
       <div className="mb-2 flex items-center gap-2">
         <span className={`h-2 w-2 rounded-full ${success ? "bg-emerald-400" : "bg-red-500"}`} aria-hidden />
         <span className="font-medium text-gray-200">{title}</span>
         <span className={success ? "text-emerald-400" : "text-red-400"}>
-          {success ? "success" : "failed"}
+          {success ? t("tool.success") : t("tool.failed")}
         </span>
       </div>
 
