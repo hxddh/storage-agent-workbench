@@ -112,6 +112,65 @@ def test_stream_finalizes_on_context_overflow():
     assert "context window" in final["answer"].lower()
 
 
+# --- tool-call sequencing 400 recovers via finalize, not a raw error --------
+
+
+def test_is_tool_call_sequence_error_detects_and_scopes():
+    err = Exception(
+        "Error code: 400 - {'error': {'message': \"An assistant message with "
+        "'tool_calls' must be followed by tool messages responding to each "
+        "'tool_call_id'. (insufficient tool messages following tool_calls "
+        "message)\", 'type': 'invalid_request_error'}}")
+    assert session_agent._is_tool_call_sequence_error(err)
+    # A typed 400 with the phrase but no "Error code:" prefix still matches.
+    typed = type("BadRequestError", (Exception,), {})(
+        "insufficient tool messages following tool_calls message")
+    typed.status_code = 400
+    assert session_agent._is_tool_call_sequence_error(typed)
+    # Not a 400 → not this class (avoid catching unrelated errors).
+    assert not session_agent._is_tool_call_sequence_error(
+        Exception("500 tool_call_id server error"))
+    # A 400 unrelated to tool sequencing → not this class.
+    bad = Exception("Error code: 400 - invalid model")
+    assert not session_agent._is_tool_call_sequence_error(bad)
+
+
+def test_stream_finalizes_on_tool_call_sequence_error():
+    """A provider 400 about tool_calls not being followed by tool results must
+    NOT surface raw: finalize rebuilds from a fresh prompt and the turn returns a
+    grounded answer — WITHOUT the 'context filled up' marker (context isn't why
+    it failed)."""
+    class FakeResult:
+        final_output = ""
+
+        async def stream_events(self):
+            err = Exception(
+                "Error code: 400 - {'error': {'message': \"An assistant message "
+                "with 'tool_calls' must be followed by tool messages responding "
+                "to each 'tool_call_id'. (insufficient tool messages following "
+                "tool_calls message)\"}}")
+            raise err
+            yield  # make this an async generator
+
+    async def finalize():
+        return "Grounded best-effort answer from the probes already run."
+
+    async def collect():
+        out = []
+        async for kind, data in session_agent.stream_events_for(
+                FakeResult(), [], [], finalize):
+            out.append((kind, data))
+        return out
+
+    events = asyncio.run(collect())
+    kinds = [k for k, _ in events]
+    assert "error" not in kinds  # the raw 400 was NOT surfaced
+    final = next(d for k, d in events if k == "final")
+    assert "grounded best-effort answer" in final["answer"].lower()
+    # Not marked as a context cutoff — context is not why it failed.
+    assert session_agent._CONTEXT_CUT_MARKER not in final["answer"]
+
+
 # --- (fix 6) live delta stream is sanitized ---------------------------------
 
 
