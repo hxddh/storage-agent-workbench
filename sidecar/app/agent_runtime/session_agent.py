@@ -368,6 +368,28 @@ def _is_context_overflow(exc: BaseException) -> bool:
     return is_bad_request and any(n in msg for n in _CONTEXT_OVERFLOW_WEAK_NEEDLES)
 
 
+def _is_tool_call_sequence_error(exc: BaseException) -> bool:
+    """True if exc is a provider 400 rejecting the reconstructed message list
+    because an assistant ``tool_calls`` message isn't followed by a ``tool``
+    result for every ``tool_call_id`` (an SDK / OpenAI-compatible-provider
+    tool-call sequencing mismatch — e.g. a provider that emits multiple tool
+    calls despite ``parallel_tool_calls=False``).
+
+    The in-flight conversation can't be repaired in place, but the tool-less
+    finalize pass rebuilds from a FRESH prompt (no tool_calls history), so
+    treating this as recoverable lets the turn synthesize a grounded best-effort
+    answer instead of surfacing a raw 400."""
+    msg = str(exc).lower()
+    is_400 = getattr(exc, "status_code", None) == 400 or "error code: 400" in msg or "code: 400" in msg
+    if not is_400:
+        return False
+    return (
+        "insufficient tool messages" in msg
+        or "tool_call_id" in msg
+        or ("tool_calls" in msg and "must be followed" in msg)
+    )
+
+
 def _finalize_directive(activity: list[dict[str, Any]] | None) -> str:
     rows = [a for a in (activity or []) if a.get("status") != "started"]
     trace = "\n".join(
@@ -832,7 +854,13 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
                     emitted_tools += 1
         except Exception as exc:  # noqa: BLE001
             cut_short = _is_context_overflow(exc) and not _is_max_turns(exc)
-            if finalize is None or not (_is_max_turns(exc) or cut_short):
+            # A tool-call sequencing 400 is recoverable too: finalize rebuilds
+            # from a fresh prompt (no tool_calls history), so the turn synthesizes
+            # a grounded answer instead of surfacing a raw provider error. It is
+            # NOT `cut_short` — no "context filled up" marker, since context is
+            # not why it failed.
+            recoverable = _is_max_turns(exc) or cut_short or _is_tool_call_sequence_error(exc)
+            if finalize is None or not recoverable:
                 raise
             while len(activity) > emitted_tools:
                 yield ("tool", activity[emitted_tools])

@@ -6,6 +6,25 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.10] - 2026-07-08
+
+_Turns a raw provider 400 into a graceful, grounded answer._
+
+### Fixed
+
+- **A tool-call sequencing 400 now recovers via finalize instead of surfacing
+  raw.** Some OpenAI-compatible providers reject the reconstructed message list
+  with `400 … "An assistant message with 'tool_calls' must be followed by tool
+  messages responding to each 'tool_call_id'"` (e.g. a provider that emits
+  multiple tool calls despite `parallel_tool_calls=False`). The stream loop only
+  recovered from max-turns / context-overflow, so this 400 was re-raised to the
+  user. It is now recognized (`_is_tool_call_sequence_error`) and treated as
+  recoverable: the tool-less finalize pass rebuilds from a fresh prompt (no
+  `tool_calls` history) and the turn returns a grounded best-effort answer with a
+  continue-investigation offer — **not** marked as a context cutoff, since
+  context isn't why it failed. The underlying SDK/provider sequencing mismatch is
+  upstream; this is the graceful in-app recovery.
+
 ## [0.24.9] - 2026-07-08
 
 _Robustness fixes from an adversarial bug hunt. No new capability, no
