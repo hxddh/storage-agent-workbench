@@ -41,6 +41,15 @@ architecture change; each closes a real defect the happy path didn't exercise._
   cut-short answer recorded as success. Generic phrases are now trusted only on
   a bad-request-class (HTTP 400) provider error; specific phrases
   ("maximum context length", `context_length_exceeded`) still match anywhere.
+- **`fork` keeps a message's grounding + proposed-action cards.** The fork copy
+  selected only a subset of columns, silently dropping `grounding` and
+  `proposed_actions` (migration 16), so a forked thread lost its grounding
+  blocks and next-action cards despite the docstring's "copies its full message
+  thread". Both columns are now copied verbatim.
+- **`_arn_resource` never leaks an account id, even on a truncated ARN.** The
+  account-stripping only ran for a standard 6-field ARN; a shorter / non-standard
+  ARN (e.g. `arn:aws:sns:region:account` with no resource) passed through with
+  the account id intact. It now reduces to the service label in that case.
 
 ## [0.24.8] - 2026-07-07
 

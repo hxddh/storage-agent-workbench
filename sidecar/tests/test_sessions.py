@@ -154,6 +154,24 @@ def test_fork_session_copies_agent_memory(client):
     assert texts == ["bucket acme is path-style only", "public read enabled"]
 
 
+def test_fork_preserves_grounding_and_proposals(client):
+    """A forked assistant message must keep its grounding + proposed-action cards
+    (migration 16 columns), not silently drop them — the fork copies the FULL
+    thread."""
+    s = _session(client)
+    with _db() as conn:
+        sessions_repo.add_message(
+            conn, s["id"], "assistant", "public read is on",
+            grounding={"evidence_used": ["review_bucket_security"], "evidence_gaps": [], "skills_used": ["sec"]},
+            proposed_actions=[{"action_type": "review_bucket_security", "title": "Re-check", "requires_confirmation": True}],
+        )
+    forked = client.post(f"/sessions/{s['id']}/fork").json()
+    fmsgs = client.get(f"/sessions/{forked['id']}/messages").json()["messages"]
+    assert len(fmsgs) == 1
+    assert fmsgs[0]["grounding"]["evidence_used"] == ["review_bucket_security"]
+    assert fmsgs[0]["proposed_actions"][0]["action_type"] == "review_bucket_security"
+
+
 def test_delete_session_removes_it(client):
     s = _session(client, title="Delete me")
     assert client.delete(f"/sessions/{s['id']}").status_code == 204

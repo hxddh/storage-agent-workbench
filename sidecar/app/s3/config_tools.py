@@ -187,6 +187,11 @@ def _arn_resource(value: Any) -> str | None:
             # other services keep a 'service:resource' label so the target's kind
             # (sqs/sns/lambda) stays visible.
             s = resource if svc == "s3" else f"{svc}:{resource}"
+        elif len(parts) >= 3:
+            # Truncated / non-standard ARN with no resource segment (e.g.
+            # arn:aws:sns:us-east-1:123456789012). Keep only the service label and
+            # NEVER pass parts[4] (the account id) through — the docstring promise.
+            s = parts[2]
     return redact_text(s)
 
 
