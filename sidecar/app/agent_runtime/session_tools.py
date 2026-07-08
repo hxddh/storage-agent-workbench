@@ -27,6 +27,7 @@ from ..repositories import cloud_providers as cloud_repo
 from ..s3 import config_tools as ct
 from ..s3 import tools as s3
 from ..s3.scope import check_scope
+from ..security.redaction import redact_text
 from . import guardrails
 
 # Max object keys echoed to the model per list_objects call. The bucket may hold
@@ -396,7 +397,10 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         if denial:
             return _err(denial)
         rec("get_bucket_config_detail", provider_id=provider_id, bucket=bucket, aspect=aspect)
-        res = ct.get_bucket_config_detail(conn, provider_id, bucket, aspect)
+        try:
+            res = ct.get_bucket_config_detail(conn, provider_id, bucket, aspect)
+        except Exception as exc:  # noqa: BLE001 — a tool returns an error string, never raises
+            return _err(redact_text(f"get_bucket_config_detail failed: {exc}"))
         note("get_bucket_config_detail", f"{bucket} · {aspect}",
              res.get("status") if res.get("success") else "error")
         return json.dumps(res)
@@ -436,7 +440,10 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
                 return _err(denial)
             tname = getattr(_t, "name", "bucket_config")
             rec(tname, provider_id=provider_id, bucket=bucket)
-            res = fn(conn, provider_id, bucket)
+            try:
+                res = fn(conn, provider_id, bucket)
+            except Exception as exc:  # noqa: BLE001 — a tool returns an error string, never raises
+                return _err(redact_text(f"{tname} failed: {exc}"))
             note(tname, bucket, "reviewed" if not (isinstance(res, dict) and res.get("error")) else "error")
             return json.dumps(res)
         return _t

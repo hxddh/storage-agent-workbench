@@ -6,6 +6,42 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.9] - 2026-07-08
+
+_Robustness fixes from an adversarial bug hunt. No new capability, no
+architecture change; each closes a real defect the happy path didn't exercise._
+
+### Fixed
+
+- **Streaming turn de-dup is now symmetric with the blocking path.** The
+  blocking `POST /sessions/{id}/messages` already attaches to an in-flight turn
+  instead of re-running it, but `POST /messages/stream` discarded the
+  registry's `created` flag and spawned a worker unconditionally — so two
+  concurrent stream POSTs (or a stream retry) for the same `turn_id` double-ran
+  the agent and persisted duplicate messages + double model spend. The stream
+  endpoint now declines a duplicate `turn_id` with 409, so the client falls back
+  to the blocking path (which attaches to the owner).
+- **The streaming worker always resolves its turn handle.** `except Exception`
+  missed a `BaseException` (e.g. `CancelledError`) out of the run, and a clean
+  run yielding no final data also left the handle unresolved — either way
+  `done_event` never set, leaking a non-evictable handle and hanging a blocking
+  fallback the full in-progress wait. The worker's `finally` now fails an
+  unresolved handle as a backstop.
+- **Config-review agent tools return an error string instead of raising.**
+  `get_bucket_config_detail`, the `review_bucket_*` tools, and the inline
+  `survey_account` / `review_bucket_config` tools built their S3 client / ran
+  their engine outside any try, so a malformed endpoint or a transient failure
+  raised out of the tool body (the SDK swallowed it into a generic message).
+  They now catch and return a **redacted** error the agent can actually diagnose
+  and narrate — matching every tool in `s3/tools.py`.
+- **Context-overflow detection no longer misreads unrelated errors.**
+  `_is_context_overflow` matched generic phrases ("context window", "input is
+  too long") anywhere in an exception, so an unrelated 5xx/connection error
+  carrying such text was reclassified into a fabricated "context filled up"
+  cut-short answer recorded as success. Generic phrases are now trusted only on
+  a bad-request-class (HTTP 400) provider error; specific phrases
+  ("maximum context length", `context_length_exceeded`) still match anywhere.
+
 ## [0.24.8] - 2026-07-07
 
 _Documentation-only: a full review of the docs cleared the stale/inaccurate

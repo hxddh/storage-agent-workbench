@@ -191,11 +191,14 @@ def build(
         if not bucket_ok(p, bucket):
             return _err("That bucket is not in this provider's allow-list.")
         start("review_bucket_config", bucket)
-        body = RunCreate(run_type="bucket_config_review", provider_id=provider_id, bucket=bucket,
-                         user_prompt=_DEFAULT_PROMPTS["bucket_config_review"], session_id=session_id)
-        run_id = _execute_run(conn, body, turn_id, f"bucket_config_review:{provider_id}:{bucket}",
-                              cancel_event=cancel_event)
-        result = _run_result(conn, run_id)
+        try:
+            body = RunCreate(run_type="bucket_config_review", provider_id=provider_id, bucket=bucket,
+                             user_prompt=_DEFAULT_PROMPTS["bucket_config_review"], session_id=session_id)
+            run_id = _execute_run(conn, body, turn_id, f"bucket_config_review:{provider_id}:{bucket}",
+                                  cancel_event=cancel_event)
+            result = _run_result(conn, run_id)
+        except Exception as exc:  # noqa: BLE001 — a tool returns an error string, never raises
+            return _err(f"review_bucket_config failed: {exc}")
         note("review_bucket_config", bucket, result["status"])
         return json.dumps(result)
 
@@ -206,12 +209,15 @@ def build(
         if p is None:
             return _err("Unknown provider_id. Use a configured provider.")
         start("survey_account", provider_name(provider_id))
-        body = RunCreate(run_type="account_discovery", provider_id=provider_id,
-                         user_prompt=_DEFAULT_PROMPTS["account_discovery"], session_id=session_id)
-        run_id = _execute_run(conn, body, turn_id, f"account_discovery:{provider_id}",
-                              cancel_event=cancel_event)
-        result = _run_result(conn, run_id)
-        profile = account_repo.get_profile(conn, run_id)
+        try:
+            body = RunCreate(run_type="account_discovery", provider_id=provider_id,
+                             user_prompt=_DEFAULT_PROMPTS["account_discovery"], session_id=session_id)
+            run_id = _execute_run(conn, body, turn_id, f"account_discovery:{provider_id}",
+                                  cancel_event=cancel_event)
+            result = _run_result(conn, run_id)
+            profile = account_repo.get_profile(conn, run_id)
+        except Exception as exc:  # noqa: BLE001 — a tool returns an error string, never raises
+            return _err(f"survey_account failed: {exc}")
         if profile:
             result["bucket_count"] = profile.get("bucket_count")
             result["visible_count"] = profile.get("visible_count")

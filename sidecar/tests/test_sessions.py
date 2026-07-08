@@ -369,6 +369,25 @@ def test_in_progress_turn_blocks_concurrent_rerun_with_409(client, monkeypatch):
     assert client.get(f"/sessions/{s['id']}/messages").json()["messages"] == []
 
 
+def test_stream_declines_duplicate_turn_id_with_409(client, monkeypatch):
+    """The STREAMING endpoint must be symmetric with the blocking one: a stream
+    POST for a turn_id an earlier attempt already owns must NOT spawn a second
+    worker (which would double-run the agent + persist duplicate messages). It
+    declines with 409 so the client falls back to POST /messages (which attaches
+    to the owner) instead of re-running."""
+    from app.agent_runtime import turn_guard
+    s = _session(client)
+    _add_model_provider(client)
+    # An earlier attempt already registered this turn as in-flight.
+    turn_guard.begin("turnDup", s["id"])
+    r = client.post(f"/sessions/{s['id']}/messages/stream",
+                    json={"content": "hi", "turn_id": "turnDup"})
+    assert r.status_code == 409
+    assert "in progress" in r.json()["detail"].lower()
+    # No second worker ran → nothing persisted.
+    assert client.get(f"/sessions/{s['id']}/messages").json()["messages"] == []
+
+
 # --- report -----------------------------------------------------------------
 
 

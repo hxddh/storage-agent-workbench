@@ -336,8 +336,16 @@ def _is_max_turns(exc: BaseException) -> bool:
     return type(exc).__name__ == "MaxTurnsExceeded" or "max turns" in str(exc).lower()
 
 
+# Specific enough to be unambiguous — an unrelated error won't carry these, so
+# they are trusted wherever they appear.
 _CONTEXT_OVERFLOW_NEEDLES = (
     "context length", "context_length_exceeded", "maximum context length",
+)
+# Generic phrasing that CAN appear in unrelated provider/tool errors. These are
+# trusted only when the error is bad-request-class (a real overflow is always a
+# 400), so a stray 5xx/connection error whose text merely contains one of them
+# isn't reclassified into a fabricated cut-short answer.
+_CONTEXT_OVERFLOW_WEAK_NEEDLES = (
     "context window", "input is too long", "prompt is too long",
 )
 
@@ -346,11 +354,18 @@ def _is_context_overflow(exc: BaseException) -> bool:
     """True if exc is a provider context-length error (openai.BadRequestError
     carrying a context-length message, or an equivalent message from a
     compatible provider)."""
+    code = str(getattr(exc, "code", "") or "").lower()
+    if code == "context_length_exceeded":
+        return True
     msg = str(exc).lower()
     if any(n in msg for n in _CONTEXT_OVERFLOW_NEEDLES):
         return True
-    code = str(getattr(exc, "code", "") or "").lower()
-    return code == "context_length_exceeded"
+    # Generic needles: every provider reaches the model through the openai SDK,
+    # so a genuine overflow surfaces as an openai.BadRequestError (status 400).
+    status = getattr(exc, "status_code", None)
+    type_name = type(exc).__name__.lower()
+    is_bad_request = status == 400 or "badrequest" in type_name or "invalidrequest" in type_name
+    return is_bad_request and any(n in msg for n in _CONTEXT_OVERFLOW_WEAK_NEEDLES)
 
 
 def _finalize_directive(activity: list[dict[str, Any]] | None) -> str:
