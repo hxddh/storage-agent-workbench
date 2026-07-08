@@ -67,6 +67,24 @@ def test_is_context_overflow_detects_provider_errors():
     assert not session_agent._is_context_overflow(Exception("rate limit exceeded"))
 
 
+def test_is_context_overflow_generic_needle_requires_bad_request():
+    """A GENERIC phrase ('context window', 'input is too long') must NOT
+    reclassify an unrelated error into a fabricated cut-short answer unless the
+    error is bad-request-class (a real overflow is always a 400). Guards the
+    over-broad-substring bug."""
+    # Unrelated 5xx/connection error that merely mentions the phrase → not overflow.
+    assert not session_agent._is_context_overflow(
+        Exception("upstream 502: the context window proxy is down"))
+    assert not session_agent._is_context_overflow(Exception("input is too long to log"))
+    # Same generic phrase on a real bad-request (status 400) → overflow.
+    bad = Exception("the input is too long for this model")
+    bad.status_code = 400
+    assert session_agent._is_context_overflow(bad)
+    # …or on a BadRequestError-typed exception.
+    bre = type("BadRequestError", (Exception,), {})("prompt is too long")
+    assert session_agent._is_context_overflow(bre)
+
+
 def test_stream_finalizes_on_context_overflow():
     class FakeResult:
         final_output = ""

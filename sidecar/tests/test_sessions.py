@@ -154,6 +154,24 @@ def test_fork_session_copies_agent_memory(client):
     assert texts == ["bucket acme is path-style only", "public read enabled"]
 
 
+def test_fork_preserves_grounding_and_proposals(client):
+    """A forked assistant message must keep its grounding + proposed-action cards
+    (migration 16 columns), not silently drop them — the fork copies the FULL
+    thread."""
+    s = _session(client)
+    with _db() as conn:
+        sessions_repo.add_message(
+            conn, s["id"], "assistant", "public read is on",
+            grounding={"evidence_used": ["review_bucket_security"], "evidence_gaps": [], "skills_used": ["sec"]},
+            proposed_actions=[{"action_type": "review_bucket_security", "title": "Re-check", "requires_confirmation": True}],
+        )
+    forked = client.post(f"/sessions/{s['id']}/fork").json()
+    fmsgs = client.get(f"/sessions/{forked['id']}/messages").json()["messages"]
+    assert len(fmsgs) == 1
+    assert fmsgs[0]["grounding"]["evidence_used"] == ["review_bucket_security"]
+    assert fmsgs[0]["proposed_actions"][0]["action_type"] == "review_bucket_security"
+
+
 def test_delete_session_removes_it(client):
     s = _session(client, title="Delete me")
     assert client.delete(f"/sessions/{s['id']}").status_code == 204
@@ -366,6 +384,25 @@ def test_in_progress_turn_blocks_concurrent_rerun_with_409(client, monkeypatch):
     assert r.status_code == 409
     assert "in progress" in r.json()["detail"].lower()
     # And no message was persisted (the concurrent re-run was prevented).
+    assert client.get(f"/sessions/{s['id']}/messages").json()["messages"] == []
+
+
+def test_stream_declines_duplicate_turn_id_with_409(client, monkeypatch):
+    """The STREAMING endpoint must be symmetric with the blocking one: a stream
+    POST for a turn_id an earlier attempt already owns must NOT spawn a second
+    worker (which would double-run the agent + persist duplicate messages). It
+    declines with 409 so the client falls back to POST /messages (which attaches
+    to the owner) instead of re-running."""
+    from app.agent_runtime import turn_guard
+    s = _session(client)
+    _add_model_provider(client)
+    # An earlier attempt already registered this turn as in-flight.
+    turn_guard.begin("turnDup", s["id"])
+    r = client.post(f"/sessions/{s['id']}/messages/stream",
+                    json={"content": "hi", "turn_id": "turnDup"})
+    assert r.status_code == 409
+    assert "in progress" in r.json()["detail"].lower()
+    # No second worker ran → nothing persisted.
     assert client.get(f"/sessions/{s['id']}/messages").json()["messages"] == []
 
 

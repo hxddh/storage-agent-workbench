@@ -402,7 +402,14 @@ async def post_session_message_stream(
     # Register this turn as running (owner of the handle). A blocking fallback
     # for the same turn_id then ATTACHES to this handle instead of re-running,
     # and the cancel endpoint sets this handle's cancel_event.
-    handle, _created = turn_guard.begin(body.turn_id, session_id)
+    handle, created = turn_guard.begin(body.turn_id, session_id)
+    if handle is not None and not created:
+        # Another attempt already owns this turn_id (running or done). Spawning a
+        # second worker would double-run the agent and persist duplicate messages
+        # + double model spend. Decline symmetrically with the blocking path: the
+        # client falls back to POST /messages, which ATTACHES to the owning
+        # attempt (waits for its result) instead of re-running the turn.
+        raise HTTPException(status_code=409, detail="turn already in progress")
     cancel_event = handle.cancel_event if handle else None
     # Snapshot the request-scoped reads into plain data so the worker never
     # touches `conn` (the request handler closes it once StreamingResponse is
@@ -496,6 +503,15 @@ async def post_session_message_stream(
             turn_guard.fail(body.turn_id, redact_text(str(exc)), session_id)
             emit(("error", redact_text(str(exc))))
         finally:
+            # Guarantee the turn handle is resolved on EVERY exit. `except
+            # Exception` above misses a BaseException (CancelledError/MemoryError/
+            # …) from run_until_complete, and a clean run that yields no final
+            # data also never resolves the handle — either way done_event would
+            # stay unset, leaking a non-evictable handle and hanging a blocking
+            # fallback the full _IN_PROGRESS_WAIT_S. This is a no-op once
+            # set_result/fail has already run.
+            if handle is not None and not handle.done:
+                turn_guard.fail(body.turn_id, "the turn ended unexpectedly", session_id)
             try:
                 wconn.close()
             except Exception:  # noqa: BLE001

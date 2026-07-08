@@ -9,6 +9,18 @@ import sqlite3
 from app.s3 import config_tools as ct
 
 
+def test_arn_resource_strips_account_id_on_truncated_arn():
+    """A standard 6-field ARN reduces to service:resource; a truncated / non-
+    standard ARN (fewer fields, no resource) must still NEVER leak the account
+    id — regression for the <6-part passthrough."""
+    assert ct._arn_resource("arn:aws:sqs:us-east-1:123456789012:my-queue") == "sqs:my-queue"
+    assert ct._arn_resource("arn:aws:s3:::my-bucket") == "my-bucket"
+    # Truncated ARN with an account id but no resource segment: account stripped.
+    reduced = ct._arn_resource("arn:aws:sns:us-east-1:123456789012")
+    assert "123456789012" not in reduced
+    assert reduced == "sns"
+
+
 class _FT:
     def __call__(self, fn):
         fn.name = fn.__name__

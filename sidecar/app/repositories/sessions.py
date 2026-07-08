@@ -104,18 +104,26 @@ def fork(conn: sqlite3.Connection, session_id: str) -> str | None:
         (new_id, title, src["goal"], src["provider_id"], src["primary_bucket"], now, now),
     )
     msgs = conn.execute(
-        "SELECT role, content, referenced_run_ids, referenced_evidence_ids, tool_activity, created_at "
+        "SELECT role, content, referenced_run_ids, referenced_evidence_ids, tool_activity, "
+        "grounding, proposed_actions, created_at "
         "FROM session_messages WHERE session_id = ? ORDER BY rowid", (session_id,)
     ).fetchall()
     for m in msgs:
         keys = m.keys()
+        # grounding / proposed_actions are stored as JSON strings (migration 16);
+        # copy them verbatim so a forked thread keeps its grounding + next-action
+        # cards, matching the docstring's "copies its full message thread".
         conn.execute(
             "INSERT INTO session_messages "
-            "(id, session_id, role, content, referenced_run_ids, referenced_evidence_ids, tool_activity, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "(id, session_id, role, content, referenced_run_ids, referenced_evidence_ids, tool_activity, "
+            "grounding, proposed_actions, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (uuid.uuid4().hex, new_id, m["role"], m["content"],
              m["referenced_run_ids"], m["referenced_evidence_ids"],
-             (m["tool_activity"] if "tool_activity" in keys else None), m["created_at"]),
+             (m["tool_activity"] if "tool_activity" in keys else None),
+             (m["grounding"] if "grounding" in keys else None),
+             (m["proposed_actions"] if "proposed_actions" in keys else None),
+             m["created_at"]),
         )
     # Copy the agent's working memory so a fork doesn't lose what the agent learned.
     mem = conn.execute(
