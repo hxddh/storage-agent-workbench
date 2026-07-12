@@ -387,6 +387,7 @@ export function Thread({
       uploading={uploading}
       onSend={send}
       onStop={runner.stop}
+      onSteer={() => { if (text.trim()) void runner.steer(text.trim()); }}
       modelName={modelName}
       onOpenSettings={onOpenSettings}
       onSlashReport={openReport}

@@ -6,7 +6,25 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
-## [0.24.10] - 2026-07-08
+## [0.24.11] - 2026-07-08
+
+_Execution-time interaction: redirect a running investigation without losing its
+work — inspired by the "steer mid-run" pattern in agentic browsers, composed
+entirely from capabilities the app already had._
+
+### Added
+
+- **Redirect a streaming turn ("steer").** While the agent is investigating, you
+  can now type a new direction and send it to **redirect the turn instead of
+  killing it**. A ⏎ (or the new redirect button next to Stop) cancels the current
+  turn — its partial answer and tool trace are preserved — and immediately
+  resends your text as a fresh turn whose context **replays the cancelled turn's
+  tool trace** (the 0.24.7 mechanism), so the agent continues from what it
+  already probed toward the new ask instead of restarting from scratch. Purely a
+  frontend orchestration over existing pieces (cancel + send + trace replay): no
+  SDK in-run injection, no new backend, no new subsystem. A load-bearing timing
+  gate reopens the turn only after the partial has persisted, so the redirect is
+  always trace-aware. Stop (halt and keep the partial) is unchanged.
 
 _Turns a raw provider 400 into a graceful, grounded answer._
 

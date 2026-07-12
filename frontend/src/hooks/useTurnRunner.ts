@@ -355,6 +355,46 @@ export function useTurnRunner(opts: {
     }
   };
 
+  // Wait until this session's turn has fully SETTLED (busy=false). The stopped
+  // branch flips busy only after the partial answer is persisted AND the thread
+  // reloaded, so busy=false is a reliable "the prior turn's trace is now in the
+  // DB" gate. Bounded so a stuck turn can't hang the redirect forever.
+  const waitForIdle = async (id: string): Promise<boolean> => {
+    for (let i = 0; i < 120; i++) {
+      if (!getSessionRun(id).busy) return true;
+      await sleep(100);
+    }
+    return false;
+  };
+
+  // STEER: redirect a running turn without losing its work. Cancel the in-flight
+  // turn (its partial answer + tool_activity persist), wait for it to settle,
+  // then send `text` as a NEW turn — whose context REPLAYS the cancelled turn's
+  // tool trace (v0.24.7), so the agent continues from what it already probed
+  // toward the new ask instead of restarting from scratch. If nothing is
+  // running, it degrades to a normal submit. The timing gate (waitForIdle) is
+  // load-bearing: reopening before the partial persists would lose the trace.
+  const steer = async (text: string) => {
+    const q = text.trim();
+    if (!q) return;
+    const id = localId.current;
+    const flight = id ? turnsRef.current.get(id) : null;
+    if (!id || !flight) {
+      await submit(q);
+      return;
+    }
+    setText(""); // immediate feedback: the composer clears as the redirect is dispatched
+    stop(); // cancel the current turn; its partial + trace are persisted server-side
+    const settled = await waitForIdle(id);
+    // If it didn't settle, or the user navigated to another session while it
+    // did, don't cross-send — restore the text so nothing is lost.
+    if (!settled || localId.current !== id) {
+      setText(q);
+      return;
+    }
+    await submit(q);
+  };
+
   // Composer file upload → agent-native analysis. The file is attached to the
   // SESSION, then the user's message is sent as a NORMAL agent turn. The agent
   // discovers the upload and analyzes it with its read-only tools.
@@ -405,5 +445,5 @@ export function useTurnRunner(opts: {
     flight.controller.abort();
   };
 
-  return { submit, submitWithDataset, stop };
+  return { submit, submitWithDataset, stop, steer };
 }
