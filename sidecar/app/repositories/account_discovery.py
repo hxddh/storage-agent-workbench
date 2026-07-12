@@ -171,3 +171,73 @@ def get_profile(conn: sqlite3.Connection, run_id: str) -> dict[str, Any] | None:
         "buckets": buckets,
         "created_at": snap["created_at"],
     }
+
+
+def recent_run_ids_for_provider(
+    conn: sqlite3.Connection, provider_id: str, limit: int = 2
+) -> list[str]:
+    """The run_ids of a provider's most recent account snapshots, newest first —
+    across sessions (the account is the same account). Used to diff 'what changed
+    since last time'."""
+    rows = conn.execute(
+        "SELECT run_id FROM account_snapshots WHERE provider_id = ? "
+        "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+        (provider_id, max(1, int(limit))),
+    ).fetchall()
+    return [r["run_id"] for r in rows]
+
+
+# Scalar per-bucket aspects the diff compares (all already-sanitized status/enum/
+# bool fields from the config snapshot + the bucket access status).
+_DIFF_ASPECTS = (
+    "access_status", "region", "head_bucket_status",
+    "versioning_status", "versioning_enabled", "encryption_status",
+    "lifecycle_status", "logging_status", "logging_enabled",
+    "replication_status", "policy_status", "public_access_block_status",
+    "tagging_status", "inventory_status",
+)
+_MAX_DIFF_CHANGES = 200
+
+
+def _scalar(v: Any) -> Any:
+    """A short, safe representation of a scalar aspect value for the diff."""
+    if v is None or isinstance(v, bool):
+        return v
+    return str(v)[:80]
+
+
+def _evidence_map(bucket: dict[str, Any]) -> dict[str, Any]:
+    return {e.get("source_type"): e.get("status")
+            for e in (bucket.get("evidence_sources") or []) if e.get("source_type")}
+
+
+def diff_profiles(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic diff of two account profiles (as returned by get_profile):
+    buckets added/removed, per-bucket config-aspect changes, and evidence-source
+    changes. Pure function — no LLM, no S3, no raw object listings; it reads only
+    the already-persisted, already-sanitized profile facts. Bounded output."""
+    old_b = {b["bucket_name"]: b for b in (old.get("buckets") or [])}
+    new_b = {b["bucket_name"]: b for b in (new.get("buckets") or [])}
+    changes: list[dict[str, Any]] = []
+    for name in sorted(set(new_b) - set(old_b)):
+        changes.append({"bucket": name, "change": "bucket_added"})
+    for name in sorted(set(old_b) - set(new_b)):
+        changes.append({"bucket": name, "change": "bucket_removed"})
+    for name in sorted(set(old_b) & set(new_b)):
+        ob, nb = old_b[name], new_b[name]
+        for k in _DIFF_ASPECTS:
+            if k in ob or k in nb:
+                ov, nv = ob.get(k), nb.get(k)
+                if ov != nv:
+                    changes.append({"bucket": name, "change": k,
+                                    "from": _scalar(ov), "to": _scalar(nv)})
+        oe, ne = _evidence_map(ob), _evidence_map(nb)
+        for st in sorted(set(oe) | set(ne)):
+            if oe.get(st) != ne.get(st):
+                changes.append({"bucket": name, "change": f"evidence:{st}",
+                                "from": _scalar(oe.get(st)), "to": _scalar(ne.get(st))})
+    return {
+        "changes": changes[:_MAX_DIFF_CHANGES],
+        "change_count": len(changes),
+        "truncated": len(changes) > _MAX_DIFF_CHANGES,
+    }

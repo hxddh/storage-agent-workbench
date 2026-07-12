@@ -41,7 +41,10 @@ from .guardrails import strip_chain_of_thought, strip_chain_of_thought_stream
 
 _MAX_FACTS = 50  # kept in sync with sessions.summary_builder.MAX_FACTS
 _MAX_FINDINGS = 30
-_MAX_MESSAGES = 12
+# How many recent thread messages the agent sees. 24 (was 12): a small-context
+# clip that now just makes the agent lose the thread on a long investigation —
+# 24 msgs × _MAX_REPLAY_MSG chars is still tiny under a modern context window.
+_MAX_MESSAGES = 24
 # Tool-trace lines replayed per prior assistant turn. Each message already
 # persists its tool_activity (the one-line-per-call trace shown in the UI); we
 # surface it into the next turn's context so the agent sees WHAT it already
@@ -78,7 +81,10 @@ _MAX_TURNS = 40
 # (see build_session_prompt) — the same "no silent caps" rule as ingestion.
 _MAX_USER_MSG = 16000
 # Bound on each replayed prior message in the context. Also never silent.
-_MAX_REPLAY_MSG = 1000
+# 4000 (was 1000): 1000 chars clipped mid-answer on any substantial turn, so the
+# agent saw only truncated tails of its own prior reasoning; 4000 keeps a full
+# normal answer while staying bounded (24 × 4000 ≈ 24k tokens of thread history).
+_MAX_REPLAY_MSG = 4000
 # Per-turn cumulative budget on tool OUTPUT characters handed to the model.
 # This is the PRIMARY, elastic governor of how deep a turn goes: it tracks the
 # context the model actually consumes, so a turn runs as deep as it needs until

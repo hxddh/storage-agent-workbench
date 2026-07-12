@@ -182,7 +182,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     @function_tool
-    def list_objects(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 50,
+    def list_objects(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 200,
                      continuation_token: str = "", recursive: bool = False) -> str:
         """List one page of object keys (read-only ListObjectsV2, up to 1000 per call; no object bodies). To enumerate fully, PAGE: re-call with continuation_token = the previous result's next_token until next_token is null, accumulating result.keys. Set recursive=true to list keys flat under the prefix (no '/' directory grouping). Args: provider_id, bucket, prefix?, max_keys? (up to 1000), continuation_token?, recursive?."""
         p = provider(provider_id)

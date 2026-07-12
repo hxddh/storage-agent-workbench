@@ -7,6 +7,7 @@ never leak. No object bodies are persisted; range reads are bounded.
 
 from __future__ import annotations
 
+import json
 import socket
 import sqlite3
 import ssl
@@ -651,6 +652,45 @@ def _preview_parquet(client, bucket: str, key: str, cap: int,
         return binary_fallback
 
 
+def _structure_hint(key: str, ctype: str, text: str) -> dict[str, Any] | None:
+    """Best-effort STRUCTURE summary (columns / keys) for a text preview, so the
+    agent gets a clean schema instead of re-parsing the raw head itself. Bounded,
+    never raises, and NEVER fetches more bytes — it reads only the already-fetched
+    preview text. Returns None when nothing structured is recognized (the raw text
+    preview is unchanged in that case)."""
+    name = (key or "").lower()
+    try:
+        if name.endswith((".json", ".geojson")) or "json" in ctype:
+            s = text.lstrip()
+            head = s[:1]
+            if head == "{":
+                obj = json.loads(s)  # fails on a truncated head → falls through
+                if isinstance(obj, dict):
+                    return {"format": "json", "root": "object", "keys": list(obj.keys())[:50]}
+            elif head == "[":
+                arr = json.loads(s)
+                if isinstance(arr, list):
+                    item_keys = list(arr[0].keys())[:50] if arr and isinstance(arr[0], dict) else None
+                    return {"format": "json", "root": "array", "length": len(arr), "item_keys": item_keys}
+        if name.endswith((".jsonl", ".ndjson")):
+            first = text.lstrip().split("\n", 1)[0].strip()
+            if first:
+                obj = json.loads(first)
+                if isinstance(obj, dict):
+                    return {"format": "jsonl", "item_keys": list(obj.keys())[:50]}
+        if name.endswith((".csv", ".tsv")) or "csv" in ctype or "tab-separated" in ctype:
+            lines = [ln for ln in text.splitlines() if ln.strip()]
+            if lines:
+                delim = "\t" if (name.endswith(".tsv") or "\t" in lines[0]) else ","
+                cols = [c.strip().strip('"') for c in lines[0].split(delim)]
+                return {"format": "csv", "delimiter": "tab" if delim == "\t" else "comma",
+                        "column_count": len(cols), "columns": cols[:100],
+                        "sampled_rows": max(0, len(lines) - 1)}
+    except Exception:  # noqa: BLE001 — structure is a bonus; never fail the preview
+        return None
+    return None
+
+
 def preview_object(
     conn: sqlite3.Connection,
     provider_id: str,
@@ -713,8 +753,14 @@ def preview_object(
             (object_size is not None and object_size > len(data))
             or (object_size is None and len(data) >= cap)
         )
-        return {**base, "success": True, "content": text, "bytes_read": len(data),
-                "object_size": object_size, "content_type": ctype or None, "truncated": truncated}
+        out = {**base, "success": True, "content": text, "bytes_read": len(data),
+               "object_size": object_size, "content_type": ctype or None, "truncated": truncated}
+        # Bonus STRUCTURE summary for CSV/JSON (columns/keys) read from the SAME
+        # preview bytes — no extra fetch, the raw text is still returned too.
+        structure = _structure_hint(key, ctype, text)
+        if structure is not None:
+            out["structure"] = structure
+        return out
     except ClientError as exc:
         fields = _client_error_fields(exc)
         # A Range GET on a zero-byte object returns 416 InvalidRange — that's an

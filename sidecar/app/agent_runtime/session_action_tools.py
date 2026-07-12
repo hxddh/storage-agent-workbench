@@ -252,7 +252,38 @@ def build(
         note("read_run_result", run_id[:8], result["status"])
         return json.dumps(result)
 
-    return [review_bucket_config, survey_account, read_run_result]
+    @function_tool
+    def compare_to_last_survey(provider_id: str) -> str:
+        """Read-only: what CHANGED between this provider's two most recent account surveys — buckets added/removed, per-bucket config changes (versioning / encryption / lifecycle / logging / replication / policy / public-access / tagging / inventory), and evidence-source changes. Answers "what changed since last time?" from ALREADY-PERSISTED survey data — no new S3 calls, no LLM. Needs two completed surveys to exist (run survey_account now and it compares against the previous one). Args: provider_id."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Use a configured provider.")
+        try:
+            run_ids = account_repo.recent_run_ids_for_provider(conn, provider_id, 2)
+            if len(run_ids) < 2:
+                note("compare_to_last_survey", provider_name(provider_id), "no prior")
+                return json.dumps({
+                    "success": True, "comparable": False,
+                    "note": ("Only one (or no) account survey exists for this provider, so there is "
+                             "nothing to compare against yet. Run survey_account now; a later survey "
+                             "can then be compared to this one."),
+                })
+            new_p = account_repo.get_profile(conn, run_ids[0])
+            old_p = account_repo.get_profile(conn, run_ids[1])
+            if not new_p or not old_p:
+                return _err("Could not load the two surveys to compare.")
+            diff = account_repo.diff_profiles(old_p, new_p)
+        except Exception as exc:  # noqa: BLE001 — a tool returns an error string, never raises
+            return _err(f"compare_to_last_survey failed: {exc}")
+        note("compare_to_last_survey", provider_name(provider_id), f"{diff['change_count']} change(s)")
+        return json.dumps({
+            "success": True, "comparable": True,
+            "newer_survey": {"run_id": run_ids[0], "at": new_p.get("created_at")},
+            "older_survey": {"run_id": run_ids[1], "at": old_p.get("created_at")},
+            **diff,
+        })
+
+    return [review_bucket_config, survey_account, read_run_result, compare_to_last_survey]
 
 
 __all__ = ["build"]
