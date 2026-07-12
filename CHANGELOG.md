@@ -6,6 +6,23 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.13] - 2026-07-12
+
+_Prompt guidance only — makes two existing capabilities feel native. No new
+tools, no behavior gates._
+
+### Changed
+
+- **The agent proactively surfaces "what changed" after a survey.** After
+  `survey_account`, if the provider has an earlier survey, the agent now calls
+  `compare_to_last_survey` and tells the user what changed since last time
+  (reusing persisted snapshots — no new scan), instead of waiting to be asked.
+- **The agent escalates a truncated preview to full analysis instead of guessing.**
+  When `preview_object` truncates a large object and the answer needs its full
+  content, the agent now proposes the confirmed evidence import (for a bucket
+  file) or uses `analyze_uploaded_file` (for an attached file) so the whole file
+  is analyzed deterministically — rather than answering from the 1 MiB head.
+
 ## [0.24.12] - 2026-07-12
 
 _Capability + de-ossification: lift a couple of small-context-era clips that
