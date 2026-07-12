@@ -40,6 +40,7 @@ export function Composer({
   uploading,
   onSend,
   onStop,
+  onSteer,
   modelName,
   onOpenSettings,
   onSlashReport,
@@ -60,6 +61,9 @@ export function Composer({
   uploading: boolean;
   onSend: () => void;
   onStop: () => void;
+  /** Redirect the in-flight turn: cancel it (keeping what it found) and send the
+   *  composer text as a new, trace-aware turn. Only meaningful while `busy`. */
+  onSteer: () => void;
   modelName: string | null;
   onOpenSettings: () => void;
   onSlashReport: () => void;
@@ -173,7 +177,10 @@ export function Composer({
           }
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
-            onSend();
+            // While a turn is streaming, Enter REDIRECTS it (cancel + resend as a
+            // trace-aware turn) instead of no-opping; otherwise it sends normally.
+            if (busy) onSteer();
+            else onSend();
           }
         }}
         placeholder={t("thread.placeholder")}
@@ -207,6 +214,22 @@ export function Composer({
         <span className="ml-auto hidden text-[11px] text-gray-600 sm:inline">
           <kbd className="font-sans">⏎</kbd> {t("thread.send")} · <kbd className="font-sans">⇧⏎</kbd> {t("thread.newline")}
         </span>
+        {busy && text.trim() && (
+          // Redirect the running turn: cancel it (keeping what it found) and
+          // resend this text as a trace-aware turn. Secondary look next to the
+          // prominent Stop, so the two actions read distinctly.
+          <button
+            onClick={onSteer}
+            aria-label={t("thread.redirect")}
+            title={t("thread.redirectHint")}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-edge bg-elevated text-gray-100 transition-all hover:bg-hover active:scale-95"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5" />
+              <polyline points="5 12 12 5 19 12" />
+            </svg>
+          </button>
+        )}
         {busy ? (
           <button
             onClick={onStop}
