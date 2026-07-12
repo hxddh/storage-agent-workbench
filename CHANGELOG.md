@@ -6,6 +6,42 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.12] - 2026-07-12
+
+_Capability + de-ossification: lift a couple of small-context-era clips that
+were throttling the agent, and add two new read-only capabilities. Every lifted
+bound is arbitrary/non-security — the list hard cap, per-turn preview/range
+budgets, no-write, and confirmed-data-moving floor are unchanged._
+
+### Changed
+
+- **The agent sees much more of the conversation.** The context clip was a
+  small-context-era relic: only the last **12** messages, each cut to **1000**
+  chars, so on a long investigation the agent lost the thread and re-derived
+  earlier conclusions. Raised to **24** messages × **4000** chars — still tiny
+  under a modern context window, no longer amnesiac.
+- **`list_objects` default page size 50 → 200.** The timid default forced many
+  round-trips for distribution/count questions (while `list_object_versions`
+  already defaulted to 1000). The hard cap stays **1000** (== the S3 cap, the
+  security floor); only the default moved.
+
+### Added
+
+- **`compare_to_last_survey` — "what changed since last time?"** A deterministic
+  diff of a provider's two most recent account surveys: buckets added/removed,
+  per-bucket config-aspect changes (versioning / encryption / lifecycle /
+  logging / replication / policy / public-access / tagging / inventory), and
+  evidence-source changes. Computed from **already-persisted, sanitized** snapshot
+  data — no new S3 calls, no LLM, no raw rows. Needs two completed surveys.
+- **`preview_object` returns a `structure` summary for CSV/JSON.** Alongside the
+  raw text preview, a CSV/TSV preview now carries its **columns** and a JSON/JSONL
+  preview its **top-level keys**, parsed from the SAME preview bytes (no extra
+  fetch) — so the agent gets a clean schema without re-parsing the head.
+- **Live progress rollup while the agent streams.** A compact "N checks run ·
+  latest: …" line above the streaming answer, so a long investigation reads as
+  making progress at a glance. Evidence/progress only — never a plan (frontend,
+  derived from the live tool trace; no new LLM/backend).
+
 ## [0.24.11] - 2026-07-08
 
 _Execution-time interaction: redirect a running investigation without losing its

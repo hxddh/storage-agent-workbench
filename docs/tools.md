@@ -46,7 +46,7 @@ Purpose:
 
 Safety:
 
-- `max_keys` is NOT required — the agent-tool signature defaults it to **50**
+- `max_keys` is NOT required — the agent-tool signature defaults it to **200**
   (`session_tools.py`; the guardrails `AGENT_DEFAULT_LIST_KEYS = 100` fallback
   is unreachable because the signature default always supplies a value). An
   explicit larger request is honored but clamped to `AGENT_MAX_LIST_KEYS` = 1000
@@ -89,8 +89,10 @@ Purpose:
   manifest, small config, or log/data sample) so the agent can answer "what's
   inside this object". Gzip objects (`.gz`) are decompressed within the same byte
   bound; `.parquet` objects return a STRUCTURE preview (schema + row counts from
-  the footer via one bounded suffix-range GET — never the object body). Other
-  binary/oversized objects are reported, not decoded.
+  the footer via one bounded suffix-range GET — never the object body). CSV/TSV
+  and JSON/JSONL text previews additionally carry a `structure` summary (columns
+  or top-level keys) read from the SAME preview bytes — no extra fetch, the raw
+  text is still returned. Other binary/oversized objects are reported, not decoded.
 
 Safety:
 
@@ -224,6 +226,11 @@ tools above (choosing provider/bucket itself), plus:
   file; it picks up a backgrounded run later with `read_run_result`. There is no
   autonomy toggle. Nothing data-moving or mutating is auto-run — cloud evidence
   import / large scans stay confirmation-gated proposals.
+- **compare_to_last_survey** — "what changed since last time?": a deterministic
+  diff of a provider's two most recent account surveys (buckets added/removed,
+  per-bucket config-aspect changes, evidence-source changes) computed from
+  ALREADY-PERSISTED, sanitized snapshot data — no new S3 call, no LLM, no raw
+  rows. Needs two completed surveys to compare.
 
 These tools return only the deterministic engine's sanitized summary + counts
 (no raw rows, no full key lists, no object bodies) for the agent to narrate.

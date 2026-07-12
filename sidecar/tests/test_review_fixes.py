@@ -503,6 +503,12 @@ def test_raised_budgets_and_caps():
     assert session_agent._MAX_TURNS >= 40
     assert session_agent._MAX_TOOL_OUTPUT_CHARS >= 200_000
     assert session_tools._LIST_KEYS_CTX_CAP >= 500
+    # Conversation context is no longer clipped for small-context models: the
+    # agent sees more recent messages, each kept fuller, so it doesn't lose the
+    # thread on a long investigation. (Lifted, non-security — the list HARD cap
+    # and per-turn budgets are the floor, not these.)
+    assert session_agent._MAX_MESSAGES >= 24
+    assert session_agent._MAX_REPLAY_MSG >= 4000
     # skills_used contract cap must match the per-turn read_skill budget; the
     # budget constants live inside build(), so pin the contract-side value.
     src = open("app/agent_runtime/session_tools.py").read()

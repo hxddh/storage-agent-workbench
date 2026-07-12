@@ -400,3 +400,42 @@ def test_account_discovery_creates_deterministic_run(client):
 def test_account_profile_404_when_absent(client):
     r = client.get("/runs/does-not-exist/account-profile")
     assert r.status_code == 404
+
+
+# --- "what changed" survey diff (compare_to_last_survey) ---------------------
+
+
+def test_diff_profiles_detects_changes():
+    from app.repositories import account_discovery as ad
+
+    old = {"buckets": [
+        {"bucket_name": "a", "versioning_status": "available", "versioning_enabled": True,
+         "encryption_status": "available", "access_status": "ok", "evidence_sources": []},
+        {"bucket_name": "gone", "versioning_status": "not_configured", "evidence_sources": []},
+    ]}
+    new = {"buckets": [
+        {"bucket_name": "a", "versioning_status": "not_configured", "versioning_enabled": False,
+         "encryption_status": "available", "access_status": "ok",
+         "evidence_sources": [{"source_type": "inventory", "status": "available"}]},
+        {"bucket_name": "new", "versioning_status": "available", "evidence_sources": []},
+    ]}
+    d = ad.diff_profiles(old, new)
+    changes = {(c["bucket"], c["change"]): c for c in d["changes"]}
+    assert ("new", "bucket_added") in changes
+    assert ("gone", "bucket_removed") in changes
+    assert changes[("a", "versioning_status")]["from"] == "available"
+    assert changes[("a", "versioning_status")]["to"] == "not_configured"
+    assert ("a", "versioning_enabled") in changes
+    assert ("a", "evidence:inventory") in changes  # evidence source appeared
+    assert ("a", "encryption_status") not in changes  # unchanged aspect not reported
+    assert d["change_count"] == len(d["changes"])
+
+
+def test_diff_profiles_no_changes_is_empty():
+    from app.repositories import account_discovery as ad
+
+    prof = {"buckets": [
+        {"bucket_name": "a", "versioning_status": "available", "evidence_sources": []},
+    ]}
+    d = ad.diff_profiles(prof, prof)
+    assert d["change_count"] == 0 and d["changes"] == [] and d["truncated"] is False

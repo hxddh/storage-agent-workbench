@@ -480,6 +480,49 @@ def test_preview_object_returns_sanitized_text(client, cloud_id, stub):
     assert res["object_size"] == len(body)
 
 
+def test_preview_object_csv_structure_hint(client, cloud_id, stub):
+    """A CSV preview carries a `structure` summary (columns) read from the same
+    preview bytes — no extra fetch — while still returning the raw text."""
+    from app.s3 import tools as s3
+
+    c, s = stub
+    body = b"name,region,size\nobj1,us-east-1,42\nobj2,eu-west-1,99\n"
+    s.add_response(
+        "get_object",
+        {"Body": StreamingBody(BytesIO(body), len(body)), "ContentType": "text/csv",
+         "ContentRange": f"bytes 0-{len(body) - 1}/{len(body)}"},
+        expected_params={"Bucket": BUCKET, "Key": "inv.csv", "Range": "bytes=0-262143"},
+    )
+    with _db() as conn:
+        res = s3.preview_object(conn, cloud_id, BUCKET, "inv.csv", 262144)
+    assert res["success"] is True
+    st = res.get("structure")
+    assert st and st["format"] == "csv"
+    assert st["columns"] == ["name", "region", "size"]
+    assert st["column_count"] == 3 and st["sampled_rows"] == 2
+    assert "obj1" in res["content"]  # raw text still returned
+
+
+def test_preview_object_json_structure_hint(client, cloud_id, stub):
+    """A JSON preview carries a `structure` summary (top-level keys)."""
+    from app.s3 import tools as s3
+
+    c, s = stub
+    body = b'{"versioning": "Enabled", "encryption": "aws:kms", "rules": []}'
+    s.add_response(
+        "get_object",
+        {"Body": StreamingBody(BytesIO(body), len(body)), "ContentType": "application/json",
+         "ContentRange": f"bytes 0-{len(body) - 1}/{len(body)}"},
+        expected_params={"Bucket": BUCKET, "Key": "cfg.json", "Range": "bytes=0-262143"},
+    )
+    with _db() as conn:
+        res = s3.preview_object(conn, cloud_id, BUCKET, "cfg.json", 262144)
+    assert res["success"] is True
+    st = res.get("structure")
+    assert st and st["format"] == "json" and st["root"] == "object"
+    assert set(st["keys"]) == {"versioning", "encryption", "rules"}
+
+
 def test_preview_object_rejects_binary(client, cloud_id, stub):
     from app.s3 import tools as s3
 

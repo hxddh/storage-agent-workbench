@@ -172,6 +172,27 @@ export function ThinkingBubble() {
   );
 }
 
+/** Compact live progress rollup during a streaming turn: how many read-only
+ * checks have completed so far + the latest one, so a long investigation reads
+ * as making progress at a glance (complements the detailed tool list). This is
+ * evidence/progress, never a plan. */
+export function LiveProgress({ tools }: { tools: ToolActivity[] }) {
+  const { t } = useI18n();
+  if (!tools.length) return null;
+  const done = tools.filter((a) => a.status !== "started").length;
+  const latest = tools[tools.length - 1];
+  const label = latest ? [latest.tool, latest.target].filter(Boolean).join(" · ") : "";
+  return (
+    <div className="mb-1.5 flex items-center gap-2 text-[11px] text-gray-500">
+      <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+      <span className="shrink-0">{t("thread.progress", { n: done })}</span>
+      {label && (
+        <span className="min-w-0 truncate font-mono text-gray-600" title={label}>· {label}</span>
+      )}
+    </div>
+  );
+}
+
 /** Transparency for the last answer: what it's grounded in and what the agent
  * couldn't verify. Collapsed by default — subtle, not a wall of text. */
 export function GroundingCard({ g }: { g: Grounding }) {

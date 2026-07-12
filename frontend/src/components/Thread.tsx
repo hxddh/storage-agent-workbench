@@ -12,7 +12,7 @@ import { useTurnRunner, cleanError } from "../hooks/useTurnRunner";
 import { Button } from "./ui";
 import { Composer } from "./Composer";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
-import { FindingsCard, GroundingCard, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
+import { FindingsCard, GroundingCard, LiveProgress, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
 import { useI18n } from "../i18n";
 
 type Item =
@@ -505,6 +505,7 @@ export function Thread({
                   <MessageCard role="user" content={pending} />
                   {streamText !== null || streamTools.length ? (
                     <>
+                      {!run.stopped && <LiveProgress tools={streamTools} />}
                       <MessageCard
                         role="assistant"
                         content={streamText ?? ""}
