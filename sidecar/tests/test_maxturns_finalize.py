@@ -73,3 +73,125 @@ def test_stream_reraises_non_maxturns_errors():
         assert False, "expected the transport error to propagate"
     except RuntimeError as e:
         assert "connection reset" in str(e)
+
+
+# --- v0.24.18: transient provider errors + tool-output-budget cut-short ------
+
+
+def test_transient_provider_error_detection():
+    # Rate limit / 5xx by status code, type name, or "Error code: N" text.
+    assert session_agent._is_transient_provider_error(
+        type("RateLimitError", (Exception,), {"status_code": 429})("slow down"))
+    assert session_agent._is_transient_provider_error(Exception("Error code: 503 - upstream"))
+    assert session_agent._is_transient_provider_error(
+        type("InternalServerError", (Exception,), {})("boom"))
+    # A bare connection reset (no HTTP status) is NOT transient here — it goes to
+    # the fallback re-run path, so it must still propagate.
+    assert not session_agent._is_transient_provider_error(RuntimeError("connection reset by peer"))
+    # A deterministic client error is never transient.
+    assert not session_agent._is_transient_provider_error(
+        type("BadRequestError", (Exception,), {"status_code": 400})("bad"))
+
+
+def test_stream_finalizes_on_transient_error_with_continue_proposal():
+    class FakeResult:
+        final_output = ""
+
+        async def stream_events(self):
+            raise type("RateLimitError", (Exception,), {"status_code": 429})("rate limited")
+            yield  # noqa: unreachable
+
+    async def finalize():
+        return "The bucket is reachable based on the checks completed so far."
+
+    async def collect():
+        out = []
+        async for kind, data in session_agent.stream_events_for(FakeResult(), [], [], finalize):
+            out.append((kind, data))
+        return out
+
+    events = asyncio.run(collect())
+    final = next(d for k, d in events if k == "final")
+    # Grounded answer synthesized from the trace, marked as a transient interruption.
+    assert "reachable" in (final.get("answer") or "")
+    assert "temporary provider error" in (final.get("answer") or "")
+    # And a one-click continue proposal is offered.
+    assert any(p.get("action_type") == session_agent._CONTINUE_ACTION
+               for p in final.get("next_action_proposals") or [])
+
+
+def test_tool_output_budget_note_is_status_not_error():
+    # The exhausted note reads as a soft boundary with a next step, not a failure.
+    import json
+
+    calls = {"n": 0}
+
+    class FakeTool:
+        name = "list_objects"
+
+        async def on_invoke_tool(self, ctx, args):
+            calls["n"] += 1
+            return "x" * 100
+
+    tool = FakeTool()
+    budget = session_agent._install_tool_output_budget([tool], limit=10)
+
+    async def run():
+        first = await tool.on_invoke_tool(None, None)   # consumes >10 chars
+        second = await tool.on_invoke_tool(None, None)   # now over budget → note
+        return first, second
+
+    first, second = asyncio.run(run())
+    assert first == "x" * 100
+    payload = json.loads(second)
+    assert payload["status"] == "budget_exhausted" and "error" not in payload
+    assert "resets" in payload["next_step"]
+    assert budget["exhausted"] is True
+
+
+def test_budget_exhausted_turn_is_cut_short_with_continue_proposal():
+    class FakeResult:
+        final_output = "Here is what I found."
+
+        async def stream_events(self):
+            return
+            yield  # noqa: unreachable — empty async generator
+
+    budget = {"chars": 999_999, "exhausted": True}
+
+    async def collect():
+        out = []
+        async for kind, data in session_agent.stream_events_for(
+                FakeResult(), [], [], finalize=None, budget=budget):
+            out.append((kind, data))
+        return out
+
+    events = asyncio.run(collect())
+    final = next(d for k, d in events if k == "final")
+    assert "cut short" in (final.get("answer") or "").lower()
+    assert any(p.get("action_type") == session_agent._CONTINUE_ACTION
+               for p in final.get("next_action_proposals") or [])
+
+
+def test_normal_turn_without_budget_exhaustion_has_no_continue_proposal():
+    class FakeResult:
+        final_output = "All good."
+
+        async def stream_events(self):
+            return
+            yield
+
+    budget = {"chars": 10, "exhausted": False}
+
+    async def collect():
+        out = []
+        async for kind, data in session_agent.stream_events_for(
+                FakeResult(), [], [], finalize=None, budget=budget):
+            out.append((kind, data))
+        return out
+
+    events = asyncio.run(collect())
+    final = next(d for k, d in events if k == "final")
+    assert "cut short" not in (final.get("answer") or "").lower()
+    assert not any(p.get("action_type") == session_agent._CONTINUE_ACTION
+                   for p in final.get("next_action_proposals") or [])

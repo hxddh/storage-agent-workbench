@@ -447,7 +447,7 @@ async def post_session_message_stream(
             # runs once we reach the async-for below).
             clients: list[Any] = []
             try:
-                result, activity, skill_names, finalize, _ = session_agent.build_stream(
+                result, activity, skill_names, finalize, _, budget = session_agent.build_stream(
                     row_d, summary, recent, body.content, creds, wconn, body.turn_id,
                     attachments=attachments, cancel_event=cancel_event, clients=clients)
             except BaseException:
@@ -455,7 +455,7 @@ async def post_session_message_stream(
                 raise
             async for kind, data in session_agent.stream_events_for(
                     result, activity, skill_names, finalize,
-                    cancel_event=cancel_event, clients=clients):
+                    cancel_event=cancel_event, clients=clients, budget=budget):
                 if kind == "final":
                     final["data"] = data
                 else:

@@ -6,6 +6,38 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.18] - 2026-07-14
+
+_Turn-loop resilience: two deep-investigation dead-ends where a turn ended
+abruptly instead of degrading into a grounded answer, plus the budget note's
+shape. Isolated to the streaming/finalize path on purpose._
+
+### Fixed
+
+- **A transient provider error (429 rate-limit / 5xx) no longer discards the
+  whole investigation.** Previously such an error re-raised and surfaced as a raw
+  `Session assistant failed: Error code: 429 …`, throwing away the entire tool
+  trace with no retry. It's now recoverable: the turn runs the existing tool-less
+  finalize pass to synthesize a grounded best-effort answer from what it already
+  gathered, marks it as interrupted, and offers a one-click "continue." The
+  detector is deliberately narrow — a **provider-response** 429/5xx only; a raw
+  transport/connection reset (no HTTP status) still propagates to the blocking
+  fallback re-run, the pre-existing recovery for those.
+- **The deepest turns — those that exhaust the per-turn tool-output budget (the
+  primary depth governor) — are now marked cut-short with a "continue" proposal**,
+  exactly like the max-turns ceiling. Before, hitting the tool-output budget let
+  the model emit an ordinary `final` with no marker, so a best-effort partial
+  answer could read as complete.
+
+### Changed
+
+- **The tool-output-budget note is a soft boundary, not a failure.** It was
+  shaped as `{"error": …}` (reading to the model like a broken tool) and never
+  said the budget is per-turn. It's now `{"status": "budget_exhausted",
+  "next_step": …}` with an explicit "synthesize now; this resets if the user
+  continues," so the agent finishes the answer instead of looping on alternatives
+  or giving up.
+
 ## [0.24.17] - 2026-07-14
 
 _Correctness hardening: six classes of "the tool succeeds but returns a wrong
