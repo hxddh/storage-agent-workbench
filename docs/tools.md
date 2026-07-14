@@ -151,6 +151,49 @@ Safety:
 - A missing lock, or a provider that doesn't implement object-lock, is reported
   as a normal `none` / `provider_unsupported` state, not a hard failure.
 
+### get_object_acl
+
+Purpose:
+
+- Read ONE object's ACL — who is granted what — to answer "is THIS object
+  public?" / "who can read it?" at the object level (an object can be public even
+  under a locked-down bucket, which bucket-level review can't see).
+
+Safety:
+
+- Read-only GetObjectAcl; single object, no body. Grantees are reduced to a KIND
+  (`public-all-users` / `authenticated-users` / `canonical-user` /
+  `log-delivery` / `email-user`) — no owner id, canonical id, or email is ever
+  surfaced. A public grant (AllUsers/AuthenticatedUsers) sets `is_public`. A
+  provider without object-ACL support reports `provider_unsupported`.
+
+### get_object_tagging
+
+Purpose:
+
+- Read ONE object's tag set (tags drive lifecycle, cost attribution, and
+  tag-scoped access policies), to explain why such a rule does or doesn't apply.
+
+Safety:
+
+- Read-only GetObjectTagging; single object, no body. Both tag keys and values
+  are redacted (user-controlled). Bounded to 20 tags; an untagged object is a
+  normal empty result; a provider without object tagging → `provider_unsupported`.
+
+### get_object_attributes
+
+Purpose:
+
+- Read ONE object's attributes — checksum algorithm, multipart part count,
+  storage class, size — in a single call, for "how was this large object
+  assembled?" / checksum / storage-class checks.
+
+Safety:
+
+- Read-only GetObjectAttributes; single object, no body. Not universally
+  implemented by S3-compatible providers → `provider_unsupported` on gap (fall
+  back to `head_object`).
+
 ### test_addressing_style
 
 (S3 layer: `test_path_style_vs_virtual_host`)
@@ -180,19 +223,22 @@ Purpose:
 
 ## Bucket config review tools
 
-- get_bucket_config_summary — status map over ~15 config reads, including the
+- get_bucket_config_summary — status map over ~19 config reads, including the
   authoritative `policy_status` (is-public), `ownership` (Object Ownership /
-  ACLs-disabled), and bucket-level `object_lock`.
+  ACLs-disabled), bucket-level `object_lock`, `website`, `intelligent_tiering`,
+  `accelerate`, and `request_payment`.
 - get_bucket_config_detail — read-only, sanitized RULE detail for one aspect that
-  the review tools return only a status/boolean for. Aspects: `replication`,
+  the review tools return only a status/boolean for. Aspects (13): `replication`,
   `notification`, `cors`, `logging`, `lifecycle` (transitions/expiration/cleanup),
   `encryption` (SSE algorithm + reduced KMS key), `public_access_block` (the four
   booleans), `policy` (per-statement effect/actions/`is_public` — principal
   reduced to `*`/`specific`, never the raw ARN), `inventory` (schedule/
-  destination/format/fields). ARNs reduced (account id stripped), values redacted,
-  ≤20 rules; a provider lacking the API returns `status='provider_unsupported'`.
-  Fills the config skills' decision trees so the agent reads the config instead
-  of asking for it.
+  destination/format/fields), `website` (index/error docs, redirect host,
+  routing-rule count), `intelligent_tiering` (status/filter/tiering days), 
+  `accelerate` (Transfer Acceleration status), `request_payment` (Requester Pays).
+  ARNs reduced (account id stripped), values redacted, ≤20 rules; a provider
+  lacking the API returns `status='provider_unsupported'`. Fills the config
+  skills' decision trees so the agent reads the config instead of asking for it.
 - review_bucket_security
 - review_bucket_lifecycle
 - review_bucket_observability

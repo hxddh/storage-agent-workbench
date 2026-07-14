@@ -852,3 +852,114 @@ def test_get_object_lock_status_access_denied_is_hard_error(client, cloud_id, st
     with _db() as conn:
         res = s3.get_object_lock_status(conn, cloud_id, BUCKET, "k")
     assert res["success"] is False and res["error_code"] == "AccessDenied"
+
+
+# --- get_object_acl (object-level grants, no id/email leak) ------------------
+
+_PUBLIC_URI = "http://acs.amazonaws.com/groups/global/AllUsers"
+
+
+def test_get_object_acl_flags_public_without_leaking_identity(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    _, s = stub
+    s.add_response("get_object_acl", {
+        "Owner": {"ID": "canonical-owner-id-123", "DisplayName": "acct-owner"},
+        "Grants": [
+            {"Grantee": {"Type": "CanonicalUser", "ID": "canonical-owner-id-123",
+                         "DisplayName": "acct-owner"}, "Permission": "FULL_CONTROL"},
+            {"Grantee": {"Type": "Group", "URI": _PUBLIC_URI}, "Permission": "READ"},
+        ],
+    }, expected_params={"Bucket": BUCKET, "Key": "pub"})
+    with _db() as conn:
+        res = s3.get_object_acl(conn, cloud_id, BUCKET, "pub")
+    assert res["success"] is True and res["is_public"] is True
+    assert res["public_permissions"] == ["READ"]
+    assert {g["grantee_kind"] for g in res["grants"]} == {"canonical-user", "public-all-users"}
+    assert res["owner_display"] == "present"
+    # No canonical id / display name leaks anywhere.
+    blob = json.dumps(res)
+    assert "canonical-owner-id-123" not in blob and "acct-owner" not in blob
+
+
+def test_get_object_acl_private_is_not_public(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    _, s = stub
+    s.add_response("get_object_acl", {
+        "Owner": {"ID": "id"},
+        "Grants": [{"Grantee": {"Type": "CanonicalUser", "ID": "id"}, "Permission": "FULL_CONTROL"}],
+    }, expected_params={"Bucket": BUCKET, "Key": "priv"})
+    with _db() as conn:
+        res = s3.get_object_acl(conn, cloud_id, BUCKET, "priv")
+    assert res["success"] is True and res["is_public"] is False
+    assert res["public_permissions"] == []
+
+
+def test_get_object_acl_provider_unsupported(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    _, s = stub
+    s.add_client_error("get_object_acl", service_error_code="NotImplemented", http_status_code=501)
+    with _db() as conn:
+        res = s3.get_object_acl(conn, cloud_id, BUCKET, "k")
+    assert res["success"] is True and res["acl_status"] == "provider_unsupported"
+
+
+# --- get_object_tagging (redacted keys + values) ----------------------------
+
+
+def test_get_object_tagging_redacts_and_counts(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    _, s = stub
+    s.add_response("get_object_tagging", {"TagSet": [
+        {"Key": "env", "Value": "prod"}, {"Key": "owner", "Value": "team-a"}]},
+        expected_params={"Bucket": BUCKET, "Key": "obj"})
+    with _db() as conn:
+        res = s3.get_object_tagging(conn, cloud_id, BUCKET, "obj")
+    assert res["success"] is True and res["tag_count"] == 2
+    assert res["tags"]["env"] == "prod" and res["tags"]["owner"] == "team-a"
+
+
+def test_get_object_tagging_empty_is_normal(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    _, s = stub
+    s.add_response("get_object_tagging", {"TagSet": []},
+                   expected_params={"Bucket": BUCKET, "Key": "obj"})
+    with _db() as conn:
+        res = s3.get_object_tagging(conn, cloud_id, BUCKET, "obj")
+    assert res["success"] is True and res["tag_count"] == 0 and res["tags"] == {}
+
+
+# --- get_object_attributes (checksum / parts / storage-class / size) --------
+
+
+def test_get_object_attributes_surfaces_parts_and_checksum(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    _, s = stub
+    s.add_response("get_object_attributes", {
+        "ETag": "abc123", "StorageClass": "GLACIER", "ObjectSize": 1048576,
+        "Checksum": {"ChecksumSHA256": "deadbeef"},
+        "ObjectParts": {"TotalPartsCount": 4},
+    }, expected_params={
+        "Bucket": BUCKET, "Key": "big",
+        "ObjectAttributes": ["ETag", "Checksum", "ObjectParts", "StorageClass", "ObjectSize"]})
+    with _db() as conn:
+        res = s3.get_object_attributes(conn, cloud_id, BUCKET, "big")
+    assert res["success"] is True and res["storage_class"] == "GLACIER"
+    assert res["size"] == 1048576 and res["parts_count"] == 4
+    assert res["checksum_algorithm"] == "SHA256"
+
+
+def test_get_object_attributes_provider_unsupported(client, cloud_id, stub):
+    from app.s3 import tools as s3
+
+    _, s = stub
+    s.add_client_error("get_object_attributes", service_error_code="MethodNotAllowed",
+                       http_status_code=405)
+    with _db() as conn:
+        res = s3.get_object_attributes(conn, cloud_id, BUCKET, "k")
+    assert res["success"] is True and res["attributes_status"] == "provider_unsupported"

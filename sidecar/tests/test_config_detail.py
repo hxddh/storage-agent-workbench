@@ -130,6 +130,41 @@ def test_inventory_detail_surfaces_schedule_and_destination():
     assert r["format"] == "CSV" and "Size" in r["optional_fields"]
 
 
+def test_website_detail_reduces_redirect_host_and_counts_rules():
+    data = {"IndexDocument": {"Suffix": "index.html"},
+            "ErrorDocument": {"Key": "error.html"},
+            "RedirectAllRequestsTo": {"HostName": "example.com", "Protocol": "https"},
+            "RoutingRules": [{"Redirect": {"HostName": "a"}}, {"Redirect": {"HostName": "b"}}]}
+    r = ct._detail_website(data)[0]
+    assert r["index_document"] == "index.html" and r["error_document"] == "error.html"
+    assert r["redirect_all_to_host"] == "example.com" and r["redirect_protocol"] == "https"
+    assert r["routing_rule_count"] == 2
+
+
+def test_website_detail_empty_when_unconfigured():
+    assert ct._detail_website({}) == []
+
+
+def test_intelligent_tiering_detail_surfaces_tierings():
+    data = {"IntelligentTieringConfigurationList": [
+        {"Id": "cfg-1", "Status": "Enabled", "Filter": {"Prefix": "data/"},
+         "Tierings": [{"Days": 90, "AccessTier": "ARCHIVE_ACCESS"},
+                      {"Days": 180, "AccessTier": "DEEP_ARCHIVE_ACCESS"}]}]}
+    r = ct._detail_intelligent_tiering(data)[0]
+    assert r["status"] == "Enabled" and r["filter_prefix"] == "data/"
+    assert r["tierings"][0] == {"days": 90, "access_tier": "ARCHIVE_ACCESS"}
+
+
+def test_accelerate_detail_reports_status_or_empty():
+    assert ct._detail_accelerate({"Status": "Enabled"})[0] == {"status": "Enabled"}
+    assert ct._detail_accelerate({}) == []
+
+
+def test_request_payment_detail_flags_requester_pays():
+    assert ct._detail_request_payment({"Payer": "Requester"})[0]["requester_pays"] is True
+    assert ct._detail_request_payment({"Payer": "BucketOwner"})[0]["requester_pays"] is False
+
+
 def test_detail_aspects_and_extractors_stay_in_sync():
     # get_bucket_config_detail dispatches _DETAIL_EXTRACTORS[aspect]; a mismatch
     # would KeyError for a registered aspect. Guard the two dicts stay aligned.
