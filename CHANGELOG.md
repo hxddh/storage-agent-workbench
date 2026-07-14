@@ -6,7 +6,30 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
-## [0.24.14] - 2026-07-12
+## [0.24.15] - 2026-07-14
+
+_Config-read coverage (Tier 1): the security/compliance APIs a review agent
+needs but the tools didn't call, plus rule detail for five more aspects. All
+read-only, provider_unsupported on gap, reuse the existing `_read` machinery._
+
+### Added
+
+- **Authoritative "is this bucket public?" + modern access-control posture.**
+  `get_bucket_config_summary` now also reads `policy_status`
+  (GetBucketPolicyStatus — the authoritative IsPublic, instead of inferring from
+  PAB+ACL+policy), `ownership` (GetBucketOwnershipControls — Object Ownership /
+  whether ACLs are disabled), and bucket-level `object_lock`
+  (GetObjectLockConfiguration — WORM/compliance, which previously only existed
+  per-object).
+- **`get_bucket_config_detail` now covers 9 aspects, not 4.** Added rule detail
+  for `lifecycle` (per-rule prefix/status, transitions, expiration,
+  noncurrent/abort-MPU cleanup), `encryption` (SSE algorithm + reduced KMS key +
+  bucket-key), `public_access_block` (the four block/ignore/restrict booleans),
+  `policy` (per-statement effect/actions/`is_public` — the principal is reduced
+  to `*`/`specific`, so no account id or raw ARN ever leaks), and `inventory`
+  (per-config schedule/destination/format/included-versions/optional-fields).
+  The detail surface previously stopped at replication/notification/cors/logging,
+  forcing the agent to ask the user for config it can read itself.
 
 _Correctness: analyze a raw, headerless S3 Inventory CSV — the industry-standard
 format the importer previously mis-parsed._

@@ -69,6 +69,73 @@ def test_cors_detail_surfaces_origins_methods():
     assert out[0]["allowed_origins"] == ["https://app.example.com"]
 
 
+def test_lifecycle_detail_surfaces_transitions_and_expiration():
+    data = {"Rules": [
+        {"ID": "archive-old", "Status": "Enabled", "Filter": {"Prefix": "logs/"},
+         "Transitions": [{"Days": 30, "StorageClass": "GLACIER"}],
+         "Expiration": {"Days": 365},
+         "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7}}]}
+    r = ct._detail_lifecycle(data)[0]
+    assert r["status"] == "Enabled" and r["prefix"] == "logs/"
+    assert r["transitions"][0] == {"days": 30, "date": None, "storage_class": "GLACIER"}
+    assert r["expiration_days"] == 365 and r["abort_incomplete_mpu_days"] == 7
+
+
+def test_encryption_detail_reduces_kms_key():
+    data = {"ServerSideEncryptionConfiguration": {"Rules": [
+        {"ApplyServerSideEncryptionByDefault": {
+            "SSEAlgorithm": "aws:kms",
+            "KMSMasterKeyID": "arn:aws:kms:us-east-1:123456789012:key/abcd-1234"},
+         "BucketKeyEnabled": True}]}}
+    out = ct._detail_encryption(data)
+    assert out[0]["sse_algorithm"] == "aws:kms" and out[0]["bucket_key_enabled"] is True
+    assert "123456789012" not in json.dumps(out)  # account id stripped
+
+
+def test_public_access_block_detail_surfaces_four_booleans():
+    data = {"PublicAccessBlockConfiguration": {
+        "BlockPublicAcls": True, "IgnorePublicAcls": True,
+        "BlockPublicPolicy": False, "RestrictPublicBuckets": False}}
+    assert ct._detail_pab(data)[0] == {
+        "block_public_acls": True, "ignore_public_acls": True,
+        "block_public_policy": False, "restrict_public_buckets": False}
+
+
+def test_policy_detail_flags_public_without_leaking_principal():
+    data = {"Policy": json.dumps({"Statement": [
+        {"Sid": "PublicRead", "Effect": "Allow", "Principal": "*",
+         "Action": ["s3:GetObject"], "Resource": "arn:aws:s3:::b/*"},
+        {"Effect": "Allow", "Principal": {"AWS": "arn:aws:iam::123456789012:role/app"},
+         "Action": "s3:PutObject", "Condition": {"IpAddress": {"aws:SourceIp": "10.0.0.0/8"}}},
+    ]})}
+    out = ct._detail_policy(data)
+    assert out[0]["is_public"] is True and out[0]["principal"] == "*"
+    assert out[0]["actions"] == ["s3:GetObject"]
+    assert out[1]["principal"] == "specific" and out[1]["is_public"] is False
+    assert out[1]["has_condition"] is True
+    # Neither the account id nor the raw role ARN leaks (principal is summarized).
+    assert "123456789012" not in json.dumps(out) and "role/app" not in json.dumps(out)
+
+
+def test_inventory_detail_surfaces_schedule_and_destination():
+    data = {"InventoryConfigurationList": [
+        {"Id": "daily", "IsEnabled": True, "Schedule": {"Frequency": "Daily"},
+         "IncludedObjectVersions": "Current",
+         "Destination": {"S3BucketDestination": {
+             "Bucket": "arn:aws:s3:::inv-dest", "Prefix": "inv/", "Format": "CSV"}},
+         "OptionalFields": ["Size", "StorageClass"]}]}
+    r = ct._detail_inventory(data)[0]
+    assert r["enabled"] is True and r["schedule"] == "Daily"
+    assert r["destination_bucket"] == "inv-dest" and r["destination_prefix"] == "inv/"
+    assert r["format"] == "CSV" and "Size" in r["optional_fields"]
+
+
+def test_detail_aspects_and_extractors_stay_in_sync():
+    # get_bucket_config_detail dispatches _DETAIL_EXTRACTORS[aspect]; a mismatch
+    # would KeyError for a registered aspect. Guard the two dicts stay aligned.
+    assert set(ct._DETAIL_ASPECTS) == set(ct._DETAIL_EXTRACTORS)
+
+
 def test_detail_is_bounded_to_20_rules():
     data = {"CORSRules": [{"AllowedOrigins": [f"o{i}"], "AllowedMethods": ["GET"]}
                           for i in range(50)]}
