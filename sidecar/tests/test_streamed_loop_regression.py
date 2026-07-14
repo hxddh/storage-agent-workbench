@@ -31,7 +31,7 @@ def test_streamed_loop_starts_run_inside_running_loop(monkeypatch):
         return ("fake-result", lambda: None, [])
 
     async def fake_stream(result, activity, skill_names, finalize, *, cancel_event=None,
-                          clients=None):
+                          clients=None, budget=None):
         yield "final", {"answer": "hi", "skills_used": [], "evidence_used": [],
                         "evidence_gaps": [], "next_action_proposals": []}
 

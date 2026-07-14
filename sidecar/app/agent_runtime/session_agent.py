@@ -96,7 +96,8 @@ _MAX_REPLAY_MSG = 4000
 # the overflow → finalize path is the backstop above it.
 _MAX_TOOL_OUTPUT_CHARS = 200_000
 _TOOL_BUDGET_EXHAUSTED = (
-    "tool output budget for this turn is exhausted — synthesize your findings now"
+    "This turn's tool-output budget is used up — synthesize your findings from what "
+    "you've already gathered and answer now. This budget resets if the user continues."
 )
 # Memory tools stay usable even after the budget is spent: recording a finding
 # is how the model synthesizes, and their outputs are a few bytes.
@@ -111,6 +112,14 @@ _STOPPED_MARKER = "_[stopped by user]_"
 _CONTEXT_CUT_MARKER = (
     "_[investigation cut short: the model's context window filled up before the "
     "investigation finished]_"
+)
+_BUDGET_CUT_MARKER = (
+    "_[investigation cut short: this turn's tool-output budget was used up. This is "
+    "a best-effort answer from what was gathered — continue for a deeper look.]_"
+)
+_TRANSIENT_CUT_MARKER = (
+    "_[a temporary provider error interrupted this turn: this is a best-effort answer "
+    "from the investigation so far — resend to continue.]_"
 )
 
 _PROPOSAL_ACTION_TYPES = (
@@ -381,6 +390,34 @@ def _is_context_overflow(exc: BaseException) -> bool:
     return is_bad_request and any(n in msg for n in _CONTEXT_OVERFLOW_WEAK_NEEDLES)
 
 
+_TRANSIENT_STATUS = {429, 500, 502, 503, 504}
+
+
+def _is_transient_provider_error(exc: BaseException) -> bool:
+    """True for a retryable PROVIDER-RESPONSE error — a rate limit (429) or a
+    server error (5xx) the model provider returned — as opposed to a deterministic
+    client error (400/401/403). On these, discarding the whole investigation with a
+    raw "Session assistant failed: Error code: 429" is the worst outcome; instead
+    the turn salvages a grounded best-effort answer from the trace already gathered
+    (via the tool-less finalize pass) and offers to continue.
+
+    Deliberately NARROW: a raw transport/connection reset (no HTTP status) is left
+    to propagate so the SSE client falls back to the blocking turn (a full re-run),
+    which is the pre-existing recovery for those. Auth failures (401/403) and
+    context/tool-sequence 400s are not transient and are handled elsewhere."""
+    status = getattr(exc, "status_code", None)
+    if status in _TRANSIENT_STATUS:
+        return True
+    # Provider-response exception types that carry a retryable status even when the
+    # attribute was lost through a re-raise (rate limit / 5xx). NOT the
+    # connection/timeout transport types — those go to the fallback re-run.
+    type_name = type(exc).__name__.lower()
+    if any(t in type_name for t in ("ratelimit", "internalserver", "serviceunavailable")):
+        return True
+    msg = str(exc).lower()
+    return any(f"error code: {s}" in msg for s in _TRANSIENT_STATUS)
+
+
 def _is_tool_call_sequence_error(exc: BaseException) -> bool:
     """True if exc is a provider 400 rejecting the reconstructed message list
     because an assistant ``tool_calls`` message isn't followed by a ``tool``
@@ -455,7 +492,7 @@ def _install_tool_output_budget(tools: list[Any],
     provider's context window. Wraps each SDK FunctionTool's ``on_invoke_tool``;
     fake tools in tests (plain callables) are left untouched.
     """
-    spent = {"chars": 0}
+    spent = {"chars": 0, "exhausted": False}
     for t in tools:
         orig = getattr(t, "on_invoke_tool", None)
         if orig is None or getattr(t, "name", "") in _BUDGET_EXEMPT_TOOLS:
@@ -464,7 +501,14 @@ def _install_tool_output_budget(tools: list[Any],
         def _make(_orig):
             async def wrapped(ctx: Any, args: Any) -> Any:
                 if spent["chars"] >= limit:
-                    return json.dumps({"error": _TOOL_BUDGET_EXHAUSTED})
+                    # A soft per-turn boundary, NOT a tool failure: shape it as a
+                    # status (not {"error": …}) with an explicit next step, and
+                    # flag the turn so the driver offers a "continue" next step —
+                    # like the max-turns ceiling — instead of the model emitting a
+                    # normal 'final' that reads as a complete answer.
+                    spent["exhausted"] = True
+                    return json.dumps({"status": "budget_exhausted",
+                                       "next_step": _TOOL_BUDGET_EXHAUSTED})
                 out = await _orig(ctx, args)
                 spent["chars"] += len(str(out or ""))
                 return out
@@ -615,7 +659,8 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     tools = _build_tools(spec.get("conn"), function_tool, activity,
                          spec.get("session_id"), spec.get("turn_id"),
                          spec.get("cancel_event"))
-    _install_tool_output_budget(tools)
+    budget = _install_tool_output_budget(tools)
+    spec["budget"] = budget  # readable by the blocking driver, which owns `spec`
     # _make_agent disables parallel tool calls (chat-completions providers like
     # DeepSeek can emit malformed follow-ups with streaming + parallel calls) and
     # uses a per-run client so concurrent sessions don't race on SDK globals.
@@ -662,7 +707,8 @@ def _streamed_session_loop(spec: dict[str, Any]) -> dict[str, Any]:
             final: dict[str, Any] = {}
             async for kind, data in stream_events_for(
                     result, spec["activity"], spec.get("skill_names") or [], finalize,
-                    cancel_event=spec.get("cancel_event"), clients=clients):
+                    cancel_event=spec.get("cancel_event"), clients=clients,
+                    budget=spec.get("budget")):
                 if kind == "final":
                     final = data
             return final
@@ -730,9 +776,11 @@ def build_stream(
 ):
     """Set up a streaming run.
 
-    Returns (result_streaming, activity, skill_names, finalize, clients).
+    Returns (result_streaming, activity, skill_names, finalize, clients, budget).
     ``clients`` may be passed in so the CALLER owns closing them even if this
-    setup raises after a client was created (see _start_streamed_run).
+    setup raises after a client was created (see _start_streamed_run). ``budget``
+    is the per-turn tool-output budget state; pass it to ``stream_events_for`` so
+    a budget-exhausted turn is marked cut-short with a "continue" proposal.
     Raises AgentUnavailable if the SDK/key is unavailable — caller should then
     fall back to the blocking endpoint.
     """
@@ -745,7 +793,7 @@ def build_stream(
             "session_id": session.get("id"), "turn_id": turn_id,
             "cancel_event": cancel_event}
     result, finalize, _ = _start_streamed_run(spec, clients)
-    return result, activity, skill_names, finalize, clients
+    return result, activity, skill_names, finalize, clients, spec.get("budget")
 
 
 def _hold_back_contract(text: str) -> str:
@@ -822,7 +870,8 @@ async def _close_clients(clients: list[Any] | None) -> None:
 
 async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_names: list[str],
                             finalize=None, *, cancel_event: Any = None,
-                            clients: list[Any] | None = None):
+                            clients: list[Any] | None = None,
+                            budget: dict[str, Any] | None = None):
     """Yield ('delta', text) and ('tool', record) during the run, then
     ('final', contract) when complete.
 
@@ -867,12 +916,19 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
                     emitted_tools += 1
         except Exception as exc:  # noqa: BLE001
             cut_short = _is_context_overflow(exc) and not _is_max_turns(exc)
+            # A transient provider error (429/5xx/reset) is recoverable: rather
+            # than discard the whole investigation with a raw error, finalize
+            # synthesizes a grounded best-effort answer from the trace gathered so
+            # far and offers to continue. Not cut_short (context wasn't the cause).
+            transient = (_is_transient_provider_error(exc)
+                         and not _is_max_turns(exc) and not cut_short)
             # A tool-call sequencing 400 is recoverable too: finalize rebuilds
             # from a fresh prompt (no tool_calls history), so the turn synthesizes
             # a grounded answer instead of surfacing a raw provider error. It is
             # NOT `cut_short` — no "context filled up" marker, since context is
             # not why it failed.
-            recoverable = _is_max_turns(exc) or cut_short or _is_tool_call_sequence_error(exc)
+            recoverable = (_is_max_turns(exc) or cut_short or transient
+                           or _is_tool_call_sequence_error(exc))
             if finalize is None or not recoverable:
                 raise
             while len(activity) > emitted_tools:
@@ -881,6 +937,8 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
             text = await finalize() or _FINALIZE_FALLBACK
             if cut_short:
                 text = text + "\n\n" + _CONTEXT_CUT_MARKER
+            elif transient:
+                text = text + "\n\n" + _TRANSIENT_CUT_MARKER
             # If sanitized deltas already streamed, the finalize text REPLACES
             # them — skip the delta and let 'final' correct the client's view.
             if not sanitizer.emitted:
@@ -899,7 +957,19 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
         tail = sanitizer.push(raw_acc, final=True)
         if tail:
             yield ("delta", tail)
-        yield ("final", _finalize_contract(getattr(result, "final_output", "") or "", skill_names, activity))
+        final_text = getattr(result, "final_output", "") or ""
+        # If the per-turn tool-output budget (the PRIMARY depth governor) was what
+        # forced the model to stop investigating, the answer is a best-effort cut
+        # short — mark it and offer a one-click "continue", exactly like the
+        # max-turns ceiling. Without this the deepest turns end as an ordinary
+        # 'final' the user can mistake for a complete answer.
+        if budget and budget.get("exhausted"):
+            if _BUDGET_CUT_MARKER not in final_text:
+                final_text = (final_text + "\n\n" + _BUDGET_CUT_MARKER).strip()
+            yield ("final", _with_continue_proposal(
+                _finalize_contract(final_text, skill_names, activity)))
+        else:
+            yield ("final", _finalize_contract(final_text, skill_names, activity))
     finally:
         await _close_clients(clients)
 
