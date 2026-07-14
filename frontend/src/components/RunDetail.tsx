@@ -3,6 +3,7 @@ import { getAccountProfile, getReport, getRun, runEventsUrl } from "../api";
 import type { AccountProfile, ReportOut, RunDetail as RunDetailT, RunEvent } from "../types";
 import { ToolTimeline, type TimelineItem } from "./ToolTimeline";
 import { AccountProfilePanel } from "./AccountProfilePanel";
+import { Markdown } from "./Markdown";
 import { useI18n } from "../i18n";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -366,9 +367,9 @@ export function RunDetail({
           {report && (
             <div className="mt-6">
               <h2 className="mb-2 text-sm font-semibold text-gray-200">{t("run.reportPreview")}</h2>
-              <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md border border-edge bg-sidebar p-3 text-[11px] text-gray-300">
-                {report.content}
-              </pre>
+              <div className="max-h-96 overflow-auto rounded-md border border-edge bg-sidebar p-3">
+                <Markdown text={report.content} />
+              </div>
             </div>
           )}
         </section>

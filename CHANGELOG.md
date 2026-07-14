@@ -6,6 +6,36 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.19] - 2026-07-14
+
+_Frontend UX pass (third of the usability sweep): five focused fixes where the
+thread-first UI stranded the user or rendered a deliverable poorly. No backend
+change; the settled thread-first shell is unchanged._
+
+### Fixed
+
+- **A stalled turn no longer spins forever.** When the client gave up polling a
+  still-running turn (~150 s), the thread kept showing the "thinking" animation
+  indefinitely — even though the answer was often already persisted server-side.
+  It now shows a "this is taking longer than expected — the answer may already be
+  ready" note with a **Reload** button that pulls the persisted result, instead
+  of an eternal spinner. (New per-session `stalled` run-state flag.)
+- **The turn-error banner offers Retry, not only "Open settings."** A failed turn
+  restores the message into the composer, so a transient/network error now shows
+  a **Retry** button (re-sends it) alongside Open settings — previously the only
+  action was Open settings, which is irrelevant for a network/timeout error.
+- **Reports render as Markdown, not raw monospace.** The report modal and the run
+  report-preview showed structured Markdown inside a tiny `<pre>` block; both now
+  render through the app's `Markdown` component — the headline "auditable report"
+  is finally readable.
+- **The composer's keyboard hint reflects what Enter does.** While a turn is
+  running, Enter **redirects** the in-flight turn (cancel + resend), but the hint
+  still read "⏎ Send"; it now reads "⏎ redirect current turn" so the behavior is
+  discoverable and Enter can't surprise-cancel an investigation.
+- **The Copy button no longer silently no-ops** where the async Clipboard API is
+  unavailable (some WebViews): it falls back to a temp-textarea copy and only
+  shows the "Copied" confirmation when the copy actually succeeded.
+
 ## [0.24.18] - 2026-07-14
 
 _Turn-loop resilience: two deep-investigation dead-ends where a turn ended

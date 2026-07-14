@@ -254,7 +254,7 @@ export function useTurnRunner(opts: {
     const turnId = newTurnId();
     patchSessionRun(id, {
       busy: true, error: null, needKey: false, pending: q,
-      streamText: null, streamTools: [], stopped: false,
+      streamText: null, streamTools: [], stopped: false, stalled: false,
     });
     // busy is set for this session → the synchronous double-submit latch can
     // release now; further same-session submits are gated by `busy` (F1).
@@ -313,10 +313,13 @@ export function useTurnRunner(opts: {
         // the pending bubble — never on a fixed timer (F4).
         outcome = await waitForPersistedTurn(id);
         if (outcome === "inprogress") {
-          // Gave up waiting, but the turn may still be running. Keep the pending
-          // bubble (the user's message must never silently disappear); busy is
-          // released by the finally so the composer isn't locked. Do NOT clear
-          // pending here.
+          // Gave up waiting, but the turn may still be running (its answer may
+          // already be persisted server-side). Keep the pending bubble — the
+          // user's message must never silently disappear — but mark it STALLED so
+          // the thread shows a "reload" affordance instead of an eternal
+          // "thinking" spinner (the answer never surfaced otherwise). busy is
+          // released by the finally so the composer isn't locked.
+          patchSessionRun(id, { stalled: true });
           return;
         }
       }
@@ -326,7 +329,7 @@ export function useTurnRunner(opts: {
         // message into the composer and drop the pending bubble so nothing is
         // lost (M3). The error/needKey banner is already set.
         if (localId.current === id) setText(q);
-        patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
+        patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false, stalled: false });
         return;
       }
 

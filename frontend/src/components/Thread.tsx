@@ -7,9 +7,10 @@ import {
   prepareSessionAction,
 } from "../api";
 import type { Grounding, NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
-import { useSessionRun } from "../sessionRuns";
+import { useSessionRun, patchSessionRun } from "../sessionRuns";
 import { useTurnRunner, cleanError } from "../hooks/useTurnRunner";
 import { Button } from "./ui";
+import { Markdown } from "./Markdown";
 import { Composer } from "./Composer";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
 import { FindingsCard, GroundingCard, LiveProgress, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
@@ -411,7 +412,13 @@ export function Thread({
       {error && (
         <div className="animate-fade-in-up rounded-xl border border-red-900/50 bg-red-950/20 p-3.5 text-[13px] text-red-300">
           {error}
-          <div className="mt-2.5">
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            {/* Retry re-sends the message (the failed turn restored it into the
+                composer), so a transient/network error isn't a dead-end whose
+                only action is the often-irrelevant "Open settings". */}
+            {text.trim() && (
+              <Button variant="primary" size="sm" onClick={send}>{t("thread.retry")}</Button>
+            )}
             <Button variant="default" size="sm" onClick={onOpenSettings}>{t("common.openSettings")}</Button>
           </div>
         </div>
@@ -528,6 +535,27 @@ export function Thread({
                       </svg>
                       {t("thread.stoppedByUser")}
                     </div>
+                  ) : run.stalled ? (
+                    /* Gave up polling a still-running turn — offer a reload
+                       instead of an eternal "thinking" spinner (the answer may
+                       already be persisted server-side). */
+                    <div className="animate-fade-in rounded-lg border border-edge bg-panel/60 p-3 text-[12.5px] text-gray-400">
+                      {t("thread.stalled")}
+                      <div className="mt-2">
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => {
+                            const id = localId.current;
+                            if (!id) return;
+                            patchSessionRun(id, { pending: null, stalled: false, streamText: null, streamTools: [] });
+                            void reload(id);
+                          }}
+                        >
+                          {t("thread.reload")}
+                        </Button>
+                      </div>
+                    </div>
                   ) : (
                     <ThinkingBubble />
                   )}
@@ -592,7 +620,9 @@ export function Thread({
               <span className="text-sm font-semibold text-gray-100">{t("thread.report")}</span>
               <Button variant="ghost" onClick={() => setReport(null)}>{t("common.close")}</Button>
             </header>
-            <pre className="flex-1 overflow-auto whitespace-pre-wrap p-6 text-[11px] text-gray-300">{report}</pre>
+            <div className="flex-1 overflow-auto p-6">
+              <Markdown text={report} />
+            </div>
           </div>
         </Overlay>
       )}
