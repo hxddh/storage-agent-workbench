@@ -26,6 +26,8 @@ export type SessionRun = {
   needKey: boolean;
   error: string | null;
   stopped: boolean; // the user cancelled the turn; keep the partial text visible
+  stalled: boolean; // gave up polling for a still-running turn — offer a reload
+                    // instead of an eternal "thinking" spinner (v0.24.19).
 };
 
 const EMPTY: SessionRun = {
@@ -39,6 +41,7 @@ const EMPTY: SessionRun = {
   needKey: false,
   error: null,
   stopped: false,
+  stalled: false,
 };
 
 const store = new Map<string, SessionRun>();

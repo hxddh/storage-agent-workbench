@@ -212,7 +212,13 @@ export function Composer({
           </svg>
         </button>
         <span className="ml-auto hidden text-[11px] text-gray-600 sm:inline">
-          <kbd className="font-sans">⏎</kbd> {t("thread.send")} · <kbd className="font-sans">⇧⏎</kbd> {t("thread.newline")}
+          {busy && text.trim() ? (
+            // While a turn runs, Enter REDIRECTS it (cancel + resend) — say so,
+            // instead of the misleading "Send".
+            <><kbd className="font-sans">⏎</kbd> {t("thread.redirectCurrent")}</>
+          ) : (
+            <><kbd className="font-sans">⏎</kbd> {t("thread.send")} · <kbd className="font-sans">⇧⏎</kbd> {t("thread.newline")}</>
+          )}
         </span>
         {busy && text.trim() && (
           // Redirect the running turn: cancel it (keeping what it found) and
