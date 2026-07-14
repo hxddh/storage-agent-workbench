@@ -8,6 +8,7 @@ or downloads object bodies.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,73 @@ _FIELD_CANDIDATES = {
 
 def _norm(name: str) -> str:
     return name.lower().replace(" ", "").replace("_", "")
+
+
+# Storage-class tokens used to recognize the storage-class column in a HEADERLESS
+# inventory CSV (S3 + common S3-compatible names).
+_KNOWN_STORAGE = {
+    "standard", "standard_ia", "onezone_ia", "reduced_redundancy", "glacier",
+    "glacier_ir", "deep_archive", "intelligent_tiering", "outposts",
+    "express_onezone", "cold", "archive", "tepid", "mtc",
+}
+# S3 inventory LastModifiedDate is ISO-8601 (e.g. 2024-01-15T10:30:00.000Z).
+_TS_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]")
+
+
+def _looks_like_header(row: Any) -> bool:
+    """True if a CSV's first row is a HEADER (column names) rather than data.
+
+    S3 Inventory CSVs are HEADERLESS (the schema lives in the manifest), but a
+    manifest-synthesized header (managed import) or a generic CSV has one.
+    Recognized when >=2 cells normalize to known inventory field names — a real
+    data row won't have two cells that are exactly 'bucket'/'key'/'size'/... .
+    """
+    known = {c for cands in _FIELD_CANDIDATES.values() for c in cands}
+    hits = sum(1 for v in list(row) if _norm(str(v)) in known)
+    return hits >= 2
+
+
+def _detect_field_columns(df: pd.DataFrame) -> dict[str, Any]:
+    """Map inventory fields to columns of a HEADERLESS CSV by VALUE SHAPE, so a raw
+    S3 inventory export analyzes regardless of column order (the order is defined
+    by the manifest, which the direct-upload path doesn't have). Best-effort:
+    unmatched fields stay None and the analyzer degrades gracefully."""
+    sample = df.head(500)
+    cols = list(df.columns)
+    used: set[Any] = set()
+
+    def frac(col: Any, pred: Any) -> float:
+        vals = [str(v).strip() for v in sample[col].tolist() if str(v).strip() != ""]
+        return (sum(1 for v in vals if pred(v)) / len(vals)) if vals else 0.0
+
+    assigned: dict[str, Any] = {}
+    for field, pred, thresh in (
+        ("storage_class", lambda s: s.lower() in _KNOWN_STORAGE, 0.6),
+        ("last_modified", lambda s: bool(_TS_PREFIX.match(s)), 0.6),
+        ("size", lambda s: s.isdigit(), 0.8),
+    ):
+        cand, score = max(
+            ((c, frac(c, pred)) for c in cols if c not in used),
+            key=lambda x: x[1], default=(None, 0.0))
+        if cand is not None and score >= thresh:
+            assigned[field] = cand
+            used.add(cand)
+    # key: the remaining column that is most path-like, else the longest strings.
+    rem = [c for c in cols if c not in used]
+    if rem:
+        pathy, pscore = max(((c, frac(c, lambda s: "/" in s)) for c in rem),
+                            key=lambda x: x[1])
+        key_col = pathy if pscore >= 0.3 else max(
+            rem, key=lambda c: sum(len(str(v)) for v in sample[c].tolist()))
+        assigned["key"] = key_col
+        used.add(key_col)
+    # bucket: a remaining low-cardinality, non-numeric column (one repeated value).
+    for c in (c for c in cols if c not in used):
+        vals = {str(v) for v in sample[c].tolist() if str(v).strip() != ""}
+        if vals and len(vals) <= 2 and not all(v.isdigit() for v in vals):
+            assigned["bucket"] = c
+            break
+    return assigned
 
 
 def _prefix_of(key: str) -> str:
@@ -77,14 +145,19 @@ def _load_dataframe(raw_path: str | Path) -> tuple[pd.DataFrame, bool, str]:
             df = df.head(MAX_INGEST_ROWS)
         return df, truncated, "parquet"
     try:
-        df = pd.read_csv(path, dtype=str, keep_default_na=False, nrows=MAX_INGEST_ROWS + 1)
+        # header=None: S3 Inventory CSVs are HEADERLESS (the column schema lives in
+        # the manifest, not the file). Read every row as data; import_inventory_file
+        # decides whether row 0 is a header or maps columns by content. +2 rows:
+        # one for a possible header line, one to detect overflow past the cap.
+        df = pd.read_csv(path, dtype=str, keep_default_na=False, header=None,
+                         nrows=MAX_INGEST_ROWS + 2)
     except pd.errors.EmptyDataError:
-        # A 0-byte / header-less CSV is an empty inventory, not a failure.
+        # A genuinely empty (0-byte / whitespace-only) CSV is an empty inventory,
+        # not a failure. (A headerless file WITH data does not raise this.)
         return pd.DataFrame(), False, "csv"
-    truncated = len(df) > MAX_INGEST_ROWS
-    if truncated:
-        df = df.head(MAX_INGEST_ROWS)
-    return df, truncated, "csv"
+    # CSV truncation is applied AFTER header handling (import_inventory_file), so
+    # the row cap counts DATA rows — a header line never eats a data-row slot.
+    return df, False, "csv"
 
 
 # --- import_inventory_file --------------------------------------------------
@@ -94,7 +167,22 @@ def import_inventory_file(raw_path: str | Path, duckdb_path: str | Path) -> dict
     # The read itself is bounded (no silent cap: a truncated analysis is a lower
     # bound, not the whole object set, and the result says so).
     df_in, truncated, fmt = _load_dataframe(raw_path)
-    norm_map = {_norm(c): c for c in df_in.columns}
+    # CSV columns are integer positions (read headerless). Resolve real names:
+    # promote a genuine/synthesized header row, else map columns by content so a
+    # raw HEADERLESS S3 inventory export analyzes regardless of column order.
+    if fmt == "csv" and len(df_in) > 0:
+        if _looks_like_header(df_in.iloc[0]):
+            df_in.columns = [str(v) for v in df_in.iloc[0].tolist()]
+            df_in = df_in.iloc[1:].reset_index(drop=True)
+        else:
+            df_in = df_in.rename(
+                columns={pos: field for field, pos in _detect_field_columns(df_in).items()})
+        # Cap DATA rows now that any header line has been removed (never silent:
+        # the result reports truncated + ingest_cap).
+        truncated = len(df_in) > MAX_INGEST_ROWS
+        if truncated:
+            df_in = df_in.head(MAX_INGEST_ROWS)
+    norm_map = {_norm(str(c)): c for c in df_in.columns}
 
     def col_for(field: str) -> str | None:
         for cand in _FIELD_CANDIDATES[field]:
