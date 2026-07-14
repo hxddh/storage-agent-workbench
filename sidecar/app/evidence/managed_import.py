@@ -244,8 +244,8 @@ def plan_inventory(
     if fmt == "orc":
         plan = _limitation_plan(
             "inventory", dest_bucket, dest_prefix, evidence_ref, max_files, max_bytes,
-            "Inventory format ORC was detected_but_not_supported in this phase; "
-            "use CSV or Parquet inventory output.",
+            "ORC inventory format isn't supported yet — re-export the inventory "
+            "as CSV or Parquet, which both analyze.",
         )
         plan.fmt = "orc"
         plan.plan_source = plan_source

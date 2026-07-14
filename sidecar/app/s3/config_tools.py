@@ -128,6 +128,7 @@ def get_bucket_config_summary(conn: sqlite3.Connection, provider_id: str, bucket
 
     provider_unsupported_items = [n for n, s in config_items.items() if s == PROVIDER_UNSUPPORTED]
     access_denied_items = [n for n, s in config_items.items() if s == ACCESS_DENIED]
+    error_items = [n for n, s in config_items.items() if s == ERROR]
     available = [n for n, s in config_items.items() if s == AVAILABLE]
 
     findings: list[dict[str, str]] = []
@@ -137,6 +138,11 @@ def get_bucket_config_summary(conn: sqlite3.Connection, provider_id: str, bucket
     for item in access_denied_items:
         findings.append(_finding(WARNING, f"Access denied reading {item}",
                                  "The credentials lack permission to read this configuration."))
+    for item in error_items:
+        # An errored read is unassessed, not clean — surface it (was silently dropped).
+        findings.append(_finding(WARNING, f"Could not read {item}",
+                                 "An unexpected error prevented reading this configuration; "
+                                 "this aspect is unassessed."))
     if available:
         findings.append(_finding(GOOD, "Configuration readable",
                                  f"Read {len(available)} configuration item(s) successfully."))
@@ -162,6 +168,7 @@ def get_bucket_config_summary(conn: sqlite3.Connection, provider_id: str, bucket
         "findings_count_by_category": counts,
         "provider_unsupported_items": provider_unsupported_items,
         "access_denied_items": access_denied_items,
+        "error_items": error_items,
         "overall_status": overall,
         "findings": findings,
     }
@@ -562,6 +569,13 @@ def _unsupported_findings(status: str, item: str) -> list[dict[str, str]]:
     if status == ACCESS_DENIED:
         return [_finding(WARNING, f"Access denied reading {item}",
                          "Credentials lack permission to read this configuration.")]
+    if status == ERROR:
+        # An unexpected read error (e.g. a transient 5xx) is NOT "no problem" —
+        # without this branch the review silently omitted the aspect, implying it
+        # was clean. Surface it so the aspect reads as unassessed, not healthy.
+        return [_finding(WARNING, f"Could not read {item}",
+                         "An unexpected error prevented reading this configuration; "
+                         "this aspect is unassessed. Retry or check connectivity.")]
     return []
 
 
@@ -725,10 +739,10 @@ def review_bucket_observability(conn: sqlite3.Connection, provider_id: str, buck
         findings.append(_finding(OPPORTUNITY, "No bucket tags", "Tags help with cost attribution and ownership."))
     findings += _unsupported_findings(tagging["status"], "tagging")
 
-    # Inventory configuration API is out of scope for Phase 06.
-    findings.append(_finding(NOT_APPLICABLE, "Inventory configuration not assessed",
-                             "Bucket inventory configuration review is future work; run inventory_analysis on an "
-                             "uploaded inventory file instead."))
+    findings.append(_finding(OPPORTUNITY, "Deeper inventory review available",
+                             "Read the bucket's inventory configuration with get_bucket_config_detail "
+                             "(aspect 'inventory'), and run inventory_analysis on an inventory file for "
+                             "object-level capacity metrics."))
 
     return {
         "success": True,

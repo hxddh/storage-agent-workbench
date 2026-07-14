@@ -39,7 +39,7 @@ _AUTH_FAIL_CODES = {
     "InvalidToken",
     "UnrecognizedClientException",
 }
-_UNSUPPORTED_CODES = {"NotImplemented", "MethodNotAllowed"}
+_UNSUPPORTED_CODES = {"NotImplemented", "MethodNotAllowed", "NotSupported", "Unsupported"}
 _DENIED_CODES = {"AccessDenied", "Forbidden", "AllAccessDisabled", "UnauthorizedAccess"}
 
 # Read status vocabulary shared with config_tools.
@@ -61,6 +61,16 @@ def _client_error_fields(exc: ClientError) -> dict[str, Any]:
         "error_message_sanitized": redact_text(str(err.get("Message") or "")),
         "status_code": meta.get("HTTPStatusCode"),
     }
+
+
+def _is_unsupported(exc: ClientError) -> bool:
+    """A capability gap — the provider doesn't implement this API — by error code
+    (NotImplemented/MethodNotAllowed/NotSupported/Unsupported) OR a bare HTTP 501.
+    Rule 18: such gaps are 'provider_unsupported', never a hard failure."""
+    resp = exc.response or {}
+    code = resp.get("Error", {}).get("Code")
+    http = resp.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    return code in _UNSUPPORTED_CODES or http == 501
 
 
 def _generic_error_fields(exc: Exception) -> dict[str, Any]:
@@ -106,8 +116,13 @@ def test_credentials(conn: sqlite3.Connection, provider_id: str) -> dict[str, An
         if code in _UNSUPPORTED_CODES:
             # Capability gap, not an auth failure.
             return {**base, "success": True, "identity_hint": "Provider unsupported"}
-        if code == "AccessDenied":
-            # Credentials are valid; the account just cannot ListBuckets.
+        if code in _DENIED_CODES or (fields.get("status_code") == 403 and code not in _AUTH_FAIL_CODES):
+            # Credentials are valid; the account just cannot ListBuckets. Mirror
+            # list_buckets' full denied-code set (Forbidden/AllAccessDisabled/…),
+            # plus a non-auth 403 so a provider using a non-standard permission
+            # code isn't reported as broken credentials. A genuine auth-failure
+            # code (InvalidAccessKeyId/SignatureDoesNotMatch/…) still falls
+            # through to the failure path below even though it, too, is a 403.
             return {**base, "success": True, "identity_hint": "authenticated (ListBuckets denied)"}
         # Everything else (auth failures included) is a genuine failure.
         return {**base, **fields, "success": False}
@@ -263,6 +278,10 @@ def list_objects_v2(
             "keys": all_keys[:clamped],
             "is_truncated": bool(resp.get("IsTruncated", False)),
             "next_token": resp.get("NextContinuationToken"),
+            # Report the applied cap so the caller can tell a requested max_keys
+            # was clamped (never a silent cap): requested vs the enforced value.
+            "max_keys_requested": int(max_keys),
+            "max_keys_applied": clamped,
         }
     except ClientError as exc:
         return {**base, **_client_error_fields(exc), "success": False}
@@ -897,7 +916,11 @@ def measure_request_latency(
     n = max(1, min(int(samples), LATENCY_MAX_SAMPLES))
     op = "head_object" if key else "head_bucket"
     base = {
-        "success": False, "operation": op, "samples_requested": n,
+        # samples_requested is the caller's ACTUAL request; samples_applied is the
+        # capped value actually run — so a request for 100 shows it was clamped to
+        # 10, never a silent cap.
+        "success": False, "operation": op,
+        "samples_requested": int(samples), "samples_applied": n,
         "samples_ok": 0, "samples_failed": 0,
         "min_ms": None, "p50_ms": None, "p95_ms": None, "max_ms": None, "mean_ms": None,
         "error_code": None, "error_message_sanitized": None,
@@ -1096,22 +1119,25 @@ def get_object_acl(
         client = client_factory.build_s3_client(conn, provider_id)
         resp = client.get_object_acl(**kw)
     except ClientError as exc:
-        code = (exc.response or {}).get("Error", {}).get("Code")
-        if code in _UNSUPPORTED_CODES:
+        if _is_unsupported(exc):
             return {**base, "success": True, "acl_status": PROVIDER_UNSUPPORTED}
         return {**base, **_client_error_fields(exc), "success": False}
     except Exception as exc:  # noqa: BLE001
         return {**base, **_generic_error_fields(exc), "success": False}
 
-    grants: list[dict[str, Any]] = []
-    public_perms: list[str] = []
-    for g in (resp.get("Grants") or [])[:SAMPLE_KEYS_LIMIT]:
-        grantee = g.get("Grantee") or {}
-        kind = _grantee_kind(grantee)
-        perm = g.get("Permission")
-        grants.append({"grantee_kind": kind, "permission": perm})
-        if kind in ("public-all-users", "authenticated-users") and perm:
-            public_perms.append(perm)
+    all_grants = resp.get("Grants") or []
+    # is_public is a SECURITY signal — compute it over EVERY grant, not just the
+    # 20 echoed back; a public AllUsers/AuthenticatedUsers grant past position 20
+    # must still flip is_public (S3 allows up to 100 grants per ACL).
+    public_perms: list[str] = [
+        g.get("Permission") for g in all_grants
+        if _grantee_kind(g.get("Grantee") or {}) in ("public-all-users", "authenticated-users")
+        and g.get("Permission")
+    ]
+    grants: list[dict[str, Any]] = [
+        {"grantee_kind": _grantee_kind(g.get("Grantee") or {}), "permission": g.get("Permission")}
+        for g in all_grants[:SAMPLE_KEYS_LIMIT]
+    ]
     # Owner reduced to whether one exists — the DisplayName/ID identify an account.
     owner = resp.get("Owner") or {}
     return {
@@ -1119,7 +1145,7 @@ def get_object_acl(
         "success": True,
         "acl_status": AVAILABLE,
         "grants": grants,
-        "grant_count": len(resp.get("Grants") or []),
+        "grant_count": len(all_grants),
         "is_public": bool(public_perms),
         "public_permissions": sorted(set(public_perms)),
         "owner_display": "present" if (owner.get("ID") or owner.get("DisplayName")) else None,
@@ -1147,8 +1173,7 @@ def get_object_tagging(
         client = client_factory.build_s3_client(conn, provider_id)
         resp = client.get_object_tagging(**kw)
     except ClientError as exc:
-        code = (exc.response or {}).get("Error", {}).get("Code")
-        if code in _UNSUPPORTED_CODES:
+        if _is_unsupported(exc):
             return {**base, "success": True, "tagging_status": PROVIDER_UNSUPPORTED}
         return {**base, **_client_error_fields(exc), "success": False}
     except Exception as exc:  # noqa: BLE001
@@ -1191,8 +1216,7 @@ def get_object_attributes(
         client = client_factory.build_s3_client(conn, provider_id)
         resp = client.get_object_attributes(**kw)
     except ClientError as exc:
-        code = (exc.response or {}).get("Error", {}).get("Code")
-        if code in _UNSUPPORTED_CODES:
+        if _is_unsupported(exc):
             return {**base, "success": True, "attributes_status": PROVIDER_UNSUPPORTED}
         return {**base, **_client_error_fields(exc), "success": False}
     except Exception as exc:  # noqa: BLE001

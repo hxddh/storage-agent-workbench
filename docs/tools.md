@@ -54,6 +54,8 @@ Safety:
   wider sample works while a full scan can't be requested. Bounds, not gates —
   there is no approval path.
 - Must sanitize sample keys and bound the keys surfaced to the model per call.
+  The clamp is reported (`max_keys_requested` / `max_keys_applied`) and the
+  in-context echo cap sets `keys_truncated_in_context` — never a silent cap.
 - Never returns object bodies.
 
 ### head_object
