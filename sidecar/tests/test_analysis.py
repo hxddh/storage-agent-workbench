@@ -40,6 +40,10 @@ INVENTORY_CSV = (
     "b,tmp/small.txt,512,2026-06-25T09:00:00Z,STANDARD,e4\n"
 )
 
+# The SAME data as a raw S3 Inventory export: HEADERLESS (the column schema lives
+# in the manifest, not the file).
+INVENTORY_CSV_HEADERLESS = "\n".join(INVENTORY_CSV.splitlines()[1:]) + "\n"
+
 
 def _write(tmp_path, name, content) -> Path:
     p = tmp_path / name
@@ -157,6 +161,33 @@ def test_import_inventory_parquet(tmp_path):
     out = inventory.import_inventory_file(pq, tmp_path / "i.duckdb")
     assert out["format"] == "parquet"
     assert out["row_count"] == 4
+
+
+def test_import_inventory_headerless_csv_maps_by_content(tmp_path):
+    """A raw S3 Inventory CSV is HEADERLESS (schema is in the manifest). The
+    importer must map columns by content — not assume a header row — so all rows
+    analyze and the columns land in the right fields regardless of order."""
+    p = _write(tmp_path, "inv-headerless.csv", INVENTORY_CSV_HEADERLESS)
+    duckdb_path = tmp_path / "i.duckdb"
+    out = inventory.import_inventory_file(p, duckdb_path)
+    assert out["row_count"] == 4  # all 4 rows are data; none consumed as a "header"
+    m = inventory.analyze_inventory(duckdb_path)
+    assert m["object_count"] == 4
+    assert m["total_size"] == 536870912 * 2 + 2048 + 512  # size column detected
+    sc = {d["value"] for d in m["storage_class_distribution"]}
+    assert "STANDARD" in sc and "STANDARD_IA" in sc  # storage_class column detected
+    prefixes = {d["value"] for d in m["prefix_distribution"]}
+    assert "datasets/" in prefixes and "logs/" in prefixes  # key column detected
+    # last_modified detected → the 2024 object lands in the 365d+ age bucket.
+    assert "365d+" in {a["bucket"] for a in m["object_age_distribution"]}
+
+
+def test_import_inventory_headered_csv_still_works(tmp_path):
+    """A headered CSV (generic upload, or the manifest-synthesized header that
+    managed import writes) is still detected and parsed by column name."""
+    out = inventory.import_inventory_file(
+        _write(tmp_path, "inv.csv", INVENTORY_CSV), tmp_path / "i.duckdb")
+    assert out["row_count"] == 4  # header row is NOT counted as data
 
 
 def test_analyze_inventory_metrics(tmp_path):

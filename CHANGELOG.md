@@ -6,7 +6,27 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
-## [0.24.13] - 2026-07-12
+## [0.24.14] - 2026-07-12
+
+_Correctness: analyze a raw, headerless S3 Inventory CSV — the industry-standard
+format the importer previously mis-parsed._
+
+### Fixed
+
+- **Headerless inventory CSVs now analyze correctly.** S3 Inventory delivers
+  **headerless** CSV files — the column schema lives in the manifest, not the
+  file. The importer assumed a header row (`pandas` `header=0`), so a raw
+  inventory CSV attached directly (no manifest) had its first data row consumed
+  as a "header" and its columns mis-mapped, producing empty/garbage analysis.
+  `import_inventory_file` now detects whether row 0 is a real header (a generic
+  upload, or the header the managed-import path synthesizes from the manifest
+  `fileSchema`) and, when it isn't, **maps columns to fields by value shape**
+  (integer → size, ISO timestamp → last_modified, known storage-class token →
+  storage_class, path-like → key, single repeated value → bucket) — so a raw S3
+  inventory export analyzes regardless of column order. The per-turn ingest cap
+  now counts DATA rows, never a header line. (The managed-import path already
+  synthesized a header from the manifest and is unchanged; Parquet/ORC carry
+  their own schema and were never affected.)
 
 _Prompt guidance only — makes two existing capabilities feel native. No new
 tools, no behavior gates._
