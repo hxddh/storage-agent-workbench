@@ -1040,3 +1040,172 @@ def get_object_lock_status(
         result["error_code"] = hard_error.get("error_code")
         result["error_message_sanitized"] = hard_error.get("error_message_sanitized")
     return result
+
+
+# --- Object-level ACL / tagging / attributes (read-only) --------------------
+
+# Predefined S3 group grantees. AllUsers = anonymous/public; AuthenticatedUsers
+# = any AWS account (also effectively public). LogDelivery is the log-writer
+# group. A grant to AllUsers/AuthenticatedUsers is the "this object is public"
+# signal — we surface the group KIND, never a canonical user id / owner id / email.
+_GRANT_ALL_USERS = "http://acs.amazonaws.com/groups/global/AllUsers"
+_GRANT_AUTH_USERS = "http://acs.amazonaws.com/groups/global/AuthenticatedUsers"
+_GRANT_LOG_DELIVERY = "http://acs.amazonaws.com/groups/s3/LogDelivery"
+
+
+def _grantee_kind(grantee: dict[str, Any]) -> str:
+    """Reduce a grantee to a KIND label — never its canonical id, email, or
+    display name (all of which identify an account)."""
+    uri = grantee.get("URI")
+    if uri == _GRANT_ALL_USERS:
+        return "public-all-users"
+    if uri == _GRANT_AUTH_USERS:
+        return "authenticated-users"
+    if uri == _GRANT_LOG_DELIVERY:
+        return "log-delivery"
+    gtype = grantee.get("Type")
+    if gtype == "CanonicalUser" or grantee.get("ID"):
+        return "canonical-user"
+    if gtype == "AmazonCustomerByEmail" or grantee.get("EmailAddress"):
+        return "email-user"
+    if gtype == "Group" or uri:
+        return "group"
+    return "unknown"
+
+
+def get_object_acl(
+    conn: sqlite3.Connection, provider_id: str, bucket: str, key: str,
+    version_id: str | None = None,
+) -> dict[str, Any]:
+    """Read one object's ACL (read-only GetObjectAcl; no body). Answers "is this
+    object public?" and "who was granted what?" at the OBJECT level, which
+    bucket-level security review can't. Grantees are reduced to a KIND
+    (public-all-users / authenticated-users / canonical-user / …) so no owner id,
+    canonical id, or email leaks. A public grant (AllUsers / AuthenticatedUsers)
+    is flagged explicitly. Provider without object-ACL support → provider_unsupported.
+    """
+    base = {
+        "success": False, "grants": [], "is_public": False,
+        "public_permissions": [], "owner_display": None,
+        "error_code": None, "error_message_sanitized": None,
+    }
+    kw: dict[str, Any] = {"Bucket": bucket, "Key": key}
+    if version_id:
+        kw["VersionId"] = version_id
+    try:
+        client = client_factory.build_s3_client(conn, provider_id)
+        resp = client.get_object_acl(**kw)
+    except ClientError as exc:
+        code = (exc.response or {}).get("Error", {}).get("Code")
+        if code in _UNSUPPORTED_CODES:
+            return {**base, "success": True, "acl_status": PROVIDER_UNSUPPORTED}
+        return {**base, **_client_error_fields(exc), "success": False}
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc), "success": False}
+
+    grants: list[dict[str, Any]] = []
+    public_perms: list[str] = []
+    for g in (resp.get("Grants") or [])[:SAMPLE_KEYS_LIMIT]:
+        grantee = g.get("Grantee") or {}
+        kind = _grantee_kind(grantee)
+        perm = g.get("Permission")
+        grants.append({"grantee_kind": kind, "permission": perm})
+        if kind in ("public-all-users", "authenticated-users") and perm:
+            public_perms.append(perm)
+    # Owner reduced to whether one exists — the DisplayName/ID identify an account.
+    owner = resp.get("Owner") or {}
+    return {
+        **base,
+        "success": True,
+        "acl_status": AVAILABLE,
+        "grants": grants,
+        "grant_count": len(resp.get("Grants") or []),
+        "is_public": bool(public_perms),
+        "public_permissions": sorted(set(public_perms)),
+        "owner_display": "present" if (owner.get("ID") or owner.get("DisplayName")) else None,
+    }
+
+
+def get_object_tagging(
+    conn: sqlite3.Connection, provider_id: str, bucket: str, key: str,
+    version_id: str | None = None,
+) -> dict[str, Any]:
+    """Read one object's tag set (read-only GetObjectTagging; no body). Tags drive
+    lifecycle/cost-attribution/access rules, so "what tags does this object carry?"
+    is a real diagnostic. Both tag keys and values are redacted (they are
+    user-controlled and may embed secrets). Bounded to 20 tags. An untagged object
+    is a normal empty result; a provider without object tagging → provider_unsupported.
+    """
+    base = {
+        "success": False, "tags": {}, "tag_count": 0,
+        "error_code": None, "error_message_sanitized": None,
+    }
+    kw: dict[str, Any] = {"Bucket": bucket, "Key": key}
+    if version_id:
+        kw["VersionId"] = version_id
+    try:
+        client = client_factory.build_s3_client(conn, provider_id)
+        resp = client.get_object_tagging(**kw)
+    except ClientError as exc:
+        code = (exc.response or {}).get("Error", {}).get("Code")
+        if code in _UNSUPPORTED_CODES:
+            return {**base, "success": True, "tagging_status": PROVIDER_UNSUPPORTED}
+        return {**base, **_client_error_fields(exc), "success": False}
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc), "success": False}
+
+    tagset = resp.get("TagSet") or []
+    tags: dict[str, str] = {}
+    for t in tagset[:SAMPLE_KEYS_LIMIT]:
+        k = redact_text(str(t.get("Key", "")))
+        if k:
+            tags[k] = redact_text(str(t.get("Value", "")))
+    return {
+        **base, "success": True, "tagging_status": AVAILABLE,
+        "tags": tags, "tag_count": len(tagset),
+    }
+
+
+def get_object_attributes(
+    conn: sqlite3.Connection, provider_id: str, bucket: str, key: str,
+    version_id: str | None = None,
+) -> dict[str, Any]:
+    """Read one object's attributes — checksum, part count, storage class, size
+    (read-only GetObjectAttributes; no body). Answers "how was this multipart
+    object assembled?", "what checksum algorithm protects it?", "what storage
+    class / size is it?" without a HEAD-then-GET dance. GetObjectAttributes is not
+    universally implemented by S3-compatible providers → provider_unsupported on gap.
+    """
+    base = {
+        "success": False, "storage_class": None, "size": None,
+        "etag": None, "checksum_algorithm": None, "parts_count": None,
+        "error_code": None, "error_message_sanitized": None,
+    }
+    kw: dict[str, Any] = {
+        "Bucket": bucket, "Key": key,
+        "ObjectAttributes": ["ETag", "Checksum", "ObjectParts", "StorageClass", "ObjectSize"],
+    }
+    if version_id:
+        kw["VersionId"] = version_id
+    try:
+        client = client_factory.build_s3_client(conn, provider_id)
+        resp = client.get_object_attributes(**kw)
+    except ClientError as exc:
+        code = (exc.response or {}).get("Error", {}).get("Code")
+        if code in _UNSUPPORTED_CODES:
+            return {**base, "success": True, "attributes_status": PROVIDER_UNSUPPORTED}
+        return {**base, **_client_error_fields(exc), "success": False}
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc), "success": False}
+
+    checksum = resp.get("Checksum") or {}
+    algo = next((k.replace("Checksum", "") for k in checksum if k.startswith("Checksum")), None)
+    parts = resp.get("ObjectParts") or {}
+    return {
+        **base, "success": True, "attributes_status": AVAILABLE,
+        "storage_class": resp.get("StorageClass") or "STANDARD",
+        "size": resp.get("ObjectSize"),
+        "etag": resp.get("ETag"),
+        "checksum_algorithm": algo,
+        "parts_count": parts.get("TotalPartsCount"),
+    }

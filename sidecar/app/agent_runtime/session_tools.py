@@ -275,6 +275,50 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     @function_tool
+    def get_object_acl(provider_id: str, bucket: str, key: str, version_id: str = "") -> str:
+        """Read ONE object's ACL — who is granted what (read-only GetObjectAcl; no body). Use for "is THIS object public?" or "who can read this object?" — bucket-level security review shows only the bucket's posture, not a specific object's grants (an object can be public even under a locked-down bucket). Grantees are reduced to a KIND (public-all-users / authenticated-users / canonical-user / log-delivery / email-user) so no owner id, canonical id, or email leaks; a public grant (AllUsers/AuthenticatedUsers) sets is_public with the granted permissions. A provider without object-ACL support reports acl_status='provider_unsupported', not an error. Args: provider_id, bucket, key, version_id? (a specific version)."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Call list_providers first.")
+        denial = scope_denial(p, bucket, key=key)
+        if denial:
+            return _err(denial)
+        rec("get_object_acl", provider_id=provider_id, bucket=bucket, key=key)
+        res = s3.get_object_acl(conn, provider_id, bucket, key, version_id or None)
+        note("get_object_acl", f"{bucket}/{key}", "public" if res.get("is_public") else res.get("acl_status", res))
+        return json.dumps(res)
+
+    @function_tool
+    def get_object_tagging(provider_id: str, bucket: str, key: str, version_id: str = "") -> str:
+        """Read ONE object's tag set (read-only GetObjectTagging; no body). Object tags drive lifecycle rules, cost attribution, and tag-based access policies, so "what tags does this object carry?" is a real diagnostic (e.g. why a lifecycle/tag-scoped policy does or doesn't apply to it). Both tag keys and values are redacted defensively (they are user-controlled). Bounded to 20 tags. An untagged object is a normal empty result; a provider without object tagging reports tagging_status='provider_unsupported'. Args: provider_id, bucket, key, version_id?."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Call list_providers first.")
+        denial = scope_denial(p, bucket, key=key)
+        if denial:
+            return _err(denial)
+        rec("get_object_tagging", provider_id=provider_id, bucket=bucket, key=key)
+        res = s3.get_object_tagging(conn, provider_id, bucket, key, version_id or None)
+        note("get_object_tagging", f"{bucket}/{key}",
+             f"{res.get('tag_count', 0)} tags" if res.get("success") else res)
+        return json.dumps(res)
+
+    @function_tool
+    def get_object_attributes(provider_id: str, bucket: str, key: str, version_id: str = "") -> str:
+        """Read ONE object's attributes — checksum algorithm, multipart part count, storage class, size (read-only GetObjectAttributes; no body). Use for "how was this large object assembled (how many parts)?", "what checksum protects it?", or a storage-class/size check without a HEAD-then-GET dance. GetObjectAttributes is not universally implemented by S3-compatible providers → attributes_status='provider_unsupported' on gap (fall back to head_object). Args: provider_id, bucket, key, version_id?."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Call list_providers first.")
+        denial = scope_denial(p, bucket, key=key)
+        if denial:
+            return _err(denial)
+        rec("get_object_attributes", provider_id=provider_id, bucket=bucket, key=key)
+        res = s3.get_object_attributes(conn, provider_id, bucket, key, version_id or None)
+        note("get_object_attributes", f"{bucket}/{key}",
+             res.get("attributes_status", res) if res.get("success") else res)
+        return json.dumps(res)
+
+    @function_tool
     def test_range_get(provider_id: str, bucket: str, key: str, range_header: str = "bytes=0-1023") -> str:
         """Test a bounded ranged read of one object (read-only GET with a Range header; reads at most the requested bytes). Use to verify range-GET support, partial-read latency, or CDN/range behavior. Args: provider_id, bucket, key, range_header? (default bytes=0-1023)."""
         p = provider(provider_id)
@@ -389,7 +433,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
 
     @function_tool
     def get_bucket_config_detail(provider_id: str, bucket: str, aspect: str) -> str:
-        """Read the SANITIZED RULE DETAIL of one bucket-config aspect (read-only GET). The config review tools return only a status/boolean for these; this returns the actual rules a diagnosis needs — so you don't have to ask the user for the config. `aspect` is one of: 'replication' (per-rule status, prefix/tag filter, delete-marker replication, destination bucket), 'notification' (per-target type topic/queue/lambda/eventbridge + resource name, events, prefix/suffix filter — use for "my event/Lambda isn't firing"), 'cors' (allowed origins/methods/headers — use for browser CORS failures), 'logging' (the access-log target bucket/prefix), 'lifecycle' (per-rule prefix/status, transitions, expiration, noncurrent/abort-MPU cleanup), 'encryption' (SSE algorithm + reduced KMS key + bucket-key), 'public_access_block' (the four block/ignore/restrict booleans), 'policy' (per-statement effect/actions/is_public — principal reduced to '*'/'specific', never the raw ARN), 'inventory' (per-config schedule/destination/format/included-versions/optional-fields). ARNs are reduced (no account IDs), values redacted, ≤20 rules. A provider lacking the API returns status='provider_unsupported', not an error. Args: provider_id, bucket, aspect."""
+        """Read the SANITIZED RULE DETAIL of one bucket-config aspect (read-only GET). The config review tools return only a status/boolean for these; this returns the actual rules a diagnosis needs — so you don't have to ask the user for the config. `aspect` is one of: 'replication' (per-rule status, prefix/tag filter, delete-marker replication, destination bucket), 'notification' (per-target type topic/queue/lambda/eventbridge + resource name, events, prefix/suffix filter — use for "my event/Lambda isn't firing"), 'cors' (allowed origins/methods/headers — use for browser CORS failures), 'logging' (the access-log target bucket/prefix), 'lifecycle' (per-rule prefix/status, transitions, expiration, noncurrent/abort-MPU cleanup), 'encryption' (SSE algorithm + reduced KMS key + bucket-key), 'public_access_block' (the four block/ignore/restrict booleans), 'policy' (per-statement effect/actions/is_public — principal reduced to '*'/'specific', never the raw ARN), 'inventory' (per-config schedule/destination/format/included-versions/optional-fields), 'website' (static-hosting index/error docs, redirect host, routing-rule count), 'intelligent_tiering' (per-config status, filter, tiering days/access-tiers), 'accelerate' (Transfer Acceleration status), 'request_payment' (Requester Pays vs BucketOwner). ARNs are reduced (no account IDs), values redacted, ≤20 rules. A provider lacking the API returns status='provider_unsupported', not an error. Args: provider_id, bucket, aspect."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -408,6 +452,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
     tools = [list_providers, list_buckets, head_bucket, list_objects,
              list_object_versions, list_multipart_uploads,
              test_credentials, head_object, get_object_lock_status,
+             get_object_acl, get_object_tagging, get_object_attributes,
              test_range_get, preview_object, measure_request_latency,
              test_addressing_style, inspect_endpoint_tls,
              get_bucket_config_detail, read_skill]

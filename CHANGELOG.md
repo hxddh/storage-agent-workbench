@@ -6,6 +6,43 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.16] - 2026-07-14
+
+_Config-read coverage (Tier 2/3): four more read-only bucket-config aspects and
+three object-level read tools the investigator was missing. All read-only,
+provider_unsupported on gap, secret-safe (no owner id / canonical id / email
+ever leaves the ACL tool), reusing the existing `_read` / detail-extractor and
+`get_object_*` machinery._
+
+### Added
+
+- **Four more bucket-config aspects.** `get_bucket_config_summary` and
+  `get_bucket_config_detail` now also cover `website` (static-hosting index/error
+  documents, redirect host reduced to a hostname, routing-rule count),
+  `intelligent_tiering` (per-config status, filter, tiering days/access-tiers —
+  the modern cost-tiering posture), `accelerate` (Transfer Acceleration status),
+  and `request_payment` (Requester Pays vs BucketOwner). `get_bucket_config_detail`
+  now dispatches 13 aspects, up from 9.
+- **Object-level read tools: `get_object_acl`, `get_object_tagging`,
+  `get_object_attributes`.** Bucket-level review can't answer object-scoped
+  questions, so the agent gains three read-only object tools:
+  - `get_object_acl` — "is THIS object public?" / "who is granted what?" An
+    object can be public even under a locked-down bucket. Grantees are reduced to
+    a KIND (`public-all-users` / `authenticated-users` / `canonical-user` /
+    `log-delivery` / `email-user`) so **no owner id, canonical id, or email
+    leaks**; a grant to AllUsers/AuthenticatedUsers sets `is_public` with the
+    granted permissions.
+  - `get_object_tagging` — the object's tag set (keys and values redacted; tags
+    drive lifecycle/cost-attribution/tag-scoped policies), bounded to 20 tags.
+  - `get_object_attributes` — checksum algorithm, multipart part count, storage
+    class, and size in one read-only GetObjectAttributes (no body), for "how was
+    this large object assembled?" / checksum / storage-class checks. Not
+    universally implemented → `attributes_status='provider_unsupported'` on gap
+    (fall back to `head_object`).
+
+  All three honor the same allowed_buckets + allowed_prefixes scope as the other
+  object tools, are audited, and download no object body.
+
 ## [0.24.15] - 2026-07-14
 
 _Config-read coverage (Tier 1): the security/compliance APIs a review agent

@@ -92,6 +92,7 @@ def test_session_investigator_exposes_full_readonly_diagnostic_surface():
         "list_providers", "list_buckets", "head_bucket", "list_objects",
         "list_object_versions", "list_multipart_uploads",
         "test_credentials", "head_object", "get_object_lock_status",
+        "get_object_acl", "get_object_tagging", "get_object_attributes",
         "test_range_get", "preview_object", "measure_request_latency",
         "test_addressing_style", "inspect_endpoint_tls", "read_skill",
         "get_bucket_config_summary", "review_bucket_security",

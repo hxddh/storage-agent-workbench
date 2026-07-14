@@ -238,6 +238,9 @@ Allowed MVP tool groups:
 - `list_objects` (agent tool; internal S3 helper is `list_objects_v2`)
 - `head_object`
 - `get_object_lock_status` (read-only, one object — retention mode + retain-until + legal hold; "why can't I delete this object?")
+- `get_object_acl` (read-only, one object — grants reduced to grantee KIND, `is_public` flag; "is this object public?" — no owner/canonical id or email leaks)
+- `get_object_tagging` (read-only, one object — tag set, keys+values redacted, ≤20 tags)
+- `get_object_attributes` (read-only, one object — checksum/parts/storage-class/size, no body; `provider_unsupported` on gap)
 - `test_range_get`
 - `preview_object` (bounded ≤1 MiB, read-only, sanitized, text-only, per-turn budget)
 - `measure_request_latency` (read-only, bounded head round-trips — live min/p50/p95/max latency; probe, not load test; per-turn budget)

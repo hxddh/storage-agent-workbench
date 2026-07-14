@@ -110,6 +110,11 @@ _CONFIG_READS = [
     ("policy_status", "get_bucket_policy_status"),
     ("ownership", "get_bucket_ownership_controls"),
     ("object_lock", "get_object_lock_configuration"),
+    # Hosting / cost-tiering / transfer posture (Tier 2/3).
+    ("website", "get_bucket_website"),
+    ("intelligent_tiering", "list_bucket_intelligent_tiering_configurations"),
+    ("accelerate", "get_bucket_accelerate_configuration"),
+    ("request_payment", "get_bucket_request_payment"),
 ]
 
 
@@ -179,6 +184,10 @@ _DETAIL_ASPECTS = {
     "public_access_block": "get_public_access_block",
     "policy": "get_bucket_policy",
     "inventory": "list_bucket_inventory_configurations",
+    "website": "get_bucket_website",
+    "intelligent_tiering": "list_bucket_intelligent_tiering_configurations",
+    "accelerate": "get_bucket_accelerate_configuration",
+    "request_payment": "get_bucket_request_payment",
 }
 _MAX_DETAIL_RULES = 20
 
@@ -385,6 +394,57 @@ def _detail_inventory(data: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _detail_website(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Static-website hosting config. RedirectAllRequestsTo host is reduced
+    (hostname only, redacted); routing rules are counted, not dumped."""
+    idx = (data.get("IndexDocument") or {}).get("Suffix")
+    err = (data.get("ErrorDocument") or {}).get("Key")
+    redir = data.get("RedirectAllRequestsTo") or {}
+    routing = data.get("RoutingRules") or []
+    if not any([idx, err, redir, routing]):
+        return []
+    return [{
+        "index_document": redact_text(str(idx)) if idx else None,
+        "error_document": redact_text(str(err)) if err else None,
+        "redirect_all_to_host": redact_text(str(redir.get("HostName"))) if redir.get("HostName") else None,
+        "redirect_protocol": redir.get("Protocol"),
+        "routing_rule_count": len(routing),
+    }]
+
+
+def _detail_intelligent_tiering(data: dict[str, Any]) -> list[dict[str, Any]]:
+    out = []
+    for c in (data.get("IntelligentTieringConfigurationList") or [])[:_MAX_DETAIL_RULES]:
+        flt = c.get("Filter") or {}
+        prefix = flt.get("Prefix")
+        if prefix is None and flt.get("And"):
+            prefix = (flt.get("And") or {}).get("Prefix")
+        out.append({
+            "id": redact_text(str(c.get("Id", "")))[:120] or None,
+            "status": c.get("Status"),
+            "filter_prefix": redact_text(str(prefix)) if prefix else None,
+            "has_tag_filter": bool(flt.get("Tag") or (flt.get("And") or {}).get("Tags")),
+            "tierings": [
+                {"days": t.get("Days"), "access_tier": t.get("AccessTier")}
+                for t in (c.get("Tierings") or [])][:10],
+        })
+    return out
+
+
+def _detail_accelerate(data: dict[str, Any]) -> list[dict[str, Any]]:
+    status = data.get("Status")
+    if not status:  # never enabled → no acceleration
+        return []
+    return [{"status": status}]
+
+
+def _detail_request_payment(data: dict[str, Any]) -> list[dict[str, Any]]:
+    payer = data.get("Payer")
+    if not payer:
+        return []
+    return [{"payer": payer, "requester_pays": payer == "Requester"}]
+
+
 _DETAIL_EXTRACTORS = {
     "replication": _detail_replication,
     "notification": _detail_notification,
@@ -395,6 +455,10 @@ _DETAIL_EXTRACTORS = {
     "public_access_block": _detail_pab,
     "policy": _detail_policy,
     "inventory": _detail_inventory,
+    "website": _detail_website,
+    "intelligent_tiering": _detail_intelligent_tiering,
+    "accelerate": _detail_accelerate,
+    "request_payment": _detail_request_payment,
 }
 
 
@@ -403,7 +467,8 @@ def get_bucket_config_detail(conn: sqlite3.Connection, provider_id: str, bucket:
     """Sanitized RULE detail for one config aspect (read-only GET).
 
     ``aspect`` ∈ replication | notification | cors | logging | lifecycle |
-    encryption | public_access_block | policy | inventory. Returns
+    encryption | public_access_block | policy | inventory | website |
+    intelligent_tiering | accelerate | request_payment. Returns
     ``{aspect, status, rules}`` where ``status`` is available / not_configured /
     provider_unsupported / access_denied / error (rule 18: a provider that lacks
     the API is 'provider_unsupported', not a failure) and ``rules`` is the bounded,
