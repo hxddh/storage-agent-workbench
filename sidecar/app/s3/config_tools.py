@@ -50,6 +50,8 @@ _NOT_CONFIGURED_CODES = {
     "NoSuchTagSetError",
     "NoSuchConfiguration",
     "NoSuchWebsiteConfiguration",
+    "ObjectLockConfigurationNotFoundError",
+    "OwnershipControlsNotFoundError",
 }
 _UNSUPPORTED_CODES = {"NotImplemented", "MethodNotAllowed", "NotSupported", "Unsupported"}
 _DENIED_CODES = {"AccessDenied", "Forbidden", "AllAccessDisabled", "UnauthorizedAccess"}
@@ -104,6 +106,10 @@ _CONFIG_READS = [
     ("replication", "get_bucket_replication"),
     ("notification", "get_bucket_notification_configuration"),
     ("tagging", "get_bucket_tagging"),
+    # Authoritative "is this bucket public?" + modern access-control posture.
+    ("policy_status", "get_bucket_policy_status"),
+    ("ownership", "get_bucket_ownership_controls"),
+    ("object_lock", "get_object_lock_configuration"),
 ]
 
 
@@ -168,6 +174,11 @@ _DETAIL_ASPECTS = {
     "notification": "get_bucket_notification_configuration",
     "cors": "get_bucket_cors",
     "logging": "get_bucket_logging",
+    "lifecycle": "get_bucket_lifecycle_configuration",
+    "encryption": "get_bucket_encryption",
+    "public_access_block": "get_public_access_block",
+    "policy": "get_bucket_policy",
+    "inventory": "list_bucket_inventory_configurations",
 }
 _MAX_DETAIL_RULES = 20
 
@@ -269,11 +280,121 @@ def _detail_logging(data: dict[str, Any]) -> list[dict[str, Any]]:
     }]
 
 
+def _detail_lifecycle(data: dict[str, Any]) -> list[dict[str, Any]]:
+    out = []
+    for r in (data.get("Rules") or [])[:_MAX_DETAIL_RULES]:
+        flt = r.get("Filter") or {}
+        prefix = r.get("Prefix") if r.get("Prefix") is not None else flt.get("Prefix")
+        if prefix is None and flt.get("And"):
+            prefix = (flt.get("And") or {}).get("Prefix")
+        exp = r.get("Expiration") or {}
+        out.append({
+            "id": redact_text(str(r.get("ID", "")))[:120] or None,
+            "status": r.get("Status"),
+            "prefix": redact_text(str(prefix)) if prefix else None,
+            "has_tag_filter": bool(flt.get("Tag") or (flt.get("And") or {}).get("Tags")),
+            "transitions": [
+                {"days": t.get("Days"),
+                 "date": str(t.get("Date")) if t.get("Date") else None,
+                 "storage_class": t.get("StorageClass")}
+                for t in (r.get("Transitions") or [])][:10],
+            "expiration_days": exp.get("Days"),
+            "expiration_date": str(exp.get("Date")) if exp.get("Date") else None,
+            "expired_object_delete_marker": exp.get("ExpiredObjectDeleteMarker"),
+            "noncurrent_expiration_days": (r.get("NoncurrentVersionExpiration") or {}).get("NoncurrentDays"),
+            "abort_incomplete_mpu_days": (r.get("AbortIncompleteMultipartUpload") or {}).get("DaysAfterInitiation"),
+        })
+    return out
+
+
+def _detail_encryption(data: dict[str, Any]) -> list[dict[str, Any]]:
+    rules = ((data.get("ServerSideEncryptionConfiguration") or {}).get("Rules")) or []
+    out = []
+    for r in rules[:_MAX_DETAIL_RULES]:
+        d = r.get("ApplyServerSideEncryptionByDefault") or {}
+        out.append({
+            "sse_algorithm": d.get("SSEAlgorithm"),
+            # KMS key ARN/id reduced (account id stripped) — never the raw key id.
+            "kms_key": _arn_resource(d.get("KMSMasterKeyID")) if d.get("KMSMasterKeyID") else None,
+            "bucket_key_enabled": r.get("BucketKeyEnabled"),
+        })
+    return out
+
+
+def _detail_pab(data: dict[str, Any]) -> list[dict[str, Any]]:
+    c = data.get("PublicAccessBlockConfiguration") or {}
+    return [{
+        "block_public_acls": c.get("BlockPublicAcls"),
+        "ignore_public_acls": c.get("IgnorePublicAcls"),
+        "block_public_policy": c.get("BlockPublicPolicy"),
+        "restrict_public_buckets": c.get("RestrictPublicBuckets"),
+    }]
+
+
+def _detail_policy(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Per-statement SUMMARY of the bucket policy — NEVER the raw document. The
+    principal is reduced to '*' (public) / 'specific' so no account id or ARN
+    leaks; the public+Allow combination is flagged explicitly."""
+    try:
+        doc = json.loads(data.get("Policy", "{}"))
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return []
+    stmts = doc.get("Statement") or []
+    if isinstance(stmts, dict):
+        stmts = [stmts]
+    out = []
+    for s in stmts[:_MAX_DETAIL_RULES]:
+        principal = s.get("Principal")
+        if principal == "*":
+            princ: str | None = "*"
+        elif isinstance(principal, dict):
+            aws = principal.get("AWS")
+            vals = aws if isinstance(aws, list) else ([aws] if aws else [])
+            princ = "*" if any(v == "*" for v in vals) else "specific"
+        else:
+            princ = "specific" if principal else None
+        actions = s.get("Action")
+        actions = actions if isinstance(actions, list) else ([actions] if actions else [])
+        out.append({
+            "sid": redact_text(str(s.get("Sid", "")))[:120] or None,
+            "effect": s.get("Effect"),
+            "principal": princ,  # '*' (public) or 'specific' — never the raw ARN
+            "is_public": princ == "*" and s.get("Effect") == "Allow",
+            "actions": [str(a) for a in actions][:20],
+            "has_condition": bool(s.get("Condition")),
+        })
+    return out
+
+
+def _detail_inventory(data: dict[str, Any]) -> list[dict[str, Any]]:
+    out = []
+    for c in (data.get("InventoryConfigurationList") or [])[:_MAX_DETAIL_RULES]:
+        dest = ((c.get("Destination") or {}).get("S3BucketDestination")) or {}
+        flt = c.get("Filter") or {}
+        out.append({
+            "id": redact_text(str(c.get("Id", "")))[:120] or None,
+            "enabled": c.get("IsEnabled"),
+            "schedule": (c.get("Schedule") or {}).get("Frequency"),
+            "included_object_versions": c.get("IncludedObjectVersions"),
+            "destination_bucket": _arn_resource(dest.get("Bucket")),
+            "destination_prefix": redact_text(str(dest.get("Prefix") or "")) or None,
+            "format": dest.get("Format"),
+            "filter_prefix": redact_text(str(flt.get("Prefix") or "")) or None,
+            "optional_fields": [str(f) for f in (c.get("OptionalFields") or [])][:30],
+        })
+    return out
+
+
 _DETAIL_EXTRACTORS = {
     "replication": _detail_replication,
     "notification": _detail_notification,
     "cors": _detail_cors,
     "logging": _detail_logging,
+    "lifecycle": _detail_lifecycle,
+    "encryption": _detail_encryption,
+    "public_access_block": _detail_pab,
+    "policy": _detail_policy,
+    "inventory": _detail_inventory,
 }
 
 
@@ -281,7 +402,8 @@ def get_bucket_config_detail(conn: sqlite3.Connection, provider_id: str, bucket:
                              aspect: str) -> dict[str, Any]:
     """Sanitized RULE detail for one config aspect (read-only GET).
 
-    ``aspect`` ∈ replication | notification | cors | logging. Returns
+    ``aspect`` ∈ replication | notification | cors | logging | lifecycle |
+    encryption | public_access_block | policy | inventory. Returns
     ``{aspect, status, rules}`` where ``status`` is available / not_configured /
     provider_unsupported / access_denied / error (rule 18: a provider that lacks
     the API is 'provider_unsupported', not a failure) and ``rules`` is the bounded,

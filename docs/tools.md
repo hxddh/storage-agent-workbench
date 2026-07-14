@@ -180,13 +180,19 @@ Purpose:
 
 ## Bucket config review tools
 
-- get_bucket_config_summary
-- get_bucket_config_detail — read-only, sanitized RULE detail for one aspect
-  (`replication` / `notification` / `cors` / `logging`) that the review tools
-  return only a status/boolean for. ARNs reduced to a resource label (account id
-  stripped), values redacted, ≤20 rules; a provider lacking the API returns
-  `status='provider_unsupported'`. Fills the replication/event-notification/CORS
-  skills' decision trees so the agent reads the config instead of asking for it.
+- get_bucket_config_summary — status map over ~15 config reads, including the
+  authoritative `policy_status` (is-public), `ownership` (Object Ownership /
+  ACLs-disabled), and bucket-level `object_lock`.
+- get_bucket_config_detail — read-only, sanitized RULE detail for one aspect that
+  the review tools return only a status/boolean for. Aspects: `replication`,
+  `notification`, `cors`, `logging`, `lifecycle` (transitions/expiration/cleanup),
+  `encryption` (SSE algorithm + reduced KMS key), `public_access_block` (the four
+  booleans), `policy` (per-statement effect/actions/`is_public` — principal
+  reduced to `*`/`specific`, never the raw ARN), `inventory` (schedule/
+  destination/format/fields). ARNs reduced (account id stripped), values redacted,
+  ≤20 rules; a provider lacking the API returns `status='provider_unsupported'`.
+  Fills the config skills' decision trees so the agent reads the config instead
+  of asking for it.
 - review_bucket_security
 - review_bucket_lifecycle
 - review_bucket_observability
