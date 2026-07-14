@@ -38,9 +38,14 @@ def check_scope(
       caller must list within an allowed prefix.
     """
     if allowed_buckets and bucket not in allowed_buckets:
+        # List the allowed bucket names (they are non-secret DNS-style
+        # identifiers), like the prefix branch below, so the caller can pick a
+        # valid one instead of only learning a count. Bounded to keep it short.
+        shown = ", ".join(allowed_buckets[:10])
+        more = "" if len(allowed_buckets) <= 10 else f", …(+{len(allowed_buckets) - 10} more)"
         return (
-            f"Bucket '{bucket}' is outside this provider's allowed_buckets scope "
-            f"({len(allowed_buckets)} bucket(s) allowed)."
+            f"Bucket '{bucket}' is outside this provider's allowed_buckets scope. "
+            f"Allowed: {shown}{more}."
         )
     if allowed_prefixes:
         target = key if key is not None else prefix

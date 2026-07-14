@@ -114,6 +114,32 @@ def test_security_detects_public_principal_and_anonymous_get(cfg):
     assert "CORS allows all origins" in titles
 
 
+def test_errored_config_read_surfaces_as_finding_not_silent(cfg):
+    """A genuine read error (e.g. a transient 5xx) must NOT be silently dropped —
+    otherwise the review implies the aspect is clean when it was never assessed."""
+    cfg.fake.behaviors["get_bucket_policy"] = _err("InternalError", 500)
+    conn = _conn()
+    try:
+        out = ct.review_bucket_security(conn, cfg.pid, "demo-bucket")
+    finally:
+        conn.close()
+    titles = " ".join(f["title"] for f in out["findings"])
+    cats = {f["category"] for f in out["findings"]}
+    assert "Could not read bucket policy" in titles
+    assert "Warning" in cats
+
+
+def test_summary_reports_errored_read_in_findings_and_error_items(cfg):
+    cfg.fake.behaviors["get_bucket_versioning"] = _err("InternalError", 500)
+    conn = _conn()
+    try:
+        out = ct.get_bucket_config_summary(conn, cfg.pid, "demo-bucket")
+    finally:
+        conn.close()
+    assert "versioning" in out["error_items"]
+    assert any("Could not read versioning" in f["title"] for f in out["findings"])
+
+
 def test_lifecycle_detects_missing_abort_and_noncurrent(cfg):
     conn = _conn()
     try:

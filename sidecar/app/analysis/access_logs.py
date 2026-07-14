@@ -143,6 +143,20 @@ def _nonempty_lines(path: str | Path, limit: int | None = None) -> list[str]:
 # --- tool 1: detect_log_format ----------------------------------------------
 
 
+# CSV header cells the _parse_csv column picker (pick(...) below) recognizes.
+# The detector MUST stay in sync with the parser: a valid CSV access log whose
+# header isn't recognized is detected "unknown", then ingested by the universal
+# text parser as raw null-field rows — yielding a misleadingly clean "no
+# anomalies" analysis of a log that simply wasn't parsed. Keep this set == the
+# union of pick() candidates.
+_CSV_HEADER_TOKENS = frozenset({
+    "timestamp", "time", "ts", "method", "verb", "path", "key", "uri", "request",
+    "status", "status_code", "bytes", "bytes_sent", "size", "latency_ms",
+    "latency", "duration_ms", "user_agent", "ua", "remote_ip", "client_ip", "ip",
+    "request_id", "req_id",
+})
+
+
 def detect_log_format(path: str | Path) -> dict[str, Any]:
     sample = _nonempty_lines(path, limit=20)
     fmt = "unknown"
@@ -157,9 +171,12 @@ def detect_log_format(path: str | Path) -> dict[str, Any]:
         if fmt == "unknown" and (_TEXT_RE.match(first) or _CLF_RE.match(first)):
             fmt = "text"
         if fmt == "unknown" and "," in first:
-            # Heuristic CSV: header-ish first line with known tokens.
-            lowered = first.lower()
-            if any(tok in lowered for tok in ("method", "status", "path", "key", "timestamp", "time")):
+            # CSV header: at least one comma-separated cell EXACTLY matches a
+            # column the parser understands (exact match, like pick() — not a
+            # substring test, so short tokens like "ip"/"ts" can't false-positive
+            # on arbitrary prose).
+            cells = {c.strip().lower() for c in first.split(",")}
+            if cells & _CSV_HEADER_TOKENS:
                 fmt = "csv"
     return {"format": fmt, "sampled_lines": len(sample)}
 

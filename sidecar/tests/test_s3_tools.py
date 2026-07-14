@@ -106,6 +106,18 @@ def test_credentials_auth_failure(client, cloud_id, stub):
     assert body["error_code"] == "InvalidAccessKeyId"
 
 
+def test_credentials_forbidden_listbuckets_is_valid_creds(client, cloud_id, stub):
+    """A provider that returns Forbidden (not the exact 'AccessDenied' code) on
+    ListBuckets has VALID credentials that just can't list — mirror list_buckets'
+    full denied-code set instead of reporting the keys as broken."""
+    _, s = stub
+    s.add_client_error("list_buckets", service_error_code="Forbidden", http_status_code=403)
+    with _db() as conn:
+        body = s3.test_credentials(conn, cloud_id)
+    assert body["success"] is True
+    assert body["identity_hint"] == "authenticated (ListBuckets denied)"
+
+
 def test_cloud_provider_test_endpoint_runs_real_check(client, cloud_id, stub):
     _, s = stub
     s.add_response("list_buckets", {"Buckets": [], "Owner": {"ID": "abc"}})
@@ -236,6 +248,8 @@ def test_list_objects_v2_clamped_to_hard_cap(client, cloud_id, stub):
         json={"provider_id": cloud_id, "bucket": BUCKET, "max_keys": 999999},
     ).json()
     assert body["success"] is True  # would raise StubAssertionError if MaxKeys != 1000
+    # The clamp is reported, never silent: requested vs applied.
+    assert body["max_keys_requested"] == 999999 and body["max_keys_applied"] == 1000
 
 
 def test_list_objects_v2_paginates_and_lists_recursively(client, cloud_id, stub):
@@ -771,7 +785,9 @@ def test_measure_request_latency_clamps_samples(client, cloud_id, stub):
         s.add_response("head_bucket", {}, expected_params={"Bucket": BUCKET})
     with _db() as conn:
         res = s3.measure_request_latency(conn, cloud_id, BUCKET, None, 100)
-    assert res["samples_requested"] == s3.LATENCY_MAX_SAMPLES
+    # The request (100) is echoed verbatim; the applied value shows the clamp to 10.
+    assert res["samples_requested"] == 100
+    assert res["samples_applied"] == s3.LATENCY_MAX_SAMPLES
     assert res["samples_ok"] == s3.LATENCY_MAX_SAMPLES
 
 
@@ -904,6 +920,45 @@ def test_get_object_acl_provider_unsupported(client, cloud_id, stub):
     with _db() as conn:
         res = s3.get_object_acl(conn, cloud_id, BUCKET, "k")
     assert res["success"] is True and res["acl_status"] == "provider_unsupported"
+
+
+def test_get_object_acl_public_grant_beyond_sample_still_flags_public(client, cloud_id, stub):
+    """is_public is a SECURITY signal — it must scan EVERY grant, not just the 20
+    echoed back. A public AllUsers grant at position 22 must still flip is_public."""
+    from app.s3 import tools as s3
+
+    _, s = stub
+    grants = [{"Grantee": {"Type": "CanonicalUser", "ID": f"u{i}"}, "Permission": "READ"}
+              for i in range(21)]
+    grants.append({"Grantee": {"Type": "Group", "URI": _PUBLIC_URI}, "Permission": "READ"})  # index 21
+    s.add_response("get_object_acl", {"Owner": {"ID": "o"}, "Grants": grants},
+                   expected_params={"Bucket": BUCKET, "Key": "big-acl"})
+    with _db() as conn:
+        res = s3.get_object_acl(conn, cloud_id, BUCKET, "big-acl")
+    assert res["success"] is True
+    assert res["grant_count"] == 22           # full total reported
+    assert len(res["grants"]) == 20           # sample still bounded
+    assert res["is_public"] is True           # public grant past the sample still counts
+    assert res["public_permissions"] == ["READ"]
+
+
+def test_object_tools_treat_501_and_notsupported_as_unsupported(client, cloud_id, stub):
+    """Rule 18: an S3-compatible provider lacking the API (bare 501, or a
+    NotSupported/Unsupported code) is provider_unsupported, not a hard error."""
+    from app.s3 import tools as s3
+
+    _, s = stub
+    # Bare 501 with a non-listed code → unsupported (widened http check).
+    s.add_client_error("get_object_tagging", service_error_code="ServerSideError",
+                       http_status_code=501)
+    # NotSupported code (added to the set) → unsupported.
+    s.add_client_error("get_object_attributes", service_error_code="NotSupported",
+                       http_status_code=400)
+    with _db() as conn:
+        tag = s3.get_object_tagging(conn, cloud_id, BUCKET, "k")
+        attr = s3.get_object_attributes(conn, cloud_id, BUCKET, "k")
+    assert tag["success"] is True and tag["tagging_status"] == "provider_unsupported"
+    assert attr["success"] is True and attr["attributes_status"] == "provider_unsupported"
 
 
 # --- get_object_tagging (redacted keys + values) ----------------------------

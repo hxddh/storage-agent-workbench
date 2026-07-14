@@ -68,6 +68,31 @@ def test_detect_log_format_jsonl(tmp_path):
     assert access_logs.detect_log_format(p)["format"] == "jsonl"
 
 
+def test_detect_log_format_csv_with_alternate_headers(tmp_path):
+    """A valid CSV access log whose header uses parser-supported synonyms
+    (verb/uri/code/size/ua/ip — not the old narrow method/status/path set) must be
+    detected as csv, not 'unknown' (which would be misparsed into null-field rows
+    and a falsely-clean analysis)."""
+    csv = ("ts,verb,uri,status,size,ua,ip\n"
+           "2024-01-01T00:00:00Z,GET,/a/obj.bin,200,1024,curl/8,10.0.0.1\n"
+           "2024-01-01T00:01:00Z,GET,/a/missing,404,0,curl/8,10.0.0.2\n")
+    p = _write(tmp_path, "log.csv", csv)
+    assert access_logs.detect_log_format(p)["format"] == "csv"
+    # And it actually parses into populated status codes (not raw null rows).
+    duckdb_path = tmp_path / "c.duckdb"
+    access_logs.import_access_logs(p, duckdb_path, "csv")
+    m = access_logs.analyze_access_logs(duckdb_path)
+    assert m["total_requests"] == 2
+    assert m["error_rate_4xx"] == 0.5  # the 404 is seen, not lost to misparse
+
+
+def test_detect_log_format_prose_with_comma_is_not_csv(tmp_path):
+    """Guard the exact-cell match: arbitrary comma-containing prose (no header
+    cell equal to a known token) must NOT be misdetected as csv."""
+    p = _write(tmp_path, "note.txt", "hello, this is not a log file at all\n")
+    assert access_logs.detect_log_format(p)["format"] != "csv"
+
+
 def test_import_access_logs_creates_duckdb_table(tmp_path):
     p = _write(tmp_path, "a.log", ACCESS_LOG_TEXT)
     duckdb_path = tmp_path / "a.duckdb"

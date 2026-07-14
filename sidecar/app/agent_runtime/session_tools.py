@@ -184,7 +184,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
     @function_tool
     def list_objects(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 200,
                      continuation_token: str = "", recursive: bool = False) -> str:
-        """List one page of object keys (read-only ListObjectsV2, up to 1000 per call; no object bodies). To enumerate fully, PAGE: re-call with continuation_token = the previous result's next_token until next_token is null, accumulating result.keys. Set recursive=true to list keys flat under the prefix (no '/' directory grouping). Args: provider_id, bucket, prefix?, max_keys? (up to 1000), continuation_token?, recursive?."""
+        """List one page of object keys (read-only ListObjectsV2, up to 1000 per call; no object bodies). To enumerate fully, PAGE: re-call with continuation_token = the previous result's next_token until next_token is null, accumulating result.keys. Set recursive=true to list keys flat under the prefix (no '/' directory grouping). The echoed `keys` list is capped at 500 per call — if `keys_truncated_in_context` is true, `key_count` is the real page size and the rest are on the next page (re-page), so don't treat the 500 you see as the whole page. For a bucket far larger than paging can cover, propose an inventory analysis instead. Args: provider_id, bucket, prefix?, max_keys? (up to 1000), continuation_token?, recursive?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -329,8 +329,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
             return _err(denial)
         if range_budget["n"] >= _MAX_RANGE_GETS:
             return _err(f"Ranged-read budget for this turn is used up ({_MAX_RANGE_GETS} calls). "
-                        "Report the range behavior you already measured, or ask the user "
-                        "which object matters most.")
+                        "Report the range behavior you already measured; if a specific object "
+                        "still needs testing, pick the most relevant one and propose continuing. "
+                        "This budget resets on the next turn.")
         rec("test_range_get", provider_id=provider_id, bucket=bucket, key=key, range_header=range_header)
         res = s3.test_range_get(conn, provider_id, bucket, key, range_header)
         range_budget["n"] += 1
@@ -349,8 +350,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         if preview_budget["n"] >= _MAX_PREVIEWS or preview_budget["bytes"] >= _MAX_PREVIEW_BYTES:
             return _err(
                 f"Object-preview budget for this turn is used up ({_MAX_PREVIEWS} objects / "
-                f"{_MAX_PREVIEW_BYTES // (1024 * 1024)} MiB). Summarize what you found, or ask the "
-                "user which object matters most."
+                f"{_MAX_PREVIEW_BYTES // (1024 * 1024)} MiB). Synthesize from the objects you've "
+                "already previewed; if one more object is genuinely decisive, pick it and propose "
+                "continuing. This budget resets on the next turn."
             )
         rec("preview_object", provider_id=provider_id, bucket=bucket, key=key)
         res = s3.preview_object(conn, provider_id, bucket, key, max_bytes)
@@ -392,7 +394,8 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
             return _err(denial)
         if latency_budget["n"] >= _MAX_LATENCY_RUNS:
             return _err(f"Latency-probe budget for this turn is used up ({_MAX_LATENCY_RUNS} runs). "
-                        "Report the measurements you have, or ask the user which target matters most.")
+                        "Report the latency you measured; if another target still needs probing, pick "
+                        "the most relevant one and propose continuing. This budget resets on the next turn.")
         rec("measure_request_latency", provider_id=provider_id, bucket=bucket, key=key, samples=samples)
         res = s3.measure_request_latency(conn, provider_id, bucket, key or None, samples)
         latency_budget["n"] += 1

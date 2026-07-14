@@ -6,6 +6,60 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.24.17] - 2026-07-14
+
+_Correctness hardening: six classes of "the tool succeeds but returns a wrong
+answer" — the worst failure mode for a diagnostic product — plus reporting the
+caps that were applied silently. All message/classification changes; no new
+machinery, no gates, security floor unchanged._
+
+### Fixed
+
+- **`get_object_acl` now judges "is this object public?" over EVERY grant**, not
+  just the 20 echoed back. A public `AllUsers`/`AuthenticatedUsers` grant past
+  position 20 previously left `is_public: false` — silently hiding the exact
+  security signal the tool exists for. The returned `grants` sample stays capped
+  at 20; `grant_count` reports the true total. *(Regression from v0.24.16.)*
+- **Object tools classify "provider doesn't support this" as `provider_unsupported`,
+  not a hard error** (rule 18). `get_object_acl` / `get_object_tagging` /
+  `get_object_attributes` / `get_object_lock_status` now share the wider
+  unsupported-code set (`+NotSupported/Unsupported`) and honor a bare HTTP 501,
+  matching `config_tools`. An S3-compatible provider lacking object ACLs/tagging
+  was previously surfaced as a broken call. *(Partly a regression from v0.24.16.)*
+- **Access-log CSV files with valid-but-unrecognized headers are no longer
+  silently misparsed.** `detect_log_format` recognized only a tiny header token
+  set (`method/status/path/key/timestamp/time`); a valid CSV log headed e.g.
+  `ts,verb,uri,status,size,ua,ip` was detected `unknown`, then ingested by the
+  universal text parser as raw null-field rows — producing a misleadingly clean
+  "No anomalies detected." The detector now matches the **full** set of columns
+  the CSV parser actually supports, by **exact header-cell match** (so short
+  tokens like `ip`/`ts` can't false-positive on arbitrary prose). Same class of
+  bug as the v0.24.14 headerless-inventory fix.
+- **Config-read errors surface as a finding instead of vanishing.** A genuine
+  read error (e.g. a transient 5xx reading the bucket policy) produced **no
+  finding**, so `review_bucket_*` / `get_bucket_config_summary` silently implied
+  the aspect was clean. Errored reads now emit a `Warning` ("Could not read …")
+  and appear in the summary's new `error_items`, marking the aspect *unassessed*.
+- **`test_credentials` no longer reports valid credentials as broken** when a
+  provider returns `Forbidden`/`AllAccessDisabled`/a non-standard 403 on
+  ListBuckets — it now uses the same denied-code set as `list_buckets` (genuine
+  auth-failure codes still fail correctly even though they, too, are 403).
+- **Applied caps are reported, never silent.** `list_objects` returns
+  `max_keys_requested`/`max_keys_applied`, and `measure_request_latency` now
+  reports the caller's real `samples_requested` alongside the clamped
+  `samples_applied` (it previously echoed only the clamped value).
+
+### Changed
+
+- **Clearer, less-dead-ending agent/user messages.** Bucket-scope denials now
+  list the allowed bucket names (like prefix denials already did) instead of only
+  a count; per-turn probe-budget messages drop the "ask the user which object
+  matters most" framing (the agent should pick the most relevant object itself)
+  and note the budget resets next turn; the `list_objects` tool description now
+  documents the `keys_truncated_in_context` echo cap; the ORC-inventory message
+  is plain English; and `review_bucket_observability`'s inventory note points to
+  the now-available `get_bucket_config_detail` aspect instead of "future work."
+
 ## [0.24.16] - 2026-07-14
 
 _Config-read coverage (Tier 2/3): four more read-only bucket-config aspects and
