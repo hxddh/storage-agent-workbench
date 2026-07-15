@@ -279,3 +279,80 @@ def test_existing_run_apis_unaffected(client, monkeypatch):
     client.post(f"/runs/{rid}/message", json={"content": "go"})
     detail = client.get(f"/runs/{rid}").json()
     assert detail["status"] == "completed" and detail["session_id"] is None
+
+
+# --- v0.26.0: query_account_profile (cross-bucket posture from persisted survey) ---
+
+
+class _FT:
+    def __call__(self, fn):
+        fn.name = fn.__name__
+        return fn
+
+
+def _seed_survey_with_flags(session_id, provider_id, buckets):
+    """buckets: list of (name, config_flags_dict). Persists one completed survey."""
+    conn = _db()
+    try:
+        run_id = runs_repo.create(
+            conn, RunCreate(run_type="account_discovery", provider_id=provider_id,
+                            user_prompt="x", session_id=session_id), status="completed")
+        sid = account_repo.create_snapshot(conn, run_id, provider_id, bucket_count=len(buckets),
+                                           visible_count=len(buckets), processed_count=len(buckets),
+                                           truncated=False, list_status="available", summary={})
+        for name, flags in buckets:
+            account_repo.add_bucket(conn, sid, run_id, provider_id, name, "us-east-1", "available")
+            account_repo.add_config_snapshot(conn, sid, run_id, provider_id, name, flags)
+        sessions_repo.link_run(conn, session_id, run_id, "account_discovery")
+        conn.commit()
+        return run_id
+    finally:
+        conn.close()
+
+
+def _query_tool(conn):
+    from app.agent_runtime import session_action_tools
+    tools = {t.name: t for t in session_action_tools.build(conn, _FT(), [], session_id="s1")}
+    return tools["query_account_profile"]
+
+
+def test_query_account_profile_filters_by_posture(client):
+    pid = _provider(client)
+    sid = _session(client, provider_id=pid)["id"]
+    _seed_survey_with_flags(sid, pid, [
+        ("good", {"encryption_status": "available", "public_access_block_status": "available",
+                  "lifecycle_status": "available"}),
+        ("no-enc", {"encryption_status": "not_configured", "public_access_block_status": "available",
+                    "lifecycle_status": "available"}),
+        ("no-pab", {"encryption_status": "available", "public_access_block_status": "not_configured",
+                    "lifecycle_status": "not_configured"}),
+    ])
+    conn = _db()
+    try:
+        tool = _query_tool(conn)
+        allb = json.loads(tool(pid, "all"))
+        assert allb["has_survey"] is True and allb["total_buckets"] == 3 and allb["matched_count"] == 3
+        enc = json.loads(tool(pid, "missing_encryption"))
+        assert [b["bucket"] for b in enc["buckets"]] == ["no-enc"]
+        pab = json.loads(tool(pid, "missing_public_access_block"))
+        assert [b["bucket"] for b in pab["buckets"]] == ["no-pab"]
+        lc = json.loads(tool(pid, "missing_lifecycle"))
+        assert [b["bucket"] for b in lc["buckets"]] == ["no-pab"]
+        # Statuses only — no object keys/bodies leak into the matrix.
+        blob = json.dumps(allb)
+        assert "encryption_status" in blob and "Contents" not in blob
+    finally:
+        conn.close()
+
+
+def test_query_account_profile_no_survey_and_bad_filter(client):
+    pid = _provider(client)
+    conn = _db()
+    try:
+        tool = _query_tool(conn)
+        none = json.loads(tool(pid, "all"))
+        assert none["has_survey"] is False and "survey_account" in none["note"]
+        bad = json.loads(tool(pid, "bogus"))
+        assert bad.get("error") and "filter" in bad["error"].lower()
+    finally:
+        conn.close()

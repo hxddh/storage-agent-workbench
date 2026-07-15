@@ -65,10 +65,19 @@ specifics for each branch.
 
 - `survey_account` / `review_bucket_config` — the broad, bounded read-only runs
   when the question is about the account or a whole bucket's posture.
+- `query_account_profile` — after a survey, answer account-WIDE posture questions
+  ("which buckets have no encryption / no public-access-block / no lifecycle?")
+  from the persisted matrix, with a filter, instead of reviewing every bucket.
+- `compare_to_last_survey` — "what changed since last time?": a deterministic diff
+  of the provider's two most recent surveys (no new scan).
 - `list_*` / `head_*` / config readers — the fine-grained probes for a specific
-  hypothesis.
-- `analyze_uploaded_file` (after `list_uploaded_files`) — when the user attached
-  a log or inventory export; for data still in a bucket, propose an import.
+  hypothesis (`get_bucket_config_detail` returns the actual rules for one aspect;
+  `diagnose_presigned_url` / `test_conditional_get` / `get_object_acl` /
+  `list_upload_parts` are the targeted object/protocol probes).
+- `analyze_uploaded_file` / `aggregate_uploaded_file` (after `list_uploaded_files`)
+  — when the user attached a log or inventory export; `aggregate_uploaded_file`
+  runs one constrained metric+group-by when the fixed metrics don't fit. For data
+  still in a bucket, propose an import.
 - `read_run_result` — pick up a backgrounded run's result in a later turn.
 
 ## What to report

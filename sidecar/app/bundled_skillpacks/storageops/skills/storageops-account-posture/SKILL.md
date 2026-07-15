@@ -50,6 +50,14 @@ The survey gives the landscape; you decide where to go deeper.
   `public_access_block_status`, `policy_status` — plus detected `evidence_sources`
   (logging targets, inventory destinations). It reads the landscape; it is NOT a
   deep per-bucket audit.
+- `query_account_profile(provider_id, filter)` — the account-wide posture query:
+  reads the LATEST persisted survey and returns, per bucket, its region + config
+  flags, filtered by posture (`missing_public_access_block`, `missing_encryption`,
+  `missing_lifecycle`, `missing_logging`, `no_versioning`, `access_issues`, or
+  `all`). This is how you answer "which of my N buckets have no X?" at scale —
+  no re-scan, statuses only. Run `survey_account` first if none exists.
+- `compare_to_last_survey(provider_id)` — "what changed since last time?" across
+  the two most recent surveys.
 - For one bucket's full configuration, use `review_bucket_config` /
   `review_bucket_*` instead of surveying the whole account.
 - Large accounts: the survey can exceed the inline time budget and finish in the

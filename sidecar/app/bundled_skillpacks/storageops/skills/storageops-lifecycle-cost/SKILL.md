@@ -55,8 +55,14 @@ Cost concern →
 - `list_multipart_uploads` — surfaces abandoned incomplete uploads whose parts
   are billed but invisible in a normal listing. If present, propose an "abort
   incomplete multipart upload" lifecycle rule (manual — the app never aborts).
+- `list_upload_parts` — for the worst offender from `list_multipart_uploads`,
+  pass its `upload_id` here to size it: part count, **total bytes accrued**, and
+  first/last part times — the concrete "this abandoned upload has held N GB since
+  <date>" number. Listing only; still no abort.
 - `review_bucket_performance_profile` / `list_objects` — sample size
-  distribution and storage classes to judge small-file impact.
+  distribution and storage classes to judge small-file impact. `list_objects`
+  now returns per-key `objects[]` (size / storage_class / last_modified) so you
+  can sample the distribution directly, without an extra head_object per key.
 - Run `review_bucket_config` (inline, read-only) for the full lifecycle posture.
   For real per-object numbers, analyze an uploaded inventory export with
   `analyze_uploaded_file`; for an inventory still in a bucket, propose

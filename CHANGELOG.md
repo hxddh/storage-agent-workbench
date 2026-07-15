@@ -6,6 +6,49 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-07-15
+
+_Capability uplift: teach the agent's playbooks the tools it already has, and
+add the one account-wide question it structurally couldn't answer. No new S3
+surface; read-only, bounded, sanitized throughout._
+
+### Added
+
+- **`query_account_profile(provider_id, filter)`** — a new read-only agent tool
+  that answers account-WIDE posture questions ("which of my N buckets have no
+  encryption / no public-access-block / no lifecycle / logging off / no
+  versioning / access issues?") from the **already-persisted** account survey,
+  with a filter whitelist. It returns the per-bucket config-flag matrix (region +
+  logging/encryption/lifecycle/replication/policy/public_access_block/tagging/
+  inventory status) — no new S3 call, no LLM, **statuses only** (never object
+  keys or bodies). Previously this class of question forced N per-bucket reviews
+  that blew the turn's tool-output budget; the data was persisted but unqueryable.
+  Registered, provider-scoped, and audited.
+
+### Changed
+
+- **The StorageOps skills now teach the v0.24–v0.25 toolset.** Nine tools added
+  since v0.24.13 were referenced by **zero** skills, so a skill-following agent
+  still routed to the old method. Updated the affected decision trees to reach for
+  the purpose-built tool:
+  - `s3-protocol-compatibility` → `diagnose_presigned_url` (presigned 403s) +
+    `get_bucket_config_summary`'s `region_mismatch` (the #1 SigV4 cause).
+  - `security-iam-policy` → `get_object_acl` ("is THIS object public?", incl.
+    AuthenticatedUsers), `get_bucket_config_detail` policy/PAB, and
+    `query_account_profile` for account-wide exposure.
+  - `data-consistency` → `test_conditional_get` (304/200 ETag freshness probe) +
+    `head_object`'s new cache/replication/parts fields.
+  - `lifecycle-cost` → `list_upload_parts` (size a stuck upload) + `list_objects`'
+    per-key `objects[]`.
+  - `observability-audit` → `get_bucket_config_detail` (metrics / notification /
+    inventory / analytics aspects).
+  - `replication-versioning` → `head_object` replication_status/version_id +
+    `get_bucket_config_detail(replication)` + `get_object_attributes`.
+  - `workbench-investigation` / `account-posture` → `query_account_profile`,
+    `compare_to_last_survey`, `aggregate_uploaded_file`.
+  - `eval-golden-cases` → a "reach for the purpose-built tool, don't hand-wave"
+    check.
+
 ## [0.25.1] - 2026-07-15
 
 _Security + regression hotfix from the next-round audit: one prefix-scope

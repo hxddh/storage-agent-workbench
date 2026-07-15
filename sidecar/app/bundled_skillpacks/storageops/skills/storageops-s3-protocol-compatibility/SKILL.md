@@ -48,8 +48,16 @@ Protocol error →
   virtual-hosted and path-style HeadBucket and tells you which works. Many
   SignatureDoesNotMatch / "bucket not found" cases on OSS/BOS/COS are an
   addressing-style mismatch.
+- `diagnose_presigned_url` — for "my presigned URL 403s / AccessDenied": paste
+  the URL and this COMPUTES the answer (expired? clock skew? wrong region scope?
+  legacy SigV2? path vs virtual-hosted). Pure parse — no request is made and the
+  signature/key-id never leave the tool. Reach for this instead of interviewing
+  the user about the URL.
 - `test_credentials` — if signing fails outright vs. only on one operation, this
   separates a global signature problem from an operation-specific one.
+- `get_bucket_config_summary` — its `bucket_region` + `region_mismatch` fields
+  confirm the #1 SignatureDoesNotMatch cause: the bucket's real region differs
+  from the provider's configured signing region.
 - `inspect_endpoint_tls` — confirm the endpoint host/cert matches the URL being
   signed (SNI/host mismatches surface as signature or connection errors).
 - `head_bucket` — confirm a clean signed request succeeds at all.

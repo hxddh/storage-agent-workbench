@@ -341,6 +341,15 @@ tools above (choosing provider/bucket itself), plus:
   per-bucket config-aspect changes, evidence-source changes) computed from
   ALREADY-PERSISTED, sanitized snapshot data — no new S3 call, no LLM, no raw
   rows. Needs two completed surveys to compare.
+- **query_account_profile** — account-WIDE posture from the latest persisted
+  survey: "which of my N buckets have no encryption / no public-access-block / no
+  lifecycle / logging off / no versioning / access issues?" Returns the per-bucket
+  config-flag matrix (region + logging/encryption/lifecycle/replication/policy/
+  public_access_block/tagging/inventory status) filtered by a whitelist
+  (`all` | `missing_public_access_block` | `missing_encryption` |
+  `missing_lifecycle` | `missing_logging` | `no_versioning` | `access_issues`).
+  Reads ALREADY-PERSISTED, sanitized snapshot flags — no new S3 call, no LLM,
+  statuses only (never object keys/bodies). Needs one completed `survey_account`.
 
 These tools return only the deterministic engine's sanitized summary + counts
 (no raw rows, no full key lists, no object bodies) for the agent to narrate.
