@@ -63,6 +63,27 @@ _AllUsers = "http://acs.amazonaws.com/groups/global/AllUsers"
 _AuthUsers = "http://acs.amazonaws.com/groups/global/AuthenticatedUsers"
 
 
+# Legacy LocationConstraint aliases that are textually different but equivalent
+# to a canonical region name.
+_REGION_ALIASES = {"eu": "eu-west-1", "us": "us-east-1", "": "us-east-1", None: "us-east-1"}
+
+
+def _norm_region(value: Any) -> str:
+    v = (str(value).strip() if value is not None else "")
+    return _REGION_ALIASES.get(v.lower() if v else "", v) or "us-east-1"
+
+
+def _region_mismatch(bucket_region: str | None, provider_region: str | None) -> bool:
+    """True only when the bucket's real region and the provider's configured
+    region genuinely differ. Skips the flag when the provider region is unset or
+    a wildcard (`auto`, as R2 uses) — those aren't a mismatch, and false-flagging
+    them on S3-compatible providers is exactly the misdiagnosis to avoid."""
+    pr = (provider_region or "").strip().lower()
+    if not pr or pr == "auto":
+        return False
+    return _norm_region(bucket_region) != _norm_region(provider_region)
+
+
 def _read(client, method: str, **kwargs) -> dict[str, Any]:
     """Call a read-only client method, mapping failures to a structured status."""
     # Defense-in-depth: this is the one spot that resolves a client method by name
@@ -139,7 +160,7 @@ def get_bucket_config_summary(conn: sqlite3.Connection, provider_id: str, bucket
             # returns None/empty). Exposing it — with a mismatch flag against the
             # provider's configured region — makes the #1 SignatureDoesNotMatch
             # root cause (wrong signing region) checkable instead of guessable.
-            bucket_region = (read["data"] or {}).get("LocationConstraint") or "us-east-1"
+            bucket_region = _norm_region((read["data"] or {}).get("LocationConstraint"))
 
     provider_unsupported_items = [n for n, s in config_items.items() if s == PROVIDER_UNSUPPORTED]
     access_denied_items = [n for n, s in config_items.items() if s == ACCESS_DENIED]
@@ -184,7 +205,7 @@ def get_bucket_config_summary(conn: sqlite3.Connection, provider_id: str, bucket
         "endpoint_url": cfg.endpoint_url,
         "region": cfg.region,
         "bucket_region": bucket_region,
-        "region_mismatch": bool(bucket_region and cfg.region and bucket_region != cfg.region),
+        "region_mismatch": _region_mismatch(bucket_region, cfg.region),
         "config_items": config_items,
         "findings_count_by_category": counts,
         "provider_unsupported_items": provider_unsupported_items,

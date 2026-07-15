@@ -222,3 +222,30 @@ def test_agent_tool_registered_and_scope_enforced(client):
         assert out.get("error")
     finally:
         conn.close()
+
+
+def test_performance_profile_honors_allowed_prefixes(client):
+    """review_bucket_performance_profile LISTS objects, so a prefix-scoped
+    provider must not have the bucket root sampled out of scope (S1 fix)."""
+    from app.agent_runtime import session_tools
+
+    pid = client.post("/cloud-providers", json={
+        "name": "pfx", "provider_type": "s3-compatible",
+        "endpoint_url": "https://minio.example.com", "region": "us-east-1",
+        "addressing_style": "path", "access_key": "AKIAIOSFODNN7EXAMPLE",
+        "secret_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        "allowed_buckets": ["only-this"], "allowed_prefixes": ["team-a/"],
+    }).json()["id"]
+    conn = sqlite3.connect(str(__import__("app.config", fromlist=["config"]).db_path()))
+    conn.row_factory = sqlite3.Row
+    try:
+        tools = {t.name: t for t in session_tools.build(conn, _FT(), [])}
+        assert "review_bucket_performance_profile" in tools
+        # Root listing (no prefix) is denied before any S3 call.
+        out = json.loads(tools["review_bucket_performance_profile"](pid, "only-this", ""))
+        assert out.get("error") and "prefix" in out["error"].lower()
+        # An out-of-prefix key is denied too.
+        out2 = json.loads(tools["review_bucket_performance_profile"](pid, "only-this", "team-b/"))
+        assert out2.get("error")
+    finally:
+        conn.close()

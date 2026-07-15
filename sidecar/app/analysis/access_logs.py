@@ -241,15 +241,22 @@ def _parse_text(path: str | Path) -> list[dict[str, Any]]:
 
 def _parse_csv(path: str | Path) -> list[dict[str, Any]]:
     # Robust + never-crash: the python engine tolerates ragged rows, on_bad_lines
-    # skips malformed ones instead of raising a C tokenizer error, and any other
-    # parse failure yields [] (the caller falls back to the text parser).
-    try:
-        # sep=None + python engine sniffs the delimiter, so comma AND tab
-        # separated logs both parse (the composer accepts .tsv); pandas infers
-        # gzip from the .gz extension.
-        df = pd.read_csv(path, dtype=str, keep_default_na=False, sep=None,
-                         engine="python", on_bad_lines="skip", nrows=MAX_INGEST_ROWS)
-    except Exception:  # noqa: BLE001
+    # skips malformed ones instead of raising a C tokenizer error. Try explicit
+    # delimiters in order (comma, then tab) rather than sep=None — the csv.Sniffer
+    # raises "Could not determine delimiter" on ambiguous/single-column files,
+    # which previously dropped a valid comma CSV to the null-field text fallback.
+    df = None
+    for sep in (",", "\t"):
+        try:
+            cand = pd.read_csv(path, dtype=str, keep_default_na=False, sep=sep,
+                               engine="python", on_bad_lines="skip", nrows=MAX_INGEST_ROWS)
+        except Exception:  # noqa: BLE001
+            continue
+        # A wrong delimiter collapses everything into one column; prefer the sep
+        # that actually splits the header into recognized fields.
+        if df is None or len(cand.columns) > len(df.columns):
+            df = cand
+    if df is None:
         return []
     lower = {c.lower().strip(): c for c in df.columns}
 
@@ -333,7 +340,7 @@ def _dist(con, sql: str) -> list[dict[str, Any]]:
 
 
 def analyze_access_logs(duckdb_path: str | Path) -> dict[str, Any]:
-    con = duck.connect(duckdb_path)
+    con = duck.connect(duckdb_path, read_only=True)
     try:
         total = con.execute(f"SELECT count(*) FROM {TABLE_NAME}").fetchone()[0]
         if total == 0:

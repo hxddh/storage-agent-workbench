@@ -124,10 +124,12 @@ def test_model_provider(
                                "(HTTP %d), so the key wasn't verified." % resp.status_code)
         else:
             checks["endpoint_reachable"] = True
+            checks["server_error"] = True
             live_detail = "Endpoint reachable but returned a server error (HTTP %d)." % resp.status_code
     except Exception:  # noqa: BLE001 — network failure classes, no body echoed
         checks["endpoint_reachable"] = False
         live_detail = "Could not reach the endpoint (network error or timeout). Check the base URL."
 
-    ok = config_ok and checks.get("api_key_accepted", True) and checks.get("endpoint_reachable", True)
+    ok = (config_ok and checks.get("api_key_accepted", True)
+          and checks.get("endpoint_reachable", True) and not checks.get("server_error", False))
     return ModelProviderTestResult(ok=ok, checks=checks, detail=live_detail)

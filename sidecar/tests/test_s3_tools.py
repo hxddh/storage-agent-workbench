@@ -1118,6 +1118,40 @@ def test_presigned_v4_expired_and_scope_no_secret_leak():
     assert "AKIAIOSFODNN7EXAMPLE" not in blob and "deadbeefcafe" not in blob
 
 
+def test_presigned_virtual_hosted_keeps_full_key():
+    """The default AWS presigned form is virtual-hosted; the WHOLE path is the
+    key (regression: it was labelled path-style and the leading segment dropped)."""
+    url = ("https://my-bucket.s3.us-east-1.amazonaws.com/2024/reports/x.csv"
+           "?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+           "&X-Amz-Credential=AKIA%2F20240101%2Fus-east-1%2Fs3%2Faws4_request"
+           "&X-Amz-Date=20240101T000000Z&X-Amz-Expires=3600"
+           "&X-Amz-SignedHeaders=host&X-Amz-Signature=sig")
+    res = s3.diagnose_presigned_url(url)
+    assert res["addressing_style"] == "virtual"
+    assert res["key"] == "2024/reports/x.csv"  # leading 2024/ NOT dropped
+
+
+def test_presigned_path_style_strips_bucket_segment():
+    url = ("https://s3.us-east-1.amazonaws.com/my-bucket/2024/x.csv"
+           "?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=sig")
+    res = s3.diagnose_presigned_url(url)
+    assert res["addressing_style"] == "path"
+    assert res["key"] == "2024/x.csv"
+
+
+def test_presigned_custom_endpoint_keeps_full_path():
+    url = "https://minio.example.com/bucket/key?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=s"
+    res = s3.diagnose_presigned_url(url)
+    assert res["addressing_style"] is None  # unknown — don't guess the bucket
+    assert res["key"] == "bucket/key"  # never truncated
+
+
+def test_presigned_v2_millisecond_expires_does_not_crash():
+    url = "https://s3.example.com/b/k?AWSAccessKeyId=AKIAX&Expires=1700000000000&Signature=sig"
+    res = s3.diagnose_presigned_url(url)  # must return a dict, not raise
+    assert res["success"] is True and "malformed_expires" in res["problems"]
+
+
 def test_presigned_v2_and_non_presigned():
     v2 = s3.diagnose_presigned_url(
         "https://s3.example.com/b/k?AWSAccessKeyId=AKIAX&Expires=1200000000&Signature=sig")

@@ -147,7 +147,7 @@ def aggregate(
 
     limit = max(1, min(int(limit), MAX_GROUPS))
 
-    con = duck.connect(duckdb_path)
+    con = duck.connect(duckdb_path, read_only=True)
     try:
         if group_by is None or group_by == "":
             sql = f"SELECT {metric_sql} FROM {table}{where_sql}"

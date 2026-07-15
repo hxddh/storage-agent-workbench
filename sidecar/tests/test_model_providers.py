@@ -164,6 +164,17 @@ def test_test_endpoint_unreachable_is_reported(client, monkeypatch):
     assert body["checks"]["endpoint_reachable"] is False
 
 
+def test_test_endpoint_5xx_is_not_ok(client, monkeypatch):
+    import httpx
+
+    provider_id = _create(client).json()["id"]
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(503))
+    body = client.post(f"/model-providers/{provider_id}/test").json()
+    # Reachable but 5xx must NOT pass the test (detail said "server error").
+    assert body["ok"] is False
+    assert body["checks"]["server_error"] is True
+
+
 def test_test_endpoint_no_models_endpoint_is_reachable_unverified(client, monkeypatch):
     import httpx
 
