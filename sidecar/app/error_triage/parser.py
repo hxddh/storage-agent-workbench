@@ -49,10 +49,16 @@ KNOWN_ERROR_CODES = {
     "TooManyRequests", "RequestTimeout", "BadGateway", "InternalError", "InvalidPart",
     "EntityTooSmall", "PreconditionFailed", "InvalidBucketName",
     "AuthorizationHeaderMalformed", "ServiceUnavailable", "Throttling",
+    # v0.29.0: archived-object GETs, KMS-encrypted-object denials (note the DOTS —
+    # the regexes below must accept them), STS credential expiry, and the
+    # capability-gap codes S3-compatible providers return for unimplemented APIs.
+    "InvalidObjectState", "KMS.AccessDenied", "KMS.DisabledException",
+    "KMS.NotFoundException", "ExpiredToken", "InvalidToken",
+    "NotImplemented", "MethodNotAllowed",
 }
 
-_CODE_RE = re.compile(r"<Code>\s*([A-Za-z]+)\s*</Code>")
-_CODE_KV_RE = re.compile(r"(?i)\b(?:error\s*code|errorcode|code)\s*[:=]\s*['\"]?([A-Za-z]{4,40})")
+_CODE_RE = re.compile(r"<Code>\s*([A-Za-z][A-Za-z.]{0,39})\s*</Code>")
+_CODE_KV_RE = re.compile(r"(?i)\b(?:error\s*code|errorcode|code)\s*[:=]\s*['\"]?([A-Za-z][A-Za-z.]{3,39})")
 _HTTP_RE = re.compile(r"(?i)(?:HTTP/\d\.\d\s+|status(?:\s*code)?\s*[:=]\s*)(\d{3})")
 _REQUEST_ID_RE = re.compile(r"(?i)<RequestId>\s*([^<\s]+)\s*</RequestId>|\brequest[\s_-]?id['\"]?\s*[:=]\s*['\"]?([A-Za-z0-9\-]+)")
 _HOST_ID_RE = re.compile(r"(?i)<HostId>\s*([^<\s]+)\s*</HostId>|\bhost[\s_-]?id['\"]?\s*[:=]\s*['\"]?([A-Za-z0-9+/=_\-]+)")
@@ -93,8 +99,10 @@ def parse(redacted: str, input_kind: str = "mixed") -> dict[str, Any]:
         if m and m.group(1) in KNOWN_ERROR_CODES:
             code = m.group(1)
     if not code:
-        # bare token match for known codes anywhere in the text
-        for known in KNOWN_ERROR_CODES:
+        # Bare token match for known codes anywhere in the text. Longest first,
+        # deterministically: "KMS.AccessDenied" must win over its embedded
+        # "AccessDenied" (the dot is a word boundary, so both would match).
+        for known in sorted(KNOWN_ERROR_CODES, key=len, reverse=True):
             if re.search(rf"\b{re.escape(known)}\b", text):
                 code = known
                 break

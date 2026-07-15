@@ -40,9 +40,14 @@ Event not delivered →
 
 ## Investigate with your read-only tools
 
-- `review_bucket_observability` — reads the bucket's notification/logging/tagging
-  configuration; the fastest way to confirm whether a notification rule exists
-  and what event types/filters it declares.
+- `get_bucket_config_detail` (aspect `notification`) — the per-target rule
+  detail: target type (topic/queue/lambda/eventbridge) + resource name, the
+  event types, and the prefix/suffix filters. This is the exact evidence "why
+  isn't my Lambda firing" needs — read it FIRST, then compare the failing
+  object's key against the filter.
+- `review_bucket_observability` — the summary pass (does ANY notification rule
+  exist, plus logging/tagging posture) when you don't yet know which layer is
+  missing.
 - `get_bucket_config_summary` — broader readable config to cross-check.
 - `head_object` / `list_objects` — confirm the object that *should* have fired an
   event matches the rule's prefix/suffix and event type (e.g. it landed via

@@ -271,7 +271,8 @@ Allowed MVP tool groups:
 - `get_bucket_config_summary`
 - `get_bucket_config_detail` (read-only; sanitized RULE detail for one aspect —
   `replication` / `notification` / `cors` / `logging` / `policy_status` (AWS's
-  authoritative IsPublic verdict) / `ownership` (Object Ownership; ACLs-disabled) /
+  IsPublic verdict for the bucket POLICY — combine with `acl` for full exposure) /
+  `ownership` (Object Ownership; ACLs-disabled) /
   `object_lock` (bucket WORM default) / `acl` (grantee KIND + permission, no owner
   id/email) / … — that the review tools collapse to a status; ARNs reduced, ≤20
   rules, `provider_unsupported` on gap)

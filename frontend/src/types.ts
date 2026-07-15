@@ -6,6 +6,8 @@ export interface ModelProvider {
   model: string | null;
   api_key_ref: string | null;
   has_api_key: boolean;
+  /** Optional explicit context window (tokens); overrides the built-in model table for the agent's depth budgets. */
+  context_window: number | null;
   /** True for the provider the agent uses (explicitly activated; otherwise the oldest is the implicit default). */
   active: boolean;
   created_at: string;

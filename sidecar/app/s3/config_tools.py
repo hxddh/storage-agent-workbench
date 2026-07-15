@@ -544,9 +544,11 @@ def _detail_analytics(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _detail_policy_status(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """AWS's AUTHORITATIVE public verdict (GetBucketPolicyStatus.IsPublic) — the
-    combined policy + ACL + Public-Access-Block computation. This is the direct,
-    correct answer to 'is this bucket public?', not the hand-parsed policy guess."""
+    """AWS's verdict on whether the BUCKET POLICY makes the bucket public
+    (GetBucketPolicyStatus.IsPublic). POLICY ONLY — a bucket can still be public
+    via ACL grants, which this call does not evaluate (on a policy-less bucket it
+    errors NoSuchBucketPolicy). For the full picture combine with aspect='acl'
+    (or run review_bucket_security, which does both)."""
     ps = data.get("PolicyStatus") or {}
     if "IsPublic" not in ps:
         return []
@@ -757,8 +759,8 @@ def review_bucket_security(conn: sqlite3.Connection, provider_id: str, bucket: s
     enc = _read(client, "get_bucket_encryption", Bucket=bucket)
     acl = _read(client, "get_bucket_acl", Bucket=bucket)
     pab = _read(client, "get_public_access_block", Bucket=bucket)
-    # AWS's authoritative public verdict (combined policy+ACL+PAB) and the modern
-    # access-control posture — not the hand-parsed policy/ACL guesses above.
+    # AWS's policy-public verdict (GetBucketPolicyStatus — policy ONLY, not ACL)
+    # and the modern access-control posture (Object Ownership).
     policy_status = _read(client, "get_bucket_policy_status", Bucket=bucket)
     ownership = _read(client, "get_bucket_ownership_controls", Bucket=bucket)
 
@@ -820,19 +822,32 @@ def review_bucket_security(conn: sqlite3.Connection, provider_id: str, bucket: s
                                  "No public access block configuration is set."))
     findings += _unsupported_findings(pab["status"], "public access block")
 
-    # Authoritative IsPublic (GetBucketPolicyStatus) — AWS's own combined verdict.
-    is_public: bool | None = None
+    # AWS's verdict on the BUCKET POLICY (GetBucketPolicyStatus.IsPublic). This is
+    # policy-only — it does NOT evaluate ACL grants — so the overall "not public"
+    # verdict is only emitted when the ACL was ALSO readable and non-public.
+    # (Claiming a combined verdict here previously produced a false GOOD "Not
+    # public" on a bucket that was public via its ACL.)
+    policy_is_public: bool | None = None
     if policy_status["status"] == AVAILABLE:
-        is_public = bool((policy_status["data"].get("PolicyStatus") or {}).get("IsPublic"))
-        if is_public:
-            findings.append(_finding(CRITICAL, "Bucket is PUBLIC (AWS authoritative verdict)",
-                                     "GetBucketPolicyStatus.IsPublic is true — AWS considers this "
-                                     "bucket publicly accessible after combining policy, ACL, and "
-                                     "public-access-block. Investigate and lock down."))
-        else:
-            findings.append(_finding(GOOD, "Not public (AWS authoritative verdict)",
-                                     "GetBucketPolicyStatus.IsPublic is false."))
+        policy_is_public = bool((policy_status["data"].get("PolicyStatus") or {}).get("IsPublic"))
+        if policy_is_public:
+            findings.append(_finding(CRITICAL, "Bucket policy makes this bucket PUBLIC (AWS verdict)",
+                                     "GetBucketPolicyStatus.IsPublic is true — AWS judges the bucket "
+                                     "policy itself to grant public access. Investigate and lock down."))
     findings += _unsupported_findings(policy_status["status"], "policy status")
+
+    # Combined exposure verdict — only asserted when BOTH signals were readable.
+    publicly_exposed: bool | None = None
+    if policy_is_public is not None and acl["status"] in (AVAILABLE, NOT_CONFIGURED):
+        publicly_exposed = policy_is_public or acl_public
+        if not publicly_exposed:
+            findings.append(_finding(GOOD, "Not public (policy verdict + ACL check)",
+                                     "The bucket policy is not public (AWS's GetBucketPolicyStatus "
+                                     "verdict) and the ACL grants no public access."))
+    elif policy_is_public is False:
+        findings.append(_finding(WARNING, "Policy not public, but ACL unreadable",
+                                 "The bucket policy is not public, but the ACL could not be read — "
+                                 "public exposure via ACL grants cannot be ruled out."))
 
     # Object Ownership: BucketOwnerEnforced = ACLs disabled (recommended).
     object_ownership: str | None = None
@@ -863,9 +878,12 @@ def review_bucket_security(conn: sqlite3.Connection, provider_id: str, bucket: s
             "acl_public": acl_public,
             "public_access_block_status": pab["status"],
             "public_access_block": pab_details,
-            # Authoritative posture (v0.28.0): AWS's own IsPublic verdict + ACL mode.
-            "is_public": is_public,
-            "is_public_status": policy_status["status"],
+            # Public posture: AWS's policy verdict (policy-only), the combined
+            # policy+ACL exposure (None when either signal was unreadable), and
+            # the ACL mode. (v0.29.0: renamed from the over-claiming "is_public".)
+            "policy_is_public": policy_is_public,
+            "policy_is_public_status": policy_status["status"],
+            "publicly_exposed": publicly_exposed,
             "object_ownership": object_ownership,
             "acls_disabled": object_ownership == "BucketOwnerEnforced" if object_ownership else None,
             "ownership_status": ownership["status"],

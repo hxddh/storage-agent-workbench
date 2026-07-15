@@ -57,9 +57,14 @@ first, because the layer names differ.
   public (an object can be public even under a locked-down bucket). Grantees are
   reduced to a KIND — no owner/canonical id leaks. Use `get_object_tagging` when
   a tag-scoped policy is in play.
-- `get_bucket_config_detail` (aspect `policy` / `public_access_block`) — the
-  actual per-statement effect/actions/`is_public` and the four PAB booleans, so
-  you read the config instead of asking the user for it.
+- `get_bucket_config_detail` (aspect `policy_status` / `acl` / `ownership` /
+  `policy` / `public_access_block`) — read the config instead of asking for it:
+  `policy_status` is **AWS's own IsPublic verdict for the bucket policy** (policy
+  only — pair it with `acl`, which lists every grant as grantee KIND +
+  permission, to cover ACL-public buckets); `ownership` tells you whether ACLs
+  are disabled entirely (`BucketOwnerEnforced`, the recommended posture — if so,
+  skip the ACL layer in the chain); `policy` gives per-statement
+  effect/actions/`is_public`; `public_access_block` the four PAB booleans.
 - `query_account_profile` — for account-wide exposure ("which buckets have no
   public-access-block?"): filters the last survey's persisted posture matrix
   (e.g. `missing_public_access_block`) across ALL buckets without re-scanning.
@@ -80,13 +85,22 @@ The same authorization chain answers the opposite question — "is this bucket/
 object exposed to the world?" — which is worth a deliberate pass on any security
 review, not just when a 403 is reported:
 
+- **Start with `review_bucket_security`** — it reads the policy verdict
+  (`policy_is_public`, AWS's GetBucketPolicyStatus judgement of the policy), the
+  ACL grants, PAB, and Object Ownership in one pass, and emits a combined
+  `publicly_exposed` verdict only when both the policy verdict AND the ACL were
+  readable. Trust that over hand-reasoning; fall back to the chain below only to
+  explain WHY.
 - **Public-access block** — is it ON at both account and bucket level? A missing
-  block is the single biggest exposure risk; `review_bucket_security` /
-  `get_bucket_config_summary` read it.
-- **Bucket policy** — any `Principal: "*"` / `AWS: "*"` allow without a tight
-  condition (VPCE, source IP, aws:SecureTransport) is effectively public.
+  block is the single biggest exposure risk.
+- **Bucket policy** — `aspect='policy_status'` is AWS's own verdict on the
+  policy; use `aspect='policy'` per-statement detail to locate the offending
+  statement (any `Principal: "*"` allow without a tight condition).
 - **ACL** — `AllUsers` / `AuthenticatedUsers` grants are legacy public access
-  that a policy review alone misses; the security reader flags them.
+  that a policy-only check misses (the policy verdict does NOT cover them);
+  `aspect='acl'` lists each grant as grantee KIND + permission. If
+  `aspect='ownership'` shows `BucketOwnerEnforced`, ACLs are disabled and this
+  layer is moot.
 - **Website / unauthenticated GET** — if anonymous reads are expected (static
   hosting), say so explicitly and scope it; if not, it's a finding.
 

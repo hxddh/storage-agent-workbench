@@ -17,7 +17,17 @@ def connect(duckdb_path: str | Path, read_only: bool = False) -> duckdb.DuckDBPy
     path = Path(duckdb_path)
     if read_only:
         if path.exists():
-            return duckdb.connect(str(path), read_only=True)
+            try:
+                return duckdb.connect(str(path), read_only=True)
+            except duckdb.IOException as exc:
+                # A concurrent import holds the write lock. Surface a friendly,
+                # actionable message instead of the raw lock IOException.
+                if "lock" in str(exc).lower():
+                    raise ValueError(
+                        "This dataset is busy (an import or rebuild is writing to it "
+                        "right now). Retry in a moment, once the import finishes."
+                    ) from exc
+                raise
         # No DB yet — nothing to read; open writable so the caller gets an empty DB
         # rather than a hard error.
     path.parent.mkdir(parents=True, exist_ok=True)

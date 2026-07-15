@@ -37,7 +37,9 @@ class ModelProviderUpdate(BaseModel):
     model: str | None = None
     # If provided (non-empty), the stored secret is rotated. Omit/null to keep.
     api_key: str | None = None
-    context_window: int | None = Field(default=None, gt=0)
+    # None = keep as-is; 0 = CLEAR back to NULL (infer from the model name);
+    # positive = set. (None can't mean "clear" here — it's the "unchanged" sentinel.)
+    context_window: int | None = Field(default=None, ge=0)
 
 
 class ModelProviderOut(BaseModel):

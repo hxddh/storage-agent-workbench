@@ -159,7 +159,8 @@ def test_security_review_surfaces_authoritative_is_public(client, monkeypatch):
     try:
         out = ct.review_bucket_security(conn, pid, "b")
         facts = out["facts"]
-        assert facts["is_public"] is True
+        assert facts["policy_is_public"] is True
+        assert facts["publicly_exposed"] is True
         assert facts["object_ownership"] == "BucketOwnerEnforced"
         assert facts["acls_disabled"] is True
         titles = " ".join(f["title"] for f in out["findings"])

@@ -167,7 +167,63 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         ["the conditional headers sent", "current object ETag"],
         ["re-fetch current ETag and retry", "remove or correct the precondition"],
         ["diagnostic"], [], [_ASK]),
+    "InvalidObjectState": _entry(
+        "InvalidObjectState", "client", "Object is archived (GLACIER / DEEP_ARCHIVE)", "high",
+        ["the object's storage class is an archive tier, so GET is not allowed until restored",
+         "a restore was requested but has not completed yet", "a completed restore already expired"],
+        ["the object's storage class", "its restore status (in progress / expiry)"],
+        ["head_object on the exact key — it reports storage_class, archive_status, and the "
+         "x-amz-restore state (restore in progress / restored-until)",
+         "if not restored: initiate a restore from your own tooling (this app is read-only), "
+         "then retry the GET after it completes"],
+        ["diagnostic"],
+        ["Archive tiers and restore semantics vary by provider (e.g. OSS Archive needs Restore too)."],
+        [_DIAG, _ASK]),
+    "ExpiredToken": _entry(
+        "ExpiredToken", "auth", "Session token has expired", "high",
+        ["STS/temporary credentials expired", "a long-running job outlived its session",
+         "cached credentials not refreshed"],
+        ["when the credentials were issued and their duration", "whether a refresh path exists"],
+        ["test_credentials — confirms the stored credential is rejected",
+         "re-issue the session token / re-assume the role, then update the provider credentials"],
+        ["diagnostic"], [], [_DIAG, _ASK]),
+    "NotImplemented": _entry(
+        "NotImplemented", "client", "Provider does not implement this API (capability gap)", "high",
+        ["the S3-compatible provider does not support the API you called (rule: this is a "
+         "capability gap, NOT a failure)", "an optional header/feature the provider ignores"],
+        ["which API/operation returned 501", "the provider/endpoint in use"],
+        ["get_bucket_config_summary — its per-aspect statuses mark unsupported APIs as "
+         "provider_unsupported so you can see the provider's real surface",
+         "use the fallback the equivalent skill suggests (e.g. head_object instead of "
+         "get_object_attributes)"],
+        ["bucket_config_review"],
+        ["MinIO/Ceph/OSS/COS each omit different config APIs; design around provider_unsupported."],
+        [_CFG, _ASK]),
 }
+
+# KMS-encrypted-object denials: same playbook for the three KMS.* codes.
+_KMS = _entry(
+    "KMS.AccessDenied", "authz", "KMS key access denied (SSE-KMS object)", "high",
+    ["the caller lacks kms:Decrypt (or kms:GenerateDataKey for writes) on the object's KMS key",
+     "the KMS key is disabled or scheduled for deletion", "the key policy does not grant the caller",
+     "cross-account: the key policy must grant the external account explicitly"],
+    ["the object's SSE mode and KMS key (head_object shows SSE state)",
+     "the caller's kms:Decrypt permission on that key", "the key's enabled/disabled state"],
+    ["head_object on the exact key — confirms it is SSE-KMS encrypted and which key id style applies",
+     "review the key policy + caller IAM for kms:Decrypt (identity-side; share the policy redacted)"],
+    ["bucket_config_review", "diagnostic"],
+    ["S3-compatible providers may not surface KMS.* codes; a plain AccessDenied on an encrypted "
+     "object has the same likely cause."],
+    [_CFG, _ASK])
+
+
+def _alias(code: str, base: dict[str, Any], title: str | None = None) -> dict[str, Any]:
+    """A code-level alias of an existing entry (same guidance, correct code echo)."""
+    out = dict(base)
+    out["code"] = code
+    if title:
+        out["title"] = title
+    return out
 
 # Synthetic categories keyed off parsed flags / HTTP status when no code matched.
 _TLS = _entry(
@@ -195,6 +251,26 @@ _PAGINATION = _entry(
     ["whether IsTruncated was handled", "how the continuation token is threaded"],
     ["page using NextContinuationToken until IsTruncated is false", "use a bounded list to verify"],
     ["diagnostic"], [], [_ASK])
+
+# Orphaned known codes (previously parsed but unmapped → fell through to
+# "Could not classify") + the KMS aliases. Same guidance as their canonical
+# entries, with the pasted code echoed back correctly.
+_BY_CODE.update({
+    "ServiceUnavailable": _alias("ServiceUnavailable", _BY_CODE["SlowDown"],
+                                 "Service unavailable (503) — usually throttling"),
+    "Throttling": _alias("Throttling", _BY_CODE["TooManyRequests"], "Request throttled"),
+    "InternalError": _alias("InternalError", _5XX, "Provider-side InternalError (500)"),
+    "BadGateway": _alias("BadGateway", _5XX, "Bad gateway (502) — proxy/provider issue"),
+    "InvalidToken": _alias("InvalidToken", _BY_CODE["ExpiredToken"],
+                           "Session token invalid/malformed"),
+    "MethodNotAllowed": _alias("MethodNotAllowed", _BY_CODE["NotImplemented"],
+                               "Method not allowed — likely a provider capability gap"),
+    "KMS.AccessDenied": _KMS,
+    "KMS.DisabledException": _alias("KMS.DisabledException", _KMS,
+                                    "KMS key is disabled (SSE-KMS object unreadable)"),
+    "KMS.NotFoundException": _alias("KMS.NotFoundException", _KMS,
+                                    "KMS key not found (deleted or wrong region)"),
+})
 
 
 def match(parsed: dict[str, Any]) -> list[dict[str, Any]]:

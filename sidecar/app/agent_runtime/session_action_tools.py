@@ -285,11 +285,11 @@ def build(
 
     @function_tool
     def query_account_profile(provider_id: str, filter: str = "all") -> str:
-        """Read-only: query the MOST RECENT persisted account survey for a cross-bucket posture matrix — answers "which of my buckets have no encryption / no public-access-block / no lifecycle / logging off?" across the whole account WITHOUT re-scanning. Reads ALREADY-PERSISTED, sanitized snapshot flags (no new S3 call, no LLM, no object keys/bodies — statuses only). Returns, per matching bucket, its region + config-flag statuses (versioning/encryption/lifecycle/logging/replication/policy/public_access_block/tagging/inventory + access). `filter` ∈ all | missing_public_access_block | missing_encryption | missing_lifecycle | missing_logging | no_versioning | access_issues. Needs a completed survey_account first (run it if none exists). Args: provider_id, filter? (default 'all')."""
+        """Read-only: query the MOST RECENT persisted account survey for a cross-bucket posture matrix — answers "which of my buckets are public / have no encryption / no public-access-block / no lifecycle / logging off?" across the whole account WITHOUT re-scanning. Reads ALREADY-PERSISTED, sanitized snapshot flags (no new S3 call, no LLM, no object keys/bodies — statuses only). Returns, per matching bucket, its region + config-flag statuses (versioning/encryption/lifecycle/logging/replication/policy/public_access_block/tagging/inventory + access + policy_is_public/object_ownership). `filter` ∈ all | public_buckets (bucket POLICY judged public by AWS — ACL-public is separate) | missing_public_access_block | missing_encryption | missing_lifecycle | missing_logging | no_versioning | access_issues. Needs a completed survey_account first (run it if none exists; surveys before v0.29.0 lack the public-posture flags — re-survey to fill them). Args: provider_id, filter? (default 'all')."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Use a configured provider.")
-        allowed = {"all", "missing_public_access_block", "missing_encryption",
+        allowed = {"all", "public_buckets", "missing_public_access_block", "missing_encryption",
                    "missing_lifecycle", "missing_logging", "no_versioning", "access_issues"}
         if filter not in allowed:
             return _err(f"Unknown filter '{filter}'. Choose one of: {', '.join(sorted(allowed))}.")
@@ -313,7 +313,9 @@ def build(
         _FLAGS = ("region", "access_status", "head_bucket_status", "versioning_status",
                   "versioning_enabled", "encryption_status", "lifecycle_status",
                   "logging_status", "logging_enabled", "replication_status", "policy_status",
-                  "public_access_block_status", "tagging_status", "inventory_status")
+                  "public_access_block_status", "tagging_status", "inventory_status",
+                  "policy_public_status", "policy_is_public", "ownership_status",
+                  "object_ownership", "acls_disabled")
         _NC = "not_configured"
 
         def matches(b: dict[str, Any]) -> bool:
@@ -331,6 +333,11 @@ def build(
                 return b.get("logging_status") == _NC
             if filter == "no_versioning":
                 return b.get("versioning_status") == _NC
+            if filter == "public_buckets":
+                # AWS's policy verdict only — True means the bucket POLICY is
+                # public. (ACL-public isn't captured by this flag; None = the
+                # verdict was unreadable or the survey predates the flag.)
+                return b.get("policy_is_public") is True
             if filter == "access_issues":
                 # The survey persists access_status as "available" (healthy),
                 # "access_denied", or "error" — never "ok"/"accessible". Match the

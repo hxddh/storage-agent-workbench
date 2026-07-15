@@ -47,8 +47,10 @@ _MAX_OUTPUT_TOKENS: tuple[tuple[str, int], ...] = (
     ("claude-3-5", 8_192), ("claude-3-7", 64_000),
     ("claude-sonnet-4", 64_000), ("claude-opus-4", 32_000), ("claude-haiku-4", 32_000),
     ("claude", 8_192),
-    ("gemini-1.5", 8_192), ("gemini-2", 8_192), ("gemini", 8_192),
-    ("deepseek", 8_192),
+    # gemini-2.5 raised max output to 64k; 1.5/2.0 are 8k. Most-specific first.
+    ("gemini-2.5", 64_000), ("gemini-1.5", 8_192), ("gemini-2", 8_192), ("gemini", 8_192),
+    # deepseek-reasoner supports far larger outputs than deepseek-chat's 8k.
+    ("deepseek-reasoner", 64_000), ("deepseek", 8_192),
     ("qwen", 8_192), ("llama", 4_096), ("mixtral", 4_096), ("mistral", 4_096),
 )
 # Unknown model → the historical completion floor, so v0.27.0 behavior is
@@ -62,6 +64,10 @@ _CHARS_PER_TOKEN = 4
 # Floors == the historical hardcoded values. Budgets NEVER go below these, so an
 # existing 128k/200k deployment is byte-for-byte unchanged.
 TOOL_OUTPUT_CHARS_FLOOR = 200_000       # was session_agent._MAX_TOOL_OUTPUT_CHARS
+# Ceiling on the tool-output budget: an absurd operator-declared context_window
+# must not yield an effectively unbounded per-turn budget (2M chars ≈ a 2M-token
+# window's fair share — no shipping model exceeds that usefully today).
+TOOL_OUTPUT_CHARS_CEILING = 2_000_000
 COMPLETION_TOKENS_FLOOR = 16_384        # was session_agent._MAX_COMPLETION_TOKENS
 COMPLETION_TOKENS_CEILING = 32_768      # stay under provider max-output caps
 
@@ -97,7 +103,8 @@ def tool_output_char_budget(model: str | None, explicit_window: int | None = Non
     never below the historical floor. 128k/200k models → 200_000 (unchanged);
     1M models → 1_000_000."""
     tokens = int(context_window(model, explicit_window) * _TOOL_OUTPUT_FRACTION)
-    return max(TOOL_OUTPUT_CHARS_FLOOR, tokens * _CHARS_PER_TOKEN)
+    return min(TOOL_OUTPUT_CHARS_CEILING,
+               max(TOOL_OUTPUT_CHARS_FLOOR, tokens * _CHARS_PER_TOKEN))
 
 
 def completion_token_budget(model: str | None, explicit_window: int | None = None) -> int:
