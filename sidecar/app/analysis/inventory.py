@@ -107,21 +107,25 @@ def _detect_field_columns(df: pd.DataFrame) -> dict[str, Any]:
         return (sum(1 for v in vals if pred(v)) / len(vals)) if vals else 0.0
 
     assigned: dict[str, Any] = {}
-    # last_modified runs BEFORE size: an epoch column is all-digits and would
-    # otherwise be grabbed by the size predicate. The epoch check is range-bound
-    # (~2001–2100) so an ordinary size column (bytes spread over many magnitudes)
-    # rarely clears the 0.6 threshold.
-    for field, pred, thresh in (
-        ("storage_class", lambda s: s.lower() in _KNOWN_STORAGE, 0.6),
-        ("last_modified", lambda s: bool(_TS_PREFIX.match(s)) or _is_epoch(s), 0.6),
-        ("size", lambda s: s.isdigit(), 0.8),
-    ):
+
+    def claim(field: str, pred: Any, thresh: float) -> None:
         cand, score = max(
             ((c, frac(c, pred)) for c in cols if c not in used),
             key=lambda x: x[1], default=(None, 0.0))
         if cand is not None and score >= thresh:
             assigned[field] = cand
             used.add(cand)
+
+    # Order matters. A DATE-shaped column claims last_modified first (unambiguous).
+    # size claims next. Only AFTER size is taken does an EPOCH column claim
+    # last_modified — otherwise, for a headerless GB-scale export with no
+    # timestamp column, a 10-digit size (~1–4 GB) would be mis-claimed as an
+    # epoch and steal the size mapping.
+    claim("storage_class", lambda s: s.lower() in _KNOWN_STORAGE, 0.6)
+    claim("last_modified", lambda s: bool(_TS_PREFIX.match(s)), 0.6)
+    claim("size", lambda s: s.isdigit(), 0.8)
+    if "last_modified" not in assigned and "size" in assigned:
+        claim("last_modified", _is_epoch, 0.6)
     # key: the remaining column that is most path-like, else the longest strings.
     rem = [c for c in cols if c not in used]
     if rem:
@@ -289,7 +293,7 @@ END
 
 
 def analyze_inventory(duckdb_path: str | Path) -> dict[str, Any]:
-    con = duck.connect(duckdb_path)
+    con = duck.connect(duckdb_path, read_only=True)
     try:
         count = con.execute(f"SELECT count(*) FROM {TABLE_NAME}").fetchone()[0]
         if count == 0:

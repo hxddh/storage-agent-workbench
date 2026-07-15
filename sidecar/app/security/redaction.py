@@ -10,7 +10,11 @@ Two layers:
    (AWS access keys, labeled AWS secret keys / session tokens, bearer/
    authorization values, cookies, presigned-URL query parameters — AWS and
    Google-style — bare signatures, bare ``token=`` / ``api_key=`` values,
-   and common third-party tokens: GitHub, Slack, Google API keys, JWTs).
+   common third-party tokens (GitHub, Slack, Google API keys, JWTs), and
+   non-AWS provider secrets: GCP PEM ``private_key`` blocks, Azure
+   ``AccountKey=`` connection strings, and basic-auth passwords in URLs).
+
+``bytes`` values inside a redacted structure are scrubbed as text too.
 
 ``keyring://`` references are intentionally NOT redacted — they are safe
 pointers, not secrets.
@@ -50,6 +54,10 @@ _SENSITIVE_KEYS = {
     "wwwauthenticate",
     "proxyauthorization",
     "credential",
+    # Non-AWS provider secrets (this app targets S3-compatible incl. GCS/Azure):
+    # GCP service-account private key, Azure Storage account key.
+    "privatekey",
+    "accountkey",
 }
 
 _KEY_NORMALIZE = re.compile(r"[^a-z0-9]")
@@ -129,6 +137,24 @@ _VALUE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         re.compile(r"\beyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+"),
         REDACTED,
     ),
+    # PEM private-key blocks (GCP service-account JSON, TLS client keys) — the
+    # whole armored block, any key type (RSA/EC/OPENSSH/generic).
+    (
+        re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----.*?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----",
+                   re.DOTALL),
+        REDACTED,
+    ),
+    # Azure Storage `AccountKey=<base64>` connection-string secret. Label kept.
+    (
+        re.compile(r"(?i)\b(accountkey)(\s*=\s*)[A-Za-z0-9/+=]{8,}"),
+        r"\1\2" + REDACTED,
+    ),
+    # Basic-auth userinfo in a URL (`scheme://user:pass@host`): mask the
+    # password only, keep the scheme/user so the URL stays diagnosable.
+    (
+        re.compile(r"(?i)\b([a-z][a-z0-9+.\-]*://)([^:/?#@\s]+):([^@/?#\s]+)@"),
+        r"\1\2:" + REDACTED + "@",
+    ),
 ]
 
 
@@ -188,4 +214,8 @@ def redact(value: Any) -> Any:
         return [redact(v) for v in value]
     if isinstance(value, str):
         return redact_text(value)
+    if isinstance(value, bytes):
+        # A bytes value in a JSON-like payload must not skip redaction (the
+        # "recursively redact" contract); scrub as text, re-encode.
+        return redact_text(value.decode("utf-8", "replace")).encode("utf-8")
     return value

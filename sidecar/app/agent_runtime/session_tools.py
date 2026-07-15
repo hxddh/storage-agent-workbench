@@ -516,8 +516,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
          "Review a bucket's logging, notifications, and tagging. Args: provider_id, bucket."),
         ("review_bucket_cost_optimization", ct.review_bucket_cost_optimization,
          "Review a bucket for cost-optimization opportunities. Args: provider_id, bucket."),
-        ("review_bucket_performance_profile", ct.review_bucket_performance_profile,
-         "Profile a bucket's performance from a bounded object sample (key layout, sizes, storage classes). Args: provider_id, bucket."),
+        # NOTE: review_bucket_performance_profile is registered separately below —
+        # it LISTS objects, so it needs the stricter listing scope gate (the five
+        # tools above are bucket-metadata reads and gate at the bucket level).
     ]
 
     def make_cfg(fn: Callable):
@@ -553,4 +554,25 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
             params["title"] = name
         tools.append(t)
 
+    @function_tool
+    def review_bucket_performance_profile(provider_id: str, bucket: str, prefix: str = "") -> str:
+        """Profile a bucket's performance from a BOUNDED object sample (key layout, sizes, storage classes). This LISTS objects, so a prefix-scoped provider must pass an in-scope prefix. Args: provider_id, bucket, prefix? (required if the provider restricts allowed_prefixes)."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Call list_providers first.")
+        # Listing gate (not the bucket-metadata gate): honors allowed_prefixes so
+        # a prefix-scoped provider can't have the bucket root sampled out of scope.
+        denial = scope_denial(p, bucket, prefix=prefix or None, listing=True)
+        if denial:
+            return _err(denial)
+        rec("review_bucket_performance_profile", provider_id=provider_id, bucket=bucket, prefix=prefix)
+        try:
+            res = ct.review_bucket_performance_profile(conn, provider_id, bucket, prefix or None)
+        except Exception as exc:  # noqa: BLE001 — a tool returns an error string, never raises
+            return _err(redact_text(f"review_bucket_performance_profile failed: {exc}"))
+        note("review_bucket_performance_profile", bucket,
+             "reviewed" if not (isinstance(res, dict) and res.get("error")) else "error")
+        return json.dumps(res)
+
+    tools.append(review_bucket_performance_profile)
     return tools

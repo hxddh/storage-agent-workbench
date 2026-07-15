@@ -6,6 +6,67 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-07-15
+
+_Security + regression hotfix from the next-round audit: one prefix-scope
+bypass, four redaction gaps for non-AWS provider secrets, and six regressions
+in the v0.25.0 batch (two in the brand-new presigned-URL parser). All read-only,
+bounded, redacted; no behavior gates added._
+
+### Security
+
+- **Bucket config review no longer lists the bucket root outside
+  `allowed_prefixes`.** The review gated at the bucket level (`listing=False`),
+  but its `review_bucket_performance_profile` sub-tool LISTS objects — so a
+  prefix-scoped provider had out-of-prefix object keys sampled and persisted
+  into the stream, snapshot, and report. The performance profile is now gated
+  with the stricter listing scope in BOTH the run executor and the standalone
+  agent tool (skipped/denied when the provider restricts prefixes and none is
+  in scope); the five bucket-metadata reviews still gate at the bucket level.
+- **Redaction now covers non-AWS provider secret shapes** (this app targets
+  S3-compatible incl. GCS/Azure): GCP service-account **PEM `private_key`**
+  blocks (dict key + armored-block value pattern), Azure **`AccountKey=`**
+  connection-string secrets, **basic-auth passwords in URLs**
+  (`scheme://user:pass@host` → password masked, scheme/user/host kept), and
+  **`bytes` values** inside a redacted structure (previously passed through
+  unscrubbed). Non-secret URLs/bucket names are left untouched.
+
+### Fixed
+
+- **`diagnose_presigned_url` returns the correct key + addressing style for
+  virtual-hosted URLs** (the default AWS presigned form). It previously derived
+  bucket-vs-key from the path length, mislabelling `bucket.s3.region.amazonaws.com/
+  a/b/c` as path-style and dropping the leading path segment from the key. Style
+  is now decided from the HOST; a custom/unknown endpoint keeps the full path
+  (never silently truncated).
+- **`diagnose_presigned_url` no longer crashes on a millisecond-epoch V2
+  `Expires`** — the conversion is guarded and reported as `malformed_expires`
+  (the tool's contract is to always return a dict).
+- **`region_mismatch` no longer false-positives** on providers whose region is a
+  wildcard (`auto`, as R2 uses) or a legacy alias (`EU`≡eu-west-1, `US`≡us-east-1)
+  — the exact S3-compatible providers the flag targets. It now normalizes aliases
+  and skips wildcard/empty provider regions.
+- **Access-log CSV parsing no longer depends on the `csv.Sniffer`.** v0.25.0
+  switched to `sep=None`, which raises "Could not determine delimiter" on
+  ambiguous/single-column CSVs → the log dropped to the null-field text fallback.
+  It now tries comma then tab explicitly and keeps whichever splits into real
+  columns.
+- **Headerless-inventory detection won't mis-claim a GB-scale `size` column as
+  an epoch timestamp.** A real date-shaped column wins `last_modified` first;
+  an epoch column only claims it after `size` is already mapped.
+- **The model-provider Test reports `ok=false` on an endpoint 5xx** (it set
+  `endpoint_reachable=true` and computed `ok=true` while the detail said "server
+  error").
+- Removed a dead `_PRESIGNED_SECRET_PARAMS` constant.
+
+### Changed
+
+- Pure-read analysis (`analyze_inventory` / `analyze_access_logs` /
+  `aggregate_uploaded_file`) opens DuckDB **read-only**, so it can't collide with
+  a concurrent import that rebuilds the same table on another turn's worker
+  thread (import stays read-write; falls back to a normal open if the DB doesn't
+  exist yet).
+
 ## [0.25.0] - 2026-07-14
 
 _One combined release fixing EVERY finding of the v0.24.19 deep-mining audit

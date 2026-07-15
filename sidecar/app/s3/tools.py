@@ -1296,11 +1296,6 @@ def get_object_attributes(
 
 # --- Presigned-URL diagnosis (pure parse — NO network, NO secrets echoed) ----
 
-# Presigned query params that are CREDENTIAL material (rule 15): parsed for their
-# non-secret scope components, but their raw values NEVER appear in the result.
-_PRESIGNED_SECRET_PARAMS = {"x-amz-signature", "x-amz-credential", "x-amz-security-token",
-                            "awsaccesskeyid", "signature"}
-
 
 def diagnose_presigned_url(url: str) -> dict[str, Any]:
     """Parse a user-pasted presigned URL and explain why it might fail — WITHOUT
@@ -1373,20 +1368,43 @@ def diagnose_presigned_url(url: str) -> dict[str, Any]:
         out["signature_version"] = "v2"
         exp_epoch = q.get("expires", "")
         if exp_epoch.isdigit():
-            out["expires_at"] = datetime.fromtimestamp(int(exp_epoch), tz=timezone.utc).isoformat()
-            out["expired"] = int(exp_epoch) < now.timestamp()
-            if out["expired"]:
-                problems.append("url_expired")
+            try:
+                # V2 Expires is epoch SECONDS; a millisecond value (a common
+                # mistake) overflows fromtimestamp — report it, don't crash.
+                out["expires_at"] = datetime.fromtimestamp(int(exp_epoch), tz=timezone.utc).isoformat()
+                out["expired"] = int(exp_epoch) < now.timestamp()
+                if out["expired"]:
+                    problems.append("url_expired")
+            except (ValueError, OverflowError, OSError):
+                problems.append("malformed_expires")
         problems.append("sigv2_legacy_many_providers_reject")
     else:
         out["signature_version"] = None
         problems.append("no_presign_parameters_found")
 
-    # Bucket-in-path (path-style) vs bucket-in-host (virtual-hosted).
-    host = parsed.hostname or ""
-    if path_parts and "." not in host.split(".")[0]:
-        out["addressing_style"] = "path" if len(path_parts) >= 2 else "virtual"
-    out["key"] = redact_text("/".join(path_parts[1:]) or (path_parts[0] if path_parts else "")) or None
+    # Addressing style + object key. Decide from the HOST, not the path length:
+    # a virtual-hosted URL (bucket.s3.region.amazonaws.com/<key>) carries the
+    # WHOLE path as the key, while a path-style URL (s3.region.amazonaws.com/
+    # <bucket>/<key>) puts the bucket in the first path segment. The previous
+    # path-length heuristic mislabelled the common virtual-hosted form AND
+    # truncated its key by dropping the leading segment.
+    host = (parsed.hostname or "").lower()
+    labels = [x for x in host.split(".") if x]
+    first = labels[0] if labels else ""
+    is_aws = host.endswith("amazonaws.com")
+    path_style = first == "s3" or first.startswith("s3-")
+    virtual_hosted = (not path_style) and is_aws and len(labels) >= 3 and ".s3" in ("." + host)
+    if virtual_hosted:
+        out["addressing_style"] = "virtual"
+        out["key"] = redact_text("/".join(path_parts)) or None
+    elif path_style:
+        out["addressing_style"] = "path"
+        out["key"] = redact_text("/".join(path_parts[1:])) or None
+    else:
+        # Custom / unknown endpoint: don't guess which segment is the bucket —
+        # keep the FULL path so the key is never silently truncated.
+        out["addressing_style"] = None
+        out["key"] = redact_text("/".join(path_parts)) or None
     out["problems"] = problems
     return out
 

@@ -172,6 +172,18 @@ def test_summary_exposes_bucket_region_and_mismatch(cfg):
     assert out["region_mismatch"] is True
 
 
+def test_region_mismatch_not_flagged_for_auto_or_alias(cfg):
+    # Legacy 'EU' LocationConstraint == eu-west-1 → not a mismatch when the
+    # provider is configured eu-west-1.
+    assert ct._region_mismatch("EU", "eu-west-1") is False
+    assert ct._region_mismatch("us-east-1", "US") is False
+    # R2-style 'auto' provider region is never a mismatch.
+    assert ct._region_mismatch("us-east-1", "auto") is False
+    assert ct._region_mismatch(None, "") is False
+    # A genuine difference still flags.
+    assert ct._region_mismatch("eu-west-1", "us-east-1") is True
+
+
 def test_lifecycle_review_surfaces_mfa_delete(cfg):
     cfg.fake.behaviors["get_bucket_versioning"] = {"Status": "Enabled", "MFADelete": "Enabled"}
     conn = _conn()

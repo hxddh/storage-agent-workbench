@@ -221,3 +221,42 @@ def test_redacts_header_dict_like_s3_response():
     assert out["content-type"] == "application/xml"
     assert out["authorization"] == REDACTED
     assert out["x-amz-security-token"] == REDACTED
+
+
+# --- v0.25.1: non-AWS provider secret shapes -------------------------------
+
+
+def test_redacts_gcp_private_key_pem_dict_and_text():
+    sa = {"type": "service_account",
+          "private_key": "-----BEGIN PRIVATE KEY-----\nMIIabc123\n-----END PRIVATE KEY-----"}
+    out = redact(sa)
+    assert out["type"] == "service_account"
+    assert out["private_key"] == REDACTED
+    # And as free text (any key type).
+    text = "cfg: -----BEGIN RSA PRIVATE KEY-----\nMIIabc\n-----END RSA PRIVATE KEY-----"
+    assert "MIIabc" not in redact_text(text) and REDACTED in redact_text(text)
+
+
+def test_redacts_azure_account_key():
+    conn = "DefaultEndpointsProtocol=https;AccountName=x;AccountKey=Zm9vYmFyYmF6MD09;EndpointSuffix=core"
+    out = redact_text(conn)
+    assert "Zm9vYmFyYmF6MD09" not in out and REDACTED in out
+    assert "AccountName=x" in out  # non-secret label preserved
+    # As a dict key too.
+    assert redact({"accountkey": "Zm9vYmFyYmF6MD09"})["accountkey"] == REDACTED
+
+
+def test_redacts_basic_auth_url_password_only():
+    out = redact_text("endpoint https://admin:S3cr3tPass@storage.example.com/bucket")
+    assert "S3cr3tPass" not in out and REDACTED in out
+    assert "admin" in out and "storage.example.com" in out  # scheme/user/host kept
+
+
+def test_normal_url_and_bucket_are_not_over_redacted():
+    assert redact_text("https://minio.example.com/bucket/key") == "https://minio.example.com/bucket/key"
+
+
+def test_redacts_bytes_values_in_structure():
+    out = redact({"blob": b"AKIAIOSFODNN7EXAMPLE trailing"})
+    assert b"AKIAIOSFODNN7EXAMPLE" not in out["blob"]
+    assert REDACTED.encode() in out["blob"]

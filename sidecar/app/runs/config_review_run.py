@@ -34,11 +34,19 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
         raise RunError("bucket_config_review requires a provider and bucket.")
 
     provider = cloud_repo.get(conn, provider_id)
+    # The config reads are bucket-metadata (no object listing) — gate them at the
+    # bucket level. The performance profile is the ONE sub-tool that LISTS objects
+    # (list_objects_v2 at the prefix, defaulting to the bucket root), so it needs
+    # the stricter listing gate: a prefix-scoped provider must not have the root
+    # listed for it and its out-of-prefix keys persisted. Gated separately below.
+    listing_denial: str | None = None
     if provider is not None:
         denial = check_scope(provider.allowed_buckets, provider.allowed_prefixes,
                              bucket, prefix=prefix)
         if denial:
             raise RunError(denial)
+        listing_denial = check_scope(provider.allowed_buckets, provider.allowed_prefixes,
+                                     bucket, prefix=prefix, listing=True)
 
     all_findings: list[dict[str, str]] = []
 
@@ -66,10 +74,24 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
     cost = call_and_collect(
         "review_bucket_cost_optimization", {"provider_id": provider_id, "bucket": bucket},
         lambda: ct.review_bucket_cost_optimization(conn, provider_id, bucket))
-    performance = call_and_collect(
-        "review_bucket_performance_profile",
-        {"provider_id": provider_id, "bucket": bucket, "prefix": prefix},
-        lambda: ct.review_bucket_performance_profile(conn, provider_id, bucket, prefix))
+    if listing_denial:
+        # Prefix-scoped provider with no in-scope prefix: skip the object-listing
+        # profile entirely rather than list the bucket root out of scope. The rest
+        # of the review (bucket-metadata reads) still runs.
+        performance = {"success": True, "skipped": True,
+                       "facts": {"list_status": "out_of_scope", "inconclusive": True},
+                       "findings": [{"category": ct.NOT_APPLICABLE,
+                                     "title": "Performance profile skipped (prefix scope)",
+                                     "detail": listing_denial}]}
+        for f in performance["findings"]:
+            bus.publish(run_id, {"type": "finding", "severity": f["category"],
+                                 "title": f["title"], "detail": f["detail"]})
+            all_findings.append(f)
+    else:
+        performance = call_and_collect(
+            "review_bucket_performance_profile",
+            {"provider_id": provider_id, "bucket": bucket, "prefix": prefix},
+            lambda: ct.review_bucket_performance_profile(conn, provider_id, bucket, prefix))
 
     counts = dict(Counter(f["category"] for f in all_findings))
     summary_text = (
