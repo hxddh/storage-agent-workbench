@@ -111,11 +111,66 @@ def test_delete_missing_returns_404(client):
     assert client.delete("/model-providers/nope").status_code == 404
 
 
-def test_test_endpoint_reports_complete(client):
+class _FakeResp:
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+
+
+def test_test_endpoint_reports_complete(client, monkeypatch):
+    import httpx
+
     provider_id = _create(client).json()["id"]
+    seen = {}
+
+    def fake_get(url, headers=None, timeout=None):
+        seen["url"] = url
+        seen["auth"] = (headers or {}).get("Authorization", "")
+        return _FakeResp(200)
+
+    monkeypatch.setattr(httpx, "get", fake_get)
     resp = client.post(f"/model-providers/{provider_id}/test")
     assert resp.status_code == 200
     body = resp.json()
     assert body["ok"] is True
     assert body["checks"]["api_key_present"] is True
+    assert body["checks"]["api_key_accepted"] is True
+    assert body["checks"]["endpoint_reachable"] is True
+    # The probe hit the provider's /models with the key — but the secret never
+    # appears in the RESPONSE.
+    assert seen["url"].endswith("/models") and SECRET in seen["auth"]
     assert SECRET not in resp.text
+
+
+def test_test_endpoint_flags_rejected_key(client, monkeypatch):
+    import httpx
+
+    provider_id = _create(client).json()["id"]
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(401))
+    body = client.post(f"/model-providers/{provider_id}/test").json()
+    assert body["ok"] is False
+    assert body["checks"]["api_key_accepted"] is False
+
+
+def test_test_endpoint_unreachable_is_reported(client, monkeypatch):
+    import httpx
+
+    def boom(*a, **k):
+        raise httpx.ConnectError("no route")
+
+    provider_id = _create(client).json()["id"]
+    monkeypatch.setattr(httpx, "get", boom)
+    body = client.post(f"/model-providers/{provider_id}/test").json()
+    assert body["ok"] is False
+    assert body["checks"]["endpoint_reachable"] is False
+
+
+def test_test_endpoint_no_models_endpoint_is_reachable_unverified(client, monkeypatch):
+    import httpx
+
+    provider_id = _create(client).json()["id"]
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(404))
+    body = client.post(f"/model-providers/{provider_id}/test").json()
+    # Endpoint answered (reachable); key neither proven nor disproven → ok.
+    assert body["ok"] is True
+    assert body["checks"]["endpoint_reachable"] is True
+    assert "api_key_accepted" not in body["checks"]

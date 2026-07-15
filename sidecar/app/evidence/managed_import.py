@@ -530,15 +530,36 @@ def _combine_inventory(parts: list[Path], fmt: str, schema: str | None, dest_dir
                 writer = _TrackedWriter(fh)
                 _append_with_newline(part, writer)
         else:
-            # No schema: assume each file carries its own header; keep the first
-            # file's header and drop subsequent header lines.
+            # No schema (prefix-listing fallback, no manifest). Only skip the
+            # first line of subsequent parts when the parts REALLY carry a
+            # header: S3 Inventory CSVs are headerless (and access-log parts are
+            # raw lines), so unconditionally skipping dropped the first DATA
+            # row/log line of every part after the first. Peek at part 0's first
+            # line and skip only if it looks like an inventory header.
+            headered = _first_line_looks_like_header(parts[0]) if parts else False
             for i, part in enumerate(parts):
                 tracked = _TrackedWriter(fh)
-                writer = tracked if i == 0 else _SkipFirstLineWriter(tracked)
+                writer = tracked if (i == 0 or not headered) else _SkipFirstLineWriter(tracked)
                 _append_maybe_gunzip(part, writer)
                 if writer.wrote and writer.last != b"\n":
                     tracked.write(b"\n")
     return out_path
+
+
+def _first_line_looks_like_header(part: Path) -> bool:
+    """Best-effort: does this (possibly gzipped) part start with a CSV header
+    row of known inventory column names? Bounded read; any failure → False
+    (treat as headerless, which never loses data)."""
+    from ..analysis.inventory import _looks_like_header
+    try:
+        with part.open("rb") as fh:
+            head = fh.read(65536)
+        if head[:2] == b"\x1f\x8b":
+            head = zlib.decompressobj(wbits=31).decompress(head, 65536)
+        first = head.split(b"\n", 1)[0].decode("utf-8", "replace").strip()
+        return bool(first) and _looks_like_header([c.strip().strip('"') for c in first.split(",")])
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def download_and_combine(

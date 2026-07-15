@@ -59,6 +59,20 @@ def test_upload_rejects_bad_type(client):
     assert r.status_code == 422
 
 
+def test_upload_over_cap_is_413_and_not_stored(client, monkeypatch):
+    """The session upload streams in bounded chunks with a total cap (it used to
+    buffer the whole file in RAM with no limit — OOM on a multi-GB attachment)."""
+    from app.routers import datasets as ds
+
+    monkeypatch.setattr(ds, "MAX_UPLOAD_BYTES", 1024)  # tiny cap for the test
+    sid = client.post("/sessions", json={"title": "t", "goal": "g"}).json()["id"]
+    r = _upload(client, sid, "big.log", "x" * 4096)
+    assert r.status_code == 413
+    # The partial file was removed.
+    raw_dir = config.data_dir() / "sessions" / sid / "raw"
+    assert not (raw_dir / "big.log").exists()
+
+
 def test_analyze_uploaded_access_log_returns_aggregates(client):
     sid = client.post("/sessions", json={"title": "t", "goal": "g"}).json()["id"]
     did = _upload(client, sid, "a.log", ACCESS_LOG_TEXT).json()["dataset_id"]

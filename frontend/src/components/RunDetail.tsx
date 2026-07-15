@@ -14,6 +14,20 @@ const STATUS_COLOR: Record<string, string> = {
   not_implemented: "text-gray-500",
 };
 
+// Localize the backend enums instead of leaking them raw ("not_implemented",
+// run_type slugs, severity tokens) into user-visible text. Unknown values fall
+// back to the raw string so nothing ever renders blank.
+const STATUS_KEY: Record<string, string> = {
+  pending: "run.queued", running: "run.running", completed: "run.done",
+  failed: "run.failed", not_implemented: "run.na",
+};
+const SEVERITY_KEY: Record<string, string> = {
+  critical: "metric.critical", error: "metric.critical", warning: "metric.warning",
+  opportunity: "metric.opportunity", good: "metric.good",
+  "provider unsupported": "metric.providerUnsupported",
+  "access denied": "metric.accessDenied",
+};
+
 export function RunDetail({
   runId,
   onBack,
@@ -28,6 +42,18 @@ export function RunDetail({
   const [loadError, setLoadError] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
   const { t } = useI18n();
+
+  // Localized run-type / severity labels with a raw-value fallback (never
+  // render an i18n key or a blank for an unknown backend value).
+  const runTypeLabel = (rt?: string | null): string => {
+    if (!rt) return "";
+    const v = t(`runtype.${rt}`);
+    return v === `runtype.${rt}` ? rt : v;
+  };
+  const severityLabel = (sev?: string | null): string => {
+    const s = (sev || "").toLowerCase();
+    return SEVERITY_KEY[s] ? t(SEVERITY_KEY[s]) : sev || "info";
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -289,11 +315,11 @@ export function RunDetail({
             {detail?.title || detail?.run_type || t("run.fallbackTitle")}
           </h1>
           <span className={`text-sm ${STATUS_COLOR[status] ?? "text-gray-400"}`} data-testid="run-status">
-            {status}
+            {STATUS_KEY[status] ? t(STATUS_KEY[status]) : status}
           </span>
         </div>
         <p className="text-sm text-gray-500">
-          {detail?.run_type} · {detail?.bucket || "—"} · {detail?.prefix || t("run.rootPrefix")}
+          {runTypeLabel(detail?.run_type)} · {detail?.bucket || "—"} · {detail?.prefix || t("run.rootPrefix")}
         </p>
       </header>
 
@@ -343,7 +369,7 @@ export function RunDetail({
                         : "text-emerald-400"
                   }
                 >
-                  [{f.severity}]
+                  [{severityLabel(f.severity)}]
                 </span>{" "}
                 <span className="text-gray-200">{f.title}</span>{" "}
                 <span className="text-gray-500">— {f.detail}</span>

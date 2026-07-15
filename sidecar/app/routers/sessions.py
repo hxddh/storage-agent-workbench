@@ -224,14 +224,32 @@ async def upload_session_dataset(
     raw_dir = config.data_dir() / "sessions" / session_id / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     dest = raw_dir / filename
-    contents = await file.read()
-    dest.write_bytes(contents)
+    # Stream to disk in bounded chunks with a total cap (same protection as the
+    # /runs upload endpoint): a single `await file.read()` buffered a multi-GB
+    # attachment fully in RAM — the sidecar OOM'd on exactly the large inventory
+    # files this endpoint invites.
+    from .datasets import _UPLOAD_CHUNK, MAX_UPLOAD_BYTES
+    total = 0
+    with dest.open("wb") as fh:
+        while True:
+            chunk = await file.read(_UPLOAD_CHUNK)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_UPLOAD_BYTES:
+                fh.close()
+                dest.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB limit",
+                )
+            fh.write(chunk)
 
     stored_rel = config.rel_path(dest)
     dataset_id = sds_repo.upsert(conn, session_id, dataset_type, filename, stored_rel)
     audit.record(conn, "session.dataset.upload",
                  {"session_id": session_id, "dataset_id": dataset_id,
-                  "dataset_type": dataset_type, "bytes": len(contents)}, run_id=None)
+                  "dataset_type": dataset_type, "bytes": total}, run_id=None)
     conn.commit()
     return SessionDatasetUploadResponse(
         dataset_id=dataset_id, session_id=session_id, dataset_type=dataset_type,

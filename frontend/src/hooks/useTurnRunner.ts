@@ -22,7 +22,9 @@ import {
   getSessionRun,
   patchSessionRun,
   registerTurnAbort,
+  registerTurnCancel,
   unregisterTurnAbort,
+  unregisterTurnCancel,
 } from "../sessionRuns";
 import { useI18n, type TFunc } from "../i18n";
 import type { SessionDetail, ToolActivity } from "../types";
@@ -266,6 +268,12 @@ export function useTurnRunner(opts: {
     // unregister so a newer turn's aborter isn't clobbered.
     const abort = () => controller.abort();
     registerTurnAbort(id, abort);
+    // And let it cancel the turn SERVER-SIDE too — otherwise the worker keeps
+    // generating (and spending) against a deleted session.
+    const serverCancel = () => {
+      void cancelSessionTurn(id, turnId).catch(() => undefined);
+    };
+    registerTurnCancel(id, serverCancel);
     let outcome: Outcome = "failed";
     try {
       try {
@@ -341,6 +349,7 @@ export function useTurnRunner(opts: {
     } finally {
       turnsRef.current.delete(id);
       unregisterTurnAbort(id, abort);
+      unregisterTurnCancel(id, serverCancel);
       patchSessionRun(id, { busy: false });
     }
   };
@@ -377,13 +386,17 @@ export function useTurnRunner(opts: {
   // toward the new ask instead of restarting from scratch. If nothing is
   // running, it degrades to a normal submit. The timing gate (waitForIdle) is
   // load-bearing: reopening before the partial persists would lose the trace.
-  const steer = async (text: string) => {
+  // `resend` (optional) is how the redirected message is sent once the turn
+  // settles — the caller passes it when the composer holds an ATTACHMENT, so a
+  // steer routes through the dataset-upload path instead of silently dropping
+  // the file (the two send paths must agree about attachments).
+  const steer = async (text: string, resend?: () => Promise<void>) => {
     const q = text.trim();
-    if (!q) return;
+    if (!q && !resend) return;
     const id = localId.current;
     const flight = id ? turnsRef.current.get(id) : null;
     if (!id || !flight) {
-      await submit(q);
+      await (resend ? resend() : submit(q));
       return;
     }
     setText(""); // immediate feedback: the composer clears as the redirect is dispatched
@@ -395,7 +408,7 @@ export function useTurnRunner(opts: {
       setText(q);
       return;
     }
-    await submit(q);
+    await (resend ? resend() : submit(q));
   };
 
   // Composer file upload → agent-native analysis. The file is attached to the

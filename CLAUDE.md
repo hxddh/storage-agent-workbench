@@ -242,10 +242,13 @@ Allowed MVP tool groups:
 - `get_object_tagging` (read-only, one object — tag set, keys+values redacted, ≤20 tags)
 - `get_object_attributes` (read-only, one object — checksum/parts/storage-class/size, no body; `provider_unsupported` on gap)
 - `test_range_get`
+- `test_conditional_get` (read-only HeadObject + If-None-Match — 304 vs 200 ETag freshness probe; no body either way)
 - `preview_object` (bounded ≤1 MiB, read-only, sanitized, text-only, per-turn budget)
 - `measure_request_latency` (read-only, bounded head round-trips — live min/p50/p95/max latency; probe, not load test; per-turn budget)
+- `diagnose_presigned_url` (pure parse of a user-pasted presigned URL — expiry/scope/style; NO network call, signature + key id dropped, never echoed)
 - `list_object_versions` (read-only, bounded, sample keys ≤20 — version/delete-marker pileup)
 - `list_multipart_uploads` (read-only, bounded — incomplete/abandoned uploads; list only, no abort)
+- `list_upload_parts` (read-only ListParts for ONE in-progress multipart upload — parts/bytes/times; list only, no abort)
 - `test_addressing_style` (S3 layer: `test_path_style_vs_virtual_host`)
 - `inspect_endpoint_tls` (S3 layer: `inspect_tls`)
 

@@ -899,7 +899,11 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
                     while len(activity) > emitted_tools:
                         yield ("tool", activity[emitted_tools])
                         emitted_tools += 1
-                    partial = strip_chain_of_thought(redact_text(raw_acc)).strip()
+                    # _hold_back_contract too (like the live sanitizer): a cancel
+                    # mid-way through the trailing ```json contract block would
+                    # otherwise leak the dangling fence into the persisted answer.
+                    partial = _hold_back_contract(
+                        strip_chain_of_thought(redact_text(raw_acc))).strip()
                     answer_text = (partial + "\n\n" if partial else "") + _STOPPED_MARKER
                     contract = _finalize_contract(answer_text, skill_names, activity)
                     contract["stopped"] = True

@@ -6,6 +6,115 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-07-14
+
+_One combined release fixing EVERY finding of the v0.24.19 deep-mining audit
+(three parallel reviews: bug hunt, end-to-end flow trace, tool-coverage
+analysis): 8 correctness bugs, 10 functional/usage defects, and the full
+tool-coverage batch — 6 "already fetched, just dropped" field surfacings plus
+3 new read-only tools. Security floor unchanged: everything remains read-only,
+bounded, redacted; the new presigned-URL tool makes NO network call and drops
+all credential material._
+
+### Fixed — correctness
+
+- **Bucket security review now flags `AuthenticatedUsers` ACL grants as public.**
+  `_acl_public` matched only `AllUsers`, so a bucket ACL granting to
+  AuthenticatedUsers (any AWS account — effectively public) was reported clean.
+  Both group URIs now raise the CRITICAL finding, consistent with the
+  object-level `get_object_acl`.
+- **A summary whose reads ALL errored reports `overall_status='inconclusive'`.**
+  It previously fell through to `"reviewed"` with zero aspects assessed.
+- **Policy principals are matched EXACTLY against `'*'`.** `_policy_facts` used a
+  substring test, so a partial-wildcard ARN like `role/deploy-*` produced a false
+  CRITICAL "Anonymous s3:GetObject allowed". Now identical to `_detail_policy`.
+- **Multi-part headerless inventory combine no longer drops a data row per part.**
+  The no-manifest fallback assumed every part carried a header and skipped each
+  subsequent part's first line — but S3 Inventory parts are headerless (and
+  access-log parts are raw lines). The combiner now peeks at part 0 and only
+  dedupes headers when a real header is present.
+- **Headerless-inventory timestamp detection accepts date-only and epoch
+  columns.** `2024-01-15` and unix-epoch (s/ms) modified columns were unmapped
+  (age become 100% "unknown"; an epoch column could even steal the `size`
+  mapping). Epochs are converted to ISO at import so DuckDB can cast them.
+- **`get_object_attributes` can't misreport `checksum_algorithm="Type"`** — the
+  algorithm is now extracted from a known-algorithm whitelist (the `Checksum`
+  struct also carries `ChecksumType`, which a prefix match could grab).
+- **Cancelling mid-answer can't leak a dangling ```` ```json ```` contract
+  fence** into the persisted partial (the cancel path now applies the same
+  contract holdback as the live stream sanitizer).
+- **A code-less HTTP 403 on `test_credentials` is a failure again**, not
+  "authenticated (ListBuckets denied)" — without an error code, auth failure
+  can't be ruled out.
+
+### Fixed — flows
+
+- **Session file uploads stream to disk with a 2 GiB cap + HTTP 413.** The live
+  composer endpoint buffered the ENTIRE attachment in RAM with no size limit
+  (OOM on multi-GB inventories); the chunked/capped logic existed only on an
+  endpoint the frontend never calls. Oversized uploads are refused cleanly and
+  the partial file removed.
+- **Gzipped access logs actually decompress.** `.gz` was accepted but read as
+  raw bytes — every line became a null-field row and the analysis reported a
+  confident "No anomalies detected" built from nothing.
+- **`.tsv` files parse as tab-separated** in both the access-log and inventory
+  importers (previously collapsed to one column by the comma reader), and the
+  format detector recognizes TSV headers.
+- **`.json` / `.jsonl` access logs are selectable in the composer** — the
+  backend always parsed JSONL fully; the file picker just refused the extension.
+- **Steering (Enter during a run) no longer silently drops a pending
+  attachment** — a redirect now routes through the same dataset-upload path as
+  send, or asks for the file type first.
+- **The model-provider "Test" makes a real call.** It was a local config check
+  that passed invalid keys (first turn then failed). It now probes
+  `{base_url}/models` with the key (5s timeout) and classifies: key accepted /
+  key rejected / endpoint unreachable / reachable-but-no-/models. No response
+  body or secret is echoed.
+- **Forked sessions keep run links** (read-only references), so run-dependent
+  proposal cards (e.g. "import inventory" needing the discovery run) stay
+  actionable instead of dead-ending with "run discovery first".
+- **Deleting a session mid-turn cancels the server-side turn too** (best-effort)
+  — the worker previously kept generating (and spending) against a deleted
+  session.
+- **Session reports list only completed runs** (in-flight ones are counted, not
+  rendered as `(running) — —`), and RunDetail no longer leaks raw backend enums
+  (`not_implemented`, run-type slugs, severity tokens) — all localized.
+
+### Added — tool coverage
+
+- **`head_object` surfaces its dropped diagnostic headers** — `replication_status`
+  ("did it replicate?"), `restore` (GLACIER restore progress/expiry),
+  `archive_status`, `parts_count`, `lifecycle_expiration` ("when will lifecycle
+  delete this?"), `version_id`, `content_type`/`content_encoding`/`cache_control`
+  (stale-read diagnosis), `website_redirect_location` — and accepts
+  `version_id` to HEAD a specific version.
+- **`list_objects` returns per-key detail** (`objects`: size / storage class /
+  mtime for the first 100 entries), so size-distribution and storage-class
+  sampling need one listing, not N× head_object.
+- **`list_object_versions` returns `sample_versions`** with per-entry
+  `version_id` / `is_latest` / `is_delete_marker` / size / storage class — the
+  agent can now point at WHICH version is the pileup and inspect it.
+- **The config summary exposes `bucket_region` + `region_mismatch`** (bucket
+  LocationConstraint vs the provider's configured region) — the #1
+  SignatureDoesNotMatch root cause, previously unreadable on the agent surface.
+- **`review_bucket_lifecycle` surfaces `mfa_delete_enabled`** (same
+  GetBucketVersioning response, previously dropped) — answers "why can't I
+  delete this version?".
+- **Two new config-detail aspects (15 total): `metrics` and `analytics`** —
+  request-metrics configurations and storage-class-analysis (with reduced
+  export destination), completing the observability skill's audit layers.
+- **New tool `diagnose_presigned_url`** — pure PARSE of a user-pasted presigned
+  URL (no network call): signature version, computed expired/valid, credential
+  SCOPE (date/region/service — the key id and signature are dropped entirely),
+  signed headers, addressing style, and a `problems` list. Turns "my presigned
+  URL 403s" into a computation.
+- **New tool `list_upload_parts`** — read-only ListParts for ONE in-progress
+  multipart upload: parts, bytes accrued, first/last part times ("this abandoned
+  upload holds N GB since June"). Listing only; no abort.
+- **New tool `test_conditional_get`** — HeadObject + If-None-Match: 304 proves a
+  cached ETag is still current (stale reads = cache/CDN), 200 returns the new
+  ETag. No body either way.
+
 ## [0.24.19] - 2026-07-14
 
 _Frontend UX pass (third of the usability sweep): five focused fixes where the

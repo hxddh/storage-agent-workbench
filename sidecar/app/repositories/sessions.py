@@ -89,9 +89,11 @@ def delete(conn: sqlite3.Connection, session_id: str) -> None:
 
 def fork(conn: sqlite3.Connection, session_id: str) -> str | None:
     """Create a new session that copies another's title/goal/provider, its full
-    message thread, and the agent's working memory, so a branched conversation
-    keeps its context. Runs, deterministic findings and the derived summary are
-    NOT copied (they belong to the source's runs)."""
+    message thread, the agent's working memory, its uploaded datasets, and its
+    run LINKS (read-only references to the shared run records — needed so
+    run-dependent proposal cards stay actionable in the fork). Deterministic
+    findings and the derived summary are NOT copied (they are rebuilt from the
+    linked runs on demand)."""
     src = get_row(conn, session_id)
     if src is None:
         return None
@@ -164,6 +166,20 @@ def fork(conn: sqlite3.Connection, session_id: str) -> str | None:
             "VALUES (?, ?, ?, ?, ?, 'uploaded', ?)",
             (uuid.uuid4().hex, new_id, d["dataset_type"], d["source_filename"],
              new_stored_rel, now),
+        )
+    # Copy run LINKS (read-only references — the run records themselves are
+    # shared, not duplicated). Without them, a copied proposal card that resolves
+    # against the session's runs (e.g. "import inventory" needing the
+    # account_discovery run) dead-ends in the fork with "run discovery first".
+    run_links = conn.execute(
+        "SELECT run_id, role, created_at FROM session_runs "
+        "WHERE session_id = ? ORDER BY rowid", (session_id,)
+    ).fetchall()
+    for rl in run_links:
+        conn.execute(
+            "INSERT INTO session_runs (id, session_id, run_id, role, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (uuid.uuid4().hex, new_id, rl["run_id"], rl["role"], rl["created_at"]),
         )
     conn.commit()
     return new_id

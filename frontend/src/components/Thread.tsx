@@ -36,8 +36,10 @@ const propKey = (p: NextAction) => `${p.action_type}::${p.title}`;
 // null = ambiguous → the composer shows an Inventory/Access-log toggle.
 const inferDatasetType = (name: string): "inventory" | "access_log" | null => {
   const n = name.toLowerCase();
-  if (/\.(csv|parquet|tsv)$/.test(n)) return "inventory";
-  if (/\.(log|txt)(\.gz)?$/.test(n) || n.includes("access") || n.includes("log")) return "access_log";
+  if (/\.(csv|parquet|tsv)(\.gz)?$/.test(n)) return "inventory";
+  // JSONL is a fully-supported access-log shape (the backend parses it) — it
+  // just wasn't selectable before.
+  if (/\.(log|txt|json|jsonl)(\.gz)?$/.test(n) || n.includes("access") || n.includes("log")) return "access_log";
   return null;
 };
 
@@ -388,7 +390,20 @@ export function Thread({
       uploading={uploading}
       onSend={send}
       onStop={runner.stop}
-      onSteer={() => { if (text.trim()) void runner.steer(text.trim()); }}
+      onSteer={() => {
+        // A pending attachment rides along on a redirect (via the dataset-upload
+        // path) instead of being silently dropped — same rules as send().
+        if (attached) {
+          const type = attachType ?? inferDatasetType(attached.name);
+          if (!type) {
+            setViewError(t("attach.pickTypeHint"));
+            return;
+          }
+          void runner.steer(text.trim(), () => runner.submitWithDataset(text.trim(), attached, type));
+          return;
+        }
+        if (text.trim()) void runner.steer(text.trim());
+      }}
       modelName={modelName}
       onOpenSettings={onOpenSettings}
       onSlashReport={openReport}

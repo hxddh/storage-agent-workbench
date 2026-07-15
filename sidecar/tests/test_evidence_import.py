@@ -476,6 +476,34 @@ def test_combine_access_logs_streams_and_gunzips(tmp_path):
     assert "GET /a 200" in text and "GET /c 200" in text
 
 
+def test_combine_headerless_inventory_parts_lose_no_rows(tmp_path):
+    """No-manifest fallback: S3 Inventory parts are HEADERLESS — skipping each
+    subsequent part's 'header' silently dropped its first DATA row."""
+    from app.evidence import managed_import as mi
+
+    p1 = tmp_path / "part_00000"
+    p1.write_bytes(b'"b","k1","10"\n"b","k2","20"\n')
+    p2 = tmp_path / "part_00001"
+    p2.write_bytes(b'"b","k3","30"\n"b","k4","40"\n')
+    combined = mi._combine_inventory([p1, p2], "csv", None, tmp_path)
+    text = combined.read_text()
+    for k in ("k1", "k2", "k3", "k4"):
+        assert k in text, f"row {k} lost in combine"
+
+
+def test_combine_headered_parts_still_dedupe_headers(tmp_path):
+    from app.evidence import managed_import as mi
+
+    p1 = tmp_path / "h_00000"
+    p1.write_bytes(b"Bucket,Key,Size\nb,k1,10\n")
+    p2 = tmp_path / "h_00001"
+    p2.write_bytes(b"Bucket,Key,Size\nb,k2,20\n")
+    combined = mi._combine_inventory([p1, p2], "csv", None, tmp_path)
+    text = combined.read_text()
+    assert text.count("Bucket,Key,Size") == 1  # one header kept
+    assert "k1" in text and "k2" in text
+
+
 def test_claim_for_import_is_atomic(client, monkeypatch):
     """Two concurrent confirmed→importing claims: exactly one wins."""
     from app.repositories import evidence_imports as repo

@@ -1018,3 +1018,166 @@ def test_get_object_attributes_provider_unsupported(client, cloud_id, stub):
     with _db() as conn:
         res = s3.get_object_attributes(conn, cloud_id, BUCKET, "k")
     assert res["success"] is True and res["attributes_status"] == "provider_unsupported"
+
+
+def test_get_object_attributes_checksum_type_not_misread_as_algorithm(client, cloud_id, stub):
+    """The Checksum struct also carries ChecksumType (COMPOSITE/FULL_OBJECT);
+    the algorithm extraction must never yield the string 'Type'."""
+    from app.s3 import tools as s3
+
+    _, s = stub
+    s.add_response("get_object_attributes", {
+        "ETag": "e", "ObjectSize": 1,
+        "Checksum": {"ChecksumType": "COMPOSITE", "ChecksumCRC32C": "abcd"},
+    }, expected_params={
+        "Bucket": BUCKET, "Key": "k",
+        "ObjectAttributes": ["ETag", "Checksum", "ObjectParts", "StorageClass", "ObjectSize"]})
+    with _db() as conn:
+        res = s3.get_object_attributes(conn, cloud_id, BUCKET, "k")
+    assert res["checksum_algorithm"] == "CRC32C"
+
+
+# --- head_object diagnostic fields + version targeting -----------------------
+
+
+def test_head_object_surfaces_diagnostic_headers(client, cloud_id, stub):
+    from datetime import datetime, timezone
+
+    _, s = stub
+    s.add_response("head_object", {
+        "ContentLength": 10, "ETag": '"e"',
+        "LastModified": datetime(2024, 1, 1, tzinfo=timezone.utc),
+        "StorageClass": "GLACIER",
+        "ReplicationStatus": "FAILED",
+        "Restore": 'ongoing-request="true"',
+        "PartsCount": 3, "VersionId": "v1",
+        "Expiration": 'expiry-date="Fri, 21 Dec 2024 00:00:00 GMT", rule-id="archive"',
+        "ContentType": "application/octet-stream", "CacheControl": "max-age=60",
+    }, expected_params={"Bucket": BUCKET, "Key": "obj"})
+    with _db() as conn:
+        res = s3.head_object(conn, cloud_id, BUCKET, "obj")
+    assert res["replication_status"] == "FAILED"
+    assert "ongoing-request" in res["restore"]
+    assert res["parts_count"] == 3 and res["version_id"] == "v1"
+    assert "expiry-date" in res["lifecycle_expiration"]
+    assert res["content_type"] == "application/octet-stream"
+    assert res["cache_control"] == "max-age=60"
+
+
+def test_head_object_targets_specific_version(client, cloud_id, stub):
+    _, s = stub
+    s.add_response("head_object", {"ContentLength": 5, "ETag": '"old"'},
+                   expected_params={"Bucket": BUCKET, "Key": "obj", "VersionId": "v-old"})
+    with _db() as conn:
+        res = s3.head_object(conn, cloud_id, BUCKET, "obj", version_id="v-old")
+    assert res["success"] is True and res["etag"] == '"old"'
+
+
+# --- list_object_versions per-entry detail ------------------------------------
+
+
+def test_list_object_versions_sample_versions_carry_ids(client, cloud_id, stub):
+    from datetime import datetime, timezone
+
+    _, s = stub
+    lm = datetime(2024, 6, 1, tzinfo=timezone.utc)
+    s.add_response("list_object_versions", {
+        "Versions": [
+            {"Key": "a", "VersionId": "v2", "IsLatest": True, "Size": 10,
+             "StorageClass": "STANDARD", "LastModified": lm},
+            {"Key": "a", "VersionId": "v1", "IsLatest": False, "Size": 8,
+             "StorageClass": "STANDARD", "LastModified": lm},
+        ],
+        "DeleteMarkers": [{"Key": "b", "VersionId": "d1", "IsLatest": True, "LastModified": lm}],
+        "IsTruncated": False,
+    }, expected_params={"Bucket": BUCKET, "Prefix": "", "MaxKeys": 1000})
+    with _db() as conn:
+        res = s3.list_object_versions(conn, cloud_id, BUCKET)
+    sv = res["sample_versions"]
+    assert {e["version_id"] for e in sv} == {"v1", "v2", "d1"}
+    assert any(e["is_delete_marker"] for e in sv)
+    noncurrent = next(e for e in sv if e["version_id"] == "v1")
+    assert noncurrent["is_latest"] is False and noncurrent["size"] == 8
+
+
+# --- diagnose_presigned_url (pure parse, no secrets) --------------------------
+
+
+def test_presigned_v4_expired_and_scope_no_secret_leak():
+    url = ("https://bucket.s3.us-east-1.amazonaws.com/path/obj.bin"
+           "?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+           "&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20200101%2Feu-west-1%2Fs3%2Faws4_request"
+           "&X-Amz-Date=20200101T000000Z&X-Amz-Expires=3600"
+           "&X-Amz-SignedHeaders=host&X-Amz-Signature=deadbeefcafe")
+    res = s3.diagnose_presigned_url(url)
+    assert res["success"] is True and res["signature_version"] == "v4"
+    assert res["expired"] is True and "url_expired" in res["problems"]
+    assert res["scope_region"] == "eu-west-1" and res["scope_service"] == "s3"
+    # Credential material never enters the result.
+    blob = json.dumps(res)
+    assert "AKIAIOSFODNN7EXAMPLE" not in blob and "deadbeefcafe" not in blob
+
+
+def test_presigned_v2_and_non_presigned():
+    v2 = s3.diagnose_presigned_url(
+        "https://s3.example.com/b/k?AWSAccessKeyId=AKIAX&Expires=1200000000&Signature=sig")
+    assert v2["signature_version"] == "v2" and v2["expired"] is True
+    assert "AKIAX" not in json.dumps(v2)
+    plain = s3.diagnose_presigned_url("https://example.com/plain")
+    assert "no_presign_parameters_found" in plain["problems"]
+
+
+# --- list_upload_parts (read-only ListParts) ----------------------------------
+
+
+def test_list_upload_parts_totals_and_samples(client, cloud_id, stub):
+    from datetime import datetime, timezone
+
+    _, s = stub
+    t1 = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    t2 = datetime(2024, 1, 2, tzinfo=timezone.utc)
+    s.add_response("list_parts", {
+        "Parts": [{"PartNumber": 1, "Size": 100, "LastModified": t1},
+                  {"PartNumber": 2, "Size": 150, "LastModified": t2}],
+        "IsTruncated": False,
+    }, expected_params={"Bucket": BUCKET, "Key": "big", "UploadId": "up-1", "MaxParts": 1000})
+    with _db() as conn:
+        res = s3.list_upload_parts(conn, cloud_id, BUCKET, "big", "up-1")
+    assert res["part_count"] == 2 and res["total_bytes"] == 250
+    assert res["first_part_at"].startswith("2024-01-01")
+    assert res["last_part_at"].startswith("2024-01-02")
+
+
+# --- test_conditional_get (If-None-Match) --------------------------------------
+
+
+def test_conditional_get_304_means_unchanged(client, cloud_id, stub):
+    _, s = stub
+    s.add_client_error("head_object", service_error_code="304", http_status_code=304)
+    with _db() as conn:
+        res = s3.test_conditional_get(conn, cloud_id, BUCKET, "k", '"etag1"')
+    assert res["success"] is True and res["etag_matches"] is True and res["status_code"] == 304
+
+
+def test_conditional_get_200_returns_current_etag(client, cloud_id, stub):
+    _, s = stub
+    s.add_response("head_object", {"ETag": '"etag2"', "ContentLength": 9},
+                   expected_params={"Bucket": BUCKET, "Key": "k", "IfNoneMatch": '"etag1"'})
+    with _db() as conn:
+        res = s3.test_conditional_get(conn, cloud_id, BUCKET, "k", '"etag1"')
+    assert res["etag_matches"] is False and res["current_etag"] == '"etag2"'
+
+
+def test_credentials_codeless_403_is_not_reported_authenticated(client, cloud_id, monkeypatch):
+    """A 403 with NO parseable error code can be an auth failure — do not claim
+    the credentials are valid."""
+    from botocore.exceptions import ClientError as CE
+
+    class _Boom:
+        def list_buckets(self):
+            raise CE({"Error": {}, "ResponseMetadata": {"HTTPStatusCode": 403}}, "ListBuckets")
+
+    monkeypatch.setattr(client_factory, "build_s3_client", lambda *a, **k: _Boom())
+    with _db() as conn:
+        res = s3.test_credentials(conn, cloud_id)
+    assert res["success"] is False

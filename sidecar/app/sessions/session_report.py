@@ -47,11 +47,19 @@ def _bullets(items: list[str]) -> str:
 def _timeline_md(runs: list[dict[str, Any]]) -> str:
     if not runs:
         return "- No runs linked yet."
-    return "\n".join(
+    # Only terminal runs carry a result worth reporting; an in-flight run would
+    # render as "(running) — —". Count the in-progress ones instead of listing
+    # empty lines for them.
+    done = [r for r in runs if r.get("status") in ("completed", "failed", "not_implemented")]
+    in_flight = len(runs) - len(done)
+    lines = [
         f"- `{r.get('run_type')}` ({r.get('status')}) — {r.get('final_summary') or '—'} "
         f"[{str(r.get('run_id') or '')[:8]}]"
-        for r in runs
-    )
+        for r in done
+    ]
+    if in_flight:
+        lines.append(f"- {in_flight} run(s) still in progress (not included in this report).")
+    return "\n".join(lines) if lines else "- No completed runs yet."
 
 
 def _triage_md(cases: list[dict[str, Any]]) -> str:

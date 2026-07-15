@@ -127,9 +127,20 @@ def _row(ts, method, path, status, nbytes, latency, ua, ip, request_id, raw) -> 
     }
 
 
+def _open_text(path: str | Path):
+    """Open a log file as text, transparently gunzipping ``.gz`` — the composer
+    accepts gzipped logs, and reading them as raw bytes previously produced
+    mojibake rows and a misleadingly clean 'no anomalies' analysis."""
+    import gzip
+    p = Path(path)
+    if p.name.lower().endswith(".gz"):
+        return gzip.open(p, "rt", encoding="utf-8", errors="replace")
+    return open(p, "r", encoding="utf-8", errors="replace")
+
+
 def _nonempty_lines(path: str | Path, limit: int | None = None) -> list[str]:
     out: list[str] = []
-    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+    with _open_text(path) as fh:
         for line in fh:
             s = line.strip()
             if not s:
@@ -170,12 +181,14 @@ def detect_log_format(path: str | Path) -> dict[str, Any]:
                 fmt = "unknown"
         if fmt == "unknown" and (_TEXT_RE.match(first) or _CLF_RE.match(first)):
             fmt = "text"
-        if fmt == "unknown" and "," in first:
-            # CSV header: at least one comma-separated cell EXACTLY matches a
+        if fmt == "unknown" and ("," in first or "\t" in first):
+            # CSV/TSV header: at least one delimited cell EXACTLY matches a
             # column the parser understands (exact match, like pick() — not a
             # substring test, so short tokens like "ip"/"ts" can't false-positive
-            # on arbitrary prose).
-            cells = {c.strip().lower() for c in first.split(",")}
+            # on arbitrary prose). Tab wins when present (a TSV header contains
+            # no commas).
+            delim = "\t" if "\t" in first else ","
+            cells = {c.strip().lower() for c in first.split(delim)}
             if cells & _CSV_HEADER_TOKENS:
                 fmt = "csv"
     return {"format": fmt, "sampled_lines": len(sample)}
@@ -231,7 +244,10 @@ def _parse_csv(path: str | Path) -> list[dict[str, Any]]:
     # skips malformed ones instead of raising a C tokenizer error, and any other
     # parse failure yields [] (the caller falls back to the text parser).
     try:
-        df = pd.read_csv(path, dtype=str, keep_default_na=False,
+        # sep=None + python engine sniffs the delimiter, so comma AND tab
+        # separated logs both parse (the composer accepts .tsv); pandas infers
+        # gzip from the .gz extension.
+        df = pd.read_csv(path, dtype=str, keep_default_na=False, sep=None,
                          engine="python", on_bad_lines="skip", nrows=MAX_INGEST_ROWS)
     except Exception:  # noqa: BLE001
         return []
