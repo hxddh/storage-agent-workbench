@@ -34,8 +34,11 @@ switch) was eliminated in v0.20.0 — do not reintroduce it.
    agent pick a metric + group-by + filters from a hard whitelist, never SQL and
    never raw rows); it runs the heavier read-only `survey_account` /
    `review_bucket_config` tools (`agent_runtime/session_action_tools.py`) when
-   the request is about the account/buckets; and it picks up a backgrounded run's
-   result in a later turn with `read_run_result`. Crucially, **nothing the agent
+   the request is about the account/buckets, then answers account-wide posture
+   questions from the persisted survey with `query_account_profile` (a filtered
+   per-bucket config-flag matrix — no re-scan, statuses only) and "what changed"
+   with `compare_to_last_survey`; and it picks up a backgrounded run's result in a
+   later turn with `read_run_result`. Crucially, **nothing the agent
    does in a conversation surfaces as a structured run card** — those tools
    record runs with `origin='agent'` that the thread filters out; the agent
    narrates the result inline.

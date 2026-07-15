@@ -283,7 +283,75 @@ def build(
             **diff,
         })
 
-    return [review_bucket_config, survey_account, read_run_result, compare_to_last_survey]
+    @function_tool
+    def query_account_profile(provider_id: str, filter: str = "all") -> str:
+        """Read-only: query the MOST RECENT persisted account survey for a cross-bucket posture matrix — answers "which of my buckets have no encryption / no public-access-block / no lifecycle / logging off?" across the whole account WITHOUT re-scanning. Reads ALREADY-PERSISTED, sanitized snapshot flags (no new S3 call, no LLM, no object keys/bodies — statuses only). Returns, per matching bucket, its region + config-flag statuses (versioning/encryption/lifecycle/logging/replication/policy/public_access_block/tagging/inventory + access). `filter` ∈ all | missing_public_access_block | missing_encryption | missing_lifecycle | missing_logging | no_versioning | access_issues. Needs a completed survey_account first (run it if none exists). Args: provider_id, filter? (default 'all')."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Use a configured provider.")
+        allowed = {"all", "missing_public_access_block", "missing_encryption",
+                   "missing_lifecycle", "missing_logging", "no_versioning", "access_issues"}
+        if filter not in allowed:
+            return _err(f"Unknown filter '{filter}'. Choose one of: {', '.join(sorted(allowed))}.")
+        try:
+            run_ids = account_repo.recent_run_ids_for_provider(conn, provider_id, 1)
+            if not run_ids:
+                note("query_account_profile", provider_name(provider_id), "no survey")
+                return json.dumps({
+                    "success": True, "has_survey": False,
+                    "note": ("No account survey exists for this provider yet. Run survey_account "
+                             "first; then this can answer account-wide posture questions from it."),
+                })
+            prof = account_repo.get_profile(conn, run_ids[0])
+            if not prof:
+                return _err("Could not load the latest account survey.")
+        except Exception as exc:  # noqa: BLE001 — a tool returns an error string, never raises
+            return _err(f"query_account_profile failed: {exc}")
+
+        # These are the sanitized, scalar status/bool fields the snapshot persists
+        # (same set diff_profiles compares) — never a key, ARN, or object body.
+        _FLAGS = ("region", "access_status", "head_bucket_status", "versioning_status",
+                  "versioning_enabled", "encryption_status", "lifecycle_status",
+                  "logging_status", "logging_enabled", "replication_status", "policy_status",
+                  "public_access_block_status", "tagging_status", "inventory_status")
+        _NC = "not_configured"
+
+        def matches(b: dict[str, Any]) -> bool:
+            if filter == "all":
+                return True
+            if filter == "missing_public_access_block":
+                return b.get("public_access_block_status") == _NC
+            if filter == "missing_encryption":
+                return b.get("encryption_status") == _NC
+            if filter == "missing_lifecycle":
+                return b.get("lifecycle_status") == _NC
+            if filter == "missing_logging":
+                return b.get("logging_status") == _NC or b.get("logging_enabled") is False
+            if filter == "no_versioning":
+                return b.get("versioning_enabled") is False
+            if filter == "access_issues":
+                return (b.get("access_status") not in (None, "ok", "accessible")
+                        or b.get("head_bucket_status") in ("access_denied", "error"))
+            return True
+
+        buckets = prof.get("buckets") or []
+        rows = [{"bucket": b.get("bucket_name"), **{k: b.get(k) for k in _FLAGS}}
+                for b in buckets if matches(b)]
+        audit.record(conn, "session.query_account_profile",
+                     {"session_id": session_id, "provider_id": provider_id,
+                      "filter": filter, "matched": len(rows)}, run_id=None)
+        conn.commit()
+        note("query_account_profile", provider_name(provider_id),
+             f"{len(rows)}/{len(buckets)} match '{filter}'")
+        return json.dumps({
+            "success": True, "has_survey": True,
+            "survey_run_id": run_ids[0], "surveyed_at": prof.get("created_at"),
+            "filter": filter, "total_buckets": len(buckets),
+            "matched_count": len(rows), "buckets": rows,
+        })
+
+    return [review_bucket_config, survey_account, read_run_result,
+            compare_to_last_survey, query_account_profile]
 
 
 __all__ = ["build"]

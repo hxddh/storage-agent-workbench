@@ -38,9 +38,20 @@ Consistency concern →
 
 ## Investigate with your read-only tools
 
-- `head_object` — the key probe: read the object's ETag, size, last-modified, and
-  storage class. Compare the live ETag to what the client cached to prove staleness
-  is client-side, and classify the ETag (single-part MD5 vs multipart `-N`).
+- `head_object` — the key probe: read the object's ETag, size, last-modified,
+  storage class, and now `replication_status` / `parts_count` /
+  `cache_control` / `content_encoding`. Compare the live ETag to what the client
+  cached to prove staleness is client-side, classify the ETag (single-part MD5 vs
+  multipart `-N` — `parts_count` confirms it), and use `cache_control` to explain
+  a client/CDN serving old bytes.
+- `test_conditional_get` — the sharpest freshness probe: HeadObject with
+  If-None-Match against the client's cached ETag. **304 → the object is
+  unchanged**, so the stale read is a cache/CDN problem, not the store; **200 →
+  it really changed** and the tool returns the current ETag. No body either way.
+  Reach for this before asking the user about their cache layers.
+- `get_object_attributes` — the object's checksum algorithm + part count when you
+  need to diagnose a checksum/multipart-assembly mismatch (falls back to
+  head_object where the provider doesn't implement it).
 - `list_objects` — confirm the object/prefix is actually present (LIST is
   consistent), ruling out "wrong prefix" and pagination illusions.
 - `test_range_get` — confirm the current bytes are readable directly from the

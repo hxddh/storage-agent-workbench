@@ -49,7 +49,14 @@ looks configured but yields nothing when you need it.
 - `review_bucket_observability` — the focused read: logging target, notification
   configuration, and tagging in one pass.
 - `get_bucket_config_summary` — confirms the logging destination bucket + prefix,
-  notification config, and tag set actually present on the bucket.
+  notification config, and tag set actually present on the bucket. Now also reads
+  request `metrics` and storage-class `analytics` config status.
+- `get_bucket_config_detail` — the actual RULES behind the status: aspect
+  `logging` (target bucket/prefix), `notification` (per-target type + events +
+  prefix/suffix filter — use for "my event/Lambda isn't firing"), `metrics`
+  (which prefixes have CloudWatch request metrics), `inventory` (schedule /
+  destination / fields), `analytics` (storage-class-analysis + export). Read the
+  config instead of asking the user for it.
 - `head_bucket` / `list_objects` on the **logging destination** bucket — verify
   logs are truly landing there (config says "on", but are objects arriving?).
 - `list_uploaded_files` + `analyze_uploaded_file` — if the user attaches an

@@ -52,6 +52,17 @@ first, because the layer names differ.
   policy/ACL/public-access-block/encryption posture and point to the layer that
   blocks. For a full posture check run `review_bucket_config` (inline,
   read-only); to enumerate the whole account, run `survey_account`.
+- `get_object_acl` — for "is THIS object public / who can read it?": reads ONE
+  object's ACL and flags an `AllUsers` **or `AuthenticatedUsers`** grant as
+  public (an object can be public even under a locked-down bucket). Grantees are
+  reduced to a KIND — no owner/canonical id leaks. Use `get_object_tagging` when
+  a tag-scoped policy is in play.
+- `get_bucket_config_detail` (aspect `policy` / `public_access_block`) — the
+  actual per-statement effect/actions/`is_public` and the four PAB booleans, so
+  you read the config instead of asking the user for it.
+- `query_account_profile` — for account-wide exposure ("which buckets have no
+  public-access-block?"): filters the last survey's persisted posture matrix
+  (e.g. `missing_public_access_block`) across ALL buckets without re-scanning.
 
 You read configuration; you cannot read the caller's IAM/RAM identity policy — so
 identity-side denials must be confirmed from the policy document the user shares.
