@@ -6,6 +6,68 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-07-15
+
+_Public-posture visibility + budget-table de-ossification. The agent gains
+AWS's authoritative "is this bucket public?" verdict and the modern
+access-control posture, and the v0.27.0 depth elasticity is extended so it can't
+silently re-ossify on a new model. Plus targeted correctness fixes._
+
+### Added
+
+- **Authoritative bucket public-posture, reachable at last.** `get_bucket_config_summary`
+  read `GetBucketPolicyStatus`, `GetBucketOwnershipControls`, and
+  `GetObjectLockConfiguration` but collapsed each to a bare status — the agent had
+  **no path** to the actual values. Four new `get_bucket_config_detail` aspects
+  surface them (read-only, sanitized):
+  - `policy_status` — AWS's **authoritative `IsPublic`** verdict (the combined
+    policy + ACL + public-access-block computation; use before hand-parsing the
+    policy, which misses PAB-override semantics).
+  - `ownership` — Object Ownership (`BucketOwnerEnforced` = ACLs disabled, the
+    recommended posture).
+  - `object_lock` — bucket-level WORM default (enabled + retention mode/days/years).
+  - `acl` — bucket ACL grants reduced to grantee **KIND** + permission (no owner
+    canonical id, display name, or email).
+- **`review_bucket_security` now reports the authoritative verdict** — folds
+  `IsPublic` (a CRITICAL finding when true) and Object Ownership (ACLs-disabled)
+  into its facts + findings, instead of only a hand-computed public boolean.
+- **Operator-declarable model context window.** A model provider can now carry an
+  explicit `context_window` (tokens), overriding the built-in model→window table
+  so a newly-shipped large-context model isn't throttled to the default. New
+  nullable `model_providers.context_window` column (migration 17); optional on the
+  create/update API; unset → inferred from the model name as before.
+
+### Changed
+
+- **Thread-replay context is now model-elastic.** How many prior messages and how
+  many chars per message the agent re-sees (`_MAX_MESSAGES` / `_MAX_REPLAY_MSG`)
+  were flat constants while the v0.27.0 tool-output budget scaled with the model
+  window. They now scale with the window too — floored at the historical values
+  (small models unchanged) and bounded above — so a large-context model keeps more
+  of the thread on a long investigation.
+- **Performance-profile sample widened.** `review_bucket_performance_profile`
+  estimated the small-object ratio from a 100-object sample; raised to 1000 (the
+  ListObjectsV2 page cap) — still a single bounded call and no body reads (the
+  echoed sample stays capped at 20), just a far less noisy statistic.
+
+### Fixed
+
+- **Completion budget is clamped to each model's real max-output.** The
+  per-turn `max_tokens` budget (16k–32k) exceeded some providers' output caps
+  (gpt-4-turbo 4096, Gemini 8192, Claude 3.5 8192) → a hard 400. It's now clamped
+  to a per-model max-output table; unknown models keep the historical floor.
+- **No-credential edge: a configured-but-unresolvable credential now fails
+  loudly.** When a provider had a credential *ref* stored but its vault value was
+  missing (deleted secret / out-of-sync vault), the client silently downgraded to
+  anonymous — surfacing later as a baffling `AccessDenied`. It now raises
+  `CredentialResolutionError` telling the operator to re-enter the credential.
+  (The genuine no-credentials case still signs anonymously, unchanged.)
+- **CSV/TSV delimiter regression from v0.27.0.** The v0.27.0 single-read
+  optimization could lock the parser onto a comma for a TSV whose header cell
+  contained a comma, nulling every request field. The parser now tries the
+  delimiter the header implies first (tab when the header contains a tab, matching
+  the format detector), keeping the single-read win.
+
 ## [0.27.0] - 2026-07-15
 
 _De-ossification + hotfix batch. The agent's investigation depth now scales to

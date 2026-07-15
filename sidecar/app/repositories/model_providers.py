@@ -73,6 +73,7 @@ def _row_to_out(row: sqlite3.Row, active_id: str | None = None) -> ModelProvider
         model=row["model"],
         api_key_ref=row["api_key_ref"],
         has_api_key=keyring_store.secret_exists(row["api_key_ref"]),
+        context_window=row["context_window"],
         active=(row["id"] == active_id),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
@@ -106,8 +107,9 @@ def create(conn: sqlite3.Connection, data: ModelProviderCreate) -> ModelProvider
 
     conn.execute(
         "INSERT INTO model_providers "
-        "(id, name, provider_type, base_url, model, api_key_ref, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "(id, name, provider_type, base_url, model, api_key_ref, context_window, "
+        " created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             provider_id,
             data.name,
@@ -115,6 +117,7 @@ def create(conn: sqlite3.Connection, data: ModelProviderCreate) -> ModelProvider
             data.base_url,
             data.model,
             api_key_ref,
+            data.context_window,
             now,
             now,
         ),
@@ -143,6 +146,9 @@ def update(
     )
     base_url = data.base_url if data.base_url is not None else existing["base_url"]
     model = data.model if data.model is not None else existing["model"]
+    context_window = (
+        data.context_window if data.context_window is not None else existing["context_window"]
+    )
 
     api_key_ref = existing["api_key_ref"]
     if has_value(data.api_key):
@@ -152,8 +158,9 @@ def update(
 
     conn.execute(
         "UPDATE model_providers SET name=?, provider_type=?, base_url=?, model=?, "
-        "api_key_ref=?, updated_at=? WHERE id=?",
-        (name, provider_type, base_url, model, api_key_ref, utcnow(), provider_id),
+        "api_key_ref=?, context_window=?, updated_at=? WHERE id=?",
+        (name, provider_type, base_url, model, api_key_ref, context_window,
+         utcnow(), provider_id),
     )
     audit.record(
         conn,

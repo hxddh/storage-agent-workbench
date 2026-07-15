@@ -245,8 +245,16 @@ def _parse_csv(path: str | Path) -> list[dict[str, Any]]:
     # delimiters in order (comma, then tab) rather than sep=None — the csv.Sniffer
     # raises "Could not determine delimiter" on ambiguous/single-column files,
     # which previously dropped a valid comma CSV to the null-field text fallback.
+    # Try the MORE LIKELY delimiter first: if the header line contains a tab it's
+    # a TSV — try tab before comma. This matches detect_log_format's choice
+    # (`"\t" if "\t" in first else ","`), so parser and detector never disagree,
+    # and it prevents the early-break below from locking onto a comma that merely
+    # lives INSIDE a TSV header cell (which would split the header into 2 junk
+    # columns and null every request field).
+    header = _nonempty_lines(path, limit=1)
+    seps = ("\t", ",") if header and "\t" in header[0] else (",", "\t")
     df = None
-    for sep in (",", "\t"):
+    for sep in seps:
         try:
             cand = pd.read_csv(path, dtype=str, keep_default_na=False, sep=sep,
                                engine="python", on_bad_lines="skip", nrows=MAX_INGEST_ROWS)

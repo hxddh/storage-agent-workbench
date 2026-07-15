@@ -19,8 +19,14 @@ from botocore.exceptions import ClientError
 
 from ..security.redaction import redact_text
 from . import client_factory
+from .tools import _grantee_kind  # reuse the sanitized grantee-KIND reducer
 
-PERF_MAX_KEYS = 100
+# One bounded list page for the small-object-ratio estimate. 1000 == the S3
+# ListObjectsV2 MaxKeys hard cap (s3.tools.MAX_LIST_KEYS): still a SINGLE bounded
+# call and no body reads (rule 12), and the echoed sample stays capped at
+# SAMPLE_LIMIT=20 (rule 16) regardless — this only widens the STATISTICAL base of
+# the ratio, which was noisy at 100. Not a security bound; the caps above are.
+PERF_MAX_KEYS = 1000
 SAMPLE_LIMIT = 20
 SMALL_OBJECT_BYTES = 1024 * 1024
 
@@ -232,6 +238,10 @@ _DETAIL_ASPECTS = {
     "encryption": "get_bucket_encryption",
     "public_access_block": "get_public_access_block",
     "policy": "get_bucket_policy",
+    "policy_status": "get_bucket_policy_status",
+    "ownership": "get_bucket_ownership_controls",
+    "object_lock": "get_object_lock_configuration",
+    "acl": "get_bucket_acl",
     "inventory": "list_bucket_inventory_configurations",
     "website": "get_bucket_website",
     "intelligent_tiering": "list_bucket_intelligent_tiering_configurations",
@@ -533,6 +543,65 @@ def _detail_analytics(data: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _detail_policy_status(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """AWS's AUTHORITATIVE public verdict (GetBucketPolicyStatus.IsPublic) — the
+    combined policy + ACL + Public-Access-Block computation. This is the direct,
+    correct answer to 'is this bucket public?', not the hand-parsed policy guess."""
+    ps = data.get("PolicyStatus") or {}
+    if "IsPublic" not in ps:
+        return []
+    return [{"is_public": bool(ps.get("IsPublic"))}]
+
+
+def _detail_ownership(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Object Ownership (GetBucketOwnershipControls). BucketOwnerEnforced means
+    ACLs are DISABLED — the AWS-recommended posture; the other two keep ACLs
+    active. No account id / ARN in this payload."""
+    rules = (data.get("OwnershipControls") or {}).get("Rules") or []
+    out = []
+    for r in rules[:_MAX_DETAIL_RULES]:
+        ownership = r.get("ObjectOwnership")
+        if not ownership:
+            continue
+        out.append({
+            "object_ownership": ownership,
+            "acls_disabled": ownership == "BucketOwnerEnforced",
+        })
+    return out
+
+
+def _detail_object_lock(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Bucket-level Object Lock default retention (GetObjectLockConfiguration):
+    whether WORM is enabled and the default mode + retention period. Complements
+    the object-level get_object_lock_status ('why can't I delete this object?')."""
+    olc = data.get("ObjectLockConfiguration") or {}
+    enabled = olc.get("ObjectLockEnabled")
+    dr = ((olc.get("Rule") or {}).get("DefaultRetention")) or {}
+    if not enabled and not dr:
+        return []
+    return [{
+        "object_lock_enabled": enabled == "Enabled",
+        "default_mode": dr.get("Mode"),                 # GOVERNANCE | COMPLIANCE
+        "default_retention_days": dr.get("Days"),
+        "default_retention_years": dr.get("Years"),
+    }]
+
+
+def _detail_acl(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Bucket ACL grants reduced to grantee KIND + permission — never the owner
+    canonical id, display name, or email. Answers 'who has grants on this bucket
+    and of what kind (log-delivery / authenticated-users / canonical)?' where the
+    security review only exposes a public yes/no."""
+    grants = data.get("Grants") or []
+    out = []
+    for g in grants[:_MAX_DETAIL_RULES]:
+        out.append({
+            "grantee_kind": _grantee_kind(g.get("Grantee") or {}),
+            "permission": g.get("Permission"),
+        })
+    return out
+
+
 _DETAIL_EXTRACTORS = {
     "replication": _detail_replication,
     "notification": _detail_notification,
@@ -542,6 +611,10 @@ _DETAIL_EXTRACTORS = {
     "encryption": _detail_encryption,
     "public_access_block": _detail_pab,
     "policy": _detail_policy,
+    "policy_status": _detail_policy_status,
+    "ownership": _detail_ownership,
+    "object_lock": _detail_object_lock,
+    "acl": _detail_acl,
     "inventory": _detail_inventory,
     "website": _detail_website,
     "intelligent_tiering": _detail_intelligent_tiering,
@@ -557,8 +630,9 @@ def get_bucket_config_detail(conn: sqlite3.Connection, provider_id: str, bucket:
     """Sanitized RULE detail for one config aspect (read-only GET).
 
     ``aspect`` ∈ replication | notification | cors | logging | lifecycle |
-    encryption | public_access_block | policy | inventory | website |
-    intelligent_tiering | accelerate | request_payment | metrics | analytics.
+    encryption | public_access_block | policy | policy_status | ownership |
+    object_lock | acl | inventory | website | intelligent_tiering | accelerate |
+    request_payment | metrics | analytics.
     Returns
     ``{aspect, status, rules}`` where ``status`` is available / not_configured /
     provider_unsupported / access_denied / error (rule 18: a provider that lacks
@@ -683,6 +757,10 @@ def review_bucket_security(conn: sqlite3.Connection, provider_id: str, bucket: s
     enc = _read(client, "get_bucket_encryption", Bucket=bucket)
     acl = _read(client, "get_bucket_acl", Bucket=bucket)
     pab = _read(client, "get_public_access_block", Bucket=bucket)
+    # AWS's authoritative public verdict (combined policy+ACL+PAB) and the modern
+    # access-control posture — not the hand-parsed policy/ACL guesses above.
+    policy_status = _read(client, "get_bucket_policy_status", Bucket=bucket)
+    ownership = _read(client, "get_bucket_ownership_controls", Bucket=bucket)
 
     pf = _policy_facts(policy)
     findings: list[dict[str, str]] = []
@@ -742,6 +820,35 @@ def review_bucket_security(conn: sqlite3.Connection, provider_id: str, bucket: s
                                  "No public access block configuration is set."))
     findings += _unsupported_findings(pab["status"], "public access block")
 
+    # Authoritative IsPublic (GetBucketPolicyStatus) — AWS's own combined verdict.
+    is_public: bool | None = None
+    if policy_status["status"] == AVAILABLE:
+        is_public = bool((policy_status["data"].get("PolicyStatus") or {}).get("IsPublic"))
+        if is_public:
+            findings.append(_finding(CRITICAL, "Bucket is PUBLIC (AWS authoritative verdict)",
+                                     "GetBucketPolicyStatus.IsPublic is true — AWS considers this "
+                                     "bucket publicly accessible after combining policy, ACL, and "
+                                     "public-access-block. Investigate and lock down."))
+        else:
+            findings.append(_finding(GOOD, "Not public (AWS authoritative verdict)",
+                                     "GetBucketPolicyStatus.IsPublic is false."))
+    findings += _unsupported_findings(policy_status["status"], "policy status")
+
+    # Object Ownership: BucketOwnerEnforced = ACLs disabled (recommended).
+    object_ownership: str | None = None
+    if ownership["status"] == AVAILABLE:
+        rules = (ownership["data"].get("OwnershipControls") or {}).get("Rules") or []
+        object_ownership = rules[0].get("ObjectOwnership") if rules else None
+        if object_ownership == "BucketOwnerEnforced":
+            findings.append(_finding(GOOD, "ACLs disabled (BucketOwnerEnforced)",
+                                     "Object Ownership is BucketOwnerEnforced — bucket/object ACLs "
+                                     "are disabled, the AWS-recommended posture."))
+        elif object_ownership:
+            findings.append(_finding(OPPORTUNITY, "ACLs still active",
+                                     f"Object Ownership is {object_ownership}; consider "
+                                     "BucketOwnerEnforced to disable ACLs entirely."))
+    findings += _unsupported_findings(ownership["status"], "object ownership")
+
     return {
         "success": True,
         "facts": {
@@ -756,6 +863,12 @@ def review_bucket_security(conn: sqlite3.Connection, provider_id: str, bucket: s
             "acl_public": acl_public,
             "public_access_block_status": pab["status"],
             "public_access_block": pab_details,
+            # Authoritative posture (v0.28.0): AWS's own IsPublic verdict + ACL mode.
+            "is_public": is_public,
+            "is_public_status": policy_status["status"],
+            "object_ownership": object_ownership,
+            "acls_disabled": object_ownership == "BucketOwnerEnforced" if object_ownership else None,
+            "ownership_status": ownership["status"],
         },
         "findings": findings,
     }

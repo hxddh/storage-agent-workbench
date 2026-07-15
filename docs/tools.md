@@ -284,16 +284,20 @@ Purpose:
   SignatureDoesNotMatch root cause, now checkable. An all-reads-errored summary
   reports `overall_status='inconclusive'`, never "reviewed".
 - get_bucket_config_detail — read-only, sanitized RULE detail for one aspect that
-  the review tools return only a status/boolean for. Aspects (15): `replication`,
+  the review tools return only a status/boolean for. Aspects (19): `replication`,
   `notification`, `cors`, `logging`, `lifecycle` (transitions/expiration/cleanup),
   `encryption` (SSE algorithm + reduced KMS key), `public_access_block` (the four
   booleans), `policy` (per-statement effect/actions/`is_public` — principal
-  reduced to `*`/`specific`, never the raw ARN), `inventory` (schedule/
-  destination/format/fields), `website` (index/error docs, redirect host,
-  routing-rule count), `intelligent_tiering` (status/filter/tiering days), 
-  `accelerate` (Transfer Acceleration status), `request_payment` (Requester Pays),
-  `metrics` (request-metrics configs), `analytics` (storage-class-analysis +
-  reduced export destination).
+  reduced to `*`/`specific`, never the raw ARN), `policy_status` (AWS's
+  AUTHORITATIVE combined policy+ACL+PAB `IsPublic` verdict — use before hand-
+  parsing `policy`), `ownership` (Object Ownership; `BucketOwnerEnforced` = ACLs
+  disabled), `object_lock` (bucket-level WORM: enabled + default retention mode/
+  days/years), `acl` (bucket ACL grants → grantee KIND + permission, no owner id/
+  email), `inventory` (schedule/destination/format/fields), `website` (index/error
+  docs, redirect host, routing-rule count), `intelligent_tiering` (status/filter/
+  tiering days), `accelerate` (Transfer Acceleration status), `request_payment`
+  (Requester Pays), `metrics` (request-metrics configs), `analytics`
+  (storage-class-analysis + reduced export destination).
   ARNs reduced (account id stripped), values redacted, ≤20 rules; a provider
   lacking the API returns `status='provider_unsupported'`. Fills the config
   skills' decision trees so the agent reads the config instead of asking for it.
@@ -360,8 +364,15 @@ a notice asking the agent to synthesize from what it already has instead of more
 data. The budget is **model-elastic** (`agent_runtime/model_budget.py`) — derived
 from the active model's context window (≈25% of it), with the historical ~200k
 chars as a **hard floor**. A 128k/200k-context model is unchanged; a 1M-context
-model gets a proportionally deeper turn. This scales only sanitized, bounded tool
-output — it never relaxes any security-floor cap (preview/range byte caps, list
+model gets a proportionally deeper turn. The window comes from a built-in
+model→window table, but a model provider can carry an explicit `context_window`
+(tokens) that overrides it — so a newly-shipped large-context model isn't
+throttled to the default. The same window also scales the thread-replay caps
+(how many prior messages / chars the agent re-sees), floored at the historical
+values and capped. The completion (`max_tokens`) budget is additionally clamped
+to each model's real provider max-output, so we never send a value the provider
+rejects. This scales only sanitized, bounded tool output and already-persisted
+context — it never relaxes any security-floor cap (preview/range byte caps, list
 caps, sample caps, ingest caps stay fixed).
 
 ## Forbidden tools
