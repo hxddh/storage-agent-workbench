@@ -326,11 +326,16 @@ def build(
             if filter == "missing_lifecycle":
                 return b.get("lifecycle_status") == _NC
             if filter == "missing_logging":
-                return b.get("logging_status") == _NC or b.get("logging_enabled") is False
+                # Only "confirmed absent" — NOT provider_unsupported/access_denied,
+                # where logging_enabled is also False but the truth is UNKNOWN.
+                return b.get("logging_status") == _NC
             if filter == "no_versioning":
-                return b.get("versioning_enabled") is False
+                return b.get("versioning_status") == _NC
             if filter == "access_issues":
-                return (b.get("access_status") not in (None, "ok", "accessible")
+                # The survey persists access_status as "available" (healthy),
+                # "access_denied", or "error" — never "ok"/"accessible". Match the
+                # real problem values, not the absence of guessed-healthy ones.
+                return (b.get("access_status") in ("access_denied", "error")
                         or b.get("head_bucket_status") in ("access_denied", "error"))
             return True
 

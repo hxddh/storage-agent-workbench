@@ -11,6 +11,7 @@ import sqlite3
 from dataclasses import dataclass
 
 import boto3
+from botocore import UNSIGNED
 from botocore.client import BaseClient
 from botocore.config import Config
 
@@ -84,24 +85,41 @@ def build_s3_client(
     secret_key = _resolve(cfg.secret_key_ref)
     session_token = _resolve(cfg.session_token_ref)
 
-    addressing_style = addressing_style_override or cfg.addressing_style or "virtual"
+    # Default addressing: virtual-hosted for AWS (no endpoint), but PATH-style
+    # when a custom endpoint is set — most S3-compatible endpoints (MinIO/Ceph on
+    # an IP/host without wildcard DNS) require path-style, so virtual-hosting them
+    # by default fails every call.
+    default_addressing = "path" if cfg.endpoint_url else "virtual"
+    addressing_style = addressing_style_override or cfg.addressing_style or default_addressing
     signature_version = cfg.signature_version or "s3v4"
 
+    # Credentials: sign only when BOTH keys are present. When they aren't, sign
+    # ANONYMOUSLY (UNSIGNED) rather than letting botocore fall back to the host's
+    # ambient AWS credentials (env vars / instance metadata) — that would be a
+    # confused-deputy: the operator configured "no credentials", so calls must
+    # NOT silently use the host identity. (Anonymous access still works for a
+    # genuinely public bucket; a private one fails clearly instead of leaking.)
+    signed = bool(access_key and secret_key)
     boto_config = Config(
-        signature_version=signature_version,
+        signature_version=signature_version if signed else UNSIGNED,
         s3={"addressing_style": addressing_style},
         connect_timeout=_CONNECT_TIMEOUT,
         read_timeout=_READ_TIMEOUT,
         retries={"max_attempts": _MAX_ATTEMPTS, "mode": "standard"},
     )
 
+    kwargs: dict = {}
+    if signed:
+        kwargs = {
+            "aws_access_key_id": access_key,
+            "aws_secret_access_key": secret_key,
+            "aws_session_token": session_token or None,
+        }
     return boto3.client(
         "s3",
         endpoint_url=cfg.endpoint_url or None,
         # botocore requires a region for SigV4; default for custom endpoints.
         region_name=cfg.region or "us-east-1",
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        aws_session_token=session_token or None,
         config=boto_config,
+        **kwargs,
     )

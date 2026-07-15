@@ -33,6 +33,7 @@ from ..skills import context as skill_context
 from ..skills import contract as skill_contract
 from . import guardrails
 from . import session_action_tools
+from . import model_budget
 from . import session_analysis_tools
 from . import session_memory_tools
 from . import session_tools
@@ -50,7 +51,11 @@ _MAX_MESSAGES = 24
 # surface it into the next turn's context so the agent sees WHAT it already
 # probed and doesn't re-run the same checks. Cheap continuity — already-persisted,
 # already-sanitized data; not summarization/compaction.
-_MAX_REPLAY_TOOLS = 15
+# Match _MAX_TURNS: a turn can run ~that many probes, and the NEXT turn's
+# continuity should see the whole trace (tail-kept), not a 15-line head that
+# dropped the decisive later probes. ~180 chars/line stays comfortably inside
+# the (now elastic) per-turn budget.
+_MAX_REPLAY_TOOLS = 40
 # Enumerations can be large (e.g. 96+ buckets in a table). Keep our answer cap
 # well above any single model completion so we never truncate a legitimate full
 # answer in post-processing.
@@ -75,7 +80,10 @@ _MAX_COMPLETION_TOKENS = 16384
 # arbitrary step number, while a heavy-output one is still bounded by real context
 # use. The tool-less finalize pass still guarantees termination, and the
 # context-overflow → finalize path is the backstop if a provider window is hit.
-_MAX_TURNS = 40
+# 60 (was 40): real depth is governed by the elastic tool-output budget
+# (model_budget), so this is only the runaway-loop SAFETY stop — set it high
+# enough not to clip a legitimately long adaptive investigation on a large model.
+_MAX_TURNS = 60
 # Bound on the user's message as embedded in the prompt. Truncation is NEVER
 # silent: the cut is marked in the prompt so the agent knows it saw a prefix
 # (see build_session_prompt) — the same "no silent caps" rule as ingestion.
@@ -251,7 +259,11 @@ def _replay_tools(activity: list[dict[str, Any]] | None) -> list[str]:
         lines.append(redact_text(line))
     if len(lines) > _MAX_REPLAY_TOOLS:
         extra = len(lines) - _MAX_REPLAY_TOOLS
-        lines = lines[:_MAX_REPLAY_TOOLS] + [f"[+{extra} more tool calls this turn]"]
+        # Keep the TAIL, not the head: a deep turn's decisive probes/findings land
+        # at the end, while the head is setup (list_providers/list_buckets). Slicing
+        # the head dropped exactly what the next turn needs (cross-turn amnesia).
+        # Matches _finalize_directive's rows[-40:].
+        lines = [f"[+{extra} earlier tool calls this turn]"] + lines[-_MAX_REPLAY_TOOLS:]
     return lines
 
 
@@ -323,8 +335,12 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str,
                 client_registry: list[Any] | None = None) -> Any:
     """Build the session Agent via the shared per-run builder (no SDK globals)."""
     from .agent_service import build_agent
+    # Completion budget scales with the model's context window (floor =
+    # _MAX_COMPLETION_TOKENS), so a large-window model isn't capped to the value
+    # a small one needs. Never below the floor, never above provider max-output.
     return build_agent(creds, tools, instructions, name="Storage Agent",
-                       max_tokens=_MAX_COMPLETION_TOKENS, parallel_tool_calls=False,
+                       max_tokens=model_budget.completion_token_budget(creds.get("model")),
+                       parallel_tool_calls=False,
                        client_registry=client_registry)
 
 
@@ -483,8 +499,13 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
 
 
 def _install_tool_output_budget(tools: list[Any],
-                                limit: int = _MAX_TOOL_OUTPUT_CHARS) -> dict[str, int]:
+                                limit: int | None = None,
+                                model: str | None = None) -> dict[str, int]:
     """Cap the CUMULATIVE characters of tool output handed to the model per turn.
+
+    ``limit`` defaults to the model-elastic budget (``model_budget``) — scaled to
+    the active model's context window, floored at ``_MAX_TOOL_OUTPUT_CHARS`` so a
+    128k/200k model is unchanged and a 1M model gets a proportionally deeper turn.
 
     A bound, not a gate: once ``limit`` is spent, every further (non-memory)
     tool call returns a short structured note telling the model to synthesize —
@@ -492,7 +513,9 @@ def _install_tool_output_budget(tools: list[Any],
     provider's context window. Wraps each SDK FunctionTool's ``on_invoke_tool``;
     fake tools in tests (plain callables) are left untouched.
     """
-    spent = {"chars": 0, "exhausted": False}
+    if limit is None:
+        limit = model_budget.tool_output_char_budget(model)
+    spent = {"chars": 0, "exhausted": False, "limit": limit}
     for t in tools:
         orig = getattr(t, "on_invoke_tool", None)
         if orig is None or getattr(t, "name", "") in _BUDGET_EXEMPT_TOOLS:
@@ -659,7 +682,7 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     tools = _build_tools(spec.get("conn"), function_tool, activity,
                          spec.get("session_id"), spec.get("turn_id"),
                          spec.get("cancel_event"))
-    budget = _install_tool_output_budget(tools)
+    budget = _install_tool_output_budget(tools, model=creds.get("model"))
     spec["budget"] = budget  # readable by the blocking driver, which owns `spec`
     # _make_agent disables parallel tool calls (chat-completions providers like
     # DeepSeek can emit malformed follow-ups with streaming + parallel calls) and

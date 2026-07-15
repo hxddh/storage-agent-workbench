@@ -355,9 +355,14 @@ These tools return only the deterministic engine's sanitized summary + counts
 (no raw rows, no full key lists, no object bodies) for the agent to narrate.
 
 On top of the per-tool bounds there is a **per-turn cumulative tool-output
-budget** (~200k chars): once a turn's tool results have consumed it, further
-tool calls return a notice asking the agent to synthesize from what it already
-has instead of more data.
+budget**: once a turn's tool results have consumed it, further tool calls return
+a notice asking the agent to synthesize from what it already has instead of more
+data. The budget is **model-elastic** (`agent_runtime/model_budget.py`) — derived
+from the active model's context window (≈25% of it), with the historical ~200k
+chars as a **hard floor**. A 128k/200k-context model is unchanged; a 1M-context
+model gets a proportionally deeper turn. This scales only sanitized, bounded tool
+output — it never relaxes any security-floor cap (preview/range byte caps, list
+caps, sample caps, ingest caps stay fixed).
 
 ## Forbidden tools
 

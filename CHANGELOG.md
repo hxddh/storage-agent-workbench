@@ -6,6 +6,62 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-07-15
+
+_De-ossification + hotfix batch. The agent's investigation depth now scales to
+the active model's context window instead of a single hardcoded constant, while
+the security floor (byte/list/sample/ingest caps) stays pinned. Plus a set of
+correctness fixes to posture queries, client credentials, and parsing._
+
+### Changed
+
+- **Agent depth is now model-elastic (`agent_runtime/model_budget.py`).** The
+  per-turn tool-output budget — the PRIMARY governor of how deep an
+  investigation goes — was a single hardcoded 200k-char constant chosen for "a
+  modern 200k-token context". It throttled a 1M-context model to a quarter of the
+  depth its window supports. The budget (and the completion-token cap) is now
+  derived from the active model's context window, with the **historical values as
+  a hard floor** — a 128k/200k deployment is byte-for-byte unchanged, a 1M model
+  gets a proportionally deeper turn. This scales only how much *already-sanitized,
+  bounded* tool output the model consumes; it touches **no** security-floor bound.
+- **Cross-turn tool-trace replay now keeps the TAIL, not the head.** A deep
+  turn's decisive probes and findings land at the end of the trace, but the
+  replay summarizer sliced the *head* — so the next turn re-probed exactly what
+  the previous one had just discovered (cross-turn amnesia). It now keeps the most
+  recent calls (`_MAX_REPLAY_TOOLS` 15 → 40) and leads with a "+N earlier" marker.
+- **Runaway-turn ceiling raised (`_MAX_TURNS` 40 → 60).** Real depth is governed
+  by the elastic tool-output budget above; the turn count is only the
+  runaway-loop safety stop, so it's set well clear of legitimate deep
+  investigations.
+
+### Fixed
+
+- **`query_account_profile` posture filters read the real persisted values.**
+  `access_issues` tested `access_status not in (None, "ok", "accessible")`, but a
+  healthy bucket persists `access_status="available"` — so the filter matched
+  **every** healthy bucket (fully inverted). It now matches only
+  `access_denied`/`error`. `missing_logging` / `no_versioning` used
+  `*_enabled is False`, which is also False for `provider_unsupported` /
+  `access_denied` (where the truth is UNKNOWN, not absent) — they now match only
+  the confirmed-absent `not_configured` status.
+- **No-credential providers now sign anonymously (UNSIGNED), never with the
+  host's ambient AWS identity.** When a provider has no access/secret key,
+  botocore previously fell back to the host's env-var / instance-metadata
+  credentials — a confused-deputy: the operator configured "no credentials", so
+  calls must not silently use the host identity. Calls are now explicitly
+  anonymous (a genuinely public bucket still works; a private one fails clearly).
+- **Custom-endpoint providers default to path-style addressing.** When
+  `addressing_style` is genuinely unset, a custom endpoint (MinIO/Ceph on an
+  IP/host without wildcard DNS) now defaults to path-style — virtual-hosting it
+  fails every call. An explicit stored choice is never overridden.
+- **CSV log parser stops at the first recognized delimiter.** It read (and
+  re-decompressed, for `.gz`) the whole file once per candidate delimiter; it now
+  breaks as soon as a delimiter splits the header into a recognized column.
+- **`redact()` no longer corrupts benign binary.** A `bytes` value was always
+  `decode("utf-8", "replace")`'d and re-encoded — lossily mangling non-UTF-8
+  binary (→ U+FFFD) even when it held no secret. It now returns the original
+  bytes untouched unless redaction actually matched a secret.
+
 ## [0.26.0] - 2026-07-15
 
 _Capability uplift: teach the agent's playbooks the tools it already has, and
