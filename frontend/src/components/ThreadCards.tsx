@@ -123,7 +123,7 @@ function ToolActivityList({ items }: { items: ToolActivity[] }) {
 // Copy `text`, falling back to a temp-textarea + execCommand when the async
 // Clipboard API is unavailable (it is absent/blocked in some WebViews) so the
 // button never silently no-ops. Returns whether the copy succeeded.
-function copyText(text: string): Promise<boolean> {
+export function copyText(text: string): Promise<boolean> {
   if (navigator.clipboard?.writeText) {
     return navigator.clipboard.writeText(text).then(() => true).catch(() => legacyCopy(text));
   }

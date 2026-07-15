@@ -442,11 +442,25 @@ async def post_session_message_stream(
     # every other request — so one session's run used to stall all the others.
     # Isolating each run on its own thread lets sessions run concurrently.
     main_loop = asyncio.get_running_loop()
-    queue: asyncio.Queue = asyncio.Queue()
+    # Bounded: a stalled SSE consumer must not grow this without limit. 10k
+    # events is far beyond any legitimate turn; on overflow the OLDEST pending
+    # event is dropped (newest wins — the terminal `done` event always lands).
+    queue: asyncio.Queue = asyncio.Queue(maxsize=10_000)
     _DONE = object()
 
+    def _put(item: Any) -> None:  # runs on the main loop via call_soon_threadsafe
+        while True:
+            try:
+                queue.put_nowait(item)
+                return
+            except asyncio.QueueFull:
+                try:
+                    queue.get_nowait()  # evict oldest, keep the newest event
+                except asyncio.QueueEmpty:
+                    pass
+
     def emit(item: Any) -> None:
-        main_loop.call_soon_threadsafe(queue.put_nowait, item)
+        main_loop.call_soon_threadsafe(_put, item)
 
     def worker() -> None:
         wloop = asyncio.new_event_loop()

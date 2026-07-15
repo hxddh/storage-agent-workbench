@@ -6,6 +6,88 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-07-15
+
+_Correction + coverage release: fix the v0.28.0 public-verdict over-claim, teach
+the skills the new aspects, make "which buckets are public?" an account-wide
+one-call answer, fill the classic error-triage holes, surface the operator
+escape hatch in the UI, and land a batch of hardening/de-ossification micro-fixes._
+
+### Fixed
+
+- **`policy_status` no longer over-claims (false-negative risk).**
+  `GetBucketPolicyStatus.IsPublic` evaluates only the **bucket policy** — not ACL
+  grants — but v0.28.0 labeled it the "combined policy+ACL+PAB authoritative
+  verdict". On a bucket public via its ACL the review emitted a GOOD "Not public
+  (AWS authoritative verdict)"; with the ACL unreadable that false GOOD was the
+  *only* verdict. Now: the fact is `policy_is_public` (policy-scoped finding
+  text), and a combined `publicly_exposed` verdict is asserted **only when both**
+  the policy verdict and the ACL were readable — an unreadable ACL yields an
+  explicit "exposure cannot be ruled out" warning instead of a false GOOD. Tool
+  description, docstrings, and docs all re-scoped.
+- **Evidence-import planning no longer 500s on a broken credential.** The plan
+  endpoint (the "Import access logs / inventory" proposal click) called
+  `build_s3_client` unprotected; a missing vault value — exactly the case
+  `CredentialResolutionError` targets — surfaced as a raw 500. Now a sanitized,
+  actionable 424 (and other planning failures → sanitized 502, never a raw 500).
+- **Max-output table: `gemini-2.5` (64k) and `deepseek-reasoner` (64k) entries**
+  — both were caught by their families' 8k entries, provider-truncating long
+  enumerations. `gemini-2.5-pro` now budgets 32768.
+- **A stale session-token ref on a keyless provider no longer errors.** The
+  token could never be used (no access/secret key → anonymous either way), so
+  `CredentialResolutionError` now fires only for refs that would actually sign.
+- **Truncated-PEM redaction (R-6).** A private key cut mid-paste (BEGIN armor,
+  no END) previously leaked its partial body into persisted triage cases; a
+  BEGIN-without-END fallback now redacts to end-of-text.
+- **DuckDB lock → friendly error (R-7).** Reading a dataset mid-import surfaced
+  a raw lock IOException; now "dataset is busy — retry in a moment".
+
+### Added
+
+- **Account-wide public posture.** The survey snapshot now reads
+  `GetBucketPolicyStatus` + `GetBucketOwnershipControls` per bucket and persists
+  `policy_is_public` / `object_ownership` / `acls_disabled` flags;
+  `query_account_profile` gains a **`public_buckets`** filter ("which of my N
+  buckets are public?" — one call, no re-scan); and the survey diff compares the
+  new flags, so `compare_to_last_survey` can finally alert **"bucket X became
+  public since the last survey"**.
+- **Error-triage coverage batch.** `InvalidObjectState` (archived GLACIER/
+  DEEP_ARCHIVE object → routes to `head_object`'s restore/storage-class fields),
+  dotted **KMS codes** (`KMS.AccessDenied`/`KMS.DisabledException`/
+  `KMS.NotFoundException` — the code regexes previously couldn't match a dot),
+  `ExpiredToken`/`InvalidToken` (STS expiry), `NotImplemented`/`MethodNotAllowed`
+  (rule-18 capability gap, not a failure), and playbooks for the four codes the
+  parser knew but never mapped (`ServiceUnavailable`, `Throttling`,
+  `InternalError`, `BadGateway` — previously "Could not classify").
+- **Frontend: the v0.28.0 operator escape hatch is now reachable** — a
+  "Context window" field on the model-provider form (clearing it resets to
+  name-based inference; API accepts `0` to clear). Plus **Copy / Download .md**
+  on the report overlay, and a client-side 2 GiB pre-check on attachments
+  (instant clear message instead of a minutes-long upload → 413).
+- **Skills re-taught the v0.28.0 aspects** (the v0.26 lesson, applied again):
+  security-iam-policy routes "is it public?" through `policy_status`+`acl`+
+  `ownership` and `review_bucket_security`'s combined verdict;
+  replication-versioning's now-false "config review only shows whether
+  object-lock is enabled" claim fixed (aspect `object_lock` returns the default
+  retention); event-notification reads per-target rules via aspect
+  `notification`; protocol-compatibility uses aspect `cors`; migration-sync
+  teaches `get_object_attributes` checksums.
+
+### Changed
+
+- **De-ossification/hardening micro-batch:** the user-message prompt cap scales
+  with the model window (floor 16k chars, ceiling 64k — pasted config/error
+  dumps were clipped on large-window models); the tool-output budget gains a
+  2M-char ceiling (an absurd declared window can't create an unbounded budget);
+  `_MAX_FINDINGS` synced to the summary builder's 50 (was 30 — drift);
+  `_MAX_REPLAY_TOOLS` locked to `_MAX_TURNS` by assertion (was 40 vs 60 — drift);
+  the per-turn SSE queue is bounded (10k events, oldest dropped) so a stalled
+  consumer can't grow memory without limit.
+- **boto3 clients are cached** per (provider, addressing-override, config
+  version) with explicit invalidation on provider update/delete — a deep
+  40-probe turn no longer pays client construction + vault decrypt per call.
+  The cache holds clients only, never plaintext secrets.
+
 ## [0.28.0] - 2026-07-15
 
 _Public-posture visibility + budget-table de-ossification. The agent gains

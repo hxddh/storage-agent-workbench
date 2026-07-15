@@ -43,6 +43,10 @@ Migration →
 - `head_object` on a sample key on each side — compare ETag/metadata to catch the
   classic multipart-ETag format mismatch (AWS `-N` suffix vs BOS/OSS) before it
   breaks integrity checks.
+- `get_object_attributes` on a sample key — the REAL integrity check when ETags
+  aren't comparable (multipart vs single-put, SSE-KMS): checksum (SHA256/CRC32),
+  part count, and object size, no body read. `provider_unsupported` on gaps →
+  fall back to the head_object ETag comparison above.
 - `list_objects` — compare object counts/keys on a prefix to scope the delta.
 - To size the migration precisely (object count, total bytes, class mix),
   analyze an uploaded inventory export with `analyze_uploaded_file`; for an

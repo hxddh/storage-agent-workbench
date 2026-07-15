@@ -146,9 +146,13 @@ def update(
     )
     base_url = data.base_url if data.base_url is not None else existing["base_url"]
     model = data.model if data.model is not None else existing["model"]
-    context_window = (
-        data.context_window if data.context_window is not None else existing["context_window"]
-    )
+    # None = keep; 0 = clear to NULL (re-infer from the model name); >0 = set.
+    if data.context_window is None:
+        context_window = existing["context_window"]
+    elif data.context_window == 0:
+        context_window = None
+    else:
+        context_window = data.context_window
 
     api_key_ref = existing["api_key_ref"]
     if has_value(data.api_key):

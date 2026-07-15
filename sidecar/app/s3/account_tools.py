@@ -87,6 +87,12 @@ def get_bucket_config_snapshot(
     pab = ct._read(client, "get_public_access_block", Bucket=bucket)
     tagging = ct._read(client, "get_bucket_tagging", Bucket=bucket)
     inventory = ct._read(client, "list_bucket_inventory_configurations", Bucket=bucket)
+    # Public posture (v0.29.0): AWS's policy-public verdict + Object Ownership,
+    # so the survey can answer "which buckets are public?" account-wide and the
+    # survey diff can alert "bucket X became public". Policy verdict ONLY — ACL
+    # public is separate (and moot under BucketOwnerEnforced).
+    policy_public = ct._read(client, "get_bucket_policy_status", Bucket=bucket)
+    ownership = ct._read(client, "get_bucket_ownership_controls", Bucket=bucket)
 
     # region: prefer the bucket location; fall back to the provider's region.
     region = cfg.region
@@ -113,6 +119,17 @@ def get_bucket_config_snapshot(
     inv_configured = inventory["status"] == ct.AVAILABLE and bool(
         inventory["data"].get("InventoryConfigurationList")
     )
+    policy_is_public: bool | None = None
+    if policy_public["status"] == ct.AVAILABLE:
+        policy_is_public = bool(
+            (policy_public["data"].get("PolicyStatus") or {}).get("IsPublic")
+        )
+    elif policy_public["status"] == ct.NOT_CONFIGURED:
+        policy_is_public = False  # no bucket policy → the policy can't be public
+    object_ownership: str | None = None
+    if ownership["status"] == ct.AVAILABLE:
+        rules = (ownership["data"].get("OwnershipControls") or {}).get("Rules") or []
+        object_ownership = rules[0].get("ObjectOwnership") if rules else None
 
     snapshot = {
         "success": True,
@@ -130,6 +147,13 @@ def get_bucket_config_snapshot(
         "public_access_block_status": _dim_status(pab, pab_configured),
         "tagging_status": _dim_status(tagging, tagging_configured),
         "inventory_status": _dim_status(inventory, inv_configured),
+        # Public posture flags (policy verdict only; None = unreadable/unsupported).
+        "policy_public_status": policy_public["status"],
+        "policy_is_public": policy_is_public,
+        "ownership_status": ownership["status"],
+        "object_ownership": object_ownership,
+        "acls_disabled": (object_ownership == "BucketOwnerEnforced"
+                          if object_ownership else None),
     }
 
     # Aggregate provider-unsupported / access-denied / error items by dimension.
@@ -137,7 +161,8 @@ def get_bucket_config_snapshot(
         "location": location, "versioning": versioning, "encryption": encryption,
         "lifecycle": lifecycle, "logging": logging_r, "replication": replication,
         "policy": policy, "public_access_block": pab, "tagging": tagging,
-        "inventory": inventory,
+        "inventory": inventory, "policy_public": policy_public,
+        "ownership": ownership,
     }
     snapshot["provider_unsupported_items"] = [
         n for n, r in dim_reads.items() if r["status"] == ct.PROVIDER_UNSUPPORTED

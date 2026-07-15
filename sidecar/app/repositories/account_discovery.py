@@ -193,6 +193,9 @@ _DIFF_ASPECTS = (
     "access_status", "region", "head_bucket_status",
     "versioning_status", "versioning_enabled", "encryption_status",
     "lifecycle_status", "logging_status", "logging_enabled",
+    # Public posture (v0.29.0): the diff's most valuable alert — a bucket whose
+    # policy_is_public flipped False→True BECAME PUBLIC since the last survey.
+    "policy_is_public", "policy_public_status", "object_ownership", "acls_disabled",
     "replication_status", "policy_status", "public_access_block_status",
     "tagging_status", "inventory_status",
 )

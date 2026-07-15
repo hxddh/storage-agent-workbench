@@ -6,6 +6,11 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "../i18n";
 
+// Mirror of the backend's upload cap (routers/datasets.py MAX_UPLOAD_BYTES) so
+// an oversized file is rejected before any bytes are sent.
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024; // 2 GiB
+const formatGiB = (n: number) => `${(n / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
+
 // Slash commands: "/" in the composer opens this menu. Capability commands seed
 // a prompt; "report" runs the session report; logs/inventory open the picker.
 export type Slash = { cmd: string; labelKey: string; promptKey?: string; action?: "report" | "pickFile" };
@@ -71,6 +76,7 @@ export function Composer({
 }) {
   const { t } = useI18n();
   const [slashSel, setSlashSel] = useState(0);
+  const [sizeError, setSizeError] = useState<string | null>(null);
 
   // Auto-grow the composer (pin one line when empty so the wrapping placeholder
   // doesn't inflate scrollHeight).
@@ -155,12 +161,28 @@ export function Composer({
           )}
         </div>
       )}
+      {sizeError && (
+        <div className="mb-2 rounded-md border border-red-900/60 bg-red-950/40 px-3 py-1.5 text-xs text-red-400">
+          {sizeError}
+        </div>
+      )}
       <input
         ref={fileRef}
         type="file"
         accept=".csv,.parquet,.tsv,.log,.txt,.gz,.json,.jsonl"
         className="hidden"
-        onChange={(e) => { onPickFile(e.target.files?.[0] ?? null); e.target.value = ""; }}
+        onChange={(e) => {
+          const f = e.target.files?.[0] ?? null;
+          e.target.value = "";
+          // Pre-check against the backend's 2 GiB cap so an oversized file fails
+          // instantly with a clear message instead of uploading for minutes → 413.
+          if (f && f.size > MAX_UPLOAD_BYTES) {
+            setSizeError(t("attach.tooLarge").replace("{size}", formatGiB(f.size)));
+            return;
+          }
+          setSizeError(null);
+          onPickFile(f);
+        }}
       />
       <textarea
         ref={taRef}

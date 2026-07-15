@@ -103,12 +103,15 @@ def test_memory_keeps_most_recent_when_over_limit(client):
 
 
 def test_memory_block_surfaces_most_recent_per_kind():
-    # 40 findings recorded; the context block keeps the most recent 30.
-    mem = [{"kind": "finding", "text": f"f{i}", "severity": "info"} for i in range(40)]
+    # More findings than the cap (synced with summary_builder.MAX_FINDINGS=50):
+    # the context block keeps only the most recent _MAX_FINDINGS.
+    cap = session_agent._MAX_FINDINGS
+    n = cap + 10
+    mem = [{"kind": "finding", "text": f"f{i}", "severity": "info"} for i in range(n)]
     block = session_agent._build_agent_memory_block(mem)
     titles = [x["title"] for x in block["recorded_findings"]]
-    assert len(titles) == 30
-    assert titles[0] == "f10" and titles[-1] == "f39"  # newest survive, not f0..f29
+    assert len(titles) == cap
+    assert titles[0] == f"f{n - cap}" and titles[-1] == f"f{n - 1}"  # newest survive
 
 
 def test_no_memory_tools_without_session():

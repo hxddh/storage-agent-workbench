@@ -288,9 +288,9 @@ Purpose:
   `notification`, `cors`, `logging`, `lifecycle` (transitions/expiration/cleanup),
   `encryption` (SSE algorithm + reduced KMS key), `public_access_block` (the four
   booleans), `policy` (per-statement effect/actions/`is_public` — principal
-  reduced to `*`/`specific`, never the raw ARN), `policy_status` (AWS's
-  AUTHORITATIVE combined policy+ACL+PAB `IsPublic` verdict — use before hand-
-  parsing `policy`), `ownership` (Object Ownership; `BucketOwnerEnforced` = ACLs
+  reduced to `*`/`specific`, never the raw ARN), `policy_status` (AWS's `IsPublic`
+  verdict for the bucket POLICY — policy only, ACL grants are not evaluated;
+  combine with `acl`, or use review_bucket_security which checks both), `ownership` (Object Ownership; `BucketOwnerEnforced` = ACLs
   disabled), `object_lock` (bucket-level WORM: enabled + default retention mode/
   days/years), `acl` (bucket ACL grants → grantee KIND + permission, no owner id/
   email), `inventory` (schedule/destination/format/fields), `website` (index/error
@@ -346,14 +346,19 @@ tools above (choosing provider/bucket itself), plus:
   ALREADY-PERSISTED, sanitized snapshot data — no new S3 call, no LLM, no raw
   rows. Needs two completed surveys to compare.
 - **query_account_profile** — account-WIDE posture from the latest persisted
-  survey: "which of my N buckets have no encryption / no public-access-block / no
-  lifecycle / logging off / no versioning / access issues?" Returns the per-bucket
-  config-flag matrix (region + logging/encryption/lifecycle/replication/policy/
-  public_access_block/tagging/inventory status) filtered by a whitelist
-  (`all` | `missing_public_access_block` | `missing_encryption` |
+  survey: "which of my N buckets are public / have no encryption / no
+  public-access-block / no lifecycle / logging off / no versioning / access
+  issues?" Returns the per-bucket config-flag matrix (region + logging/
+  encryption/lifecycle/replication/policy/public_access_block/tagging/inventory
+  status + `policy_is_public`/`object_ownership`) filtered by a whitelist
+  (`all` | `public_buckets` (the bucket POLICY judged public by AWS — ACL-public
+  is separate) | `missing_public_access_block` | `missing_encryption` |
   `missing_lifecycle` | `missing_logging` | `no_versioning` | `access_issues`).
   Reads ALREADY-PERSISTED, sanitized snapshot flags — no new S3 call, no LLM,
-  statuses only (never object keys/bodies). Needs one completed `survey_account`.
+  statuses only (never object keys/bodies). Needs one completed `survey_account`
+  (pre-v0.29.0 surveys lack the public-posture flags — re-survey to fill them).
+  The survey diff (`compare_to_last_survey`) also compares these flags, so a
+  bucket that BECAME public since the last survey is reported as a change.
 
 These tools return only the deterministic engine's sanitized summary + counts
 (no raw rows, no full key lists, no object bodies) for the agent to narrate.

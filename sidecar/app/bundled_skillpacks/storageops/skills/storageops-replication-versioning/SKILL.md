@@ -57,8 +57,10 @@ Replication / versioning issue →
 - `get_object_lock_status` — when the confusion is "why can't I delete/overwrite
   this object?", this reads the OBJECT's actual retention mode + retain-until date
   and legal-hold status (COMPLIANCE can't be shortened; a legal hold blocks delete
-  regardless of retention). Bucket config review only shows whether object-lock is
-  enabled — this shows the specific object's lock.
+  regardless of retention). For the BUCKET's WORM default — is object-lock enabled
+  and what default retention mode/days/years applies to new objects —
+  `get_bucket_config_detail` (aspect `object_lock`) reads it directly; the two
+  together explain "every new object is undeletable for N days".
 - `list_object_versions` — when the confusion is about version STATE (unexpected
   noncurrent versions, lingering delete markers not propagating), this reads the
   actual versions + delete markers on a prefix, not just the on/off config.

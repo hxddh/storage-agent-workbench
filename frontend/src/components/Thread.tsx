@@ -13,7 +13,7 @@ import { Button } from "./ui";
 import { Markdown } from "./Markdown";
 import { Composer } from "./Composer";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
-import { FindingsCard, GroundingCard, LiveProgress, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard } from "./ThreadCards";
+import { FindingsCard, GroundingCard, LiveProgress, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard, copyText } from "./ThreadCards";
 import { useI18n } from "../i18n";
 
 type Item =
@@ -75,6 +75,7 @@ export function Thread({
     { sourceType: "inventory" | "access_log"; accountRunId: string; bucketName: string } | null
   >(null);
   const [report, setReport] = useState<string | null>(null);
+  const [reportCopied, setReportCopied] = useState(false);
   const [modelName, setModelName] = useState<string | null>(null);
 
   // Per-session run state lives in a store keyed by session id (see sessionRuns)
@@ -633,7 +634,34 @@ export function Thread({
           <div className="flex h-full flex-col bg-canvas">
             <header className="flex items-center justify-between border-b border-edge px-6 py-3">
               <span className="text-sm font-semibold text-gray-100">{t("thread.report")}</span>
-              <Button variant="ghost" onClick={() => setReport(null)}>{t("common.close")}</Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    void copyText(report).then((ok) => {
+                      if (ok) setReportCopied(true);
+                      window.setTimeout(() => setReportCopied(false), 1500);
+                    });
+                  }}
+                >
+                  {reportCopied ? t("thread.copied") : t("common.copy")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    const blob = new Blob([report], { type: "text/markdown" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "report.md";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  {t("thread.download")}
+                </Button>
+                <Button variant="ghost" onClick={() => setReport(null)}>{t("common.close")}</Button>
+              </div>
             </header>
             <div className="flex-1 overflow-auto p-6">
               <Markdown text={report} />

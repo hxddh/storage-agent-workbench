@@ -31,6 +31,7 @@ from ..repositories import account_discovery as account_repo
 from ..repositories import datasets as datasets_repo
 from ..repositories import evidence_imports as repo
 from ..repositories import runs as runs_repo
+from ..s3 import client_factory
 from ..security.redaction import redact_text
 
 router = APIRouter(prefix="/evidence-imports", tags=["evidence-imports"])
@@ -70,33 +71,45 @@ def plan_import(body: EvidenceImportPlanRequest, conn: sqlite3.Connection = Depe
     snapshot_id = None  # profile is keyed by run; snapshot linkage is implicit
     max_files, max_bytes = mi.clamp_bounds(body.max_files, body.max_bytes)
 
-    if body.source_type == "inventory":
-        configs = detail.get("configurations") or []
-        if not configs:
-            raise HTTPException(status_code=422, detail="inventory evidence source has no configuration")
-        cfg = configs[0]
-        dest_bucket = cfg.get("destination_bucket")
-        dest_prefix = cfg.get("destination_prefix") or ""
-        if not dest_bucket:
-            raise HTTPException(status_code=422, detail="inventory destination bucket is unknown")
-        plan = mi.plan_inventory(
-            conn, provider_id, dest_bucket, dest_prefix,
-            evidence_ref=cfg.get("inventory_id"), declared_format=cfg.get("format"),
-            max_files=max_files, max_bytes=max_bytes,
-        )
-    else:  # access_log
-        if not body.time_range_start or not body.time_range_end:
-            raise HTTPException(status_code=422, detail="access_log import requires time_range_start and time_range_end")
-        target_bucket = detail.get("target_bucket")
-        target_prefix = detail.get("target_prefix") or ""
-        if not target_bucket:
-            raise HTTPException(status_code=422, detail="logging target bucket is unknown")
-        plan = mi.plan_access_log(
-            conn, provider_id, target_bucket, target_prefix,
-            evidence_ref="server_access_logging",
-            time_range_start=body.time_range_start, time_range_end=body.time_range_end,
-            max_files=max_files, max_bytes=max_bytes,
-        )
+    try:
+        if body.source_type == "inventory":
+            configs = detail.get("configurations") or []
+            if not configs:
+                raise HTTPException(status_code=422, detail="inventory evidence source has no configuration")
+            cfg = configs[0]
+            dest_bucket = cfg.get("destination_bucket")
+            dest_prefix = cfg.get("destination_prefix") or ""
+            if not dest_bucket:
+                raise HTTPException(status_code=422, detail="inventory destination bucket is unknown")
+            plan = mi.plan_inventory(
+                conn, provider_id, dest_bucket, dest_prefix,
+                evidence_ref=cfg.get("inventory_id"), declared_format=cfg.get("format"),
+                max_files=max_files, max_bytes=max_bytes,
+            )
+        else:  # access_log
+            if not body.time_range_start or not body.time_range_end:
+                raise HTTPException(status_code=422, detail="access_log import requires time_range_start and time_range_end")
+            target_bucket = detail.get("target_bucket")
+            target_prefix = detail.get("target_prefix") or ""
+            if not target_bucket:
+                raise HTTPException(status_code=422, detail="logging target bucket is unknown")
+            plan = mi.plan_access_log(
+                conn, provider_id, target_bucket, target_prefix,
+                evidence_ref="server_access_logging",
+                time_range_start=body.time_range_start, time_range_end=body.time_range_end,
+                max_files=max_files, max_bytes=max_bytes,
+            )
+    except HTTPException:
+        raise
+    except client_factory.CredentialResolutionError as exc:
+        # The one place this is EXPECTED to surface to a user action (the import
+        # proposal click) — an actionable 424, not a raw 500.
+        raise HTTPException(status_code=424, detail=redact_text(str(exc))) from exc
+    except client_factory.ProviderNotFound as exc:
+        raise HTTPException(status_code=404, detail="cloud provider not found") from exc
+    except Exception as exc:  # noqa: BLE001 — S3/listing errors → sanitized 502, never a raw 500
+        raise HTTPException(status_code=502,
+                            detail=redact_text(f"planning failed: {exc}")) from exc
 
     import_id = repo.create_plan(
         conn, provider_id=provider_id, account_run_id=body.account_run_id, snapshot_id=snapshot_id,

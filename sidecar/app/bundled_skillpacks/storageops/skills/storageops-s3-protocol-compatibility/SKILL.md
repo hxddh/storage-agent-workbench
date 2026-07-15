@@ -61,10 +61,10 @@ Protocol error →
 - `inspect_endpoint_tls` — confirm the endpoint host/cert matches the URL being
   signed (SNI/host mismatches surface as signature or connection errors).
 - `head_bucket` — confirm a clean signed request succeeds at all.
-- `review_bucket_security` — for a CORS failure, this reads the bucket's actual
-  CORS rules (allowed origins / methods / headers) so you can say whether a rule
-  is missing or just doesn't cover the request's origin/method; it also surfaces
-  an over-broad `*` origin worth flagging.
+- `get_bucket_config_detail` (aspect `cors`) — for a CORS failure, the per-rule
+  allowed origins / methods / headers, so you can say whether a rule is missing
+  or just doesn't cover the request's origin/method. `review_bucket_security`
+  cross-checks the posture and flags an over-broad `*` origin.
 
 ## Ask the user (only what tools can't reveal)
 

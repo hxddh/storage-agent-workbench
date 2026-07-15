@@ -108,6 +108,9 @@ export interface ModelProviderInput {
   base_url?: string;
   model?: string;
   api_key?: string; // sent only when set/rotated; never persisted client-side
+  /** Optional explicit context window (tokens). Overrides the built-in model
+   * table so a new large-context model isn't throttled to the default. */
+  context_window?: number | null;
 }
 
 export const listModelProviders = () =>

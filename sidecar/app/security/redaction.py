@@ -144,6 +144,15 @@ _VALUE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
                    re.DOTALL),
         REDACTED,
     ),
+    # TRUNCATED PEM: a BEGIN armor with no matching END (a partial paste cut a
+    # key in half). Without this the partial key body — still secret material —
+    # leaked verbatim. Redact from the BEGIN armor to the end of the text; runs
+    # AFTER the full-block rule, so it only fires when no END exists.
+    (
+        re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----(?:(?!-----END ).)*\Z",
+                   re.DOTALL),
+        REDACTED,
+    ),
     # Azure Storage `AccountKey=<base64>` connection-string secret. Label kept.
     (
         re.compile(r"(?i)\b(accountkey)(\s*=\s*)[A-Za-z0-9/+=]{8,}"),

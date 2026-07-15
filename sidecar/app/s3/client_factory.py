@@ -8,6 +8,7 @@ only in local variables for the lifetime of the client.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from dataclasses import dataclass
 
 import boto3
@@ -45,6 +46,7 @@ class ProviderConfig:
     access_key_ref: str | None
     secret_key_ref: str | None
     session_token_ref: str | None
+    updated_at: str | None = None
 
 
 def load_provider(conn: sqlite3.Connection, provider_id: str) -> ProviderConfig:
@@ -64,7 +66,28 @@ def load_provider(conn: sqlite3.Connection, provider_id: str) -> ProviderConfig:
         access_key_ref=row["access_key_ref"],
         secret_key_ref=row["secret_key_ref"],
         session_token_ref=row["session_token_ref"],
+        updated_at=row["updated_at"],
     )
+
+
+# Client cache: building a boto3 client re-reads + re-decrypts the vault and
+# re-constructs botocore machinery on EVERY tool call (~50-100ms) — a deep
+# 40-probe turn pays that dozens of times. Keyed on (provider_id, addressing
+# override, row updated_at): editing the provider changes updated_at, so a stale
+# client is never served (it just ages out). boto3 clients are thread-safe for
+# request operations. The CACHE holds clients only — never plaintext secrets.
+_CLIENT_CACHE: dict[tuple[str, str | None, str | None], BaseClient] = {}
+_CLIENT_CACHE_LOCK = threading.Lock()
+_CLIENT_CACHE_MAX = 32
+
+
+def invalidate_provider(provider_id: str) -> None:
+    """Drop cached clients for one provider — called on provider update/delete.
+    (The updated_at in the key already rotates on edit; this closes the sub-second
+    window where two edits share a timestamp, and covers delete.)"""
+    with _CLIENT_CACHE_LOCK:
+        for key in [k for k in _CLIENT_CACHE if k[0] == provider_id]:
+            _CLIENT_CACHE.pop(key, None)
 
 
 def _resolve(ref: str | None) -> str | None:
@@ -86,6 +109,12 @@ def build_s3_client(
     """
     cfg = load_provider(conn, provider_id)
 
+    cache_key = (provider_id, addressing_style_override, cfg.updated_at)
+    with _CLIENT_CACHE_LOCK:
+        cached = _CLIENT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
     access_key = _resolve(cfg.access_key_ref)
     secret_key = _resolve(cfg.secret_key_ref)
     session_token = _resolve(cfg.session_token_ref)
@@ -95,14 +124,19 @@ def build_s3_client(
     # anonymous below, which would issue unsigned calls under an identity the
     # operator thinks is configured and surface as a baffling AccessDenied. This is
     # distinct from the genuine no-credentials case (no ref at all → anonymous).
+    # Only refs that would actually be USED count: a stale session-token ref on a
+    # provider with no access/secret keys is dead config, not a broken credential —
+    # the request would be anonymous either way, so it must not error.
     _missing = [
         label for label, ref, val in (
             ("access key", cfg.access_key_ref, access_key),
             ("secret key", cfg.secret_key_ref, secret_key),
-            ("session token", cfg.session_token_ref, session_token),
         )
         if ref and val is None
     ]
+    if (cfg.session_token_ref and session_token is None
+            and access_key and secret_key):
+        _missing.append("session token")
     if _missing:
         raise CredentialResolutionError(
             f"Provider '{cfg.name}' has {', '.join(_missing)} configured, but the "
@@ -140,7 +174,7 @@ def build_s3_client(
             "aws_secret_access_key": secret_key,
             "aws_session_token": session_token or None,
         }
-    return boto3.client(
+    client = boto3.client(
         "s3",
         endpoint_url=cfg.endpoint_url or None,
         # botocore requires a region for SigV4; default for custom endpoints.
@@ -148,3 +182,10 @@ def build_s3_client(
         config=boto_config,
         **kwargs,
     )
+    with _CLIENT_CACHE_LOCK:
+        if len(_CLIENT_CACHE) >= _CLIENT_CACHE_MAX:
+            # Evict the oldest entry (insertion order) — a rarely-used provider's
+            # client simply gets rebuilt on next use.
+            _CLIENT_CACHE.pop(next(iter(_CLIENT_CACHE)), None)
+        _CLIENT_CACHE[cache_key] = client
+    return client

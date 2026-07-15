@@ -41,7 +41,7 @@ from .agent_service import AgentUnavailable
 from .guardrails import strip_chain_of_thought, strip_chain_of_thought_stream
 
 _MAX_FACTS = 50  # kept in sync with sessions.summary_builder.MAX_FACTS
-_MAX_FINDINGS = 30
+_MAX_FINDINGS = 50  # kept in sync with sessions.summary_builder.MAX_FINDINGS (was 30 — drift)
 # How many recent thread messages the agent sees. 24 (was 12): a small-context
 # clip that now just makes the agent lose the thread on a long investigation —
 # 24 msgs × _MAX_REPLAY_MSG chars is still tiny under a modern context window.
@@ -57,8 +57,9 @@ _MAX_MESSAGES_CEIL = 96
 # Match _MAX_TURNS: a turn can run ~that many probes, and the NEXT turn's
 # continuity should see the whole trace (tail-kept), not a 15-line head that
 # dropped the decisive later probes. ~180 chars/line stays comfortably inside
-# the (now elastic) per-turn budget.
-_MAX_REPLAY_TOOLS = 40
+# the (now elastic) per-turn budget. Defined AS _MAX_TURNS (below) so the two
+# can't drift apart again (they did: 40 vs 60 after v0.27.0).
+_MAX_REPLAY_TOOLS = 60  # == _MAX_TURNS; assert below keeps them in lockstep
 # Enumerations can be large (e.g. 96+ buckets in a table). Keep our answer cap
 # well above any single model completion so we never truncate a legitimate full
 # answer in post-processing.
@@ -87,10 +88,15 @@ _MAX_COMPLETION_TOKENS = 16384
 # (model_budget), so this is only the runaway-loop SAFETY stop — set it high
 # enough not to clip a legitimately long adaptive investigation on a large model.
 _MAX_TURNS = 60
+assert _MAX_REPLAY_TOOLS == _MAX_TURNS, "replay must cover a full turn's probes"
 # Bound on the user's message as embedded in the prompt. Truncation is NEVER
 # silent: the cut is marked in the prompt so the agent knows it saw a prefix
 # (see build_session_prompt) — the same "no silent caps" rule as ingestion.
+# FLOOR: scaled up with the model window (capped at the CEIL) — pasted error/
+# config dumps are a core flow and 16k chars ≈ 4k tokens clipped real dumps on
+# large-window models while the rest of the context went elastic in v0.27–28.
 _MAX_USER_MSG = 16000
+_MAX_USER_MSG_CEIL = 64000
 # Bound on each replayed prior message in the context. Also never silent.
 # 4000 (was 1000): 1000 chars clipped mid-answer on any substantial turn, so the
 # agent saw only truncated tails of its own prior reasoning; 4000 keeps a full
@@ -620,13 +626,15 @@ def _build_prompt(
     if catalog:
         prompt_parts.append(catalog)
     # Never truncate the user's question silently: a long paste (error output,
-    # config dump) is cut at _MAX_USER_MSG with an explicit marker so the agent
-    # knows it saw a prefix and can say so / ask for the rest as an attachment.
+    # config dump) is cut at the (model-elastic) user-message cap with an explicit
+    # marker so the agent knows it saw a prefix and can ask for the rest as a file.
+    window = model_budget.context_window(model, explicit_window)
+    user_cap = min(_MAX_USER_MSG_CEIL, _MAX_USER_MSG * max(1, window // 128_000))
     msg = redact_text(user_message)
-    if len(msg) > _MAX_USER_MSG:
-        omitted = len(msg) - _MAX_USER_MSG
+    if len(msg) > user_cap:
+        omitted = len(msg) - user_cap
         msg = (
-            msg[:_MAX_USER_MSG]
+            msg[:user_cap]
             + f"\n[TRUNCATED: {omitted} more characters were cut here. You saw only a "
             "prefix of the user's message — say so explicitly, and suggest attaching "
             "the full text as a file for complete analysis.]"

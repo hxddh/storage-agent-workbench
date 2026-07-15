@@ -190,6 +190,9 @@ def update(
         {"id": provider_id, "rotated_secrets": rotated, "mode": mode},
     )
     conn.commit()
+    # Drop any cached boto3 client built from the old config/credentials.
+    from ..s3 import client_factory
+    client_factory.invalidate_provider(provider_id)
     return get(conn, provider_id)
 
 
@@ -205,4 +208,6 @@ def delete(conn: sqlite3.Connection, provider_id: str) -> bool:
     conn.execute("DELETE FROM cloud_providers WHERE id = ?", (provider_id,))
     audit.record(conn, "cloud_provider.delete", {"id": provider_id})
     conn.commit()
+    from ..s3 import client_factory
+    client_factory.invalidate_provider(provider_id)
     return True
