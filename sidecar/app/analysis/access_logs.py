@@ -256,6 +256,12 @@ def _parse_csv(path: str | Path) -> list[dict[str, Any]]:
         # that actually splits the header into recognized fields.
         if df is None or len(cand.columns) > len(df.columns):
             df = cand
+        # Early exit: if this delimiter already split the header into a recognized
+        # column, it's the right one — stop before re-reading (and re-decompressing
+        # a .gz) the whole file with the next candidate delimiter.
+        cells = {str(c).strip().lower() for c in cand.columns}
+        if len(cand.columns) > 1 and cells & _CSV_HEADER_TOKENS:
+            break
     if df is None:
         return []
     lower = {c.lower().strip(): c for c in df.columns}

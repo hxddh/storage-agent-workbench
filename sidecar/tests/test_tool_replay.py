@@ -32,14 +32,19 @@ def test_assistant_tool_trace_is_replayed():
 
 
 def test_started_records_excluded_and_bounded():
+    # More than the replay cap so truncation triggers. The TAIL (most recent) is
+    # kept and the elision marker leads the list at the head.
+    n = sa._MAX_REPLAY_TOOLS + 10
     activity = [{"tool": "list_objects", "target": f"b/p{i}", "result": "50 keys",
-                 "status": "completed"} for i in range(40)]
+                 "status": "completed"} for i in range(n)]
     activity.append({"tool": "preview_object", "target": "b/x", "status": "started"})
     recent = [{"role": "assistant", "content": "a", "tool_activity": activity}]
     ctx = _ctx(recent)
     tr = ctx["recent_messages"][0]["tools_run"]
-    assert len(tr) == sa._MAX_REPLAY_TOOLS + 1  # bounded + a "+N more" line
-    assert "more tool calls" in tr[-1]
+    assert len(tr) == sa._MAX_REPLAY_TOOLS + 1  # bounded tail + a "+N earlier" line
+    assert "earlier tool calls" in tr[0]  # marker leads (head), tail is kept
+    assert any(f"b/p{n - 1}" in line for line in tr)      # newest kept
+    assert not any("b/p0 " in line for line in tr)        # oldest elided
     assert not any("preview_object" in line for line in tr)  # 'started' dropped
 
 

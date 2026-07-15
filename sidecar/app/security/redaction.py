@@ -216,6 +216,13 @@ def redact(value: Any) -> Any:
         return redact_text(value)
     if isinstance(value, bytes):
         # A bytes value in a JSON-like payload must not skip redaction (the
-        # "recursively redact" contract); scrub as text, re-encode.
-        return redact_text(value.decode("utf-8", "replace")).encode("utf-8")
+        # "recursively redact" contract); scrub as text. But decode("replace")
+        # is LOSSY on non-UTF-8 binary (bytes → U+FFFD), so only substitute the
+        # re-encoded form when redaction ACTUALLY matched a secret — otherwise
+        # return the original bytes intact and never corrupt benign binary.
+        decoded = value.decode("utf-8", "replace")
+        scrubbed = redact_text(decoded)
+        if scrubbed == decoded:
+            return value
+        return scrubbed.encode("utf-8")
     return value
