@@ -271,10 +271,10 @@ def test_performance_profile_bounded_max_keys(cfg):
         out = ct.review_bucket_performance_profile(conn, cfg.pid, "demo-bucket", None)
     finally:
         conn.close()
-    assert out["facts"]["max_keys"] == 100
-    # confirm the actual call used a bounded MaxKeys
+    assert out["facts"]["max_keys"] == ct.PERF_MAX_KEYS == 1000
+    # confirm the actual call used a bounded MaxKeys (one page, no body reads)
     listing = [c for c in cfg.fake.calls if c[0] == "list_objects_v2"]
-    assert listing and listing[-1][1]["MaxKeys"] <= 100
+    assert listing and listing[-1][1]["MaxKeys"] <= 1000
 
 
 def test_provider_unsupported_does_not_raise(cfg):

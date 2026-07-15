@@ -36,6 +36,25 @@ _CONTEXT_WINDOWS: tuple[tuple[str, int], ...] = (
 )
 _DEFAULT_CONTEXT = 128_000  # unknown model → yields exactly the current floor
 
+# Per-model MAX OUTPUT (completion) tokens, keyed on lowercased substrings, most
+# specific first. Several providers cap output well below what window//8 implies —
+# passing max_tokens above the cap is a hard 400. The completion budget is clamped
+# to this so we never over-request. Unknown model → _DEFAULT_MAX_OUTPUT.
+_MAX_OUTPUT_TOKENS: tuple[tuple[str, int], ...] = (
+    ("gpt-4-turbo", 4_096), ("gpt-4o", 16_384), ("gpt-4.1", 32_768), ("gpt-4", 8_192),
+    ("gpt-3.5", 4_096),
+    ("o1", 100_000), ("o3", 100_000), ("o4", 100_000),
+    ("claude-3-5", 8_192), ("claude-3-7", 64_000),
+    ("claude-sonnet-4", 64_000), ("claude-opus-4", 32_000), ("claude-haiku-4", 32_000),
+    ("claude", 8_192),
+    ("gemini-1.5", 8_192), ("gemini-2", 8_192), ("gemini", 8_192),
+    ("deepseek", 8_192),
+    ("qwen", 8_192), ("llama", 4_096), ("mixtral", 4_096), ("mistral", 4_096),
+)
+# Unknown model → the historical completion floor, so v0.27.0 behavior is
+# preserved (no regression): only KNOWN small-output models are clamped down.
+_DEFAULT_MAX_OUTPUT = 16_384
+
 # Fraction of the window we let tool output consume, and chars/token.
 _TOOL_OUTPUT_FRACTION = 0.25
 _CHARS_PER_TOKEN = 4
@@ -47,8 +66,15 @@ COMPLETION_TOKENS_FLOOR = 16_384        # was session_agent._MAX_COMPLETION_TOKE
 COMPLETION_TOKENS_CEILING = 32_768      # stay under provider max-output caps
 
 
-def context_window(model: str | None) -> int:
-    """The active model's approximate input context window in tokens."""
+def context_window(model: str | None, explicit: int | None = None) -> int:
+    """The active model's approximate input context window in tokens.
+
+    ``explicit`` (an operator-declared window from the model-provider config) wins
+    when positive — so a newly-shipped model absent from the substring table isn't
+    throttled to the default. Otherwise the table decides; unknown → default.
+    """
+    if explicit and explicit > 0:
+        return explicit
     m = (model or "").lower()
     for sub, win in _CONTEXT_WINDOWS:
         if sub in m:
@@ -56,16 +82,33 @@ def context_window(model: str | None) -> int:
     return _DEFAULT_CONTEXT
 
 
-def tool_output_char_budget(model: str | None) -> int:
+def max_output_tokens(model: str | None) -> int:
+    """The active model's provider-imposed MAX output tokens (best-effort). Used to
+    clamp the completion budget so we never send a max_tokens the provider rejects."""
+    m = (model or "").lower()
+    for sub, cap in _MAX_OUTPUT_TOKENS:
+        if sub in m:
+            return cap
+    return _DEFAULT_MAX_OUTPUT
+
+
+def tool_output_char_budget(model: str | None, explicit_window: int | None = None) -> int:
     """Per-turn tool-output character budget, scaled to the model's window but
     never below the historical floor. 128k/200k models → 200_000 (unchanged);
     1M models → 1_000_000."""
-    tokens = int(context_window(model) * _TOOL_OUTPUT_FRACTION)
+    tokens = int(context_window(model, explicit_window) * _TOOL_OUTPUT_FRACTION)
     return max(TOOL_OUTPUT_CHARS_FLOOR, tokens * _CHARS_PER_TOKEN)
 
 
-def completion_token_budget(model: str | None) -> int:
+def completion_token_budget(model: str | None, explicit_window: int | None = None) -> int:
     """Completion (max_tokens) budget: raised only where the window clearly
-    supports it, floored at the historical value and capped under known
-    provider max-output limits so we never trigger a 400."""
-    return max(COMPLETION_TOKENS_FLOOR, min(context_window(model) // 8, COMPLETION_TOKENS_CEILING))
+    supports it, floored at the historical value, capped by the module ceiling AND
+    by the model's real provider max-output so we never trigger a 400.
+
+    The provider cap is applied only when it's *below* the floor for a genuinely
+    small-output model — the floor otherwise wins (an existing deployment is
+    unchanged), but a 4k-output model like gpt-4-turbo is clamped down to 4096
+    rather than being handed the 16384 floor it would reject."""
+    scaled = max(COMPLETION_TOKENS_FLOOR,
+                 min(context_window(model, explicit_window) // 8, COMPLETION_TOKENS_CEILING))
+    return min(scaled, max_output_tokens(model))

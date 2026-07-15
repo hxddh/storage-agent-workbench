@@ -114,5 +114,8 @@ def get_model_credentials(conn: sqlite3.Connection) -> dict[str, Any]:
         "model": row["model"] or "gpt-4o-mini",
         "base_url": row["base_url"],
         "provider_type": row["provider_type"],
+        # Optional operator-declared context window (tokens); None → inferred from
+        # the model name by model_budget. NOT a secret.
+        "context_window": row["context_window"],
     }
 

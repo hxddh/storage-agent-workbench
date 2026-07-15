@@ -28,6 +28,11 @@ class ProviderNotFound(Exception):
     """Raised when a cloud_provider row does not exist."""
 
 
+class CredentialResolutionError(Exception):
+    """Raised when a provider has a credential REF configured but its value cannot
+    be read from the vault — so the client is NOT silently downgraded to anonymous."""
+
+
 @dataclass
 class ProviderConfig:
     id: str
@@ -84,6 +89,26 @@ def build_s3_client(
     access_key = _resolve(cfg.access_key_ref)
     secret_key = _resolve(cfg.secret_key_ref)
     session_token = _resolve(cfg.session_token_ref)
+
+    # A credential REF that's configured but whose vault value is missing (deleted
+    # secret, out-of-sync vault) must fail loudly — not silently fall through to
+    # anonymous below, which would issue unsigned calls under an identity the
+    # operator thinks is configured and surface as a baffling AccessDenied. This is
+    # distinct from the genuine no-credentials case (no ref at all → anonymous).
+    _missing = [
+        label for label, ref, val in (
+            ("access key", cfg.access_key_ref, access_key),
+            ("secret key", cfg.secret_key_ref, secret_key),
+            ("session token", cfg.session_token_ref, session_token),
+        )
+        if ref and val is None
+    ]
+    if _missing:
+        raise CredentialResolutionError(
+            f"Provider '{cfg.name}' has {', '.join(_missing)} configured, but the "
+            "value(s) could not be read from the secret vault. The vault may be out "
+            "of sync — re-enter the credential(s) for this provider."
+        )
 
     # Default addressing: virtual-hosted for AWS (no endpoint), but PATH-style
     # when a custom endpoint is set — most S3-compatible endpoints (MinIO/Ceph on

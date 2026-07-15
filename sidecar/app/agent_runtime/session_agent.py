@@ -45,7 +45,10 @@ _MAX_FINDINGS = 30
 # How many recent thread messages the agent sees. 24 (was 12): a small-context
 # clip that now just makes the agent lose the thread on a long investigation —
 # 24 msgs × _MAX_REPLAY_MSG chars is still tiny under a modern context window.
+# This is the FLOOR: build_session_context scales it up with the model window
+# (bounded by _MAX_MESSAGES_CEIL), so a large-context model keeps more history.
 _MAX_MESSAGES = 24
+_MAX_MESSAGES_CEIL = 96
 # Tool-trace lines replayed per prior assistant turn. Each message already
 # persists its tool_activity (the one-line-per-call trace shown in the UI); we
 # surface it into the next turn's context so the agent sees WHAT it already
@@ -92,7 +95,8 @@ _MAX_USER_MSG = 16000
 # 4000 (was 1000): 1000 chars clipped mid-answer on any substantial turn, so the
 # agent saw only truncated tails of its own prior reasoning; 4000 keeps a full
 # normal answer while staying bounded (24 × 4000 ≈ 24k tokens of thread history).
-_MAX_REPLAY_MSG = 4000
+_MAX_REPLAY_MSG = 4000       # FLOOR; scaled up with the model window, capped below
+_MAX_REPLAY_MSG_CEIL = 12000
 # Per-turn cumulative budget on tool OUTPUT characters handed to the model.
 # This is the PRIMARY, elastic governor of how deep a turn goes: it tracks the
 # context the model actually consumes, so a turn runs as deep as it needs until
@@ -267,11 +271,11 @@ def _replay_tools(activity: list[dict[str, Any]] | None) -> list[str]:
     return lines
 
 
-def _replay_message(m: dict[str, Any]) -> dict[str, Any]:
+def _replay_message(m: dict[str, Any], max_chars: int = _MAX_REPLAY_MSG) -> dict[str, Any]:
     """One replayed message: role + clipped content, plus a bounded tools_run
     trace for assistant turns (cross-turn continuity of what was already probed)."""
     out = {"role": m.get("role"),
-           "content": _clip_marked(redact_text(str(m.get("content", ""))), _MAX_REPLAY_MSG)}
+           "content": _clip_marked(redact_text(str(m.get("content", ""))), max_chars)}
     if m.get("role") == "assistant":
         tools = _replay_tools(m.get("tool_activity"))
         if tools:
@@ -279,13 +283,28 @@ def _replay_message(m: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _elastic_replay_caps(model: str | None, explicit_window: int | None) -> tuple[int, int]:
+    """(message count, per-message chars) for thread replay, scaled to the model's
+    context window and floored at the historical constants (bounded above). Keeps a
+    small-window model unchanged while letting a large-window model retain more of
+    the thread — the same de-ossification the tool-output budget uses."""
+    window = model_budget.context_window(model, explicit_window)
+    factor = max(1, window // 128_000)
+    count = min(_MAX_MESSAGES_CEIL, _MAX_MESSAGES * factor)
+    chars = min(_MAX_REPLAY_MSG_CEIL, _MAX_REPLAY_MSG * factor)
+    return count, chars
+
+
 def build_session_context(
     session: dict[str, Any],
     summary: dict[str, Any],
     recent_messages: list[dict[str, Any]],
     agent_memory: list[dict[str, Any]] | None = None,
+    model: str | None = None,
+    explicit_window: int | None = None,
 ) -> dict[str, Any]:
     """Bounded, redacted context — the ONLY thing the model sees."""
+    max_messages, max_replay_msg = _elastic_replay_caps(model, explicit_window)
     findings = []
     for f in (summary.get("findings") or [])[:_MAX_FINDINGS]:
         findings.append({
@@ -320,7 +339,8 @@ def build_session_context(
         # Prior assistant turns carry a `tools_run` trace of the read-only probes
         # they already ran (bounded) — so this turn sees what was checked and
         # re-fetches only what it needs fuller detail on, instead of re-probing.
-        "recent_messages": [_replay_message(m) for m in recent_messages[-_MAX_MESSAGES:]],
+        "recent_messages": [_replay_message(m, max_replay_msg)
+                            for m in recent_messages[-max_messages:]],
         # NOTE: safety rules live ONCE in the instructions — not re-injected here.
     }
     guardrails.assert_no_secrets_in_context(context)
@@ -339,7 +359,8 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str,
     # _MAX_COMPLETION_TOKENS), so a large-window model isn't capped to the value
     # a small one needs. Never below the floor, never above provider max-output.
     return build_agent(creds, tools, instructions, name="Storage Agent",
-                       max_tokens=model_budget.completion_token_budget(creds.get("model")),
+                       max_tokens=model_budget.completion_token_budget(
+                           creds.get("model"), creds.get("context_window")),
                        parallel_tool_calls=False,
                        client_registry=client_registry)
 
@@ -500,7 +521,8 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
 
 def _install_tool_output_budget(tools: list[Any],
                                 limit: int | None = None,
-                                model: str | None = None) -> dict[str, int]:
+                                model: str | None = None,
+                                explicit_window: int | None = None) -> dict[str, int]:
     """Cap the CUMULATIVE characters of tool output handed to the model per turn.
 
     ``limit`` defaults to the model-elastic budget (``model_budget``) — scaled to
@@ -514,7 +536,7 @@ def _install_tool_output_budget(tools: list[Any],
     fake tools in tests (plain callables) are left untouched.
     """
     if limit is None:
-        limit = model_budget.tool_output_char_budget(model)
+        limit = model_budget.tool_output_char_budget(model, explicit_window)
     spent = {"chars": 0, "exhausted": False, "limit": limit}
     for t in tools:
         orig = getattr(t, "on_invoke_tool", None)
@@ -551,6 +573,8 @@ def _build_prompt(
     user_message: str,
     conn: Any,
     attachments: list[dict[str, Any]] | None = None,
+    model: str | None = None,
+    explicit_window: int | None = None,
 ) -> tuple[str, list[str], dict[str, Any]]:
     """Build the sanitized prompt + skill names + context (shared).
 
@@ -565,7 +589,8 @@ def _build_prompt(
             agent_memory = sessions_repo.list_agent_memory(conn, session["id"])
         except Exception:  # noqa: BLE001
             agent_memory = []
-    context = build_session_context(session, summary, recent_messages, agent_memory)
+    context = build_session_context(session, summary, recent_messages, agent_memory,
+                                     model=model, explicit_window=explicit_window)
     skill_names = skill_context.skill_names()
 
     prompt_parts = [render_context_text(context)]
@@ -682,7 +707,8 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     tools = _build_tools(spec.get("conn"), function_tool, activity,
                          spec.get("session_id"), spec.get("turn_id"),
                          spec.get("cancel_event"))
-    budget = _install_tool_output_budget(tools, model=creds.get("model"))
+    budget = _install_tool_output_budget(tools, model=creds.get("model"),
+                                         explicit_window=creds.get("context_window"))
     spec["budget"] = budget  # readable by the blocking driver, which owns `spec`
     # _make_agent disables parallel tool calls (chat-completions providers like
     # DeepSeek can emit malformed follow-ups with streaming + parallel calls) and
@@ -770,7 +796,8 @@ def answer(
     SSE endpoint (via SESSION_LOOP) to completion.
     """
     prompt, skill_names, context = _build_prompt(session, summary, recent_messages, user_message,
-                                                 conn, attachments)
+                                                 conn, attachments, model=creds.get("model"),
+                                                 explicit_window=creds.get("context_window"))
 
     activity: list[dict[str, Any]] = []
     spec = {"context": context, "prompt": prompt, "instructions": INSTRUCTIONS,
@@ -810,7 +837,8 @@ def build_stream(
     if clients is None:
         clients = []
     prompt, skill_names, _context = _build_prompt(session, summary, recent_messages, user_message,
-                                                  conn, attachments)
+                                                  conn, attachments, model=creds.get("model"),
+                                                  explicit_window=creds.get("context_window"))
     activity: list[dict[str, Any]] = []
     spec = {"prompt": prompt, "creds": creds, "conn": conn, "activity": activity,
             "session_id": session.get("id"), "turn_id": turn_id,

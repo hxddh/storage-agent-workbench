@@ -24,6 +24,10 @@ class ModelProviderCreate(BaseModel):
     base_url: str | None = None
     model: str | None = None
     api_key: str | None = None  # plaintext on input only; stored in keyring
+    # Optional explicit context window (tokens). Overrides the built-in table so
+    # a newly-shipped large-context model isn't throttled to the default. Omit to
+    # let the agent infer the window from the model name.
+    context_window: int | None = Field(default=None, gt=0)
 
 
 class ModelProviderUpdate(BaseModel):
@@ -33,6 +37,7 @@ class ModelProviderUpdate(BaseModel):
     model: str | None = None
     # If provided (non-empty), the stored secret is rotated. Omit/null to keep.
     api_key: str | None = None
+    context_window: int | None = Field(default=None, gt=0)
 
 
 class ModelProviderOut(BaseModel):
@@ -43,6 +48,7 @@ class ModelProviderOut(BaseModel):
     model: str | None
     api_key_ref: str | None
     has_api_key: bool
+    context_window: int | None = None
     # True for the provider the agent actually uses. Selected explicitly via
     # POST /model-providers/{id}/activate; when none is selected the oldest
     # configured provider is the implicit default (matching the agent runtime).

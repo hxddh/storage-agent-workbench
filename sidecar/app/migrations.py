@@ -529,6 +529,15 @@ ALTER TABLE session_messages ADD COLUMN grounding TEXT;
 ALTER TABLE session_messages ADD COLUMN proposed_actions TEXT;
 """
 
+# Optional explicit context window (tokens) for a model provider. The agent's
+# per-turn depth budgets (model_budget) scale with the active model's window;
+# when a newly-shipped model isn't in the built-in substring table it falls to a
+# conservative default and gets throttled. This lets an operator declare the real
+# window so a large-context model is used to its full depth. NULL → use the table.
+_M017 = """
+ALTER TABLE model_providers ADD COLUMN context_window INTEGER;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -547,6 +556,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (14, "session_datasets", _M014),
     (15, "runs_add_origin", _M015),
     (16, "session_message_grounding", _M016),
+    (17, "model_provider_context_window", _M017),
 ]
 
 
