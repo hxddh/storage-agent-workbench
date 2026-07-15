@@ -184,7 +184,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
     @function_tool
     def list_objects(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 200,
                      continuation_token: str = "", recursive: bool = False) -> str:
-        """List one page of object keys (read-only ListObjectsV2, up to 1000 per call; no object bodies). To enumerate fully, PAGE: re-call with continuation_token = the previous result's next_token until next_token is null, accumulating result.keys. Set recursive=true to list keys flat under the prefix (no '/' directory grouping). The echoed `keys` list is capped at 500 per call — if `keys_truncated_in_context` is true, `key_count` is the real page size and the rest are on the next page (re-page), so don't treat the 500 you see as the whole page. For a bucket far larger than paging can cover, propose an inventory analysis instead. Args: provider_id, bucket, prefix?, max_keys? (up to 1000), continuation_token?, recursive?."""
+        """List one page of object keys (read-only ListObjectsV2, up to 1000 per call; no object bodies). To enumerate fully, PAGE: re-call with continuation_token = the previous result's next_token until next_token is null, accumulating result.keys. Set recursive=true to list keys flat under the prefix (no '/' directory grouping). The echoed `keys` list is capped at 500 per call — if `keys_truncated_in_context` is true, `key_count` is the real page size and the rest are on the next page (re-page), so don't treat the 500 you see as the whole page. `objects` carries per-key {size, storage_class, last_modified} for the first 100 entries — use it to sample size distribution / storage classes without N head_object calls. For a bucket far larger than paging can cover, propose an inventory analysis instead. Args: provider_id, bucket, prefix?, max_keys? (up to 1000), continuation_token?, recursive?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -247,8 +247,8 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     @function_tool
-    def head_object(provider_id: str, bucket: str, key: str) -> str:
-        """Read one object's metadata — size, ETag, last-modified, storage class, sanitized user metadata (read-only HeadObject; no body). Use to confirm an object exists, check its storage class, or diagnose a 403/404 on a specific key. Args: provider_id, bucket, key."""
+    def head_object(provider_id: str, bucket: str, key: str, version_id: str = "") -> str:
+        """Read one object's metadata (read-only HeadObject; no body): size, ETag, last-modified, storage class, sanitized user metadata — plus the diagnostic headers: replication_status (PENDING/COMPLETED/FAILED/REPLICA — "did this object replicate?"), restore (GLACIER restore in-progress/expiry — "why isn't my restore ready?"), archive_status (intelligent-tiering archive), parts_count (multipart), lifecycle_expiration ("when will lifecycle delete this?"), version_id, content_type/content_encoding/cache_control (stale-read/caching diagnosis), website_redirect_location. Use to confirm an object exists, check its state, or diagnose a 403/404 on a specific key. Args: provider_id, bucket, key, version_id? (HEAD a specific version — compare current vs noncurrent)."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -256,7 +256,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         if denial:
             return _err(denial)
         rec("head_object", provider_id=provider_id, bucket=bucket, key=key)
-        res = s3.head_object(conn, provider_id, bucket, key)
+        res = s3.head_object(conn, provider_id, bucket, key, version_id or None)
         note("head_object", f"{bucket}/{key}", res)
         return json.dumps(res)
 
@@ -316,6 +316,48 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         res = s3.get_object_attributes(conn, provider_id, bucket, key, version_id or None)
         note("get_object_attributes", f"{bucket}/{key}",
              res.get("attributes_status", res) if res.get("success") else res)
+        return json.dumps(res)
+
+    @function_tool
+    def diagnose_presigned_url(url: str) -> str:
+        """Diagnose a PRESIGNED URL the user pasted — pure parsing, NO network request, NO credential ever echoed. Extracts: signature version (v4/v2), whether it is EXPIRED (computed from X-Amz-Date + X-Amz-Expires, or the V2 epoch), the credential SCOPE (date/region/service — the key id and signature are dropped entirely), signed headers, addressing style, and a `problems` list (url_expired / issued_in_future_check_clock_skew / expires_exceeds_v4_7day_max / sigv2_legacy_many_providers_reject / …). Use for "my presigned URL returns 403/AccessDenied" — it turns the interview into a computation (expired? wrong region scope vs the bucket's region? clock skew?). Args: url (the full presigned URL)."""
+        rec("diagnose_presigned_url")
+        res = s3.diagnose_presigned_url(url)
+        note("diagnose_presigned_url", res.get("host") or "url",
+             ("expired" if res.get("expired") else ", ".join(res.get("problems") or []) or "parsed")
+             if res.get("success") else "invalid")
+        return json.dumps(res)
+
+    @function_tool
+    def list_upload_parts(provider_id: str, bucket: str, key: str, upload_id: str,
+                          max_parts: int = 1000) -> str:
+        """List the PARTS of one in-progress multipart upload (read-only ListParts; no bodies). list_multipart_uploads shows THAT uploads are stuck; this shows how much a specific one holds — part count, total bytes accrued, first/last part times, ≤20 sample parts. The concrete "this abandoned upload is holding N GB since <date>" evidence for cost diagnosis. Listing only — aborting is a mutation and is NOT available; propose an AbortIncompleteMultipartUpload lifecycle rule instead. Args: provider_id, bucket, key, upload_id (from list_multipart_uploads), max_parts? (up to 1000)."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Call list_providers first.")
+        denial = scope_denial(p, bucket, key=key)
+        if denial:
+            return _err(denial)
+        rec("list_upload_parts", provider_id=provider_id, bucket=bucket, key=key)
+        res = s3.list_upload_parts(conn, provider_id, bucket, key, upload_id, max_parts)
+        note("list_upload_parts", f"{bucket}/{key}",
+             f"{res.get('part_count', 0)} parts" if res.get("success") else res)
+        return json.dumps(res)
+
+    @function_tool
+    def test_conditional_get(provider_id: str, bucket: str, key: str, etag: str) -> str:
+        """Probe whether a cached ETag still matches the stored object (read-only HeadObject with If-None-Match; NO body either way). 304 → etag_matches=true (the object is unchanged — the user's stale data is a cache/CDN problem, not the store); 200 → etag_matches=false + the current_etag (the object really changed). Also doubles as a provider-compatibility probe for conditional-header support. Use for "I'm seeing stale/old data" or "did this object change?". Args: provider_id, bucket, key, etag (the cached ETag to test, quotes optional)."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Call list_providers first.")
+        denial = scope_denial(p, bucket, key=key)
+        if denial:
+            return _err(denial)
+        rec("test_conditional_get", provider_id=provider_id, bucket=bucket, key=key)
+        res = s3.test_conditional_get(conn, provider_id, bucket, key, etag)
+        note("test_conditional_get", f"{bucket}/{key}",
+             ("unchanged (304)" if res.get("etag_matches") else "changed (200)")
+             if res.get("success") else "error")
         return json.dumps(res)
 
     @function_tool
@@ -436,7 +478,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
 
     @function_tool
     def get_bucket_config_detail(provider_id: str, bucket: str, aspect: str) -> str:
-        """Read the SANITIZED RULE DETAIL of one bucket-config aspect (read-only GET). The config review tools return only a status/boolean for these; this returns the actual rules a diagnosis needs — so you don't have to ask the user for the config. `aspect` is one of: 'replication' (per-rule status, prefix/tag filter, delete-marker replication, destination bucket), 'notification' (per-target type topic/queue/lambda/eventbridge + resource name, events, prefix/suffix filter — use for "my event/Lambda isn't firing"), 'cors' (allowed origins/methods/headers — use for browser CORS failures), 'logging' (the access-log target bucket/prefix), 'lifecycle' (per-rule prefix/status, transitions, expiration, noncurrent/abort-MPU cleanup), 'encryption' (SSE algorithm + reduced KMS key + bucket-key), 'public_access_block' (the four block/ignore/restrict booleans), 'policy' (per-statement effect/actions/is_public — principal reduced to '*'/'specific', never the raw ARN), 'inventory' (per-config schedule/destination/format/included-versions/optional-fields), 'website' (static-hosting index/error docs, redirect host, routing-rule count), 'intelligent_tiering' (per-config status, filter, tiering days/access-tiers), 'accelerate' (Transfer Acceleration status), 'request_payment' (Requester Pays vs BucketOwner). ARNs are reduced (no account IDs), values redacted, ≤20 rules. A provider lacking the API returns status='provider_unsupported', not an error. Args: provider_id, bucket, aspect."""
+        """Read the SANITIZED RULE DETAIL of one bucket-config aspect (read-only GET). The config review tools return only a status/boolean for these; this returns the actual rules a diagnosis needs — so you don't have to ask the user for the config. `aspect` is one of: 'replication' (per-rule status, prefix/tag filter, delete-marker replication, destination bucket), 'notification' (per-target type topic/queue/lambda/eventbridge + resource name, events, prefix/suffix filter — use for "my event/Lambda isn't firing"), 'cors' (allowed origins/methods/headers — use for browser CORS failures), 'logging' (the access-log target bucket/prefix), 'lifecycle' (per-rule prefix/status, transitions, expiration, noncurrent/abort-MPU cleanup), 'encryption' (SSE algorithm + reduced KMS key + bucket-key), 'public_access_block' (the four block/ignore/restrict booleans), 'policy' (per-statement effect/actions/is_public — principal reduced to '*'/'specific', never the raw ARN), 'inventory' (per-config schedule/destination/format/included-versions/optional-fields), 'website' (static-hosting index/error docs, redirect host, routing-rule count), 'intelligent_tiering' (per-config status, filter, tiering days/access-tiers), 'accelerate' (Transfer Acceleration status), 'request_payment' (Requester Pays vs BucketOwner), 'metrics' (request-metrics configs — which prefixes have CloudWatch request metrics), 'analytics' (storage-class-analysis configs + export destination). ARNs are reduced (no account IDs), values redacted, ≤20 rules. A provider lacking the API returns status='provider_unsupported', not an error. Args: provider_id, bucket, aspect."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -453,10 +495,11 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     tools = [list_providers, list_buckets, head_bucket, list_objects,
-             list_object_versions, list_multipart_uploads,
+             list_object_versions, list_multipart_uploads, list_upload_parts,
              test_credentials, head_object, get_object_lock_status,
              get_object_acl, get_object_tagging, get_object_attributes,
-             test_range_get, preview_object, measure_request_latency,
+             test_range_get, test_conditional_get, preview_object,
+             measure_request_latency, diagnose_presigned_url,
              test_addressing_style, inspect_endpoint_tls,
              get_bucket_config_detail, read_skill]
 

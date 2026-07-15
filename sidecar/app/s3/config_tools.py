@@ -57,6 +57,10 @@ _UNSUPPORTED_CODES = {"NotImplemented", "MethodNotAllowed", "NotSupported", "Uns
 _DENIED_CODES = {"AccessDenied", "Forbidden", "AllAccessDisabled", "UnauthorizedAccess"}
 
 _AllUsers = "http://acs.amazonaws.com/groups/global/AllUsers"
+# Any authenticated AWS account — effectively public (legacy grant). The
+# security review must flag it exactly like AllUsers (the object-level
+# get_object_acl already does via _grantee_kind).
+_AuthUsers = "http://acs.amazonaws.com/groups/global/AuthenticatedUsers"
 
 
 def _read(client, method: str, **kwargs) -> dict[str, Any]:
@@ -115,6 +119,9 @@ _CONFIG_READS = [
     ("intelligent_tiering", "list_bucket_intelligent_tiering_configurations"),
     ("accelerate", "get_bucket_accelerate_configuration"),
     ("request_payment", "get_bucket_request_payment"),
+    # Observability posture: request metrics + storage-class analysis configs.
+    ("metrics", "list_bucket_metrics_configurations"),
+    ("analytics", "list_bucket_analytics_configurations"),
 ]
 
 
@@ -123,8 +130,16 @@ def get_bucket_config_summary(conn: sqlite3.Connection, provider_id: str, bucket
     client = client_factory.build_s3_client(conn, provider_id)
 
     config_items: dict[str, str] = {}
+    bucket_region: str | None = None
     for name, method in _CONFIG_READS:
-        config_items[name] = _read(client, method, Bucket=bucket)["status"]
+        read = _read(client, method, Bucket=bucket)
+        config_items[name] = read["status"]
+        if name == "location" and read["status"] == AVAILABLE:
+            # The bucket's REAL region (LocationConstraint; classic us-east-1
+            # returns None/empty). Exposing it — with a mismatch flag against the
+            # provider's configured region — makes the #1 SignatureDoesNotMatch
+            # root cause (wrong signing region) checkable instead of guessable.
+            bucket_region = (read["data"] or {}).get("LocationConstraint") or "us-east-1"
 
     provider_unsupported_items = [n for n, s in config_items.items() if s == PROVIDER_UNSUPPORTED]
     access_denied_items = [n for n, s in config_items.items() if s == ACCESS_DENIED]
@@ -151,6 +166,10 @@ def get_bucket_config_summary(conn: sqlite3.Connection, provider_id: str, bucket
         overall = "partial_access"
     elif len(provider_unsupported_items) >= len(_CONFIG_READS) - 1:
         overall = "provider_limited"
+    elif error_items and not available:
+        # Every read errored (e.g. endpoint 500s): nothing was assessed — say so
+        # instead of the misleading "reviewed".
+        overall = "inconclusive"
     else:
         overall = "reviewed"
 
@@ -164,6 +183,8 @@ def get_bucket_config_summary(conn: sqlite3.Connection, provider_id: str, bucket
         "provider_id": provider_id,
         "endpoint_url": cfg.endpoint_url,
         "region": cfg.region,
+        "bucket_region": bucket_region,
+        "region_mismatch": bool(bucket_region and cfg.region and bucket_region != cfg.region),
         "config_items": config_items,
         "findings_count_by_category": counts,
         "provider_unsupported_items": provider_unsupported_items,
@@ -195,6 +216,8 @@ _DETAIL_ASPECTS = {
     "intelligent_tiering": "list_bucket_intelligent_tiering_configurations",
     "accelerate": "get_bucket_accelerate_configuration",
     "request_payment": "get_bucket_request_payment",
+    "metrics": "list_bucket_metrics_configurations",
+    "analytics": "list_bucket_analytics_configurations",
 }
 _MAX_DETAIL_RULES = 20
 
@@ -452,6 +475,43 @@ def _detail_request_payment(data: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"payer": payer, "requester_pays": payer == "Requester"}]
 
 
+def _detail_metrics(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Request-metrics configurations (which prefixes/tags have CloudWatch
+    request metrics enabled) — the observability skill's 'metrics' layer."""
+    out = []
+    for c in (data.get("MetricsConfigurationList") or [])[:_MAX_DETAIL_RULES]:
+        flt = c.get("Filter") or {}
+        prefix = flt.get("Prefix")
+        if prefix is None and flt.get("And"):
+            prefix = (flt.get("And") or {}).get("Prefix")
+        out.append({
+            "id": redact_text(str(c.get("Id", "")))[:120] or None,
+            "filter_prefix": redact_text(str(prefix)) if prefix else None,
+            "has_tag_filter": bool(flt.get("Tag") or (flt.get("And") or {}).get("Tags")),
+            "filters_whole_bucket": not flt,
+        })
+    return out
+
+
+def _detail_analytics(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Storage-class-analysis configurations: whether access-pattern analysis
+    runs and where its export lands (destination reduced, no account id)."""
+    out = []
+    for c in (data.get("AnalyticsConfigurationList") or [])[:_MAX_DETAIL_RULES]:
+        flt = c.get("Filter") or {}
+        sca = ((c.get("StorageClassAnalysis") or {}).get("DataExport")) or {}
+        dest = ((sca.get("Destination") or {}).get("S3BucketDestination")) or {}
+        out.append({
+            "id": redact_text(str(c.get("Id", "")))[:120] or None,
+            "filter_prefix": redact_text(str(flt.get("Prefix"))) if flt.get("Prefix") else None,
+            "has_export": bool(sca),
+            "export_bucket": _arn_resource(dest.get("Bucket")),
+            "export_prefix": redact_text(str(dest.get("Prefix") or "")) or None,
+            "export_format": dest.get("Format"),
+        })
+    return out
+
+
 _DETAIL_EXTRACTORS = {
     "replication": _detail_replication,
     "notification": _detail_notification,
@@ -466,6 +526,8 @@ _DETAIL_EXTRACTORS = {
     "intelligent_tiering": _detail_intelligent_tiering,
     "accelerate": _detail_accelerate,
     "request_payment": _detail_request_payment,
+    "metrics": _detail_metrics,
+    "analytics": _detail_analytics,
 }
 
 
@@ -475,7 +537,8 @@ def get_bucket_config_detail(conn: sqlite3.Connection, provider_id: str, bucket:
 
     ``aspect`` ∈ replication | notification | cors | logging | lifecycle |
     encryption | public_access_block | policy | inventory | website |
-    intelligent_tiering | accelerate | request_payment. Returns
+    intelligent_tiering | accelerate | request_payment | metrics | analytics.
+    Returns
     ``{aspect, status, rules}`` where ``status`` is available / not_configured /
     provider_unsupported / access_denied / error (rule 18: a provider that lacks
     the API is 'provider_unsupported', not a failure) and ``rules`` is the bounded,
@@ -515,7 +578,14 @@ def _policy_facts(policy_read: dict[str, Any]) -> dict[str, Any]:
         if stmt.get("Effect") != "Allow":
             continue
         principal = stmt.get("Principal")
-        is_public = principal == "*" or (isinstance(principal, dict) and "*" in str(principal.get("AWS", "")))
+        # EXACT '*' match only (same as _detail_policy): a substring test would
+        # mis-flag a partial-wildcard ARN like role/deploy-* as anonymous access.
+        if isinstance(principal, dict):
+            aws = principal.get("AWS")
+            vals = aws if isinstance(aws, list) else ([aws] if aws else [])
+            is_public = any(v == "*" for v in vals)
+        else:
+            is_public = principal == "*"
         if not is_public:
             continue
         facts["public_principal"] = True
@@ -530,11 +600,14 @@ def _policy_facts(policy_read: dict[str, Any]) -> dict[str, Any]:
 
 
 def _acl_public(acl_read: dict[str, Any]) -> bool:
+    """True when the bucket ACL grants to AllUsers (anonymous) OR
+    AuthenticatedUsers (any AWS account) — both are public exposure. Checking
+    only AllUsers silently passed a real public bucket."""
     if acl_read["status"] != AVAILABLE:
         return False
     for grant in acl_read["data"].get("Grants", []) or []:
         grantee = grant.get("Grantee", {})
-        if grantee.get("URI") == _AllUsers:
+        if grantee.get("URI") in (_AllUsers, _AuthUsers):
             return True
     return False
 
@@ -625,7 +698,8 @@ def review_bucket_security(conn: sqlite3.Connection, provider_id: str, bucket: s
     acl_public = _acl_public(acl)
     if acl_public:
         findings.append(_finding(CRITICAL, "ACL grants public access",
-                                 "Bucket ACL grants access to AllUsers (public)."))
+                                 "Bucket ACL grants access to AllUsers or AuthenticatedUsers "
+                                 "(both are public exposure)."))
     findings += _unsupported_findings(acl["status"], "ACL")
 
     pab_details: dict[str, bool] = {}
@@ -676,6 +750,10 @@ def review_bucket_lifecycle(conn: sqlite3.Connection, provider_id: str, bucket: 
 
     facts = _lifecycle_facts(lc)
     versioning_on = _versioning_enabled(ver)
+    # MFA-Delete (same GetBucketVersioning response, previously dropped): when
+    # Enabled, versions/delete-markers can only be removed with an MFA token —
+    # the direct answer to "why can't I delete this version?".
+    mfa_delete = ver["status"] == AVAILABLE and ver["data"].get("MFADelete") == "Enabled"
     findings: list[dict[str, str]] = []
 
     if lc["status"] == NOT_CONFIGURED:
@@ -699,7 +777,8 @@ def review_bucket_lifecycle(conn: sqlite3.Connection, provider_id: str, bucket: 
 
     return {
         "success": True,
-        "facts": {"lifecycle_status": lc["status"], "versioning_enabled": versioning_on, **facts},
+        "facts": {"lifecycle_status": lc["status"], "versioning_enabled": versioning_on,
+                  "mfa_delete_enabled": mfa_delete, **facts},
         "findings": findings,
     }
 

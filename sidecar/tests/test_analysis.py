@@ -93,6 +93,34 @@ def test_detect_log_format_prose_with_comma_is_not_csv(tmp_path):
     assert access_logs.detect_log_format(p)["format"] != "csv"
 
 
+def test_gzipped_access_log_decompresses_and_parses(tmp_path):
+    """.gz is accepted by the composer; reading it as raw bytes produced
+    mojibake rows and a falsely-clean 'no anomalies' analysis."""
+    import gzip as _gzip
+
+    p = tmp_path / "a.log.gz"
+    with _gzip.open(p, "wt", encoding="utf-8") as fh:
+        fh.write(ACCESS_LOG_TEXT)
+    assert access_logs.detect_log_format(p)["format"] == "text"
+    duckdb_path = tmp_path / "g.duckdb"
+    access_logs.import_access_logs(p, duckdb_path, "text")
+    m = access_logs.analyze_access_logs(duckdb_path)
+    assert m["total_requests"] == 4
+    assert m["error_rate_4xx"] == 0.5  # the 403/404 lines are really parsed
+
+
+def test_tsv_access_log_detected_and_parsed(tmp_path):
+    tsv = ("ts\tverb\turi\tstatus\tsize\tua\tip\n"
+           "2024-01-01T00:00:00Z\tGET\t/a/obj.bin\t200\t1024\tcurl/8\t10.0.0.1\n"
+           "2024-01-01T00:01:00Z\tGET\t/a/missing\t404\t0\tcurl/8\t10.0.0.2\n")
+    p = _write(tmp_path, "log.tsv", tsv)
+    assert access_logs.detect_log_format(p)["format"] == "csv"
+    duckdb_path = tmp_path / "t.duckdb"
+    access_logs.import_access_logs(p, duckdb_path, "csv")
+    m = access_logs.analyze_access_logs(duckdb_path)
+    assert m["total_requests"] == 2 and m["error_rate_4xx"] == 0.5
+
+
 def test_import_access_logs_creates_duckdb_table(tmp_path):
     p = _write(tmp_path, "a.log", ACCESS_LOG_TEXT)
     duckdb_path = tmp_path / "a.duckdb"
@@ -205,6 +233,45 @@ def test_import_inventory_headerless_csv_maps_by_content(tmp_path):
     assert "datasets/" in prefixes and "logs/" in prefixes  # key column detected
     # last_modified detected → the 2024 object lands in the 365d+ age bucket.
     assert "365d+" in {a["bucket"] for a in m["object_age_distribution"]}
+
+
+def test_import_inventory_tsv_parses_columns(tmp_path):
+    """.tsv is accepted by the composer — a comma read collapsed it to one
+    column and produced hollow analysis."""
+    tsv = INVENTORY_CSV.replace(",", "\t")
+    p = _write(tmp_path, "inv.tsv", tsv)
+    duckdb_path = tmp_path / "i.duckdb"
+    out = inventory.import_inventory_file(p, duckdb_path)
+    assert out["row_count"] == 4
+    m = inventory.analyze_inventory(duckdb_path)
+    assert m["object_count"] == 4 and m["total_size"] > 0
+
+
+def test_headerless_inventory_with_date_only_and_epoch_timestamps(tmp_path):
+    # date-only modified column → still mapped + parsed (age not 'unknown').
+    dateonly = (
+        "b,data/a.bin,1024,2024-01-15,STANDARD\n"
+        "b,data/b.bin,2048,2024-02-20,STANDARD\n"
+    )
+    p = _write(tmp_path, "inv-dateonly.csv", dateonly)
+    duckdb_path = tmp_path / "d.duckdb"
+    inventory.import_inventory_file(p, duckdb_path)
+    m = inventory.analyze_inventory(duckdb_path)
+    assert m["object_count"] == 2
+    assert m["unknown_age_ratio"] == 0.0
+    # epoch-seconds modified column → detected as last_modified (not stolen by
+    # the size predicate) and converted to ISO for DuckDB.
+    epoch = (
+        "b,data/a.bin,1024,1704067200,STANDARD\n"
+        "b,data/b.bin,2048,1706745600,STANDARD\n"
+    )
+    p2 = _write(tmp_path, "inv-epoch.csv", epoch)
+    duckdb_path2 = tmp_path / "e.duckdb"
+    inventory.import_inventory_file(p2, duckdb_path2)
+    m2 = inventory.analyze_inventory(duckdb_path2)
+    assert m2["object_count"] == 2
+    assert m2["unknown_age_ratio"] == 0.0
+    assert m2["total_size"] == 3072  # size column still correctly mapped
 
 
 def test_import_inventory_headered_csv_still_works(tmp_path):

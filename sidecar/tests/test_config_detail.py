@@ -165,6 +165,26 @@ def test_request_payment_detail_flags_requester_pays():
     assert ct._detail_request_payment({"Payer": "BucketOwner"})[0]["requester_pays"] is False
 
 
+def test_metrics_detail_surfaces_filter_scope():
+    data = {"MetricsConfigurationList": [
+        {"Id": "whole-bucket"},
+        {"Id": "hot-prefix", "Filter": {"Prefix": "hot/"}}]}
+    out = ct._detail_metrics(data)
+    assert out[0]["filters_whole_bucket"] is True
+    assert out[1]["filter_prefix"] == "hot/" and out[1]["filters_whole_bucket"] is False
+
+
+def test_analytics_detail_reduces_export_destination():
+    data = {"AnalyticsConfigurationList": [
+        {"Id": "sca", "StorageClassAnalysis": {"DataExport": {
+            "OutputSchemaVersion": "V_1",
+            "Destination": {"S3BucketDestination": {
+                "Bucket": "arn:aws:s3:::analytics-dest", "Prefix": "sca/", "Format": "CSV"}}}}}]}
+    r = ct._detail_analytics(data)[0]
+    assert r["has_export"] is True and r["export_bucket"] == "analytics-dest"
+    assert r["export_prefix"] == "sca/" and r["export_format"] == "CSV"
+
+
 def test_detail_aspects_and_extractors_stay_in_sync():
     # get_bucket_config_detail dispatches _DETAIL_EXTRACTORS[aspect]; a mismatch
     # would KeyError for a registered aspect. Guard the two dicts stay aligned.

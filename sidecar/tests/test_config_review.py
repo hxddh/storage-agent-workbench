@@ -114,6 +114,74 @@ def test_security_detects_public_principal_and_anonymous_get(cfg):
     assert "CORS allows all origins" in titles
 
 
+AUTH_USERS = "http://acs.amazonaws.com/groups/global/AuthenticatedUsers"
+
+
+def test_acl_authenticated_users_grant_is_flagged_public(cfg):
+    """AuthenticatedUsers (any AWS account) is effectively public — the review
+    must flag it like AllUsers (previously silently passed)."""
+    cfg.fake.behaviors["get_bucket_acl"] = {
+        "Grants": [{"Grantee": {"URI": AUTH_USERS}, "Permission": "READ"}]}
+    conn = _conn()
+    try:
+        out = ct.review_bucket_security(conn, cfg.pid, "demo-bucket")
+    finally:
+        conn.close()
+    assert out["facts"]["acl_public"] is True
+    assert any("ACL grants public access" in f["title"] for f in out["findings"])
+
+
+def test_policy_partial_wildcard_principal_is_not_public(cfg):
+    """A principal ARN merely CONTAINING '*' (role/deploy-*) must not be
+    flagged anonymous — only an exact '*' principal is public."""
+    cfg.fake.behaviors["get_bucket_policy"] = {"Policy": json.dumps({
+        "Statement": [{"Effect": "Allow",
+                       "Principal": {"AWS": "arn:aws:iam::123:role/deploy-*"},
+                       "Action": "s3:GetObject"}]})}
+    conn = _conn()
+    try:
+        out = ct.review_bucket_security(conn, cfg.pid, "demo-bucket")
+    finally:
+        conn.close()
+    assert out["facts"]["public_principal"] is False
+    assert out["facts"]["anonymous_get_object"] is False
+
+
+def test_all_reads_erroring_is_inconclusive_not_reviewed(cfg):
+    for _, method in ct._CONFIG_READS:
+        cfg.fake.behaviors[method] = _err("InternalError", 500)
+    conn = _conn()
+    try:
+        out = ct.get_bucket_config_summary(conn, cfg.pid, "demo-bucket")
+    finally:
+        conn.close()
+    assert out["overall_status"] == "inconclusive"
+    assert len(out["error_items"]) == len(out["config_items"])
+
+
+def test_summary_exposes_bucket_region_and_mismatch(cfg):
+    cfg.fake.behaviors["get_bucket_location"] = {"LocationConstraint": "eu-west-1"}
+    conn = _conn()
+    try:
+        out = ct.get_bucket_config_summary(conn, cfg.pid, "demo-bucket")
+    finally:
+        conn.close()
+    # Provider fixture is configured us-east-1; the bucket really lives in
+    # eu-west-1 → the #1 SignatureDoesNotMatch cause is now visible.
+    assert out["bucket_region"] == "eu-west-1"
+    assert out["region_mismatch"] is True
+
+
+def test_lifecycle_review_surfaces_mfa_delete(cfg):
+    cfg.fake.behaviors["get_bucket_versioning"] = {"Status": "Enabled", "MFADelete": "Enabled"}
+    conn = _conn()
+    try:
+        out = ct.review_bucket_lifecycle(conn, cfg.pid, "demo-bucket")
+    finally:
+        conn.close()
+    assert out["facts"]["mfa_delete_enabled"] is True
+
+
 def test_errored_config_read_surfaces_as_finding_not_silent(cfg):
     """A genuine read error (e.g. a transient 5xx) must NOT be silently dropped —
     otherwise the review implies the aspect is clean when it was never assessed."""

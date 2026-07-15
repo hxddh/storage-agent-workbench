@@ -48,8 +48,36 @@ _KNOWN_STORAGE = {
     "glacier_ir", "deep_archive", "intelligent_tiering", "outposts",
     "express_onezone", "cold", "archive", "tepid", "mtc",
 }
-# S3 inventory LastModifiedDate is ISO-8601 (e.g. 2024-01-15T10:30:00.000Z).
-_TS_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}[ T]")
+# S3 inventory LastModifiedDate is ISO-8601 (e.g. 2024-01-15T10:30:00.000Z);
+# accept date-only values too (some exports emit bare 2024-01-15, which DuckDB
+# casts fine — it just needs the column MAPPED).
+_TS_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}([ T]|$)")
+
+
+def _is_epoch(s: str) -> bool:
+    """A plausible unix timestamp: 10-digit seconds or 13-digit millis in
+    ~2001–2100. Used both to DETECT an epoch modified-time column and to convert
+    its values to ISO at import (DuckDB can't cast a bare epoch string)."""
+    if not s.isdigit():
+        return False
+    if len(s) == 10:
+        return 1_000_000_000 <= int(s) <= 4_102_444_800
+    if len(s) == 13:
+        return 1_000_000_000_000 <= int(s) <= 4_102_444_800_000
+    return False
+
+
+def _norm_ts(v: Any) -> str | None:
+    """Normalize a last_modified cell for storage: epoch → ISO-8601; everything
+    else passes through as text (DuckDB try_casts ISO/date strings itself)."""
+    if v is None or str(v).strip() == "":
+        return None
+    s = str(v).strip()
+    if _is_epoch(s):
+        from datetime import datetime, timezone
+        secs = int(s) / (1000 if len(s) == 13 else 1)
+        return datetime.fromtimestamp(secs, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return s
 
 
 def _looks_like_header(row: Any) -> bool:
@@ -79,9 +107,13 @@ def _detect_field_columns(df: pd.DataFrame) -> dict[str, Any]:
         return (sum(1 for v in vals if pred(v)) / len(vals)) if vals else 0.0
 
     assigned: dict[str, Any] = {}
+    # last_modified runs BEFORE size: an epoch column is all-digits and would
+    # otherwise be grabbed by the size predicate. The epoch check is range-bound
+    # (~2001–2100) so an ordinary size column (bytes spread over many magnitudes)
+    # rarely clears the 0.6 threshold.
     for field, pred, thresh in (
         ("storage_class", lambda s: s.lower() in _KNOWN_STORAGE, 0.6),
-        ("last_modified", lambda s: bool(_TS_PREFIX.match(s)), 0.6),
+        ("last_modified", lambda s: bool(_TS_PREFIX.match(s)) or _is_epoch(s), 0.6),
         ("size", lambda s: s.isdigit(), 0.8),
     ):
         cand, score = max(
@@ -149,8 +181,11 @@ def _load_dataframe(raw_path: str | Path) -> tuple[pd.DataFrame, bool, str]:
         # the manifest, not the file). Read every row as data; import_inventory_file
         # decides whether row 0 is a header or maps columns by content. +2 rows:
         # one for a possible header line, one to detect overflow past the cap.
+        # .tsv really is tab-separated — the composer accepts it, so honor it
+        # (a comma read collapses a TSV to one useless column).
+        sep = "\t" if ".tsv" in path.name.lower() else ","
         df = pd.read_csv(path, dtype=str, keep_default_na=False, header=None,
-                         nrows=MAX_INGEST_ROWS + 2)
+                         nrows=MAX_INGEST_ROWS + 2, sep=sep)
     except pd.errors.EmptyDataError:
         # A genuinely empty (0-byte / whitespace-only) CSV is an empty inventory,
         # not a failure. (A headerless file WITH data does not raise this.)
@@ -207,7 +242,7 @@ def import_inventory_file(raw_path: str | Path, duckdb_path: str | Path) -> dict
         "key": keys,
         "prefix": keys.map(_prefix_of),
         "size": series_for("size").map(_to_int),
-        "last_modified": series_for("last_modified").map(lambda v: str(v) if v else None),
+        "last_modified": series_for("last_modified").map(_norm_ts),
         "storage_class": series_for("storage_class"),
         "etag": series_for("etag"),
     }, columns=COLUMNS)

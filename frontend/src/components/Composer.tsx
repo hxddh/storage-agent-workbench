@@ -158,7 +158,7 @@ export function Composer({
       <input
         ref={fileRef}
         type="file"
-        accept=".csv,.parquet,.tsv,.log,.txt,.gz"
+        accept=".csv,.parquet,.tsv,.log,.txt,.gz,.json,.jsonl"
         className="hidden"
         onChange={(e) => { onPickFile(e.target.files?.[0] ?? null); e.target.value = ""; }}
       />

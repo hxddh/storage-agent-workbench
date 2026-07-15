@@ -25,6 +25,7 @@ from . import client_factory
 
 MAX_LIST_KEYS = 1000          # backend hard cap for list_objects_v2 MaxKeys
 SAMPLE_KEYS_LIMIT = 20        # max object keys echoed back
+OBJECT_DETAIL_LIMIT = 100     # per-key {size,storage_class,last_modified} entries echoed
 MAX_RANGE_BYTES = 4 * 1024 * 1024   # hard cap on a single range read (4 MiB)
 TLS_TIMEOUT = 5
 LATENCY_DEFAULT_SAMPLES = 5   # default round-trips for measure_request_latency
@@ -116,13 +117,16 @@ def test_credentials(conn: sqlite3.Connection, provider_id: str) -> dict[str, An
         if code in _UNSUPPORTED_CODES:
             # Capability gap, not an auth failure.
             return {**base, "success": True, "identity_hint": "Provider unsupported"}
-        if code in _DENIED_CODES or (fields.get("status_code") == 403 and code not in _AUTH_FAIL_CODES):
+        if code in _DENIED_CODES or (fields.get("status_code") == 403 and code
+                                     and code not in _AUTH_FAIL_CODES):
             # Credentials are valid; the account just cannot ListBuckets. Mirror
             # list_buckets' full denied-code set (Forbidden/AllAccessDisabled/…),
             # plus a non-auth 403 so a provider using a non-standard permission
             # code isn't reported as broken credentials. A genuine auth-failure
             # code (InvalidAccessKeyId/SignatureDoesNotMatch/…) still falls
-            # through to the failure path below even though it, too, is a 403.
+            # through to the failure path below even though it, too, is a 403 —
+            # and so does a CODE-LESS 403 (we can't tell auth from permission
+            # without a code, so don't claim the credentials are valid).
             return {**base, "success": True, "identity_hint": "authenticated (ListBuckets denied)"}
         # Everything else (auth failures included) is a genuine failure.
         return {**base, **fields, "success": False}
@@ -276,6 +280,18 @@ def list_objects_v2(
             # agent can enumerate by paging.
             "sample_keys": all_keys[:SAMPLE_KEYS_LIMIT],
             "keys": all_keys[:clamped],
+            # Per-key detail (size / storage class / mtime) for the first
+            # OBJECT_DETAIL_LIMIT entries — the skills sample size distribution
+            # and storage classes from listings, which bare keys couldn't answer
+            # without N follow-up head_object calls. Bounded so a 1000-key page
+            # doesn't quadruple the context echo.
+            "objects": [
+                {"key": c.get("Key"), "size": c.get("Size"),
+                 "storage_class": c.get("StorageClass"),
+                 "last_modified": c["LastModified"].isoformat()
+                 if hasattr(c.get("LastModified"), "isoformat") else c.get("LastModified")}
+                for c in contents[:OBJECT_DETAIL_LIMIT]
+            ],
             "is_truncated": bool(resp.get("IsTruncated", False)),
             "next_token": resp.get("NextContinuationToken"),
             # Report the applied cap so the caller can tell a requested max_keys
@@ -332,6 +348,24 @@ def list_object_versions(
             "current_bytes": sum(int(v.get("Size") or 0) for v in versions if v.get("IsLatest")),
             "noncurrent_bytes": sum(int(v.get("Size") or 0) for v in noncurrent),
             "sample_keys": [v.get("Key") for v in versions[:SAMPLE_KEYS_LIMIT]],
+            # Per-entry detail so the agent can point at WHICH version to inspect
+            # (and hand its version_id to head_object/get_object_lock_status) —
+            # bare keys couldn't answer "which one is the pileup?".
+            "sample_versions": [
+                {"key": v.get("Key"), "version_id": v.get("VersionId"),
+                 "is_latest": bool(v.get("IsLatest")), "is_delete_marker": False,
+                 "size": v.get("Size"), "storage_class": v.get("StorageClass"),
+                 "last_modified": v["LastModified"].isoformat()
+                 if hasattr(v.get("LastModified"), "isoformat") else v.get("LastModified")}
+                for v in versions[:SAMPLE_KEYS_LIMIT]
+            ] + [
+                {"key": m.get("Key"), "version_id": m.get("VersionId"),
+                 "is_latest": bool(m.get("IsLatest")), "is_delete_marker": True,
+                 "size": None, "storage_class": None,
+                 "last_modified": m["LastModified"].isoformat()
+                 if hasattr(m.get("LastModified"), "isoformat") else m.get("LastModified")}
+                for m in markers[:SAMPLE_KEYS_LIMIT]
+            ],
             "is_truncated": bool(resp.get("IsTruncated", False)),
             "next_key_marker": resp.get("NextKeyMarker"),
             "next_version_id_marker": resp.get("NextVersionIdMarker"),
@@ -394,7 +428,8 @@ def list_multipart_uploads(
 
 
 def head_object(
-    conn: sqlite3.Connection, provider_id: str, bucket: str, key: str
+    conn: sqlite3.Connection, provider_id: str, bucket: str, key: str,
+    version_id: str | None = None,
 ) -> dict[str, Any]:
     base = {
         "success": False,
@@ -408,7 +443,10 @@ def head_object(
     }
     try:
         client = client_factory.build_s3_client(conn, provider_id)
-        resp = client.head_object(Bucket=bucket, Key=key)
+        kw: dict[str, Any] = {"Bucket": bucket, "Key": key}
+        if version_id:
+            kw["VersionId"] = version_id
+        resp = client.head_object(**kw)
         lm = resp.get("LastModified")
         # Server-side encryption state: the security skill needs this to reason
         # about "why can't I read this object" (KMS-encrypted objects require key
@@ -417,6 +455,13 @@ def head_object(
         sse = resp.get("ServerSideEncryption")
         kms_key = resp.get("SSEKMSKeyId")
         kms_key_ref = redact(str(kms_key).split("/")[-1].split(":")[-1]) if kms_key else None
+        # The same HeadObject response carries a set of diagnostic fields that
+        # were previously dropped — each answers a real question the skills
+        # reference (replication state, GLACIER restore progress/expiry,
+        # multipart part count, lifecycle expiry, cache/content headers).
+        # Restore/Expiration are provider strings (dates + rule ids) — redacted.
+        expiration = resp.get("Expiration")
+        restore = resp.get("Restore")
         return {
             **base,
             "success": True,
@@ -427,6 +472,17 @@ def head_object(
             "server_side_encryption": sse,
             "sse_kms_key_ref": kms_key_ref,
             "metadata_sanitized": redact(resp.get("Metadata", {}) or {}),
+            "version_id": resp.get("VersionId"),
+            "replication_status": resp.get("ReplicationStatus"),
+            "restore": redact_text(str(restore)) if restore else None,
+            "archive_status": resp.get("ArchiveStatus"),
+            "parts_count": resp.get("PartsCount"),
+            "lifecycle_expiration": redact_text(str(expiration)) if expiration else None,
+            "content_type": resp.get("ContentType"),
+            "content_encoding": resp.get("ContentEncoding"),
+            "cache_control": resp.get("CacheControl"),
+            "website_redirect_location": redact_text(str(resp.get("WebsiteRedirectLocation")))
+            if resp.get("WebsiteRedirectLocation") else None,
         }
     except ClientError as exc:
         return {**base, **_client_error_fields(exc), "success": False}
@@ -1223,7 +1279,10 @@ def get_object_attributes(
         return {**base, **_generic_error_fields(exc), "success": False}
 
     checksum = resp.get("Checksum") or {}
-    algo = next((k.replace("Checksum", "") for k in checksum if k.startswith("Checksum")), None)
+    # Known algorithm keys only: the Checksum struct also carries ChecksumType
+    # (COMPOSITE/FULL_OBJECT), which a prefix match would mis-extract as "Type".
+    algo = next((a for a in ("CRC64NVME", "CRC32C", "CRC32", "SHA256", "SHA1")
+                 if f"Checksum{a}" in checksum), None)
     parts = resp.get("ObjectParts") or {}
     return {
         **base, "success": True, "attributes_status": AVAILABLE,
@@ -1233,3 +1292,182 @@ def get_object_attributes(
         "checksum_algorithm": algo,
         "parts_count": parts.get("TotalPartsCount"),
     }
+
+
+# --- Presigned-URL diagnosis (pure parse — NO network, NO secrets echoed) ----
+
+# Presigned query params that are CREDENTIAL material (rule 15): parsed for their
+# non-secret scope components, but their raw values NEVER appear in the result.
+_PRESIGNED_SECRET_PARAMS = {"x-amz-signature", "x-amz-credential", "x-amz-security-token",
+                            "awsaccesskeyid", "signature"}
+
+
+def diagnose_presigned_url(url: str) -> dict[str, Any]:
+    """Parse a user-pasted presigned URL and explain why it might fail — WITHOUT
+    making any request and WITHOUT echoing any credential material.
+
+    Extracts: signature version (V2/V4), expiry (computed expired/valid from
+    X-Amz-Date + X-Amz-Expires, or the V2 epoch Expires), the credential SCOPE
+    (date/region/service — the access-key id itself is dropped), signed headers,
+    and addressing style. The signature, key id, and security token never enter
+    the result. Answers "my presigned URL 403s" (expired / wrong region scope /
+    clock skew / wrong addressing) as a computation instead of an interview.
+    """
+    from datetime import datetime, timezone
+
+    base: dict[str, Any] = {
+        "success": False, "signature_version": None, "expired": None,
+        "expires_at": None, "expires_in_seconds": None, "issued_at": None,
+        "scope_date": None, "scope_region": None, "scope_service": None,
+        "signed_headers": [], "addressing_style": None, "host": None,
+        "key": None, "problems": [],
+        "error_code": None, "error_message_sanitized": None,
+    }
+    try:
+        parsed = urlparse(url.strip())
+    except Exception:  # noqa: BLE001
+        return {**base, "error_code": "InvalidUrl",
+                "error_message_sanitized": "The value could not be parsed as a URL."}
+    if not parsed.scheme or not parsed.netloc:
+        return {**base, "error_code": "InvalidUrl",
+                "error_message_sanitized": "The value could not be parsed as a URL."}
+    from urllib.parse import parse_qs
+    q = {k.lower(): v[0] for k, v in parse_qs(parsed.query, keep_blank_values=True).items()}
+    problems: list[str] = []
+    now = datetime.now(timezone.utc)
+
+    out = {**base, "success": True, "host": redact_text(parsed.hostname or "")}
+    # Addressing style: path-style URLs carry the bucket as the first path
+    # segment; virtual-hosted URLs carry it in the host.
+    path_parts = [p for p in (parsed.path or "").split("/") if p]
+    if q.get("x-amz-algorithm") or q.get("x-amz-signature"):
+        out["signature_version"] = "v4"
+        cred = q.get("x-amz-credential", "")
+        # Credential = <key-id>/<date>/<region>/<service>/aws4_request — keep the
+        # SCOPE only; the key id (first segment) is dropped entirely.
+        scope = cred.split("/")[1:] if "/" in cred else []
+        if len(scope) >= 3:
+            out["scope_date"], out["scope_region"], out["scope_service"] = scope[0], scope[1], scope[2]
+        amz_date, expires_s = q.get("x-amz-date"), q.get("x-amz-expires")
+        if amz_date:
+            out["issued_at"] = amz_date
+            try:
+                issued = datetime.strptime(amz_date, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+                if issued > now:
+                    problems.append("issued_in_future_check_clock_skew")
+                if expires_s and expires_s.isdigit():
+                    out["expires_in_seconds"] = int(expires_s)
+                    exp = issued.timestamp() + int(expires_s)
+                    out["expires_at"] = datetime.fromtimestamp(exp, tz=timezone.utc).isoformat()
+                    out["expired"] = exp < now.timestamp()
+                    if out["expired"]:
+                        problems.append("url_expired")
+                    if int(expires_s) > 604800:
+                        problems.append("expires_exceeds_v4_7day_max")
+            except ValueError:
+                problems.append("malformed_x_amz_date")
+        out["signed_headers"] = [h for h in q.get("x-amz-signedheaders", "").split(";") if h]
+        if not q.get("x-amz-signature"):
+            problems.append("missing_signature_param")
+    elif q.get("awsaccesskeyid") or (q.get("expires") and q.get("signature")):
+        out["signature_version"] = "v2"
+        exp_epoch = q.get("expires", "")
+        if exp_epoch.isdigit():
+            out["expires_at"] = datetime.fromtimestamp(int(exp_epoch), tz=timezone.utc).isoformat()
+            out["expired"] = int(exp_epoch) < now.timestamp()
+            if out["expired"]:
+                problems.append("url_expired")
+        problems.append("sigv2_legacy_many_providers_reject")
+    else:
+        out["signature_version"] = None
+        problems.append("no_presign_parameters_found")
+
+    # Bucket-in-path (path-style) vs bucket-in-host (virtual-hosted).
+    host = parsed.hostname or ""
+    if path_parts and "." not in host.split(".")[0]:
+        out["addressing_style"] = "path" if len(path_parts) >= 2 else "virtual"
+    out["key"] = redact_text("/".join(path_parts[1:]) or (path_parts[0] if path_parts else "")) or None
+    out["problems"] = problems
+    return out
+
+
+# --- ListParts (one stuck multipart upload's parts — read-only, no abort) -----
+
+
+def list_upload_parts(
+    conn: sqlite3.Connection, provider_id: str, bucket: str, key: str,
+    upload_id: str, max_parts: int = 1000,
+) -> dict[str, Any]:
+    """List the PARTS of one in-progress multipart upload (read-only ListParts).
+
+    list_multipart_uploads shows THAT uploads are stuck; this shows how much a
+    specific one is holding — parts uploaded, bytes accrued, last activity — the
+    concrete "this abandoned upload holds N GB" evidence. Listing only; aborting
+    is a mutation and is NOT available (propose a lifecycle rule instead).
+    """
+    base = {
+        "success": False, "part_count": 0, "total_bytes": 0,
+        "first_part_at": None, "last_part_at": None, "sample_parts": [],
+        "is_truncated": False, "next_part_number_marker": None,
+        "error_code": None, "error_message_sanitized": None,
+    }
+    clamped = max(1, min(int(max_parts), 1000))
+    try:
+        client = client_factory.build_s3_client(conn, provider_id)
+        resp = client.list_parts(Bucket=bucket, Key=key, UploadId=upload_id,
+                                 MaxParts=clamped)
+    except ClientError as exc:
+        if _is_unsupported(exc):
+            return {**base, "success": True, "parts_status": PROVIDER_UNSUPPORTED}
+        return {**base, **_client_error_fields(exc), "success": False}
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc), "success": False}
+    parts = resp.get("Parts", []) or []
+    times = [p.get("LastModified") for p in parts if p.get("LastModified") is not None]
+    iso = lambda d: d.isoformat() if hasattr(d, "isoformat") else d  # noqa: E731
+    return {
+        **base, "success": True, "parts_status": AVAILABLE,
+        "part_count": len(parts),
+        "total_bytes": sum(int(p.get("Size") or 0) for p in parts),
+        "first_part_at": iso(min(times)) if times else None,
+        "last_part_at": iso(max(times)) if times else None,
+        "sample_parts": [{"part_number": p.get("PartNumber"), "size": p.get("Size"),
+                          "last_modified": iso(p.get("LastModified"))}
+                         for p in parts[:SAMPLE_KEYS_LIMIT]],
+        "is_truncated": bool(resp.get("IsTruncated", False)),
+        "next_part_number_marker": resp.get("NextPartNumberMarker"),
+    }
+
+
+# --- Conditional-read probe (ETag freshness — no body either way) ------------
+
+
+def test_conditional_get(
+    conn: sqlite3.Connection, provider_id: str, bucket: str, key: str, etag: str,
+) -> dict[str, Any]:
+    """HeadObject with If-None-Match — proves whether a cached ETag still matches
+    the stored object (304 = unchanged, 200 = changed + the current ETag). The
+    cleanest evidence for "am I seeing stale data / did the object change?", and
+    a provider-compat probe for conditional-header support. No body either way.
+    """
+    base = {
+        "success": False, "etag_matches": None, "current_etag": None,
+        "status_code": None, "error_code": None, "error_message_sanitized": None,
+    }
+    try:
+        client = client_factory.build_s3_client(conn, provider_id)
+        resp = client.head_object(Bucket=bucket, Key=key, IfNoneMatch=etag)
+        # 200: the stored object differs from the supplied ETag.
+        return {**base, "success": True, "etag_matches": False,
+                "current_etag": resp.get("ETag"), "status_code": 200}
+    except ClientError as exc:
+        fields = _client_error_fields(exc)
+        if fields.get("status_code") == 304 or fields.get("error_code") in ("304", "NotModified"):
+            return {**base, "success": True, "etag_matches": True, "status_code": 304}
+        if _is_unsupported(exc):
+            return {**base, "success": True, "etag_matches": None,
+                    "status_code": fields.get("status_code"),
+                    "error_code": PROVIDER_UNSUPPORTED}
+        return {**base, **fields, "success": False}
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc), "success": False}

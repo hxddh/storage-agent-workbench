@@ -154,6 +154,26 @@ def test_fork_session_copies_agent_memory(client):
     assert texts == ["bucket acme is path-style only", "public read enabled"]
 
 
+def test_fork_copies_run_links(client):
+    """Run LINKS (read-only references) come along on fork, so a copied
+    proposal card that resolves against the session's runs (e.g. 'import
+    inventory' needing the account_discovery run) stays actionable."""
+    s = _session(client)
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO runs (id, run_type, status, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("run-x1", "account_discovery", "completed",
+             "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"))
+        sessions_repo.link_run(conn, s["id"], "run-x1", role="evidence")
+        conn.commit()
+    forked = client.post(f"/sessions/{s['id']}/fork").json()
+    with _db() as conn:
+        rows = conn.execute("SELECT run_id FROM session_runs WHERE session_id = ?",
+                            (forked["id"],)).fetchall()
+    assert [r[0] for r in rows] == ["run-x1"]
+
+
 def test_fork_preserves_grounding_and_proposals(client):
     """A forked assistant message must keep its grounding + proposed-action cards
     (migration 16 columns), not silently drop them — the fork copies the FULL

@@ -56,17 +56,25 @@ Safety:
 - Must sanitize sample keys and bound the keys surfaced to the model per call.
   The clamp is reported (`max_keys_requested` / `max_keys_applied`) and the
   in-context echo cap sets `keys_truncated_in_context` — never a silent cap.
+- `objects` carries per-key `{size, storage_class, last_modified}` for the first
+  100 entries, so size/storage-class distribution is samplable from one listing
+  (no N× head_object).
 - Never returns object bodies.
 
 ### head_object
 
 Purpose:
 
-- Inspect object metadata.
+- Inspect one object's metadata — size/ETag/mtime/storage class plus the
+  diagnostic headers the same response already carries: `replication_status`,
+  `restore` (GLACIER restore progress/expiry), `archive_status`, `parts_count`,
+  `lifecycle_expiration`, `version_id`, `content_type`/`content_encoding`/
+  `cache_control`, `website_redirect_location`. Accepts `version_id` to HEAD a
+  specific version (compare current vs noncurrent).
 
 Safety:
 
-- Must not download object body.
+- Must not download object body. Restore/expiration strings are redacted.
 
 ### test_range_get
 
@@ -113,7 +121,9 @@ Purpose:
 Safety:
 
 - Read-only ListObjectVersions; one bounded page (markers for paging). No bodies.
-- At most 20 sample keys echoed back.
+- At most 20 sample keys echoed back; `sample_versions` additionally carries
+  bounded per-entry detail (`version_id`, `is_latest`, `is_delete_marker`, size,
+  storage class) so the agent can point at WHICH version to inspect.
 
 ### list_multipart_uploads
 
@@ -126,6 +136,46 @@ Safety:
 
 - Read-only ListMultipartUploads; listing only. Aborting is a mutation and is
   NOT available — propose a lifecycle rule instead. At most 20 sample keys.
+
+### list_upload_parts
+
+Purpose:
+
+- List the PARTS of one in-progress multipart upload (read-only ListParts):
+  part count, total bytes accrued, first/last part times — the concrete
+  "this abandoned upload holds N GB since <date>" cost evidence.
+
+Safety:
+
+- Read-only; listing only (no abort — propose an
+  AbortIncompleteMultipartUpload lifecycle rule). ≤20 sample parts.
+
+### test_conditional_get
+
+Purpose:
+
+- Prove whether a cached ETag still matches the stored object (HeadObject with
+  If-None-Match): 304 → unchanged (stale reads are a cache/CDN problem), 200 →
+  changed + the current ETag. Doubles as a conditional-header compat probe.
+
+Safety:
+
+- Read-only HeadObject; no body on either outcome.
+
+### diagnose_presigned_url
+
+Purpose:
+
+- Diagnose a user-pasted presigned URL by PURE PARSING — signature version,
+  computed expired/valid (X-Amz-Date + X-Amz-Expires, or the V2 epoch), the
+  credential SCOPE (date/region/service), signed headers, addressing style,
+  and a `problems` list (expired / clock skew / >7d V4 expiry / legacy SigV2).
+
+Safety:
+
+- NO network request is made. The signature, access-key id, and any security
+  token are dropped entirely — credential material never reaches the model
+  (rule 15). Host and key are redaction-passed.
 
 ### measure_request_latency
 
@@ -225,19 +275,25 @@ Purpose:
 
 ## Bucket config review tools
 
-- get_bucket_config_summary — status map over ~19 config reads, including the
+- get_bucket_config_summary — status map over ~21 config reads, including the
   authoritative `policy_status` (is-public), `ownership` (Object Ownership /
   ACLs-disabled), bucket-level `object_lock`, `website`, `intelligent_tiering`,
-  `accelerate`, and `request_payment`.
+  `accelerate`, `request_payment`, `metrics`, and `analytics`. Also exposes the
+  bucket's REAL region (`bucket_region` from LocationConstraint) plus a
+  `region_mismatch` flag against the provider's configured region — the #1
+  SignatureDoesNotMatch root cause, now checkable. An all-reads-errored summary
+  reports `overall_status='inconclusive'`, never "reviewed".
 - get_bucket_config_detail — read-only, sanitized RULE detail for one aspect that
-  the review tools return only a status/boolean for. Aspects (13): `replication`,
+  the review tools return only a status/boolean for. Aspects (15): `replication`,
   `notification`, `cors`, `logging`, `lifecycle` (transitions/expiration/cleanup),
   `encryption` (SSE algorithm + reduced KMS key), `public_access_block` (the four
   booleans), `policy` (per-statement effect/actions/`is_public` — principal
   reduced to `*`/`specific`, never the raw ARN), `inventory` (schedule/
   destination/format/fields), `website` (index/error docs, redirect host,
   routing-rule count), `intelligent_tiering` (status/filter/tiering days), 
-  `accelerate` (Transfer Acceleration status), `request_payment` (Requester Pays).
+  `accelerate` (Transfer Acceleration status), `request_payment` (Requester Pays),
+  `metrics` (request-metrics configs), `analytics` (storage-class-analysis +
+  reduced export destination).
   ARNs reduced (account id stripped), values redacted, ≤20 rules; a provider
   lacking the API returns `status='provider_unsupported'`. Fills the config
   skills' decision trees so the agent reads the config instead of asking for it.

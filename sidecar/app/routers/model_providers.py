@@ -72,32 +72,62 @@ def activate_model_provider(
 def test_model_provider(
     provider_id: str, conn: sqlite3.Connection = Depends(get_conn)
 ):
-    """Validate that a model provider is configured.
+    """Validate that a model provider is configured — and actually reachable.
 
-    Phase 02 performs a local configuration check only: it confirms required
-    fields are set and that the API key resolves from the keyring. It does NOT
-    make a live network call to the provider (that arrives with the agent
-    runtime in a later phase). The secret value is never returned.
+    Config check (fields set, key resolves from the vault) plus a bounded LIVE
+    probe: GET {base_url}/models with the key, 5s timeout. A config-only "test"
+    passed invalid keys and let the first real turn fail instead. The probe
+    classifies: key accepted / key rejected / endpoint unreachable / endpoint
+    doesn't expose /models (config ok, auth unverified). The secret value is
+    resolved server-side only and never returned; no response body is echoed.
     """
     provider = repo.get(conn, provider_id)
     if provider is None:
         raise HTTPException(status_code=404, detail="model provider not found")
 
-    has_secret = False
+    secret: str | None = None
     if provider.api_key_ref:
         scope, name = keyring_store.parse_ref(provider.api_key_ref)
-        has_secret = keyring_store.get_secret(scope, name) is not None
+        secret = keyring_store.get_secret(scope, name)
 
     checks = {
         "has_base_url": bool(provider.base_url),
         "has_model": bool(provider.model),
-        "api_key_present": has_secret,
+        "api_key_present": secret is not None,
     }
-    ok = all(checks.values())
-    detail = (
-        "Configuration looks complete. Live provider ping is deferred to the "
-        "agent-runtime phase."
-        if ok
-        else "Configuration incomplete: " + ", ".join(k for k, v in checks.items() if not v)
-    )
-    return ModelProviderTestResult(ok=ok, checks=checks, detail=detail)
+    config_ok = all(checks.values())
+    if not config_ok:
+        return ModelProviderTestResult(
+            ok=False, checks=checks,
+            detail="Configuration incomplete: "
+                   + ", ".join(k for k, v in checks.items() if not v))
+
+    # Live probe. /models is the standard OpenAI-compatible listing endpoint;
+    # providers that don't expose it still prove reachability by answering.
+    import httpx
+    live_detail = ""
+    try:
+        url = provider.base_url.rstrip("/") + "/models"
+        resp = httpx.get(url, headers={"Authorization": f"Bearer {secret}"}, timeout=5.0)
+        if resp.status_code in (401, 403):
+            checks["api_key_accepted"] = False
+            live_detail = "The provider rejected the API key (HTTP %d). Check the key." % resp.status_code
+        elif resp.status_code < 500:
+            # 200 = key accepted; 404/405 = endpoint reached but no /models
+            # (common on minimal proxies) — reachable, auth not disproven.
+            checks["endpoint_reachable"] = True
+            if resp.status_code == 200:
+                checks["api_key_accepted"] = True
+                live_detail = "Endpoint reachable and the API key was accepted."
+            else:
+                live_detail = ("Endpoint reachable; it doesn't expose /models "
+                               "(HTTP %d), so the key wasn't verified." % resp.status_code)
+        else:
+            checks["endpoint_reachable"] = True
+            live_detail = "Endpoint reachable but returned a server error (HTTP %d)." % resp.status_code
+    except Exception:  # noqa: BLE001 — network failure classes, no body echoed
+        checks["endpoint_reachable"] = False
+        live_detail = "Could not reach the endpoint (network error or timeout). Check the base URL."
+
+    ok = config_ok and checks.get("api_key_accepted", True) and checks.get("endpoint_reachable", True)
+    return ModelProviderTestResult(ok=ok, checks=checks, detail=live_detail)

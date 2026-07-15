@@ -54,6 +54,10 @@ const dropped = new Set<string>();
 // How to abort a session's in-flight turn, registered by the turn runner. Lets
 // dropSessionRun stop the stream when a session is deleted mid-turn (F3).
 const aborters = new Map<string, () => void>();
+// How to CANCEL the turn server-side (best-effort). Aborting only the local
+// stream left the server worker generating against a deleted session — wasted
+// model spend; this asks the server to stop too.
+const cancellers = new Map<string, () => void>();
 
 function notify(id: string) {
   listeners.get(id)?.forEach((l) => l());
@@ -91,12 +95,25 @@ export function unregisterTurnAbort(id: string, abort: () => void): void {
   if (aborters.get(id) === abort) aborters.delete(id);
 }
 
+/** Register how to cancel a session's in-flight turn SERVER-SIDE (best-effort),
+ * so deleting the session also stops the worker, not just the local stream. */
+export function registerTurnCancel(id: string, cancel: () => void): void {
+  cancellers.set(id, cancel);
+}
+
+/** Unregister a turn's server canceller (identity-checked, like the aborter). */
+export function unregisterTurnCancel(id: string, cancel: () => void): void {
+  if (cancellers.get(id) === cancel) cancellers.delete(id);
+}
+
 /** Forget a session's run state and listeners (call when a session is deleted)
  * so the module-level maps don't accumulate entries for dead sessions. Aborts
  * any in-flight turn first and marks the session dropped so late writes from
  * that turn are ignored — no orphan stream, no resurrected entry (F3). */
 export function dropSessionRun(id: string): void {
   dropped.add(id);
+  cancellers.get(id)?.(); // ask the server to stop the turn (best-effort)
+  cancellers.delete(id);
   aborters.get(id)?.();
   aborters.delete(id);
   store.delete(id);
