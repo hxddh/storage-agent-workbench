@@ -6,6 +6,63 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-07-16
+
+_Packaging-integrity + ops-robustness round. The least-audited surface — how the
+app is bundled, released, and launched — plus two data-integrity fixes. The
+security floor is untouched (and its packaging is now proven, not assumed)._
+
+### Fixed — packaging & release integrity
+
+- **The packaged bundle now proves it can actually run, not just answer
+  `/health`.** A PyInstaller bundle can pass the liveness probe while silently
+  missing a lazily imported native dependency — the OpenAI Agents SDK, a botocore
+  S3 service model, the DuckDB/PyArrow engines, or the `cryptography` binding the
+  AES-256-GCM secret vault decrypts with — because none of those load on the
+  `/health` path. Added a deep self-check (`GET /health/selfcheck`) that imports
+  and exercises each offline (no network, no credentials, no secrets), and made
+  the release smoke test assert it. A broken bundle now fails the build instead
+  of breaking in a user's hands.
+- **`cryptography` is now collected in full by the PyInstaller spec.** The secret
+  vault decrypts with it, and it ships a compiled `_rust` binding loaded lazily;
+  it was riding only on PyInstaller's built-in hook. A bundle that can't open the
+  vault is a security-floor break, so it is collected explicitly like the other
+  native packages.
+- **Releases publish atomically.** The workflow created a *published* GitHub
+  Release up front, then uploaded assets from three parallel platform jobs — so a
+  failure on any platform left a permanently half-populated public release.
+  Releases are now created as a draft and published only after all three
+  platforms succeed; a partial run leaves a reviewable draft, never a broken
+  public download.
+
+### Fixed — launch & data integrity
+
+- **A missing/unspawnable sidecar no longer crashes with an opaque panic.** The
+  Tauri launcher used `panic!`/`.expect()` for resource-dir resolution and
+  sidecar spawn, which unwinds through the FFI boundary as an uninformative
+  crash. It now returns a clear error from `setup` (and logs a precise
+  diagnostic), so startup aborts cleanly with a debuggable message.
+- **Numeric Unix-epoch access-log timestamps are parsed instead of dropped.**
+  Epoch timestamps (seconds / milliseconds / microseconds / nanoseconds, common
+  in JSON and CDN logs) failed every text format and cast to NULL downstream, so
+  every hour bucket became `'unknown'` and the log's entire time analysis
+  vanished. They now normalize by magnitude to UTC; small integers (ports, status
+  codes) are never misread as timestamps.
+- **Migration crash-recovery tolerates a re-inserted seed row.** The idempotent
+  replay after a partial-apply crash only caught the `OperationalError` DDL cases
+  (duplicate column / existing table); an `INSERT` that re-added a seed row would
+  raise `IntegrityError` and wedge the runner. Both are now recognized as the
+  same "already applied" signal — while a genuine constraint violation is still
+  never swallowed.
+
+### Changed — agent tool guidance
+
+- **`survey_account` now flags itself as the costly live-scan path.** Its
+  description steers the agent to the cheap persisted-profile readers
+  (`query_account_profile`, `compare_to_last_survey`, both no new S3 calls) for
+  account-wide posture and "what changed" questions, reserving the live survey
+  for establishing or deliberately refreshing a profile.
+
 ## [0.30.0] - 2026-07-16
 
 _The deep round: concurrency correctness, engine truth guards, "the survey

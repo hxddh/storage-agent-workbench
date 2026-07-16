@@ -165,17 +165,27 @@ pub fn run() {
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_default();
 
-            let resource_dir = app
-                .path()
-                .resource_dir()
-                .expect("failed to resolve resource dir");
+            // Launch failures below return an Err from `setup` instead of
+            // `panic!`/`.expect()`. A panic here unwinds through the Tauri/FFI
+            // boundary and shows the user an opaque crash; returning the error
+            // lets Tauri report it cleanly and still aborts startup (the app
+            // cannot function without its sidecar). We also log a precise
+            // diagnostic to stderr so a packaging regression is debuggable.
+            let resource_dir = app.path().resource_dir().map_err(|e| {
+                eprintln!("fatal: failed to resolve resource dir: {e}");
+                format!("failed to resolve resource dir: {e}")
+            })?;
 
-            let sidecar_bin = resolve_sidecar(&resource_dir).unwrap_or_else(|| {
-                panic!(
+            let sidecar_bin = resolve_sidecar(&resource_dir).ok_or_else(|| {
+                eprintln!(
+                    "fatal: bundled sidecar not found under resource dir {}",
+                    resource_dir.display()
+                );
+                format!(
                     "bundled sidecar not found under resource dir {}",
                     resource_dir.display()
                 )
-            });
+            })?;
 
             let child = Command::new(&sidecar_bin)
                 .args(["--host", "127.0.0.1", "--port", &port.to_string()])
@@ -187,7 +197,10 @@ pub fn run() {
                 // orphaned on app exit/crash.
                 .env("STORAGE_AGENT_PARENT_PID", std::process::id().to_string())
                 .spawn()
-                .expect("failed to spawn sidecar");
+                .map_err(|e| {
+                    eprintln!("fatal: failed to spawn sidecar at {}: {e}", sidecar_bin.display());
+                    format!("failed to spawn sidecar at {}: {e}", sidecar_bin.display())
+                })?;
 
             app.manage(SidecarState {
                 url,

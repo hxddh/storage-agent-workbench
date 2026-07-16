@@ -50,9 +50,13 @@ if _skillpack.is_dir():
 # tree of service JSON models loaded lazily by name, and both packages import
 # submodules dynamically. Collect them in FULL rather than relying solely on
 # PyInstaller's built-in hooks, so a bundle can never be missing an S3 service
-# model at runtime (the smoke test's /health check wouldn't catch that).
+# model at runtime (the deep self-check below exercises a real client build).
+# cryptography backs the AES-256-GCM secret vault (security/keyring_store); it
+# ships a compiled `_rust` binding loaded lazily, so collect it in FULL rather
+# than trusting the built-in hook — a bundle that can't decrypt the vault would
+# be a security-floor break that a bare /health probe never notices.
 for pkg in ("duckdb", "pyarrow", "pandas", "openai", "agents", "griffe",
-            "boto3", "botocore"):
+            "boto3", "botocore", "cryptography"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b

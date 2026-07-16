@@ -87,6 +87,9 @@ def _normalize_ts(ts: Any) -> str | None:
     s = str(ts).strip()
     if not s:
         return None
+    epoch = _epoch_to_iso(s)
+    if epoch is not None:
+        return epoch
     for fmt in ("%d/%b/%Y:%H:%M:%S %z", "%d/%b/%Y:%H:%M:%S"):
         try:
             return _to_utc_iso(datetime.strptime(s, fmt))
@@ -96,6 +99,36 @@ def _normalize_ts(ts: Any) -> str | None:
         return _to_utc_iso(datetime.fromisoformat(s.replace("Z", "+00:00")))
     except ValueError:
         return s
+
+
+# A bare numeric timestamp is a Unix epoch — common in JSON / CDN / some
+# S3-compatible access logs. Without this, such values fail every text format
+# above and cast to NULL downstream, so every hour bucket becomes 'unknown' and
+# the log's whole time analysis silently vanishes. The unit (s / ms / µs / ns) is
+# inferred by magnitude. The integer part must be 10–21 digits so small integers
+# (ports, status codes, sizes) are never misread as timestamps: a 10-digit second
+# epoch starts at 2001-09-09, which is a safe floor for real access logs.
+_EPOCH_RE = re.compile(r"^\d{10,21}(?:\.\d+)?$")
+
+
+def _epoch_to_iso(s: str) -> str | None:
+    if not _EPOCH_RE.match(s):
+        return None
+    try:
+        v = float(s)
+    except ValueError:
+        return None
+    if v >= 1e18:      # nanoseconds
+        v /= 1e9
+    elif v >= 1e15:    # microseconds
+        v /= 1e6
+    elif v >= 1e12:    # milliseconds
+        v /= 1e3
+    # else: seconds
+    try:
+        return _to_utc_iso(datetime.fromtimestamp(v, tz=timezone.utc))
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def _to_utc_iso(dt: datetime) -> str:

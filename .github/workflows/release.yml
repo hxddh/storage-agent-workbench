@@ -55,8 +55,12 @@ jobs:
           # (the commit the dispatch ran against), which can differ from `ref`.
           REF="${{ github.event.inputs.ref }}"
           VER_NO_V="${VERSION#v}"
-          FLAGS=""
-          if [ "${{ github.event.inputs.draft }}" = "true" ]; then FLAGS="$FLAGS --draft"; fi
+          # Always create HIDDEN (draft): the three platform jobs upload assets in
+          # parallel, and a release must never be visible while half-populated (or
+          # permanently partial if one platform fails). The `finalize` job flips it
+          # to published only after all three succeed. A run that explicitly asked
+          # for --draft simply never gets finalized, so it stays a draft.
+          FLAGS="--draft"
           if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then FLAGS="$FLAGS --prerelease"; fi
 
           # Per-version "What's changed" pulled from this version's CHANGELOG section
@@ -222,3 +226,26 @@ jobs:
           cp "$EXE" "$OUT/storage-agent-workbench-$VERSION-windows-x64-setup.exe"
           ( cd "$OUT" && sha256sum storage-agent-workbench-* > SHA256SUMS-windows-x64.txt && cat SHA256SUMS-windows-x64.txt )
           gh release upload "$VERSION" "$OUT"/* --clobber
+
+  # Publish (undraft) the release ONLY after all three platform jobs succeeded,
+  # so a run that fails on any platform leaves a hidden draft (reviewable /
+  # deletable) rather than a permanently half-populated public release. `needs`
+  # gates this on every platform job passing; a requested draft (draft=true) skips
+  # finalize and stays a draft on purpose.
+  finalize:
+    name: Publish release
+    needs: [release-macos-arm64, release-linux-x64, release-windows-x64]
+    if: ${{ github.event.inputs.draft != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
+      - name: Publish now that all platforms uploaded
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version }}"
+          gh release edit "$VERSION" --draft=false
+          echo "Published release $VERSION (all platform assets present)."

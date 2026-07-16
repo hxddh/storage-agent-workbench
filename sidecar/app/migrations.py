@@ -596,7 +596,21 @@ def apply_migrations(conn: sqlite3.Connection) -> int:
 # i.e. the migration was partially applied before a crash (executescript commits
 # implicitly and cannot roll back), and its version row was never written. On a
 # retry these are safe to skip; a genuinely new error is not swallowed.
+#
+# OperationalError covers DDL that already ran (a duplicate column, an existing
+# table/index). IntegrityError covers a *seed row* an ``INSERT`` re-added on the
+# retry — the row is already there from the partial apply, so its unique/primary
+# key clash is the same "already applied" signal, not a real violation. Both are
+# only ever swallowed on the recovery path, never on a first, clean apply.
 _IDEMPOTENT_ERROR_MARKERS = ("duplicate column name", "already exists")
+_IDEMPOTENT_INTEGRITY_MARKERS = ("unique constraint failed", "primary key must be unique")
+
+
+def _is_idempotent(exc: sqlite3.Error) -> bool:
+    text = str(exc).lower()
+    if isinstance(exc, sqlite3.IntegrityError):
+        return any(m in text for m in _IDEMPOTENT_INTEGRITY_MARKERS)
+    return any(m in text for m in _IDEMPOTENT_ERROR_MARKERS)
 
 
 def _apply_one(conn: sqlite3.Connection, sql: str) -> None:
@@ -606,22 +620,23 @@ def _apply_one(conn: sqlite3.Connection, sql: str) -> None:
     fails with an "already applied" marker — a retry after a mid-migration crash,
     since ``ALTER TABLE ... ADD COLUMN`` has no ``IF NOT EXISTS`` — do we re-run
     the statements individually, skipping the ones that report the schema element
-    already exists. Any other error propagates.
+    (or seed row) already exists. Any other error propagates.
     """
     try:
         conn.executescript(sql)
         return
-    except sqlite3.OperationalError as exc:
-        if not any(m in str(exc).lower() for m in _IDEMPOTENT_ERROR_MARKERS):
+    except (sqlite3.OperationalError, sqlite3.IntegrityError) as exc:
+        if not _is_idempotent(exc):
             raise
     # Recovery: replay statement-by-statement, tolerating only the idempotent
-    # "already exists / duplicate column" errors. (Migration DDL here has no
-    # semicolons inside string literals, so a simple split is safe.)
+    # "already exists / duplicate column / seed row already present" errors.
+    # (Migration DDL here has no semicolons inside string literals, so a simple
+    # split is safe.)
     for stmt in (s.strip() for s in sql.split(";")):
         if not stmt:
             continue
         try:
             conn.execute(stmt)
-        except sqlite3.OperationalError as exc:
-            if not any(m in str(exc).lower() for m in _IDEMPOTENT_ERROR_MARKERS):
+        except (sqlite3.OperationalError, sqlite3.IntegrityError) as exc:
+            if not _is_idempotent(exc):
                 raise
