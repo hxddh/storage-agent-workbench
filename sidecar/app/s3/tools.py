@@ -66,12 +66,14 @@ def _client_error_fields(exc: ClientError) -> dict[str, Any]:
 
 def _is_unsupported(exc: ClientError) -> bool:
     """A capability gap — the provider doesn't implement this API — by error code
-    (NotImplemented/MethodNotAllowed/NotSupported/Unsupported) OR a bare HTTP 501.
+    (NotImplemented/MethodNotAllowed/NotSupported/Unsupported) OR a bare HTTP
+    501/405. A gateway that rejects an unimplemented operation with a code-less
+    405 Method Not Allowed is the same gap as a coded MethodNotAllowed.
     Rule 18: such gaps are 'provider_unsupported', never a hard failure."""
     resp = exc.response or {}
     code = resp.get("Error", {}).get("Code")
     http = resp.get("ResponseMetadata", {}).get("HTTPStatusCode")
-    return code in _UNSUPPORTED_CODES or http == 501
+    return code in _UNSUPPORTED_CODES or http in (501, 405)
 
 
 def _generic_error_fields(exc: Exception) -> dict[str, Any]:
@@ -152,35 +154,53 @@ def list_buckets(conn: sqlite3.Connection, provider_id: str) -> dict[str, Any]:
         "provider_id": provider_id,
         "bucket_count": 0,
         "buckets": [],
+        "list_truncated": False,
         "warnings": [],
         "provider_capabilities": {},
         "error_code": None,
         "error_message_sanitized": None,
     }
+    # AWS ListBuckets now paginates (default 10k/page, quota up to 1M); a provider
+    # that doesn't paginate simply returns no ContinuationToken and we stop after
+    # one page. Bound the loop so a huge/quirky account can't spin, and surface
+    # list_truncated so the count is never silently wrong.
+    _MAX_BUCKET_PAGES = 50
     try:
         client = client_factory.build_s3_client(conn, provider_id)
-        resp = client.list_buckets()
         buckets = []
-        for b in resp.get("Buckets", []) or []:
-            cd = b.get("CreationDate")
-            # A bucket name is a DNS-style resource identifier, not secret
-            # material — and account discovery reuses it verbatim as the
-            # `Bucket=` argument for head_bucket / config snapshots. Running it
-            # through redact_text can mangle a legitimately-named bucket (e.g.
-            # one that trips a token-shaped pattern) into "***REDACTED***", which
-            # then makes every per-bucket follow-up call fail. Keep the raw name;
-            # secrets in error messages/headers are still redacted elsewhere.
-            buckets.append({
-                "name": str(b.get("Name") or ""),
-                "creation_date": cd.isoformat() if hasattr(cd, "isoformat") else cd,
-                "status": "visible",
-            })
+        cont = None
+        truncated = False
+        for page in range(_MAX_BUCKET_PAGES):
+            resp = client.list_buckets(**({"ContinuationToken": cont} if cont else {}))
+            for b in resp.get("Buckets", []) or []:
+                cd = b.get("CreationDate")
+                # A bucket name is a DNS-style resource identifier, not secret
+                # material — and account discovery reuses it verbatim as the
+                # `Bucket=` argument for head_bucket / config snapshots. Running it
+                # through redact_text can mangle a legitimately-named bucket (e.g.
+                # one that trips a token-shaped pattern) into "***REDACTED***",
+                # which then makes every per-bucket follow-up call fail. Keep the
+                # raw name; secrets in error messages/headers are redacted
+                # elsewhere.
+                buckets.append({
+                    "name": str(b.get("Name") or ""),
+                    "creation_date": cd.isoformat() if hasattr(cd, "isoformat") else cd,
+                    "status": "visible",
+                })
+            cont = resp.get("ContinuationToken")
+            if not cont:
+                break
+            if page == _MAX_BUCKET_PAGES - 1:
+                truncated = True
         return {
             **base,
             "success": True,
             "status": AVAILABLE,
             "bucket_count": len(buckets),
             "buckets": buckets,
+            "list_truncated": truncated,
+            "warnings": (["ListBuckets result truncated at the page cap; the "
+                          "bucket_count is a lower bound."] if truncated else []),
             "provider_capabilities": {"list_buckets": AVAILABLE},
         }
     except ClientError as exc:
@@ -324,7 +344,7 @@ def list_object_versions(
     base = {
         "success": False, "version_count": 0, "noncurrent_version_count": 0,
         "delete_marker_count": 0, "current_bytes": 0, "noncurrent_bytes": 0,
-        "sample_keys": [], "is_truncated": False,
+        "sample_keys": [], "is_truncated": False, "provider_unsupported": False,
         "next_key_marker": None, "next_version_id_marker": None,
         "error_code": None, "error_message_sanitized": None,
     }
@@ -371,6 +391,13 @@ def list_object_versions(
             "next_version_id_marker": resp.get("NextVersionIdMarker"),
         }
     except ClientError as exc:
+        # Rule 18: a provider that doesn't implement ListObjectVersions (501/
+        # NotImplemented) is a capability gap, not a hard failure — and not "0
+        # versions" (which would read as a clean bucket). Flag it so the agent
+        # narrates "version listing unsupported here", like the sibling tools.
+        if _is_unsupported(exc):
+            return {**base, **_client_error_fields(exc), "success": True,
+                    "provider_unsupported": True}
         return {**base, **_client_error_fields(exc), "success": False}
     except Exception as exc:  # noqa: BLE001
         return {**base, **_generic_error_fields(exc), "success": False}
@@ -393,7 +420,7 @@ def list_multipart_uploads(
     """
     base = {
         "success": False, "upload_count": 0, "oldest_initiated": None,
-        "sample_keys": [], "is_truncated": False,
+        "sample_keys": [], "is_truncated": False, "provider_unsupported": False,
         "next_key_marker": None, "next_upload_id_marker": None,
         "error_code": None, "error_message_sanitized": None,
     }
@@ -419,6 +446,11 @@ def list_multipart_uploads(
             "next_upload_id_marker": resp.get("NextUploadIdMarker"),
         }
     except ClientError as exc:
+        # Rule 18: ListMultipartUploads unsupported (501/NotImplemented) is a
+        # capability gap, not a hard failure or "0 uploads".
+        if _is_unsupported(exc):
+            return {**base, **_client_error_fields(exc), "success": True,
+                    "provider_unsupported": True}
         return {**base, **_client_error_fields(exc), "success": False}
     except Exception as exc:  # noqa: BLE001
         return {**base, **_generic_error_fields(exc), "success": False}
@@ -866,9 +898,44 @@ def _probe_style(conn: sqlite3.Connection, provider_id: str, bucket: str, style:
         return {"success": False, "error_code": f["error_code"], "error_message_sanitized": f["error_message_sanitized"]}
 
 
+def _endpoint_is_ip(endpoint_url: str | None) -> bool:
+    """True when the endpoint host is a bare IP (typical MinIO/Ceph: http://IP:9000)."""
+    if not endpoint_url:
+        return False
+    from ipaddress import ip_address
+    from urllib.parse import urlparse
+
+    host = urlparse(endpoint_url).hostname or ""
+    try:
+        ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+
 def test_path_style_vs_virtual_host(
     conn: sqlite3.Connection, provider_id: str, bucket: str
 ) -> dict[str, Any]:
+    # botocore NEVER virtual-hosts against an IP endpoint — the "virtual" override
+    # silently sends the identical path-style URL, so probing both would falsely
+    # report `both_work` on the single most common S3-compatible setup (MinIO/Ceph
+    # on an IP:port). Don't run a meaningless probe; report path and say why.
+    cfg = client_factory.load_provider(conn, provider_id)
+    if _endpoint_is_ip(cfg.endpoint_url):
+        path = _probe_style(conn, provider_id, bucket, "path")
+        return {
+            "virtual_hosted_result": {
+                "success": None, "not_testable": True,
+                "error_code": None,
+                "error_message_sanitized": "Endpoint is a bare IP address; "
+                "virtual-hosted (bucket-in-hostname) addressing is impossible "
+                "against an IP, so it cannot be tested — botocore uses path-style.",
+            },
+            "path_style_result": path,
+            "recommendation": "path" if path["success"] else "inconclusive",
+            "note": "IP endpoint: use path-style addressing (virtual-hosting is not possible).",
+        }
+
     virtual = _probe_style(conn, provider_id, bucket, "virtual")
     path = _probe_style(conn, provider_id, bucket, "path")
 
@@ -1414,7 +1481,7 @@ def diagnose_presigned_url(url: str) -> dict[str, Any]:
 
 def list_upload_parts(
     conn: sqlite3.Connection, provider_id: str, bucket: str, key: str,
-    upload_id: str, max_parts: int = 1000,
+    upload_id: str, max_parts: int = 1000, part_number_marker: int | None = None,
 ) -> dict[str, Any]:
     """List the PARTS of one in-progress multipart upload (read-only ListParts).
 
@@ -1432,8 +1499,11 @@ def list_upload_parts(
     clamped = max(1, min(int(max_parts), 1000))
     try:
         client = client_factory.build_s3_client(conn, provider_id)
-        resp = client.list_parts(Bucket=bucket, Key=key, UploadId=upload_id,
-                                 MaxParts=clamped)
+        kw: dict[str, Any] = {"Bucket": bucket, "Key": key, "UploadId": upload_id,
+                              "MaxParts": clamped}
+        if part_number_marker:
+            kw["PartNumberMarker"] = int(part_number_marker)
+        resp = client.list_parts(**kw)
     except ClientError as exc:
         if _is_unsupported(exc):
             return {**base, "success": True, "parts_status": PROVIDER_UNSUPPORTED}

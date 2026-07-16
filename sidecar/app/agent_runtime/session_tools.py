@@ -207,8 +207,9 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     @function_tool
-    def list_object_versions(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 1000) -> str:
-        """List one page of object VERSIONS + delete markers (read-only ListObjectVersions; no bodies). Surfaces the actual noncurrent-version / delete-marker pileup a versioned bucket carries — which config review can't see (it only shows whether versioning + a cleanup rule exist). Use for "why is my versioned bucket so large/expensive?". Returns version/noncurrent/delete-marker counts, current vs noncurrent bytes, ≤20 sample keys, and paging markers. Args: provider_id, bucket, prefix?, max_keys? (up to 1000)."""
+    def list_object_versions(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 1000,
+                             key_marker: str = "", version_id_marker: str = "") -> str:
+        """List one page of object VERSIONS + delete markers (read-only ListObjectVersions; no bodies). Surfaces the actual noncurrent-version / delete-marker pileup a versioned bucket carries — which config review can't see (it only shows whether versioning + a cleanup rule exist). Use for "why is my versioned bucket so large/expensive?". Returns version/noncurrent/delete-marker counts, current vs noncurrent bytes, ≤20 sample keys, and next_key_marker/next_version_id_marker. When is_truncated is true, page by passing those back as key_marker/version_id_marker — the per-page counts are ONE page, not the bucket total. Args: provider_id, bucket, prefix?, max_keys? (up to 1000), key_marker?, version_id_marker?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -217,13 +218,15 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
             return _err(denial)
         bound = guardrails.bound_tool_args("list_objects_v2", {"max_keys": max_keys})
         rec("list_object_versions", provider_id=provider_id, bucket=bucket, prefix=prefix, max_keys=bound["max_keys"])
-        res = s3.list_object_versions(conn, provider_id, bucket, prefix or None, bound["max_keys"])
+        res = s3.list_object_versions(conn, provider_id, bucket, prefix or None, bound["max_keys"],
+                                      key_marker=key_marker or None, version_id_marker=version_id_marker or None)
         note("list_object_versions", bucket, res)
         return json.dumps(res)
 
     @function_tool
-    def list_multipart_uploads(provider_id: str, bucket: str, max_uploads: int = 1000) -> str:
-        """List one page of in-progress / incomplete multipart uploads (read-only ListMultipartUploads; no bodies). Surfaces abandoned uploads — a common silent cost leak (parts are billed but invisible in a normal object listing). Use for unexplained storage/cost. Returns upload count, oldest initiation time, ≤20 sample keys, and paging markers. Listing only — aborting is a mutation and is not available; propose a lifecycle rule instead. Args: provider_id, bucket, max_uploads? (up to 1000)."""
+    def list_multipart_uploads(provider_id: str, bucket: str, max_uploads: int = 1000,
+                               key_marker: str = "", upload_id_marker: str = "") -> str:
+        """List one page of in-progress / incomplete multipart uploads (read-only ListMultipartUploads; no bodies). Surfaces abandoned uploads — a common silent cost leak (parts are billed but invisible in a normal object listing). Use for unexplained storage/cost. Returns upload count, oldest initiation time, ≤20 sample keys, and next_key_marker/next_upload_id_marker. When is_truncated is true, page by passing those back as key_marker/upload_id_marker — the count is ONE page, not the bucket total. Listing only — aborting is a mutation and is not available; propose a lifecycle rule instead. Args: provider_id, bucket, max_uploads? (up to 1000), key_marker?, upload_id_marker?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -232,7 +235,8 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
             return _err(denial)
         bound = guardrails.bound_tool_args("list_objects_v2", {"max_keys": max_uploads})
         rec("list_multipart_uploads", provider_id=provider_id, bucket=bucket, max_uploads=bound["max_keys"])
-        res = s3.list_multipart_uploads(conn, provider_id, bucket, bound["max_keys"])
+        res = s3.list_multipart_uploads(conn, provider_id, bucket, bound["max_keys"],
+                                        key_marker=key_marker or None, upload_id_marker=upload_id_marker or None)
         note("list_multipart_uploads", bucket, res)
         return json.dumps(res)
 
@@ -330,8 +334,8 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
 
     @function_tool
     def list_upload_parts(provider_id: str, bucket: str, key: str, upload_id: str,
-                          max_parts: int = 1000) -> str:
-        """List the PARTS of one in-progress multipart upload (read-only ListParts; no bodies). list_multipart_uploads shows THAT uploads are stuck; this shows how much a specific one holds — part count, total bytes accrued, first/last part times, ≤20 sample parts. The concrete "this abandoned upload is holding N GB since <date>" evidence for cost diagnosis. Listing only — aborting is a mutation and is NOT available; propose an AbortIncompleteMultipartUpload lifecycle rule instead. Args: provider_id, bucket, key, upload_id (from list_multipart_uploads), max_parts? (up to 1000)."""
+                          max_parts: int = 1000, part_number_marker: int = 0) -> str:
+        """List the PARTS of one in-progress multipart upload (read-only ListParts; no bodies). list_multipart_uploads shows THAT uploads are stuck; this shows how much a specific one holds — part count, total bytes accrued, first/last part times, ≤20 sample parts. The concrete "this abandoned upload is holding N GB since <date>" evidence for cost diagnosis. A multipart upload can have up to 10,000 parts; when is_truncated is true this is ONE page — page by passing next_part_number_marker back as part_number_marker to get the true total_bytes. Listing only — aborting is a mutation and is NOT available; propose an AbortIncompleteMultipartUpload lifecycle rule instead. Args: provider_id, bucket, key, upload_id (from list_multipart_uploads), max_parts? (up to 1000), part_number_marker?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -339,7 +343,8 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         if denial:
             return _err(denial)
         rec("list_upload_parts", provider_id=provider_id, bucket=bucket, key=key)
-        res = s3.list_upload_parts(conn, provider_id, bucket, key, upload_id, max_parts)
+        res = s3.list_upload_parts(conn, provider_id, bucket, key, upload_id, max_parts,
+                                   part_number_marker=part_number_marker or None)
         note("list_upload_parts", f"{bucket}/{key}",
              f"{res.get('part_count', 0)} parts" if res.get("success") else res)
         return json.dumps(res)

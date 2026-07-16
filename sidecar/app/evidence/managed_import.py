@@ -89,28 +89,49 @@ def clamp_bounds(max_files: int | None, max_bytes: int | None) -> tuple[int, int
 # --- read-only S3 primitives ------------------------------------------------
 
 
-def _list_prefix(client, bucket: str, prefix: str, hard_cap: int = _LIST_HARD_CAP) -> list[dict[str, Any]]:
-    """Bounded listing of one destination prefix (objects only, no delimiter)."""
+def _list_prefix(client, bucket: str, prefix: str,
+                 hard_cap: int = _LIST_HARD_CAP) -> tuple[list[dict[str, Any]], bool]:
+    """Bounded listing of one destination prefix (objects only, no delimiter).
+
+    Returns ``(items, truncated)``. ``truncated`` is True when the listing hit the
+    hard cap (or the page budget) with more objects remaining — the caller MUST
+    surface it, because access-log/inventory keys sort chronologically, so a
+    silent cap drops the NEWEST objects and a recent-window query would wrongly
+    report "nothing matched". The page budget also stops a quirky provider that
+    returns a continuation token with an empty page from looping forever."""
     out: list[dict[str, Any]] = []
     token: str | None = None
-    while len(out) < hard_cap:
+    truncated = False
+    max_pages = (hard_cap // 1000) + 2
+    for _ in range(max_pages):
         kw: dict[str, Any] = {"Bucket": bucket, "Prefix": prefix or "",
                               "MaxKeys": min(1000, hard_cap - len(out))}
         if token:
             kw["ContinuationToken"] = token
         resp = client.list_objects_v2(**kw)
-        for c in resp.get("Contents", []) or []:
+        contents = resp.get("Contents", []) or []
+        for c in contents:
             lm = c.get("LastModified")
             out.append({
                 "key": c.get("Key"),
                 "size": int(c.get("Size") or 0),
                 "last_modified": lm.isoformat() if hasattr(lm, "isoformat") else lm,
             })
-        if resp.get("IsTruncated") and resp.get("NextContinuationToken"):
-            token = resp["NextContinuationToken"]
-        else:
+        more = bool(resp.get("IsTruncated") and resp.get("NextContinuationToken"))
+        if len(out) >= hard_cap:
+            truncated = more
             break
-    return out
+        if not more:
+            break
+        token = resp["NextContinuationToken"]
+        if not contents:
+            # A continuation token with an empty page can't make progress — stop
+            # rather than spin, and report the listing as incomplete.
+            truncated = True
+            break
+    else:
+        truncated = True  # exhausted the page budget with pages still remaining
+    return out, truncated
 
 
 def _get_object_bytes(client, bucket: str, key: str, cap: int) -> bytes:
@@ -206,7 +227,10 @@ def plan_inventory(
 ) -> Plan:
     client = client_factory.build_s3_client(conn, provider_id)
     warnings: list[str] = []
-    listed = _list_prefix(client, dest_bucket, dest_prefix)
+    listed, listing_truncated = _list_prefix(client, dest_bucket, dest_prefix)
+    if listing_truncated:
+        warnings.append(f"Listing was capped at {_LIST_HARD_CAP} objects under this prefix; "
+                        "a newer inventory manifest may be missing — narrow the prefix.")
     fmt = (declared_format or "").lower()
     schema: str | None = None
     data_files: list[dict[str, Any]] = []
@@ -289,7 +313,11 @@ def plan_access_log(
     start = parse_iso(time_range_start)
     end = parse_iso(time_range_end)
 
-    listed = _list_prefix(client, target_bucket, target_prefix)
+    listed, listing_truncated = _list_prefix(client, target_bucket, target_prefix)
+    if listing_truncated:
+        warnings.append(f"Listing was capped at {_LIST_HARD_CAP} objects; access-log keys sort "
+                        "chronologically, so the NEWEST logs may be missing from this window — "
+                        "narrow the prefix or time range to reach recent logs.")
     in_range = [
         {"key": o["key"], "size": o["size"], "kind": "log", "last_modified": o.get("last_modified")}
         for o in listed

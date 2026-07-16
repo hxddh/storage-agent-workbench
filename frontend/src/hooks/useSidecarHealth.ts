@@ -35,9 +35,11 @@ export function useSidecarHealth(): SidecarHealth {
     let cancelled = false;
 
     async function check() {
+      const controller = new AbortController();
+      // Clear the abort timer on EVERY exit path — a fetch rejection (not just
+      // an abort) otherwise leaves the 3 s timer to fire on a settled controller.
+      const timeout = setTimeout(() => controller.abort(), 3000);
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
         const token = sidecarToken();
         const res = await fetch(`${sidecarBaseUrl()}/health`, {
           signal: controller.signal,
@@ -59,6 +61,7 @@ export function useSidecarHealth(): SidecarHealth {
           setService(null);
         }
       } catch {
+        clearTimeout(timeout);
         if (cancelled) return;
         // Before the first successful connection we are still "starting";
         // afterwards a failure means the sidecar went away ("disconnected").
