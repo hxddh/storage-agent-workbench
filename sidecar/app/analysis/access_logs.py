@@ -87,6 +87,9 @@ def _normalize_ts(ts: Any) -> str | None:
     s = str(ts).strip()
     if not s:
         return None
+    numeric = _epoch_to_iso(s) or _compact_date_to_iso(s)
+    if numeric is not None:
+        return numeric
     for fmt in ("%d/%b/%Y:%H:%M:%S %z", "%d/%b/%Y:%H:%M:%S"):
         try:
             return _to_utc_iso(datetime.strptime(s, fmt))
@@ -96,6 +99,48 @@ def _normalize_ts(ts: Any) -> str | None:
         return _to_utc_iso(datetime.fromisoformat(s.replace("Z", "+00:00")))
     except ValueError:
         return s
+
+
+# A bare numeric timestamp is a Unix epoch — common in JSON / CDN / some
+# S3-compatible access logs. Without this, such values fail every text format
+# above and cast to NULL downstream, so every hour bucket becomes 'unknown' and
+# the log's whole time analysis silently vanishes.
+#
+# The unit is inferred from the EXACT digit width: in the plausible log era
+# (2001-09-09 .. ~2286) a Unix epoch has exactly 10 digits (seconds, optionally
+# fractional), 13 (milliseconds), 16 (microseconds) or 19 (nanoseconds). Gating
+# on exact widths — not a magnitude range — means compact wall-clock stamps like
+# ``202406251000`` (yyyyMMddHHmm, 12 digits) or ``20240625100000`` (14) never
+# enter this branch and get misread as year-8383/2611 epochs; they are parsed as
+# dates by ``_compact_date_to_iso`` instead. Small integers (ports, status
+# codes, sizes) are far below 10 digits and never match either.
+_EPOCH_RE = re.compile(r"^(?:\d{10}(?:\.\d+)?|\d{13}|\d{16}|\d{19})$")
+_EPOCH_DIVISOR = {10: 1, 13: 1e3, 16: 1e6, 19: 1e9}
+
+# Compact numeric wall-clock stamps some exporters emit: yyyyMMddHHmm[ss].
+# strptime validates month/day/hour ranges, so a random 12/14-digit number
+# (e.g. "999999999999") falls through unchanged rather than becoming a date.
+_COMPACT_DATE_FORMATS = {12: "%Y%m%d%H%M", 14: "%Y%m%d%H%M%S"}
+
+
+def _epoch_to_iso(s: str) -> str | None:
+    if not _EPOCH_RE.match(s):
+        return None
+    try:
+        v = float(s) / _EPOCH_DIVISOR[len(s.split(".", 1)[0])]
+        return _to_utc_iso(datetime.fromtimestamp(v, tz=timezone.utc))
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _compact_date_to_iso(s: str) -> str | None:
+    fmt = _COMPACT_DATE_FORMATS.get(len(s))
+    if fmt is None or not s.isdigit():
+        return None
+    try:
+        return _to_utc_iso(datetime.strptime(s, fmt))
+    except ValueError:
+        return None
 
 
 def _to_utc_iso(dt: datetime) -> str:

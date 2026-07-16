@@ -1,10 +1,15 @@
 """Smoke test for the packaged sidecar (Phase 08).
 
-Starts the PyInstaller-built sidecar, calls GET /health, asserts status ok, then
-terminates the process. Exit codes:
-    0  -> health ok (PASS)
+Starts the PyInstaller-built sidecar, calls GET /health, then GET
+/health/selfcheck — a DEEP check that imports/instantiates the packaging-critical
+runtime a bare /health never touches (OpenAI Agents SDK, a botocore S3 client,
+the DuckDB/PyArrow engines, and the `cryptography` AES-GCM binding the secret
+vault decrypts with). A bundle can pass /health while silently missing one of
+those, so asserting the self-check turns a "breaks in the user's hands" bug into
+a build failure. All offline: no AWS/OPENAI_API_KEY/keyring secrets. Exit codes:
+    0  -> health ok AND all self-check components ok (PASS)
     0  -> bundle not built (SKIP, printed clearly — NOT a false pass)
-    1  -> bundle present but health failed (FAIL)
+    1  -> bundle present but health or a self-check component failed (FAIL)
 
 NOTE on subprocess: launching the packaged sidecar is an INTERNAL packaged-app
 lifecycle action (the same thing Tauri does in production). This script is build
@@ -43,19 +48,28 @@ def _binary() -> Path:
     return onefile
 
 
+def _get_json(path: str, timeout: float = 10.0) -> dict | None:
+    import json
+
+    url = f"http://{HOST}:{PORT}{path}"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:  # noqa: S310 - localhost only
+            if resp.status == 200:
+                return json.loads(resp.read().decode())
+    except (urllib.error.URLError, ConnectionError, OSError):
+        return None
+    return None
+
+
 def _wait_health(timeout: float = 90.0) -> dict | None:
     # The bundle is heavy (duckdb/pyarrow/pandas); first cold start can take
     # 20s+ while PyInstaller extracts native libs.
     deadline = time.monotonic() + timeout
-    url = f"http://{HOST}:{PORT}/health"
     while time.monotonic() < deadline:
-        try:
-            with urllib.request.urlopen(url, timeout=2) as resp:  # noqa: S310 - localhost only
-                if resp.status == 200:
-                    import json
-                    return json.loads(resp.read().decode())
-        except (urllib.error.URLError, ConnectionError, OSError):
-            time.sleep(0.5)
+        got = _get_json("/health", timeout=2)
+        if got is not None:
+            return got
+        time.sleep(0.5)
     return None
 
 
@@ -78,10 +92,23 @@ def main() -> int:
     )
     try:
         health = _wait_health()
-        if health and health.get("status") == "ok":
-            print(f"PASS: /health returned {health}")
+        if not (health and health.get("status") == "ok"):
+            print("FAIL: packaged sidecar did not report healthy.")
+            return 1
+        print(f"/health ok: {health}")
+
+        # Deep check: a bundle can pass /health while missing a lazily imported
+        # native dep. The self-check exercises the real runtime offline.
+        deep = _get_json("/health/selfcheck", timeout=60)
+        if deep is None:
+            print("FAIL: /health/selfcheck did not respond.")
+            return 1
+        checks = deep.get("checks", {})
+        if deep.get("status") == "ok":
+            print(f"PASS: /health/selfcheck all ok: {checks}")
             return 0
-        print("FAIL: packaged sidecar did not report healthy.")
+        broken = {k: v for k, v in checks.items() if v != "ok"}
+        print(f"FAIL: packaged bundle self-check degraded: {broken or deep}")
         return 1
     finally:
         proc.terminate()
