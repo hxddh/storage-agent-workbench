@@ -92,7 +92,7 @@ export function useTurnRunner(opts: {
   /** Ref tracking the visible session id (owned by Thread). */
   localId: React.MutableRefObject<string | null>;
   onSessionCreated: (id: string) => void;
-  reload: (id: string | null) => Promise<void>;
+  reload: (id: string | null) => Promise<boolean>;
   onChanged: () => void;
   /** Composer text setter — used to restore the user's message on a failed turn. */
   setText: (text: string) => void;
@@ -352,7 +352,18 @@ export function useTurnRunner(opts: {
 
       // Refresh the just-run session's thread only if it's the one on screen;
       // otherwise its persisted answer loads when the user switches back to it.
-      if (localId.current === id) await reload(id);
+      if (localId.current === id) {
+        const reloaded = await reload(id);
+        if (!reloaded) {
+          // The reconcile fetch blipped (sidecar GC/restart/network): `detail`
+          // still lacks the new messages, so clearing the streamed bubble now
+          // would erase the answer the user just watched complete. Keep it and
+          // mark stalled so they get a reload affordance instead (F1).
+          patchSessionRun(id, { stalled: true });
+          onChanged();
+          return;
+        }
+      }
       patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
       onChanged();
     } finally {

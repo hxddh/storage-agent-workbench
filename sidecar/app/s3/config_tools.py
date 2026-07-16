@@ -79,13 +79,22 @@ def _norm_region(value: Any) -> str:
     return _REGION_ALIASES.get(v.lower() if v else "", v) or "us-east-1"
 
 
-def _region_mismatch(bucket_region: str | None, provider_region: str | None) -> bool:
+def _region_mismatch(bucket_region: str | None, provider_region: str | None,
+                     custom_endpoint: bool = False, raw_location_empty: bool = False) -> bool:
     """True only when the bucket's real region and the provider's configured
     region genuinely differ. Skips the flag when the provider region is unset or
     a wildcard (`auto`, as R2 uses) — those aren't a mismatch, and false-flagging
-    them on S3-compatible providers is exactly the misdiagnosis to avoid."""
+    them on S3-compatible providers is exactly the misdiagnosis to avoid.
+
+    Also skips when the provider has a CUSTOM endpoint and the bucket returned an
+    EMPTY LocationConstraint: MinIO/Ceph and similar gateways report no region, so
+    ``_norm_region('')`` becomes ``us-east-1`` and would falsely mismatch any
+    region label the user typed for that endpoint (a wrong "signing region"
+    narrative on a working setup)."""
     pr = (provider_region or "").strip().lower()
     if not pr or pr == "auto":
+        return False
+    if custom_endpoint and raw_location_empty:
         return False
     return _norm_region(bucket_region) != _norm_region(provider_region)
 
@@ -107,7 +116,7 @@ def _read(client, method: str, **kwargs) -> dict[str, Any]:
         http = (exc.response or {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
         if code in _NOT_CONFIGURED_CODES:
             status = NOT_CONFIGURED
-        elif code in _UNSUPPORTED_CODES or http == 501:
+        elif code in _UNSUPPORTED_CODES or http in (501, 405):
             status = PROVIDER_UNSUPPORTED
         elif code in _DENIED_CODES or http == 403:
             status = ACCESS_DENIED
@@ -158,6 +167,7 @@ def get_bucket_config_summary(conn: sqlite3.Connection, provider_id: str, bucket
 
     config_items: dict[str, str] = {}
     bucket_region: str | None = None
+    raw_location_empty = True
     for name, method in _CONFIG_READS:
         read = _read(client, method, Bucket=bucket)
         config_items[name] = read["status"]
@@ -166,7 +176,9 @@ def get_bucket_config_summary(conn: sqlite3.Connection, provider_id: str, bucket
             # returns None/empty). Exposing it — with a mismatch flag against the
             # provider's configured region — makes the #1 SignatureDoesNotMatch
             # root cause (wrong signing region) checkable instead of guessable.
-            bucket_region = _norm_region((read["data"] or {}).get("LocationConstraint"))
+            raw_loc = (read["data"] or {}).get("LocationConstraint")
+            raw_location_empty = not (str(raw_loc).strip() if raw_loc else "")
+            bucket_region = _norm_region(raw_loc)
 
     provider_unsupported_items = [n for n, s in config_items.items() if s == PROVIDER_UNSUPPORTED]
     access_denied_items = [n for n, s in config_items.items() if s == ACCESS_DENIED]
@@ -211,7 +223,9 @@ def get_bucket_config_summary(conn: sqlite3.Connection, provider_id: str, bucket
         "endpoint_url": cfg.endpoint_url,
         "region": cfg.region,
         "bucket_region": bucket_region,
-        "region_mismatch": _region_mismatch(bucket_region, cfg.region),
+        "region_mismatch": _region_mismatch(
+            bucket_region, cfg.region,
+            custom_endpoint=bool(cfg.endpoint_url), raw_location_empty=raw_location_empty),
         "config_items": config_items,
         "findings_count_by_category": counts,
         "provider_unsupported_items": provider_unsupported_items,
@@ -834,6 +848,12 @@ def review_bucket_security(conn: sqlite3.Connection, provider_id: str, bucket: s
             findings.append(_finding(CRITICAL, "Bucket policy makes this bucket PUBLIC (AWS verdict)",
                                      "GetBucketPolicyStatus.IsPublic is true — AWS judges the bucket "
                                      "policy itself to grant public access. Investigate and lock down."))
+    elif policy_status["status"] == NOT_CONFIGURED:
+        # No bucket policy at all (the common case on AWS and MinIO) → the policy
+        # cannot be public. Absent ≠ unknown: leaving this None wrongly downgraded
+        # the combined verdict to "cannot rule out public" on a clean bucket, and
+        # disagreed with the survey path (account_tools), which already maps this.
+        policy_is_public = False
     findings += _unsupported_findings(policy_status["status"], "policy status")
 
     # Combined exposure verdict. A single TRUE signal alone PROVES exposure —

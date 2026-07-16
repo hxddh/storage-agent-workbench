@@ -106,6 +106,9 @@ export function Thread({
   // Tracks which session id the loaded `detail` belongs to, so a failed refresh
   // for the current session doesn't get mistaken for a first-load failure.
   const loadedIdRef = useRef<string | null>(null);
+  // Monotonic reload token: a stale in-flight reload must never overwrite a newer
+  // one for the same session (F2). Captured at call start, checked after await.
+  const reloadSeqRef = useRef(0);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   // Composer file attachment (dataset for inventory/access-log analysis). type is
@@ -150,13 +153,18 @@ export function Thread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsOpen]);
 
-  const reload = async (id: string | null) => {
+  // Returns true iff it actually applied fresh session detail for `id`. Callers
+  // (post-turn cleanup) rely on this: a transient failure that keeps the stale
+  // thread must NOT be treated as a successful reload, or they'd clear the
+  // streamed answer bubble and the just-completed answer would vanish (F1).
+  const reload = async (id: string | null): Promise<boolean> => {
     if (!id) {
       setDetail(null);
       setTriage([]);
       setLoadError(null);
-      return;
+      return false;
     }
+    const seq = ++reloadSeqRef.current;
     let d: SessionDetail | null = null;
     let failed: string | null = null;
     const [dRes, tRes] = await Promise.allSettled([getSession(id), getSessionTriage(id)]);
@@ -165,15 +173,17 @@ export function Thread({
     // (bad key / model 404) only apply to turn failures (D2).
     else failed = cleanError(String(dRes.reason), t, "load");
     const triageCases = tRes.status === "fulfilled" ? tRes.value.cases : [];
-    // Guard against a switch race: if the user moved to another session while
-    // this request was in flight, drop the stale result instead of clobbering
-    // the now-current session's view.
-    if (id !== localId.current) return;
+    // Drop the result if the user switched sessions OR a newer reload for this
+    // session has since started (F2 last-writer-wins guard).
+    if (id !== localId.current || seq !== reloadSeqRef.current) return false;
     if (d) {
       loadedIdRef.current = id;
       setDetail(d);
       setLoadError(null);
-    } else if (failed) {
+      if (tRes.status === "fulfilled") setTriage(triageCases);
+      return true;
+    }
+    if (failed) {
       // A transient refresh blip for the session we're already showing shouldn't
       // wipe the populated thread — keep it. Otherwise (no content for this id)
       // surface an explicit error + retry instead of the empty new-chat surface.
@@ -185,6 +195,7 @@ export function Thread({
     // Only replace triage cards when the fetch actually succeeded — a transient
     // failure used to flash them out of the thread until the next reload.
     if (tRes.status === "fulfilled") setTriage(triageCases);
+    return false;
   };
 
   // The turn runner owns ensureSession / submit / dataset upload / stop; all

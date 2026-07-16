@@ -733,8 +733,9 @@ def test_list_multipart_uploads_reports_abandoned(client, cloud_id, stub):
 
 
 def test_list_object_versions_provider_unsupported(client, cloud_id, stub):
-    """A provider that doesn't implement ListObjectVersions surfaces as a clean
-    error, not a crash (rule 18)."""
+    """A provider that doesn't implement ListObjectVersions surfaces as a capability
+    gap (provider_unsupported), NOT a hard failure and NOT "0 versions" (rule 18) —
+    consistent with the sibling object tools."""
     from app.s3 import tools as s3
 
     c, s = stub
@@ -742,7 +743,8 @@ def test_list_object_versions_provider_unsupported(client, cloud_id, stub):
                        http_status_code=501)
     with _db() as conn:
         res = s3.list_object_versions(conn, cloud_id, BUCKET, None, 1000)
-    assert res["success"] is False and res["error_code"] == "NotImplemented"
+    assert res["success"] is True and res["provider_unsupported"] is True
+    assert res["error_code"] == "NotImplemented"
 
 
 # --- measure_request_latency (live probe, read-only, bounded) ---------------
