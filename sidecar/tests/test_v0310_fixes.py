@@ -122,8 +122,23 @@ def test_epoch_timestamps_normalize(raw, expected):
     assert _normalize_ts(raw) == expected
 
 
+@pytest.mark.parametrize("raw,expected", [
+    # Compact wall-clock stamps must parse as DATES, never as epochs (a
+    # magnitude-based gate misread these as years 8383 / 2611).
+    ("202406251000", "2024-06-25T10:00:00"),      # yyyyMMddHHmm (12 digits)
+    ("20240625100000", "2024-06-25T10:00:00"),    # yyyyMMddHHmmss (14 digits)
+])
+def test_compact_dates_parse_as_dates_not_epochs(raw, expected):
+    from app.analysis.access_logs import _normalize_ts
+
+    assert _normalize_ts(raw) == expected
+
+
 @pytest.mark.parametrize("raw", [
     "404",                       # status code — too short to be an epoch
+    "17193096001",               # 11 digits — no epoch unit has this width
+    "999999999999",              # 12 digits but month 99 — not a compact date
+    "99999999999999",            # 14 digits, invalid date fields
     "1234567890123456789012",    # 22 digits — out of range
     "not-a-time",                # non-numeric
 ])

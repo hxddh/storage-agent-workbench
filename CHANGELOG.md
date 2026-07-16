@@ -42,12 +42,14 @@ security floor is untouched (and its packaging is now proven, not assumed)._
   sidecar spawn, which unwinds through the FFI boundary as an uninformative
   crash. It now returns a clear error from `setup` (and logs a precise
   diagnostic), so startup aborts cleanly with a debuggable message.
-- **Numeric Unix-epoch access-log timestamps are parsed instead of dropped.**
-  Epoch timestamps (seconds / milliseconds / microseconds / nanoseconds, common
-  in JSON and CDN logs) failed every text format and cast to NULL downstream, so
-  every hour bucket became `'unknown'` and the log's entire time analysis
-  vanished. They now normalize by magnitude to UTC; small integers (ports, status
-  codes) are never misread as timestamps.
+- **Numeric access-log timestamps are parsed instead of dropped.** Unix epochs
+  (seconds / milliseconds / microseconds / nanoseconds, common in JSON and CDN
+  logs) failed every text format and cast to NULL downstream, so every hour
+  bucket became `'unknown'` and the log's entire time analysis vanished. They now
+  normalize to UTC, gated on the exact digit widths a real epoch has (10/13/16/19)
+  so compact wall-clock stamps like `202406251000` (yyyyMMddHHmm) parse as dates
+  rather than being misread as far-future epochs, and small integers (ports,
+  status codes) are never misread as timestamps.
 - **Migration crash-recovery tolerates a re-inserted seed row.** The idempotent
   replay after a partial-apply crash only caught the `OperationalError` DDL cases
   (duplicate column / existing table); an `INSERT` that re-added a seed row would
