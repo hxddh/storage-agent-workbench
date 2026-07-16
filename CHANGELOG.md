@@ -6,6 +6,111 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-07-16
+
+_The deep round: concurrency correctness, engine truth guards, "the survey
+tells the whole truth", and a first full frontend hardening pass. Three fresh
+audit angles (frontend deep-dive, concurrency/lifecycle, analysis-engine math)
+plus the prior round's verified slate — all in one release. Security floor
+untouched (and strengthened: PEM redaction, filename redaction)._
+
+### Fixed — concurrency & lifecycle
+
+- **Turns are now serialized per session.** The turn registry keyed only on
+  turn_id, so a steer (cancel + resend) started the new turn while the cancelled
+  one was still persisting: the new turn's context was missing the steered turn
+  entirely, and its late writes landed AFTER the new turn's — permanently
+  scrambled thread order. A new turn now auto-cancels the session's prior live
+  turn and its worker waits (bounded) for the prior to finish persisting before
+  snapshotting the thread. Cancellation is also observed at TOOL ENTRY (a chain
+  of blocking S3 calls no longer runs minutes past Stop).
+- **`POST /runs/{id}/message` claims the run atomically** — two concurrent
+  POSTs (double-click/retry) both passed the check-then-act guard and raced two
+  executors on one run row (duplicate tool_calls, report overwrites, terminal-
+  status flapping). A conditional UPDATE lets exactly one through.
+- **Uploads are temp-then-rename** — a mid-stream failure no longer leaves a
+  truncated file at the path an existing dataset row references (silently
+  analyzed later); partial files are cleaned up.
+- **Shutdown hardening**: SSE emit no longer aborts the worker's persist chain
+  when the main loop already closed; the worker's event loop cancels pending
+  tasks + finalizes async generators before closing (leaked HTTP pools).
+
+### Fixed — verdicts & truth
+
+- **`publicly_exposed` now asserts True from a single proven signal.** Policy-
+  public with the ACL unreadable — or ACL-public with `GetBucketPolicyStatus`
+  provider-unsupported (the common non-AWS case) — previously yielded
+  "indeterminate" on a provably public bucket.
+- **Truncated-PEM redaction bypass closed** (confirmed by two independent
+  audits): a key cut mid-body followed by a foreign END armor (a normal
+  .pem-bundle partial paste) slipped past both rules. The lookahead now blocks
+  only on a PRIVATE-KEY end armor and stops at the next BEGIN, so the following
+  certificate is preserved.
+- **Engine truth guards**: a mostly-unparsed access log now leads with an
+  honest "Log mostly unparsed" warning instead of "0% errors" + hot-key
+  findings fired on the null group (`parsed_fraction` metric, minimum-sample
+  guards); an inventory with mostly-missing sizes warns instead of claiming
+  "distributions look balanced" (`unknown_size_ratio`).
+- **Survey-diff upgrade noise baselined**: fields only the newer survey has
+  (schema growth) no longer flood the diff as None→value changes that could
+  truncate a real became-public signal; security-relevant flips carry
+  `"alert": true` and sort first (truncation can never cut them). 5xx triage
+  aliases no longer duplicate the generic ServerError guidance; error-code
+  tie-breaking is deterministic; user-chosen filenames are redacted at persist
+  and prompt-embed.
+
+### Added — the survey tells the whole truth
+
+- **Per-bucket ACL exposure in the survey** — `acl_public` + combined
+  `publicly_exposed` flags, with the ACL GET **skipped** under
+  `BucketOwnerEnforced` (ACLs disabled — most modern buckets) and paid for
+  twice over by deduplicating the two GETs the survey used to re-issue for
+  evidence discovery.
+- **The survey narrates public exposure**: summary counts (`public_buckets`,
+  `acls_disabled_count`), a CRITICAL "PUBLIC buckets detected" finding, a
+  public-exposure note in the final summary the agent reads, a **Public**
+  column + security-summary rows in the account report, and public buckets
+  join `buckets_needing_review`.
+- **`review_bucket_config` returns real findings** — a bounded, severity-
+  ordered digest (≤12 titles) in the tool result, instead of bare counts that
+  forced the agent to re-run the five per-aspect reviews.
+- **Routing honesty**: `survey_account` returns `has_prior_survey` (+ an
+  explicit next-step nudge to `compare_to_last_survey`), accepts
+  `max_buckets` (1–500) for large accounts, and echoes `truncated`;
+  `query_account_profile` echoes `survey_truncated`.
+- **Session report absorbs agent-recorded findings** (provenance-labeled) — a
+  "became public" discovery no longer lives only in chat prose.
+- **Triage**: `AccessControlListNotSupported` (ACLs on a BucketOwnerEnforced
+  bucket — the modern classic), `NoSuchUpload`, `InvalidRange`;
+  `InvalidObjectState` re-bridged to the lifecycle skill.
+- **Skills re-taught (round three)**: `public_buckets` + became-public alerts
+  in account-posture and security-iam-policy; account-wide filter mentions in
+  observability-audit and lifecycle-cost.
+
+### Fixed — frontend
+
+- **Error boundary**: a render crash now shows an error + reload button
+  instead of a permanent white screen.
+- **Report download + external links work in the packaged app**: a core-only
+  Tauri `save_report` command writes to Downloads (WKWebView ignores blob
+  anchor downloads) and `open_external` opens https/mailto links (Tauri v2
+  swallows target=_blank without a plugin); dev/browser keeps the old paths.
+- **Steer text-loss trio**: a second steer during settle replaces the pending
+  message (latest wins) instead of vanishing; a failed steer-upload restores
+  the typed text; typing during the settle window is no longer wiped.
+- **Provider fields are clearable**: blanking base URL / model / endpoint /
+  region on edit now clears it ("" → NULL protocol) instead of silently
+  reverting.
+- Stale view errors clear when the next turn starts; Escape closes the report
+  overlay; the import dialog ignores backdrop clicks while an import runs; a
+  proposal chip click during a running turn steers instead of silently
+  no-opping; slash-menu Escape keeps the typed text; the attachment size error
+  auto-clears; code-block copy hardened (fallback + no unhandled rejection);
+  transient triage-fetch failures no longer flash cards out of the thread;
+  streaming no longer hides a legitimate ```json block in the answer;
+  tool-timeline statuses and the palette hint are localized; i18n
+  interpolation survives $-patterns in values.
+
 ## [0.29.0] - 2026-07-15
 
 _Correction + coverage release: fix the v0.28.0 public-verdict over-claim, teach

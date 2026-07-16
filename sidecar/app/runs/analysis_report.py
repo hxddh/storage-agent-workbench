@@ -334,11 +334,22 @@ def render_account_profile(
     s = profile.get("summary", {}) or {}
     buckets = profile.get("buckets", []) or []
 
+    def _public_cell(b: dict[str, Any]) -> str:
+        exposed = b.get("publicly_exposed")
+        if exposed is True:
+            return "**PUBLIC**"
+        if exposed is False:
+            return "no"
+        if b.get("policy_is_public") is True:
+            return "**PUBLIC (policy)**"
+        return "unknown"
+
     bucket_rows = [
         [
             b.get("bucket_name", "—"),
             b.get("region") or "—",
             b.get("access_status") or "—",
+            _public_cell(b),
             b.get("encryption_status") or "—",
             b.get("logging_status") or "—",
             b.get("inventory_status") or "—",
@@ -362,6 +373,9 @@ def render_account_profile(
         ["ListBuckets status", profile.get("list_status", "—")],
     ]
     security_rows = [
+        ["Publicly exposed buckets", str(s.get("public_bucket_count", 0))
+         + (f" ({_cap(s.get('public_buckets') or [])})" if s.get("public_bucket_count") else "")],
+        ["ACLs disabled (BucketOwnerEnforced)", str(s.get("acls_disabled_count", 0))],
         ["Encryption configured", str(s.get("encryption_configured", 0))],
         ["Encryption not configured", str(s.get("encryption_not_configured", 0))],
         ["Encryption provider-unsupported", str(s.get("encryption_unsupported", 0))],
@@ -397,7 +411,7 @@ def render_account_profile(
 
 ## Bucket inventory
 
-{_table(["Bucket", "Region", "Access", "Encryption", "Logging", "Inventory", "Lifecycle", "Public access block", "Evidence"], bucket_rows)}
+{_table(["Bucket", "Region", "Access", "Public", "Encryption", "Logging", "Inventory", "Lifecycle", "Public access block", "Evidence"], bucket_rows)}
 
 ## Provider capability summary
 

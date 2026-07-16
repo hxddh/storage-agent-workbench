@@ -93,6 +93,17 @@ def get_bucket_config_snapshot(
     # public is separate (and moot under BucketOwnerEnforced).
     policy_public = ct._read(client, "get_bucket_policy_status", Bucket=bucket)
     ownership = ct._read(client, "get_bucket_ownership_controls", Bucket=bucket)
+    # ACL exposure (v0.30.0): the policy verdict alone can't rule out ACL-public.
+    # CONDITIONAL — skipped when Object Ownership is BucketOwnerEnforced (ACLs
+    # disabled entirely, the modern default), so on most modern accounts this
+    # costs nothing; the two duplicate GETs the survey used to re-issue for
+    # evidence discovery were deduplicated to pay for it (see _raw_reads below).
+    _own_rules = ((ownership.get("data") or {}).get("OwnershipControls") or {}).get("Rules") or []
+    _own_mode = _own_rules[0].get("ObjectOwnership") if _own_rules else None
+    if ownership["status"] == ct.AVAILABLE and _own_mode == "BucketOwnerEnforced":
+        acl = {"status": "skipped_acls_disabled", "data": {}}
+    else:
+        acl = ct._read(client, "get_bucket_acl", Bucket=bucket)
 
     # region: prefer the bucket location; fall back to the provider's region.
     region = cfg.region
@@ -126,10 +137,26 @@ def get_bucket_config_snapshot(
         )
     elif policy_public["status"] == ct.NOT_CONFIGURED:
         policy_is_public = False  # no bucket policy → the policy can't be public
-    object_ownership: str | None = None
-    if ownership["status"] == ct.AVAILABLE:
-        rules = (ownership["data"].get("OwnershipControls") or {}).get("Rules") or []
-        object_ownership = rules[0].get("ObjectOwnership") if rules else None
+    object_ownership: str | None = _own_mode if ownership["status"] == ct.AVAILABLE else None
+    # ACL exposure: True/False when determined; None when unreadable. ACLs
+    # disabled (BucketOwnerEnforced) means no ACL grant can be public.
+    acl_public: bool | None = None
+    if acl["status"] == "skipped_acls_disabled":
+        acl_public = False
+    elif acl["status"] == ct.AVAILABLE:
+        acl_public = any(
+            (g.get("Grantee") or {}).get("URI") in (
+                "http://acs.amazonaws.com/groups/global/AllUsers",
+                "http://acs.amazonaws.com/groups/global/AuthenticatedUsers",
+            )
+            for g in acl["data"].get("Grants") or []
+        )
+    # Combined exposure: a single True proves public; False needs both signals.
+    publicly_exposed: bool | None = None
+    if policy_is_public or acl_public:
+        publicly_exposed = True
+    elif policy_is_public is False and acl_public is False:
+        publicly_exposed = False
 
     snapshot = {
         "success": True,
@@ -147,13 +174,19 @@ def get_bucket_config_snapshot(
         "public_access_block_status": _dim_status(pab, pab_configured),
         "tagging_status": _dim_status(tagging, tagging_configured),
         "inventory_status": _dim_status(inventory, inv_configured),
-        # Public posture flags (policy verdict only; None = unreadable/unsupported).
+        # Public posture flags (None = unreadable/unsupported).
         "policy_public_status": policy_public["status"],
         "policy_is_public": policy_is_public,
         "ownership_status": ownership["status"],
         "object_ownership": object_ownership,
         "acls_disabled": (object_ownership == "BucketOwnerEnforced"
                           if object_ownership else None),
+        "acl_status": acl["status"],
+        "acl_public": acl_public,
+        "publicly_exposed": publicly_exposed,
+        # Raw reads for the survey to pass into evidence discovery instead of
+        # re-issuing the same GETs. STRIPPED by the caller before persistence.
+        "_raw_reads": {"logging": logging_r, "inventory": inventory},
     }
 
     # Aggregate provider-unsupported / access-denied / error items by dimension.
@@ -181,14 +214,17 @@ def get_bucket_config_snapshot(
 # --- evidence source discovery ----------------------------------------------
 
 
-def _discover_inventory(client, bucket: str) -> dict[str, Any]:
+def _discover_inventory(client, bucket: str,
+                        pre_read: dict[str, Any] | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {
         "source_type": INVENTORY,
         "configured": False,
         "status": ct.NOT_CONFIGURED,
         "configurations": [],
     }
-    r = ct._read(client, "list_bucket_inventory_configurations", Bucket=bucket)
+    # Reuse the snapshot's read when the survey provides it (one GET per bucket
+    # instead of two identical ones).
+    r = pre_read or ct._read(client, "list_bucket_inventory_configurations", Bucket=bucket)
     if r["status"] != ct.AVAILABLE:
         out["status"] = r["status"]
         return out
@@ -213,7 +249,8 @@ def _discover_inventory(client, bucket: str) -> dict[str, Any]:
     return out
 
 
-def _discover_logging(client, bucket: str) -> dict[str, Any]:
+def _discover_logging(client, bucket: str,
+                      pre_read: dict[str, Any] | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {
         "source_type": SERVER_ACCESS_LOGGING,
         "configured": False,
@@ -221,7 +258,7 @@ def _discover_logging(client, bucket: str) -> dict[str, Any]:
         "target_bucket": None,
         "target_prefix": None,
     }
-    r = ct._read(client, "get_bucket_logging", Bucket=bucket)
+    r = pre_read or ct._read(client, "get_bucket_logging", Bucket=bucket)
     if r["status"] != ct.AVAILABLE:
         out["status"] = r["status"]
         return out
@@ -237,13 +274,19 @@ def _discover_logging(client, bucket: str) -> dict[str, Any]:
 
 
 def discover_evidence_sources(
-    conn: sqlite3.Connection, provider_id: str, bucket: str
+    conn: sqlite3.Connection, provider_id: str, bucket: str,
+    pre_reads: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Discover (not fetch) inventory / access-logging evidence for one bucket."""
+    """Discover (not fetch) inventory / access-logging evidence for one bucket.
+
+    ``pre_reads`` (keys: ``logging``, ``inventory``) lets the survey pass the
+    config-snapshot's reads through instead of re-issuing the same two GETs.
+    """
     client = client_factory.build_s3_client(conn, provider_id)
+    pre = pre_reads or {}
     sources = [
-        _discover_inventory(client, bucket),
-        _discover_logging(client, bucket),
+        _discover_inventory(client, bucket, pre_read=pre.get("inventory")),
+        _discover_logging(client, bucket, pre_read=pre.get("logging")),
     ]
     # Future evidence types are reserved but explicitly not implemented.
     for name in _PLACEHOLDER_SOURCES:

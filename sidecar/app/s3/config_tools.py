@@ -836,14 +836,18 @@ def review_bucket_security(conn: sqlite3.Connection, provider_id: str, bucket: s
                                      "policy itself to grant public access. Investigate and lock down."))
     findings += _unsupported_findings(policy_status["status"], "policy status")
 
-    # Combined exposure verdict — only asserted when BOTH signals were readable.
+    # Combined exposure verdict. A single TRUE signal alone PROVES exposure —
+    # policy-public with the ACL unreadable is still public, and ACL-public with
+    # GetBucketPolicyStatus unsupported (the common S3-compatible case) is still
+    # public. Only the NOT-public verdict requires both signals readable.
     publicly_exposed: bool | None = None
-    if policy_is_public is not None and acl["status"] in (AVAILABLE, NOT_CONFIGURED):
-        publicly_exposed = policy_is_public or acl_public
-        if not publicly_exposed:
-            findings.append(_finding(GOOD, "Not public (policy verdict + ACL check)",
-                                     "The bucket policy is not public (AWS's GetBucketPolicyStatus "
-                                     "verdict) and the ACL grants no public access."))
+    if policy_is_public or acl_public:
+        publicly_exposed = True
+    elif policy_is_public is not None and acl["status"] in (AVAILABLE, NOT_CONFIGURED):
+        publicly_exposed = False
+        findings.append(_finding(GOOD, "Not public (policy verdict + ACL check)",
+                                 "The bucket policy is not public (AWS's GetBucketPolicyStatus "
+                                 "verdict) and the ACL grants no public access."))
     elif policy_is_public is False:
         findings.append(_finding(WARNING, "Policy not public, but ACL unreadable",
                                  "The bucket policy is not public, but the ACL could not be read — "

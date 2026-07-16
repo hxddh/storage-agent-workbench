@@ -340,6 +340,9 @@ def analyze_inventory(duckdb_path: str | Path) -> dict[str, Any]:
         unknown_age = con.execute(
             f"SELECT count(*) FROM {TABLE_NAME} WHERE try_cast(last_modified AS TIMESTAMP) IS NULL"
         ).fetchone()[0]
+        unknown_size = con.execute(
+            f"SELECT count(*) FROM {TABLE_NAME} WHERE size IS NULL"
+        ).fetchone()[0]
 
         return {
             "object_count": int(count),
@@ -352,6 +355,7 @@ def analyze_inventory(duckdb_path: str | Path) -> dict[str, Any]:
             "small_object_ratio": round(small_n / count, 4),
             "top_large_objects": top_large,
             "unknown_age_ratio": round(unknown_age / count, 4),
+            "unknown_size_ratio": round(unknown_size / count, 4),
         }
     finally:
         con.close()
@@ -367,6 +371,17 @@ def derive_findings(m: dict[str, Any]) -> list[dict[str, str]]:
                  "detail": "The uploaded inventory produced zero rows."}]
 
     total_size = m.get("total_size", 0) or 1
+
+    # TRUTH GUARD: mostly-null sizes mean the size columns didn't map — every
+    # size-derived statistic below describes a sliver. Lead with the honest
+    # warning (and never emit the "balanced" claim, since f is now non-empty).
+    unknown_size = m.get("unknown_size_ratio")
+    if unknown_size is not None and unknown_size > 0.5:
+        f.append({"severity": "warning", "title": "Inventory mostly missing sizes",
+                  "detail": (f"{unknown_size:.1%} of rows have no parseable size — the size "
+                             "histogram, small-object ratio, and capacity findings reflect "
+                             "only the remainder. The column mapping may be wrong; share a "
+                             "sample row to identify the format.")})
 
     if m["small_object_ratio"] > 0.5:
         f.append({"severity": "warning", "title": "High small-object ratio",

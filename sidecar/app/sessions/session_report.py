@@ -85,11 +85,23 @@ def _triage_md(cases: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _agent_findings_md(memory: list[dict[str, Any]]) -> str:
+    rows = [m for m in (memory or []) if m.get("kind") == "finding"]
+    if not rows:
+        return "_None recorded._"
+    out = []
+    for m in rows[:50]:
+        sev = str(m.get("severity") or "info")
+        out.append(f"- **[{sev}]** {m.get('text', '')}")
+    return "\n".join(out)
+
+
 def render_session_report(
     session: dict[str, Any],
     summary: dict[str, Any],
     runs: list[dict[str, Any]],
     triage_cases: list[dict[str, Any]] | None = None,
+    agent_memory: list[dict[str, Any]] | None = None,
 ) -> str:
     facts = summary.get("known_facts", []) or []
     findings = summary.get("findings", []) or []
@@ -123,6 +135,15 @@ def render_session_report(
 ## Key findings
 
 {_findings_md(findings)}
+
+## Agent-recorded findings
+
+_Findings the conversational agent explicitly recorded during its investigation
+(provenance: agent-recorded, grounded in read-only tool output). Critical facts
+like "bucket X became public since the last survey" live here — previously they
+existed only in chat prose and never reached this report._
+
+{_agent_findings_md(agent_memory or [])}
 
 ## Error triage
 

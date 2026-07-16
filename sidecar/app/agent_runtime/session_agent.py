@@ -528,7 +528,8 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
 def _install_tool_output_budget(tools: list[Any],
                                 limit: int | None = None,
                                 model: str | None = None,
-                                explicit_window: int | None = None) -> dict[str, int]:
+                                explicit_window: int | None = None,
+                                cancel_event: Any = None) -> dict[str, int]:
     """Cap the CUMULATIVE characters of tool output handed to the model per turn.
 
     ``limit`` defaults to the model-elastic budget (``model_budget``) — scaled to
@@ -551,6 +552,16 @@ def _install_tool_output_budget(tools: list[Any],
 
         def _make(_orig):
             async def wrapped(ctx: Any, args: Any) -> Any:
+                if cancel_event is not None and cancel_event.is_set():
+                    # Observe cancellation at TOOL ENTRY too, not only between
+                    # SDK stream events — a chain of blocking S3 calls otherwise
+                    # keeps running long after the user hit Stop (and widens the
+                    # steer race window). Same soft shape as budget exhaustion.
+                    spent["exhausted"] = True
+                    return json.dumps({"status": "cancelled",
+                                       "next_step": "The user cancelled this turn. Stop "
+                                                    "investigating and give your best "
+                                                    "answer from what you already have."})
                 if spent["chars"] >= limit:
                     # A soft per-turn boundary, NOT a tool failure: shape it as a
                     # status (not {"error": …}) with an explicit next step, and
@@ -615,7 +626,10 @@ def _build_prompt(
     # Files the user attached this turn (uploaded but not yet analyzed). The agent
     # should analyze the relevant one with analyze_uploaded_file and answer inline.
     if attachments:
-        att = [{"dataset_id": a.get("id"), "filename": a.get("source_filename"),
+        # Filenames are user-chosen text: redacted at persist since v0.30.0, and
+        # re-redacted here defensively (rows written by older versions).
+        att = [{"dataset_id": a.get("id"),
+                "filename": redact_text(str(a.get("source_filename") or "")),
                 "type": a.get("dataset_type")} for a in attachments]
         prompt_parts.append(
             "attached_files (the user just uploaded these; analyze the relevant one with "
@@ -716,7 +730,8 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
                          spec.get("session_id"), spec.get("turn_id"),
                          spec.get("cancel_event"))
     budget = _install_tool_output_budget(tools, model=creds.get("model"),
-                                         explicit_window=creds.get("context_window"))
+                                         explicit_window=creds.get("context_window"),
+                                         cancel_event=spec.get("cancel_event"))
     spec["budget"] = budget  # readable by the blocking driver, which owns `spec`
     # _make_agent disables parallel tool calls (chat-completions providers like
     # DeepSeek can emit malformed follow-ups with streaming + parallel calls) and

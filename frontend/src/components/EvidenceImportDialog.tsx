@@ -108,7 +108,11 @@ export function EvidenceImportDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+    // While an import is in flight, a stray backdrop click must NOT dismiss the
+    // dialog — the import continues server-side and the user loses all
+    // progress/error feedback. Close is still available via ✕ / Escape when idle.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+         onClick={busy ? undefined : onClose}>
       <div
         className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-lg border border-edge bg-panel p-5"
         onClick={(e) => e.stopPropagation()}

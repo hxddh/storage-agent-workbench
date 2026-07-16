@@ -383,9 +383,18 @@ def analyze_access_logs(duckdb_path: str | Path) -> dict[str, Any]:
         n_206 = con.execute(f"SELECT count(*) FROM {TABLE_NAME} WHERE status_code = 206").fetchone()[0]
         n_404 = con.execute(f"SELECT count(*) FROM {TABLE_NAME} WHERE status_code = 404").fetchone()[0]
         n_403 = con.execute(f"SELECT count(*) FROM {TABLE_NAME} WHERE status_code = 403").fetchone()[0]
+        # How much of the log actually PARSED into structured requests. The
+        # universal text fallback ingests unrecognized lines as raw rows with
+        # null fields — without this signal a fully-unparsed log reads as
+        # "0% errors" (clean) when the truth is "nothing was parsed".
+        n_parsed = con.execute(
+            f"SELECT count(*) FROM {TABLE_NAME} WHERE status_code IS NOT NULL "
+            f"OR method IS NOT NULL"
+        ).fetchone()[0]
 
         return {
             "total_requests": int(total),
+            "parsed_fraction": round(n_parsed / total, 4),
             "status_code_distribution": status_dist,
             "method_distribution": method_dist,
             "requests_by_hour": by_hour,
@@ -407,9 +416,25 @@ def analyze_access_logs(duckdb_path: str | Path) -> dict[str, Any]:
 
 def derive_findings(m: dict[str, Any]) -> list[dict[str, str]]:
     f: list[dict[str, str]] = []
-    if m.get("total_requests", 0) == 0:
+    total = m.get("total_requests", 0)
+    if total == 0:
         return [{"severity": "warning", "title": "No requests parsed",
                  "detail": "The uploaded log produced zero recognizable request rows."}]
+
+    # TRUTH GUARD: a log that mostly didn't parse must not be narrated as clean.
+    # Without this, a fully-unstructured .log read "0% errors" and even fired
+    # "hot key" findings on the null group. Low parsed fraction → lead with the
+    # honest warning and suppress every metric-derived finding (the metrics are
+    # about the parsed sliver, not the log).
+    parsed = m.get("parsed_fraction")
+    if parsed is not None and parsed < 0.5:
+        return [{
+            "severity": "warning", "title": "Log mostly unparsed",
+            "detail": (f"Only {parsed:.0%} of {total} ingested lines parsed into "
+                       "structured requests — error rates and access patterns below "
+                       "reflect that sliver, not the whole log. The format may be "
+                       "unsupported; share a sample line to identify it."),
+        }]
 
     if m["error_rate_4xx"] > 0.10:
         f.append({"severity": "warning", "title": "High 4xx error rate",
@@ -424,12 +449,22 @@ def derive_findings(m: dict[str, Any]) -> list[dict[str, str]]:
         f.append({"severity": "warning", "title": "Suspicious 403 pattern",
                   "detail": f"403 responses are {m['share_403']:.1%} of requests."})
 
+    # Concentration findings need a real signal: never fire on the null group
+    # (unparsed rows all share key=None) and not on a sample too small for
+    # "concentration" to mean anything.
+    _MIN_CONCENTRATION_ROWS = 50
+
+    def _real_group(entry: dict[str, Any]) -> bool:
+        return entry.get("value") not in (None, "None", "")
+
     top_keys = m.get("top_keys") or []
-    if top_keys and top_keys[0]["count"] / m["total_requests"] > 0.5:
+    if (total >= _MIN_CONCENTRATION_ROWS and top_keys and _real_group(top_keys[0])
+            and top_keys[0]["count"] / total > 0.5):
         f.append({"severity": "info", "title": "Concentrated hot key",
-                  "detail": f"Top key accounts for {top_keys[0]['count']} of {m['total_requests']} requests."})
+                  "detail": f"Top key accounts for {top_keys[0]['count']} of {total} requests."})
     top_pref = m.get("top_prefixes") or []
-    if top_pref and top_pref[0]["count"] / m["total_requests"] > 0.7:
+    if (total >= _MIN_CONCENTRATION_ROWS and top_pref and _real_group(top_pref[0])
+            and top_pref[0]["count"] / total > 0.7):
         f.append({"severity": "info", "title": "Concentrated hot prefix",
                   "detail": f"Top prefix '{top_pref[0]['value']}' dominates request volume."})
     if m["range_share_206"] > 0.30:

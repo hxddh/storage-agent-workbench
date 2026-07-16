@@ -13,7 +13,15 @@ import sqlite3
 import uuid
 from typing import Any
 
+from ..security.redaction import redact_text
 from . import utcnow
+
+
+def _clean_name(name: str | None) -> str | None:
+    """Redact a user-chosen filename before persistence (rule 14): a file named
+    after a secret must not carry it into SQLite or — via attached_files — the
+    prompt. Consistent with the evidence-import path, which redacts its labels."""
+    return redact_text(name) if name else name
 
 
 def _to_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -44,7 +52,8 @@ def create(
         "INSERT INTO session_datasets "
         "(id, session_id, dataset_type, source_filename, stored_path, status, created_at) "
         "VALUES (?, ?, ?, ?, ?, 'uploaded', ?)",
-        (dataset_id, session_id, dataset_type, source_filename, stored_path_rel, utcnow()),
+        (dataset_id, session_id, dataset_type, _clean_name(source_filename),
+         stored_path_rel, utcnow()),
     )
     return dataset_id
 
@@ -61,6 +70,7 @@ def upsert(
     multiple rows pointing at one path. On reuse the row resets to 'uploaded'
     (dropping any stale imported DuckDB/table) so the next analysis re-derives it.
     """
+    source_filename = _clean_name(source_filename)
     existing = conn.execute(
         "SELECT id FROM session_datasets WHERE session_id = ? AND source_filename = ? "
         "ORDER BY rowid DESC LIMIT 1",

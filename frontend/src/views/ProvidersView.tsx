@@ -106,8 +106,10 @@ function ModelProvidersPanel() {
     const body: ModelProviderInput = {
       name: form.name,
       provider_type: form.provider_type,
-      base_url: form.base_url || undefined,
-      model: form.model || undefined,
+      // On EDIT, send "" verbatim — the API treats "" as "clear to NULL", so
+      // blanking a field actually removes it (it used to silently revert).
+      base_url: editing ? form.base_url ?? "" : form.base_url || undefined,
+      model: editing ? form.model ?? "" : form.model || undefined,
     };
     if (form.api_key && form.api_key.trim()) body.api_key = form.api_key;
     if (form.context_window && form.context_window > 0) {
@@ -405,8 +407,10 @@ function CloudProvidersPanel() {
     const body: CloudProviderInput = {
       name: form.name || preset.label,
       provider_type: presetId === "custom" ? form.provider_type || "s3-compatible" : preset.providerType,
-      endpoint_url: endpoint || undefined,
-      region: region || undefined,
+      // On EDIT, "" means "clear to NULL" server-side — blanking the endpoint
+      // actually removes it instead of silently reverting to the stored value.
+      endpoint_url: editing ? endpoint : endpoint || undefined,
+      region: editing ? region : region || undefined,
       addressing_style: form.addressing_style || preset.addressing,
       signature_version: form.signature_version || preset.signature,
       mode: form.mode,

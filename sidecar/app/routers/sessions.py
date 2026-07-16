@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sqlite3
 import threading
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -161,7 +163,8 @@ def get_session_report(session_id: str, conn: sqlite3.Connection = Depends(get_c
     from ..repositories import error_triage as triage_repo
     content = session_report.render_session_report(
         dict(row), summary, repo.list_runs(conn, session_id),
-        triage_cases=triage_repo.list_for_session(conn, session_id))
+        triage_cases=triage_repo.list_for_session(conn, session_id),
+        agent_memory=repo.list_agent_memory(conn, session_id))
     return {"session_id": session_id, "format": "markdown", "content": content}
 
 
@@ -229,21 +232,27 @@ async def upload_session_dataset(
     # attachment fully in RAM — the sidecar OOM'd on exactly the large inventory
     # files this endpoint invites.
     from .datasets import _UPLOAD_CHUNK, MAX_UPLOAD_BYTES
+    # Temp-then-rename (see /runs upload): a mid-stream failure must never leave
+    # a truncated file at the final path a dataset row may already reference.
     total = 0
-    with dest.open("wb") as fh:
-        while True:
-            chunk = await file.read(_UPLOAD_CHUNK)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > MAX_UPLOAD_BYTES:
-                fh.close()
-                dest.unlink(missing_ok=True)
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB limit",
-                )
-            fh.write(chunk)
+    tmp = dest.with_name(dest.name + f".part-{uuid.uuid4().hex[:8]}")
+    try:
+        with tmp.open("wb") as fh:
+            while True:
+                chunk = await file.read(_UPLOAD_CHUNK)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB limit",
+                    )
+                fh.write(chunk)
+        os.replace(tmp, dest)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
     stored_rel = config.rel_path(dest)
     dataset_id = sds_repo.upsert(conn, session_id, dataset_type, filename, stored_rel)
@@ -260,6 +269,11 @@ async def upload_session_dataset(
 # How long the blocking fallback waits to ATTACH to a still-running streaming
 # worker for the same turn before giving up with a 409 (the worker keeps going).
 _IN_PROGRESS_WAIT_S = 150.0
+# How long a NEW turn waits for the session's PRIOR turn (already asked to
+# cancel) to finish persisting before snapshotting the thread. Cancellation is
+# observed between SDK stream events (and now at tool entry), so this normally
+# resolves in seconds; the bound only guards a wedged worker.
+_PRIOR_TURN_WAIT_S = 120.0
 
 
 def _result_envelope(cached: dict[str, Any]) -> dict[str, Any]:
@@ -304,6 +318,13 @@ def post_session_message(
     # We own this turn (created=True). GUARANTEE the handle is resolved on every
     # exit — otherwise a same-turn_id fallback attaches to a running handle whose
     # done_event is never set and blocks the full _IN_PROGRESS_WAIT_S.
+    # Serialize behind the session's prior live turn (redirect it) before
+    # snapshotting — same ordering guarantee as the streaming path. This handler
+    # is sync (threadpool thread), so a bounded blocking wait is fine.
+    prior_turn = turn_guard.register_session_turn(session_id, handle)
+    if prior_turn is not None:
+        prior_turn.cancel_event.set()
+        prior_turn.done_event.wait(_PRIOR_TURN_WAIT_S)
     try:
         # Build the deterministic, sanitized context — independent of any model key.
         # NOTE: the user message is NOT persisted yet. We persist user+assistant
@@ -405,13 +426,6 @@ async def post_session_message_stream(
     if row is None:
         raise HTTPException(status_code=404, detail="session not found")
 
-    # Build context from the prior thread; the new question goes in via the
-    # prompt. Persist nothing until 'final' so that if the stream errors and the
-    # client falls back to POST /messages, the turn isn't double-recorded.
-    summary = repo.get_summary(conn, session_id) or summary_builder.refresh(conn, session_id)
-    recent = repo.list_messages(conn, session_id)
-    attachments = sds_repo.list_pending_for_session(conn, session_id)
-
     try:
         creds = get_model_credentials(conn)
     except AgentUnavailable as exc:
@@ -429,6 +443,15 @@ async def post_session_message_stream(
         # attempt (waits for its result) instead of re-running the turn.
         raise HTTPException(status_code=409, detail="turn already in progress")
     cancel_event = handle.cancel_event if handle else None
+
+    # SERIALIZE turns per session: if a prior turn is still live (a steer, or two
+    # rapid sends), redirect it (cancel) and make OUR WORKER wait for it to
+    # finish persisting BEFORE snapshotting the thread. Without this the new
+    # turn's context is missing the prior turn entirely, and the prior turn's
+    # late writes land after ours — permanently scrambled thread order.
+    prior_turn = turn_guard.register_session_turn(session_id, handle)
+    if prior_turn is not None:
+        prior_turn.cancel_event.set()  # a new message while one runs = redirect
     # Snapshot the request-scoped reads into plain data so the worker never
     # touches `conn` (the request handler closes it once StreamingResponse is
     # constructed). The worker opens its OWN connection below (fix: request-scoped
@@ -460,7 +483,13 @@ async def post_session_message_stream(
                     pass
 
     def emit(item: Any) -> None:
-        main_loop.call_soon_threadsafe(_put, item)
+        try:
+            main_loop.call_soon_threadsafe(_put, item)
+        except RuntimeError:
+            # Main loop already closed (process shutting down) — nothing is
+            # consuming the SSE anyway; don't let this abort the worker's
+            # persist/cleanup chain.
+            pass
 
     def worker() -> None:
         wloop = asyncio.new_event_loop()
@@ -472,6 +501,16 @@ async def post_session_message_stream(
         # is closed as soon as the handler returns (and torn down on client
         # disconnect); binding tools to it would hit "closed database" mid-run.
         wconn = connect()
+
+        # Serialize behind the prior live turn for this session (already asked to
+        # cancel above), THEN snapshot the thread — so this turn's context
+        # includes the prior turn's persisted messages, in order. Bounded wait:
+        # on timeout we proceed (degraded to today's behavior) rather than hang.
+        if prior_turn is not None:
+            prior_turn.done_event.wait(_PRIOR_TURN_WAIT_S)
+        summary = repo.get_summary(wconn, session_id) or summary_builder.refresh(wconn, session_id)
+        recent = repo.list_messages(wconn, session_id)
+        attachments = sds_repo.list_pending_for_session(wconn, session_id)
 
         async def drive() -> None:
             # Own the client list so a build_stream failure after a client was
@@ -549,6 +588,21 @@ async def post_session_message_stream(
             except Exception:  # noqa: BLE001
                 pass
             emit(_DONE)
+            # Drain the worker loop before closing it: an early-exit from drive()
+            # (error path) can leave run_streamed's background task and the
+            # stream_events_for async generator unfinalized — cancel + gather +
+            # shutdown_asyncgens so per-turn HTTP clients' finally-close runs
+            # instead of leaking pools ("Task was destroyed but it is pending").
+            try:
+                pending = asyncio.all_tasks(wloop)
+                for t in pending:
+                    t.cancel()
+                if pending:
+                    wloop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True))
+                wloop.run_until_complete(wloop.shutdown_asyncgens())
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 wloop.close()
             except Exception:  # noqa: BLE001

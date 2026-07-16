@@ -47,6 +47,7 @@ _CATEGORY_SKILL: dict[str, str] = {
     "connectivity": "storageops-network-endpoint-access",
     "routing": "storageops-s3-protocol-compatibility",
     "throttling": "storageops-performance-diagnosis",
+    "lifecycle": "storageops-lifecycle-cost",
     "unknown": "storageops-triage",
 }
 
@@ -168,7 +169,9 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         ["re-fetch current ETag and retry", "remove or correct the precondition"],
         ["diagnostic"], [], [_ASK]),
     "InvalidObjectState": _entry(
-        "InvalidObjectState", "client", "Object is archived (GLACIER / DEEP_ARCHIVE)", "high",
+        # Category "lifecycle": this is an archive/restore problem — bridge to the
+        # lifecycle-cost skill, not data-consistency (which "client" mapped to).
+        "InvalidObjectState", "lifecycle", "Object is archived (GLACIER / DEEP_ARCHIVE)", "high",
         ["the object's storage class is an archive tier, so GET is not allowed until restored",
          "a restore was requested but has not completed yet", "a completed restore already expired"],
         ["the object's storage class", "its restore status (in progress / expiry)"],
@@ -186,6 +189,39 @@ _BY_CODE: dict[str, dict[str, Any]] = {
         ["when the credentials were issued and their duration", "whether a refresh path exists"],
         ["test_credentials — confirms the stored credential is rejected",
          "re-issue the session token / re-assume the role, then update the provider credentials"],
+        ["diagnostic"], [], [_DIAG, _ASK]),
+    "AccessControlListNotSupported": _entry(
+        "AccessControlListNotSupported", "authz",
+        "ACLs are disabled on this bucket (BucketOwnerEnforced)", "high",
+        ["legacy tooling is setting an ACL (e.g. --acl public-read / grant headers) on a bucket "
+         "whose Object Ownership is BucketOwnerEnforced — ACLs are disabled there (the AWS "
+         "default for new buckets since 2023)"],
+        ["the bucket's Object Ownership setting", "whether the client sends ACL headers/grants"],
+        ["get_bucket_config_detail(aspect='ownership') — confirms BucketOwnerEnforced",
+         "remove the ACL parameter/headers from the upload tooling; grant access via bucket "
+         "policy instead (manual change, reviewed by you)"],
+        ["bucket_config_review"],
+        ["S3-compatible providers usually don't implement Object Ownership; this code is AWS."],
+        [_CFG, _ASK]),
+    "NoSuchUpload": _entry(
+        "NoSuchUpload", "client", "Multipart upload no longer exists", "high",
+        ["a lifecycle AbortIncompleteMultipartUpload rule cleaned it up mid-upload",
+         "the upload was already completed/aborted (a concurrent completer or retry)",
+         "wrong upload id / wrong bucket"],
+        ["the upload's start time vs the lifecycle abort-days rule",
+         "whether another worker completed/aborted the same upload id"],
+        ["list_multipart_uploads — is the upload id still listed?",
+         "get_bucket_config_detail(aspect='lifecycle') — check AbortIncompleteMultipartUpload days",
+         "restart the upload; serialize completers if multiple workers share one upload id"],
+        ["bucket_config_review"], [], [_CFG, _ASK]),
+    "InvalidRange": _entry(
+        "InvalidRange", "client", "Requested range not satisfiable (416)", "high",
+        ["the Range start is at/past the object's actual size (stale size cached by a CDN/client)",
+         "the object was replaced with a smaller version between HEAD and GET",
+         "a zero-byte object requested with any Range"],
+        ["the exact Range header sent vs the object's current size"],
+        ["head_object on the key — read the CURRENT size (and ETag: did it change?)",
+         "test_range_get with a bounded in-range read to confirm range reads work at all"],
         ["diagnostic"], [], [_DIAG, _ASK]),
     "NotImplemented": _entry(
         "NotImplemented", "client", "Provider does not implement this API (capability gap)", "high",
@@ -289,7 +325,11 @@ def match(parsed: dict[str, Any]) -> list[dict[str, Any]]:
         out.append(_CONN)
     if flags.get("pagination_hint"):
         out.append(_PAGINATION)
-    if http and 500 <= int(http) <= 599 and not any(e["code"] == "ServerError" for e in out):
+    # Guard on CATEGORY, not the literal "ServerError" code: the 5xx-shaped code
+    # entries (InternalError/BadGateway/ServiceUnavailable aliases) already carry
+    # the same guidance — appending _5XX next to them duplicated it byte-for-byte.
+    if (http and 500 <= int(http) <= 599
+            and not any(e["category"] in ("availability", "throttling") for e in out)):
         out.append(_5XX)
     if http in (429,) and not any(e["category"] == "throttling" for e in out):
         out.append(_BY_CODE["TooManyRequests"])

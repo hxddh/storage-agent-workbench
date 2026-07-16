@@ -94,10 +94,22 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
             lambda: ct.review_bucket_performance_profile(conn, provider_id, bucket, prefix))
 
     counts = dict(Counter(f["category"] for f in all_findings))
+    # The agent tool's contract says "returns its findings for you to narrate" —
+    # counts alone forced it to re-run the five review tools individually to see
+    # WHAT was found. Fold a bounded, severity-ordered digest of the actual
+    # findings into the summary (titles only, ≤12 — the full detail is in the
+    # report and the per-aspect tools).
+    _SEV_ORDER = {"critical": 0, "warning": 1, "error": 1, "opportunity": 2,
+                  "good": 3, "info": 3}
+    ordered = sorted(all_findings, key=lambda f: _SEV_ORDER.get(f.get("category", ""), 2))
+    digest = "; ".join(f"[{f['category']}] {f['title']}" for f in ordered[:12])
+    more = len(all_findings) - min(12, len(all_findings))
     summary_text = (
         f"Read-only configuration review of bucket '{bucket}' "
         f"(overall status: {summary_out.get('overall_status')}). "
         f"Findings: " + ", ".join(f"{n} {c}" for c, n in counts.items()) + "."
+        + (f" Details: {digest}" + (f" (+{more} more in the report)" if more > 0 else "") + "."
+           if digest else "")
     )
     bus.publish(run_id, {"type": "summary", "content": summary_text})
 

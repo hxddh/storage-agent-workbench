@@ -82,14 +82,23 @@ def _build_summary(buckets: list[dict[str, Any]], visible: int, processed: int, 
         lambda b: any(s.get("source_type") == "server_access_logging" and s.get("status") == _CONFIGURED
                       for s in b.get("evidence_sources", []))
     )
+    # Public exposure is the survey's most critical fact — a policy-public or
+    # ACL-public bucket makes the review list regardless of anything else.
+    public_buckets = names_where(lambda b: b.get("publicly_exposed") is True
+                                 or b.get("policy_is_public") is True)
     needs_review = names_where(
         lambda b: b.get("encryption_status") == _NOT_CONFIGURED
         or b.get("public_access_block_status") == _NOT_CONFIGURED
+        or b.get("publicly_exposed") is True
+        or b.get("policy_is_public") is True
     )
     access_denied = names_where(lambda b: b.get("access_status") == _DENIED)
     errored = names_where(lambda b: b.get("access_status") == "error")
 
     return {
+        "public_buckets": public_buckets,
+        "public_bucket_count": len(public_buckets),
+        "acls_disabled_count": sum(1 for b in buckets if b.get("acls_disabled") is True),
         "visible_buckets": visible,
         "processed_buckets": processed,
         "truncated": truncated,
@@ -194,10 +203,12 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
                 {"provider_id": provider_id, "bucket": name},
                 lambda n=name: account_tools.get_bucket_config_snapshot(conn, provider_id, n),
             )
+            raw_reads = snap.pop("_raw_reads", None)  # reuse, never persist
             ev = run_tool_with_events(
                 conn, run_id, "discover_evidence_sources",
                 {"provider_id": provider_id, "bucket": name},
-                lambda n=name: account_tools.discover_evidence_sources(conn, provider_id, n),
+                lambda n=name, rr=raw_reads: account_tools.discover_evidence_sources(
+                    conn, provider_id, n, pre_reads=rr),
             )
             head = snap.get("head_bucket_status")
             # A denied/errored HeadBucket means the bucket itself is
@@ -245,6 +256,17 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
     conn.commit()
 
     # A few account-level findings (bounded; no per-object detail).
+    # Public exposure FIRST — the account's most critical fact must never be
+    # discovered, persisted, and then silently dropped from the narration.
+    if summary["public_bucket_count"]:
+        names = ", ".join(summary["public_buckets"][:10])
+        more = summary["public_bucket_count"] - min(10, summary["public_bucket_count"])
+        bus.publish(run_id, {"type": "finding", "severity": "critical",
+                             "title": "PUBLIC buckets detected",
+                             "detail": (f"{summary['public_bucket_count']} bucket(s) are publicly "
+                                        f"exposed (policy verdict and/or ACL grants): {names}"
+                                        + (f" (+{more} more)" if more > 0 else "") + ". "
+                                        "Review each with review_bucket_security.")})
     if summary["encryption_not_configured"]:
         bus.publish(run_id, {"type": "finding", "severity": "warning",
                              "title": "Buckets without default encryption",
@@ -261,10 +283,17 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
                                        "access logging that can feed access_log_analysis."})
 
     counts = dict(Counter(b["access_status"] for b in per_bucket))
+    public_note = (
+        f" PUBLIC EXPOSURE: {summary['public_bucket_count']} bucket(s) publicly exposed"
+        f" ({', '.join(summary['public_buckets'][:5])}"
+        f"{'…' if summary['public_bucket_count'] > 5 else ''})."
+        if summary["public_bucket_count"] else " No publicly exposed buckets detected."
+    )
     summary_text = (
         f"Account discovery via provider '{provider_id}': {visible} bucket(s) visible, "
         f"{len(per_bucket)} processed{' (truncated)' if truncated else ''}. "
         f"Access status: " + (", ".join(f"{n} {s}" for s, n in counts.items()) or "—") + "."
+        + public_note
     )
     bus.publish(run_id, {"type": "summary", "content": summary_text})
 

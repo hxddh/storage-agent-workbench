@@ -125,16 +125,23 @@ def update(
     if existing is None:
         return None
 
-    def pick(field: str):
+    def pick(field: str, clearable: bool = False):
+        # None = keep as-is. For CLEARABLE optional fields, "" = clear to NULL —
+        # previously blanking Endpoint URL / region in the UI silently reverted
+        # to the stored value, with no way to remove a mistaken custom endpoint.
         val = getattr(data, field)
-        return val if val is not None else existing[field]
+        if val is None:
+            return existing[field]
+        if clearable and val == "":
+            return None
+        return val
 
     name = pick("name")
     provider_type = pick("provider_type")
-    endpoint_url = pick("endpoint_url")
-    region = pick("region")
-    addressing_style = pick("addressing_style")
-    signature_version = pick("signature_version")
+    endpoint_url = pick("endpoint_url", clearable=True)
+    region = pick("region", clearable=True)
+    addressing_style = pick("addressing_style", clearable=True)
+    signature_version = pick("signature_version", clearable=True)
     mode = data.mode if data.mode is not None else existing["mode"]
 
     allowed_buckets_json = (

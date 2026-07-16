@@ -32,11 +32,46 @@ export function sidecarToken(): string {
   return _token;
 }
 
-/** True when running inside the Tauri webview. */
-function tauriInvoke(): ((cmd: string) => Promise<unknown>) | null {
-  const g = globalThis as unknown as { __TAURI__?: { core?: { invoke?: (c: string) => Promise<unknown> } } };
+/** The Tauri invoke function when running inside the Tauri webview, else null. */
+export function tauriInvoke():
+  ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null {
+  const g = globalThis as unknown as {
+    __TAURI__?: { core?: { invoke?: (c: string, a?: Record<string, unknown>) => Promise<unknown> } };
+  };
   const invoke = g.__TAURI__?.core?.invoke;
   return typeof invoke === "function" ? invoke.bind(g.__TAURI__!.core) : null;
+}
+
+/**
+ * Save text to the user's Downloads folder via the Tauri shell (returns the
+ * written path), or null when not in Tauri / on failure — the caller then falls
+ * back to the browser blob-anchor download (works in dev; WKWebView ignores it,
+ * which is exactly why the Tauri path exists).
+ */
+export async function saveTextFile(filename: string, content: string): Promise<string | null> {
+  const invoke = tauriInvoke();
+  if (!invoke) return null;
+  try {
+    const path = await invoke("save_report", { filename, content });
+    return typeof path === "string" ? path : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Open an external link in the system browser via the Tauri shell. Returns
+ * false when not in Tauri (caller keeps the normal anchor behavior).
+ */
+export async function openExternal(url: string): Promise<boolean> {
+  const invoke = tauriInvoke();
+  if (!invoke) return false;
+  try {
+    await invoke("open_external", { url });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
