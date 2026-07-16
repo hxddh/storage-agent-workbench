@@ -261,7 +261,7 @@ def test_migrations_are_sequential_and_capped():
     # (support the startup data-maintenance prune).
     versions = [v for v, _n, _s in migrations.MIGRATIONS]
     assert versions == list(range(1, len(versions) + 1))  # 1..N, no gaps/dupes
-    assert max(versions) == 18
+    assert max(versions) == 19
 
 
 def test_no_public_skills_api(client):

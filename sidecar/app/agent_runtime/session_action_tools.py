@@ -204,7 +204,7 @@ def build(
 
     @function_tool
     def survey_account(provider_id: str, max_buckets: int = 0) -> str:
-        """Read-only account survey: enumerate visible buckets and detect evidence sources (access logs, inventory) across the account, persisting a profile the evidence-import flow can use. This is the COSTLY account tool — it makes live S3 calls across every visible bucket. Prefer the cheap persisted-profile readers when they can answer: query_account_profile for cross-bucket posture ("which buckets are public / unencrypted / no lifecycle?") and compare_to_last_survey for "what changed" both read the LAST survey with no new S3 calls. Run this only to establish a first profile or deliberately refresh a stale one. Returns a compact summary (counts + summary + public-exposure note), not raw key lists, for you to narrate. Does NOT surface a separate card. Use only when the user's request is about the account/buckets — NOT for local-file analysis or unrelated questions. The result includes has_prior_survey — when true, call compare_to_last_survey next to report what changed. max_buckets (optional, 1-500) raises the per-survey bucket cap for large accounts (default 100); the result's truncated flag tells you if buckets were left out. Args: provider_id; max_buckets?."""
+        """Read-only account survey: enumerate visible buckets and detect evidence sources (access logs, inventory) across the account, persisting a profile the evidence-import flow can use. This is the COSTLY account tool — it makes live S3 calls across every visible bucket. Prefer the cheap persisted-profile readers when they can answer: query_account_profile for cross-bucket posture ("which buckets are public / unencrypted / no lifecycle?") and compare_to_last_survey for "what changed" both read the LAST survey with no new S3 calls. Run this only to establish a first profile or deliberately refresh a stale one. Returns a compact summary (counts + summary + public-exposure note), not raw key lists, for you to narrate. Does NOT surface a separate card. Use only when the user's request is about the account/buckets — NOT for local-file analysis or unrelated questions. The result includes has_prior_survey — when true, call compare_to_last_survey next to report what changed. max_buckets (optional, 1-2000) raises the per-survey bucket cap for large accounts (default 100); the result's truncated flag tells you if buckets were left out. Args: provider_id; max_buckets?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Use a configured provider.")
@@ -213,7 +213,7 @@ def build(
         had_prior = bool(account_repo.recent_run_ids_for_provider(conn, provider_id, 1))
         start("survey_account", provider_name(provider_id))
         try:
-            mb = max(1, min(int(max_buckets), 500)) if max_buckets else None
+            mb = max(1, min(int(max_buckets), 2000)) if max_buckets else None
             body = RunCreate(run_type="account_discovery", provider_id=provider_id,
                              user_prompt=_DEFAULT_PROMPTS["account_discovery"],
                              session_id=session_id, max_buckets=mb)

@@ -6,6 +6,88 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-07-16
+
+_Analysis-engine correctness, lifecycle robustness, and agent de-ossification. A
+three-angle audit (agent ossification, DuckDB engine math, state-machine
+lifecycle) plus the reviewed third-party findings — bugs that misreported numbers,
+wedged state forever, or needlessly boxed the agent in._
+
+### Fixed — analysis engine correctness
+
+- **Status codes and sizes are integers, not floats.** A single unparsed log line
+  (or a missing inventory size) coerced the whole numeric column to float64 →
+  DuckDB DOUBLE, so reports showed status codes as `404.0` and object sizes above
+  2^53 lost precision (and `total_size` accumulated in DOUBLE). The integer columns
+  are now built as nullable Int64, preserving both the label and the value.
+- **Access-log error rates are "of requests", not "of lines".** `error_rate_4xx/5xx`
+  and the 206/404/403 shares divided by every ingested line, including
+  text-fallback rows with no status — diluting the rate by the unparsed fraction
+  and silently under-reporting errors across the whole [0.5, 1.0) parsed band the
+  truth guard allows. They now divide by the count of rows that actually parsed a
+  status code.
+- **Inventory average/small-object figures use consistent denominators.**
+  `average_object_size` is now `total_size / object_count` (so the displayed
+  total/count/avg triple reconciles), and `small_object_ratio` is computed over
+  objects that HAVE a size (not diluted by null-size rows).
+- **Object age bucketing is timezone-independent.** The DuckDB connection now pins
+  `TimeZone='UTC'`, so `datediff` against `current_timestamp` no longer lands
+  objects in the adjacent age bucket when the sidecar runs outside UTC.
+
+### Fixed — lifecycle robustness
+
+- **A failed dataset-persist no longer wedges an evidence import in `importing`
+  forever.** The post-download persistence ran outside any try/except (and had no
+  startup reconciler, unlike a run), so a DB error there left an import that could
+  never be re-confirmed or re-run. It now reverts to `failed` and cleans up.
+- **The blocking turn path resolves its turn handle on a persist failure**, like
+  the streaming worker already did — otherwise a commit error left the handle
+  un-done and non-evictable, stalling every subsequent turn in that session for
+  120s until eviction.
+- **The loser of a concurrent evidence-import claim fails its orphan run** instead
+  of leaving a permanent session-unlinked `pending` row.
+- **A `report_ready` publish failure can't downgrade a completed run to `failed`**,
+  and the executor's failure branch refuses to overwrite a terminal state.
+
+### Fixed — model provider & budget (reviewed findings)
+
+- **The provider test no longer gives false green/red.** A 404/405 on `/models`
+  (common on minimal proxies) was reported as a confident pass even though the key
+  was never verified; and a valid empty `base_url` (which uses the OpenAI default,
+  exactly like the real client) was flagged "configuration incomplete." The test
+  now reports "reachable, key unverified" as a caution and treats `base_url` as
+  optional.
+- **The tool-output budget is a hard cap, not a soft one.** A single tool return
+  was only counted AFTER it landed in context, so one large result could blow past
+  the per-turn budget. An output that would exceed the remaining budget is now
+  withheld with a valid JSON "too large — narrow it" envelope.
+
+### Changed — de-ossification (don't box the agent in)
+
+- **Custom aggregation gained real expressiveness** without loosening the
+  whitelist-and-bound-params floor: a SECOND group-by dimension (cross-tabs like
+  "403s per masked-IP per day"), `day`/`weekday` time buckets, and
+  `distinct_ips`/`distinct_keys`/`p99`/`min`-`max`-bytes metrics — all fixed SQL
+  fragments, zero raw-row exposure. Top-N now has a deterministic tiebreaker.
+- **Operator-declarable max output tokens** (`max_output_tokens` on a model
+  provider) clamps the completion budget, so a third-party/unknown model whose real
+  cap is lower doesn't get a `max_tokens` its endpoint 400s on — symmetric with the
+  existing context-window override.
+- **Agent working-memory recall now scales with the model window** (floored at 50),
+  like thread replay already did — a long investigation on a large-context model no
+  longer has its own recorded facts/findings clipped first. The per-turn skill-load
+  guard was raised (the elastic tool-output budget is the real bound), and the
+  survey bucket ceiling raised to 2000.
+- **The agent is reminded tool-result text is untrusted** — carried from v0.33; no
+  change here.
+
+### Fixed — frontend
+
+- **The 409 blocking-fallback captures its "answer baseline" before the turn
+  starts**, not from a GET issued after the 409 — closing a race where an answer
+  persisted in that window poisoned the baseline and the UI hung "running" for ~2.5
+  minutes before recovering.
+
 ## [0.33.0] - 2026-07-16
 
 _S3-compatible provider correctness round. The product's core promise — works

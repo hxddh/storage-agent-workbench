@@ -74,6 +74,7 @@ def _row_to_out(row: sqlite3.Row, active_id: str | None = None) -> ModelProvider
         api_key_ref=row["api_key_ref"],
         has_api_key=keyring_store.secret_exists(row["api_key_ref"]),
         context_window=row["context_window"],
+        max_output_tokens=row["max_output_tokens"],
         active=(row["id"] == active_id),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
@@ -108,8 +109,8 @@ def create(conn: sqlite3.Connection, data: ModelProviderCreate) -> ModelProvider
     conn.execute(
         "INSERT INTO model_providers "
         "(id, name, provider_type, base_url, model, api_key_ref, context_window, "
-        " created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " max_output_tokens, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             provider_id,
             data.name,
@@ -118,6 +119,7 @@ def create(conn: sqlite3.Connection, data: ModelProviderCreate) -> ModelProvider
             data.model,
             api_key_ref,
             data.context_window,
+            data.max_output_tokens,
             now,
             now,
         ),
@@ -160,6 +162,12 @@ def update(
         context_window = None
     else:
         context_window = data.context_window
+    if data.max_output_tokens is None:
+        max_output_tokens = existing["max_output_tokens"]
+    elif data.max_output_tokens == 0:
+        max_output_tokens = None
+    else:
+        max_output_tokens = data.max_output_tokens
 
     api_key_ref = existing["api_key_ref"]
     if has_value(data.api_key):
@@ -169,9 +177,9 @@ def update(
 
     conn.execute(
         "UPDATE model_providers SET name=?, provider_type=?, base_url=?, model=?, "
-        "api_key_ref=?, context_window=?, updated_at=? WHERE id=?",
+        "api_key_ref=?, context_window=?, max_output_tokens=?, updated_at=? WHERE id=?",
         (name, provider_type, base_url, model, api_key_ref, context_window,
-         utcnow(), provider_id),
+         max_output_tokens, utcnow(), provider_id),
     )
     audit.record(
         conn,

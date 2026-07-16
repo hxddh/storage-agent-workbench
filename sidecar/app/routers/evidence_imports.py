@@ -12,6 +12,7 @@ access_log_analysis path.
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import uuid
 from typing import Any
@@ -204,9 +205,13 @@ def run_import(import_id: str, conn: sqlite3.Connection = Depends(get_conn)):
     )
     # Atomically claim the confirmed→importing transition. Two concurrent runs
     # would otherwise both pass the status check above and double-download; the
-    # single conditional UPDATE lets exactly one win. The loser's just-created
-    # analysis run stays a harmless unstarted 'pending' row.
+    # single conditional UPDATE lets exactly one win.
     if not repo.claim_for_import(conn, import_id, analysis_run_id):
+        # The loser must fail its just-created run, or it lingers 'pending' forever
+        # (session-unlinked, only reconciled at the next restart).
+        runs_repo.set_status(conn, analysis_run_id, "failed",
+                             final_summary="Superseded by a concurrent import of the same evidence.")
+        conn.commit()
         current = repo.get(conn, import_id)
         raise HTTPException(
             status_code=409,
@@ -226,8 +231,6 @@ def run_import(import_id: str, conn: sqlite3.Connection = Depends(get_conn)):
             files, data["max_files"], data["max_bytes"], dest_dir,
         )
     except Exception as exc:  # noqa: BLE001 - any download/combine failure is sanitized + surfaced as 400
-        import shutil
-
         repo.set_status(conn, import_id, "failed")
         repo.mark_files(conn, import_id, "failed")
         # The combined file is written directly at its final path (no temp-rename),
@@ -242,19 +245,36 @@ def run_import(import_id: str, conn: sqlite3.Connection = Depends(get_conn)):
         conn.commit()
         raise HTTPException(status_code=400, detail=f"evidence download failed: {redact_text(str(exc))}")
 
-    stored_rel = config.rel_path(combined)
-    datasets_repo.create(
-        conn, analysis_run_id, dataset_type,
-        name="managed_evidence_import", source_filename=redact_text(label),
-        stored_path_rel=stored_rel,
-    )
-    repo.mark_files(conn, import_id, "downloaded")
-    repo.set_status(conn, import_id, "imported")
-    audit.record(conn, "evidence_import.download",
-                 {"import_id": import_id, "downloaded_files": len(files),
-                  "downloaded_bytes": total, "stored_path": stored_rel,
-                  "analysis_run_id": analysis_run_id}, run_id=analysis_run_id)
-    conn.commit()
+    # The download succeeded; persist the dataset + flip the import to 'imported'.
+    # This block MUST be guarded too: if datasets_repo.create / rel_path / a commit
+    # raises here, the import was left 'importing' — a terminal-ish state that can
+    # never be re-confirmed or re-run (and, unlike the run, has no startup
+    # reconciler), so it would wedge forever. On failure, revert it to 'failed'
+    # (mirroring the download-failure branch) and clean up.
+    try:
+        stored_rel = config.rel_path(combined)
+        datasets_repo.create(
+            conn, analysis_run_id, dataset_type,
+            name="managed_evidence_import", source_filename=redact_text(label),
+            stored_path_rel=stored_rel,
+        )
+        repo.mark_files(conn, import_id, "downloaded")
+        repo.set_status(conn, import_id, "imported")
+        audit.record(conn, "evidence_import.download",
+                     {"import_id": import_id, "downloaded_files": len(files),
+                      "downloaded_bytes": total, "stored_path": stored_rel,
+                      "analysis_run_id": analysis_run_id}, run_id=analysis_run_id)
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001 - persist failure must not wedge the import
+        repo.set_status(conn, import_id, "failed")
+        repo.mark_files(conn, import_id, "failed")
+        shutil.rmtree(dest_dir, ignore_errors=True)
+        runs_repo.set_status(conn, analysis_run_id, "failed",
+                             final_summary="Evidence import failed while persisting the dataset.")
+        audit.record(conn, "evidence_import.failed",
+                     {"import_id": import_id, "error": redact_text(str(exc))}, run_id=None)
+        conn.commit()
+        raise HTTPException(status_code=500, detail=f"evidence import failed: {redact_text(str(exc))}")
 
     # Hand off to the existing deterministic analysis executor.
     run_service.start(analysis_run_id)

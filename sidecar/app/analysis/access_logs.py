@@ -376,6 +376,13 @@ def import_access_logs(raw_path: str | Path, duckdb_path: str | Path, fmt: str) 
     truncated = len(rows) >= MAX_INGEST_ROWS
 
     df = pd.DataFrame(rows, columns=COLUMNS)
+    # Integer columns MUST be built as nullable Int64 from the raw row values.
+    # `pd.DataFrame(list-of-dicts)` coerces any column containing a None to
+    # float64 → DuckDB infers DOUBLE → status codes render as "404.0" in reports
+    # and int64 sizes above 2^53 lose precision. Building from the Python ints
+    # (not the already-floated column) preserves both the label and the value.
+    for col in ("status_code", "bytes_sent", "latency_ms"):
+        df[col] = pd.array([r.get(col) for r in rows], dtype="Int64")
     con = duck.connect(duckdb_path)
     try:
         con.register("incoming", df)
@@ -405,11 +412,22 @@ def analyze_access_logs(duckdb_path: str | Path) -> dict[str, Any]:
         if total == 0:
             return {"total_requests": 0}
 
+        # Rates are "of the actual HTTP requests", so the denominator is the count
+        # of rows that PARSED a status code — not every ingested line. Using
+        # count(*) (which includes text-fallback rows with a null status) diluted
+        # every rate by the unparsed fraction, silently under-reporting error rates
+        # across the whole [0.5, 1.0) parsed-fraction band the truth guard permits.
+        status_total = con.execute(
+            f"SELECT count(*) FROM {TABLE_NAME} WHERE status_code IS NOT NULL"
+        ).fetchone()[0]
+
         def rate(lo: int, hi: int) -> float:
+            if not status_total:
+                return 0.0
             n = con.execute(
                 f"SELECT count(*) FROM {TABLE_NAME} WHERE status_code >= {lo} AND status_code <= {hi}"
             ).fetchone()[0]
-            return round(n / total, 4)
+            return round(n / status_total, 4)
 
         status_dist = _dist(con, f"SELECT status_code, count(*) c FROM {TABLE_NAME} GROUP BY status_code ORDER BY c DESC")
         method_dist = _dist(con, f"SELECT method, count(*) c FROM {TABLE_NAME} GROUP BY method ORDER BY c DESC")
@@ -448,9 +466,9 @@ def analyze_access_logs(duckdb_path: str | Path) -> dict[str, Any]:
             "top_user_agents": top_uas,
             "error_rate_4xx": rate(400, 499),
             "error_rate_5xx": rate(500, 599),
-            "range_share_206": round(n_206 / total, 4),
-            "share_404": round(n_404 / total, 4),
-            "share_403": round(n_403 / total, 4),
+            "range_share_206": round(n_206 / (status_total or 1), 4),
+            "share_404": round(n_404 / (status_total or 1), 4),
+            "share_403": round(n_403 / (status_total or 1), 4),
         }
     finally:
         con.close()

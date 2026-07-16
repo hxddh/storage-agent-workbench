@@ -117,5 +117,7 @@ def get_model_credentials(conn: sqlite3.Connection) -> dict[str, Any]:
         # Optional operator-declared context window (tokens); None → inferred from
         # the model name by model_budget. NOT a secret.
         "context_window": row["context_window"],
+        # Optional operator-declared max output tokens; None → inferred. NOT a secret.
+        "max_output_tokens": row["max_output_tokens"],
     }
 

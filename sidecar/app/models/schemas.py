@@ -28,6 +28,10 @@ class ModelProviderCreate(BaseModel):
     # a newly-shipped large-context model isn't throttled to the default. Omit to
     # let the agent infer the window from the model name.
     context_window: int | None = Field(default=None, gt=0)
+    # Optional explicit MAX OUTPUT tokens. Clamps the completion budget so a
+    # third-party/unknown model whose real cap is below the default doesn't get a
+    # max_tokens the endpoint 400s on. Omit to infer from the model name.
+    max_output_tokens: int | None = Field(default=None, gt=0)
 
 
 class ModelProviderUpdate(BaseModel):
@@ -40,6 +44,7 @@ class ModelProviderUpdate(BaseModel):
     # None = keep as-is; 0 = CLEAR back to NULL (infer from the model name);
     # positive = set. (None can't mean "clear" here — it's the "unchanged" sentinel.)
     context_window: int | None = Field(default=None, ge=0)
+    max_output_tokens: int | None = Field(default=None, ge=0)  # None keep / 0 clear / +set
 
 
 class ModelProviderOut(BaseModel):
@@ -51,6 +56,7 @@ class ModelProviderOut(BaseModel):
     api_key_ref: str | None
     has_api_key: bool
     context_window: int | None = None
+    max_output_tokens: int | None = None
     # True for the provider the agent actually uses. Selected explicitly via
     # POST /model-providers/{id}/activate; when none is selected the oldest
     # configured provider is the implicit default (matching the agent runtime).
@@ -120,6 +126,10 @@ class ModelProviderTestResult(BaseModel):
     ok: bool
     checks: dict[str, bool]
     detail: str
+    # True = key accepted (HTTP 200); False = key rejected (401/403); None = the
+    # endpoint was reached but couldn't verify the key (no /models, e.g. a minimal
+    # proxy). Lets the UI show "reachable but unverified" instead of a false green.
+    api_key_verified: bool | None = None
 
 
 # --- S3 tool request bodies --------------------------------------

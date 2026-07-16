@@ -512,7 +512,7 @@ def test_raised_budgets_and_caps():
     # skills_used contract cap must match the per-turn read_skill budget; the
     # budget constants live inside build(), so pin the contract-side value.
     src = open("app/agent_runtime/session_tools.py").read()
-    assert "_MAX_SKILL_LOADS = 10" in src
+    assert "_MAX_SKILL_LOADS = 20" in src
     assert "_MAX_PREVIEWS = 16" in src
     assert "_MAX_LATENCY_RUNS = 8" in src
     raw = "answer\n```json\n" + json.dumps(

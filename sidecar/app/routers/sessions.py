@@ -364,25 +364,34 @@ def post_session_message(
 
     # Success: persist the user message and the assistant answer together.
     # The contract is already sanitized + allowlist-coerced inside session_agent.
-    proposed_actions = contract["next_action_proposals"]
-    grounding = {
-        "evidence_used": contract.get("evidence_used", []),
-        "evidence_gaps": contract.get("evidence_gaps", []),
-        "skills_used": contract.get("skills_used", []),
-    }
-    repo.add_message(conn, session_id, "user", body.content)
-    repo.add_message(conn, session_id, "assistant", contract["answer"],
-                     tool_activity=contract.get("tool_activity"),
-                     grounding=grounding, proposed_actions=proposed_actions)
-    audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
-    conn.commit()
-    turn_guard.set_result(body.turn_id, {
-        "proposed_actions": proposed_actions,
-        "skills_used": contract.get("skills_used", []),
-        "skills_offered": contract.get("skills_offered", []),
-        "evidence_used": contract.get("evidence_used", []),
-        "evidence_gaps": contract.get("evidence_gaps", []),
-    }, session_id)
+    # This block runs OUTSIDE the try/except above, so — like the streaming
+    # worker's finally — it must resolve the turn handle on its own failure. If a
+    # persist/commit here raised before set_result, the handle stayed un-done and
+    # non-evictable: the same-turn fallback would block 150s, and EVERY subsequent
+    # turn in this session would eat the 120s prior-turn wait until eviction.
+    try:
+        proposed_actions = contract["next_action_proposals"]
+        grounding = {
+            "evidence_used": contract.get("evidence_used", []),
+            "evidence_gaps": contract.get("evidence_gaps", []),
+            "skills_used": contract.get("skills_used", []),
+        }
+        repo.add_message(conn, session_id, "user", body.content)
+        repo.add_message(conn, session_id, "assistant", contract["answer"],
+                         tool_activity=contract.get("tool_activity"),
+                         grounding=grounding, proposed_actions=proposed_actions)
+        audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
+        conn.commit()
+        turn_guard.set_result(body.turn_id, {
+            "proposed_actions": proposed_actions,
+            "skills_used": contract.get("skills_used", []),
+            "skills_offered": contract.get("skills_offered", []),
+            "evidence_used": contract.get("evidence_used", []),
+            "evidence_gaps": contract.get("evidence_gaps", []),
+        }, session_id)
+    except Exception as exc:  # noqa: BLE001 — a persist failure must still resolve the handle
+        turn_guard.fail(body.turn_id, redact_text(str(exc)), session_id)
+        raise HTTPException(status_code=500, detail=redact_text(str(exc)))
     return {
         "session_id": session_id,
         "messages": repo.list_messages(conn, session_id),

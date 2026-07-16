@@ -538,6 +538,16 @@ _M017 = """
 ALTER TABLE model_providers ADD COLUMN context_window INTEGER;
 """
 
+# Optional operator-declared MAX OUTPUT tokens for a model provider. The
+# completion budget is clamped to the model's provider max-output (a substring
+# table) so we never request a max_tokens the endpoint 400s on; but an unknown or
+# third-party-compatible model falls to a default that some endpoints reject. This
+# lets an operator declare the real cap. NULL → use the table. Mirrors
+# context_window (migration 017).
+_M019 = """
+ALTER TABLE model_providers ADD COLUMN max_output_tokens INTEGER;
+"""
+
 # Indexes on created_at for the startup retention prune (data_maintenance):
 # audit_logs and ad-hoc (run_id IS NULL) tool_calls are aged out by created_at,
 # and both tables grow to the point where a full scan per boot would be costly.
@@ -566,6 +576,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (16, "session_message_grounding", _M016),
     (17, "model_provider_context_window", _M017),
     (18, "retention_indexes", _M018),
+    (19, "model_provider_max_output", _M019),
 ]
 
 
