@@ -91,6 +91,7 @@ const en: Dict = {
   "thread.needKeyBtn": "Add a model API key",
   "thread.report": "Report",
   "thread.download": "Download .md",
+  "thread.savedTo": "Saved: {path}",
   "thread.copied": "Copied",
   "thread.startChatFirst": "Start a chat first, then generate a report.",
   "thread.agentRuntimeUnavailable": "The agent runtime isn't available in this build. Update to the latest app version.",
@@ -166,6 +167,7 @@ const en: Dict = {
   "metric.smallRatio": "Small-object ratio",
   "metric.topPrefix": "Top prefix (size)",
   "tool.running": "running…",
+  "palette.chat": "chat",
   "tool.success": "success",
   "tool.failed": "failed",
   "timeline.noCalls": "No tool calls yet.",
@@ -406,6 +408,7 @@ const zh: Dict = {
   "thread.needKeyBtn": "添加模型 API Key",
   "thread.report": "报告",
   "thread.download": "下载 .md",
+  "thread.savedTo": "已保存：{path}",
   "thread.copied": "已复制",
   "thread.startChatFirst": "请先开始一个对话，再生成报告。",
   "thread.agentRuntimeUnavailable": "此版本中 Agent 运行时不可用。请更新到最新版本。",
@@ -473,6 +476,7 @@ const zh: Dict = {
   "metric.smallRatio": "小对象占比",
   "metric.topPrefix": "最大前缀（按大小）",
   "tool.running": "运行中…",
+  "palette.chat": "会话",
   "tool.success": "成功",
   "tool.failed": "失败",
   "timeline.noCalls": "还没有工具调用。",
@@ -648,7 +652,10 @@ export type TFunc = (key: string, vars?: Record<string, string | number>) => str
 
 function translate(lang: Lang, key: string, vars?: Record<string, string | number>): string {
   let s = DICTS[lang][key] ?? DICTS.en[key] ?? key;
-  if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v));
+  // split/join, not String.replace: a value containing $-patterns ("$&", "$'")
+  // — legal in filenames — corrupted the output, and replace only hit the
+  // first occurrence of a repeated placeholder.
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
   return s;
 }
 

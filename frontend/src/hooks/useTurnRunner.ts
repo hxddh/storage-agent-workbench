@@ -86,6 +86,9 @@ type InFlight = {
 };
 
 export function useTurnRunner(opts: {
+  /** Current composer text (via ref) — lets runTurn avoid wiping characters the
+   * user typed during a steer's settle window (it only clears its OWN text). */
+  getText?: () => string;
   /** Ref tracking the visible session id (owned by Thread). */
   localId: React.MutableRefObject<string | null>;
   onSessionCreated: (id: string) => void;
@@ -97,11 +100,13 @@ export function useTurnRunner(opts: {
   /** Called after a dataset upload succeeded (clear the attachment chip). */
   onUploaded: () => void;
 }) {
-  const { localId, onSessionCreated, reload, onChanged, setText, setViewError, onUploaded } = opts;
+  const { getText, localId, onSessionCreated, reload, onChanged, setText, setViewError, onUploaded } = opts;
   const { t } = useI18n();
   // Per-session in-flight turn (AbortController + turn id) so Stop can abort the
   // stream AND ask the server to cancel. Keyed by the id the turn started with.
   const turnsRef = useRef<Map<string, InFlight>>(new Map());
+  // Per-session pending steer payload — see steer()'s latest-wins semantics.
+  const steerPendingRef = useRef<Map<string, { q: string; resend?: () => Promise<void> }>>(new Map());
   // PER-SESSION synchronous double-submit latch (F1). `busy` in the store only
   // flips after async work begins, so within one session a double-Enter could
   // start two turns before busy is observable. This latch bridges that gap and
@@ -242,7 +247,11 @@ export function useTurnRunner(opts: {
   // `onRegistered` fires the instant this turn sets `busy` for its session, so
   // the caller's double-submit latch can release without waiting out the turn.
   const runTurn = async (q: string, onRegistered?: () => void) => {
-    setText("");
+    // Clear the composer ONLY when it still holds this turn's text (or is
+    // empty): after a steer there is a ~1s settle gap, and anything the user
+    // typed into the empty composer during it must not be wiped here.
+    const cur = getText ? getText() : null;
+    if (cur === null || cur === "" || cur === q) setText("");
     let id: string;
     try {
       id = await ensureSession(q);
@@ -400,15 +409,25 @@ export function useTurnRunner(opts: {
       return;
     }
     setText(""); // immediate feedback: the composer clears as the redirect is dispatched
+    // LATEST WINS: a second steer while the first is still settling REPLACES the
+    // pending payload instead of racing it — previously the second submit hit
+    // the busy latch and the corrected message vanished (not sent, not restored).
+    if (steerPendingRef.current.has(id)) {
+      steerPendingRef.current.set(id, { q, resend });
+      return;
+    }
+    steerPendingRef.current.set(id, { q, resend });
     stop(); // cancel the current turn; its partial + trace are persisted server-side
     const settled = await waitForIdle(id);
+    const payload = steerPendingRef.current.get(id) ?? { q, resend };
+    steerPendingRef.current.delete(id);
     // If it didn't settle, or the user navigated to another session while it
     // did, don't cross-send — restore the text so nothing is lost.
     if (!settled || localId.current !== id) {
-      setText(q);
+      setText(payload.q);
       return;
     }
-    await (resend ? resend() : submit(q));
+    await (payload.resend ? payload.resend() : submit(payload.q));
   };
 
   // Composer file upload → agent-native analysis. The file is attached to the
@@ -437,7 +456,11 @@ export function useTurnRunner(opts: {
         await uploadSessionDataset(id, file, type);
       } catch (e) {
         patchSessionRun(id, { error: cleanError(String(e), t) });
-        return; // keep the attachment + text so the user can retry
+        // Keep the attachment + text so the user can retry. The STEER path
+        // clears the composer before dispatching here — restore the typed
+        // message so a failed upload never eats it.
+        if (message && getText && getText() === "") setText(message);
+        return;
       } finally {
         patchSessionRun(id, { uploading: false });
       }

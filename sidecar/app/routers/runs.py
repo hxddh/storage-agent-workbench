@@ -139,13 +139,21 @@ def post_message(
             detail=f"run_type '{row['run_type']}' has no executable message turn",
         )
     # Refuse to spawn a second executor over a run that is already in flight or
-    # finished — a concurrent/duplicate POST would otherwise start a racing
-    # thread on the same run row. A fresh ('pending') or 'failed' run may start;
-    # 'running'/'completed' must not.
-    if row["status"] in ("running", "completed"):
+    # finished. This must be an ATOMIC claim, not check-then-act: two concurrent
+    # POSTs (double-click / client retry) on separate threadpool threads both
+    # read 'pending' and both spawned executors racing on the same run row —
+    # duplicate tool_calls, both writing report.md, terminal-status flapping.
+    # A single conditional UPDATE lets exactly one caller through.
+    claimed = conn.execute(
+        "UPDATE runs SET status = 'running' WHERE id = ? "
+        "AND status NOT IN ('running', 'completed')",
+        (run_id,),
+    ).rowcount
+    conn.commit()
+    if not claimed:
         raise HTTPException(
             status_code=409,
-            detail=f"run is '{row['status']}'; cannot start another executor for it",
+            detail="run is already running or completed; cannot start another executor for it",
         )
 
     repo.add_message(conn, run_id, role="user", content=body.content)

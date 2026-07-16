@@ -70,6 +70,60 @@ fn get_sidecar_token(state: State<SidecarState>) -> String {
     state.token.clone()
 }
 
+/// Save app-generated text (a markdown report) into the user's Downloads
+/// directory and return the written path. WKWebView ignores the `download`
+/// attribute on blob: URLs, so the frontend's anchor-download was a silent
+/// no-op on macOS — this core-only command (no plugins) is the reliable path.
+/// The filename is reduced to a safe basename; existing files are never
+/// overwritten (a numeric suffix is appended instead).
+#[tauri::command]
+fn save_report(app: tauri::AppHandle, filename: String, content: String) -> Result<String, String> {
+    let safe: String = filename
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '.' || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let safe = if safe.is_empty() { "report.md".to_string() } else { safe };
+    let dir = app
+        .path()
+        .download_dir()
+        .map_err(|e| format!("no downloads directory: {e}"))?;
+    let mut path = dir.join(&safe);
+    if path.exists() {
+        let (stem, ext) = match safe.rsplit_once('.') {
+            Some((s, e)) => (s.to_string(), format!(".{e}")),
+            None => (safe.clone(), String::new()),
+        };
+        for i in 1..100 {
+            let candidate = dir.join(format!("{stem}-{i}{ext}"));
+            if !candidate.exists() {
+                path = candidate;
+                break;
+            }
+        }
+    }
+    std::fs::write(&path, content).map_err(|e| format!("write failed: {e}"))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Open an https/mailto link in the system browser/mail client. Tauri v2
+/// swallows `target="_blank"` without the opener plugin, so links in agent
+/// answers were dead in the packaged app. Fixed argv (no shell interpolation)
+/// and a strict scheme allowlist — this is a UI-level opener, not a shell tool.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    let ok = url.starts_with("https://") || url.starts_with("http://") || url.starts_with("mailto:");
+    if !ok {
+        return Err("only http(s)/mailto links can be opened".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    let result = Command::new("open").arg(&url).spawn();
+    #[cfg(target_os = "windows")]
+    let result = Command::new("cmd").args(["/C", "start", "", &url]).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let result = Command::new("xdg-open").arg(&url).spawn();
+    result.map(|_| ()).map_err(|e| format!("open failed: {e}"))
+}
+
 /// Executable name inside the one-dir bundle (`.exe` on Windows).
 fn sidecar_exe_name() -> &'static str {
     if cfg!(windows) {
@@ -142,7 +196,8 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_sidecar_url, get_sidecar_token])
+        .invoke_handler(tauri::generate_handler![get_sidecar_url, get_sidecar_token,
+                                                 save_report, open_external])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {

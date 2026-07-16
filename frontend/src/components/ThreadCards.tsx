@@ -84,7 +84,14 @@ export const MessageCard = memo(function MessageCard({
 // partially-streamed answer so it never flashes on screen.
 function stripMetaBlock(text: string): string {
   const i = text.lastIndexOf("```json");
-  return i >= 0 ? text.slice(0, i).trimEnd() : text;
+  if (i < 0) return text;
+  // Only strip when the fence actually looks like the METADATA contract — a
+  // legitimate ```json block in the answer (a policy, a config sample) was
+  // previously hidden during streaming from the fence onward.
+  const rest = text.slice(i);
+  const looksMeta = /"(answer|skills_used|evidence_used|next_action_proposals)"/.test(rest)
+    || rest.replace(/```json\s*/, "").trimStart().length === 0; // still-empty open fence
+  return looksMeta ? text.slice(0, i).trimEnd() : text;
 }
 
 /** Compact, Codex/Cursor-style trace of the read-only tools the agent ran. Each

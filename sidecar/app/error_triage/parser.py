@@ -55,6 +55,9 @@ KNOWN_ERROR_CODES = {
     "InvalidObjectState", "KMS.AccessDenied", "KMS.DisabledException",
     "KMS.NotFoundException", "ExpiredToken", "InvalidToken",
     "NotImplemented", "MethodNotAllowed",
+    # v0.30.0: ACLs-on-BucketOwnerEnforced (the modern classic), multipart
+    # upload vanished, and unsatisfiable range requests.
+    "AccessControlListNotSupported", "NoSuchUpload", "InvalidRange",
 }
 
 _CODE_RE = re.compile(r"<Code>\s*([A-Za-z][A-Za-z.]{0,39})\s*</Code>")
@@ -102,7 +105,7 @@ def parse(redacted: str, input_kind: str = "mixed") -> dict[str, Any]:
         # Bare token match for known codes anywhere in the text. Longest first,
         # deterministically: "KMS.AccessDenied" must win over its embedded
         # "AccessDenied" (the dot is a word boundary, so both would match).
-        for known in sorted(KNOWN_ERROR_CODES, key=len, reverse=True):
+        for known in sorted(KNOWN_ERROR_CODES, key=lambda c: (-len(c), c)):
             if re.search(rf"\b{re.escape(known)}\b", text):
                 code = known
                 break

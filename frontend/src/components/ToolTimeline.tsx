@@ -40,7 +40,7 @@ function TimelineRow({ item }: { item: TimelineItem }) {
         />
         <span className="font-mono text-gray-200">{item.tool_name}</span>
         <span className={!finished ? "text-amber-400" : ok ? "text-emerald-400" : "text-red-400"}>
-          {!finished ? t("tool.running") : item.status}
+          {!finished ? t("tool.running") : ok ? t("tool.success") : t("tool.failed")}
         </span>
         {item.duration_ms != null && <span className="text-gray-600">{item.duration_ms} ms</span>}
         <span className="ml-auto text-gray-500">{summarize(item.output)}</span>

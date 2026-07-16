@@ -1,4 +1,5 @@
 import { Fragment, memo, useMemo, useState, type ReactNode } from "react";
+import { openExternal, tauriInvoke } from "../config";
 import { useI18n } from "../i18n";
 
 /**
@@ -81,10 +82,33 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const copy = () => {
-    navigator.clipboard?.writeText(content).then(() => {
+    // Hardened like ThreadCards.copyText: never an unhandled rejection, and a
+    // temp-textarea fallback for webviews where the async Clipboard API is
+    // blocked (code-block copy silently no-op'd there).
+    const done = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1400);
-    });
+    };
+    const legacy = () => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = content;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        done();
+      } catch {
+        /* nothing left to try */
+      }
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(content).then(done).catch(legacy);
+    } else {
+      legacy();
+    }
   };
   return (
     <div className="group/code overflow-hidden rounded-lg border border-edge bg-[#0a0a0c]">
@@ -271,7 +295,20 @@ function inline(text: string): ReactNode {
         const safe = /^(https?:|mailto:)/i.test(href);
         nodes.push(
           safe ? (
-            <a key={k++} href={href} target="_blank" rel="noreferrer noopener" className="text-accent-soft underline decoration-accent/40 underline-offset-2 hover:decoration-accent">
+            <a
+              key={k++}
+              href={href}
+              target="_blank"
+              rel="noreferrer noopener"
+              onClick={(e) => {
+                // Tauri v2 swallows target="_blank" without the opener plugin —
+                // route through the shell's open_external command; in dev/browser
+                // openExternal returns false and the anchor works normally.
+                void openExternal(href).then((handled) => void handled);
+                if (tauriInvoke()) e.preventDefault();
+              }}
+              className="text-accent-soft underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+            >
               {mm[1]}
             </a>
           ) : (

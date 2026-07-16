@@ -77,6 +77,17 @@ export function Composer({
   const { t } = useI18n();
   const [slashSel, setSlashSel] = useState(0);
   const [sizeError, setSizeError] = useState<string | null>(null);
+  // Escape closes the slash menu WITHOUT destroying the typed text (it used to
+  // wipe the whole composer); typing again re-enables the menu.
+  const [slashSuppressed, setSlashSuppressed] = useState(false);
+  useEffect(() => {
+    setSlashSuppressed(false);
+  }, [text]);
+  // A stale size error must not read as a live error forever: clear it when the
+  // attachment state changes (picked/cleared) or the user starts typing.
+  useEffect(() => {
+    setSizeError(null);
+  }, [attached]);
 
   // Auto-grow the composer (pin one line when empty so the wrapping placeholder
   // doesn't inflate scrollHeight).
@@ -95,7 +106,7 @@ export function Composer({
   // Slash commands: open when the composer is exactly "/" + word chars.
   const slashQ = /^\/(\w*)$/.exec(text)?.[1];
   const slashItems = slashQ !== undefined ? SLASH.filter((c) => c.cmd.startsWith(slashQ.toLowerCase())) : [];
-  const slashOpen = slashItems.length > 0;
+  const slashOpen = slashItems.length > 0 && !slashSuppressed;
   const slashIdx = Math.min(slashSel, slashItems.length - 1);
 
   const selectSlash = (c: Slash) => {
@@ -177,7 +188,7 @@ export function Composer({
           // Pre-check against the backend's 2 GiB cap so an oversized file fails
           // instantly with a clear message instead of uploading for minutes → 413.
           if (f && f.size > MAX_UPLOAD_BYTES) {
-            setSizeError(t("attach.tooLarge").replace("{size}", formatGiB(f.size)));
+            setSizeError(t("attach.tooLarge", { size: formatGiB(f.size) }));
             return;
           }
           setSizeError(null);
@@ -195,7 +206,7 @@ export function Composer({
             if (e.key === "ArrowDown") { e.preventDefault(); setSlashSel((s) => Math.min(slashItems.length - 1, s + 1)); return; }
             if (e.key === "ArrowUp") { e.preventDefault(); setSlashSel((s) => Math.max(0, s - 1)); return; }
             if (e.key === "Enter") { e.preventDefault(); selectSlash(slashItems[slashIdx]); return; }
-            if (e.key === "Escape") { e.preventDefault(); setText(""); return; }
+            if (e.key === "Escape") { e.preventDefault(); setSlashSuppressed(true); return; }
           }
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();

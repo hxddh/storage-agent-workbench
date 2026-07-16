@@ -140,12 +140,19 @@ def update(
     if existing is None:
         return None
 
+    def _coalesce(new_val, old_val):
+        # None = keep as-is; "" = CLEAR to NULL (the UI can't send None for a
+        # cleared field — previously blanking base_url/model silently reverted).
+        if new_val is None:
+            return old_val
+        return None if new_val == "" else new_val
+
     name = data.name if data.name is not None else existing["name"]
     provider_type = (
         data.provider_type if data.provider_type is not None else existing["provider_type"]
     )
-    base_url = data.base_url if data.base_url is not None else existing["base_url"]
-    model = data.model if data.model is not None else existing["model"]
+    base_url = _coalesce(data.base_url, existing["base_url"])
+    model = _coalesce(data.model, existing["model"])
     # None = keep; 0 = clear to NULL (re-infer from the model name); >0 = set.
     if data.context_window is None:
         context_window = existing["context_window"]

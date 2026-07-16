@@ -351,8 +351,8 @@ tools above (choosing provider/bucket itself), plus:
   issues?" Returns the per-bucket config-flag matrix (region + logging/
   encryption/lifecycle/replication/policy/public_access_block/tagging/inventory
   status + `policy_is_public`/`object_ownership`) filtered by a whitelist
-  (`all` | `public_buckets` (the bucket POLICY judged public by AWS — ACL-public
-  is separate) | `missing_public_access_block` | `missing_encryption` |
+  (`all` | `public_buckets` (publicly exposed — AWS's policy verdict and/or ACL
+  grants; the ACL read is skipped when ACLs are disabled) | `missing_public_access_block` | `missing_encryption` |
   `missing_lifecycle` | `missing_logging` | `no_versioning` | `access_issues`).
   Reads ALREADY-PERSISTED, sanitized snapshot flags — no new S3 call, no LLM,
   statuses only (never object keys/bodies). Needs one completed `survey_account`

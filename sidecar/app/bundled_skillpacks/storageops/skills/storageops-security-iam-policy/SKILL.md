@@ -65,9 +65,11 @@ first, because the layer names differ.
   are disabled entirely (`BucketOwnerEnforced`, the recommended posture — if so,
   skip the ACL layer in the chain); `policy` gives per-statement
   effect/actions/`is_public`; `public_access_block` the four PAB booleans.
-- `query_account_profile` — for account-wide exposure ("which buckets have no
-  public-access-block?"): filters the last survey's persisted posture matrix
-  (e.g. `missing_public_access_block`) across ALL buckets without re-scanning.
+- `query_account_profile` — for account-wide exposure: `filter='public_buckets'`
+  answers "which of my N buckets are PUBLIC?" in one call from the last survey
+  (policy verdict and/or ACL grants; no re-scan); `missing_public_access_block`
+  and friends cover the weaker postures. `compare_to_last_survey` flags any
+  bucket that BECAME public since the previous survey (`"alert": true` rows).
 
 You read configuration; you cannot read the caller's IAM/RAM identity policy — so
 identity-side denials must be confirmed from the policy document the user shares.
@@ -88,9 +90,10 @@ review, not just when a 403 is reported:
 - **Start with `review_bucket_security`** — it reads the policy verdict
   (`policy_is_public`, AWS's GetBucketPolicyStatus judgement of the policy), the
   ACL grants, PAB, and Object Ownership in one pass, and emits a combined
-  `publicly_exposed` verdict only when both the policy verdict AND the ACL were
-  readable. Trust that over hand-reasoning; fall back to the chain below only to
-  explain WHY.
+  `publicly_exposed` verdict: a single public signal (policy OR ACL) already
+  proves exposure; the NOT-public verdict is asserted only when both signals
+  were readable. Trust that over hand-reasoning; fall back to the chain below
+  only to explain WHY.
 - **Public-access block** — is it ON at both account and bucket level? A missing
   block is the single biggest exposure risk.
 - **Bucket policy** — `aspect='policy_status'` is AWS's own verdict on the

@@ -41,6 +41,12 @@ _MAX = 256
 _lock = threading.RLock()
 _turns: "OrderedDict[str, TurnHandle]" = OrderedDict()
 _runs: "OrderedDict[str, dict[str, str]]" = OrderedDict()
+# session_id → the session's ACTIVE (most recent) turn handle. Used to SERIALIZE
+# turns per session: a new turn must wait for the prior turn's worker to finish
+# persisting before it snapshots the thread — otherwise a steer (cancel + resend)
+# reads a thread missing the cancelled turn entirely, and the cancelled turn's
+# late writes land AFTER the new turn's (permanently scrambled message order).
+_session_active: "OrderedDict[str, TurnHandle]" = OrderedDict()
 
 
 class TurnHandle:
@@ -100,6 +106,28 @@ def begin(turn_id: str | None, session_id: str | None) -> tuple["TurnHandle | No
         _turns[turn_id] = h
         _bump(_turns, turn_id)
         return h, True
+
+
+def register_session_turn(session_id: str | None,
+                          handle: "TurnHandle | None") -> "TurnHandle | None":
+    """Make ``handle`` the session's ACTIVE turn; return the PRIOR still-live
+    handle (if any) so the caller can serialize behind it.
+
+    Contract for the caller (the turn worker): if a prior handle is returned,
+    set its ``cancel_event`` (a new message while a turn runs means "redirect")
+    and wait on its ``done_event`` BEFORE snapshotting the thread — so the new
+    turn's context includes the prior turn's persisted messages and the thread
+    order can never interleave. Bounded registry; done handles are evictable.
+    """
+    if not session_id or handle is None:
+        return None
+    with _lock:
+        prior = _session_active.get(session_id)
+        _session_active[session_id] = handle
+        _bump(_session_active, session_id)
+        if prior is not None and prior is not handle and not prior.done:
+            return prior
+        return None
 
 
 def get_handle(turn_id: str | None, session_id: str | None = None) -> "TurnHandle | None":
@@ -202,7 +230,8 @@ def _reset_for_tests() -> None:
     with _lock:
         _turns.clear()
         _runs.clear()
+        _session_active.clear()
 
 
-__all__ = ["TurnHandle", "begin", "get_handle", "get_result", "set_result",
-           "fail", "discard", "get_run", "set_run"]
+__all__ = ["TurnHandle", "begin", "register_session_turn", "get_handle",
+           "get_result", "set_result", "fail", "discard", "get_run", "set_run"]

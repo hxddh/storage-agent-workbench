@@ -64,6 +64,9 @@ Cost concern →
   now returns per-key `objects[]` (size / storage_class / last_modified) so you
   can sample the distribution directly, without an extra head_object per key.
 - Run `review_bucket_config` (inline, read-only) for the full lifecycle posture.
+- Account-wide: after a `survey_account`,
+  `query_account_profile(filter='missing_lifecycle')` lists every bucket with no
+  lifecycle rules in one call from the persisted survey (no re-scan).
   For real per-object numbers, analyze an uploaded inventory export with
   `analyze_uploaded_file`; for an inventory still in a bucket, propose
   `plan_inventory_import` (a confirmed import). Do not invent prices.

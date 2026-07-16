@@ -47,7 +47,7 @@ export function CommandPalette({
     const chats: Cmd[] = sessions.map((s) => ({
       id: `s:${s.id}`,
       label: s.title || t("common.untitled"),
-      hint: "chat",
+      hint: t("palette.chat"),
       icon: I("M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"),
       run: () => { onSelectSession(s.id); onClose(); },
     }));

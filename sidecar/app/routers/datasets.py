@@ -6,9 +6,11 @@ Uploaded files are copied into the per-run raw directory
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import (
     APIRouter,
@@ -60,21 +62,29 @@ async def upload_dataset(
 
     # Stream to disk in bounded chunks (never a single in-memory read) and cap
     # the total so a huge/runaway upload can't exhaust memory or disk.
+    # Temp-then-rename: write to a .part file and os.replace() only on success —
+    # a mid-stream failure (client disconnect) must never leave a TRUNCATED file
+    # at the final path (a same-named re-upload previously destroyed the file an
+    # existing dataset row still referenced, silently analyzed later).
     total = 0
-    with dest.open("wb") as fh:
-        while True:
-            chunk = await file.read(_UPLOAD_CHUNK)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > MAX_UPLOAD_BYTES:
-                fh.close()
-                dest.unlink(missing_ok=True)
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB limit",
-                )
-            fh.write(chunk)
+    tmp = dest.with_name(dest.name + f".part-{uuid4().hex[:8]}")
+    try:
+        with tmp.open("wb") as fh:
+            while True:
+                chunk = await file.read(_UPLOAD_CHUNK)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB limit",
+                    )
+                fh.write(chunk)
+        os.replace(tmp, dest)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
     stored_rel = config.rel_path(dest)
     dataset_id = repo.create(conn, run_id, dataset_type, name, filename, stored_rel)

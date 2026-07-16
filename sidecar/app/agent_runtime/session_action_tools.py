@@ -203,15 +203,20 @@ def build(
         return json.dumps(result)
 
     @function_tool
-    def survey_account(provider_id: str) -> str:
-        """Read-only account survey: enumerate visible buckets and detect evidence sources (access logs, inventory) across the account, persisting a profile the evidence-import flow can use. Returns a compact summary (counts + summary), not raw key lists, for you to narrate. Does NOT surface a separate card. Use only when the user's request is about the account/buckets — NOT for local-file analysis or unrelated questions. Args: provider_id."""
+    def survey_account(provider_id: str, max_buckets: int = 0) -> str:
+        """Read-only account survey: enumerate visible buckets and detect evidence sources (access logs, inventory) across the account, persisting a profile the evidence-import flow can use. Returns a compact summary (counts + summary + public-exposure note), not raw key lists, for you to narrate. Does NOT surface a separate card. Use only when the user's request is about the account/buckets — NOT for local-file analysis or unrelated questions. The result includes has_prior_survey — when true, call compare_to_last_survey next to report what changed. max_buckets (optional, 1-500) raises the per-survey bucket cap for large accounts (default 100); the result's truncated flag tells you if buckets were left out. Args: provider_id; max_buckets?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Use a configured provider.")
+        # Was there a survey BEFORE this one? (Checked before running, so the
+        # run we're about to create doesn't count itself.)
+        had_prior = bool(account_repo.recent_run_ids_for_provider(conn, provider_id, 1))
         start("survey_account", provider_name(provider_id))
         try:
+            mb = max(1, min(int(max_buckets), 500)) if max_buckets else None
             body = RunCreate(run_type="account_discovery", provider_id=provider_id,
-                             user_prompt=_DEFAULT_PROMPTS["account_discovery"], session_id=session_id)
+                             user_prompt=_DEFAULT_PROMPTS["account_discovery"],
+                             session_id=session_id, max_buckets=mb)
             run_id = _execute_run(conn, body, turn_id, f"account_discovery:{provider_id}",
                                   cancel_event=cancel_event)
             result = _run_result(conn, run_id)
@@ -221,6 +226,12 @@ def build(
         if profile:
             result["bucket_count"] = profile.get("bucket_count")
             result["visible_count"] = profile.get("visible_count")
+            result["truncated"] = profile.get("truncated")
+        result["has_prior_survey"] = had_prior
+        if had_prior:
+            result["next_step"] = ("A prior survey exists — call compare_to_last_survey "
+                                   "to report what changed (including any bucket that "
+                                   "became public).")
         note("survey_account", provider_name(provider_id), result["status"])
         return json.dumps(result)
 
@@ -315,7 +326,8 @@ def build(
                   "logging_status", "logging_enabled", "replication_status", "policy_status",
                   "public_access_block_status", "tagging_status", "inventory_status",
                   "policy_public_status", "policy_is_public", "ownership_status",
-                  "object_ownership", "acls_disabled")
+                  "object_ownership", "acls_disabled", "acl_status", "acl_public",
+                  "publicly_exposed")
         _NC = "not_configured"
 
         def matches(b: dict[str, Any]) -> bool:
@@ -334,10 +346,12 @@ def build(
             if filter == "no_versioning":
                 return b.get("versioning_status") == _NC
             if filter == "public_buckets":
-                # AWS's policy verdict only — True means the bucket POLICY is
-                # public. (ACL-public isn't captured by this flag; None = the
-                # verdict was unreadable or the survey predates the flag.)
-                return b.get("policy_is_public") is True
+                # Combined exposure (policy verdict OR ACL grants) when the
+                # survey recorded it; policy verdict alone as fallback for
+                # surveys from before the ACL read existed. None = unknown.
+                return (b.get("publicly_exposed") is True
+                        or b.get("policy_is_public") is True
+                        or b.get("acl_public") is True)
             if filter == "access_issues":
                 # The survey persists access_status as "available" (healthy),
                 # "access_denied", or "error" — never "ok"/"accessible". Match the
@@ -358,6 +372,9 @@ def build(
         return json.dumps({
             "success": True, "has_survey": True,
             "survey_run_id": run_ids[0], "surveyed_at": prof.get("created_at"),
+            # Honesty: a truncated survey means this matrix is PARTIAL — say so
+            # instead of silently answering over a subset of the account.
+            "survey_truncated": bool(prof.get("truncated")),
             "filter": filter, "total_buckets": len(buckets),
             "matched_count": len(rows), "buckets": rows,
         })

@@ -52,12 +52,18 @@ The survey gives the landscape; you decide where to go deeper.
   deep per-bucket audit.
 - `query_account_profile(provider_id, filter)` — the account-wide posture query:
   reads the LATEST persisted survey and returns, per bucket, its region + config
-  flags, filtered by posture (`missing_public_access_block`, `missing_encryption`,
-  `missing_lifecycle`, `missing_logging`, `no_versioning`, `access_issues`, or
-  `all`). This is how you answer "which of my N buckets have no X?" at scale —
-  no re-scan, statuses only. Run `survey_account` first if none exists.
+  flags, filtered by posture (`public_buckets` — buckets AWS judges publicly exposed via
+  policy verdict and/or ACL grants, the account's most critical question —
+  `missing_public_access_block`, `missing_encryption`, `missing_lifecycle`,
+  `missing_logging`, `no_versioning`, `access_issues`, or `all`). This is how
+  you answer "which of my N buckets are public / have no X?" at scale — no
+  re-scan, statuses only. Run `survey_account` first if none exists; the result
+  echoes `survey_truncated` — say so when the matrix is partial.
 - `compare_to_last_survey(provider_id)` — "what changed since last time?" across
-  the two most recent surveys.
+  the two most recent surveys. Changes carrying `"alert": true` mean a bucket
+  BECAME PUBLIC since the last survey — lead your answer with those. Whenever
+  `survey_account` returns `has_prior_survey: true`, call this next and report
+  the delta unprompted.
 - For one bucket's full configuration, use `review_bucket_config` /
   `review_bucket_*` instead of surveying the whole account.
 - Large accounts: the survey can exceed the inline time budget and finish in the

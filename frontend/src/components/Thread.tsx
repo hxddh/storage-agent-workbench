@@ -7,6 +7,7 @@ import {
   prepareSessionAction,
 } from "../api";
 import type { Grounding, NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
+import { saveTextFile } from "../config";
 import { useSessionRun, patchSessionRun } from "../sessionRuns";
 import { useTurnRunner, cleanError } from "../hooks/useTurnRunner";
 import { Button } from "./ui";
@@ -76,6 +77,7 @@ export function Thread({
   >(null);
   const [report, setReport] = useState<string | null>(null);
   const [reportCopied, setReportCopied] = useState(false);
+  const [reportSavedPath, setReportSavedPath] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
 
   // Per-session run state lives in a store keyed by session id (see sessionRuns)
@@ -90,6 +92,12 @@ export function Thread({
   // View-level errors not tied to a turn (e.g. a proposal action failing, or
   // asking for a report before a chat exists). Combined with the run's error.
   const [viewError, setViewError] = useState<string | null>(null);
+  // A stale view-local error (failed proposal click / report open) must not
+  // outlive the next turn: clear it whenever a new turn starts. (run.error is
+  // already reset per turn; viewError previously persisted until session switch.)
+  useEffect(() => {
+    if (run.busy) setViewError(null);
+  }, [run.busy]);
   const error = run.error ?? viewError;
   // Set when loading an EXISTING session fails, so we show an explicit error +
   // retry instead of silently rendering the empty new-chat surface (M6).
@@ -174,12 +182,15 @@ export function Thread({
         setLoadError(failed);
       }
     }
-    setTriage(triageCases);
+    // Only replace triage cards when the fetch actually succeeded — a transient
+    // failure used to flash them out of the thread until the next reload.
+    if (tRes.status === "fulfilled") setTriage(triageCases);
   };
 
   // The turn runner owns ensureSession / submit / dataset upload / stop; all
   // run state goes into the sessionRuns store keyed by the starting session id.
   const runner = useTurnRunner({
+    getText: () => taRef.current?.value ?? "",
     localId,
     onSessionCreated,
     reload,
@@ -296,6 +307,14 @@ export function Thread({
   };
 
   const runProposal = async (p: NextAction) => {
+    // A chip click during a running turn used to silently no-op at the submit
+    // latch. For prompt-shaped proposals, steer instead (the click becomes a
+    // redirect of the running turn); for picker/report proposals, wait it out.
+    if (run.busy) {
+      const key = INLINE_ACTION_PROMPT[p.action_type];
+      if (key) void runner.steer(t(key));
+      return;
+    }
     const inlineKey = INLINE_ACTION_PROMPT[p.action_type];
     if (inlineKey) {
       void runner.submit(t(inlineKey));
@@ -649,16 +668,24 @@ export function Thread({
                 <Button
                   variant="ghost"
                   onClick={() => {
-                    const blob = new Blob([report], { type: "text/markdown" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = "report.md";
-                    a.click();
-                    URL.revokeObjectURL(url);
+                    void saveTextFile("report.md", report).then((path) => {
+                      if (path) {
+                        setReportSavedPath(path);
+                        window.setTimeout(() => setReportSavedPath(null), 4000);
+                        return;
+                      }
+                      // Not in Tauri (dev/browser): the anchor download works there.
+                      const blob = new Blob([report], { type: "text/markdown" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = "report.md";
+                      a.click();
+                      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    });
                   }}
                 >
-                  {t("thread.download")}
+                  {reportSavedPath ? t("thread.savedTo", { path: reportSavedPath }) : t("thread.download")}
                 </Button>
                 <Button variant="ghost" onClick={() => setReport(null)}>{t("common.close")}</Button>
               </div>
@@ -674,6 +701,14 @@ export function Thread({
 }
 
 function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  // Escape closes (keyboard users had no way out — only backdrop click/button).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
     <div className="fixed inset-0 z-40 flex bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div

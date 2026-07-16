@@ -193,9 +193,10 @@ _DIFF_ASPECTS = (
     "access_status", "region", "head_bucket_status",
     "versioning_status", "versioning_enabled", "encryption_status",
     "lifecycle_status", "logging_status", "logging_enabled",
-    # Public posture (v0.29.0): the diff's most valuable alert — a bucket whose
-    # policy_is_public flipped False→True BECAME PUBLIC since the last survey.
+    # Public posture: the diff's most valuable alert — a bucket whose
+    # policy_is_public/publicly_exposed flipped False→True BECAME PUBLIC.
     "policy_is_public", "policy_public_status", "object_ownership", "acls_disabled",
+    "acl_public", "publicly_exposed",
     "replication_status", "policy_status", "public_access_block_status",
     "tagging_status", "inventory_status",
 )
@@ -226,21 +227,43 @@ def diff_profiles(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
         changes.append({"bucket": name, "change": "bucket_added"})
     for name in sorted(set(old_b) - set(new_b)):
         changes.append({"bucket": name, "change": "bucket_removed"})
+    baselined: set[str] = set()
     for name in sorted(set(old_b) & set(new_b)):
         ob, nb = old_b[name], new_b[name]
         for k in _DIFF_ASPECTS:
             if k in ob or k in nb:
+                # An aspect the OLD survey never recorded (schema grew, e.g. the
+                # v0.29 public-posture flags) is a BASELINE, not a change — on a
+                # 60+ bucket account the None→value noise alone blew past the
+                # change cap and could truncate a real "became public". Report
+                # it once as a baselined field; the NEXT diff catches real flips.
+                if k not in ob:
+                    baselined.add(k)
+                    continue
                 ov, nv = ob.get(k), nb.get(k)
                 if ov != nv:
-                    changes.append({"bucket": name, "change": k,
-                                    "from": _scalar(ov), "to": _scalar(nv)})
+                    entry: dict[str, Any] = {"bucket": name, "change": k,
+                                             "from": _scalar(ov), "to": _scalar(nv)}
+                    # Make security-relevant flips unmissable for the narrator.
+                    if k in ("policy_is_public", "publicly_exposed", "acl_public") and nv is True:
+                        entry["alert"] = True
+                        entry["note"] = "bucket BECAME PUBLIC since the last survey"
+                    changes.append(entry)
         oe, ne = _evidence_map(ob), _evidence_map(nb)
         for st in sorted(set(oe) | set(ne)):
             if oe.get(st) != ne.get(st):
                 changes.append({"bucket": name, "change": f"evidence:{st}",
                                 "from": _scalar(oe.get(st)), "to": _scalar(ne.get(st))})
-    return {
+    # Alerts first, so truncation can never cut a became-public signal.
+    changes.sort(key=lambda c: not c.get("alert", False))
+    out: dict[str, Any] = {
         "changes": changes[:_MAX_DIFF_CHANGES],
         "change_count": len(changes),
         "truncated": len(changes) > _MAX_DIFF_CHANGES,
     }
+    if baselined:
+        out["fields_baselined"] = sorted(baselined)
+        out["note"] = ("Some posture fields exist only in the newer survey (app upgrade); "
+                       "they were baselined, not reported as changes. The next survey diff "
+                       "will track them normally.")
+    return out

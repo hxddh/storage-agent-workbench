@@ -63,7 +63,9 @@ looks configured but yields nothing when you need it.
   access-log or inventory export, analyze it for coverage; for data still in a
   bucket, propose `plan_inventory_import` / an access-log import (confirmed).
 - Run `review_bucket_config` (inline, read-only) for the full posture; for the
-  account-wide view use `survey_account`.
+  account-wide view use `survey_account`, then
+  `query_account_profile(filter='missing_logging')` answers "which buckets have
+  logging off?" in one call from the persisted survey (no re-scan).
 
 ## Ask the user (only what tools can't reveal)
 

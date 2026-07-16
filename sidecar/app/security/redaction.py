@@ -144,12 +144,17 @@ _VALUE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
                    re.DOTALL),
         REDACTED,
     ),
-    # TRUNCATED PEM: a BEGIN armor with no matching END (a partial paste cut a
-    # key in half). Without this the partial key body — still secret material —
-    # leaked verbatim. Redact from the BEGIN armor to the end of the text; runs
-    # AFTER the full-block rule, so it only fires when no END exists.
+    # TRUNCATED PEM: a BEGIN armor with no matching PRIVATE-KEY END (a partial
+    # paste cut a key in half). Without this the partial key body — still secret
+    # material — leaked verbatim. The lookahead blocks ONLY on a PRIVATE KEY end
+    # armor (matching the full-block rule's label grammar), NOT on any foreign
+    # `-----END ` — a truncated key followed by a complete CERTIFICATE block (a
+    # normal .pem-bundle partial paste) previously slipped past BOTH rules.
+    # Redacts from the BEGIN armor up to the next foreign armor / end of text.
+    # Runs AFTER the full-block rule, so complete key blocks are already gone.
     (
-        re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----(?:(?!-----END ).)*\Z",
+        re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----"
+                   r"(?:(?!-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----|-----BEGIN ).)*",
                    re.DOTALL),
         REDACTED,
     ),
