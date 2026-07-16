@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from .. import __version__ as APP_VERSION
+
 SERVICE_NAME = "storage-agent-sidecar"
 
 router = APIRouter()
@@ -11,8 +13,12 @@ router = APIRouter()
 
 @router.get("/health")
 def health() -> dict[str, str]:
-    """Liveness probe used by the frontend to show connected/disconnected."""
-    return {"status": "ok", "service": SERVICE_NAME}
+    """Liveness probe used by the frontend to show connected/disconnected.
+
+    ``version`` is the running service version (from installed package metadata);
+    exposing it lets the release smoke test confirm a bundle reports the stamped
+    version rather than a stale one or the ``0.0.0+source`` fallback."""
+    return {"status": "ok", "service": SERVICE_NAME, "version": APP_VERSION}
 
 
 def _run_selfcheck() -> dict[str, object]:

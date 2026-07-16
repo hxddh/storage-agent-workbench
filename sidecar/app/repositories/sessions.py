@@ -77,14 +77,27 @@ def update(conn: sqlite3.Connection, session_id: str, data: SessionUpdate) -> No
     conn.commit()
 
 
-def delete(conn: sqlite3.Connection, session_id: str) -> None:
+def delete(conn: sqlite3.Connection, session_id: str) -> list[str]:
     """Delete a session and all its child rows (thread, runs links, findings,
-    evidence refs, summary). Run records themselves are not deleted."""
+    evidence refs, summary), plus the INTERNAL ('agent'-origin) runs it spawned —
+    surveys/config-reviews that exist only to serve this investigation. Returns
+    the ids of those deleted runs so the caller can remove their on-disk
+    ``data/runs/{id}/`` trees. User-authored report runs are left intact.
+
+    (Child session_* rows would cascade via FK, but they are deleted explicitly
+    here too — unchanged from before — so the behavior is identical if PRAGMA
+    foreign_keys is ever off.)"""
+    from . import runs as runs_repo
+
+    agent_run_ids = runs_repo.agent_run_ids_for_session(conn, session_id)
+    for rid in agent_run_ids:
+        conn.execute("DELETE FROM runs WHERE id = ?", (rid,))
     for tbl in ("session_messages", "session_runs", "session_findings",
                 "session_evidence_refs", "session_summaries"):
         conn.execute(f"DELETE FROM {tbl} WHERE session_id = ?", (session_id,))
     conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
     conn.commit()
+    return agent_run_ids
 
 
 def fork(conn: sqlite3.Connection, session_id: str) -> str | None:
@@ -190,14 +203,23 @@ def get_row(conn: sqlite3.Connection, session_id: str) -> sqlite3.Row | None:
 
 
 def _enrich(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
+    # Two grouped aggregates keyed by session, instead of 2 COUNT queries per row
+    # (an N+1 that made every rail load scale with the session count).
+    ids = [r["id"] for r in rows]
+    if not ids:
+        return []
+    ph = ",".join("?" * len(ids))
+    run_counts = {row[0]: row[1] for row in conn.execute(
+        f"SELECT session_id, count(*) FROM session_runs "
+        f"WHERE session_id IN ({ph}) GROUP BY session_id", ids)}
+    finding_counts = {row[0]: row[1] for row in conn.execute(
+        f"SELECT session_id, count(*) FROM session_findings "
+        f"WHERE status = 'active' AND session_id IN ({ph}) GROUP BY session_id", ids)}
     out = []
     for r in rows:
         d = dict(r)
-        d["run_count"] = conn.execute(
-            "SELECT count(*) FROM session_runs WHERE session_id = ?", (r["id"],)).fetchone()[0]
-        d["finding_count"] = conn.execute(
-            "SELECT count(*) FROM session_findings WHERE session_id = ? AND status = 'active'",
-            (r["id"],)).fetchone()[0]
+        d["run_count"] = run_counts.get(r["id"], 0)
+        d["finding_count"] = finding_counts.get(r["id"], 0)
         out.append(d)
     return out
 
@@ -218,12 +240,15 @@ def search(conn: sqlite3.Connection, query: str | None) -> list[dict[str, Any]]:
     # Escape LIKE wildcards so a literal % or _ in the query isn't treated as one.
     esc = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     like = f"%{esc}%"
+    # Bounded: the message-content EXISTS clause is an unindexable scan fired per
+    # (debounced) keystroke; a LIMIT keeps its worst case flat as the thread grows.
     rows = conn.execute(
         "SELECT s.* FROM sessions s "
         "WHERE s.title LIKE ? ESCAPE '\\' "
         "   OR EXISTS (SELECT 1 FROM session_messages m "
         "              WHERE m.session_id = s.id AND m.content LIKE ? ESCAPE '\\') "
-        "ORDER BY s.pinned DESC, s.updated_at DESC, s.rowid DESC",
+        "ORDER BY s.pinned DESC, s.updated_at DESC, s.rowid DESC "
+        "LIMIT 50",
         (like, like),
     ).fetchall()
     return _enrich(conn, rows)

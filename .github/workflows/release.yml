@@ -110,12 +110,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      # Stamp BEFORE `pip install`: the sidecar reports its version via
+      # importlib.metadata, which is frozen from pyproject.toml at install time.
+      # Installing first would bake in the pre-stamp version (0.23.0) and the
+      # packaged /health + OpenAPI would report it instead of the release tag.
+      - name: Stamp bundle version from tag
+        run: python3 scripts/stamp-version.py "${{ github.event.inputs.version }}"
       - name: Install sidecar deps (dev + packaging)
         run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
-      - name: Stamp bundle version from tag
-        run: python3 scripts/stamp-version.py "${{ github.event.inputs.version }}"
       - name: Build ad-hoc-sealed macOS bundle (.app + DMG)
         run: bash scripts/build-macos-app-bundle.sh
       - name: Collect + upload assets
@@ -157,12 +161,14 @@ jobs:
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
             libayatana-appindicator3-dev build-essential curl wget file libssl-dev
+      # Stamp BEFORE `pip install` (importlib.metadata freezes the version at
+      # install time — see the macOS job note).
+      - name: Stamp bundle version from tag
+        run: python3 scripts/stamp-version.py "${{ github.event.inputs.version }}"
       - name: Install sidecar deps (dev + packaging)
         run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
-      - name: Stamp bundle version from tag
-        run: python3 scripts/stamp-version.py "${{ github.event.inputs.version }}"
       - name: Build frontend
         run: cd frontend && npm ci && npm run build
       - name: Build sidecar one-dir + stage resource
@@ -200,13 +206,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      # Stamp BEFORE `pip install` (importlib.metadata freezes the version at
+      # install time — see the macOS job note).
+      - name: Stamp bundle version from tag
+        shell: bash
+        run: python scripts/stamp-version.py "${{ github.event.inputs.version }}"
       - name: Install sidecar deps (dev + packaging)
         run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
-      - name: Stamp bundle version from tag
-        shell: bash
-        run: python scripts/stamp-version.py "${{ github.event.inputs.version }}"
       - name: Build frontend
         run: cd frontend; npm ci; npm run build
       - name: Build sidecar one-dir + stage resource

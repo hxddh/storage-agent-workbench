@@ -6,6 +6,72 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-07-16
+
+_Security + data-lifecycle round. Two real vulnerabilities in the glue layer, and
+the first pass at reclaiming local storage over long-lived installs — the surface
+that only shows up after weeks of daily use. Found by a fresh three-angle audit
+(glue scripts/Tauri config, data lifecycle, runtime log-leak surface)._
+
+### Security
+
+- **Windows command injection in the link opener is closed.** `open_external`
+  validated only the URL scheme, then on Windows ran `cmd /C start "" <url>`.
+  cmd.exe reparses its argument string and treats `& | < > ^` as metacharacters,
+  and Rust's std cannot safely escape for cmd/batch — so a link like
+  `https://x/&calc.exe` (and links come from agent output / imported reports)
+  could run an arbitrary command when clicked. It now launches via
+  `rundll32 url.dll,FileProtocolHandler` (a real executable, URL passed as one
+  escaped argv arg, no shell reparse) and rejects URLs containing whitespace or
+  control characters. `&` in legitimate query strings is preserved.
+- **422 validation errors no longer echo plaintext secrets.** FastAPI's default
+  handler returns pydantic's error list verbatim, and each error carries the
+  offending `input` — for a missing-required-field error that `input` is the
+  entire request body. On the provider-create endpoints that body holds the
+  plaintext access key / secret key / session token / model API key, so a 422
+  leaked them into the HTTP response and the UI error banner. A new handler strips
+  `input` and redaction-passes the messages, keeping `type`/`loc`/`msg`.
+
+### Fixed — data lifecycle
+
+- **Deleting a session now removes its files, not just its rows.** The upload
+  tree (`data/sessions/{id}/`, raw files up to 2 GiB each plus per-dataset DuckDB
+  files) was left on disk forever, unreachable and invisible to the UI. Session
+  delete now removes that tree.
+- **Runs are deletable, and their disk artifacts are reclaimed.** There was no
+  `DELETE /runs/{id}` at all, so run rows and their `data/runs/{id}/` trees (raw
+  evidence up to 5 GiB, analysis.duckdb, report.md) accumulated forever — and the
+  agent silently mints an internal run on every survey/config-review. Added the
+  delete endpoint (row cascade + directory removal); session delete now also
+  removes the internal ('agent'-origin) runs it spawned; and startup sweeps
+  'agent'-origin runs whose session no longer exists. User-authored report runs
+  are never auto-deleted.
+- **The write-only audit trail is bounded.** `audit_logs` (and ad-hoc
+  `run_id IS NULL` tool_calls) grew forever with zero read path. A startup pass
+  ages out rows past a retention window — a full year by default, tunable via
+  `STORAGE_AGENT_AUDIT_RETENTION_DAYS` (0 disables) — backed by new created_at
+  indexes.
+- **Session-rail enrichment no longer does N+1 counts**, and the cross-session
+  message search is capped, so both stay flat as sessions and threads grow.
+- **A failed evidence import cleans up after itself.** It left a partial combined
+  file in the run's raw dir and the analysis run stuck `pending` until the next
+  restart; the partial dir is now removed and the run is marked failed inline.
+
+### Fixed — build & logging
+
+- **The packaged sidecar reports the real release version.** `stamp-version.py`
+  ran *after* `pip install` in the release jobs, but the sidecar reads its version
+  from `importlib.metadata`, which is frozen at install time — so `/health` and
+  the OpenAPI spec reported the pre-stamp `0.23.0`. Stamping now runs before the
+  install. `/health` exposes the version, and the smoke test asserts the bundle
+  resolved a real version (not the `0.0.0+source` fallback).
+- **The packaged entrypoint scrubs `OPENAI_LOG`** and pins the httpx/openai/
+  botocore loggers to WARNING, so a stray environment variable can't turn on
+  verbose wire logging that would dump conversation content to the captured
+  child stderr.
+- **`app.__version__` derives from package metadata** instead of a hardcoded
+  `0.1.0` literal that silently rotted.
+
 ## [0.31.0] - 2026-07-16
 
 _Packaging-integrity + ops-robustness round. The least-audited surface — how the

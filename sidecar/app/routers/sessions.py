@@ -94,10 +94,20 @@ def patch_session(session_id: str, body: SessionUpdate, conn: sqlite3.Connection
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_session(session_id: str, conn: sqlite3.Connection = Depends(get_conn)):
+    import shutil
+
     if repo.get_row(conn, session_id) is None:
         raise HTTPException(status_code=404, detail="session not found")
-    repo.delete(conn, session_id)
-    audit.record(conn, "session.delete", {"session_id": session_id}, run_id=None)
+    # Deletes rows AND returns the internal agent-run ids to clean off disk.
+    agent_run_ids = repo.delete(conn, session_id)
+    # Remove the session's own upload tree (raw files up to 2 GiB each + per-
+    # dataset .duckdb) and each internal run's artifact dir — the DB rows are
+    # gone, so without this the files become unreachable orphans forever.
+    shutil.rmtree(config.data_dir() / "sessions" / session_id, ignore_errors=True)
+    for rid in agent_run_ids:
+        shutil.rmtree(config.run_dir(rid), ignore_errors=True)
+    audit.record(conn, "session.delete",
+                 {"session_id": session_id, "runs_removed": len(agent_run_ids)}, run_id=None)
     conn.commit()
     return None
 
