@@ -163,6 +163,41 @@ def set_status(
     conn.commit()
 
 
+def delete(conn: sqlite3.Connection, run_id: str) -> bool:
+    """Delete one run row. Child rows (messages, tool_calls, reports,
+    account_snapshots, session_runs links) cascade via ``ON DELETE CASCADE`` with
+    ``foreign_keys=ON``. Returns True if a row was removed. Does NOT touch the
+    on-disk ``data/runs/{run_id}/`` tree — the caller removes that (it owns the
+    filesystem side and the id is what it needs to build the path)."""
+    n = conn.execute("DELETE FROM runs WHERE id = ?", (run_id,)).rowcount
+    conn.commit()
+    return n > 0
+
+
+def agent_run_ids_for_session(conn: sqlite3.Connection, session_id: str) -> list[str]:
+    """Ids of the internal ('agent'-origin) runs tied to a session — the survey /
+    config-review runs the conversational agent spawned itself. These exist only
+    to serve that session's investigation, so they are reclaimable when it is
+    deleted. User-authored report runs (origin='user') are deliberately excluded."""
+    return [
+        r["id"] for r in conn.execute(
+            "SELECT id FROM runs WHERE session_id = ? AND origin = 'agent'", (session_id,)
+        ).fetchall()
+    ]
+
+
+def orphaned_agent_run_ids(conn: sqlite3.Connection) -> list[str]:
+    """Ids of 'agent'-origin runs whose session no longer exists — accumulated by
+    session deletes that predated per-session run cleanup. Safe to reclaim: the
+    session and its thread are gone, so nothing references these runs."""
+    return [
+        r["id"] for r in conn.execute(
+            "SELECT id FROM runs WHERE origin = 'agent' AND session_id IS NOT NULL "
+            "AND session_id NOT IN (SELECT id FROM sessions)"
+        ).fetchall()
+    ]
+
+
 def mark_interrupted(conn: sqlite3.Connection) -> int:
     """Fail any run still pending/running at startup.
 

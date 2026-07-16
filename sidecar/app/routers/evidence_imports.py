@@ -226,8 +226,17 @@ def run_import(import_id: str, conn: sqlite3.Connection = Depends(get_conn)):
             files, data["max_files"], data["max_bytes"], dest_dir,
         )
     except Exception as exc:  # noqa: BLE001 - any download/combine failure is sanitized + surfaced as 400
+        import shutil
+
         repo.set_status(conn, import_id, "failed")
         repo.mark_files(conn, import_id, "failed")
+        # The combined file is written directly at its final path (no temp-rename),
+        # so a mid-combine failure leaves a partial file behind; and the analysis
+        # run stays 'pending' until the NEXT app restart reconciles it. Remove the
+        # partial raw dir and fail the run now so neither lingers.
+        shutil.rmtree(dest_dir, ignore_errors=True)
+        runs_repo.set_status(conn, analysis_run_id, "failed",
+                             final_summary="Evidence import failed before analysis could run.")
         audit.record(conn, "evidence_import.failed",
                      {"import_id": import_id, "error": redact_text(str(exc))}, run_id=None)
         conn.commit()

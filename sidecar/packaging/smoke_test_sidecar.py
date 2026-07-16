@@ -97,6 +97,24 @@ def main() -> int:
             return 1
         print(f"/health ok: {health}")
 
+        # Version resolution: a bundle that failed to include the package
+        # dist-info reports the "0.0.0+source" fallback. Assert the frozen build
+        # resolved a real version (and matches the build env's when known).
+        reported = health.get("version")
+        if reported in (None, "0.0.0+source"):
+            print(f"FAIL: packaged sidecar reports no real version (got {reported!r}); "
+                  "package metadata was not bundled.")
+            return 1
+        try:
+            from importlib import metadata
+            expected = metadata.version("storage-agent-sidecar")
+            if reported != expected:
+                print(f"FAIL: version drift — bundle reports {reported!r}, build env {expected!r}.")
+                return 1
+        except Exception:  # noqa: BLE001 - metadata not resolvable in this env; the non-source check above stands
+            pass
+        print(f"version ok: {reported}")
+
         # Deep check: a bundle can pass /health while missing a lazily imported
         # native dep. The self-check exercises the real runtime offline.
         deep = _get_json("/health/selfcheck", timeout=60)

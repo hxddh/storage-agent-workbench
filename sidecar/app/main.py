@@ -32,10 +32,12 @@ from contextlib import asynccontextmanager
 from importlib import metadata
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .db import init_db
+from .security.redaction import redact_text
 from .routers import (
     cloud_providers,
     datasets,
@@ -81,6 +83,12 @@ async def lifespan(_app: FastAPI):
     # threads don't survive a restart, so such rows are orphans.
     from . import run_service
     run_service.reconcile_interrupted_runs()
+    # Reclaim disk/rows that accumulate over long-lived installs: purge the
+    # internal ('agent'-origin) runs of already-deleted sessions (rows + dirs),
+    # and age out the write-only audit trail. Both are bounded, best-effort, and
+    # never touch user-authored report runs.
+    from . import data_maintenance
+    data_maintenance.run_startup_maintenance()
     yield
 
 
@@ -90,6 +98,28 @@ app = FastAPI(
     description="Local-first sidecar for Storage Agent Workbench.",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def _sanitized_validation_handler(request: Request, exc: RequestValidationError):
+    """422s must never echo the plaintext request body.
+
+    FastAPI's default handler returns ``exc.errors()`` verbatim, and pydantic v2
+    attaches the offending ``input`` to each error — for a "missing required
+    field" error that ``input`` is the WHOLE request body. On the provider-create
+    endpoints that body carries the plaintext access key / secret key / session
+    token / model API key, so the default 422 would leak them into the HTTP
+    response and, from there, the UI error banner (violating the redaction rule).
+    Rebuild the error list with ``input`` dropped and every remaining string
+    redaction-passed, keeping the useful ``type``/``loc``/``msg`` for the client.
+    """
+    cleaned = []
+    for err in exc.errors():
+        item = {k: v for k, v in err.items() if k != "input"}
+        if isinstance(item.get("msg"), str):
+            item["msg"] = redact_text(item["msg"])
+        cleaned.append(item)
+    return JSONResponse({"detail": cleaned}, status_code=422)
 
 
 @app.middleware("http")

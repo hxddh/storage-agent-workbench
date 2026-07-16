@@ -538,6 +538,14 @@ _M017 = """
 ALTER TABLE model_providers ADD COLUMN context_window INTEGER;
 """
 
+# Indexes on created_at for the startup retention prune (data_maintenance):
+# audit_logs and ad-hoc (run_id IS NULL) tool_calls are aged out by created_at,
+# and both tables grow to the point where a full scan per boot would be costly.
+_M018 = """
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON tool_calls(created_at);
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -557,6 +565,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (15, "runs_add_origin", _M015),
     (16, "session_message_grounding", _M016),
     (17, "model_provider_context_window", _M017),
+    (18, "retention_indexes", _M018),
 ]
 
 

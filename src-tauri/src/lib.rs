@@ -107,18 +107,35 @@ fn save_report(app: tauri::AppHandle, filename: String, content: String) -> Resu
 
 /// Open an https/mailto link in the system browser/mail client. Tauri v2
 /// swallows `target="_blank"` without the opener plugin, so links in agent
-/// answers were dead in the packaged app. Fixed argv (no shell interpolation)
-/// and a strict scheme allowlist — this is a UI-level opener, not a shell tool.
+/// answers were dead in the packaged app. This is a UI-level opener, not a shell
+/// tool: a strict scheme allowlist, no shell interpreter, and the URL is always
+/// passed as a single argv argument to a non-shell launcher.
 #[tauri::command]
 fn open_external(url: String) -> Result<(), String> {
     let ok = url.starts_with("https://") || url.starts_with("http://") || url.starts_with("mailto:");
     if !ok {
         return Err("only http(s)/mailto links can be opened".to_string());
     }
+    // Defense in depth: a real URL never contains raw whitespace or control
+    // characters (spaces are percent-encoded). Rejecting them blocks
+    // newline/argument-splitting tricks before the URL reaches any handler.
+    if url.chars().any(|c| c.is_control() || c == ' ') {
+        return Err("URL contains illegal whitespace or control characters".to_string());
+    }
     #[cfg(target_os = "macos")]
     let result = Command::new("open").arg(&url).spawn();
+    // Windows: NOT `cmd /C start`. cmd.exe reparses its argument string and treats
+    // `& | < > ^` as metacharacters, and Rust's std cannot safely escape for
+    // cmd/batch — so a link like `https://x/&calc.exe` would run an arbitrary
+    // command (and `&` is legitimate in URL query strings, so it can't be
+    // filtered out). `rundll32 url.dll,FileProtocolHandler` is a normal
+    // executable: the URL is passed as one properly-escaped argv arg with no
+    // shell reparse, and url.dll handles http/https/mailto via the default apps.
     #[cfg(target_os = "windows")]
-    let result = Command::new("cmd").args(["/C", "start", "", &url]).spawn();
+    let result = Command::new("rundll32.exe")
+        .arg("url.dll,FileProtocolHandler")
+        .arg(&url)
+        .spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
     let result = Command::new("xdg-open").arg(&url).spawn();
     result.map(|_| ()).map_err(|e| format!("open failed: {e}"))

@@ -49,6 +49,19 @@ def configure(args: argparse.Namespace) -> None:
     if args.data_dir:
         os.environ["STORAGE_AGENT_DATA_DIR"] = str(args.data_dir)
 
+    # The desktop launcher spawns this process with the user's FULL environment
+    # inherited. ``OPENAI_LOG=debug`` makes the openai/httpx SDK loggers dump
+    # every request/response — the whole conversation prompt and tool output — to
+    # this child's stderr, which the desktop app captures. The current SDK
+    # redacts credential headers, but conversation content shouldn't hit the log
+    # either, and that protection is version-dependent. Drop it and pin the noisy
+    # library loggers so a stray env var can't turn on verbose wire logging.
+    os.environ.pop("OPENAI_LOG", None)
+    import logging
+
+    for _name in ("httpx", "httpcore", "openai", "botocore", "boto3", "urllib3"):
+        logging.getLogger(_name).setLevel(logging.WARNING)
+
 
 def _start_parent_watchdog() -> None:
     """Exit if the launching parent (the desktop app) goes away.

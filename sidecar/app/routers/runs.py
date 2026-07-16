@@ -22,7 +22,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from .. import run_service
+from .. import audit, config, run_service
 from ..db import get_conn
 from ..events import bus, sse_stream
 from ..models.schemas import (
@@ -115,6 +115,25 @@ def get_run(run_id: str, conn: sqlite3.Connection = Depends(get_conn)):
     if detail is None:
         raise HTTPException(status_code=404, detail="run not found")
     return detail
+
+
+@router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_run(run_id: str, conn: sqlite3.Connection = Depends(get_conn)):
+    """Delete a run: its row (child messages/tool_calls/reports/snapshots and
+    session links cascade) and its on-disk ``data/runs/{run_id}/`` tree (raw
+    evidence, analysis.duckdb, report.md). Without this the deterministic layer
+    had no delete surface at all, so runs — including the ones the agent mints on
+    every survey/review — accumulated on disk forever."""
+    import shutil
+
+    row = repo.get_row(conn, run_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    repo.delete(conn, run_id)
+    shutil.rmtree(config.run_dir(run_id), ignore_errors=True)
+    audit.record(conn, "run.delete", {"run_id": run_id}, run_id=None)
+    conn.commit()
+    return None
 
 
 @router.get("/{run_id}/account-profile", response_model=AccountProfileOut)
