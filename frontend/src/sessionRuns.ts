@@ -28,6 +28,9 @@ export type SessionRun = {
   stopped: boolean; // the user cancelled the turn; keep the partial text visible
   stalled: boolean; // gave up polling for a still-running turn — offer a reload
                     // instead of an eternal "thinking" spinner (v0.24.19).
+  failedText: string | null; // a failed turn's message to restore into the
+                             // composer when this session is next VISIBLE — set
+                             // even when the failure happened off-screen (FE2).
 };
 
 const EMPTY: SessionRun = {
@@ -42,6 +45,7 @@ const EMPTY: SessionRun = {
   error: null,
   stopped: false,
   stalled: false,
+  failedText: null,
 };
 
 const store = new Map<string, SessionRun>();

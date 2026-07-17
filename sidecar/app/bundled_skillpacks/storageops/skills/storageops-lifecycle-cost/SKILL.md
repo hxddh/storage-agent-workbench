@@ -53,8 +53,10 @@ Cost concern →
   delete markers) that the config review can't see. The concrete "your bucket is
   huge because of old versions" evidence.
 - `list_multipart_uploads` — surfaces abandoned incomplete uploads whose parts
-  are billed but invisible in a normal listing. If present, propose an "abort
-  incomplete multipart upload" lifecycle rule (manual — the app never aborts).
+  are billed but invisible in a normal listing (pass a `prefix` to scope it —
+  REQUIRED on a prefix-restricted provider, where a prefixless listing is
+  denied). If present, propose an "abort incomplete multipart upload" lifecycle
+  rule (manual — the app never aborts).
 - `list_upload_parts` — for the worst offender from `list_multipart_uploads`,
   pass its `upload_id` here to size it: part count, **total bytes accrued**, and
   first/last part times — the concrete "this abandoned upload has held N GB since

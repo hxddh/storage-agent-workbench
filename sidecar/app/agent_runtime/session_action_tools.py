@@ -302,6 +302,10 @@ def build(
             diff = account_repo.diff_profiles(old_p, new_p)
         except Exception as exc:  # noqa: BLE001 — a tool returns an error string, never raises
             return _err(f"compare_to_last_survey failed: {exc}")
+        audit.record(conn, "session.compare_to_last_survey",
+                     {"provider_id": provider_id, "change_count": diff.get("change_count")},
+                     run_id=None)
+        conn.commit()
         note("compare_to_last_survey", provider_name(provider_id), f"{diff['change_count']} change(s)")
         return json.dumps({
             "success": True, "comparable": True,
@@ -312,7 +316,7 @@ def build(
 
     @function_tool
     def query_account_profile(provider_id: str, filter: str = "all") -> str:
-        """Read-only: query the MOST RECENT persisted account survey for a cross-bucket posture matrix — answers "which of my buckets are public / have no encryption / no public-access-block / no lifecycle / logging off?" across the whole account WITHOUT re-scanning. Reads ALREADY-PERSISTED, sanitized snapshot flags (no new S3 call, no LLM, no object keys/bodies — statuses only). Returns, per matching bucket, its region + config-flag statuses (versioning/encryption/lifecycle/logging/replication/policy/public_access_block/tagging/inventory + access + policy_is_public/object_ownership). `filter` ∈ all | public_buckets (bucket POLICY judged public by AWS — ACL-public is separate) | missing_public_access_block | missing_encryption | missing_lifecycle | missing_logging | no_versioning | access_issues. Needs a completed survey_account first (run it if none exists; surveys before v0.29.0 lack the public-posture flags — re-survey to fill them). Args: provider_id, filter? (default 'all')."""
+        """Read-only: query the MOST RECENT persisted account survey for a cross-bucket posture matrix — answers "which of my buckets are public / have no encryption / no public-access-block / no lifecycle / logging off?" across the whole account WITHOUT re-scanning. Reads ALREADY-PERSISTED, sanitized snapshot flags (no new S3 call, no LLM, no object keys/bodies — statuses only). Returns, per matching bucket, its region + config-flag statuses (versioning/encryption/lifecycle/logging/replication/policy/public_access_block/tagging/inventory + access + policy_is_public/object_ownership). `filter` ∈ all | public_buckets (publicly exposed via the bucket POLICY verdict AND/OR public ACL grants) | missing_public_access_block | missing_encryption | missing_lifecycle | missing_logging | no_versioning | access_issues. Needs a completed survey_account first (run it if none exists; surveys before v0.29.0 lack the public-posture flags — re-survey to fill them). Args: provider_id, filter? (default 'all')."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Use a configured provider.")

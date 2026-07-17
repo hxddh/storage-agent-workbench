@@ -40,7 +40,13 @@ export const cleanError = (raw: string, t: TFunc, kind: "turn" | "load" = "turn"
   if (kind === "turn") {
     if (/agents sdk is not available|agent runtime/i.test(s)) return t("thread.agentRuntimeUnavailable");
     if (/401|authentication|api key.*invalid|invalid.*api key/i.test(s)) return t("thread.errKey");
-    if (/404|not found|model.*exist/i.test(s)) return t("thread.err404");
+    // The model-404 hint must be provider-shaped: a bare "not found" / "404"
+    // (e.g. "session not found" when a session is deleted mid-turn) would
+    // otherwise send the user to fix a model name/base-URL that isn't the
+    // problem. Require model/provider/endpoint context alongside the 404.
+    if (/\b(model|provider|endpoint|base ?url)\b/i.test(s) &&
+        /404|not found|does not exist|no such model|unknown model/i.test(s))
+      return t("thread.err404");
     if (/timeout|timed out|connection|network/i.test(s)) return t("thread.errNetwork");
   }
   return s.length > 280 ? `${s.slice(0, 280)}…` : s;
@@ -171,7 +177,10 @@ export function useTurnRunner(opts: {
           skills_used: r.skills_used || [],
         },
       });
-      return "ok";
+      // If the persisted turn was cancelled (user hit Stop, or the streaming
+      // attempt was steered), carry the stopped marker through so the fallback
+      // shows "Stopped by user" instead of a normal answer (FE7).
+      return r.stopped ? "stopped" : "ok";
     } catch (e) {
       // 409 "turn still in progress": the same turn is still streaming
       // server-side — not a failure. The caller keeps the pending state and
@@ -330,15 +339,27 @@ export function useTurnRunner(opts: {
       }
 
       if (outcome === "stopped") {
-        // Keep the partially streamed text visible, marked as stopped, until
-        // the reload swaps in the persisted partial.
+        // Keep the partially streamed text visible, marked as stopped, until the
+        // persisted partial is swapped in.
         patchSessionRun(id, { stopped: true });
         try {
           await flight.cancelPromise;
         } catch {
           /* cancel is best-effort */
         }
-        await sleep(800); // give the server a beat to persist the partial
+        // The server persists the (stopped) partial as a NEW assistant message.
+        // WAIT until it's actually visible before clearing the streamed bubble —
+        // a fixed 800 ms sleep raced the persist, and the reload then found no new
+        // message and wiped the whole turn until a manual reload (FE1). On success
+        // waitForPersistedTurn reloads; on timeout keep the bubble + stall.
+        const persisted = await waitForPersistedTurn(id, preTurnAsstIds);
+        if (persisted === "ok") {
+          patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
+        } else {
+          patchSessionRun(id, { stalled: true });
+        }
+        onChanged();
+        return;
       } else if (outcome === "inprogress") {
         // The turn is still running server-side (nothing persisted yet). Poll
         // until this turn's assistant answer is actually persisted, then clear
@@ -357,11 +378,24 @@ export function useTurnRunner(opts: {
       }
 
       if (outcome === "failed") {
-        // Nothing was persisted (error or missing key): restore the user's
-        // message into the composer and drop the pending bubble so nothing is
-        // lost (M3). The error/needKey banner is already set.
-        if (localId.current === id) setText(q);
-        patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false, stalled: false });
+        // Nothing was persisted (error or missing key): drop the pending bubble
+        // and preserve the user's message. If this session is on screen, restore
+        // it straight into the composer; otherwise stash it as failedText so it's
+        // restored when the user switches back — a failure in a backgrounded
+        // session must not silently eat the message (FE2 / M3). The
+        // error/needKey banner is already set.
+        if (localId.current === id) {
+          setText(q);
+          patchSessionRun(id, {
+            pending: null, streamText: null, streamTools: [], stopped: false,
+            stalled: false, failedText: null,
+          });
+        } else {
+          patchSessionRun(id, {
+            pending: null, streamText: null, streamTools: [], stopped: false,
+            stalled: false, failedText: q,
+          });
+        }
         return;
       }
 
@@ -370,13 +404,18 @@ export function useTurnRunner(opts: {
       if (localId.current === id) {
         const reloaded = await reload(id);
         if (!reloaded) {
-          // The reconcile fetch blipped (sidecar GC/restart/network): `detail`
-          // still lacks the new messages, so clearing the streamed bubble now
-          // would erase the answer the user just watched complete. Keep it and
-          // mark stalled so they get a reload affordance instead (F1).
-          patchSessionRun(id, { stalled: true });
-          onChanged();
-          return;
+          // reload returned false. Distinguish two cases (FE5): if the user
+          // navigated AWAY during the async reload, this is a supersede — the
+          // answer IS persisted and loads on switch-back, so just clear the
+          // bubble (fall through). If we're still ON this session, it's a genuine
+          // fetch blip: `detail` still lacks the new messages, so clearing the
+          // streamed bubble would erase the answer the user just watched — keep it
+          // and offer a reload affordance instead.
+          if (localId.current === id) {
+            patchSessionRun(id, { stalled: true });
+            onChanged();
+            return;
+          }
         }
       }
       patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
@@ -434,7 +473,11 @@ export function useTurnRunner(opts: {
       await (resend ? resend() : submit(q));
       return;
     }
-    setText(""); // immediate feedback: the composer clears as the redirect is dispatched
+    // Clear the composer only when it still holds this steered text (or is empty):
+    // a proposal-chip click steers the CHIP's prompt, not the composer content, so
+    // wiping an unsent draft the user typed would lose it (FE3). Mirror runTurn.
+    const curDraft = getText ? getText() : null;
+    if (curDraft === null || curDraft === "" || curDraft === q) setText("");
     // LATEST WINS: a second steer while the first is still settling REPLACES the
     // pending payload instead of racing it — previously the second submit hit
     // the busy latch and the corrected message vanished (not sent, not restored).

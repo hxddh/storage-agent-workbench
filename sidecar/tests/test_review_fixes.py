@@ -515,10 +515,12 @@ def test_raised_budgets_and_caps():
     assert "_MAX_SKILL_LOADS = 20" in src
     assert "_MAX_PREVIEWS = 16" in src
     assert "_MAX_LATENCY_RUNS = 8" in src
+    # The skills_used contract cap tracks _MAX_SKILL_LOADS (v0.38: 10 → 20), so a
+    # turn that loaded up to 20 skills reports them all. 25 in → capped at 20.
     raw = "answer\n```json\n" + json.dumps(
-        {"skills_used": [f"s{i}" for i in range(12)], "next_action_proposals": []}
+        {"skills_used": [f"s{i}" for i in range(25)], "next_action_proposals": []}
     ) + "\n```"
-    assert len(contract.parse_agent_contract(raw)["skills_used"]) == 10
+    assert len(contract.parse_agent_contract(raw)["skills_used"]) == 20
 
 
 # --- B3: denylist no longer ossifies against a constrained aggregate tool -----

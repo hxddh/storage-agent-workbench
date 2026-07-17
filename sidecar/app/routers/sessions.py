@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import sqlite3
 import threading
 import uuid
@@ -43,6 +44,13 @@ from ..security.redaction import redact_text
 from ..sessions import next_actions, session_report, summary_builder
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+
+def _safe_err(exc: object) -> str:
+    """Redact secrets AND collapse absolute filesystem paths out of an error
+    surfaced to the client / SSE — an OSError/sqlite error carries e.g. the app
+    DB's absolute path (username included), which `redact_text` alone leaves in."""
+    return config.scrub_paths(redact_text(str(exc)))
 
 
 def _detail(conn: sqlite3.Connection, session_id: str) -> SessionDetail:
@@ -94,7 +102,6 @@ def patch_session(session_id: str, body: SessionUpdate, conn: sqlite3.Connection
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_session(session_id: str, conn: sqlite3.Connection = Depends(get_conn)):
-    import shutil
 
     if repo.get_row(conn, session_id) is None:
         raise HTTPException(status_code=404, detail="session not found")
@@ -175,6 +182,10 @@ def get_session_report(session_id: str, conn: sqlite3.Connection = Depends(get_c
         dict(row), summary, repo.list_runs(conn, session_id),
         triage_cases=triage_repo.list_for_session(conn, session_id),
         agent_memory=repo.list_agent_memory(conn, session_id))
+    # Rule 17: report generation is an auditable event.
+    audit.record(conn, "session.report",
+                 {"session_id": session_id, "bytes": len(content)}, run_id=None)
+    conn.commit()
     return {"session_id": session_id, "format": "markdown", "content": content}
 
 
@@ -215,7 +226,12 @@ _DATASET_TYPES = {"access_log", "inventory"}
 
 def _safe_filename(name: str) -> str:
     base = Path(name or "upload.dat").name
-    return base or "upload.dat"
+    # Path("..").name == ".." and Path(".").name == "." — these are directory
+    # refs, not filenames: `raw_dir / ".."` resolves to the PARENT dir and the
+    # os.replace onto it 500s. Map them (and an empty base) to a safe default.
+    if base in ("", ".", ".."):
+        return "upload.dat"
+    return base
 
 
 @router.post("/{session_id}/datasets/upload", response_model=SessionDatasetUploadResponse)
@@ -265,7 +281,19 @@ async def upload_session_dataset(
         raise
 
     stored_rel = config.rel_path(dest)
-    dataset_id = sds_repo.upsert(conn, session_id, dataset_type, filename, stored_rel)
+    # The session was verified before the (up to 2 GiB) stream; a concurrent
+    # DELETE /sessions/{id} could have removed the row + rmtree'd the dir in that
+    # window, so the write recreated a now-orphaned tree. Guard the insert: on the
+    # FK violation (or a vanished session), delete the just-written file/dir so no
+    # orphan tree is left, and return a clean 409 instead of a 500.
+    try:
+        if repo.get_row(conn, session_id) is None:
+            raise sqlite3.IntegrityError("session deleted during upload")
+        dataset_id = sds_repo.upsert(conn, session_id, dataset_type, filename, stored_rel)
+    except sqlite3.IntegrityError:
+        dest.unlink(missing_ok=True)
+        shutil.rmtree(config.data_dir() / "sessions" / session_id, ignore_errors=True)
+        raise HTTPException(status_code=409, detail="session was deleted during the upload") from None
     audit.record(conn, "session.dataset.upload",
                  {"session_id": session_id, "dataset_id": dataset_id,
                   "dataset_type": dataset_type, "bytes": total}, run_id=None)
@@ -293,6 +321,10 @@ def _result_envelope(cached: dict[str, Any]) -> dict[str, Any]:
         "skills_offered": cached.get("skills_offered", []),
         "evidence_used": cached.get("evidence_used", []),
         "evidence_gaps": cached.get("evidence_gaps", []),
+        # Carry the stopped flag through the ATTACH path too, so a blocking
+        # fallback that attaches to a cancelled turn still shows the "stopped"
+        # marker (the direct-return path already includes it).
+        "stopped": cached.get("stopped", False),
     }
 
 
@@ -303,6 +335,15 @@ def post_session_message(
     row = repo.get_row(conn, session_id)
     if row is None:
         raise HTTPException(status_code=404, detail="session not found")
+
+    # A client that omits turn_id would otherwise get no handle from begin() and
+    # so bypass per-session serialization entirely — two such messages could run
+    # concurrently and scramble thread order (and race the same dataset import).
+    # Synthesize a server-side id so a handle always exists and serialization
+    # always applies. (Streaming↔fallback dedup still needs a CLIENT id; a client
+    # that omits one already had none, so nothing regresses there.)
+    if not body.turn_id:
+        body.turn_id = uuid.uuid4().hex
 
     # Idempotency / attach: this may be the blocking fallback for a turn the
     # streaming attempt is still running (SSE dropped) or already completed.
@@ -355,12 +396,12 @@ def post_session_message(
             # sees the error. Drop the registration so a genuine retry isn't
             # blocked as "in progress".
             turn_guard.discard(body.turn_id)
-            raise HTTPException(status_code=422, detail=redact_text(str(exc)))
+            raise HTTPException(status_code=422, detail=_safe_err(exc))
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001 — any other failure MUST resolve the handle
-        turn_guard.fail(body.turn_id, redact_text(str(exc)), session_id)
-        raise HTTPException(status_code=500, detail=redact_text(str(exc)))
+        turn_guard.fail(body.turn_id, _safe_err(exc), session_id)
+        raise HTTPException(status_code=500, detail=_safe_err(exc))
 
     # Success: persist the user message and the assistant answer together.
     # The contract is already sanitized + allowlist-coerced inside session_agent.
@@ -388,10 +429,11 @@ def post_session_message(
             "skills_offered": contract.get("skills_offered", []),
             "evidence_used": contract.get("evidence_used", []),
             "evidence_gaps": contract.get("evidence_gaps", []),
+            "stopped": contract.get("stopped", False),
         }, session_id)
     except Exception as exc:  # noqa: BLE001 — a persist failure must still resolve the handle
-        turn_guard.fail(body.turn_id, redact_text(str(exc)), session_id)
-        raise HTTPException(status_code=500, detail=redact_text(str(exc)))
+        turn_guard.fail(body.turn_id, _safe_err(exc), session_id)
+        raise HTTPException(status_code=500, detail=_safe_err(exc))
     return {
         "session_id": session_id,
         "messages": repo.list_messages(conn, session_id),
@@ -445,10 +487,15 @@ async def post_session_message_stream(
     if row is None:
         raise HTTPException(status_code=404, detail="session not found")
 
+    # See post_session_message: a missing turn_id would bypass per-session
+    # serialization; synthesize one so register_session_turn always serializes.
+    if not body.turn_id:
+        body.turn_id = uuid.uuid4().hex
+
     try:
         creds = get_model_credentials(conn)
     except AgentUnavailable as exc:
-        raise HTTPException(status_code=422, detail=redact_text(str(exc)))
+        raise HTTPException(status_code=422, detail=_safe_err(exc))
 
     # Register this turn as running (owner of the handle). A blocking fallback
     # for the same turn_id then ATTACHES to this handle instead of re-running,
@@ -591,8 +638,8 @@ async def post_session_message_stream(
             # Mark FAILED (not just discard) so a blocking fallback parked on this
             # turn's done_event wakes immediately with the error instead of
             # blocking the full _IN_PROGRESS_WAIT_S and reporting a bogus 409.
-            turn_guard.fail(body.turn_id, redact_text(str(exc)), session_id)
-            emit(("error", redact_text(str(exc))))
+            turn_guard.fail(body.turn_id, _safe_err(exc), session_id)
+            emit(("error", _safe_err(exc)))
         finally:
             # Guarantee the turn handle is resolved on EVERY exit. `except
             # Exception` above misses a BaseException (CancelledError/MemoryError/

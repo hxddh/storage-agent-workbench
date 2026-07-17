@@ -195,7 +195,11 @@ def test_diagnostic_invokes_three_tools_and_completes(diag):
     detail = diag.client.get(f"/runs/{run_id}").json()
     assert detail["status"] == "completed"
     tool_names = [t["tool_name"] for t in detail["tool_calls"]]
-    assert tool_names == ["test_credentials", "head_bucket", "list_objects_v2"]
+    # The 3 probes in order, then the report generation as its own audited
+    # tool_call (v0.38: diagnostic now routes report writing through
+    # run_tool_with_events like every other executor — rule 17).
+    assert tool_names == ["test_credentials", "head_bucket", "list_objects_v2",
+                          "generate_markdown_report"]
     assert detail["final_summary"]
 
 
@@ -211,9 +215,10 @@ def test_tool_calls_and_audit_have_run_id(diag):
         ).fetchall()
     finally:
         conn.close()
-    assert len(tc) == 3
+    # 3 probes + generate_markdown_report (v0.38: report gen is an audited tool).
+    assert len(tc) == 4
     assert all(r[0] == run_id for r in tc)
-    assert len(al) == 3
+    assert len(al) == 4
     assert all(r[0] == run_id for r in al)
 
 
@@ -282,9 +287,10 @@ def test_sse_emits_required_events(diag):
                      "summary", "finding", "report_ready"):
         assert required in types, f"missing SSE event: {required}"
     assert "plan" not in types  # no canned plan — the real tool trace stands in for it
-    # exactly three tool start/finish pairs
-    assert types.count("tool_call_started") == 3
-    assert types.count("tool_call_finished") == 3
+    # 3 probes + generate_markdown_report (v0.38: report gen is an audited tool
+    # call, routed through run_tool_with_events like every other executor).
+    assert types.count("tool_call_started") == 4
+    assert types.count("tool_call_finished") == 4
 
 
 def test_sse_events_carry_no_secrets(diag):

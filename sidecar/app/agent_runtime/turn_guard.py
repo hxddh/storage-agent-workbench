@@ -156,6 +156,20 @@ def get_result(turn_id: str | None, session_id: str | None = None) -> dict[str, 
     return h.payload
 
 
+def _handle_for_write(turn_id: str, session_id: str | None) -> "TurnHandle":
+    """The handle to record a result/failure on, SESSION-BOUND. If the registered
+    handle belongs to a DIFFERENT session (a turn_id collision between unrelated
+    sessions), it is replaced with a fresh handle bound to the writer's session —
+    so this session's payload is never stored on the other session's handle and
+    then read back by it (``get_result`` is session-bound). Caller holds ``_lock``."""
+    h = _turns.get(turn_id)
+    if h is None or (h.session_id is not None and session_id is not None
+                     and h.session_id != session_id):
+        h = TurnHandle(turn_id, session_id)
+        _turns[turn_id] = h
+    return h
+
+
 def set_result(turn_id: str | None, payload: dict[str, Any],
                session_id: str | None = None) -> None:
     """Record that this turn completed (so a fallback won't re-run it).
@@ -166,10 +180,7 @@ def set_result(turn_id: str | None, payload: dict[str, Any],
     if not turn_id:
         return
     with _lock:
-        h = _turns.get(turn_id)
-        if h is None:
-            h = TurnHandle(turn_id, session_id)
-            _turns[turn_id] = h
+        h = _handle_for_write(turn_id, session_id)
         h.payload = payload
         h.done_event.set()
         _bump(_turns, turn_id)
@@ -187,10 +198,7 @@ def fail(turn_id: str | None, error: str | None = None,
     if not turn_id:
         return
     with _lock:
-        h = _turns.get(turn_id)
-        if h is None:
-            h = TurnHandle(turn_id, session_id)
-            _turns[turn_id] = h
+        h = _handle_for_write(turn_id, session_id)
         h.failed = True
         h.error = error
         h.done_event.set()
@@ -198,11 +206,28 @@ def fail(turn_id: str | None, error: str | None = None,
 
 
 def discard(turn_id: str | None) -> None:
-    """Drop a turn registration (a failed attempt) so a clean retry can run."""
+    """Drop a turn registration (a failed attempt) so a clean retry can run.
+
+    Resolves the handle before dropping it: a discarded turn's ``done_event`` is
+    SET (so a session-serialize wait or an attached fallback parked on it wakes
+    immediately instead of blocking the full timeout on an event nothing would
+    ever set), and any ``_session_active`` pointer still referencing this handle
+    is cleared (so the session's NEXT turn doesn't serialize behind a dead handle
+    for ``_PRIOR_TURN_WAIT_S``). Without this, a clean failure on the blocking
+    path — e.g. ``AgentUnavailable`` on a fresh install with no model key — left
+    the session's active pointer on an unresolvable handle and every subsequent
+    turn ate the 120 s prior-turn wait. A fallback that had already attached wakes
+    to a prompt, retryable 409 rather than a 150 s hang.
+    """
     if not turn_id:
         return
     with _lock:
-        _turns.pop(turn_id, None)
+        h = _turns.pop(turn_id, None)
+        if h is not None:
+            h.done_event.set()
+            for sid, active in list(_session_active.items()):
+                if active is h:
+                    del _session_active[sid]
 
 
 def get_run(turn_id: str | None, key: str) -> str | None:

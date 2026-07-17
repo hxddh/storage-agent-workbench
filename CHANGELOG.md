@@ -6,6 +6,110 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-07-17
+
+_A four-angle sweep (concurrency, API-layer robustness, audit coverage, and
+teaching-vs-tool drift) plus a frontend UX pass. No security-floor bound changes._
+
+### Fixed — concurrency
+
+- **A failed turn no longer makes the session hang 120 s on its next turn.** On a
+  clean failure (the common fresh-install "no model key" case), the blocking
+  handler called `turn_guard.discard()`, which dropped the turn from the registry
+  but left the session's active-turn pointer on a handle whose `done_event` was
+  never set — so the next message waited the full `_PRIOR_TURN_WAIT_S` (120 s) on
+  an event nothing would resolve, and an attached fallback waited 150 s then
+  returned a bogus 409. `discard()` now resolves the handle and clears the
+  session-active pointer.
+- **A retried run gets a fresh event stream.** Re-running a failed run (the atomic
+  claim allows `failed → running`) reused the event-bus entry via `setdefault`,
+  so a new SSE subscriber replayed the OLD run's terminal events and `done=True` —
+  it saw the prior failure and disconnected while the new executor published into
+  an already-done buffer. `bus.create()` now resets a previously-done entry.
+- **A cross-session `turn_id` collision can't deliver one session's result to
+  another.** `set_result`/`fail` ignored the handle's session binding (only the
+  readers enforced it); they now replace a foreign-session handle with a fresh one
+  bound to the writer, so `get_result` (already session-bound) can never return
+  another session's payload.
+- **A turn sent without a client `turn_id` no longer bypasses per-session
+  serialization.** The server now synthesizes one, so two rapid messages on a
+  session always serialize (thread order + a shared dataset import were otherwise
+  raceable).
+
+### Fixed — API layer
+
+- **An upload named `.` / `..` no longer 500s.** `Path("..").name == ".."`, so the
+  temp-then-rename targeted the parent directory; the sanitizer now maps `.`/`..`/
+  empty to a safe default.
+- **`GET /runs/{id}/events` 404s an unknown run** instead of streaming an
+  instantly-"done" empty timeline that reads as a finished run.
+- **A run that fails to launch after the atomic claim reverts to `pending`**
+  instead of wedging as `running` (blocking every retry until the next restart).
+- **Upload racing a session delete no longer orphans a directory tree + 500s** —
+  the insert re-verifies the session and, on the FK violation, deletes the
+  just-written file/tree and returns a clean 409.
+- **Error responses/SSE no longer leak absolute filesystem paths.** A new
+  `config.scrub_paths` collapses the app data dir and OS home dir (username, the
+  `app.db` path) out of surfaced `OSError`/`sqlite` messages — `redact_text`
+  scrubbed secrets but not paths.
+
+### Fixed — audit coverage (rule 17)
+
+- The DuckDB **dataset import** is audited at the import itself, not only as a
+  side effect of a successful analyze/aggregate (an import-then-failed-aggregate
+  left no trail); the **diagnostic** executor routes report generation through the
+  same audited path as the other four executors (it wrote `report.md` untracked);
+  the **session report** endpoint, **run create/start**, `compare_to_last_survey`,
+  and `list_uploaded_files` now record audit rows.
+
+### Fixed — agent teaching drift (from the v0.37 tool changes)
+
+- `test_conditional_get` docstring, the data-consistency skill, the S3-layer
+  docstring, and the UI trace label all still taught **"HTTP 200 → the object
+  changed"** — but v0.37 made 200-with-the-same-ETag mean "the provider ignored
+  If-None-Match" (unchanged + `provider_unsupported`). An agent following the old
+  text would report a spurious data change. All four now key off `etag_matches`.
+- `list_objects` docstring dropped the stale "echoed keys capped at 500 /
+  `keys_truncated_in_context`" teaching (the full ≤1000-key page is echoed now);
+  the lifecycle-cost skill documents the new REQUIRED `prefix` for
+  `list_multipart_uploads` on a prefix-scoped provider; `query_account_profile`'s
+  `public_buckets` help now says policy-verdict AND/OR ACL (it always included
+  ACL); the `skills_used` contract cap tracks `_MAX_SKILL_LOADS` (10 → 20).
+
+### Fixed — data race
+
+- A **re-upload during an in-flight analysis** can't stamp a stale table as
+  imported: `mark_imported` is guarded by the expected `stored_path`, so an
+  import of a since-overwritten file loses instead of silently serving the wrong
+  data.
+
+### Fixed — frontend
+
+- **Stop during a slow tool call no longer makes the whole turn vanish.** The
+  fixed 800 ms wait raced the server's persist, so the reload found no new message
+  and wiped the streamed partial; it now waits until the persisted (stopped)
+  answer is visible.
+- A turn that **fails while you're viewing another session** keeps the message
+  (restored into that session's composer on return) instead of losing it.
+- A **proposal-chip click during a streaming turn** no longer wipes an unsent
+  composer draft; **switching sessions** no longer flashes the previous session's
+  messages under the new one; **renaming the open session** refreshes the thread
+  header; the **blocking fallback** preserves the "Stopped by user" marker; a
+  post-turn reload that loses to a session switch no longer mislabels a healthy
+  session as stalled.
+- Byte sizes render as **KiB/MiB/GiB** (they used 1024 divisors with KB/MB
+  labels — two unit systems in one card after v0.37 relabeled the backend); the
+  model-404 error hint only fires for provider-shaped errors (a "session not
+  found" turn error no longer sends you to fix a model name); the evidence-import
+  dialog closes on **Escape** (idle only) and its ✕ is disabled mid-import;
+  blanking a model-provider name shows a friendly message instead of a raw 422.
+
+### Tests
+
+- New `test_v0380_fixes.py` (concurrency, path scrubbing, filename sanitizer,
+  stale-import guard, bus reset, reconciler); existing diagnostic/SSE/cap tests
+  updated where behavior intentionally changed (report-gen tool call, skills cap).
+
 ## [0.37.0] - 2026-07-17
 
 _Four-angle audit batch: crash-recovery completeness, agent enumeration truth,

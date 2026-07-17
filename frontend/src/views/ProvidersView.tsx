@@ -105,8 +105,15 @@ function ModelProvidersPanel() {
 
   const submit = async () => {
     setError(null);
+    // Name and provider type are required (server: min_length=1). Validate here so
+    // a blank field shows a friendly message instead of a raw pydantic 422 array
+    // in the banner (FE11).
+    if (!form.name.trim() || !form.provider_type.trim()) {
+      setError(t("prov.nameTypeRequired"));
+      return;
+    }
     const body: ModelProviderInput = {
-      name: form.name,
+      name: form.name.trim(),
       provider_type: form.provider_type,
       // On EDIT, send "" verbatim — the API treats "" as "clear to NULL", so
       // blanking a field actually removes it (it used to silently revert).

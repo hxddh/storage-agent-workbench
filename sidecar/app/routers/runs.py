@@ -25,6 +25,7 @@ from fastapi.responses import StreamingResponse
 from .. import audit, config, run_service
 from ..db import get_conn
 from ..events import bus, sse_stream
+from ..security.redaction import redact_text
 from ..models.schemas import (
     AccountProfileOut,
     MessageCreate,
@@ -99,6 +100,10 @@ def create_run(body: RunCreate, conn: sqlite3.Connection = Depends(get_conn)):
     # Link the run to its session immediately so it appears in the timeline.
     if body.session_id and sessions_repo.get_row(conn, body.session_id) is not None:
         sessions_repo.link_run(conn, body.session_id, run_id, sessions_repo.RUN_ROLE.get(body.run_type))
+
+    audit.record(conn, "run.create",
+                 {"run_id": run_id, "run_type": body.run_type,
+                  "provider_id": body.provider_id, "bucket": body.bucket}, run_id=run_id)
 
     row = repo.get_row(conn, run_id)
     return RunCreated(
@@ -175,14 +180,30 @@ def post_message(
             detail="run is already running or completed; cannot start another executor for it",
         )
 
-    repo.add_message(conn, run_id, role="user", content=body.content)
-    bus.create(run_id)
-    run_service.start(run_id)
+    # The claim committed the row as 'running'. If wiring up the executor now
+    # fails, revert to 'pending' before re-raising — otherwise the row is wedged
+    # 'running' with no executor and the atomic claim above blocks every retry
+    # until the next startup reconciler.
+    try:
+        audit.record(conn, "run.start", {"run_id": run_id, "run_type": row["run_type"]},
+                     run_id=run_id)
+        repo.add_message(conn, run_id, role="user", content=body.content)
+        bus.create(run_id)
+        run_service.start(run_id)
+    except Exception as exc:  # noqa: BLE001 — never leave the row wedged 'running'
+        conn.execute("UPDATE runs SET status = 'pending' WHERE id = ?", (run_id,))
+        conn.commit()
+        raise HTTPException(status_code=500, detail=redact_text(str(exc))) from exc
     return {"run_id": run_id, "status": "running"}
 
 
 @router.get("/{run_id}/events")
-def run_events(run_id: str) -> StreamingResponse:
+def run_events(run_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> StreamingResponse:
+    # 404 an unknown run rather than streaming an instantly-"done" empty timeline
+    # (snapshot() treats an unknown run as done) — a stale/typo'd id otherwise
+    # reads as a finished run to the client.
+    if repo.get_row(conn, run_id) is None:
+        raise HTTPException(status_code=404, detail="run not found")
     return StreamingResponse(
         sse_stream(run_id),
         media_type="text/event-stream",

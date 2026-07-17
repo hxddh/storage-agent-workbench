@@ -83,6 +83,9 @@ def build(
             }
             for r in rows
         ]
+        audit.record(conn, "session.list_uploaded_files",
+                     {"session_id": session_id, "count": len(items)}, run_id=None)
+        conn.commit()
         note("list_uploaded_files", session_id or "", f"{len(items)} file(s)")
         return json.dumps({"files": items})
 
@@ -116,9 +119,27 @@ def build(
         else:
             imp = inventory.import_inventory_file(raw_abs, duckdb_abs)
             detected = imp.get("format")
-        ds_repo.mark_imported(conn, dataset_id, config.rel_path(duckdb_abs),
-                              imp.get("table_name") or "", int(imp.get("row_count") or 0),
-                              detected_format=detected)
+        # Guard against a concurrent re-upload of the same filename (which resets
+        # the row to a NEW stored_path): if stored_path changed under us, this
+        # import is of the now-stale file — don't stamp it 'imported' over the new
+        # upload. mark_imported returns False in that case; treat the result as a
+        # transient miss so the next call re-imports the current file.
+        imported = ds_repo.mark_imported(
+            conn, dataset_id, config.rel_path(duckdb_abs),
+            imp.get("table_name") or "", int(imp.get("row_count") or 0),
+            detected_format=detected, expected_stored_path=ds.get("stored_path"))
+        if not imported:
+            conn.commit()
+            raise FileNotFoundError(
+                "The uploaded file was replaced during analysis; retry to analyze the new upload.")
+        # Rule 17: audit the DATA IMPORT here, at the import itself — not only as a
+        # side effect of a SUCCESSFUL analyze/aggregate. An aggregate that imports
+        # the whole file and then fails (e.g. a bad metric) otherwise left a
+        # completed import with no audit trail.
+        audit.record(conn, "session.import_dataset",
+                     {"session_id": session_id, "dataset_id": dataset_id,
+                      "dataset_type": ds["dataset_type"], "detected_format": detected,
+                      "row_count": int(imp.get("row_count") or 0)}, run_id=None)
         conn.commit()
         return duckdb_abs, imp, detected
 

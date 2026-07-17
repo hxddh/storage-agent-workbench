@@ -45,10 +45,14 @@ Consistency concern →
   multipart `-N` — `parts_count` confirms it), and use `cache_control` to explain
   a client/CDN serving old bytes.
 - `test_conditional_get` — the sharpest freshness probe: HeadObject with
-  If-None-Match against the client's cached ETag. **304 → the object is
-  unchanged**, so the stale read is a cache/CDN problem, not the store; **200 →
-  it really changed** and the tool returns the current ETag. No body either way.
-  Reach for this before asking the user about their cache layers.
+  If-None-Match against the client's cached ETag. Read the verdict from
+  `etag_matches`, NOT the raw status: **304 → unchanged** (the stale read is a
+  cache/CDN problem, not the store); **200 with a DIFFERENT `current_etag` → it
+  really changed**; **200 with the SAME ETag → the provider ignored If-None-Match**
+  (`error_code="provider_unsupported"`) — that is unchanged plus a
+  conditional-request capability gap, NOT a change, so don't report the object as
+  modified. No body either way. Reach for this before asking the user about their
+  cache layers.
 - `get_object_attributes` — the object's checksum algorithm + part count when you
   need to diagnose a checksum/multipart-assembly mismatch (falls back to
   head_object where the provider doesn't implement it).

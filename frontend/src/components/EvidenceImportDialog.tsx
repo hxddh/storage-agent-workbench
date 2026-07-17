@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   attachRunToSession,
   confirmEvidenceImport,
@@ -11,7 +11,8 @@ import { useI18n } from "../i18n";
 
 function bytesH(n: number): string {
   let v = n || 0;
-  const units = ["B", "KB", "MB", "GB", "TB"];
+  // Binary divisors (÷1024) → binary labels, matching the backend (KiB/MiB).
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
   let i = 0;
   while (v >= 1024 && i < units.length - 1) {
     v /= 1024;
@@ -46,6 +47,18 @@ export function EvidenceImportDialog({
   const [plan, setPlan] = useState<EvidenceImport | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Escape closes the dialog — but only when idle, mirroring the backdrop guard,
+  // so an in-flight import (whose progress/error feedback lives here) isn't
+  // dismissed out from under the user (FE10). The comment above the backdrop
+  // promised this but no handler existed.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onClose]);
 
   const generatePlan = async () => {
     setError(null);
@@ -121,7 +134,12 @@ export function EvidenceImportDialog({
           <h2 className="text-sm font-semibold text-gray-100">
             {t("imp.title", { what })} <span className="font-mono">{bucketName}</span>
           </h2>
-          <button className="text-xs text-gray-500 hover:text-gray-300" onClick={onClose}>✕</button>
+          <button
+            className="text-xs text-gray-500 hover:text-gray-300 disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={onClose}
+            disabled={busy}
+            title={busy ? t("imp.busyClose") : undefined}
+          >✕</button>
         </div>
 
         {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
