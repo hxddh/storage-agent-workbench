@@ -44,9 +44,13 @@ def is_contract_json(payload: str) -> bool:
     except (json.JSONDecodeError, ValueError):
         return False
     return isinstance(parsed, dict) and bool(_CONTRACT_KEYS & parsed.keys())
-# Generous cap so large enumerations (e.g. a 96-row bucket table) are never
-# truncated in post-processing; the model's own completion budget bounds length.
+# FLOOR of the answer cap (callers pass a model-elastic ``max_answer`` ≥ this) so
+# large enumerations are never truncated in post-processing; the model's own
+# completion budget bounds length. When the cap IS hit, the cut is MARKED — this
+# was the codebase's one silent truncation.
 _MAX_ANSWER = 48000
+ANSWER_CUT_MARKER = ("[TRUNCATED — the answer reached the output cap and was cut "
+                     "here; ask to continue for the rest.]")
 
 
 CONTRACT_INSTRUCTION = (
@@ -79,7 +83,8 @@ def _strlist(data: dict[str, Any], key: str, cap: int = 12, length: int = 300) -
     return out
 
 
-def parse_agent_contract(raw: Any, allowed_skill_names: list[str] | None = None) -> dict[str, Any]:
+def parse_agent_contract(raw: Any, allowed_skill_names: list[str] | None = None,
+                         max_answer: int | None = None) -> dict[str, Any]:
     text = raw if isinstance(raw, str) else str(raw or "")
     data: dict[str, Any] = {}
     prose = text
@@ -101,7 +106,10 @@ def parse_agent_contract(raw: Any, allowed_skill_names: list[str] | None = None)
     # e.g. an enumerated list); the JSON block is for metadata. Only fall back to
     # the JSON "answer" field when there is no prose outside the block.
     answer_raw = prose if prose.strip() else (data.get("answer") if isinstance(data.get("answer"), str) else "")
-    answer = strip_chain_of_thought(redact_text(str(answer_raw or "")))[:_MAX_ANSWER]
+    cap = max(max_answer or 0, _MAX_ANSWER)  # elastic caller cap, floored
+    answer = strip_chain_of_thought(redact_text(str(answer_raw or "")))
+    if len(answer) > cap:
+        answer = answer[:cap].rstrip() + "\n\n" + ANSWER_CUT_MARKER
 
     # Cap matches the per-turn read_skill budget (session_tools._MAX_SKILL_LOADS)
     # so a turn that legitimately loaded several skills can report all of them

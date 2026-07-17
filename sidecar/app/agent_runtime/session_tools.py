@@ -30,12 +30,14 @@ from ..s3.scope import check_scope
 from ..security.redaction import redact_text
 from . import guardrails
 
-# Max object keys echoed to the model per list_objects call. The bucket may hold
-# far more; the agent pages via next_token for the rest. 500 (was 200): the S3
-# layer already caps a page at 1000, and a fuller echo lets an enumeration finish
-# in fewer turns; keys_truncated_in_context still tells the agent when the echo
-# was cut (never a silent cap).
-_LIST_KEYS_CTX_CAP = 500
+# Max object keys echoed to the model per list_objects call — equal to the S3
+# layer's page cap (MAX_LIST_KEYS = 1000), and it MUST stay >= that cap: the S3
+# layer computes next_token over the FULL page, so an echo cap below the page
+# size would drop the tail keys with no way to page back to them (paging with
+# next_token skips straight past the whole page) — silently incomplete
+# enumeration. A full 1000-key page is ~50 KB, comfortably inside the elastic
+# tool-output budget, which still backstops pathological key lengths.
+_LIST_KEYS_CTX_CAP = s3.MAX_LIST_KEYS
 
 
 def _err(msg: str) -> str:
@@ -226,18 +228,20 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return json.dumps(res)
 
     @function_tool
-    def list_multipart_uploads(provider_id: str, bucket: str, max_uploads: int = 1000,
+    def list_multipart_uploads(provider_id: str, bucket: str, prefix: str = "", max_uploads: int = 1000,
                                key_marker: str = "", upload_id_marker: str = "") -> str:
-        """List one page of in-progress / incomplete multipart uploads (read-only ListMultipartUploads; no bodies). Surfaces abandoned uploads — a common silent cost leak (parts are billed but invisible in a normal object listing). Use for unexplained storage/cost. Returns upload count, oldest initiation time, ≤20 sample keys, and next_key_marker/next_upload_id_marker. When is_truncated is true, page by passing those back as key_marker/upload_id_marker — the count is ONE page, not the bucket total. Listing only — aborting is a mutation and is not available; propose a lifecycle rule instead. Args: provider_id, bucket, max_uploads? (up to 1000), key_marker?, upload_id_marker?."""
+        """List one page of in-progress / incomplete multipart uploads (read-only ListMultipartUploads; no bodies). Surfaces abandoned uploads — a common silent cost leak (parts are billed but invisible in a normal object listing). Use for unexplained storage/cost. Returns upload count, oldest initiation time, ≤20 sample keys, and next_key_marker/next_upload_id_marker. When is_truncated is true, page by passing those back as key_marker/upload_id_marker — the count is ONE page, not the bucket total. Listing only — aborting is a mutation and is not available; propose a lifecycle rule instead. Args: provider_id, bucket, prefix? (limit to keys under a prefix — REQUIRED on a prefix-scoped provider), max_uploads? (up to 1000), key_marker?, upload_id_marker?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
-        denial = scope_denial(p, bucket, listing=True)
+        denial = scope_denial(p, bucket, prefix=prefix or None, listing=True)
         if denial:
             return _err(denial)
         bound = guardrails.bound_tool_args("list_objects_v2", {"max_keys": max_uploads})
-        rec("list_multipart_uploads", provider_id=provider_id, bucket=bucket, max_uploads=bound["max_keys"])
+        rec("list_multipart_uploads", provider_id=provider_id, bucket=bucket,
+            prefix=prefix or None, max_uploads=bound["max_keys"])
         res = s3.list_multipart_uploads(conn, provider_id, bucket, bound["max_keys"],
+                                        prefix=prefix or None,
                                         key_marker=key_marker or None, upload_id_marker=upload_id_marker or None)
         note("list_multipart_uploads", bucket, res)
         return json.dumps(res)

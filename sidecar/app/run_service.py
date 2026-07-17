@@ -11,6 +11,7 @@ import threading
 
 from . import db
 from .events import bus
+from .repositories import evidence_imports as evidence_imports_repo
 from .repositories import runs as runs_repo
 from .runs.access_log_run import execute_access_log_run
 from .runs.account_discovery_run import execute_account_discovery_run
@@ -31,11 +32,16 @@ def reconcile_interrupted_runs() -> int:
     """On startup, fail any run left pending/running by a prior process.
 
     In-process run threads can't survive a restart, so such rows are orphans that
-    would otherwise report as forever-running. Called from the app lifespan.
+    would otherwise report as forever-running. Evidence imports get the same
+    pass: a row still 'importing' is an orphan from a crash mid-download and
+    would otherwise be permanently un-re-runnable (its status can never get back
+    to 'confirmed'). Called from the app lifespan.
     """
     conn = db.connect()
     try:
-        return runs_repo.mark_interrupted(conn)
+        count = runs_repo.mark_interrupted(conn)
+        count += evidence_imports_repo.mark_interrupted(conn)
+        return count
     finally:
         conn.close()
 

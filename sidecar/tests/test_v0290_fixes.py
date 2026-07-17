@@ -187,8 +187,9 @@ def test_max_output_table_gemini25_and_deepseek_reasoner():
     assert mb.max_output_tokens("gemini-2.0-flash") == 8_192
     assert mb.max_output_tokens("deepseek-reasoner") == 64_000
     assert mb.max_output_tokens("deepseek-chat") == 8_192
-    # gemini-2.5 (1M window): scaled 32768, no longer clamped to 8192.
-    assert mb.completion_token_budget("gemini-2.5-pro") == 32_768
+    # gemini-2.5 (1M window, 64k output): window//8 governs, clamped only by the
+    # provider max — the old module-wide 32k ceiling is gone (v0.37).
+    assert mb.completion_token_budget("gemini-2.5-pro") == 64_000
 
 
 def test_stale_token_ref_on_keyless_provider_stays_anonymous(client):
@@ -318,7 +319,11 @@ def test_tool_output_budget_has_ceiling():
 def test_drift_syncs():
     from app.agent_runtime import session_agent as sa
     from app.sessions import summary_builder as sb
-    assert sa._MAX_FINDINGS == sb.MAX_FINDINGS
+    # The persisted summary must hold at least as much as the elastic context cap
+    # can ever reveal (v0.37: floors decoupled — persisted 200 >= floor 50, and
+    # never below the elastic ceiling's reach for findings).
+    assert sb.MAX_FINDINGS >= sa._MAX_FINDINGS
+    assert sb.MAX_FACTS >= sa._MAX_FACTS
     assert sa._MAX_REPLAY_TOOLS == sa._MAX_TURNS
 
 

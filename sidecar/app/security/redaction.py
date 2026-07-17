@@ -172,15 +172,33 @@ _VALUE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
+# Bare (unlabeled) AWS secret access keys. The labeled rule above is anchored to
+# a `secret_access_key=`-style label so ordinary 40-char strings and object keys
+# are not blanket-mangled — which meant a user pasting a bare AK/SK PAIR into
+# chat ("AKIA… / wJalrXUtnFEMI/K7MDENG…") had the SK survive redaction, get
+# persisted, and re-enter the next turn's prompt. Narrow fix: ONLY when the text
+# also carries an AWS access-key-ID shape (the pair paste — the practical way a
+# bare SK shows up) does a bare 40-char base64 token get masked. S3 bucket names
+# can't match (lowercase-only, no / +), and the key-id condition keeps the rule
+# from firing on ordinary prose or object listings.
+_AWS_KEY_ID_HINT = re.compile(r"\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA|ANVA)[A-Z0-9]{16}\b")
+_BARE_AWS_SECRET = re.compile(r"(?<![A-Za-z0-9/+=])[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])")
+
+
 def _is_sensitive_key(key: str) -> bool:
     return _KEY_NORMALIZE.sub("", key.lower()) in _SENSITIVE_KEYS
 
 
 def redact_text(text: str) -> str:
     """Scrub credential-shaped substrings from a string."""
+    # Detect the access-key-ID hint on the ORIGINAL text — the first pattern
+    # below replaces the key id itself with the redaction marker.
+    paired_paste = bool(_AWS_KEY_ID_HINT.search(text))
     out = text
     for pattern, repl in _VALUE_PATTERNS:
         out = pattern.sub(repl, out)
+    if paired_paste:
+        out = _BARE_AWS_SECRET.sub(REDACTED, out)
     return out
 
 

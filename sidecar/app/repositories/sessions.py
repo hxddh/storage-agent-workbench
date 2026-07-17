@@ -398,11 +398,15 @@ def add_message(
         "(id, session_id, role, content, referenced_run_ids, referenced_evidence_ids, "
         " tool_activity, grounding, proposed_actions, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        # The JSON columns go through redact() like every sibling repo
+        # (replace_findings / upsert_summary / create_case): the agent runtime
+        # sanitizes upstream, but rule 14 wants the persistence boundary to hold
+        # on its own — defense in depth, not the only line.
         (msg_id, session_id, role, redact_text(content or ""),
          json.dumps(referenced_run_ids or []), json.dumps(referenced_evidence_ids or []),
-         json.dumps(tool_activity or []),
-         json.dumps(grounding) if grounding is not None else None,
-         json.dumps(proposed_actions) if proposed_actions is not None else None,
+         _dumps(tool_activity or []),
+         _dumps(grounding) if grounding is not None else None,
+         _dumps(proposed_actions) if proposed_actions is not None else None,
          utcnow()),
     )
     _touch(conn, session_id)

@@ -6,6 +6,95 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-07-17
+
+_Four-angle audit batch: crash-recovery completeness, agent enumeration truth,
+provider compatibility, engine correctness, de-ossification, and redaction
+depth. Every security-floor bound is untouched (one is tightened)._
+
+### Fixed
+
+- **An evidence import interrupted by a crash no longer wedges forever.** The
+  download runs in-process, so a hard kill mid-download left the row `importing`
+  — a state that could never get back to `confirmed` (re-run) or `planned`
+  (re-confirm). Startup reconciliation now fails orphaned `importing` imports
+  (and their files), mirroring what it already did for runs.
+- **`list_objects` no longer makes keys 501–1000 of a page unreachable.** The
+  per-call echo cap (500) sat below the S3 page size (1000) while `next_token`
+  advanced past the whole page — so any enumeration with `max_keys > 500`
+  silently lost the tail keys with no way to page back to them. The echo cap now
+  equals the page cap (a full 1000-key page is ~50 KB, inside the elastic
+  tool-output budget that still backstops it).
+- **The final answer is never truncated silently.** The one unmarked cut in the
+  codebase: the answer contract was hard-sliced at 48 000 chars with no marker —
+  in post-processing that promises "write out EVERY item". The cap is now
+  model-elastic (≥ 4 chars/token of the completion budget, so it can never cut
+  an answer the model was allowed to emit) and, when hit, appends an explicit
+  `[TRUNCATED …]` marker.
+- **`test_conditional_get` no longer misreports "object changed" on providers
+  that ignore `If-None-Match`.** Many S3-compatible providers return `200`
+  (ignoring the conditional header) instead of `304`; the tool mapped any `200`
+  to `etag_matches: false` even with an identical ETag. It now compares
+  quote-normalized ETags: equal on `200` → "unchanged + conditional requests
+  unsupported" (rule 18), different → genuinely changed.
+- **`list_multipart_uploads` works on prefix-scoped providers.** The wrapper
+  exposed no `prefix`, so any provider with `allowed_prefixes` always denied the
+  root listing, making the abandoned-upload cost diagnostic unreachable there.
+  It now takes a `prefix`, passed to both the scope check and the S3 `Prefix=`.
+- **`get_object_lock_status` no longer reads a malformed call as "no lock".**
+  The broad `InvalidRequest` code was blanket-mapped to "none"; only its
+  object-lock flavor ("Bucket is missing Object Lock Configuration") means that.
+  Other `InvalidRequest`s now surface as errors instead of "cleanly deletable".
+- **Inventory engine:** no more `Storage-class skew: 'None' covers 100%` finding
+  when the inventory simply has no storage_class column (the same null-group
+  guard hot-key/hot-prefix already had); `average_object_size` uses floor
+  division so multi-PB totals keep int64 precision above 2^53.
+- **DuckDB layer:** a read-only open of a missing analytical DB is a clean
+  "nothing imported yet" error instead of creating a stray empty `.duckdb` via a
+  writable fallback; writer-side lock contention now gets the same friendly
+  retryable message readers already had.
+- **`session_datasets` dedupe matches NULL filenames** (`IS`, not `=`), so a
+  re-uploaded nameless file can't create two rows pointing at one on-disk path.
+
+### Security
+
+- **A pasted bare AWS access-key/secret-key PAIR is now fully scrubbed.** The
+  secret-key redaction rule is label-anchored (so bucket/object names aren't
+  blanket-mangled), which let a bare 40-char SK pasted alongside its `AKIA…` key
+  id survive redaction, be persisted, and re-enter the next turn's prompt. A
+  narrow rule now masks bare 40-char base64 tokens ONLY when the text also
+  carries an AWS access-key-ID shape — ordinary 40-char strings without that
+  hint remain untouched.
+- **`session_messages` JSON columns (`tool_activity`, `grounding`,
+  `proposed_actions`) pass through `redact()` at the persistence boundary**,
+  like every sibling repository — defense in depth for rule 14; the agent
+  runtime still sanitizes upstream.
+
+### Changed (de-ossification — no security-floor change)
+
+- **The completion budget's only upper bound is the model's real provider
+  max-output.** The module-wide 32 768 ceiling is gone: the per-model clamp
+  already existed, so the ceiling only ever bit models whose real output cap is
+  higher (claude-3-7 / gemini-2.5 at 64k, o-series at 100k) — starving long
+  enumerations on exactly the models that could hold them.
+- **The survey/config-review summary echoed to the agent scales with the model
+  window** (floor 2000 chars, ceiling 16k) instead of a flat 2000.
+- **The deterministic session summary scales too:** the persisted store holds up
+  to 200 facts/findings (was 50) and the context echo is model-elastic (floor
+  50), matching the agent-memory de-ossification; the human-readable digest
+  stays at 50 entries with an explicit "+N more" note.
+- **Size labels are binary to match the binary math** (KiB/MiB/GiB, thresholds
+  like `<4KiB`/`128KiB-1MiB`): the divisors were always 1024-based; only the
+  labels said KB/MB.
+- Docs: note that gated larger context windows (e.g. Claude 1M beta) should be
+  declared via the model provider's explicit `context_window` override.
+
+### Tests
+
+- 20 new regression tests (`test_v0370_fixes.py`) covering every item above;
+  existing tests updated where behavior intentionally changed (full-page echo,
+  provider-cap-only completion budget, object-lock message flavor).
+
 ## [0.36.0] - 2026-07-17
 
 _Migration crash-recovery: a partially-applied table-rebuild no longer wedges the

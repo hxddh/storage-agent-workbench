@@ -545,7 +545,8 @@ async def post_session_message_stream(
                 raise
             async for kind, data in session_agent.stream_events_for(
                     result, activity, skill_names, finalize,
-                    cancel_event=cancel_event, clients=clients, budget=budget):
+                    cancel_event=cancel_event, clients=clients, budget=budget,
+                    answer_cap=session_agent._answer_cap(creds)):
                 if kind == "final":
                     final["data"] = data
                 else:

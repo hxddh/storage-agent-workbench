@@ -411,6 +411,7 @@ def list_multipart_uploads(
     provider_id: str,
     bucket: str,
     max_uploads: int = MAX_LIST_KEYS,
+    prefix: str | None = None,
     key_marker: str | None = None,
     upload_id_marker: str | None = None,
 ) -> dict[str, Any]:
@@ -428,6 +429,8 @@ def list_multipart_uploads(
     try:
         client = client_factory.build_s3_client(conn, provider_id)
         kw: dict[str, Any] = {"Bucket": bucket, "MaxUploads": clamped}
+        if prefix:
+            kw["Prefix"] = prefix
         if key_marker:
             kw["KeyMarker"] = key_marker
         if upload_id_marker:
@@ -1120,15 +1123,23 @@ def get_object_lock_status(
         "error_code": None, "error_message_sanitized": None,
     }
     # Codes meaning "no lock configured on this object", which is a valid answer.
-    # Real S3 returns `InvalidRequest` ("Bucket is missing Object Lock
-    # Configuration") from get_object_retention/legal_hold on a bucket without
-    # Object Lock — the overwhelmingly common case — so treat it as "none" here
-    # (these two calls are object-lock-specific) rather than a confusing hard error.
     _NONE_CODES = {
         "NoSuchObjectLockConfiguration",
         "ObjectLockConfigurationNotFoundError",
-        "InvalidRequest",
     }
+
+    def _is_no_lock(exc: ClientError) -> bool:
+        err = (exc.response or {}).get("Error", {})
+        if err.get("Code") in _NONE_CODES:
+            return True
+        # Real S3 returns the BROAD `InvalidRequest` ("Bucket is missing Object
+        # Lock Configuration") on a bucket without Object Lock — the common case.
+        # But InvalidRequest also covers genuinely malformed calls (e.g. a bad
+        # version_id), so map it to "none" only in its object-lock flavor;
+        # otherwise reporting "none" would read as "cleanly deletable" when the
+        # truth is unknown.
+        return (err.get("Code") == "InvalidRequest"
+                and "object lock" in str(err.get("Message", "")).lower())
     try:
         client = client_factory.build_s3_client(conn, provider_id)
     except Exception as exc:  # noqa: BLE001
@@ -1153,7 +1164,7 @@ def get_object_lock_status(
             result["retention_status"] = "active"
     except ClientError as exc:
         code = (exc.response or {}).get("Error", {}).get("Code")
-        if code in _NONE_CODES:
+        if _is_no_lock(exc):
             result["retention_status"] = "none"
         elif code in _UNSUPPORTED_CODES:
             result["retention_status"] = PROVIDER_UNSUPPORTED
@@ -1169,7 +1180,7 @@ def get_object_lock_status(
         result["legal_hold_status"] = status.lower() if isinstance(status, str) else "none"
     except ClientError as exc:
         code = (exc.response or {}).get("Error", {}).get("Code")
-        if code in _NONE_CODES:
+        if _is_no_lock(exc):
             result["legal_hold_status"] = "none"
         elif code in _UNSUPPORTED_CODES:
             result["legal_hold_status"] = PROVIDER_UNSUPPORTED
@@ -1545,9 +1556,23 @@ def test_conditional_get(
     try:
         client = client_factory.build_s3_client(conn, provider_id)
         resp = client.head_object(Bucket=bucket, Key=key, IfNoneMatch=etag)
-        # 200: the stored object differs from the supplied ETag.
+        # 200 does NOT always mean "changed": many S3-compatible providers simply
+        # ignore If-None-Match on HEAD and return 200 with the SAME ETag. Compare
+        # (quote-normalized — S3 returns ETags quoted, callers often pass them
+        # bare) instead of blindly reporting a change: equal ETags on a 200 mean
+        # the provider ignored the conditional header — a capability gap (rule
+        # 18), not a stale/changed object.
+        current = resp.get("ETag")
+        matches = (current or "").strip('"') == (etag or "").strip('"')
+        if matches:
+            return {**base, "success": True, "etag_matches": True,
+                    "current_etag": current, "status_code": 200,
+                    "error_code": PROVIDER_UNSUPPORTED,
+                    "error_message_sanitized":
+                        "Provider ignored If-None-Match (returned 200 with the same "
+                        "ETag instead of 304); conditional requests unsupported."}
         return {**base, "success": True, "etag_matches": False,
-                "current_etag": resp.get("ETag"), "status_code": 200}
+                "current_etag": current, "status_code": 200}
     except ClientError as exc:
         fields = _client_error_fields(exc)
         if fields.get("status_code") == 304 or fields.get("error_code") in ("304", "NotModified"):

@@ -283,6 +283,9 @@ def test_session_list_objects_caps_keys_in_context(client, cloud_id, monkeypatch
     from app.agent_runtime import session_tools
     from app.s3 import tools as s3mod
 
+    # 700 keys — a legal single page (S3 layer caps a page at MAX_LIST_KEYS=1000).
+    # v0.37: the echo cap covers the FULL page (it used to sit at 500, silently
+    # dropping keys 501+ which next_token then skipped past — unreachable forever).
     monkeypatch.setattr(s3mod, "list_objects_v2", lambda *a, **k: {
         "success": True, "key_count": 700, "keys": [f"k{i}" for i in range(700)],
         "sample_keys": [], "common_prefixes": [], "is_truncated": True, "next_token": "T",
@@ -298,8 +301,8 @@ def test_session_list_objects_caps_keys_in_context(client, cloud_id, monkeypatch
         tools = {t.name: t for t in session_tools.build(conn, _FT(), [])}
         out = _json.loads(tools["list_objects"](cloud_id, BUCKET))
     assert out["key_count"] == 700            # exact count preserved
-    assert len(out["keys"]) == 500            # capped for context (_LIST_KEYS_CTX_CAP)
-    assert out["keys_truncated_in_context"] is True
+    assert len(out["keys"]) == 700            # the WHOLE page — nothing unreachable
+    assert "keys_truncated_in_context" not in out
     assert out["next_token"] == "T"           # can still page
 
 
@@ -616,13 +619,18 @@ def test_preview_object_parquet_returns_schema_not_body(client, cloud_id, stub):
 
 
 def test_object_lock_status_invalid_request_means_no_lock(client, cloud_id, stub):
-    """S3 returns InvalidRequest for get_object_retention on a bucket without
-    Object Lock — treat it as 'none', not a confusing hard error (review L-4)."""
+    """S3 returns InvalidRequest ("Bucket is missing Object Lock Configuration")
+    for get_object_retention on a bucket without Object Lock — treat that FLAVOR
+    as 'none', not a confusing hard error (review L-4). v0.37: the flavor check is
+    message-based — a generic InvalidRequest no longer maps to 'none' (see
+    test_v0370_fixes)."""
     from app.s3 import tools as s3
 
     c, s = stub
-    s.add_client_error("get_object_retention", service_error_code="InvalidRequest")
-    s.add_client_error("get_object_legal_hold", service_error_code="InvalidRequest")
+    s.add_client_error("get_object_retention", service_error_code="InvalidRequest",
+                       service_message="Bucket is missing Object Lock Configuration")
+    s.add_client_error("get_object_legal_hold", service_error_code="InvalidRequest",
+                       service_message="Bucket is missing Object Lock Configuration")
     with _db() as conn:
         res = s3.get_object_lock_status(conn, cloud_id, BUCKET, "obj.bin")
     assert res["success"] is True

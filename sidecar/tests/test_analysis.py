@@ -293,7 +293,7 @@ def test_analyze_inventory_metrics(tmp_path):
         assert key in m
     assert m["object_count"] == 4
     buckets = {b["bucket"] for b in m["size_histogram"]}
-    assert "512MB+" in buckets and "<4KB" in buckets
+    assert "512MiB+" in buckets and "<4KiB" in buckets
     # one object dated 2024 should land in 365d+
     age_buckets = {a["bucket"] for a in m["object_age_distribution"]}
     assert "365d+" in age_buckets

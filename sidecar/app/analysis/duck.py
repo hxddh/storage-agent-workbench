@@ -23,23 +23,37 @@ def connect(duckdb_path: str | Path, read_only: bool = False) -> duckdb.DuckDBPy
 
     ``read_only=True`` opens the existing DB read-only so a pure-read analysis
     (analyze/aggregate) can't collide with a concurrent import that DROPs/rebuilds
-    the same table on another turn's worker thread. Falls back to a normal open if
-    the file doesn't exist yet (the read-only mode can't create it)."""
+    the same table on another turn's worker thread. A missing file is a clean
+    "dataset not imported" error — a read must not leave a stray empty ``.duckdb``
+    behind (it used to fall back to a WRITABLE open that created one).
+
+    Lock contention is translated to a friendly, retryable ``ValueError`` on BOTH
+    open modes: a reader blocked by a writer AND a writer (import) blocked by a
+    long analyze on another worker thread previously surfaced the raw
+    ``IOException`` from the writer side."""
     path = Path(duckdb_path)
     if read_only:
-        if path.exists():
-            try:
-                return _configure(duckdb.connect(str(path), read_only=True))
-            except duckdb.IOException as exc:
-                # A concurrent import holds the write lock. Surface a friendly,
-                # actionable message instead of the raw lock IOException.
-                if "lock" in str(exc).lower():
-                    raise ValueError(
-                        "This dataset is busy (an import or rebuild is writing to it "
-                        "right now). Retry in a moment, once the import finishes."
-                    ) from exc
-                raise
-        # No DB yet — nothing to read; open writable so the caller gets an empty DB
-        # rather than a hard error.
+        if not path.exists():
+            raise ValueError(
+                "This dataset has no analytical database yet (nothing was imported, "
+                "or the import did not complete). Import the data first."
+            )
+        try:
+            return _configure(duckdb.connect(str(path), read_only=True))
+        except duckdb.IOException as exc:
+            if "lock" in str(exc).lower():
+                raise ValueError(
+                    "This dataset is busy (an import or rebuild is writing to it "
+                    "right now). Retry in a moment, once the import finishes."
+                ) from exc
+            raise
     path.parent.mkdir(parents=True, exist_ok=True)
-    return _configure(duckdb.connect(str(path)))
+    try:
+        return _configure(duckdb.connect(str(path)))
+    except duckdb.IOException as exc:
+        if "lock" in str(exc).lower():
+            raise ValueError(
+                "This dataset is busy (another analysis or import holds it right "
+                "now). Retry in a moment."
+            ) from exc
+        raise

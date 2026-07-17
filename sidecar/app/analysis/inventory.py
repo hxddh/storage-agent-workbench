@@ -273,15 +273,17 @@ def import_inventory_file(raw_path: str | Path, duckdb_path: str | Path) -> dict
 
 # --- analyze_inventory ------------------------------------------------------
 
+# Thresholds are binary (4096 = 4 KiB, 1048576 = 1 MiB, …) so the labels say
+# KiB/MiB — they used to read KB/MB, mislabeling the buckets under SI units.
 _SIZE_CASE = f"""
 CASE
   WHEN size IS NULL THEN 'unknown'
-  WHEN size < 4096 THEN '<4KB'
-  WHEN size < 131072 THEN '4KB-128KB'
-  WHEN size < 1048576 THEN '128KB-1MB'
-  WHEN size < 67108864 THEN '1MB-64MB'
-  WHEN size < 536870912 THEN '64MB-512MB'
-  ELSE '512MB+'
+  WHEN size < 4096 THEN '<4KiB'
+  WHEN size < 131072 THEN '4KiB-128KiB'
+  WHEN size < 1048576 THEN '128KiB-1MiB'
+  WHEN size < 67108864 THEN '1MiB-64MiB'
+  WHEN size < 536870912 THEN '64MiB-512MiB'
+  ELSE '512MiB+'
 END
 """
 
@@ -362,7 +364,9 @@ def analyze_inventory(duckdb_path: str | Path) -> dict[str, Any]:
             # total ÷ ALL objects (null sizes counted as 0) so the displayed
             # total_size / object_count / average triple reconciles; the
             # unknown_size_ratio below tells the reader how many were size-less.
-            "average_object_size": int(total_size / count),
+            # Floor division: float division loses int64 precision above 2^53
+            # (multi-PB totals), which the Int64 ingestion works to preserve.
+            "average_object_size": int(total_size) // int(count),
             "size_histogram": size_hist,
             "prefix_distribution": prefix_dist,
             "object_age_distribution": age_dist,
@@ -425,7 +429,11 @@ def derive_findings(m: dict[str, Any]) -> list[dict[str, str]]:
                             f"{large_sum / total_size:.1%} of total bytes."})
 
     storage = m.get("storage_class_distribution") or []
-    if storage and storage[0]["count"] / m["object_count"] > 0.9:
+    # Skip the NULL group: an inventory with no storage_class column at all
+    # (minimal Bucket/Key/Size exports) is "column missing", not "skewed to
+    # class 'None'" — same null-group guard as hot-key/hot-prefix in access_logs.
+    if (storage and storage[0]["value"] not in (None, "None", "")
+            and storage[0]["count"] / m["object_count"] > 0.9):
         f.append({"severity": "info", "title": "Storage-class skew",
                   "detail": f"Storage class '{storage[0]['value']}' covers "
                             f"{storage[0]['count'] / m['object_count']:.1%} of objects."})

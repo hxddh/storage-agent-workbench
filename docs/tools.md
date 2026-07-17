@@ -372,7 +372,11 @@ chars as a **hard floor**. A 128k/200k-context model is unchanged; a 1M-context
 model gets a proportionally deeper turn. The window comes from a built-in
 model→window table, but a model provider can carry an explicit `context_window`
 (tokens) that overrides it — so a newly-shipped large-context model isn't
-throttled to the default. The same window also scales the thread-replay caps
+throttled to the default. The table is deliberately conservative where a
+family's real window is gated: e.g. Claude models map to 200k (the GA default)
+even though some expose a 1M window behind a beta/tier opt-in — if your account
+has the larger window enabled, declare it via `context_window` on the model
+provider rather than expecting the table to assume it. The same window also scales the thread-replay caps
 (how many prior messages / chars the agent re-sees), floored at the historical
 values and capped. The completion (`max_tokens`) budget is additionally clamped
 to each model's real provider max-output, so we never send a value the provider
