@@ -28,6 +28,9 @@ export default function App() {
   const [showWizard, setShowWizard] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Bumped to force the open Thread to reload when the ACTIVE session changed in
+  // a way the thread mirrors (a rename → header title) without a session switch.
+  const [threadReloadKey, setThreadReloadKey] = useState(0);
   const { t } = useI18n();
 
   const refreshSessions = useCallback(async () => {
@@ -73,6 +76,10 @@ export default function App() {
     onRename: async (s, title) => {
       try { await patchSession(s.id, { title }); } catch (e) { fail(e); }
       refreshSessions();
+      // The thread header mirrors the title; nudge it to reload if it's the open
+      // session (a rename doesn't change activeId, so Thread wouldn't otherwise
+      // refresh) (FE6).
+      if (s.id === activeId) setThreadReloadKey((k) => k + 1);
     },
     onTogglePin: async (s) => {
       try { await patchSession(s.id, { pinned: !s.pinned }); } catch (e) { fail(e); }
@@ -162,6 +169,7 @@ export default function App() {
         onChanged={refreshSessions}
         sidecarReady={status === "connected"}
         settingsOpen={drawerOpen}
+        reloadKey={threadReloadKey}
       />
 
       <SettingsDrawer

@@ -54,7 +54,15 @@ class EventBus:
 
     def create(self, run_id: str) -> None:
         with self._lock:
-            self._runs.setdefault(run_id, self._new_entry())
+            entry = self._runs.get(run_id)
+            if entry is None or entry["done"]:
+                # Fresh stream for this run. RE-creating a run that already
+                # finished (a retry of a failed run: the atomic claim allows
+                # failed→running) must start clean — otherwise a new subscriber
+                # replays the OLD run's terminal events and its `done=True`, so it
+                # sees the prior failure and disconnects while the new executor
+                # publishes into an already-done buffer.
+                self._runs[run_id] = self._new_entry()
             self._evict_done_locked()
 
     def publish(self, run_id: str, event: dict[str, Any]) -> None:

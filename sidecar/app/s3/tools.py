@@ -1545,9 +1545,11 @@ def test_conditional_get(
     conn: sqlite3.Connection, provider_id: str, bucket: str, key: str, etag: str,
 ) -> dict[str, Any]:
     """HeadObject with If-None-Match — proves whether a cached ETag still matches
-    the stored object (304 = unchanged, 200 = changed + the current ETag). The
-    cleanest evidence for "am I seeing stale data / did the object change?", and
-    a provider-compat probe for conditional-header support. No body either way.
+    the stored object. 304 → unchanged. 200 → compare ETags: a DIFFERENT ETag
+    means changed; the SAME ETag means the provider IGNORED the conditional header
+    (returned 200 instead of 304), reported as unchanged + provider_unsupported.
+    The cleanest evidence for "am I seeing stale data / did the object change?",
+    and a provider-compat probe for conditional-header support. No body either way.
     """
     base = {
         "success": False, "etag_matches": None, "current_etag": None,

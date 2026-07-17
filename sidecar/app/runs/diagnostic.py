@@ -14,6 +14,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from .. import config
 from ..events import bus
 from ..repositories import cloud_providers as cloud_repo
 from ..s3 import tools as s3_tools
@@ -120,5 +121,12 @@ def _diagnostic_body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any])
     summary = _summary_text(all_ok, evidence)
     bus.publish(run_id, {"type": "summary", "content": summary})
 
-    write_report(run, evidence, findings, summary)
+    # Route report generation through run_tool_with_events like every other
+    # executor, so it lands a tool_call + audit row (rule 17: report generation is
+    # auditable) instead of writing report.md with no trail.
+    run_tool_with_events(
+        conn, run_id, "generate_markdown_report", {"run_id": run_id},
+        lambda: {"report_path": config.rel_path(
+            write_report(run, evidence, findings, summary)[0]), "format": "markdown"},
+    )
     return summary

@@ -8,7 +8,7 @@ import {
 } from "../api";
 import type { Grounding, NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
 import { saveTextFile } from "../config";
-import { useSessionRun, patchSessionRun } from "../sessionRuns";
+import { useSessionRun, patchSessionRun, getSessionRun } from "../sessionRuns";
 import { useTurnRunner, cleanError } from "../hooks/useTurnRunner";
 import { Button } from "./ui";
 import { Markdown } from "./Markdown";
@@ -61,6 +61,7 @@ export function Thread({
   onChanged,
   sidecarReady,
   settingsOpen,
+  reloadKey = 0,
 }: {
   sessionId: string | null;
   onSessionCreated: (id: string) => void;
@@ -68,6 +69,9 @@ export function Thread({
   onChanged: () => void;
   sidecarReady: boolean;
   settingsOpen: boolean;
+  /** Bumped by the parent to force a thread reload without a session switch —
+   * e.g. after the active session is renamed, so the header title refreshes. */
+  reloadKey?: number;
 }) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [triage, setTriage] = useState<TriageCase[]>([]);
@@ -221,7 +225,22 @@ export function Thread({
     // sessionRuns store, so an in-flight turn keeps going and keeps its content
     // when you switch away and back — nothing to reset here.
     localId.current = sessionId;
-    setText("");
+    // Clear the previous session's thread immediately on a real switch so B never
+    // briefly renders A's messages/title/findings while B's reload is in flight
+    // (FE4). The reload's stale-guard still protects against out-of-order fetches.
+    if (sessionId !== loadedIdRef.current) {
+      setDetail(null);
+      setTriage([]);
+    }
+    // Restore a message a prior turn FAILED on in this session (possibly while it
+    // was off-screen) into the composer, so it's never silently lost (FE2).
+    const failed = sessionId ? getSessionRun(sessionId).failedText : null;
+    if (failed) {
+      setText(failed);
+      patchSessionRun(sessionId!, { failedText: null });
+    } else {
+      setText("");
+    }
     setImportHandoff(null);
     setReport(null);
     setViewError(null);
@@ -231,6 +250,13 @@ export function Thread({
     refreshModel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
+
+  // Parent-driven reload without a session switch (e.g. the active session was
+  // renamed): refresh the thread so its header title matches the rail (FE6).
+  useEffect(() => {
+    if (reloadKey && sessionId) reload(sessionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadKey]);
 
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];

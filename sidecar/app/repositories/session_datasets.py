@@ -97,12 +97,30 @@ def mark_imported(
     table_name: str,
     row_count: int,
     detected_format: str | None = None,
-) -> None:
-    conn.execute(
-        "UPDATE session_datasets SET duckdb_path=?, table_name=?, row_count=?, "
-        "detected_format=?, status='imported' WHERE id=?",
-        (duckdb_path_rel, table_name, row_count, detected_format, dataset_id),
-    )
+    expected_stored_path: str | None = None,
+) -> bool:
+    """Flag a dataset imported. Returns True if the row was updated.
+
+    ``expected_stored_path`` guards against a concurrent re-upload: if the caller
+    imported ``expected_stored_path`` but the row's ``stored_path`` has since
+    changed (a re-upload of the same filename overwrote it and reset status to
+    'uploaded'), the UPDATE matches 0 rows and returns False — so a slow import of
+    the OLD file can't stamp a stale table as freshly imported over the new one.
+    """
+    if expected_stored_path is not None:
+        cur = conn.execute(
+            "UPDATE session_datasets SET duckdb_path=?, table_name=?, row_count=?, "
+            "detected_format=?, status='imported' WHERE id=? AND stored_path=?",
+            (duckdb_path_rel, table_name, row_count, detected_format,
+             dataset_id, expected_stored_path),
+        )
+    else:
+        cur = conn.execute(
+            "UPDATE session_datasets SET duckdb_path=?, table_name=?, row_count=?, "
+            "detected_format=?, status='imported' WHERE id=?",
+            (duckdb_path_rel, table_name, row_count, detected_format, dataset_id),
+        )
+    return cur.rowcount > 0
 
 
 def get(conn: sqlite3.Connection, dataset_id: str) -> dict[str, Any] | None:

@@ -72,3 +72,24 @@ def rel_path(path: str | Path) -> str:
         return str(p.relative_to(base))
     except ValueError:
         return p.name
+
+
+def scrub_paths(text: str) -> str:
+    """Collapse the app data dir and the OS home dir (which carry the username and
+    the exact ``app.db`` location ``rel_path`` exists to keep out of persistence)
+    out of a free-text string — e.g. an error message surfaced to the client / SSE.
+
+    Deliberately narrow: only these two known prefixes are stripped, so object
+    keys / bucket names that merely LOOK like paths are never mangled. Longest
+    prefix first so the data dir (usually under home) wins."""
+    if not text:
+        return text
+    out = text
+    try:
+        prefixes = [(str(data_dir()), "<data>"), (str(Path.home()), "~")]
+    except (RuntimeError, OSError):
+        prefixes = [(str(data_dir()), "<data>")]
+    for raw, repl in sorted(prefixes, key=lambda x: len(x[0]), reverse=True):
+        if raw and raw != "/":
+            out = out.replace(raw, repl)
+    return out

@@ -213,7 +213,8 @@ export function RunDetail({
     const pct = (n: unknown) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
     const bytesH = (n: unknown) => {
       let v = Number(n) || 0;
-      const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+      // Binary divisors (÷1024) → binary labels, matching the backend (KiB/MiB).
+      const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
       let i = 0;
       while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
       return i === 0 ? `${v} B` : `${v.toFixed(1)} ${units[i]}`;

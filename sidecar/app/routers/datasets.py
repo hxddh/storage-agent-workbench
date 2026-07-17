@@ -37,9 +37,13 @@ MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
 
 
 def _safe_filename(name: str) -> str:
-    # Strip any directory components; keep a simple basename.
+    # Strip any directory components; keep a simple basename. A bare "." / ".."
+    # basename is a directory ref (resolves to run_dir / its parent) — map those
+    # and an empty name to a safe default so os.replace can't target a directory.
     base = Path(name or "upload.dat").name
-    return base or "upload.dat"
+    if base in ("", ".", ".."):
+        return "upload.dat"
+    return base
 
 
 @router.post("/runs/{run_id}/datasets/upload", response_model=DatasetUploadResponse)

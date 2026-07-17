@@ -188,7 +188,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
     @function_tool
     def list_objects(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 200,
                      continuation_token: str = "", recursive: bool = False) -> str:
-        """List one page of object keys (read-only ListObjectsV2, up to 1000 per call; no object bodies). To enumerate fully, PAGE: re-call with continuation_token = the previous result's next_token until next_token is null, accumulating result.keys. Set recursive=true to list keys flat under the prefix (no '/' directory grouping). The echoed `keys` list is capped at 500 per call — if `keys_truncated_in_context` is true, `key_count` is the real page size and the rest are on the next page (re-page), so don't treat the 500 you see as the whole page. `objects` carries per-key {size, storage_class, last_modified} for the first 100 entries — use it to sample size distribution / storage classes without N head_object calls. For a bucket far larger than paging can cover, propose an inventory analysis instead. Args: provider_id, bucket, prefix?, max_keys? (up to 1000), continuation_token?, recursive?."""
+        """List one page of object keys (read-only ListObjectsV2, up to 1000 per call; no object bodies). To enumerate fully, PAGE: re-call with continuation_token = the previous result's next_token until next_token is null, accumulating result.keys. Set recursive=true to list keys flat under the prefix (no '/' directory grouping). The FULL page (up to 1000 keys) is echoed in `keys`, so the keys you see ARE the whole page — enumerate further pages via next_token. `objects` carries per-key {size, storage_class, last_modified} for the first 100 entries — use it to sample size distribution / storage classes without N head_object calls. For a bucket far larger than paging can cover, propose an inventory analysis instead. Args: provider_id, bucket, prefix?, max_keys? (up to 1000), continuation_token?, recursive?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -357,7 +357,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
 
     @function_tool
     def test_conditional_get(provider_id: str, bucket: str, key: str, etag: str) -> str:
-        """Probe whether a cached ETag still matches the stored object (read-only HeadObject with If-None-Match; NO body either way). 304 → etag_matches=true (the object is unchanged — the user's stale data is a cache/CDN problem, not the store); 200 → etag_matches=false + the current_etag (the object really changed). Also doubles as a provider-compatibility probe for conditional-header support. Use for "I'm seeing stale/old data" or "did this object change?". Args: provider_id, bucket, key, etag (the cached ETag to test, quotes optional)."""
+        """Probe whether a cached ETag still matches the stored object (read-only HeadObject with If-None-Match; NO body either way). Read the result from `etag_matches`, NOT the status code: 304 → etag_matches=true (unchanged — stale data is a cache/CDN problem, not the store); 200 with a DIFFERENT current_etag → etag_matches=false (the object really changed); 200 with the SAME etag → etag_matches=true + error_code="provider_unsupported" (the provider ignored If-None-Match — many S3-compatible stores do; the object is unchanged and conditional requests aren't supported here, so don't report a change). Doubles as a provider-compatibility probe for conditional-header support. Use for "I'm seeing stale/old data" or "did this object change?". Args: provider_id, bucket, key, etag (the cached ETag to test, quotes optional)."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -366,9 +366,15 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
             return _err(denial)
         rec("test_conditional_get", provider_id=provider_id, bucket=bucket, key=key)
         res = s3.test_conditional_get(conn, provider_id, bucket, key, etag)
-        note("test_conditional_get", f"{bucket}/{key}",
-             ("unchanged (304)" if res.get("etag_matches") else "changed (200)")
-             if res.get("success") else "error")
+        if not res.get("success"):
+            label = "error"
+        elif res.get("error_code") == s3.PROVIDER_UNSUPPORTED:
+            label = "unchanged (provider ignored If-None-Match)"
+        elif res.get("etag_matches"):
+            label = f"unchanged ({res.get('status_code', 304)})"
+        else:
+            label = f"changed ({res.get('status_code', 200)})"
+        note("test_conditional_get", f"{bucket}/{key}", label)
         return json.dumps(res)
 
     @function_tool

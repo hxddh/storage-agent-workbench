@@ -111,10 +111,11 @@ def parse_agent_contract(raw: Any, allowed_skill_names: list[str] | None = None,
     if len(answer) > cap:
         answer = answer[:cap].rstrip() + "\n\n" + ANSWER_CUT_MARKER
 
-    # Cap matches the per-turn read_skill budget (session_tools._MAX_SKILL_LOADS)
-    # so a turn that legitimately loaded several skills can report all of them
-    # instead of under-reporting its method.
-    skills_used = _strlist(data, "skills_used", cap=10, length=80)
+    # Cap matches the per-turn read_skill budget (session_tools._MAX_SKILL_LOADS,
+    # now 20) so a turn that legitimately loaded up to that many skills can report
+    # all of them instead of under-reporting its method. (Kept as a literal, not
+    # an import, to avoid an agent_runtime→skills import cycle.)
+    skills_used = _strlist(data, "skills_used", cap=20, length=80)
     if allowed_skill_names is not None:
         allowed = set(allowed_skill_names)
         skills_used = [s for s in skills_used if s in allowed]

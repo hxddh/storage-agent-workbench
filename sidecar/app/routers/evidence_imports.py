@@ -38,6 +38,13 @@ from ..security.redaction import redact_text
 router = APIRouter(prefix="/evidence-imports", tags=["evidence-imports"])
 
 
+def _safe_err(exc: object) -> str:
+    """Redact secrets AND collapse absolute filesystem paths from an error
+    surfaced to the client (an OSError/download failure can carry the app's
+    absolute paths, which `redact_text` alone leaves in)."""
+    return config.scrub_paths(redact_text(str(exc)))
+
+
 # The import API uses "access_log"; the discovered evidence source
 # is named "server_access_logging".
 _SOURCE_TYPE_ALIAS = {"access_log": "server_access_logging", "inventory": "inventory"}
@@ -105,12 +112,12 @@ def plan_import(body: EvidenceImportPlanRequest, conn: sqlite3.Connection = Depe
     except client_factory.CredentialResolutionError as exc:
         # The one place this is EXPECTED to surface to a user action (the import
         # proposal click) — an actionable 424, not a raw 500.
-        raise HTTPException(status_code=424, detail=redact_text(str(exc))) from exc
+        raise HTTPException(status_code=424, detail=_safe_err(exc)) from exc
     except client_factory.ProviderNotFound as exc:
         raise HTTPException(status_code=404, detail="cloud provider not found") from exc
     except Exception as exc:  # noqa: BLE001 — S3/listing errors → sanitized 502, never a raw 500
         raise HTTPException(status_code=502,
-                            detail=redact_text(f"planning failed: {exc}")) from exc
+                            detail=_safe_err(f"planning failed: {exc}")) from exc
 
     import_id = repo.create_plan(
         conn, provider_id=provider_id, account_run_id=body.account_run_id, snapshot_id=snapshot_id,
@@ -241,9 +248,9 @@ def run_import(import_id: str, conn: sqlite3.Connection = Depends(get_conn)):
         runs_repo.set_status(conn, analysis_run_id, "failed",
                              final_summary="Evidence import failed before analysis could run.")
         audit.record(conn, "evidence_import.failed",
-                     {"import_id": import_id, "error": redact_text(str(exc))}, run_id=None)
+                     {"import_id": import_id, "error": _safe_err(exc)}, run_id=None)
         conn.commit()
-        raise HTTPException(status_code=400, detail=f"evidence download failed: {redact_text(str(exc))}")
+        raise HTTPException(status_code=400, detail=f"evidence download failed: {_safe_err(exc)}")
 
     # The download succeeded; persist the dataset + flip the import to 'imported'.
     # This block MUST be guarded too: if datasets_repo.create / rel_path / a commit
@@ -272,9 +279,9 @@ def run_import(import_id: str, conn: sqlite3.Connection = Depends(get_conn)):
         runs_repo.set_status(conn, analysis_run_id, "failed",
                              final_summary="Evidence import failed while persisting the dataset.")
         audit.record(conn, "evidence_import.failed",
-                     {"import_id": import_id, "error": redact_text(str(exc))}, run_id=None)
+                     {"import_id": import_id, "error": _safe_err(exc)}, run_id=None)
         conn.commit()
-        raise HTTPException(status_code=500, detail=f"evidence import failed: {redact_text(str(exc))}")
+        raise HTTPException(status_code=500, detail=f"evidence import failed: {_safe_err(exc)}")
 
     # Hand off to the existing deterministic analysis executor.
     run_service.start(analysis_run_id)
