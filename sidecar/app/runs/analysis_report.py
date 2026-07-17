@@ -16,14 +16,17 @@ SAMPLE_LIMIT = 20
 
 
 def _bytes_h(n: int | float | None) -> str:
+    # 1024-based divisors → binary-unit labels (KiB/MiB/…). The labels used to
+    # say KB/MB while dividing by 1024, so a 1,000,000-byte object printed as
+    # "976.6 KB" — mislabeled by the SI reading of KB.
     if not n:
         return "0 B"
     n = float(n)
-    for unit in ("B", "KB", "MB", "GB", "TB", "PB"):
-        if n < 1024 or unit == "PB":
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB", "PiB"):
+        if n < 1024 or unit == "PiB":
             return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} B"
         n /= 1024
-    return f"{n:.1f} PB"
+    return f"{n:.1f} PiB"
 
 
 def _cell(v: object) -> str:

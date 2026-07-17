@@ -154,3 +154,30 @@ def mark_files(conn: sqlite3.Connection, import_id: str, status: str) -> None:
         (status, import_id),
     )
     conn.commit()
+
+
+def mark_interrupted(conn: sqlite3.Connection) -> int:
+    """Fail any import still 'importing' at startup.
+
+    The download runs in-process, so no import survives a sidecar restart — a row
+    still ``importing`` on boot is an orphan from a prior process (hard kill /
+    power loss mid-download). The in-request failure paths already revert to
+    'failed'; only a crash can leave this state, and without this pass the row
+    could never be re-confirmed (needs 'planned') nor re-run (needs 'confirmed'),
+    wedging the import forever. Mirrors ``runs.mark_interrupted``. Returns the
+    number reconciled.
+    """
+    ids = [row[0] for row in conn.execute(
+        "SELECT id FROM evidence_imports WHERE status = 'importing'"
+    )]
+    for import_id in ids:
+        conn.execute(
+            "UPDATE evidence_imports SET status = 'failed' WHERE id = ?", (import_id,)
+        )
+        conn.execute(
+            "UPDATE evidence_import_files SET status = 'failed' "
+            "WHERE import_id = ? AND selected = 1",
+            (import_id,),
+        )
+    conn.commit()
+    return len(ids)

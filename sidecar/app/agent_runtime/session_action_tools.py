@@ -40,7 +40,13 @@ _DEFAULT_PROMPTS = {
     "account_discovery": "Discover account-level buckets and evidence sources.",
 }
 
+# FLOOR on the survey/review final_summary echoed to the model, scaled with the
+# model window in build() (same de-ossification as agent memory / thread replay):
+# the summary is an already-sanitized deterministic aggregate — no raw rows — so
+# clipping it to a flat 2000 chars on a large-window model just made the agent
+# narrate a large account from a truncated summary.
 _MAX_SUMMARY = 2000
+_MAX_SUMMARY_CEIL = 16000
 
 
 def _err(msg: str) -> str:
@@ -110,7 +116,8 @@ def _execute_run(conn: sqlite3.Connection, body: RunCreate,
     return run_id
 
 
-def _run_result(conn: sqlite3.Connection, run_id: str) -> dict[str, Any]:
+def _run_result(conn: sqlite3.Connection, run_id: str,
+                summary_cap: int = _MAX_SUMMARY) -> dict[str, Any]:
     row = runs_repo.get_row(conn, run_id)
     if row is None:
         return {"run_id": run_id, "status": "unknown"}
@@ -118,7 +125,7 @@ def _run_result(conn: sqlite3.Connection, run_id: str) -> dict[str, Any]:
     result: dict[str, Any] = {
         "run_id": run_id,
         "status": row["status"],
-        "final_summary": redact_text(str(summary))[:_MAX_SUMMARY],
+        "final_summary": redact_text(str(summary))[:summary_cap],
     }
     if row["status"] in ("pending", "running"):
         # Hit the wall-clock timeout: the run is still going in the background.
@@ -140,6 +147,8 @@ def build(
     session_id: str | None = None,
     turn_id: str | None = None,
     cancel_event: Any = None,
+    model: str | None = None,
+    explicit_window: int | None = None,
 ) -> list[Any]:
     """Build the agent's read-only survey/review tools (always available).
 
@@ -154,6 +163,13 @@ def build(
     ``cancel_event`` lets the 180 s inline-run wait return early when the user
     stops the turn.
     """
+    from . import model_budget
+
+    # Elastic summary echo: floor at _MAX_SUMMARY (128k/200k windows unchanged),
+    # scaled with the window like agent memory / thread replay.
+    window = model_budget.context_window(model, explicit_window)
+    summary_cap = min(_MAX_SUMMARY_CEIL, _MAX_SUMMARY * max(1, window // 128_000))
+
     def provider(provider_id: str):
         return cloud_repo.get(conn, provider_id)
 
@@ -196,7 +212,7 @@ def build(
                              user_prompt=_DEFAULT_PROMPTS["bucket_config_review"], session_id=session_id)
             run_id = _execute_run(conn, body, turn_id, f"bucket_config_review:{provider_id}:{bucket}",
                                   cancel_event=cancel_event)
-            result = _run_result(conn, run_id)
+            result = _run_result(conn, run_id, summary_cap)
         except Exception as exc:  # noqa: BLE001 — a tool returns an error string, never raises
             return _err(f"review_bucket_config failed: {exc}")
         note("review_bucket_config", bucket, result["status"])
@@ -219,7 +235,7 @@ def build(
                              session_id=session_id, max_buckets=mb)
             run_id = _execute_run(conn, body, turn_id, f"account_discovery:{provider_id}",
                                   cancel_event=cancel_event)
-            result = _run_result(conn, run_id)
+            result = _run_result(conn, run_id, summary_cap)
             profile = account_repo.get_profile(conn, run_id)
         except Exception as exc:  # noqa: BLE001 — a tool returns an error string, never raises
             return _err(f"survey_account failed: {exc}")
@@ -244,7 +260,7 @@ def build(
         linked = {r["run_id"] for r in sessions_repo.list_runs(conn, session_id)} if session_id else set()
         if run_id not in linked:
             return _err("Unknown run_id for this session. Only runs in this session can be read.")
-        result = _run_result(conn, run_id)
+        result = _run_result(conn, run_id, summary_cap)
         # Bounded in-turn wait: poll until the run leaves pending/running or the
         # budget elapses. This whole turn already runs on a dedicated worker
         # thread (boto3 tools block it by design), so sleeping here stalls only
@@ -255,7 +271,7 @@ def build(
                 break  # user stopped the turn — stop waiting on the background run
             _time.sleep(1.0)
             conn.commit()  # end the read snapshot so run_sync's writes are visible
-            result = _run_result(conn, run_id)
+            result = _run_result(conn, run_id, summary_cap)
         audit.record(conn, "session.read_run_result",
                      {"session_id": session_id, "run_id": run_id, "status": result["status"]},
                      run_id=run_id)

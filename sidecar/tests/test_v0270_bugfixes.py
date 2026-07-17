@@ -24,7 +24,6 @@ R-5 — redact() leaves benign non-UTF-8 bytes intact (only substitutes on a
 import json
 import sqlite3
 
-import pytest
 
 from app import config
 from app.models.schemas import RunCreate
@@ -75,15 +74,20 @@ def test_model_budget_tool_output_never_below_floor():
         assert mb.tool_output_char_budget(m) >= mb.TOOL_OUTPUT_CHARS_FLOOR
 
 
-def test_model_budget_completion_floor_and_ceiling():
+def test_model_budget_completion_floor_and_provider_cap():
     from app.agent_runtime import model_budget as mb
 
-    # Floor model unchanged; large window raised but capped under provider max.
+    # Floor model unchanged; large window raised but capped by the model's REAL
+    # provider max-output (the sole upper bound — the old module-wide 32k ceiling
+    # is gone: it only ever clamped models whose real output cap is higher).
     assert mb.completion_token_budget("gpt-4o") == mb.COMPLETION_TOKENS_FLOOR
-    assert mb.completion_token_budget("gpt-4.1") == mb.COMPLETION_TOKENS_CEILING
+    assert mb.completion_token_budget("gpt-4.1") == mb.max_output_tokens("gpt-4.1")
     for m in (None, "", "unknown", "claude-opus-4-8"):
         b = mb.completion_token_budget(m)
-        assert mb.COMPLETION_TOKENS_FLOOR <= b <= mb.COMPLETION_TOKENS_CEILING
+        assert mb.COMPLETION_TOKENS_FLOOR <= b <= mb.max_output_tokens(m)
+    # A 64k-output model on a large window is no longer starved at 32k: window//8
+    # governs, clamped only by its provider cap.
+    assert mb.completion_token_budget("gemini-2.5-pro") == 64_000
 
 
 def test_install_tool_output_budget_honors_model_limit():
@@ -298,7 +302,7 @@ def test_redact_bytes_preserves_benign_binary():
 
 
 def test_redact_bytes_still_scrubs_a_real_secret():
-    from app.security.redaction import redact, REDACTED
+    from app.security.redaction import redact
 
     secret = b"aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
     out = redact(secret)

@@ -71,8 +71,11 @@ def upsert(
     (dropping any stale imported DuckDB/table) so the next analysis re-derives it.
     """
     source_filename = _clean_name(source_filename)
+    # `IS`, not `=`: with a NULL filename `= NULL` never matches, so a re-uploaded
+    # nameless file would insert a second row pointing at the same overwritten
+    # path — exactly what this dedupe exists to prevent.
     existing = conn.execute(
-        "SELECT id FROM session_datasets WHERE session_id = ? AND source_filename = ? "
+        "SELECT id FROM session_datasets WHERE session_id = ? AND source_filename IS ? "
         "ORDER BY rowid DESC LIMIT 1",
         (session_id, source_filename),
     ).fetchone()

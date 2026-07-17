@@ -18,9 +18,15 @@ from ..repositories import account_discovery as account_repo
 from ..repositories import sessions as sessions_repo
 from ..security.redaction import redact_text
 
-MAX_FACTS = 50
-MAX_FINDINGS = 50
+# Persisted caps. 200 (was 50): the PERSISTED summary is the ceiling on what the
+# model-elastic context cap (session_agent.build_session_context) can ever show a
+# large-window model — a flat 50 here silently re-imposed the old clip after the
+# context side went elastic. The human-readable summary_md digest stays at
+# MD_RENDER_CAP entries so the UI card remains readable.
+MAX_FACTS = 200
+MAX_FINDINGS = 200
 MAX_FINDINGS_PER_RUN = 20
+MD_RENDER_CAP = 50
 
 _ANALYSIS_TYPES = {"inventory_analysis", "access_log_analysis"}
 
@@ -154,10 +160,14 @@ def _render_md(session: dict[str, Any], facts, findings, open_q, actions, limita
 
     fact_lines = "\n".join(
         f"- {f['text']} _(run {str(f.get('source_run_id') or 'n/a')[:8]}, {f.get('confidence', 'medium')})_"
-        for f in facts) or "- —"
+        for f in facts[:MD_RENDER_CAP]) or "- —"
+    if len(facts) > MD_RENDER_CAP:
+        fact_lines += f"\n- _…and {len(facts) - MD_RENDER_CAP} more (kept in the structured summary)_"
     finding_lines = "\n".join(
         f"- **[{f['severity']}]** {f['title']} — {f['interpretation']} _(run {str(f.get('source_run_id') or '')[:8]}, {f['confidence']})_"
-        for f in findings) or "- —"
+        for f in findings[:MD_RENDER_CAP]) or "- —"
+    if len(findings) > MD_RENDER_CAP:
+        finding_lines += f"\n- _…and {len(findings) - MD_RENDER_CAP} more (kept in the structured summary)_"
     action_lines = "\n".join(
         f"- **{a['title']}** ({a['action_type']}, {a.get('confidence','medium')}) — {a.get('reason','')}"
         for a in actions) or "- —"

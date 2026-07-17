@@ -69,7 +69,6 @@ TOOL_OUTPUT_CHARS_FLOOR = 200_000       # was session_agent._MAX_TOOL_OUTPUT_CHA
 # window's fair share — no shipping model exceeds that usefully today).
 TOOL_OUTPUT_CHARS_CEILING = 2_000_000
 COMPLETION_TOKENS_FLOOR = 16_384        # was session_agent._MAX_COMPLETION_TOKENS
-COMPLETION_TOKENS_CEILING = 32_768      # stay under provider max-output caps
 
 
 def context_window(model: str | None, explicit: int | None = None) -> int:
@@ -116,13 +115,19 @@ def tool_output_char_budget(model: str | None, explicit_window: int | None = Non
 def completion_token_budget(model: str | None, explicit_window: int | None = None,
                             explicit_max: int | None = None) -> int:
     """Completion (max_tokens) budget: raised only where the window clearly
-    supports it, floored at the historical value, capped by the module ceiling AND
-    by the model's real provider max-output so we never trigger a 400.
+    supports it, floored at the historical value, and capped by the model's real
+    provider max-output so we never trigger a 400.
+
+    The per-model max-output clamp is the SOLE upper bound — there is no second
+    module-wide ceiling. (There was: 32_768, and since the provider clamp already
+    existed it only ever bit DOWNWARD on models whose real output ceiling is
+    higher — claude-3-7 / gemini-2.5 at 64k, o-series at 100k — starving long
+    enumeration answers on exactly the models that could hold them, worst on
+    reasoning models whose thinking spends part of the same budget.)
 
     The provider cap is applied only when it's *below* the floor for a genuinely
     small-output model — the floor otherwise wins (an existing deployment is
     unchanged), but a 4k-output model like gpt-4-turbo is clamped down to 4096
     rather than being handed the 16384 floor it would reject."""
-    scaled = max(COMPLETION_TOKENS_FLOOR,
-                 min(context_window(model, explicit_window) // 8, COMPLETION_TOKENS_CEILING))
+    scaled = max(COMPLETION_TOKENS_FLOOR, context_window(model, explicit_window) // 8)
     return min(scaled, max_output_tokens(model, explicit_max))

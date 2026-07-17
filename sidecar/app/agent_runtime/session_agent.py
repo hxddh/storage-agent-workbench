@@ -40,8 +40,12 @@ from . import session_tools
 from .agent_service import AgentUnavailable
 from .guardrails import strip_chain_of_thought, strip_chain_of_thought_stream
 
-_MAX_FACTS = 50  # kept in sync with sessions.summary_builder.MAX_FACTS
-_MAX_FINDINGS = 50  # kept in sync with sessions.summary_builder.MAX_FINDINGS (was 30 — drift)
+# FLOORS for the deterministic-summary items shown to the model; the effective
+# cap is _elastic_memory_cap (scales with the window, ceiling _MEM_RECALL_CEIL).
+# The PERSISTED summary holds up to summary_builder.MAX_FACTS/MAX_FINDINGS (200),
+# so the elastic cap has something to reveal on a large-window model.
+_MAX_FACTS = 50
+_MAX_FINDINGS = 50
 _MEM_RECALL_CEIL = 400  # upper bound on the elastic agent-memory recall
 
 
@@ -71,18 +75,20 @@ _MAX_MESSAGES_CEIL = 96
 # the (now elastic) per-turn budget. Defined AS _MAX_TURNS (below) so the two
 # can't drift apart again (they did: 40 vs 60 after v0.27.0).
 _MAX_REPLAY_TOOLS = 60  # == _MAX_TURNS; assert below keeps them in lockstep
-# Enumerations can be large (e.g. 96+ buckets in a table). Keep our answer cap
-# well above any single model completion so we never truncate a legitimate full
-# answer in post-processing.
+# Enumerations can be large (e.g. 96+ buckets in a table). FLOOR of the answer
+# cap, not the cap itself: _answer_cap() scales it to ≥ ~4 chars/token of the
+# model's completion budget, so post-processing can never truncate an answer the
+# completion budget legitimately allowed — and when the cap IS hit, the cut is
+# marked (_ANSWER_CUT_MARKER), never silent (same rule as every other budget).
 _MAX_OUTPUT = 48000
 # Without an explicit max_tokens the provider applies a small default; for a
 # reasoning model (e.g. deepseek-v4-pro) the thinking budget then leaves almost
-# nothing for the answer, truncating long enumerations mid-table. The budget
-# must comfortably cover the post-processing answer cap (_MAX_OUTPUT ≈ 12k
-# tokens), otherwise the prompt mandates full enumeration the completion budget
-# can't hold. (The installed Agents SDK's chat-completions streaming path does
-# not surface finish_reason, so a provider-side length cut cannot be detected
-# here — the generous budget is the mitigation.)
+# nothing for the answer, truncating long enumerations mid-table. This floor
+# (16384 tokens ≈ 65k chars) comfortably covers the _MAX_OUTPUT answer floor,
+# so the prompt's full-enumeration mandate always fits the completion budget.
+# (The installed Agents SDK's chat-completions streaming path does not surface
+# finish_reason, so a provider-side length cut cannot be detected here — the
+# generous budget is the mitigation.)
 _MAX_COMPLETION_TOKENS = 16384
 # A real investigation chains several probes (test_credentials → head_bucket →
 # test_addressing_style → list_objects → head_object …); keep a generous but
@@ -334,8 +340,12 @@ def build_session_context(
 ) -> dict[str, Any]:
     """Bounded, redacted context — the ONLY thing the model sees."""
     max_messages, max_replay_msg = _elastic_replay_caps(model, explicit_window)
+    # The deterministic grounding summary scales with the window too (floored at
+    # the historical 50) — agent_memory already went elastic; leaving these flat
+    # clipped exactly the grounding a large-context model needs on big sessions.
+    summary_cap = _elastic_memory_cap(model, explicit_window)
     findings = []
-    for f in (summary.get("findings") or [])[:_MAX_FINDINGS]:
+    for f in (summary.get("findings") or [])[:summary_cap]:
         findings.append({
             "severity": str(f.get("severity", "info"))[:32],
             "confidence": str(f.get("confidence", "medium"))[:16],
@@ -354,13 +364,13 @@ def build_session_context(
                 {"text": redact_text(str(f.get("text", "")))[:300],
                  "confidence": f.get("confidence", "medium"),
                  "source_run_id": str(f.get("source_run_id") or "")[:64]}
-                for f in (summary.get("known_facts") or [])[:_MAX_FACTS]
+                for f in (summary.get("known_facts") or [])[:summary_cap]
             ],
             "findings": findings,
-            "open_questions": [redact_text(str(q))[:300] for q in (summary.get("open_questions") or [])[:_MAX_FACTS]],
+            "open_questions": [redact_text(str(q))[:300] for q in (summary.get("open_questions") or [])[:summary_cap]],
             # NOTE: the deterministic rule-engine "next_actions" menu is intentionally
             # NOT injected — the agent proposes its own next steps. (Removed in v0.20.)
-            "limitations": [redact_text(str(x))[:300] for x in (summary.get("limitations") or [])[:_MAX_FACTS]],
+            "limitations": [redact_text(str(x))[:300] for x in (summary.get("limitations") or [])[:summary_cap]],
         },
         # Things YOU recorded in earlier turns of this session (via note_fact /
         # record_finding / note_open_question). Reuse them; don't re-derive.
@@ -535,13 +545,15 @@ def _finalize_agent_and_prompt(creds: dict[str, Any], prompt: str,
 
 def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, Any]] | None,
                  session_id: str | None, turn_id: str | None = None,
-                 cancel_event: Any = None) -> list[Any]:
+                 cancel_event: Any = None, model: str | None = None,
+                 explicit_window: int | None = None) -> list[Any]:
     """The agent's full read-only toolset (no autonomy toggle — always available)."""
     if conn is None:
         return []
     tools = session_tools.build(conn, function_tool, activity)
     tools += session_action_tools.build(conn, function_tool, activity, session_id, turn_id,
-                                        cancel_event=cancel_event)
+                                        cancel_event=cancel_event, model=model,
+                                        explicit_window=explicit_window)
     # Working-memory tools are always available (recording is cloud-read-only).
     tools += session_memory_tools.build(conn, function_tool, session_id, activity)
     # Uploaded-file analysis is always available (local, read-only, sanitized) so
@@ -722,9 +734,28 @@ def _with_continue_proposal(contract: dict[str, Any]) -> dict[str, Any]:
     return contract
 
 
-def _finalize_contract(raw: Any, skill_names: list[str], activity: list[dict[str, Any]]) -> dict[str, Any]:
-    contract = skill_contract.parse_agent_contract(raw, allowed_skill_names=skill_names)
-    contract["answer"] = contract["answer"][:_MAX_OUTPUT]
+_ANSWER_CUT_MARKER = skill_contract.ANSWER_CUT_MARKER
+
+
+def _answer_cap(creds: dict[str, Any] | None) -> int:
+    """Elastic post-processing cap on the final answer.
+
+    Never below the _MAX_OUTPUT floor, and always ≥ ~4 chars/token of the model's
+    completion budget — so this cap can never cut an answer the completion budget
+    legitimately allowed the model to emit (it only backstops pathological output).
+    """
+    if not creds:
+        return _MAX_OUTPUT
+    return max(_MAX_OUTPUT, 4 * model_budget.completion_token_budget(
+        creds.get("model"), creds.get("context_window"), creds.get("max_output_tokens")))
+
+
+def _finalize_contract(raw: Any, skill_names: list[str], activity: list[dict[str, Any]],
+                       cap: int | None = None) -> dict[str, Any]:
+    # The answer cap is applied INSIDE parse_agent_contract (it owns the only
+    # slice), model-elastic via ``cap`` and never silent — the cut is marked.
+    contract = skill_contract.parse_agent_contract(raw, allowed_skill_names=skill_names,
+                                                   max_answer=cap or _MAX_OUTPUT)
     # Bind skills_used to skills the agent ACTUALLY loaded via read_skill this
     # turn — the model can't merely *claim* a skill it never opened (keeps the
     # report honest). read_skill records {tool, target=skill_name} in activity.
@@ -764,7 +795,8 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
         clients = []
     tools = _build_tools(spec.get("conn"), function_tool, activity,
                          spec.get("session_id"), spec.get("turn_id"),
-                         spec.get("cancel_event"))
+                         spec.get("cancel_event"), model=creds.get("model"),
+                         explicit_window=creds.get("context_window"))
     budget = _install_tool_output_budget(tools, model=creds.get("model"),
                                          explicit_window=creds.get("context_window"),
                                          cancel_event=spec.get("cancel_event"))
@@ -816,7 +848,8 @@ def _streamed_session_loop(spec: dict[str, Any]) -> dict[str, Any]:
             async for kind, data in stream_events_for(
                     result, spec["activity"], spec.get("skill_names") or [], finalize,
                     cancel_event=spec.get("cancel_event"), clients=clients,
-                    budget=spec.get("budget")):
+                    budget=spec.get("budget"),
+                    answer_cap=_answer_cap(spec.get("creds"))):
                 if kind == "final":
                     final = data
             return final
@@ -866,7 +899,7 @@ def answer(
     raw = SESSION_LOOP(spec)
     if isinstance(raw, dict):  # the real (streamed) loop returns the contract
         return raw
-    return _finalize_contract(raw, skill_names, activity)
+    return _finalize_contract(raw, skill_names, activity, cap=_answer_cap(creds))
 
 
 # --- Streaming path (SDK-only; used by the SSE endpoint) --------------------
@@ -981,7 +1014,8 @@ async def _close_clients(clients: list[Any] | None) -> None:
 async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_names: list[str],
                             finalize=None, *, cancel_event: Any = None,
                             clients: list[Any] | None = None,
-                            budget: dict[str, Any] | None = None):
+                            budget: dict[str, Any] | None = None,
+                            answer_cap: int | None = None):
     """Yield ('delta', text) and ('tool', record) during the run, then
     ('final', contract) when complete.
 
@@ -1015,7 +1049,7 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
                     partial = _hold_back_contract(
                         strip_chain_of_thought(redact_text(raw_acc))).strip()
                     answer_text = (partial + "\n\n" if partial else "") + _STOPPED_MARKER
-                    contract = _finalize_contract(answer_text, skill_names, activity)
+                    contract = _finalize_contract(answer_text, skill_names, activity, cap=answer_cap)
                     contract["stopped"] = True
                     yield ("final", contract)
                     return
@@ -1062,7 +1096,7 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
             # Cut short by the step ceiling or the context window → offer a
             # one-click "continue investigation" next step.
             yield ("final", _with_continue_proposal(
-                _finalize_contract(text, skill_names, activity)))
+                _finalize_contract(text, skill_names, activity, cap=answer_cap)))
             return
         while len(activity) > emitted_tools:
             yield ("tool", activity[emitted_tools])
@@ -1081,9 +1115,9 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
             if _BUDGET_CUT_MARKER not in final_text:
                 final_text = (final_text + "\n\n" + _BUDGET_CUT_MARKER).strip()
             yield ("final", _with_continue_proposal(
-                _finalize_contract(final_text, skill_names, activity)))
+                _finalize_contract(final_text, skill_names, activity, cap=answer_cap)))
         else:
-            yield ("final", _finalize_contract(final_text, skill_names, activity))
+            yield ("final", _finalize_contract(final_text, skill_names, activity, cap=answer_cap))
     finally:
         await _close_clients(clients)
 
