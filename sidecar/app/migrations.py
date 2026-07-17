@@ -11,6 +11,7 @@ secrets are stored here — only ``keyring://`` references for secrets.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 
 # --- Migration 001: initial app-metadata schema -----------------------------
@@ -633,19 +634,143 @@ def _is_idempotent(exc: sqlite3.Error) -> bool:
     return any(m in text for m in _IDEMPOTENT_ERROR_MARKERS)
 
 
+# Table-rebuild idiom: CREATE <new> / INSERT..SELECT / DROP <final> / RENAME
+# <new>→<final>. Used by _M002 (tool_calls) and _M004 (datasets, which also
+# RENAMES columns).
+_RENAME_RE = re.compile(r"ALTER\s+TABLE\s+(\w+)\s+RENAME\s+TO\s+(\w+)", re.IGNORECASE)
+
+
+def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    ).fetchone() is not None
+
+
+def _col_sig(conn: sqlite3.Connection, table: str) -> frozenset:
+    # (name, type, notnull, pk) — a rebuild that changes ONLY a constraint (e.g.
+    # ``_M002`` relaxing ``run_id`` to nullable) leaves column NAMES identical, so
+    # a name-set comparison can't tell the un-rebuilt old table from the rebuilt
+    # one; the ``notnull`` flag can.
+    return frozenset(
+        (row[1], row[2], row[3], row[5])
+        for row in conn.execute(f"PRAGMA table_info({table})")
+    )
+
+
+def _statements(sql: str) -> list[str]:
+    # Migration DDL here has no semicolons inside string literals, so a simple
+    # split is safe.
+    return [s.strip() for s in sql.split(";") if s.strip()]
+
+
+def _create_sig(sql: str, table: str) -> frozenset:
+    """``(name, notnull)`` per column declared in this migration's ``CREATE TABLE
+    <table> (...)``. Parsed from the migration text so the rebuilt shape is known
+    even when the ``<new>`` table itself is already gone. Includes ``notnull`` so a
+    constraint-only rebuild (``_M002``: ``run_id`` → nullable, names unchanged) is
+    distinguishable from the un-rebuilt table. A bare ``PRIMARY KEY`` is NOT treated
+    as ``NOT NULL`` — matching SQLite's ``PRAGMA table_info`` for a non-INTEGER PK,
+    so this signature compares equal to the live table's."""
+    m = re.search(rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{table}\s*\((.*?)\)\s*;",
+                  sql, re.IGNORECASE | re.DOTALL)
+    if m is None:
+        return frozenset()
+    sig: set = set()
+    for part in m.group(1).split(","):
+        tok = part.strip().split()
+        if tok and tok[0].upper() not in (
+            "PRIMARY", "FOREIGN", "UNIQUE", "CHECK", "CONSTRAINT"
+        ):
+            notnull = 1 if re.search(r"\bNOT\s+NULL\b", part, re.IGNORECASE) else 0
+            sig.add((tok[0].strip('"'), notnull))
+    return frozenset(sig)
+
+
+def _name_notnull_sig(conn: sqlite3.Connection, table: str) -> frozenset:
+    return frozenset((row[1], row[3]) for row in conn.execute(f"PRAGMA table_info({table})"))
+
+
+def _recover_table_rebuild(conn: sqlite3.Connection, sql: str) -> bool:
+    """Recover a crashed table-rebuild migration (``CREATE <new> / INSERT..SELECT /
+    DROP <final> / RENAME <new>→<final>``). Return True if handled (caller returns),
+    False if this isn't a rebuild or it should be re-run from scratch.
+
+    Why this is REQUIRED, not an optimization: a rebuild that renames COLUMNS
+    (``_M004``: ``kind``→``dataset_type``) has an ``INSERT..SELECT`` naming the OLD
+    columns, so once the rename completes a retry's ``executescript`` re-runs that
+    copy against the NEW-schema table and raises ``no such column`` / ``no such
+    table`` — NOT an idempotent marker, so the migration wedges on EVERY boot and
+    the app never starts. The naive fix (tolerating those errors) DROPs the
+    populated final table and renames an empty ``<new>`` in — silent data loss. So
+    we key off the SCHEMA, not table existence (``executescript`` re-creates an
+    empty ``<new>`` before failing, so "both exist" is not a reliable signal):
+
+      - ``<new>`` present, ``<final>`` gone → crashed after DROP, before RENAME; the
+        data lives in ``<new>`` → finish the RENAME + trailing indexes/PRAGMA and
+        NEVER re-run the CREATE/INSERT (their source table is gone).
+      - ``<final>`` already has the REBUILT column set → the rebuild completed
+        (crash after RENAME, incl. a fully-applied migration that died before its
+        version row was written) → drop any stale empty ``<new>`` and stop.
+      - ``<final>`` still has the OLD column set → drop any stale ``<new>`` and let
+        the caller re-run the whole rebuild from the intact ``<final>``.
+    """
+    m = _RENAME_RE.search(sql)
+    if m is None:
+        return False
+    new, final = m.group(1), m.group(2)
+
+    if _table_exists(conn, new) and not _table_exists(conn, final):
+        stmts = _statements(sql)
+        rename_idx = next(i for i, s in enumerate(stmts) if _RENAME_RE.search(s))
+        for stmt in stmts[rename_idx:]:  # RENAME + trailing indexes / PRAGMA only
+            try:
+                conn.execute(stmt)
+            except (sqlite3.OperationalError, sqlite3.IntegrityError) as exc:
+                if not _is_idempotent(exc):
+                    raise
+        conn.commit()
+        return True
+
+    if not _table_exists(conn, final):
+        return False  # unrecognized state; let the generic replay try
+
+    # <final> exists. Whether the rebuild already ran is told by comparing <final>
+    # to the rebuilt shape. When the stale <new> is still present (executescript
+    # re-created it before failing) we compare full column SIGNATURES — names
+    # alone miss a constraint-only rebuild like _M002 (run_id → nullable). We then
+    # DROP the stale <new> so, if not completed, the generic replay re-runs the
+    # rebuild from the intact <final>.
+    if _table_exists(conn, new):
+        completed = _col_sig(conn, final) == _col_sig(conn, new)
+        conn.execute(f"DROP TABLE IF EXISTS {new}")  # stale/partial copy
+        conn.commit()
+        return completed
+    # <new> is gone: compare <final> to the rebuilt shape parsed from the migration
+    # text — (name, notnull) so a constraint-only rebuild (names unchanged) isn't
+    # mistaken for complete. If they disagree, return False so the generic replay
+    # re-runs the rebuild from the intact <final>.
+    target_sig = _create_sig(sql, new)
+    return bool(target_sig) and _name_notnull_sig(conn, final) == target_sig
+
+
 def _apply_one(conn: sqlite3.Connection, sql: str) -> None:
     """Apply one migration's SQL, recovering from a partial prior application.
 
-    Fast path: a single ``executescript`` (unchanged behavior). Only if that
-    fails with an "already applied" marker — a retry after a mid-migration crash,
-    since ``ALTER TABLE ... ADD COLUMN`` has no ``IF NOT EXISTS`` — do we re-run
-    the statements individually, skipping the ones that report the schema element
-    (or seed row) already exists. Any other error propagates.
+    Fast path: a single ``executescript`` (unchanged behavior). If that fails on a
+    retry after a mid-migration crash: a table-rebuild is recovered rename-state-
+    aware (``_recover_table_rebuild``), and otherwise (ADD COLUMN / IF NOT EXISTS
+    migrations) the statements are re-run individually, skipping the ones that
+    report the schema element (or seed row) already exists. Any other error
+    propagates.
     """
     try:
         conn.executescript(sql)
         return
     except (sqlite3.OperationalError, sqlite3.IntegrityError) as exc:
+        # A crashed table-rebuild can fail with a NON-idempotent error (no such
+        # table/column) — try the rebuild-aware recovery before deciding to raise.
+        if _recover_table_rebuild(conn, sql):
+            return
         if not _is_idempotent(exc):
             raise
     # Recovery: replay statement-by-statement, tolerating only the idempotent

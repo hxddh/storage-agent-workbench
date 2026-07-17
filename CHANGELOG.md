@@ -6,6 +6,45 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-07-17
+
+_Migration crash-recovery: a partially-applied table-rebuild no longer wedges the
+app or loses data._
+
+### Fixed
+
+- **A table-rebuild migration interrupted mid-way now recovers instead of
+  wedging the app forever.** Two migrations rebuild a table by
+  `CREATE <new> / INSERT..SELECT / DROP <final> / RENAME <new>→<final>`
+  (`_M002` relaxing `tool_calls.run_id` to nullable, `_M004` reshaping
+  `datasets`). `executescript` commits each statement implicitly and cannot roll
+  back, so a crash — power loss, kill, OOM — between those statements leaves a
+  partial state with the migration's version row unwritten. On the next boot the
+  whole migration re-runs. `_M004` renames COLUMNS (`kind → dataset_type`), so
+  once the rename has completed its `INSERT..SELECT` copies from the NEW-schema
+  table and raises `no such column: kind` — **not** an idempotent marker — so
+  every subsequent boot failed and the app never started. `_apply_one` now calls
+  a rebuild-aware recovery (`_recover_table_rebuild`) that recognizes each crash
+  window from the on-disk schema: it finishes the rename when the data already
+  lives in `<new>`, stops when the rebuilt shape is already in place, and
+  otherwise drops the stale partial copy and re-runs the rebuild from the intact
+  table. Detection compares full column signatures (including the `notnull`
+  flag), so a constraint-only rebuild like `_M002` is distinguished from an
+  un-rebuilt table even though its column names are unchanged — the naive fix
+  (tolerating the error) would have DROPped the populated table and renamed an
+  empty one in, silently losing rows. This holds even when the interim `<new>`
+  table is already gone: the rebuilt shape is then parsed (name + `notnull`) from
+  the migration text rather than compared by column names alone, so a future
+  constraint-only rebuild can never be mistaken for already-applied.
+
+### Tests
+
+- **Every crash window of both rebuilds is covered.** New parametrized tests
+  drive a crash after each statement of `_M002` (8 windows) and `_M004` (7
+  windows), seed real rows first, then re-run the migration and assert the rows
+  survive with the rebuilt shape (`kind → dataset_type`, `source_path →
+  stored_path`, `run_id` now nullable). All windows recover with data intact.
+
 ## [0.35.0] - 2026-07-17
 
 _Report-artifact hardening + an upgrade regression guard._
