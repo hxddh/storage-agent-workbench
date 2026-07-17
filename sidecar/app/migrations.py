@@ -646,10 +646,6 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
     ).fetchone() is not None
 
 
-def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
-    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
-
-
 def _col_sig(conn: sqlite3.Connection, table: str) -> frozenset:
     # (name, type, notnull, pk) — a rebuild that changes ONLY a constraint (e.g.
     # ``_M002`` relaxing ``run_id`` to nullable) leaves column NAMES identical, so
@@ -667,20 +663,31 @@ def _statements(sql: str) -> list[str]:
     return [s.strip() for s in sql.split(";") if s.strip()]
 
 
-def _create_columns(sql: str, table: str) -> set[str]:
-    """Column names declared in this migration's ``CREATE TABLE <table> (...)``."""
+def _create_sig(sql: str, table: str) -> frozenset:
+    """``(name, notnull)`` per column declared in this migration's ``CREATE TABLE
+    <table> (...)``. Parsed from the migration text so the rebuilt shape is known
+    even when the ``<new>`` table itself is already gone. Includes ``notnull`` so a
+    constraint-only rebuild (``_M002``: ``run_id`` → nullable, names unchanged) is
+    distinguishable from the un-rebuilt table. A bare ``PRIMARY KEY`` is NOT treated
+    as ``NOT NULL`` — matching SQLite's ``PRAGMA table_info`` for a non-INTEGER PK,
+    so this signature compares equal to the live table's."""
     m = re.search(rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{table}\s*\((.*?)\)\s*;",
                   sql, re.IGNORECASE | re.DOTALL)
     if m is None:
-        return set()
-    cols: set[str] = set()
+        return frozenset()
+    sig: set = set()
     for part in m.group(1).split(","):
         tok = part.strip().split()
         if tok and tok[0].upper() not in (
             "PRIMARY", "FOREIGN", "UNIQUE", "CHECK", "CONSTRAINT"
         ):
-            cols.add(tok[0].strip('"'))
-    return cols
+            notnull = 1 if re.search(r"\bNOT\s+NULL\b", part, re.IGNORECASE) else 0
+            sig.add((tok[0].strip('"'), notnull))
+    return frozenset(sig)
+
+
+def _name_notnull_sig(conn: sqlite3.Connection, table: str) -> frozenset:
+    return frozenset((row[1], row[3]) for row in conn.execute(f"PRAGMA table_info({table})"))
 
 
 def _recover_table_rebuild(conn: sqlite3.Connection, sql: str) -> bool:
@@ -738,9 +745,12 @@ def _recover_table_rebuild(conn: sqlite3.Connection, sql: str) -> bool:
         conn.execute(f"DROP TABLE IF EXISTS {new}")  # stale/partial copy
         conn.commit()
         return completed
-    # <new> is gone: fall back to the migration's declared column NAMES.
-    target_cols = _create_columns(sql, new)
-    return bool(target_cols) and _columns(conn, final) == target_cols
+    # <new> is gone: compare <final> to the rebuilt shape parsed from the migration
+    # text — (name, notnull) so a constraint-only rebuild (names unchanged) isn't
+    # mistaken for complete. If they disagree, return False so the generic replay
+    # re-runs the rebuild from the intact <final>.
+    target_sig = _create_sig(sql, new)
+    return bool(target_sig) and _name_notnull_sig(conn, final) == target_sig
 
 
 def _apply_one(conn: sqlite3.Connection, sql: str) -> None:

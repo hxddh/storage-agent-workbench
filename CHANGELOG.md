@@ -32,7 +32,10 @@ app or loses data._
   flag), so a constraint-only rebuild like `_M002` is distinguished from an
   un-rebuilt table even though its column names are unchanged — the naive fix
   (tolerating the error) would have DROPped the populated table and renamed an
-  empty one in, silently losing rows.
+  empty one in, silently losing rows. This holds even when the interim `<new>`
+  table is already gone: the rebuilt shape is then parsed (name + `notnull`) from
+  the migration text rather than compared by column names alone, so a future
+  constraint-only rebuild can never be mistaken for already-applied.
 
 ### Tests
 

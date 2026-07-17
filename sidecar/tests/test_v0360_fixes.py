@@ -25,7 +25,12 @@ import sqlite3
 
 import pytest
 
-from app.migrations import MIGRATIONS, _apply_one, _statements
+from app.migrations import (
+    MIGRATIONS,
+    _apply_one,
+    _recover_table_rebuild,
+    _statements,
+)
 
 
 def _mig(version: int) -> str:
@@ -102,4 +107,26 @@ def test_m002_recovers_every_crash_window_with_data(tmp_path, k):
     conn.execute("INSERT INTO tool_calls (id, tool_name, status, created_at) "
                  "VALUES ('tc2','x','ok','t')")
     conn.commit()
+    conn.close()
+
+
+# --- fallback branch: <new> gone, constraint-only rebuild not yet applied -----
+
+def test_recover_does_not_falsely_complete_a_constraint_only_rebuild(tmp_path):
+    """The ``<new>``-gone fallback compares the rebuilt shape by (name, notnull),
+    not names alone — so a constraint-only rebuild like _M002 (run_id → nullable,
+    column names UNCHANGED) is NOT mistaken for already-complete when the table is
+    still the un-rebuilt original. A name-only comparison returned True here and
+    would have marked the migration applied with run_id still NOT NULL."""
+    conn = sqlite3.connect(tmp_path / "old.db")
+    _apply_one(conn, _mig(1))  # only the pre-rebuild schema: tool_calls.run_id NOT NULL
+    m002 = _mig(2)
+
+    # Directly probe the recovery on the intact OLD table (this is the branch a
+    # future constraint-only rebuild placed after a failing statement could hit).
+    assert _recover_table_rebuild(conn, m002) is False  # NOT "already complete"
+
+    # And it must leave the old table intact for the generic replay to rebuild from.
+    notnull = {r[1]: r[3] for r in conn.execute("PRAGMA table_info(tool_calls)")}
+    assert notnull["run_id"] == 1  # untouched; still the old NOT NULL shape
     conn.close()
