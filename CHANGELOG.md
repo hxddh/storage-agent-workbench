@@ -6,6 +6,31 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-07-17
+
+_Report-artifact hardening + an upgrade regression guard._
+
+### Security
+
+- **Saved Markdown reports escape their table cells.** Report tables interpolated
+  object keys and user-agents — the most attacker-influenceable data in the
+  product — straight between `|` delimiters with no escaping. An S3 key containing
+  `|` misaligned the row's columns, a newline split one row into two (corrupting
+  the rest of the table), and a key like `<img src=x onerror=…>` landed as stored
+  HTML in the `.md` that executes when viewed in a renderer. (Credential redaction,
+  applied to the whole document, does not cover these metacharacters.) All four
+  report types now escape every cell — `|`, CR/LF, backticks, and `<`/`>` — at the
+  render boundary.
+
+### Tests
+
+- **Regression guard for old-DB upgrades.** Added a test that seeds an
+  old-schema database with rows in the tables later migrations REBUILD
+  (`tool_calls` @ migration 002, `datasets` @ 004), runs a full upgrade, and
+  asserts the data survives intact (`kind → dataset_type`, `source_path →
+  stored_path`, counts preserved). This upgrade-on-real-data path was verified
+  sound but previously had no coverage.
+
 ## [0.34.0] - 2026-07-16
 
 _Analysis-engine correctness, lifecycle robustness, and agent de-ossification. A
