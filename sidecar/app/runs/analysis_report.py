@@ -26,10 +26,26 @@ def _bytes_h(n: int | float | None) -> str:
     return f"{n:.1f} PB"
 
 
+def _cell(v: object) -> str:
+    """Escape a value for a Markdown TABLE cell.
+
+    Cell content includes the most attacker-influenceable data in the product —
+    object keys and user-agents (an S3 key may contain ``|``, newlines, and angle
+    brackets). Unescaped, a ``|`` misaligns the row's columns, a newline splits
+    one row into two (corrupting the rest of the table), and ``<img onerror=…>``
+    becomes stored HTML/script in the saved .md when viewed in a renderer.
+    Credential redaction (applied to the whole document on write) does NOT cover
+    these metacharacters, so escape them here at the render boundary."""
+    return (str(v).replace("\\", "\\\\").replace("|", "\\|")
+            .replace("\r", " ").replace("\n", " ").replace("`", "\\`")
+            .replace("<", "&lt;").replace(">", "&gt;"))
+
+
 def _table(headers: list[str], rows: list[list[str]]) -> str:
-    head = "| " + " | ".join(headers) + " |"
+    head = "| " + " | ".join(_cell(h) for h in headers) + " |"
     sep = "| " + " | ".join("---" for _ in headers) + " |"
-    body = "\n".join("| " + " | ".join(r) + " |" for r in rows) if rows else "| " + " | ".join("—" for _ in headers) + " |"
+    body = ("\n".join("| " + " | ".join(_cell(c) for c in r) + " |" for r in rows)
+            if rows else "| " + " | ".join("—" for _ in headers) + " |")
     return f"{head}\n{sep}\n{body}"
 
 
