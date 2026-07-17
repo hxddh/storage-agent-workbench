@@ -59,6 +59,7 @@ const emptyModelForm: ModelProviderInput = {
   model: "",
   api_key: "",
   context_window: null,
+  max_output_tokens: null,
 };
 
 function ModelProvidersPanel() {
@@ -90,6 +91,7 @@ function ModelProvidersPanel() {
       model: p.model ?? "",
       api_key: "", // never prefill secrets
       context_window: p.context_window ?? null,
+      max_output_tokens: p.max_output_tokens ?? null,
     });
     setEditing(p);
     setCreating(false);
@@ -117,6 +119,11 @@ function ModelProvidersPanel() {
     } else if (editing && editing.context_window) {
       body.context_window = 0; // field cleared → 0 tells the API to reset to NULL
     }
+    if (form.max_output_tokens && form.max_output_tokens > 0) {
+      body.max_output_tokens = form.max_output_tokens;
+    } else if (editing && editing.max_output_tokens) {
+      body.max_output_tokens = 0; // cleared → 0 resets to NULL
+    }
     try {
       if (editing) await updateModelProvider(editing.id, body);
       else await createModelProvider(body);
@@ -143,7 +150,14 @@ function ModelProvidersPanel() {
     setStatus(null);
     try {
       const r = await testModelProvider(p.id);
-      setStatus(`${p.name}: ${r.ok ? t("prov.testOk") : t("prov.testIncomplete")} — ${r.detail}`);
+      // A reachable endpoint whose key couldn't be verified (api_key_verified ===
+      // null) is NOT a clean pass — surface it as a caution, not "OK".
+      const label = !r.ok
+        ? t("prov.testIncomplete")
+        : r.api_key_verified == null
+          ? t("prov.testUnverified")
+          : t("prov.testOk");
+      setStatus(`${p.name}: ${label} — ${r.detail}`);
     } catch (e) {
       setStatus(String(e));
     }
@@ -193,6 +207,17 @@ function ModelProvidersPanel() {
                 setForm({ ...form, context_window: v ? parseInt(v, 10) : null });
               }}
               placeholder="1000000"
+            />
+          </Field>
+          <Field label={t("prov.fMaxOutput")} hint={t("prov.hintMaxOutput")}>
+            <TextInput
+              inputMode="numeric"
+              value={form.max_output_tokens != null ? String(form.max_output_tokens) : ""}
+              onChange={(e) => {
+                const v = e.target.value.replace(/[^0-9]/g, "");
+                setForm({ ...form, max_output_tokens: v ? parseInt(v, 10) : null });
+              }}
+              placeholder="4096"
             />
           </Field>
           <Field label={t("prov.fApiKey")} hint={editing && editing.has_api_key ? t("prov.hintKeep") : t("prov.hintNew")}>

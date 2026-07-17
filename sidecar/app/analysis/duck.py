@@ -7,6 +7,17 @@ from pathlib import Path
 import duckdb
 
 
+def _configure(con: duckdb.DuckDBPyConnection) -> duckdb.DuckDBPyConnection:
+    # Pin the session timezone to UTC. Timestamps are normalized to naive-UTC at
+    # ingest, but `current_timestamp` is TIMESTAMP WITH TIME ZONE, and DuckDB casts
+    # a naive value against it using the session TimeZone — so an age `datediff`
+    # (inventory `_AGE_CASE`) would land objects in the wrong age bucket by up to a
+    # day when the sidecar runs outside UTC. UTC keeps every comparison consistent
+    # with how the data was stored.
+    con.execute("SET TimeZone='UTC'")
+    return con
+
+
 def connect(duckdb_path: str | Path, read_only: bool = False) -> duckdb.DuckDBPyConnection:
     """Open (creating parent dirs) a DuckDB connection at ``duckdb_path``.
 
@@ -18,7 +29,7 @@ def connect(duckdb_path: str | Path, read_only: bool = False) -> duckdb.DuckDBPy
     if read_only:
         if path.exists():
             try:
-                return duckdb.connect(str(path), read_only=True)
+                return _configure(duckdb.connect(str(path), read_only=True))
             except duckdb.IOException as exc:
                 # A concurrent import holds the write lock. Surface a friendly,
                 # actionable message instead of the raw lock IOException.
@@ -31,4 +42,4 @@ def connect(duckdb_path: str | Path, read_only: bool = False) -> duckdb.DuckDBPy
         # No DB yet — nothing to read; open writable so the caller gets an empty DB
         # rather than a hard error.
     path.parent.mkdir(parents=True, exist_ok=True)
-    return duckdb.connect(str(path))
+    return _configure(duckdb.connect(str(path)))

@@ -88,9 +88,15 @@ def context_window(model: str | None, explicit: int | None = None) -> int:
     return _DEFAULT_CONTEXT
 
 
-def max_output_tokens(model: str | None) -> int:
+def max_output_tokens(model: str | None, explicit_max: int | None = None) -> int:
     """The active model's provider-imposed MAX output tokens (best-effort). Used to
-    clamp the completion budget so we never send a max_tokens the provider rejects."""
+    clamp the completion budget so we never send a max_tokens the provider rejects.
+
+    ``explicit_max`` (an operator-declared cap from the model-provider config) wins
+    when positive — so a third-party/unknown model whose real ceiling is below the
+    substring-table default isn't handed a max_tokens its endpoint 400s on."""
+    if explicit_max and explicit_max > 0:
+        return explicit_max
     m = (model or "").lower()
     for sub, cap in _MAX_OUTPUT_TOKENS:
         if sub in m:
@@ -107,7 +113,8 @@ def tool_output_char_budget(model: str | None, explicit_window: int | None = Non
                max(TOOL_OUTPUT_CHARS_FLOOR, tokens * _CHARS_PER_TOKEN))
 
 
-def completion_token_budget(model: str | None, explicit_window: int | None = None) -> int:
+def completion_token_budget(model: str | None, explicit_window: int | None = None,
+                            explicit_max: int | None = None) -> int:
     """Completion (max_tokens) budget: raised only where the window clearly
     supports it, floored at the historical value, capped by the module ceiling AND
     by the model's real provider max-output so we never trigger a 400.
@@ -118,4 +125,4 @@ def completion_token_budget(model: str | None, explicit_window: int | None = Non
     rather than being handed the 16384 floor it would reject."""
     scaled = max(COMPLETION_TOKENS_FLOOR,
                  min(context_window(model, explicit_window) // 8, COMPLETION_TOKENS_CEILING))
-    return min(scaled, max_output_tokens(model))
+    return min(scaled, max_output_tokens(model, explicit_max))

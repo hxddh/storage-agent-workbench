@@ -111,6 +111,9 @@ export interface ModelProviderInput {
   /** Optional explicit context window (tokens). Overrides the built-in model
    * table so a new large-context model isn't throttled to the default. */
   context_window?: number | null;
+  /** Optional explicit max output tokens. Clamps the completion budget so a
+   * third-party/unknown model whose real cap is lower doesn't 400. */
+  max_output_tokens?: number | null;
 }
 
 export const listModelProviders = () =>

@@ -202,11 +202,15 @@ export function useTurnRunner(opts: {
   // "ok" once the persisted answer is visible, or "inprogress" if it gives up —
   // in which case the caller keeps the pending bubble rather than dropping the
   // user's message (F4).
-  const waitForPersistedTurn = async (id: string): Promise<Outcome> => {
-    // The assistant answer for this turn is a NEW assistant message. The 409
-    // guarantees it isn't persisted yet, so the first successful fetch is a safe
-    // baseline; later fetches detect a new assistant id.
-    let baseline: Set<string> | null = null;
+  const waitForPersistedTurn = async (
+    id: string,
+    baselinePromise?: Promise<Set<string> | null>,
+  ): Promise<Outcome> => {
+    // The assistant answer for this turn is a NEW assistant message. Prefer the
+    // baseline captured BEFORE the turn started (baselinePromise) — it can't
+    // include this turn's answer, so it's race-free. Only if that snapshot failed
+    // do we fall back to capturing from the first successful fetch here.
+    let baseline: Set<string> | null = baselinePromise ? await baselinePromise : null;
     const captureOrDetect = (d: SessionDetail): boolean => {
       const asstIds = d.messages.filter((m) => m.role === "assistant").map((m) => m.id);
       if (baseline === null) {
@@ -215,10 +219,12 @@ export function useTurnRunner(opts: {
       }
       return asstIds.some((mid) => !baseline!.has(mid));
     };
-    try {
-      captureOrDetect(await getSession(id));
-    } catch {
-      /* the loop retries the fetch; baseline stays null until one succeeds */
+    if (baseline === null) {
+      try {
+        captureOrDetect(await getSession(id));
+      } catch {
+        /* the loop retries the fetch; baseline stays null until one succeeds */
+      }
     }
     // Bounded backoff aligned with the server's own turn budget (its blocking
     // wait is ~150 s), then give up polling — but never drop the message.
@@ -263,6 +269,15 @@ export function useTurnRunner(opts: {
       return;
     }
     const turnId = newTurnId();
+    // Snapshot the assistant-message ids BEFORE the turn runs (in parallel with
+    // the stream, so no added latency). The 409 blocking-fallback uses this as its
+    // "which assistant messages predate this turn" baseline. Capturing it here —
+    // rather than from a GET issued AFTER the 409 — closes a race where the worker
+    // persisted the answer in the gap after the 409 but before that GET, poisoning
+    // the baseline so the new answer was never detected and the UI hung (P2b).
+    const preTurnAsstIds: Promise<Set<string> | null> = getSession(id)
+      .then((d) => new Set(d.messages.filter((m) => m.role === "assistant").map((m) => m.id)))
+      .catch(() => null);
     patchSessionRun(id, {
       busy: true, error: null, needKey: false, pending: q,
       streamText: null, streamTools: [], stopped: false, stalled: false,
@@ -328,7 +343,7 @@ export function useTurnRunner(opts: {
         // The turn is still running server-side (nothing persisted yet). Poll
         // until this turn's assistant answer is actually persisted, then clear
         // the pending bubble — never on a fixed timer (F4).
-        outcome = await waitForPersistedTurn(id);
+        outcome = await waitForPersistedTurn(id, preTurnAsstIds);
         if (outcome === "inprogress") {
           // Gave up waiting, but the turn may still be running (its answer may
           // already be persisted server-side). Keep the pending bubble — the

@@ -73,7 +73,14 @@ def _finalize_success(conn: sqlite3.Connection, run_id: str, summary: str) -> No
     )
     conn.commit()
     runs_repo.set_status(conn, run_id, "completed", final_summary=summary, report_path=report_rel)
-    bus.publish(run_id, {"type": "report_ready", "run_id": run_id, "report_path": report_rel})
+    # The run is now committed 'completed'. A failure in the notification below
+    # must NOT propagate — if it did, run_executor's except would fire and
+    # downgrade this finished run to 'failed', a terminal contradiction (a failed
+    # run that already has a report + success summary).
+    try:
+        bus.publish(run_id, {"type": "report_ready", "run_id": run_id, "report_path": report_rel})
+    except Exception:  # noqa: BLE001 - best-effort SSE notification; the run is already done
+        pass
 
 
 def run_executor(
@@ -105,7 +112,11 @@ def run_executor(
     except Exception as exc:  # noqa: BLE001 - sanitized below
         detail = redact_text(str(exc)).strip()
         final = f"{failure_summary} {detail}".strip()[:500] if detail else failure_summary
-        runs_repo.set_status(conn, run_id, "failed", final_summary=final)
-        bus.publish(run_id, {"type": "error", "message": detail or failure_summary})
+        # Terminal is final: never downgrade a run that already reached a terminal
+        # state (e.g. an error raised AFTER _finalize_success committed 'completed').
+        cur = runs_repo.get_row(conn, run_id)
+        if cur is None or cur["status"] not in ("completed", "failed"):
+            runs_repo.set_status(conn, run_id, "failed", final_summary=final)
+            bus.publish(run_id, {"type": "error", "message": detail or failure_summary})
     finally:
         bus.mark_done(run_id)

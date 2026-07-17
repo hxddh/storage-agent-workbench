@@ -8,6 +8,8 @@ export interface ModelProvider {
   has_api_key: boolean;
   /** Optional explicit context window (tokens); overrides the built-in model table for the agent's depth budgets. */
   context_window: number | null;
+  /** Optional explicit max output tokens; clamps the completion budget so a lower-cap endpoint doesn't 400. */
+  max_output_tokens: number | null;
   /** True for the provider the agent uses (explicitly activated; otherwise the oldest is the implicit default). */
   active: boolean;
   created_at: string;
@@ -41,6 +43,8 @@ export interface ModelProviderTestResult {
   ok: boolean;
   checks: Record<string, boolean>;
   detail: string;
+  /** true=key accepted, false=key rejected, null=reached but key unverified. */
+  api_key_verified?: boolean | null;
 }
 
 // --- S3 tool results (Phase 03) ---

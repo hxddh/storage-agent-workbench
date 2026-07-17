@@ -86,12 +86,14 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         return check_scope(p.allowed_buckets, p.allowed_prefixes, bucket,
                            key=key, prefix=prefix, listing=listing)
 
-    # Per-turn budget: cap how many skill bodies the agent can load in one turn,
-    # so a runaway loop can't pull every skill (~8000 chars each) into context.
-    # 10 (was 8/6): a cross-domain investigation legitimately spans several skills;
-    # keep the cap above what a real diagnosis needs, below "load everything".
+    # Per-turn budget: a runaway-loop guard on skill-body loads, NOT the real
+    # context bound — read_skill output is NOT budget-exempt, so each ~8000-char
+    # skill body already counts against the model-elastic tool-output budget
+    # (200k floor → up to 1M on a large-context model). So this stays a fixed
+    # guard, raised to 20 (was 10) so a legitimately cross-domain investigation on
+    # a large model isn't clipped below what the elastic byte budget would allow.
     skill_loads = {"n": 0}
-    _MAX_SKILL_LOADS = 10
+    _MAX_SKILL_LOADS = 20
 
     # Per-turn object-preview budget: preview_object reads bounded object CONTENT
     # (unlike the metadata-only probes), so bound it in code — a handful of small

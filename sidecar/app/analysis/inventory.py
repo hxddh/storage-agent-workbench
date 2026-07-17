@@ -250,6 +250,12 @@ def import_inventory_file(raw_path: str | Path, duckdb_path: str | Path) -> dict
         "storage_class": series_for("storage_class"),
         "etag": series_for("etag"),
     }, columns=COLUMNS)
+    # size MUST be nullable Int64, not float64. `_to_int` deliberately parses as
+    # int to preserve int64 precision above 2^53, but a column that mixes ints
+    # with None coerces to float64 → DuckDB DOUBLE, which reintroduces the very
+    # precision loss (and sum(size) then accumulates capacity in DOUBLE). The
+    # mapped Series is object dtype, so astype("Int64") keeps the exact ints.
+    df["size"] = df["size"].astype("Int64")
     con = duck.connect(duckdb_path)
     try:
         con.register("incoming", df)
@@ -300,7 +306,13 @@ def analyze_inventory(duckdb_path: str | Path) -> dict[str, Any]:
             return {"object_count": 0}
 
         total_size = con.execute(f"SELECT COALESCE(sum(size), 0) FROM {TABLE_NAME}").fetchone()[0]
-        avg_size = con.execute(f"SELECT COALESCE(avg(size), 0) FROM {TABLE_NAME}").fetchone()[0]
+        # Objects that actually carry a size — the honest denominator for the
+        # size-based ratios. Using the all-rows count diluted small_object_ratio
+        # by null-size rows (never in the numerator), and SQL avg(size) (÷ non-null)
+        # disagreed with the report's own total_size ÷ object_count pairing.
+        known_size = con.execute(
+            f"SELECT count(*) FROM {TABLE_NAME} WHERE size IS NOT NULL"
+        ).fetchone()[0]
 
         size_hist = [
             {"bucket": b, "count": int(c)}
@@ -347,12 +359,16 @@ def analyze_inventory(duckdb_path: str | Path) -> dict[str, Any]:
         return {
             "object_count": int(count),
             "total_size": int(total_size),
-            "average_object_size": int(avg_size),
+            # total ÷ ALL objects (null sizes counted as 0) so the displayed
+            # total_size / object_count / average triple reconciles; the
+            # unknown_size_ratio below tells the reader how many were size-less.
+            "average_object_size": int(total_size / count),
             "size_histogram": size_hist,
             "prefix_distribution": prefix_dist,
             "object_age_distribution": age_dist,
             "storage_class_distribution": storage_dist,
-            "small_object_ratio": round(small_n / count, 4),
+            # ratio among objects that HAVE a size (not diluted by null-size rows).
+            "small_object_ratio": round(small_n / known_size, 4) if known_size else 0.0,
             "top_large_objects": top_large,
             "unknown_age_ratio": round(unknown_age / count, 4),
             "unknown_size_ratio": round(unknown_size / count, 4),

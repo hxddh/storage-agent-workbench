@@ -35,10 +35,16 @@ _KEYLIKE_DIMENSIONS = {"key", "path"}
 # Whitelisted GROUP BY dimensions per dataset type. Values are the exact SQL
 # expressions used — constants defined HERE, never caller input. "hour" mirrors
 # the derivation used by the fixed metric set.
-_HOUR_EXPR = (
-    "CASE WHEN try_cast(timestamp AS TIMESTAMP) IS NULL THEN 'unknown' "
-    "ELSE strftime(try_cast(timestamp AS TIMESTAMP), '%Y-%m-%dT%H:00') END"
-)
+def _ts_bucket(fmt: str) -> str:
+    return (f"CASE WHEN try_cast(timestamp AS TIMESTAMP) IS NULL THEN 'unknown' "
+            f"ELSE strftime(try_cast(timestamp AS TIMESTAMP), '{fmt}') END")
+
+
+_HOUR_EXPR = _ts_bucket("%Y-%m-%dT%H:00")
+# day / weekday let a multi-week log be bucketed at a coarser grain than hour.
+# weekday sorts Sun..Sat via the leading %w digit; the name follows for the label.
+_DAY_EXPR = _ts_bucket("%Y-%m-%d")
+_WEEKDAY_EXPR = _ts_bucket("%w %A")
 _DIMENSIONS: dict[str, dict[str, str]] = {
     "access_log": {
         "status_code": "status_code",
@@ -50,6 +56,8 @@ _DIMENSIONS: dict[str, dict[str, str]] = {
         "client_ip_masked": "client_ip_masked",
         "error_code": "error_code",
         "hour": _HOUR_EXPR,
+        "day": _DAY_EXPR,
+        "weekday": _WEEKDAY_EXPR,
     },
     "inventory": {
         "bucket": "bucket",
@@ -64,10 +72,15 @@ _METRICS: dict[str, dict[str, str]] = {
         "count": "count(*)",
         "sum_bytes": "sum(bytes_sent)",
         "avg_bytes": "avg(bytes_sent)",
+        "min_bytes": "min(bytes_sent)",
+        "max_bytes": "max(bytes_sent)",
         "avg_latency_ms": "avg(latency_ms)",
         "p50_latency_ms": "quantile_cont(latency_ms, 0.5)",
         "p95_latency_ms": "quantile_cont(latency_ms, 0.95)",
+        "p99_latency_ms": "quantile_cont(latency_ms, 0.99)",
         "max_latency_ms": "max(latency_ms)",
+        "distinct_ips": "count(DISTINCT client_ip_masked)",
+        "distinct_keys": "count(DISTINCT key)",
     },
     "inventory": {
         "count": "count(*)",
@@ -75,6 +88,8 @@ _METRICS: dict[str, dict[str, str]] = {
         "avg_size": "avg(size)",
         "max_size": "max(size)",
         "min_size": "min(size)",
+        "distinct_prefixes": "count(DISTINCT prefix)",
+        "distinct_storage_classes": "count(DISTINCT storage_class)",
     },
 }
 
@@ -106,6 +121,7 @@ def aggregate(
     dataset_type: str,
     metric: str,
     group_by: str | None = None,
+    group_by_2: str | None = None,
     filters: dict[str, Any] | None = None,
     status_min: int | None = None,
     status_max: int | None = None,
@@ -158,25 +174,46 @@ def aggregate(
                 "value": _num(value), "truncated": False,
             }
         _require("group_by", group_by, _DIMENSIONS[dataset_type])
-        dim_sql = _DIMENSIONS[dataset_type][group_by]
-        if group_by in _KEYLIKE_DIMENSIONS:
+        # Optional SECOND dimension: e.g. "403s per masked-IP per hour". Both
+        # identifiers resolve only from the whitelist (never caller text), so the
+        # composite GROUP BY carries zero injection surface — only the vocabulary
+        # widened, not the mechanism.
+        dims = [group_by]
+        if group_by_2:
+            _require("group_by (2)", group_by_2, _DIMENSIONS[dataset_type])
+            if group_by_2 != group_by:
+                dims.append(group_by_2)
+        dim_exprs = [_DIMENSIONS[dataset_type][d] for d in dims]
+        if any(d in _KEYLIKE_DIMENSIONS for d in dims):
             limit = min(limit, DEFAULT_GROUPS)  # rule 16: don't stream 50 raw keys
+        select_dims = ", ".join(f"{expr} AS g{i}" for i, expr in enumerate(dim_exprs))
+        group_keys = ", ".join(f"g{i}" for i in range(len(dim_exprs)))
+        # Deterministic ordering: primary metric DESC, then the group keys, so ties
+        # don't shuffle which groups appear (or flip `truncated`) run-to-run.
+        order_keys = ", ".join(f"g{i}" for i in range(len(dim_exprs)))
         # Fetch limit+1 to report (not silently drop) an over-limit tail.
         sql = (
-            f"SELECT {dim_sql} AS g, {metric_sql} AS v FROM {table}{where_sql} "
-            f"GROUP BY g ORDER BY v DESC NULLS LAST LIMIT {limit + 1}"
+            f"SELECT {select_dims}, {metric_sql} AS v FROM {table}{where_sql} "
+            f"GROUP BY {group_keys} ORDER BY v DESC NULLS LAST, {order_keys} LIMIT {limit + 1}"
         )
         rows = con.execute(sql, params).fetchall()
     finally:
         con.close()
 
+    n_dims = len(dim_exprs)
     truncated = len(rows) > limit
+
+    def _label(row) -> str:
+        parts = [redact_text(str(x))[:_LABEL_LEN] for x in row[:n_dims]]
+        return " · ".join(parts)
+
     groups = [
-        {"group": redact_text(str(g))[:_LABEL_LEN], "value": _num(v)}
-        for g, v in rows[:limit]
+        {"group": _label(row), "value": _num(row[n_dims])}
+        for row in rows[:limit]
     ]
     return {
-        "sql": sql, "params": list(params), "metric": metric, "group_by": group_by,
+        "sql": sql, "params": list(params), "metric": metric,
+        "group_by": group_by, "group_by_2": group_by_2 if len(dims) > 1 else None,
         "groups": groups, "truncated": truncated,
     }
 

@@ -42,6 +42,17 @@ from .guardrails import strip_chain_of_thought, strip_chain_of_thought_stream
 
 _MAX_FACTS = 50  # kept in sync with sessions.summary_builder.MAX_FACTS
 _MAX_FINDINGS = 50  # kept in sync with sessions.summary_builder.MAX_FINDINGS (was 30 — drift)
+_MEM_RECALL_CEIL = 400  # upper bound on the elastic agent-memory recall
+
+
+def _elastic_memory_cap(model: str | None, explicit_window: int | None) -> int:
+    """How many of the agent's OWN recorded facts/findings/questions to recall,
+    scaled to the model window (floored at 50) — the same de-ossification the
+    thread replay uses. On a long investigation with a large-context model, the
+    agent's durable memory was the first thing clipped at a hard 50."""
+    window = model_budget.context_window(model, explicit_window)
+    factor = max(1, window // 128_000)
+    return min(_MEM_RECALL_CEIL, _MAX_FACTS * factor)
 # How many recent thread messages the agent sees. 24 (was 12): a small-context
 # clip that now just makes the agent lose the thread on a long investigation —
 # 24 msgs × _MAX_REPLAY_MSG chars is still tiny under a modern context window.
@@ -116,6 +127,11 @@ _MAX_TOOL_OUTPUT_CHARS = 200_000
 _TOOL_BUDGET_EXHAUSTED = (
     "This turn's tool-output budget is used up — synthesize your findings from what "
     "you've already gathered and answer now. This budget resets if the user continues."
+)
+_TOOL_OUTPUT_TOO_LARGE = (
+    "This result was too large for the turn's remaining context budget and was "
+    "withheld. Narrow it — a smaller max_keys, a prefix, or a filter — and call "
+    "again, or answer from what you already have."
 )
 # Memory tools stay usable even after the budget is spent: recording a finding
 # is how the model synthesizes, and their outputs are a few bytes.
@@ -217,11 +233,13 @@ INSTRUCTIONS = (
 )
 
 
-def _build_agent_memory_block(memory: list[dict[str, Any]] | None) -> dict[str, list[Any]]:
+def _build_agent_memory_block(memory: list[dict[str, Any]] | None,
+                              cap: int = _MAX_FACTS) -> dict[str, list[Any]]:
     """Group agent-authored memory into recalled facts/findings/questions.
 
-    ``memory`` is oldest-first; we keep the most RECENT items per kind (the tail)
-    so a long session surfaces its latest learnings rather than stale early ones.
+    ``memory`` is oldest-first; we keep the most RECENT ``cap`` items per kind
+    (the tail) so a long session surfaces its latest learnings rather than stale
+    early ones. ``cap`` scales with the model window (see _elastic_memory_cap).
     Each item carries its id so the agent can update/resolve it later.
     """
     facts: list[dict[str, Any]] = []
@@ -242,9 +260,9 @@ def _build_agent_memory_block(memory: list[dict[str, Any]] | None) -> dict[str, 
         elif kind == "open_question":
             questions.append({"id": mem_id, "text": text})
     return {
-        "recorded_facts": facts[-_MAX_FACTS:],
-        "recorded_findings": findings[-_MAX_FINDINGS:],
-        "open_questions": questions[-_MAX_FACTS:],
+        "recorded_facts": facts[-cap:],
+        "recorded_findings": findings[-cap:],
+        "open_questions": questions[-cap:],
     }
 
 
@@ -346,7 +364,8 @@ def build_session_context(
         },
         # Things YOU recorded in earlier turns of this session (via note_fact /
         # record_finding / note_open_question). Reuse them; don't re-derive.
-        "agent_memory": _build_agent_memory_block(agent_memory),
+        "agent_memory": _build_agent_memory_block(
+            agent_memory, cap=_elastic_memory_cap(model, explicit_window)),
         # Prior assistant turns carry a `tools_run` trace of the read-only probes
         # they already ran (bounded) — so this turn sees what was checked and
         # re-fetches only what it needs fuller detail on, instead of re-probing.
@@ -371,7 +390,8 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str,
     # a small one needs. Never below the floor, never above provider max-output.
     return build_agent(creds, tools, instructions, name="Storage Agent",
                        max_tokens=model_budget.completion_token_budget(
-                           creds.get("model"), creds.get("context_window")),
+                           creds.get("model"), creds.get("context_window"),
+                           creds.get("max_output_tokens")),
                        parallel_tool_calls=False,
                        client_registry=client_registry)
 
@@ -577,8 +597,18 @@ def _install_tool_output_budget(tools: list[Any],
                     return json.dumps({"status": "budget_exhausted",
                                        "next_step": _TOOL_BUDGET_EXHAUSTED})
                 out = await _orig(ctx, args)
-                spent["chars"] += len(str(out or ""))
-                return out
+                text = str(out or "")
+                if spent["chars"] + len(text) > limit:
+                    # This SINGLE output would push the turn past its context
+                    # budget. Counting-after made the budget a soft post-hoc bound
+                    # a single large tool return could blow past; withhold it with
+                    # a VALID JSON envelope (truncating the JSON would be
+                    # unparseable) and flag the turn so the driver offers 'continue'.
+                    spent["exhausted"] = True
+                    text = json.dumps({"status": "output_too_large",
+                                       "next_step": _TOOL_OUTPUT_TOO_LARGE})
+                spent["chars"] += len(text)
+                return text
             return wrapped
 
         try:
@@ -608,7 +638,8 @@ def _build_prompt(
     if conn is not None and session.get("id"):
         try:
             from ..repositories import sessions as sessions_repo
-            agent_memory = sessions_repo.list_agent_memory(conn, session["id"])
+            agent_memory = sessions_repo.list_agent_memory(
+                conn, session["id"], limit=_elastic_memory_cap(model, explicit_window))
         except Exception:  # noqa: BLE001
             agent_memory = []
     context = build_session_context(session, summary, recent_messages, agent_memory,

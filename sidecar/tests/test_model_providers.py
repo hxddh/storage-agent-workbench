@@ -133,7 +133,7 @@ def test_test_endpoint_reports_complete(client, monkeypatch):
     body = resp.json()
     assert body["ok"] is True
     assert body["checks"]["api_key_present"] is True
-    assert body["checks"]["api_key_accepted"] is True
+    assert body["api_key_verified"] is True
     assert body["checks"]["endpoint_reachable"] is True
     # The probe hit the provider's /models with the key — but the secret never
     # appears in the RESPONSE.
@@ -148,7 +148,7 @@ def test_test_endpoint_flags_rejected_key(client, monkeypatch):
     monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(401))
     body = client.post(f"/model-providers/{provider_id}/test").json()
     assert body["ok"] is False
-    assert body["checks"]["api_key_accepted"] is False
+    assert body["api_key_verified"] is False
 
 
 def test_test_endpoint_unreachable_is_reported(client, monkeypatch):

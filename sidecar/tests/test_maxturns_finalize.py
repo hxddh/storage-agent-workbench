@@ -120,30 +120,51 @@ def test_stream_finalizes_on_transient_error_with_continue_proposal():
                for p in final.get("next_action_proposals") or [])
 
 
-def test_tool_output_budget_note_is_status_not_error():
-    # The exhausted note reads as a soft boundary with a next step, not a failure.
+def test_tool_output_budget_hard_caps_a_single_oversized_output():
+    # PB: a SINGLE output that would exceed the budget is withheld with a VALID
+    # JSON status envelope (not the raw bytes, not an error) — a hard pre-emptive
+    # cap, so one large tool return can't blow past the per-turn context budget.
     import json
-
-    calls = {"n": 0}
 
     class FakeTool:
         name = "list_objects"
 
         async def on_invoke_tool(self, ctx, args):
-            calls["n"] += 1
             return "x" * 100
 
     tool = FakeTool()
     budget = session_agent._install_tool_output_budget([tool], limit=10)
+    out = asyncio.run(tool.on_invoke_tool(None, None))
+    payload = json.loads(out)  # valid JSON, not the raw 100 chars
+    assert out != "x" * 100
+    assert payload["status"] == "output_too_large" and "error" not in payload
+    assert budget["exhausted"] is True
+
+
+def test_tool_output_budget_note_is_status_not_error():
+    # After the budget is spent, further calls read as a soft boundary with a next
+    # step, not a failure.
+    import json
+
+    class FakeTool:
+        name = "list_objects"
+
+        async def on_invoke_tool(self, ctx, args):
+            return "y" * 5
+
+    tool = FakeTool()
+    budget = session_agent._install_tool_output_budget([tool], limit=8)
 
     async def run():
-        first = await tool.on_invoke_tool(None, None)   # consumes >10 chars
-        second = await tool.on_invoke_tool(None, None)   # now over budget → note
-        return first, second
+        first = await tool.on_invoke_tool(None, None)    # 5 chars, fits (0+5<=8)
+        second = await tool.on_invoke_tool(None, None)   # 5+5>8 → withheld too_large
+        third = await tool.on_invoke_tool(None, None)    # already over → exhausted
+        return first, second, third
 
-    first, second = asyncio.run(run())
-    assert first == "x" * 100
-    payload = json.loads(second)
+    first, second, third = asyncio.run(run())
+    assert first == "y" * 5
+    assert json.loads(second)["status"] == "output_too_large"
+    payload = json.loads(third)
     assert payload["status"] == "budget_exhausted" and "error" not in payload
     assert "resets" in payload["next_step"]
     assert budget["exhausted"] is True

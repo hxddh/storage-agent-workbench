@@ -205,12 +205,13 @@ def build(
         dataset_id: str,
         metric: str,
         group_by: str = "",
+        group_by_2: str = "",
         filters_json: str = "",
         status_min: int = -1,
         status_max: int = -1,
         limit: int = 20,
     ) -> str:
-        """Run ONE custom aggregation over an uploaded file when the fixed analyze_uploaded_file metrics don't answer the user's question (e.g. "which masked IP got the most 403s between status 400-499", "total bytes per storage class"). You choose metric + group_by + equality filters from a whitelist; raw rows and arbitrary SQL are never available. access_log metrics: count, sum_bytes, avg_bytes, avg_latency_ms, p50_latency_ms, p95_latency_ms, max_latency_ms; group_by: status_code, method, key, path, prefix, user_agent, client_ip_masked, error_code, hour. inventory metrics: count, total_size, avg_size, max_size, min_size; group_by: bucket, prefix, storage_class. filters_json: optional JSON object of column->value equality filters (same columns as group_by, except hour). status_min/status_max: optional status-code range (access logs; pass -1 to skip). limit: max groups returned (<=50); a "truncated": true means more groups exist. Args: dataset_id (from list_uploaded_files), metric, group_by (empty for a single scalar), filters_json, status_min, status_max, limit."""
+        """Run ONE custom aggregation over an uploaded file when the fixed analyze_uploaded_file metrics don't answer the user's question (e.g. "which masked IP got the most 403s between status 400-499", "403s per masked-IP per day", "total bytes per storage class"). You choose metric + up to TWO group-by dimensions + equality filters from a whitelist; raw rows and arbitrary SQL are never available. access_log metrics: count, sum_bytes, avg_bytes, min_bytes, max_bytes, avg_latency_ms, p50/p95/p99_latency_ms, max_latency_ms, distinct_ips, distinct_keys; group_by: status_code, method, key, path, prefix, user_agent, client_ip_masked, error_code, hour, day, weekday. inventory metrics: count, total_size, avg_size, max_size, min_size, distinct_prefixes, distinct_storage_classes; group_by: bucket, prefix, storage_class. group_by_2 (optional) adds a second dimension for a cross-tab (e.g. group_by=client_ip_masked, group_by_2=day); the returned group label joins the two with " · ". filters_json: optional JSON object of column->value equality filters (same columns as group_by, except derived hour/day/weekday). status_min/status_max: optional status-code range (access logs; pass -1 to skip). limit: max groups returned (<=50); a "truncated": true means more groups exist. Args: dataset_id (from list_uploaded_files), metric, group_by (empty for a single scalar), group_by_2 (optional), filters_json, status_min, status_max, limit."""
         ds = ds_repo.get(conn, dataset_id)
         if ds is None or ds.get("session_id") != session_id:
             return _err("Unknown dataset_id for this session. Call list_uploaded_files first.")
@@ -231,7 +232,7 @@ def build(
             duckdb_abs, _imp, _detected = _ensure_imported(ds)
             out = agg.aggregate(
                 duckdb_abs, ds["dataset_type"], metric,
-                group_by=group_by or None, filters=filters,
+                group_by=group_by or None, group_by_2=group_by_2 or None, filters=filters,
                 status_min=None if status_min < 0 else status_min,
                 status_max=None if status_max < 0 else status_max,
                 limit=limit,
