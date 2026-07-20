@@ -16,7 +16,7 @@ from ..events import bus
 from ..repositories import cloud_providers as cloud_repo
 from ..s3 import config_tools as ct
 from ..s3.scope import check_scope
-from ._common import RunError, run_executor, run_tool_with_events
+from ._common import RunError, require_success, run_executor, run_tool_with_events
 from .analysis_report import render_config_review, write
 
 
@@ -121,8 +121,8 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
         "performance": performance,
     }
     content = render_config_review(run, summary_out, sections, counts, summary_text)
-    run_tool_with_events(
+    require_success(run_tool_with_events(
         conn, run_id, "generate_markdown_report", {"run_id": run_id},
         lambda: {"report_path": config.rel_path(write(run_id, content)), "format": "markdown"},
-    )
+    ))
     return summary_text

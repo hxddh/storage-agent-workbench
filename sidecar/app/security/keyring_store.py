@@ -278,6 +278,15 @@ def _persist(blob: dict[str, str]) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
+        # O_CREAT's mode is masked by umask AND ignored entirely if the .tmp
+        # already exists (a prior crashed write) — so a leftover file could carry
+        # looser perms. fchmod on the open fd forces 0600 unconditionally before
+        # any ciphertext is written, so the vault is never briefly group/world
+        # readable. Best-effort on platforms without fchmod (Windows).
+        try:
+            os.fchmod(fd, 0o600)
+        except (AttributeError, OSError):
+            pass
         os.write(fd, token)
         os.fsync(fd)  # ciphertext durable before the atomic swap
     finally:

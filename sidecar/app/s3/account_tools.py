@@ -26,6 +26,11 @@ from . import config_tools as ct
 
 SAMPLE_LIMIT = 20
 
+# A bucket that exists but lives in another region (HeadBucket → 301). Reachable
+# with the right region, so it is NOT an error — a distinct status the survey
+# reports without dropping the bucket from posture counts.
+REGION_MISMATCH = "region_mismatch"
+
 # Evidence source types.
 INVENTORY = "inventory"
 SERVER_ACCESS_LOGGING = "server_access_logging"
@@ -76,6 +81,12 @@ def get_bucket_config_snapshot(
             head_status = ct.ACCESS_DENIED
         elif code in ct._UNSUPPORTED_CODES or http == 501:
             head_status = ct.PROVIDER_UNSUPPORTED
+        elif code in ("PermanentRedirect", "301") or http == 301:
+            # A healthy bucket in ANOTHER region answers HeadBucket with a 301
+            # redirect. That is NOT "error" (the bucket exists and is reachable
+            # with the right region) — brand it distinctly so the survey doesn't
+            # drop it from posture counts and the user can fix the provider region.
+            head_status = REGION_MISMATCH
 
     location = ct._read(client, "get_bucket_location", Bucket=bucket)
     versioning = ct._read(client, "get_bucket_versioning", Bucket=bucket)

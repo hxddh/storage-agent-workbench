@@ -6,6 +6,76 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-07-20
+
+_Security-floor and correctness hardening from an adversarial mining round: three
+more secret shapes are redacted, prefix scoping now matches at a path boundary,
+ingestion is bounded against oversized/hostile inputs, run executors persist and
+degrade truthfully, and provider-credential failures surface cleanly instead of
+as opaque 500s._
+
+### Security
+
+- **Prefix scope now matches at a path boundary, not a raw prefix.** A provider
+  restricted to `allowed_prefixes=["logs"]` previously admitted
+  `logs-private/secret` via a plain `startswith` — a different top-level path.
+  `check_scope` now matches only an exact equal or a `/`-delimited child
+  (`logs` / `logs/…`, never `logs-private/…`), and drops empty-string prefix
+  entries so a stray `""` can't silently unrestrict the bucket.
+- **Three more secret shapes are redacted** in logs/reports/traces/UI: Azure
+  Blob **SAS `sig=`** HMAC query params, temporary-credential **session tokens**
+  (`FQoG`/`FwoG`/`IQoJ…`), and `private_key = <value>` assignments (GCP
+  service-account / TLS keys) — labels kept, values masked.
+- The session agent's appended provider block (name + endpoint URL, added after
+  `build_session_context` and therefore outside `assert_no_secrets_in_context`)
+  now routes both fields through `redact_text`, closing the one place a
+  credential-bearing endpoint string could reach the prompt unredacted.
+
+### Ingestion bounds
+
+- `_nonempty_lines` reads via a bounded `readline(_MAX_LINE_CHARS)` loop with a
+  cumulative-bytes ceiling, so a single multi-GiB line (or a giant file) can no
+  longer be slurped whole into one Python string and OOM the sidecar.
+- Free-text group-by labels in the access-log and inventory analyzers are clipped
+  to `_LABEL_LEN` before they reach the model context / report prose.
+- Finding cells are HTML-escaped in **both** report writers (`analysis_report`
+  and `report`), so a crafted finding title/detail can't inject markup
+  (`<img onerror=…>`) into a generated report.
+- A **future-dated** object (clock skew or a garbage `9999` date) now lands in
+  the `unknown` age bucket instead of being mis-bucketed as freshly modified
+  (`0-7d`).
+- The per-run DuckDB session applies a best-effort `memory_limit` / `threads`
+  ceiling, so an unbounded analytical query can't exhaust host RAM and take the
+  desktop app down.
+- A managed evidence combine now enforces a **cumulative decompressed-output
+  budget** across all parts (`_COMBINE_MAX_OUT_BYTES`), closing the gap where
+  thousands of individually-under-cap gzip members could still sum to a
+  disk-filling total (decompression-bomb defense in depth).
+
+### Run executors
+
+- `recent_run_ids_for_provider` joins on `runs.status = 'completed'`, so a
+  crashed/partial survey's snapshot is never read back as the newest — which had
+  made "what changed" report un-scanned buckets as removed and posture answers
+  come from a truncated set.
+- Per-bucket persistence in the account-discovery run is wrapped in a
+  savepoint-style try/except: one bucket's write failure rolls back that bucket
+  and records a warning finding instead of aborting the whole survey.
+- Report generation in the diagnostic, config-review, and account-discovery runs
+  is wrapped in `require_success`, so a failed report write fails the run loudly
+  instead of silently completing without an artifact.
+- A region-mismatch HeadBucket (`301` / `PermanentRedirect`) surfaces a distinct
+  `region_mismatch` status instead of a generic access failure.
+
+### Provider credentials
+
+- The encrypted-vault temp file is forced to `0600` via `fchmod` before any
+  ciphertext is written, so a leftover `.tmp` (whose pre-existing perms `O_CREAT`
+  would otherwise keep) can never be briefly group/world-readable.
+- A malformed stored credential reference now raises a clear
+  `CredentialResolutionError` ("re-enter the credential") instead of a raw
+  `ValueError` surfacing as an opaque 500.
+
 ## [0.39.0] - 2026-07-17
 
 _Test coverage, not behavior: a frontend test harness (the frontend had zero

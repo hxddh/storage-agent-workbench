@@ -15,6 +15,16 @@ def _configure(con: duckdb.DuckDBPyConnection) -> duckdb.DuckDBPyConnection:
     # day when the sidecar runs outside UTC. UTC keeps every comparison consistent
     # with how the data was stored.
     con.execute("SET TimeZone='UTC'")
+    # Defense-in-depth memory ceiling: the analysis runs inside the desktop app's
+    # sidecar, so an unbounded DuckDB query (a future path using read_csv_auto on a
+    # crafted file, a huge aggregate) must not be able to exhaust host RAM and take
+    # the app down. Bounded threads likewise keep a background analysis from
+    # starving the UI. Both are best-effort — ignored if the build rejects them.
+    for pragma in ("SET memory_limit='2GB'", "SET threads=4"):
+        try:
+            con.execute(pragma)
+        except duckdb.Error:
+            pass
     return con
 
 

@@ -16,6 +16,24 @@ which let a prefix-scoped provider read outside its prefix via preview_object).
 from __future__ import annotations
 
 
+def _prefix_in_scope(target: str, allowed_prefixes: list[str]) -> bool:
+    """True if ``target`` is within one of ``allowed_prefixes`` at a PATH boundary.
+
+    A plain ``startswith`` let ``allowed_prefixes=["logs"]`` admit
+    ``logs-private/secret`` — a different top-level path. A prefix ``p`` matches
+    only an EXACT equal, or ``p`` treated as a directory boundary (``p`` ending in
+    ``/``, or ``target`` continuing with ``/`` right after ``p``). So ``logs``
+    admits ``logs`` and ``logs/...`` but NOT ``logs-private/...``; ``logs/`` admits
+    ``logs/...``. Callers already strip empty entries."""
+    for p in allowed_prefixes:
+        if target == p:
+            return True
+        boundary = p if p.endswith("/") else p + "/"
+        if target.startswith(boundary):
+            return True
+    return False
+
+
 def check_scope(
     allowed_buckets: list[str] | None,
     allowed_prefixes: list[str] | None,
@@ -47,10 +65,13 @@ def check_scope(
             f"Bucket '{bucket}' is outside this provider's allowed_buckets scope. "
             f"Allowed: {shown}{more}."
         )
+    # An empty-string entry would make every startswith() match — i.e. silently
+    # unrestrict the bucket. Drop empties, so a stray "" doesn't widen scope.
+    allowed_prefixes = [p for p in (allowed_prefixes or []) if p]
     if allowed_prefixes:
         target = key if key is not None else prefix
         if target:
-            if not any(target.startswith(p) for p in allowed_prefixes):
+            if not _prefix_in_scope(target, allowed_prefixes):
                 kind = "key" if key is not None else "prefix"
                 return (
                     f"The {kind} '{target}' is outside this provider's "

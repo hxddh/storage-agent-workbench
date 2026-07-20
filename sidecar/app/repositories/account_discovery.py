@@ -176,12 +176,22 @@ def get_profile(conn: sqlite3.Connection, run_id: str) -> dict[str, Any] | None:
 def recent_run_ids_for_provider(
     conn: sqlite3.Connection, provider_id: str, limit: int = 2
 ) -> list[str]:
-    """The run_ids of a provider's most recent account snapshots, newest first —
-    across sessions (the account is the same account). Used to diff 'what changed
-    since last time'."""
+    """The run_ids of a provider's most recent COMPLETED account snapshots, newest
+    first — across sessions (the account is the same account). Used to diff 'what
+    changed since last time' and to answer cross-bucket posture.
+
+    Only ``runs.status = 'completed'`` snapshots are returned: ``create_snapshot``
+    commits the snapshot row (with ``processed_count`` = the full selection) BEFORE
+    the per-bucket loop, so a run that crashed/was killed mid-survey leaves a
+    snapshot with only k of N bucket rows. Surfacing that as the newest survey made
+    ``compare_to_last_survey`` report the un-scanned buckets as 'removed' and
+    ``query_account_profile`` answer posture from a truncated set. Joining on the
+    run's terminal status excludes those partials."""
     rows = conn.execute(
-        "SELECT run_id FROM account_snapshots WHERE provider_id = ? "
-        "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+        "SELECT s.run_id FROM account_snapshots s "
+        "JOIN runs r ON r.id = s.run_id "
+        "WHERE s.provider_id = ? AND r.status = 'completed' "
+        "ORDER BY s.created_at DESC, s.rowid DESC LIMIT ?",
         (provider_id, max(1, int(limit))),
     ).fetchall()
     return [r["run_id"] for r in rows]

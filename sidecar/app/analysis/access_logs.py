@@ -183,10 +183,29 @@ def _open_text(path: str | Path):
     return open(p, "r", encoding="utf-8", errors="replace")
 
 
+# A real access-log line is well under a few KB. MAX_INGEST_ROWS bounds the line
+# COUNT, but not the length of any one line — so a 2 GiB single-line upload was
+# read into one giant str (OOM), and redact_text then ran its regex set over the
+# whole thing. Cap bytes per readline AND total bytes so a pathological file
+# degrades to bounded junk rows (the parsed-fraction truth guard flags them),
+# never an OOM.
+_MAX_LINE_CHARS = 1 << 20        # 1 MiB per line
+_MAX_TOTAL_CHARS = 3 << 30       # ~3 GiB total (above the 2 GiB upload cap, below OOM)
+
+
 def _nonempty_lines(path: str | Path, limit: int | None = None) -> list[str]:
     out: list[str] = []
+    total = 0
     with _open_text(path) as fh:
-        for line in fh:
+        while True:
+            # readline(size) reads AT MOST _MAX_LINE_CHARS chars, so a giant single
+            # line comes back as bounded chunks instead of one huge str.
+            line = fh.readline(_MAX_LINE_CHARS)
+            if not line:
+                break
+            total += len(line)
+            if total > _MAX_TOTAL_CHARS:
+                break
             s = line.strip()
             if not s:
                 continue
@@ -401,8 +420,19 @@ def import_access_logs(raw_path: str | Path, duckdb_path: str | Path, fmt: str) 
 # --- tool 3: analyze_access_logs --------------------------------------------
 
 
+# A single object key / user-agent can be arbitrarily long (bounded only by the
+# 2 GiB upload cap). Cap every distribution LABEL so one pathological value can't
+# blow up the model context / report prose. Mirrors aggregate._LABEL_LEN.
+_LABEL_LEN = 300
+
+
+def _clip(v: object) -> str:
+    s = str(v)
+    return s if len(s) <= _LABEL_LEN else s[:_LABEL_LEN] + "…"
+
+
 def _dist(con, sql: str) -> list[dict[str, Any]]:
-    return [{"value": str(v), "count": int(c)} for v, c in con.execute(sql).fetchall()]
+    return [{"value": _clip(v), "count": int(c)} for v, c in con.execute(sql).fetchall()]
 
 
 def analyze_access_logs(duckdb_path: str | Path) -> dict[str, Any]:

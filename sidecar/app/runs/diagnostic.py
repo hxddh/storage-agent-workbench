@@ -19,7 +19,7 @@ from ..events import bus
 from ..repositories import cloud_providers as cloud_repo
 from ..s3 import tools as s3_tools
 from ..s3.scope import check_scope
-from ._common import RunError, run_executor, run_tool_with_events
+from ._common import RunError, require_success, run_executor, run_tool_with_events
 from .report import write_report
 
 # Bounded sample size for the diagnostic listing (never a full scan).
@@ -124,9 +124,9 @@ def _diagnostic_body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any])
     # Route report generation through run_tool_with_events like every other
     # executor, so it lands a tool_call + audit row (rule 17: report generation is
     # auditable) instead of writing report.md with no trail.
-    run_tool_with_events(
+    require_success(run_tool_with_events(
         conn, run_id, "generate_markdown_report", {"run_id": run_id},
         lambda: {"report_path": config.rel_path(
             write_report(run, evidence, findings, summary)[0]), "format": "markdown"},
-    )
+    ))
     return summary
