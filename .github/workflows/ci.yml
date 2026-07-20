@@ -35,6 +35,8 @@ jobs:
       # a real eslint flat config is a follow-up so this stays a safe, green gate.
       - name: Lint
         run: npm run lint
+      - name: Test
+        run: npm test
       - name: Build
         run: npm run build
 
