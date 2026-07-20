@@ -6,6 +6,53 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-07-17
+
+_Test coverage, not behavior: a frontend test harness (the frontend had zero
+tests) and a provider-compatibility matrix that pins rule-18 degradation. No
+product code changes — this locks in the v0.37/v0.38 fixes and the
+S3-compatible contract against regression._
+
+### Added — frontend test harness
+
+- **The frontend had no tests at all**, despite a substantial turn-runner / store
+  state machine that the v0.38 fixes leaned on. Added a Vitest + Testing-Library
+  (jsdom) harness (`npm test`, wired into CI between lint and build) and an
+  initial suite:
+  - `useTurnRunner` pure helpers — `cleanError` (incl. the FE9 guard: a bare
+    "not found"/"404" with no provider context is NOT rewritten to the model-404
+    hint) and `looksLikeError` (no false trigger on "I have 404 objects").
+  - the `sessionRuns` store — patch/merge, functional patches, the `failedText`
+    round-trip (FE2), and the drop-guard (a deleted session's late writes can't
+    resurrect its entry, and abort/cancel fire).
+  - a turn-runner flow test (api mocked) — a turn that fails while another session
+    is visible stashes the message as `failedText`; a failure on the visible
+    session restores it into the composer.
+  - The production build is unaffected (Vitest config is separate from
+    `vite.config.ts`; the bundle is byte-identical).
+
+### Added — provider-compatibility matrix (rule 18)
+
+- Most S3 tests stub AWS-shaped happy paths; the S3-**compatible** contract
+  (R2 / MinIO / GCS-XML / B2 / Ceph deviations) had little direct coverage. A new
+  `test_provider_compat.py` pins the degradation contract across the real
+  deviation shapes (coded `NotImplemented` / `MethodNotAllowed` /
+  `NotSupported` / `Unsupported`, and code-less `501` / `405` gateway
+  rejections):
+  - the central detectors (`_is_unsupported`, `config_tools._read`) map every gap
+    shape to `provider_unsupported`, and keep a genuine permission error
+    (`AccessDenied` / `403`) DISTINCT (never masked as a capability gap);
+  - each object-level read tool (`get_object_tagging` / `_acl` / `_attributes`,
+    `list_object_versions` / `list_multipart_uploads`) degrades to a successful
+    probe with the gap flagged — never a raise, never `success=false`, never a
+    leaked credential;
+  - all four `review_bucket_*` engines, run against a provider that implements
+    NONE of the config surface, return findings (not a crashed run).
+  - The matrix also documents (and pins) an existing inconsistency: the object
+    tools express the gap three ways — `tagging_status`/`acl_status`/
+    `attributes_status` strings vs a boolean `provider_unsupported`. Left as-is
+    (both are documented and agent-read); the tests lock current behavior.
+
 ## [0.38.0] - 2026-07-17
 
 _A four-angle sweep (concurrency, API-layer robustness, audit coverage, and
