@@ -55,7 +55,16 @@ def _table(headers: list[str], rows: list[list[str]]) -> str:
 def _findings_md(findings: list[dict[str, str]]) -> str:
     if not findings:
         return "- No findings."
-    return "\n".join(f"- **[{f['severity']}]** {f['title']} — {f['detail']}" for f in findings)
+    # Escape title/detail like table cells: they interpolate object keys /
+    # prefixes / storage-class values (attacker-influenceable) into prose, and the
+    # report renders as HTML — an unescaped `<img onerror=…>` in a storage_class
+    # would be stored script. `_cell` was applied to table cells (v0.35) but this
+    # prose sink was missed.
+    return "\n".join(
+        f"- **[{_cell(f.get('severity', ''))}]** {_cell(f.get('title', ''))} — "
+        f"{_cell(f.get('detail', ''))}"
+        for f in findings
+    )
 
 
 def _cat_findings_md(findings: list[dict[str, str]]) -> str:

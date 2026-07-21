@@ -22,6 +22,16 @@ def report_path_for(run_id: str) -> Path:
     return config.data_dir() / "runs" / run_id / "report.md"
 
 
+def _esc(v: object) -> str:
+    """Escape a value interpolated into report PROSE. The report renders as HTML;
+    a finding detail may carry a bucket name / object key, so neutralize the
+    markup/table metacharacters (same set as the analysis report's cell escaper).
+    Whole-document redaction covers credentials, not these."""
+    return (str(v).replace("\\", "\\\\").replace("|", "\\|")
+            .replace("\r", " ").replace("\n", " ").replace("`", "\\`")
+            .replace("<", "&lt;").replace(">", "&gt;"))
+
+
 def _evidence_block(name: str, output: dict[str, Any] | None) -> str:
     body = json.dumps(output or {"note": "not run"}, indent=2, default=str)
     return f"### {name}\n\n```json\n{body}\n```\n"
@@ -38,7 +48,8 @@ def render(
     evidence_md = "\n".join(_evidence_block(n, evidence.get(n)) for n in _TOOL_ORDER)
     if findings:
         findings_md = "\n".join(
-            f"- **[{f['severity']}]** {f['title']} — {f['detail']}" for f in findings
+            f"- **[{_esc(f['severity'])}]** {_esc(f['title'])} — {_esc(f['detail'])}"
+            for f in findings
         )
     else:
         findings_md = "- No findings."

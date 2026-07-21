@@ -93,7 +93,18 @@ def invalidate_provider(provider_id: str) -> None:
 def _resolve(ref: str | None) -> str | None:
     if not ref:
         return None
-    scope, name = keyring_store.parse_ref(ref)
+    # A malformed ref (corrupt row, a value that never went through make_ref)
+    # makes parse_ref raise a bare ValueError that would bubble up as an opaque
+    # 500. Translate it to the same clear, actionable CredentialResolutionError
+    # the missing-value path raises, so the operator is told to re-enter the
+    # credential rather than seeing a raw parse error.
+    try:
+        scope, name = keyring_store.parse_ref(ref)
+    except ValueError as exc:
+        raise CredentialResolutionError(
+            "A stored credential reference for this provider is malformed and "
+            "could not be parsed. Re-enter the credential(s) for this provider."
+        ) from exc
     return keyring_store.get_secret(scope, name)
 
 

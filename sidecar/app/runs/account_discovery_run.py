@@ -28,7 +28,7 @@ from ..repositories import cloud_providers as cloud_repo
 from ..s3 import account_tools, tools as s3tools
 from ..s3.scope import check_scope
 from ..security.redaction import redact_text
-from ._common import RunError, run_executor, run_tool_with_events
+from ._common import RunError, require_success, run_executor, run_tool_with_events
 from .analysis_report import render_account_profile, write
 
 DEFAULT_MAX_BUCKETS = 100
@@ -198,12 +198,22 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
     for name in selected:
         access_status = _CONFIGURED
         try:
+            # Strip `_raw_reads` INSIDE the recorded callable so run_tool_with_events
+            # persists the cleaned snapshot — popping it after the call (as before)
+            # left the raw logging/inventory reads in the committed tool_call row,
+            # contradicting the "never persist" contract and ~doubling the row.
+            _rr: dict[str, Any] = {}
+
+            def _snapshot(n=name, holder=_rr):
+                s = account_tools.get_bucket_config_snapshot(conn, provider_id, n)
+                holder["raw"] = s.pop("_raw_reads", None)
+                return s
+
             snap = run_tool_with_events(
                 conn, run_id, "get_bucket_config_snapshot",
-                {"provider_id": provider_id, "bucket": name},
-                lambda n=name: account_tools.get_bucket_config_snapshot(conn, provider_id, n),
+                {"provider_id": provider_id, "bucket": name}, _snapshot,
             )
-            raw_reads = snap.pop("_raw_reads", None)  # reuse, never persist
+            raw_reads = _rr.get("raw")  # reuse, never persisted
             ev = run_tool_with_events(
                 conn, run_id, "discover_evidence_sources",
                 {"provider_id": provider_id, "bucket": name},
@@ -219,6 +229,10 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
             # denied buckets were mis-reported as "available".)
             if head == _DENIED:
                 access_status = _DENIED
+            elif head == account_tools.REGION_MISMATCH:
+                # Exists but in another region — reachable with the right region,
+                # NOT an error; surface distinctly so it isn't dropped as broken.
+                access_status = account_tools.REGION_MISMATCH
             elif head == "error":
                 access_status = "error"
             elif snap.get("access_denied_items"):
@@ -240,12 +254,22 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
             }
 
         per_bucket.append(bucket_entry)
-        account_repo.add_bucket(conn, snapshot_id, run_id, provider_id, name,
-                                bucket_entry.get("region"), bucket_entry["access_status"])
-        account_repo.add_config_snapshot(conn, snapshot_id, run_id, provider_id, name, bucket_entry)
-        for src in bucket_entry.get("evidence_sources", []):
-            account_repo.add_evidence_source(conn, snapshot_id, run_id, provider_id, name, src)
-        conn.commit()
+        # Persistence is ISOLATED per-bucket too: a redact/json error on one
+        # bucket's row must not abort the whole survey (the docstring promises it
+        # continues). Previously these inserts sat outside the try above, so one
+        # bad row failed the entire run.
+        try:
+            account_repo.add_bucket(conn, snapshot_id, run_id, provider_id, name,
+                                    bucket_entry.get("region"), bucket_entry["access_status"])
+            account_repo.add_config_snapshot(conn, snapshot_id, run_id, provider_id, name, bucket_entry)
+            for src in bucket_entry.get("evidence_sources", []):
+                account_repo.add_evidence_source(conn, snapshot_id, run_id, provider_id, name, src)
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001 - per-bucket persistence isolation
+            conn.rollback()
+            bus.publish(run_id, {"type": "finding", "severity": "warning",
+                                 "title": f"Bucket {name}: persistence error",
+                                 "detail": redact_text(str(exc))})
 
     summary = _build_summary(per_bucket, visible, len(per_bucket), truncated)
     # Persist the computed summary onto the snapshot row.
@@ -304,8 +328,8 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
         "summary": summary, "buckets": per_bucket,
     }
     content = render_account_profile(run, profile, summary_text)
-    run_tool_with_events(
+    require_success(run_tool_with_events(
         conn, run_id, "generate_markdown_report", {"run_id": run_id},
         lambda: {"report_path": config.rel_path(write(run_id, content)), "format": "markdown"},
-    )
+    ))
     return summary_text

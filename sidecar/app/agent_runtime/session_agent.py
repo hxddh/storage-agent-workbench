@@ -665,8 +665,14 @@ def _build_prompt(
     if conn is not None:
         try:
             from ..repositories import cloud_providers as cloud_repo
-            providers = [{"provider_id": p.id, "name": p.name, "type": p.provider_type,
-                          "region": p.region, "endpoint": p.endpoint_url}
+            # redact_text the operator-controlled name/endpoint: an endpoint URL
+            # configured with embedded basic-auth (https://KEY:SECRET@host) would
+            # otherwise leak into the prompt verbatim — this block is appended
+            # AFTER build_session_context, so assert_no_secrets_in_context (which
+            # guards only `context`) does not cover it.
+            providers = [{"provider_id": p.id, "name": redact_text(p.name or ""),
+                          "type": p.provider_type, "region": p.region,
+                          "endpoint": redact_text(p.endpoint_url or "")}
                          for p in cloud_repo.list_all(conn)]
         except Exception:  # noqa: BLE001
             providers = []

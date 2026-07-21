@@ -107,6 +107,11 @@ _VALUE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         ),
         r"\1" + REDACTED,
     ),
+    # Azure Blob SAS: the HMAC credential rides in the `sig=` query param (this app
+    # targets Azure-via-S3-compat too). Anchored to `?`/`&` so a bare word "sig"
+    # in prose isn't touched. Kept AFTER the AWS rule so an already-masked URL is
+    # untouched. `se`/`sp`/`sv` etc. are non-secret and intentionally left.
+    (re.compile(r"(?i)([?&]sig=)([^&\s]+)"), r"\1" + REDACTED),
     # Bare `token=` / `api_key=` in free text or query strings (e.g. the local
     # SSE auth `?token=...`, a pasted `api_key=...` config line). Label kept,
     # value masked. `\b` keeps compound labels like `next_token=` (preceded by a
@@ -162,6 +167,18 @@ _VALUE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (
         re.compile(r"(?i)\b(accountkey)(\s*=\s*)[A-Za-z0-9/+=]{8,}"),
         r"\1\2" + REDACTED,
+    ),
+    # AWS STS session tokens: a long base64 blob with an UNAMBIGUOUS prefix
+    # (FQoG/FwoG/IQoJ…). Unlike a bare 40-char SK, this shape can't collide with an
+    # object key, so it's masked on its own — no AKIA-co-present condition needed.
+    (re.compile(r"\b(?:FQoG|FwoG|IQoJ)[A-Za-z0-9/+=_\-]{40,}"), REDACTED),
+    # A `private_key:`/`private-key=` value that is NOT PEM-armored (the PEM rules
+    # above catch armored blocks; a raw base64/hex value after the label slips
+    # past them). Label kept, value masked. Requires a longish value so prose
+    # ("the private key was rotated") isn't touched.
+    (
+        re.compile(r"(?i)\b(private[_-]?key)(\s*[:=]\s*)(['\"]?)[A-Za-z0-9/+=_\-]{20,}"),
+        r"\1\2\3" + REDACTED,
     ),
     # Basic-auth userinfo in a URL (`scheme://user:pass@host`): mask the
     # password only, keep the scheme/user so the URL stays diagnosable.

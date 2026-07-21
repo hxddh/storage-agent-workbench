@@ -46,6 +46,36 @@ _CHUNK = 1024 * 1024
 # bounds the compressed input, and this ratio bounds the decompressed output.
 _GUNZIP_MAX_RATIO = 1000
 _GUNZIP_MIN_OUT_CAP = 4 * _CHUNK
+# Cumulative decompression-bomb backstop for a whole combine. `_gunzip_out_cap`
+# bounds ONE gzip member, but a confirmed selection can carry thousands of parts,
+# and the per-file 4-MiB floor (`_GUNZIP_MIN_OUT_CAP`) means many small members
+# each stay "under cap" while their decompressed SUM fills the disk. This absolute
+# ceiling bounds the TOTAL bytes one import writes to the combined file across all
+# parts — legitimate inventory/log combines land far below it; a bomb field trips
+# it. Set generously above any real analytical import (the DuckDB engine that reads
+# the result runs under a 2 GiB memory ceiling).
+_COMBINE_MAX_OUT_BYTES = 16 * 1024 * 1024 * 1024  # 16 GiB
+
+
+class _OutBudget:
+    """Shared cumulative-output budget for one combine (see _COMBINE_MAX_OUT_BYTES).
+
+    Threaded through every part so the running decompressed/copied total is bounded
+    across the whole selection, not just per-file."""
+
+    __slots__ = ("remaining",)
+
+    def __init__(self, cap: int = _COMBINE_MAX_OUT_BYTES) -> None:
+        self.remaining = cap
+
+    def take(self, n: int) -> None:
+        self.remaining -= n
+        if self.remaining < 0:
+            raise LimitExceeded(
+                "combined evidence exceeds the total decompression budget "
+                f"({_COMBINE_MAX_OUT_BYTES} bytes across all parts); refusing a "
+                "possible decompression bomb"
+            )
 
 
 class ImportError_(Exception):
@@ -427,21 +457,23 @@ class _SkipFirstLineWriter:
         self._inner.write(data)
 
 
-def _append_maybe_gunzip(src: Path, out) -> None:
+def _append_maybe_gunzip(src: Path, out, budget: "_OutBudget | None" = None) -> None:
     """Stream ``src`` into ``out``, transparently gunzipping (bounded).
 
     Non-gzip content (and content that merely starts with the gzip magic but is
     not a valid stream) is copied through verbatim, matching the old
     best-effort behavior. Decompressed output is capped at
     ``_GUNZIP_MAX_RATIO`` x the compressed size — beyond that it is treated as
-    a decompression bomb and the import fails with LimitExceeded.
+    a decompression bomb and the import fails with LimitExceeded. When ``budget``
+    is supplied, every emitted byte also draws down a cumulative cap shared across
+    all parts of the combine (``_COMBINE_MAX_OUT_BYTES``).
     """
     size = src.stat().st_size
     with src.open("rb") as fh:
         magic = fh.read(2)
         fh.seek(0)
         if magic != b"\x1f\x8b":
-            _copy_stream(fh, out)
+            _copy_stream(fh, out, budget)
             return
         out_cap = _gunzip_out_cap(size)
         d = zlib.decompressobj(wbits=31)  # gzip container
@@ -464,6 +496,8 @@ def _append_maybe_gunzip(src: Path, out) -> None:
                             f"bound ({out_cap} bytes for {size} compressed bytes); "
                             "refusing a possible decompression bomb"
                         )
+                    if budget is not None:
+                        budget.take(len(piece))
                     out.write(piece)
                     data = d.unconsumed_tail
                     if d.eof:
@@ -493,26 +527,29 @@ def _append_maybe_gunzip(src: Path, out) -> None:
             _copy_stream(fh, out)
 
 
-def _copy_stream(fh: BinaryIO, out) -> None:
+def _copy_stream(fh: BinaryIO, out, budget: "_OutBudget | None" = None) -> None:
     while True:
         chunk = fh.read(_CHUNK)
         if not chunk:
             break
+        if budget is not None:
+            budget.take(len(chunk))
         out.write(chunk)
 
 
-def _append_with_newline(src: Path, out: _TrackedWriter) -> None:
-    _append_maybe_gunzip(src, out)
+def _append_with_newline(src: Path, out: _TrackedWriter, budget: "_OutBudget | None" = None) -> None:
+    _append_maybe_gunzip(src, out, budget)
     if out.wrote and out.last != b"\n":
         out.write(b"\n")
 
 
 def _combine_access_logs(parts: list[Path], dest_dir: Path) -> Path:
     out_path = dest_dir / "combined.log"
+    budget = _OutBudget()
     with out_path.open("wb") as fh:
         for part in parts:
             writer = _TrackedWriter(fh)
-            _append_with_newline(part, writer)
+            _append_with_newline(part, writer, budget)
     return out_path
 
 
@@ -523,13 +560,14 @@ def _combine_inventory(parts: list[Path], fmt: str, schema: str | None, dest_dir
         import duckdb
 
         plain: list[Path] = []
+        budget = _OutBudget()
         for i, part in enumerate(parts):
             with part.open("rb") as fh:
                 is_gz = fh.read(2) == b"\x1f\x8b"
             if is_gz:
                 unpacked = part.with_name(part.name + ".parquet")
                 with unpacked.open("wb") as fh:
-                    _append_maybe_gunzip(part, fh)
+                    _append_maybe_gunzip(part, fh, budget)
                 plain.append(unpacked)
             else:
                 plain.append(part)
@@ -550,13 +588,14 @@ def _combine_inventory(parts: list[Path], fmt: str, schema: str | None, dest_dir
     # provides the column names, which we write as the header so the existing
     # header-based importer can map columns.
     out_path = dest_dir / "combined.csv"
+    budget = _OutBudget()
     with out_path.open("wb") as fh:
         if schema:
             header = ",".join(c.strip() for c in schema.split(","))
             fh.write(header.encode("utf-8") + b"\n")
             for part in parts:
                 writer = _TrackedWriter(fh)
-                _append_with_newline(part, writer)
+                _append_with_newline(part, writer, budget)
         else:
             # No schema (prefix-listing fallback, no manifest). Only skip the
             # first line of subsequent parts when the parts REALLY carry a
@@ -568,7 +607,7 @@ def _combine_inventory(parts: list[Path], fmt: str, schema: str | None, dest_dir
             for i, part in enumerate(parts):
                 tracked = _TrackedWriter(fh)
                 writer = tracked if (i == 0 or not headered) else _SkipFirstLineWriter(tracked)
-                _append_maybe_gunzip(part, writer)
+                _append_maybe_gunzip(part, writer, budget)
                 if writer.wrote and writer.last != b"\n":
                     tracked.write(b"\n")
     return out_path

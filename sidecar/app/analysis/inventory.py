@@ -41,6 +41,17 @@ def _norm(name: str) -> str:
     return name.lower().replace(" ", "").replace("_", "")
 
 
+# Cap every key/prefix/storage-class LABEL: a single object key is bounded only by
+# the 2 GiB upload cap, so one pathological value could blow up the model context
+# and the report prose. Mirrors aggregate._LABEL_LEN / access_logs._LABEL_LEN.
+_LABEL_LEN = 300
+
+
+def _clip(v: object) -> str:
+    s = str(v)
+    return s if len(s) <= _LABEL_LEN else s[:_LABEL_LEN] + "…"
+
+
 # Storage-class tokens used to recognize the storage-class column in a HEADERLESS
 # inventory CSV (S3 + common S3-compatible names).
 _KNOWN_STORAGE = {
@@ -290,6 +301,10 @@ END
 _AGE_CASE = """
 CASE
   WHEN try_cast(last_modified AS TIMESTAMP) IS NULL THEN 'unknown'
+  -- A future last_modified (clock skew, or a garbage 9999 date) yields a NEGATIVE
+  -- age; without this guard it satisfies '<= 7' and is mis-bucketed as freshly
+  -- modified ('0-7d'). Treat future-dated objects as 'unknown', not recent.
+  WHEN datediff('day', try_cast(last_modified AS TIMESTAMP), current_timestamp) < 0 THEN 'unknown'
   WHEN datediff('day', try_cast(last_modified AS TIMESTAMP), current_timestamp) <= 7 THEN '0-7d'
   WHEN datediff('day', try_cast(last_modified AS TIMESTAMP), current_timestamp) <= 30 THEN '8-30d'
   WHEN datediff('day', try_cast(last_modified AS TIMESTAMP), current_timestamp) <= 90 THEN '31-90d'
@@ -329,20 +344,21 @@ def analyze_inventory(duckdb_path: str | Path) -> dict[str, Any]:
             ).fetchall()
         ]
         prefix_dist = [
-            {"value": str(p), "count": int(c), "size": int(s or 0)}
+            {"value": _clip(p), "count": int(c), "size": int(s or 0)}
             for p, c, s in con.execute(
                 f"SELECT prefix, count(*) c, COALESCE(sum(size), 0) s FROM {TABLE_NAME} "
                 f"GROUP BY prefix ORDER BY s DESC LIMIT {SAMPLE_LIMIT}"
             ).fetchall()
         ]
         storage_dist = [
-            {"value": str(sc), "count": int(c)}
+            {"value": _clip(sc), "count": int(c)}
             for sc, c in con.execute(
                 f"SELECT storage_class, count(*) c FROM {TABLE_NAME} GROUP BY storage_class ORDER BY c DESC"
             ).fetchall()
         ]
         top_large = [
-            {"key": str(k), "size": int(sz or 0), "storage_class": str(sc) if sc is not None else None}
+            {"key": _clip(k), "size": int(sz or 0),
+             "storage_class": _clip(sc) if sc is not None else None}
             for k, sz, sc in con.execute(
                 f"SELECT key, size, storage_class FROM {TABLE_NAME} "
                 f"ORDER BY size DESC NULLS LAST LIMIT {SAMPLE_LIMIT}"
