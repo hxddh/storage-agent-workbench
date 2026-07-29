@@ -269,6 +269,14 @@ export function GroundingCard({ g }: { g: Grounding }) {
   );
 }
 
+// Localize a backend severity/kind enum with a raw fallback (mirror
+// RunDetail.severityLabel) — zh users previously saw raw English tokens as
+// UI labels inside an otherwise fully translated thread.
+const severityLabel = (t: (k: string) => string, sev: string): string => {
+  const v = t(`metric.${sev}`);
+  return v === `metric.${sev}` ? sev : v;
+};
+
 const FINDING_TONE: Record<string, string> = {
   critical: "text-red-300", high: "text-red-300", warning: "text-amber-300/90",
   medium: "text-amber-300/90", opportunity: "text-accent-soft/90",
@@ -300,7 +308,7 @@ export function FindingsCard({ findings }: { findings: SessionFinding[] }) {
             <li key={f.id} className="text-[12px]">
               <div className="flex items-baseline gap-1.5">
                 <span className={`text-[10px] font-medium uppercase tracking-wider ${FINDING_TONE[(f.severity || f.kind || "info").toLowerCase()] || "text-gray-400"}`}>
-                  {f.severity || f.kind || "info"}
+                  {severityLabel(t, (f.severity || f.kind || "info").toLowerCase())}
                 </span>
                 <span className="text-gray-200">{f.title || "—"}</span>
               </div>

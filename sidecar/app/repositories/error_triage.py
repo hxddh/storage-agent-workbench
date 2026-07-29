@@ -93,9 +93,17 @@ def get_case(conn: sqlite3.Connection, case_id: str) -> dict[str, Any] | None:
     return data
 
 
-def list_for_session(conn: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        "SELECT id FROM error_triage_cases WHERE session_id = ? ORDER BY created_at DESC, rowid DESC",
-        (session_id,),
-    ).fetchall()
+def list_for_session(conn: sqlite3.Connection, session_id: str,
+                     limit: int | None = None) -> list[dict[str, Any]]:
+    """Newest-first cases (each with findings). ``limit`` pushes the bound into
+    SQL: the summary refresh runs after every run/triage/attach and needs only
+    the newest 10 — without the bound a long-lived session's every refresh
+    re-read ALL cases + findings (2N+1 queries) to use ten."""
+    sql = ("SELECT id FROM error_triage_cases WHERE session_id = ? "
+           "ORDER BY created_at DESC, rowid DESC")
+    args: tuple[Any, ...] = (session_id,)
+    if limit is not None:
+        sql += " LIMIT ?"
+        args += (max(1, int(limit)),)
+    rows = conn.execute(sql, args).fetchall()
     return [get_case(conn, r["id"]) for r in rows]

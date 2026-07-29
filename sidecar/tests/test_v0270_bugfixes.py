@@ -69,9 +69,13 @@ def test_model_budget_tool_output_never_below_floor():
     assert mb.tool_output_char_budget("unknown") == mb.TOOL_OUTPUT_CHARS_FLOOR
     # A 1M-context model scales up proportionally (0.25 * 1M tokens * 4 chars).
     assert mb.tool_output_char_budget("gpt-4.1") == 1_000_000
-    # Never below floor, whatever the model.
-    for m in (None, "", "tiny", "gpt-3.5-turbo", "qwen-max"):
+    # Never below floor for models whose window can HOLD the floor. (v0.41: a
+    # small-window model — gpt-3.5's 16k — is now clamped to half its window
+    # instead of being handed a 200k-char budget 3x its whole context.)
+    for m in (None, "", "tiny"):
         assert mb.tool_output_char_budget(m) >= mb.TOOL_OUTPUT_CHARS_FLOOR
+    for m in ("gpt-3.5-turbo", "qwen-max"):  # 16k / 32k windows
+        assert mb.tool_output_char_budget(m) <= mb.context_window(m) * 4 // 2
 
 
 def test_model_budget_completion_floor_and_provider_cap():

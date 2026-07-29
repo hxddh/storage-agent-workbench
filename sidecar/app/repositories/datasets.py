@@ -39,11 +39,17 @@ def create(
     stored_path_rel: str,
 ) -> str:
     dataset_id = uuid.uuid4().hex
+    # Rule 14: user-chosen names must be redacted before persistence — the
+    # session-dataset path has done this from the start; the run-scoped path
+    # stored both display columns raw.
+    from ..security.redaction import redact_text
     conn.execute(
         "INSERT INTO datasets "
         "(id, run_id, dataset_type, name, source_filename, stored_path, status, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, 'uploaded', ?)",
-        (dataset_id, run_id, dataset_type, name, source_filename, stored_path_rel, utcnow()),
+        (dataset_id, run_id, dataset_type, redact_text(name) if name else name,
+         redact_text(source_filename) if source_filename else source_filename,
+         stored_path_rel, utcnow()),
     )
     conn.commit()
     return dataset_id

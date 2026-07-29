@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 
-from . import db
+from . import config, db
 from .events import bus
 from .repositories import evidence_imports as evidence_imports_repo
 from .repositories import runs as runs_repo
@@ -57,6 +57,10 @@ def run_sync(run_id: str) -> None:
     try:
         row = runs_repo.get_row(conn, run_id)
         if row is None:
+            # The router already bus.create()d this run's stream; a row deleted
+            # in the race window must still close it, or the SSE stays open
+            # until the client-side timeout.
+            bus.mark_done(run_id)
             return
         session_id = row["session_id"]
         executor = _EXECUTORS.get(row["run_type"])
@@ -79,7 +83,10 @@ def run_sync(run_id: str) -> None:
                 runs_repo.set_status(conn, run_id, "failed", final_summary="Run failed to start.")
             except Exception:  # noqa: BLE001 - best effort; never mask the original
                 pass
-            bus.publish(run_id, {"type": "error", "message": redact_text(str(exc))})
+            # scrub_paths too: this error renders in the UI via SSE, and an
+            # OSError/sqlite failure carries the data dir's absolute path.
+            bus.publish(run_id, {"type": "error",
+                                 "message": config.scrub_paths(redact_text(str(exc)))})
             bus.mark_done(run_id)
             return
         # After the run finishes, refresh its session's deterministic summary.

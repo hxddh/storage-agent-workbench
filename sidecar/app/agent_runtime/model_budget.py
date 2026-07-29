@@ -69,6 +69,17 @@ TOOL_OUTPUT_CHARS_FLOOR = 200_000       # was session_agent._MAX_TOOL_OUTPUT_CHA
 # window's fair share — no shipping model exceeds that usefully today).
 TOOL_OUTPUT_CHARS_CEILING = 2_000_000
 COMPLETION_TOKENS_FLOOR = 16_384        # was session_agent._MAX_COMPLETION_TOKENS
+# The floors above are COMPAT guarantees for the 128k/200k models the app
+# shipped against — not licenses to exceed a small window. An operator-declared
+# 8k/16k window (local llama.cpp / vLLM / Ollama) must never be handed a budget
+# larger than the window itself: vLLM hard-400s max_tokens ≥ context, and a
+# 200k-char tool budget against a 16k window voids the "never blow the
+# provider's context window" contract. Both budgets are therefore clamped to
+# half the window (with tiny absolute minimums so a degenerate declared window
+# still yields a workable turn). Windows ≥ ~33k tokens are byte-for-byte
+# unchanged by the clamp.
+_SMALL_WINDOW_MIN_CHARS = 8_192
+_COMPLETION_TOKENS_MIN = 1_024
 
 
 def context_window(model: str | None, explicit: int | None = None) -> int:
@@ -107,9 +118,13 @@ def tool_output_char_budget(model: str | None, explicit_window: int | None = Non
     """Per-turn tool-output character budget, scaled to the model's window but
     never below the historical floor. 128k/200k models → 200_000 (unchanged);
     1M models → 1_000_000."""
-    tokens = int(context_window(model, explicit_window) * _TOOL_OUTPUT_FRACTION)
-    return min(TOOL_OUTPUT_CHARS_CEILING,
-               max(TOOL_OUTPUT_CHARS_FLOOR, tokens * _CHARS_PER_TOKEN))
+    window = context_window(model, explicit_window)
+    tokens = int(window * _TOOL_OUTPUT_FRACTION)
+    scaled = max(TOOL_OUTPUT_CHARS_FLOOR, tokens * _CHARS_PER_TOKEN)
+    # Small-window clamp (see _SMALL_WINDOW_MIN_CHARS above): never budget more
+    # tool-output chars than half the window can hold.
+    half_window_chars = max(_SMALL_WINDOW_MIN_CHARS, (window * _CHARS_PER_TOKEN) // 2)
+    return min(TOOL_OUTPUT_CHARS_CEILING, scaled, half_window_chars)
 
 
 def completion_token_budget(model: str | None, explicit_window: int | None = None,
@@ -129,5 +144,10 @@ def completion_token_budget(model: str | None, explicit_window: int | None = Non
     small-output model — the floor otherwise wins (an existing deployment is
     unchanged), but a 4k-output model like gpt-4-turbo is clamped down to 4096
     rather than being handed the 16384 floor it would reject."""
-    scaled = max(COMPLETION_TOKENS_FLOOR, context_window(model, explicit_window) // 8)
+    window = context_window(model, explicit_window)
+    scaled = max(COMPLETION_TOKENS_FLOOR, window // 8)
+    # Small-window clamp (see _COMPLETION_TOKENS_MIN above): never request more
+    # output tokens than half the window — the 16_384 floor against an 8k local
+    # endpoint is a guaranteed 400 (vLLM rejects max_tokens ≥ context).
+    scaled = min(scaled, max(_COMPLETION_TOKENS_MIN, window // 2))
     return min(scaled, max_output_tokens(model, explicit_max))

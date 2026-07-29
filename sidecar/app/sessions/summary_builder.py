@@ -224,7 +224,7 @@ def build(conn: sqlite3.Connection, session_id: str) -> dict[str, Any]:
 
     # Fold in recent error-triage cases — sanitized, bounded.
     from ..repositories import error_triage as triage_repo
-    for c in triage_repo.list_for_session(conn, session_id)[:10]:
+    for c in triage_repo.list_for_session(conn, session_id, limit=10):
         facts.append({"text": f"Error triage: {redact_text(str(c.get('summary', '')))[:300]}",
                       "source_run_id": None, "kind": "fact", "confidence": "medium"})
         evidence_refs.append({"source_type": "error_triage_case", "source_id": c["id"],

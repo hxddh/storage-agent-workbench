@@ -320,6 +320,7 @@ function RenameInput({ initial, onCommit, onCancel }: { initial: string; onCommi
       onChange={(e) => setVal(e.target.value)}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
+        if (e.nativeEvent.isComposing) return; // IME candidate commit, not ours
         if (e.key === "Enter") { e.preventDefault(); onCommit(val); }
         else if (e.key === "Escape") { e.preventDefault(); onCancel(); }
       }}

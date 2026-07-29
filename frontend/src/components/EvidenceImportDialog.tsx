@@ -54,7 +54,12 @@ export function EvidenceImportDialog({
   // promised this but no handler existed.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) onClose();
+      // Escape focused in an input (incl. a zh user's habitual IME-cancel)
+      // must not destroy the whole form — same editable-target guard as App.
+      const el = e.target as HTMLElement | null;
+      const editable = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" ||
+        el.tagName === "SELECT" || el.isContentEditable);
+      if (e.key === "Escape" && !busy && !editable) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -167,7 +172,7 @@ export function EvidenceImportDialog({
           <Button variant="primary" onClick={generatePlan} disabled={busy}>
             {busy && !plan ? t("imp.planning") : t("imp.generatePlan")}
           </Button>
-          <Button variant="ghost" onClick={onClose}>{t("imp.cancel")}</Button>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>{t("imp.cancel")}</Button>
         </div>
 
         {plan && (

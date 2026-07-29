@@ -43,6 +43,14 @@ def _safe_filename(name: str) -> str:
     base = Path(name or "upload.dat").name
     if base in ("", ".", ".."):
         return "upload.dat"
+    # Rule 14: a secret-shaped filename must not reach disk or the stored_path
+    # column — swap for a generated name (same guard as the session upload).
+    from ..security.redaction import redact_text
+    if redact_text(base) != base:
+        ext = Path(base).suffix
+        if len(ext) > 8 or redact_text(ext) != ext:
+            ext = ".dat"
+        return "upload-" + uuid4().hex[:12] + ext
     return base
 
 

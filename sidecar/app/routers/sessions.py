@@ -231,6 +231,16 @@ def _safe_filename(name: str) -> str:
     # os.replace onto it 500s. Map them (and an empty base) to a safe default.
     if base in ("", ".", ".."):
         return "upload.dat"
+    # Rule 14: a filename carrying a secret-shaped string (a log exported as
+    # "AKIA…-backup.csv") must not reach disk, SQLite (`stored_path` persists
+    # this name verbatim — redacting only the display column left the secret in
+    # the adjacent path column), or the prompt. Swap it for a generated name,
+    # keeping only a short, clean extension.
+    if redact_text(base) != base:
+        ext = Path(base).suffix
+        if len(ext) > 8 or redact_text(ext) != ext:
+            ext = ".dat"
+        return "upload-" + uuid.uuid4().hex[:12] + ext
     return base
 
 
@@ -566,17 +576,12 @@ async def post_session_message_stream(
         # the final persist uses it too. The request-scoped Depends(get_conn) conn
         # is closed as soon as the handler returns (and torn down on client
         # disconnect); binding tools to it would hit "closed database" mid-run.
-        wconn = connect()
-
-        # Serialize behind the prior live turn for this session (already asked to
-        # cancel above), THEN snapshot the thread — so this turn's context
-        # includes the prior turn's persisted messages, in order. Bounded wait:
-        # on timeout we proceed (degraded to today's behavior) rather than hang.
-        if prior_turn is not None:
-            prior_turn.done_event.wait(_PRIOR_TURN_WAIT_S)
-        summary = repo.get_summary(wconn, session_id) or summary_builder.refresh(wconn, session_id)
-        recent = repo.list_messages(wconn, session_id)
-        attachments = sds_repo.list_pending_for_session(wconn, session_id)
+        # Opened INSIDE the try below: everything after the handle exists must be
+        # covered by the finally that resolves it — a connect()/refresh() failure
+        # here (session deleted mid-turn, busy-timeout) previously escaped the
+        # plain Thread target, leaving the handle unresolved (next turn waits the
+        # full _PRIOR_TURN_WAIT_S), the SSE without _DONE, and wconn leaked.
+        wconn: sqlite3.Connection | None = None
 
         async def drive() -> None:
             # Own the client list so a build_stream failure after a client was
@@ -600,6 +605,17 @@ async def post_session_message_stream(
                     emit((kind, data))
 
         try:
+            wconn = connect()
+            # Serialize behind the prior live turn for this session (already
+            # asked to cancel above), THEN snapshot the thread — so this turn's
+            # context includes the prior turn's persisted messages, in order.
+            # Bounded wait: on timeout we proceed (degraded to today's behavior)
+            # rather than hang.
+            if prior_turn is not None:
+                prior_turn.done_event.wait(_PRIOR_TURN_WAIT_S)
+            summary = repo.get_summary(wconn, session_id) or summary_builder.refresh(wconn, session_id)
+            recent = repo.list_messages(wconn, session_id)
+            attachments = sds_repo.list_pending_for_session(wconn, session_id)
             wloop.run_until_complete(drive())
             data = final.get("data")
             if data is not None:
@@ -651,7 +667,8 @@ async def post_session_message_stream(
             if handle is not None and not handle.done:
                 turn_guard.fail(body.turn_id, "the turn ended unexpectedly", session_id)
             try:
-                wconn.close()
+                if wconn is not None:
+                    wconn.close()
             except Exception:  # noqa: BLE001
                 pass
             emit(_DONE)

@@ -25,10 +25,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Callable
 from typing import Any
 
-from ..security.redaction import redact_text
+from ..security.redaction import REDACTED, redact_text
 from ..skills import context as skill_context
 from ..skills import contract as skill_contract
 from . import guardrails
@@ -925,6 +926,20 @@ def _streamed_session_loop(spec: dict[str, Any]) -> dict[str, Any]:
         try:
             return loop.run_until_complete(_drive())
         finally:
+            # Drain before close (same discipline as the streaming worker): a
+            # hard provider error exits _drive with run_streamed's background
+            # task still pending — closing the loop then leaves it destroyed
+            # un-finalized and SDK asyncgens never aclose'd.
+            try:
+                pending = asyncio.all_tasks(loop)
+                for t in pending:
+                    t.cancel()
+                if pending:
+                    loop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True))
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            except Exception:  # noqa: BLE001
+                pass
             loop.close()
     except AgentUnavailable:
         raise
@@ -1027,16 +1042,36 @@ def _hold_back_contract(text: str) -> str:
         pos = close + 3
 
 
+# A still-growing trailing token in the live stream that could be a secret: a
+# long unbroken run of secret-alphabet chars (base64/JWT/hex/url-safe). The
+# fixed char holdback alone is beaten by patterns whose match is recognizable
+# only near their END (a JWT needs its second '.' + signature; a 400-char
+# header+payload would stream un-redacted long before that) — so an unfinished
+# long token is NEVER emitted, regardless of how far it extends past the fixed
+# tail. Flushed the moment a boundary char arrives (then full-text redaction
+# has seen the complete token) or at end of stream.
+_SECRET_TOKEN_TAIL = re.compile(r"[A-Za-z0-9/+=_.\-]{20,}\Z")
+# Stream-only eager bare-SK rule: the precise pair rule in redaction.py masks a
+# bare 40-char secret only when the AKIA/ASIA… key-id hint is present — but in
+# a LIVE stream the model may echo the SK first and mention the key id 100s of
+# chars later, after the SK already left over SSE. The live view masks every
+# standalone 40-char base64ish token unconditionally; the persisted final
+# answer applies the precise rules and corrects any over-redaction (that
+# replace-on-finalize path is the sanitizer's designed recovery).
+_STREAM_BARE_SECRET = re.compile(r"(?<![A-Za-z0-9/+=])[A-Za-z0-9/+]{40}(?![A-Za-z0-9/+=])")
+
+
 class _StreamSanitizer:
     """Incrementally sanitize the live delta stream.
 
     Maintains the accumulated raw text; each push computes the sanitized view
-    (streaming-safe CoT strip → contract-block holdback → redaction), holds back
-    a ~128-char tail (flushed at the end) so a secret completing across deltas
-    can't leak an un-redacted prefix, and emits only the monotonic extension of
-    what was already emitted. When the sanitized view diverges from the emitted
-    prefix, nothing more is emitted — the persisted final answer corrects the
-    client's view.
+    (streaming-safe CoT strip → contract-block holdback → redaction + eager
+    stream-only masking), holds back a ~128-char tail PLUS any still-growing
+    trailing secret-alphabet token (flushed at the end) so a secret completing
+    across deltas can never leak an un-redacted prefix, and emits only the
+    monotonic extension of what was already emitted. When the sanitized view
+    diverges from the emitted prefix, nothing more is emitted — the persisted
+    final answer corrects the client's view.
     """
 
     def __init__(self) -> None:
@@ -1044,14 +1079,23 @@ class _StreamSanitizer:
 
     @staticmethod
     def _visible(raw: str) -> str:
-        return redact_text(_hold_back_contract(strip_chain_of_thought_stream(raw)))
+        text = redact_text(_hold_back_contract(strip_chain_of_thought_stream(raw)))
+        return _STREAM_BARE_SECRET.sub(REDACTED, text)
 
     def push(self, raw_acc: str, final: bool = False) -> str:
         visible = self._visible(raw_acc)
         if not final:
-            if len(visible) <= _STREAM_TAIL_HOLDBACK:
+            cut = len(visible) - _STREAM_TAIL_HOLDBACK
+            if cut <= 0:
                 return ""
-            visible = visible[:len(visible) - _STREAM_TAIL_HOLDBACK]
+            # Never split an in-progress long token: if the trailing token
+            # started before the fixed-tail boundary, hold back from its start.
+            m = _SECRET_TOKEN_TAIL.search(visible)
+            if m is not None and m.start() < cut:
+                cut = m.start()
+            if cut <= 0:
+                return ""
+            visible = visible[:cut]
         if len(visible) <= len(self.emitted) or not visible.startswith(self.emitted):
             return ""
         out = visible[len(self.emitted):]
@@ -1113,8 +1157,11 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
                     # _hold_back_contract too (like the live sanitizer): a cancel
                     # mid-way through the trailing ```json contract block would
                     # otherwise leak the dangling fence into the persisted answer.
-                    partial = _hold_back_contract(
-                        strip_chain_of_thought(redact_text(raw_acc))).strip()
+                    # Strip BEFORE redacting (then strip again): redaction can
+                    # eat a </think> tag abutting a credential-shaped token,
+                    # after which the strip would persist the whole block.
+                    partial = _hold_back_contract(strip_chain_of_thought(
+                        redact_text(strip_chain_of_thought(raw_acc)))).strip()
                     answer_text = (partial + "\n\n" if partial else "") + _STOPPED_MARKER
                     contract = _finalize_contract(answer_text, skill_names, activity, cap=answer_cap)
                     contract["stopped"] = True
@@ -1130,6 +1177,25 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
                     yield ("tool", activity[emitted_tools])
                     emitted_tools += 1
         except Exception as exc:  # noqa: BLE001
+            if cancel_event is not None and cancel_event.is_set():
+                # The user hit Stop while the failing call was in flight (rate
+                # limits / step ceilings are exactly when users cancel). Honor
+                # the cancel: persist the PARTIAL answer with stopped=True —
+                # do NOT launch a fresh finalize model call (up to a minute of
+                # post-Stop work) whose answer would drop the stopped flag and
+                # add a "continue" proposal, the opposite of what the cancel
+                # endpoint promises. Mirrors the cancel path above.
+                while len(activity) > emitted_tools:
+                    yield ("tool", activity[emitted_tools])
+                    emitted_tools += 1
+                partial = _hold_back_contract(strip_chain_of_thought(
+                    redact_text(strip_chain_of_thought(raw_acc)))).strip()
+                answer_text = (partial + "\n\n" if partial else "") + _STOPPED_MARKER
+                contract = _finalize_contract(answer_text, skill_names, activity,
+                                              cap=answer_cap)
+                contract["stopped"] = True
+                yield ("final", contract)
+                return
             cut_short = _is_context_overflow(exc) and not _is_max_turns(exc)
             # A transient provider error (429/5xx/reset) is recoverable: rather
             # than discard the whole investigation with a raw error, finalize

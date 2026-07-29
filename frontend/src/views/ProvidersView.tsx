@@ -69,7 +69,7 @@ function ModelProvidersPanel() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<ModelProviderInput>(emptyModelForm);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
+  const [status, setStatus] = useState<{ tone: "ok" | "warn" | "err"; msg: string } | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const reload = () => listModelProviders().then(setItems).catch((e) => setError(String(e)));
@@ -164,9 +164,12 @@ function ModelProvidersPanel() {
         : r.api_key_verified == null
           ? t("prov.testUnverified")
           : t("prov.testOk");
-      setStatus(`${p.name}: ${label} — ${r.detail}`);
+      // Tone travels with the message: failures/cautions must never render in
+      // success-green (a broken base URL looked like a pass).
+      const tone = !r.ok ? "err" : r.api_key_verified == null ? "warn" : "ok";
+      setStatus({ tone, msg: `${p.name}: ${label} — ${r.detail}` });
     } catch (e) {
-      setStatus(String(e));
+      setStatus({ tone: "err", msg: String(e) });
     }
   };
 
@@ -189,7 +192,10 @@ function ModelProvidersPanel() {
         {!showForm && <Button variant="primary" onClick={openCreate}>{t("prov.addModel")}</Button>}
       </div>
       {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
-      {status && <p className="mb-3 text-xs text-emerald-400" data-testid="model-test-status">{status}</p>}
+      {status && (
+        <p className={"mb-3 text-xs " + (status.tone === "ok" ? "text-emerald-400" : status.tone === "warn" ? "text-amber-400" : "text-red-400")}
+           data-testid="model-test-status">{status.msg}</p>
+      )}
 
       {showForm ? (
         <div className="mb-6 rounded-lg border border-edge bg-panel p-4">
@@ -298,6 +304,7 @@ interface CloudForm {
   access_key: string;
   secret_key: string;
   session_token: string;
+  clear_session_token: boolean;
   mode: "readonly" | "test-write";
   allowed_buckets: string;
   allowed_prefixes: string;
@@ -314,6 +321,7 @@ const emptyCloudForm: CloudForm = {
   access_key: "",
   secret_key: "",
   session_token: "",
+  clear_session_token: false,
   mode: "readonly",
   allowed_buckets: "",
   allowed_prefixes: "",
@@ -409,6 +417,7 @@ function CloudProvidersPanel() {
       access_key: "",
       secret_key: "",
       session_token: "",
+      clear_session_token: false,
       mode: p.mode,
       allowed_buckets: p.allowed_buckets.join(", "),
       allowed_prefixes: p.allowed_prefixes.join(", "),
@@ -452,6 +461,10 @@ function CloudProvidersPanel() {
     if (form.access_key.trim()) body.access_key = form.access_key;
     if (form.secret_key.trim()) body.secret_key = form.secret_key;
     if (form.session_token.trim()) body.session_token = form.session_token;
+    // Explicit "" = clear the saved token server-side (rotating from STS to
+    // permanent keys must not keep signing with the stale token). Untouched
+    // fields stay OMITTED, so "" is always a deliberate clear.
+    else if (editing?.has_session_token && form.clear_session_token) body.session_token = "";
     try {
       if (editing) await updateCloudProvider(editing.id, body);
       else await createCloudProvider(body);
@@ -557,6 +570,12 @@ function CloudProvidersPanel() {
               </div>
               <Field label={t("prov.fSessionToken")} hint={secretHint(editing?.has_session_token ?? false)}>
                 <TextInput type="password" autoComplete="off" value={form.session_token} onChange={(e) => setForm({ ...form, session_token: e.target.value })} placeholder={editing?.has_session_token ? t("prov.savedPlaceholder") : ""} />
+                {editing?.has_session_token && !form.session_token.trim() && (
+                  <label className="mt-1 flex items-center gap-2 text-xs text-gray-400">
+                    <input type="checkbox" checked={form.clear_session_token} onChange={(e) => setForm({ ...form, clear_session_token: e.target.checked })} />
+                    {t("prov.clearToken")}
+                  </label>
+                )}
               </Field>
               <Field label={t("prov.fAllowedBuckets")} hint={t("prov.hintBuckets")}>
                 <TextInput value={form.allowed_buckets} onChange={(e) => setForm({ ...form, allowed_buckets: e.target.value })} placeholder="bucket-alpha, bucket-beta" />
