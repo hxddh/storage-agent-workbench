@@ -40,8 +40,13 @@ def _run_selfcheck() -> dict[str, object]:
             fn()
             checks[name] = "ok"
         except Exception as exc:  # noqa: BLE001 - report, don't crash the probe
-            # Import/build errors carry no secrets; keep the class + short text.
-            checks[name] = f"error: {type(exc).__name__}: {str(exc)[:160]}"
+            # Scrub before surfacing: an ImportError/OSError from a broken
+            # bundle embeds absolute paths (username included), and this JSON
+            # renders in the UI — same rule-15 discipline as every router.
+            from .. import config
+            from ..security.redaction import redact_text
+            checks[name] = ("error: " + type(exc).__name__ + ": "
+                            + config.scrub_paths(redact_text(str(exc)[:160])))
 
     def _agents_sdk() -> None:
         import agents  # noqa: F401  (SDK imports submodules at package import)

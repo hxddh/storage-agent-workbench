@@ -116,8 +116,10 @@ def test_credentials(conn: sqlite3.Connection, provider_id: str) -> dict[str, An
     except ClientError as exc:
         fields = _client_error_fields(exc)
         code = fields["error_code"]
-        if code in _UNSUPPORTED_CODES:
-            # Capability gap, not an auth failure.
+        if _is_unsupported(exc):
+            # Capability gap, not an auth failure — including a CODE-LESS bare
+            # HTTP 501/405 from a gateway with no ListBuckets (rule 18: never a
+            # hard failure, and never "your credentials are broken").
             return {**base, "success": True, "identity_hint": "Provider unsupported"}
         if code in _DENIED_CODES or (fields.get("status_code") == 403 and code
                                      and code not in _AUTH_FAIL_CODES):
@@ -207,7 +209,7 @@ def list_buckets(conn: sqlite3.Connection, provider_id: str) -> dict[str, Any]:
         fields = _client_error_fields(exc)
         code = fields["error_code"]
         http = fields["status_code"]
-        if code in _UNSUPPORTED_CODES or http == 501:
+        if code in _UNSUPPORTED_CODES or http in (501, 405):
             status = PROVIDER_UNSUPPORTED
         elif code in _DENIED_CODES or http == 403:
             status = ACCESS_DENIED
@@ -1194,6 +1196,17 @@ def get_object_lock_status(
     if hard_error and hard_error.get("error_code") in (_AUTH_FAIL_CODES | _DENIED_CODES):
         return {**base, **hard_error, "success": False}
     if hard_error:
+        # Any other hard error (NoSuchKey/NoSuchBucket/NoSuchVersion/404/…)
+        # means the object was NEVER inspected — reporting success plus the
+        # optimistic "none" defaults read as "exists and is cleanly deletable",
+        # the exact wrong answer for "why can't I delete this object?" with a
+        # mistyped key. Statuses a probe actually determined are kept; the
+        # optimistic defaults flip to "unknown", and the call is not a success.
+        result["success"] = False
+        if result["retention_status"] == "none" and "retention_mode" not in result:
+            result["retention_status"] = "unknown"
+        if result["legal_hold_status"] == "none":
+            result["legal_hold_status"] = "unknown"
         result["error_code"] = hard_error.get("error_code")
         result["error_message_sanitized"] = hard_error.get("error_message_sanitized")
     return result

@@ -37,10 +37,14 @@ const propKey = (p: NextAction) => `${p.action_type}::${p.title}`;
 // null = ambiguous → the composer shows an Inventory/Access-log toggle.
 const inferDatasetType = (name: string): "inventory" | "access_log" | null => {
   const n = name.toLowerCase();
+  // Name hints BEFORE the extension mapping: "access-logs.parquet" /
+  // "s3_access_log.csv" are columnar ACCESS-LOG exports — the extension rule
+  // alone auto-chipped them "inventory" and ran the wrong engine.
+  if (n.includes("access") || n.includes("log")) return "access_log";
   if (/\.(csv|parquet|tsv)(\.gz)?$/.test(n)) return "inventory";
   // JSONL is a fully-supported access-log shape (the backend parses it) — it
   // just wasn't selectable before.
-  if (/\.(log|txt|json|jsonl)(\.gz)?$/.test(n) || n.includes("access") || n.includes("log")) return "access_log";
+  if (/\.(log|txt|json|jsonl)(\.gz)?$/.test(n)) return "access_log";
   return null;
 };
 

@@ -202,6 +202,10 @@ export function Composer({
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
+          // IME composition: Enter here commits a candidate (zh/ja/ko input),
+          // not a submit — without this guard it sent half-composed text, and
+          // during a running turn it CANCELLED the user's own turn via steer.
+          if (e.nativeEvent.isComposing) return;
           if (slashOpen) {
             if (e.key === "ArrowDown") { e.preventDefault(); setSlashSel((s) => Math.min(slashItems.length - 1, s + 1)); return; }
             if (e.key === "ArrowUp") { e.preventDefault(); setSlashSel((s) => Math.max(0, s - 1)); return; }

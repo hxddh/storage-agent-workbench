@@ -37,6 +37,18 @@ _CONTRACT_KEYS = frozenset(
 )
 
 
+def _sanitize_text(text: str) -> str:
+    """Strip CoT → redact → strip again.
+
+    Order matters: redacting FIRST can eat a ``</think>`` tag when a
+    credential-shaped token abuts it (the ``\\S+``-style patterns swallow the
+    tag), after which the strip finds no closing pair and persists the entire
+    hidden-reasoning block. Stripping first removes the block intact; the
+    second strip is defense in depth for a block whose tags only became
+    well-formed after redaction rewrote the text."""
+    return strip_chain_of_thought(redact_text(strip_chain_of_thought(text)))
+
+
 def is_contract_json(payload: str) -> bool:
     """True if ``payload`` (a fenced block's body) is the metadata contract."""
     try:
@@ -77,7 +89,7 @@ def _strlist(data: dict[str, Any], key: str, cap: int = 12, length: int = 300) -
         return []
     out: list[str] = []
     for it in items[:cap]:
-        s = strip_chain_of_thought(redact_text(str(it)))[:length]
+        s = _sanitize_text(str(it))[:length]
         if s:
             out.append(s)
     return out
@@ -107,7 +119,7 @@ def parse_agent_contract(raw: Any, allowed_skill_names: list[str] | None = None,
     # the JSON "answer" field when there is no prose outside the block.
     answer_raw = prose if prose.strip() else (data.get("answer") if isinstance(data.get("answer"), str) else "")
     cap = max(max_answer or 0, _MAX_ANSWER)  # elastic caller cap, floored
-    answer = strip_chain_of_thought(redact_text(str(answer_raw or "")))
+    answer = _sanitize_text(str(answer_raw or ""))
     if len(answer) > cap:
         answer = answer[:cap].rstrip() + "\n\n" + ANSWER_CUT_MARKER
 

@@ -134,6 +134,15 @@ def delete_run(run_id: str, conn: sqlite3.Connection = Depends(get_conn)):
     row = repo.get_row(conn, run_id)
     if row is None:
         raise HTTPException(status_code=404, detail="run not found")
+    if row["status"] == "running":
+        # A running run has a live executor thread on its own connection:
+        # deleting the row under it makes its child-row inserts fail, and its
+        # report/analysis writes RECREATE data/runs/{run_id}/ after the rmtree —
+        # permanently orphaned files, the exact leak this endpoint exists to
+        # prevent. Refuse; the caller can delete once it reaches a terminal state.
+        raise HTTPException(status_code=409,
+                            detail="run is currently executing; wait for it to "
+                                   "finish (or fail) before deleting it")
     repo.delete(conn, run_id)
     shutil.rmtree(config.run_dir(run_id), ignore_errors=True)
     audit.record(conn, "run.delete", {"run_id": run_id}, run_id=None)
@@ -193,7 +202,11 @@ def post_message(
     except Exception as exc:  # noqa: BLE001 — never leave the row wedged 'running'
         conn.execute("UPDATE runs SET status = 'pending' WHERE id = ?", (run_id,))
         conn.commit()
-        raise HTTPException(status_code=500, detail=redact_text(str(exc))) from exc
+        # scrub_paths too: an OSError/sqlite error carries the app data dir's
+        # absolute path (username included), which redact_text alone leaves in —
+        # same hardening the sessions router's _safe_err already has.
+        raise HTTPException(status_code=500,
+                            detail=config.scrub_paths(redact_text(str(exc)))) from exc
     return {"run_id": run_id, "status": "running"}
 
 

@@ -67,7 +67,14 @@ class EventBus:
 
     def publish(self, run_id: str, event: dict[str, Any]) -> None:
         with self._lock:
-            entry = self._runs.setdefault(run_id, self._new_entry())
+            # Never MINT an entry here: every live publisher runs after
+            # bus.create(). A straggler publish for an already-evicted run (or a
+            # foreign run_id) would otherwise resurrect a fresh done=False entry
+            # that nothing ever marks done or evicts — an immortal zombie any
+            # subscriber streams heartbeats from until the backstop.
+            entry = self._runs.get(run_id)
+            if entry is None:
+                return
             entry["events"].append(event)
             overflow = len(entry["events"]) - _MAX_EVENTS_PER_RUN
             if overflow > 0:
@@ -76,8 +83,9 @@ class EventBus:
 
     def mark_done(self, run_id: str) -> None:
         with self._lock:
-            entry = self._runs.setdefault(run_id, self._new_entry())
-            entry["done"] = True
+            entry = self._runs.get(run_id)
+            if entry is not None:  # unknown/evicted: nothing to close
+                entry["done"] = True
 
     def snapshot(self, run_id: str, cursor: int) -> tuple[list[dict[str, Any]], int, bool]:
         """Return (events after cursor, next_cursor, done).
@@ -93,6 +101,13 @@ class EventBus:
             offset = entry["offset"]
             start = max(cursor - offset, 0)
             evs = list(entry["events"][start:])
+            if cursor < offset:
+                # The subscriber's cursor fell behind the retention window —
+                # events were dropped. Truncation is never silent: prepend a
+                # synthetic marker so the viewer knows the timeline (and any
+                # findings derived from it) is incomplete, instead of rendering
+                # a silently shortened run.
+                evs.insert(0, {"type": "truncated", "dropped": offset - cursor})
             next_cursor = offset + len(entry["events"])
             return evs, next_cursor, bool(entry["done"])
 
@@ -114,13 +129,21 @@ async def sse_stream(run_id: str):
     promptly once the run is marked done; an absolute backstop prevents a
     never-marked-done run from lingering forever.
     """
+    import time
+
     cursor = 0
     idle = 0.0
-    total = 0.0
+    # Wall-clock backstop: accumulating only in the sleep branch let a run that
+    # keeps PUBLISHING (a looping executor that never marks done — exactly what
+    # the backstop exists for) stream forever, since the busy branch `continue`d
+    # past the accounting.
+    started = time.monotonic()
     while True:
         events, cursor, done = bus.snapshot(run_id, cursor)
         for event in events:
             yield f"data: {json.dumps(event)}\n\n"
+        if time.monotonic() - started >= _STREAM_MAX_S:
+            break
         if events:
             idle = 0.0
             continue
@@ -128,9 +151,6 @@ async def sse_stream(run_id: str):
             break
         await asyncio.sleep(_POLL_INTERVAL_S)
         idle += _POLL_INTERVAL_S
-        total += _POLL_INTERVAL_S
         if idle >= _HEARTBEAT_S:
             idle = 0.0
             yield ": keepalive\n\n"  # SSE comment; ignored by EventSource
-        if total >= _STREAM_MAX_S:
-            break

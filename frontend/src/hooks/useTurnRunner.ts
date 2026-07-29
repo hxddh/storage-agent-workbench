@@ -266,7 +266,11 @@ export function useTurnRunner(opts: {
     // empty): after a steer there is a ~1s settle gap, and anything the user
     // typed into the empty composer during it must not be wiped here.
     const cur = getText ? getText() : null;
-    if (cur === null || cur === "" || cur === q) setText("");
+    // Trimmed compare: the caller submits text.trim(), so a trailing
+    // newline/space (typical for pasted text) must still count as "this
+    // turn's text" — otherwise the sent message stays in the composer and a
+    // second Enter cancels the user's own running turn as a redirect.
+    if (cur === null || cur.trim() === "" || cur.trim() === q) setText("");
     let id: string;
     try {
       id = await ensureSession(q);
@@ -477,7 +481,7 @@ export function useTurnRunner(opts: {
     // a proposal-chip click steers the CHIP's prompt, not the composer content, so
     // wiping an unsent draft the user typed would lose it (FE3). Mirror runTurn.
     const curDraft = getText ? getText() : null;
-    if (curDraft === null || curDraft === "" || curDraft === q) setText("");
+    if (curDraft === null || curDraft.trim() === "" || curDraft.trim() === q) setText("");
     // LATEST WINS: a second steer while the first is still settling REPLACES the
     // pending payload instead of racing it — previously the second submit hit
     // the busy latch and the corrected message vanished (not sent, not restored).
@@ -486,14 +490,19 @@ export function useTurnRunner(opts: {
       return;
     }
     steerPendingRef.current.set(id, { q, resend });
-    stop(); // cancel the current turn; its partial + trace are persisted server-side
+    stop(id); // cancel THIS session's turn; its partial + trace persist server-side
     const settled = await waitForIdle(id);
     const payload = steerPendingRef.current.get(id) ?? { q, resend };
     steerPendingRef.current.delete(id);
     // If it didn't settle, or the user navigated to another session while it
-    // did, don't cross-send — restore the text so nothing is lost.
+    // did, don't cross-send — restore the text so nothing is lost. When the
+    // visible session CHANGED, restoring means stashing it as the ORIGINAL
+    // session's failedText (shown when the user returns) — writing it into
+    // the now-visible session's composer would overwrite that session's draft
+    // and arm an Enter-to-send into the wrong thread.
     if (!settled || localId.current !== id) {
-      setText(payload.q);
+      if (localId.current === id) setText(payload.q);
+      else patchSessionRun(id, { failedText: payload.q });
       return;
     }
     await (payload.resend ? payload.resend() : submit(payload.q));
@@ -543,8 +552,13 @@ export function useTurnRunner(opts: {
   // Stop the visible session's in-flight turn: abort the local stream AND ask
   // the server to cancel the turn (the persisted partial carries a stopped
   // marker). The run loop keeps the partial text visible and reloads.
-  const stop = () => {
-    const id = localId.current;
+  // `sessionId` targets a specific session's flight; default is the visible
+  // one. steer() passes its captured id so a session switch between the Enter
+  // and this call can't abort the newly visible session's turn (usually a
+  // no-op) while leaving the steered session's turn running for the full
+  // waitForIdle timeout.
+  const stop = (sessionId?: string) => {
+    const id = sessionId ?? localId.current;
     if (!id) return;
     const flight = turnsRef.current.get(id);
     if (!flight) return;

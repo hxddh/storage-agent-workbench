@@ -173,12 +173,14 @@ def test_interrupted_runs_reconciled_on_startup(client):
         conn.close()
 
     n = run_service.reconcile_interrupted_runs()
-    assert n >= 2
+    assert n == 1
 
     conn = db.connect()
     try:
         assert runs_repo.get_row(conn, r_running)["status"] == "failed"
-        assert runs_repo.get_row(conn, r_pending)["status"] == "failed"
+        # v0.41: pending = created-but-never-executed (and the retry revert
+        # target) — it is NOT an interrupted run and must stay retryable.
+        assert runs_repo.get_row(conn, r_pending)["status"] == "pending"
         assert "Interrupted" in (runs_repo.get_row(conn, r_running)["final_summary"] or "")
         assert runs_repo.get_row(conn, r_done)["status"] == "completed"  # untouched
     finally:

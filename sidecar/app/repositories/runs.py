@@ -199,18 +199,23 @@ def orphaned_agent_run_ids(conn: sqlite3.Connection) -> list[str]:
 
 
 def mark_interrupted(conn: sqlite3.Connection) -> int:
-    """Fail any run still pending/running at startup.
+    """Fail any run still RUNNING at startup.
 
     Runs execute on in-process threads, so none can survive a sidecar restart —
-    a row still `pending`/`running` on boot is an orphan from a prior process
-    (e.g. the app quit mid-survey). Left as-is it would report as forever-running
-    to ``read_run_result`` and in run cards. Returns the number reconciled.
+    a row still `running` on boot is an orphan from a prior process (e.g. the
+    app quit mid-survey). Left as-is it would report as forever-running to
+    ``read_run_result`` and in run cards. Returns the number reconciled.
+
+    `pending` rows are NOT touched: pending is the created-but-never-executed
+    state (and the explicit revert target when an executor fails to spin up, so
+    the run can be retried). Failing those stamped a "restarted while in
+    progress" summary onto runs that never ran.
     """
     cur = conn.execute(
         "UPDATE runs SET status = 'failed', updated_at = ?, "
         "final_summary = COALESCE(final_summary, "
         "'Interrupted: the app restarted while this run was in progress.') "
-        "WHERE status IN ('pending', 'running')",
+        "WHERE status = 'running'",
         (utcnow(),),
     )
     conn.commit()

@@ -6,6 +6,119 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-07-21
+
+_The prompt-injection envelope (SEC4, deferred from v0.40) plus a fresh
+adversarial mining round over the streaming lifecycle, budget arithmetic, event
+bus, migrations, and frontend — including two empirically-reproduced live-stream
+secret leaks, now closed._
+
+### Security
+
+- **Untrusted-data envelope (SEC4).** Every data-deriving tool output the model
+  sees is wrapped in `<<external_untrusted_data>>` … `<<end_external_untrusted_data>>`
+  markers; literal markers inside a payload are defanged so content can't fake an
+  early close and smuggle text outside the envelope. `read_skill` and the memory
+  tools stay unwrapped (first-party instruction/ack text); the budget wrapper's
+  runtime status notes stay outside. The system prompt now anchors the
+  data-never-instructions rule on the exact markers.
+- **Live-stream secret leaks closed (both reproduced by execution).** The
+  128-char stream holdback was beaten by patterns recognizable only near their
+  END: a JWT streamed its header+payload un-redacted until the signature arrived,
+  and a bare secret key echoed before its `AKIA…` hint left over SSE whole. The
+  stream sanitizer now (a) never emits a still-growing long secret-alphabet
+  token, and (b) eagerly masks standalone 40-char base64ish tokens in the LIVE
+  view only (the persisted answer applies the precise rules and corrects any
+  over-redaction).
+- **Hidden reasoning can no longer persist.** Sanitize order was redact→strip;
+  a credential-shaped token abutting `</think>` made redaction eat the close tag
+  and the whole think-block persisted to SQLite/UI (reproduced). Now
+  strip→redact→strip at all three persist sites.
+- **Secret-shaped filenames never reach disk or SQLite.** A file named
+  `AKIA…-backup.csv` had its name redacted in the display column but persisted
+  verbatim in `stored_path` (and raw in the run-scoped datasets table). Both
+  upload routes now swap secret-shaped names for generated ones; the run-scoped
+  repository redacts its display columns.
+- Error text hardening: the runs router / run-service SSE error path and
+  `/health/selfcheck` now scrub absolute paths (`scrub_paths`) like the sessions
+  router; `scrub_paths` ignores degenerate (short/relative) data-dir prefixes and
+  `data_dir()` resolves relative overrides, so error prose is never mangled.
+
+### Agent runtime / streaming
+
+- A turn cancelled while a recoverable provider error was in flight now honors
+  the cancel: partial answer + `stopped: true`, instead of launching a fresh
+  post-Stop finalize model call that dropped the stopped flag.
+- The streaming worker's pre-`try` window (connect / prior-turn wait / summary
+  refresh / snapshot) is now covered by the finally that resolves the turn
+  handle — a failure there previously left the handle unresolved (next turn
+  waited the full 120 s), the SSE without `_DONE`, and the connection leaked.
+- The blocking driver drains its event loop (cancel + gather + shutdown asyncgens)
+  before closing it, matching the streaming worker.
+- Small-window model budgets are clamped to half the window: an operator-declared
+  8k/16k local model (llama.cpp / vLLM / Ollama) no longer gets `max_tokens=16384`
+  (a guaranteed vLLM 400) or a 200k-char tool budget 3× its whole context.
+  128k/200k models are byte-for-byte unchanged.
+
+### Event bus / runs
+
+- The run-SSE absolute backstop is wall-clock based — a run that keeps
+  publishing without ever marking done can no longer stream forever.
+- Event-buffer truncation is no longer silent: a subscriber whose cursor fell
+  behind the retention window gets a synthetic `truncated` event.
+- `publish`/`mark_done` no longer mint zombie bus entries for unknown/evicted
+  run ids.
+- `DELETE /runs/{id}` returns 409 while the run is executing (deleting under a
+  live executor re-created orphaned files after the rmtree).
+- Startup reconciliation fails only `running` runs; `pending`
+  (created-but-never-executed, or the retry revert target) stays retryable.
+- `run_sync` closes the SSE stream when the run row vanished in the start race.
+
+### S3 tools / providers
+
+- `get_object_lock_status` no longer reports success + "no retention / no legal
+  hold" for a nonexistent object/bucket — hard errors flip the statuses to
+  `unknown` with `success: false` (the old answer read as "cleanly deletable"
+  for a mistyped key).
+- Rule-18: `test_credentials` and `list_buckets` treat a code-less bare HTTP
+  501/405 as `Provider unsupported` instead of a credential failure.
+- **A stale STS session token can now be cleared**: an explicit empty
+  `session_token` on provider update deletes the stored secret (the UI omits
+  untouched fields, so "" is always deliberate) — previously rotating from
+  temporary to permanent credentials kept signing with the dead token forever,
+  with no way out short of deleting the provider. The settings drawer grows a
+  "clear saved session token" checkbox.
+- `error_triage.list_for_session` pushes its bound into SQL (the summary refresh
+  re-read every case + finding to use ten).
+
+### Migrations
+
+- `_create_sig` parses the CREATE column block with paren-depth awareness — a
+  future append-only rebuild migration containing `CHECK (… IN ('a','b'))` or
+  `DEFAULT (strftime(…))` no longer mis-fragments the recovery signature (which
+  could have made crash-recovery replay a non-idempotent rebuild on every boot).
+
+### Frontend
+
+- **IME composition guard** (zh/ja/ko input): Enter committing a candidate no
+  longer sends half-composed text — or, during a streaming turn, silently
+  CANCELS the user's own turn via the redirect path. Guarded in the composer,
+  session rename, and command palette.
+- Composer clears reliably after send: the raw-vs-trimmed compare left pasted
+  text (trailing newline) in the box, arming the redirect path so a second Enter
+  cancelled the running turn and re-sent a duplicate.
+- A steer that settles after the user switched sessions stashes the steered text
+  as the ORIGINAL session's `failedText` instead of overwriting the visible
+  session's composer; `stop()` targets the steered session's flight explicitly.
+- Evidence-import dialog: the ghost Cancel button now respects the busy guard
+  (every other dismissal already did), and Escape while typing in a field no
+  longer destroys the form.
+- Model-provider test failures render in red/amber, not success-green.
+- Thread finding severities and enum labels are localized (zh users saw raw
+  English tokens); `access-logs.parquet` / `s3_access_log.csv` are auto-typed
+  access-log (name hints now beat the extension mapping).
+
+
 ## [0.40.0] - 2026-07-20
 
 _Security-floor and correctness hardening from an adversarial mining round: three

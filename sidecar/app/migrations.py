@@ -671,12 +671,46 @@ def _create_sig(sql: str, table: str) -> frozenset:
     distinguishable from the un-rebuilt table. A bare ``PRIMARY KEY`` is NOT treated
     as ``NOT NULL`` — matching SQLite's ``PRAGMA table_info`` for a non-INTEGER PK,
     so this signature compares equal to the live table's."""
-    m = re.search(rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{table}\s*\((.*?)\)\s*;",
-                  sql, re.IGNORECASE | re.DOTALL)
+    m = re.search(rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{table}\s*\(",
+                  sql, re.IGNORECASE)
     if m is None:
         return frozenset()
+    # Paren-depth walk to the MATCHING close paren, then a depth-aware comma
+    # split. The old non-greedy `\((.*?)\)` + bare `split(",")` silently
+    # mis-parsed any column block containing parenthesized commas — a future
+    # rebuild with `CHECK (status IN ('a','b'))` or `DEFAULT (strftime(...))`
+    # would fragment into bogus tuples, the recovery signature would never
+    # match, and the crash-recovery path would replay a non-idempotent rebuild
+    # on every boot (a permanent wedge). Migrations are append-only; the parser
+    # must not constrain what future ones may contain.
+    i, depth = m.end(), 1
+    start = i
+    while i < len(sql) and depth:
+        if sql[i] == "(":
+            depth += 1
+        elif sql[i] == ")":
+            depth -= 1
+        i += 1
+    if depth:
+        return frozenset()
+    block = sql[start:i - 1]
+    parts: list[str] = []
+    buf: list[str] = []
+    d = 0
+    for ch in block:
+        if ch == "(":
+            d += 1
+        elif ch == ")":
+            d -= 1
+        if ch == "," and d == 0:
+            parts.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    if buf:
+        parts.append("".join(buf))
     sig: set = set()
-    for part in m.group(1).split(","):
+    for part in parts:
         tok = part.strip().split()
         if tok and tok[0].upper() not in (
             "PRIMARY", "FOREIGN", "UNIQUE", "CHECK", "CONSTRAINT"

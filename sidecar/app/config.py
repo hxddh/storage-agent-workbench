@@ -42,7 +42,11 @@ def data_dir() -> Path:
     """
     override = os.environ.get("STORAGE_AGENT_DATA_DIR") or os.environ.get("SAW_DATA_DIR")
     if override:
-        return Path(override)
+        # Resolve to an absolute path: a RELATIVE override (SAW_DATA_DIR=data)
+        # would otherwise (a) behave differently depending on process CWD and
+        # (b) make scrub_paths blindly replace the bare substring ("metadata" →
+        # "meta<data>") in every surfaced error.
+        return Path(override).resolve()
     return _REPO_ROOT / "data"
 
 
@@ -90,6 +94,9 @@ def scrub_paths(text: str) -> str:
     except (RuntimeError, OSError):
         prefixes = [(str(data_dir()), "<data>")]
     for raw, repl in sorted(prefixes, key=lambda x: len(x[0]), reverse=True):
-        if raw and raw != "/":
+        # Minimum length guard: a degenerate prefix ("/", ".", "C:\\", a bare
+        # relative name) would mangle arbitrary error text rather than scrub a
+        # real path. Real data/home dirs are always comfortably longer.
+        if raw and len(raw) >= 4 and raw not in ("/", "\\"):
             out = out.replace(raw, repl)
     return out

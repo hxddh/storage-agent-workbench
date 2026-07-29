@@ -172,8 +172,10 @@ def test_event_bus_buffer_is_bounded():
     for i in range(total):
         bus.publish("r1", {"i": i})
     evs, cursor, _ = bus.snapshot("r1", 0)
-    # Old events dropped; retained window is capped.
-    assert len(evs) <= events._MAX_EVENTS_PER_RUN
+    # Old events dropped; retained window is capped — plus ONE synthetic
+    # `truncated` marker so the drop is never silent (v0.41).
+    assert len(evs) <= events._MAX_EVENTS_PER_RUN + 1
+    assert evs[0] == {"type": "truncated", "dropped": 500}
     # The last event is always retained and the cursor reflects the logical total.
     assert evs[-1]["i"] == total - 1
     assert cursor == total

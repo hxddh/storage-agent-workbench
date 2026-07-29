@@ -161,6 +161,7 @@ def update(
         "session_token": existing["session_token_ref"],
     }
     rotated: list[str] = []
+    cleared: list[str] = []
     for field, suffix in _SECRET_FIELDS.items():
         value = getattr(data, field)
         if has_value(value):
@@ -168,6 +169,21 @@ def update(
                 KEYRING_SCOPE, _secret_name(provider_id, suffix), value
             )
             rotated.append(field)
+        elif field == "session_token" and value == "" and refs[field]:
+            # An explicit empty string CLEARS the session token (the UI omits
+            # untouched secret fields entirely, so "" is always a deliberate
+            # clear). Without this, a user who rotated from temporary STS
+            # credentials to permanent keys kept signing every request with the
+            # stale token — InvalidToken/SignatureDoesNotMatch on every call,
+            # with no way out short of deleting the provider. AK/SK stay
+            # rotate-only: clearing them flips the provider to anonymous, which
+            # deserves an explicit delete/re-create, not an empty form field.
+            try:
+                keyring_store.delete_secret(KEYRING_SCOPE, _secret_name(provider_id, suffix))
+            except Exception:  # noqa: BLE001 — ref goes away regardless
+                pass
+            refs[field] = None
+            cleared.append(field)
 
     conn.execute(
         "UPDATE cloud_providers SET name=?, provider_type=?, endpoint_url=?, region=?, "
@@ -194,7 +210,8 @@ def update(
     audit.record(
         conn,
         "cloud_provider.update",
-        {"id": provider_id, "rotated_secrets": rotated, "mode": mode},
+        {"id": provider_id, "rotated_secrets": rotated, "cleared_secrets": cleared,
+         "mode": mode},
     )
     conn.commit()
     # Drop any cached boto3 client built from the old config/credentials.
