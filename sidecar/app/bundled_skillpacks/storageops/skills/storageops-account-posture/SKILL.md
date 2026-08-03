@@ -43,7 +43,10 @@ The survey gives the landscape; you decide where to go deeper.
 
 ## How this runs in the app
 
-- `survey_account(provider_id)` runs the read-only account survey and persists a
+- `survey_account(provider_id, max_buckets?)` runs the read-only account survey.
+  It caps at **100 buckets by default** (hard cap 500) — on a larger account pass
+  `max_buckets`, and ALWAYS report the result's `truncated` flag rather than
+  answering "which buckets are public?" over a silently trimmed set. It persists a
   profile: `bucket_count` / `visible_count` (the account may hold buckets the
   credentials can't see), and per-bucket config flags — `logging_status`,
   `inventory_status`, `lifecycle_status`, `replication_status`,
@@ -67,7 +70,8 @@ The survey gives the landscape; you decide where to go deeper.
 - For one bucket's full configuration, use `review_bucket_config` /
   `review_bucket_*` instead of surveying the whole account.
 - Large accounts: the survey can exceed the inline time budget and finish in the
-  background — then read it with `read_run_result(run_id)`; don't re-run the
+  background — then read it with `read_run_result(run_id, wait_seconds=…)` (up
+  to 60s in-turn, rather than deferring to another message); don't re-run the
   survey.
 
 Treat `provider_unsupported` / `access_denied` items as exactly that — report the

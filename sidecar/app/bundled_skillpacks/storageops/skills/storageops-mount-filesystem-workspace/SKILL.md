@@ -49,8 +49,10 @@ you can characterize the backing bucket, which drives amplification:
 
 - `list_objects` (bounded) — sample the prefix/key layout and file count behind
   the mount; deep directories with many small objects explain stat storms.
-- `review_bucket_performance_profile` — object size/count distribution that
-  predicts metadata amplification.
+- `review_bucket_performance_profile(provider_id, bucket, prefix?)` — object
+  size/count distribution that predicts metadata amplification.
+  Pass an in-scope `prefix` when the provider restricts `allowed_prefixes` —
+  this tool LISTS, so a prefixless call is denied on a prefix-scoped provider.
 
 ## Ask the user (only what tools can't reveal)
 

@@ -40,6 +40,41 @@ jobs:
       - name: Build
         run: npm run build
 
+  e2e:
+    name: E2E smoke (real sidecar)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The suite drives the REAL stack: a live sidecar (started by the
+      # Playwright global setup against a throwaway data dir) plus the
+      # production frontend bundle. It covers the integration seam the unit
+      # suites can't reach — composer -> HTTP -> SQLite -> render — using only
+      # the offline paths, so it needs no model or cloud credentials.
+      - name: Install sidecar
+        run: pip install -e "./sidecar[dev]"
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Run E2E smoke
+        working-directory: frontend
+        run: npm run test:e2e
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
   sidecar:
     name: Sidecar import & tests
     runs-on: ubuntu-latest

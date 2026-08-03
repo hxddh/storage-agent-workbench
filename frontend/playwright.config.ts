@@ -1,0 +1,54 @@
+import { defineConfig, devices } from "@playwright/test";
+
+/**
+ * End-to-end smoke config.
+ *
+ * These tests drive the REAL stack: a live Python sidecar (started by
+ * `e2e/global-setup.ts` on its own port, against a throwaway data dir) plus the
+ * production frontend bundle served by `vite preview`. Everything below the
+ * composer — HTTP wiring, SSE, SQLite, the deterministic triage engine — runs
+ * for real. Only the model provider is absent, which is deliberate: the offline
+ * paths (error triage, session CRUD, settings) are exactly the ones that must
+ * work on a fresh install with no credentials, and they need no LLM.
+ *
+ * The bundle is built with VITE_SIDECAR_URL pointing at the test sidecar,
+ * because `config.ts` bakes that value at build time. Port 5173 is not
+ * arbitrary either — it is one of the origins the sidecar's CORS allowlist
+ * accepts (`sidecar/app/main.py`), so a different port would fail preflight.
+ */
+const SIDECAR_PORT = Number(process.env.E2E_SIDECAR_PORT || 8799);
+const WEB_PORT = 5173;
+
+export default defineConfig({
+  testDir: "./e2e",
+  // The suite is a smoke gate, not a matrix: keep it serial and fast so it can
+  // sit in the CI critical path without becoming the slowest job.
+  fullyParallel: false,
+  workers: 1,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 1 : 0,
+  timeout: 30_000,
+  expect: { timeout: 10_000 },
+  reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : [["list"]],
+  globalSetup: "./e2e/global-setup.ts",
+  globalTeardown: "./e2e/global-teardown.ts",
+  use: {
+    baseURL: `http://127.0.0.1:${WEB_PORT}`,
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
+    // Local sandboxes ship a preinstalled browser at a pinned revision that may
+    // not match this Playwright build; CI installs the matching one in the
+    // default location. Honour an explicit override when present.
+    launchOptions: process.env.PW_CHROMIUM_PATH
+      ? { executablePath: process.env.PW_CHROMIUM_PATH }
+      : {},
+  },
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  webServer: {
+    command: `npm run build && npx vite preview --port ${WEB_PORT} --strictPort`,
+    url: `http://127.0.0.1:${WEB_PORT}`,
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+    env: { VITE_SIDECAR_URL: `http://127.0.0.1:${SIDECAR_PORT}` },
+  },
+});

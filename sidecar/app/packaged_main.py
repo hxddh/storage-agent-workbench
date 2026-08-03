@@ -73,25 +73,64 @@ def _start_parent_watchdog() -> None:
     No-ops in dev/standalone (no parent PID and a normal parent).
     """
     import os
+    import sys
     import threading
     import time
 
     parent_pid = os.environ.get("STORAGE_AGENT_PARENT_PID")
 
-    def _watch() -> None:
+    def _watch_windows(pid: int) -> None:
+        """Wait on a real process HANDLE — never ``os.kill``.
+
+        On Windows ``os.kill(pid, 0)`` is NOT a liveness probe: CPython maps any
+        signal other than CTRL_C/CTRL_BREAK_EVENT to
+        ``OpenProcess(PROCESS_ALL_ACCESS) + TerminateProcess(handle, sig)``. This
+        watchdog therefore *killed the desktop app it was guarding* two seconds
+        after launch, then (with the parent gone, and OpenProcess failing with a
+        plain OSError the handler below didn't catch) died and left itself
+        running as the orphan it exists to prevent.
+
+        A SYNCHRONIZE handle opened once is also immune to PID reuse, and
+        WaitForSingleObject blocks until the parent really exits — no polling.
+        """
+        import ctypes
+
+        SYNCHRONIZE = 0x0010_0000
+        INFINITE = 0xFFFF_FFFF
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+        if not handle:
+            os._exit(0)  # parent already gone -> never orphan
+        kernel32.WaitForSingleObject(handle, INFINITE)
+        os._exit(0)
+
+    def _watch_posix(pid: int) -> None:
         while True:
             time.sleep(2)
-            if parent_pid:
-                try:
-                    os.kill(int(parent_pid), 0)  # signal 0 = liveness probe
-                except (ProcessLookupError, ValueError):
-                    os._exit(0)  # parent gone -> never orphan
-                except PermissionError:
-                    pass  # exists but not ours; treat as alive
-            elif os.getppid() == 1:
+            try:
+                os.kill(pid, 0)  # signal 0 IS a liveness probe on POSIX
+            except ProcessLookupError:
+                os._exit(0)  # parent gone -> never orphan
+            except PermissionError:
+                pass  # exists but not ours; treat as alive
+
+    def _watch_orphan() -> None:
+        while True:
+            time.sleep(2)
+            if os.getppid() == 1:
                 os._exit(0)  # reparented to launchd/init -> orphaned
 
-    threading.Thread(target=_watch, daemon=True).start()
+    if parent_pid:
+        try:
+            pid = int(parent_pid)
+        except ValueError:
+            return  # malformed env: no watchdog rather than a wrong one
+        target = _watch_windows if sys.platform == "win32" else _watch_posix
+        threading.Thread(target=target, args=(pid,), daemon=True).start()
+    elif sys.platform != "win32":
+        # No parent PID (dev/standalone): fall back to the reparenting check,
+        # which is a POSIX concept — Windows has no init-reparenting.
+        threading.Thread(target=_watch_orphan, daemon=True).start()
 
 
 def _startup_banner(host: str, port: int) -> str:

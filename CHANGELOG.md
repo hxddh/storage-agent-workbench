@@ -6,6 +6,106 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-07-29
+
+_An end-to-end smoke harness (the integration seam unit tests can't reach) plus
+a targeted audit of two never-mined surfaces: the Tauri Rust shell and the
+StorageOps skill pack. The shell audit found a **critical Windows defect** that
+would kill the desktop app seconds after launch._
+
+### Added — E2E smoke harness
+
+- The app had 759 unit tests and **zero coverage of the seam between them**:
+  composer → HTTP → SQLite → SSE → rendered card. A Playwright suite now drives
+  the real stack — a live sidecar (started against a throwaway data dir) plus the
+  production frontend bundle — and runs in CI between the unit gates and the
+  desktop builds (`npm run test:e2e`).
+- Deliberately credential-free: it exercises the offline paths a user hits on a
+  fresh install (deterministic error triage with no model provider, session
+  persistence across reload, settings drawer, first-run wizard), so it needs no
+  model key or cloud account and cannot go flaky on a provider.
+
+### Fixed — desktop shell (Tauri)
+
+- **CRITICAL (Windows): the sidecar's parent-watchdog terminated the app it was
+  guarding.** The watchdog polled `os.kill(parent_pid, 0)` as a liveness probe —
+  correct on POSIX, but on Windows CPython maps every signal except
+  CTRL_C/CTRL_BREAK to `OpenProcess` + `TerminateProcess`, so the sidecar
+  hard-killed the Tauri app about two seconds after launch. The subsequent
+  `OpenProcess` failure then raised a plain `OSError` the handler didn't catch,
+  killing the watchdog thread and leaving the sidecar running as exactly the
+  orphan it exists to prevent. Windows now waits on a `SYNCHRONIZE` process
+  handle (also immune to PID reuse); POSIX keeps the real signal-0 probe.
+- **The launcher now verifies the sidecar before trusting the port.** Nothing
+  checked that the spawned child stayed alive (a sidecar that died at startup
+  left the user on a "starting…" spinner forever, because the frontend maps every
+  pre-first-success failure back to "starting"), and nothing checked *who* was
+  listening — the webview would send the auth token to any local process
+  squatting the port that could answer `{"status":"ok"}`. The shell now polls
+  `/health` for a per-launch nonce it passed to its own child, watching
+  `try_wait()` for early exit, and only then publishes the URL and token.
+- The free-port helper no longer falls back to **8765** — the documented dev
+  default, and therefore the most likely address of a stale sidecar from an
+  earlier crashed run (different token, different data dir). It fails loudly.
+- Teardown handles `RunEvent::Exit` as well as `ExitRequested` (a window-manager
+  close or OS logout skipped the only cleanup path), reaps the child, and matches
+  on `lock()` instead of unwrapping — a poisoned mutex would have panicked
+  *during shutdown*.
+- A failure to resolve the app data dir aborts startup instead of degrading to an
+  empty string, which the sidecar treats as unset — falling back to a path
+  **inside the packaged bundle**, writing the SQLite DB and secret vault into the
+  signed app.
+- `save_report` uses `create_new(true)` and 1000 candidate names: the old
+  `exists()`-then-`write()` was racy, and after 99 collisions it fell through and
+  **overwrote the user's existing file** — the opposite of its contract.
+- CORS: added `http(s)://tauri.localhost`, the origin Tauri v2 serves the
+  packaged app from on Windows and Android. Every call carries the
+  `X-Sidecar-Token` header, so it is preflighted — without this the packaged
+  Windows app could not reach its own sidecar at all. The token gate remains the
+  real authorization boundary.
+
+### Fixed — skill teaching drift
+
+The agent loads StorageOps skills to learn method; several taught tool behavior
+that v0.39–v0.41 changed, so it was being taught to reach wrong conclusions:
+
+- **Access logs**: the analyzer has no requester dimension at all, but the skill
+  promised "top requesters" — the agent would mislabel `top_user_agents` or claim
+  it couldn't answer. It now teaches `aggregate_uploaded_file` grouped by
+  `client_ip_masked` for "who is accessing", and the `truncated` lower-bound rule.
+- **Credentials**: `test_credentials` returning `success: true` no longer proves
+  the keys work — rule-18 degradation returns success with
+  `identity_hint: "Provider unsupported"`, and a list-denied account returns
+  `"authenticated (ListBuckets denied)"`. The skill now teaches reading
+  `identity_hint`, not `success`.
+- **Version/upload pileup**: on providers without these listings the tools return
+  `success: true, provider_unsupported: true` and **zero counts** — the skill read
+  that as "no abandoned uploads / no old versions", a clean bill of health for
+  something never measured. It now requires checking `provider_unsupported`, and
+  treats a truncated page as a lower bound rather than a bucket total.
+- **Object lock**: `"none"` is only a real answer when `success: true`; after
+  v0.41 a nonexistent object yields `unknown` + `success: false`, which must not
+  be read as "unlocked".
+- `review_bucket_performance_profile` is taught with its `prefix` argument (it
+  lists, so a prefixless call is denied on a prefix-scoped provider);
+  `survey_account`'s 100-bucket default cap and `truncated` flag are taught;
+  `read_run_result` is taught with `wait_seconds`; `preview_object` is taught its
+  gzip/parquet handling.
+- **Code fix:** `survey_account` advertised `max_buckets` up to 2000 and clamped
+  to 2000, but `RunCreate` caps at 500 — a model taking the docstring at its word
+  got a `ValidationError` instead of a larger survey. Both now say 500.
+
+### Known gaps
+
+- Bounded concurrency for the per-bucket survey loop was scoped for this release
+  and deliberately deferred: it touches the account-discovery executor's
+  per-bucket transaction isolation and its audit-row ordering, and belongs in its
+  own change rather than riding along with 20 unrelated fixes.
+- The E2E specs are compiled by Playwright (esbuild, no type check) and sit
+  outside `tsc --noEmit`, whose `include` is `src`. Type errors there surface as
+  test failures rather than at the typecheck gate.
+
+
 ## [0.41.0] - 2026-07-21
 
 _The prompt-injection envelope (SEC4, deferred from v0.40) plus a fresh

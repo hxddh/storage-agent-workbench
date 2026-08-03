@@ -44,9 +44,11 @@ Slow transfer or 429/503 →
 
 - `list_objects` (bounded) — sample the key layout to judge small-file vs
   large-file vs hot-prefix workload.
-- `review_bucket_performance_profile` — profile object sizes / storage classes /
-  key distribution for a bucket; for the full picture run `review_bucket_config`
-  (inline, read-only).
+- `review_bucket_performance_profile(provider_id, bucket, prefix?)` — profile
+  object sizes / storage classes / key distribution for a bucket; for the full
+  picture run `review_bucket_config` (inline, read-only).
+  Pass an in-scope `prefix` when the provider restricts `allowed_prefixes` —
+  this tool LISTS, so a prefixless call is denied on a prefix-scoped provider.
 - `measure_request_latency` — the one tool that MEASURES it: a bounded set of
   head round-trips returning min/p50/p95/max/mean milliseconds against the
   endpoint (optionally on a specific key). Run this FIRST when the complaint is

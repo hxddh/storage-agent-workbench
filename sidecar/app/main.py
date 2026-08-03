@@ -145,7 +145,15 @@ _ALLOWED_ORIGINS = [
     "http://127.0.0.1:1420",
     "http://localhost:5173",  # Vite default dev origin
     "http://127.0.0.1:5173",
-    "tauri://localhost",      # Tauri production webview origin
+    "tauri://localhost",      # Tauri production webview origin (macOS/iOS)
+    # Tauri v2 serves the packaged app from http(s)://tauri.localhost on Windows
+    # (WebView2) and Android. Every frontend call carries X-Sidecar-Token, a
+    # non-simple header, so it is preflighted — without these origins the
+    # packaged Windows app cannot talk to its own sidecar at all. Widening CORS
+    # costs nothing here: the token gate above is the real authorization
+    # boundary, and CORS never protected a non-browser caller anyway.
+    "http://tauri.localhost",
+    "https://tauri.localhost",
 ]
 
 app.add_middleware(

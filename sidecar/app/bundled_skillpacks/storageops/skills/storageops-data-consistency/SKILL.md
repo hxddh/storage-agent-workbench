@@ -63,7 +63,10 @@ Consistency concern →
 - `preview_object` — when "the content is wrong/old" for a text object, read a
   bounded, sanitized preview of its head to see the actual current bytes from the
   store (vs. what the client shows) — direct evidence of whether staleness is
-  client-side. Text-only, per-turn budgeted; binary/oversized objects aren't decoded.
+  client-side. Gzip objects (`.gz`) are decompressed within the same bound
+  (`"decompressed": true`), and `.parquet` returns a footer-only STRUCTURE
+  preview (schema + row counts); other binary/oversized objects are reported, not
+  decoded. Per-turn budget: 16 objects / 24 MiB.
 
 ## Ask the user (only what tools can't reveal)
 

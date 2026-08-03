@@ -48,7 +48,9 @@ Two paths, depending on where the inventory lives:
   first to get the actual `dataset_id` attached to this session (don't assume
   one), then `analyze_uploaded_file` on it (it ingests CSV/Parquet and computes
   the metrics above over the local file) and explain the result conversationally.
-  No confirmation.
+  No confirmation. If the result carries `"truncated": true`, the metrics cover
+  only the first `rows_analyzed` rows — present them as a LOWER BOUND and offer a
+  narrower slice.
 - **Inventory still in a bucket** — bringing it in is cloud-side data movement, so
   it stays a confirmed step: propose `plan_inventory_import`. After the user
   confirms and the run completes, read its findings; if it finished in the
