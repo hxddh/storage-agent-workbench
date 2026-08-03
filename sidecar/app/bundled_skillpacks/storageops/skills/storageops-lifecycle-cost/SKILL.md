@@ -51,17 +51,26 @@ Cost concern →
 - `list_object_versions` — when config shows versioning on but the bill is
   unexplained, this reads the ACTUAL pileup (noncurrent-version count + bytes,
   delete markers) that the config review can't see. The concrete "your bucket is
-  huge because of old versions" evidence.
+  huge because of old versions" evidence. Two honesty checks before you quote a
+  number: a `provider_unsupported: true` result (with `success: true` and zero
+  counts) means this provider does not implement the listing — report "not
+  measurable here", NEVER "no old versions"; and the counts/bytes are ONE page
+  (≤1000). If `is_truncated`, page with `key_marker`/`version_id_marker` or
+  report the figure as a lower bound.
 - `list_multipart_uploads` — surfaces abandoned incomplete uploads whose parts
   are billed but invisible in a normal listing (pass a `prefix` to scope it —
   REQUIRED on a prefix-restricted provider, where a prefixless listing is
-  denied). If present, propose an "abort incomplete multipart upload" lifecycle
-  rule (manual — the app never aborts).
+  denied). Same two checks: `provider_unsupported: true` means unmeasurable, not
+  "none found"; and an `is_truncated` page is a lower bound. If uploads are
+  present, propose an "abort incomplete multipart upload" lifecycle rule
+  (manual — the app never aborts).
 - `list_upload_parts` — for the worst offender from `list_multipart_uploads`,
   pass its `upload_id` here to size it: part count, **total bytes accrued**, and
   first/last part times — the concrete "this abandoned upload has held N GB since
   <date>" number. Listing only; still no abort.
-- `review_bucket_performance_profile` / `list_objects` — sample size
+- `review_bucket_performance_profile(provider_id, bucket, prefix?)` (pass an
+  in-scope `prefix` on a prefix-restricted provider — it lists) / `list_objects`
+  — sample size
   distribution and storage classes to judge small-file impact. `list_objects`
   now returns per-key `objects[]` (size / storage_class / last_modified) so you
   can sample the distribution directly, without an extra head_object per key.

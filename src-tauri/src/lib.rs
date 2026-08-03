@@ -13,10 +13,12 @@
 // NOTE: This Rust code is not compiled in environments without the Rust
 // toolchain (a documented packaging blocker).
 
-use std::net::TcpListener;
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use tauri::{Manager, RunEvent, State};
 
@@ -28,12 +30,87 @@ struct SidecarState {
 }
 
 /// Pick a free localhost TCP port by binding to port 0 and reading it back.
-fn free_port() -> u16 {
+///
+/// Returns None rather than falling back to 8765: that is the documented DEV
+/// default, so the fallback aimed the launcher straight at whatever is already
+/// listening there — typically a stale sidecar from an earlier crashed run,
+/// holding a different token and a different data dir. A launcher that cannot
+/// find a port must fail loudly, not silently adopt a foreign process.
+fn free_port() -> Option<u16> {
     TcpListener::bind("127.0.0.1:0")
         .ok()
         .and_then(|l| l.local_addr().ok())
         .map(|a| a.port())
-        .unwrap_or(8765)
+}
+
+/// Block until the sidecar we just spawned answers /health with OUR launch
+/// nonce, or fail with a precise reason.
+///
+/// Two problems this closes. (1) Nothing checked that the child stayed alive:
+/// a sidecar that exited at startup (port lost to the TOCTOU race below, an
+/// unwritable data dir, a missing lib in the bundle) left the user staring at a
+/// "starting…" spinner forever, because the frontend's health hook maps every
+/// pre-first-success failure back to "starting". (2) Nothing checked WHO was
+/// listening: the webview would send the auth token to any local process
+/// squatting the port that could answer `{"status":"ok"}` — disclosing the
+/// secret that exists to keep other local processes out. The nonce is echoed
+/// only by a sidecar that inherited it from this launch.
+/// One loopback GET /health. Deliberately a hand-rolled request over TcpStream
+/// rather than an HTTP crate: this is the only HTTP the shell ever speaks, to a
+/// fixed path on 127.0.0.1, so a client dependency would be pure supply-chain
+/// surface for no benefit. Returns the response body.
+fn probe_health(port: u16) -> Result<String, String> {
+    let mut stream = TcpStream::connect_timeout(
+        &SocketAddr::from(([127, 0, 0, 1], port)),
+        Duration::from_secs(2),
+    )
+    .map_err(|e| format!("{e}"))?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .map_err(|e| format!("{e}"))?;
+    stream
+        .write_all(b"GET /health HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .map_err(|e| format!("{e}"))?;
+    let mut body = String::new();
+    // HTTP/1.0 + Connection: close means the server closes at end of body, so a
+    // read-to-end is the complete response (headers included — we only need to
+    // substring-match the nonce, so no parsing is required).
+    stream
+        .take(64 * 1024)
+        .read_to_string(&mut body)
+        .map_err(|e| format!("{e}"))?;
+    Ok(body)
+}
+
+fn await_sidecar_ready(
+    port: u16,
+    nonce: &str,
+    child: &mut Child,
+    timeout: Duration,
+) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+    let mut last = String::from("no response yet");
+    while Instant::now() < deadline {
+        // A child that already exited will never become ready; report its status
+        // instead of burning the whole timeout.
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(format!(
+                "sidecar exited during startup with {status} (last probe: {last})"
+            ));
+        }
+        match probe_health(port) {
+            Ok(body) => {
+                if body.contains(nonce) {
+                    return Ok(());
+                }
+                // Something is listening, but it is not our sidecar.
+                last = "a different process is listening on this port".to_string();
+            }
+            Err(e) => last = e,
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    Err(format!("sidecar did not become ready within {timeout:?}: {last}"))
 }
 
 /// Generate a random 128-bit auth token as 32 lowercase hex chars from the OS
@@ -87,22 +164,36 @@ fn save_report(app: tauri::AppHandle, filename: String, content: String) -> Resu
         .path()
         .download_dir()
         .map_err(|e| format!("no downloads directory: {e}"))?;
-    let mut path = dir.join(&safe);
-    if path.exists() {
-        let (stem, ext) = match safe.rsplit_once('.') {
-            Some((s, e)) => (s.to_string(), format!(".{e}")),
-            None => (safe.clone(), String::new()),
+    let (stem, ext) = match safe.rsplit_once('.') {
+        Some((s, e)) => (s.to_string(), format!(".{e}")),
+        None => (safe.clone(), String::new()),
+    };
+    // create_new(true) is the whole guarantee: `exists()` then `write()` is
+    // racy, and the old loop fell through to the ORIGINAL path when all 99
+    // suffixes were taken — overwriting the user's file, the exact opposite of
+    // what this function promises. Now the OS decides atomically and we simply
+    // try the next name on AlreadyExists.
+    for i in 0..1000 {
+        let candidate = if i == 0 {
+            dir.join(&safe)
+        } else {
+            dir.join(format!("{stem}-{i}{ext}"))
         };
-        for i in 1..100 {
-            let candidate = dir.join(format!("{stem}-{i}{ext}"));
-            if !candidate.exists() {
-                path = candidate;
-                break;
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(mut f) => {
+                f.write_all(content.as_bytes())
+                    .map_err(|e| format!("write failed: {e}"))?;
+                return Ok(candidate.to_string_lossy().to_string());
             }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("write failed: {e}")),
         }
     }
-    std::fs::write(&path, content).map_err(|e| format!("write failed: {e}"))?;
-    Ok(path.to_string_lossy().to_string())
+    Err(format!("could not find a free filename for {safe} in the downloads folder"))
 }
 
 /// Open an https/mailto link in the system browser/mail client. Tauri v2
@@ -169,18 +260,32 @@ fn resolve_sidecar(resource_dir: &PathBuf) -> Option<PathBuf> {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let port = free_port();
+            let port = free_port().ok_or_else(|| {
+                eprintln!("fatal: no free loopback port for the sidecar");
+                "no free loopback port for the sidecar".to_string()
+            })?;
             let url = format!("http://127.0.0.1:{port}");
             // Random per-launch auth token: the sidecar enforces it only because
             // we set STORAGE_AGENT_AUTH_TOKEN in its environment below.
             let token = gen_token();
+            // Separate per-launch value, NOT a secret: the sidecar echoes it on
+            // /health so we can prove the process on `port` is the one we
+            // started before handing the webview the URL and the real token.
+            let nonce = gen_token();
 
             // App data dir is the stable, OS-appropriate location for user data.
+            // A failure here must abort startup, not degrade to an empty string:
+            // the sidecar treats "" as unset and falls back to a path INSIDE the
+            // packaged bundle, writing the SQLite DB and the secret vault into
+            // the signed app (breaking the seal, losing everything on update).
             let data_dir = app
                 .path()
                 .app_data_dir()
                 .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_default();
+                .map_err(|e| {
+                    eprintln!("fatal: failed to resolve app data dir: {e}");
+                    format!("failed to resolve app data dir: {e}")
+                })?;
 
             // Launch failures below return an Err from `setup` instead of
             // `panic!`/`.expect()`. A panic here unwinds through the Tauri/FFI
@@ -204,12 +309,14 @@ pub fn run() {
                 )
             })?;
 
-            let child = Command::new(&sidecar_bin)
+            let mut child = Command::new(&sidecar_bin)
                 .args(["--host", "127.0.0.1", "--port", &port.to_string()])
                 .env("STORAGE_AGENT_DATA_DIR", data_dir)
                 // Auth token the sidecar requires on every request (header or
                 // ?token= for SSE). Only enforced because it's set here.
                 .env("STORAGE_AGENT_AUTH_TOKEN", &token)
+                // Non-secret identity value echoed on /health (see below).
+                .env("STORAGE_AGENT_LAUNCH_NONCE", &nonce)
                 // The sidecar exits if this PID disappears, so the child is never
                 // orphaned on app exit/crash.
                 .env("STORAGE_AGENT_PARENT_PID", std::process::id().to_string())
@@ -218,6 +325,17 @@ pub fn run() {
                     eprintln!("fatal: failed to spawn sidecar at {}: {e}", sidecar_bin.display());
                     format!("failed to spawn sidecar at {}: {e}", sidecar_bin.display())
                 })?;
+
+            // Don't publish the URL/token until OUR sidecar has answered on that
+            // port. Without this the app could hand the token to a foreign
+            // listener, or hang on a "starting…" spinner forever after a sidecar
+            // that died at startup. Kill the child on failure so a half-started
+            // process is never left behind.
+            if let Err(e) = await_sidecar_ready(port, &nonce, &mut child, Duration::from_secs(60)) {
+                let _ = child.kill();
+                eprintln!("fatal: {e}");
+                return Err(e.into());
+            }
 
             app.manage(SidecarState {
                 url,
@@ -231,11 +349,25 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // Clean up the sidecar process when the app exits.
-            if let RunEvent::ExitRequested { .. } = event {
+            // Clean up the sidecar process when the app exits. BOTH terminal
+            // events are handled: ExitRequested alone missed the paths that
+            // don't ask first (a window-manager close, an OS logout), leaving
+            // teardown entirely to the child's own parent-watchdog. `Option::take`
+            // makes the second call a no-op, so handling both is safe.
+            //
+            // `lock()` is matched, never unwrapped: a poisoned mutex here would
+            // panic *during shutdown*, inside the run-event callback, turning a
+            // clean exit into a crash — and the child watchdog would still reap
+            // the sidecar anyway.
+            if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
                 if let Some(state) = app_handle.try_state::<SidecarState>() {
-                    if let Some(mut child) = state.child.lock().unwrap().take() {
-                        let _ = child.kill();
+                    if let Ok(mut guard) = state.child.lock() {
+                        if let Some(mut child) = guard.take() {
+                            let _ = child.kill();
+                            // Reap so the child is never left a zombie if the
+                            // host process lingers after this event.
+                            let _ = child.wait();
+                        }
                     }
                 }
             }

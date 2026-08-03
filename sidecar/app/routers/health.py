@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter
 
 from .. import __version__ as APP_VERSION
 
 SERVICE_NAME = "storage-agent-sidecar"
+
+# Per-launch identity nonce set by the desktop shell. NOT a secret and NOT an
+# auth credential — it exists so the launcher can prove the process answering on
+# the port it picked is the sidecar IT started, before handing that port (and
+# the real auth token) to the webview. Absent in dev/standalone.
+_LAUNCH_NONCE = os.environ.get("STORAGE_AGENT_LAUNCH_NONCE") or ""
 
 router = APIRouter()
 
@@ -17,8 +25,15 @@ def health() -> dict[str, str]:
 
     ``version`` is the running service version (from installed package metadata);
     exposing it lets the release smoke test confirm a bundle reports the stamped
-    version rather than a stale one or the ``0.0.0+source`` fallback."""
-    return {"status": "ok", "service": SERVICE_NAME, "version": APP_VERSION}
+    version rather than a stale one or the ``0.0.0+source`` fallback.
+
+    ``launch_nonce`` echoes the shell's per-launch value so the launcher can tell
+    its own sidecar from a stale one (or any other local process) squatting the
+    port — see ``src-tauri/src/lib.rs``. Omitted when unset."""
+    out = {"status": "ok", "service": SERVICE_NAME, "version": APP_VERSION}
+    if _LAUNCH_NONCE:
+        out["launch_nonce"] = _LAUNCH_NONCE
+    return out
 
 
 def _run_selfcheck() -> dict[str, object]:

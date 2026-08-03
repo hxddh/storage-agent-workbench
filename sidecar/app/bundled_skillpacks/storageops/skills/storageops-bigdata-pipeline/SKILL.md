@@ -42,8 +42,10 @@ writes to:
 - `list_objects` (bounded) — sample the output prefix: many tiny part files or
   leftover `_temporary`/`_SUCCESS` markers confirm a committer/small-file
   problem.
-- `review_bucket_performance_profile` — object size/count distribution that
-  quantifies small-file amplification.
+- `review_bucket_performance_profile(provider_id, bucket, prefix?)` — object
+  size/count distribution that quantifies small-file amplification.
+  Pass an in-scope `prefix` when the provider restricts `allowed_prefixes` —
+  this tool LISTS, so a prefixless call is denied on a prefix-scoped provider.
 - `head_object` on `_SUCCESS` / part files — confirm what the job actually wrote.
 
 ## Ask the user (only what tools can't reveal)

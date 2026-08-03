@@ -78,7 +78,9 @@ specifics for each branch.
   — when the user attached a log or inventory export; `aggregate_uploaded_file`
   runs one constrained metric+group-by when the fixed metrics don't fit. For data
   still in a bucket, propose an import.
-- `read_run_result` — pick up a backgrounded run's result in a later turn.
+- `read_run_result(run_id, wait_seconds?)` — pick up a backgrounded run's
+  result. Pass `wait_seconds` (up to 60) to finish it inside THIS turn instead of
+  handing the user a "check back later".
 
 ## What to report
 
