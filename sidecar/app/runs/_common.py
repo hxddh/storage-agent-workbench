@@ -29,11 +29,16 @@ def run_tool_with_events(
     name: str,
     raw_input: dict[str, Any],
     executor: Callable[[], dict[str, Any]],
+    duration_ms: int | None = None,
 ) -> dict[str, Any]:
-    """Publish started/finished SSE events around a recorded tool call."""
+    """Publish started/finished SSE events around a recorded tool call.
+
+    ``duration_ms`` is passed through to ``run_tool`` for work already performed
+    elsewhere (see its docstring) so the recorded row reports the true elapsed
+    time rather than the cost of handing back a finished result."""
     tool_call_id = uuid.uuid4().hex
     bus.publish(run_id, {"type": "tool_call_started", "tool_name": name, "tool_call_id": tool_call_id})
-    out = run_tool(conn, name, raw_input, executor, run_id=run_id)
+    out = run_tool(conn, name, raw_input, executor, run_id=run_id, duration_ms=duration_ms)
     status = "success" if out.get("success", True) else "error"
     bus.publish(run_id, {
         "type": "tool_call_finished",

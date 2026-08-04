@@ -259,6 +259,27 @@ fn resolve_sidecar(resource_dir: &PathBuf) -> Option<PathBuf> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // MUST be the first plugin registered (the plugin's own requirement):
+        // a second launch hands its argv to the running instance and exits,
+        // rather than starting a second sidecar over the SAME data dir. That
+        // sharing is not benign — the secret vault rewrites the whole file on
+        // every save, so the second instance's write silently discarded a
+        // credential the first had just stored, and both would contend on one
+        // app.db. Here we simply surface the existing window.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            // The window config sets no explicit label, so Tauri's implicit
+            // "main" applies — but don't depend on that: fall back to whichever
+            // window exists so a future label rename can't silently turn the
+            // second launch into a no-op the user reads as "the app is dead".
+            let win = app
+                .get_webview_window("main")
+                .or_else(|| app.webview_windows().into_values().next());
+            if let Some(win) = win {
+                let _ = win.unminimize();
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+        }))
         .setup(|app| {
             let port = free_port().ok_or_else(|| {
                 eprintln!("fatal: no free loopback port for the sidecar");

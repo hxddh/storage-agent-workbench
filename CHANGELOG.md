@@ -6,6 +6,66 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-08-04
+
+_Finishes what v0.42 started: the one audit finding it left unfixed (a silent
+credential-loss path), the survey concurrency it deferred, and more E2E
+coverage._
+
+### Fixed — the vault could silently lose a credential
+
+- **A save rewrites the whole vault file from an in-memory cache that was loaded
+  once and never re-read.** Two app instances over the same data dir — which
+  nothing prevented — meant the second one's save persisted its stale map and
+  **deleted the credential the first had just stored, with no error anywhere.**
+  Writes now compare the vault's (mtime, size) against what the cache was
+  decrypted from and re-read when it changed. Reads are untouched: they still
+  come straight from the cache, so the guard costs a `stat` on save only.
+- **Added a single-instance guard** (`tauri-plugin-single-instance`). A second
+  launch now focuses the running window instead of starting a second sidecar
+  over the same SQLite database and secret vault — closing the above at its
+  source rather than only surviving it.
+
+### Changed — the account survey probes buckets concurrently
+
+- Per-bucket probing is network-bound (a dozen-ish S3 round trips each) and ran
+  fully serially, so a 100-bucket account paid 100 × latency end to end. Probes
+  now run in a bounded pool (4 workers, measured ~3.9× on 12 buckets).
+- **Only the probes are parallel.** Every database write, every `tool_call` /
+  audit row, and every SSE event still happens on the run thread, sequentially,
+  in the original bucket order — so the per-bucket transaction isolation from
+  v0.40 and the recorded ordering are unchanged. Workers open their own
+  connections and use them purely to read the provider row and build the
+  (globally cached, request-thread-safe) boto3 client.
+- A probe that fails is captured per bucket and re-raised on the run thread, so
+  it produces exactly the error row it did when the work ran inline.
+- `run_tool` grew an optional `duration_ms`. Without it, recording a call whose
+  work already happened in the pool would have written a ~0 ms audit row for
+  something that took seconds — the concurrency would have made the audit trail
+  lie. The real elapsed time is threaded through instead.
+- Worker count is deliberately small: this is one desktop app against one
+  account, and a wide fan-out invites provider-side `SlowDown` throttling, which
+  would make the survey slower and noisier rather than faster.
+
+### Added — E2E coverage
+
+- Cloud-provider creation, asserting **end to end** that the plaintext secret
+  appears neither in the DOM nor in the API response (rule 2/4 — SQLite holds
+  only a `keyring://` ref — verified through the real stack, not just a vault
+  unit test), plus persistence across reload.
+- Session rename round-tripping through SQLite, and the command palette's
+  open/Escape handling.
+- The provider spec cleans up the row it creates: the suite shares one sidecar,
+  and a leftover provider silently invalidates the first-run-wizard test, which
+  asserts first-install behaviour.
+
+### Known gaps
+
+- The E2E specs remain outside `tsc --noEmit` (`include: ["src"]`); Playwright
+  compiles them with esbuild, which strips types without checking them, so type
+  errors there surface as test failures rather than at the typecheck gate.
+
+
 ## [0.42.0] - 2026-07-29
 
 _An end-to-end smoke harness (the integration seam unit tests can't reach) plus
