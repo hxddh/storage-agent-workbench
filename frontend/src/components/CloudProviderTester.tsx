@@ -73,7 +73,7 @@ export function CloudProviderTester({ provider }: { provider: CloudProvider }) {
         </Button>
       </div>
 
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
 
       {cred && (
         <ToolResultCard

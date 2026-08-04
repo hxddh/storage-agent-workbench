@@ -173,7 +173,7 @@ export function Composer({
         </div>
       )}
       {sizeError && (
-        <div className="mb-2 rounded-md border border-red-900/60 bg-red-950/40 px-3 py-1.5 text-xs text-red-400">
+        <div className="mb-2 rounded-md border border-danger-border bg-danger-bg px-3 py-1.5 text-xs text-danger">
           {sizeError}
         </div>
       )}
@@ -239,7 +239,7 @@ export function Composer({
           className={`group/chip flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11.5px] transition-colors ${
             modelName
               ? "border-edge text-gray-400 hover:border-edge-strong hover:text-gray-200"
-              : "border-amber-800/40 text-amber-300/90 hover:border-amber-700/60 hover:text-amber-200"
+              : "border-warn-border text-warn-fg hover:border-warn-border hover:text-warn-fg"
           }`}
         >
           <Spark size={11} />

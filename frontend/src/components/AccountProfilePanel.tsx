@@ -19,12 +19,12 @@ function hasEvidence(b: AccountBucket, sourceType: string): boolean {
 function statusClass(status: string | null | undefined): string {
   switch (status) {
     case "available":
-      return "text-emerald-400";
+      return "text-success";
     case "not_configured":
-      return "text-amber-400";
+      return "text-warn";
     case "access_denied":
     case "error":
-      return "text-red-400";
+      return "text-danger";
     case "provider_unsupported":
       return "text-gray-500";
     default:

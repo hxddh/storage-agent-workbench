@@ -6,15 +6,15 @@ import { useI18n } from "../i18n";
 
 const RUN_STATUS: Record<string, { cls: string; key: string }> = {
   pending: { cls: "text-gray-400", key: "run.queued" },
-  running: { cls: "text-amber-300", key: "run.running" },
-  completed: { cls: "text-emerald-300", key: "run.done" },
-  failed: { cls: "text-red-300", key: "run.failed" },
+  running: { cls: "text-warn-fg", key: "run.running" },
+  completed: { cls: "text-success", key: "run.done" },
+  failed: { cls: "text-danger", key: "run.failed" },
   not_implemented: { cls: "text-gray-500", key: "run.na" },
 };
 
 const CONF_PILL: Record<string, string> = {
   high: "bg-accent/15 text-accent-soft",
-  medium: "bg-amber-500/12 text-amber-300/90",
+  medium: "bg-warn-bg text-warn-fg",
   low: "bg-gray-700/40 text-gray-400",
 };
 
@@ -32,21 +32,21 @@ export const MessageCard = memo(function MessageCard({
   content,
   toolActivity,
   streaming,
+  onEdit,
+  onRegenerate,
 }: {
   role: string;
   content: string | null;
   toolActivity?: ToolActivity[];
   streaming?: boolean;
+  /** Put this user message back in the composer to send again (a NEW turn). */
+  onEdit?: (text: string) => void;
+  /** Re-ask the question that produced this answer, as a NEW turn. */
+  onRegenerate?: () => void;
 }) {
   const { t } = useI18n();
   if (role === "user") {
-    return (
-      <div className="flex justify-end animate-fade-in-up">
-        <div className="max-w-[82%] whitespace-pre-wrap rounded-2xl border border-edge bg-elevated px-3.5 py-2.5 text-[13px] leading-relaxed text-gray-100">
-          {content || ""}
-        </div>
-      </div>
-    );
+    return <UserMessage content={content} onEdit={onEdit} />;
   }
   // While streaming, the raw deltas may include the trailing metadata JSON block
   // (the backend strips it for the persisted message); hide it from the live view.
@@ -56,9 +56,30 @@ export const MessageCard = memo(function MessageCard({
       <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-accent-soft">
         {Spark}
         {t("card.agentName")}
-        {!streaming && <CopyButton text={content || ""} />}
+        {!streaming && (
+          <span className="flex items-center gap-1">
+            <CopyButton text={content || ""} />
+            {onRegenerate && (
+              <button
+                onClick={onRegenerate}
+                title={t("msg.regenerate")}
+                aria-label={t("msg.regenerate")}
+                data-testid="regenerate"
+                className="opacity-0 transition-opacity group-hover:opacity-100 text-gray-500 hover:text-gray-200"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
+              </button>
+            )}
+          </span>
+        )}
       </div>
-      {toolActivity && toolActivity.length > 0 && <ToolActivityList items={toolActivity} />}
+      {toolActivity && toolActivity.length > 0 && (
+        <ToolActivityList items={toolActivity} streaming={streaming} />
+      )}
       <Markdown text={shown} />
       {streaming &&
         (shown.trim() ? (
@@ -80,6 +101,58 @@ export const MessageCard = memo(function MessageCard({
   );
 });
 
+/** A user turn.
+ *
+ * Long pastes get clamped: this app's most common user message is a full S3
+ * error body or a log excerpt, and letting one fill the viewport buries the
+ * conversation around it. The clamp is visual only — nothing is truncated, and
+ * "show more" reveals the rest in place.
+ */
+function UserMessage({ content, onEdit }: { content: string | null; onEdit?: (text: string) => void }) {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const text = content || "";
+  const long = text.length > 600 || text.split("\n").length > 12;
+
+  return (
+    <div className="group flex justify-end animate-fade-in-up">
+      <div className="flex max-w-[82%] flex-col items-end gap-1">
+        <div className="w-full whitespace-pre-wrap break-words rounded-2xl border border-edge bg-elevated px-3.5 py-2.5 text-[13px] leading-relaxed text-gray-100">
+          <div className={long && !expanded ? "max-h-[11.5rem] overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" : ""}>
+            {text}
+          </div>
+          {long && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-1 text-[11.5px] text-gray-500 transition-colors hover:text-accent-soft"
+            >
+              {expanded ? t("msg.showLess") : t("msg.showMore")}
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-1 pr-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          <CopyButton text={text} />
+          {onEdit && (
+            <button
+              onClick={() => onEdit(text)}
+              title={t("msg.edit")}
+              aria-label={t("msg.edit")}
+              data-testid="edit-message"
+              className="text-[11px] text-gray-500 transition-colors hover:text-gray-200"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Drop a trailing (possibly still-open) ```json … ``` metadata block from a
 // partially-streamed answer so it never flashes on screen.
 function stripMetaBlock(text: string): string {
@@ -94,35 +167,71 @@ function stripMetaBlock(text: string): string {
   return looksMeta ? text.slice(0, i).trimEnd() : text;
 }
 
-/** Compact, Codex/Cursor-style trace of the read-only tools the agent ran. Each
- * row stays on a single line: tool name + a truncating target, with the result
- * pinned to the right. A streamed "started" record renders as an in-progress
- * row (spinner) that resolves in place when the completed record arrives. */
-function ToolActivityList({ items }: { items: ToolActivity[] }) {
+/** Compact, Codex/Cursor-style trace of the read-only tools the agent ran.
+ *
+ * COLLAPSED BY DEFAULT once the turn is done. A deep investigation runs twenty
+ * tools, and twenty rows pinned above the answer push the answer itself off the
+ * screen — the trace is evidence you consult, not the thing you came to read.
+ * While the turn is still streaming it stays open: there, the rows ARE the
+ * content, and watching them land is how you know it is working.
+ */
+function ToolActivityList({ items, streaming }: { items: ToolActivity[]; streaming?: boolean }) {
   const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const done = items.filter((a) => a.status !== "started");
+  const kinds = new Set(done.map((a) => a.tool)).size;
+  const failed = done.filter((a) => /^(error|failed)\b/i.test(a.result || "")).length;
+  // Streaming forces it open; afterwards the user's own toggle wins.
+  const expanded = streaming || open;
+
   return (
-    <div className="mb-2.5 space-y-[3px]">
-      {items.map((a, i) => (
-        <div key={i} className="flex items-center gap-2 text-[11.5px] text-gray-500">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-gray-600">
-            <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z" />
+    <div className="mb-2.5">
+      {!streaming && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={expanded}
+          data-testid="tool-trace-toggle"
+          className="group/tt -ml-1 flex items-center gap-1.5 rounded px-1 py-0.5 text-[11.5px] text-gray-600 transition-colors hover:text-gray-300"
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+               className={`shrink-0 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`} aria-hidden>
+            <polyline points="9 18 15 12 9 6" />
           </svg>
-          <span className="shrink-0 font-mono text-accent-soft">{a.tool}</span>
-          {a.target ? (
-            <span className="min-w-0 flex-1 truncate text-gray-600" title={a.target}>· {a.target}</span>
-          ) : (
-            <span className="flex-1" />
-          )}
-          {a.status === "started" ? (
-            <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-amber-300/80">
-              <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-              {t("tool.running")}
+          <span className="tabular-nums">{t("trace.ran", { n: done.length })}</span>
+          {kinds > 1 && <span className="text-gray-700">· {t("trace.kinds", { n: kinds })}</span>}
+          {failed > 0 && (
+            <span className="ml-0.5 rounded bg-danger-bg px-1.5 py-px text-[10px] text-danger">
+              {t("trace.failed", { n: failed })}
             </span>
-          ) : (
-            <span className="shrink-0 font-mono text-[11px] text-gray-500" title={a.result}>{a.result}</span>
           )}
+        </button>
+      )}
+      {expanded && (
+        <div className={`space-y-[3px] ${streaming ? "" : "mt-1.5 border-l border-edge pl-3"}`}>
+          {items.map((a, i) => (
+            <div key={i} className="flex items-center gap-2 text-[11.5px] text-gray-500">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-gray-600">
+                <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z" />
+              </svg>
+              <span className="shrink-0 font-mono text-accent-soft">{a.tool}</span>
+              {a.target ? (
+                <span className="min-w-0 flex-1 truncate text-gray-600" title={a.target}>· {a.target}</span>
+              ) : (
+                <span className="flex-1" />
+              )}
+              {a.status === "started" ? (
+                <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-warn-fg">
+                  <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+                  {t("tool.running")}
+                </span>
+              ) : (
+                <span className="shrink-0 font-mono text-[11px] text-gray-500" title={a.result}>{a.result}</span>
+              )}
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -256,12 +365,12 @@ export function GroundingCard({ g }: { g: Grounding }) {
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
              className={`transition-transform ${open ? "rotate-90" : ""}`}><polyline points="9 18 15 12 9 6" /></svg>
         {t("grounding.title")}
-        {gaps.length ? <span className="rounded bg-amber-500/12 px-1.5 py-0.5 text-[10px] text-amber-300/90">{gaps.length}</span> : null}
+        {gaps.length ? <span className="rounded bg-warn-bg px-1.5 py-0.5 text-[10px] text-warn-fg">{gaps.length}</span> : null}
       </button>
       {open && (
         <div className="mt-1 border-l border-edge/70 pl-3">
           <Section label={t("grounding.evidence")} items={evidence} tone="text-gray-500" />
-          <Section label={t("grounding.gaps")} items={gaps} tone="text-amber-300/80" />
+          <Section label={t("grounding.gaps")} items={gaps} tone="text-warn-fg" />
           <Section label={t("grounding.skills")} items={skills} tone="text-accent-soft/80" />
         </div>
       )}
@@ -278,8 +387,8 @@ const severityLabel = (t: (k: string) => string, sev: string): string => {
 };
 
 const FINDING_TONE: Record<string, string> = {
-  critical: "text-red-300", high: "text-red-300", warning: "text-amber-300/90",
-  medium: "text-amber-300/90", opportunity: "text-accent-soft/90",
+  critical: "text-danger", high: "text-danger", warning: "text-warn-fg",
+  medium: "text-warn-fg", opportunity: "text-accent-soft/90",
   low: "text-gray-400", info: "text-gray-400",
 };
 

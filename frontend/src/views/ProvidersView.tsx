@@ -191,9 +191,9 @@ function ModelProvidersPanel() {
         <h2 className="text-sm font-semibold text-gray-200">{t("prov.tabModel")}</h2>
         {!showForm && <Button variant="primary" onClick={openCreate}>{t("prov.addModel")}</Button>}
       </div>
-      {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
+      {error && <p className="mb-3 text-xs text-danger">{error}</p>}
       {status && (
-        <p className={"mb-3 text-xs " + (status.tone === "ok" ? "text-emerald-400" : status.tone === "warn" ? "text-amber-400" : "text-red-400")}
+        <p className={"mb-3 text-xs " + (status.tone === "ok" ? "text-success" : status.tone === "warn" ? "text-warn" : "text-danger")}
            data-testid="model-test-status">{status.msg}</p>
       )}
 
@@ -257,14 +257,14 @@ function ModelProvidersPanel() {
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-100">
                   {p.name}
                   {p.active && (
-                    <span className="rounded-full border border-emerald-700 bg-emerald-950/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400" data-testid="active-model-badge">
+                    <span className="rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-success" data-testid="active-model-badge">
                       {t("prov.active")}
                     </span>
                   )}
                 </div>
                 <div className="text-xs text-gray-500">{p.provider_type} · {p.model || "—"} · {p.base_url || "—"}</div>
                 <div className="mt-1 text-xs text-gray-500">
-                  {t("prov.apiKeyLabel")}: {p.has_api_key ? <span className="text-emerald-400">{t("prov.savedKeychain")}</span> : <span className="text-gray-600">{t("prov.notSet")}</span>}
+                  {t("prov.apiKeyLabel")}: {p.has_api_key ? <span className="text-success">{t("prov.savedKeychain")}</span> : <span className="text-gray-600">{t("prov.notSet")}</span>}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -496,7 +496,7 @@ function CloudProvidersPanel() {
         <h2 className="text-sm font-semibold text-gray-200">{t("prov.tabCloud")}</h2>
         {!showForm && <Button variant="primary" onClick={openCreate}>{t("prov.addCloud")}</Button>}
       </div>
-      {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
+      {error && <p className="mb-3 text-xs text-danger">{error}</p>}
 
       {showForm ? (
         <div className="mb-6 rounded-xl border border-edge bg-panel p-4">
@@ -602,9 +602,9 @@ function CloudProvidersPanel() {
                 <div className="text-sm font-medium text-gray-100">{p.name}</div>
                 <div className="text-xs text-gray-500">{p.provider_type} · {p.region || "—"} · {p.endpoint_url || "—"}</div>
                 <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-gray-500">
-                  <span>{t("prov.modeLabel")}: <span className={p.mode === "readonly" ? "text-emerald-400" : "text-amber-400"}>{p.mode}</span></span>
-                  <span>{t("prov.accessKeyLabel")}: {p.has_access_key ? <span className="text-emerald-400">{t("prov.savedKeychain")}</span> : <span className="text-gray-600">{t("prov.notSet")}</span>}</span>
-                  <span>{t("prov.secretKeyLabel")}: {p.has_secret_key ? <span className="text-emerald-400">{t("prov.savedKeychain")}</span> : <span className="text-gray-600">{t("prov.notSet")}</span>}</span>
+                  <span>{t("prov.modeLabel")}: <span className={p.mode === "readonly" ? "text-success" : "text-warn"}>{p.mode}</span></span>
+                  <span>{t("prov.accessKeyLabel")}: {p.has_access_key ? <span className="text-success">{t("prov.savedKeychain")}</span> : <span className="text-gray-600">{t("prov.notSet")}</span>}</span>
+                  <span>{t("prov.secretKeyLabel")}: {p.has_secret_key ? <span className="text-success">{t("prov.savedKeychain")}</span> : <span className="text-gray-600">{t("prov.notSet")}</span>}</span>
                 </div>
                 {(p.allowed_buckets.length > 0 || p.allowed_prefixes.length > 0) && (
                   <div className="mt-1 text-xs text-gray-600">

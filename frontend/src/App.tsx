@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { SessionRail } from "./components/SessionRail";
+import {
+  SessionRail,
+  DEFAULT_RAIL_WIDTH,
+  clampRailWidth,
+} from "./components/SessionRail";
 import { Thread } from "./components/Thread";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { FirstRunWizard } from "./components/FirstRunWizard";
@@ -17,8 +21,19 @@ import type { SessionSummaryRow } from "./types";
 import { dropSessionRun } from "./sessionRuns";
 import { useSidecarHealth } from "./hooks/useSidecarHealth";
 import { useI18n } from "./i18n";
+import { useToast } from "./components/Toast";
+import { ShortcutsSheet } from "./components/ShortcutsSheet";
 
 const ONBOARDED_KEY = "saw.onboarded";
+const RAIL_WIDTH_KEY = "saw.railWidth";
+const RAIL_COLLAPSED_KEY = "saw.railCollapsed";
+
+// Read once at mount. A rail that forgets its width every launch is worse than
+// one that was never resizable — the user re-does the same drag daily.
+function storedRailWidth(): number {
+  const raw = Number(localStorage.getItem(RAIL_WIDTH_KEY));
+  return Number.isFinite(raw) && raw > 0 ? clampRailWidth(raw) : DEFAULT_RAIL_WIDTH;
+}
 
 export default function App() {
   const { status, slow } = useSidecarHealth();
@@ -27,11 +42,16 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [railWidth, setRailWidth] = useState(storedRailWidth);
+  const [railCollapsed, setRailCollapsed] = useState(
+    () => localStorage.getItem(RAIL_COLLAPSED_KEY) === "1",
+  );
   // Bumped to force the open Thread to reload when the ACTIVE session changed in
   // a way the thread mirrors (a rename → header title) without a session switch.
   const [threadReloadKey, setThreadReloadKey] = useState(0);
   const { t } = useI18n();
+  const toast = useToast();
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -71,7 +91,7 @@ export default function App() {
 
   // Session management actions (rail ⋯ menu). Optimistic-ish: act, then refresh.
   // Failures surface a dismissible banner instead of being silently swallowed.
-  const fail = (e: unknown) => setActionError(`${t("app.actionFailed")} ${String(e)}`);
+  const fail = (e: unknown) => toast.error(`${t("app.actionFailed")} ${String(e)}`);
   const sessionActions: SessionActions = {
     onRename: async (s, title) => {
       try { await patchSession(s.id, { title }); } catch (e) { fail(e); }
@@ -130,10 +150,22 @@ export default function App() {
       } else if (meta && e.key.toLowerCase() === "n") {
         e.preventDefault();
         setActiveId(null);
+      } else if (meta && e.key === "\\") {
+        e.preventDefault();
+        setRailCollapsed((v) => {
+          localStorage.setItem(RAIL_COLLAPSED_KEY, v ? "0" : "1");
+          return !v;
+        });
+      } else if (e.key === "?" && !meta && !isEditable(e.target)) {
+        // Bare "?" only outside a text field — otherwise it would swallow the
+        // character mid-sentence in the composer.
+        e.preventDefault();
+        setShortcutsOpen((o) => !o);
       } else if (e.key === "Escape") {
         if (isEditable(e.target)) return;
         setPaletteOpen(false);
         setDrawerOpen(false);
+        setShortcutsOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -142,12 +174,6 @@ export default function App() {
 
   return (
     <div className="flex h-full w-full bg-canvas text-gray-200">
-      {actionError && (
-        <div className="fixed left-1/2 top-4 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-red-500/40 bg-red-950/90 px-4 py-2 text-sm text-red-200 shadow-lg">
-          <span>{actionError}</span>
-          <button className="text-red-300 hover:text-red-100" onClick={() => setActionError(null)}>✕</button>
-        </div>
-      )}
       <SessionRail
         sessions={sessions}
         activeId={activeId}
@@ -157,6 +183,16 @@ export default function App() {
         status={status}
         slow={slow}
         actions={sessionActions}
+        width={railWidth}
+        collapsed={railCollapsed}
+        onToggleCollapse={() => setRailCollapsed((v) => {
+          localStorage.setItem(RAIL_COLLAPSED_KEY, v ? "0" : "1");
+          return !v;
+        })}
+        onResize={(px) => {
+          setRailWidth(px);
+          localStorage.setItem(RAIL_WIDTH_KEY, String(px));
+        }}
       />
 
       <Thread
@@ -176,6 +212,8 @@ export default function App() {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
       />
+
+      <ShortcutsSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
       <CommandPalette
         open={paletteOpen}

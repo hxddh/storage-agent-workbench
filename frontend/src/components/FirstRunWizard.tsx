@@ -17,7 +17,7 @@ export function FirstRunWizard({
 }) {
   const { t } = useI18n();
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim p-4 backdrop-blur-sm animate-fade-in">
       <div className="w-[min(540px,94vw)] overflow-hidden rounded-2xl border border-edge bg-panel shadow-pop animate-scale-in">
         <div className="border-b border-edge bg-elevated px-7 pb-5 pt-7">
           <div className="mb-3 grid h-11 w-11 place-items-center rounded-xl border border-edge-strong bg-panel text-accent">

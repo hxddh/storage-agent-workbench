@@ -26,9 +26,9 @@ export function ToolResultCard({
   return (
     <div className="mt-2 rounded-md border border-edge bg-canvas p-3 text-xs" data-testid="tool-result-card">
       <div className="mb-2 flex items-center gap-2">
-        <span className={`h-2 w-2 rounded-full ${success ? "bg-emerald-400" : "bg-red-500"}`} aria-hidden />
+        <span className={`h-2 w-2 rounded-full ${success ? "bg-success" : "bg-danger"}`} aria-hidden />
         <span className="font-medium text-gray-200">{title}</span>
-        <span className={success ? "text-emerald-400" : "text-red-400"}>
+        <span className={success ? "text-success" : "text-danger"}>
           {success ? t("tool.success") : t("tool.failed")}
         </span>
       </div>
@@ -45,7 +45,7 @@ export function ToolResultCard({
       )}
 
       {!success && (errorCode || errorMessage) && (
-        <div className="mt-2 rounded border border-red-900/60 bg-red-950/40 p-2 text-red-300">
+        <div className="mt-2 rounded border border-danger-border bg-danger-bg p-2 text-danger">
           {errorCode && <div className="font-mono">{errorCode}</div>}
           {errorMessage && <div className="mt-0.5">{errorMessage}</div>}
         </div>

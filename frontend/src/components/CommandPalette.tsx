@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionSummaryRow } from "../types";
 import { useI18n } from "../i18n";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 type Cmd = { id: string; label: string; hint?: string; icon: React.ReactNode; run: () => void };
 
@@ -30,6 +31,7 @@ export function CommandPalette({
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
 
   useEffect(() => {
     if (open) {
@@ -71,8 +73,12 @@ export function CommandPalette({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50 pt-[14vh] backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-start justify-center bg-scrim pt-[14vh] backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("palette.placeholder")}
         className="w-[min(560px,92vw)] overflow-hidden rounded-2xl border border-edge bg-panel shadow-pop animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >

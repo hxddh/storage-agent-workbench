@@ -12,10 +12,10 @@ const STATUS_KEY: Record<Status, string> = {
   error: "status.error",
 };
 const STATUS_DOT: Record<Status, string> = {
-  starting: "bg-amber-400",
-  connected: "bg-emerald-400",
-  disconnected: "bg-red-500",
-  error: "bg-red-600",
+  starting: "bg-warn",
+  connected: "bg-success",
+  disconnected: "bg-danger",
+  error: "bg-danger",
 };
 
 function relTime(iso: string, t: TFunc): string {
@@ -28,6 +28,39 @@ function relTime(iso: string, t: TFunc): string {
   if (s < 172800) return t("time.yesterday");
   if (s < 604800) return t("time.dAgo", { n: Math.floor(s / 86400) });
   return t("time.wAgo", { n: Math.floor(s / 604800) });
+}
+
+/** Rail width bounds. Below MIN the titles stop being readable and the rail
+ * stops earning its space — collapse instead; above MAX it starves the thread. */
+export const MIN_RAIL_WIDTH = 190;
+export const MAX_RAIL_WIDTH = 420;
+export const DEFAULT_RAIL_WIDTH = 244;
+
+export const clampRailWidth = (px: number) =>
+  Math.min(MAX_RAIL_WIDTH, Math.max(MIN_RAIL_WIDTH, Math.round(px)));
+
+/** Calendar buckets, not elapsed-time buckets.
+ *
+ * "23h ago" can be yesterday or today depending on when you look; people
+ * remember work by the day it happened on. So the boundaries are local
+ * midnights, and "Last 7 days" means the last seven calendar days — which is
+ * how every file browser and mail client the user already knows behaves.
+ */
+const DAY_BUCKETS = ["today", "yesterday", "week", "month", "older"] as const;
+type DayBucket = (typeof DAY_BUCKETS)[number];
+
+export function dayBucket(iso: string, now: Date = new Date()): DayBucket {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return "older";
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const days = Math.floor((midnight - new Date(ms).setHours(0, 0, 0, 0)) / 86_400_000);
+  // A clock skew / future timestamp counts as today rather than falling to
+  // "older", where it would sort below genuinely old chats.
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return "week";
+  if (days < 30) return "month";
+  return "older";
 }
 
 export type SessionActions = {
@@ -57,7 +90,17 @@ export function SessionRail({
   status,
   slow,
   actions,
+  width,
+  collapsed,
+  onToggleCollapse,
+  onResize,
 }: {
+  /** Current rail width in px (ignored while collapsed). */
+  width: number;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  /** Called with a new width while the user drags the edge. */
+  onResize: (px: number) => void;
   sessions: SessionSummaryRow[];
   activeId: string | null;
   onSelect: (id: string) => void;
@@ -184,7 +227,7 @@ export function SessionRail({
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); setConfirmId(null); actions.onDelete(s); }}
-                className="rounded-md bg-red-500/90 px-2.5 py-1 text-[12px] font-medium text-white transition-colors hover:bg-red-500"
+                className="rounded-md bg-danger px-2.5 py-1 text-[12px] font-medium text-white transition-colors hover:bg-danger"
               >
                 {t("rail.confirmDelete")}
               </button>
@@ -195,16 +238,112 @@ export function SessionRail({
     );
   };
 
+  // Pointer capture rather than window listeners: the drag keeps tracking even
+  // when the cursor outruns the handle, and releases cleanly if the pointer is
+  // cancelled (a system gesture, a lost window) instead of sticking.
+  const startResize = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const handle = e.currentTarget;
+    handle.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => onResize(clampRailWidth(ev.clientX));
+    const stop = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", stop);
+      handle.removeEventListener("pointercancel", stop);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
+  };
+
+  // Collapsed: a narrow strip with just the brand, "new chat" and settings. The
+  // rail is navigation, and navigation should be surrenderable on a small screen
+  // without losing the two things you reach for most.
+  if (collapsed) {
+    return (
+      <aside
+        data-testid="session-rail"
+        data-collapsed="true"
+        className="flex w-[52px] shrink-0 flex-col items-center gap-1 border-r border-edge bg-sidebar py-3.5"
+      >
+        <button
+          onClick={onToggleCollapse}
+          title={t("rail.expand")}
+          aria-label={t("rail.expand")}
+          aria-expanded={false}
+          data-testid="rail-toggle"
+          className="grid h-[26px] w-[26px] place-items-center rounded-md border border-edge-strong bg-elevated text-accent-soft transition-colors hover:border-accent/50"
+        >
+          <BrandMark size={15} />
+        </button>
+        <button
+          onClick={onNew}
+          title={t("rail.newChat")}
+          aria-label={t("rail.newChat")}
+          className="mt-1.5 grid h-8 w-8 place-items-center rounded-lg text-gray-400 transition-colors hover:bg-hover hover:text-gray-100"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+        <div className="mt-auto flex flex-col items-center gap-2">
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]} ${status === "starting" ? "animate-pulse" : ""}`}
+            title={status === "starting" && slow ? t("status.slowStart") : t(STATUS_KEY[status])}
+          />
+          <button
+            onClick={onOpenSettings}
+            aria-label={t("rail.settingsAria")}
+            className="grid h-7 w-7 place-items-center rounded-md text-gray-500 transition-colors hover:bg-hover hover:text-gray-200"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+        </div>
+      </aside>
+    );
+  }
+
   return (
-    <aside className="flex w-[244px] shrink-0 flex-col border-r border-edge bg-sidebar">
+    <aside
+      data-testid="session-rail"
+      data-collapsed="false"
+      style={{ width }}
+      className="relative flex shrink-0 flex-col border-r border-edge bg-sidebar"
+    >
+      {/* Drag handle. A 5px hit area straddling the border — wide enough to grab
+          without a visible gutter eating layout. */}
+      <div
+        onPointerDown={startResize}
+        onDoubleClick={() => onResize(DEFAULT_RAIL_WIDTH)}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t("rail.resize")}
+        data-testid="rail-resize"
+        className="absolute -right-[2px] top-0 z-40 h-full w-[5px] cursor-col-resize transition-colors hover:bg-accent/30"
+      />
       {/* click-away backdrop for the open item menu / delete confirm */}
       {(menuId || confirmId) && <div className="fixed inset-0 z-30" onClick={closeAll} />}
 
-      <div className="flex items-center gap-2.5 px-3.5 pb-2.5 pt-3.5">
+      <div className="group/brand flex items-center gap-2.5 px-3.5 pb-2.5 pt-3.5">
         <div className="grid h-[26px] w-[26px] place-items-center rounded-md border border-edge-strong bg-elevated text-accent-soft">
           <BrandMark size={15} />
         </div>
         <div className="text-[13px] font-medium tracking-[-0.01em] text-gray-100">{t("app.name")}</div>
+        <button
+          onClick={onToggleCollapse}
+          title={t("rail.collapse")}
+          aria-label={t("rail.collapse")}
+          aria-expanded
+          data-testid="rail-toggle"
+          className="ml-auto grid h-6 w-6 place-items-center rounded-md text-gray-600 opacity-0 transition-all hover:bg-hover hover:text-gray-200 group-hover/brand:opacity-100"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <rect x="3" y="4" width="18" height="16" rx="2" /><line x1="9" y1="4" x2="9" y2="20" />
+          </svg>
+        </button>
       </div>
 
       <div className="px-2.5 pb-1">
@@ -260,12 +399,18 @@ export function SessionRail({
           </>
         )}
 
-        {recent.length > 0 && (
-          <>
-            <div className="px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-gray-600">{t("rail.recent")}</div>
-            {recent.map(item)}
-          </>
-        )}
+        {DAY_BUCKETS.map((bucket) => {
+          const rows = recent.filter((s) => dayBucket(s.updated_at) === bucket);
+          if (rows.length === 0) return null;
+          return (
+            <div key={bucket}>
+              <div className="px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-gray-600">
+                {t(`rail.day.${bucket}`)}
+              </div>
+              {rows.map(item)}
+            </div>
+          );
+        })}
 
         {archived.length > 0 && (
           <>
@@ -335,7 +480,7 @@ function MenuItem({ children, onClick, danger }: { children: React.ReactNode; on
     <button
       onClick={onClick}
       className={`block w-full px-3 py-1.5 text-left text-[12.5px] transition-colors hover:bg-hover ${
-        danger ? "text-red-400 hover:text-red-300" : "text-gray-300 hover:text-gray-100"
+        danger ? "text-danger hover:text-danger" : "text-gray-300 hover:text-gray-100"
       }`}
     >
       {children}
