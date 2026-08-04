@@ -360,6 +360,8 @@ export interface SessionMessage {
   // reload; null/empty for user messages and pre-0.21.0 history.
   grounding?: Grounding | null;
   proposed_actions?: NextAction[];
+  /** Opaque paging cursor (v0.47.0); hand the oldest back as `before`. */
+  seq?: number | null;
   created_at: string;
 }
 
@@ -375,7 +377,10 @@ export interface SessionDetail {
   runs: SessionRunLink[];
   findings: SessionFinding[];
   summary: SessionSummaryData | null;
+  /** The TAIL of the thread (v0.47.0), not the whole history. */
   messages: SessionMessage[];
+  /** How many messages exist in total, so the client can offer "load earlier". */
+  message_total?: number;
 }
 
 // --- Error triage (Phase 18) ---

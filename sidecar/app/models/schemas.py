@@ -564,6 +564,7 @@ class SessionMessageOut(BaseModel):
     grounding: dict | None = None
     proposed_actions: list[dict] = Field(default_factory=list)
     created_at: str
+    seq: int | None = None
 
 
 class SessionSummary(BaseModel):
@@ -593,4 +594,8 @@ class SessionDetail(BaseModel):
     runs: list[SessionRunLink] = Field(default_factory=list)
     findings: list[SessionFindingOut] = Field(default_factory=list)
     summary: SessionSummaryOut | None = None
+    # The TAIL of the thread, not the whole thing (v0.47.0). `message_total` is
+    # how many exist, so the client can offer "load earlier" instead of silently
+    # showing a partial conversation as if it were complete.
     messages: list[SessionMessageOut] = Field(default_factory=list)
+    message_total: int = 0

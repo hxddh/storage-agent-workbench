@@ -1,36 +1,11 @@
 import { useEffect } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useI18n } from "../i18n";
+import { shortcutsIn, type Shortcut } from "../shortcuts";
 
-/** Cmd on Apple platforms, Ctrl everywhere else — showing ⌘ to a Windows user
- * is a shortcut they will try and fail to press. */
-const isApple = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || "");
-export const MOD = isApple ? "⌘" : "Ctrl";
-
-interface Row {
-  keys: string[];
-  labelKey: string;
-}
-
-const GROUPS: { titleKey: string; rows: Row[] }[] = [
-  {
-    titleKey: "keys.groupGlobal",
-    rows: [
-      { keys: [MOD, "K"], labelKey: "keys.palette" },
-      { keys: [MOD, "N"], labelKey: "keys.newChat" },
-      { keys: [MOD, "\\"], labelKey: "keys.toggleRail" },
-      { keys: ["?"], labelKey: "keys.thisSheet" },
-      { keys: ["Esc"], labelKey: "keys.close" },
-    ],
-  },
-  {
-    titleKey: "keys.groupChat",
-    rows: [
-      { keys: ["Enter"], labelKey: "keys.send" },
-      { keys: ["Shift", "Enter"], labelKey: "keys.newline" },
-      { keys: [MOD, "I"], labelKey: "keys.inspector" },
-    ],
-  },
+const GROUPS = [
+  { group: "global" as const, titleKey: "keys.groupGlobal" },
+  { group: "chat" as const, titleKey: "keys.groupChat" },
 ];
 
 function Key({ children }: { children: string }) {
@@ -90,13 +65,13 @@ export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () =
         </div>
         <div className="max-h-[70vh] space-y-4 overflow-auto px-5 py-4">
           {GROUPS.map((g) => (
-            <div key={g.titleKey}>
+            <div key={g.group}>
               <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-600">
                 {t(g.titleKey)}
               </div>
               <ul className="space-y-1">
-                {g.rows.map((r) => (
-                  <li key={r.labelKey} className="flex items-center gap-3 py-0.5">
+                {shortcutsIn(g.group).map((r: Shortcut) => (
+                  <li key={r.id} className="flex items-center gap-3 py-0.5">
                     <span className="min-w-0 flex-1 truncate text-[12.5px] text-gray-300">{t(r.labelKey)}</span>
                     <span className="flex shrink-0 items-center gap-1">
                       {r.keys.map((k) => <Key key={k}>{k}</Key>)}

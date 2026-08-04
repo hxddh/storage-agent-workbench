@@ -329,6 +329,9 @@ export function useTurnRunner(opts: {
             evidence_gaps: r.evidence_gaps || [],
             skills_used: r.skills_used || [],
           },
+          // Straight off the `done` event, so the cost footer appears with the
+          // answer instead of a beat later when the reload persists it.
+          lastMetrics: r.metrics ? { messageId: r.message_id ?? null, metrics: r.metrics } : null,
         });
         outcome = r.stopped ? "stopped" : "ok";
       } catch {

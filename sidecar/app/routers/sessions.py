@@ -47,6 +47,11 @@ from ..sessions import next_actions, session_report, summary_builder
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
+# Upper bound on the thread slice handed to the agent for context. The agent
+# applies its own elastic cap below this (scaled to the model window); this is
+# simply the most it could ever want, so the query never grows with the session.
+_CONTEXT_MESSAGES = session_agent._MAX_MESSAGES_CEIL
+
 
 def _safe_err(exc: object) -> str:
     """Redact secrets AND collapse absolute filesystem paths out of an error
@@ -67,14 +72,20 @@ def _detail(conn: sqlite3.Connection, session_id: str) -> SessionDetail:
             {**f, "id": f["id"]} for f in repo.list_findings(conn, session_id)
         ],
         summary=summary,
-        messages=repo.list_messages(conn, session_id),
+        # The tail, not the whole thread: a long investigation is worth keeping
+        # in one session, but re-sending its entire history on every open (and
+        # every turn) grows without bound. `message_total` lets the client offer
+        # "load earlier" rather than showing a partial thread as if complete.
+        messages=repo.list_messages(conn, session_id, limit=repo.DEFAULT_MESSAGE_PAGE),
+        message_total=repo.count_messages(conn, session_id),
     )
 
 
 @router.post("", response_model=SessionDetail, status_code=status.HTTP_201_CREATED)
 def create_session(body: SessionCreate, conn: sqlite3.Connection = Depends(get_conn)):
     session_id = repo.create(conn, body)
-    audit.record(conn, "session.create", {"session_id": session_id}, run_id=None)
+    audit.record(conn, "session.create", {"session_id": session_id}, run_id=None,
+                 session_id=session_id)
     conn.commit()
     return _detail(conn, session_id)
 
@@ -115,6 +126,10 @@ def delete_session(session_id: str, conn: sqlite3.Connection = Depends(get_conn)
     shutil.rmtree(config.data_dir() / "sessions" / session_id, ignore_errors=True)
     for rid in agent_run_ids:
         shutil.rmtree(config.run_dir(rid), ignore_errors=True)
+    # Deliberately NOT session-scoped in the column: the session is ceasing to
+    # exist, so a session-scoped row could only ever be read back through a
+    # session that is gone. The id stays in the payload, where the global audit
+    # trail can still answer "what happened to session X".
     audit.record(conn, "session.delete",
                  {"session_id": session_id, "runs_removed": len(agent_run_ids)}, run_id=None)
     conn.commit()
@@ -128,7 +143,8 @@ def fork_session(session_id: str, conn: sqlite3.Connection = Depends(get_conn)):
     new_id = repo.fork(conn, session_id)
     if new_id is None:
         raise HTTPException(status_code=404, detail="session not found")
-    audit.record(conn, "session.fork", {"session_id": session_id, "new_session_id": new_id}, run_id=None)
+    audit.record(conn, "session.fork", {"session_id": session_id, "new_session_id": new_id},
+                 run_id=None, session_id=session_id)
     conn.commit()
     return _detail(conn, new_id)
 
@@ -142,7 +158,8 @@ def attach_run(session_id: str, run_id: str, conn: sqlite3.Connection = Depends(
         raise HTTPException(status_code=404, detail="run not found")
     repo.link_run(conn, session_id, run_id, repo.RUN_ROLE.get(run["run_type"]))
     summary_builder.refresh(conn, session_id)
-    audit.record(conn, "session.attach_run", {"session_id": session_id, "run_id": run_id}, run_id=run_id)
+    audit.record(conn, "session.attach_run", {"session_id": session_id, "run_id": run_id},
+                 run_id=run_id, session_id=session_id)
     conn.commit()
     return _detail(conn, session_id)
 
@@ -234,7 +251,8 @@ def get_session_report(session_id: str, conn: sqlite3.Connection = Depends(get_c
         agent_memory=repo.list_agent_memory(conn, session_id))
     # Rule 17: report generation is an auditable event.
     audit.record(conn, "session.report",
-                 {"session_id": session_id, "bytes": len(content)}, run_id=None)
+                 {"session_id": session_id, "bytes": len(content)}, run_id=None,
+                 session_id=session_id)
     conn.commit()
     return {"session_id": session_id, "format": "markdown", "content": content}
 
@@ -255,20 +273,41 @@ def prepare_action(session_id: str, body: ActionRequest, conn: sqlite3.Connectio
     out = next_actions.prepare(conn, dict(row), proposal)
     audit.record(conn, "next_action_prepared",
                  {"session_id": session_id, "action_type": proposal["action_type"], "status": out["status"]},
-                 run_id=None)
+                 run_id=None, session_id=session_id)
     if out["status"] == "ready":
         audit.record(conn, "next_action_opened",
                      {"session_id": session_id, "action_type": proposal["action_type"], "open": out["open"]},
-                     run_id=None)
+                     run_id=None, session_id=session_id)
     conn.commit()
     return {"proposal": proposal, **out}
 
 
 @router.get("/{session_id}/messages")
-def list_session_messages(session_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+def list_session_messages(
+    session_id: str,
+    limit: int | None = None,
+    before: int | None = None,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict[str, Any]:
     if repo.get_row(conn, session_id) is None:
         raise HTTPException(status_code=404, detail="session not found")
-    return {"session_id": session_id, "messages": repo.list_messages(conn, session_id)}
+    items = repo.list_messages(conn, session_id, limit=limit or repo.DEFAULT_MESSAGE_PAGE,
+                               before_rowid=before)
+    total = repo.count_messages(conn, session_id)
+    return {
+        "session_id": session_id,
+        "messages": items,
+        "total": total,
+        # True when older messages exist above this page — never a silent cap.
+        "has_more": bool(items) and int(items[0].get("seq") or 0) > _oldest_seq(conn, session_id),
+    }
+
+
+def _oldest_seq(conn: sqlite3.Connection, session_id: str) -> int:
+    row = conn.execute(
+        "SELECT min(rowid) FROM session_messages WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    return int(row[0] or 0)
 
 
 _DATASET_TYPES = {"access_log", "inventory"}
@@ -417,7 +456,10 @@ def post_session_message(
             handle.done_event.wait(_IN_PROGRESS_WAIT_S)
         if handle.done:
             if handle.payload is not None:
-                return {"session_id": session_id, "messages": repo.list_messages(conn, session_id),
+                return {"session_id": session_id,
+                        "messages": repo.list_messages(conn, session_id,
+                                                       limit=repo.DEFAULT_MESSAGE_PAGE),
+                        "message_total": repo.count_messages(conn, session_id),
                         **_result_envelope(handle.payload)}
             if handle.failed:
                 # The streaming attempt for this turn failed server-side (nothing
@@ -443,7 +485,9 @@ def post_session_message(
         # (e.g. no model key → 422) doesn't leave a dangling user message in the
         # thread. answer() takes body.content as the question directly.
         summary = repo.get_summary(conn, session_id) or summary_builder.refresh(conn, session_id)
-        recent = repo.list_messages(conn, session_id)
+        # Only what the agent can actually replay (it caps the thread itself);
+        # fetching the full history to then slice it grew with the session.
+        recent = repo.list_messages(conn, session_id, limit=_CONTEXT_MESSAGES)
         attachments = sds_repo.list_pending_for_session(conn, session_id)
 
         blocking_t0 = time.monotonic()
@@ -504,7 +548,8 @@ def post_session_message(
         raise HTTPException(status_code=500, detail=_safe_err(exc))
     return {
         "session_id": session_id,
-        "messages": repo.list_messages(conn, session_id),
+        "messages": repo.list_messages(conn, session_id, limit=repo.DEFAULT_MESSAGE_PAGE),
+        "message_total": repo.count_messages(conn, session_id),
         "proposed_actions": proposed_actions,
         "skills_used": contract.get("skills_used", []),
         "skills_offered": contract.get("skills_offered", []),
@@ -672,7 +717,7 @@ async def post_session_message_stream(
             if prior_turn is not None:
                 prior_turn.done_event.wait(_PRIOR_TURN_WAIT_S)
             summary = repo.get_summary(wconn, session_id) or summary_builder.refresh(wconn, session_id)
-            recent = repo.list_messages(wconn, session_id)
+            recent = repo.list_messages(wconn, session_id, limit=_CONTEXT_MESSAGES)
             attachments = sds_repo.list_pending_for_session(wconn, session_id)
             # Wall-clock the turn from here: the user's wait starts when the
             # agent starts working, not when the HTTP request was parsed.

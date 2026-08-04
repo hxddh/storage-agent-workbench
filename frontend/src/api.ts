@@ -509,3 +509,19 @@ export const getSessionAudit = (id: string, limit?: number, offset?: number) =>
 
 export const getSessionOverview = (id: string) =>
   request<SessionOverview>(`/sessions/${id}/overview`);
+
+/** One page of thread messages, oldest-first, ending just before `before`.
+ * Omit `before` for the newest page. `has_more` reports whether older messages
+ * exist above the page — the thread never silently hides history. */
+export const getSessionMessages = (id: string, opts: { limit?: number; before?: number } = {}) => {
+  const q = new URLSearchParams();
+  if (opts.limit) q.set("limit", String(opts.limit));
+  if (opts.before != null) q.set("before", String(opts.before));
+  const suffix = q.toString() ? `?${q}` : "";
+  return request<{
+    session_id: string;
+    messages: SessionMessage[];
+    total: number;
+    has_more: boolean;
+  }>(`/sessions/${id}/messages${suffix}`);
+};

@@ -28,7 +28,9 @@
   --gray-300: #d1d5db;
   --gray-400: #9ca3af;
   --gray-500: #6b7280;
-  --gray-600: #4b5563;
+  /* 3.2:1 on canvas. The old #4b5563 measured 2.60:1 — below the 3.0
+   * floor — and it carries the metrics footer and every timestamp. */
+  --gray-600: #596371;
   --gray-700: #374151;
   --scrollbar-thumb: #262a33;
   --scrollbar-thumb-hover: #3a3f4b;
@@ -73,7 +75,9 @@
   --gray-300: #3f3f46;
   --gray-400: #52525b;
   --gray-500: #6b7280;
-  --gray-600: #9aa0aa;
+  /* 3.2:1 on canvas; the old #9aa0aa measured 2.63:1. Same hue, raised
+   * only in lightness so the neutral ramp keeps its ordering. */
+  --gray-600: #8a909a;
   --gray-700: #c4c7ce;
   --scrollbar-thumb: #d4d4d8;
   --scrollbar-thumb-hover: #b8b9c0;

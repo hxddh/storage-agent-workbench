@@ -89,3 +89,71 @@ describe("theme tokens", () => {
     }
   });
 });
+
+/**
+ * Contrast is measurable, so it is checked rather than eyeballed.
+ *
+ * The semantic tints were constructed, not sampled from a design, and the
+ * neutral ramp carries real information (the per-turn metrics footer, every
+ * timestamp). WCAG's 3.0:1 floor for UI text and 4.5:1 for body text is the
+ * bar; a token that quietly slips under it looks "subtle" to whoever picked it
+ * and unreadable to everyone else.
+ */
+describe("contrast", () => {
+  const css = fs.readFileSync(path.join(SRC, "index.css"), "utf8");
+
+  const block = (sel: string) => {
+    const i = css.indexOf(sel);
+    const j = css.indexOf("}", i);
+    const out: Record<string, string> = {};
+    for (const m of css.slice(i, j).matchAll(/(--[\w-]+):\s*([^;]+);/g)) out[m[1]] = m[2].trim();
+    return out;
+  };
+
+  type RGBA = [number, number, number, number];
+  const parse = (c: string): RGBA => {
+    if (c.startsWith("#")) {
+      let h = c.slice(1);
+      if (h.length === 3) h = [...h].map((x) => x + x).join("");
+      return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), 1];
+    }
+    const p = c.replace(/rgba?\(|\)/g, "").split(/[\s,]+/).filter(Boolean).map(Number);
+    return [p[0], p[1], p[2], p[3] ?? 1];
+  };
+  const over = (fg: RGBA, bg: RGBA): RGBA =>
+    [0, 1, 2].map((i) => fg[i] * fg[3] + bg[i] * (1 - fg[3])).concat(1) as RGBA;
+  const lum = (c: RGBA) => {
+    const f = (v: number) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+  };
+  const ratio = (a: RGBA, b: RGBA) => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  for (const [theme, sel] of [["dark", ':root[data-theme="dark"]'], ["light", ':root[data-theme="light"]']] as const) {
+    const v = block(sel);
+    const canvas = parse(v["--canvas"]);
+
+    it(`${theme}: status text clears AA on its own surface`, () => {
+      for (const [fg, bg] of [["--danger", "--danger-bg"], ["--warn-fg", "--warn-bg"], ["--success", "--success-bg"]]) {
+        const surface = over(parse(v[bg]), canvas);
+        expect(ratio(over(parse(v[fg]), surface), surface), `${theme} ${fg}`).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+
+    it(`${theme}: the faintest neutral still clears the 3.0 UI floor`, () => {
+      // gray-600 carries the metrics footer and timestamps — quiet, but not
+      // decorative, so it may not fall below the floor.
+      expect(ratio(parse(v["--gray-600"]), canvas), theme).toBeGreaterThanOrEqual(3.0);
+      expect(ratio(parse(v["--gray-500"]), canvas), theme).toBeGreaterThanOrEqual(3.0);
+    });
+
+    it(`${theme}: the neutral ramp keeps its ordering`, () => {
+      // 100 is strongest through 700 faintest; an out-of-order step silently
+      // inverts emphasis wherever it is used.
+      const ramp = [100, 200, 300, 400, 500, 600, 700].map((n) => ratio(parse(v[`--gray-${n}`]), canvas));
+      for (let i = 1; i < ramp.length; i++) expect(ramp[i]).toBeLessThan(ramp[i - 1]);
+    });
+  }
+});

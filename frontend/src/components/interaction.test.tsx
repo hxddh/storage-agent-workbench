@@ -14,6 +14,7 @@ import { I18nProvider } from "../i18n";
 import { MessageCard } from "./ThreadCards";
 import { dayBucket, clampRailWidth, MIN_RAIL_WIDTH, MAX_RAIL_WIDTH } from "./SessionRail";
 import { ToastProvider, useToast } from "./Toast";
+import { SHORTCUTS, MOD, matches } from "../shortcuts";
 import type { ToolActivity } from "../types";
 
 const wrap = (node: React.ReactNode) => render(createElement(I18nProvider, null, node));
@@ -144,5 +145,51 @@ describe("toasts", () => {
     mount();
     for (let i = 0; i < 9; i++) fireEvent.click(screen.getByText("err"));
     expect(screen.getAllByText("it broke").length).toBe(4);
+  });
+});
+
+/**
+ * The shortcut registry (v0.47.0).
+ *
+ * The help sheet and the key handler used to be two hand-maintained lists.
+ * Adding a shortcut to one and forgetting the other produced either an
+ * undocumented binding or a documented one that does nothing — a lie the UI
+ * tells confidently. Both now read `src/shortcuts.ts`.
+ */
+describe("shortcut registry", () => {
+  it("documents every binding the handler actually installs", () => {
+    const handled = SHORTCUTS.filter((s) => s.handled);
+    // Each handled row must carry the key the matcher compares against;
+    // without it the row renders in the sheet but can never fire.
+    for (const s of handled) expect(s.key, s.id).toBeTruthy();
+    expect(handled.length).toBeGreaterThan(4);
+  });
+
+  it("matches the chords it advertises", () => {
+    const ev = (init: Partial<KeyboardEvent>) => new KeyboardEvent("keydown", init as KeyboardEventInit);
+    expect(matches(ev({ key: "k", metaKey: true }), "palette")).toBe(true);
+    expect(matches(ev({ key: "K", ctrlKey: true }), "palette")).toBe(true);
+    // Without the modifier it is just a letter someone is typing.
+    expect(matches(ev({ key: "k" }), "palette")).toBe(false);
+  });
+
+  it("does not let a bare-key shortcut swallow a modified chord", () => {
+    const ev = (init: Partial<KeyboardEvent>) => new KeyboardEvent("keydown", init as KeyboardEventInit);
+    expect(matches(ev({ key: "?" }), "shortcuts")).toBe(true);
+    // ⌘? belongs to whatever else claims it, not to us.
+    expect(matches(ev({ key: "?", metaKey: true }), "shortcuts")).toBe(false);
+  });
+
+  it("renders a platform-correct modifier", () => {
+    // Showing ⌘ to a Windows user documents a chord they will press and watch
+    // fail; the registry resolves it once for everyone.
+    const palette = SHORTCUTS.find((s) => s.id === "palette")!;
+    expect(palette.keys[0]).toBe(MOD);
+    expect(["⌘", "Ctrl"]).toContain(MOD);
+  });
+
+  it("has no duplicate ids", () => {
+    const ids = SHORTCUTS.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
