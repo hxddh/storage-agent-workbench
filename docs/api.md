@@ -140,7 +140,18 @@ POST   /sessions/{session_id}/datasets/upload  # attach a data file to the sessi
 POST   /sessions/{session_id}/messages      # send a message (blocking agent turn / streaming fallback)
 POST   /sessions/{session_id}/messages/stream  # send a message (SSE-streamed agent turn)
 POST   /sessions/{session_id}/turns/{turn_id}/cancel  # cancel a streaming turn (Stop button)
+GET    /sessions/{session_id}/activity      # the session's tool calls (sanitized input/output + duration)
+GET    /sessions/{session_id}/audit         # the session's audit trail (rule 17)
+GET    /sessions/{session_id}/overview      # counts, token rollup, and per-turn metrics
 ```
+
+Observability (v0.45.0): `/activity` and `/audit` are bounded — `limit` is capped
+at 500 (default 200) and every response carries `total` / `offset` / `limit` /
+`truncated`, so a partial timeline is never presented as a complete one. They
+read rows that were sanitized on write; nothing is re-derived. `/overview`
+returns `usage.available` — **false** means the model endpoint never reported
+token counts, which the UI must render as "not reported", not as zero. When only
+some turns reported, `usage.partial` is true and the totals are a floor.
 
 Turn semantics: the client sends a `turn_id` with each turn. The blocking
 `POST /messages` doubles as the streaming fallback — if an identical `turn_id`

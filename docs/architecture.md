@@ -434,6 +434,40 @@ or written by any code path.
   user-facing shell/subprocess tool.
 - See `docs/packaging.md`. Rust toolchain is required for the desktop build.
 
+## Session observability
+
+Every tool call, audit event, and turn belonging to a session is retrievable
+from the session (v0.45.0). This closed a real gap rather than adding a feature:
+rule 17 requires that tool calls and approvals be recorded, and they were — but
+`tool_calls` and `audit_logs` had no `session_id`, so a conversational turn's
+rows were only reachable by `run_id`, and an agent turn has no run. The trail was
+written and immediately orphaned.
+
+- **Writes.** The session agent's tool wrapper records a `tool_calls` row per
+  call — sanitized input/output, status, measured duration — and stamps
+  `session_id` on both that row and its audit event. The recording is wrapped so
+  a bookkeeping failure can never break a turn.
+- **Reads.** `repositories/session_activity.py` is read-mostly and bounded (500
+  rows per request); every response reports its own truncation. It re-derives
+  nothing — the rows were sanitized on write, so the inspector is a reader, not
+  a second source of truth.
+- **Turn metrics.** `turn_metrics` holds one row per turn: wall-clock duration,
+  completed tool calls, model, and token counts. Token columns are **NULL** when
+  the provider did not report usage — distinct from a measured zero, because a
+  fabricated 0 would be a false claim about spend. Nothing is ever estimated.
+- **Token capture.** The Agents SDK only requests streamed usage for the official
+  OpenAI client, so `ModelSettings.include_usage` is set explicitly for custom
+  `base_url` endpoints. An endpoint that rejects the parameter is remembered per
+  `base_url|model` and never asked again; that turn recovers through the normal
+  finalize pass. Usage is summed across both model runs in a turn (tool loop +
+  finalize), because the turn paid for both.
+
+The UI renders this at three zoom levels: a per-turn footer under each answer,
+an in-place expansion showing which tools ran and how often, and the session
+inspector — one merged timeline with additive filter chips rather than tabs,
+since tool calls and audit events interleave and tabs would destroy the ordering
+that explains what led to what.
+
 ## Testing
 
 Three layers, each covering what the one below cannot:

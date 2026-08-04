@@ -19,6 +19,10 @@ import type {
   ModelProviderTestResult,
   ReportOut,
   RunDetail,
+  BoundedList,
+  SessionActivityItem,
+  SessionAuditItem,
+  SessionOverview,
 } from "./types";
 
 // Default client-side timeout for plain (non-streaming) requests. Guards against
@@ -369,6 +373,7 @@ export async function streamSessionMessage(
             skills_offered: data.skills_offered || [],
             message_id: data.message_id,
             stopped: data.stopped === true,
+            metrics: data.metrics,
           };
         } else if (type === "error") throw new Error(data.detail || "stream error");
       }
@@ -487,3 +492,20 @@ export interface VaultStatus {
 }
 
 export const getVaultStatus = () => request<VaultStatus>("/settings/secret-vault");
+
+// --- session observability (v0.45.0) ----------------------------------------
+// All three read from rows that were sanitized on write; nothing new is exposed
+// here. What is new is that a session's own trail can finally be read back.
+
+export const getSessionActivity = (id: string, limit?: number, offset?: number) =>
+  request<BoundedList<SessionActivityItem>>(
+    `/sessions/${id}/activity?limit=${limit ?? 200}&offset=${offset ?? 0}`,
+  );
+
+export const getSessionAudit = (id: string, limit?: number, offset?: number) =>
+  request<BoundedList<SessionAuditItem>>(
+    `/sessions/${id}/audit?limit=${limit ?? 200}&offset=${offset ?? 0}`,
+  );
+
+export const getSessionOverview = (id: string) =>
+  request<SessionOverview>(`/sessions/${id}/overview`);

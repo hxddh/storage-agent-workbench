@@ -409,6 +409,81 @@ def render_context_text(context: dict[str, Any]) -> str:
     return json.dumps(context, indent=2, default=str)
 
 
+# Endpoints that rejected `stream_options` (the parameter that makes streamed
+# token usage observable). Keyed by base_url+model. Provider compatibility
+# outranks a metrics field: once an endpoint refuses, this process stops asking
+# and the session honestly reports usage as unavailable rather than failing turns.
+_NO_USAGE_ENDPOINTS: set[str] = set()
+
+
+def _endpoint_key(creds: dict[str, Any]) -> str:
+    return f"{creds.get('base_url') or 'openai'}|{creds.get('model') or ''}"
+
+
+# --- token usage (measured, never estimated) ---------------------------------
+# The SDK accumulates usage on the run's context wrapper. A turn can involve TWO
+# model runs (the tool loop, plus the tool-less finalize pass), so the finalize
+# run's usage is stashed on the streaming result and summed in — a turn's cost is
+# what the turn actually spent, not just its first run.
+
+def _stash_extra_usage(result: Any, other: Any) -> None:
+    """Record a secondary run's usage against the turn's primary result."""
+    try:
+        usage = other.context_wrapper.usage
+    except Exception:  # noqa: BLE001
+        return
+    if usage is None:
+        return
+    try:
+        result._sa_extra_usage = [*getattr(result, "_sa_extra_usage", []), usage]
+    except Exception:  # noqa: BLE001 - never let bookkeeping break a turn
+        pass
+
+
+def _usage_snapshot(result: Any) -> dict[str, Any] | None:
+    """Measured token usage for the turn, or None if the provider didn't report it.
+
+    None is a first-class answer: many OpenAI-compatible endpoints simply omit
+    usage on streamed responses. The UI must then say "unavailable" — an
+    estimate, or a confident zero, would be a lie about real spend.
+    """
+    parts = []
+    try:
+        primary = result.context_wrapper.usage
+    except Exception:  # noqa: BLE001
+        primary = None
+    if primary is not None:
+        parts.append(primary)
+    parts.extend(getattr(result, "_sa_extra_usage", []) or [])
+    if not parts:
+        return None
+    out = {"requests": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    for u in parts:
+        for key in out:
+            try:
+                out[key] += int(getattr(u, key, 0) or 0)
+            except (TypeError, ValueError):
+                pass
+    # An endpoint that answered without usage yields a zeroed Usage object. That
+    # is "not reported", not "free" — report it as unavailable.
+    if out["total_tokens"] <= 0 and out["input_tokens"] <= 0 and out["output_tokens"] <= 0:
+        return None
+    return out
+
+
+def _is_stream_options_rejection(exc: BaseException) -> bool:
+    """Did the endpoint refuse the usage request specifically?
+
+    Narrow on purpose: only a parameter-shaped complaint naming stream_options /
+    include_usage disables usage. A generic 400 must NOT be silently attributed
+    to this, or a real bug becomes an invisible "usage unavailable"."""
+    text = str(exc).lower()
+    return ("stream_options" in text or "include_usage" in text) and (
+        "unsupport" in text or "unknown" in text or "invalid" in text
+        or "not allowed" in text or "unrecognized" in text or "extra" in text
+    )
+
+
 def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str,
                 client_registry: list[Any] | None = None) -> Any:
     """Build the session Agent via the shared per-run builder (no SDK globals)."""
@@ -421,7 +496,8 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str,
                            creds.get("model"), creds.get("context_window"),
                            creds.get("max_output_tokens")),
                        parallel_tool_calls=False,
-                       client_registry=client_registry)
+                       client_registry=client_registry,
+                       include_usage=_endpoint_key(creds) not in _NO_USAGE_ENDPOINTS)
 
 
 # --- graceful step-budget finalize -----------------------------------------
@@ -568,7 +644,7 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
     """The agent's full read-only toolset (no autonomy toggle — always available)."""
     if conn is None:
         return []
-    tools = session_tools.build(conn, function_tool, activity)
+    tools = session_tools.build(conn, function_tool, activity, session_id=session_id)
     tools += session_action_tools.build(conn, function_tool, activity, session_id, turn_id,
                                         cancel_event=cancel_event, model=model,
                                         explicit_window=explicit_window)
@@ -874,6 +950,13 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     # uses a per-run client so concurrent sessions don't race on SDK globals.
     agent = _make_agent(creds, tools, INSTRUCTIONS, clients)
     result = Runner.run_streamed(agent, spec["prompt"], max_turns=_MAX_TURNS)
+    # Tag the run with the endpoint it targets, so a stream_options rejection
+    # raised mid-stream can be attributed to THIS endpoint without threading
+    # creds through the (creds-free) event pump.
+    try:
+        result._sa_endpoint_key = _endpoint_key(creds)
+    except Exception:  # noqa: BLE001
+        pass
 
     async def _finalize() -> str:
         """One tool-less call to synthesize a grounded answer when the step
@@ -882,6 +965,7 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
         try:
             fa, fp = _finalize_agent_and_prompt(creds, spec["prompt"], activity, clients)
             fr = await Runner.run(fa, fp, max_turns=2)
+            _stash_extra_usage(result, fr)
             return getattr(fr, "final_output", "") or _FINALIZE_FALLBACK
         except Exception:  # noqa: BLE001
             return _FINALIZE_FALLBACK
@@ -1146,6 +1230,15 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
     emitted_tools = 0
     raw_acc = ""
     sanitizer = _StreamSanitizer()
+
+    def _stamped(contract: dict[str, Any]) -> dict[str, Any]:
+        """Attach measured token usage to a final contract, if the provider
+        reported any. Absent key == unavailable; never a fabricated zero."""
+        usage = _usage_snapshot(result)
+        if usage:
+            contract["usage"] = usage
+        return contract
+
     try:
         try:
             async for event in result.stream_events():
@@ -1165,7 +1258,7 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
                     answer_text = (partial + "\n\n" if partial else "") + _STOPPED_MARKER
                     contract = _finalize_contract(answer_text, skill_names, activity, cap=answer_cap)
                     contract["stopped"] = True
-                    yield ("final", contract)
+                    yield ("final", _stamped(contract))
                     return
                 if getattr(event, "type", "") == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
                     if event.data.delta:
@@ -1194,7 +1287,7 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
                 contract = _finalize_contract(answer_text, skill_names, activity,
                                               cap=answer_cap)
                 contract["stopped"] = True
-                yield ("final", contract)
+                yield ("final", _stamped(contract))
                 return
             cut_short = _is_context_overflow(exc) and not _is_max_turns(exc)
             # A transient provider error (429/5xx/reset) is recoverable: rather
@@ -1208,7 +1301,20 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
             # a grounded answer instead of surfacing a raw provider error. It is
             # NOT `cut_short` — no "context filled up" marker, since context is
             # not why it failed.
+            # The endpoint refused the usage request itself (`stream_options` /
+            # `include_usage`). Token metrics are strictly less important than
+            # the turn working: remember the refusal so every later agent built
+            # for this endpoint drops the parameter, and recover THIS turn via
+            # the finalize pass — which rebuilds the agent and therefore already
+            # omits it. Sessions on such an endpoint honestly show usage as
+            # unavailable instead of failing.
+            usage_rejected = _is_stream_options_rejection(exc)
+            if usage_rejected:
+                key = getattr(result, "_sa_endpoint_key", None)
+                if key:
+                    _NO_USAGE_ENDPOINTS.add(key)
             recoverable = (_is_max_turns(exc) or cut_short or transient
+                           or usage_rejected
                            or _is_tool_call_sequence_error(exc))
             if finalize is None or not recoverable:
                 raise
@@ -1228,8 +1334,8 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
                     yield ("delta", flushed)
             # Cut short by the step ceiling or the context window → offer a
             # one-click "continue investigation" next step.
-            yield ("final", _with_continue_proposal(
-                _finalize_contract(text, skill_names, activity, cap=answer_cap)))
+            yield ("final", _stamped(_with_continue_proposal(
+                _finalize_contract(text, skill_names, activity, cap=answer_cap))))
             return
         while len(activity) > emitted_tools:
             yield ("tool", activity[emitted_tools])
@@ -1247,10 +1353,10 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
         if budget and budget.get("exhausted"):
             if _BUDGET_CUT_MARKER not in final_text:
                 final_text = (final_text + "\n\n" + _BUDGET_CUT_MARKER).strip()
-            yield ("final", _with_continue_proposal(
-                _finalize_contract(final_text, skill_names, activity, cap=answer_cap)))
+            yield ("final", _stamped(_with_continue_proposal(
+                _finalize_contract(final_text, skill_names, activity, cap=answer_cap))))
         else:
-            yield ("final", _finalize_contract(final_text, skill_names, activity, cap=answer_cap))
+            yield ("final", _stamped(_finalize_contract(final_text, skill_names, activity, cap=answer_cap)))
     finally:
         await _close_clients(clients)
 

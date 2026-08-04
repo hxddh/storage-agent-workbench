@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getSession,
+  getSessionOverview,
   getSessionReport,
   getSessionTriage,
   listModelProviders,
   prepareSessionAction,
 } from "../api";
-import type { Grounding, NextAction, SessionDetail, ToolActivity, TriageCase } from "../types";
+import type {
+  Grounding,
+  NextAction,
+  SessionDetail,
+  ToolActivity,
+  TriageCase,
+  TurnMetricsRow,
+} from "../types";
 import { saveTextFile } from "../config";
 import { useSessionRun, patchSessionRun, getSessionRun } from "../sessionRuns";
 import { useTurnRunner, cleanError } from "../hooks/useTurnRunner";
@@ -15,6 +23,8 @@ import { Markdown } from "./Markdown";
 import { Composer } from "./Composer";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
 import { FindingsCard, GroundingCard, LiveProgress, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard, copyText } from "./ThreadCards";
+import { SessionInspector } from "./SessionInspector";
+import { TurnMetricsBar } from "./TurnMetrics";
 import { useI18n } from "../i18n";
 
 type Item =
@@ -87,6 +97,10 @@ export function Thread({
   const [reportCopied, setReportCopied] = useState(false);
   const [reportSavedPath, setReportSavedPath] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  // Persisted per-turn metrics, keyed by the assistant message they belong to,
+  // so the footer under an OLD answer still shows what that turn cost.
+  const [metrics, setMetrics] = useState<Record<string, TurnMetricsRow>>({});
 
   // Per-session run state lives in a store keyed by session id (see sessionRuns)
   // so an in-flight turn keeps streaming — and keeps its content — when you
@@ -188,6 +202,15 @@ export function Thread({
       loadedIdRef.current = id;
       setDetail(d);
       setLoadError(null);
+      // Best-effort: the thread must still render if the overview call fails.
+      void getSessionOverview(id)
+        .then((o) => {
+          if (id !== localId.current) return;
+          const byId: Record<string, TurnMetricsRow> = {};
+          for (const row of o.turns) if (row.message_id) byId[row.message_id] = row;
+          setMetrics(byId);
+        })
+        .catch(() => undefined);
       if (tRes.status === "fulfilled") setTriage(triageCases);
       return true;
     }
@@ -205,6 +228,20 @@ export function Thread({
     if (tRes.status === "fulfilled") setTriage(triageCases);
     return false;
   };
+
+  // ⌘I / Ctrl+I opens the inspector — the same "show me the details" reflex as a
+  // browser's dev tools. Ignored while the settings drawer owns the screen.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "i") {
+        if (settingsOpen || !localId.current) return;
+        e.preventDefault();
+        setInspectorOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [settingsOpen]);
 
   // The turn runner owns ensureSession / submit / dataset upload / stop; all
   // run state goes into the sessionRuns store keyed by the starting session id.
@@ -547,9 +584,27 @@ export function Thread({
         <>
           <header className="flex items-center gap-3 border-b border-edge px-6 py-2.5">
             <div className="truncate text-[12.5px] font-medium text-gray-200">{detail?.title || t("thread.titleNew")}</div>
-            <div className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-edge px-2 py-1 text-[11px] text-gray-500">
-              <Spark size={11} />
-              <span className="text-gray-400">{modelName ?? t("thread.noModel")}</span>
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setInspectorOpen(true)}
+                disabled={!sessionId}
+                title={t("thread.inspect")}
+                aria-label={t("thread.inspect")}
+                data-testid="open-inspector"
+                className="grid h-7 w-7 place-items-center rounded-md text-gray-500 transition-colors hover:bg-hover hover:text-gray-200 disabled:opacity-40"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+                  <line x1="4" y1="7" x2="20" y2="7" />
+                  <line x1="4" y1="12" x2="14" y2="12" />
+                  <line x1="4" y1="17" x2="17" y2="17" />
+                </svg>
+              </button>
+              <div className="flex items-center gap-1.5 rounded-md border border-edge px-2 py-1 text-[11px] text-gray-500">
+                <Spark size={11} />
+                <span className="text-gray-400">{modelName ?? t("thread.noModel")}</span>
+              </div>
             </div>
           </header>
 
@@ -559,6 +614,18 @@ export function Thread({
                 it.kind === "message" ? (
                   <div key={it.id} className="thread-item space-y-3">
                     <MessageCard role={it.role} content={it.content} toolActivity={it.toolActivity} />
+                    {/* What this turn cost (v0.45.0) — persisted, so it survives
+                        a reload. Absent for pre-0.45.0 history, which renders
+                        nothing rather than zeros. */}
+                    {it.role === "assistant" && metrics[it.id] && (
+                      <TurnMetricsBar
+                        durationMs={metrics[it.id].duration_ms}
+                        usage={metrics[it.id]}
+                        tools={it.toolActivity}
+                        model={metrics[it.id].model}
+                        onOpenInspector={() => setInspectorOpen(true)}
+                      />
+                    )}
                     {/* Persisted grounding + proposals (v0.21.0) — survive reload,
                         so a historical assistant turn still shows why it said that
                         and what it proposed next. */}
@@ -688,6 +755,12 @@ export function Thread({
           }}
         />
       )}
+
+      <SessionInspector
+        sessionId={sessionId}
+        open={inspectorOpen && !!sessionId}
+        onClose={() => setInspectorOpen(false)}
+      />
 
       {report !== null && (
         <Overlay onClose={() => setReport(null)}>

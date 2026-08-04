@@ -345,6 +345,8 @@ export interface TurnResult {
   message_id?: string;
   /** True when the turn was cancelled and a partial answer was persisted. */
   stopped?: boolean;
+  /** What the turn cost (v0.45.0). Absent on the blocking fallback path. */
+  metrics?: TurnMetrics;
 }
 
 export interface SessionMessage {
@@ -408,4 +410,86 @@ export interface TriageCase {
   limitations: string[];
   created_at: string | null;
   updated_at: string | null;
+}
+
+// --- session observability (v0.45.0) ----------------------------------------
+// What a turn cost. Token fields are OPTIONAL on purpose: many OpenAI-compatible
+// endpoints never report usage, and the UI must say so rather than show a zero.
+
+export interface TokenUsage {
+  requests?: number | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  total_tokens?: number | null;
+}
+
+/** Live per-turn metrics from the SSE `done` event. */
+export interface TurnMetrics extends TokenUsage {
+  duration_ms?: number | null;
+  tool_calls?: number | null;
+  model?: string | null;
+  usage?: TokenUsage;
+}
+
+/** A persisted per-turn metrics row, keyed to the assistant message. */
+export interface TurnMetricsRow extends TokenUsage {
+  turn_id: string | null;
+  message_id: string | null;
+  model: string | null;
+  duration_ms: number | null;
+  tool_calls: number | null;
+  created_at: string;
+}
+
+export interface SessionActivityItem {
+  id: string;
+  tool_name: string;
+  input: Record<string, unknown> | null;
+  output: Record<string, unknown> | null;
+  status: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface SessionAuditItem {
+  id: string;
+  event_type: string;
+  payload: Record<string, unknown> | null;
+  run_id: string | null;
+  created_at: string;
+}
+
+export interface BoundedList<T> {
+  session_id: string;
+  items: T[];
+  total: number;
+  offset: number;
+  limit: number;
+  /** True when more rows exist than were returned — never a silent cap. */
+  truncated: boolean;
+}
+
+export interface SessionUsageRollup {
+  /** False when NO turn reported tokens — render "unavailable", not zero. */
+  available: boolean;
+  turns: number;
+  turns_measured: number;
+  /** True when only some turns reported: the totals are a floor, not a total. */
+  partial: boolean;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  requests: number;
+  duration_ms: number;
+}
+
+export interface SessionOverview {
+  session_id: string;
+  tool_calls: number;
+  tool_errors: number;
+  tool_ms: number;
+  audit_events: number;
+  approvals: number;
+  usage: SessionUsageRollup;
+  turns: TurnMetricsRow[];
 }

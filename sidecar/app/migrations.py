@@ -557,6 +557,44 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_tool_calls_created ON tool_calls(created_at);
 """
 
+# Session-scoped observability: the agent's own tool calls and audit rows were
+# only ever linked to a RUN, and a conversational turn has no run — so a session's
+# activity was recorded (rule 17) but could not be queried back for the session it
+# belonged to. Nullable columns + indexes; existing rows keep NULL and simply
+# don't appear in per-session views.
+_M020 = """
+ALTER TABLE audit_logs ADD COLUMN session_id TEXT;
+ALTER TABLE tool_calls ADD COLUMN session_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_audit_logs_session ON audit_logs(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id, created_at);
+"""
+
+# What one conversational turn cost: wall-clock, tool calls, and — when the
+# provider reports it — tokens. Its own table rather than columns on messages
+# because token counts are frequently ABSENT (many OpenAI-compatible endpoints
+# omit usage on streamed responses); a nullable column set would make
+# "unavailable" indistinguishable from a measured zero. A missing row, or a NULL
+# token column, means not reported — never free.
+_M021 = """
+CREATE TABLE IF NOT EXISTS turn_metrics (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  turn_id TEXT,
+  message_id TEXT,
+  model TEXT,
+  requests INTEGER,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  total_tokens INTEGER,
+  duration_ms INTEGER,
+  tool_calls INTEGER,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_turn_metrics_session ON turn_metrics(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_turn_metrics_message ON turn_metrics(message_id);
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -578,6 +616,8 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (17, "model_provider_context_window", _M017),
     (18, "retention_indexes", _M018),
     (19, "model_provider_max_output", _M019),
+    (20, "session_scoped_observability", _M020),
+    (21, "turn_metrics", _M021),
 ]
 
 
