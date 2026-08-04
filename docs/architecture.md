@@ -155,7 +155,19 @@ read-only APIs:
 - The executor (`runs/account_discovery_run.py`) is deterministic only. It is
   bounded by `max_buckets` (default 100, hard cap 500) with optional
   include/exclude glob patterns; each bucket's reads are isolated so one
-  bucket's failure never fails the whole run. Results persist to four SQLite
+  bucket's failure never fails the whole run.
+- **Probing is concurrent; recording is not.** Per-bucket probing is
+  network-bound, so it runs in a small bounded pool (4 workers) where each
+  worker holds its own sqlite connection and uses it purely to read the provider
+  row and build the (globally cached, request-thread-safe) boto3 client. Every
+  database write, `tool_call`/audit row, and SSE event still happens on the run
+  thread, **sequentially, in the original bucket order** — so the per-bucket
+  transaction isolation and the recorded ordering are exactly what they were
+  when probing ran inline. A probe that fails is captured per bucket and
+  re-raised on the run thread, producing the same error row. The true elapsed
+  time is threaded into `run_tool` (`duration_ms`) so an audit row never claims
+  ~0 ms for work that took seconds. The worker count is deliberately small: a
+  wide fan-out invites provider-side `SlowDown` throttling. Results persist to four SQLite
   tables (account_snapshots, account_snapshot_buckets, bucket_config_snapshots,
   evidence_sources) via `repositories/account_discovery.py`, all JSON
   redaction-passed. `GET /runs/{id}/account-profile` returns the structured
@@ -410,10 +422,35 @@ or written by any code path.
 - The Python sidecar is bundled with PyInstaller (`sidecar/packaging/`) into a
   one-dir executable, `storage-agent-sidecar`.
 - The Tauri v2 shell launches the bundled sidecar as a child process on a free
-  localhost port, passes `STORAGE_AGENT_DATA_DIR` (the OS app-data dir), exposes
-  the URL via the `get_sidecar_url` command, and terminates it on app exit.
+  localhost port, passes `STORAGE_AGENT_DATA_DIR` (the OS app-data dir), and
+  terminates it on app exit. It does **not** expose the URL until the process on
+  that port has echoed a per-launch identity nonce on `/health` — see
+  [security.md](security.md) for why that check exists — and a second launch
+  focuses the running window instead of starting a second sidecar over the same
+  data dir.
 - Dev mode runs the sidecar separately; the frontend resolves the URL from
   `VITE_SIDECAR_URL` (dev) or the Tauri command (prod), with a localhost
   fallback. The only spawned process is the internal sidecar — there is no
   user-facing shell/subprocess tool.
 - See `docs/packaging.md`. Rust toolchain is required for the desktop build.
+
+## Testing
+
+Three layers, each covering what the one below cannot:
+
+- **Sidecar unit/integration tests** (`sidecar/tests`, pytest) — the bulk of the
+  suite: engines, repositories, tool semantics, the security floor (redaction,
+  scope, audit), and per-release regression files (`test_v0NNN_fixes.py`) that
+  pin each fix to the behaviour it corrected.
+- **Frontend unit tests** (`frontend/src/**/*.test.ts*`, Vitest + Testing Library
+  in jsdom) — the turn-runner state machine and stores, which are pure logic.
+- **E2E smoke** (`frontend/e2e`, Playwright) — the seam the other two cannot
+  reach: composer → HTTP → SQLite → SSE → rendered card, driven against a REAL
+  sidecar (started on a throwaway data dir) and the production frontend bundle.
+  Deliberately credential-free, so it exercises the offline paths a user meets on
+  a fresh install and can never go flaky on a model provider.
+
+The E2E specs sit in their own TypeScript project (`tsconfig.e2e.json`) because
+they import node builtins the app bundle never touches; `npm run typecheck` runs
+both projects, since Playwright itself compiles specs with esbuild and would
+strip type errors without reporting them.

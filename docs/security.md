@@ -48,6 +48,10 @@ Rules:
 8. A provider's `allowed_buckets` / `allowed_prefixes` scope is enforced
    server-side — in the agent session tools, the surviving `/tools` endpoints,
    and the run executors.
+9. Prefix scope matches at a **path boundary**, not as a raw string prefix:
+   `allowed_prefixes=["logs"]` admits `logs` and `logs/…` but NOT
+   `logs-private/…`, which is a different top-level path. Empty-string entries
+   are dropped so a stray `""` cannot silently unrestrict the bucket.
 
 Forbidden:
 
@@ -59,6 +63,25 @@ Forbidden:
 - Recursive delete
 - Mass object mutation
 - Bucket-wide destructive or mutating operation
+
+### Tool results are untrusted data
+
+Everything a tool returns — bucket and object names, previewed object bodies,
+config rules, log and inventory content — is third-party text that an attacker
+may control. Teaching the model to distrust it is not enough on its own, because
+an injected instruction looks exactly like runtime text in the transcript.
+
+Every data-deriving tool output is therefore wrapped in explicit markers
+(`<<external_untrusted_data>>` … `<<end_external_untrusted_data>>`) at a single
+choke point in `agent_runtime/session_agent.py`, and any literal marker inside a
+payload is defanged first so content cannot fake an early close and smuggle text
+into the trusted region. The system prompt anchors the data-never-instructions
+rule on those exact markers.
+
+Two categories stay **outside** the envelope, deliberately: `read_skill` output
+(first-party StorageOps teaching — skills ARE instructions by design) and the
+runtime status notes the budget wrapper emits (`budget_exhausted`, `cancelled`),
+which are the agent runtime speaking to the model, not data.
 
 ## Analysis safety
 
@@ -88,6 +111,42 @@ Must redact:
 - Sensitive query parameters
 - Cookies
 - Bearer tokens
+
+`security/redaction.py` is the single implementation. Beyond the AWS shapes it
+also covers the non-AWS credentials this app meets through S3-compatible
+endpoints: GCP service-account `private_key` PEM blocks **and** `private_key = …`
+assignments, Azure `AccountKey=` connection strings, Azure Blob **SAS `sig=`**
+query parameters (anchored to `?`/`&`, so the non-secret `se=`/`sp=` params
+survive), and temporary-credential **session tokens** by prefix shape
+(`FQoG`/`FwoG`/`IQoJ…`).
+
+A *bare* 40-character secret key carries no label to match on, so it is masked
+only when the text also contains an `AKIA`/`ASIA…` key-id — the pair-paste that
+is how one actually shows up. Bucket names cannot collide with that shape.
+
+### Streaming is redacted separately, and more eagerly
+
+The live answer stream cannot wait for the whole text before deciding what to
+hide, and several patterns are only recognizable near their END (a JWT needs its
+second `.` plus signature). The stream sanitizer therefore:
+
+- holds back a fixed tail **plus any still-growing run of secret-alphabet
+  characters**, so an unfinished long token is never emitted no matter how far
+  it extends; and
+- masks standalone 40-char base64-ish tokens **unconditionally in the live view
+  only**. The persisted answer re-applies the precise rules, so any
+  over-redaction is corrected when the final answer replaces the stream.
+
+Chain-of-thought is stripped **before** redacting and again after: redaction can
+consume a `</think>` tag when a credential-shaped token abuts it, and a single
+strip would then persist the whole hidden-reasoning block.
+
+### Names are content too
+
+A user-chosen filename can itself be a secret (`AKIA…-backup.csv`). Redacting
+only the display column left the raw string in the adjacent `stored_path`, so
+both upload routes replace a secret-shaped filename with a generated one before
+anything reaches disk or SQLite.
 
 ## Audit
 
@@ -359,6 +418,42 @@ against non-browser clients. A shared-secret gate closes that gap:
   depth, not the sole boundary — secrets still never transit the API in
   plaintext.
 
+### The launcher proves the sidecar's identity before handing over the token
+
+Picking a free port and spawning a child is a TOCTOU: another local process can
+take the port in between, and the webview would then send the auth token to
+whatever answered. So the shell does not publish the URL or token until the
+process on that port proves it is the child that was just started:
+
+- The shell generates a second per-launch value (a **non-secret** identity
+  nonce), passes it as `STORAGE_AGENT_LAUNCH_NONCE`, and polls `/health` until
+  the response echoes it back as `launch_nonce` — watching the child for early
+  exit at the same time, so a sidecar that died at startup reports why instead
+  of leaving a permanent "starting…" spinner. The nonce is an identity marker,
+  never a credential: it is deliberately distinct from the auth token, and
+  `/health` stays auth-exempt so the handshake can happen before a token is in
+  hand.
+- There is no fallback to the documented dev port `8765`. That is precisely
+  where a stale sidecar from an earlier crashed run listens — with a different
+  token and a different data dir — so a launcher that cannot find a port fails
+  loudly instead.
+- A **single-instance guard** means a second launch focuses the running window
+  rather than starting a second sidecar over the same SQLite database and secret
+  vault. That sharing was never benign: the vault rewrites the whole file on
+  every save, so the second instance's write could silently discard a credential
+  the first had just stored. The vault additionally re-reads the file before a
+  write when its (mtime, size) changed, so the loss cannot happen even if two
+  writers do share a data dir.
+
+### CORS is not the boundary
+
+The allowlist covers the dev origins plus the packaged webview origins Tauri v2
+actually uses — `tauri://localhost` on macOS/iOS and `http(s)://tauri.localhost`
+on Windows/Android. Every call carries `X-Sidecar-Token`, a non-simple header, so
+requests are preflighted and a missing origin breaks the packaged app entirely.
+Widening the list costs nothing security-wise: the token gate is the real
+authorization boundary, and CORS never constrained a non-browser caller.
+
 ## Packaging
 
 - The application bundle contains code and library data only. It must never
@@ -369,3 +464,13 @@ against non-browser clients. A shared-secret gate closes that gap:
   and prints a sanitized startup banner (no secrets, no full paths, no env dump).
 - Tauri spawns only the internal packaged sidecar; no user-controlled shell or
   subprocess execution is exposed.
+- The sidecar exits when its launching parent disappears, so it can never be
+  orphaned. That watchdog is **platform-specific by necessity**: on POSIX
+  `os.kill(pid, 0)` is a liveness probe, but on Windows CPython maps it to
+  `TerminateProcess` — using it there made the sidecar kill the very app it was
+  guarding. Windows waits on a `SYNCHRONIZE` process handle instead (also immune
+  to PID reuse).
+- Failing to resolve the app data dir aborts startup rather than degrading to an
+  empty value, which the sidecar would treat as unset — falling back to a path
+  *inside* the packaged bundle and writing the database and vault into the
+  signed app.

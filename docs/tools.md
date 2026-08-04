@@ -202,6 +202,12 @@ Safety:
 - Read-only GetObjectRetention + GetObjectLegalHold; single object, no body.
 - A missing lock, or a provider that doesn't implement object-lock, is reported
   as a normal `none` / `provider_unsupported` state, not a hard failure.
+- **`none` is only meaningful when `success` is true.** A hard error — a
+  mistyped key, wrong bucket, bad version id — sets `success: false` and reports
+  the statuses as `unknown`. The optimistic default used to survive that path,
+  so "object not found" read as "no retention, no legal hold", i.e. *cleanly
+  deletable*, which is the exact opposite of the truth for the question this
+  tool answers.
 
 ### get_object_acl
 
@@ -335,9 +341,12 @@ tools above (choosing provider/bucket itself), plus:
   persist sanitized, audited items that are fed back into later turns, plus
   update/resolve lifecycle tools so stale memory can be corrected or closed out.
 - **Inline read-only runs** — the agent executes the deterministic
-  `survey_account` / `review_bucket_config` engines itself (real, audited,
-  read-only, wall-clock-bounded) and `analyze_uploaded_file` for an attached
-  file; it picks up a backgrounded run later with `read_run_result`. There is no
+  `survey_account(provider_id, max_buckets?)` / `review_bucket_config` engines
+  itself (real, audited, read-only, wall-clock-bounded) and
+  `analyze_uploaded_file` for an attached
+  file; it picks up a backgrounded run with `read_run_result(run_id,
+  wait_seconds?)` — `wait_seconds` (up to 60) finishes it inside the SAME turn
+  instead of handing the user a "check back later". There is no
   autonomy toggle. Nothing data-moving or mutating is auto-run — cloud evidence
   import / large scans stay confirmation-gated proposals.
 - **compare_to_last_survey** — "what changed since last time?": a deterministic
@@ -355,7 +364,10 @@ tools above (choosing provider/bucket itself), plus:
   grants; the ACL read is skipped when ACLs are disabled) | `missing_public_access_block` | `missing_encryption` |
   `missing_lifecycle` | `missing_logging` | `no_versioning` | `access_issues`).
   Reads ALREADY-PERSISTED, sanitized snapshot flags — no new S3 call, no LLM,
-  statuses only (never object keys/bodies). Needs one completed `survey_account`
+  statuses only (never object keys/bodies). The survey caps at **100 buckets by
+  default** (hard cap 500); pass `max_buckets` for a larger account and always
+  report the result's `truncated` flag rather than answering account-wide
+  posture from a silently trimmed set. Needs one completed `survey_account`
   (pre-v0.29.0 surveys lack the public-posture flags — re-survey to fill them).
   The survey diff (`compare_to_last_survey`) also compares these flags, so a
   bucket that BECAME public since the last survey is reported as a change.

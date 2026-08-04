@@ -1,0 +1,26 @@
+{
+  // Type-checks the Playwright harness, which the app tsconfig deliberately
+  // excludes (its `include` is "src", and the e2e files import node builtins the
+  // app never touches). Playwright compiles these specs with esbuild, which
+  // STRIPS types without checking them — so without this project a type error in
+  // the harness surfaced only as a confusing runtime failure, or not at all.
+  //
+  // Separate from tsconfig.json rather than merged into it: the harness needs
+  // the node lib/types and must NOT drag them into the browser bundle's
+  // type environment.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true
+  },
+  "include": ["e2e", "playwright.config.ts"]
+}
