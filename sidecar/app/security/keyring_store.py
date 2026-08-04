@@ -39,7 +39,11 @@ never written to SQLite, logs, reports, traces, or model prompts.
 In-process cache
 ----------------
 The decrypted map is held in memory for the sidecar's lifetime and updated in
-place on every save/delete; the file is re-read at most once per launch.
+place on every save/delete. Reads are served from that cache; WRITES first check
+the vault file's (mtime, size) and re-read when it changed, because a save
+rewrites the whole file — basing that on a stale snapshot would silently discard
+whatever another process (a second app instance over the same data dir) stored
+in the meantime.
 """
 
 from __future__ import annotations
@@ -69,6 +73,13 @@ _NONCE_LEN = 12
 _blob: dict[str, str] | None = None
 _master_key: bytes | None = None
 _lock = threading.RLock()
+# (st_mtime_ns, st_size) of the vault file the cached `_blob` was decrypted
+# from — None when nothing has been loaded. Every write re-checks this and
+# re-reads if the file changed underneath us, because a save rewrites the WHOLE
+# file from the cache: a second app instance (or any second process sharing the
+# data dir) that cached the blob before we stored a key would otherwise persist
+# its stale map and silently delete our secret, with no error anywhere.
+_blob_stat: tuple[int, int] | None = None
 # Set when an existing vault file could not be decrypted (key lost / data dir
 # copied without the key). Surfaced to the UI so the user knows to recover the
 # .unreadable backup or re-enter keys, instead of silently seeing "not set".
@@ -217,14 +228,32 @@ def _load_master_key() -> bytes:
 # --- vault load / persist ---------------------------------------------------
 
 
-def _ensure_loaded() -> dict[str, str]:
-    """Decrypt the vault into memory once. Caller holds ``_lock``."""
-    global _blob
-    if _blob is not None:
+def _vault_stat() -> tuple[int, int] | None:
+    """(mtime_ns, size) of the vault file, or None if it doesn't exist."""
+    try:
+        st = _vault_path().stat()
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
+def _ensure_loaded(force: bool = False) -> dict[str, str]:
+    """Decrypt the vault into memory. Caller holds ``_lock``.
+
+    ``force`` re-reads even when a cached blob exists — used before every write
+    so a whole-file rewrite is never based on a snapshot the file has moved past.
+    """
+    global _blob, _blob_stat
+    if _blob is not None and not force:
         return _blob
     path = _vault_path()
+    # Sample the stat BEFORE reading, so a write landing between our read and
+    # our stat leaves us looking stale (re-read next time) rather than falsely
+    # current.
+    stat_before = _vault_stat()
     if not path.exists():
         _blob = {}
+        _blob_stat = None
         return _blob
     try:
         token = path.read_bytes()
@@ -232,6 +261,7 @@ def _ensure_loaded() -> dict[str, str]:
         plaintext = AESGCM(key).decrypt(token[:_NONCE_LEN], token[_NONCE_LEN:], None)
         parsed = json.loads(plaintext.decode("utf-8"))
         _blob = parsed if isinstance(parsed, dict) else {}
+        _blob_stat = stat_before
     except Exception as exc:  # noqa: BLE001
         # The vault exists but can't be decrypted/parsed (e.g. the key file was
         # lost/regenerated, or the data dir was copied without it). Don't silently
@@ -260,7 +290,23 @@ def _ensure_loaded() -> dict[str, str]:
             path, type(exc).__name__, path,
         )
         _blob = {}
+        # Leave _blob_stat as None: an undecryptable vault must be re-examined
+        # on the next write, never treated as a current snapshot to rewrite from.
+        _blob_stat = None
     return _blob
+
+
+def _load_for_write() -> dict[str, str]:
+    """The vault map to base a write on, re-read if the file changed. Holds ``_lock``.
+
+    ``save_secret``/``delete_secret`` rewrite the whole file, so basing that on a
+    cache the file has moved past silently drops whatever the other writer
+    stored. Comparing (mtime_ns, size) makes the common case free — nothing
+    changed, no decrypt — while a second instance's write forces a re-read.
+    """
+    if _blob is not None and _vault_stat() == _blob_stat:
+        return _blob
+    return _ensure_loaded(force=True)
 
 
 def _persist(blob: dict[str, str]) -> None:
@@ -320,13 +366,16 @@ def save_secret(scope: str, name: str, value: str) -> str:
     Persists to disk FIRST and only mutates the in-memory blob on success, so a
     failed write can't leave memory claiming a secret the vault never got.
     """
-    global _blob
+    global _blob, _blob_stat
     key = _blob_key(scope, name)
     with _lock:
-        updated = dict(_ensure_loaded())
+        # _load_for_write, not _ensure_loaded: this rewrites the WHOLE vault, so
+        # it must start from what is actually on disk right now.
+        updated = dict(_load_for_write())
         updated[key] = value
         _persist(updated)
         _blob = updated
+        _blob_stat = _vault_stat()
     return make_ref(scope, name)
 
 
@@ -342,15 +391,16 @@ def delete_secret(scope: str, name: str) -> None:
 
     Same persist-first ordering as :func:`save_secret`.
     """
-    global _blob
+    global _blob, _blob_stat
     key = _blob_key(scope, name)
     with _lock:
-        current = _ensure_loaded()
+        current = _load_for_write()
         if key not in current:
             return
         updated = {k: v for k, v in current.items() if k != key}
         _persist(updated)
         _blob = updated
+        _blob_stat = _vault_stat()
 
 
 def secret_exists(ref: str | None) -> bool:
@@ -387,9 +437,10 @@ def vault_status() -> dict[str, Any]:
 
 def _reset_for_tests() -> None:
     """Drop the in-process cache + master key. Used by the test harness."""
-    global _blob, _master_key, _unreadable
+    global _blob, _master_key, _unreadable, _blob_stat
     with _lock:
         _blob = None
+        _blob_stat = None
         _master_key = None
         _unreadable = False
 

@@ -22,6 +22,12 @@ serde_json = "1"
 # hand-roll the token from clock/pid/ports — those are locally observable and
 # low-entropy (see gen_token in src/lib.rs).
 getrandom = "0.2"
+# Single-instance guard. Two launches would otherwise run two sidecars over the
+# SAME app data dir: the secret vault rewrites the whole file on every save, so
+# the second instance's write silently discarded whatever the first had stored
+# (and SQLite/DuckDB contend on one app.db). The plugin hands the argv to the
+# already-running instance instead, which focuses its window.
+tauri-plugin-single-instance = "2"
 
 # NOTE: The Python FastAPI sidecar is packaged with PyInstaller as a ONE-DIR
 # bundle, shipped as a Tauri resource, and launched directly from src/lib.rs via

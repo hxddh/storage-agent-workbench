@@ -18,6 +18,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import sqlite3
+import time
 from collections import Counter
 from typing import Any
 
@@ -33,6 +34,13 @@ from .analysis_report import render_account_profile, write
 
 DEFAULT_MAX_BUCKETS = 100
 HARD_MAX_BUCKETS = 500
+# Per-bucket probing is network-bound (a dozen-ish S3 round trips per bucket) and
+# was fully serial, so a 100-bucket account paid 100 x latency end to end. Only
+# the PROBES are parallelized; every database write stays on the run thread (see
+# the loop below). Kept deliberately small: this is one user's desktop app
+# talking to one account, and a wide fan-out invites provider-side throttling
+# (SlowDown), which would make the survey slower AND noisier, not faster.
+_PROBE_WORKERS = 4
 _CONFIGURED = "available"
 _NOT_CONFIGURED = "not_configured"
 _UNSUPPORTED = "provider_unsupported"
@@ -68,6 +76,66 @@ def _filter_buckets(names: list[str], include: str | None, exclude: str | None) 
 
 def _count(buckets: list[dict[str, Any]], field: str, value: str) -> int:
     return sum(1 for b in buckets if b.get(field) == value)
+
+
+def _replay(probe: dict[str, Any], which: str) -> dict[str, Any]:
+    """Hand back a probe's finished result, or re-raise how it failed.
+
+    Re-raising matters: ``run_tool`` turns an executor exception into the
+    recorded error row, so a probe that blew up produces exactly the tool_call
+    it produced when the work ran inline."""
+    exc = probe.get(f"{which}_exc")
+    if exc is not None:
+        raise exc
+    return probe[which]
+
+
+def _probe_buckets(provider_id: str, names: list[str]) -> dict[str, dict[str, Any]]:
+    """Run every bucket's read-only probes in a bounded pool, keyed by name.
+
+    ONLY network work happens here. Each worker opens its OWN sqlite connection
+    — ``account_tools`` uses it purely to read the provider row and build the
+    (globally cached, request-thread-safe) boto3 client, never to write — so the
+    run's own connection is untouched and no database write is ever concurrent.
+    Failures are captured per bucket and re-raised on the run thread, keeping the
+    executor's per-bucket isolation exactly as it was.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    from ..db import connect
+
+    def _one(name: str) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        wconn = connect()
+        try:
+            started = time.monotonic()
+            try:
+                snap = account_tools.get_bucket_config_snapshot(wconn, provider_id, name)
+                # Strip the raw reads HERE so the recorded snapshot never carries
+                # them (rule: raw logging/inventory reads are reused, never
+                # persisted); keep them in-memory to feed evidence discovery.
+                raw_reads = snap.pop("_raw_reads", None)
+                out["snapshot"] = snap
+            except Exception as exc:  # noqa: BLE001 - re-raised on the run thread
+                out["snapshot_exc"] = exc
+                raw_reads = None
+            out["snapshot_ms"] = int((time.monotonic() - started) * 1000)
+
+            started = time.monotonic()
+            try:
+                out["evidence"] = account_tools.discover_evidence_sources(
+                    wconn, provider_id, name, pre_reads=raw_reads)
+            except Exception as exc:  # noqa: BLE001 - re-raised on the run thread
+                out["evidence_exc"] = exc
+            out["evidence_ms"] = int((time.monotonic() - started) * 1000)
+        finally:
+            wconn.close()
+        return out
+
+    if len(names) <= 1:
+        return {n: _one(n) for n in names}
+    with ThreadPoolExecutor(max_workers=min(_PROBE_WORKERS, len(names))) as pool:
+        return dict(zip(names, pool.map(_one, names)))
 
 
 def _build_summary(buckets: list[dict[str, Any]], visible: int, processed: int, truncated: bool) -> dict[str, Any]:
@@ -194,31 +262,34 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
         truncated=truncated, list_status=list_status, summary={},
     )
 
+    probes = _probe_buckets(provider_id, selected)
+
     per_bucket: list[dict[str, Any]] = []
     for name in selected:
         access_status = _CONFIGURED
+        probe = probes[name]
         try:
-            # Strip `_raw_reads` INSIDE the recorded callable so run_tool_with_events
-            # persists the cleaned snapshot — popping it after the call (as before)
-            # left the raw logging/inventory reads in the committed tool_call row,
-            # contradicting the "never persist" contract and ~doubling the row.
-            _rr: dict[str, Any] = {}
-
-            def _snapshot(n=name, holder=_rr):
-                s = account_tools.get_bucket_config_snapshot(conn, provider_id, n)
-                holder["raw"] = s.pop("_raw_reads", None)
-                return s
-
+            # The network work already happened in the bounded pool above; these
+            # callables just hand back its result (or re-raise its failure, so
+            # run_tool records the same error row it always did). Recording stays
+            # SEQUENTIAL and in `selected` order, so tool_call/audit rows, SSE
+            # event order, and the per-bucket transaction isolation below are all
+            # byte-for-byte what they were when the probes ran inline. The real
+            # elapsed time is passed through so the audit row isn't a ~0 ms lie.
+            #
+            # `_raw_reads` was already stripped inside the probe, so the recorded
+            # snapshot never carries the raw logging/inventory reads.
             snap = run_tool_with_events(
                 conn, run_id, "get_bucket_config_snapshot",
-                {"provider_id": provider_id, "bucket": name}, _snapshot,
+                {"provider_id": provider_id, "bucket": name},
+                lambda p=probe: _replay(p, "snapshot"),
+                duration_ms=probe.get("snapshot_ms"),
             )
-            raw_reads = _rr.get("raw")  # reuse, never persisted
             ev = run_tool_with_events(
                 conn, run_id, "discover_evidence_sources",
                 {"provider_id": provider_id, "bucket": name},
-                lambda n=name, rr=raw_reads: account_tools.discover_evidence_sources(
-                    conn, provider_id, n, pre_reads=rr),
+                lambda p=probe: _replay(p, "evidence"),
+                duration_ms=probe.get("evidence_ms"),
             )
             head = snap.get("head_bucket_status")
             # A denied/errored HeadBucket means the bucket itself is

@@ -28,8 +28,17 @@ def run_tool(
     raw_input: dict[str, Any],
     executor: Callable[[], dict[str, Any]],
     run_id: str | None = None,
+    duration_ms: int | None = None,
 ) -> dict[str, Any]:
-    """Run ``executor``, record a sanitized tool_call + audit entry, return output."""
+    """Run ``executor``, record a sanitized tool_call + audit entry, return output.
+
+    ``duration_ms`` overrides the locally measured time. It exists for work that
+    was ALREADY performed elsewhere — e.g. the account survey probes its buckets
+    in a bounded thread pool and then records the calls sequentially, so the
+    executor here just hands back a finished result. Without the real elapsed
+    time the audit row would claim ~0 ms, which is a lie about a call that took
+    seconds. Callers that actually do the work here leave it None.
+    """
     started = time.monotonic()
     try:
         output = executor()
@@ -42,7 +51,8 @@ def run_tool(
         }
         status = "error"
 
-    duration_ms = int((time.monotonic() - started) * 1000)
+    if duration_ms is None:
+        duration_ms = int((time.monotonic() - started) * 1000)
     sanitized_input = redact(raw_input)
     sanitized_output = redact(output)
 
