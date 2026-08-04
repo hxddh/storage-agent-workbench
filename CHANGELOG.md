@@ -6,6 +6,62 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-08-04
+
+_Interface and interaction. The design system was sound; what let it down was a
+light theme half the components opted out of, a tool trace that buried the
+answer, and a shell you could not adjust. Frontend only — no API, schema or
+agent behaviour changed._
+
+### Fixed — the light theme was a half-finished feature
+
+Surfaces went through CSS variables and inverted correctly, but **14 components
+bypassed them** with hardcoded dark-theme values: every error and warning banner
+(`bg-red-950` + `text-red-300`), the code block (`bg-[#0a0a0c]`), status pills,
+and every overlay scrim. In light mode those rendered dark slabs with pale text
+on a white page — not a matter of taste, simply unreadable. Status colour had
+never entered the token system at all.
+
+- `danger` / `warn` / `success` / `code` / `scrim` are now **semantic tokens**,
+  defined separately for each theme (light gets tinted surfaces with dark
+  foregrounds — not the dark values inverted, which is a different problem).
+- **121 hardcoded colour usages replaced** across 19 files; zero remain.
+- A unit test fails the build on any new raw palette step of a status hue, any
+  literal hex, or a semantic token defined in only one theme.
+
+### Added — the thread reads like Codex now
+
+- **The tool trace collapses.** A deep investigation ran twenty rows pinned above
+  the answer, pushing the answer itself off screen. It now collapses to
+  `Ran 12 checks · 5 tools`, with failures still counted in the collapsed
+  summary — and stays open while streaming, where the rows *are* the progress.
+- **Jump to latest.** Scrolling up during a turn silently detached auto-scroll
+  with no indication and no way back. A pill now appears when you leave the
+  bottom, and says whether the agent is still writing.
+- **Message actions** on hover: copy, edit-and-send-again, ask-again. Both
+  re-ask actions seed the composer and open a **new turn** — they never rewrite a
+  persisted message, because the thread is the audit record that the session
+  inspector and turn metrics describe.
+- **Long pastes clamp.** The most common user message here is a full S3 error
+  body; one used to fill the viewport. Now clamped visually with "show more" —
+  nothing is truncated.
+
+### Added — a shell you can adjust
+
+- **Collapsible sidebar** (`⌘\` / the header button) and **drag-to-resize**,
+  both persisted. Collapsed keeps new-chat, status and settings.
+- **Sessions group by calendar day** — Today / Yesterday / Last 7 days / Last 30
+  days / Older — rather than one flat list of relative timestamps. Boundaries are
+  local midnights, so "23h ago at 9am" correctly reads as *yesterday*.
+- **One toast surface** replaces the bespoke fixed error bar and its inline twin.
+  Errors persist until dismissed (a failure you blinked past is one you will hit
+  again); successes auto-dismiss; the stack is capped at four.
+- **`?` opens a keyboard-shortcut sheet.** Every shortcut already existed and
+  none were written down anywhere in the product.
+- **Focus traps** on the palette, settings drawer, inspector and shortcut sheet,
+  with focus restored on close, plus `aria-modal`. Tab used to walk straight out
+  of a modal into the composer hidden behind the scrim.
+
 ## [0.45.0] - 2026-08-04
 
 _Session observability. The product recorded a rule-17 audit trail it could never

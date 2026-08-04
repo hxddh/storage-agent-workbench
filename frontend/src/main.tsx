@@ -4,6 +4,7 @@ import App from "./App";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { I18nProvider } from "./i18n";
 import { ThemeProvider, applyTheme, initialTheme } from "./theme";
+import { ToastProvider } from "./components/Toast";
 import "./index.css";
 
 // Apply the saved theme before first paint to avoid a flash.
@@ -14,7 +15,9 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <ErrorBoundary>
       <ThemeProvider>
         <I18nProvider>
-          <App />
+          <ToastProvider>
+            <App />
+          </ToastProvider>
         </I18nProvider>
       </ThemeProvider>
     </ErrorBoundary>

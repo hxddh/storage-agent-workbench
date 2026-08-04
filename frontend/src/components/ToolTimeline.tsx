@@ -34,12 +34,12 @@ function TimelineRow({ item }: { item: TimelineItem }) {
       <div className="flex items-center gap-2">
         <span
           className={`h-2 w-2 rounded-full ${
-            !finished ? "bg-amber-400 animate-pulse" : ok ? "bg-emerald-400" : "bg-red-500"
+            !finished ? "bg-warn animate-pulse" : ok ? "bg-success" : "bg-danger"
           }`}
           aria-hidden
         />
         <span className="font-mono text-gray-200">{item.tool_name}</span>
-        <span className={!finished ? "text-amber-400" : ok ? "text-emerald-400" : "text-red-400"}>
+        <span className={!finished ? "text-warn" : ok ? "text-success" : "text-danger"}>
           {!finished ? t("tool.running") : ok ? t("tool.success") : t("tool.failed")}
         </span>
         {item.duration_ms != null && <span className="text-gray-600">{item.duration_ms} ms</span>}

@@ -3,6 +3,7 @@ import { ProvidersView } from "../views/ProvidersView";
 import { useI18n, LANGS, type Lang } from "../i18n";
 import { useTheme, type Theme } from "../theme";
 import { getVaultStatus } from "../api";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 /**
  * Right slide-over for setup. Embeds the existing model + cloud provider CRUD
@@ -18,7 +19,7 @@ function VaultWarning() {
   }, []);
   if (!unreadable) return null;
   return (
-    <div className="border-b border-red-500/30 bg-red-950/40 px-8 py-3 text-xs leading-relaxed text-red-300">
+    <div className="border-b border-danger-border bg-danger-bg px-8 py-3 text-xs leading-relaxed text-danger">
       {t("settings.vaultUnreadable")}
     </div>
   );
@@ -30,6 +31,7 @@ export function SettingsDrawer(
 ) {
   const { t, lang, setLang } = useI18n();
   const { theme, setTheme } = useTheme();
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   if (!open) return null;
 
   const themes: { value: Theme; label: string }[] = [
@@ -39,10 +41,15 @@ export function SettingsDrawer(
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex justify-end bg-scrim backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
       <div
+        ref={trapRef}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        aria-label={t("settings.title")}
         className="flex h-full w-[min(860px,96vw)] flex-col border-l border-edge bg-canvas shadow-pop animate-slide-in-right"
         onClick={(e) => e.stopPropagation()}
       >

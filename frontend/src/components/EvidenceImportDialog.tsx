@@ -129,7 +129,7 @@ export function EvidenceImportDialog({
     // While an import is in flight, a stray backdrop click must NOT dismiss the
     // dialog — the import continues server-side and the user loses all
     // progress/error feedback. Close is still available via ✕ / Escape when idle.
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
          onClick={busy ? undefined : onClose}>
       <div
         className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-lg border border-edge bg-panel p-5"
@@ -147,7 +147,7 @@ export function EvidenceImportDialog({
           >✕</button>
         </div>
 
-        {error && <p className="mb-3 text-xs text-red-400">{error}</p>}
+        {error && <p className="mb-3 text-xs text-danger">{error}</p>}
 
         <p className="mb-3 text-xs text-gray-500">{t("imp.intro", { target })}</p>
 
@@ -194,7 +194,7 @@ export function EvidenceImportDialog({
             </dl>
 
             {plan.warnings.length > 0 && (
-              <ul className="mt-2 list-inside list-disc text-amber-400">
+              <ul className="mt-2 list-inside list-disc text-warn">
                 {plan.warnings.map((w, i) => (
                   <li key={i}>{w}</li>
                 ))}
@@ -210,7 +210,7 @@ export function EvidenceImportDialog({
                 {busy ? t("imp.importing") : t("imp.confirmImport")}
               </Button>
               {plan.selected_file_count === 0 && (
-                <span className="self-center text-amber-400">{t("imp.nothingToImport")}</span>
+                <span className="self-center text-warn">{t("imp.nothingToImport")}</span>
               )}
             </div>
           </div>

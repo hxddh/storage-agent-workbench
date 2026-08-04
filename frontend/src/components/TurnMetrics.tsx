@@ -148,7 +148,7 @@ export function TurnMetricsBar({
               </span>
               <span className="h-[3px] flex-1 overflow-hidden rounded-full bg-edge">
                 <span
-                  className={`block h-full rounded-full ${r.errs ? "bg-red-500/60" : "bg-accent/45"}`}
+                  className={`block h-full rounded-full ${r.errs ? "bg-danger/60" : "bg-accent/45"}`}
                   style={{ width: `${Math.max(6, (r.n / max) * 100)}%` }}
                 />
               </span>

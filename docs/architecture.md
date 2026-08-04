@@ -468,6 +468,29 @@ inspector — one merged timeline with additive filter chips rather than tabs,
 since tool calls and audit events interleave and tabs would destroy the ordering
 that explains what led to what.
 
+## Frontend design system
+
+All surface, neutral and status colour goes through CSS custom properties
+(`frontend/src/index.css`), remapped into Tailwind so `text-gray-300`,
+`bg-panel`, `bg-danger-bg` and friends invert per theme without a component
+knowing which theme is active. Components must never use a raw palette step of a
+status hue (`bg-red-950`), a literal hex, or `bg-black/60`: those bake in one
+theme's ground, which is exactly how the light theme rotted before v0.46.0 — 14
+components looked correct in dark and rendered dark slabs with pale text on
+white. `frontend/src/theme.tokens.test.ts` fails the build on a new escape and
+on any semantic token defined in only one theme.
+
+Layers, deepest to most elevated: `canvas` → `sidebar` → `panel` → `elevated` →
+`hover`, with `edge` / `edge-strong` borders and a single restrained indigo
+accent. Semantic status is a separate axis (`danger` / `warn` / `success`), each
+with its own surface, border and foreground so the two themes can be tuned
+independently rather than inverted.
+
+Overlays (command palette, settings drawer, session inspector, shortcut sheet)
+share `useFocusTrap`: focus moves in, Tab wraps at both ends, and focus is
+restored to the opener on close — unless the user has already clicked elsewhere,
+where yanking it back would be the ruder option.
+
 ## Testing
 
 Three layers, each covering what the one below cannot:

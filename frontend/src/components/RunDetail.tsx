@@ -8,9 +8,9 @@ import { useI18n } from "../i18n";
 
 const STATUS_COLOR: Record<string, string> = {
   pending: "text-gray-400",
-  running: "text-amber-400",
-  completed: "text-emerald-400",
-  failed: "text-red-400",
+  running: "text-warn",
+  completed: "text-success",
+  failed: "text-danger",
   not_implemented: "text-gray-500",
 };
 
@@ -307,7 +307,7 @@ export function RunDetail({
           ← {t("run.back")}
         </button>
         {loadError && (
-          <p className="mb-2 rounded border border-red-500/40 bg-red-950/60 px-3 py-1.5 text-xs text-red-300">
+          <p className="mb-2 rounded border border-danger-border bg-danger-bg px-3 py-1.5 text-xs text-danger">
             {t("run.loadFailed")} {loadError}
           </p>
         )}
@@ -325,7 +325,7 @@ export function RunDetail({
       </header>
 
       {errorMessage && (
-        <div className="mx-8 mt-4 rounded-md border border-red-900/60 bg-red-950/40 p-3 text-xs text-red-300" data-testid="run-error">
+        <div className="mx-8 mt-4 rounded-md border border-danger-border bg-danger-bg p-3 text-xs text-danger" data-testid="run-error">
           <span className="font-medium">{t("run.errorLabel")}</span> {errorMessage}
         </div>
       )}
@@ -364,10 +364,10 @@ export function RunDetail({
                 <span
                   className={
                     f.severity === "error"
-                      ? "text-red-400"
+                      ? "text-danger"
                       : f.severity === "warning"
-                        ? "text-amber-400"
-                        : "text-emerald-400"
+                        ? "text-warn"
+                        : "text-success"
                   }
                 >
                   [{severityLabel(f.severity)}]

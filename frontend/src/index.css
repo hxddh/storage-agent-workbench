@@ -34,6 +34,25 @@
   --scrollbar-thumb-hover: #3a3f4b;
   --selection: rgba(109, 139, 255, 0.3);
   --focus-ring: rgba(109, 139, 255, 0.55);
+  /* Semantic status colors. These are TOKENS, not raw palette steps, because a
+   * hardcoded `bg-red-950` is a dark-theme assumption: on a light ground it
+   * renders a near-black slab with pale text on it. Each status owns a surface,
+   * a border and a foreground so both themes can be tuned independently. */
+  --danger: #f87171;
+  --danger-bg: rgba(127, 29, 29, 0.22);
+  --danger-bg-strong: rgba(69, 10, 10, 0.92);
+  --danger-border: rgba(153, 27, 27, 0.55);
+  --warn: #fcd34d;
+  --warn-fg: #fde68a;
+  --warn-bg: rgba(120, 53, 15, 0.2);
+  --warn-border: rgba(146, 64, 14, 0.5);
+  --success: #34d399;
+  --success-bg: rgba(6, 78, 59, 0.45);
+  --success-border: rgba(6, 95, 70, 0.55);
+  /* Code blocks sit a step BELOW the canvas in dark and above it in light —
+   * a fixed near-black would invert the depth cue on a white page. */
+  --code-bg: #0a0a0c;
+  --scrim: rgba(0, 0, 0, 0.6);
 }
 
 :root[data-theme="light"] {
@@ -60,6 +79,22 @@
   --scrollbar-thumb-hover: #b8b9c0;
   --selection: rgba(79, 99, 224, 0.22);
   --focus-ring: rgba(79, 99, 224, 0.55);
+  /* Light-theme status colors: tinted surfaces with DARK foregrounds. Not the
+   * dark values inverted — a wash that reads as "attention" on white needs far
+   * less saturation than one that reads on near-black. */
+  --danger: #b91c1c;
+  --danger-bg: rgba(254, 226, 226, 0.85);
+  --danger-bg-strong: #fee2e2;
+  --danger-border: rgba(248, 113, 113, 0.55);
+  --warn: #b45309;
+  --warn-fg: #92400e;
+  --warn-bg: rgba(254, 243, 199, 0.9);
+  --warn-border: rgba(252, 211, 77, 0.7);
+  --success: #047857;
+  --success-bg: rgba(209, 250, 229, 0.9);
+  --success-border: rgba(52, 211, 153, 0.6);
+  --code-bg: #f6f7f9;
+  --scrim: rgba(24, 24, 27, 0.42);
 }
 
 html,

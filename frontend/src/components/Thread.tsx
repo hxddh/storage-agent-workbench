@@ -229,6 +229,29 @@ export function Thread({
     return false;
   };
 
+  // Message actions. Both are deliberately ADDITIVE: they seed the composer and
+  // start a NEW turn rather than rewriting or deleting a persisted message. The
+  // thread is an audit record of what was actually asked and answered — an
+  // "edit" that silently rewrote history would make the session inspector and
+  // the turn metrics describe a conversation that never happened.
+  const seedComposer = (text: string) => {
+    setText(text);
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    });
+  };
+  /** The user question that produced the assistant message at `idx`. */
+  const questionBefore = (idx: number): string | null => {
+    for (let i = idx - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it.kind === "message" && it.role === "user") return it.content ?? null;
+    }
+    return null;
+  };
+
   // ⌘I / Ctrl+I opens the inspector — the same "show me the details" reflex as a
   // browser's dev tools. Ignored while the settings drawer owns the screen.
   useEffect(() => {
@@ -329,10 +352,21 @@ export function Thread({
   // unpins; scrolling back to the bottom re-pins.
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pinnedRef = useRef(true);
+  // Mirrored into state so the "jump to latest" affordance can render. Unpinning
+  // used to be invisible: you scrolled up to re-read a tool result, the answer
+  // kept growing below, and nothing told you so or offered a way back.
+  const [pinned, setPinned] = useState(true);
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    pinnedRef.current = atBottom;
+    setPinned((was) => (was === atBottom ? was : atBottom));
+  };
+  const jumpToLatest = () => {
+    pinnedRef.current = true;
+    setPinned(true);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   };
   useEffect(() => {
     if (pinnedRef.current) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -515,7 +549,7 @@ export function Thread({
   const banners = (
     <>
       {needKey && (
-        <div className="animate-fade-in-up rounded-xl border border-amber-800/50 bg-amber-950/20 p-3.5 text-[13px] text-amber-200">
+        <div className="animate-fade-in-up rounded-xl border border-warn-border bg-warn-bg p-3.5 text-[13px] text-warn-fg">
           {t("thread.needKey")}
           <div className="mt-2.5">
             <Button variant="primary" size="sm" onClick={onOpenSettings}>{t("thread.needKeyBtn")}</Button>
@@ -523,7 +557,7 @@ export function Thread({
         </div>
       )}
       {error && (
-        <div className="animate-fade-in-up rounded-xl border border-red-900/50 bg-red-950/20 p-3.5 text-[13px] text-red-300">
+        <div className="animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-3.5 text-[13px] text-danger">
           {error}
           <div className="mt-2.5 flex flex-wrap gap-2">
             {/* Retry re-sends the message (the failed turn restored it into the
@@ -545,9 +579,9 @@ export function Thread({
         /* Loading an existing session failed — show an explicit error + retry
            instead of silently presenting the empty new-chat surface (M6). */
         <div className="flex flex-1 items-center justify-center px-6 py-10">
-          <div className="w-full max-w-md animate-fade-in-up rounded-xl border border-red-900/50 bg-red-950/20 p-5 text-center">
-            <div className="text-[14px] font-medium text-red-200">{t("thread.loadFailed")}</div>
-            <div className="mt-1.5 text-[12.5px] text-red-300/80">{loadError}</div>
+          <div className="w-full max-w-md animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-5 text-center">
+            <div className="text-[14px] font-medium text-danger">{t("thread.loadFailed")}</div>
+            <div className="mt-1.5 text-[12.5px] text-danger/80">{loadError}</div>
             <div className="mt-3.5 flex justify-center">
               <Button variant="primary" size="sm" onClick={() => reload(localId.current)}>
                 {t("thread.retry")}
@@ -610,10 +644,20 @@ export function Thread({
 
           <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-auto px-6 py-7">
             <div className="mx-auto max-w-3xl space-y-6">
-              {items.map((it) =>
+              {items.map((it, idx) =>
                 it.kind === "message" ? (
                   <div key={it.id} className="thread-item space-y-3">
-                    <MessageCard role={it.role} content={it.content} toolActivity={it.toolActivity} />
+                    <MessageCard
+                      role={it.role}
+                      content={it.content}
+                      toolActivity={it.toolActivity}
+                      onEdit={it.role === "user" && !busy ? seedComposer : undefined}
+                      onRegenerate={
+                        it.role === "assistant" && !busy && questionBefore(idx)
+                          ? () => seedComposer(questionBefore(idx) as string)
+                          : undefined
+                      }
+                    />
                     {/* What this turn cost (v0.45.0) — persisted, so it survives
                         a reload. Absent for pre-0.45.0 history, which renders
                         nothing rather than zeros. */}
@@ -734,7 +778,27 @@ export function Thread({
             </div>
           </div>
 
-          <div className="px-6 pb-5 pt-1">
+          <div className="relative px-6 pb-5 pt-1">
+            {/* Jump to latest. Sits just above the composer, appears only when
+                you have scrolled away, and says whether the agent is still
+                writing — so leaving the bottom is a choice, not a trap. */}
+            {!pinned && (
+              <div className="pointer-events-none absolute -top-11 left-0 right-0 flex justify-center">
+                <button
+                  type="button"
+                  onClick={jumpToLatest}
+                  data-testid="jump-to-latest"
+                  className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-edge bg-elevated/95 px-3 py-1.5 text-[11.5px] text-gray-300 shadow-elev backdrop-blur transition-all hover:border-edge-strong hover:text-gray-100 animate-fade-in-up"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <polyline points="19 12 12 19 5 12" />
+                  </svg>
+                  {busy ? t("thread.jumpWriting") : t("thread.jumpLatest")}
+                </button>
+              </div>
+            )}
             <div className="mx-auto max-w-3xl">{composer}</div>
           </div>
         </>
@@ -824,7 +888,7 @@ function Overlay({ children, onClose }: { children: React.ReactNode; onClose: ()
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-40 flex bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-40 flex bg-scrim backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div
         className="m-auto h-[88vh] w-[min(900px,92vw)] overflow-hidden rounded-2xl border border-edge bg-canvas shadow-pop animate-scale-in"
         onClick={(e) => e.stopPropagation()}

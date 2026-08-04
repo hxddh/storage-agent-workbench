@@ -59,7 +59,7 @@ export function Button({
   const variants: Record<string, string> = {
     default: "border border-edge bg-elevated text-gray-200 hover:bg-hover hover:border-edge-strong",
     primary: "bg-accent text-white hover:bg-accent-soft",
-    danger: "border border-red-900/70 text-red-300 hover:bg-red-950/40",
+    danger: "border border-danger-border text-danger hover:bg-danger-bg",
     ghost: "text-gray-400 hover:text-gray-100 hover:bg-hover",
   };
   const sizes: Record<string, string> = {

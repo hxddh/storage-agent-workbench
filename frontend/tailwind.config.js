@@ -13,6 +13,28 @@ export default {
         hover: "var(--hover)",
         edge: "var(--edge)",
         "edge-strong": "var(--edge-strong)",
+        // Semantic status colors. Components must use THESE, never a raw
+        // `red-950`/`amber-200` step: a palette step bakes in one theme's
+        // ground and breaks on the other. Guarded by a unit test.
+        danger: {
+          DEFAULT: "var(--danger)",
+          bg: "var(--danger-bg)",
+          strong: "var(--danger-bg-strong)",
+          border: "var(--danger-border)",
+        },
+        warn: {
+          DEFAULT: "var(--warn)",
+          fg: "var(--warn-fg)",
+          bg: "var(--warn-bg)",
+          border: "var(--warn-border)",
+        },
+        success: {
+          DEFAULT: "var(--success)",
+          bg: "var(--success-bg)",
+          border: "var(--success-border)",
+        },
+        code: "var(--code-bg)",
+        scrim: "var(--scrim)",
         // Single restrained accent (Cursor/Codex-style indigo-blue).
         accent: {
           DEFAULT: "var(--accent)",

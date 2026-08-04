@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSessionActivity, getSessionAudit, getSessionOverview } from "../api";
 import { saveTextFile } from "../config";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useI18n } from "../i18n";
 import { Button } from "./ui";
 import { fmtDuration, fmtTokens } from "./TurnMetrics";
@@ -77,7 +78,7 @@ function ToolRow({ item }: { item: SessionActivityItem }) {
   const failed = item.status === "error";
   const dur = fmtDuration(item.duration_ms);
   return (
-    <li className="border-l-2 pl-3" style={{ borderColor: failed ? "rgb(239 68 68 / 0.55)" : "transparent" }}>
+    <li className={`border-l-2 pl-3 ${failed ? "border-danger-border" : "border-transparent"}`}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -85,7 +86,7 @@ function ToolRow({ item }: { item: SessionActivityItem }) {
       >
         <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-gray-700">{clock(item.created_at)}</span>
         <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${failed ? "bg-red-500" : "bg-emerald-400/80"}`}
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${failed ? "bg-danger" : "bg-success/80"}`}
           aria-hidden
         />
         <span className="min-w-0 truncate font-mono text-[12px] text-gray-300">{item.tool_name}</span>
@@ -166,6 +167,7 @@ export function SessionInspector({
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [copied, setCopied] = useState(false);
   const [savedPath, setSavedPath] = useState<string | null>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
 
   useEffect(() => {
     if (!open || !sessionId) return;
@@ -249,11 +251,14 @@ export function SessionInspector({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex justify-end bg-scrim backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
       <div
+        ref={trapRef}
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         aria-label={t("inspector.title")}
         data-testid="session-inspector"
         className="flex h-full w-[min(680px,96vw)] flex-col border-l border-edge bg-canvas shadow-pop animate-slide-in-right"
@@ -316,7 +321,7 @@ export function SessionInspector({
 
         <div className="flex-1 overflow-auto px-5 py-4">
           {error && (
-            <div className="mb-4 rounded-lg border border-red-500/30 bg-red-950/30 px-3 py-2 text-[12px] text-red-300">
+            <div className="mb-4 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-[12px] text-danger">
               {error}
             </div>
           )}
@@ -326,7 +331,7 @@ export function SessionInspector({
               label={t("inspector.statCalls")}
               value={String(overview?.tool_calls ?? 0)}
               sub={overview?.tool_errors ? t("inspector.statFailed", { n: overview.tool_errors }) : undefined}
-              tone={overview?.tool_errors ? "text-red-300" : undefined}
+              tone={overview?.tool_errors ? "text-danger" : undefined}
             />
             <Stat label={t("inspector.statToolTime")} value={fmtDuration(overview?.tool_ms) ?? "—"} />
             <Stat
@@ -362,7 +367,7 @@ export function SessionInspector({
           </div>
 
           {truncated && (
-            <p className="mt-3 text-[11px] text-amber-300/80">{t("inspector.truncated")}</p>
+            <p className="mt-3 text-[11px] text-warn-fg">{t("inspector.truncated")}</p>
           )}
 
           <ul className="mt-3 space-y-0.5">
