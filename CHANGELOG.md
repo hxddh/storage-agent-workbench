@@ -6,6 +6,56 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-08-04
+
+_No product-code changes. Four releases of security work had landed without the
+documentation that describes the security posture ever being updated, so this
+release makes the docs true again and closes the last remaining Known gap._
+
+### Fixed — documentation had gone stale in a way that mattered
+
+`docs/security.md` was last touched before v0.39. Measured against it, the
+following had **zero** mentions despite all shipping in v0.40–v0.43: the
+untrusted-data envelope, the launcher identity nonce, the single-instance guard,
+the vault write guard, the Windows watchdog, the `tauri.localhost` CORS origins,
+Azure SAS / session-token / `private_key` redaction, and path-boundary prefix
+scoping. That document is what a reader trusts to learn *what this app actually
+protects against*, so it was not merely incomplete — it was wrong.
+
+- **`docs/security.md`** now covers: path-boundary prefix scope; the
+  untrusted-data envelope (including which two categories stay outside it and
+  why); the concrete non-AWS redaction shapes and the bare-secret pair rule; why
+  streaming is redacted separately and more eagerly; the strip→redact→strip
+  chain-of-thought ordering; secret-shaped filenames; the launcher's
+  readiness + identity handshake and why there is no `8765` fallback; the
+  single-instance guard and the vault's write-time re-read; the packaged webview
+  CORS origins (and why widening them costs nothing); the platform-split parent
+  watchdog; and the data-dir hard-fail.
+- **`docs/architecture.md`** now documents the survey's concurrent probing —
+  specifically that probing is concurrent while recording is **not**, which is
+  the whole design — and gains a Testing section describing the three layers and
+  why the E2E specs live in their own TypeScript project.
+- **`docs/tools.md`**: `read_run_result`'s `wait_seconds`, `survey_account`'s
+  `max_buckets` and 100-bucket default cap, and `get_object_lock_status`'s
+  `unknown` states (`none` is only meaningful when `success` is true).
+- **`docs/roadmap.md`**: current state, the test layers, and honest gaps —
+  notarization and auto-update are blocked on signing credentials, i.e. a
+  decision before an implementation.
+
+Every factual claim added was cross-checked against the code it describes (20
+assertions covering marker strings, env var names, worker counts, cap values,
+and function signatures).
+
+### Added — the E2E harness is type-checked
+
+The Playwright specs sat outside `tsc --noEmit` (its `include` is `"src"`), and
+Playwright compiles them with esbuild, which strips types **without** checking
+them — verified by planting a deliberate `const x: number = "string"` and
+watching the gate pass. They now have their own project (`tsconfig.e2e.json`,
+with `@types/node` for the builtins the app bundle never imports), and
+`npm run typecheck` runs both. This closes the last item on the Known-gaps list.
+
+
 ## [0.43.0] - 2026-08-04
 
 _Finishes what v0.42 started: the one audit finding it left unfixed (a silent
