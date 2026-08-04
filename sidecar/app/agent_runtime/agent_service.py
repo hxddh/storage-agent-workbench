@@ -35,6 +35,7 @@ def build_agent(
     max_tokens: int | None = _DEFAULT_MAX_TOKENS,
     parallel_tool_calls: bool = False,
     client_registry: list[Any] | None = None,
+    include_usage: bool = True,
 ) -> Any:
     """Build an Agents-SDK Agent with a PER-RUN model client.
 
@@ -70,7 +71,18 @@ def build_agent(
         client_registry.append(client)
     model = OpenAIChatCompletionsModel(model=creds.get("model") or "gpt-4o-mini",
                                        openai_client=client)
+    # Ask for streamed token usage explicitly. The SDK only defaults this on for
+    # the OFFICIAL OpenAI client (is_official_openai_client); against any custom
+    # base_url — which is this app's main case — it omits stream_options entirely
+    # and the stream reports no usage at all. Setting it here is what makes usage
+    # observable for third-party OpenAI-compatible endpoints.
+    #
+    # It is a best-effort ask, not a requirement: a strict endpoint that rejects
+    # the unknown parameter is retried without it (see session_agent's usage
+    # fallback), because provider compatibility outranks a metrics field.
     settings_kwargs: dict[str, Any] = {"parallel_tool_calls": parallel_tool_calls}
+    if include_usage:
+        settings_kwargs["include_usage"] = True
     if max_tokens:
         settings_kwargs["max_tokens"] = max_tokens
     return Agent(name=name, instructions=instructions, tools=tools or [], model=model,

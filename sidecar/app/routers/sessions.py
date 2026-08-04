@@ -17,6 +17,7 @@ import os
 import shutil
 import sqlite3
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,7 @@ from ..models.schemas import (
     SessionUpdate,
 )
 from ..repositories import runs as runs_repo
+from ..repositories import session_activity
 from ..repositories import session_datasets as sds_repo
 from ..repositories import sessions as repo
 from ..security.redaction import redact_text
@@ -150,6 +152,54 @@ def list_session_runs(session_id: str, conn: sqlite3.Connection = Depends(get_co
     if repo.get_row(conn, session_id) is None:
         raise HTTPException(status_code=404, detail="session not found")
     return {"session_id": session_id, "runs": repo.list_runs(conn, session_id)}
+
+
+@router.get("/{session_id}/activity")
+def get_session_activity(
+    session_id: str,
+    limit: int | None = None,
+    offset: int = 0,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict[str, Any]:
+    """The session's tool calls with sanitized input/output and real durations.
+
+    This is the inspector's timeline source. Rows were sanitized on write, so
+    nothing new is exposed here — what changes is that a conversational turn's
+    work can finally be retrieved for the session it belongs to. Bounded, and
+    the response says so when more exists.
+    """
+    if repo.get_row(conn, session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"session_id": session_id,
+            **session_activity.list_activity(conn, session_id, limit, offset)}
+
+
+@router.get("/{session_id}/audit")
+def get_session_audit(
+    session_id: str,
+    limit: int | None = None,
+    offset: int = 0,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict[str, Any]:
+    """The session's audit trail (rule 17), readable at last."""
+    if repo.get_row(conn, session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"session_id": session_id,
+            **session_activity.list_audit(conn, session_id, limit, offset)}
+
+
+@router.get("/{session_id}/overview")
+def get_session_overview(
+    session_id: str, conn: sqlite3.Connection = Depends(get_conn)
+) -> dict[str, Any]:
+    """Counts for the inspector's header band, plus per-turn usage rows.
+
+    ``usage.available`` is false when the model endpoint never reported usage —
+    the UI must render that as "unavailable", not as zero.
+    """
+    if repo.get_row(conn, session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"session_id": session_id, **session_activity.overview(conn, session_id)}
 
 
 @router.get("/{session_id}/summary")
@@ -396,6 +446,7 @@ def post_session_message(
         recent = repo.list_messages(conn, session_id)
         attachments = sds_repo.list_pending_for_session(conn, session_id)
 
+        blocking_t0 = time.monotonic()
         try:
             creds = get_model_credentials(conn)  # raises AgentUnavailable if missing
             contract = session_agent.answer(dict(row), summary, recent, body.content, creds, conn,
@@ -428,10 +479,17 @@ def post_session_message(
             "skills_used": contract.get("skills_used", []),
         }
         repo.add_message(conn, session_id, "user", body.content)
-        repo.add_message(conn, session_id, "assistant", contract["answer"],
-                         tool_activity=contract.get("tool_activity"),
-                         grounding=grounding, proposed_actions=proposed_actions)
-        audit.record(conn, "session.message", {"session_id": session_id}, run_id=None)
+        mid = repo.add_message(conn, session_id, "assistant", contract["answer"],
+                               tool_activity=contract.get("tool_activity"),
+                               grounding=grounding, proposed_actions=proposed_actions)
+        audit.record(conn, "session.message", {"session_id": session_id}, run_id=None,
+                     session_id=session_id)
+        session_activity.record_turn(
+            conn, session_id, turn_id=body.turn_id, message_id=mid,
+            model=(creds or {}).get("model"),
+            duration_ms=int((time.monotonic() - blocking_t0) * 1000),
+            tool_calls=len(contract.get("tool_activity") or []),
+            usage=contract.get("usage"))
         conn.commit()
         turn_guard.set_result(body.turn_id, {
             "proposed_actions": proposed_actions,
@@ -616,7 +674,11 @@ async def post_session_message_stream(
             summary = repo.get_summary(wconn, session_id) or summary_builder.refresh(wconn, session_id)
             recent = repo.list_messages(wconn, session_id)
             attachments = sds_repo.list_pending_for_session(wconn, session_id)
+            # Wall-clock the turn from here: the user's wait starts when the
+            # agent starts working, not when the HTTP request was parsed.
+            t0 = time.monotonic()
             wloop.run_until_complete(drive())
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
             data = final.get("data")
             if data is not None:
                 stopped = bool(data.get("stopped"))
@@ -631,7 +693,16 @@ async def post_session_message_stream(
                                            },
                                            proposed_actions=data["next_action_proposals"])
                     audit.record(wconn, "session.message",
-                                 {"session_id": session_id, "stopped": stopped}, run_id=None)
+                                 {"session_id": session_id, "stopped": stopped},
+                                 run_id=None, session_id=session_id)
+                    # What this turn cost. ``usage`` is absent when the provider
+                    # never reported it — recorded as NULL so the UI can say
+                    # "unavailable" instead of implying the turn was free.
+                    session_activity.record_turn(
+                        wconn, session_id, turn_id=body.turn_id, message_id=mid,
+                        model=(creds or {}).get("model"), duration_ms=elapsed_ms,
+                        tool_calls=len(data.get("tool_activity") or []),
+                        usage=data.get("usage"))
                     wconn.commit()
                 finally:
                     pass
@@ -649,7 +720,14 @@ async def post_session_message_stream(
                                "evidence_used": data.get("evidence_used", []),
                                "evidence_gaps": data.get("evidence_gaps", []),
                                "skills_used": data.get("skills_used", []),
-                               "stopped": stopped}))
+                               "stopped": stopped,
+                               # Per-turn metrics for the answer footer. `usage`
+                               # is omitted (not zeroed) when the provider never
+                               # reported tokens.
+                               "metrics": {"duration_ms": elapsed_ms,
+                                           "tool_calls": len(data.get("tool_activity") or []),
+                                           "model": (creds or {}).get("model"),
+                                           **({"usage": data["usage"]} if data.get("usage") else {})}}))
         except Exception as exc:  # noqa: BLE001
             # Mark FAILED (not just discard) so a blocking fallback parked on this
             # turn's done_event wakes immediately with the error instead of

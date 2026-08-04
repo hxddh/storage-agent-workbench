@@ -20,14 +20,17 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
+import uuid
 from typing import Any, Callable
 
 from .. import audit
 from ..repositories import cloud_providers as cloud_repo
+from ..repositories import utcnow
 from ..s3 import config_tools as ct
 from ..s3 import tools as s3
 from ..s3.scope import check_scope
-from ..security.redaction import redact_text
+from ..security.redaction import redact, redact_text
 from . import guardrails
 
 # Max object keys echoed to the model per list_objects call — equal to the S3
@@ -62,11 +65,18 @@ def _summarize(result: Any) -> str:
     return "done"
 
 
-def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict[str, Any]] | None = None) -> list[Any]:
+def build(conn: sqlite3.Connection, function_tool: Callable,
+          activity: list[dict[str, Any]] | None = None,
+          session_id: str | None = None) -> list[Any]:
     """Build the read-only investigator tool set bound to this DB connection.
 
     If ``activity`` is given, each tool call appends a sanitized record
     {tool, target, result} for the UI to show ("ran list_buckets → 96 buckets").
+
+    ``session_id`` makes the turn's work retrievable afterwards: the rec/note
+    pair below writes a real ``tool_calls`` row (sanitized input + output +
+    measured duration) and stamps the audit row, so a session's activity can be
+    inspected later instead of surviving only as the one-line thread trace.
     """
     def provider(provider_id: str):
         return cloud_repo.get(conn, provider_id)
@@ -123,16 +133,45 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
     _MAX_RANGE_GETS = 12
 
     def note(tool: str, target: str, result: Any) -> None:
+        summary = result if isinstance(result, str) else _summarize(result)
         if activity is not None:
-            summary = result if isinstance(result, str) else _summarize(result)
             activity.append({"tool": tool, "target": target[:80], "result": summary,
                              "status": "completed"})
+        if session_id is None:
+            return
+        # Persist the call itself, not just the thread trace: sanitized input +
+        # output + the REAL elapsed time (nothing measured this before, so
+        # "which step was slow" was unanswerable). Best-effort — a bookkeeping
+        # failure must never break the tool the user actually asked for.
+        matched = _open.get("tool") == tool
+        started = _open.get("t0") if matched else None
+        call_input = _open.get("input") if matched else {}
+        duration_ms = int((time.monotonic() - started) * 1000) if started else None
+        _open.clear()
+        ok = not (isinstance(result, dict) and result.get("success") is False)
+        try:
+            conn.execute(
+                "INSERT INTO tool_calls (id, run_id, session_id, tool_name, "
+                " input_json_sanitized, output_json_sanitized, status, duration_ms, created_at) "
+                "VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+                (uuid.uuid4().hex, session_id, tool,
+                 json.dumps(redact({"target": target[:200], **(call_input or {})})),
+                 json.dumps(redact({"summary": summary})),
+                 "success" if ok else "error", duration_ms, utcnow()),
+            )
+            conn.commit()
+        except Exception:  # noqa: BLE001 - observability must never break a turn
+            pass
 
     def _target_of(kw: dict[str, Any]) -> str:
         bucket, key = kw.get("bucket"), kw.get("key")
         if bucket and key:
             return f"{bucket}/{key}"
         return str(bucket or kw.get("name") or kw.get("provider_id") or kw.get("endpoint") or "")
+
+    # Open call being timed by rec(); closed by the matching note(). Only ever
+    # one in flight — the agent runs tools sequentially within a turn.
+    _open: dict[str, Any] = {}
 
     def rec(tool: str, **kw: Any) -> None:
         # Commit the audit row immediately. audit.record() deliberately doesn't
@@ -142,8 +181,12 @@ def build(conn: sqlite3.Connection, function_tool: Callable, activity: list[dict
         # slow S3 tool call, which can starve a concurrently-running inline run's
         # writes for >busy_timeout → "database is locked". Keep the write txn tiny.
         audit.record(conn, "session_tool",
-                     {"tool": tool, **{k: str(v)[:200] for k, v in kw.items()}}, run_id=None)
+                     {"tool": tool, **{k: str(v)[:200] for k, v in kw.items()}},
+                     run_id=None, session_id=session_id)
         conn.commit()
+        _open.clear()
+        _open.update({"tool": tool, "input": {k: str(v)[:200] for k, v in kw.items()},
+                      "t0": time.monotonic()})
         # Emit a START record so the live stream can show "running <tool>…"
         # while the (possibly slow) call executes. Only "completed" records are
         # persisted on the message; the UI ignores fields it doesn't know.

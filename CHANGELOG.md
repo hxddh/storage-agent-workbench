@@ -6,6 +6,55 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.45.0] - 2026-08-04
+
+_Session observability. The product recorded a rule-17 audit trail it could never
+read back, and never recorded what a turn cost at all. This release makes an
+investigation legible: what ran, in what order, how long it took, and — when the
+provider actually reports it — how many tokens it burned._
+
+### Added — you can now see what a session did
+
+- **Per-turn metrics footer.** Under each answer: wall-clock duration, the number
+  of completed tool calls, and token usage. Expanding the tool count shows
+  *which* tools ran and how often, with a proportional bar per tool — the
+  difference between "7 calls" and understanding the shape of the investigation.
+- **Session inspector** (`⌘I` / `Ctrl+I`, or the header button). A right
+  slide-over with an overview band (tool calls, time in tools, tokens, audit
+  events) over **one** merged timeline of tool calls and audit events. The
+  filters are additive chips, deliberately **not** tabs: the two streams
+  interleave, and tabs would destroy the ordering that explains what led to what.
+  Each tool row expands in place to its sanitized input/output.
+- **Investigation record export** — copy or download the inspector's contents as
+  Markdown.
+- **Three read-only endpoints**: `GET /sessions/{id}/activity`, `/audit`, and
+  `/overview`. Bounded (500 rows/request) and each response reports its own
+  truncation, so a partial timeline can never look complete.
+
+### Fixed — the audit trail was write-only in practice
+
+`tool_calls` and `audit_logs` carried no `session_id`. Rule 17 says every tool
+call and approval is recorded, and they were — but a conversational turn's rows
+were orphaned the moment they were written, retrievable only by run, and an
+agent turn has no run. Migration 20 adds the column (plus indexes) and the
+session agent's own tool wrapper now writes a `tool_calls` row per call with its
+measured duration, which it previously did not do at all.
+
+### Added — token usage, measured or absent
+
+- `ModelSettings.include_usage` is now set, because the Agents SDK only requests
+  streamed usage for the *official* OpenAI client — any custom `base_url` (this
+  app's normal case) silently got no usage at all.
+- An endpoint that **rejects** the parameter is remembered per `base_url|model`
+  and never asked again; that turn recovers through the existing finalize pass
+  rather than failing. Provider compatibility outranks a metrics field.
+- Usage is summed across **both** model runs in a turn (the tool loop and the
+  finalize pass), because the turn paid for both.
+- Migration 21 adds `turn_metrics`. Token columns are **NULL** when the provider
+  said nothing — never 0. The UI renders that as an explicit "not reported by the
+  provider", and a session where only some turns reported is labelled *partial*
+  so a floor is never presented as a total. **Nothing is ever estimated.**
+
 ## [0.44.0] - 2026-08-04
 
 _No product-code changes. Four releases of security work had landed without the

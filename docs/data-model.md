@@ -33,6 +33,7 @@ Tables:
 - `session_summaries`
 - `session_agent_memory`
 - `session_datasets`
+- `turn_metrics`
 - `error_triage_cases`
 - `error_triage_findings`
 - `app_settings`
@@ -163,6 +164,19 @@ Fields: id, run_id, report_path, format (defaults `'markdown'`), created_at.
   warnings_json, created_at, confirmed_at.
 - `evidence_import_files` — id, import_id, object_key, size_bytes, kind,
   selected, status (defaults `'planned'`), created_at.
+
+## Session observability (migrations 020/021)
+
+- `tool_calls` and `audit_logs` gained `session_id` (migration 020, indexed with
+  `created_at`). Rule 17's trail was always written; before this it could only be
+  read back by `run_id`, and a conversational turn has no run — so a turn's tool
+  calls and audit events were orphaned on write.
+- `turn_metrics` (migration 021) — id, session_id, turn_id, message_id, model,
+  requests, input_tokens, output_tokens, total_tokens, duration_ms, tool_calls,
+  created_at. One row per turn; cascades with the session. Token columns are
+  **NULL** when the provider did not report usage, which is deliberately distinct
+  from a measured `0` — the UI renders the former as "not reported". Nothing is
+  estimated. `duration_ms` and `tool_calls` are always measurable and always set.
 
 ## Sessions (migration 008, extended by 010/011/013/014/016)
 

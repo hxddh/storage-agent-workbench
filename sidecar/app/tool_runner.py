@@ -29,6 +29,7 @@ def run_tool(
     executor: Callable[[], dict[str, Any]],
     run_id: str | None = None,
     duration_ms: int | None = None,
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     """Run ``executor``, record a sanitized tool_call + audit entry, return output.
 
@@ -58,16 +59,17 @@ def run_tool(
 
     conn.execute(
         "INSERT INTO tool_calls "
-        "(id, run_id, tool_name, input_json_sanitized, output_json_sanitized, "
-        " status, duration_ms, created_at) "
+        "(id, run_id, session_id, tool_name, input_json_sanitized, "
+        " output_json_sanitized, status, duration_ms, created_at) "
         # ISO-8601 UTC "Z" via utcnow() — the same format the repositories use —
         # so created_at string-sorts coherently across tables (SQLite's
         # datetime('now') emits "YYYY-MM-DD HH:MM:SS", which sorts before any
         # same-second "...T...Z" value).
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             uuid.uuid4().hex,
             run_id,
+            session_id,
             tool_name,
             json.dumps(sanitized_input),
             json.dumps(sanitized_output),
@@ -81,6 +83,7 @@ def run_tool(
         f"tool.{tool_name}",
         {"input": sanitized_input, "status": status},
         run_id=run_id,
+        session_id=session_id,
     )
     conn.commit()
     return output
