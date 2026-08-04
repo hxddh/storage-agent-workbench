@@ -524,15 +524,61 @@ def list_agent_memory(
     return [dict(r) for r in reversed(rows)]
 
 
-def list_messages(conn: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        "SELECT * FROM session_messages WHERE session_id = ? ORDER BY rowid", (session_id,)
-    ).fetchall()
+# How many messages a thread returns by default. A long investigation is worth
+# keeping in one session, but the whole history is not worth re-sending on every
+# open AND every turn: at 300 turns the full thread is ~1 MiB of JSON, and it
+# grows without bound. The client asks for older pages when the user scrolls up.
+DEFAULT_MESSAGE_PAGE = 60
+MAX_MESSAGE_PAGE = 500
+
+
+def count_messages(conn: sqlite3.Connection, session_id: str) -> int:
+    return int(conn.execute(
+        "SELECT count(*) FROM session_messages WHERE session_id = ?", (session_id,)
+    ).fetchone()[0])
+
+
+def list_messages(conn: sqlite3.Connection, session_id: str,
+                  limit: int | None = None, before_rowid: int | None = None
+                  ) -> list[dict[str, Any]]:
+    """Thread messages in chronological order.
+
+    ``limit`` returns the LAST ``limit`` messages (the tail is what a thread
+    opens to); ``before_rowid`` pages backwards from there. ``limit=None`` keeps
+    the historical unbounded behaviour for callers that genuinely need it — the
+    report builder, which summarises the whole investigation.
+    """
+    # `rowid` must be selected EXPLICITLY: `SELECT *` omits it, so both the
+    # paging cursor and the outer re-sort would silently have nothing to work
+    # with (a page that looks correct but never advances).
+    if limit is None:
+        rows = conn.execute(
+            "SELECT rowid AS seq, * FROM session_messages WHERE session_id = ? ORDER BY seq",
+            (session_id,),
+        ).fetchall()
+    else:
+        lim = max(1, min(int(limit), MAX_MESSAGE_PAGE))
+        if before_rowid is not None:
+            rows = conn.execute(
+                "SELECT * FROM (SELECT rowid AS seq, * FROM session_messages "
+                "               WHERE session_id = ? AND rowid < ? "
+                "               ORDER BY seq DESC LIMIT ?) ORDER BY seq",
+                (session_id, int(before_rowid), lim),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM (SELECT rowid AS seq, * FROM session_messages "
+                "               WHERE session_id = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq",
+                (session_id, lim),
+            ).fetchall()
     out: list[dict[str, Any]] = []
     for r in rows:
         keys = r.keys()
         out.append({
             "id": r["id"], "role": r["role"], "content": r["content"],
+            # Opaque paging cursor: the client hands the oldest one back as
+            # `before` to fetch the page above it.
+            "seq": r["seq"] if "seq" in keys else None,
             "referenced_run_ids": json.loads(r["referenced_run_ids"] or "[]"),
             "referenced_evidence_ids": json.loads(r["referenced_evidence_ids"] or "[]"),
             "tool_activity": json.loads((r["tool_activity"] if "tool_activity" in keys else None) or "[]"),

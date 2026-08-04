@@ -13,7 +13,7 @@
  * sessions.
  */
 import { useCallback, useSyncExternalStore } from "react";
-import type { Grounding, NextAction, ToolActivity } from "./types";
+import type { Grounding, NextAction, ToolActivity, TurnMetrics } from "./types";
 
 export type SessionRun = {
   busy: boolean;
@@ -23,6 +23,10 @@ export type SessionRun = {
   streamTools: ToolActivity[];
   proposals: NextAction[] | null; // agent's proposed next steps (null = not answered yet)
   grounding: Grounding | null; // what the last answer was grounded in / couldn't verify
+  // What the just-finished turn cost, straight off the SSE `done` event, keyed
+  // by the message it belongs to. Lets the footer appear the moment the answer
+  // lands instead of waiting for the post-turn reload to persist it.
+  lastMetrics: { messageId: string | null; metrics: TurnMetrics } | null;
   needKey: boolean;
   error: string | null;
   stopped: boolean; // the user cancelled the turn; keep the partial text visible
@@ -41,6 +45,7 @@ const EMPTY: SessionRun = {
   streamTools: [],
   proposals: null,
   grounding: null,
+  lastMetrics: null,
   needKey: false,
   error: null,
   stopped: false,

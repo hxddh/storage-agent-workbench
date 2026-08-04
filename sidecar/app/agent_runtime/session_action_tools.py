@@ -278,7 +278,7 @@ def build(
             result = _run_result(conn, run_id, summary_cap)
         audit.record(conn, "session.read_run_result",
                      {"session_id": session_id, "run_id": run_id, "status": result["status"]},
-                     run_id=run_id)
+                     run_id=run_id, session_id=session_id)
         conn.commit()
         note("read_run_result", run_id[:8], result["status"])
         return json.dumps(result)
@@ -308,7 +308,7 @@ def build(
             return _err(f"compare_to_last_survey failed: {exc}")
         audit.record(conn, "session.compare_to_last_survey",
                      {"provider_id": provider_id, "change_count": diff.get("change_count")},
-                     run_id=None)
+                     run_id=None, session_id=session_id)
         conn.commit()
         note("compare_to_last_survey", provider_name(provider_id), f"{diff['change_count']} change(s)")
         return json.dumps({
@@ -389,7 +389,7 @@ def build(
                 for b in buckets if matches(b)]
         audit.record(conn, "session.query_account_profile",
                      {"session_id": session_id, "provider_id": provider_id,
-                      "filter": filter, "matched": len(rows)}, run_id=None)
+                      "filter": filter, "matched": len(rows)}, run_id=None, session_id=session_id)
         conn.commit()
         note("query_account_profile", provider_name(provider_id),
              f"{len(rows)}/{len(buckets)} match '{filter}'")

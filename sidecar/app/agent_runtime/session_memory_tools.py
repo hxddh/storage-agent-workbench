@@ -55,7 +55,7 @@ def build(
         """Record a grounded fact you established during this investigation so it persists for later turns (it is shown back to you next time as agent_memory). Use for durable, tool-verified facts (e.g. 'bucket acme-logs is path-style only'). Args: text; confidence (low|medium|high)."""
         mem_id = sessions_repo.add_agent_memory(
             conn, session_id, "fact", text, confidence=_norm(confidence, _CONFIDENCES))
-        audit.record(conn, "session_memory", {"kind": "fact", "text": redact_text(text)[:200]}, run_id=None)
+        audit.record(conn, "session_memory", {"kind": "fact", "text": redact_text(text)[:200]}, run_id=None, session_id=session_id)
         # add_agent_memory already committed; commit again so the audit INSERT
         # doesn't leave a write transaction open on this shared per-turn
         # connection across model latency (the "database is locked" hazard
@@ -69,7 +69,7 @@ def build(
         """Record a notable finding/issue so it persists across turns and shows up in this session's memory. Use for problems or noteworthy observations (e.g. 'bucket is world-readable'). Args: title; severity (info|low|medium|high|critical)."""
         mem_id = sessions_repo.add_agent_memory(
             conn, session_id, "finding", title, severity=_norm(severity, _SEVERITIES) or "info")
-        audit.record(conn, "session_memory", {"kind": "finding", "text": redact_text(title)[:200]}, run_id=None)
+        audit.record(conn, "session_memory", {"kind": "finding", "text": redact_text(title)[:200]}, run_id=None, session_id=session_id)
         conn.commit()
         note("record_finding", title)
         return json.dumps({"ok": True, "id": mem_id, "kind": "finding"})
@@ -78,7 +78,7 @@ def build(
     def note_open_question(text: str) -> str:
         """Record an unresolved question to revisit later in this session. Use when something needs more evidence or a user decision. Args: text."""
         mem_id = sessions_repo.add_agent_memory(conn, session_id, "open_question", text)
-        audit.record(conn, "session_memory", {"kind": "open_question", "text": redact_text(text)[:200]}, run_id=None)
+        audit.record(conn, "session_memory", {"kind": "open_question", "text": redact_text(text)[:200]}, run_id=None, session_id=session_id)
         conn.commit()
         note("note_open_question", text)
         return json.dumps({"ok": True, "id": mem_id, "kind": "open_question"})
@@ -90,7 +90,7 @@ def build(
         if not ok:
             return json.dumps({"error": "Unknown or already-resolved memory item id for this session."})
         audit.record(conn, "session_memory_update",
-                     {"id": id, "text": redact_text(new_content)[:200]}, run_id=None)
+                     {"id": id, "text": redact_text(new_content)[:200]}, run_id=None, session_id=session_id)
         conn.commit()
         note("update_memory_item", id)
         return json.dumps({"ok": True, "id": id, "action": "updated"})
@@ -102,7 +102,7 @@ def build(
         if not ok:
             return json.dumps({"error": "Unknown or already-resolved memory item id for this session."})
         audit.record(conn, "session_memory_resolve",
-                     {"id": id, "reason": redact_text(reason)[:200]}, run_id=None)
+                     {"id": id, "reason": redact_text(reason)[:200]}, run_id=None, session_id=session_id)
         conn.commit()
         note("resolve_memory_item", id)
         return json.dumps({"ok": True, "id": id, "action": "resolved"})

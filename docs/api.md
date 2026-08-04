@@ -135,7 +135,7 @@ GET    /sessions/{session_id}/summary       # deterministic session summary
 POST   /sessions/{session_id}/refresh-summary  # rebuild the summary from run artifacts
 GET    /sessions/{session_id}/report        # generate/fetch the session report (markdown)
 POST   /sessions/{session_id}/actions/prepare  # prepare a proposed next action for execution
-GET    /sessions/{session_id}/messages      # thread messages (with persisted grounding + proposals)
+GET    /sessions/{session_id}/messages      # thread messages, PAGED (limit + before → total/has_more)
 POST   /sessions/{session_id}/datasets/upload  # attach a data file to the session for agent-native analysis (413 over the size cap)
 POST   /sessions/{session_id}/messages      # send a message (blocking agent turn / streaming fallback)
 POST   /sessions/{session_id}/messages/stream  # send a message (SSE-streamed agent turn)
@@ -144,6 +144,14 @@ GET    /sessions/{session_id}/activity      # the session's tool calls (sanitize
 GET    /sessions/{session_id}/audit         # the session's audit trail (rule 17)
 GET    /sessions/{session_id}/overview      # counts, token rollup, and per-turn metrics
 ```
+
+Paging (v0.47.0): `GET /sessions/{id}` returns the **tail** of the thread
+(60 messages) plus `message_total`; `GET /sessions/{id}/messages` takes `limit`
+and `before` (an opaque `seq` cursor from the oldest message the client holds)
+and returns `total` + `has_more`. A long investigation used to re-send its whole
+history on every open and every turn — ~1 MiB of JSON at 300 turns, growing
+without bound. The unbounded form remains internally for the report builder,
+which summarises the entire investigation.
 
 Observability (v0.45.0): `/activity` and `/audit` are bounded — `limit` is capped
 at 500 (default 200) and every response carries `total` / `offset` / `limit` /

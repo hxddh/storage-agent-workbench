@@ -84,7 +84,7 @@ def build(
             for r in rows
         ]
         audit.record(conn, "session.list_uploaded_files",
-                     {"session_id": session_id, "count": len(items)}, run_id=None)
+                     {"session_id": session_id, "count": len(items)}, run_id=None, session_id=session_id)
         conn.commit()
         note("list_uploaded_files", session_id or "", f"{len(items)} file(s)")
         return json.dumps({"files": items})
@@ -139,7 +139,8 @@ def build(
         audit.record(conn, "session.import_dataset",
                      {"session_id": session_id, "dataset_id": dataset_id,
                       "dataset_type": ds["dataset_type"], "detected_format": detected,
-                      "row_count": int(imp.get("row_count") or 0)}, run_id=None)
+                      "row_count": int(imp.get("row_count") or 0)},
+                     run_id=None, session_id=session_id)
         conn.commit()
         return duckdb_abs, imp, detected
 
@@ -214,7 +215,7 @@ def build(
             "session_id": session_id, "dataset_id": dataset_id,
             "type": ds["dataset_type"], "detected_format": detected,
             "row_count": int(result.get("row_count") or 0),
-        }, run_id=None)
+        }, run_id=None, session_id=session_id)
         conn.commit()
         note("analyze_uploaded_file", ds.get("source_filename") or dataset_id,
              f"{result.get('row_count', 0)} rows")
@@ -270,7 +271,7 @@ def build(
             "session_id": session_id, "dataset_id": dataset_id,
             "sql": out["sql"], "params": [redact_text(str(p))[:100] for p in out["params"]],
             "groups": len(out.get("groups", [])),
-        }, run_id=None)
+        }, run_id=None, session_id=session_id)
         conn.commit()
 
         result = {

@@ -52,18 +52,33 @@ def sweep_orphaned_agent_runs(conn) -> int:
 
 
 def prune_audit_logs(conn) -> int:
-    """Age out audit rows and orphan-able ad-hoc tool_calls past the window.
+    """Age out audit rows and genuinely OWNERLESS tool_calls past the window.
 
-    ``tool_calls`` with a ``run_id`` cascade when their run is deleted; the ones
-    with ``run_id IS NULL`` (ad-hoc Test-Connection-style calls) never do, so they
-    are pruned by age here too. Returns the number of audit rows removed."""
+    A ``tool_calls`` row is reachable through its run (cascades on run delete) or
+    through its session (cascade-equivalent: the session's own delete path). Only
+    rows with NEITHER owner — ad-hoc Test-Connection-style probes — are
+    unreachable forever, and only those may be aged out here.
+
+    The ``session_id IS NULL`` half of that predicate is load-bearing. Before it,
+    the sweep matched ``run_id IS NULL`` alone, which from v0.45.0 also describes
+    every tool call the conversational agent makes: the sweep silently destroyed
+    a LIVE session's rule-17 tool trace, leaving the inspector's timeline empty
+    while ``turn_metrics`` still reported the calls — two numbers in one UI
+    disagreeing, with the evidence gone.
+
+    Audit rows are pruned by age regardless of owner: they are an append-only
+    trail with a retention window by design, and the window is what bounds them.
+
+    Returns the number of audit rows removed."""
     days = _audit_retention_days()
     if days <= 0:
         return 0
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     n = conn.execute("DELETE FROM audit_logs WHERE created_at < ?", (cutoff,)).rowcount
     conn.execute(
-        "DELETE FROM tool_calls WHERE run_id IS NULL AND created_at < ?", (cutoff,)
+        "DELETE FROM tool_calls "
+        "WHERE run_id IS NULL AND session_id IS NULL AND created_at < ?",
+        (cutoff,),
     )
     conn.commit()
     return n

@@ -6,6 +6,79 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-08-04
+
+_Finishing v0.45.0's observability properly — including a data-loss regression it
+introduced — and bounding the thread so a long investigation stays cheap._
+
+### Fixed — the retention sweep was deleting live sessions' tool calls
+
+`prune_audit_logs` aged out `tool_calls WHERE run_id IS NULL`. When that was
+written, `run_id IS NULL` meant "an ad-hoc Test-Connection probe, owned by
+nobody". **From v0.45.0 it also describes every tool call the conversational
+agent makes**, so past the retention window the sweep destroyed a *live*
+session's rule-17 tool trace: the inspector's timeline emptied while
+`turn_metrics` still reported the calls — two numbers in one UI disagreeing,
+with the evidence gone.
+
+The predicate is now `run_id IS NULL AND session_id IS NULL` — genuinely
+unreachable rows only. Regression tests pin both directions: a live session's
+calls survive, and truly ownerless old rows are still swept.
+
+### Fixed — most of the session audit trail was still unreachable
+
+v0.45.0 added `session_id` to `audit_logs` but only two call sites set it.
+**21 did not** — every uploaded-file analysis, all six working-memory writes,
+`read_run_result` / `compare_to_last_survey` / `query_account_profile`, report
+generation, and the next-action approval events. The inspector's audit timeline
+showed a fraction of what a session did while looking complete. All of them are
+session-scoped now, enforced by an AST test over the agent-tool modules.
+
+(`session.delete` deliberately stays payload-only: the session is ceasing to
+exist, so a session-scoped row could only be read back through a session that is
+gone.)
+
+### Fixed — the per-turn footer no longer lags the answer
+
+The SSE `done` event has carried `metrics` since v0.45.0 and nothing consumed
+it; the footer only appeared once the post-turn reload persisted the row. The
+live copy now fills the gap, and the persisted one takes over when it arrives.
+
+### Changed — the thread is paged
+
+`list_messages` was unbounded. A 300-turn investigation measured **0.98 MiB of
+JSON**, re-sent on every session open *and* every turn (the worker fetched the
+whole history to build a context the agent caps at 96 messages anyway).
+
+- Threads open to their last 60 messages with `message_total` alongside, so a
+  partial thread is never presented as complete; **"Load earlier" pages
+  backwards**, anchoring the scroll so prepending doesn't yank the reader.
+- `GET /sessions/{id}/messages` takes `limit` + `before` and returns
+  `total` / `has_more`.
+- The per-turn context fetch is bounded by the agent's own replay ceiling.
+- Measured after: **100 KiB** on open, flat as the session grows. The unbounded
+  form survives for the report builder, which summarises the whole investigation.
+
+### Added — the inspector pages
+
+Past 500 rows it said "truncated" and offered nothing. It now shows
+`Showing N of M` with a **Load more** that pages forward through both streams.
+
+### Fixed — contrast, measured rather than eyeballed
+
+A WCAG pass over the v0.46.0 tokens found `--gray-600` at **2.60:1** (dark) and
+**2.63:1** (light) — below the 3.0 floor, and it carries the per-turn metrics
+footer and every timestamp. Raised to 3.2:1 in both themes, same hue, lightness
+only, so the neutral ramp keeps its ordering. The semantic status tints all
+cleared AA already. Tests now compute the ratios and fail below the floor.
+
+### Changed — one shortcut registry
+
+`src/shortcuts.ts` is the single source for both the key handler and the help
+sheet, which were two hand-maintained lists that could disagree — an
+undocumented binding or a documented one that does nothing. The platform
+modifier resolves once, and bare-key shortcuts no longer swallow modified chords.
+
 ## [0.46.0] - 2026-08-04
 
 _Interface and interaction. The design system was sound; what let it down was a

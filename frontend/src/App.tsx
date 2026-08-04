@@ -23,6 +23,7 @@ import { useSidecarHealth } from "./hooks/useSidecarHealth";
 import { useI18n } from "./i18n";
 import { useToast } from "./components/Toast";
 import { ShortcutsSheet } from "./components/ShortcutsSheet";
+import { matches } from "./shortcuts";
 
 const ONBOARDED_KEY = "saw.onboarded";
 const RAIL_WIDTH_KEY = "saw.railWidth";
@@ -142,26 +143,27 @@ export default function App() {
       const tag = node.tagName;
       return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || node.isContentEditable;
     };
+    // Matching goes through the shared registry (src/shortcuts.ts), so the help
+    // sheet and this handler can never document different chords.
     const onKey = (e: KeyboardEvent) => {
-      const meta = e.metaKey || e.ctrlKey;
-      if (meta && e.key.toLowerCase() === "k") {
+      if (matches(e, "palette")) {
         e.preventDefault();
         setPaletteOpen((o) => !o);
-      } else if (meta && e.key.toLowerCase() === "n") {
+      } else if (matches(e, "newChat")) {
         e.preventDefault();
         setActiveId(null);
-      } else if (meta && e.key === "\\") {
+      } else if (matches(e, "toggleRail")) {
         e.preventDefault();
         setRailCollapsed((v) => {
           localStorage.setItem(RAIL_COLLAPSED_KEY, v ? "0" : "1");
           return !v;
         });
-      } else if (e.key === "?" && !meta && !isEditable(e.target)) {
+      } else if (matches(e, "shortcuts") && !isEditable(e.target)) {
         // Bare "?" only outside a text field — otherwise it would swallow the
         // character mid-sentence in the composer.
         e.preventDefault();
         setShortcutsOpen((o) => !o);
-      } else if (e.key === "Escape") {
+      } else if (matches(e, "close")) {
         if (isEditable(e.target)) return;
         setPaletteOpen(false);
         setDrawerOpen(false);

@@ -119,3 +119,43 @@ test.describe("overlay focus", () => {
     expect(inside).toBe(true);
   });
 });
+
+test.describe("thread paging", () => {
+  test("a short thread offers no 'load earlier' control", async ({ page }) => {
+    await seedFreshApp(page);
+    await page.goto("/");
+    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    await box.click();
+    await box.fill("<Error><Code>AccessDenied</Code></Error>");
+    await box.press("Enter");
+    await expect(page.getByText(/error triage/i).first()).toBeVisible({ timeout: 20_000 });
+    // Nothing is hidden, so nothing claims to be.
+    await expect(page.getByTestId("load-earlier")).toHaveCount(0);
+  });
+
+  test("the messages endpoint pages and reports the total", async ({ page }) => {
+    await seedFreshApp(page);
+    await page.goto("/");
+    const sid = await page.evaluate(async () => {
+      const base = (window as unknown as { __SAW_BASE__?: string }).__SAW_BASE__;
+      const url = base || "http://127.0.0.1:8799";
+      const r = await fetch(`${url}/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "paging" }),
+      });
+      return (await r.json()).id as string;
+    });
+
+    const body = await page.evaluate(async (id) => {
+      const url = "http://127.0.0.1:8799";
+      const r = await fetch(`${url}/sessions/${id}/messages?limit=5`);
+      return await r.json();
+    }, sid);
+
+    // The contract the thread relies on: a page, plus how many exist.
+    expect(Array.isArray(body.messages)).toBe(true);
+    expect(typeof body.total).toBe("number");
+    expect(typeof body.has_more).toBe("boolean");
+  });
+});

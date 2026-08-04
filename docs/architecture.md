@@ -462,6 +462,12 @@ written and immediately orphaned.
   finalize pass. Usage is summed across both model runs in a turn (tool loop +
   finalize), because the turn paid for both.
 
+Retention is owner-aware: the startup sweep ages out `tool_calls` only when
+they have **neither** a run nor a session (ad-hoc probes, unreachable forever).
+Matching `run_id IS NULL` alone — which is what it did before v0.47.0 — also
+described every conversational tool call from v0.45.0 onward, and silently
+destroyed a live session's rule-17 trace past the window.
+
 The UI renders this at three zoom levels: a per-turn footer under each answer,
 an in-place expansion showing which tools ran and how often, and the session
 inspector — one merged timeline with additive filter chips rather than tabs,

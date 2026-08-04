@@ -160,6 +160,8 @@ export function SessionInspector({
   const [tools, setTools] = useState<SessionActivityItem[]>([]);
   const [audit, setAudit] = useState<SessionAuditItem[]>([]);
   const [truncated, setTruncated] = useState(false);
+  const [total, setTotal] = useState({ tools: 0, audit: 0 });
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showTools, setShowTools] = useState(true);
@@ -184,6 +186,7 @@ export function SessionInspector({
         setOverview(o);
         setTools(a.items);
         setAudit(u.items);
+        setTotal({ tools: a.total, audit: u.total });
         setTruncated(a.truncated || u.truncated);
       })
       .catch((e) => !cancelled && setError(String(e?.message ?? e)))
@@ -192,6 +195,32 @@ export function SessionInspector({
       cancelled = true;
     };
   }, [open, sessionId]);
+
+  const loadMore = async () => {
+    if (!sessionId || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      // The timeline reads oldest-first, so paging means fetching FORWARD from
+      // what is already held — offset = current length, per stream.
+      const [a, u] = await Promise.all([
+        tools.length < total.tools
+          ? getSessionActivity(sessionId, undefined, tools.length)
+          : Promise.resolve(null),
+        audit.length < total.audit
+          ? getSessionAudit(sessionId, undefined, audit.length)
+          : Promise.resolve(null),
+      ]);
+      if (a) setTools((prev) => [...prev, ...a.items]);
+      if (u) setAudit((prev) => [...prev, ...u.items]);
+      if (a || u) {
+        setTruncated((a?.truncated ?? false) || (u?.truncated ?? false));
+      }
+    } catch (e) {
+      setError(String((e as Error)?.message ?? e));
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -366,8 +395,24 @@ export function SessionInspector({
             </Chip>
           </div>
 
-          {truncated && (
-            <p className="mt-3 text-[11px] text-warn-fg">{t("inspector.truncated")}</p>
+          {(tools.length < total.tools || audit.length < total.audit) && (
+            <div className="mt-3 flex items-center gap-2 text-[11px] text-warn-fg">
+              <span>
+                {t("inspector.showing", {
+                  n: tools.length + audit.length,
+                  total: total.tools + total.audit,
+                })}
+              </span>
+              <button
+                type="button"
+                onClick={loadMore}
+                disabled={loadingMore}
+                data-testid="inspector-load-more"
+                className="rounded border border-edge px-2 py-0.5 text-gray-400 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50"
+              >
+                {loadingMore ? t("inspector.loading") : t("inspector.loadMore")}
+              </button>
+            </div>
           )}
 
           <ul className="mt-3 space-y-0.5">

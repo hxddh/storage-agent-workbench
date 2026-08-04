@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getSession,
+  getSessionMessages,
   getSessionOverview,
   getSessionReport,
   getSessionTriage,
@@ -9,8 +10,10 @@ import {
 } from "../api";
 import type {
   Grounding,
+  TokenUsage,
   NextAction,
   SessionDetail,
+  SessionMessage,
   ToolActivity,
   TriageCase,
   TurnMetricsRow,
@@ -98,6 +101,11 @@ export function Thread({
   const [reportSavedPath, setReportSavedPath] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  // Pages fetched by "load earlier", oldest-first, held separately from
+  // `detail.messages` (the tail) so a reload can refresh the tail without
+  // discarding history the user deliberately pulled in.
+  const [earlier, setEarlier] = useState<SessionMessage[]>([]);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
   // Persisted per-turn metrics, keyed by the assistant message they belong to,
   // so the footer under an OLD answer still shows what that turn cost.
   const [metrics, setMetrics] = useState<Record<string, TurnMetricsRow>>({});
@@ -180,6 +188,7 @@ export function Thread({
   // thread must NOT be treated as a successful reload, or they'd clear the
   // streamed answer bubble and the just-completed answer would vanish (F1).
   const reload = async (id: string | null): Promise<boolean> => {
+    if (id !== loadedIdRef.current) setEarlier([]);
     if (!id) {
       setDetail(null);
       setTriage([]);
@@ -227,6 +236,54 @@ export function Thread({
     // failure used to flash them out of the thread until the next reload.
     if (tRes.status === "fulfilled") setTriage(triageCases);
     return false;
+  };
+
+  // How many messages exist above what is currently rendered. `message_total`
+  // comes from the server, so this is a fact rather than a guess.
+  const shownCount = (earlier.length + (detail?.messages?.length ?? 0));
+  const hiddenCount = Math.max(0, (detail?.message_total ?? shownCount) - shownCount);
+
+  const loadEarlier = async () => {
+    const id = localId.current;
+    if (!id || loadingEarlier) return;
+    const oldest = (earlier[0] ?? detail?.messages?.[0])?.seq;
+    if (oldest == null) return;
+    setLoadingEarlier(true);
+    try {
+      const page = await getSessionMessages(id, { before: oldest });
+      // Guard against a session switch mid-fetch.
+      if (id !== localId.current) return;
+      // Anchor the scroll: prepending content would otherwise yank the reader
+      // upward by exactly the height of what was just inserted.
+      const el = scrollRef.current;
+      const before = el ? el.scrollHeight - el.scrollTop : 0;
+      setEarlier((prev) => [...page.messages, ...prev]);
+      requestAnimationFrame(() => {
+        if (el) el.scrollTop = el.scrollHeight - before;
+      });
+    } catch (e) {
+      setViewError(String((e as Error)?.message ?? e));
+    } finally {
+      setLoadingEarlier(false);
+    }
+  };
+
+  // Persisted metrics win once the reload has them; until then the live `done`
+  // event's copy fills the gap, so the footer never lags the answer it describes.
+  const metricsFor = (messageId: string): (TurnMetricsRow & { usage?: TokenUsage }) | null => {
+    const persisted = metrics[messageId];
+    if (persisted) return persisted;
+    const live = run.lastMetrics;
+    if (live && live.messageId === messageId) {
+      const m = live.metrics;
+      return {
+        turn_id: null, message_id: messageId, model: m.model ?? null,
+        duration_ms: m.duration_ms ?? null, tool_calls: m.tool_calls ?? null,
+        created_at: "", usage: m.usage,
+        ...(m.usage ?? {}),
+      };
+    }
+    return null;
   };
 
   // Message actions. Both are deliberately ADDITIVE: they seed the composer and
@@ -324,7 +381,7 @@ export function Thread({
 
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
-    for (const m of detail?.messages ?? [])
+    for (const m of [...earlier, ...(detail?.messages ?? [])])
       out.push({
         kind: "message", ts: m.created_at, role: m.role, content: m.content, id: m.id,
         toolActivity: m.tool_activity, grounding: m.grounding, proposals: m.proposed_actions,
@@ -338,7 +395,7 @@ export function Thread({
     }
     for (const c of triage) out.push({ kind: "triage", ts: c.created_at || "", data: c });
     return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
-  }, [detail, triage]);
+  }, [detail, triage, earlier]);
 
   // Proposals come ONLY from the agent's own answer (liveProposals). We no longer
   // fall back to the deterministic summary.next_actions menu — before the agent
@@ -644,6 +701,19 @@ export function Thread({
 
           <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-auto px-6 py-7">
             <div className="mx-auto max-w-3xl space-y-6">
+              {hiddenCount > 0 && (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={loadEarlier}
+                    disabled={loadingEarlier}
+                    data-testid="load-earlier"
+                    className="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-gray-500 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50"
+                  >
+                    {loadingEarlier ? t("thread.loadingEarlier") : t("thread.loadEarlier", { n: hiddenCount })}
+                  </button>
+                </div>
+              )}
               {items.map((it, idx) =>
                 it.kind === "message" ? (
                   <div key={it.id} className="thread-item space-y-3">
@@ -661,12 +731,12 @@ export function Thread({
                     {/* What this turn cost (v0.45.0) — persisted, so it survives
                         a reload. Absent for pre-0.45.0 history, which renders
                         nothing rather than zeros. */}
-                    {it.role === "assistant" && metrics[it.id] && (
+                    {it.role === "assistant" && metricsFor(it.id) && (
                       <TurnMetricsBar
-                        durationMs={metrics[it.id].duration_ms}
-                        usage={metrics[it.id]}
+                        durationMs={metricsFor(it.id)!.duration_ms}
+                        usage={metricsFor(it.id)!.usage ?? metricsFor(it.id)!}
                         tools={it.toolActivity}
-                        model={metrics[it.id].model}
+                        model={metricsFor(it.id)!.model}
                         onOpenInspector={() => setInspectorOpen(true)}
                       />
                     )}
