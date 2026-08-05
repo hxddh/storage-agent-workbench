@@ -149,8 +149,24 @@ jobs:
       - name: cargo build (compile + link desktop binary)
         run: cd src-tauri && cargo build
 
-      - name: cargo tauri build (unsigned .app / dmg)
-        run: cd src-tauri && cargo tauri build
+      - name: cargo tauri build (unsigned .app)
+        run: cd src-tauri && cargo tauri build --bundles app
+        # Scoped to the .app, like the Linux job scopes to deb and the Windows
+        # job to nsis — macOS was the only one building EVERY bundler.
+        #
+        # The extra one was the DMG, and Tauri's bundle_dmg.sh drives Finder
+        # through AppleScript to lay out the disk-image window, which needs a GUI
+        # session a headless runner does not reliably provide. It began hanging
+        # here on 2026-08-05 (two consecutive failures at the same step, 9.5s and
+        # 111s on identical input — a hang, not a deterministic error), and its
+        # non-zero exit took the whole job down BEFORE the steps that carry this
+        # job's actual value: the .app artifact and verify-runtime-macos.sh.
+        #
+        # Nothing is left unbuilt that ships: the Release workflow builds and
+        # uploads the real DMG on its own, and did so for v0.54.0. This job never
+        # treated the DMG as a deliverable either — the upload below has always
+        # been "+ DMG if the bundler produced one" with if-no-files-found: warn.
+        #
         # No signing cert / Apple developer account / notarization. The bundle is
         # UNSIGNED; Gatekeeper warns on first open (see docs/release.md). A
         # headless CI runner cannot launch the GUI — that is verified manually.

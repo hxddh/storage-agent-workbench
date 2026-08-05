@@ -160,6 +160,22 @@ assumed they could not:
 with the six newest kept visible — **except failures, which are never folded
 away**.
 
+### Fixed — CI's macOS job died on a bundle it never shipped
+
+`cargo tauri build` on macOS ran **every** bundler, while the Linux job scopes to
+`--bundles deb` and the Windows job to `--bundles nsis`. The extra one was the
+DMG, and Tauri's `bundle_dmg.sh` drives Finder through AppleScript to lay out the
+disk-image window — a GUI session a headless runner does not reliably provide. It
+started hanging on 2026-08-05 (two consecutive failures at the same step, 9.5s
+and 111s on identical input — a hang, not a deterministic error), and its
+non-zero exit took the job down **before** the steps that carry its actual value:
+the `.app` artifact and `verify-runtime-macos.sh`.
+
+macOS is now scoped like the other two. Nothing that ships is left unbuilt — the
+Release workflow builds and uploads the real DMG itself (and did for v0.54.0),
+and this job never treated the DMG as a deliverable: its upload has always read
+"+ DMG if the bundler produced one" with `if-no-files-found: warn`.
+
 ### Fixed — a blind title strip would have broken `record_finding`
 
 Caught by its own test before it shipped: `title` is a JSON-Schema keyword in one
