@@ -29,6 +29,7 @@ MAX_TURNS = 40          # conversational turns rendered in full
 ANSWER_EXCERPT = 600    # chars of each answer
 MAX_TOOL_ROWS = 25      # distinct tools in the breakdown
 MAX_AUDIT_ROWS = 30     # audit events listed
+_MAX_MEMORY_ROWS = 50   # agent-memory items per kind, and attached files
 
 
 def _excerpt(text: str | None, limit: int = ANSWER_EXCERPT) -> str:
@@ -261,6 +262,59 @@ def _agent_findings_md(memory: list[dict[str, Any]]) -> str:
     return "\n".join(out)
 
 
+def _memory_truncation(rendered: int, total: int | None, noun: str) -> str:
+    """State what was left out, or nothing. The count comes from the DB, not
+    from the (already tail-capped) list — otherwise a session with 60 facts
+    renders 50 and claims completeness."""
+    if total is None or total <= rendered:
+        return ""
+    return f"\n\n_Truncated: {total - rendered} more {noun} recorded._"
+
+
+def _agent_facts_md(memory: list[dict[str, Any]], total: int | None = None) -> str:
+    """The facts the agent established and then reasoned FROM.
+
+    Before v0.51.0 this section did not exist: of the three kinds of memory the
+    agent records, the report rendered only findings, so the premises behind
+    every conclusion in the document were missing from it."""
+    rows = [m for m in (memory or []) if m.get("kind") == "fact"]
+    if not rows:
+        return "_None recorded._"
+    shown = rows[:_MAX_MEMORY_ROWS]
+    out = []
+    for m in shown:
+        conf = str(m.get("confidence") or "medium")
+        out.append(f"- {m.get('text', '')} _(confidence: {conf})_")
+    return "\n".join(out) + _memory_truncation(len(shown), total, "facts")
+
+
+def _agent_questions_md(memory: list[dict[str, Any]], total: int | None = None) -> str:
+    """What the agent left open — the honest boundary of the investigation."""
+    rows = [m for m in (memory or []) if m.get("kind") == "open_question"]
+    if not rows:
+        return "_None recorded._"
+    shown = rows[:_MAX_MEMORY_ROWS]
+    return "\n".join(f"- {m.get('text', '')}" for m in shown) + _memory_truncation(
+        len(shown), total, "questions")
+
+
+def _attached_files_md(files: list[dict[str, Any]] | None) -> str:
+    """The evidence the user attached, so a reader knows what the analysis had."""
+    rows = files or []
+    if not rows:
+        return "_None attached._"
+    out = []
+    for f in rows[:_MAX_MEMORY_ROWS]:
+        rc = f.get("row_count")
+        bits = [str(f.get("dataset_type") or "file")]
+        if f.get("detected_format"):
+            bits.append(str(f["detected_format"]))
+        if rc:
+            bits.append(f"{int(rc):,} rows")
+        out.append(f"- `{f.get('source_filename') or '(unnamed)'}` — {' · '.join(bits)}")
+    return "\n".join(out)
+
+
 def render_session_report(
     session: dict[str, Any],
     summary: dict[str, Any],
@@ -273,6 +327,8 @@ def render_session_report(
     usage: dict[str, Any] | None = None,
     turn_metrics: list[dict[str, Any]] | None = None,
     audit_events: list[dict[str, Any]] | None = None,
+    attached_files: list[dict[str, Any]] | None = None,
+    memory_totals: dict[str, int] | None = None,
 ) -> str:
     """Render the report. The keyword inputs are the investigation itself; they
     default to empty so an older caller still produces the historical document
@@ -344,6 +400,22 @@ like "bucket X became public since the last survey" live here — previously the
 existed only in chat prose and never reached this report._
 
 {_agent_findings_md(agent_memory or [])}
+
+## What the agent established
+
+_The facts the agent recorded and then reasoned FROM — the premises behind every
+conclusion above. Replayed into each later turn, so they steer the whole
+investigation._
+
+{_agent_facts_md(agent_memory or [], (memory_totals or {}).get("fact"))}
+
+## What the agent left open
+
+{_agent_questions_md(agent_memory or [], (memory_totals or {}).get("open_question"))}
+
+## Attached evidence
+
+{_attached_files_md(attached_files)}
 
 ## Error triage
 

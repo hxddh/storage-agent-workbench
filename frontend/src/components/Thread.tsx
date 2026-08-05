@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  correctSessionMemory,
   getSession,
   getSessionMessages,
   getSessionOverview,
   getSessionReport,
   getSessionTriage,
+  getSessionTurnState,
   listModelProviders,
   prepareSessionAction,
+  resolveSessionMemory,
 } from "../api";
 import type {
   Grounding,
@@ -14,12 +17,14 @@ import type {
   NextAction,
   SessionDetail,
   SessionMessage,
+  SessionTurnState,
   ToolActivity,
   TriageCase,
   TurnMetricsRow,
 } from "../types";
 import { saveTextFile } from "../config";
 import { useSessionRun, patchSessionRun, getSessionRun } from "../sessionRuns";
+import { loadDraft, saveDraft } from "../drafts";
 import { useTurnRunner, cleanError } from "../hooks/useTurnRunner";
 import { Button } from "./ui";
 import { Markdown } from "./Markdown";
@@ -28,6 +33,7 @@ import { EvidenceImportDialog } from "./EvidenceImportDialog";
 import { GroundingCard, LiveProgress, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard, copyText } from "./ThreadCards";
 import { SessionInspector } from "./SessionInspector";
 import { TurnFooter } from "./TurnFooter";
+import { fmtDuration } from "./TurnMetrics";
 import { useI18n } from "../i18n";
 
 type Item =
@@ -92,7 +98,17 @@ export function Thread({
 }) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [triage, setTriage] = useState<TriageCase[]>([]);
-  const [text, setText] = useState("");
+  const [text, setTextState] = useState("");
+  // Every composer write persists the draft for the session it belongs to
+  // (v0.51.0). Done here rather than in an effect on purpose: an effect keyed on
+  // [sessionId, text] fires once with the NEW session id and the OLD text on the
+  // render where the switch lands, filing one session's draft under another's.
+  // `localId.current` is updated at the top of the switch effect, before the
+  // composer is repopulated, so it is always the session this text is for.
+  const setText = (next: string) => {
+    setTextState(next);
+    saveDraft(localId.current, next);
+  };
   const [importHandoff, setImportHandoff] = useState<
     { sourceType: "inventory" | "access_log"; accountRunId: string; bucketName: string } | null
   >(null);
@@ -101,6 +117,9 @@ export function Thread({
   const [reportSavedPath, setReportSavedPath] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  // Set when the inspector was opened FROM a turn: the [from, to] window whose
+  // rows it highlights and scrolls to. Cleared on close.
+  const [inspectorAnchor, setInspectorAnchor] = useState<{ from: string; to: string } | null>(null);
   // Pages fetched by "load earlier", oldest-first, held separately from
   // `detail.messages` (the tail) so a reload can refresh the tail without
   // discarding history the user deliberately pulled in.
@@ -113,6 +132,12 @@ export function Thread({
   // Persisted per-turn metrics, keyed by the assistant message they belong to,
   // so the footer under an OLD answer still shows what that turn cost.
   const [metrics, setMetrics] = useState<Record<string, TurnMetricsRow>>({});
+  // A turn running server-side that THIS client did not start (a reload mid-turn,
+  // or a second window). Mirrored into a ref so the poll's closure can tell
+  // "ended" from "was never running" without re-subscribing.
+  const [remoteTurn, setRemoteTurn] = useState<SessionTurnState | null>(null);
+  const remoteTurnRef = useRef<SessionTurnState | null>(null);
+  remoteTurnRef.current = remoteTurn;
 
   // Per-session run state lives in a store keyed by session id (see sessionRuns)
   // so an in-flight turn keeps streaming — and keeps its content — when you
@@ -250,6 +275,87 @@ export function Thread({
   const shownCount = (earlier.length + (detail?.messages?.length ?? 0));
   const hiddenCount = Math.max(0, (detail?.message_total ?? shownCount) - shownCount);
 
+  /** Reattach to a turn this client did not start.
+   *
+   * Run state lives in the client's memory, so reloading the app (or opening the
+   * session in a second window) while a turn is generating showed an idle
+   * session — while the worker kept running and kept spending. The server knows;
+   * this asks it.
+   *
+   * One check per session switch and per return-to-foreground, then a short poll
+   * only WHILE a turn is known to be running: a turn cannot start without this
+   * client's knowledge except through those two doors, so idle polling would buy
+   * nothing. When it ends, the answer is persisted — reload and show it.
+   */
+  useEffect(() => {
+    if (!sessionId || !sidecarReady) return;
+    let stopped = false;
+    let timer = 0;
+    const tick = async () => {
+      if (stopped) return;
+      // Our own in-flight turn already renders live; never report it twice.
+      if (getSessionRun(sessionId).busy) {
+        setRemoteTurn(null);
+        return;
+      }
+      let state: SessionTurnState | null = null;
+      try {
+        state = await getSessionTurnState(sessionId);
+      } catch {
+        // A sidecar blip is not evidence that nothing is running; try again on
+        // the next door rather than clearing a banner that may be true.
+        return;
+      }
+      if (stopped || localId.current !== sessionId) return;
+      if (state.running) {
+        setRemoteTurn(state);
+        timer = window.setTimeout(tick, 3000);
+      } else {
+        // It ended (or never ran). If we were tracking one, its answer is
+        // persisted now.
+        if (remoteTurnRef.current) void reload(sessionId);
+        setRemoteTurn(null);
+      }
+    };
+    void tick();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, sidecarReady]);
+
+  /** Correct one of the agent's memory items, in place.
+   *
+   * The agent replays its memory into every later turn, so this is not
+   * cosmetic: an uncorrected wrong fact keeps steering the investigation. The
+   * server returns the refreshed detail, which is what the panel re-renders
+   * from. */
+  const correctMemory = async (memId: string, next: string) => {
+    const id = localId.current;
+    if (!id) return;
+    try {
+      setDetail(await correctSessionMemory(id, memId, next));
+    } catch (e) {
+      setViewError(String((e as Error)?.message ?? e));
+    }
+  };
+
+  const resolveMemory = async (memId: string) => {
+    const id = localId.current;
+    if (!id) return;
+    try {
+      setDetail(await resolveSessionMemory(id, memId));
+    } catch (e) {
+      setViewError(String((e as Error)?.message ?? e));
+    }
+  };
+
   /** Pull every remaining older page in one go.
    *
    * A thousand-turn session is ~17 clicks of "load earlier" to reach the start,
@@ -349,6 +455,21 @@ export function Thread({
     return null;
   };
 
+  /** The wall-clock window one turn occupied: from the question that started it
+   * to the answer that ended it. Everything the agent did for that turn — every
+   * tool call, every audit row — happened inside it, so this is what the
+   * inspector highlights when "inspect" is clicked from that turn's footer.
+   * Timestamps are fixed-width ISO-8601 Z, so string order IS chronological. */
+  const turnWindow = (idx: number): { from: string; to: string } | null => {
+    const end = items[idx];
+    if (!end || end.kind !== "message") return null;
+    for (let i = idx - 1; i >= 0; i--) {
+      const it = items[i];
+      if (it.kind === "message" && it.role === "user") return { from: it.ts, to: end.ts };
+    }
+    return null;
+  };
+
   // ⌘I / Ctrl+I opens the inspector — the same "show me the details" reflex as a
   // browser's dev tools. Ignored while the settings drawer owns the screen.
   useEffect(() => {
@@ -400,7 +521,10 @@ export function Thread({
       setText(failed);
       patchSessionRun(sessionId!, { failedText: null });
     } else {
-      setText("");
+      // Otherwise restore this session's saved draft (v0.51.0). Switching
+      // sessions used to wipe the composer unconditionally, so a half-written
+      // question was lost the moment you looked at another investigation.
+      setText(loadDraft(sessionId));
     }
     setImportHandoff(null);
     setReport(null);
@@ -643,6 +767,24 @@ export function Thread({
     />
   );
 
+  /* Screen-reader narration for a surface that is otherwise entirely visual
+   * (v0.51.0). A streaming answer, a finished turn and a failed turn produced no
+   * announcement at all before this — the only aria-live region in the app was
+   * the toast host. The region reports STATE TRANSITIONS, not the answer text:
+   * announcing a token stream character by character is worse than silence, and
+   * the finished answer is already reachable in the normal reading order. */
+  const liveStatus = needKey
+    ? t("a11y.needKey")
+    : error
+      ? t("a11y.turnFailed")
+      : run.stopped
+        ? t("thread.stoppedByUser")
+        : busy
+          ? t("a11y.working")
+          : lastPersisted
+            ? t("a11y.answerReady")
+            : "";
+
   const banners = (
     <>
       {needKey && (
@@ -826,7 +968,14 @@ export function Thread({
                         durationMs={metricsFor(it.id)?.duration_ms}
                         usage={metricsFor(it.id)?.usage ?? metricsFor(it.id) ?? undefined}
                         model={metricsFor(it.id)?.model}
-                        onOpenInspector={() => setInspectorOpen(true)}
+                        onOpenInspector={() => {
+                          // Anchored: the inspector highlights and scrolls to
+                          // THIS turn's rows. Unanchored it dropped the reader
+                          // at the top of a whole session's timeline with no
+                          // way to tell which entries were theirs.
+                          setInspectorAnchor(turnWindow(idx));
+                          setInspectorOpen(true);
+                        }}
                       />
                     )}
                     {it.proposals && it.proposals.length > 0 && (
@@ -848,6 +997,22 @@ export function Thread({
                   </div>
                 );
               })}
+
+              {/* A turn this client did not start is still running server-side
+                  (v0.51.0). Not the local "thinking" bubble: there is no stream
+                  to attach to and no partial text to show — only the honest
+                  fact that work is in flight, and the answer when it lands. */}
+              {!pending && remoteTurn?.running && (
+                <div
+                  data-testid="remote-turn"
+                  className="animate-fade-in flex items-center gap-2 rounded-lg border border-edge bg-panel/60 px-3 py-2 text-[12.5px] text-gray-400"
+                >
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
+                  {t("thread.remoteTurn", {
+                    age: fmtDuration(remoteTurn.age_ms ?? null) ?? "—",
+                  })}
+                </div>
+              )}
 
               {pending && (
                 <>
@@ -903,6 +1068,11 @@ export function Thread({
                   )}
                 </>
               )}
+
+              {/* Visually hidden, announced. */}
+              <p className="sr-only" role="status" aria-live="polite" data-testid="turn-status">
+                {liveStatus}
+              </p>
 
               {banners}
 
@@ -978,8 +1148,18 @@ export function Thread({
       <SessionInspector
         sessionId={sessionId}
         open={inspectorOpen && !!sessionId}
-        onClose={() => setInspectorOpen(false)}
+        onClose={() => {
+          setInspectorOpen(false);
+          setInspectorAnchor(null);
+        }}
         findings={detail?.findings}
+        memory={detail?.agent_memory}
+        files={detail?.attached_files}
+        contextMessages={detail?.context_messages}
+        messageTotal={detail?.message_total}
+        onCorrectMemory={correctMemory}
+        onResolveMemory={resolveMemory}
+        anchor={inspectorAnchor}
       />
 
       {report !== null && (

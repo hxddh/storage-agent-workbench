@@ -582,6 +582,40 @@ class SessionSummary(BaseModel):
     updated_at: str
 
 
+class SessionAgentMemoryOut(BaseModel):
+    """One item of the agent's own working memory (v0.51.0).
+
+    The agent writes these itself (``note_fact`` / ``record_finding`` /
+    ``note_open_question``) and they are replayed into EVERY later turn's
+    context. Before v0.51.0 they were persisted and fed to the model but never
+    surfaced, so a wrong fact steered the rest of the investigation invisibly.
+    Text is redacted on write (`sessions_repo.add_agent_memory`)."""
+
+    id: str
+    kind: str  # fact | finding | open_question
+    text: str
+    severity: str | None = None
+    confidence: str | None = None
+    source_run_id: str | None = None
+    created_at: str | None = None
+
+
+class SessionAttachedFileOut(BaseModel):
+    """A file the user attached in this conversation, as the UI sees it.
+
+    Filesystem paths are deliberately NOT included: the app data dir carries the
+    OS username, and this shape is rendered in the thread and copied into
+    exports."""
+
+    id: str
+    dataset_type: str
+    source_filename: str | None = None
+    detected_format: str | None = None
+    row_count: int | None = None
+    status: str | None = None
+    created_at: str | None = None
+
+
 class SessionDetail(BaseModel):
     id: str
     title: str
@@ -599,3 +633,39 @@ class SessionDetail(BaseModel):
     # showing a partial conversation as if it were complete.
     messages: list[SessionMessageOut] = Field(default_factory=list)
     message_total: int = 0
+    # What the agent knows and holds (v0.51.0).
+    agent_memory: list[SessionAgentMemoryOut] = Field(default_factory=list)
+    attached_files: list[SessionAttachedFileOut] = Field(default_factory=list)
+    # How many of those messages the agent actually replays into its context,
+    # given the configured model's window. Below `message_total` means the
+    # earliest turns have rolled out of its view and it is working from the
+    # summary + agent_memory instead — which the UI must say rather than imply
+    # the model still sees the whole conversation.
+    context_messages: int = 0
+
+
+class SessionMemoryUpdate(BaseModel):
+    """Correct one memory item's text. The agent has `update_memory_item`; this
+    is the same operation for the person watching, so a wrong fact can be fixed
+    instead of steering every later turn."""
+
+    text: str = Field(min_length=1, max_length=600)
+
+
+class SessionMemoryResolve(BaseModel):
+    """Close a memory item (answered question, fixed finding, stale fact)."""
+
+    reason: str | None = Field(default=None, max_length=300)
+
+
+class SessionTurnState(BaseModel):
+    """Is a turn running for this session right now? (v0.51.0)
+
+    Run state lives in the client's memory, so a reload during a turn used to
+    show an idle session while the worker kept generating and spending. This is
+    the server's answer to "is anything in flight", so the client can reattach."""
+
+    running: bool = False
+    turn_id: str | None = None
+    started_at: str | None = None
+    age_ms: int | None = None

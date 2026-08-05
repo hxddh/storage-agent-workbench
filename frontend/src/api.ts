@@ -23,6 +23,7 @@ import type {
   SessionActivityItem,
   SessionAuditItem,
   SessionOverview,
+  SessionTurnState,
 } from "./types";
 
 // Default client-side timeout for plain (non-streaming) requests. Guards against
@@ -509,6 +510,26 @@ export const getSessionAudit = (id: string, limit?: number, offset?: number) =>
 
 export const getSessionOverview = (id: string) =>
   request<SessionOverview>(`/sessions/${id}/overview`);
+
+/** Correct one of the agent's memory items. It replays its memory into every
+ * later turn, so a wrong fact steers the rest of the investigation until fixed. */
+export const correctSessionMemory = (id: string, memId: string, text: string) =>
+  request<SessionDetail>(`/sessions/${id}/memory/${memId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ text }),
+  });
+
+/** Close a memory item so it stops being replayed (resolved, not deleted). */
+export const resolveSessionMemory = (id: string, memId: string, reason?: string) =>
+  request<SessionDetail>(`/sessions/${id}/memory/${memId}/resolve`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? null }),
+  });
+
+/** Server truth about whether a turn is in flight — the client's own run state
+ * is in memory, so a reload mid-turn has nothing to go on. */
+export const getSessionTurnState = (id: string) =>
+  request<SessionTurnState>(`/sessions/${id}/turn`);
 
 /** One page of thread messages, oldest-first, ending just before `before`.
  * Omit `before` for the newest page. `has_more` reports whether older messages

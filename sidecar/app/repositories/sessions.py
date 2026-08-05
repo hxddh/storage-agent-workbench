@@ -536,6 +536,21 @@ def list_agent_memory(
     return [dict(r) for r in reversed(rows)]
 
 
+def count_agent_memory(conn: sqlite3.Connection, session_id: str) -> dict[str, int]:
+    """ACTIVE agent-memory counts per kind.
+
+    ``list_agent_memory`` tail-caps, which is right for the prompt (a bounded
+    context) and right for the UI panel (it shows exactly what the agent
+    replays) — but wrong for the REPORT, which would otherwise drop the oldest
+    items and say nothing. This is how the report states what it left out."""
+    rows = conn.execute(
+        "SELECT kind, count(*) n FROM session_agent_memory "
+        "WHERE session_id = ? AND status = 'active' GROUP BY kind",
+        (session_id,),
+    ).fetchall()
+    return {r["kind"]: int(r["n"]) for r in rows}
+
+
 # How many messages a thread returns by default. A long investigation is worth
 # keeping in one session, but the whole history is not worth re-sending on every
 # open AND every turn: at 300 turns the full thread is ~1 MiB of JSON, and it

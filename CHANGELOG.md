@@ -6,6 +6,115 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-08-05
+
+_A serious pass over what a session actually exposes. Three silences, each
+verified against the running app before being fixed._
+
+### Fixed — the agent's own memory was invisible, and uncorrectable
+
+The agent records what it learns as it investigates (`note_fact` /
+`record_finding` / `note_open_question`) and **replays that memory into the
+context of every later turn**. Probing a real session showed where it surfaced:
+
+```
+GET /sessions/{id} keys: [created_at, findings, goal, id, message_total,
+                          messages, primary_bucket, provider_id, runs,
+                          status, summary, title, updated_at]
+detail exposes agent_memory: False        ← the endpoint returned none of it
+rows actually in DB: 3
+report contains fact          : False     ← the report rendered findings only
+report contains finding       : True
+report contains open_question : False
+```
+
+So a wrong fact — "bucket acme-logs is path-style only" — steered the rest of the
+investigation with nothing on screen to reveal it, and only the agent could fix
+its own items (`update_agent_memory` / `resolve_agent_memory` existed in the
+repository with no route and no UI).
+
+Now: `GET /sessions/{id}` returns `agent_memory`; the inspector shows all three
+kinds and lets the user **correct** an item's text or **resolve** it (closed, not
+deleted — it leaves the agent's context, the row survives for the audit trail);
+and the report gained "What the agent established" and "What the agent left
+open" beside the findings it already had.
+
+Text is redacted by the repository on write, exactly like the agent's own writes
+— this text goes into a prompt — and both operations are audited as
+`session.memory_edit` / `session.memory_resolve` with `by: user`, so a later
+reader can tell which premises the agent derived and which a human overrode.
+
+Two neighbours of the same question:
+
+- **Attached evidence** is listed (`attached_files`, without filesystem paths —
+  the app data dir carries the OS username). Once the composer's chip cleared,
+  there had been no way to see what files the session held.
+- **Context reach**: `context_messages` reports how many of `message_total` the
+  agent actually replays for the configured model (24–96, elastic). When it is
+  lower, the UI says so. The agent is then working from its memory and the
+  summary rather than a re-read of the conversation, and a reader who assumes
+  otherwise misjudges every later answer.
+
+While wiring the report, a second silent truncation surfaced: the repository
+tail-caps active memory at 50 for the prompt, so a session with 60 facts rendered
+50 and claimed completeness. The report now fetches beyond the replay cap and
+states the remainder from a true count (`count_agent_memory`).
+
+### Fixed — a reload during a turn showed an idle session
+
+Run state lives in the client's memory (that is what lets a turn keep streaming
+while you work in another session). The cost: reloading the app — or opening the
+session in a second window — mid-turn showed **nothing running** while the worker
+kept generating and kept spending, and the answer surfaced only if the user
+happened to reload later. There was no endpoint to ask, either: `turn_guard`
+already tracked `session → handle`, but nothing exposed it.
+
+`GET /sessions/{id}/turn` now reports `{running, turn_id, started_at, age_ms}`.
+The thread asks once per session switch and once per return-to-foreground, then
+polls only while a turn is known to be running — a turn cannot start without this
+client's knowledge except through those two doors. It states the fact and the
+elapsed time (there is no stream to re-attach to, and inventing partial text
+would be worse than saying nothing) and reloads the thread when the turn ends.
+
+`TurnHandle` gained `started_at` for display and a monotonic clock for the age,
+so a wall-clock jump cannot make a live turn look hours old.
+
+### Fixed — an unsent question was destroyed by switching sessions
+
+The composer was one piece of component state, cleared unconditionally on every
+session switch (`setText("")`) and never persisted: writing a long question,
+switching to another investigation to check something, and coming back lost it,
+as did quitting mid-sentence. Drafts are now per session in `localStorage`,
+including for a chat that does not exist yet — the most common case, since a
+fresh chat has no session id until the first message is sent.
+
+They stay client-side deliberately: a draft is UI state, never sent anywhere, and
+persisting it server-side would put unsent user text into the audit surface.
+
+### Added — "inspect" lands on the turn you clicked
+
+The turn footer's `onOpenInspector` took no argument, so from turn 7 of 30 you
+arrived at the top of a whole session's timeline with no marker for which rows
+were yours. It now passes the turn's wall-clock window (question → answer);
+matching rows are highlighted and the first is scrolled into view. Timestamps are
+fixed-width ISO-8601 Z, so the comparison is a string compare.
+
+### Added — the thread speaks to a screen reader
+
+The only `aria-live` region in the app was the toast host: a streaming answer, a
+finished turn and a failed turn were all silent. A polite live region now reports
+state transitions — working, answer ready, turn failed, stopped, model provider
+needed. State transitions, not the token stream: narrating an answer character by
+character is worse than silence, and the finished answer is already in the normal
+reading order.
+
+### Verified
+
+`sidecar`: 814 tests pass (11 new, `tests/test_v051_agent_knowledge.py`).
+`frontend`: 110 unit tests pass (19 new, `src/components/knowledge.test.tsx`),
+plus 3 new E2E specs; `npm run typecheck` (app + e2e) and `npm run build` clean.
+No migration, no change to any tool, and no new data leaves the machine.
+
 ## [0.50.0] - 2026-08-05
 
 _What an answer is allowed to look like. Frontend, plus one line of agent

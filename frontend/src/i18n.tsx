@@ -412,6 +412,26 @@ const en: Dict = {
   "chart.peak": "peak",
   "chart.hide": "Hide chart",
   "chart.show": "Show chart",
+
+  // what the agent knows (v0.51.0)
+  "memory.title": "What the agent knows",
+  "memory.kind.fact": "Established facts",
+  "memory.kind.finding": "Recorded findings",
+  "memory.kind.open_question": "Open questions",
+  "memory.attached": "Attached evidence",
+  "memory.correct": "Correct",
+  "memory.resolve": "Resolve",
+  "memory.save": "Save",
+  "memory.confidence": "confidence: {level}",
+  "memory.rolled": "The agent replays the most recent {shown} of {total} messages; earlier turns are no longer in its context — it works from this memory and the summary instead.",
+  "inspector.anchored": "Highlighted: what this turn did.",
+  "thread.remoteTurn": "A turn started earlier is still running ({age}). Its answer will appear here.",
+
+  // screen-reader announcements
+  "a11y.working": "The agent is working.",
+  "a11y.answerReady": "Answer ready.",
+  "a11y.turnFailed": "The turn failed.",
+  "a11y.needKey": "A model provider is required before the agent can answer.",
 };
 
 const zh: Dict = {
@@ -799,6 +819,24 @@ const zh: Dict = {
   "chart.peak": "峰值",
   "chart.hide": "隐藏图表",
   "chart.show": "显示图表",
+
+  "memory.title": "Agent 已知内容",
+  "memory.kind.fact": "已确认事实",
+  "memory.kind.finding": "已记录发现",
+  "memory.kind.open_question": "待解问题",
+  "memory.attached": "已附证据",
+  "memory.correct": "更正",
+  "memory.resolve": "标记完结",
+  "memory.save": "保存",
+  "memory.confidence": "置信度：{level}",
+  "memory.rolled": "Agent 只回放最近 {shown} 条（共 {total} 条）消息；更早的轮次已不在它的上下文中——它依据这份记忆和摘要作答。",
+  "inspector.anchored": "高亮部分：本轮所做的事。",
+  "thread.remoteTurn": "此前开始的一轮仍在运行（{age}），答案会显示在这里。",
+
+  "a11y.working": "Agent 正在工作。",
+  "a11y.answerReady": "答案已就绪。",
+  "a11y.turnFailed": "本轮失败。",
+  "a11y.needKey": "需要先配置模型提供商，Agent 才能作答。",
 };
 
 const DICTS: Record<Lang, Dict> = { en, zh };

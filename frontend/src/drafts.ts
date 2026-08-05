@@ -1,0 +1,82 @@
+/**
+ * Per-session composer drafts, persisted.
+ *
+ * The composer was a single piece of Thread state, wiped on every session
+ * switch and gone entirely on reload. Typing a long question in one
+ * investigation, switching to another to check something, and coming back lost
+ * it — as did quitting the app mid-sentence. Neither is a failure the user can
+ * see coming, and neither leaves a trace to recover from.
+ *
+ * Kept in localStorage rather than SQLite deliberately: a draft is UI state, it
+ * is never sent anywhere, and persisting it server-side would put unsent user
+ * text into the audit surface. It is redaction-exempt for the same reason —
+ * nothing here reaches a prompt, a log, or a report until the user presses
+ * Enter, at which point the normal sanitized path takes over.
+ */
+
+const KEY = "saw.drafts";
+/** A draft is a question, not a document; this is far above any real one and
+ * exists so a pathological paste cannot fill the storage quota. */
+const MAX_DRAFT = 20_000;
+/** Drafts for at most this many sessions, newest-first; the rest are dropped. */
+const MAX_SESSIONS = 50;
+
+/** The not-yet-created session. Typing into a fresh chat is the MOST common
+ * place a draft is lost — the session id does not exist until the first message
+ * is sent — so it gets a stable key of its own rather than being dropped. */
+const NEW_SESSION_KEY = "__new__";
+
+const keyFor = (sessionId: string | null) => sessionId ?? NEW_SESSION_KEY;
+
+type Store = Record<string, string>;
+
+function read(): Store {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed as Store;
+  } catch {
+    // Corrupt or unavailable storage must never break the composer.
+    return {};
+  }
+}
+
+function write(store: Store): void {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(store));
+  } catch {
+    /* quota or private mode — the draft is a convenience, not a guarantee */
+  }
+}
+
+/** The saved draft for a session, or "" — never null, so the composer can use
+ * it as its value directly. */
+export function loadDraft(sessionId: string | null): string {
+  return read()[keyFor(sessionId)] ?? "";
+}
+
+/** Save (or clear, when `text` is empty) one session's draft. */
+export function saveDraft(sessionId: string | null, text: string): void {
+  const key = keyFor(sessionId);
+  const store = read();
+  if (!text) {
+    if (!(key in store)) return;
+    delete store[key];
+  } else {
+    store[key] = text.slice(0, MAX_DRAFT);
+    // Re-insert last so the key order is oldest-first and trimming drops the
+    // sessions the user has not touched in longest.
+    const keys = Object.keys(store);
+    if (keys.length > MAX_SESSIONS) {
+      for (const k of keys.slice(0, keys.length - MAX_SESSIONS)) delete store[k];
+    }
+  }
+  write(store);
+}
+
+/** Drop a session's draft (it was sent, or the session was deleted). */
+export function clearDraft(sessionId: string | null): void {
+  saveDraft(sessionId, "");
+}
