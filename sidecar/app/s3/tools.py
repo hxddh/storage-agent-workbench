@@ -53,7 +53,38 @@ ERROR = "error"
 # --- Error helpers ----------------------------------------------------------
 
 
+def _diag_meta(meta: dict[str, Any]) -> dict[str, Any]:
+    """The metadata that makes a request actionable, from any boto response.
+
+    ``request_id`` / ``host_id`` are what a provider's support asks for first;
+    without them, an unexplained 500 or 503 from an S3-compatible gateway is a
+    dead end. ``retry_attempts`` is why a request that "succeeded" took four
+    seconds — botocore retries throttling silently, so a turn that was rate
+    limited otherwise reports success with no explanation. The headers carry
+    ``x-amz-bucket-region`` (the real region behind a 301) and the provider's
+    ``server`` banner.
+
+    Headers go through the standard redaction, which keeps the diagnostic ones
+    and strips Authorization / Set-Cookie (rule 15) — verified by test."""
+    hdrs = meta.get("HTTPHeaders") or {}
+    out: dict[str, Any] = {
+        "request_id": meta.get("RequestId") or hdrs.get("x-amz-request-id") or None,
+        "host_id": meta.get("HostId") or hdrs.get("x-amz-id-2") or None,
+        "retry_attempts": meta.get("RetryAttempts"),
+        "headers_sanitized": redact(hdrs),
+    }
+    # A bucket that answers 301 tells you where it actually lives in a header;
+    # AWS repeats it in the message but most gateways do not, so parsing prose
+    # would be the fragile path.
+    region = hdrs.get("x-amz-bucket-region")
+    if region:
+        out["bucket_region"] = region
+    return out
+
+
 def _client_error_fields(exc: ClientError) -> dict[str, Any]:
+    """The failure shape EVERY live tool returns. It carries the request's
+    identity so a failure the agent cannot explain is still escalatable."""
     resp = exc.response or {}
     err = resp.get("Error", {})
     meta = resp.get("ResponseMetadata", {})
@@ -61,6 +92,7 @@ def _client_error_fields(exc: ClientError) -> dict[str, Any]:
         "error_code": err.get("Code"),
         "error_message_sanitized": redact_text(str(err.get("Message") or "")),
         "status_code": meta.get("HTTPStatusCode"),
+        **_diag_meta(meta),
     }
 
 
@@ -83,10 +115,6 @@ def _generic_error_fields(exc: Exception) -> dict[str, Any]:
         "error_code": type(exc).__name__,
         "error_message_sanitized": redact_text(str(exc)),
     }
-
-
-def _sanitized_headers(meta: dict[str, Any]) -> dict[str, Any]:
-    return redact(meta.get("HTTPHeaders", {}))
 
 
 # --- 1. test_credentials ----------------------------------------------------
@@ -112,7 +140,8 @@ def test_credentials(conn: sqlite3.Connection, provider_id: str) -> dict[str, An
             or owner.get("ID")
             or f"{len(resp.get('Buckets', []))} bucket(s) visible"
         )
-        return {**base, "success": True, "identity_hint": hint}
+        return {**base, "success": True, "identity_hint": hint,
+                **_diag_meta(resp.get("ResponseMetadata", {}))}
     except ClientError as exc:
         fields = _client_error_fields(exc)
         code = fields["error_code"]
@@ -245,10 +274,82 @@ def head_bucket(conn: sqlite3.Connection, provider_id: str, bucket: str) -> dict
             "success": True,
             # A successful HeadBucket is a 200; default if the metadata omits it.
             "status_code": meta.get("HTTPStatusCode") or 200,
-            "headers_sanitized": _sanitized_headers(meta),
+            **_diag_meta(meta),
         }
     except ClientError as exc:
         return {**base, **_client_error_fields(exc), "success": False}
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc), "success": False}
+
+
+# --- 2b. get_bucket_location -------------------------------------------------
+
+
+def get_bucket_location(conn: sqlite3.Connection, provider_id: str,
+                        bucket: str) -> dict[str, Any]:
+    """Where does this bucket actually live? One read-only call.
+
+    Region / endpoint mismatch is the most common misconfiguration in
+    S3-compatible setups, and until now diagnosing it cost a full
+    ``get_bucket_config_summary`` — 15+ API calls — because there was no cheap
+    probe. This is that probe.
+
+    Two things make the answer trustworthy rather than a guess:
+
+    - AWS returns an EMPTY LocationConstraint for ``us-east-1``; treating that
+      as "unknown" would report the most common region as undetectable.
+    - A 301 on the way in still carries ``x-amz-bucket-region``, so a bucket the
+      configured endpoint cannot serve still reports where it is (the header is
+      the reliable source; AWS repeats it in prose, most gateways do not).
+
+    A provider without GetBucketLocation is a capability gap, not a failure
+    (rule 18)."""
+    base: dict[str, Any] = {
+        "success": False,
+        "bucket": bucket,
+        "bucket_region": None,
+        "configured_region": None,
+        "endpoint_url": None,
+        "region_mismatch": None,
+        "provider_unsupported": False,
+        "error_code": None,
+        "error_message_sanitized": None,
+    }
+    try:
+        cfg = client_factory.load_provider(conn, provider_id)
+        base["configured_region"] = cfg.region
+        base["endpoint_url"] = cfg.endpoint_url
+    except Exception as exc:  # noqa: BLE001
+        return {**base, **_generic_error_fields(exc)}
+
+    def _verdict(found: str | None) -> dict[str, Any]:
+        configured = (base.get("configured_region") or "").strip().lower()
+        got = (found or "").strip().lower()
+        # Only claim a mismatch when BOTH sides are known — "unset region on a
+        # custom endpoint" is normal, not a fault.
+        mismatch = bool(configured and got and configured != got)
+        return {"bucket_region": found, "region_mismatch": mismatch if (configured and got) else None}
+
+    try:
+        client = client_factory.build_s3_client(conn, provider_id)
+        resp = client.get_bucket_location(Bucket=bucket)
+        raw = resp.get("LocationConstraint")
+        # "" / None is us-east-1 in the AWS wire format. On a non-AWS gateway an
+        # empty answer means "this provider does not partition by region", which
+        # is reported as-is rather than invented as us-east-1.
+        region = raw or ("us-east-1" if (cfg.endpoint_url is None) else None)
+        return {**base, "success": True, **_verdict(region),
+                **_diag_meta(resp.get("ResponseMetadata", {}))}
+    except ClientError as exc:
+        fields = _client_error_fields(exc)
+        if _is_unsupported(exc):
+            return {**base, "success": True, "provider_unsupported": True,
+                    "bucket_region": "Provider unsupported"}
+        # A redirect still answers the question — that IS the diagnosis.
+        found = fields.get("bucket_region")
+        if found:
+            return {**base, **fields, "success": True, **_verdict(found)}
+        return {**base, **fields, "success": False}
     except Exception as exc:  # noqa: BLE001
         return {**base, **_generic_error_fields(exc), "success": False}
 

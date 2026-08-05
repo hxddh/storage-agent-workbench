@@ -516,6 +516,60 @@ Inputs were sanitized on write and the whole document is redacted again on
 render, so the report still contains no raw log lines, no raw inventory rows, no
 evidence file content, no credentials and no chain-of-thought.
 
+## What the access-log engine measures
+
+`analysis/access_logs.py` parses `latency_ms` and `bytes_sent` into the table on
+ingest and, until v0.52.0, read neither — so "why is it slow" and "why is it
+expensive", the two questions people bring an access log to answer, had no
+numbers behind them. It now computes, alongside the existing volume and status
+breakdowns:
+
+- **latency percentiles** (p50/p95/p99/max), not an average — the mean of a
+  latency distribution hides the tail, and the tail is what gets reported as
+  "it's slow";
+- **egress** — total bytes served and the keys that account for them, because a
+  single hot key served uncached is a different problem from broad traffic;
+- **errors by prefix** — which part of the bucket is failing, which a global
+  error rate cannot say; ordered by error count so a 100%-failing prefix with
+  three requests does not outrank an outage;
+- **error rate by hour** — a flat 2% and a 2% that was 40% for one hour are
+  different incidents;
+- **top talkers**, ranked on the ingest-masked client IP (rule 15).
+
+Every one of these is `null` (absent, never zero) when the log format carries no
+such field: many formats have no timing at all, and a "p95 = 0 ms" would be a
+false claim about performance. The derived findings follow the same rule and
+additionally require a minimum sample before firing.
+
+## What a failure carries
+
+Every live S3 tool returns the same failure shape, built by
+`s3/tools.py::_client_error_fields`. Since v0.52.0 that shape carries the
+metadata that makes a failure actionable rather than merely reported:
+
+- **`request_id` / `host_id`** — what a provider's support desk asks for first.
+  Without them an unexplained 500 or 503 from an S3-compatible gateway is a dead
+  end. botocore hands them over on the same exception; they were being dropped,
+  while the *offline* triage parser had always extracted `request_id` from
+  pasted error text — one product, two standards.
+- **`retry_attempts`** — botocore retries throttling transparently, so a request
+  that "succeeded" in four seconds looked like an unexplained pause. This is the
+  explanation, and it is captured on the success path too.
+- **`headers_sanitized`** — the provider's `server` banner and, on a 301,
+  `x-amz-bucket-region`: the reliable source for where a bucket really lives
+  (AWS repeats it in message prose, most gateways do not). Headers go through
+  the standard redaction, which keeps the diagnostic ones and strips
+  Authorization / Set-Cookie — asserted by test, not assumed.
+
+It lives in the shared helper on purpose: every tool inherits it, and there is
+no per-tool variant to drift. The turn's one-line trace shows
+`<code> · req <id>` on failure so the id is visible without expanding anything.
+
+`get_bucket_location` is the matching probe: one read-only call that reports the
+bucket's region beside the configured one and says whether they disagree.
+Region/endpoint mismatch is the most common S3-compatible misconfiguration and
+used to cost a 15-call config summary to diagnose.
+
 ## What the agent knows
 
 The session agent keeps its own working memory — facts it established, findings

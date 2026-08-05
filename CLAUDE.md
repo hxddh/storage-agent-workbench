@@ -238,6 +238,9 @@ Allowed MVP tool groups:
 
 - `test_credentials`
 - `head_bucket`
+- `get_bucket_location` (read-only, ONE call — where the bucket actually lives,
+  vs the configured region/endpoint; answers a 301 redirect too. The cheap probe
+  for the most common S3-compatible misconfiguration)
 - `list_objects` (agent tool; internal S3 helper is `list_objects_v2`)
 - `head_object`
 - `get_object_lock_status` (read-only, one object — retention mode + retain-until + legal hold; "why can't I delete this object?")
