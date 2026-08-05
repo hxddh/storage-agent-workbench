@@ -432,6 +432,11 @@ const en: Dict = {
   "a11y.answerReady": "Answer ready.",
   "a11y.turnFailed": "The turn failed.",
   "a11y.needKey": "A model provider is required before the agent can answer.",
+
+  // token detail (v0.53.0)
+  "metrics.cachedHint":
+    "{n} input tokens ({pct}%) were served from the endpoint's prompt cache — cached input is typically much cheaper.",
+  "metrics.reasoningHint": "{n} of the output tokens were reasoning, which is billed but never shown as text.",
 };
 
 const zh: Dict = {
@@ -837,6 +842,9 @@ const zh: Dict = {
   "a11y.answerReady": "答案已就绪。",
   "a11y.turnFailed": "本轮失败。",
   "a11y.needKey": "需要先配置模型提供商，Agent 才能作答。",
+
+  "metrics.cachedHint": "其中 {n}（{pct}%）输入 token 命中了端点的 prompt 缓存——缓存输入通常便宜得多。",
+  "metrics.reasoningHint": "输出中有 {n} 个 token 用于推理：计费，但从不作为正文显示。",
 };
 
 const DICTS: Record<Lang, Dict> = { en, zh };

@@ -3,6 +3,7 @@ import type { Grounding, NextAction, SessionFinding, SessionRunLink, ToolActivit
 import { RunDetail } from "./RunDetail";
 import { Markdown } from "./Markdown";
 import { useI18n } from "../i18n";
+import { LiveTrace } from "./LiveTrace";
 
 const RUN_STATUS: Record<string, { cls: string; key: string }> = {
   pending: { cls: "text-gray-400", key: "run.queued" },
@@ -81,7 +82,7 @@ export const MessageCard = memo(function MessageCard({
           single expansion, in execution order and next to the grounding it
           supports — see TurnFooter. */}
       {streaming && toolActivity && toolActivity.length > 0 && (
-        <ToolActivityList items={toolActivity} />
+        <LiveTrace items={toolActivity} />
       )}
       <Markdown text={shown} />
       {streaming &&
@@ -177,34 +178,6 @@ function stripMetaBlock(text: string): string {
  * footer's single expansion, which shows the same calls in execution order
  * alongside the grounding they support, so this no longer renders afterwards.
  */
-function ToolActivityList({ items }: { items: ToolActivity[] }) {
-  const { t } = useI18n();
-  return (
-    <div className="mb-2.5 space-y-[3px]">
-      {items.map((a, i) => (
-        <div key={i} className="flex items-center gap-2 text-[11.5px] text-gray-500">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-gray-600">
-            <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z" />
-          </svg>
-          <span className="shrink-0 font-mono text-accent-soft">{a.tool}</span>
-          {a.target ? (
-            <span className="min-w-0 flex-1 truncate text-gray-600" title={a.target}>· {a.target}</span>
-          ) : (
-            <span className="flex-1" />
-          )}
-          {a.status === "started" ? (
-            <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-warn-fg">
-              <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-              {t("tool.running")}
-            </span>
-          ) : (
-            <span className="shrink-0 font-mono text-[11px] text-gray-500" title={a.result}>{a.result}</span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
 export function copyText(text: string): Promise<boolean> {
   if (navigator.clipboard?.writeText) {
     return navigator.clipboard.writeText(text).then(() => true).catch(() => legacyCopy(text));
@@ -285,23 +258,6 @@ export function ThinkingBubble() {
  * checks have completed so far + the latest one, so a long investigation reads
  * as making progress at a glance (complements the detailed tool list). This is
  * evidence/progress, never a plan. */
-export function LiveProgress({ tools }: { tools: ToolActivity[] }) {
-  const { t } = useI18n();
-  if (!tools.length) return null;
-  const done = tools.filter((a) => a.status !== "started").length;
-  const latest = tools[tools.length - 1];
-  const label = latest ? [latest.tool, latest.target].filter(Boolean).join(" · ") : "";
-  return (
-    <div className="mb-1.5 flex items-center gap-2 text-[11px] text-gray-500">
-      <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-      <span className="shrink-0">{t("thread.progress", { n: done })}</span>
-      {label && (
-        <span className="min-w-0 truncate font-mono text-gray-600" title={label}>· {label}</span>
-      )}
-    </div>
-  );
-}
-
 /** Transparency for the last answer: what it's grounded in and what the agent
  * couldn't verify. Collapsed by default — subtle, not a wall of text. */
 export function GroundingCard({ g }: { g: Grounding }) {

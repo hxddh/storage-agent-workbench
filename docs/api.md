@@ -157,6 +157,15 @@ without bound. `GET /sessions/{id}/report` is the one caller that reads the
 thread unbounded, because the report covers the entire investigation; it bounds
 the document for reading and states when it truncates.
 
+Token detail (v0.53.0): `/overview`'s `usage` and each `turn_metrics` row also
+carry `cached_input_tokens` and `reasoning_tokens`, taken straight from the SDK's
+`Usage` details. Both are **null when the endpoint did not report them** — not
+zero. The fixed prompt prefix (instructions + tool schemas, ~5k tokens) is
+re-sent on every step of a multi-step turn, so the cache hit rate is the single
+biggest factor in what a turn costs; a confident `0` would claim a cold cache we
+never measured. A genuine `0` IS stored, because a cold cache is the finding
+worth acting on.
+
 Observability (v0.45.0): `/activity` and `/audit` are bounded — `limit` is capped
 at 500 (default 200) and every response carries `total` / `offset` / `limit` /
 `truncated`, so a partial timeline is never presented as a complete one. They

@@ -66,6 +66,17 @@ export function TurnFooter({
   const inTok = fmtTokens(usage?.input_tokens);
   const outTok = fmtTokens(usage?.output_tokens);
   const hasTokens = inTok !== null || outTok !== null;
+  // The two numbers that explain what a turn actually COST (v0.53.0). The fixed
+  // prefix — instructions, tool schemas, context — is re-sent on every step of a
+  // multi-step turn, so a cached hit rate is the difference between a cheap turn
+  // and an expensive one; reasoning tokens are output paid for and never shown.
+  // Absent when the endpoint did not report them: not the same as zero.
+  const cachedTok = fmtTokens(usage?.cached_input_tokens);
+  const reasonTok = fmtTokens(usage?.reasoning_tokens);
+  const cachedShare =
+    usage?.cached_input_tokens != null && usage?.input_tokens
+      ? Math.round((usage.cached_input_tokens / usage.input_tokens) * 100)
+      : null;
   const evidence = grounding?.evidence_used ?? [];
   const gaps = grounding?.evidence_gaps ?? [];
   const skills = grounding?.skills_used ?? [];
@@ -108,7 +119,25 @@ export function TurnFooter({
         {hasTokens ? (
           <span className="tabular-nums" title={model ? t("metrics.modelHint", { model }) : undefined}>
             <span className="text-gray-700">↑</span>{inTok ?? "?"}
+            {cachedTok !== null && (
+              <span
+                className="ml-1 text-success"
+                data-testid="cached-tokens"
+                title={t("metrics.cachedHint", { n: cachedTok, pct: cachedShare ?? 0 })}
+              >
+                ({cachedShare !== null ? `${cachedShare}%` : cachedTok}⚡)
+              </span>
+            )}
             <span className="ml-1.5 text-gray-700">↓</span>{outTok ?? "?"}
+            {reasonTok !== null && Number(usage?.reasoning_tokens) > 0 && (
+              <span
+                className="ml-1 text-gray-600"
+                data-testid="reasoning-tokens"
+                title={t("metrics.reasoningHint", { n: reasonTok })}
+              >
+                (+{reasonTok}⋯)
+              </span>
+            )}
           </span>
         ) : (
           // Honest absence: the provider never reported usage. A zero here would

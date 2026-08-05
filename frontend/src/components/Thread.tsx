@@ -30,7 +30,7 @@ import { Button } from "./ui";
 import { Markdown } from "./Markdown";
 import { Composer } from "./Composer";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
-import { GroundingCard, LiveProgress, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard, copyText } from "./ThreadCards";
+import { GroundingCard, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard, copyText } from "./ThreadCards";
 import { SessionInspector } from "./SessionInspector";
 import { TurnFooter } from "./TurnFooter";
 import { fmtDuration } from "./TurnMetrics";
@@ -1019,7 +1019,6 @@ export function Thread({
                   <MessageCard role="user" content={pending} />
                   {streamText !== null || streamTools.length ? (
                     <>
-                      {!run.stopped && <LiveProgress tools={streamTools} />}
                       <MessageCard
                         role="assistant"
                         content={streamText ?? ""}

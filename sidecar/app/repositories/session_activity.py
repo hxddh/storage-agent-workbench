@@ -142,12 +142,30 @@ def record_turn(
         except (TypeError, ValueError):
             return None
 
+    def _opt(key: str) -> int | None:
+        """An OPTIONAL metric: NULL when the endpoint did not report it.
+
+        `_n` coalesces a missing key to 0, which is right for the core token
+        counts (present whenever usage is) and wrong for the detail columns —
+        writing 0 there would state "nothing was cached" when the truth is
+        "this endpoint does not say". A genuine 0 still stores as 0."""
+        if not usage or u.get(key) is None:
+            return None
+        try:
+            return int(u[key])
+        except (TypeError, ValueError):
+            return None
+
     conn.execute(
         "INSERT INTO turn_metrics (id, session_id, turn_id, message_id, model, requests, "
-        " input_tokens, output_tokens, total_tokens, duration_ms, tool_calls, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " input_tokens, output_tokens, total_tokens, cached_input_tokens, reasoning_tokens, "
+        " duration_ms, tool_calls, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (uuid.uuid4().hex, session_id, turn_id, message_id, model, _n("requests"),
          _n("input_tokens"), _n("output_tokens"), _n("total_tokens"),
+         # NULL, not 0, when the endpoint omitted the detail: "not reported" and
+         # "nothing cached" are different facts (v0.53.0).
+         _opt("cached_input_tokens"), _opt("reasoning_tokens"),
          duration_ms, tool_calls, utcnow()),
     )
 
@@ -164,7 +182,11 @@ def usage_rollup(conn: sqlite3.Connection, session_id: str) -> dict[str, Any]:
         "       COALESCE(sum(CASE WHEN total_tokens IS NOT NULL THEN 1 ELSE 0 END), 0) measured, "
         "       COALESCE(sum(input_tokens), 0) i, "
         "       COALESCE(sum(output_tokens), 0) o, COALESCE(sum(total_tokens), 0) t, "
-        "       COALESCE(sum(requests), 0) r, COALESCE(sum(duration_ms), 0) ms "
+        "       COALESCE(sum(requests), 0) r, COALESCE(sum(duration_ms), 0) ms, "
+        "       COALESCE(sum(CASE WHEN cached_input_tokens IS NOT NULL THEN 1 ELSE 0 END), 0) cm, "
+        "       COALESCE(sum(cached_input_tokens), 0) c, "
+        "       COALESCE(sum(CASE WHEN reasoning_tokens IS NOT NULL THEN 1 ELSE 0 END), 0) rm, "
+        "       COALESCE(sum(reasoning_tokens), 0) rt "
         "FROM turn_metrics WHERE session_id = ?",
         (session_id,),
     ).fetchone()
@@ -182,6 +204,13 @@ def usage_rollup(conn: sqlite3.Connection, session_id: str) -> dict[str, Any]:
         "total_tokens": int(row["t"] or 0),
         "requests": int(row["r"] or 0),
         "duration_ms": int(row["ms"] or 0),
+        # Cached input is typically an order of magnitude cheaper, and the fixed
+        # prefix (instructions + tool schemas + context) is re-sent on every step
+        # of a multi-step turn — so the hit rate, not the raw input count, is
+        # what a turn actually costs. None when no turn reported it.
+        "cached_input_tokens": int(row["c"] or 0) if int(row["cm"] or 0) else None,
+        # Output the user pays for and never sees.
+        "reasoning_tokens": int(row["rt"] or 0) if int(row["rm"] or 0) else None,
     }
 
 
@@ -190,7 +219,8 @@ def list_turns(conn: sqlite3.Connection, session_id: str,
     """Per-turn metrics, oldest first."""
     rows = conn.execute(
         "SELECT turn_id, message_id, model, requests, input_tokens, output_tokens, "
-        "       total_tokens, duration_ms, tool_calls, created_at "
+        "       total_tokens, cached_input_tokens, reasoning_tokens, "
+        "       duration_ms, tool_calls, created_at "
         "FROM turn_metrics WHERE session_id = ? ORDER BY created_at ASC, rowid ASC LIMIT ?",
         (session_id, _bounded(limit)),
     ).fetchall()

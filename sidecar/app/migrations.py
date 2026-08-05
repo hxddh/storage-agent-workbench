@@ -595,6 +595,11 @@ CREATE INDEX IF NOT EXISTS idx_turn_metrics_session ON turn_metrics(session_id, 
 CREATE INDEX IF NOT EXISTS idx_turn_metrics_message ON turn_metrics(message_id);
 """
 
+_M022 = """
+ALTER TABLE turn_metrics ADD COLUMN cached_input_tokens INTEGER;
+ALTER TABLE turn_metrics ADD COLUMN reasoning_tokens INTEGER;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -618,6 +623,11 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (19, "model_provider_max_output", _M019),
     (20, "session_scoped_observability", _M020),
     (21, "turn_metrics", _M021),
+    # v0.53.0 — the two numbers that actually explain a turn's cost. The SDK has
+    # reported both since v0.45.0's usage capture; nothing read them, so a
+    # cached prefix (typically an order of magnitude cheaper) and a reasoning
+    # model's invisible output were indistinguishable from ordinary spend.
+    (22, "turn_metrics_token_details", _M022),
 ]
 
 

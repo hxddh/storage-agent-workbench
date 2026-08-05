@@ -516,6 +516,41 @@ Inputs were sanitized on write and the whole document is redacted again on
 render, so the report still contains no raw log lines, no raw inventory rows, no
 evidence file content, no credentials and no chain-of-thought.
 
+## What a turn costs
+
+Three things dominate a turn's token bill, and until v0.53.0 two of them were
+invisible and one was partly wasted.
+
+**The fixed prefix** — instructions plus tool schemas — is ~5k tokens and is
+re-sent on **every step** of a multi-step turn. A turn with eight tool calls
+makes nine model requests, so it is paid nine times. It is a stable byte-for-byte
+prefix, which is exactly what endpoint prompt caching is for; whether the
+endpoint actually caches it is the single biggest factor in what the turn costs.
+
+**The context block** is rebuilt per turn and re-sent per step. It used to be
+serialized with `json.dumps(..., indent=2)`: measured on a 40-turn session,
+43,547 chars pretty against 37,520 compact — **14% of the context was
+indentation**. Tool results had the same issue at smaller scale (a full
+`list_objects` page: 75,603 chars against 73,794). Both are compact now; models
+parse compact JSON identically, and the indentation only ever helped a human
+reading a debug dump. The inspector still pretty-prints at the point a human
+actually reads it.
+
+**Tool outputs** accumulate inside a turn — a full 1000-key listing page is
+~18k tokens and stays in the conversation for every later step. That echo cannot
+simply be trimmed: the S3 layer computes `next_token` over the whole page, so a
+smaller echo would drop keys the agent can never page back to.
+
+`turn_metrics` therefore records two more columns (migration 22):
+`cached_input_tokens` and `reasoning_tokens`, both straight from the SDK's
+`Usage` (`input_tokens_details` / `output_tokens_details`), which has reported
+them since usage capture landed and which nothing read. Both are **NULL when the
+endpoint did not report them** — "this endpoint does not say" and "nothing was
+cached" are different facts, and the repository has a separate `_opt` writer so
+the core counts' coalesce-to-zero rule cannot silently answer the first with the
+second. A genuine 0 is stored as 0, because a cold cache is the measurement
+worth acting on.
+
 ## What the access-log engine measures
 
 `analysis/access_logs.py` parses `latency_ms` and `bytes_sent` into the table on
@@ -622,6 +657,24 @@ including for a chat that does not exist yet — the most common place a draft w
 lost, since a fresh chat has no session id until the first message is sent. They
 stay client-side deliberately: a draft is UI state, never sent anywhere, and
 persisting it server-side would put unsent user text into the audit surface.
+
+## The live trace
+
+While a turn runs, the thread shows one growing list of tool calls whose newest
+row carries the spinner. Before v0.53.0 it showed two: a `LiveProgress` summary
+line ("5 checks run · list_objects · acme-logs") stacked directly on top of a
+`ToolActivityList` rendering those same calls as rows — the duplication v0.49.0
+removed from the *finished* state, still present in the live one. The rows are
+the progress indicator; a separate counter adds nothing they do not show.
+
+Each row also carries the arguments that decide what the call meant. A row used
+to read `list_objects · acme-logs` whether the call was a scan of one prefix or a
+recursive walk of the whole bucket — and the arguments had been written to
+`tool_calls` all along, they were simply never put on the SSE stream. Only the
+distinguishing ones are shown (prefix, aspect, limits, `recursive`, version and
+upload ids); `bucket`/`key` are already the row's target and `provider_id` is an
+opaque id a reader cannot use. They go through the same redaction as everything
+else that reaches the UI.
 
 ## Rendering an answer
 
