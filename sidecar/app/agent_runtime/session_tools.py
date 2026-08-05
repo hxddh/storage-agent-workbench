@@ -47,6 +47,16 @@ def _err(msg: str) -> str:
     return json.dumps({"error": msg})
 
 
+def _out(res: Any) -> str:
+    """A tool result, as compactly as JSON allows.
+
+    Every tool result stays in the conversation for the rest of the turn and is
+    re-sent on each later step, so the default `", "` / `": "` separators are
+    paid many times over. Measured on one full list_objects page: 75,603 chars
+    against 73,794 compact. Small per call, not per turn — and free."""
+    return json.dumps(res, separators=(",", ":"), default=str, ensure_ascii=False)
+
+
 def _summarize(result: Any) -> str:
     if isinstance(result, dict):
         if result.get("error"):
@@ -148,8 +158,12 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
     def note(tool: str, target: str, result: Any) -> None:
         summary = result if isinstance(result, str) else _summarize(result)
         if activity is not None:
+            # Carry the args forward from the matching `started` record so the
+            # finished row reads the same as the live one. Only when the open
+            # call IS this tool — stale args would misdescribe the call.
+            args = dict(_open.get("args") or {}) if _open.get("tool") == tool else {}
             activity.append({"tool": tool, "target": target[:80], "result": summary,
-                             "status": "completed"})
+                             "args": args, "status": "completed"})
         if session_id is None:
             return
         # Persist the call itself, not just the thread trace: sanitized input +
@@ -182,6 +196,28 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
             return f"{bucket}/{key}"
         return str(bucket or kw.get("name") or kw.get("provider_id") or kw.get("endpoint") or "")
 
+    # Arguments that change what a call MEANS, and are worth the width in a live
+    # trace row. `target` already carries bucket/key; provider_id is an opaque id
+    # a reader cannot use. Everything else is bounded and redacted like the rest.
+    _ARG_KEYS = ("prefix", "aspect", "max_keys", "max_uploads", "max_parts", "max_bytes",
+                 "recursive", "paged", "version_id", "upload_id", "etag", "range_bytes",
+                 "samples")
+
+    def _args_of(kw: dict[str, Any]) -> dict[str, Any]:
+        """The call's distinguishing arguments, for the LIVE trace.
+
+        `list_objects(prefix="logs/2026/08/", max_keys=1000, recursive=True)`
+        rendered as just the bucket name — three arguments that decide what the
+        call means were invisible while it ran, even though `rec` has always
+        written them to `tool_calls`. This is the same data reaching the stream."""
+        out: dict[str, Any] = {}
+        for k in _ARG_KEYS:
+            v = kw.get(k)
+            if v is None or v == "" or v is False:
+                continue
+            out[k] = redact_text(str(v))[:80] if isinstance(v, str) else v
+        return out
+
     # Open call being timed by rec(); closed by the matching note(). Only ever
     # one in flight — the agent runs tools sequentially within a turn.
     _open: dict[str, Any] = {}
@@ -199,12 +235,13 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         conn.commit()
         _open.clear()
         _open.update({"tool": tool, "input": {k: str(v)[:200] for k, v in kw.items()},
-                      "t0": time.monotonic()})
+                      "args": _args_of(kw), "t0": time.monotonic()})
         # Emit a START record so the live stream can show "running <tool>…"
         # while the (possibly slow) call executes. Only "completed" records are
         # persisted on the message; the UI ignores fields it doesn't know.
         if activity is not None:
-            activity.append({"tool": tool, "target": _target_of(kw)[:80], "status": "started"})
+            activity.append({"tool": tool, "target": _target_of(kw)[:80],
+                             "args": _args_of(kw), "status": "started"})
 
     @function_tool
     def list_providers() -> str:
@@ -225,7 +262,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         rec("list_buckets", provider_id=provider_id)
         res = s3.list_buckets(conn, provider_id)
         note("list_buckets", provider_name(provider_id), res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def head_bucket(provider_id: str, bucket: str) -> str:
@@ -239,7 +276,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         rec("head_bucket", provider_id=provider_id, bucket=bucket)
         res = s3.head_bucket(conn, provider_id, bucket)
         note("head_bucket", bucket, res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def get_bucket_location(provider_id: str, bucket: str) -> str:
@@ -253,12 +290,12 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         rec("get_bucket_location", provider_id=provider_id, bucket=bucket)
         res = s3.get_bucket_location(conn, provider_id, bucket)
         note("get_bucket_location", bucket, res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def list_objects(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 200,
                      continuation_token: str = "", recursive: bool = False) -> str:
-        """List one page of object keys (read-only ListObjectsV2, up to 1000 per call; no object bodies). To enumerate fully, PAGE: re-call with continuation_token = the previous result's next_token until next_token is null, accumulating result.keys. Set recursive=true to list keys flat under the prefix (no '/' directory grouping). The FULL page (up to 1000 keys) is echoed in `keys`, so the keys you see ARE the whole page — enumerate further pages via next_token. `objects` carries per-key {size, storage_class, last_modified} for the first 100 entries — use it to sample size distribution / storage classes without N head_object calls. For a bucket far larger than paging can cover, propose an inventory analysis instead. Args: provider_id, bucket, prefix?, max_keys? (up to 1000), continuation_token?, recursive?."""
+        """List one page of object keys (read-only ListObjectsV2, up to 1000/call; no bodies). To enumerate fully, PAGE: re-call with continuation_token = the previous next_token until it is null, accumulating result.keys — the FULL page is echoed in `keys`, and paging skips past it, so never treat one page's key_count as the bucket total. `objects` carries {size, storage_class, last_modified} for the first 100 keys — sample size/storage-class distribution from it instead of N head_object calls. recursive=true lists flat (no '/' grouping). For a bucket far larger than paging can cover, propose an inventory analysis. Args: provider_id, bucket, prefix?, max_keys? (up to 1000), continuation_token?, recursive?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -266,8 +303,12 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         if denial:
             return _err(denial)
         bound = guardrails.bound_tool_args("list_objects_v2", {"max_keys": max_keys})
+        # `recursive` is translated to a delimiter below, so record it here or
+        # the trace cannot distinguish a flat enumeration from a directory-style
+        # one — the difference between "listed a folder" and "walked the bucket".
         rec("list_objects", provider_id=provider_id, bucket=bucket, prefix=prefix,
-            max_keys=bound["max_keys"], paged=bool(continuation_token))
+            max_keys=bound["max_keys"], recursive=bool(recursive),
+            paged=bool(continuation_token))
         res = s3.list_objects_v2(conn, provider_id, bucket, bound["max_keys"], prefix or None,
                                  continuation_token=continuation_token or None,
                                  delimiter=None if recursive else "/")
@@ -278,12 +319,12 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
             res["keys"] = res["keys"][:_LIST_KEYS_CTX_CAP]
             res["keys_truncated_in_context"] = True
         note("list_objects", bucket, res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def list_object_versions(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 1000,
                              key_marker: str = "", version_id_marker: str = "") -> str:
-        """List one page of object VERSIONS + delete markers (read-only ListObjectVersions; no bodies). Surfaces the actual noncurrent-version / delete-marker pileup a versioned bucket carries — which config review can't see (it only shows whether versioning + a cleanup rule exist). Use for "why is my versioned bucket so large/expensive?". Returns version/noncurrent/delete-marker counts, current vs noncurrent bytes, ≤20 sample keys, and next_key_marker/next_version_id_marker. When is_truncated is true, page by passing those back as key_marker/version_id_marker — the per-page counts are ONE page, not the bucket total. Args: provider_id, bucket, prefix?, max_keys? (up to 1000), key_marker?, version_id_marker?."""
+        """List one page of object VERSIONS + delete markers (read-only; no bodies). Surfaces the noncurrent-version / delete-marker pileup that config review cannot see (it only shows whether versioning + a cleanup rule exist) — the answer to "why is my versioned bucket so large?". Returns version/noncurrent/delete-marker counts, current vs noncurrent bytes, ≤20 sample keys, and next_key_marker/next_version_id_marker. When is_truncated, the counts are ONE page, not the bucket total: page with those markers. Args: provider_id, bucket, prefix?, max_keys? (up to 1000), key_marker?, version_id_marker?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -295,12 +336,12 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         res = s3.list_object_versions(conn, provider_id, bucket, prefix or None, bound["max_keys"],
                                       key_marker=key_marker or None, version_id_marker=version_id_marker or None)
         note("list_object_versions", bucket, res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def list_multipart_uploads(provider_id: str, bucket: str, prefix: str = "", max_uploads: int = 1000,
                                key_marker: str = "", upload_id_marker: str = "") -> str:
-        """List one page of in-progress / incomplete multipart uploads (read-only ListMultipartUploads; no bodies). Surfaces abandoned uploads — a common silent cost leak (parts are billed but invisible in a normal object listing). Use for unexplained storage/cost. Returns upload count, oldest initiation time, ≤20 sample keys, and next_key_marker/next_upload_id_marker. When is_truncated is true, page by passing those back as key_marker/upload_id_marker — the count is ONE page, not the bucket total. Listing only — aborting is a mutation and is not available; propose a lifecycle rule instead. Args: provider_id, bucket, prefix? (limit to keys under a prefix — REQUIRED on a prefix-scoped provider), max_uploads? (up to 1000), key_marker?, upload_id_marker?."""
+        """List one page of in-progress / incomplete multipart uploads (read-only; no bodies). Abandoned uploads are billed but invisible in a normal listing — a common silent cost leak. Returns upload count, oldest initiation time, ≤20 sample keys, and next_key_marker/next_upload_id_marker; when is_truncated the count is ONE page, not the total. Listing only — aborting is a mutation and does not exist here; propose an AbortIncompleteMultipartUpload lifecycle rule instead. Args: provider_id, bucket, prefix? (REQUIRED on a prefix-scoped provider), max_uploads? (up to 1000), key_marker?, upload_id_marker?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -314,7 +355,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
                                         prefix=prefix or None,
                                         key_marker=key_marker or None, upload_id_marker=upload_id_marker or None)
         note("list_multipart_uploads", bucket, res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def test_credentials(provider_id: str) -> str:
@@ -324,11 +365,11 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         rec("test_credentials", provider_id=provider_id)
         res = s3.test_credentials(conn, provider_id)
         note("test_credentials", provider_name(provider_id), res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def head_object(provider_id: str, bucket: str, key: str, version_id: str = "") -> str:
-        """Read one object's metadata (read-only HeadObject; no body): size, ETag, last-modified, storage class, sanitized user metadata — plus the diagnostic headers: replication_status (PENDING/COMPLETED/FAILED/REPLICA — "did this object replicate?"), restore (GLACIER restore in-progress/expiry — "why isn't my restore ready?"), archive_status (intelligent-tiering archive), parts_count (multipart), lifecycle_expiration ("when will lifecycle delete this?"), version_id, content_type/content_encoding/cache_control (stale-read/caching diagnosis), website_redirect_location. Use to confirm an object exists, check its state, or diagnose a 403/404 on a specific key. Args: provider_id, bucket, key, version_id? (HEAD a specific version — compare current vs noncurrent)."""
+        """Read one object's metadata (read-only HeadObject; no body): size, ETag, last-modified, storage class, sanitized user metadata — plus the diagnostic headers replication_status ("did this replicate?"), restore ("why isn't my Glacier restore ready?"), archive_status, parts_count, lifecycle_expiration ("when will lifecycle delete this?"), version_id, and content_type/content_encoding/cache_control for stale-read diagnosis. Use to confirm an object exists, check its state, or diagnose a 403/404 on a specific key. Args: provider_id, bucket, key, version_id? (HEAD a specific version — compare current vs noncurrent)."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -338,7 +379,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         rec("head_object", provider_id=provider_id, bucket=bucket, key=key)
         res = s3.head_object(conn, provider_id, bucket, key, version_id or None)
         note("head_object", f"{bucket}/{key}", res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def get_object_lock_status(provider_id: str, bucket: str, key: str, version_id: str = "") -> str:
@@ -352,7 +393,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         rec("get_object_lock_status", provider_id=provider_id, bucket=bucket, key=key)
         res = s3.get_object_lock_status(conn, provider_id, bucket, key, version_id or None)
         note("get_object_lock_status", f"{bucket}/{key}", res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def get_object_acl(provider_id: str, bucket: str, key: str, version_id: str = "") -> str:
@@ -366,7 +407,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         rec("get_object_acl", provider_id=provider_id, bucket=bucket, key=key)
         res = s3.get_object_acl(conn, provider_id, bucket, key, version_id or None)
         note("get_object_acl", f"{bucket}/{key}", "public" if res.get("is_public") else res.get("acl_status", res))
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def get_object_tagging(provider_id: str, bucket: str, key: str, version_id: str = "") -> str:
@@ -381,7 +422,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         res = s3.get_object_tagging(conn, provider_id, bucket, key, version_id or None)
         note("get_object_tagging", f"{bucket}/{key}",
              f"{res.get('tag_count', 0)} tags" if res.get("success") else res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def get_object_attributes(provider_id: str, bucket: str, key: str, version_id: str = "") -> str:
@@ -396,7 +437,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         res = s3.get_object_attributes(conn, provider_id, bucket, key, version_id or None)
         note("get_object_attributes", f"{bucket}/{key}",
              res.get("attributes_status", res) if res.get("success") else res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def diagnose_presigned_url(url: str) -> str:
@@ -406,12 +447,12 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         note("diagnose_presigned_url", res.get("host") or "url",
              ("expired" if res.get("expired") else ", ".join(res.get("problems") or []) or "parsed")
              if res.get("success") else "invalid")
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def list_upload_parts(provider_id: str, bucket: str, key: str, upload_id: str,
                           max_parts: int = 1000, part_number_marker: int = 0) -> str:
-        """List the PARTS of one in-progress multipart upload (read-only ListParts; no bodies). list_multipart_uploads shows THAT uploads are stuck; this shows how much a specific one holds — part count, total bytes accrued, first/last part times, ≤20 sample parts. The concrete "this abandoned upload is holding N GB since <date>" evidence for cost diagnosis. A multipart upload can have up to 10,000 parts; when is_truncated is true this is ONE page — page by passing next_part_number_marker back as part_number_marker to get the true total_bytes. Listing only — aborting is a mutation and is NOT available; propose an AbortIncompleteMultipartUpload lifecycle rule instead. Args: provider_id, bucket, key, upload_id (from list_multipart_uploads), max_parts? (up to 1000), part_number_marker?."""
+        """List the PARTS of one in-progress multipart upload (read-only ListParts; no bodies). list_multipart_uploads shows THAT an upload is stuck; this shows how much it holds — part count, bytes accrued, first/last part times, ≤20 sample parts — i.e. the concrete "this abandoned upload has held N GB since <date>". An upload can have 10,000 parts: when is_truncated this is ONE page, so page with next_part_number_marker before quoting total_bytes. Listing only — aborting is a mutation and does not exist here. Args: provider_id, bucket, key, upload_id (from list_multipart_uploads), max_parts? (up to 1000), part_number_marker?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -423,7 +464,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
                                    part_number_marker=part_number_marker or None)
         note("list_upload_parts", f"{bucket}/{key}",
              f"{res.get('part_count', 0)} parts" if res.get("success") else res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def test_conditional_get(provider_id: str, bucket: str, key: str, etag: str) -> str:
@@ -445,7 +486,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         else:
             label = f"changed ({res.get('status_code', 200)})"
         note("test_conditional_get", f"{bucket}/{key}", label)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def test_range_get(provider_id: str, bucket: str, key: str, range_header: str = "bytes=0-1023") -> str:
@@ -465,7 +506,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         res = s3.test_range_get(conn, provider_id, bucket, key, range_header)
         range_budget["n"] += 1
         note("test_range_get", f"{bucket}/{key}", res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def preview_object(provider_id: str, bucket: str, key: str, max_bytes: int = 262144) -> str:
@@ -496,7 +537,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         else:
             trace = f"{res.get('bytes_read', 0)} bytes"
         note("preview_object", f"{bucket}/{key}", trace)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def test_addressing_style(provider_id: str, bucket: str) -> str:
@@ -510,7 +551,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         rec("test_addressing_style", provider_id=provider_id, bucket=bucket)
         res = s3.test_path_style_vs_virtual_host(conn, provider_id, bucket)
         note("test_addressing_style", bucket, res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def measure_request_latency(provider_id: str, bucket: str, key: str = "", samples: int = 5) -> str:
@@ -530,7 +571,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         latency_budget["n"] += 1
         note("measure_request_latency", f"{bucket}/{key}" if key else bucket,
              f"p50 {res.get('p50_ms')}ms" if res.get("success") else "error")
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def read_skill(name: str) -> str:
@@ -561,11 +602,11 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         rec("inspect_endpoint_tls", provider_id=provider_id, endpoint=endpoint)
         res = s3.inspect_tls(endpoint)
         note("inspect_endpoint_tls", provider_name(provider_id), res)
-        return json.dumps(res)
+        return _out(res)
 
     @function_tool
     def get_bucket_config_detail(provider_id: str, bucket: str, aspect: str) -> str:
-        """Read the SANITIZED RULE DETAIL of one bucket-config aspect (read-only GET). The config review tools return only a status/boolean for these; this returns the actual rules a diagnosis needs — so you don't have to ask the user for the config. `aspect` is one of: 'replication' (per-rule status, prefix/tag filter, delete-marker replication, destination bucket), 'notification' (per-target type topic/queue/lambda/eventbridge + resource name, events, prefix/suffix filter — use for "my event/Lambda isn't firing"), 'cors' (allowed origins/methods/headers — use for browser CORS failures), 'logging' (the access-log target bucket/prefix), 'lifecycle' (per-rule prefix/status, transitions, expiration, noncurrent/abort-MPU cleanup), 'encryption' (SSE algorithm + reduced KMS key + bucket-key), 'public_access_block' (the four block/ignore/restrict booleans), 'policy' (per-statement effect/actions/is_public — principal reduced to '*'/'specific', never the raw ARN), 'policy_status' (AWS's IsPublic verdict for the BUCKET POLICY — policy only, does NOT evaluate ACL grants; combine with 'acl' for the full "is this bucket public?" answer, or use review_bucket_security which checks both), 'ownership' (Object Ownership — BucketOwnerEnforced means ACLs are disabled, the recommended posture), 'object_lock' (bucket-level WORM: object-lock enabled + default retention mode/days/years), 'acl' (bucket ACL grants reduced to grantee KIND + permission — "who has grants and of what kind", no owner id/email), 'inventory' (per-config schedule/destination/format/included-versions/optional-fields), 'website' (static-hosting index/error docs, redirect host, routing-rule count), 'intelligent_tiering' (per-config status, filter, tiering days/access-tiers), 'accelerate' (Transfer Acceleration status), 'request_payment' (Requester Pays vs BucketOwner), 'metrics' (request-metrics configs — which prefixes have CloudWatch request metrics), 'analytics' (storage-class-analysis configs + export destination). ARNs are reduced (no account IDs), values redacted, ≤20 rules. A provider lacking the API returns status='provider_unsupported', not an error. Args: provider_id, bucket, aspect."""
+        """Read the SANITIZED RULE DETAIL of one bucket-config aspect (read-only GET). The review tools return a status/boolean; this returns the actual rules a diagnosis needs, so you never have to ask the user for their config. `aspect` is one of: replication, notification, cors, logging, lifecycle, encryption, public_access_block, policy, policy_status, ownership, object_lock, acl, inventory, website, intelligent_tiering, accelerate, request_payment, metrics, analytics. Three are easy to misread: 'policy_status' is AWS's IsPublic verdict for the POLICY ONLY — it does not evaluate ACL grants, so combine it with 'acl' (or use review_bucket_security, which checks both) before answering "is this bucket public?"; 'ownership' BucketOwnerEnforced means ACLs are disabled, the recommended posture; 'object_lock' is the bucket-level WORM default, not a per-object state (use get_object_lock_status for that). ARNs are reduced (no account ids), principals reduced to '*'/'specific', values redacted, ≤20 rules. A provider lacking the API returns status='provider_unsupported', not an error. Args: provider_id, bucket, aspect."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -579,7 +620,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
             return _err(redact_text(f"get_bucket_config_detail failed: {exc}"))
         note("get_bucket_config_detail", f"{bucket} · {aspect}",
              res.get("status") if res.get("success") else "error")
-        return json.dumps(res)
+        return _out(res)
 
     tools = [list_providers, list_buckets, head_bucket, get_bucket_location, list_objects,
              list_object_versions, list_multipart_uploads, list_upload_parts,
@@ -624,7 +665,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
             except Exception as exc:  # noqa: BLE001 — a tool returns an error string, never raises
                 return _err(redact_text(f"{tname} failed: {exc}"))
             note(tname, bucket, "reviewed" if not (isinstance(res, dict) and res.get("error")) else "error")
-            return json.dumps(res)
+            return _out(res)
         return _t
 
     for name, fn, desc in config_tools:
@@ -659,7 +700,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
             return _err(redact_text(f"review_bucket_performance_profile failed: {exc}"))
         note("review_bucket_performance_profile", bucket,
              "reviewed" if not (isinstance(res, dict) and res.get("error")) else "error")
-        return json.dumps(res)
+        return _out(res)
 
     tools.append(review_bucket_performance_profile)
     return tools

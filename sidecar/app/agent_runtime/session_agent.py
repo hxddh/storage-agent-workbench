@@ -412,7 +412,18 @@ def build_session_context(
 
 
 def render_context_text(context: dict[str, Any]) -> str:
-    return json.dumps(context, indent=2, default=str)
+    """The context block, serialized as compactly as JSON allows.
+
+    It used to be pretty-printed with ``indent=2``. Measured on a 40-turn
+    session that is 43,547 chars against 37,520 compact — **14% of the context
+    is indentation whitespace**, and the context is re-sent on every step of a
+    multi-step turn, so a nine-request turn paid ~13k tokens for spaces.
+
+    Models parse compact JSON exactly as well; the indentation only ever served
+    a human reading a debug dump, and the inspector shows the real structure
+    with `JSON.stringify(_, null, 2)` at the point where a human actually reads
+    it."""
+    return json.dumps(context, separators=(",", ":"), default=str, ensure_ascii=False)
 
 
 # Endpoints that rejected `stream_options` (the parameter that makes streamed
@@ -474,7 +485,51 @@ def _usage_snapshot(result: Any) -> dict[str, Any] | None:
     # is "not reported", not "free" — report it as unavailable.
     if out["total_tokens"] <= 0 and out["input_tokens"] <= 0 and out["output_tokens"] <= 0:
         return None
+    out.update(_usage_details(parts))
     return out
+
+
+# The fixed prefix of a turn — instructions + tool schemas + the context JSON —
+# is ~5.6k tokens and is re-sent on EVERY step of a multi-step turn. Whether the
+# endpoint caches it is therefore the single biggest factor in what a turn
+# costs, and reasoning tokens are output the user pays for and never sees. The
+# SDK has reported both since usage capture landed; nothing read them.
+def _usage_details(parts: list[Any]) -> dict[str, Any]:
+    """Cached-input and reasoning token totals, or absent when unreported.
+
+    A key is OMITTED rather than zeroed when no part of the turn reported it:
+    "this endpoint does not tell us" and "nothing was cached" are different
+    facts, and a confident 0 would answer the first with the second."""
+    cached = reasoning = None
+    for u in parts:
+        c = _detail_int(getattr(u, "input_tokens_details", None), "cached_tokens")
+        r = _detail_int(getattr(u, "output_tokens_details", None), "reasoning_tokens")
+        if c is not None:
+            cached = (cached or 0) + c
+        if r is not None:
+            reasoning = (reasoning or 0) + r
+    out: dict[str, Any] = {}
+    if cached is not None:
+        out["cached_input_tokens"] = cached
+    if reasoning is not None:
+        out["reasoning_tokens"] = reasoning
+    return out
+
+
+def _detail_int(details: Any, field: str) -> int | None:
+    """One token-detail field, or None when the endpoint omitted the block.
+
+    Endpoints vary: some send no details object, some send it with the field
+    absent, some send null. All three mean "not reported"."""
+    if details is None:
+        return None
+    value = getattr(details, field, None)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _is_stream_options_rejection(exc: BaseException) -> bool:

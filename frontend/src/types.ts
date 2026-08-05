@@ -328,6 +328,10 @@ export interface ToolActivity {
   tool: string;
   target: string;
   result: string;
+  /** The arguments that decide what this call MEANT — prefix, aspect, max_keys,
+   * recursive, version_id … (v0.53.0). `target` carries bucket/key; without
+   * these a `list_objects` over one prefix looked identical to a full listing. */
+  args?: Record<string, string | number | boolean> | null;
   // Streaming only: a "started" record may arrive before the completed record
   // for the same call, so the UI can show an in-progress row that resolves in
   // place. Absent/other values mean the call is finished.
@@ -463,6 +467,13 @@ export interface TokenUsage {
   input_tokens?: number | null;
   output_tokens?: number | null;
   total_tokens?: number | null;
+  /** Input the endpoint served from its prompt cache (v0.53.0). The fixed
+   * prefix is re-sent on every step of a multi-step turn, so the hit rate — not
+   * the raw input count — is what the turn costs. `null`/absent means the
+   * endpoint did not report it, which is NOT the same as nothing cached. */
+  cached_input_tokens?: number | null;
+  /** Output tokens spent on reasoning — paid for, never displayed as text. */
+  reasoning_tokens?: number | null;
 }
 
 /** Live per-turn metrics from the SSE `done` event. */

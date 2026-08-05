@@ -6,6 +6,107 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-08-05
+
+_What a turn costs, and what the thread says while it runs. Every number below
+was measured against the running app before anything changed._
+
+### Fixed — the live trace showed the same calls twice, and never said what they did
+
+While a turn ran, the thread rendered a `LiveProgress` summary line ("5 checks
+run · list_objects · acme-logs") **stacked directly on top of** a
+`ToolActivityList` showing those same calls as rows. That is the duplication
+v0.49.0 removed from the *finished* state, still present in the live one — two
+components, one event stream.
+
+There is now one growing list whose newest row carries the spinner. Codex and
+Cursor both settle here for the same reason: the rows **are** the progress
+indicator, so a counter above them adds nothing they do not already show.
+
+Each row also gained the arguments that decide what the call meant. A row used
+to read:
+
+```
+list_objects · acme-logs
+```
+
+whether the call was `list_objects(prefix="logs/2026/08/", max_keys=1000)` or a
+recursive walk of the entire bucket. Those arguments had been written to
+`tool_calls` since v0.45.0 — they were simply never put on the SSE stream. Now:
+
+```
+list_objects · acme-logs   logs/2026/08/ ·1000 ·recursive
+```
+
+Only the distinguishing arguments are shown: `bucket`/`key` are already the
+row's target and `provider_id` is an opaque id a reader cannot use. They go
+through the same redaction as everything else that reaches the UI. `recursive`
+also had to start being recorded — the tool translates it to a delimiter, so it
+had never reached `rec()` at all.
+
+### Fixed — 14% of the context block was indentation
+
+`render_context_text` used `json.dumps(context, indent=2)`. Measured on a
+40-turn session:
+
+```
+context (indent=2)      43,547 chars  ~10,886 tokens
+context (compact)       37,520 chars  ~ 9,380 tokens
+whitespace overhead      6,027 chars  (14%)
+```
+
+The context is re-sent on **every step** of a multi-step turn, so a nine-request
+turn was paying roughly 13k tokens for spaces. Tool results had the same problem
+at smaller scale (one full `list_objects` page: 75,603 chars against 73,794).
+
+Both are compact now, and `ensure_ascii=False` keeps CJK as characters rather
+than six-byte escapes. Models parse compact JSON identically; the indentation
+only ever helped a human reading a debug dump, and the inspector still
+pretty-prints at the point a human actually reads it.
+
+Six tool descriptions were also trimmed — the fixed prompt prefix is
+instructions + **every** tool schema, re-sent per step:
+
+| | before | after |
+| --- | ---: | ---: |
+| `get_bucket_config_detail` | 2,169 | 1,123 |
+| five listing/object tools | 3,837 | 3,170 |
+| **fixed per request** | 22,506 chars (~5,626 tok) | 20,787 (~5,196) |
+
+Every behavioural rule the descriptions carried — paging semantics, the
+`policy_status` ≠ ACL trap, "listing only, aborting is a mutation" — is still
+there. Combined: **~2,050 tokens per request, ~18k on a nine-request turn.**
+
+### Added — the two numbers that explain the bill
+
+The SDK's `Usage` has carried `input_tokens_details.cached_tokens` and
+`output_tokens_details.reasoning_tokens` since usage capture landed in v0.45.0.
+Nothing read either.
+
+They matter more than the totals do. The fixed prefix is ~5k tokens re-sent on
+every step, and cached input is typically an order of magnitude cheaper — so
+whether the endpoint caches it is the single biggest factor in a turn's price,
+and it was unobservable. Reasoning tokens are output the user pays for and never
+sees as text.
+
+The footer now reads `↑12.4k (80%⚡) ↓840 (+320⋯)`, and both are persisted
+(migration 22) and rolled up per session.
+
+Both are **NULL when the endpoint did not report them** — "this endpoint does
+not say" and "nothing was cached" are different facts. That distinction needed a
+separate writer: the existing `_n` helper coalesces a missing key to `0`, which
+is right for the core counts (always present when usage is) and would have
+silently answered the first question with the second. A genuine `0` is stored as
+`0`, because a cold cache is the measurement worth acting on.
+
+### Verified
+
+`sidecar`: 852 tests pass (16 new, `tests/test_v053_token_economy.py`),
+`ruff check app` clean. `frontend`: 125 unit tests pass (15 new,
+`src/components/trace.test.tsx`), `npm run typecheck` (app + e2e) and
+`npm run build` clean. Migration 22 is additive and append-only; no tool
+behaviour changed.
+
 ## [0.52.0] - 2026-08-05
 
 _The diagnostic core rather than the chat surface. Backend only — no UI, schema
