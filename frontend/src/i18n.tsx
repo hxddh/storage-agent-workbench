@@ -405,6 +405,13 @@ const en: Dict = {
   "wizard.step3Body": "Describe an issue, or paste an S3 error for offline triage — no credentials needed.",
   "wizard.skip": "Skip for now",
   "wizard.configure": "Configure providers",
+
+  // charts derived from a rendered table
+  "chart.caption": "{measure} by {label}",
+  "chart.summary": "Highest {measure}: {label} at {value}",
+  "chart.peak": "peak",
+  "chart.hide": "Hide chart",
+  "chart.show": "Show chart",
 };
 
 const zh: Dict = {
@@ -786,6 +793,12 @@ const zh: Dict = {
   "wizard.step3Body": "描述一个问题，或粘贴一段 S3 错误进行离线诊断——无需凭证。",
   "wizard.skip": "暂时跳过",
   "wizard.configure": "配置提供商",
+
+  "chart.caption": "{label} 的 {measure}",
+  "chart.summary": "最高 {measure}：{label}，{value}",
+  "chart.peak": "峰值",
+  "chart.hide": "隐藏图表",
+  "chart.show": "显示图表",
 };
 
 const DICTS: Record<Lang, Dict> = { en, zh };

@@ -6,6 +6,96 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-08-05
+
+_What an answer is allowed to look like. Frontend, plus one line of agent
+instruction — no API, schema or tool behaviour changed._
+
+### Added — the markdown the agent writes, actually rendered
+
+The renderer is hand-written and dependency-free, which is the right trade for a
+desktop app under a CSP that blocks external resources — but it had only ever
+grown the syntax someone needed at the time. Rendering a realistic answer through
+it showed seven forms arriving as literal text or quietly flattened:
+
+| Written | Rendered before | Rendered now |
+| --- | --- | --- |
+| `##### Note` | `##### Note` | a heading (h5/h6) |
+| `~~gone~~` | `~~gone~~` | ~~gone~~ |
+| `- [x] done` | `[x] done` | a checked box |
+| `https://docs.aws…` | plain text | a link |
+| nested list | flattened to one level | nested |
+| `1.` `2.` | `<ul>` + typed-out numbers | a real `<ol start=…>` |
+| `--:` in a table | discarded, always left | right-aligned |
+
+Nesting matters most: a two-level list of buckets-and-their-findings was
+flattened into peers, losing which finding belonged to which bucket. `<ol>`
+matters for a different reason — the numbers were painted as text inside a
+`<ul>`, so they looked right and announced wrong, and a list starting at `3.`
+renumbered itself from 1. Alignment matters because a right-aligned numeric
+column is how a reader compares magnitudes down a column at all.
+
+An item's indented content is now re-parsed as blocks, so a fenced command
+inside a numbered step works — which is how half of this product's answers are
+shaped ("1. run this: ```bash…").
+
+No HTML is injected, before or after: `<script>alert(1)</script>` is still text,
+and only `http(s):`/`mailto:` links are ever clickable.
+
+### Added — syntax highlighting for the four languages this product emits
+
+Bucket policies, S3 error bodies, `aws s3api` reproductions and the audit log's
+analysis SQL were all one flat grey. `frontend/src/lib/highlight.ts` is a ~200
+line tokenizer covering `json` / `xml` / `bash` / `sql` and their aliases;
+anything else, and any block over 20 000 characters, renders exactly as before.
+
+It is a tokenizer, not a parser — nothing is validated and no claim about
+correctness is implied. A test asserts the tokens rejoin to the byte-identical
+source, because a rule that matched ahead of the cursor would silently drop the
+text in between. Shell command names (`aws`, `curl`, `mc` — not in any keyword
+list, since they are whatever the user has installed) are found positionally:
+first word of a line or pipeline segment.
+
+No library, no CDN theme: the CSP forbids the second and the first would add
+hundreds of KiB to a desktop binary to colour a policy document.
+
+### Added — a chart for the tables that are measures
+
+The aggregate tools return a measure per group; the agent writes it as a table.
+A column of numbers answers "what is the value for X" but not "which one is the
+problem". When a table has a non-numeric first column and a column that parses
+as a number in **every** row, the UI now draws ranked bars above it — or a column
+chart when the categories are a time series.
+
+Three rules keep it honest:
+
+- The chart is derived from the table already on screen, never a second source.
+  Nothing extra is sent to the model and no raw row is exposed; if the numbers
+  are wrong the chart is wrong identically.
+- The table stays, unchanged, below it. A bar shows ratio, not magnitude.
+- Ambiguity draws nothing: a status matrix, a column carrying one `Provider
+  unsupported` cell, negative values, an all-zero column, or more than 40 rows.
+
+Drawn with layout boxes rather than SVG — bars are rectangles, and CSS already
+solves responsive width, truncation and theme colour.
+
+### Changed
+
+- The session agent's instructions now state what its answer surface renders,
+  and that a measure-per-group belongs in a table with the group first and one
+  plain numeric column. Six lines; the capability is worthless if the writer
+  does not know it exists.
+- Seven syntax-palette CSS variables added to **both** themes, re-picked against
+  the light code slab rather than inverted. `theme.tokens.test.ts` now computes
+  their WCAG contrast against `--code-bg` (AA body, ≥4.5:1) and asserts the
+  slots stay distinguishable from one another.
+- Table rows use `bg-elevated/30` for zebra striping instead of a white overlay.
+
+### Verified
+
+`frontend`: 91 unit tests (27 new, `src/components/markdown.test.tsx`),
+`tsc --noEmit` clean, `npm run build` clean. `sidecar`: 803 tests pass.
+
 ## [0.49.0] - 2026-08-05
 
 _A structural review of what a session actually shows. Frontend only — no API,

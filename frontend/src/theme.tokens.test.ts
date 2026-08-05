@@ -80,6 +80,7 @@ describe("theme tokens", () => {
       "--warn", "--warn-fg", "--warn-bg", "--warn-border",
       "--success", "--success-bg", "--success-border",
       "--code-bg", "--scrim",
+      "--syn-str", "--syn-num", "--syn-kw", "--syn-com", "--syn-name", "--syn-tag", "--syn-punct",
     ];
     for (const token of required) {
       // A token defined in only one theme is worse than none: it falls through
@@ -147,6 +148,31 @@ describe("contrast", () => {
       // decorative, so it may not fall below the floor.
       expect(ratio(parse(v["--gray-600"]), canvas), theme).toBeGreaterThanOrEqual(3.0);
       expect(ratio(parse(v["--gray-500"]), canvas), theme).toBeGreaterThanOrEqual(3.0);
+    });
+
+    it(`${theme}: every syntax slot clears AA on the code slab`, () => {
+      // Syntax colour is body text on a coloured ground — the slab is --code-bg,
+      // not the canvas. A slot picked in dark and reused in light is exactly how
+      // a highlighter turns a white page into pastel mush.
+      const slab = over(parse(v["--code-bg"]), canvas);
+      for (const slot of ["str", "num", "kw", "com", "name", "tag", "punct"]) {
+        const c = parse(v[`--syn-${slot}`]);
+        expect(ratio(over(c, slab), slab), `${theme} --syn-${slot}`).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+
+    it(`${theme}: the syntax slots are distinguishable from each other`, () => {
+      // Two slots that read as the same colour convey nothing; the point of the
+      // palette is that a key is not a value.
+      const slots = ["str", "num", "kw", "name", "tag"];
+      for (let a = 0; a < slots.length; a++) {
+        for (let b = a + 1; b < slots.length; b++) {
+          const d = Math.abs(lum(parse(v[`--syn-${slots[a]}`])) - lum(parse(v[`--syn-${slots[b]}`])));
+          const hueApart =
+            parse(v[`--syn-${slots[a]}`]).slice(0, 3).some((ch, i) => Math.abs(ch - parse(v[`--syn-${slots[b]}`])[i]) > 40);
+          expect(d > 0.03 || hueApart, `${theme} ${slots[a]} vs ${slots[b]}`).toBe(true);
+        }
+      }
     });
 
     it(`${theme}: the neutral ramp keeps its ordering`, () => {

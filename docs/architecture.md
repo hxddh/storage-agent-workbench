@@ -44,6 +44,8 @@ TypeScript + Tailwind:
   proposed next actions render as inline cards. Only user/deterministic runs card
   in the thread — the agent's own inline surveys/reviews (`origin === 'agent'`)
   are filtered out; the agent narrates their result in prose instead.
+- Answers render through a dependency-free markdown renderer with syntax
+  highlighting and table-derived charts (see "Rendering an answer").
 - Settings drawer for model/cloud providers; first-run wizard.
 - Tool timeline, findings, and report preview inside run cards.
 - Dark/light themes and English/中文.
@@ -514,6 +516,41 @@ Inputs were sanitized on write and the whole document is redacted again on
 render, so the report still contains no raw log lines, no raw inventory rows, no
 evidence file content, no credentials and no chain-of-thought.
 
+## Rendering an answer
+
+`frontend/src/components/Markdown.tsx` is a hand-written, dependency-free
+renderer. It is hand-written for a security reason and kept that way for a
+packaging one: **no HTML is ever injected** — the renderer emits known elements
+only, so the XML error bodies and object keys that agent text quotes stay text —
+and a CSP that blocks external resources rules out any CDN-delivered library.
+
+It covers headings h1–h6, paragraphs, blockquotes, rules, fenced and inline code,
+`**bold**` / `*italic*` / `~~strike~~`, `[links](url)` and bare URLs, pipe tables
+with `:--` / `--:` column alignment, and lists — ordered (a real `<ol>`, starting
+at the author's number), unordered, task (`- [x]`), and nested, including block
+content such as a fenced snippet inside a list item. Only `http(s):` and
+`mailto:` are ever made clickable.
+
+Two things sit on top of that renderer:
+
+- **Syntax highlighting** (`frontend/src/lib/highlight.ts`) for the four
+  languages this product actually emits — `json` (bucket policies, lifecycle
+  rules), `xml` (S3 error bodies, configuration), `bash` (`aws s3api` / `curl`
+  reproductions) and `sql` (the analysis SQL in the audit log). It is a
+  tokenizer, not a parser: nothing is validated and no claim about correctness
+  is implied. Unknown languages and blocks over 20 000 characters render plain.
+  The seven palette slots are themed CSS variables measured for AA contrast
+  against the code slab in **both** themes.
+- **Charts derived from the rendered table** (`frontend/src/components/Chart.tsx`).
+  When a table is a measure-by-category shape — a non-numeric first column and a
+  column that parses as a number in *every* row — the UI draws ranked bars above
+  it, or a column chart when the categories are a time series. The chart is
+  derived from the same table the reader sees, never from a second source: no
+  extra data reaches the model and no raw row is exposed. The table always stays
+  below, because a bar communicates ratio and the precise value still has to be
+  readable. Anything ambiguous — a status matrix, a column with one `Provider
+  unsupported` cell, negative values, more than 40 rows — draws no chart.
+
 ## Frontend design system
 
 All surface, neutral and status colour goes through CSS custom properties
@@ -524,7 +561,9 @@ status hue (`bg-red-950`), a literal hex, or `bg-black/60`: those bake in one
 theme's ground, which is exactly how the light theme rotted before v0.46.0 — 14
 components looked correct in dark and rendered dark slabs with pale text on
 white. `frontend/src/theme.tokens.test.ts` fails the build on a new escape and
-on any semantic token defined in only one theme.
+on any semantic token defined in only one theme, and computes WCAG contrast for
+the neutral ramp, the status tints and the syntax slots in both themes rather
+than leaving it to the eye.
 
 Layers, deepest to most elevated: `canvas` → `sidebar` → `panel` → `elevated` →
 `hover`, with `edge` / `edge-strong` borders and a single restrained indigo
