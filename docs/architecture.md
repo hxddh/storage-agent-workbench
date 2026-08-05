@@ -516,6 +516,59 @@ Inputs were sanitized on write and the whole document is redacted again on
 render, so the report still contains no raw log lines, no raw inventory rows, no
 evidence file content, no credentials and no chain-of-thought.
 
+## What the agent knows
+
+The session agent keeps its own working memory — facts it established, findings
+it recorded, questions it left open (`note_fact` / `record_finding` /
+`note_open_question`) — and that memory is replayed into the context of **every**
+later turn. It is how the agent stays coherent once the thread rolls past its
+replay window.
+
+Until v0.51.0 none of it was visible. `GET /sessions/{id}` did not return it, and
+the report rendered only *findings*: the premises behind every conclusion, and
+the boundary of the investigation, existed nowhere a person could look. A wrong
+fact — "bucket acme-logs is path-style only" — therefore steered the rest of the
+session invisibly, and only the agent could correct it.
+
+The inspector now shows the three kinds and lets the user **correct** an item's
+text or **resolve** it (closed, not deleted: it leaves the active set and stops
+being replayed, but the row survives for the audit trail). Both are the user's
+half of tools the agent already had for itself. Text is redacted by the
+repository on write, exactly like the agent's own writes — this text goes into a
+prompt — and both operations are audited with `by: user`, so a later reader can
+tell which premises the agent derived and which a human overrode.
+
+Two neighbours of the same question, "what is this answer actually based on":
+
+- **Attached evidence** is listed alongside it. After the composer's chip
+  cleared there was no way to see which files the session held.
+- **Context reach**: `context_messages` is how many of `message_total` the agent
+  replays for the configured model. When it is lower, the UI says so — the agent
+  is working from its memory and the summary, not from a re-read of the whole
+  conversation, and a reader who assumes otherwise misjudges the answers.
+
+## Reattaching to a running turn
+
+Client run state (`sessionRuns`) lives in memory so a turn keeps streaming across
+session switches. The cost was that reloading the app — or opening the session in
+a second window — mid-turn showed an **idle** session while the worker kept
+generating and kept spending; the answer surfaced only if the user happened to
+reload later.
+
+`GET /sessions/{id}/turn` is the server's answer to "is anything in flight". The
+thread asks once per session switch and once per return-to-foreground, then polls
+only while a turn is known to be running: a turn cannot start without this
+client's knowledge except through those two doors. It shows the fact and the
+elapsed time — there is no stream to re-attach to and no partial text to invent —
+and reloads the thread when the turn ends. Process-local by design (see
+`turn_guard`): after a sidecar restart nothing is running, and saying so is true.
+
+Composer drafts are persisted per session in `localStorage` (`src/drafts.ts`),
+including for a chat that does not exist yet — the most common place a draft was
+lost, since a fresh chat has no session id until the first message is sent. They
+stay client-side deliberately: a draft is UI state, never sent anywhere, and
+persisting it server-side would put unsent user text into the audit surface.
+
 ## Rendering an answer
 
 `frontend/src/components/Markdown.tsx` is a hand-written, dependency-free

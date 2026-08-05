@@ -381,6 +381,43 @@ export interface SessionDetail {
   messages: SessionMessage[];
   /** How many messages exist in total, so the client can offer "load earlier". */
   message_total?: number;
+  /** What the agent itself recorded and replays into every later turn (v0.51.0). */
+  agent_memory?: AgentMemoryItem[];
+  /** Files the user attached in this conversation. */
+  attached_files?: AttachedFile[];
+  /** How many of `message_total` the agent actually replays into its context.
+   * Below the total means the earliest turns have rolled out of its view. */
+  context_messages?: number;
+}
+
+export type AgentMemoryKind = "fact" | "finding" | "open_question";
+
+export interface AgentMemoryItem {
+  id: string;
+  kind: AgentMemoryKind;
+  text: string;
+  severity?: string | null;
+  confidence?: string | null;
+  source_run_id?: string | null;
+  created_at?: string | null;
+}
+
+export interface AttachedFile {
+  id: string;
+  dataset_type: string;
+  source_filename?: string | null;
+  detected_format?: string | null;
+  row_count?: number | null;
+  status?: string | null;
+  created_at?: string | null;
+}
+
+/** Is a turn running for this session right now (server truth, v0.51.0)? */
+export interface SessionTurnState {
+  running: boolean;
+  turn_id?: string | null;
+  started_at?: string | null;
+  age_ms?: number | null;
 }
 
 // --- Error triage (Phase 18) ---

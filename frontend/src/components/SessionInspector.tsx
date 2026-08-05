@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSessionActivity, getSessionAudit, getSessionOverview } from "../api";
 import { saveTextFile } from "../config";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -6,12 +6,22 @@ import { useI18n } from "../i18n";
 import { Button } from "./ui";
 import { fmtDuration, fmtTokens } from "./TurnMetrics";
 import { FindingsCard } from "./ThreadCards";
+import { AgentMemoryPanel } from "./AgentMemory";
 import type {
+  AgentMemoryItem,
+  AttachedFile,
   SessionActivityItem,
   SessionAuditItem,
   SessionFinding,
   SessionOverview,
 } from "../types";
+
+/** Is this timestamp inside the anchored turn's window? Both ends inclusive —
+ * the window is built from the turn's own first/last activity. */
+export function inAnchor(at: string, anchor?: { from: string; to: string } | null): boolean {
+  if (!anchor) return false;
+  return at >= anchor.from && at <= anchor.to;
+}
 
 /** One merged timeline entry — a tool call or an audit event. */
 type Entry =
@@ -74,13 +84,27 @@ function clock(iso: string): string {
   return d.toLocaleTimeString(undefined, { hour12: false });
 }
 
-function ToolRow({ item }: { item: SessionActivityItem }) {
+function ToolRow({
+  item,
+  anchored,
+  innerRef,
+}: {
+  item: SessionActivityItem;
+  anchored?: boolean;
+  innerRef?: React.Ref<HTMLLIElement>;
+}) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const failed = item.status === "error";
   const dur = fmtDuration(item.duration_ms);
   return (
-    <li className={`border-l-2 pl-3 ${failed ? "border-danger-border" : "border-transparent"}`}>
+    <li
+      ref={innerRef}
+      data-anchored={anchored ? "true" : undefined}
+      className={`border-l-2 pl-3 ${
+        failed ? "border-danger-border" : anchored ? "border-accent" : "border-transparent"
+      } ${anchored ? "bg-accent-dim/50" : ""}`}
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -114,11 +138,23 @@ function ToolRow({ item }: { item: SessionActivityItem }) {
   );
 }
 
-function AuditRow({ item }: { item: SessionAuditItem }) {
+function AuditRow({
+  item,
+  anchored,
+  innerRef,
+}: {
+  item: SessionAuditItem;
+  anchored?: boolean;
+  innerRef?: React.Ref<HTMLLIElement>;
+}) {
   const [open, setOpen] = useState(false);
   const hasPayload = item.payload && Object.keys(item.payload).length > 0;
   return (
-    <li className="border-l-2 border-transparent pl-3">
+    <li
+      ref={innerRef}
+      data-anchored={anchored ? "true" : undefined}
+      className={`border-l-2 pl-3 ${anchored ? "border-accent bg-accent-dim/50" : "border-transparent"}`}
+    >
       <button
         type="button"
         onClick={() => hasPayload && setOpen((v) => !v)}
@@ -153,12 +189,31 @@ export function SessionInspector({
   open,
   onClose,
   findings,
+  memory,
+  files,
+  contextMessages,
+  messageTotal,
+  onCorrectMemory,
+  onResolveMemory,
+  anchor,
 }: {
   sessionId: string | null;
   open: boolean;
   onClose: () => void;
   /** Deterministic session findings — standing state, not a timeline event. */
   findings?: SessionFinding[];
+  /** The agent's own working memory, correctable in place (v0.51.0). */
+  memory?: AgentMemoryItem[];
+  files?: AttachedFile[];
+  contextMessages?: number;
+  messageTotal?: number;
+  onCorrectMemory?: (id: string, text: string) => Promise<void>;
+  onResolveMemory?: (id: string) => Promise<void>;
+  /** Opened from a specific turn: the [from, to] wall-clock window of that
+   * turn's activity. Entries inside it are marked and scrolled to, so "inspect"
+   * from turn 7 of 30 does not just dump the reader at the top of the session
+   * timeline with no idea which rows are theirs. */
+  anchor?: { from: string; to: string } | null;
 }) {
   const { t } = useI18n();
   const [overview, setOverview] = useState<SessionOverview | null>(null);
@@ -174,6 +229,7 @@ export function SessionInspector({
   const [copied, setCopied] = useState(false);
   const [savedPath, setSavedPath] = useState<string | null>(null);
   const trapRef = useFocusTrap<HTMLDivElement>(open);
+  const anchorRef = useRef<HTMLLIElement | null>(null);
 
   useEffect(() => {
     if (!open || !sessionId) return;
@@ -244,6 +300,25 @@ export function SessionInspector({
     }
     return out.sort((x, y) => (x.at < y.at ? -1 : x.at > y.at ? 1 : 0));
   }, [tools, audit, showTools, showAudit, errorsOnly]);
+
+  const firstAnchoredIndex = useMemo(
+    () => (anchor ? entries.findIndex((e) => inAnchor(e.at, anchor)) : -1),
+    [entries, anchor],
+  );
+
+  // Scroll the anchored turn into view once its rows exist. Nearest, not
+  // centred: the reader keeps the surrounding timeline in sight, which is the
+  // context that makes the turn legible.
+  useEffect(() => {
+    if (!open || firstAnchoredIndex < 0) return;
+    const el = anchorRef.current;
+    if (!el) return;
+    const id = window.setTimeout(
+      () => el.scrollIntoView({ block: "nearest", behavior: "smooth" }),
+      60,
+    );
+    return () => window.clearTimeout(id);
+  }, [open, firstAnchoredIndex, anchor]);
 
   const markdown = useCallback((): string => {
     const lines: string[] = ["# Investigation record", ""];
@@ -394,6 +469,17 @@ export function SessionInspector({
             </div>
           )}
 
+          {onCorrectMemory && onResolveMemory && (
+            <AgentMemoryPanel
+              memory={memory ?? []}
+              files={files}
+              contextMessages={contextMessages}
+              messageTotal={messageTotal}
+              onCorrect={onCorrectMemory}
+              onResolve={onResolveMemory}
+            />
+          )}
+
           <div className="mt-4 flex flex-wrap items-center gap-1.5">
             <Chip on={showTools} onClick={() => setShowTools((v) => !v)} count={tools.length}>
               {t("inspector.chipTools")}
@@ -428,14 +514,29 @@ export function SessionInspector({
             ) : null,
           )}
 
+          {anchor && (
+            <p className="mt-3 text-[11px] text-accent-soft" data-testid="anchor-note">
+              {t("inspector.anchored")}
+            </p>
+          )}
+
           <ul className="mt-3 space-y-0.5">
-            {entries.map((e) =>
-              e.kind === "tool" ? (
-                <ToolRow key={e.id} item={e.data} />
+            {entries.map((e, i) => {
+              const hit = inAnchor(e.at, anchor);
+              // Scroll target: the FIRST row of the anchored turn, so the reader
+              // lands at the start of that turn's work, not its middle.
+              const isFirstHit = hit && i === firstAnchoredIndex;
+              return e.kind === "tool" ? (
+                <ToolRow
+                  key={e.id}
+                  item={e.data}
+                  anchored={hit}
+                  innerRef={isFirstHit ? anchorRef : undefined}
+                />
               ) : (
-                <AuditRow key={e.id} item={e.data} />
-              ),
-            )}
+                <AuditRow key={e.id} item={e.data} anchored={hit} innerRef={isFirstHit ? anchorRef : undefined} />
+              );
+            })}
           </ul>
 
           {!loading && entries.length === 0 && (

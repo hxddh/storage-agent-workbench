@@ -143,6 +143,9 @@ POST   /sessions/{session_id}/turns/{turn_id}/cancel  # cancel a streaming turn 
 GET    /sessions/{session_id}/activity      # the session's tool calls (sanitized input/output + duration)
 GET    /sessions/{session_id}/audit         # the session's audit trail (rule 17)
 GET    /sessions/{session_id}/overview      # counts, token rollup, and per-turn metrics
+GET    /sessions/{session_id}/turn          # is a turn running right now? (reattach after a reload)
+PATCH  /sessions/{session_id}/memory/{id}   # correct one of the agent's memory items
+POST   /sessions/{session_id}/memory/{id}/resolve  # close a memory item (stops being replayed)
 ```
 
 Paging (v0.47.0): `GET /sessions/{id}` returns the **tail** of the thread
@@ -161,6 +164,28 @@ read rows that were sanitized on write; nothing is re-derived. `/overview`
 returns `usage.available` — **false** means the model endpoint never reported
 token counts, which the UI must render as "not reported", not as zero. When only
 some turns reported, `usage.partial` is true and the totals are a floor.
+
+What the agent knows (v0.51.0): `GET /sessions/{id}` also returns `agent_memory`
+(the facts / findings / open questions the agent recorded itself and replays
+into EVERY later turn), `attached_files` (without their filesystem paths — the
+app data dir carries the OS username), and `context_messages` (how many of
+`message_total` the agent actually replays, so the UI can say when the earliest
+turns have rolled out of its view). `agent_memory` is the same tail-capped list
+the agent replays, so the panel shows exactly what is in its context; the report
+fetches more and states what it left out.
+
+`PATCH /memory/{id}` and `POST /memory/{id}/resolve` are the user's half of the
+`update_memory_item` / `resolve_memory_item` tools the agent already had. Text is
+redacted by the repository on write, exactly like the agent's own writes, and
+both are audited as `session.memory_edit` / `session.memory_resolve` with
+`by: user` (rule 17) — so a later reader can tell which premises the agent
+derived and which a human overrode. Resolve closes rather than deletes.
+
+Reattach (v0.51.0): `GET /sessions/{id}/turn` reports `{running, turn_id,
+started_at, age_ms}`. Client run state lives in memory, so reloading the app
+mid-turn showed an idle session while the worker kept generating and spending.
+Process-local like `turn_guard` itself: after a sidecar restart nothing is
+running, and saying so is the truth.
 
 Turn semantics: the client sends a `turn_id` with each turn. The blocking
 `POST /messages` doubles as the streaming fallback — if an identical `turn_id`

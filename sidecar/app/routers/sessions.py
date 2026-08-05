@@ -34,10 +34,14 @@ from ..models.schemas import (
     SessionCreate,
     SessionDetail,
     SessionDatasetUploadResponse,
+    SessionMemoryResolve,
+    SessionMemoryUpdate,
     SessionMessageCreate,
     SessionSummary,
+    SessionTurnState,
     SessionUpdate,
 )
+from ..repositories import model_providers as model_providers_repo
 from ..repositories import runs as runs_repo
 from ..repositories import session_activity
 from ..repositories import session_datasets as sds_repo
@@ -52,12 +56,47 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 # simply the most it could ever want, so the query never grows with the session.
 _CONTEXT_MESSAGES = session_agent._MAX_MESSAGES_CEIL
 
+# The report fetches MORE agent memory than the per-turn context replays: the
+# replay cap exists to bound the prompt, and applying it to the auditable
+# artifact would silently drop the oldest items. The renderer bounds what it
+# prints and states the remainder from the true count.
+_REPORT_MEMORY_ROWS = 500
+
 
 def _safe_err(exc: object) -> str:
     """Redact secrets AND collapse absolute filesystem paths out of an error
     surfaced to the client / SSE — an OSError/sqlite error carries e.g. the app
     DB's absolute path (username included), which `redact_text` alone leaves in."""
     return config.scrub_paths(redact_text(str(exc)))
+
+
+def _context_messages(conn: sqlite3.Connection) -> int:
+    """How many thread messages the agent actually replays, for THIS install's
+    configured model.
+
+    Reads only the model name and the operator-declared window — never the API
+    key — so the honest "the agent sees the last N of M turns" line in the UI
+    costs nothing and leaks nothing. Falls back to the base cap when no provider
+    is configured yet (the number the agent would use once one is)."""
+    try:
+        pid = model_providers_repo.effective_active_id(conn)
+        row = conn.execute(
+            "SELECT model, context_window FROM model_providers WHERE id = ?", (pid,)
+        ).fetchone() if pid else None
+        model = row["model"] if row is not None else None
+        window = row["context_window"] if row is not None else None
+        count, _ = session_agent._elastic_replay_caps(model, window)
+        return int(count)
+    except Exception:
+        return session_agent._MAX_MESSAGES
+
+
+def _attached_files(conn: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]:
+    """The session's attached files, WITHOUT their filesystem paths (the app data
+    dir carries the OS username, and this shape is rendered and exported)."""
+    keep = ("id", "dataset_type", "source_filename", "detected_format",
+            "row_count", "status", "created_at")
+    return [{k: d.get(k) for k in keep} for d in sds_repo.list_for_session(conn, session_id)]
 
 
 def _detail(conn: sqlite3.Connection, session_id: str) -> SessionDetail:
@@ -78,6 +117,13 @@ def _detail(conn: sqlite3.Connection, session_id: str) -> SessionDetail:
         # "load earlier" rather than showing a partial thread as if complete.
         messages=repo.list_messages(conn, session_id, limit=repo.DEFAULT_MESSAGE_PAGE),
         message_total=repo.count_messages(conn, session_id),
+        # What the agent knows and holds (v0.51.0). Its own memory is replayed
+        # into every later turn, so showing it is the difference between an
+        # investigator you can correct and one whose wrong facts steer the rest
+        # of the session invisibly.
+        agent_memory=repo.list_agent_memory(conn, session_id),
+        attached_files=_attached_files(conn, session_id),
+        context_messages=_context_messages(conn),
     )
 
 
@@ -147,6 +193,64 @@ def fork_session(session_id: str, conn: sqlite3.Connection = Depends(get_conn)):
                  run_id=None, session_id=session_id)
     conn.commit()
     return _detail(conn, new_id)
+
+
+@router.patch("/{session_id}/memory/{mem_id}", response_model=SessionDetail)
+def correct_agent_memory(session_id: str, mem_id: str, body: SessionMemoryUpdate,
+                         conn: sqlite3.Connection = Depends(get_conn)):
+    """Correct one of the agent's memory items.
+
+    The agent replays its memory into every later turn, so a wrong fact ("bucket
+    X is path-style only") silently steers the rest of the investigation. The
+    agent can already fix its own items; this gives the person watching the same
+    power. Text is redacted by the repository on write, exactly like the agent's
+    own writes, and the edit is audited (rule 17)."""
+    if repo.get_row(conn, session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    if not repo.update_agent_memory(conn, session_id, mem_id, body.text):
+        raise HTTPException(status_code=404, detail="memory item not found")
+    audit.record(conn, "session.memory_edit",
+                 {"session_id": session_id, "memory_id": mem_id,
+                  "text": redact_text(body.text)[:200], "by": "user"},
+                 run_id=None, session_id=session_id)
+    conn.commit()
+    return _detail(conn, session_id)
+
+
+@router.post("/{session_id}/memory/{mem_id}/resolve", response_model=SessionDetail)
+def resolve_agent_memory_item(session_id: str, mem_id: str, body: SessionMemoryResolve,
+                              conn: sqlite3.Connection = Depends(get_conn)):
+    """Close a memory item so it stops being replayed into later turns.
+
+    Resolved, not deleted: the item leaves the active set (and the agent's
+    context) but stays in the row for the audit trail."""
+    if repo.get_row(conn, session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    if not repo.resolve_agent_memory(conn, session_id, mem_id, body.reason):
+        raise HTTPException(status_code=404, detail="memory item not found")
+    audit.record(conn, "session.memory_resolve",
+                 {"session_id": session_id, "memory_id": mem_id,
+                  "reason": redact_text(body.reason or "")[:200], "by": "user"},
+                 run_id=None, session_id=session_id)
+    conn.commit()
+    return _detail(conn, session_id)
+
+
+@router.get("/{session_id}/turn", response_model=SessionTurnState)
+def get_turn_state(session_id: str, conn: sqlite3.Connection = Depends(get_conn)):
+    """Is a turn running for this session right now?
+
+    Client run state lives in memory, so reloading the app mid-turn used to show
+    an idle session while the worker kept generating and spending. The client
+    polls this on mount to reattach. Process-local by design (see turn_guard):
+    after a sidecar restart nothing is running, and saying so is the truth."""
+    if repo.get_row(conn, session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    handle = turn_guard.active_turn(session_id)
+    if handle is None:
+        return SessionTurnState(running=False)
+    return SessionTurnState(running=True, turn_id=handle.turn_id,
+                            started_at=handle.started_at, age_ms=handle.age_ms)
 
 
 @router.post("/{session_id}/runs/{run_id}", response_model=SessionDetail)
@@ -253,12 +357,14 @@ def get_session_report(session_id: str, conn: sqlite3.Connection = Depends(get_c
     content = session_report.render_session_report(
         dict(row), summary, repo.list_runs(conn, session_id),
         triage_cases=triage_repo.list_for_session(conn, session_id),
-        agent_memory=repo.list_agent_memory(conn, session_id),
+        agent_memory=repo.list_agent_memory(conn, session_id, limit=_REPORT_MEMORY_ROWS),
+        memory_totals=repo.count_agent_memory(conn, session_id),
         messages=repo.list_messages(conn, session_id),
         activity=session_activity.list_activity(conn, session_id)["items"],
         usage=overview.get("usage"),
         turn_metrics=overview.get("turns"),
-        audit_events=session_activity.list_audit(conn, session_id)["items"])
+        audit_events=session_activity.list_audit(conn, session_id)["items"],
+        attached_files=_attached_files(conn, session_id))
     # Rule 17: report generation is an auditable event.
     audit.record(conn, "session.report",
                  {"session_id": session_id, "bytes": len(content)}, run_id=None,

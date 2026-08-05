@@ -160,6 +160,63 @@ test.describe("thread paging", () => {
   });
 });
 
+test.describe("what the agent knows (v0.51.0)", () => {
+  test("the session endpoint reports its memory, its files, and its context reach", async ({ page }) => {
+    await seedFreshApp(page);
+    await page.goto("/");
+    const body = await page.evaluate(async () => {
+      const url = "http://127.0.0.1:8799";
+      const created = await (
+        await fetch(`${url}/sessions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "knowledge" }),
+        })
+      ).json();
+      return await (await fetch(`${url}/sessions/${created.id}`)).json();
+    });
+    // The contract the memory panel relies on. Before v0.51.0 the agent's own
+    // memory was persisted, replayed into every turn, and returned by nothing.
+    expect(Array.isArray(body.agent_memory)).toBe(true);
+    expect(Array.isArray(body.attached_files)).toBe(true);
+    expect(typeof body.context_messages).toBe("number");
+  });
+
+  test("a session with no turn in flight says so", async ({ page }) => {
+    await seedFreshApp(page);
+    await page.goto("/");
+    const state = await page.evaluate(async () => {
+      const url = "http://127.0.0.1:8799";
+      const created = await (
+        await fetch(`${url}/sessions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "turnstate" }),
+        })
+      ).json();
+      return await (await fetch(`${url}/sessions/${created.id}/turn`)).json();
+    });
+    // This is what a client that reloaded mid-turn asks. "Nothing running" has
+    // to be a real answer, not a 404.
+    expect(state.running).toBe(false);
+  });
+});
+
+test.describe("composer drafts (v0.51.0)", () => {
+  test("an unsent question survives a reload", async ({ page }) => {
+    await seedFreshApp(page);
+    await page.goto("/");
+    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    await box.click();
+    await box.fill("why can I not delete this object");
+
+    // A draft is UI state, so localStorage is where it lives — and a reload is
+    // exactly the event that used to destroy it.
+    const stored = await page.evaluate(() => localStorage.getItem("saw.drafts"));
+    expect(stored ?? "").toContain("why can I not delete this object");
+  });
+});
+
 test.describe("turn structure", () => {
   test("a finished answer carries ONE metadata affordance, not three", async ({ page }) => {
     await seedFreshApp(page);

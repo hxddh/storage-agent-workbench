@@ -34,8 +34,11 @@ is persisted. Bounded to the most recent ``_MAX`` turns.
 from __future__ import annotations
 
 import threading
+import time
 from collections import OrderedDict
 from typing import Any
+
+from ..repositories import utcnow
 
 _MAX = 256
 _lock = threading.RLock()
@@ -53,7 +56,7 @@ class TurnHandle:
     """In-process state of one client turn (streaming or blocking attempt)."""
 
     __slots__ = ("turn_id", "session_id", "done_event", "cancel_event", "payload",
-                 "failed", "error")
+                 "failed", "error", "started_at", "started_mono")
 
     def __init__(self, turn_id: str, session_id: str | None):
         self.turn_id = turn_id
@@ -63,6 +66,16 @@ class TurnHandle:
         self.payload: dict[str, Any] | None = None
         self.failed = False
         self.error: str | None = None
+        # When this turn started. `started_at` is for display (a client that
+        # reattached after a reload shows how long it has been running);
+        # `started_mono` is what the age is measured with, since a wall-clock
+        # jump must not make a live turn look hours old.
+        self.started_at = utcnow()
+        self.started_mono = time.monotonic()
+
+    @property
+    def age_ms(self) -> int:
+        return max(0, int((time.monotonic() - self.started_mono) * 1000))
 
     @property
     def done(self) -> bool:
@@ -128,6 +141,23 @@ def register_session_turn(session_id: str | None,
         if prior is not None and prior is not handle and not prior.done:
             return prior
         return None
+
+
+def active_turn(session_id: str | None) -> "TurnHandle | None":
+    """The session's turn that is STILL RUNNING, or None.
+
+    Client run state is in-memory, so a reload mid-turn left the UI idle while
+    the worker kept generating and spending. This is the server's answer to "is
+    anything in flight for this session", which the client polls on mount to
+    reattach. Process-local like the rest of the registry: a sidecar restart
+    loses the turn, and reporting "nothing running" is then the truth."""
+    if not session_id:
+        return None
+    with _lock:
+        h = _session_active.get(session_id)
+        if h is None or h.done:
+            return None
+        return h
 
 
 def get_handle(turn_id: str | None, session_id: str | None = None) -> "TurnHandle | None":
