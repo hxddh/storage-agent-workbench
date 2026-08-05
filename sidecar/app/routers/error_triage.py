@@ -92,7 +92,8 @@ def create_triage(body: ErrorTriageRequest, conn: sqlite3.Connection = Depends(g
         repo.add_finding(conn, case_id, f)
     audit.record(conn, "error_triage.case",
                  {"case_id": case_id, "session_id": body.session_id,
-                  "error_code": result["parsed"].get("error_code")}, run_id=None)
+                  "error_code": result["parsed"].get("error_code")}, run_id=None,
+                 session_id=body.session_id)
     conn.commit()
 
     # 5) Fold the case into the session's deterministic summary.

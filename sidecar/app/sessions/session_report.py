@@ -1,8 +1,21 @@
 """Session-level Markdown report.
 
-Built from the deterministic, sanitized session summary + linked-run metadata.
+The artifact you hand to someone else. Built from the deterministic, sanitized
+session summary, linked-run metadata, AND — since v0.48.0 — the investigation
+the conversational agent actually carried out: what was asked, what it answered,
+which read-only tools it ran, what that cost, and the audit trail.
+
+That addition closed a real hole. The report predates the v0.20 shift to an
+agent-first product, so it drew only from LINKED runs, and the agent's own work
+is deliberately never linked as a run card. A six-turn investigation that probed
+a bucket, hit a 403 and explained the cause rendered as a page of em dashes: the
+one document meant to leave the app documented none of the work.
+
 Contains no raw logs, no raw inventory rows, no evidence file content, no
-secrets, and no chain-of-thought; the whole document is redacted on render.
+secrets, and no chain-of-thought; every input was sanitized on write and the
+whole document is redacted again on render. Every section is bounded and says so
+when it truncates — a report that silently omitted half an investigation would
+be worse than one that admitted it covered nothing.
 """
 
 from __future__ import annotations
@@ -10,6 +23,158 @@ from __future__ import annotations
 from typing import Any
 
 from ..security.redaction import redact_text
+
+# Bounds. A report is read by a person; past these it stops being one.
+MAX_TURNS = 40          # conversational turns rendered in full
+ANSWER_EXCERPT = 600    # chars of each answer
+MAX_TOOL_ROWS = 25      # distinct tools in the breakdown
+MAX_AUDIT_ROWS = 30     # audit events listed
+
+
+def _excerpt(text: str | None, limit: int = ANSWER_EXCERPT) -> str:
+    """Trim to a readable excerpt, marking the cut rather than hiding it."""
+    t = " ".join((text or "").split())
+    if len(t) <= limit:
+        return t or "—"
+    return t[:limit].rstrip() + " …_(trimmed)_"
+
+
+def _fmt_ms(ms: Any) -> str:
+    try:
+        v = int(ms or 0)
+    except (TypeError, ValueError):
+        return "—"
+    if v <= 0:
+        return "—"
+    if v < 1000:
+        return f"{v} ms"
+    if v < 60_000:
+        return f"{v / 1000:.1f} s"
+    return f"{v // 60_000}m {round((v % 60_000) / 1000)}s"
+
+
+def _investigation_md(messages: list[dict[str, Any]] | None,
+                      metrics_by_message: dict[str, dict[str, Any]] | None) -> str:
+    """The conversation as an investigation record: question → answer → grounding.
+
+    Pairs each user question with the answer that followed it. Only completed
+    exchanges appear; a trailing question with no answer is not a finding.
+    """
+    msgs = messages or []
+    by_msg = metrics_by_message or {}
+    turns: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    pending: dict[str, Any] | None = None
+    for m in msgs:
+        if m.get("role") == "user":
+            pending = m
+        elif m.get("role") == "assistant" and pending is not None:
+            turns.append((pending, m))
+            pending = None
+
+    if not turns:
+        return "_No conversational turns recorded._"
+
+    shown = turns[-MAX_TURNS:]
+    out: list[str] = []
+    if len(turns) > len(shown):
+        out.append(f"_Showing the most recent {len(shown)} of {len(turns)} turns._")
+        out.append("")
+
+    for i, (q, a) in enumerate(shown, start=len(turns) - len(shown) + 1):
+        out.append(f"### Turn {i}")
+        out.append("")
+        out.append(f"**Asked:** {_excerpt(q.get('content'), 300)}")
+        out.append("")
+        out.append(f"**Answered:** {_excerpt(a.get('content'))}")
+
+        grounding = a.get("grounding") or {}
+        used = grounding.get("evidence_used") or []
+        gaps = grounding.get("evidence_gaps") or []
+        if used:
+            out.append("")
+            out.append("Grounded in:")
+            out.extend(f"- {u}" for u in used[:8])
+        if gaps:
+            out.append("")
+            out.append("Not verified:")
+            out.extend(f"- {g}" for g in gaps[:8])
+
+        tools = [t for t in (a.get("tool_activity") or []) if t.get("status") != "started"]
+        met = by_msg.get(str(a.get("id")))
+        bits: list[str] = []
+        if tools:
+            bits.append(f"{len(tools)} tool call(s)")
+        if met and met.get("duration_ms"):
+            bits.append(_fmt_ms(met.get("duration_ms")))
+        if met and met.get("total_tokens"):
+            bits.append(f"{met['total_tokens']} tokens")
+        if bits:
+            out.append("")
+            out.append(f"_{' · '.join(bits)}_")
+        out.append("")
+    return "\n".join(out).rstrip()
+
+
+def _tools_md(activity: list[dict[str, Any]] | None) -> str:
+    """Which read-only tools the investigation actually ran, and how they fared."""
+    rows = activity or []
+    if not rows:
+        return "_No tool calls recorded for this session._"
+    agg: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        name = r.get("tool_name") or "?"
+        cur = agg.setdefault(name, {"n": 0, "errors": 0, "ms": 0})
+        cur["n"] += 1
+        if r.get("status") == "error":
+            cur["errors"] += 1
+        try:
+            cur["ms"] += int(r.get("duration_ms") or 0)
+        except (TypeError, ValueError):
+            pass
+    ordered = sorted(agg.items(), key=lambda kv: (-kv[1]["n"], kv[0]))
+    out = ["| Tool | Calls | Failed | Time |", "| --- | ---: | ---: | ---: |"]
+    for name, v in ordered[:MAX_TOOL_ROWS]:
+        out.append(f"| `{name}` | {v['n']} | {v['errors'] or '—'} | {_fmt_ms(v['ms'])} |")
+    if len(ordered) > MAX_TOOL_ROWS:
+        out.append("")
+        out.append(f"_{len(ordered) - MAX_TOOL_ROWS} further tool(s) omitted._")
+    return "\n".join(out)
+
+
+def _cost_md(rollup: dict[str, Any] | None) -> str:
+    """What the investigation cost. Token counts appear only when the provider
+    reported them — an estimate here would be a false claim about spend."""
+    r = rollup or {}
+    lines = [
+        f"- Turns: {r.get('turns', 0)}",
+        f"- Wall-clock in turns: {_fmt_ms(r.get('duration_ms'))}",
+    ]
+    if r.get("available"):
+        partial = " _(partial — only some turns reported)_" if r.get("partial") else ""
+        lines.append(
+            f"- Tokens: {r.get('input_tokens', 0)} in / {r.get('output_tokens', 0)} out{partial}"
+        )
+    else:
+        lines.append("- Tokens: _not reported by the model provider_")
+    return "\n".join(lines)
+
+
+def _audit_md(events: list[dict[str, Any]] | None) -> str:
+    """Rule 17's trail for this session, summarised then listed."""
+    rows = events or []
+    if not rows:
+        return "_No audit events recorded for this session._"
+    counts: dict[str, int] = {}
+    for e in rows:
+        counts[e.get("event_type") or "?"] = counts.get(e.get("event_type") or "?", 0) + 1
+    summary = ", ".join(f"{k} ×{v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1]))
+    out = [f"{len(rows)} event(s): {summary}", ""]
+    for e in rows[-MAX_AUDIT_ROWS:]:
+        out.append(f"- `{e.get('created_at','')}` {e.get('event_type','')}")
+    if len(rows) > MAX_AUDIT_ROWS:
+        out.append("")
+        out.append(f"_Showing the most recent {MAX_AUDIT_ROWS} of {len(rows)}._")
+    return "\n".join(out)
 
 
 def _facts_md(facts: list[dict[str, Any]]) -> str:
@@ -102,16 +267,34 @@ def render_session_report(
     runs: list[dict[str, Any]],
     triage_cases: list[dict[str, Any]] | None = None,
     agent_memory: list[dict[str, Any]] | None = None,
+    *,
+    messages: list[dict[str, Any]] | None = None,
+    activity: list[dict[str, Any]] | None = None,
+    usage: dict[str, Any] | None = None,
+    turn_metrics: list[dict[str, Any]] | None = None,
+    audit_events: list[dict[str, Any]] | None = None,
 ) -> str:
+    """Render the report. The keyword inputs are the investigation itself; they
+    default to empty so an older caller still produces the historical document
+    rather than raising."""
     facts = summary.get("known_facts", []) or []
     findings = summary.get("findings", []) or []
     actions = summary.get("next_actions", []) or []
     open_q = summary.get("open_questions", []) or []
     limitations = summary.get("limitations", []) or []
 
+    by_message = {
+        str(m.get("message_id")): m for m in (turn_metrics or []) if m.get("message_id")
+    }
+    turn_count = sum(1 for m in (messages or []) if m.get("role") == "assistant")
+    tool_count = len(activity or [])
+    # The summary now counts the work that actually happened. Before v0.48.0 it
+    # counted only linked runs, which for an agent-driven session is always zero.
     exec_summary = (
         f"This session pursued the goal: \"{session.get('goal') or '—'}\". "
-        f"{len(runs)} run(s) were linked; {len(findings)} finding(s) and {len(facts)} fact(s) were collected."
+        f"{turn_count} conversational turn(s) ran {tool_count} read-only tool call(s); "
+        f"{len(runs)} run(s) were linked; {len(findings)} finding(s) and "
+        f"{len(facts)} fact(s) were collected."
     )
 
     content = f"""# Session Report: {session.get('title')}
@@ -123,6 +306,23 @@ def render_session_report(
 ## Executive summary
 
 {exec_summary}
+
+## Investigation
+
+_What was asked and answered, with the grounding the agent claimed for each
+answer. Answers are excerpted; nothing here is model reasoning._
+
+{_investigation_md(messages, by_message)}
+
+## Tools run
+
+_Read-only tool calls made during this session, as recorded in the audit trail._
+
+{_tools_md(activity)}
+
+## Cost
+
+{_cost_md(usage)}
 
 ## Evidence used
 
@@ -149,6 +349,12 @@ existed only in chat prose and never reached this report._
 
 {_triage_md(triage_cases or [])}
 
+## Audit trail
+
+_Rule 17: every tool call, approval, import and report generation is recorded._
+
+{_audit_md(audit_events)}
+
 ## Confidence / limitations
 
 Open questions:
@@ -172,8 +378,10 @@ own proposals (those appear in the conversation). Each is a suggestion only._
 
 ## Safety
 
-- This report is built from deterministic, sanitized run summaries and findings.
+- This report is built from deterministic, sanitized run summaries, findings, and
+  the session's own recorded conversation, tool trace and audit trail.
 - It contains no raw logs, no raw inventory rows, no evidence file content, no
   credentials, and no model reasoning. Next actions are proposals only.
+- Every section is bounded and states when it has truncated.
 """
     return redact_text(content)

@@ -101,9 +101,12 @@ def create_run(body: RunCreate, conn: sqlite3.Connection = Depends(get_conn)):
     if body.session_id and sessions_repo.get_row(conn, body.session_id) is not None:
         sessions_repo.link_run(conn, body.session_id, run_id, sessions_repo.RUN_ROLE.get(body.run_type))
 
+    # Scoped to the session when the run belongs to one, so the inspector's
+    # timeline shows the runs a session started alongside its tool calls.
     audit.record(conn, "run.create",
                  {"run_id": run_id, "run_type": body.run_type,
-                  "provider_id": body.provider_id, "bucket": body.bucket}, run_id=run_id)
+                  "provider_id": body.provider_id, "bucket": body.bucket}, run_id=run_id,
+                 session_id=body.session_id)
 
     row = repo.get_row(conn, run_id)
     return RunCreated(
@@ -145,6 +148,8 @@ def delete_run(run_id: str, conn: sqlite3.Connection = Depends(get_conn)):
                                    "finish (or fail) before deleting it")
     repo.delete(conn, run_id)
     shutil.rmtree(config.run_dir(run_id), ignore_errors=True)
+    # The run row is already gone, so its session link is unrecoverable here;
+    # the event stays run-scoped in the global trail.
     audit.record(conn, "run.delete", {"run_id": run_id}, run_id=None)
     conn.commit()
     return None
@@ -195,7 +200,8 @@ def post_message(
     # until the next startup reconciler.
     try:
         audit.record(conn, "run.start", {"run_id": run_id, "run_type": row["run_type"]},
-                     run_id=run_id)
+                     run_id=run_id,
+                     session_id=sessions_repo.session_id_for_run(conn, run_id))
         repo.add_message(conn, run_id, role="user", content=body.content)
         bus.create(run_id)
         run_service.start(run_id)
