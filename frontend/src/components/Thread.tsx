@@ -790,7 +790,7 @@ export function Thread({
   const banners = (
     <>
       {needKey && (
-        <div className="animate-fade-in-up rounded-xl border border-warn-border bg-warn-bg p-3.5 text-[13px] text-warn-fg">
+        <div className="animate-fade-in-up rounded-xl border border-warn-border bg-warn-bg p-3.5 text-sm text-warn-fg">
           {t("thread.needKey")}
           <div className="mt-2.5">
             <Button variant="primary" size="sm" onClick={onOpenSettings}>{t("thread.needKeyBtn")}</Button>
@@ -798,7 +798,7 @@ export function Thread({
         </div>
       )}
       {error && (
-        <div className="animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-3.5 text-[13px] text-danger">
+        <div className="animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-3.5 text-sm text-danger">
           {error}
           <div className="mt-2.5 flex flex-wrap gap-2">
             {/* Retry re-sends the message (the failed turn restored it into the
@@ -821,8 +821,8 @@ export function Thread({
            instead of silently presenting the empty new-chat surface (M6). */
         <div className="flex flex-1 items-center justify-center px-6 py-10">
           <div className="w-full max-w-md animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-5 text-center">
-            <div className="text-[14px] font-medium text-danger">{t("thread.loadFailed")}</div>
-            <div className="mt-1.5 text-[12.5px] text-danger/80">{loadError}</div>
+            <div className="text-base font-medium text-danger">{t("thread.loadFailed")}</div>
+            <div className="mt-1.5 text-xs text-danger/80">{loadError}</div>
             <div className="mt-3.5 flex justify-center">
               <Button variant="primary" size="sm" onClick={() => reload(localId.current)}>
                 {t("thread.retry")}
@@ -835,8 +835,8 @@ export function Thread({
         <div className="flex flex-1 items-center justify-center overflow-auto px-6 py-10">
           <div className="w-full max-w-[44rem] animate-fade-in-up">
             <div className="mb-7 flex flex-col items-center text-center">
-              <h1 className="text-[23px] font-semibold tracking-[-0.02em] text-gray-100">{t("thread.greeting")}</h1>
-              <p className="mt-2.5 max-w-md text-[13.5px] leading-relaxed text-gray-500">
+              <h1 className="text-2xl font-semibold tracking-[-0.02em] text-gray-100">{t("thread.greeting")}</h1>
+              <p className="mt-2.5 max-w-md text-sm leading-relaxed text-gray-500">
                 {t("thread.subtitle")}
               </p>
             </div>
@@ -846,7 +846,7 @@ export function Thread({
                 <button
                   key={s.key}
                   onClick={() => onSuggestion(s.key, s.prompt)}
-                  className="rounded-full border border-edge bg-panel/60 px-3.5 py-1.5 text-[12px] text-gray-400 transition-colors hover:border-edge-strong hover:bg-hover hover:text-gray-100"
+                  className="rounded-full border border-edge bg-panel/60 px-3.5 py-1.5 text-xs text-gray-400 transition-colors hover:border-edge-strong hover:bg-hover hover:text-gray-100"
                 >
                   {s.label}
                 </button>
@@ -858,7 +858,7 @@ export function Thread({
       ) : (
         <>
           <header className="flex items-center gap-3 border-b border-edge px-6 py-2.5">
-            <div className="truncate text-[12.5px] font-medium text-gray-200">{detail?.title || t("thread.titleNew")}</div>
+            <div className="truncate text-xs font-medium text-gray-200">{detail?.title || t("thread.titleNew")}</div>
             <div className="ml-auto flex shrink-0 items-center gap-2">
               <button
                 type="button"
@@ -876,7 +876,7 @@ export function Thread({
                   <line x1="4" y1="17" x2="17" y2="17" />
                 </svg>
               </button>
-              <div className="flex items-center gap-1.5 rounded-md border border-edge px-2 py-1 text-[11px] text-gray-500">
+              <div className="flex items-center gap-1.5 rounded-md border border-edge px-2 py-1 text-2xs text-gray-500">
                 <Spark size={11} />
                 <span className="text-gray-400">{modelName ?? t("thread.noModel")}</span>
               </div>
@@ -893,7 +893,7 @@ export function Thread({
                       onClick={loadEarlier}
                       disabled={loadingEarlier}
                       data-testid="load-earlier"
-                      className="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-gray-500 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50"
+                      className="rounded-full border border-edge px-3 py-1.5 text-2xs text-gray-500 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50"
                     >
                       {loadingEarlier ? t("thread.loadingEarlier") : t("thread.loadEarlier", { n: hiddenCount })}
                     </button>
@@ -902,7 +902,7 @@ export function Thread({
                       onClick={loadAllEarlier}
                       disabled={loadingEarlier}
                       data-testid="jump-to-start"
-                      className="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-gray-600 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50"
+                      className="rounded-full border border-edge px-3 py-1.5 text-2xs text-gray-600 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50"
                     >
                       {t("thread.jumpToStart")}
                     </button>
@@ -933,11 +933,11 @@ export function Thread({
                              strokeWidth="2.5" className="shrink-0 text-gray-700" aria-hidden>
                           <polyline points="9 18 15 12 9 6" />
                         </svg>
-                        <span className="min-w-0 flex-1 truncate text-[12px] text-gray-500 group-hover:text-gray-300">
+                        <span className="min-w-0 flex-1 truncate text-xs text-gray-500 group-hover:text-gray-300">
                           {question || it.content || t("common.untitled")}
                         </span>
                         {calls > 0 && (
-                          <span className="shrink-0 tabular-nums text-[10.5px] text-gray-700">
+                          <span className="shrink-0 tabular-nums text-3xs text-gray-700">
                             {t("turn.checks", { n: calls })}
                           </span>
                         )}
@@ -972,6 +972,7 @@ export function Thread({
                         model={metricsFor(it.id)?.model}
                         budgetTokens={metricsFor(it.id)?.budget_tokens}
                         repeatCallsAvoided={metricsFor(it.id)?.repeat_calls_avoided}
+                        sessionId={sessionId}
                         onOpenInspector={() => {
                           // Anchored: the inspector highlights and scrolls to
                           // THIS turn's rows. Unanchored it dropped the reader
@@ -984,7 +985,7 @@ export function Thread({
                     )}
                     {it.proposals && it.proposals.length > 0 && (
                       <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                        <span className="text-[11.5px] text-gray-600">{t("thread.suggestedNext")}</span>
+                        <span className="text-2xs text-gray-600">{t("thread.suggestedNext")}</span>
                         {it.proposals.map((p, i) => (
                           <ProposalCard key={`${propKey(p)}-${i}`} proposal={p} onRun={runProposal} />
                         ))}
@@ -1009,7 +1010,7 @@ export function Thread({
               {!pending && remoteTurn?.running && (
                 <div
                   data-testid="remote-turn"
-                  className="animate-fade-in flex items-center gap-2 rounded-lg border border-edge bg-panel/60 px-3 py-2 text-[12.5px] text-gray-400"
+                  className="animate-fade-in flex items-center gap-2 rounded-lg border border-edge bg-panel/60 px-3 py-2 text-xs text-gray-400"
                 >
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
                   {t("thread.remoteTurn", {
@@ -1028,9 +1029,10 @@ export function Thread({
                         content={streamText ?? ""}
                         toolActivity={streamTools}
                         streaming={!run.stopped}
+                        sessionId={sessionId}
                       />
                       {run.stopped && (
-                        <div className="flex items-center gap-1.5 text-[11.5px] text-gray-500">
+                        <div className="flex items-center gap-1.5 text-2xs text-gray-500">
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                             <rect x="6" y="6" width="12" height="12" rx="2" />
                           </svg>
@@ -1039,7 +1041,7 @@ export function Thread({
                       )}
                     </>
                   ) : run.stopped ? (
-                    <div className="flex items-center gap-1.5 text-[11.5px] text-gray-500">
+                    <div className="flex items-center gap-1.5 text-2xs text-gray-500">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                         <rect x="6" y="6" width="12" height="12" rx="2" />
                       </svg>
@@ -1049,7 +1051,7 @@ export function Thread({
                     /* Gave up polling a still-running turn — offer a reload
                        instead of an eternal "thinking" spinner (the answer may
                        already be persisted server-side). */
-                    <div className="animate-fade-in rounded-lg border border-edge bg-panel/60 p-3 text-[12.5px] text-gray-400">
+                    <div className="animate-fade-in rounded-lg border border-edge bg-panel/60 p-3 text-xs text-gray-400">
                       {t("thread.stalled")}
                       <div className="mt-2">
                         <Button
@@ -1094,7 +1096,7 @@ export function Thread({
                   {run.grounding && <GroundingCard g={run.grounding} />}
                   {proposals.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                      <span className="text-[11.5px] text-gray-600">{t("thread.suggestedNext")}</span>
+                      <span className="text-2xs text-gray-600">{t("thread.suggestedNext")}</span>
                       {proposals.map((p, i) => (
                         <ProposalCard key={`${propKey(p)}-${i}`} proposal={p} onRun={runProposal} />
                       ))}
@@ -1116,7 +1118,7 @@ export function Thread({
                   type="button"
                   onClick={jumpToLatest}
                   data-testid="jump-to-latest"
-                  className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-edge bg-elevated/95 px-3 py-1.5 text-[11.5px] text-gray-300 shadow-elev backdrop-blur transition-all hover:border-edge-strong hover:text-gray-100 animate-fade-in-up"
+                  className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-edge bg-elevated/95 px-3 py-1.5 text-2xs text-gray-300 shadow-elev backdrop-blur transition-all hover:border-edge-strong hover:text-gray-100 animate-fade-in-up"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                        strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

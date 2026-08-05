@@ -144,11 +144,11 @@ function ToastViewport({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id:
             className={`pointer-events-auto flex items-start gap-2.5 rounded-xl border ${tone.border} bg-panel px-3.5 py-2.5 shadow-pop animate-fade-in-up`}
           >
             <span className={`mt-px shrink-0 ${tone.text}`}>{tone.icon}</span>
-            <span className="min-w-0 flex-1 break-words text-[12.5px] leading-relaxed text-gray-200">{t.message}</span>
+            <span className="min-w-0 flex-1 break-words text-xs leading-relaxed text-gray-200">{t.message}</span>
             {t.action && (
               <button
                 onClick={() => { t.action?.run(); onDismiss(t.id); }}
-                className="shrink-0 text-[12px] font-medium text-accent-soft transition-colors hover:text-accent"
+                className="shrink-0 text-xs font-medium text-accent-soft transition-colors hover:text-accent"
               >
                 {t.action.label}
               </button>

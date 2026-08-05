@@ -22,7 +22,7 @@ import { Chart, chartSpec } from "./Chart";
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   const blocks = useMemo(() => parseBlocks(text || ""), [text]);
   return (
-    <div className="space-y-3 text-[13.5px] leading-[1.7] text-gray-200">
+    <div className="space-y-3 text-sm leading-[1.7] text-gray-200">
       <Blocks blocks={blocks} />
     </div>
   );
@@ -52,7 +52,7 @@ function Blocks({ blocks }: { blocks: Block[] }) {
             return (
               <blockquote
                 key={i}
-                className="border-l-2 border-accent/40 bg-elevated/40 py-1.5 pl-3.5 pr-3 text-[13px] text-gray-400"
+                className="border-l-2 border-accent/40 bg-elevated/40 py-1.5 pl-3.5 pr-3 text-sm text-gray-400"
               >
                 <div className="space-y-1.5">
                   {b.lines.map((ln, j) => (
@@ -74,12 +74,12 @@ function Blocks({ blocks }: { blocks: Block[] }) {
 /** h5/h6 exist so a deep answer does not print `##### text` at the reader. They
  * share h4's treatment — below h4 the distinction is emphasis, not scale. */
 const HEADING_CLASS: Record<number, string> = {
-  1: "mt-3 text-[16px]",
-  2: "mt-3 text-[14.5px]",
-  3: "mt-2 text-[13.5px]",
-  4: "mt-2 text-[12.5px] uppercase tracking-wide text-gray-400",
-  5: "mt-2 text-[12px] uppercase tracking-wide text-gray-400",
-  6: "mt-2 text-[11.5px] uppercase tracking-wide text-gray-500",
+  1: "mt-3 text-lg",
+  2: "mt-3 text-base",
+  3: "mt-2 text-sm",
+  4: "mt-2 text-xs uppercase tracking-wide text-gray-400",
+  5: "mt-2 text-xs uppercase tracking-wide text-gray-400",
+  6: "mt-2 text-2xs uppercase tracking-wide text-gray-500",
 };
 
 function ListBlock({ block }: { block: ListBlockT }) {
@@ -171,10 +171,10 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
   return (
     <div className="group/code overflow-hidden rounded-lg border border-edge bg-code">
       <div className="flex items-center gap-2 border-b border-edge/70 px-3 py-1.5">
-        <span className="font-mono text-[10.5px] uppercase tracking-wide text-gray-500">{lang || "code"}</span>
+        <span className="font-mono text-3xs uppercase tracking-wide text-gray-500">{lang || "code"}</span>
         <button
           onClick={copy}
-          className="ml-auto flex items-center gap-1 text-[11px] text-gray-500 opacity-0 transition-all hover:text-gray-200 group-hover/code:opacity-100"
+          className="ml-auto flex items-center gap-1 text-2xs text-gray-500 opacity-0 transition-all hover:text-gray-200 group-hover/code:opacity-100"
         >
           {copied ? (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
@@ -187,7 +187,7 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
       <pre
         data-testid="code-block"
         data-highlighted={toks ? "true" : "false"}
-        className="overflow-auto px-3.5 py-3 font-mono text-[12px] leading-relaxed text-gray-300"
+        className="overflow-auto px-3.5 py-3 font-mono text-xs leading-relaxed text-gray-300"
       >
         {toks
           ? toks.map((tok, i) =>
@@ -219,7 +219,7 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: Alig
     <div className="overflow-hidden rounded-lg border border-edge">
       {spec && showChart && <Chart spec={spec} />}
       <div className="overflow-auto">
-        <table className="w-full border-collapse text-[12.5px]">
+        <table className="w-full border-collapse text-xs">
           <thead>
             <tr className="bg-elevated">
               {headers.map((h, i) => (
@@ -227,7 +227,7 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: Alig
                   key={i}
                   // Alignment is information: a right-aligned numeric column is
                   // how a reader compares magnitudes down a column at all.
-                  className={`border-b border-edge px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400 ${
+                  className={`border-b border-edge px-3.5 py-2 text-2xs font-semibold uppercase tracking-wide text-gray-400 ${
                     ALIGN_CLASS[aligns[i] ?? "left"]
                   }`}
                 >
@@ -257,7 +257,7 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: Alig
           type="button"
           onClick={() => setShowChart((v) => !v)}
           data-testid="chart-toggle"
-          className="w-full border-t border-edge px-3.5 py-1 text-left text-[10.5px] text-gray-600 transition-colors hover:text-gray-400"
+          className="w-full border-t border-edge px-3.5 py-1 text-left text-3xs text-gray-600 transition-colors hover:text-gray-400"
         >
           {showChart ? t("chart.hide") : t("chart.show")}
         </button>
@@ -478,7 +478,7 @@ function inline(text: string): ReactNode {
     let trailing = "";
     if (tok.startsWith("`")) {
       nodes.push(
-        <code key={k++} className="rounded bg-elevated px-1.5 py-0.5 font-mono text-[12px] text-accent-soft">
+        <code key={k++} className="rounded bg-elevated px-1.5 py-0.5 font-mono text-xs text-accent-soft">
           {tok.slice(1, -1)}
         </code>,
       );

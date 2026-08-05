@@ -80,7 +80,7 @@ export function TurnMetricsBar({
   const max = breakdown.length ? breakdown[0].n : 1;
 
   return (
-    <div className="animate-fade-in select-none text-[11px] text-gray-600">
+    <div className="animate-fade-in select-none text-2xs text-gray-600">
       <div className="flex flex-wrap items-center gap-1.5">
         {dur && (
           <span className="tabular-nums" title={t("metrics.durationHint")}>
@@ -143,7 +143,7 @@ export function TurnMetricsBar({
         <ul className="mt-1.5 space-y-1 border-l border-edge pl-3">
           {breakdown.map((r) => (
             <li key={r.tool} className="flex items-center gap-2">
-              <span className="w-1/2 min-w-0 truncate font-mono text-[10.5px] text-gray-500" title={r.tool}>
+              <span className="w-1/2 min-w-0 truncate font-mono text-3xs text-gray-500" title={r.tool}>
                 {r.tool}
               </span>
               <span className="h-[3px] flex-1 overflow-hidden rounded-full bg-edge">

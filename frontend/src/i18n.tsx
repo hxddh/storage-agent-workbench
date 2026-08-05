@@ -441,6 +441,13 @@ const en: Dict = {
   // deep-turn trace fold (v0.55.0)
   "trace.showEarlier": "show {n} earlier steps",
 
+  // in-place call detail (v0.56.0)
+  "call.input": "sent",
+  "call.output": "returned",
+  "call.loading": "loading call…",
+  "call.unavailable": "This call's detail is no longer available.",
+  "call.clipped": "+{n} more characters",
+
   // per-turn budget + in-turn dedupe (v0.54.0)
   "metrics.ofBudget": "of budget",
   "metrics.budgetHint":
@@ -858,6 +865,13 @@ const zh: Dict = {
 
   // deep-turn trace fold (v0.55.0)
   "trace.showEarlier": "展开前面 {n} 步",
+
+  // in-place call detail (v0.56.0)
+  "call.input": "发送",
+  "call.output": "返回",
+  "call.loading": "正在加载调用详情…",
+  "call.unavailable": "该调用的详情已不可用。",
+  "call.clipped": "还有 {n} 个字符",
 
   // per-turn budget + in-turn dedupe (v0.54.0)
   "metrics.ofBudget": "预算",

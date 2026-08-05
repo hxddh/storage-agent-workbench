@@ -92,9 +92,9 @@ function MemoryRow({
                 }
               }}
               data-testid="memory-edit-input"
-              className="w-full resize-none rounded border border-edge-strong bg-panel px-2 py-1 text-[12px] text-gray-200 outline-none focus:border-accent"
+              className="w-full resize-none rounded border border-edge-strong bg-panel px-2 py-1 text-xs text-gray-200 outline-none focus:border-accent"
             />
-            <div className="flex gap-1.5 text-[11px]">
+            <div className="flex gap-1.5 text-2xs">
               <button
                 type="button"
                 onClick={() => void save()}
@@ -118,8 +118,8 @@ function MemoryRow({
           </div>
         ) : (
           <>
-            <p className="text-[12px] leading-relaxed text-gray-300">{item.text}</p>
-            <div className="mt-0.5 flex items-center gap-2 text-[10px]">
+            <p className="text-xs leading-relaxed text-gray-300">{item.text}</p>
+            <div className="mt-0.5 flex items-center gap-2 text-3xs">
               {item.severity && <span className={sevTone(item.severity)}>{item.severity}</span>}
               {item.confidence && (
                 <span className="text-gray-600">{t("memory.confidence", { level: item.confidence })}</span>
@@ -183,7 +183,7 @@ export function AgentMemoryPanel({
 
   return (
     <section className="mt-4 rounded-lg border border-edge bg-panel/60 p-3" data-testid="agent-memory">
-      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+      <h3 className="mb-2 text-2xs font-semibold uppercase tracking-wider text-gray-400">
         {t("memory.title")}
       </h3>
 
@@ -191,7 +191,7 @@ export function AgentMemoryPanel({
         // Honesty about the rolling window: the agent is not re-reading the
         // whole conversation, and a reader who assumes it is will misjudge
         // what its later answers are based on.
-        <p className="mb-2.5 rounded border border-warn-border bg-warn-bg px-2 py-1.5 text-[11px] text-warn-fg"
+        <p className="mb-2.5 rounded border border-warn-border bg-warn-bg px-2 py-1.5 text-2xs text-warn-fg"
            data-testid="context-rolled">
           {t("memory.rolled", { shown: contextMessages!, total: messageTotal! })}
         </p>
@@ -200,7 +200,7 @@ export function AgentMemoryPanel({
       {KIND_ORDER.map((kind) =>
         groups[kind].length > 0 ? (
           <div key={kind} className="mb-2.5 last:mb-0">
-            <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-gray-700">
+            <div className="mb-0.5 text-3xs font-medium uppercase tracking-wider text-gray-700">
               {t(`memory.kind.${kind}`)} · {groups[kind].length}
             </div>
             <ul className="space-y-px">
@@ -214,16 +214,16 @@ export function AgentMemoryPanel({
 
       {attached.length > 0 && (
         <div className="mt-2.5 border-t border-edge pt-2.5">
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-gray-700">
+          <div className="mb-1 text-3xs font-medium uppercase tracking-wider text-gray-700">
             {t("memory.attached")} · {attached.length}
           </div>
           <ul className="space-y-0.5" data-testid="attached-files">
             {attached.map((f) => (
-              <li key={f.id} className="flex items-baseline gap-2 text-[11.5px]">
+              <li key={f.id} className="flex items-baseline gap-2 text-2xs">
                 <span className="min-w-0 truncate font-mono text-gray-300" title={f.source_filename ?? ""}>
                   {f.source_filename || t("common.untitled")}
                 </span>
-                <span className="ml-auto shrink-0 tabular-nums text-[10.5px] text-gray-600">
+                <span className="ml-auto shrink-0 tabular-nums text-3xs text-gray-600">
                   {f.detected_format || f.dataset_type}
                   {f.row_count ? ` · ${f.row_count.toLocaleString()}` : ""}
                 </span>

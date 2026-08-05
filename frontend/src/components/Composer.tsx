@@ -131,7 +131,7 @@ export function Composer({
     <div className="relative rounded-[22px] border border-edge bg-panel px-3.5 pb-2.5 pt-3 shadow-elev transition-all duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
       {slashOpen && (
         <div className="absolute bottom-full left-1 right-1 mb-2 overflow-hidden rounded-xl border border-edge bg-panel shadow-pop animate-fade-in">
-          <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-600">{t("thread.commands")}</div>
+          <div className="px-3 py-1.5 text-3xs font-medium uppercase tracking-wider text-gray-600">{t("thread.commands")}</div>
           {slashItems.map((c, i) => (
             <button
               key={c.cmd}
@@ -139,8 +139,8 @@ export function Composer({
               onClick={() => selectSlash(c)}
               className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors ${i === slashIdx ? "bg-hover" : "hover:bg-hover/50"}`}
             >
-              <span className="font-mono text-[12px] text-accent-soft">/{c.cmd}</span>
-              <span className="text-[13px] text-gray-300">{t(c.labelKey)}</span>
+              <span className="font-mono text-xs text-accent-soft">/{c.cmd}</span>
+              <span className="text-sm text-gray-300">{t(c.labelKey)}</span>
             </button>
           ))}
         </div>
@@ -154,15 +154,15 @@ export function Composer({
               {t("thread.uploading", { name: attached.name })}
             </span>
           ) : attachType ? (
-            <span className="rounded-full border border-edge px-2 py-0.5 text-[11px] text-gray-400">
+            <span className="rounded-full border border-edge px-2 py-0.5 text-2xs text-gray-400">
               {attachType === "inventory" ? t("attach.inventory") : t("attach.accessLog")}
             </span>
           ) : (
             <span className="flex items-center gap-1">
               <span className="text-gray-500">{t("attach.pickType")}</span>
-              <button className="rounded-full border border-edge px-2 py-0.5 text-[11px] text-gray-300 hover:bg-hover"
+              <button className="rounded-full border border-edge px-2 py-0.5 text-2xs text-gray-300 hover:bg-hover"
                 onClick={() => setAttachType("inventory")}>{t("attach.inventory")}</button>
-              <button className="rounded-full border border-edge px-2 py-0.5 text-[11px] text-gray-300 hover:bg-hover"
+              <button className="rounded-full border border-edge px-2 py-0.5 text-2xs text-gray-300 hover:bg-hover"
                 onClick={() => setAttachType("access_log")}>{t("attach.accessLog")}</button>
             </span>
           )}
@@ -197,7 +197,7 @@ export function Composer({
       />
       <textarea
         ref={taRef}
-        className="block max-h-[220px] h-[22px] w-full resize-none bg-transparent px-1 text-[14px] leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none focus-visible:shadow-none"
+        className="block max-h-[220px] h-[22px] w-full resize-none bg-transparent px-1 text-base leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none focus-visible:shadow-none"
         rows={1}
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -236,7 +236,7 @@ export function Composer({
         </button>
         <button
           onClick={onOpenSettings}
-          className={`group/chip flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11.5px] transition-colors ${
+          className={`group/chip flex items-center gap-1.5 rounded-lg border px-2 py-1 text-2xs transition-colors ${
             modelName
               ? "border-edge text-gray-400 hover:border-edge-strong hover:text-gray-200"
               : "border-warn-border text-warn-fg hover:border-warn-border hover:text-warn-fg"
@@ -248,7 +248,7 @@ export function Composer({
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <span className="ml-auto hidden text-[11px] text-gray-600 sm:inline">
+        <span className="ml-auto hidden text-2xs text-gray-600 sm:inline">
           {busy && text.trim() ? (
             // While a turn runs, Enter REDIRECTS it (cancel + resend) — say so,
             // instead of the misleading "Send".

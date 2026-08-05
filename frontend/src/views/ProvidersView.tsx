@@ -257,7 +257,7 @@ function ModelProvidersPanel() {
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-100">
                   {p.name}
                   {p.active && (
-                    <span className="rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-success" data-testid="active-model-badge">
+                    <span className="rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-3xs font-semibold uppercase tracking-wide text-success" data-testid="active-model-badge">
                       {t("prov.active")}
                     </span>
                   )}
@@ -590,7 +590,7 @@ function CloudProvidersPanel() {
             <Button variant="primary" onClick={submit}>{editing ? t("prov.save") : t("prov.addProvider")}</Button>
             <Button variant="ghost" onClick={close}>{t("prov.cancel")}</Button>
           </div>
-          <p className="mt-2 text-[11px] text-gray-600">{t("prov.footerKeys")}</p>
+          <p className="mt-2 text-2xs text-gray-600">{t("prov.footerKeys")}</p>
         </div>
       ) : null}
 

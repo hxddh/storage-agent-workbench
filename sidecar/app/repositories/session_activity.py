@@ -119,6 +119,34 @@ def list_audit(
     }
 
 
+def get_call(conn: sqlite3.Connection, session_id: str,
+             call_id: str) -> dict[str, Any] | None:
+    """One tool call by id, scoped to its session (v0.56.0).
+
+    Scoping to `session_id` is the point: the id alone would let any session's
+    call be read through any other session's URL. Returns None when the id is
+    unknown OR belongs elsewhere — the caller renders both as "not found", so
+    the response cannot be used to probe which ids exist.
+    """
+    row = conn.execute(
+        "SELECT id, tool_name, input_json_sanitized, output_json_sanitized, status, "
+        "       duration_ms, created_at "
+        "FROM tool_calls WHERE session_id = ? AND id = ?",
+        (session_id, call_id),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "tool_name": row["tool_name"],
+        "input": _loads(row["input_json_sanitized"]),
+        "output": _loads(row["output_json_sanitized"]),
+        "status": row["status"],
+        "duration_ms": row["duration_ms"],
+        "created_at": row["created_at"],
+    }
+
+
 def record_turn(
     conn: sqlite3.Connection,
     session_id: str,

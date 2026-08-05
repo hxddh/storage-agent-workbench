@@ -295,6 +295,33 @@ def get_session_activity(
             **session_activity.list_activity(conn, session_id, limit, offset)}
 
 
+@router.get("/{session_id}/activity/{call_id}")
+def get_session_activity_call(
+    session_id: str,
+    call_id: str,
+    conn: sqlite3.Connection = Depends(get_conn),
+) -> dict[str, Any]:
+    """ONE tool call, by the id its thread row carries (v0.56.0).
+
+    Since v0.55.0 every activity record in the thread carries the same id as its
+    persisted ``tool_calls`` row, which is what makes a row expandable in place —
+    the reader can open the call and see the sanitized arguments it was made with
+    and the output it returned, the way Codex and Cursor let you open a step.
+    Before this, that detail existed only in the inspector's whole-session
+    timeline, reachable by scrolling to a guessed time window.
+
+    Scoped to the session in the path: a call id from another session is a 404,
+    not a cross-session read. Nothing new is exposed — the row was sanitized on
+    write and is the same one ``/activity`` already returns in bulk.
+    """
+    if repo.get_row(conn, session_id) is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    row = session_activity.get_call(conn, session_id, call_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="tool call not found")
+    return row
+
+
 @router.get("/{session_id}/audit")
 def get_session_audit(
     session_id: str,

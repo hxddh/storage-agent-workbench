@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useI18n } from "../i18n";
 import { fmtDuration, fmtTokens } from "./TurnMetrics";
 import { fmtCallMs, isFailed } from "./LiveTrace";
+import { CallDetail } from "./CallDetail";
 import type { Grounding, ToolActivity, TokenUsage } from "../types";
 
 /**
@@ -47,6 +48,7 @@ export function TurnFooter({
   model,
   budgetTokens,
   repeatCallsAvoided,
+  sessionId,
   onOpenInspector,
 }: {
   tools?: ToolActivity[];
@@ -56,11 +58,15 @@ export function TurnFooter({
   model?: string | null;
   budgetTokens?: number | null;
   repeatCallsAvoided?: number | null;
+  /** Lets a trace row be opened to the call's real persisted input/output. */
+  sessionId?: string | null;
   onOpenInspector?: () => void;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState<string | null>(null);
+  // The one trace row the reader has opened, if any (v0.56.0).
+  const [openCall, setOpenCall] = useState<string | null>(null);
 
   const done = useMemo(
     () => (tools ?? []).filter((a) => a.status !== "started"),
@@ -104,7 +110,7 @@ export function TurnFooter({
   if (!expandable && dur === null && !hasTokens) return null;
 
   return (
-    <div className="animate-fade-in text-[11px] text-gray-600">
+    <div className="animate-fade-in text-2xs text-gray-600">
       <div className="flex flex-wrap items-center gap-1.5">
         {expandable ? (
           <button
@@ -121,7 +127,7 @@ export function TurnFooter({
             </svg>
             <span className="tabular-nums">{t("turn.checks", { n: done.length })}</span>
             {failed > 0 && (
-              <span className="ml-0.5 rounded bg-danger-bg px-1.5 py-px text-[10px] text-danger">
+              <span className="ml-0.5 rounded bg-danger-bg px-1.5 py-px text-3xs text-danger">
                 {t("turn.failed", { n: failed })}
               </span>
             )}
@@ -207,7 +213,7 @@ export function TurnFooter({
         <div className="mt-2 space-y-3 border-l border-edge pl-3">
           {done.length > 0 && (
             <div>
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-gray-700">
+              <div className="mb-1 text-3xs font-medium uppercase tracking-wider text-gray-700">
                 {t("turn.trace")}
               </div>
               <ul className="space-y-[3px]">
@@ -216,15 +222,31 @@ export function TurnFooter({
                 {done.map((a, i) => {
                   const bad = isFailed(a);
                   const ms = fmtCallMs(a.duration_ms);
+                  const canOpen = Boolean(sessionId && a.id);
+                  const isOpen = canOpen && openCall === a.id;
                   return (
-                    <li
-                      key={i}
-                      data-tool={a.tool}
+                    <li key={a.id ?? i} data-tool={a.tool}>
+                    <div
                       className={`flex items-center gap-2 rounded px-1 transition-colors ${
                         highlight === a.tool ? "bg-accent/12" : ""
-                      }`}
+                      } ${canOpen ? "cursor-pointer hover:bg-hover" : ""}`}
+                      {...(canOpen
+                        ? {
+                            role: "button" as const,
+                            tabIndex: 0,
+                            "aria-expanded": isOpen,
+                            "data-testid": "footer-row-open",
+                            onClick: () => setOpenCall(isOpen ? null : (a.id as string)),
+                            onKeyDown: (e: React.KeyboardEvent) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setOpenCall(isOpen ? null : (a.id as string));
+                              }
+                            },
+                          }
+                        : {})}
                     >
-                      <span className="w-4 shrink-0 text-right tabular-nums text-[10px] text-gray-700">
+                      <span className="w-4 shrink-0 text-right tabular-nums text-3xs text-gray-700">
                         {i + 1}
                       </span>
                       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${bad ? "bg-danger" : "bg-success/70"}`} aria-hidden />
@@ -235,17 +257,21 @@ export function TurnFooter({
                         </span>
                       )}
                       {ms && (
-                        <span className="ml-auto shrink-0 tabular-nums text-[10.5px] text-gray-700"
+                        <span className="ml-auto shrink-0 tabular-nums text-3xs text-gray-700"
                               data-testid="footer-duration">
                           {ms}
                         </span>
                       )}
                       <span
-                        className={`${ms ? "" : "ml-auto "}shrink-0 truncate font-mono text-[10.5px] ${bad ? "text-danger" : "text-gray-500"}`}
+                        className={`${ms ? "" : "ml-auto "}shrink-0 truncate font-mono text-3xs ${bad ? "text-danger" : "text-gray-500"}`}
                         title={a.result}
                       >
                         {a.result}
                       </span>
+                    </div>
+                    {isOpen && (
+                      <CallDetail sessionId={sessionId as string} callId={a.id as string} />
+                    )}
                     </li>
                   );
                 })}
@@ -255,14 +281,14 @@ export function TurnFooter({
 
           {evidence.length > 0 && (
             <div>
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-gray-700">
+              <div className="mb-1 text-3xs font-medium uppercase tracking-wider text-gray-700">
                 {t("grounding.evidence")}
               </div>
               <ul className="space-y-0.5">
                 {evidence.map((e, i) => {
                   const tool = linkEvidence(e, done);
                   return (
-                    <li key={i} className="text-[11.5px] text-gray-500">
+                    <li key={i} className="text-2xs text-gray-500">
                       · {e}
                       {tool && (
                         // The link is the point of "grounded in": hovering shows
@@ -274,7 +300,7 @@ export function TurnFooter({
                           onFocus={() => setHighlight(tool)}
                           onBlur={() => setHighlight(null)}
                           data-testid="evidence-link"
-                          className="ml-1.5 rounded border border-edge px-1 font-mono text-[9.5px] text-gray-600 transition-colors hover:border-accent/50 hover:text-accent-soft"
+                          className="ml-1.5 rounded border border-edge px-1 font-mono text-3xs text-gray-600 transition-colors hover:border-accent/50 hover:text-accent-soft"
                         >
                           {tool}
                         </button>
@@ -288,19 +314,19 @@ export function TurnFooter({
 
           {gaps.length > 0 && (
             <div>
-              <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-warn-fg">
+              <div className="mb-1 text-3xs font-medium uppercase tracking-wider text-warn-fg">
                 {t("grounding.gaps")}
               </div>
               <ul className="space-y-0.5">
                 {gaps.map((g, i) => (
-                  <li key={i} className="text-[11.5px] text-gray-500">· {g}</li>
+                  <li key={i} className="text-2xs text-gray-500">· {g}</li>
                 ))}
               </ul>
             </div>
           )}
 
           {skills.length > 0 && (
-            <div className="text-[11px] text-gray-600">
+            <div className="text-2xs text-gray-600">
               <span className="text-gray-700">{t("grounding.skills")}: </span>
               {skills.join(", ")}
             </div>

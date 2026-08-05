@@ -188,11 +188,11 @@ export function SessionRail({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
             {s.pinned && <PinIcon size={10} />}
-            <span className={`truncate text-[12.5px] ${isActive ? "text-gray-100" : "text-gray-300 group-hover:text-gray-200"}`}>
+            <span className={`truncate text-xs ${isActive ? "text-gray-100" : "text-gray-300 group-hover:text-gray-200"}`}>
               {s.title || t("common.untitled")}
             </span>
           </div>
-          <span className="mt-0.5 block truncate text-[11px] text-gray-600">{relTime(s.updated_at, t)}</span>
+          <span className="mt-0.5 block truncate text-2xs text-gray-600">{relTime(s.updated_at, t)}</span>
         </div>
         <button
           aria-label={t("menu.more")}
@@ -217,17 +217,17 @@ export function SessionRail({
         )}
         {confirming && (
           <div className="absolute right-1.5 top-8 z-40 w-48 overflow-hidden rounded-lg border border-edge bg-panel p-3 shadow-pop animate-fade-in" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-2 text-[12.5px] text-gray-200">{t("rail.deleteConfirmShort")}</div>
+            <div className="mb-2 text-xs text-gray-200">{t("rail.deleteConfirmShort")}</div>
             <div className="flex justify-end gap-1.5">
               <button
                 onClick={(e) => { e.stopPropagation(); setConfirmId(null); }}
-                className="rounded-md px-2.5 py-1 text-[12px] text-gray-300 transition-colors hover:bg-hover hover:text-gray-100"
+                className="rounded-md px-2.5 py-1 text-xs text-gray-300 transition-colors hover:bg-hover hover:text-gray-100"
               >
                 {t("rail.cancel")}
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); setConfirmId(null); actions.onDelete(s); }}
-                className="rounded-md bg-danger px-2.5 py-1 text-[12px] font-medium text-white transition-colors hover:bg-danger"
+                className="rounded-md bg-danger px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-danger"
               >
                 {t("rail.confirmDelete")}
               </button>
@@ -331,7 +331,7 @@ export function SessionRail({
         <div className="grid h-[26px] w-[26px] place-items-center rounded-md border border-edge-strong bg-elevated text-accent-soft">
           <BrandMark size={15} />
         </div>
-        <div className="text-[13px] font-medium tracking-[-0.01em] text-gray-100">{t("app.name")}</div>
+        <div className="text-sm font-medium tracking-[-0.01em] text-gray-100">{t("app.name")}</div>
         <button
           onClick={onToggleCollapse}
           title={t("rail.collapse")}
@@ -349,14 +349,14 @@ export function SessionRail({
       <div className="px-2.5 pb-1">
         <button
           onClick={onNew}
-          className="group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-gray-300 transition-colors hover:bg-hover hover:text-gray-100"
+          className="group flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-gray-300 transition-colors hover:bg-hover hover:text-gray-100"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-gray-500 transition-colors group-hover:text-accent-soft">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
           <span className="flex-1">{t("rail.newChat")}</span>
-          <kbd className="rounded border border-edge bg-elevated/70 px-1.5 py-px text-[10px] font-medium tracking-wide text-gray-500 opacity-0 transition-opacity group-hover:opacity-100">⌘N</kbd>
+          <kbd className="rounded border border-edge bg-elevated/70 px-1.5 py-px text-3xs font-medium tracking-wide text-gray-500 opacity-0 transition-opacity group-hover:opacity-100">⌘N</kbd>
         </button>
       </div>
 
@@ -371,7 +371,7 @@ export function SessionRail({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("rail.searchPlaceholder")}
-            className="w-full bg-transparent text-[12.5px] text-gray-200 placeholder:text-gray-600 focus:outline-none focus-visible:shadow-none"
+            className="w-full bg-transparent text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus-visible:shadow-none"
           />
           {query && (
             <button
@@ -387,14 +387,14 @@ export function SessionRail({
 
       <nav className="flex-1 overflow-auto px-1.5 pb-2">
         {noResults ? (
-          <div className="px-3 py-5 text-[12px] leading-relaxed text-gray-600">{t("rail.noResults")}</div>
+          <div className="px-3 py-5 text-xs leading-relaxed text-gray-600">{t("rail.noResults")}</div>
         ) : sessions.length === 0 ? (
-          <div className="px-3 py-5 text-[12px] leading-relaxed text-gray-600">{t("rail.noChats")}</div>
+          <div className="px-3 py-5 text-xs leading-relaxed text-gray-600">{t("rail.noChats")}</div>
         ) : null}
 
         {pinned.length > 0 && (
           <>
-            <div className="px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-gray-600">{t("rail.pinned")}</div>
+            <div className="px-2 pb-1 pt-2 text-3xs font-medium uppercase tracking-wider text-gray-600">{t("rail.pinned")}</div>
             {pinned.map(item)}
           </>
         )}
@@ -404,7 +404,7 @@ export function SessionRail({
           if (rows.length === 0) return null;
           return (
             <div key={bucket}>
-              <div className="px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-gray-600">
+              <div className="px-2 pb-1 pt-2 text-3xs font-medium uppercase tracking-wider text-gray-600">
                 {t(`rail.day.${bucket}`)}
               </div>
               {rows.map(item)}
@@ -416,7 +416,7 @@ export function SessionRail({
           <>
             <button
               onClick={() => setShowArchived((v) => !v)}
-              className="mt-2 flex w-full items-center gap-1.5 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-gray-600 transition-colors hover:text-gray-400"
+              className="mt-2 flex w-full items-center gap-1.5 px-2 py-1 text-3xs font-medium uppercase tracking-wider text-gray-600 transition-colors hover:text-gray-400"
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" className={`transition-transform ${showArchived ? "rotate-90" : ""}`}>
                 <polyline points="9 18 15 12 9 6" />
@@ -430,7 +430,7 @@ export function SessionRail({
 
       <div className="flex items-center gap-2 border-t border-edge px-3.5 py-2.5">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[status]} ${status === "starting" ? "animate-pulse" : ""}`} />
-        <span className="text-[11.5px] text-gray-500">
+        <span className="text-2xs text-gray-500">
           {status === "starting" && slow ? t("status.slowStart") : t(STATUS_KEY[status])}
         </span>
         <button
@@ -470,7 +470,7 @@ function RenameInput({ initial, onCommit, onCancel }: { initial: string; onCommi
         else if (e.key === "Escape") { e.preventDefault(); onCancel(); }
       }}
       onBlur={() => onCommit(val)}
-      className="w-full rounded-md border border-accent/60 bg-elevated px-2.5 py-[7px] text-[12.5px] text-gray-100 outline-none ring-1 ring-accent/30"
+      className="w-full rounded-md border border-accent/60 bg-elevated px-2.5 py-[7px] text-xs text-gray-100 outline-none ring-1 ring-accent/30"
     />
   );
 }
@@ -479,7 +479,7 @@ function MenuItem({ children, onClick, danger }: { children: React.ReactNode; on
   return (
     <button
       onClick={onClick}
-      className={`block w-full px-3 py-1.5 text-left text-[12.5px] transition-colors hover:bg-hover ${
+      className={`block w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-hover ${
         danger ? "text-danger hover:text-danger" : "text-gray-300 hover:text-gray-100"
       }`}
     >

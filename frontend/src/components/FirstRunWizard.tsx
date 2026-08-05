@@ -39,7 +39,7 @@ export function FirstRunWizard({
               </span>
               <div>
                 <div className="text-sm font-medium text-gray-100">{t(`wizard.${k}Title`)}</div>
-                <div className="text-[13px] leading-relaxed text-gray-500">{t(`wizard.${k}Body`)}</div>
+                <div className="text-sm leading-relaxed text-gray-500">{t(`wizard.${k}Body`)}</div>
               </div>
             </li>
           ))}
