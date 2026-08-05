@@ -151,6 +151,42 @@ describe("what a turn cost", () => {
     expect(screen.queryByTestId("reasoning-tokens")).toBeNull();
   });
 
+  // --- v0.54.0: the turn's own governor, beside the provider's numbers -------
+
+  it("shows how much of the turn budget was actually used", () => {
+    wrap(createElement(TurnFooter, {
+      tools,
+      usage: { input_tokens: 90000, output_tokens: 6000, total_tokens: 96000 },
+      budgetTokens: 640000,
+    }));
+    // The share is what says whether an investigation had room left; the raw
+    // token count alone never did.
+    expect(screen.getByTestId("budget-share").textContent).toContain("15%");
+  });
+
+  it("says nothing about the budget when the endpoint reported no total", () => {
+    wrap(createElement(TurnFooter, {
+      tools, usage: { input_tokens: 900 }, budgetTokens: 640000,
+    }));
+    // A share computed from an unknown numerator would be invented.
+    expect(screen.queryByTestId("budget-share")).toBeNull();
+  });
+
+  it("reports the repeated calls it answered without re-running", () => {
+    wrap(createElement(TurnFooter, {
+      tools, usage: { input_tokens: 900, output_tokens: 100 }, repeatCallsAvoided: 3,
+    }));
+    expect(screen.getByTestId("repeat-calls-avoided").textContent).toContain("3");
+  });
+
+  it("does not brag about zero repeats", () => {
+    wrap(createElement(TurnFooter, {
+      tools, usage: { input_tokens: 900, output_tokens: 100 }, repeatCallsAvoided: 0,
+    }));
+    // Most turns repeat nothing; a "⟲0" on every answer is noise.
+    expect(screen.queryByTestId("repeat-calls-avoided")).toBeNull();
+  });
+
   it("still expands to the execution trace", () => {
     const onOpen = vi.fn();
     wrap(createElement(TurnFooter, {

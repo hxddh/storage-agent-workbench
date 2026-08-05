@@ -551,6 +551,49 @@ the core counts' coalesce-to-zero rule cannot silently answer the first with the
 second. A genuine 0 is stored as 0, because a cold cache is the measurement
 worth acting on.
 
+### The turn's own governor (v0.54.0)
+
+The three costs above are what a step is worth. What bounds how many steps a
+turn may take used to be a **character** budget on cumulative tool output — and
+because the SDK re-sends the whole accumulated conversation on every step, a
+linear character budget buys a quadratic bill: the same 200k-char budget costs
+~406k tokens at 10 steps, 781k at 20, 1.55M at 40. At `_MAX_TURNS = 60` one
+question could spend ~3.5M tokens with nothing objecting.
+
+`model_budget.turn_token_budget()` adds the bound denominated in what a turn
+costs — `window × 5`, floored at 600k and capped at 4M (640k on a 128k model,
+1M on a 200k one) — checked against the SDK's **live** per-run usage before each
+tool call. Hitting it is a soft `budget_exhausted` status naming
+`spent_tokens`/`budget_tokens`, plus the "continue investigation" proposal, not
+an error. On an endpoint that reports no usage the character budget remains the
+only bound and the turn says so; absent usage is never read as zero.
+
+Three structural repetitions were removed at the same time:
+
+- **Independent probes go out together.** `parallel_tool_calls` is on, so eight
+  independent read-only probes cost 2–4 model requests instead of 9, each of
+  which would have re-sent everything before it. Endpoints that answer a
+  parallel batch with a sequencing 400 are remembered in
+  `_NO_PARALLEL_ENDPOINTS`, keyed `base_url|model` exactly like the
+  `stream_options` capability memory: one failure per process, that turn still
+  recovers through the finalize pass, and every later turn asks for sequential
+  calls. A 400 that is not a sequencing error is never attributed here.
+- **An identical `(tool, args)` call inside one turn** returns a `repeat_call`
+  pointer to the earlier result instead of the payload — and does not re-issue
+  the S3 request. `measure_request_latency` is exempt, because repetition is the
+  measurement there and a deduped second sample would be a fabricated number.
+- **The prompt is ordered most-stable-first** — skill catalog, providers, then
+  the stable half of the context (`session`/`summary`/`agent_memory`), then the
+  thread replay, then this turn's attachments and question. Prompt caching
+  matches on the prefix and stops at the first differing byte, so the old layout
+  (thread replay ahead of the catalog) invalidated everything on every turn.
+  Measured across two consecutive turns: the shared prefix goes from 36% to 100%
+  below the replay cap, and from 12% to 64% once the replay window slides.
+
+`turn_metrics` gains `budget_tokens` and `repeat_calls_avoided` (migration 23)
+so the footer still reports the turn's governor after a reload. Neither is a
+provider measurement, and they are reported beside `usage`, never inside it.
+
 ## What the access-log engine measures
 
 `analysis/access_logs.py` parses `latency_ms` and `bytes_sent` into the table on

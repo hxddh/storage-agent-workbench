@@ -26,8 +26,8 @@ class _FakeTool:
         self.on_invoke_tool = inv
 
 
-def _invoke(tool) -> str:
-    return asyncio.run(tool.on_invoke_tool(None, "{}"))
+def _invoke(tool, args: str = "{}") -> str:
+    return asyncio.run(tool.on_invoke_tool(None, args))
 
 
 # --- SEC4: untrusted-data envelope -------------------------------------------
@@ -67,11 +67,13 @@ def test_budget_status_notes_stay_outside_envelope():
     t = _FakeTool("list_objects", "payload")
     sa._install_untrusted_envelope([t])
     spent = sa._install_tool_output_budget([t], limit=10_000)
-    first = _invoke(t)
+    first = _invoke(t, '{"prefix":"a/"}')
     assert first.startswith(sa._UNTRUSTED_OPEN)
     assert spent["chars"] == len(first)  # budget counts the enveloped length
     spent["chars"] = 10_001
-    note = _invoke(t)
+    # Distinct args: this exercises the budget boundary, not v0.54.0's
+    # identical-call dedupe (which fires first and returns a different note).
+    note = _invoke(t, '{"prefix":"b/"}')
     # Runtime instruction to the model — must NOT be marked untrusted data.
     assert sa._UNTRUSTED_OPEN not in note
     assert "budget_exhausted" in note

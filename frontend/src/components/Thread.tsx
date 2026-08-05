@@ -425,6 +425,8 @@ export function Thread({
       return {
         turn_id: null, message_id: messageId, model: m.model ?? null,
         duration_ms: m.duration_ms ?? null, tool_calls: m.tool_calls ?? null,
+        budget_tokens: m.budget_tokens ?? null,
+        repeat_calls_avoided: m.repeat_calls_avoided ?? null,
         created_at: "", usage: m.usage,
         ...(m.usage ?? {}),
       };
@@ -968,6 +970,8 @@ export function Thread({
                         durationMs={metricsFor(it.id)?.duration_ms}
                         usage={metricsFor(it.id)?.usage ?? metricsFor(it.id) ?? undefined}
                         model={metricsFor(it.id)?.model}
+                        budgetTokens={metricsFor(it.id)?.budget_tokens}
+                        repeatCallsAvoided={metricsFor(it.id)?.repeat_calls_avoided}
                         onOpenInspector={() => {
                           // Anchored: the inspector highlights and scrolls to
                           // THIS turn's rows. Unanchored it dropped the reader

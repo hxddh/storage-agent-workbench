@@ -44,6 +44,8 @@ export function TurnFooter({
   durationMs,
   usage,
   model,
+  budgetTokens,
+  repeatCallsAvoided,
   onOpenInspector,
 }: {
   tools?: ToolActivity[];
@@ -51,6 +53,8 @@ export function TurnFooter({
   durationMs?: number | null;
   usage?: TokenUsage | null;
   model?: string | null;
+  budgetTokens?: number | null;
+  repeatCallsAvoided?: number | null;
   onOpenInspector?: () => void;
 }) {
   const { t } = useI18n();
@@ -76,6 +80,14 @@ export function TurnFooter({
   const cachedShare =
     usage?.cached_input_tokens != null && usage?.input_tokens
       ? Math.round((usage.cached_input_tokens / usage.input_tokens) * 100)
+      : null;
+  // What the turn's own governor did (v0.54.0). The share of the token budget
+  // spent is the number that says whether an investigation had room left; the
+  // repeat count is what the in-turn dedupe saved. Both are omitted rather than
+  // zeroed — a turn that repeated nothing should say nothing.
+  const budgetShare =
+    budgetTokens && usage?.total_tokens
+      ? Math.round((usage.total_tokens / budgetTokens) * 100)
       : null;
   const evidence = grounding?.evidence_used ?? [];
   const gaps = grounding?.evidence_gaps ?? [];
@@ -146,6 +158,33 @@ export function TurnFooter({
             {t("metrics.tokens")} —
           </span>
         )}
+        {budgetShare !== null && (
+          <>
+            <Dot />
+            <span
+              className="tabular-nums text-gray-700"
+              data-testid="budget-share"
+              title={t("metrics.budgetHint", {
+                n: fmtTokens(budgetTokens) ?? "?",
+                pct: budgetShare,
+              })}
+            >
+              {budgetShare}% {t("metrics.ofBudget")}
+            </span>
+          </>
+        )}
+        {repeatCallsAvoided ? (
+          <>
+            <Dot />
+            <span
+              className="tabular-nums text-success"
+              data-testid="repeat-calls-avoided"
+              title={t("metrics.repeatsHint", { n: repeatCallsAvoided })}
+            >
+              ⟲{repeatCallsAvoided}
+            </span>
+          </>
+        ) : null}
         {onOpenInspector && (
           <>
             <Dot />

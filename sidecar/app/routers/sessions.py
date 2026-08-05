@@ -650,7 +650,9 @@ def post_session_message(
             model=(creds or {}).get("model"),
             duration_ms=int((time.monotonic() - blocking_t0) * 1000),
             tool_calls=len(contract.get("tool_activity") or []),
-            usage=contract.get("usage"))
+            usage=contract.get("usage"),
+            budget_tokens=contract.get("budget_tokens"),
+            repeat_calls_avoided=contract.get("repeat_calls_avoided"))
         conn.commit()
         turn_guard.set_result(body.turn_id, {
             "proposed_actions": proposed_actions,
@@ -865,7 +867,9 @@ async def post_session_message_stream(
                         wconn, session_id, turn_id=body.turn_id, message_id=mid,
                         model=(creds or {}).get("model"), duration_ms=elapsed_ms,
                         tool_calls=len(data.get("tool_activity") or []),
-                        usage=data.get("usage"))
+                        usage=data.get("usage"),
+                        budget_tokens=data.get("budget_tokens"),
+                        repeat_calls_avoided=data.get("repeat_calls_avoided"))
                     wconn.commit()
                 finally:
                     pass
@@ -886,11 +890,16 @@ async def post_session_message_stream(
                                "stopped": stopped,
                                # Per-turn metrics for the answer footer. `usage`
                                # is omitted (not zeroed) when the provider never
-                               # reported tokens.
+                               # reported tokens; the budget keys are omitted when
+                               # the turn's governor had nothing to report.
                                "metrics": {"duration_ms": elapsed_ms,
                                            "tool_calls": len(data.get("tool_activity") or []),
                                            "model": (creds or {}).get("model"),
-                                           **({"usage": data["usage"]} if data.get("usage") else {})}}))
+                                           **({"usage": data["usage"]} if data.get("usage") else {}),
+                                           **{k: data[k] for k in
+                                              ("budget_tokens", "budget_stopped_on",
+                                               "repeat_calls_avoided")
+                                              if data.get(k) is not None}}}))
         except Exception as exc:  # noqa: BLE001
             # Mark FAILED (not just discard) so a blocking fallback parked on this
             # turn's done_event wakes immediately with the error instead of

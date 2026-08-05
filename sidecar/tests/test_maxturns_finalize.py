@@ -156,9 +156,11 @@ def test_tool_output_budget_note_is_status_not_error():
     budget = session_agent._install_tool_output_budget([tool], limit=8)
 
     async def run():
-        first = await tool.on_invoke_tool(None, None)    # 5 chars, fits (0+5<=8)
-        second = await tool.on_invoke_tool(None, None)   # 5+5>8 → withheld too_large
-        third = await tool.on_invoke_tool(None, None)    # already over → exhausted
+        # Distinct args: identical (tool, args) pairs are de-duplicated since
+        # v0.54.0, which is a different boundary than the size one under test.
+        first = await tool.on_invoke_tool(None, "a")     # 5 chars, fits (0+5<=8)
+        second = await tool.on_invoke_tool(None, "b")    # 5+5>8 → withheld too_large
+        third = await tool.on_invoke_tool(None, "c")     # already over → exhausted
         return first, second, third
 
     first, second, third = asyncio.run(run())
