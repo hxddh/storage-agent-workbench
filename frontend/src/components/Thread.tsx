@@ -25,9 +25,9 @@ import { Button } from "./ui";
 import { Markdown } from "./Markdown";
 import { Composer } from "./Composer";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
-import { FindingsCard, GroundingCard, LiveProgress, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard, copyText } from "./ThreadCards";
+import { GroundingCard, LiveProgress, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard, copyText } from "./ThreadCards";
 import { SessionInspector } from "./SessionInspector";
-import { TurnMetricsBar } from "./TurnMetrics";
+import { TurnFooter } from "./TurnFooter";
 import { useI18n } from "../i18n";
 
 type Item =
@@ -106,6 +106,10 @@ export function Thread({
   // discarding history the user deliberately pulled in.
   const [earlier, setEarlier] = useState<SessionMessage[]>([]);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
+  // Turns the user has explicitly re-opened. Old turns collapse to one line so
+  // scrolling back through a long investigation is scannable rather than a wall
+  // of prose; expanding is per-turn and sticky for the session.
+  const [expandedTurns, setExpandedTurns] = useState<Set<string>>(() => new Set());
   // Persisted per-turn metrics, keyed by the assistant message they belong to,
   // so the footer under an OLD answer still shows what that turn cost.
   const [metrics, setMetrics] = useState<Record<string, TurnMetricsRow>>({});
@@ -240,6 +244,9 @@ export function Thread({
 
   // How many messages exist above what is currently rendered. `message_total`
   // comes from the server, so this is a fact rather than a guess.
+  // Only the most recent exchanges stay open. Anything older is one line until
+  // asked for — the same move Codex makes on a long session.
+  const OPEN_TAIL = 6;
   const shownCount = (earlier.length + (detail?.messages?.length ?? 0));
   const hiddenCount = Math.max(0, (detail?.message_total ?? shownCount) - shownCount);
 
@@ -758,8 +765,43 @@ export function Thread({
                   </div>
                 </div>
               )}
-              {items.map((it, idx) =>
-                it.kind === "message" ? (
+              {items.map((it, idx) => {
+                // A turn is "old" once several exchanges have happened after it.
+                // Old turns collapse to one line; the user can reopen any of
+                // them, and that choice sticks for the session.
+                const collapsible =
+                  it.kind === "message" &&
+                  it.role === "assistant" &&
+                  idx < items.length - OPEN_TAIL &&
+                  !expandedTurns.has(it.id);
+                if (collapsible && it.kind === "message") {
+                  const question = questionBefore(idx);
+                  const calls = (it.toolActivity ?? []).filter((a) => a.status !== "started").length;
+                  return (
+                    <div key={it.id} className="thread-item">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedTurns((prev) => new Set(prev).add(it.id))}
+                        data-testid="collapsed-turn"
+                        className="group flex w-full items-center gap-2 rounded-lg border border-edge/70 px-3 py-2 text-left transition-colors hover:border-edge-strong hover:bg-hover/40"
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                             strokeWidth="2.5" className="shrink-0 text-gray-700" aria-hidden>
+                          <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                        <span className="min-w-0 flex-1 truncate text-[12px] text-gray-500 group-hover:text-gray-300">
+                          {question || it.content || t("common.untitled")}
+                        </span>
+                        {calls > 0 && (
+                          <span className="shrink-0 tabular-nums text-[10.5px] text-gray-700">
+                            {t("turn.checks", { n: calls })}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  );
+                }
+                return it.kind === "message" ? (
                   <div key={it.id} className="thread-item space-y-3">
                     <MessageCard
                       role={it.role}
@@ -772,22 +814,21 @@ export function Thread({
                           : undefined
                       }
                     />
-                    {/* What this turn cost (v0.45.0) — persisted, so it survives
-                        a reload. Absent for pre-0.45.0 history, which renders
-                        nothing rather than zeros. */}
-                    {it.role === "assistant" && metricsFor(it.id) && (
-                      <TurnMetricsBar
-                        durationMs={metricsFor(it.id)!.duration_ms}
-                        usage={metricsFor(it.id)!.usage ?? metricsFor(it.id)!}
+                    {/* ONE affordance for the whole turn (v0.49.0): what it ran,
+                        how long it took, what it cost, and what it was grounded
+                        in — previously three separate expanders, two of which
+                        described the same tool calls in different words on
+                        opposite sides of the answer. */}
+                    {it.role === "assistant" && (
+                      <TurnFooter
                         tools={it.toolActivity}
-                        model={metricsFor(it.id)!.model}
+                        grounding={it.grounding}
+                        durationMs={metricsFor(it.id)?.duration_ms}
+                        usage={metricsFor(it.id)?.usage ?? metricsFor(it.id) ?? undefined}
+                        model={metricsFor(it.id)?.model}
                         onOpenInspector={() => setInspectorOpen(true)}
                       />
                     )}
-                    {/* Persisted grounding + proposals (v0.21.0) — survive reload,
-                        so a historical assistant turn still shows why it said that
-                        and what it proposed next. */}
-                    {it.grounding && <GroundingCard g={it.grounding} />}
                     {it.proposals && it.proposals.length > 0 && (
                       <div className="flex flex-wrap items-center gap-2 pt-0.5">
                         <span className="text-[11.5px] text-gray-600">{t("thread.suggestedNext")}</span>
@@ -805,8 +846,8 @@ export function Thread({
                   <div key={it.data.id} className="thread-item">
                     <TriageCard c={it.data} onRun={runProposal} />
                   </div>
-                ),
-              )}
+                );
+              })}
 
               {pending && (
                 <>
@@ -865,11 +906,11 @@ export function Thread({
 
               {banners}
 
-              {/* Persisted deterministic session findings (read-only) — surfaced
-                  in-thread, not just in the report. */}
-              {detail?.findings && detail.findings.length > 0 && !pending && (
-                <FindingsCard findings={detail.findings} />
-              )}
+              {/* Session-level findings used to render here, at the BOTTOM of a
+                  time-ordered thread — where they read as the newest event
+                  rather than as standing session state. They live in the
+                  inspector now (v0.49.0), next to the rest of the session's
+                  cross-cutting record. */}
 
               {/* Grounding + proposals normally render per assistant message
                   (above), sourced from the persisted turn so they survive a
@@ -938,6 +979,7 @@ export function Thread({
         sessionId={sessionId}
         open={inspectorOpen && !!sessionId}
         onClose={() => setInspectorOpen(false)}
+        findings={detail?.findings}
       />
 
       {report !== null && (

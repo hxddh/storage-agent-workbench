@@ -77,8 +77,11 @@ export const MessageCard = memo(function MessageCard({
           </span>
         )}
       </div>
-      {toolActivity && toolActivity.length > 0 && (
-        <ToolActivityList items={toolActivity} streaming={streaming} />
+      {/* Only while streaming. Afterwards the trace lives in the turn footer's
+          single expansion, in execution order and next to the grounding it
+          supports — see TurnFooter. */}
+      {streaming && toolActivity && toolActivity.length > 0 && (
+        <ToolActivityList items={toolActivity} />
       )}
       <Markdown text={shown} />
       {streaming &&
@@ -167,78 +170,41 @@ function stripMetaBlock(text: string): string {
   return looksMeta ? text.slice(0, i).trimEnd() : text;
 }
 
-/** Compact, Codex/Cursor-style trace of the read-only tools the agent ran.
+/** The LIVE trace, shown only while a turn is streaming.
  *
- * COLLAPSED BY DEFAULT once the turn is done. A deep investigation runs twenty
- * tools, and twenty rows pinned above the answer push the answer itself off the
- * screen — the trace is evidence you consult, not the thing you came to read.
- * While the turn is still streaming it stays open: there, the rows ARE the
- * content, and watching them land is how you know it is working.
+ * Here the rows ARE the progress indicator — watching them land is how you know
+ * the agent is working. Once the answer arrives they are redundant with the turn
+ * footer's single expansion, which shows the same calls in execution order
+ * alongside the grounding they support, so this no longer renders afterwards.
  */
-function ToolActivityList({ items, streaming }: { items: ToolActivity[]; streaming?: boolean }) {
+function ToolActivityList({ items }: { items: ToolActivity[] }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  const done = items.filter((a) => a.status !== "started");
-  const kinds = new Set(done.map((a) => a.tool)).size;
-  const failed = done.filter((a) => /^(error|failed)\b/i.test(a.result || "")).length;
-  // Streaming forces it open; afterwards the user's own toggle wins.
-  const expanded = streaming || open;
-
   return (
-    <div className="mb-2.5">
-      {!streaming && (
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={expanded}
-          data-testid="tool-trace-toggle"
-          className="group/tt -ml-1 flex items-center gap-1.5 rounded px-1 py-0.5 text-[11.5px] text-gray-600 transition-colors hover:text-gray-300"
-        >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-               className={`shrink-0 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`} aria-hidden>
-            <polyline points="9 18 15 12 9 6" />
+    <div className="mb-2.5 space-y-[3px]">
+      {items.map((a, i) => (
+        <div key={i} className="flex items-center gap-2 text-[11.5px] text-gray-500">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-gray-600">
+            <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z" />
           </svg>
-          <span className="tabular-nums">{t("trace.ran", { n: done.length })}</span>
-          {kinds > 1 && <span className="text-gray-700">· {t("trace.kinds", { n: kinds })}</span>}
-          {failed > 0 && (
-            <span className="ml-0.5 rounded bg-danger-bg px-1.5 py-px text-[10px] text-danger">
-              {t("trace.failed", { n: failed })}
-            </span>
+          <span className="shrink-0 font-mono text-accent-soft">{a.tool}</span>
+          {a.target ? (
+            <span className="min-w-0 flex-1 truncate text-gray-600" title={a.target}>· {a.target}</span>
+          ) : (
+            <span className="flex-1" />
           )}
-        </button>
-      )}
-      {expanded && (
-        <div className={`space-y-[3px] ${streaming ? "" : "mt-1.5 border-l border-edge pl-3"}`}>
-          {items.map((a, i) => (
-            <div key={i} className="flex items-center gap-2 text-[11.5px] text-gray-500">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-gray-600">
-                <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z" />
-              </svg>
-              <span className="shrink-0 font-mono text-accent-soft">{a.tool}</span>
-              {a.target ? (
-                <span className="min-w-0 flex-1 truncate text-gray-600" title={a.target}>· {a.target}</span>
-              ) : (
-                <span className="flex-1" />
-              )}
-              {a.status === "started" ? (
-                <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-warn-fg">
-                  <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-                  {t("tool.running")}
-                </span>
-              ) : (
-                <span className="shrink-0 font-mono text-[11px] text-gray-500" title={a.result}>{a.result}</span>
-              )}
-            </div>
-          ))}
+          {a.status === "started" ? (
+            <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-warn-fg">
+              <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              {t("tool.running")}
+            </span>
+          ) : (
+            <span className="shrink-0 font-mono text-[11px] text-gray-500" title={a.result}>{a.result}</span>
+          )}
         </div>
-      )}
+      ))}
     </div>
   );
 }
-
-// Copy `text`, falling back to a temp-textarea + execCommand when the async
-// Clipboard API is unavailable (it is absent/blocked in some WebViews) so the
-// button never silently no-ops. Returns whether the copy succeeded.
 export function copyText(text: string): Promise<boolean> {
   if (navigator.clipboard?.writeText) {
     return navigator.clipboard.writeText(text).then(() => true).catch(() => legacyCopy(text));

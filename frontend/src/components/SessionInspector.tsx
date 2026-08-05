@@ -5,9 +5,11 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useI18n } from "../i18n";
 import { Button } from "./ui";
 import { fmtDuration, fmtTokens } from "./TurnMetrics";
+import { FindingsCard } from "./ThreadCards";
 import type {
   SessionActivityItem,
   SessionAuditItem,
+  SessionFinding,
   SessionOverview,
 } from "../types";
 
@@ -150,10 +152,13 @@ export function SessionInspector({
   sessionId,
   open,
   onClose,
+  findings,
 }: {
   sessionId: string | null;
   open: boolean;
   onClose: () => void;
+  /** Deterministic session findings — standing state, not a timeline event. */
+  findings?: SessionFinding[];
 }) {
   const { t } = useI18n();
   const [overview, setOverview] = useState<SessionOverview | null>(null);
@@ -382,6 +387,12 @@ export function SessionInspector({
               sub={overview?.approvals ? t("inspector.statApprovals", { n: overview.approvals }) : undefined}
             />
           </div>
+
+          {findings && findings.length > 0 && (
+            <div className="mt-4">
+              <FindingsCard findings={findings} />
+            </div>
+          )}
 
           <div className="mt-4 flex flex-wrap items-center gap-1.5">
             <Chip on={showTools} onClick={() => setShowTools((v) => !v)} count={tools.length}>

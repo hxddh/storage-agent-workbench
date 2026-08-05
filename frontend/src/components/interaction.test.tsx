@@ -12,6 +12,7 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
 import { MessageCard } from "./ThreadCards";
+import { TurnFooter, linkEvidence } from "./TurnFooter";
 import { dayBucket, clampRailWidth, MIN_RAIL_WIDTH, MAX_RAIL_WIDTH } from "./SessionRail";
 import { ToastProvider, useToast } from "./Toast";
 import { SHORTCUTS, MOD, matches } from "../shortcuts";
@@ -20,35 +21,85 @@ import type { ToolActivity } from "../types";
 const wrap = (node: React.ReactNode) => render(createElement(I18nProvider, null, node));
 const call = (tool: string, result = "ok"): ToolActivity => ({ tool, target: "bucket", result });
 
-describe("tool trace", () => {
+describe("the turn footer", () => {
   const tools = [call("list_objects"), call("head_bucket"), call("test_credentials")];
 
-  it("stays open while the turn is streaming", () => {
+  it("keeps the live trace above the answer WHILE streaming", () => {
     wrap(createElement(MessageCard, { role: "assistant", content: "", toolActivity: tools, streaming: true }));
     // Mid-turn the rows are the progress indicator — hiding them behind a
     // toggle would make a working agent look frozen.
     expect(screen.getByText("list_objects")).toBeTruthy();
-    expect(screen.queryByTestId("tool-trace-toggle")).toBeNull();
   });
 
-  it("collapses to a summary once the answer has landed", () => {
+  it("drops that trace once the answer has landed", () => {
     wrap(createElement(MessageCard, { role: "assistant", content: "done", toolActivity: tools }));
+    // It is not gone — it moved into the footer's single expansion, so the same
+    // calls are no longer described twice on opposite sides of the answer.
     expect(screen.queryByText("list_objects")).toBeNull();
-    const toggle = screen.getByTestId("tool-trace-toggle");
-    expect(toggle.textContent).toContain("3");
-    fireEvent.click(toggle);
-    expect(screen.getByText("list_objects")).toBeTruthy();
   });
 
-  it("surfaces failures in the collapsed summary", () => {
-    // A failed call must be visible WITHOUT expanding — otherwise collapsing
-    // the trace would hide the one thing worth noticing.
-    wrap(createElement(MessageCard, {
-      role: "assistant",
-      content: "done",
-      toolActivity: [call("head_bucket", "error: AccessDenied"), call("list_objects")],
+  it("states the turn's work once, and expands to the execution order", () => {
+    wrap(createElement(TurnFooter, { tools, durationMs: 12400 }));
+    const toggle = screen.getByTestId("turn-footer-toggle");
+    expect(toggle.textContent).toContain("3");
+    expect(screen.queryByText("list_objects")).toBeNull();
+    fireEvent.click(toggle);
+    const rows = screen.getAllByText(/list_objects|head_bucket|test_credentials/);
+    // Execution order, not sorted by name or duration: the sequence is what
+    // explains what led to what.
+    expect(rows.map((r) => r.textContent)).toEqual([
+      "list_objects", "head_bucket", "test_credentials",
+    ]);
+  });
+
+  it("surfaces failures without needing to expand", () => {
+    wrap(createElement(TurnFooter, {
+      tools: [call("head_bucket", "error: AccessDenied"), call("list_objects")],
     }));
-    expect(screen.getByTestId("tool-trace-toggle").textContent).toMatch(/1/);
+    expect(screen.getByTestId("turn-footer-toggle").textContent).toMatch(/1/);
+  });
+
+  it("shows grounding in the same expansion as the trace it rests on", () => {
+    wrap(createElement(TurnFooter, {
+      tools,
+      grounding: {
+        evidence_used: ["head_bucket returned 200"],
+        evidence_gaps: ["IAM identity policy not readable"],
+        skills_used: ["s3-diagnostics"],
+      },
+    }));
+    fireEvent.click(screen.getByTestId("turn-footer-toggle"));
+    expect(screen.getByText(/head_bucket returned 200/)).toBeTruthy();
+    expect(screen.getByText(/IAM identity policy not readable/)).toBeTruthy();
+  });
+
+  it("links an evidence line to the call it names", () => {
+    wrap(createElement(TurnFooter, {
+      tools,
+      grounding: { evidence_used: ["head_bucket returned 200"], evidence_gaps: [], skills_used: [] },
+    }));
+    fireEvent.click(screen.getByTestId("turn-footer-toggle"));
+    expect(screen.getByTestId("evidence-link").textContent).toBe("head_bucket");
+  });
+
+  it("does not invent a link for evidence that names no tool", () => {
+    wrap(createElement(TurnFooter, {
+      tools,
+      grounding: { evidence_used: ["the user said uploads fail"], evidence_gaps: [], skills_used: [] },
+    }));
+    fireEvent.click(screen.getByTestId("turn-footer-toggle"));
+    // A fabricated citation would be worse than none.
+    expect(screen.queryByTestId("evidence-link")).toBeNull();
+  });
+
+  it("matches evidence to a tool only when the turn actually ran it", () => {
+    expect(linkEvidence("head_bucket returned 200", tools)).toBe("head_bucket");
+    expect(linkEvidence("get_object_acl said public", tools)).toBeNull();
+  });
+
+  it("renders nothing when there is nothing to report", () => {
+    const { container } = wrap(createElement(TurnFooter, { tools: [], durationMs: null }));
+    expect(container.textContent).toBe("");
   });
 });
 
