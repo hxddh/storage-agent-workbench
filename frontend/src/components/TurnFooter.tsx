@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useI18n } from "../i18n";
 import { fmtDuration, fmtTokens } from "./TurnMetrics";
+import { fmtCallMs, isFailed } from "./LiveTrace";
 import type { Grounding, ToolActivity, TokenUsage } from "../types";
 
 /**
@@ -65,7 +66,10 @@ export function TurnFooter({
     () => (tools ?? []).filter((a) => a.status !== "started"),
     [tools],
   );
-  const failed = done.filter((a) => /^(error|failed)\b/i.test(a.result || "")).length;
+  // Exact, from the sidecar's own verdict (v0.55.0) — not a guess at the result
+  // text. The old regex matched none of this product's real failure shapes, so
+  // this badge silently under-counted and the trace showed failures in green.
+  const failed = done.filter(isFailed).length;
   const dur = fmtDuration(durationMs);
   const inTok = fmtTokens(usage?.input_tokens);
   const outTok = fmtTokens(usage?.output_tokens);
@@ -210,7 +214,8 @@ export function TurnFooter({
                 {/* Execution order — the sequence is what explains what led to
                     what, so it is never re-sorted by name or duration. */}
                 {done.map((a, i) => {
-                  const bad = /^(error|failed)\b/i.test(a.result || "");
+                  const bad = isFailed(a);
+                  const ms = fmtCallMs(a.duration_ms);
                   return (
                     <li
                       key={i}
@@ -229,7 +234,16 @@ export function TurnFooter({
                           · {a.target}
                         </span>
                       )}
-                      <span className="ml-auto shrink-0 truncate font-mono text-[10.5px] text-gray-500" title={a.result}>
+                      {ms && (
+                        <span className="ml-auto shrink-0 tabular-nums text-[10.5px] text-gray-700"
+                              data-testid="footer-duration">
+                          {ms}
+                        </span>
+                      )}
+                      <span
+                        className={`${ms ? "" : "ml-auto "}shrink-0 truncate font-mono text-[10.5px] ${bad ? "text-danger" : "text-gray-500"}`}
+                        title={a.result}
+                      >
                         {a.result}
                       </span>
                     </li>

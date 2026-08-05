@@ -24,6 +24,8 @@ from __future__ import annotations
 import json
 import sqlite3
 from pathlib import Path
+import uuid
+
 from typing import Any, Callable
 
 from .. import audit, config
@@ -64,9 +66,13 @@ def build(
     if conn is None or not session_id:
         return []
 
-    def note(tool: str, target: str, result: str) -> None:
+    def note(tool: str, target: str, result: str, ok: bool = True) -> None:
+        # `id` and `ok` (v0.55.0): the thread can key a row exactly instead of
+        # matching on (tool, target), and knows a failure without pattern-matching
+        # the result text.
         if activity is not None:
-            activity.append({"tool": tool, "target": target[:80], "result": result[:80]})
+            activity.append({"id": uuid.uuid4().hex, "tool": tool, "target": target[:80],
+                             "result": result[:80], "ok": ok, "status": "completed"})
 
     @function_tool
     def list_uploaded_files() -> str:
@@ -192,7 +198,7 @@ def build(
             else:
                 return _err(f"Unsupported dataset type: {ds['dataset_type']}")
         except Exception as exc:  # noqa: BLE001 — surface a clean, redacted message
-            note("analyze_uploaded_file", ds.get("source_filename") or dataset_id, "error")
+            note("analyze_uploaded_file", ds.get("source_filename") or dataset_id, "error", ok=False)
             return _err(f"Could not analyze the file: {exc}")
 
         # No silent cap: if THIS import hit the row ceiling, tell the model the
@@ -263,7 +269,7 @@ def build(
             # The message lists the allowed values so the agent self-corrects.
             return _err(str(exc))
         except Exception as exc:  # noqa: BLE001 — surface a clean, redacted message
-            note("aggregate_uploaded_file", ds.get("source_filename") or dataset_id, "error")
+            note("aggregate_uploaded_file", ds.get("source_filename") or dataset_id, "error", ok=False)
             return _err(f"Could not aggregate the file: {exc}")
 
         # Rule 17: record the ACTUAL SQL + bound params in the audit trail.

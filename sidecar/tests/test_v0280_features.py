@@ -205,10 +205,19 @@ def test_elastic_replay_caps_floor_and_ceiling():
     assert c == sa._MAX_MESSAGES and ch == sa._MAX_REPLAY_MSG
     # Huge window → scaled but bounded by the ceilings.
     c2, ch2 = sa._elastic_replay_caps("gpt-4.1", None)  # 1M window
-    assert c2 == sa._MAX_MESSAGES_CEIL and ch2 == sa._MAX_REPLAY_MSG_CEIL
+    assert c2 == sa._MAX_MESSAGES_CEIL
     assert c2 > sa._MAX_MESSAGES and ch2 > sa._MAX_REPLAY_MSG
+    assert ch2 <= sa._MAX_REPLAY_MSG_CEIL
+    # v0.55.0: the two dimensions scale in SERIES, not in parallel. Multiplying
+    # BOTH by the window factor made the replay grow with the SQUARE of the
+    # window — a 1M model got 96 x 12,000 = 1,152,000 chars (~288,000 tokens,
+    # re-sent every step) for a window 7.8x the baseline. The AREA is what must
+    # stay linear.
+    base = sa._MAX_MESSAGES * sa._MAX_REPLAY_MSG
+    factor = 1_000_000 // 128_000
+    assert c2 * ch2 <= base * factor, f"{c2}x{ch2} exceeds a linear {factor}x budget"
     # Explicit window override drives it too.
-    c3, ch3 = sa._elastic_replay_caps("unknown", 1_000_000)
+    c3, _ch3 = sa._elastic_replay_caps("unknown", 1_000_000)
     assert c3 == sa._MAX_MESSAGES_CEIL
 
 

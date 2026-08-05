@@ -325,9 +325,25 @@ export interface SessionSummaryData {
 }
 
 export interface ToolActivity {
+  /** This call's identity (v0.55.0) — the SAME id as its persisted `tool_calls`
+   * row. It resolves a "started" row to its completed record exactly (matching
+   * on tool+target became ambiguous once v0.54.0 turned on parallel calls, where
+   * two `get_bucket_config_detail` calls on ONE bucket differ only by `aspect`),
+   * and it links a thread row to the real sanitized input/output behind it. */
+  id?: string;
   tool: string;
   target: string;
   result: string;
+  /** Did the call succeed? Computed in the sidecar from the tool result itself.
+   * The UI used to infer this with /^(error|failed)\b/ against the result text,
+   * which matched none of the real failure shapes this product produces
+   * (`AccessDenied · req 8A9F2C1B`, `NoSuchBucket`, `SignatureDoesNotMatch`) —
+   * so failed calls rendered as successes. Absent on pre-v0.55.0 history. */
+  ok?: boolean;
+  /** Measured wall-clock for this call. It has been written to `tool_calls`
+   * since v0.45.0 and never sent to the client, so "which step was slow" was
+   * answerable only in the database. */
+  duration_ms?: number | null;
   /** The arguments that decide what this call MEANT — prefix, aspect, max_keys,
    * recursive, version_id … (v0.53.0). `target` carries bucket/key; without
    * these a `list_objects` over one prefix looked identical to a full listing. */

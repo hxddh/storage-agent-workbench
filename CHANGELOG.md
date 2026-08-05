@@ -6,6 +6,205 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-08-05
+
+_v0.53.0 shrank each payload; v0.54.0 bounded the turn and stopped paying twice.
+Both worked on the wrong 32%. This release measures the whole prefix and goes
+after the part nobody had looked at._
+
+### The measurement that reframed the problem
+
+Everything the model receives **before any of this turn's own content**:
+
+| fixed prefix | chars | ~tokens |
+| --- | --- | --- |
+| 42 tool descriptions | 19,552 | 4,888 |
+| 42 parameter schemas | 11,765 | 2,941 |
+| tool names + wrapping | 4,204 | 1,051 |
+| system prompt | 5,175 | 1,294 |
+| skills catalog | 7,542 | 1,886 |
+| answer contract | 897 | 224 |
+| **total, re-sent every step** | **49,135** | **~12,284** |
+
+On a realistic 8-tool turn (9 model requests):
+
+| component | input tokens | share |
+| --- | --- | --- |
+| **fixed prefix** | **91,566** | **57%** |
+| skills catalog + contract | 18,988 | 12% |
+| session context | 19,285 | 12% |
+| tool outputs | 31,522 | 20% |
+
+The earlier "~5,196-token prefix" figure counted only the prose and omitted the
+tool block entirely. The real number is 12,284, and **69% of a turn is fixed,
+unchanging bytes** — while the last two releases optimized the other 31%.
+
+### Added — progressive tool disclosure
+
+A turn calls 3–8 tools. All 42 schemas were sent on every step regardless. Now
+a CORE set (orientation, the two probes every investigation starts from, skills,
+memory) is always exposed and the rest are grouped — `object_forensics`,
+`endpoint_probes`, `storage_pileup`, `bucket_config`, `uploaded_files`,
+`account_wide` — behind the SDK's per-tool `is_enabled`, which
+`Agent.get_all_tools` re-evaluates on **every step**. `load_tools(group)` opens
+one and its tools are callable on the very next step. Nothing is ever
+permanently hidden, and a tool belonging to no group stays visible: the default
+fails **open**, so a tool added later merely misses the saving instead of
+silently vanishing.
+
+Three things keep the unlock from costing more than it saves:
+
+- **Reading a skill opens what its method names.** A skill that says "call
+  `get_bucket_config_summary`" unlocks `bucket_config` as it loads — derived from
+  the skill TEXT, so an edited skill cannot drift out of sync with what it can
+  reach.
+- **A session remembers what it has used.** Groups whose tools appear in this
+  session's persisted `tool_calls` start open. Memory, not planning — the tools
+  genuinely ran.
+- **An attached file opens the file tools.** The file is a fact, not a guess.
+
+Measured on the same 8-tool turn:
+
+| scenario | input tokens | vs v0.54.0 |
+| --- | --- | --- |
+| v0.54.0 (all 42 schemas) | 201,838 | |
+| core only, no unlock needed | 142,351 | **−29%** |
+| one group unlocked (+1 round trip) | 161,312 | **−20%** |
+| worst case: every group unlocked | 197,615 | −2% |
+
+The tool block itself goes from 35,521 chars to 7,996 core-only (**−77%**) or
+12,382 with a group open (**−65%**).
+
+### Changed — Pydantic's schema titles are gone
+
+Every parameter carried `"title": "Provider Id"` beside `"provider_id"`, and each
+schema a `"title": "head_bucket_args"`. **3,601 chars, 30% of all parameter-schema
+bytes**, restating the key in title case — re-sent on every step of every turn.
+Titles are not part of the strict function-calling contract
+(`additionalProperties` / `required` are, and both are untouched).
+
+### Changed — the loaded skill method rides along instead of being re-read
+
+`read_skill` returns a ~3,300-char method body that lives in that turn's
+conversation and is gone by the next one — the replay keeps only
+`read_skill · storageops-lifecycle-cost → loaded`. So a multi-turn investigation
+on one topic re-read the same method **every turn**: a full round-trip to fetch
+text the agent had already been given. The most recent one now travels in the
+context's **stable** half — the part v0.54.0 ordered so a prompt cache can serve
+it, where a tool result never lands.
+
+### Fixed — the thread replay grew with the SQUARE of the context window
+
+`_elastic_replay_caps` multiplied message COUNT *and* per-message LENGTH by the
+same window factor. A 1M-window model got 96 × 12,000 = **1,152,000 chars
+(~288,000 tokens), re-sent on every step**, for a window 7.8× the baseline. The
+budget is now a single area, spent on count first and on length with what is
+left: **672,000 chars (~168,000 tokens), −42%**. A 128k model is bit-for-bit
+unchanged.
+
+### Added — the prompt-cache ask, and the ability to check it landed
+
+The fixed prefix is byte-identical across steps and across the turns of one
+investigation, which is exactly what prompt caching is for, and **nothing in this
+app had ever asked for it**. `prompt_cache_retention` is now requested (24h, so
+the entry survives the gap between a user's questions, not just between steps).
+Best-effort with the same capability memory as `stream_options`: an endpoint that
+rejects it is never asked again, and only a complaint that NAMES the parameter
+counts — a real bug must never hide behind a cost optimization. Whether it lands
+is observable, not assumed: v0.53.0 already records `cached_input_tokens`.
+
+### Fixed — failed tool calls rendered as successes
+
+The thread decided a call had failed with `/^(error|failed)\b/` against the
+result text. Measured against the failure shapes this product actually produces:
+
+| result summary | shown as failed? |
+| --- | --- |
+| `AccessDenied · req 8A9F2C1B` | ✗ no |
+| `NoSuchBucket` | ✗ no |
+| `SignatureDoesNotMatch` | ✗ no |
+| `failed` | ✓ yes |
+
+The three most common failures in an object-storage workbench all rendered
+green, and the `⚠ N failed` badge under-counted. The sidecar had computed the
+verdict exactly all along and written it to `tool_calls.status` — it now travels
+with the record as `ok`.
+
+### Added — every call carries its identity and its measured cost
+
+`duration_ms` has been measured and persisted since v0.45.0 and never sent, so
+"which step was slow" was answerable only in the database. It is now on every row
+(rounded, and omitted under 100ms where it would be jitter). Each call also
+carries an `id` — the same id as its persisted `tool_calls` row.
+
+### Fixed — parallel tool calls corrupted each other's bookkeeping
+
+v0.54.0 enabled `parallel_tool_calls`, and the Agents SDK dispatches a sync tool
+with `asyncio.to_thread` — so two tool bodies genuinely run at once. Two things
+assumed they could not:
+
+- The open-call slot that `rec()` opens and `note()` closes was a **single shared
+  dict**, on the stated assumption that "the agent runs tools sequentially within
+  a turn". The second `rec()` cleared the first call's state, and the first
+  `note()` then found nothing: no arguments, no duration, and a persisted input
+  of `{}`. It is now keyed per thread.
+- The UI resolved a completed record to its "started" row by `(tool, target)` —
+  identical for two concurrent `get_bucket_config_detail` calls on one bucket,
+  which differ only by `aspect`. It now matches on the call id, falling back to
+  the old key only for pre-v0.55.0 history.
+
+### Changed — a deep turn no longer floods the thread
+
+`LiveTrace` rendered every row with no cap, and a turn may run up to
+`_MAX_TURNS = 60` tools. The head now folds to a "show N earlier steps" line
+with the six newest kept visible — **except failures, which are never folded
+away**.
+
+### Fixed — parallel tool calls could kill a tool call outright (rule 17)
+
+Two tool bodies now genuinely run at once, and they share the request's SQLite
+connection. A connection has ONE transaction, so they shared that too: one
+call's `commit()` committed the other's half-written work, and the other's own
+`commit()` then raised **"cannot commit - no transaction is active"** — straight
+out of the tool. The agent saw a failed call for work that had actually
+succeeded, and rule 17's "every tool call is recorded" quietly did not hold.
+
+`busy_timeout` did not help: it coordinates separate *connections*, not two
+threads on one. Write-then-commit sections are now serialized by `db.WRITE_LOCK`
+— an INSERT plus a commit, held for microseconds, while the S3 call they bracket
+(the slow part, and the point of parallelism) stays outside it.
+
+Measured over 120 forced-concurrent pairs: **2 of 240 calls died** before,
+0 after. The regression test drives that same 120-pair barrier, because an
+earlier single-pair version passed 8/8 locally and only failed in CI — it was a
+coin flip, not a detector.
+
+### Fixed — CI's macOS job died on a bundle it never shipped
+
+`cargo tauri build` on macOS ran **every** bundler, while the Linux job scopes to
+`--bundles deb` and the Windows job to `--bundles nsis`. The extra one was the
+DMG, and Tauri's `bundle_dmg.sh` drives Finder through AppleScript to lay out the
+disk-image window — a GUI session a headless runner does not reliably provide. It
+started hanging on 2026-08-05 (two consecutive failures at the same step, 9.5s
+and 111s on identical input — a hang, not a deterministic error), and its
+non-zero exit took the job down **before** the steps that carry its actual value:
+the `.app` artifact and `verify-runtime-macos.sh`.
+
+macOS is now scoped like the other two. Nothing that ships is left unbuilt — the
+Release workflow builds and uploads the real DMG itself (and did for v0.54.0),
+and this job never treated the DMG as a deliverable: its upload has always read
+"+ DMG if the bundler produced one" with `if-no-files-found: warn`.
+
+### Fixed — a blind title strip would have broken `record_finding`
+
+Caught by its own test before it shipped: `title` is a JSON-Schema keyword in one
+position and an ordinary parameter NAME in another — `record_finding(title,
+severity)`. Deleting every key called `title` removed the **parameter** while
+`required` still demanded it, which would have made the tool uncallable and
+quietly cost the agent its ability to record findings. The walk is now
+schema-aware, descending only through keywords whose values are themselves
+schemas.
+
 ## [0.54.0] - 2026-08-05
 
 _v0.53.0 made each payload smaller. This release attacks the three structural

@@ -19,12 +19,14 @@ confirmed runs proposed as next steps.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
+import threading
 import time
 import uuid
 from typing import Any, Callable
 
-from .. import audit
+from .. import audit, db
 from ..repositories import cloud_providers as cloud_repo
 from ..repositories import utcnow
 from ..s3 import config_tools as ct
@@ -81,6 +83,26 @@ def _compact_list_page(res: Any) -> Any:
     return res
 
 
+def _unlock_groups_for_skill(body: str, unlocked: set[str] | None) -> list[str]:
+    """Open the gated groups whose tools this skill's method actually names.
+
+    Derived from the skill TEXT rather than a hand-kept table, so a skill edited
+    to use a different tool cannot drift out of sync with what it can reach.
+    Word-boundary matched, so a tool name inside a longer identifier does not
+    count. Returns the groups newly opened (empty when there is nothing to do)."""
+    if unlocked is None:
+        return []
+    from .session_agent import _GROUP_OF_TOOL
+    opened: list[str] = []
+    for tool_name, group in _GROUP_OF_TOOL.items():
+        if group in unlocked:
+            continue
+        if re.search(rf"\b{re.escape(tool_name)}\b", body):
+            unlocked.add(group)
+            opened.append(group)
+    return sorted(opened)
+
+
 def _err(msg: str) -> str:
     return json.dumps({"error": msg})
 
@@ -128,7 +150,8 @@ def _failure_line(result: dict[str, Any]) -> str:
 
 def build(conn: sqlite3.Connection, function_tool: Callable,
           activity: list[dict[str, Any]] | None = None,
-          session_id: str | None = None) -> list[Any]:
+          session_id: str | None = None,
+          unlocked: set[str] | None = None) -> list[Any]:
     """Build the read-only investigator tool set bound to this DB connection.
 
     If ``activity`` is given, each tool call appends a sanitized record
@@ -138,6 +161,11 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
     pair below writes a real ``tool_calls`` row (sanitized input + output +
     measured duration) and stamps the audit row, so a session's activity can be
     inspected later instead of surviving only as the one-line thread trace.
+
+    ``unlocked`` is the turn's progressive-disclosure state (v0.55.0). Only
+    ``read_skill`` touches it: a skill's method names the tools it is carried out
+    with, so LOADING the skill is the statement of intent that opening those
+    groups would otherwise cost a separate round-trip to express.
     """
     def provider(provider_id: str):
         return cloud_repo.get(conn, provider_id)
@@ -195,36 +223,50 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
 
     def note(tool: str, target: str, result: Any) -> None:
         summary = result if isinstance(result, str) else _summarize(result)
+        _open = _open_slot()
+        matched = _open.get("tool") == tool
+        started = _open.get("t0") if matched else None
+        call_input = _open.get("input") if matched else {}
+        # The id `rec` minted for THIS call. It is the row's primary key, the
+        # live row's identity, and the link between the two (v0.55.0).
+        call_id = str(_open.get("call_id") or uuid.uuid4().hex) if matched else uuid.uuid4().hex
+        duration_ms = int((time.monotonic() - started) * 1000) if started else None
+        # Whether the call SUCCEEDED, computed exactly — the same expression the
+        # persisted row has always used. The thread used to infer it from the
+        # result text with /^(error|failed)\b/, which matched none of the real
+        # failure shapes this product produces (`AccessDenied · req 8A9F2C1B`,
+        # `NoSuchBucket`, `SignatureDoesNotMatch`), so failed calls rendered
+        # green and the "N failed" badge under-counted.
+        ok = not (isinstance(result, dict) and result.get("success") is False)
         if activity is not None:
             # Carry the args forward from the matching `started` record so the
             # finished row reads the same as the live one. Only when the open
             # call IS this tool — stale args would misdescribe the call.
-            args = dict(_open.get("args") or {}) if _open.get("tool") == tool else {}
-            activity.append({"tool": tool, "target": target[:80], "result": summary,
-                             "args": args, "status": "completed"})
+            args = dict(_open.get("args") or {}) if matched else {}
+            activity.append({"id": call_id, "tool": tool, "target": target[:80],
+                             "result": summary, "args": args, "ok": ok,
+                             "duration_ms": duration_ms, "status": "completed"})
+        _open.clear()
         if session_id is None:
             return
         # Persist the call itself, not just the thread trace: sanitized input +
         # output + the REAL elapsed time (nothing measured this before, so
         # "which step was slow" was unanswerable). Best-effort — a bookkeeping
         # failure must never break the tool the user actually asked for.
-        matched = _open.get("tool") == tool
-        started = _open.get("t0") if matched else None
-        call_input = _open.get("input") if matched else {}
-        duration_ms = int((time.monotonic() - started) * 1000) if started else None
-        _open.clear()
-        ok = not (isinstance(result, dict) and result.get("success") is False)
         try:
-            conn.execute(
-                "INSERT INTO tool_calls (id, run_id, session_id, tool_name, "
-                " input_json_sanitized, output_json_sanitized, status, duration_ms, created_at) "
-                "VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)",
-                (uuid.uuid4().hex, session_id, tool,
-                 json.dumps(redact({"target": target[:200], **(call_input or {})})),
-                 json.dumps(redact({"summary": summary})),
-                 "success" if ok else "error", duration_ms, utcnow()),
-            )
-            conn.commit()
+            with db.WRITE_LOCK:
+                conn.execute(
+                    "INSERT INTO tool_calls (id, run_id, session_id, tool_name, "
+                    " input_json_sanitized, output_json_sanitized, status, duration_ms, created_at) "
+                    "VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+                    # Same id as the live row: the thread can now open a call's real
+                    # persisted input/output instead of guessing by time window.
+                    (call_id, session_id, tool,
+                     json.dumps(redact({"target": target[:200], **(call_input or {})})),
+                     json.dumps(redact({"summary": summary})),
+                     "success" if ok else "error", duration_ms, utcnow()),
+                )
+                conn.commit()
         except Exception:  # noqa: BLE001 - observability must never break a turn
             pass
 
@@ -256,9 +298,25 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
             out[k] = redact_text(str(v))[:80] if isinstance(v, str) else v
         return out
 
-    # Open call being timed by rec(); closed by the matching note(). Only ever
-    # one in flight — the agent runs tools sequentially within a turn.
-    _open: dict[str, Any] = {}
+    # The open call being timed by rec(), closed by the matching note() —
+    # PER THREAD (v0.55.0).
+    #
+    # This was a single shared dict, on the stated assumption that "only ever one
+    # [is] in flight — the agent runs tools sequentially within a turn". v0.54.0
+    # turned on parallel tool calls and the Agents SDK dispatches a sync tool with
+    # ``asyncio.to_thread``, so two tool bodies now genuinely run at once. Sharing
+    # one slot meant the second rec() cleared the first call's state and the
+    # first note() then found nothing: no args, no duration, and a persisted
+    # input of ``{}``.
+    #
+    # Keying by thread id is exact for every case the SDK produces. Concurrent
+    # calls are in different threads, so they cannot see each other's slot; calls
+    # in one thread cannot interleave, because a sync body has no await point
+    # between its rec() and its note().
+    _open_by_thread: dict[int, dict[str, Any]] = {}
+
+    def _open_slot() -> dict[str, Any]:
+        return _open_by_thread.setdefault(threading.get_ident(), {})
 
     def rec(tool: str, **kw: Any) -> None:
         # Commit the audit row immediately. audit.record() deliberately doesn't
@@ -267,18 +325,30 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         # makes the connection hold the SQLite/WAL write lock across the next
         # slow S3 tool call, which can starve a concurrently-running inline run's
         # writes for >busy_timeout → "database is locked". Keep the write txn tiny.
-        audit.record(conn, "session_tool",
-                     {"tool": tool, **{k: str(v)[:200] for k, v in kw.items()}},
-                     run_id=None, session_id=session_id)
-        conn.commit()
+        # Under db.WRITE_LOCK: with parallel tool calls two bodies share this
+        # ONE connection, so an unguarded commit here can commit the other call's
+        # half-written work and then raise on its own commit (v0.55.0).
+        with db.WRITE_LOCK:
+            audit.record(conn, "session_tool",
+                         {"tool": tool, **{k: str(v)[:200] for k, v in kw.items()}},
+                         run_id=None, session_id=session_id)
+            conn.commit()
+        # One id per call, minted here and carried to both the live row and the
+        # persisted tool_calls row (v0.55.0). Matching a completed record to its
+        # started row by (tool, target) broke the moment v0.54.0 turned on
+        # parallel tool calls: two concurrent get_bucket_config_detail calls on
+        # ONE bucket differ only by `aspect`, so the merge could resolve the
+        # wrong row and mislabel both. An id cannot be ambiguous.
+        call_id = uuid.uuid4().hex
+        _open = _open_slot()
         _open.clear()
         _open.update({"tool": tool, "input": {k: str(v)[:200] for k, v in kw.items()},
-                      "args": _args_of(kw), "t0": time.monotonic()})
+                      "args": _args_of(kw), "t0": time.monotonic(), "call_id": call_id})
         # Emit a START record so the live stream can show "running <tool>…"
         # while the (possibly slow) call executes. Only "completed" records are
         # persisted on the message; the UI ignores fields it doesn't know.
         if activity is not None:
-            activity.append({"tool": tool, "target": _target_of(kw)[:80],
+            activity.append({"id": call_id, "tool": tool, "target": _target_of(kw)[:80],
                              "args": _args_of(kw), "status": "started"})
 
     @function_tool
@@ -624,7 +694,15 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         skill_loads["n"] += 1
         rec("read_skill", name=name)
         note("read_skill", name, "loaded")
-        return body
+        opened = _unlock_groups_for_skill(body, unlocked)
+        if not opened:
+            return body
+        # A skill's method IS its tool list. Making the agent read "call
+        # get_bucket_config_summary" and then spend a whole round-trip asking for
+        # the group that contains it would cost more than the gate saves — and a
+        # skill that names tools the agent cannot see reads as a broken method.
+        return (body + "\n\n[TOOL GROUPS UNLOCKED for this skill: "
+                + ", ".join(opened) + " — their tools are callable from your next step.]")
 
     @function_tool
     def inspect_endpoint_tls(provider_id: str) -> str:
