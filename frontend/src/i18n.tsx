@@ -142,6 +142,10 @@ const en: Dict = {
   "thread.loadingEarlier": "Loading…",
   "thread.jumpToStart": "Jump to start",
   "trace.ran": "Ran {n} checks",
+  // unified turn footer (v0.49.0)
+  "turn.checks": "{n} checks",
+  "turn.failed": "{n} failed",
+  "turn.trace": "What it ran",
   "trace.kinds": "{n} tools",
   "trace.failed": "{n} failed",
   "msg.edit": "Edit and send again",
@@ -532,6 +536,10 @@ const zh: Dict = {
   "thread.loadingEarlier": "载入中…",
   "thread.jumpToStart": "跳到最早",
   "trace.ran": "已运行 {n} 项检查",
+  // 统一的回合信息条 (v0.49.0)
+  "turn.checks": "{n} 项检查",
+  "turn.failed": "{n} 项失败",
+  "turn.trace": "执行过程",
   "trace.kinds": "{n} 种工具",
   "trace.failed": "{n} 项失败",
   "msg.edit": "编辑后重新发送",

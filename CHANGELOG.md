@@ -6,6 +6,59 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-08-05
+
+_A structural review of what a session actually shows. Frontend only — no API,
+schema or agent behaviour changed._
+
+### Fixed — one answer carried three descriptions of the same work
+
+Rendering a real turn with five tool calls and measuring it: **6 clickable
+controls**, and the same tool count stated **twice, in two vocabularies, on
+opposite sides of the answer**:
+
+| | Position | Wording | Expanded |
+| --- | --- | --- | --- |
+| Tool trace | **above** the answer | `Ran 5 checks · 4 tools` | tool · target · result |
+| Metrics strip | **below** the answer | `5 tool calls (4)` | tool · bar · count |
+
+Plus a third expander (`Why this answer`). Each arrived in a different release —
+the footer in v0.45.0, the collapsible trace in v0.46.0 — and each was reasonable
+alone. Together they made a reader look in two places to learn they described the
+same five calls.
+
+Codex, Claude Code, Cursor and Dia all converge on **one metadata affordance per
+turn**, and on showing process in **execution order** rather than split before
+and after the answer. This release does that:
+
+- **One line under each answer**: `5 checks · 12.4s · ↑4.2k ↓380 · inspect`.
+- **One expansion**: the numbered trace in execution order (never re-sorted by
+  name or duration — the sequence is what explains what led to what), with the
+  grounding directly beneath the calls it rests on.
+- The live trace during streaming is unchanged: there the rows *are* the progress
+  indicator, which is a different job.
+
+Six controls per turn become three; two vocabularies become one.
+
+### Added — evidence links to the call it names
+
+An evidence line that names a tool the turn actually ran (`head_bucket returned
+200`) now carries a chip; hovering it highlights that row in the trace above.
+Evidence naming no tool — or naming one the turn did not run — gets no chip: a
+fabricated citation would be worse than none.
+
+### Changed — old turns collapse
+
+Beyond the six most recent exchanges, a turn collapses to one line (its question
+plus its check count) and reopens on click, sticky for the session. Scrolling
+back through a long investigation is now scannable rather than a wall of prose.
+
+### Changed — session findings left the timeline
+
+Deterministic session findings rendered at the **bottom of the thread**, where
+standing session state reads as the newest event. They moved into the inspector,
+next to the rest of the session's cross-cutting record.
+
 ## [0.48.0] - 2026-08-05
 
 _The report finally documents the investigation. Plus a correction to v0.47.0's

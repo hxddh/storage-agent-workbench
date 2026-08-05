@@ -159,3 +159,34 @@ test.describe("thread paging", () => {
     expect(typeof body.has_more).toBe("boolean");
   });
 });
+
+test.describe("turn structure", () => {
+  test("a finished answer carries ONE metadata affordance, not three", async ({ page }) => {
+    await seedFreshApp(page);
+    await page.goto("/");
+    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    await box.click();
+    await box.fill("<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>");
+    await box.press("Enter");
+    await expect(page.getByText(/error triage/i).first()).toBeVisible({ timeout: 20_000 });
+
+    // The old split layout put a trace above the answer AND a metrics strip
+    // below it, each with its own expander, describing the same calls.
+    await expect(page.getByTestId("tool-trace-toggle")).toHaveCount(0);
+    // "Why this answer" is no longer a separate card either.
+    await expect(page.getByText(/^Why this answer/)).toHaveCount(0);
+  });
+
+  test("session findings are not rendered at the bottom of the timeline", async ({ page }) => {
+    await seedFreshApp(page);
+    await page.goto("/");
+    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    await box.click();
+    await box.fill("<Error><Code>AccessDenied</Code></Error>");
+    await box.press("Enter");
+    await expect(page.getByText(/error triage/i).first()).toBeVisible({ timeout: 20_000 });
+    // Standing session state belongs in the inspector, not at the newest
+    // position of a time-ordered thread.
+    await expect(page.getByText(/^Session findings/)).toHaveCount(0);
+  });
+});

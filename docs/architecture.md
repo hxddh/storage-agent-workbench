@@ -474,6 +474,27 @@ inspector — one merged timeline with additive filter chips rather than tabs,
 since tool calls and audit events interleave and tabs would destroy the ordering
 that explains what led to what.
 
+## What a turn shows
+
+One assistant turn carries exactly one metadata affordance: a single line under
+the answer (`5 checks · 12.4s · ↑4.2k ↓380 · inspect`) that expands to the
+numbered tool trace in execution order with the grounding beneath the calls it
+rests on. Execution order is load-bearing — re-sorting by name or duration would
+destroy the sequence that explains what led to what.
+
+Before v0.49.0 the same tool calls were described twice, in two vocabularies, on
+opposite sides of the answer: a collapsible trace above (v0.46.0) and a metrics
+strip below (v0.45.0), plus a third expander for grounding. Each was reasonable
+when added; together they made a reader check two places to learn they were the
+same five calls.
+
+The live trace during streaming is a separate concern and still renders above the
+answer — there the rows are the progress indicator, not a record to consult.
+
+Turns beyond the most recent six collapse to a single line. Standing session
+state (deterministic findings) lives in the inspector rather than at the newest
+position of a time-ordered thread.
+
 ## The session report
 
 `GET /sessions/{id}/report` renders the artifact a user hands to someone else. It
