@@ -166,6 +166,15 @@ biggest factor in what a turn costs; a confident `0` would claim a cold cache we
 never measured. A genuine `0` IS stored, because a cold cache is the finding
 worth acting on.
 
+Turn budget (v0.54.0): each `turn_metrics` row also carries `budget_tokens` (the
+per-turn token ceiling that turn ran under) and `repeat_calls_avoided` (identical
+`(tool, args)` calls answered from the conversation instead of re-run). The
+`done` SSE event carries the same two under `metrics`, plus `budget_stopped_on`
+(`"tokens"` / `"chars"`) when a bound is what ended the investigation. These are
+the workbench's **own** governor, not provider measurements — they sit beside
+`usage`, never inside it, and every one of them is omitted rather than zeroed
+when there is nothing to report.
+
 Observability (v0.45.0): `/activity` and `/audit` are bounded — `limit` is capped
 at 500 (default 200) and every response carries `total` / `offset` / `limit` /
 `truncated`, so a partial timeline is never presented as a complete one. They

@@ -43,6 +43,44 @@ from . import guardrails
 _LIST_KEYS_CTX_CAP = s3.MAX_LIST_KEYS
 
 
+def _compact_list_page(res: Any) -> Any:
+    """Strip the list page's redundant copies of the SAME key strings.
+
+    ``list_objects_v2`` returns each page's keys three times over: ``sample_keys``
+    (the first 20), ``keys`` (the whole page), and ``objects`` (the first 100,
+    each entry repeating its key alongside size/storage-class/mtime). On a
+    1000-key page that is ~6 KB of characters carrying no information the model
+    does not already have on the line above — and it is re-sent on every later
+    step of the turn.
+
+    Two exact removals, both verified before they are applied:
+
+    - ``sample_keys`` goes when it is a genuine prefix of ``keys`` (it always is;
+      it survives in the S3 layer for the run executors that still read it).
+    - each ``objects[i]["key"]`` goes when it equals ``keys[i]`` for EVERY entry,
+      and the payload then says so explicitly with ``objects_align_with_keys``,
+      which the tool docstring also teaches.
+
+    If either shape does not hold — a provider returning something unexpected,
+    a future change to the S3 layer — nothing is removed. Mutates and returns
+    the same dict."""
+    if not isinstance(res, dict):
+        return res
+    keys = res.get("keys")
+    if not isinstance(keys, list):
+        return res
+    sample = res.get("sample_keys")
+    if isinstance(sample, list) and keys[:len(sample)] == sample:
+        res.pop("sample_keys", None)
+    objects = res.get("objects")
+    if (isinstance(objects, list) and objects and len(objects) <= len(keys)
+            and all(isinstance(o, dict) and o.get("key") == keys[i]
+                    for i, o in enumerate(objects))):
+        res["objects"] = [{k: v for k, v in o.items() if k != "key"} for o in objects]
+        res["objects_align_with_keys"] = True
+    return res
+
+
 def _err(msg: str) -> str:
     return json.dumps({"error": msg})
 
@@ -295,7 +333,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
     @function_tool
     def list_objects(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 200,
                      continuation_token: str = "", recursive: bool = False) -> str:
-        """List one page of object keys (read-only ListObjectsV2, up to 1000/call; no bodies). To enumerate fully, PAGE: re-call with continuation_token = the previous next_token until it is null, accumulating result.keys — the FULL page is echoed in `keys`, and paging skips past it, so never treat one page's key_count as the bucket total. `objects` carries {size, storage_class, last_modified} for the first 100 keys — sample size/storage-class distribution from it instead of N head_object calls. recursive=true lists flat (no '/' grouping). For a bucket far larger than paging can cover, propose an inventory analysis. Args: provider_id, bucket, prefix?, max_keys? (up to 1000), continuation_token?, recursive?."""
+        """List one page of object keys (read-only ListObjectsV2, up to 1000/call; no bodies). To enumerate fully, PAGE: re-call with continuation_token = the previous next_token until it is null, accumulating result.keys — the FULL page is echoed in `keys`, and paging skips past it, so never treat one page's key_count as the bucket total. `objects` carries {size, storage_class, last_modified} for the first 100 keys POSITIONALLY (objects[i] describes keys[i], flagged by objects_align_with_keys) — sample size/storage-class distribution from it instead of N head_object calls. recursive=true lists flat (no '/' grouping). For a bucket far larger than paging can cover, propose an inventory analysis. Args: provider_id, bucket, prefix?, max_keys? (up to 1000), continuation_token?, recursive?."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Call list_providers first.")
@@ -319,7 +357,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
             res["keys"] = res["keys"][:_LIST_KEYS_CTX_CAP]
             res["keys_truncated_in_context"] = True
         note("list_objects", bucket, res)
-        return _out(res)
+        return _out(_compact_list_page(res))
 
     @function_tool
     def list_object_versions(provider_id: str, bucket: str, prefix: str = "", max_keys: int = 1000,

@@ -53,7 +53,7 @@ ERROR = "error"
 # --- Error helpers ----------------------------------------------------------
 
 
-def _diag_meta(meta: dict[str, Any]) -> dict[str, Any]:
+def _diag_meta(meta: dict[str, Any], *, verbose: bool = True) -> dict[str, Any]:
     """The metadata that makes a request actionable, from any boto response.
 
     ``request_id`` / ``host_id`` are what a provider's support asks for first;
@@ -65,14 +65,28 @@ def _diag_meta(meta: dict[str, Any]) -> dict[str, Any]:
     ``server`` banner.
 
     Headers go through the standard redaction, which keeps the diagnostic ones
-    and strips Authorization / Set-Cookie (rule 15) — verified by test."""
+    and strips Authorization / Set-Cookie (rule 15) — verified by test.
+
+    ``verbose=False`` is the SUCCESS shape. v0.52.0 attached the full block to
+    every response including the ones that worked, and a 200 carries no
+    diagnosis: ``host_id`` is an opaque ~100-char base64 blob and
+    ``headers_sanitized`` a dozen routing/date/content-type entries, re-sent to
+    the model on every subsequent step of the turn. The success shape keeps only
+    what stays actionable — the request id, a NON-ZERO retry count (the
+    explanation for a slow "successful" call), and the bucket region when the
+    provider volunteered it. Nothing measured is dropped on the failure path,
+    where every one of these fields is the escalation material."""
     hdrs = meta.get("HTTPHeaders") or {}
     out: dict[str, Any] = {
         "request_id": meta.get("RequestId") or hdrs.get("x-amz-request-id") or None,
-        "host_id": meta.get("HostId") or hdrs.get("x-amz-id-2") or None,
-        "retry_attempts": meta.get("RetryAttempts"),
-        "headers_sanitized": redact(hdrs),
     }
+    retries = meta.get("RetryAttempts")
+    if verbose:
+        out["host_id"] = meta.get("HostId") or hdrs.get("x-amz-id-2") or None
+        out["retry_attempts"] = retries
+        out["headers_sanitized"] = redact(hdrs)
+    elif retries:
+        out["retry_attempts"] = retries
     # A bucket that answers 301 tells you where it actually lives in a header;
     # AWS repeats it in the message but most gateways do not, so parsing prose
     # would be the fragile path.
@@ -141,7 +155,7 @@ def test_credentials(conn: sqlite3.Connection, provider_id: str) -> dict[str, An
             or f"{len(resp.get('Buckets', []))} bucket(s) visible"
         )
         return {**base, "success": True, "identity_hint": hint,
-                **_diag_meta(resp.get("ResponseMetadata", {}))}
+                **_diag_meta(resp.get("ResponseMetadata", {}), verbose=False)}
     except ClientError as exc:
         fields = _client_error_fields(exc)
         code = fields["error_code"]
@@ -274,7 +288,7 @@ def head_bucket(conn: sqlite3.Connection, provider_id: str, bucket: str) -> dict
             "success": True,
             # A successful HeadBucket is a 200; default if the metadata omits it.
             "status_code": meta.get("HTTPStatusCode") or 200,
-            **_diag_meta(meta),
+            **_diag_meta(meta, verbose=False),
         }
     except ClientError as exc:
         return {**base, **_client_error_fields(exc), "success": False}
@@ -339,7 +353,7 @@ def get_bucket_location(conn: sqlite3.Connection, provider_id: str,
         # is reported as-is rather than invented as us-east-1.
         region = raw or ("us-east-1" if (cfg.endpoint_url is None) else None)
         return {**base, "success": True, **_verdict(region),
-                **_diag_meta(resp.get("ResponseMetadata", {}))}
+                **_diag_meta(resp.get("ResponseMetadata", {}), verbose=False)}
     except ClientError as exc:
         fields = _client_error_fields(exc)
         if _is_unsupported(exc):

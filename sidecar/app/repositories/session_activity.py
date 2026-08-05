@@ -129,6 +129,8 @@ def record_turn(
     duration_ms: int | None,
     tool_calls: int | None,
     usage: dict[str, Any] | None,
+    budget_tokens: int | None = None,
+    repeat_calls_avoided: int | None = None,
 ) -> None:
     """Record what one turn cost. Token columns stay NULL when the provider did
     not report usage — a measured zero and "not reported" must not collapse."""
@@ -159,13 +161,17 @@ def record_turn(
     conn.execute(
         "INSERT INTO turn_metrics (id, session_id, turn_id, message_id, model, requests, "
         " input_tokens, output_tokens, total_tokens, cached_input_tokens, reasoning_tokens, "
-        " duration_ms, tool_calls, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " budget_tokens, repeat_calls_avoided, duration_ms, tool_calls, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (uuid.uuid4().hex, session_id, turn_id, message_id, model, _n("requests"),
          _n("input_tokens"), _n("output_tokens"), _n("total_tokens"),
          # NULL, not 0, when the endpoint omitted the detail: "not reported" and
          # "nothing cached" are different facts (v0.53.0).
          _opt("cached_input_tokens"), _opt("reasoning_tokens"),
+         # The turn's OWN governor (v0.54.0), independent of whether the endpoint
+         # reported usage at all: the ceiling it ran under, and the identical
+         # calls it answered from the conversation rather than re-running.
+         budget_tokens, repeat_calls_avoided,
          duration_ms, tool_calls, utcnow()),
     )
 
@@ -220,6 +226,7 @@ def list_turns(conn: sqlite3.Connection, session_id: str,
     rows = conn.execute(
         "SELECT turn_id, message_id, model, requests, input_tokens, output_tokens, "
         "       total_tokens, cached_input_tokens, reasoning_tokens, "
+        "       budget_tokens, repeat_calls_avoided, "
         "       duration_ms, tool_calls, created_at "
         "FROM turn_metrics WHERE session_id = ? ORDER BY created_at ASC, rowid ASC LIMIT ?",
         (session_id, _bounded(limit)),

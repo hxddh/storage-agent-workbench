@@ -437,6 +437,13 @@ const en: Dict = {
   "metrics.cachedHint":
     "{n} input tokens ({pct}%) were served from the endpoint's prompt cache — cached input is typically much cheaper.",
   "metrics.reasoningHint": "{n} of the output tokens were reasoning, which is billed but never shown as text.",
+
+  // per-turn budget + in-turn dedupe (v0.54.0)
+  "metrics.ofBudget": "of budget",
+  "metrics.budgetHint":
+    "This turn used {pct}% of its {n}-token investigation budget. The budget is the workbench's own per-turn ceiling, not a provider limit.",
+  "metrics.repeatsHint":
+    "{n} identical tool call(s) were answered from earlier in this turn instead of being re-run — the payload was not paid for twice.",
 };
 
 const zh: Dict = {
@@ -845,6 +852,11 @@ const zh: Dict = {
 
   "metrics.cachedHint": "其中 {n}（{pct}%）输入 token 命中了端点的 prompt 缓存——缓存输入通常便宜得多。",
   "metrics.reasoningHint": "输出中有 {n} 个 token 用于推理：计费，但从不作为正文显示。",
+
+  // per-turn budget + in-turn dedupe (v0.54.0)
+  "metrics.ofBudget": "预算",
+  "metrics.budgetHint": "本轮用掉了 {n} token 调查预算的 {pct}%。该预算是本产品自己的每轮上限，并非服务商的限制。",
+  "metrics.repeatsHint": "本轮有 {n} 次参数完全相同的工具调用直接复用了先前结果，没有重复付费。",
 };
 
 const DICTS: Record<Lang, Dict> = { en, zh };

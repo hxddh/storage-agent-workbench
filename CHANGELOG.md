@@ -6,6 +6,143 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-08-05
+
+_v0.53.0 made each payload smaller. This release attacks the three structural
+reasons a turn was expensive no matter how small the payloads got. Every number
+below was measured against the running app._
+
+### Added — a per-turn budget denominated in tokens, not characters
+
+The only per-turn ceiling was a **character** budget on cumulative tool output.
+But the Agents SDK re-sends the entire accumulated conversation on every step,
+so a linear character budget buys a **quadratic** bill: the same 200k-char
+budget costs roughly 406k tokens at 10 steps, 781k at 20, and 1.55M at 40. At
+`_MAX_TURNS = 60`, a single question could legitimately spend ~3.5M tokens with
+nothing in the product objecting.
+
+`turn_token_budget()` adds the bound denominated in what a turn actually costs,
+read from the SDK's live per-run usage before each tool call:
+
+| model window | per-turn token budget |
+| --- | --- |
+| 128k (gpt-4o) | 640,000 |
+| 200k (claude-3-5-sonnet) | 1,000,000 |
+| ≤120k | 600,000 (floor) |
+| ≥800k | 4,000,000 (ceiling) |
+
+Hitting it is not an error — the same soft shape as the char bound: a
+`budget_exhausted` status naming `spent_tokens` and `budget_tokens`, plus the
+one-click "continue investigation" proposal the turn already offered when it was
+cut short. **On an endpoint that reports no usage at all, nothing changes**: the
+character budget stays the bound, and the turn says so rather than treating
+"unreported" as zero.
+
+The footer now shows the share of that budget the turn used, and the inspector
+persists it (`turn_metrics.budget_tokens`, migration 23) so a reload still tells
+the truth.
+
+### Changed — independent probes now go out together
+
+`parallel_tool_calls` was off, so eight independent read-only probes cost eight
+sequential model requests, **each one re-sending everything before it**. Modelled
+on a realistic 8-tool turn (measured fixed prefix 5,196 tokens, context 59,700,
+tool outputs 91,540):
+
+| how the 8 calls batch | input tokens across the turn | |
+| --- | --- | --- |
+| one per request (before) | 995,994 | |
+| three dependent phases | 431,222 | −57% |
+| all eight at once | 221,332 | −78% |
+
+Real turns land between the middle and bottom rows, since some probes genuinely
+depend on earlier ones.
+
+Some OpenAI-compatible gateways mishandle parallel calls and answer with a
+sequencing 400. That is now remembered per endpoint (`base_url|model`, the same
+key the `stream_options` capability memory uses): the failure happens at most
+once per process, that turn still recovers through the tool-less finalize pass,
+and every later turn on that endpoint asks for sequential calls. A 400 that is
+*not* a sequencing error is never attributed here — a real bug must not degrade
+into an invisible capability downgrade.
+
+### Changed — an identical call inside one turn is answered from the conversation
+
+A read-only probe called twice with the same arguments in the same turn returns
+the same bytes, and paying for them again **also carries them for every
+remaining step**. The second call now returns a `repeat_call` pointer to the
+earlier result, and the underlying S3 request is not made either.
+
+`measure_request_latency` is exempt: repetition *is* the measurement there, and
+deduping it would turn a second sample into a copy of the first — a fabricated
+number, which is worse than the tokens it saves.
+
+### Changed — the prompt is ordered so a provider's cache can actually hold
+
+Prompt caching matches on the **prefix** and stops at the first differing byte.
+The old layout put the volatile thread replay in the middle of the context, in
+front of the skill catalog and provider list — neither of which had changed — so
+one new message invalidated all of it. The order is now most-stable-first: skill
+catalog → configured providers → session/summary/agent memory → thread replay →
+this turn's attachments and question.
+
+Measured across two consecutive turns of the same session:
+
+| | shared cacheable prefix, before | after |
+| --- | --- | --- |
+| session below the 24-message replay cap | 4,257 chars (36%) | 11,912 (100%) |
+| session above it, replay window sliding | 1,691 chars (12%) | 9,346 (64%) |
+
+### Changed — the replayed tool trace states each call once
+
+On a 20-turn session, **92% of the `tools_run` lines in the replay block were
+byte-identical repeats** of a line already present in an earlier message: the
+agent re-lists providers and re-heads the same bucket each turn, and every
+turn's trace was replayed in full alongside all the previous ones. Reading
+`head_bucket · acme-logs → 200` for the ninth time teaches the model nothing and
+costs the same tokens on every step.
+
+The first occurrence is kept; later verbatim repeats are dropped and counted
+with a terse `[+N repeats]` entry — a trace that silently looked shorter than
+the turn really was would be a lie about what ran. What the marker means is
+explained **once**, in the instructions, which is the part of the prompt a cache
+serves.
+
+### Changed — a list page ships each object key once
+
+`list_objects_v2` returned every page's keys three times over: `sample_keys`
+(the first 20), `keys` (the whole page), and `objects` (the first 100, each
+entry repeating its key beside size/storage-class/mtime). On a 1000-key page
+that is **63,343 chars → 56,998 (−10%)** of pure repetition, re-sent on every
+later step of the turn.
+
+`sample_keys` is dropped (it is a strict prefix of `keys`; the S3 layer still
+returns it for the run executors that read it), and `objects[i]` now describes
+`keys[i]` positionally, flagged by `objects_align_with_keys` and taught in the
+tool docstring. Both removals are verified against the actual payload first — if
+the shapes ever stop lining up, nothing is removed, because dropping the key
+field from a misaligned list would mis-attribute every size to the wrong object.
+
+### Changed — a successful request no longer carries failure-escalation material
+
+v0.52.0 attached the diagnostic block to every response, including the ones that
+worked. A 200 carries no diagnosis: `host_id` is an opaque ~100-char base64 blob
+and `headers_sanitized` a dozen routing/date/content-type entries — **499 chars
+→ 33 per successful call**.
+
+The success shape keeps what stays actionable: the request id, a **non-zero**
+retry count (the explanation for a slow "successful" call — botocore retries
+throttling silently), and the bucket region when the provider volunteered it.
+**Nothing is dropped on the failure path**, where every one of those fields is
+the escalation material v0.52.0 added them for.
+
+### Fixed — every budget wrapper thought it was the last tool in the list
+
+The tool-name used for de-duplication and for the latency exemption was read off
+the installer's loop variable *inside* the closure, so every wrapped tool would
+have resolved to the name of the last tool in the list. Caught by its own test
+before it shipped; the name is now bound at wrap time.
+
 ## [0.53.0] - 2026-08-05
 
 _What a turn costs, and what the thread says while it runs. Every number below

@@ -127,6 +127,42 @@ def tool_output_char_budget(model: str | None, explicit_window: int | None = Non
     return min(TOOL_OUTPUT_CHARS_CEILING, scaled, half_window_chars)
 
 
+# Per-turn TOKEN budget — the only bound denominated in the thing that costs
+# money (v0.54.0).
+#
+# Every other bound in this module is a CHARACTER or STEP count, and neither
+# tracks the bill, because the SDK re-sends the whole accumulated conversation on
+# every step. Measured: the same 200,000-char tool-output budget costs ~406k
+# tokens spread over 10 steps, ~781k over 20, and ~1.55M over 40 — and the code's
+# step ceiling (60) permitted ~3.5M input tokens for ONE question. The budget was
+# linear; the bill is quadratic.
+#
+# 600k is ~3x a healthy deep investigation (an 8-tool turn measures ~199k) and
+# roughly a 6x cut to the permitted worst case. Scaled by window so a
+# large-context model, which legitimately carries more per step, is not held to a
+# small model's ceiling.
+TURN_TOKEN_BUDGET_FLOOR = 600_000
+TURN_TOKEN_BUDGET_CEILING = 4_000_000
+# Full context re-sends a turn may pay for. A turn that has re-sent its whole
+# window this many times has stopped converging.
+_WINDOW_RESENDS = 5
+
+
+def turn_token_budget(model: str | None, explicit_window: int | None = None,
+                      explicit_budget: int | None = None) -> int:
+    """Total tokens (input + output, summed across every request) one turn may
+    spend before the agent is told to synthesize from what it has.
+
+    ``explicit_budget`` is an operator override; anything else is derived from
+    the model's window so the ceiling scales with what a step legitimately
+    costs."""
+    if explicit_budget and explicit_budget > 0:
+        return int(explicit_budget)
+    window = context_window(model, explicit_window)
+    return max(TURN_TOKEN_BUDGET_FLOOR,
+               min(TURN_TOKEN_BUDGET_CEILING, window * _WINDOW_RESENDS))
+
+
 def completion_token_budget(model: str | None, explicit_window: int | None = None,
                             explicit_max: int | None = None) -> int:
     """Completion (max_tokens) budget: raised only where the window clearly

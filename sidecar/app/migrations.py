@@ -600,6 +600,15 @@ ALTER TABLE turn_metrics ADD COLUMN cached_input_tokens INTEGER;
 ALTER TABLE turn_metrics ADD COLUMN reasoning_tokens INTEGER;
 """
 
+# v0.54.0: what the turn's own governor did. NOT provider-reported tokens — the
+# workbench's per-turn ceiling and the identical calls it answered from the
+# conversation instead of re-running. Persisted so the footer still tells the
+# truth after a reload, and NULL on turns recorded before this shipped.
+_M023 = """
+ALTER TABLE turn_metrics ADD COLUMN budget_tokens INTEGER;
+ALTER TABLE turn_metrics ADD COLUMN repeat_calls_avoided INTEGER;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -628,6 +637,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     # cached prefix (typically an order of magnitude cheaper) and a reasoning
     # model's invisible output were indistinguishable from ordinary spend.
     (22, "turn_metrics_token_details", _M022),
+    (23, "turn_metrics_budget", _M023),
 ]
 
 

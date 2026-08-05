@@ -142,6 +142,12 @@ _TOOL_OUTPUT_TOO_LARGE = (
 )
 # Memory tools stay usable even after the budget is spent: recording a finding
 # is how the model synthesizes, and their outputs are a few bytes.
+# Tools whose repetition is the POINT, so an identical call is not a repeat.
+# measure_request_latency exists to sample the same endpoint more than once;
+# collapsing its second call into a pointer would silently turn a latency
+# comparison into a single measurement.
+_DEDUPE_EXEMPT_TOOLS = {"measure_request_latency"}
+
 _BUDGET_EXEMPT_TOOLS = {
     "note_fact", "record_finding", "note_open_question",
     "update_memory_item", "resolve_memory_item",
@@ -243,7 +249,9 @@ INSTRUCTIONS = (
     "resolve_memory_item to correct or close them). Each recent assistant message "
     "carries a tools_run trace of the read-only probes that turn already ran — "
     "consult it and DON'T re-run a check you've already done; re-fetch only when "
-    "you need fuller detail than the one-line result. Between that trace and "
+    "you need fuller detail than the one-line result. A trailing '[+N repeats]' "
+    "entry means N of that turn's calls were identical to lines already listed "
+    "in an earlier turn and are not repeated here. Between that trace and "
     "agent_memory, reuse what earlier turns established instead of re-deriving it.\n"
     "Your step budget is bounded: probe what the question needs, and if a "
     "complete answer would need more steps, give your best grounded answer and "
@@ -342,6 +350,69 @@ def _replay_message(m: dict[str, Any], max_chars: int = _MAX_REPLAY_MSG) -> dict
     return out
 
 
+def _dedupe_replay_tools(messages: list[dict[str, Any]]) -> None:
+    """Collapse verbatim-repeated `tools_run` lines ACROSS the replayed thread.
+
+    Measured on a real 20-turn session: 92% of the `tools_run` lines in the
+    replay block were byte-identical repeats of a line already present in an
+    earlier message — the agent re-lists providers and re-heads the same bucket
+    each turn, and every turn's trace was replayed in full alongside all the
+    previous ones. The model gains nothing from reading `head_bucket · acme-logs
+    → 200` for the ninth time; it costs the same tokens on every step.
+
+    The FIRST occurrence is kept (so "this was already checked" still holds, with
+    its earliest timestamp position in the thread) and later verbatim repeats are
+    dropped. When a message loses lines this way it says so with a '[+N repeats]'
+    entry rather than silently showing a shorter trace — a trace that looks
+    shorter than the turn really was would be a lie about what ran. The marker is
+    deliberately terse because it is paid PER MESSAGE; what it means is spelled
+    out once, in the instructions, which are the part of the prompt a provider's
+    cache actually serves.
+
+    Mutates in place; only exact duplicates go, so nothing the agent has not
+    already been told is removed."""
+    seen: set[str] = set()
+    for m in messages:
+        lines = m.get("tools_run")
+        if not lines:
+            continue
+        kept: list[str] = []
+        dropped = 0
+        for line in lines:
+            if line in seen:
+                dropped += 1
+                continue
+            seen.add(line)
+            kept.append(line)
+        if dropped:
+            kept.append(f"[+{dropped} repeats]")
+        if kept:
+            m["tools_run"] = kept
+        else:  # pragma: no cover — kept is non-empty whenever dropped > 0
+            m.pop("tools_run", None)
+
+
+# The context keys that are STABLE across the turns of a session, in the order
+# they are sent. Everything here changes rarely (a fact recorded, a finding
+# added); `recent_messages` changes on EVERY turn. Sending the stable part first
+# means a provider's prompt-cache prefix survives from one turn to the next
+# instead of being invalidated at the first byte by the newest message.
+_STABLE_CONTEXT_KEYS = ("session", "summary", "agent_memory")
+
+
+def split_context_for_cache(context: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """(stable, volatile) halves of the context block.
+
+    Prompt caching is prefix-matched: the cached span ends at the first byte that
+    differs from the previous request. Interleaving the thread replay with the
+    session summary meant a single new message invalidated the whole block. Split
+    this way, the summary/memory half stays byte-identical between turns as long
+    as the agent recorded nothing new, so it keeps being served from cache."""
+    stable = {k: context[k] for k in _STABLE_CONTEXT_KEYS if k in context}
+    volatile = {k: v for k, v in context.items() if k not in _STABLE_CONTEXT_KEYS}
+    return stable, volatile
+
+
 def _elastic_replay_caps(model: str | None, explicit_window: int | None) -> tuple[int, int]:
     """(message count, per-message chars) for thread replay, scaled to the model's
     context window and floored at the historical constants (bounded above). Keeps a
@@ -377,6 +448,9 @@ def build_session_context(
             "interpretation": redact_text(str(f.get("interpretation", "")))[:300],
             "source_run_id": str(f.get("source_run_id") or "")[:64],
         })
+    replayed = [_replay_message(m, max_replay_msg)
+                for m in recent_messages[-max_messages:]]
+    _dedupe_replay_tools(replayed)
     context = {
         "session": {
             "title": redact_text(str(session.get("title", ""))),
@@ -403,8 +477,7 @@ def build_session_context(
         # Prior assistant turns carry a `tools_run` trace of the read-only probes
         # they already ran (bounded) — so this turn sees what was checked and
         # re-fetches only what it needs fuller detail on, instead of re-probing.
-        "recent_messages": [_replay_message(m, max_replay_msg)
-                            for m in recent_messages[-max_messages:]],
+        "recent_messages": replayed,
         # NOTE: safety rules live ONCE in the instructions — not re-injected here.
     }
     guardrails.assert_no_secrets_in_context(context)
@@ -431,6 +504,15 @@ def render_context_text(context: dict[str, Any]) -> str:
 # outranks a metrics field: once an endpoint refuses, this process stops asking
 # and the session honestly reports usage as unavailable rather than failing turns.
 _NO_USAGE_ENDPOINTS: set[str] = set()
+
+# Endpoints that mishandled PARALLEL tool calls (v0.54.0). Same shape and same
+# reasoning as _NO_USAGE_ENDPOINTS: try the capability, and when a specific
+# provider proves it cannot honour it, remember that for the process and stop
+# asking. Sequential tool calls are strictly slower and more expensive — every
+# probe becomes its own round-trip carrying the whole accumulated conversation —
+# so paying that everywhere to accommodate the providers that break is the wrong
+# default; paying it only where it is actually needed is the right one.
+_NO_PARALLEL_ENDPOINTS: set[str] = set()
 
 
 def _endpoint_key(creds: dict[str, Any]) -> str:
@@ -556,7 +638,7 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str,
                        max_tokens=model_budget.completion_token_budget(
                            creds.get("model"), creds.get("context_window"),
                            creds.get("max_output_tokens")),
-                       parallel_tool_calls=False,
+                       parallel_tool_calls=_endpoint_key(creds) not in _NO_PARALLEL_ENDPOINTS,
                        client_registry=client_registry,
                        include_usage=_endpoint_key(creds) not in _NO_USAGE_ENDPOINTS)
 
@@ -757,10 +839,34 @@ def _install_untrusted_envelope(tools: list[Any]) -> None:
             pass
 
 
+def _live_tokens(ctx: Any) -> int | None:
+    """Tokens this turn has spent SO FAR, from the run's live usage.
+
+    The SDK accumulates usage on the run context as each model response lands,
+    and that number already includes the re-sent conversation — so summing it is
+    the true bill, not an estimate of one. Returns None when the endpoint reports
+    no usage at all, which is common on OpenAI-compatible gateways; the caller
+    then falls back to the character budget, exactly as before v0.54.0."""
+    try:
+        usage = getattr(ctx, "usage", None)
+        total = int(getattr(usage, "input_tokens", 0) or 0) + \
+            int(getattr(usage, "output_tokens", 0) or 0)
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return total if total > 0 else None
+
+
+def _call_key(tool_name: str, args: Any) -> str:
+    """Identity of one tool invocation, for within-turn de-duplication."""
+    return f"{tool_name}\u0000{str(args or '')[:2000]}"
+
+
 def _install_tool_output_budget(tools: list[Any],
                                 limit: int | None = None,
                                 model: str | None = None,
                                 explicit_window: int | None = None,
+                                token_limit: int | None = None,
+                                explicit_token_budget: int | None = None,
                                 cancel_event: Any = None) -> dict[str, int]:
     """Cap the CUMULATIVE characters of tool output handed to the model per turn.
 
@@ -776,13 +882,31 @@ def _install_tool_output_budget(tools: list[Any],
     """
     if limit is None:
         limit = model_budget.tool_output_char_budget(model, explicit_window)
-    spent = {"chars": 0, "exhausted": False, "limit": limit}
+    if token_limit is None:
+        token_limit = model_budget.turn_token_budget(model, explicit_window,
+                                                     explicit_token_budget)
+    spent: dict[str, Any] = {
+        "chars": 0, "exhausted": False, "limit": limit,
+        # v0.54.0: the bound that is actually denominated in what a turn costs.
+        # `tokens` stays None on an endpoint that reports no usage — the char
+        # budget above remains the only bound there, and says so.
+        "token_limit": token_limit, "tokens": None, "stopped_on": None,
+        # Identical (tool, args) pairs a turn repeated. The second call returns a
+        # pointer instead of the payload: re-fetching an unchanged read-only
+        # result costs the full payload again AND carries it for the rest of the
+        # turn, for a byte-identical answer.
+        "seen": {}, "deduped": 0,
+    }
     for t in tools:
         orig = getattr(t, "on_invoke_tool", None)
         if orig is None or getattr(t, "name", "") in _BUDGET_EXEMPT_TOOLS:
             continue
 
-        def _make(_orig):
+        # `_name` is bound HERE, not read off `t` inside the closure: `t` is the
+        # loop variable, so a late read would give every wrapper the name of the
+        # LAST tool in the list — mis-keying the dedupe map and mis-applying the
+        # exemptions.
+        def _make(_orig, _name):
             async def wrapped(ctx: Any, args: Any) -> Any:
                 if cancel_event is not None and cancel_event.is_set():
                     # Observe cancellation at TOOL ENTRY too, not only between
@@ -794,6 +918,32 @@ def _install_tool_output_budget(tools: list[Any],
                                        "next_step": "The user cancelled this turn. Stop "
                                                     "investigating and give your best "
                                                     "answer from what you already have."})
+                live = _live_tokens(ctx)
+                if live is not None:
+                    spent["tokens"] = live
+                    if live >= token_limit:
+                        # The honest ceiling: this turn has spent its budget in
+                        # the unit that bills. Same soft shape as the char
+                        # bound — a status with a next step, never a failure.
+                        spent["exhausted"] = True
+                        spent["stopped_on"] = "tokens"
+                        return json.dumps({"status": "budget_exhausted",
+                                           "spent_tokens": live,
+                                           "budget_tokens": token_limit,
+                                           "next_step": _TOOL_BUDGET_EXHAUSTED})
+                key = _call_key(_name, args)
+                prior = (None if _name in _DEDUPE_EXEMPT_TOOLS
+                         else spent["seen"].get(key))
+                if prior is not None:
+                    # A read-only tool called twice with identical arguments in
+                    # one turn returns the same bytes; paying for them again —
+                    # and carrying them for every later step — buys nothing.
+                    spent["deduped"] += 1
+                    return json.dumps({
+                        "status": "repeat_call",
+                        "note": "This exact call was already made in this turn; its "
+                                "result is above in the conversation. Reuse it.",
+                        "result_summary": prior})
                 if spent["chars"] >= limit:
                     # A soft per-turn boundary, NOT a tool failure: shape it as a
                     # status (not {"error": …}) with an explicit next step, and
@@ -801,6 +951,7 @@ def _install_tool_output_budget(tools: list[Any],
                     # like the max-turns ceiling — instead of the model emitting a
                     # normal 'final' that reads as a complete answer.
                     spent["exhausted"] = True
+                    spent["stopped_on"] = spent["stopped_on"] or "chars"
                     return json.dumps({"status": "budget_exhausted",
                                        "next_step": _TOOL_BUDGET_EXHAUSTED})
                 out = await _orig(ctx, args)
@@ -812,14 +963,16 @@ def _install_tool_output_budget(tools: list[Any],
                     # a VALID JSON envelope (truncating the JSON would be
                     # unparseable) and flag the turn so the driver offers 'continue'.
                     spent["exhausted"] = True
+                    spent["stopped_on"] = spent["stopped_on"] or "chars"
                     text = json.dumps({"status": "output_too_large",
                                        "next_step": _TOOL_OUTPUT_TOO_LARGE})
                 spent["chars"] += len(text)
+                spent["seen"][key] = text[:200]
                 return text
             return wrapped
 
         try:
-            t.on_invoke_tool = _make(orig)
+            t.on_invoke_tool = _make(orig, getattr(t, "name", "?"))
         except Exception:  # noqa: BLE001 — frozen/foreign tool object: skip the wrap
             pass
     return spent
@@ -853,7 +1006,19 @@ def _build_prompt(
                                      model=model, explicit_window=explicit_window)
     skill_names = skill_context.skill_names()
 
-    prompt_parts = [render_context_text(context)]
+    # Prompt order is CACHE order, most stable first: skill catalog (identical in
+    # every session) → configured providers (changes only when the operator edits
+    # one) → the stable half of the context (session/summary/agent_memory) → the
+    # thread replay → this turn's attachments and question. A provider's prompt
+    # cache matches on the prefix and stops at the first differing byte, so the
+    # old layout — thread replay in the middle, catalog after it — invalidated the
+    # catalog and the provider list on every single turn even though neither had
+    # changed.
+    stable_ctx, volatile_ctx = split_context_for_cache(context)
+    prompt_parts: list[str] = []
+    catalog = skill_context.catalog_text()
+    if catalog:
+        prompt_parts.append(catalog)
     # Pre-list configured providers so the agent skips a list_providers round
     # trip (latency) and already knows the provider_id values. No secrets.
     providers: list[dict[str, Any]] = []
@@ -872,6 +1037,8 @@ def _build_prompt(
         except Exception:  # noqa: BLE001
             providers = []
     prompt_parts.append("configured_providers:\n" + json.dumps(providers, ensure_ascii=False))
+    prompt_parts.append(render_context_text(stable_ctx))
+    prompt_parts.append(render_context_text(volatile_ctx))
     # Files the user attached this turn (uploaded but not yet analyzed). The agent
     # should analyze the relevant one with analyze_uploaded_file and answer inline.
     if attachments:
@@ -885,9 +1052,6 @@ def _build_prompt(
             "analyze_uploaded_file and base your answer on the result — do NOT ignore them):\n"
             + json.dumps(att, ensure_ascii=False)
         )
-    catalog = skill_context.catalog_text()
-    if catalog:
-        prompt_parts.append(catalog)
     # Never truncate the user's question silently: a long paste (error output,
     # config dump) is cut at the (model-elastic) user-message cap with an explicit
     # marker so the agent knows it saw a prefix and can ask for the rest as a file.
@@ -1004,11 +1168,17 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     _install_untrusted_envelope(tools)
     budget = _install_tool_output_budget(tools, model=creds.get("model"),
                                          explicit_window=creds.get("context_window"),
+                                         explicit_token_budget=creds.get("turn_token_budget"),
                                          cancel_event=spec.get("cancel_event"))
     spec["budget"] = budget  # readable by the blocking driver, which owns `spec`
-    # _make_agent disables parallel tool calls (chat-completions providers like
-    # DeepSeek can emit malformed follow-ups with streaming + parallel calls) and
-    # uses a per-run client so concurrent sessions don't race on SDK globals.
+    # _make_agent asks for PARALLEL tool calls unless this endpoint has already
+    # proven it mishandles them (v0.54.0). Independent probes then batch into one
+    # step instead of one round-trip each, and every avoided round-trip avoids
+    # re-sending the entire accumulated conversation — measured at ~36% of a
+    # realistic 8-tool turn. Chat-completions gateways that emit malformed
+    # follow-ups are detected by _is_tool_call_sequence_error and remembered in
+    # _NO_PARALLEL_ENDPOINTS. It uses a per-run client so concurrent sessions
+    # don't race on SDK globals.
     agent = _make_agent(creds, tools, INSTRUCTIONS, clients)
     result = Runner.run_streamed(agent, spec["prompt"], max_turns=_MAX_TURNS)
     # Tag the run with the endpoint it targets, so a stream_options rejection
@@ -1298,6 +1468,20 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
         usage = _usage_snapshot(result)
         if usage:
             contract["usage"] = usage
+        # v0.54.0: what the turn's own governor did. `budget_tokens` is the
+        # ceiling this turn ran under and `repeat_calls_avoided` the identical
+        # calls the wrapper answered from the conversation instead of re-running.
+        # Both are facts about THIS turn, reported alongside usage rather than
+        # inside it — they are not provider-reported token counts and must not be
+        # mistaken for them. Each key is omitted when there is nothing to report,
+        # so a turn that hit neither path says nothing at all.
+        if budget:
+            if budget.get("token_limit"):
+                contract["budget_tokens"] = int(budget["token_limit"])
+            if budget.get("stopped_on"):
+                contract["budget_stopped_on"] = str(budget["stopped_on"])
+            if budget.get("deduped"):
+                contract["repeat_calls_avoided"] = int(budget["deduped"])
         return contract
 
     try:
@@ -1374,9 +1558,20 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
                 key = getattr(result, "_sa_endpoint_key", None)
                 if key:
                     _NO_USAGE_ENDPOINTS.add(key)
+            # Same treatment for parallel tool calls (v0.54.0): a sequencing 400
+            # is this endpoint telling us it cannot honour them. Remember it, so
+            # every later agent for this endpoint asks for sequential calls and
+            # the failure happens at most once per process — and recover THIS
+            # turn through the finalize pass, which rebuilds from a fresh prompt
+            # with no tool_calls history.
+            sequence_broken = _is_tool_call_sequence_error(exc)
+            if sequence_broken:
+                key = getattr(result, "_sa_endpoint_key", None)
+                if key:
+                    _NO_PARALLEL_ENDPOINTS.add(key)
             recoverable = (_is_max_turns(exc) or cut_short or transient
                            or usage_rejected
-                           or _is_tool_call_sequence_error(exc))
+                           or sequence_broken)
             if finalize is None or not recoverable:
                 raise
             while len(activity) > emitted_tools:

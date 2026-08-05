@@ -482,6 +482,14 @@ export interface TurnMetrics extends TokenUsage {
   tool_calls?: number | null;
   model?: string | null;
   usage?: TokenUsage;
+  /** The per-turn TOKEN ceiling this turn ran under (v0.54.0). Not a provider
+   * measurement — the workbench's own governor, reported beside usage. */
+  budget_tokens?: number | null;
+  /** Which bound ended the investigation, when one did: "tokens" | "chars". */
+  budget_stopped_on?: string | null;
+  /** Identical (tool, args) calls answered from the conversation instead of
+   * being re-run. Absent when the turn repeated nothing. */
+  repeat_calls_avoided?: number | null;
 }
 
 /** A persisted per-turn metrics row, keyed to the assistant message. */
@@ -489,6 +497,10 @@ export interface TurnMetricsRow extends TokenUsage {
   turn_id: string | null;
   message_id: string | null;
   model: string | null;
+  /** The turn's own governor (v0.54.0), persisted so the footer still tells the
+   * truth after a reload. NULL on turns recorded before it shipped. */
+  budget_tokens?: number | null;
+  repeat_calls_avoided?: number | null;
   duration_ms: number | null;
   tool_calls: number | null;
   created_at: string;
