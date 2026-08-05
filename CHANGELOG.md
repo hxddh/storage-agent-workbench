@@ -6,6 +6,73 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-08-05
+
+_The report finally documents the investigation. Plus a correction to v0.47.0's
+own notes, and the loose ends it left._
+
+### Fixed — the session report documented none of the work
+
+The report predates the v0.20 shift to an agent-first product: it drew only from
+**linked runs**, and the conversational agent's work is deliberately never linked
+as a run card. Measured on a real six-turn investigation — probe the bucket, hit
+a 403, explain the cause — the report rendered **1244 characters, almost all
+boilerplate**, with `Evidence used: —`, `Timeline of runs: No runs linked yet`,
+`Key findings: —`, `Agent-recorded findings: None recorded`. The one document
+meant to leave the app documented nothing.
+
+Meanwhile v0.45–v0.47 had built a genuinely complete record — tool trace, per-turn
+cost, session audit trail — that lived only in the inspector. The report now
+draws on it:
+
+- **Investigation** — each turn's question, an excerpt of the answer, and the
+  grounding the agent claimed (*grounded in* / *not verified*), plus that turn's
+  tool count and duration.
+- **Tools run** — a table of which read-only tools ran, how often, how many
+  failed, and how long they took.
+- **Cost** — turns, wall-clock, and tokens **only when the provider reported
+  them**; otherwise an explicit "not reported".
+- **Audit trail** — rule 17's events for the session, summarised then listed.
+- The executive summary now counts turns and tool calls, not just linked runs.
+
+Every section is bounded (40 turns, 600-char answer excerpts, 25 tools, 30 audit
+rows) and **states when it truncates** — a report that silently dropped half an
+investigation would be worse than one that admitted it covered nothing. The
+newest turns are kept, not the oldest. Redaction is unchanged: the whole document
+is still redacted on render, and every input was sanitized on write.
+
+### Fixed — a rationale in v0.47.0's notes that was not true
+
+v0.47.0's changelog, PR and `docs/api.md` all justified keeping the unbounded
+`list_messages` branch with "the report builder needs the whole thread". **The
+report builder did not take messages at all** — the branch had no caller. It has
+a real one now (the report genuinely wants the whole investigation), and the
+documentation says something true.
+
+### Fixed — seven more audit events were still unreachable
+
+v0.47.0's AST guard covered four agent-tool modules, so a new `audit.record`
+elsewhere could still omit `session_id`. Widened to sweep the whole app, it
+immediately found seven: `error_triage.case`, `run.create`, `run.start`,
+`session.dataset.upload`, `session.turn.cancel`, and two that are correctly
+run-scoped (`session.delete`, `run.delete`) and are now explicitly exempt with
+the reason. `run.start` resolves its session through a new
+`session_id_for_run` lookup — a run outside a session has none, which is a real
+answer rather than a guess.
+
+### Changed — the inspector pages each stream separately
+
+"Load more" advanced both streams together, so a session with 4000 tool calls
+and 30 audit events paged the short stream to its end on the first click and then
+kept offering more for a stream with nothing left. Each stream now advertises and
+advances its own remainder.
+
+### Added — jump to the start of a long thread
+
+"Load earlier" moves 60 messages at a time; a thousand-turn session was ~17
+clicks to reach the beginning. **Jump to start** pulls the remaining pages in
+sequence and lands at the top.
+
 ## [0.47.0] - 2026-08-04
 
 _Finishing v0.45.0's observability properly — including a data-loss regression it

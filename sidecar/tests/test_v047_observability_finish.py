@@ -95,24 +95,26 @@ def test_a_zero_window_disables_the_sweep_entirely(monkeypatch):
 
 # --- the audit trail is session-scoped throughout -----------------------------
 
-AGENT_TOOL_MODULES = [
-    "app/agent_runtime/session_tools.py",
-    "app/agent_runtime/session_action_tools.py",
-    "app/agent_runtime/session_analysis_tools.py",
-    "app/agent_runtime/session_memory_tools.py",
-]
+# Widened in v0.48.0: the check used to name four agent-tool modules, so a new
+# `audit.record` written anywhere else could still omit `session_id`. It now
+# sweeps the whole app and decides per call site.
+_SESSION_SCOPED_EXEMPT = {
+    # The session is ceasing to exist; a session-scoped row could only ever be
+    # read back through a session that is gone. The id stays in the payload.
+    "session.delete",
+    # The run row (and its session link) is already deleted by the time this is
+    # recorded, so there is no session to attribute it to. Run-scoped is honest;
+    # guessing would not be.
+    "run.delete",
+}
 
 
-def test_every_agent_tool_audit_call_is_session_scoped():
-    """A rule-17 row the inspector cannot retrieve is a row that was written and
-    then orphaned — the exact gap v0.45.0 set out to close."""
+def _audit_calls(root):
+    """Every ``audit.record(...)`` in the app, as (path, lineno, event, kwargs)."""
     import ast
-    import pathlib
 
-    offenders: list[str] = []
-    root = pathlib.Path(__file__).resolve().parents[1]
-    for rel in AGENT_TOOL_MODULES:
-        tree = ast.parse((root / rel).read_text())
+    for path in sorted((root / "app").rglob("*.py")):
+        tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -120,9 +122,46 @@ def test_every_agent_tool_audit_call_is_session_scoped():
             if not (isinstance(fn, ast.Attribute) and fn.attr == "record"
                     and isinstance(fn.value, ast.Name) and fn.value.id == "audit"):
                 continue
-            if not any(kw.arg == "session_id" for kw in node.keywords):
-                offenders.append(f"{rel}:{node.lineno}")
+            event = None
+            if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant):
+                event = node.args[1].value
+            yield (path.relative_to(root), node.lineno, event,
+                   {kw.arg for kw in node.keywords})
+
+
+def test_every_session_scoped_audit_call_sets_session_id():
+    """A rule-17 row the inspector cannot retrieve is a row that was written and
+    then orphaned — the exact gap v0.45.0 set out to close and v0.47.0 finished.
+
+    A call site counts as session-scoped when it can see a session at all: it
+    either passes ``session_id=`` or is in a module that never handles one.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    offenders: list[str] = []
+    for rel, lineno, event, kwargs in _audit_calls(root):
+        if "session_id" in kwargs:
+            continue
+        if event in _SESSION_SCOPED_EXEMPT:
+            continue
+        # Only flag modules that DO deal with sessions — a run executor's audit
+        # rows legitimately belong to their run, not to a session.
+        src = (root / rel).read_text()
+        if "session_id" not in src:
+            continue
+        offenders.append(f"{rel}:{lineno} ({event})")
     assert offenders == []
+
+
+def test_the_sweep_actually_finds_call_sites():
+    """Guard the guard: a broken matcher that finds nothing would pass silently."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    calls = list(_audit_calls(root))
+    assert len(calls) > 20
+    assert any("session_id" in kwargs for *_rest, kwargs in calls)
 
 
 def test_an_agent_file_analysis_lands_in_the_sessions_audit_trail():

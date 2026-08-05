@@ -150,8 +150,9 @@ Paging (v0.47.0): `GET /sessions/{id}` returns the **tail** of the thread
 and `before` (an opaque `seq` cursor from the oldest message the client holds)
 and returns `total` + `has_more`. A long investigation used to re-send its whole
 history on every open and every turn — ~1 MiB of JSON at 300 turns, growing
-without bound. The unbounded form remains internally for the report builder,
-which summarises the entire investigation.
+without bound. `GET /sessions/{id}/report` is the one caller that reads the
+thread unbounded, because the report covers the entire investigation; it bounds
+the document for reading and states when it truncates.
 
 Observability (v0.45.0): `/activity` and `/audit` are bounded — `limit` is capped
 at 500 (default 200) and every response carries `total` / `offset` / `limit` /

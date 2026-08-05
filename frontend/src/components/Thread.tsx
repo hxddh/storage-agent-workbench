@@ -243,6 +243,39 @@ export function Thread({
   const shownCount = (earlier.length + (detail?.messages?.length ?? 0));
   const hiddenCount = Math.max(0, (detail?.message_total ?? shownCount) - shownCount);
 
+  /** Pull every remaining older page in one go.
+   *
+   * A thousand-turn session is ~17 clicks of "load earlier" to reach the start,
+   * which is not a scroll — it is a chore. The pages are fetched in sequence
+   * (each needs the previous cursor) and bounded by the same server caps.
+   */
+  const loadAllEarlier = async () => {
+    const id = localId.current;
+    if (!id || loadingEarlier) return;
+    setLoadingEarlier(true);
+    try {
+      let cursor = (earlier[0] ?? detail?.messages?.[0])?.seq;
+      const collected: SessionMessage[] = [];
+      // Bounded loop: the server page size is fixed, so this terminates on
+      // has_more; the cap is a backstop against a pathological cursor.
+      for (let i = 0; i < 200 && cursor != null; i++) {
+        const page = await getSessionMessages(id, { before: cursor });
+        if (id !== localId.current) return;
+        if (page.messages.length === 0) break;
+        collected.unshift(...page.messages);
+        cursor = page.messages[0]?.seq ?? undefined;
+        if (!page.has_more) break;
+      }
+      setEarlier((prev) => [...collected, ...prev]);
+      // Land at the top, which is what "jump to start" means.
+      requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" }));
+    } catch (e) {
+      setViewError(String((e as Error)?.message ?? e));
+    } finally {
+      setLoadingEarlier(false);
+    }
+  };
+
   const loadEarlier = async () => {
     const id = localId.current;
     if (!id || loadingEarlier) return;
@@ -703,15 +736,26 @@ export function Thread({
             <div className="mx-auto max-w-3xl space-y-6">
               {hiddenCount > 0 && (
                 <div className="flex justify-center">
-                  <button
-                    type="button"
-                    onClick={loadEarlier}
-                    disabled={loadingEarlier}
-                    data-testid="load-earlier"
-                    className="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-gray-500 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50"
-                  >
-                    {loadingEarlier ? t("thread.loadingEarlier") : t("thread.loadEarlier", { n: hiddenCount })}
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={loadEarlier}
+                      disabled={loadingEarlier}
+                      data-testid="load-earlier"
+                      className="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-gray-500 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50"
+                    >
+                      {loadingEarlier ? t("thread.loadingEarlier") : t("thread.loadEarlier", { n: hiddenCount })}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={loadAllEarlier}
+                      disabled={loadingEarlier}
+                      data-testid="jump-to-start"
+                      className="rounded-full border border-edge px-3 py-1.5 text-[11.5px] text-gray-600 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50"
+                    >
+                      {t("thread.jumpToStart")}
+                    </button>
+                  </div>
                 </div>
               )}
               {items.map((it, idx) =>

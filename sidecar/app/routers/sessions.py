@@ -245,10 +245,20 @@ def get_session_report(session_id: str, conn: sqlite3.Connection = Depends(get_c
         raise HTTPException(status_code=404, detail="session not found")
     summary = repo.get_summary(conn, session_id) or summary_builder.refresh(conn, session_id)
     from ..repositories import error_triage as triage_repo
+    # The report covers the WHOLE investigation, so this is the one caller that
+    # genuinely wants the unbounded thread — the renderer bounds it for reading
+    # and states when it truncates. (The thread UI and the per-turn context both
+    # page; see repo.DEFAULT_MESSAGE_PAGE.)
+    overview = session_activity.overview(conn, session_id)
     content = session_report.render_session_report(
         dict(row), summary, repo.list_runs(conn, session_id),
         triage_cases=triage_repo.list_for_session(conn, session_id),
-        agent_memory=repo.list_agent_memory(conn, session_id))
+        agent_memory=repo.list_agent_memory(conn, session_id),
+        messages=repo.list_messages(conn, session_id),
+        activity=session_activity.list_activity(conn, session_id)["items"],
+        usage=overview.get("usage"),
+        turn_metrics=overview.get("turns"),
+        audit_events=session_activity.list_audit(conn, session_id)["items"])
     # Rule 17: report generation is an auditable event.
     audit.record(conn, "session.report",
                  {"session_id": session_id, "bytes": len(content)}, run_id=None,
@@ -395,7 +405,8 @@ async def upload_session_dataset(
         raise HTTPException(status_code=409, detail="session was deleted during the upload") from None
     audit.record(conn, "session.dataset.upload",
                  {"session_id": session_id, "dataset_id": dataset_id,
-                  "dataset_type": dataset_type, "bytes": total}, run_id=None)
+                  "dataset_type": dataset_type, "bytes": total}, run_id=None,
+                 session_id=session_id)
     conn.commit()
     return SessionDatasetUploadResponse(
         dataset_id=dataset_id, session_id=session_id, dataset_type=dataset_type,
@@ -578,7 +589,8 @@ def cancel_turn(session_id: str, turn_id: str,
     if handle.done:
         return {"status": "completed"}
     handle.cancel_event.set()
-    audit.record(conn, "session.turn.cancel", {"session_id": session_id, "turn_id": turn_id}, run_id=None)
+    audit.record(conn, "session.turn.cancel", {"session_id": session_id, "turn_id": turn_id},
+                 run_id=None, session_id=session_id)
     conn.commit()
     return {"status": "cancelling"}
 

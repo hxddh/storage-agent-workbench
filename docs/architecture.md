@@ -474,6 +474,25 @@ inspector — one merged timeline with additive filter chips rather than tabs,
 since tool calls and audit events interleave and tabs would destroy the ordering
 that explains what led to what.
 
+## The session report
+
+`GET /sessions/{id}/report` renders the artifact a user hands to someone else. It
+covers the investigation the conversational agent actually carried out — the
+questions, excerpted answers with their claimed grounding, the read-only tool
+breakdown, what the turns cost, and the session's rule-17 audit trail — alongside
+the deterministic summary, linked runs and triage cases.
+
+Before v0.48.0 it drew only from *linked* runs, which for an agent-driven session
+is always zero: the agent's own surveys are recorded with `origin='agent'` and
+never surfaced as run cards. A real six-turn investigation therefore rendered as
+a page of em dashes. The observability built in v0.45–v0.47 existed but never
+reached the one document that leaves the app.
+
+Every section is bounded and states when it truncates; the newest turns are kept.
+Inputs were sanitized on write and the whole document is redacted again on
+render, so the report still contains no raw log lines, no raw inventory rows, no
+evidence file content, no credentials and no chain-of-thought.
+
 ## Frontend design system
 
 All surface, neutral and status colour goes through CSS custom properties

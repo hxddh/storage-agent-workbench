@@ -254,6 +254,18 @@ def search(conn: sqlite3.Connection, query: str | None) -> list[dict[str, Any]]:
     return _enrich(conn, rows)
 
 
+def session_id_for_run(conn: sqlite3.Connection, run_id: str) -> str | None:
+    """The session a run is linked to, if any.
+
+    A run started outside a session has none, which is a real answer — the audit
+    row stays run-scoped rather than being attributed to an arbitrary session.
+    """
+    row = conn.execute(
+        "SELECT session_id FROM session_runs WHERE run_id = ? LIMIT 1", (run_id,)
+    ).fetchone()
+    return row[0] if row else None
+
+
 def title_for(conn: sqlite3.Connection, session_id: str | None) -> str | None:
     if not session_id:
         return None
