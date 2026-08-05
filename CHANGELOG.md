@@ -6,6 +6,117 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-08-05
+
+_The diagnostic core rather than the chat surface. Backend only — no UI, schema
+or migration change._
+
+### Fixed — a live failure threw away everything that made it actionable
+
+`_client_error_fields` is the shape **every** live S3 tool returns on failure.
+Running a real botocore `ClientError` through it:
+
+```
+live error fields: {'error_code': 'PermanentRedirect',
+                    'error_message_sanitized': 'The bucket is in this region: us-west-2.',
+                    'status_code': 301}
+has request id  : False
+has host id     : False
+has retry count : False
+```
+
+botocore hands over `RequestId`, `HostId`, `RetryAttempts` and the full response
+headers on that same object. All discarded. `_sanitized_headers()` existed but
+was called exactly once in the repository — on `head_bucket`'s **success** path.
+
+That matters because when an S3-compatible gateway returns a 500 or 503 the
+agent cannot explain, the only remaining move is "take the request id to your
+provider". The id was in hand and dropped. The product already knew this
+mattered: the **offline** triage parser has always extracted `request_id` from
+pasted error text. One product, two standards.
+
+The failure shape now carries:
+
+| Field | Answers |
+| --- | --- |
+| `request_id` / `host_id` | "what do I give my provider's support desk?" |
+| `retry_attempts` | "why did a request that succeeded take four seconds?" |
+| `headers_sanitized` | the `server` banner, and `x-amz-bucket-region` on a 301 |
+
+`retry_attempts` is captured on the **success** path too: boto3 retries
+throttling transparently, so a rate-limited turn previously reported success with
+no explanation for the pause.
+
+Redaction needed no new work — it already keeps the diagnostic headers and
+strips the dangerous ones, now asserted rather than assumed:
+
+```
+x-amz-request-id       -> 8A9F2C1B4D6E0000
+x-amz-bucket-region    -> us-west-2
+authorization          -> ***REDACTED***
+set-cookie             -> ***REDACTED***
+```
+
+It went in the shared helper on purpose: 15+ call sites inherit it and there is
+no per-tool variant to drift. A turn's one-line trace now reads
+`InternalError · req 8A9F2C1B4D6E0000`.
+
+### Added — `get_bucket_location`, the cheap probe that was missing
+
+Region/endpoint mismatch is the most common misconfiguration in S3-compatible
+setups. Diagnosing it cost a full `get_bucket_config_summary` — 15+ API calls —
+because there was no cheap probe: the agent's 30 tools had no way to ask where a
+bucket lives.
+
+One read-only call, reported next to the configured region and endpoint so the
+result is a verdict rather than a fact to interpret. Four things keep it honest:
+
+- an empty `LocationConstraint` is `us-east-1` **on AWS** — treating it as
+  unknown would make the most common region the one we cannot report;
+- on a custom endpoint an empty answer means the provider does not partition by
+  region, and is reported as unknown rather than invented as `us-east-1`;
+- `region_mismatch` is `null` when either side is unknown — an unset region on a
+  custom endpoint is normal, not a fault;
+- a 301 on the way in **still answers the question**, from the
+  `x-amz-bucket-region` header (now captured) rather than by parsing prose.
+
+`provider_unsupported` on a gateway without the API (rule 18). The
+`PermanentRedirect` / `AuthorizationHeaderMalformed` / `SignatureDoesNotMatch` /
+`NoSuchBucket` playbooks now point at it instead of the 15-call review.
+
+The guard test that existed to keep the playbooks from naming a
+`get_bucket_location` that did not exist was inverted rather than deleted: it now
+scrapes the registered tools and asserts every tool-shaped token in every
+playbook is one of them.
+
+### Added — the access-log columns that were parsed and never read
+
+`latency_ms` and `bytes_sent` have been in the table since the engine's first
+version. Nothing read them, so "why is it slow" and "why is it expensive" — the
+two questions people bring an access log to answer — had no numbers behind them.
+
+- **latency percentiles** (p50/p95/p99/max), not an average: the mean hides the
+  tail, and the tail is what gets reported as "it's slow";
+- **egress**: total bytes served plus the keys that account for them (a single
+  hot key served uncached is a different problem from broad traffic);
+- **errors by prefix**: which part of the bucket is failing, ordered by error
+  count so a 100%-failing prefix with three requests does not outrank an outage;
+- **error rate by hour**: a flat 2% and a 2% that was 40% for one hour are
+  different incidents;
+- **top talkers** on the ingest-masked client IP (rule 15).
+
+Every one is `null` — absent, never zero — when the format carries no such
+field. A "p95 = 0 ms" would be a false claim about performance. Three new
+findings ride on them (long latency tail, egress concentrated on one key, errors
+concentrated in one prefix), each requiring a minimum sample and, for the prefix
+finding, a rate genuinely above the bucket average rather than merely high.
+
+### Verified
+
+`sidecar`: 836 tests pass (22 new, `tests/test_v052_actionable_failures.py`),
+`ruff check app` clean. No frontend change was needed — the request id reaches
+the trace and the inspector through the existing sanitized tool-call record.
+
 ## [0.51.0] - 2026-08-05
 
 _A serious pass over what a session actually exposes. Three silences, each

@@ -10,6 +10,8 @@ call / no run creation / no evidence download.
 
 import sqlite3
 
+from pathlib import Path
+
 import pytest
 
 from app import config, run_service
@@ -124,12 +126,41 @@ def test_triage_access_denied_causes():
 
 
 def test_triage_next_checks_use_real_tool_names():
-    """next_checks must reference tools the agent actually has — not the stale
-    get_bucket_location (report 2.6); get_bucket_config_summary reads location."""
+    """next_checks must name tools the agent actually has.
+
+    This guard exists because the playbooks once pointed at a
+    ``get_bucket_location`` that did not exist (report 2.6) — a triage result
+    telling the reader to run a tool nobody can run. Rather than blacklisting
+    that one name forever, the guard now checks the real direction: every
+    snake_case token that LOOKS like a tool must be a registered one. As of
+    v0.52.0 ``get_bucket_location`` is a real tool again, and this is what keeps
+    the two in step.
+    """
+    import re
+
+    from app.agent_runtime import session_tools
     from app.error_triage import playbooks
+
+    src = Path(session_tools.__file__).read_text()
+    registered = set(re.findall(r"@function_tool\s+def\s+(\w+)", src))
+    # The config-review tools are registered dynamically from a table.
+    registered |= {"get_bucket_config_summary", "review_bucket_security",
+                   "review_bucket_lifecycle", "review_bucket_observability",
+                   "review_bucket_cost_optimization", "survey_account",
+                   "review_bucket_config", "analyze_uploaded_file",
+                   "aggregate_uploaded_file", "list_uploaded_files"}
+    assert len(registered) > 20, "tool scrape found nothing — the guard would pass vacuously"
+
+    # Only judge tokens that are unmistakably tool-shaped: a verb_noun snake_case
+    # word. Prose like "align endpoint/region" is advice, not a tool reference.
+    looks_like_tool = re.compile(r"^(?:get|list|head|test|review|analyze|survey|inspect|"
+                                 r"measure|diagnose|preview|read|import|aggregate)_\w+$")
     for entry in playbooks._BY_CODE.values():
-        joined = " ".join(entry["next_checks"])
-        assert "get_bucket_location" not in joined, entry["code"]
+        for check in entry["next_checks"]:
+            for token in re.split(r"[\s/,]+", check):
+                token = token.strip("`.,()")
+                if looks_like_tool.match(token):
+                    assert token in registered, f"{entry['code']}: unknown tool {token!r}"
 
 
 def test_triage_region_mismatch_suggests_diagnostic():

@@ -31,6 +31,28 @@ Purpose:
 
 - Check bucket existence and access.
 
+### get_bucket_location
+
+Purpose:
+
+- Where the bucket actually lives, in ONE read-only call, next to the configured
+  region and endpoint so the answer is a verdict (`region_mismatch`) rather than
+  a fact to interpret.
+
+Notes:
+
+- Region/endpoint mismatch is the most common S3-compatible misconfiguration.
+  Before v0.52.0 diagnosing it meant `get_bucket_config_summary` — 15+ API calls
+  — because no cheap probe existed.
+- An empty `LocationConstraint` is `us-east-1` **on AWS**; on a custom endpoint
+  it means the provider does not partition by region and is reported as unknown
+  rather than invented.
+- `region_mismatch` is `null` when either side is unknown — an unset region on a
+  custom endpoint is normal, not a fault.
+- A 301 on the way in still answers the question: the real region comes from
+  `x-amz-bucket-region`, which is reliable where the message prose is not.
+- `provider_unsupported` on a gateway without the API (rule 18).
+
 ### list_objects
 
 (The registered agent tool is `list_objects`; the internal S3 helper it calls is

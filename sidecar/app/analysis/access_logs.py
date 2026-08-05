@@ -435,6 +435,102 @@ def _dist(con, sql: str) -> list[dict[str, Any]]:
     return [{"value": _clip(v), "count": int(c)} for v, c in con.execute(sql).fetchall()]
 
 
+def _latency(con) -> dict[str, Any] | None:
+    """Percentiles, not an average. The mean of a latency distribution hides the
+    tail, and the tail is what a user reports as "it's slow".
+
+    ``latency_ms`` has been parsed into the table since the first version of this
+    engine and was never read; a log that recorded every request's turnaround
+    could not answer how long a request took."""
+    row = con.execute(
+        f"SELECT count(*), quantile_cont(latency_ms, 0.50), quantile_cont(latency_ms, 0.95), "
+        f"quantile_cont(latency_ms, 0.99), max(latency_ms) "
+        f"FROM {TABLE_NAME} WHERE latency_ms IS NOT NULL AND latency_ms >= 0"
+    ).fetchone()
+    n = int(row[0] or 0)
+    if not n:
+        # Absent, not zero: many log formats carry no timing field at all, and a
+        # "p95 = 0 ms" would be a false claim about performance.
+        return None
+    return {"measured_requests": n,
+            "p50_ms": round(float(row[1] or 0), 1),
+            "p95_ms": round(float(row[2] or 0), 1),
+            "p99_ms": round(float(row[3] or 0), 1),
+            "max_ms": round(float(row[4] or 0), 1)}
+
+
+def _egress(con) -> dict[str, Any] | None:
+    """Bytes leaving the bucket, and which keys account for them.
+
+    ``bytes_sent`` was parsed and unused too. Egress is the line item that makes
+    an object-storage bill surprising, and "which keys" is the actionable half —
+    a single hot key served uncached is a different problem from broad traffic."""
+    row = con.execute(
+        f"SELECT count(*), sum(bytes_sent) FROM {TABLE_NAME} "
+        f"WHERE bytes_sent IS NOT NULL AND bytes_sent >= 0"
+    ).fetchone()
+    n, total = int(row[0] or 0), int(row[1] or 0)
+    if not n:
+        return None
+    top = [
+        {"value": _clip(k), "bytes": int(b), "requests": int(c)}
+        for k, b, c in con.execute(
+            f"SELECT key, sum(bytes_sent) b, count(*) c FROM {TABLE_NAME} "
+            f"WHERE bytes_sent IS NOT NULL AND key IS NOT NULL "
+            f"GROUP BY key ORDER BY b DESC LIMIT {SAMPLE_LIMIT}"
+        ).fetchall()
+    ]
+    return {"measured_requests": n, "total_bytes": total, "top_keys_by_bytes": top}
+
+
+def _errors_by_prefix(con) -> list[dict[str, Any]]:
+    """Which part of the bucket is failing — the question a global error rate
+    cannot answer. Ordered by error COUNT, not rate, so a 100%-failing prefix
+    with three requests does not outrank a real outage."""
+    rows = con.execute(
+        f"SELECT prefix, count(*) n, "
+        f"       sum(CASE WHEN status_code >= 400 AND status_code <= 499 THEN 1 ELSE 0 END) e4, "
+        f"       sum(CASE WHEN status_code >= 500 THEN 1 ELSE 0 END) e5 "
+        f"FROM {TABLE_NAME} WHERE status_code IS NOT NULL AND prefix IS NOT NULL "
+        f"GROUP BY prefix HAVING (e4 + e5) > 0 ORDER BY (e4 + e5) DESC LIMIT {SAMPLE_LIMIT}"
+    ).fetchall()
+    return [
+        {"value": _clip(p), "requests": int(n), "errors_4xx": int(e4), "errors_5xx": int(e5),
+         "error_rate": round((int(e4) + int(e5)) / int(n), 4) if n else 0.0}
+        for p, n, e4, e5 in rows
+    ]
+
+
+def _errors_by_hour(con) -> list[dict[str, Any]]:
+    """An error rate over time. A flat 2% and a 2% that was 40% for one hour are
+    different incidents, and the hourly request count alone cannot tell them
+    apart."""
+    rows = con.execute(
+        f"SELECT CASE WHEN try_cast(timestamp AS TIMESTAMP) IS NULL THEN 'unknown' "
+        f"ELSE strftime(try_cast(timestamp AS TIMESTAMP), '%Y-%m-%dT%H:00') END AS hour, "
+        f"count(*) n, sum(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) e "
+        f"FROM {TABLE_NAME} WHERE status_code IS NOT NULL GROUP BY hour ORDER BY hour"
+    ).fetchall()
+    return [{"hour": str(h), "requests": int(n), "errors": int(e),
+             "error_rate": round(int(e) / int(n), 4) if n else 0.0}
+            for h, n, e in rows]
+
+
+def _top_clients(con) -> list[dict[str, Any]]:
+    """Top talkers. The IP was masked at ingest (rule 15), so this ranks
+    /24-shaped groups — enough to tell "one caller" from "everyone"."""
+    return [
+        {"value": _clip(ip), "requests": int(n),
+         "errors": int(e)}
+        for ip, n, e in con.execute(
+            f"SELECT client_ip_masked, count(*) n, "
+            f"       sum(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) e "
+            f"FROM {TABLE_NAME} WHERE client_ip_masked IS NOT NULL "
+            f"GROUP BY client_ip_masked ORDER BY n DESC LIMIT {SAMPLE_LIMIT}"
+        ).fetchall()
+    ]
+
+
 def analyze_access_logs(duckdb_path: str | Path) -> dict[str, Any]:
     con = duck.connect(duckdb_path, read_only=True)
     try:
@@ -499,6 +595,15 @@ def analyze_access_logs(duckdb_path: str | Path) -> dict[str, Any]:
             "range_share_206": round(n_206 / (status_total or 1), 4),
             "share_404": round(n_404 / (status_total or 1), 4),
             "share_403": round(n_403 / (status_total or 1), 4),
+            # v0.52.0: the columns were parsed from the first version of this
+            # engine and never read, so "why is it slow" and "why is it
+            # expensive" had no numbers behind them. `null` where the log format
+            # carries no such field — absent, never zero.
+            "latency": _latency(con),
+            "egress": _egress(con),
+            "errors_by_prefix": _errors_by_prefix(con),
+            "errors_by_hour": _errors_by_hour(con),
+            "top_clients": _top_clients(con),
         }
     finally:
         con.close()
@@ -563,6 +668,47 @@ def derive_findings(m: dict[str, Any]) -> list[dict[str, str]]:
     if m["range_share_206"] > 0.30:
         f.append({"severity": "info", "title": "Range-like workload",
                   "detail": f"206 Partial Content responses are {m['range_share_206']:.1%} of requests."})
+
+    # v0.52.0 — findings from the timing/size columns. Each fires only when the
+    # log actually carried the field and enough rows to mean something; a format
+    # with no timing must produce silence, not a claim.
+    _MIN_MEASURED = 50
+
+    lat = m.get("latency")
+    if lat and lat.get("measured_requests", 0) >= _MIN_MEASURED:
+        p50, p95 = lat["p50_ms"], lat["p95_ms"]
+        # A long tail relative to the median is the shape users describe as
+        # "usually fine, sometimes terrible" — the absolute p95 alone would flag
+        # a uniformly slow but predictable workload as a tail problem.
+        if p50 > 0 and p95 >= 10 * p50 and p95 >= 500:
+            f.append({"severity": "warning", "title": "Long latency tail",
+                      "detail": (f"p95 is {p95:.0f} ms against a p50 of {p50:.0f} ms "
+                                 f"({p95 / p50:.0f}× ) — most requests are fast, a "
+                                 "minority are not.")})
+        elif p50 >= 1000:
+            f.append({"severity": "warning", "title": "Slow median request",
+                      "detail": f"Half of all requests take {p50:.0f} ms or more."})
+
+    eg = m.get("egress")
+    top_bytes = (eg or {}).get("top_keys_by_bytes") or []
+    if eg and eg.get("total_bytes") and top_bytes and _real_group(top_bytes[0]):
+        share = top_bytes[0]["bytes"] / eg["total_bytes"]
+        if share > 0.3:
+            f.append({"severity": "info", "title": "Egress concentrated on one key",
+                      "detail": (f"'{top_bytes[0]['value']}' is {share:.0%} of the "
+                                 f"{eg['total_bytes']:,} bytes served — a caching or "
+                                 "distribution question, not a storage one.")})
+
+    # A prefix failing far harder than the bucket average is the actionable form
+    # of an error rate: it names where to look.
+    overall_err = (m.get("error_rate_4xx") or 0) + (m.get("error_rate_5xx") or 0)
+    for row in (m.get("errors_by_prefix") or [])[:3]:
+        if (row.get("requests", 0) >= _MIN_MEASURED and _real_group(row)
+                and row["error_rate"] >= 0.25 and row["error_rate"] >= 2 * max(overall_err, 0.01)):
+            f.append({"severity": "warning", "title": "Errors concentrated in one prefix",
+                      "detail": (f"'{row['value']}' fails {row['error_rate']:.0%} of "
+                                 f"{row['requests']} requests, well above the bucket average.")})
+            break
 
     if not f:
         f.append({"severity": "info", "title": "No anomalies detected",

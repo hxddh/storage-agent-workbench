@@ -59,10 +59,23 @@ def _summarize(result: Any) -> str:
         if result.get("tls_version"):  # TLS inspection
             return str(result["tls_version"])
         if "success" in result:
-            return "ok" if result.get("success") else (result.get("error_code") or "failed")
+            if result.get("success"):
+                return "ok"
+            return _failure_line(result)
         if result.get("error_code"):
-            return str(result["error_code"])
+            return _failure_line(result)
     return "done"
+
+
+def _failure_line(result: dict[str, Any]) -> str:
+    """A failure the reader can act on: the code, plus the request id.
+
+    The id is what a provider's support desk asks for first, and an unexplained
+    500/503 from an S3-compatible gateway is otherwise a dead end. It is short,
+    opaque and carries no secret — it identifies the request, not the caller."""
+    code = str(result.get("error_code") or "failed")
+    rid = result.get("request_id")
+    return f"{code} · req {str(rid)[:24]}" if rid else code
 
 
 def build(conn: sqlite3.Connection, function_tool: Callable,
@@ -226,6 +239,20 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         rec("head_bucket", provider_id=provider_id, bucket=bucket)
         res = s3.head_bucket(conn, provider_id, bucket)
         note("head_bucket", bucket, res)
+        return json.dumps(res)
+
+    @function_tool
+    def get_bucket_location(provider_id: str, bucket: str) -> str:
+        """Where does this bucket actually live? ONE read-only GetBucketLocation. Use this FIRST for any endpoint/region symptom — a 301 PermanentRedirect, an AuthorizationHeaderMalformed naming a region, a SignatureDoesNotMatch that only happens on one bucket, or a bucket that 404s from one endpoint but exists. Returns bucket_region, the configured_region/endpoint_url for comparison, and region_mismatch (null when either side is unknown — an unset region on a custom endpoint is normal). Answers a redirect too: the bucket's real region comes back even when the configured endpoint cannot serve it. `provider_unsupported` on a gateway without the API. Args: provider_id, bucket."""
+        p = provider(provider_id)
+        if p is None:
+            return _err("Unknown provider_id. Call list_providers first.")
+        denial = scope_denial(p, bucket)
+        if denial:
+            return _err(denial)
+        rec("get_bucket_location", provider_id=provider_id, bucket=bucket)
+        res = s3.get_bucket_location(conn, provider_id, bucket)
+        note("get_bucket_location", bucket, res)
         return json.dumps(res)
 
     @function_tool
@@ -554,7 +581,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
              res.get("status") if res.get("success") else "error")
         return json.dumps(res)
 
-    tools = [list_providers, list_buckets, head_bucket, list_objects,
+    tools = [list_providers, list_buckets, head_bucket, get_bucket_location, list_objects,
              list_object_versions, list_multipart_uploads, list_upload_parts,
              test_credentials, head_object, get_object_lock_status,
              get_object_acl, get_object_tagging, get_object_attributes,
