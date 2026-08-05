@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
+
 from typing import Any, Callable
 
 from .. import audit
@@ -43,8 +45,14 @@ def build(
         return []
 
     def note(tool: str, target: str) -> None:
+        # `id` and `ok` (v0.55.0): every activity record now carries the same two
+        # fields, so the thread never has to infer a row's identity or its
+        # outcome from the result text. A memory write that reached here
+        # succeeded — these tools raise rather than return a failure.
         if activity is not None:
-            activity.append({"tool": tool, "target": target[:80], "result": "recorded"})
+            activity.append({"id": uuid.uuid4().hex, "tool": tool,
+                             "target": target[:80], "result": "recorded",
+                             "ok": True, "status": "completed"})
 
     def _norm(value: str | None, allowed: set[str]) -> str | None:
         v = (value or "").strip().lower()

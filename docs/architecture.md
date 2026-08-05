@@ -551,6 +551,39 @@ the core counts' coalesce-to-zero rule cannot silently answer the first with the
 second. A genuine 0 is stored as 0, because a cold cache is the measurement
 worth acting on.
 
+### The fixed prefix, and progressive tool disclosure (v0.55.0)
+
+Measured on the real 42-tool agent, everything the model receives before any of
+the turn's own content is **49,135 chars (~12,284 tokens)** — 19,552 of tool
+descriptions, 11,765 of parameter schemas, 4,204 of names and wrapping, plus the
+system prompt (5,175), the skills catalog (7,542) and the answer contract (897).
+It is re-sent on every step. On a realistic 8-tool turn (9 model requests) the
+prefix alone is 91,566 tokens, **57% of the input bill**; with the catalog, 69%
+of a turn is fixed, unchanging bytes.
+
+A turn calls 3–8 tools. So a CORE set stays exposed and the rest are grouped
+behind the SDK's per-tool `is_enabled`, which `Agent.get_all_tools` re-evaluates
+on every step; `load_tools(group)` opens one and its tools are callable on the
+next step. The default fails **open** — a tool in no group stays visible, so
+adding one later costs the saving, never the capability.
+
+The unlock is seeded so it rarely costs a round-trip: reading a skill opens the
+groups its method names (derived from the skill text, so it cannot drift), a
+session's previously-used groups start open (memory — the tools genuinely ran),
+and an attached file opens the file tools (a fact, not a guess). On the same
+8-tool turn: 201,838 input tokens before, 142,351 core-only (−29%), 161,312 with
+one unlock and its extra round-trip (−20%).
+
+Two more repetitions went with it: Pydantic's `title` keys (3,601 chars, 30% of
+the parameter schemas, restating the property name) and the skill method, which
+was re-read every turn because the replay keeps only the one-line trace of the
+read — the most recent one now rides in the context's stable half.
+
+`prompt_cache_retention` is finally requested, with the same
+ask-once-remember-a-refusal memory as `stream_options`. The prefix is exactly the
+byte-identical span caching exists for, and nothing had ever asked; whether it
+lands is visible through the `cached_input_tokens` v0.53.0 already records.
+
 ### The turn's own governor (v0.54.0)
 
 The three costs above are what a step is worth. What bounds how many steps a

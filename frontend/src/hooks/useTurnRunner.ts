@@ -70,10 +70,18 @@ const newTurnId = () =>
 // Merge a streamed `tool` event into the live list. A "started" record renders
 // as an in-progress row; the completed record for the same call resolves it in
 // place instead of appending a duplicate.
-const mergeTool = (list: ToolActivity[], rec: ToolActivity): ToolActivity[] => {
+export const mergeTool = (list: ToolActivity[], rec: ToolActivity): ToolActivity[] => {
   if (rec.status === "started") return [...list, rec];
-  const i = list.findIndex(
-    (a) => a.status === "started" && a.tool === rec.tool && (!a.target || !rec.target || a.target === rec.target),
+  // Resolve by the call's own id when it has one (v0.55.0). Matching on
+  // tool+target was ambiguous the moment v0.54.0 enabled parallel calls: two
+  // concurrent `get_bucket_config_detail` calls on the same bucket are identical
+  // under that key, so a completed record could resolve the wrong started row
+  // and both would be mislabelled. The tool+target path stays as the fallback
+  // for records replayed from pre-v0.55.0 history, which carry no id.
+  const byId = rec.id ? list.findIndex((a) => a.status === "started" && a.id === rec.id) : -1;
+  const i = byId >= 0 ? byId : list.findIndex(
+    (a) => a.status === "started" && !a.id && a.tool === rec.tool
+      && (!a.target || !rec.target || a.target === rec.target),
   );
   if (i >= 0) {
     const next = list.slice();

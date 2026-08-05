@@ -82,6 +82,84 @@ describe("the live trace", () => {
   });
 });
 
+/**
+ * v0.55.0 — a call's identity, its real outcome, and its measured cost.
+ *
+ * The sidecar had computed all three for a long time and sent none of them: the
+ * exact success/failure verdict and the measured duration went to `tool_calls`
+ * and stopped there, and the thread had no id to key a row by at all.
+ */
+describe("what a row says about the call", () => {
+  it("marks a failure the sidecar reported, whatever the error text is", () => {
+    wrap(createElement(LiveTrace, {
+      items: [call({ result: "AccessDenied · req 8A9F2C1B", ok: false })],
+    }));
+    // The old regex (/^(error|failed)\b/) matched none of this product's real
+    // failure shapes, so AccessDenied / NoSuchBucket / SignatureDoesNotMatch
+    // all rendered as successes.
+    expect(screen.getByTestId("trace-failed")).toBeTruthy();
+  });
+
+  it("does not invent a failure for a successful call", () => {
+    wrap(createElement(LiveTrace, { items: [call({ result: "1000 keys", ok: true })] }));
+    expect(screen.queryByTestId("trace-failed")).toBeNull();
+  });
+
+  it("still reads pre-v0.55.0 history, which carries no verdict", () => {
+    wrap(createElement(LiveTrace, { items: [call({ result: "error: boom" })] }));
+    expect(screen.getByTestId("trace-failed")).toBeTruthy();
+  });
+
+  it("shows how long the call actually took", () => {
+    wrap(createElement(LiveTrace, { items: [call({ duration_ms: 4200 })] }));
+    expect(screen.getByTestId("trace-duration").textContent).toBe("4.2s");
+  });
+
+  it("stays silent about a duration too small to act on", () => {
+    wrap(createElement(LiveTrace, { items: [call({ duration_ms: 12 })] }));
+    // Sub-100ms is jitter; printing it would imply a precision we don't have.
+    expect(screen.queryByTestId("trace-duration")).toBeNull();
+  });
+
+  it("says nothing when the duration was never measured", () => {
+    wrap(createElement(LiveTrace, { items: [call({ duration_ms: null })] }));
+    expect(screen.queryByTestId("trace-duration")).toBeNull();
+  });
+});
+
+describe("a deep turn", () => {
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) => call({ tool: `probe_${i}`, id: `c${i}` }));
+
+  it("folds the head so the answer is not pushed off screen", () => {
+    wrap(createElement(LiveTrace, { items: many(30) }));
+    expect(screen.queryByText("probe_0")).toBeNull();
+    expect(screen.getByText("probe_29")).toBeTruthy();
+    expect(screen.getByTestId("trace-fold").textContent).toContain("24");
+  });
+
+  it("never folds a failure away", () => {
+    const items = many(30);
+    items[1] = call({ tool: "head_bucket", id: "boom", result: "NoSuchBucket", ok: false });
+    wrap(createElement(LiveTrace, { items }));
+    // The one row a reader most needs is the one that went wrong.
+    expect(screen.getByText("head_bucket")).toBeTruthy();
+  });
+
+  it("shows everything once asked", () => {
+    wrap(createElement(LiveTrace, { items: many(30) }));
+    fireEvent.click(screen.getByTestId("trace-fold"));
+    expect(screen.getByText("probe_0")).toBeTruthy();
+    expect(screen.queryByTestId("trace-fold")).toBeNull();
+  });
+
+  it("leaves a short turn alone", () => {
+    wrap(createElement(LiveTrace, { items: many(5) }));
+    expect(screen.queryByTestId("trace-fold")).toBeNull();
+    expect(screen.getByText("probe_0")).toBeTruthy();
+  });
+});
+
 describe("argument formatting", () => {
   it("reads like an operator writes it", () => {
     expect(argLabel("prefix", "logs/2026/")).toBe("logs/2026/");

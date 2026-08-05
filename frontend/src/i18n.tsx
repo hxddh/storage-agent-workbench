@@ -438,6 +438,9 @@ const en: Dict = {
     "{n} input tokens ({pct}%) were served from the endpoint's prompt cache — cached input is typically much cheaper.",
   "metrics.reasoningHint": "{n} of the output tokens were reasoning, which is billed but never shown as text.",
 
+  // deep-turn trace fold (v0.55.0)
+  "trace.showEarlier": "show {n} earlier steps",
+
   // per-turn budget + in-turn dedupe (v0.54.0)
   "metrics.ofBudget": "of budget",
   "metrics.budgetHint":
@@ -852,6 +855,9 @@ const zh: Dict = {
 
   "metrics.cachedHint": "其中 {n}（{pct}%）输入 token 命中了端点的 prompt 缓存——缓存输入通常便宜得多。",
   "metrics.reasoningHint": "输出中有 {n} 个 token 用于推理：计费，但从不作为正文显示。",
+
+  // deep-turn trace fold (v0.55.0)
+  "trace.showEarlier": "展开前面 {n} 步",
 
   // per-turn budget + in-turn dedupe (v0.54.0)
   "metrics.ofBudget": "预算",

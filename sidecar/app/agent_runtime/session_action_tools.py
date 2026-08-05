@@ -23,6 +23,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import uuid
+
 from typing import Any, Callable
 
 from . import turn_guard
@@ -180,16 +182,27 @@ def build(
     def bucket_ok(p, bucket: str) -> bool:
         return (not p.allowed_buckets) or (bucket in p.allowed_buckets)
 
+    # One id per call, minted by start() and consumed by the matching note()
+    # (v0.55.0). Per THREAD: the SDK dispatches a sync tool with
+    # asyncio.to_thread, so v0.54.0's parallel calls really do run at once, and
+    # matching a finished record to its started row by (tool, target) alone is
+    # ambiguous the moment two calls share both.
+    _ids: dict[int, str] = {}
+
     def start(tool: str, target: str) -> None:
         # Emit a START marker so the live stream can show "running <tool>…"
         # while the (slow) inline run executes. Only "completed" records persist.
+        call_id = uuid.uuid4().hex
+        _ids[threading.get_ident()] = call_id
         if activity is not None:
-            activity.append({"tool": tool, "target": target[:80], "status": "started"})
+            activity.append({"id": call_id, "tool": tool, "target": target[:80],
+                             "status": "started"})
 
-    def note(tool: str, target: str, result: str) -> None:
+    def note(tool: str, target: str, result: str, ok: bool = True) -> None:
         if activity is not None:
-            activity.append({"tool": tool, "target": target[:80], "result": result[:80],
-                             "status": "completed"})
+            activity.append({"id": _ids.pop(threading.get_ident(), uuid.uuid4().hex),
+                             "tool": tool, "target": target[:80], "result": result[:80],
+                             "ok": ok, "status": "completed"})
 
     # NOTE: connectivity/credential/addressing diagnosis is NOT a tool here — the
     # agent does that adaptively with its own read-only session_tools probes

@@ -152,6 +152,119 @@ _BUDGET_EXEMPT_TOOLS = {
     "note_fact", "record_finding", "note_open_question",
     "update_memory_item", "resolve_memory_item",
 }
+
+# --- progressive tool disclosure (v0.55.0) -----------------------------------
+# Measured on the real 42-tool agent: the tool block is 35,521 chars (~8,880
+# tokens) and it is re-sent on EVERY step. On a realistic 8-tool turn (9 model
+# requests) the fixed prefix — system prompt plus tool schemas — is 91,566
+# tokens, **57% of the turn's entire input bill**. v0.53.0 and v0.54.0 shrank the
+# context and the tool outputs; together those are 32%. This is the other half.
+#
+# A typical turn calls 3-8 tools. The rest are paid for on every step and never
+# used. So: CORE is always exposed, and everything else is grouped and gated
+# behind the SDK's per-tool ``is_enabled`` — which ``Agent.get_all_tools``
+# re-evaluates on every step, so a group unlocked by the ``load_tools`` tool is
+# visible on the very next one. Nothing is ever permanently hidden; the agent
+# can always ask.
+#
+# Measured cost of the gate, including the extra round-trip an unlock costs:
+#   3 calls: -20% (unlock) / -40% (core only)
+#   8 calls: -21% (unlock) / -31% (core only)
+#  20 calls: -15% (unlock) / -20% (core only)
+_CORE_TOOLS = {
+    # Orientation and the two probes every investigation starts from.
+    "list_providers", "list_buckets", "test_credentials", "head_bucket",
+    "get_bucket_location", "list_objects", "head_object",
+    # Progressive disclosure of METHOD, and the group unlock itself.
+    "read_skill", "load_tools",
+    # Working memory: recording is how the agent synthesizes, and the payloads
+    # are a few bytes — gating them would only cost a round-trip.
+    "note_fact", "record_finding", "note_open_question",
+    "update_memory_item", "resolve_memory_item",
+}
+
+_TOOL_GROUPS: dict[str, tuple[str, frozenset[str]]] = {
+    "object_forensics": (
+        "one object's ACL / tags / lock / checksums / a bounded preview / range "
+        "+ conditional GET — 'why is THIS key wrong?'",
+        frozenset({"get_object_acl", "get_object_tagging", "get_object_lock_status",
+                   "get_object_attributes", "preview_object", "test_range_get",
+                   "test_conditional_get"})),
+    "endpoint_probes": (
+        "live endpoint behaviour — latency percentiles, TLS certificate, "
+        "path-style vs virtual-host, a pasted presigned URL",
+        frozenset({"measure_request_latency", "inspect_endpoint_tls",
+                   "test_addressing_style", "diagnose_presigned_url"})),
+    "storage_pileup": (
+        "what is silently accumulating — object versions, delete markers, "
+        "incomplete multipart uploads and their parts",
+        frozenset({"list_object_versions", "list_multipart_uploads",
+                   "list_upload_parts"})),
+    "bucket_config": (
+        "bucket configuration and the four review lenses (security, lifecycle, "
+        "observability, cost) plus the performance profile",
+        frozenset({"get_bucket_config_summary", "get_bucket_config_detail",
+                   "review_bucket_security", "review_bucket_lifecycle",
+                   "review_bucket_observability", "review_bucket_cost_optimization",
+                   "review_bucket_performance_profile", "review_bucket_config"})),
+    "uploaded_files": (
+        "a file the user attached — list it, analyze it, aggregate it",
+        frozenset({"list_uploaded_files", "analyze_uploaded_file",
+                   "aggregate_uploaded_file"})),
+    "account_wide": (
+        "the whole account — survey it, query the persisted profile, diff against "
+        "the last survey, read a backgrounded run's result",
+        frozenset({"survey_account", "query_account_profile",
+                   "compare_to_last_survey", "read_run_result"})),
+}
+
+# tool name -> the group that gates it (empty for CORE).
+_GROUP_OF_TOOL: dict[str, str] = {
+    name: group for group, (_desc, names) in _TOOL_GROUPS.items() for name in names
+}
+
+
+def seed_unlocked_groups(conn: Any, session_id: str | None,
+                         has_attachments: bool = False) -> set[str]:
+    """Which gated groups this turn starts with already open.
+
+    Two seeds, both FACTS about the session rather than a guess at the question:
+
+    - **What this session already used.** A bucket-configuration investigation
+      asks a second and a third question about bucket configuration. Re-charging
+      the unlock round-trip every turn would spend more than the gate saves, so
+      the groups whose tools appear in this session's persisted ``tool_calls``
+      start open. This is memory, not planning — the tools genuinely ran.
+    - **An attached file.** The user putting a file in the composer is not a
+      prediction about intent; the file is there, and the whole point of
+      attaching it is that it gets analyzed.
+
+    Everything else starts closed and the agent opens it with ``load_tools``.
+    Best-effort: a bookkeeping failure must never cost the agent a capability, so
+    any error falls back to the empty set (the agent can still unlock)."""
+    seeded: set[str] = {"uploaded_files"} if has_attachments else set()
+    if conn is None or not session_id:
+        return seeded
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT tool_name FROM tool_calls WHERE session_id = ?",
+            (session_id,)).fetchall()
+    except Exception:  # noqa: BLE001
+        return seeded
+    for r in rows:
+        group = _GROUP_OF_TOOL.get(r[0])
+        if group:
+            seeded.add(group)
+    return seeded
+
+
+def tool_group_catalog() -> str:
+    """The one-line-per-group menu the model needs to know what it can unlock.
+
+    ~600 chars against the ~27,600 of gated schemas it replaces. Kept in the
+    instructions — the most stable, most cacheable part of the prompt."""
+    lines = [f"- {g}: {desc}" for g, (desc, _names) in _TOOL_GROUPS.items()]
+    return "\n".join(lines)
 # SEC4: mechanical untrusted-data envelope. The prompt has always TAUGHT that
 # tool-result content (object keys, previewed bodies, log lines, config rules)
 # is third-party data, not instructions — but the boundary was invisible in the
@@ -234,6 +347,12 @@ INSTRUCTIONS = (
     "those provider_id values directly), any attached_files the user uploaded, "
     "and a CATALOG of StorageOps expert skills — when one fits the problem, "
     "load its full method with read_skill(name) and apply it.\n"
+    "Your visible tools are the CORE set — orientation, the two probes every "
+    "investigation starts from, skills and memory. Specialist tools live in "
+    "groups you unlock with load_tools(group) when the question needs them; "
+    "they become callable on your very next step. Unlock only what you will "
+    "actually use. Groups:\n"
+    + tool_group_catalog() + "\n"
     "Choose and chain tools by their descriptions. If a survey/review returns "
     "status 'running' with a run_id, it continues in the background: don't "
     "re-run it — read it later with read_run_result(run_id).\n"
@@ -397,7 +516,57 @@ def _dedupe_replay_tools(messages: list[dict[str, Any]]) -> None:
 # added); `recent_messages` changes on EVERY turn. Sending the stable part first
 # means a provider's prompt-cache prefix survives from one turn to the next
 # instead of being invalidated at the first byte by the newest message.
-_STABLE_CONTEXT_KEYS = ("session", "summary", "agent_memory")
+_STABLE_CONTEXT_KEYS = ("session", "summary", "agent_memory", "active_skill")
+
+# How many already-loaded skill methods ride along in the context. One: an
+# investigation follows a method, and carrying a second doubles the cost to cover
+# a case the agent can still reach with read_skill.
+_ACTIVE_SKILL_CAP = 1
+
+
+def active_skill_block(conn: Any, session_id: str | None) -> dict[str, Any] | None:
+    """The skill method this session is working from, carried across turns.
+
+    ``read_skill`` returns a ~3,300-char method body. That body lives in the
+    turn's conversation and is gone by the next turn — the replay keeps only the
+    one-line ``read_skill · storageops-lifecycle-cost → loaded`` trace. So a
+    multi-turn investigation on one topic re-read the same method every single
+    turn: a whole round-trip (the full prefix again) to fetch text the agent had
+    already been given, and then the body carried through the rest of that turn
+    anyway.
+
+    Carrying it here is strictly cheaper AND better placed: it sits in the
+    STABLE half of the context, which v0.54.0 ordered to be the part a provider's
+    prompt cache can actually serve, whereas a tool result always lands after the
+    volatile half and is never cached.
+
+    Only the most recently loaded skill, and only one — the agent can still
+    ``read_skill`` anything else. Best-effort: any bookkeeping failure returns
+    None and the agent simply re-reads, exactly as before."""
+    if conn is None or not session_id:
+        return None
+    try:
+        row = conn.execute(
+            "SELECT input_json_sanitized FROM tool_calls "
+            "WHERE session_id = ? AND tool_name = 'read_skill' "
+            "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+            (session_id, _ACTIVE_SKILL_CAP)).fetchone()
+    except Exception:  # noqa: BLE001
+        return None
+    if not row:
+        return None
+    try:
+        name = (json.loads(row[0]) or {}).get("name")
+    except Exception:  # noqa: BLE001
+        return None
+    if not name:
+        return None
+    body = skill_context.read_skill_text(str(name))
+    if not body:
+        return None
+    return {"name": str(name), "method": body,
+            "note": "You loaded this skill earlier in this session — it is "
+                    "already here, do not read_skill it again."}
 
 
 def split_context_for_cache(context: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -417,11 +586,23 @@ def _elastic_replay_caps(model: str | None, explicit_window: int | None) -> tupl
     """(message count, per-message chars) for thread replay, scaled to the model's
     context window and floored at the historical constants (bounded above). Keeps a
     small-window model unchanged while letting a large-window model retain more of
-    the thread — the same de-ossification the tool-output budget uses."""
+    the thread — the same de-ossification the tool-output budget uses.
+
+    The scaling is applied to the two dimensions in SERIES, not in parallel
+    (v0.55.0). Multiplying both by the same factor made the replay grow with the
+    SQUARE of the window: a 1M-window model got 96 messages x 12,000 chars =
+    1,152,000 chars — ~288,000 tokens, re-sent on every step, for a window only
+    7.8x larger than the 96,000-char baseline. The budget is now a single area:
+    ``factor`` times the baseline product, spent on message COUNT first (the
+    thread's reach across turns is what a big window is actually for) and on
+    per-message length with whatever is left. Both ceilings still apply, and a
+    128k model is bit-for-bit unchanged."""
     window = model_budget.context_window(model, explicit_window)
     factor = max(1, window // 128_000)
     count = min(_MAX_MESSAGES_CEIL, _MAX_MESSAGES * factor)
-    chars = min(_MAX_REPLAY_MSG_CEIL, _MAX_REPLAY_MSG * factor)
+    # What the count could not spend, length may — never more than the factor.
+    spent = count / _MAX_MESSAGES
+    chars = min(_MAX_REPLAY_MSG_CEIL, int(_MAX_REPLAY_MSG * max(1.0, factor / spent)))
     return count, chars
 
 
@@ -432,6 +613,7 @@ def build_session_context(
     agent_memory: list[dict[str, Any]] | None = None,
     model: str | None = None,
     explicit_window: int | None = None,
+    active_skill: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Bounded, redacted context — the ONLY thing the model sees."""
     max_messages, max_replay_msg = _elastic_replay_caps(model, explicit_window)
@@ -474,6 +656,10 @@ def build_session_context(
         # record_finding / note_open_question). Reuse them; don't re-derive.
         "agent_memory": _build_agent_memory_block(
             agent_memory, cap=_elastic_memory_cap(model, explicit_window)),
+        # The skill method this session is working from, carried across turns so
+        # it is not re-read every turn (v0.55.0). In the STABLE half, so a caching
+        # endpoint serves it instead of re-billing it.
+        **({"active_skill": active_skill} if active_skill else {}),
         # Prior assistant turns carry a `tools_run` trace of the read-only probes
         # they already ran (bounded) — so this turn sees what was checked and
         # re-fetches only what it needs fuller detail on, instead of re-probing.
@@ -513,6 +699,16 @@ _NO_USAGE_ENDPOINTS: set[str] = set()
 # so paying that everywhere to accommodate the providers that break is the wrong
 # default; paying it only where it is actually needed is the right one.
 _NO_PARALLEL_ENDPOINTS: set[str] = set()
+
+# Endpoints that rejected `prompt_cache_retention` (v0.55.0). Same shape as the
+# two capability memories above: ask once, remember a refusal for the process,
+# never let a cost optimization cost a turn.
+_NO_CACHE_RETENTION_ENDPOINTS: set[str] = set()
+# What we ask for when the endpoint accepts it. "24h" is OpenAI's extended
+# retention; the default (5-10 minutes) expires between a user's questions,
+# which is exactly the gap that matters here — the fixed prefix is identical
+# across the turns of one investigation, not just across the steps of one turn.
+_PROMPT_CACHE_RETENTION = "24h"
 
 
 def _endpoint_key(creds: dict[str, Any]) -> str:
@@ -627,6 +823,19 @@ def _is_stream_options_rejection(exc: BaseException) -> bool:
     )
 
 
+def _is_cache_retention_rejection(exc: BaseException) -> bool:
+    """Did the endpoint refuse `prompt_cache_retention` specifically?
+
+    Same narrowness as the usage detector, for the same reason: a cost
+    optimization must never be able to swallow the blame for a real error. Only
+    a parameter-shaped complaint that NAMES the parameter counts."""
+    text = str(exc).lower()
+    return "prompt_cache_retention" in text and (
+        "unsupport" in text or "unknown" in text or "invalid" in text
+        or "not allowed" in text or "unrecognized" in text or "extra" in text
+    )
+
+
 def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str,
                 client_registry: list[Any] | None = None) -> Any:
     """Build the session Agent via the shared per-run builder (no SDK globals)."""
@@ -640,7 +849,10 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str,
                            creds.get("max_output_tokens")),
                        parallel_tool_calls=_endpoint_key(creds) not in _NO_PARALLEL_ENDPOINTS,
                        client_registry=client_registry,
-                       include_usage=_endpoint_key(creds) not in _NO_USAGE_ENDPOINTS)
+                       include_usage=_endpoint_key(creds) not in _NO_USAGE_ENDPOINTS,
+                       prompt_cache_retention=(
+                           None if _endpoint_key(creds) in _NO_CACHE_RETENTION_ENDPOINTS
+                           else _PROMPT_CACHE_RETENTION))
 
 
 # --- graceful step-budget finalize -----------------------------------------
@@ -783,11 +995,13 @@ def _finalize_agent_and_prompt(creds: dict[str, Any], prompt: str,
 def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, Any]] | None,
                  session_id: str | None, turn_id: str | None = None,
                  cancel_event: Any = None, model: str | None = None,
-                 explicit_window: int | None = None) -> list[Any]:
+                 explicit_window: int | None = None,
+                 unlocked: set[str] | None = None) -> list[Any]:
     """The agent's full read-only toolset (no autonomy toggle — always available)."""
     if conn is None:
         return []
-    tools = session_tools.build(conn, function_tool, activity, session_id=session_id)
+    tools = session_tools.build(conn, function_tool, activity, session_id=session_id,
+                                unlocked=unlocked)
     tools += session_action_tools.build(conn, function_tool, activity, session_id, turn_id,
                                         cancel_event=cancel_event, model=model,
                                         explicit_window=explicit_window)
@@ -799,6 +1013,42 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
     return tools
 
 
+def _build_load_tools(function_tool: Callable, unlocked: set[str],
+                      activity: list[dict[str, Any]] | None) -> Any:
+    """The one tool that opens a gated group. Always exposed, always cheap.
+
+    It mutates the very set every gate closes over, and the SDK re-reads
+    ``is_enabled`` on the next step — so the group is usable immediately, in the
+    same turn, with no agent rebuild.
+
+    An unknown group name is answered with the valid list rather than an error:
+    the agent asked a reasonable question and should be able to correct itself in
+    one step instead of burning the turn on a failure it cannot parse."""
+
+    @function_tool
+    def load_tools(group: str) -> str:
+        """Unlock one GROUP of specialist read-only tools for this turn, when the question needs it. The group's tools become callable on your very next step. Groups (see the catalog in your instructions): object_forensics, endpoint_probes, storage_pileup, bucket_config, uploaded_files, account_wide. Unlock only what the question actually needs — an unused group costs tokens on every later step. Args: group."""
+        name = (group or "").strip()
+        if name not in _TOOL_GROUPS:
+            return json.dumps({
+                "error": "Unknown tool group.",
+                "valid_groups": sorted(_TOOL_GROUPS),
+            })
+        already = name in unlocked
+        unlocked.add(name)
+        if activity is not None:
+            activity.append({"tool": "load_tools", "target": name,
+                             "result": "already available" if already else "unlocked",
+                             "args": {"group": name}, "ok": True, "status": "completed"})
+        return json.dumps({
+            "unlocked_group": name,
+            "tools_now_available": sorted(_TOOL_GROUPS[name][1]),
+            "note": "These are callable from your next step onward.",
+        })
+
+    return load_tools
+
+
 def _neutralize_envelope_markers(text: str) -> str:
     """Defang any literal envelope marker inside a tool payload.
 
@@ -808,6 +1058,100 @@ def _neutralize_envelope_markers(text: str) -> str:
         if m in text:
             text = text.replace(m, m.replace("<<", "< <", 1))
     return text
+
+
+def _strip_schema_titles(tools: list[Any]) -> int:
+    """Drop Pydantic's ``title`` keys from every tool's parameter schema.
+
+    The SDK derives each schema from the function signature, and Pydantic stamps
+    a ``title`` on every property plus the schema itself — ``"title": "Provider
+    Id"`` sitting next to ``"provider_id"``. It restates the property name in
+    title case and tells the model nothing the key does not already say.
+
+    Measured across the 42 tools: 3,559 of 11,765 parameter-schema chars, **30%**
+    — re-sent on every step of every turn. Titles are not part of the strict
+    function-calling contract (``additionalProperties``/``required`` are, and
+    both are left alone), so this is a pure subtraction.
+
+    Returns the chars removed, so the saving is a measured number rather than a
+    claim. Mutates in place; a frozen or foreign tool object is skipped.
+
+    The walk is SCHEMA-AWARE, not a blind recursive key delete. ``title`` is a
+    JSON-Schema keyword in one position and an ordinary property NAME in another
+    — ``record_finding(title, severity)`` has a parameter called exactly that.
+    Deleting keys named ``title`` everywhere removed that parameter while
+    ``required`` still demanded it, which would have made the tool uncallable.
+    So only a schema node's OWN ``title`` goes, and recursion descends solely
+    through the keywords whose values are themselves schemas."""
+    removed = 0
+    # Keywords whose value is a schema, or a container of schemas.
+    _SCHEMA_VALUES = ("items", "additionalProperties", "not", "contains",
+                      "if", "then", "else")
+    _SCHEMA_MAPS = ("properties", "$defs", "definitions", "patternProperties")
+    _SCHEMA_LISTS = ("anyOf", "oneOf", "allOf", "prefixItems")
+
+    def _strip(node: Any) -> Any:
+        if not isinstance(node, dict):
+            return node
+        out = {k: v for k, v in node.items() if k != "title"}
+        for key in _SCHEMA_MAPS:
+            # Property NAMES are data, never keywords — only their values are
+            # schemas, so this is where the `title` parameter survives.
+            if isinstance(out.get(key), dict):
+                out[key] = {name: _strip(sub) for name, sub in out[key].items()}
+        for key in _SCHEMA_LISTS:
+            if isinstance(out.get(key), list):
+                out[key] = [_strip(sub) for sub in out[key]]
+        for key in _SCHEMA_VALUES:
+            if isinstance(out.get(key), dict):
+                out[key] = _strip(out[key])
+        return out
+
+    for t in tools:
+        schema = getattr(t, "params_json_schema", None)
+        if not isinstance(schema, dict):
+            continue
+        lean = _strip(schema)
+        try:
+            t.params_json_schema = lean
+        except Exception:  # noqa: BLE001 — frozen/foreign tool object: skip
+            continue
+        removed += len(json.dumps(schema, separators=(",", ":"))) - \
+            len(json.dumps(lean, separators=(",", ":")))
+    return removed
+
+
+def _install_tool_gating(tools: list[Any], unlocked: set[str]) -> set[str]:
+    """Expose CORE always; gate every other group behind ``unlocked``.
+
+    ``Agent.get_all_tools`` re-evaluates each tool's ``is_enabled`` on EVERY step
+    of the loop, so a group the agent unlocks mid-turn is visible on the very
+    next request — no agent rebuild, no restart, nothing permanently hidden.
+
+    A tool whose name is in no group is treated as CORE. That default matters:
+    a tool added later without a group entry stays visible and merely misses the
+    saving, instead of silently disappearing from the agent's repertoire.
+
+    Returns the same ``unlocked`` set the caller passes in — the tools close over
+    it, so ``load_tools`` mutating it is what opens the gate."""
+    for t in tools:
+        name = getattr(t, "name", "")
+        group = _GROUP_OF_TOOL.get(name)
+        if group is None or name in _CORE_TOOLS:
+            continue
+
+        def _gate(_group: str):
+            # Bound per tool, not read from the loop variable inside the closure
+            # (the v0.54.0 lesson): a late read gives every gate the last group.
+            def enabled(_ctx: Any = None, _agent: Any = None) -> bool:
+                return _group in unlocked
+            return enabled
+
+        try:
+            t.is_enabled = _gate(group)
+        except Exception:  # noqa: BLE001 — frozen/foreign tool object: skip
+            pass
+    return unlocked
 
 
 def _install_untrusted_envelope(tools: list[Any]) -> None:
@@ -1003,7 +1347,8 @@ def _build_prompt(
         except Exception:  # noqa: BLE001
             agent_memory = []
     context = build_session_context(session, summary, recent_messages, agent_memory,
-                                     model=model, explicit_window=explicit_window)
+                                     model=model, explicit_window=explicit_window,
+                                     active_skill=active_skill_block(conn, session.get("id")))
     skill_names = skill_context.skill_names()
 
     # Prompt order is CACHE order, most stable first: skill catalog (identical in
@@ -1158,10 +1503,22 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     # would leak its HTTP pool, since stream_events_for's close never runs).
     if clients is None:
         clients = []
+    unlocked = seed_unlocked_groups(spec.get("conn"), spec.get("session_id"),
+                                    bool(spec.get("attachments")))
     tools = _build_tools(spec.get("conn"), function_tool, activity,
                          spec.get("session_id"), spec.get("turn_id"),
                          spec.get("cancel_event"), model=creds.get("model"),
-                         explicit_window=creds.get("context_window"))
+                         explicit_window=creds.get("context_window"),
+                         unlocked=unlocked)
+    # Progressive tool disclosure (v0.55.0). The gate is installed BEFORE the
+    # wrappers so `load_tools` is itself wrapped like any other tool; `unlocked`
+    # is seeded from what this session has actually needed before (and from the
+    # plain fact that a file is attached), so a continuing investigation does not
+    # re-pay the unlock round-trip every turn.
+    tools.append(_build_load_tools(function_tool, unlocked, activity))
+    _install_tool_gating(tools, unlocked)
+    _strip_schema_titles(tools)
+    spec["unlocked_groups"] = unlocked
     # Envelope first (inner), budget second (outer): the budget's runtime status
     # notes bypass the envelope, real payloads are wrapped, and the budget
     # counts the enveloped length it actually hands the model.
@@ -1292,7 +1649,10 @@ def answer(
     spec = {"context": context, "prompt": prompt, "instructions": INSTRUCTIONS,
             "creds": creds, "conn": conn, "activity": activity,
             "session_id": session.get("id"), "turn_id": turn_id,
-            "skill_names": skill_names, "cancel_event": cancel_event}
+            "skill_names": skill_names, "cancel_event": cancel_event,
+            # v0.55.0: an attached file is a FACT, not a guess at intent —
+            # it seeds the uploaded_files tool group open (seed_unlocked_groups).
+            "attachments": attachments}
     raw = SESSION_LOOP(spec)
     if isinstance(raw, dict):  # the real (streamed) loop returns the contract
         return raw
@@ -1331,7 +1691,9 @@ def build_stream(
     activity: list[dict[str, Any]] = []
     spec = {"prompt": prompt, "creds": creds, "conn": conn, "activity": activity,
             "session_id": session.get("id"), "turn_id": turn_id,
-            "cancel_event": cancel_event}
+            "cancel_event": cancel_event,
+            # v0.55.0: seeds the uploaded_files tool group (seed_unlocked_groups).
+            "attachments": attachments}
     result, finalize, _ = _start_streamed_run(spec, clients)
     return result, activity, skill_names, finalize, clients, spec.get("budget")
 
@@ -1569,9 +1931,19 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
                 key = getattr(result, "_sa_endpoint_key", None)
                 if key:
                     _NO_PARALLEL_ENDPOINTS.add(key)
+            # And for the prompt-cache ask (v0.55.0). A cache hint is the LEAST
+            # important thing in the request — an endpoint that rejects it drops
+            # it for the rest of the process and the turn recovers, exactly like
+            # the usage parameter above.
+            cache_rejected = _is_cache_retention_rejection(exc)
+            if cache_rejected:
+                key = getattr(result, "_sa_endpoint_key", None)
+                if key:
+                    _NO_CACHE_RETENTION_ENDPOINTS.add(key)
             recoverable = (_is_max_turns(exc) or cut_short or transient
                            or usage_rejected
-                           or sequence_broken)
+                           or sequence_broken
+                           or cache_rejected)
             if finalize is None or not recoverable:
                 raise
             while len(activity) > emitted_tools:

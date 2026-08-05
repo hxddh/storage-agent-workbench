@@ -175,6 +175,14 @@ the workbench's **own** governor, not provider measurements — they sit beside
 `usage`, never inside it, and every one of them is omitted rather than zeroed
 when there is nothing to report.
 
+Tool activity (v0.55.0): every record on the `tool` SSE event and on a persisted
+message's `tool_activity` carries `id` — the SAME id as its `tool_calls` row, so
+a thread row resolves to its real sanitized input/output instead of being matched
+by time window — plus `ok` (the sidecar's exact success verdict, not a guess at
+the result text) and `duration_ms` (measured since v0.45.0, sent since this
+release). Records replayed from older history carry none of the three; a client
+must treat them as absent rather than false/zero.
+
 Observability (v0.45.0): `/activity` and `/audit` are bounded — `limit` is capped
 at 500 (default 200) and every response carries `total` / `offset` / `limit` /
 `truncated`, so a partial timeline is never presented as a complete one. They

@@ -36,6 +36,7 @@ def build_agent(
     parallel_tool_calls: bool = False,
     client_registry: list[Any] | None = None,
     include_usage: bool = True,
+    prompt_cache_retention: str | None = None,
 ) -> Any:
     """Build an Agents-SDK Agent with a PER-RUN model client.
 
@@ -85,6 +86,21 @@ def build_agent(
         settings_kwargs["include_usage"] = True
     if max_tokens:
         settings_kwargs["max_tokens"] = max_tokens
+    # Ask the endpoint to KEEP the prompt-cache entry between turns (v0.55.0).
+    #
+    # Measured on the real 42-tool agent: the fixed prefix — system prompt plus
+    # tool schemas — is ~12,284 tokens and is re-sent on every step of every
+    # turn; on a realistic 8-tool turn it is 57% of the whole input bill. It is a
+    # byte-identical prefix, which is exactly what prompt caching exists for, and
+    # nothing in this app had ever asked for it. Whether it lands is now
+    # observable rather than assumed: v0.53.0 already records
+    # `cached_input_tokens` per turn, so the footer shows the real hit rate.
+    #
+    # Best-effort, like `include_usage`: an endpoint that rejects the unknown
+    # parameter is retried without it (`_NO_CACHE_RETENTION_ENDPOINTS` in
+    # session_agent), because provider compatibility outranks a cost optimization.
+    if prompt_cache_retention:
+        settings_kwargs["prompt_cache_retention"] = prompt_cache_retention
     return Agent(name=name, instructions=instructions, tools=tools or [], model=model,
                  model_settings=ModelSettings(**settings_kwargs))
 

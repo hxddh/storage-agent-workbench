@@ -4,7 +4,8 @@
  * error-triage path is triggered — both easy to regress and previously untested.
  */
 import { describe, it, expect } from "vitest";
-import { cleanError, looksLikeError } from "./useTurnRunner";
+import { cleanError, looksLikeError, mergeTool } from "./useTurnRunner";
+import type { ToolActivity } from "../types";
 import type { TFunc } from "../i18n";
 
 // A fake translator: returns the key so assertions can match on the key name
@@ -70,5 +71,57 @@ describe("looksLikeError", () => {
     expect(looksLikeError("I have 404 objects in this bucket")).toBe(false);
     expect(looksLikeError("how much does 500 GB cost?")).toBe(false);
     expect(looksLikeError("list the first 200 keys")).toBe(false);
+  });
+});
+
+/**
+ * v0.55.0 — resolving a live row to the call that finished.
+ *
+ * Until v0.54.0 the agent ran its tools strictly one at a time, so matching a
+ * completed record to its "started" row by (tool, target) was unambiguous by
+ * construction. Turning on parallel tool calls broke that premise: two
+ * concurrent `get_bucket_config_detail` calls on ONE bucket are identical under
+ * that key and differ only by `aspect`.
+ */
+describe("mergeTool", () => {
+  const started = (over: Partial<ToolActivity>): ToolActivity => ({
+    tool: "get_bucket_config_detail", target: "acme-logs", result: "",
+    status: "started", ...over,
+  });
+  const done = (over: Partial<ToolActivity>): ToolActivity => ({
+    tool: "get_bucket_config_detail", target: "acme-logs", result: "ok",
+    status: "completed", ...over,
+  });
+
+  it("resolves the row whose id matches, not merely the first lookalike", () => {
+    const list = [started({ id: "a", args: { aspect: "cors" } }),
+                  started({ id: "b", args: { aspect: "logging" } })];
+    const out = mergeTool(list, done({ id: "b", result: "2 rules" }));
+    // Matching by (tool, target) would have resolved "a" and left "b" spinning
+    // forever, with the cors row wearing the logging row's result.
+    expect(out[0].status).toBe("started");
+    expect(out[1].result).toBe("2 rules");
+    expect(out.length).toBe(2);
+  });
+
+  it("resolves both parallel calls correctly, in either arrival order", () => {
+    let list = [started({ id: "a" }), started({ id: "b" })];
+    list = mergeTool(list, done({ id: "b", result: "second" }));
+    list = mergeTool(list, done({ id: "a", result: "first" }));
+    expect(list.map((x) => x.result)).toEqual(["first", "second"]);
+    expect(list.every((x) => x.status === "completed")).toBe(true);
+  });
+
+  it("still resolves pre-v0.55.0 records, which carry no id", () => {
+    const list = [started({ tool: "head_bucket" })];
+    const out = mergeTool(list, done({ tool: "head_bucket", result: "200" }));
+    expect(out.length).toBe(1);
+    expect(out[0].result).toBe("200");
+  });
+
+  it("appends a completed record with no started row to resolve", () => {
+    const out = mergeTool([], done({ id: "x" }));
+    expect(out.length).toBe(1);
+    expect(out[0].status).toBe("completed");
   });
 });
