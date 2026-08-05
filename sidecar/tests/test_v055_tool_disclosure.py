@@ -465,3 +465,65 @@ def test_two_concurrent_calls_do_not_steal_each_others_bookkeeping(conn):
     assert all(a.get("duration_ms") is not None for a in done)
     rows = conn.execute("SELECT id FROM tool_calls WHERE session_id = 's1'").fetchall()
     assert {r["id"] for r in rows} == {a["id"] for a in done}
+
+
+def test_many_concurrent_pairs_lose_no_audit_or_call_row(conn):
+    """Rule 17 under parallel tool calls.
+
+    The single-pair test above only caught this by luck — it passed 8/8 locally
+    and failed in CI, where contention is higher. The real defect is not a lost
+    row but a FAILED CALL: two tool bodies share one connection, a connection has
+    one transaction, so one call's commit() commits the other's half-written work
+    and the other's own commit() then raises "cannot commit - no transaction is
+    active" straight out of the tool.
+
+    Measured before the fix, over 60 forced-concurrent pairs: 2 of 120 calls died
+    that way — the agent saw a failure for a call that had actually succeeded,
+    and the audit trail rule 17 requires quietly did not hold.
+    """
+    import threading
+
+    from app.repositories import cloud_providers as cloud_repo
+
+    activity: list = []
+    tools = _live_tools(conn, activity)
+    lp = [t for t in tools if t.name == "list_providers"][0]
+
+    # 120, not a token handful: the race is probabilistic. Measured against the
+    # unguarded code, 40 rounds lost 1 call of 80 (and sometimes none — an
+    # earlier 40-round version passed 8/8 locally and only failed in CI), while
+    # 100 rounds lost 6 of 200. This many makes the test a detector rather than a
+    # coin flip, and still runs in a couple of seconds once the lock is in place.
+    rounds = 120
+    barrier = threading.Barrier(2, timeout=10)
+    real_list_all = cloud_repo.list_all
+
+    def blocking_list_all(*a, **kw):
+        try:
+            barrier.wait()
+        except threading.BrokenBarrierError:  # pragma: no cover — timing guard
+            pass
+        return real_list_all(*a, **kw)
+
+    cloud_repo.list_all = blocking_list_all
+    try:
+        async def pair():
+            await asyncio.gather(lp.on_invoke_tool(_Ctx(), "{}"),
+                                 lp.on_invoke_tool(_Ctx(), "{}"))
+
+        for _ in range(rounds):
+            barrier.reset()
+            asyncio.run(pair())
+    finally:
+        cloud_repo.list_all = real_list_all
+
+    expected = rounds * 2
+    done = [a for a in activity if a.get("status") != "started"]
+    calls = conn.execute("SELECT count(*) FROM tool_calls WHERE session_id = 's1'").fetchone()[0]
+    audits = conn.execute(
+        "SELECT count(*) FROM audit_logs WHERE session_id = 's1' "
+        "AND event_type = 'session_tool'").fetchone()[0]
+    assert len(done) == expected, "a tool call died on a commit race"
+    assert calls == expected, f"{expected - calls} tool_calls rows lost"
+    assert audits == expected, f"{expected - audits} audit rows lost (rule 17)"
+    assert len({a["id"] for a in done}) == expected

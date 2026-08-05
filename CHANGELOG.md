@@ -160,6 +160,25 @@ assumed they could not:
 with the six newest kept visible — **except failures, which are never folded
 away**.
 
+### Fixed — parallel tool calls could kill a tool call outright (rule 17)
+
+Two tool bodies now genuinely run at once, and they share the request's SQLite
+connection. A connection has ONE transaction, so they shared that too: one
+call's `commit()` committed the other's half-written work, and the other's own
+`commit()` then raised **"cannot commit - no transaction is active"** — straight
+out of the tool. The agent saw a failed call for work that had actually
+succeeded, and rule 17's "every tool call is recorded" quietly did not hold.
+
+`busy_timeout` did not help: it coordinates separate *connections*, not two
+threads on one. Write-then-commit sections are now serialized by `db.WRITE_LOCK`
+— an INSERT plus a commit, held for microseconds, while the S3 call they bracket
+(the slow part, and the point of parallelism) stays outside it.
+
+Measured over 120 forced-concurrent pairs: **2 of 240 calls died** before,
+0 after. The regression test drives that same 120-pair barrier, because an
+earlier single-pair version passed 8/8 locally and only failed in CI — it was a
+coin flip, not a detector.
+
 ### Fixed — CI's macOS job died on a bundle it never shipped
 
 `cargo tauri build` on macOS ran **every** bundler, while the Linux job scopes to

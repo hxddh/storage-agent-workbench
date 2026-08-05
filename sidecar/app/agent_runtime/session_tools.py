@@ -26,7 +26,7 @@ import time
 import uuid
 from typing import Any, Callable
 
-from .. import audit
+from .. import audit, db
 from ..repositories import cloud_providers as cloud_repo
 from ..repositories import utcnow
 from ..s3 import config_tools as ct
@@ -254,18 +254,19 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         # "which step was slow" was unanswerable). Best-effort — a bookkeeping
         # failure must never break the tool the user actually asked for.
         try:
-            conn.execute(
-                "INSERT INTO tool_calls (id, run_id, session_id, tool_name, "
-                " input_json_sanitized, output_json_sanitized, status, duration_ms, created_at) "
-                "VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)",
-                # Same id as the live row: the thread can now open a call's real
-                # persisted input/output instead of guessing by time window.
-                (call_id, session_id, tool,
-                 json.dumps(redact({"target": target[:200], **(call_input or {})})),
-                 json.dumps(redact({"summary": summary})),
-                 "success" if ok else "error", duration_ms, utcnow()),
-            )
-            conn.commit()
+            with db.WRITE_LOCK:
+                conn.execute(
+                    "INSERT INTO tool_calls (id, run_id, session_id, tool_name, "
+                    " input_json_sanitized, output_json_sanitized, status, duration_ms, created_at) "
+                    "VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+                    # Same id as the live row: the thread can now open a call's real
+                    # persisted input/output instead of guessing by time window.
+                    (call_id, session_id, tool,
+                     json.dumps(redact({"target": target[:200], **(call_input or {})})),
+                     json.dumps(redact({"summary": summary})),
+                     "success" if ok else "error", duration_ms, utcnow()),
+                )
+                conn.commit()
         except Exception:  # noqa: BLE001 - observability must never break a turn
             pass
 
@@ -324,10 +325,14 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         # makes the connection hold the SQLite/WAL write lock across the next
         # slow S3 tool call, which can starve a concurrently-running inline run's
         # writes for >busy_timeout → "database is locked". Keep the write txn tiny.
-        audit.record(conn, "session_tool",
-                     {"tool": tool, **{k: str(v)[:200] for k, v in kw.items()}},
-                     run_id=None, session_id=session_id)
-        conn.commit()
+        # Under db.WRITE_LOCK: with parallel tool calls two bodies share this
+        # ONE connection, so an unguarded commit here can commit the other call's
+        # half-written work and then raise on its own commit (v0.55.0).
+        with db.WRITE_LOCK:
+            audit.record(conn, "session_tool",
+                         {"tool": tool, **{k: str(v)[:200] for k, v in kw.items()}},
+                         run_id=None, session_id=session_id)
+            conn.commit()
         # One id per call, minted here and carried to both the live row and the
         # persisted tool_calls row (v0.55.0). Matching a completed record to its
         # started row by (tool, target) broke the moment v0.54.0 turned on

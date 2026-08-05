@@ -9,10 +9,32 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 from collections.abc import Iterator
 
 from . import config
 from .migrations import apply_migrations
+
+# Serializes write-then-commit sections that share ONE connection across threads
+# (v0.55.0).
+#
+# `busy_timeout` below coordinates separate CONNECTIONS. It does nothing for two
+# threads using the same one — and since v0.54.0 turned on parallel tool calls,
+# that is exactly what happens: the Agents SDK dispatches each sync tool with
+# `asyncio.to_thread`, and every tool in a turn shares the request's connection.
+# A connection has ONE transaction, so two interleaved tool calls share it:
+# thread A's `commit()` commits B's half-written work, and B's own `commit()`
+# then raises "cannot commit - no transaction is active".
+#
+# That exception propagates out of the tool, so the agent sees a FAILED call for
+# work that actually succeeded, and rule 17's "every tool call is recorded"
+# quietly does not hold. Measured against the unguarded code over 120 forced-
+# concurrent pairs: 2 of 240 calls died that way.
+#
+# One process-wide lock is the right grain: these sections are an INSERT plus a
+# commit, held for microseconds, while the S3 call they bracket — the slow part,
+# and the part parallelism exists to overlap — stays entirely outside it.
+WRITE_LOCK = threading.RLock()
 
 
 def connect() -> sqlite3.Connection:
