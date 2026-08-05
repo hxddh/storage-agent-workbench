@@ -55,6 +55,17 @@
    * a fixed near-black would invert the depth cue on a white page. */
   --code-bg: #0a0a0c;
   --scrim: rgba(0, 0, 0, 0.6);
+
+  /* Syntax slots for the built-in highlighter (src/lib/highlight.ts). These are
+   * palette slots, not grammar categories, and every one is measured against
+   * --code-bg for AA body contrast in theme.tokens.test.ts. */
+  --syn-str: #7ec699;
+  --syn-num: #e0a878;
+  --syn-kw: #c39ce8;
+  --syn-com: #8b94a5;
+  --syn-name: #86b8ff;
+  --syn-tag: #6fc3d6;
+  --syn-punct: #9aa2b1;
 }
 
 :root[data-theme="light"] {
@@ -99,6 +110,16 @@
   --success-border: rgba(52, 211, 153, 0.6);
   --code-bg: #f6f7f9;
   --scrim: rgba(24, 24, 27, 0.42);
+
+  /* Darkened, not inverted: the same slot ordering, re-picked against a light
+   * code slab so hue meaning survives the theme switch. */
+  --syn-str: #0f7a4d;
+  --syn-num: #9a5b00;
+  --syn-kw: #7c3aed;
+  --syn-com: #5b6472;
+  --syn-name: #1d4ed8;
+  --syn-tag: #0e7490;
+  --syn-punct: #52586a;
 }
 
 html,

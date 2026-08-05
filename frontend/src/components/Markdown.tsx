@@ -1,12 +1,20 @@
 import { Fragment, memo, useMemo, useState, type ReactNode } from "react";
 import { openExternal, tauriInvoke } from "../config";
 import { useI18n } from "../i18n";
+import { highlight, TOK_CLASS } from "../lib/highlight";
+import { Chart, chartSpec } from "./Chart";
 
 /**
- * Dependency-free markdown renderer for agent text. Handles the subset the agent
- * emits: headings (h1–h4), paragraphs, fenced + inline code, **bold**, *italic*,
- * [links](url), bullet/numbered lists, blockquotes, horizontal rules, and pipe
- * tables. No raw HTML is ever injected (inline() only emits known elements).
+ * Dependency-free markdown renderer for agent text.
+ *
+ * Block level: headings (h1–h6), paragraphs, fenced + inline code, blockquotes,
+ * horizontal rules, pipe tables (with column alignment), and lists — ordered,
+ * unordered, task, and NESTED, including block content inside an item.
+ * Inline: **bold**, *italic*, `code`, ~~strike~~, [links](url) and bare URLs.
+ *
+ * No raw HTML is ever injected: `inline()` emits known elements only, and any
+ * `<tag>` in the source stays text. That is a security property, not an
+ * omission — agent text quotes S3 error bodies, which are XML.
  *
  * Memoized (component + parse): during a fast stream only the card whose text
  * actually changed re-parses; historical messages skip both parse and render.
@@ -15,19 +23,21 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
   const blocks = useMemo(() => parseBlocks(text || ""), [text]);
   return (
     <div className="space-y-3 text-[13.5px] leading-[1.7] text-gray-200">
+      <Blocks blocks={blocks} />
+    </div>
+  );
+});
+
+/** Block renderer, shared by the top level and by nested list content. */
+function Blocks({ blocks }: { blocks: Block[] }) {
+  return (
+    <>
       {blocks.map((b, i) => {
         switch (b.type) {
           case "code":
             return <CodeBlock key={i} lang={b.lang} content={b.content} />;
           case "heading": {
-            const cls =
-              b.level === 1
-                ? "mt-3 text-[16px]"
-                : b.level === 2
-                  ? "mt-3 text-[14.5px]"
-                  : b.level === 3
-                    ? "mt-2 text-[13.5px]"
-                    : "mt-2 text-[12.5px] uppercase tracking-wide text-gray-400";
+            const cls = HEADING_CLASS[b.level] ?? HEADING_CLASS[6];
             return (
               <div key={i} className={`font-semibold text-gray-100 first:mt-0 ${cls}`}>
                 {inline(b.text)}
@@ -35,7 +45,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
             );
           }
           case "table":
-            return <TableBlock key={i} headers={b.headers} rows={b.rows} />;
+            return <TableBlock key={i} headers={b.headers} aligns={b.aligns} rows={b.rows} />;
           case "hr":
             return <hr key={i} className="border-0 border-t border-edge" />;
           case "quote":
@@ -52,35 +62,83 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
               </blockquote>
             );
           case "list":
-            return (
-              <ul key={i} className={b.ordered ? "space-y-1.5" : "space-y-1"}>
-                {b.items.map((it, j) => (
-                  <li key={j} className="flex gap-2.5">
-                    <span
-                      className={`select-none ${
-                        b.ordered
-                          ? "min-w-[1.1rem] text-right font-medium text-gray-500"
-                          : "mt-[9px] h-[3px] w-[3px] shrink-0 rounded-full bg-gray-500"
-                      }`}
-                    >
-                      {b.ordered ? `${j + 1}.` : ""}
-                    </span>
-                    <span className="min-w-0 flex-1">{inline(it)}</span>
-                  </li>
-                ))}
-              </ul>
-            );
+            return <ListBlock key={i} block={b} />;
           default:
             return <p key={i}>{inline(b.content)}</p>;
         }
       })}
-    </div>
+    </>
   );
-});
+}
+
+/** h5/h6 exist so a deep answer does not print `##### text` at the reader. They
+ * share h4's treatment — below h4 the distinction is emphasis, not scale. */
+const HEADING_CLASS: Record<number, string> = {
+  1: "mt-3 text-[16px]",
+  2: "mt-3 text-[14.5px]",
+  3: "mt-2 text-[13.5px]",
+  4: "mt-2 text-[12.5px] uppercase tracking-wide text-gray-400",
+  5: "mt-2 text-[12px] uppercase tracking-wide text-gray-400",
+  6: "mt-2 text-[11.5px] uppercase tracking-wide text-gray-500",
+};
+
+function ListBlock({ block }: { block: ListBlockT }) {
+  const Tag = block.ordered ? "ol" : "ul";
+  return (
+    // A real <ol>/<ul>: screen readers announce "list, 4 items" and copying the
+    // text out keeps its structure. The visible marker is still drawn by hand so
+    // it can be a checkbox for a task item.
+    <Tag className={block.ordered ? "space-y-1.5" : "space-y-1"} start={block.ordered ? block.start : undefined}>
+      {block.items.map((it, j) => (
+        <li key={j} className="flex gap-2.5">
+          {it.task !== null ? (
+            <span
+              role="checkbox"
+              aria-checked={it.task}
+              aria-disabled
+              data-testid="task-marker"
+              className={`mt-[5px] flex h-[11px] w-[11px] shrink-0 items-center justify-center rounded-[3px] border ${
+                it.task ? "border-accent bg-accent/25 text-accent-soft" : "border-edge-strong"
+              }`}
+            >
+              {it.task && (
+                <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" aria-hidden>
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              )}
+            </span>
+          ) : (
+            <span
+              className={`select-none ${
+                block.ordered
+                  ? "min-w-[1.1rem] text-right font-medium text-gray-500"
+                  : "mt-[9px] h-[3px] w-[3px] shrink-0 rounded-full bg-gray-500"
+              }`}
+              aria-hidden
+            >
+              {block.ordered ? `${block.start + j}.` : ""}
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            {inline(it.text)}
+            {it.children.length > 0 && (
+              <div className="mt-1.5 space-y-2">
+                <Blocks blocks={it.children} />
+              </div>
+            )}
+          </div>
+        </li>
+      ))}
+    </Tag>
+  );
+}
 
 function CodeBlock({ lang, content }: { lang: string; content: string }) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  // Tokenizing is cheap but not free, and a streaming answer re-renders this
+  // card on every chunk.
+  const toks = useMemo(() => highlight(content, lang), [content, lang]);
   const copy = () => {
     // Hardened like ThreadCards.copyText: never an unhandled rejection, and a
     // temp-textarea fallback for webviews where the async Clipboard API is
@@ -126,58 +184,118 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
           {copied ? t("common.copied") : t("common.copy")}
         </button>
       </div>
-      <pre className="overflow-auto px-3.5 py-3 font-mono text-[12px] leading-relaxed text-gray-300">{content}</pre>
+      <pre
+        data-testid="code-block"
+        data-highlighted={toks ? "true" : "false"}
+        className="overflow-auto px-3.5 py-3 font-mono text-[12px] leading-relaxed text-gray-300"
+      >
+        {toks
+          ? toks.map((tok, i) =>
+              tok.c === "plain" ? (
+                <Fragment key={i}>{tok.text}</Fragment>
+              ) : (
+                <span key={i} className={TOK_CLASS[tok.c]}>
+                  {tok.text}
+                </span>
+              ),
+            )
+          : content}
+      </pre>
     </div>
   );
 }
 
-function TableBlock({ headers, rows }: { headers: string[]; rows: string[][] }) {
+const ALIGN_CLASS: Record<Align, string> = {
+  left: "text-left",
+  center: "text-center",
+  right: "text-right",
+};
+
+function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: Align[]; rows: string[][] }) {
+  const { t } = useI18n();
+  const spec = useMemo(() => chartSpec(headers, rows), [headers, rows]);
+  const [showChart, setShowChart] = useState(true);
   return (
-    <div className="overflow-auto rounded-lg border border-edge">
-      <table className="w-full border-collapse text-[12.5px]">
-        <thead>
-          <tr className="bg-elevated">
-            {headers.map((h, i) => (
-              <th
-                key={i}
-                className="border-b border-edge px-3.5 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-400"
-              >
-                {inline(h)}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, ri) => (
-            <tr key={ri} className="border-b border-edge/40 last:border-0 odd:bg-white/[0.015]">
-              {r.map((c, ci) => (
-                <td key={ci} className="px-3.5 py-2 align-top text-gray-300">
-                  {inline(c)}
-                </td>
+    <div className="overflow-hidden rounded-lg border border-edge">
+      {spec && showChart && <Chart spec={spec} />}
+      <div className="overflow-auto">
+        <table className="w-full border-collapse text-[12.5px]">
+          <thead>
+            <tr className="bg-elevated">
+              {headers.map((h, i) => (
+                <th
+                  key={i}
+                  // Alignment is information: a right-aligned numeric column is
+                  // how a reader compares magnitudes down a column at all.
+                  className={`border-b border-edge px-3.5 py-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400 ${
+                    ALIGN_CLASS[aligns[i] ?? "left"]
+                  }`}
+                >
+                  {inline(h)}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r, ri) => (
+              <tr key={ri} className="border-b border-edge/40 last:border-0 odd:bg-elevated/30">
+                {r.map((c, ci) => (
+                  <td
+                    key={ci}
+                    className={`px-3.5 py-2 align-top text-gray-300 ${ALIGN_CLASS[aligns[ci] ?? "left"]}`}
+                  >
+                    {inline(c)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {spec && (
+        <button
+          type="button"
+          onClick={() => setShowChart((v) => !v)}
+          data-testid="chart-toggle"
+          className="w-full border-t border-edge px-3.5 py-1 text-left text-[10.5px] text-gray-600 transition-colors hover:text-gray-400"
+        >
+          {showChart ? t("chart.hide") : t("chart.show")}
+        </button>
+      )}
     </div>
   );
 }
+
+type Align = "left" | "center" | "right";
+/** `task` is null for an ordinary item, true/false for `- [x]` / `- [ ]`. */
+type ListItem = { text: string; task: boolean | null; children: Block[] };
+type ListBlockT = { type: "list"; ordered: boolean; start: number; items: ListItem[] };
 
 type Block =
   | { type: "p"; content: string }
   | { type: "heading"; level: number; text: string }
   | { type: "code"; lang: string; content: string }
-  | { type: "list"; ordered: boolean; items: string[] }
+  | ListBlockT
   | { type: "quote"; lines: string[] }
   | { type: "hr" }
-  | { type: "table"; headers: string[]; rows: string[][] };
+  | { type: "table"; headers: string[]; aligns: Align[]; rows: string[][] };
 
 const cells = (line: string) =>
   line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
 
 const isHr = (line: string) => /^\s*([-*_])(\s*\1){2,}\s*$/.test(line);
 
-function parseBlocks(text: string): Block[] {
+/** `1.` / `1)` / `-` / `*` / `+`, with the leading indent captured — the indent
+ * is what decides nesting. */
+const ITEM_RE = /^(\s*)(?:([-*+])|(\d{1,9})[.)])\s+(.*)$/;
+const TASK_RE = /^\[([ xX])\]\s+/;
+
+const indentOf = (line: string) => line.length - line.trimStart().length;
+
+/** Nesting deeper than this is a runaway input, not a document. */
+const MAX_DEPTH = 5;
+
+function parseBlocks(text: string, depth = 0): Block[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const blocks: Block[] = [];
   let i = 0;
@@ -206,7 +324,7 @@ function parseBlocks(text: string): Block[] {
       i++;
       continue;
     }
-    const h = line.match(/^(#{1,4})\s+(.*)$/);
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
       flush();
       blocks.push({ type: "heading", level: h[1].length, text: h[2] });
@@ -228,32 +346,49 @@ function parseBlocks(text: string): Block[] {
     if (line.includes("|") && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|[\s:|-]+$/.test(lines[i + 1]) && lines[i + 1].includes("-")) {
       flush();
       const headers = cells(line);
+      const aligns = cells(lines[i + 1]).map(alignOf);
       i += 2;
       const rows: string[][] = [];
       while (i < lines.length && lines[i].includes("|") && lines[i].trim() !== "") {
         rows.push(cells(lines[i]));
         i++;
       }
-      blocks.push({ type: "table", headers, rows });
+      blocks.push({ type: "table", headers, aligns, rows });
       continue;
     }
-    const ordered = /^\s*\d+\.\s+/.test(line);
-    if (ordered || /^\s*[-*]\s+/.test(line)) {
+    if (ITEM_RE.test(line)) {
       flush();
-      const items: string[] = [];
-      const re = ordered ? /^\s*\d+\.\s+/ : /^\s*[-*]\s+/;
+      const region: string[] = [];
+      const base = indentOf(line);
       while (i < lines.length) {
-        if (re.test(lines[i])) {
-          items.push(lines[i].replace(re, ""));
+        const ln = lines[i];
+        if (ln.trim() === "") {
+          // A blank line only stays inside the list if the list resumes after
+          // it; otherwise it ends the list.
+          let j = i + 1;
+          while (j < lines.length && lines[j].trim() === "") j++;
+          const resumes =
+            j < lines.length && (indentOf(lines[j]) > base || (ITEM_RE.test(lines[j]) && indentOf(lines[j]) >= base));
+          if (!resumes) break;
+          region.push("");
           i++;
-        } else if (lines[i].trim() === "" && i + 1 < lines.length && re.test(lines[i + 1])) {
-          // tolerate a single blank line between loose list items
-          i++;
-        } else {
-          break;
+          continue;
         }
+        if (ITEM_RE.test(ln) && indentOf(ln) >= base) {
+          region.push(ln);
+          i++;
+          continue;
+        }
+        // An indented non-item line is this item's continuation: a wrapped
+        // sentence, a nested code fence, a sub-table.
+        if (indentOf(ln) > base) {
+          region.push(ln);
+          i++;
+          continue;
+        }
+        break;
       }
-      blocks.push({ type: "list", ordered, items });
+      blocks.push(buildList(region, base, depth));
       continue;
     }
     if (line.trim() === "") {
@@ -268,18 +403,79 @@ function parseBlocks(text: string): Block[] {
   return blocks;
 }
 
-// Inline spans: `code`, **bold**, *italic* / _italic_, and [text](url). Tokens
-// are matched left-to-right; only known elements are emitted (no raw HTML).
-const INLINE_RE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\n]+\*)|(_[^_\n]+_)|(\[[^\]]+\]\([^)]+\))/g;
+function alignOf(cell: string): Align {
+  const left = cell.startsWith(":");
+  const right = cell.endsWith(":");
+  if (left && right) return "center";
+  if (right) return "right";
+  return "left";
+}
+
+/**
+ * Turn a captured list region into items, recursing into everything indented
+ * beneath each marker. Sub-content is dedented and re-parsed as blocks, so a
+ * nested list, a fenced snippet and a wrapped paragraph inside an item all work
+ * through the same path.
+ */
+function buildList(region: string[], base: number, depth: number): ListBlockT {
+  const first = ITEM_RE.exec(region[0])!;
+  const ordered = first[3] !== undefined;
+  const start = ordered ? Math.max(parseInt(first[3], 10), 0) : 1;
+  const items: ListItem[] = [];
+  let text: string | null = null;
+  let sub: string[] = [];
+
+  const commit = () => {
+    if (text === null) return;
+    const tm = TASK_RE.exec(text);
+    items.push({
+      text: tm ? text.slice(tm[0].length) : text,
+      task: tm ? tm[1].toLowerCase() === "x" : null,
+      children: sub.length && depth < MAX_DEPTH ? parseBlocks(dedent(sub), depth + 1) : [],
+    });
+    text = null;
+    sub = [];
+  };
+
+  for (const ln of region) {
+    const m = ITEM_RE.exec(ln);
+    if (m && m[1].length <= base) {
+      commit();
+      text = m[4];
+    } else if (text !== null) {
+      sub.push(ln);
+    }
+  }
+  commit();
+  return { type: "list", ordered, start, items };
+}
+
+/** Strip the common leading indent so nested content parses at column zero. */
+function dedent(lines: string[]): string {
+  const filled = lines.filter((l) => l.trim() !== "");
+  const min = filled.length ? Math.min(...filled.map(indentOf)) : 0;
+  return lines.map((l) => (l.trim() === "" ? "" : l.slice(min))).join("\n");
+}
+
+// Inline spans, matched left-to-right; only known elements are emitted (no raw
+// HTML). Order matters: the link form is tried before a bare URL so the URL
+// inside `[text](url)` is never linkified twice, and `**` before `*`.
+const INLINE_RE =
+  /(`[^`]+`)|(\*\*[^*]+\*\*)|(~~[^~]+~~)|(\*[^*\n]+\*)|(_[^_\n]+_)|(\[[^\]]+\]\([^)]+\))|(<https?:\/\/[^>\s]+>)|(https?:\/\/[^\s<>()[\]]+)/g;
+
+/** Trailing sentence punctuation is prose, not part of the URL. */
+const URL_TAIL = /[.,;:!?]+$/;
 
 function inline(text: string): ReactNode {
   const nodes: ReactNode[] = [];
   let last = 0;
   let m: RegExpExecArray | null;
   let k = 0;
+  INLINE_RE.lastIndex = 0;
   while ((m = INLINE_RE.exec(text)) !== null) {
     if (m.index > last) nodes.push(<Fragment key={k++}>{text.slice(last, m.index)}</Fragment>);
-    const tok = m[0];
+    let tok = m[0];
+    let trailing = "";
     if (tok.startsWith("`")) {
       nodes.push(
         <code key={k++} className="rounded bg-elevated px-1.5 py-0.5 font-mono text-[12px] text-accent-soft">
@@ -288,42 +484,59 @@ function inline(text: string): ReactNode {
       );
     } else if (tok.startsWith("**")) {
       nodes.push(<strong key={k++} className="font-semibold text-gray-100">{tok.slice(2, -2)}</strong>);
+    } else if (tok.startsWith("~~")) {
+      nodes.push(<del key={k++} className="text-gray-500 line-through">{tok.slice(2, -2)}</del>);
     } else if (tok.startsWith("[")) {
       const mm = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(tok);
       if (mm) {
-        const href = mm[2];
-        const safe = /^(https?:|mailto:)/i.test(href);
-        nodes.push(
-          safe ? (
-            <a
-              key={k++}
-              href={href}
-              target="_blank"
-              rel="noreferrer noopener"
-              onClick={(e) => {
-                // Tauri v2 swallows target="_blank" without the opener plugin —
-                // route through the shell's open_external command; in dev/browser
-                // openExternal returns false and the anchor works normally.
-                void openExternal(href).then((handled) => void handled);
-                if (tauriInvoke()) e.preventDefault();
-              }}
-              className="text-accent-soft underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
-            >
-              {mm[1]}
-            </a>
-          ) : (
-            <Fragment key={k++}>{mm[1]}</Fragment>
-          ),
-        );
+        nodes.push(link(mm[2], mm[1], k++));
       } else {
         nodes.push(<Fragment key={k++}>{tok}</Fragment>);
       }
+    } else if (/^<?https?:\/\//.test(tok)) {
+      // A bare URL is a link the agent forgot to mark up — endpoints, docs and
+      // console URLs are pasted constantly, and an unclickable one is friction.
+      const bracketed = tok.startsWith("<");
+      let href = bracketed ? tok.slice(1, -1) : tok;
+      if (!bracketed) {
+        const cut = URL_TAIL.exec(href);
+        if (cut) {
+          trailing = cut[0];
+          href = href.slice(0, -cut[0].length);
+        }
+      }
+      nodes.push(link(href, href, k++));
     } else {
       // *italic* or _italic_
       nodes.push(<em key={k++} className="italic text-gray-200">{tok.slice(1, -1)}</em>);
     }
+    if (trailing) nodes.push(<Fragment key={k++}>{trailing}</Fragment>);
     last = m.index + tok.length;
   }
   if (last < text.length) nodes.push(<Fragment key={k++}>{text.slice(last)}</Fragment>);
   return nodes;
+}
+
+function link(href: string, label: string, key: number): ReactNode {
+  // Only http(s)/mailto are ever made clickable — `javascript:` and friends
+  // render as plain text.
+  if (!/^(https?:|mailto:)/i.test(href)) return <Fragment key={key}>{label}</Fragment>;
+  return (
+    <a
+      key={key}
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      onClick={(e) => {
+        // Tauri v2 swallows target="_blank" without the opener plugin — route
+        // through the shell's open_external command; in dev/browser
+        // openExternal returns false and the anchor works normally.
+        void openExternal(href).then((handled) => void handled);
+        if (tauriInvoke()) e.preventDefault();
+      }}
+      className="text-accent-soft underline decoration-accent/40 underline-offset-2 hover:decoration-accent"
+    >
+      {label}
+    </a>
+  );
 }

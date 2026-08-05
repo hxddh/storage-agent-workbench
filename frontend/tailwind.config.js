@@ -35,6 +35,17 @@ export default {
         },
         code: "var(--code-bg)",
         scrim: "var(--scrim)",
+        // Syntax-highlight slots (src/lib/highlight.ts). Themed like everything
+        // else so a code block is legible on a white page too.
+        syn: {
+          str: "var(--syn-str)",
+          num: "var(--syn-num)",
+          kw: "var(--syn-kw)",
+          com: "var(--syn-com)",
+          name: "var(--syn-name)",
+          tag: "var(--syn-tag)",
+          punct: "var(--syn-punct)",
+        },
         // Single restrained accent (Cursor/Codex-style indigo-blue).
         accent: {
           DEFAULT: "var(--accent)",
