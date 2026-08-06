@@ -433,14 +433,16 @@ def get_summary(conn: sqlite3.Connection, session_id: str) -> dict[str, Any] | N
     row = conn.execute("SELECT * FROM session_summaries WHERE session_id = ?", (session_id,)).fetchone()
     if row is None:
         return None
+    # Same tolerance as the message loader: a damaged column costs its own
+    # field, never the whole session (`GET /sessions/{id}` reads this).
     return {
         "session_id": session_id,
         "summary_md": row["summary_md"] or "",
-        "known_facts": json.loads(row["known_facts_json"] or "[]"),
-        "open_questions": json.loads(row["open_questions_json"] or "[]"),
-        "next_actions": json.loads(row["next_actions_json"] or "[]"),
-        "findings": json.loads(row["findings_json"] or "[]"),
-        "limitations": json.loads(row["limitations_json"] or "[]"),
+        "known_facts": _loads(row["known_facts_json"], []),
+        "open_questions": _loads(row["open_questions_json"], []),
+        "next_actions": _loads(row["next_actions_json"], []),
+        "findings": _loads(row["findings_json"], []),
+        "limitations": _loads(row["limitations_json"], []),
         "updated_at": row["updated_at"],
     }
 

@@ -123,6 +123,44 @@ def test_corrupt_persisted_activity_does_not_take_the_session_down(client, bad):
     assert res.json()["messages"][-1]["tool_activity"] == []
 
 
+def test_a_corrupt_summary_column_costs_its_own_field_only(client):
+    """`get_summary` decoded five JSON columns the same unguarded way, and it is
+    read by the same endpoint. One damaged column must not close the session."""
+    from app import db
+    from app.repositories import sessions as repo
+
+    sid = _session_with_activity(client, [REAL_ROW])
+    with db.connect() as conn:
+        repo.upsert_summary(conn, sid, {"summary_md": "The policy omits s3:ListBucket.",
+                                        "open_questions": ["which principal?"]})
+        conn.execute("UPDATE session_summaries SET open_questions_json = 'not-json'")
+        conn.commit()
+    res = client.get(f"/sessions/{sid}")
+    assert res.status_code == 200, res.text
+    summary = res.json()["summary"]
+    assert summary["open_questions"] == []
+    # The undamaged fields are still there — this degrades, it does not blank.
+    assert summary["summary_md"] == "The policy omits s3:ListBucket."
+
+
+def test_a_triage_case_with_no_summary_can_still_be_read(client):
+    """`error_triage_cases.summary` is nullable while `TriageCaseOut.summary` is
+    `str`, so a NULL there was a 500 on a read-only endpoint."""
+    from app import db
+
+    sid = client.post("/sessions", json={"title": "s"}).json()["id"]
+    with db.connect() as conn:
+        conn.execute(
+            "INSERT INTO error_triage_cases (id, session_id, input_kind, summary, status,"
+            " created_at, updated_at) VALUES ('case-1', ?, 'error_body', NULL, 'parsed', ?, ?)",
+            (sid, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+        )
+        conn.commit()
+    res = client.get("/error-triage/case-1")
+    assert res.status_code == 200, res.text
+    assert res.json()["summary"] == ""
+
+
 def test_the_producer_still_emits_the_shape_this_schema_promises():
     """Pins the schema to the writer. If `note()` grows a field of a new type,
     this fails here rather than as a 500 in front of a user."""

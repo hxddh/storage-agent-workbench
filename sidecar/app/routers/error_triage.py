@@ -56,7 +56,10 @@ def _to_out(case: dict[str, Any], *, safe_next_actions=None, limitations=None) -
         id=case["id"], session_id=case.get("session_id"), provider_id=case.get("provider_id"),
         bucket=case.get("bucket"), run_id=case.get("run_id"), input_kind=case["input_kind"],
         raw_input_redacted=case.get("raw_input_redacted"), parsed=case.get("parsed", {}),
-        summary=case.get("summary", ""),
+        # `or ""`, not a default: the column is nullable, and `.get(k, "")`
+        # returns the None that is actually stored — which the response model
+        # rejects, turning a case with no summary into a 500 on read.
+        summary=case.get("summary") or "",
         status=case.get("status", "triaged"), candidate_causes=case.get("candidate_causes", []),
         safe_next_actions=safe_next_actions or [],
         suggested_skills=suggested,

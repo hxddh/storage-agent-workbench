@@ -37,10 +37,10 @@ async function paste(page: Page, text: string) {
 }
 
 async function openSeeded(page: Page, exchanges: number) {
-  seedSession(exchanges);
+  const { title } = seedSession(exchanges);
   await seedFreshApp(page);
   await page.goto("/");
-  await page.getByText("seeded multi-turn investigation").first().click();
+  await page.getByText(title).first().click();
   await expect(thread(page).getByText(/ANSWER-/).first()).toBeVisible({ timeout: 20_000 });
 }
 
@@ -120,6 +120,15 @@ test.describe("a long conversation", () => {
 
     await collapsed.first().click();
     await expect(page.getByTestId("collapsed-turn")).toHaveCount(n - 1);
+  });
+
+  test("a collapsed turn is labelled with the answer, not the question", async ({ page }) => {
+    await openSeeded(page, 12);
+    // Collapsing hides only the assistant half, so the question is still on
+    // screen in full right above the row. Repeating it there says nothing.
+    const label = await page.getByTestId("collapsed-turn").first().innerText();
+    expect(label).toContain("ANSWER-");
+    expect(label).not.toContain("QUESTION-");
   });
 
   test("the newest answer keeps its turn footer", async ({ page }) => {

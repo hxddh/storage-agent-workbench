@@ -89,6 +89,43 @@ existing fixture built `tool_activity` from all-string dicts — encoding the
 schema's assumption rather than the writer's real output — and no test in any
 suite opened a session that had called a tool.
 
+### Fixed — a collapsed turn repeated the question instead of the answer
+
+Collapsing hides only the assistant half of an old turn, so the user's message
+is still rendered in full directly above the collapsed row — which was labelled
+with that same question. Scrolling back through thirty turns showed your own
+words twice, one line apart, and never what the agent concluded. The row now
+carries the answer's first claim, with the markdown stripped (`answerGist`); the
+question remains the fallback for a stopped turn that persisted no answer.
+
+### Fixed — a case with no summary could not be read
+
+`error_triage_cases.summary` is nullable while `TriageCaseOut.summary` is `str`,
+and the router used `.get("summary", "")` — which returns the stored `None`, not
+the default. Same shape of defect as the one above, on a read-only endpoint.
+
+### Fixed — the summary loader had the same unguarded decode
+
+`get_summary` decoded five JSON columns with a bare `json.loads`, and it is read
+by the same endpoint. One damaged column now costs its own field.
+
+### Added — coverage for the surfaces that had none
+
+A second sweep over the untested seams, all against the real stack. **Everything
+below was measured, and all of it passed** — reported because "we checked and it
+holds" is a result:
+
+| surface | what is now asserted |
+| --- | --- |
+| paging | 40 exchanges → the tail is shown, the server's own "20 more" count, load-earlier prepends, jump-to-start reaches turn 0, all 40 present |
+| find | a match inside a *collapsed* turn opens it |
+| branching | a branch from a message creates a second investigation and leaves the first intact |
+| drafts | an unsent question survives switching away and back |
+| rail | rename reaches the thread header, duplicate, archive, search, delete-the-open-one leaves a usable app — and stays deleted after a relaunch |
+| turn footer | persisted tokens/duration reach the screen; the trace expands; a row opens to the call's real persisted input/output; inspect opens the inspector |
+
+E2E: 33 → 52.
+
 ## [0.62.0] - 2026-08-06
 
 _The product knew which errors were not errors. The part that answers when
