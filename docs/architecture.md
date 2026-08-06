@@ -551,6 +551,27 @@ the core counts' coalesce-to-zero rule cannot silently answer the first with the
 second. A genuine 0 is stored as 0, because a cold cache is the measurement
 worth acting on.
 
+### Mid-turn output compaction (v0.57.0)
+
+After v0.56.0 the fixed prefix and the tool outputs were co-equal at ~34%/33% of
+a measured 8-tool turn, and 81% of the tool-output cost was RE-SENDING results
+the agent had already read: a result delivered at step 3 is re-sent at full price
+on every step through 9.
+
+`RunConfig.call_model_input_filter` is the SDK's supported hook for this — the
+input list about to go to the model is handed over and taken back modified, so
+nothing reaches into SDK internals. A result older than `_COMPACT_AFTER_STEPS`
+later results and larger than `_COMPACT_MIN_CHARS` keeps its first
+`_COMPACT_KEEP_HEAD` characters; measured on one request's accumulated outputs,
+23,580 → 10,339 chars.
+
+Two invariants hold through it. The untrusted-data envelope is preserved around
+the surviving head (that head is still third-party data) while the accounting
+line sits outside it, and the drop is stated in the item — a compacted listing
+that looked complete would be reported as a whole bucket. The tool-less finalize
+pass also stopped receiving the tool-teaching half of the system prompt
+(`FINALIZE_INSTRUCTIONS`, −45%), keeping every safety rule verbatim.
+
 ### Dependency pinning and per-tool bounds (v0.56.0)
 
 The sidecar was the only stack without a lockfile, so `pip install -e ./sidecar`

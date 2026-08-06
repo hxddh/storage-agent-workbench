@@ -191,6 +191,11 @@ to the session in the path: a call id belonging to another session returns 404,
 identically to an unknown id, so the response cannot be used to probe which ids
 exist. Nothing new is exposed; it is the same row `/activity` returns in bulk.
 
+Answer structure (v0.57.0): assistant answers render markdown headings as real
+`<h1>`–`<h6>` with stable, text-derived ids (`#sec-...`), so a section can be
+linked and a screen reader can navigate the document. This is a rendering
+concern only — no API field changed.
+
 Observability (v0.45.0): `/activity` and `/audit` are bounded — `limit` is capped
 at 500 (default 200) and every response carries `total` / `offset` / `limit` /
 `truncated`, so a partial timeline is never presented as a complete one. They

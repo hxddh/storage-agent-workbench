@@ -180,7 +180,7 @@ export function SessionRail({
       <div
         key={s.id}
         onClick={() => onSelect(s.id)}
-        className={`group relative mb-px flex w-full cursor-pointer items-start rounded-lg py-[7px] pl-3 pr-1.5 text-left transition-colors duration-150 ${
+        className={`group relative mb-px flex w-full cursor-pointer items-start rounded-lg py-1.5 pl-3 pr-1.5 text-left transition-colors duration-150 ${
           isActive ? "bg-elevated" : "hover:bg-hover/60"
         }`}
       >
@@ -470,7 +470,7 @@ function RenameInput({ initial, onCommit, onCancel }: { initial: string; onCommi
         else if (e.key === "Escape") { e.preventDefault(); onCancel(); }
       }}
       onBlur={() => onCommit(val)}
-      className="w-full rounded-md border border-accent/60 bg-elevated px-2.5 py-[7px] text-xs text-gray-100 outline-none ring-1 ring-accent/30"
+      className="w-full rounded-md border border-accent/60 bg-elevated px-2.5 py-1.5 text-xs text-gray-100 outline-none ring-1 ring-accent/30"
     />
   );
 }

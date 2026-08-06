@@ -232,3 +232,53 @@ describe("charts derived from a table", () => {
     expect(chartSpec(["key", "n"], rows)).toBeNull();
   });
 });
+
+/**
+ * v0.57.0 — the answer got a document structure.
+ *
+ * Headings rendered as `<div>`, so a long diagnostic report — this product's
+ * main output — had no heading levels for a screen reader, no anchors to link
+ * to, and nothing for a browser's "jump to heading" to find.
+ */
+describe("answer structure", () => {
+  it("renders real heading elements, not divs", () => {
+    const { container } = md("## Why it is large\n\ntext");
+    const h2 = container.querySelector("h2");
+    expect(h2).toBeTruthy();
+    expect(h2?.textContent).toBe("Why it is large");
+  });
+
+  it("gives each heading a stable id derived from its text", () => {
+    const { container } = md("## Why it is large");
+    // Derived, not positional: editing elsewhere in the answer must not move
+    // where an existing deep link points.
+    expect(container.querySelector("h2")?.id).toBe("sec-why-it-is-large");
+  });
+
+  it("keeps ids valid for a heading of only punctuation", () => {
+    const { container } = md("## ---");
+    expect(container.querySelector("h2")?.id).toBe("sec");
+  });
+
+  it("offers an outline once an answer has enough sections to navigate", () => {
+    const text = "## Cause\n\na\n\n## Evidence\n\nb\n\n## Fix\n\nc";
+    md(text);
+    const nav = screen.getByTestId("answer-outline");
+    expect(nav.textContent).toContain("Cause");
+    expect(nav.querySelectorAll("a").length).toBe(3);
+    expect(nav.querySelector("a")?.getAttribute("href")).toBe("#sec-cause");
+  });
+
+  it("does not clutter a short answer with an outline", () => {
+    md("## Only one\n\ntext");
+    // An outline above three paragraphs is noise, not navigation.
+    expect(screen.queryByTestId("answer-outline")).toBeNull();
+  });
+
+  it("does not list every sub-heading in the outline", () => {
+    const text = "## A\n\n### a1\n\n### a2\n\n## B\n\n### b1\n\n## C";
+    md(text);
+    // Listing h3s would make the outline a second copy of the answer.
+    expect(screen.getByTestId("answer-outline").querySelectorAll("a").length).toBe(3);
+  });
+});

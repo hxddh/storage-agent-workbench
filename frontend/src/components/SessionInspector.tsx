@@ -17,10 +17,43 @@ import type {
 } from "../types";
 
 /** Is this timestamp inside the anchored turn's window? Both ends inclusive —
- * the window is built from the turn's own first/last activity. */
+ * the window is built from the turn's own first/last activity.
+ *
+ * This is the FALLBACK. A time window is an approximation: a concurrently
+ * running inline run writes its own tool_calls and audit rows, and those land
+ * inside the same wall-clock window even though they belong to a different piece
+ * of work. It stays because audit rows genuinely have no call id to match on. */
 export function inAnchor(at: string, anchor?: { from: string; to: string } | null): boolean {
   if (!anchor) return false;
   return at >= anchor.from && at <= anchor.to;
+}
+
+/** Does this TOOL row belong to the anchored turn?
+ *
+ * Exact when the turn told us which calls were its own (v0.57.0): v0.55.0 gave
+ * every thread activity record the same id as its persisted tool_calls row, and
+ * this is what that id was for. Falls back to the time window for turns replayed
+ * from history that carry no ids. */
+export function toolInAnchor(
+  row: { id: string; created_at: string },
+  anchor?: { from: string; to: string } | null,
+  anchorIds?: ReadonlySet<string> | null,
+): boolean {
+  if (anchorIds && anchorIds.size > 0) return anchorIds.has(row.id);
+  return inAnchor(row.created_at, anchor);
+}
+
+/** Is this timeline entry part of the anchored turn?
+ *
+ * A tool row is matched EXACTLY by its call id when the turn supplied them; an
+ * audit row has no id, so it still falls back to the wall-clock window. */
+function entryAnchored(
+  e: { kind: string; at: string; id: string },
+  anchor?: { from: string; to: string } | null,
+  anchorIds?: ReadonlySet<string> | null,
+): boolean {
+  if (e.kind === "tool") return toolInAnchor({ id: e.id, created_at: e.at }, anchor, anchorIds);
+  return inAnchor(e.at, anchor);
 }
 
 /** One merged timeline entry — a tool call or an audit event. */
@@ -196,6 +229,7 @@ export function SessionInspector({
   onCorrectMemory,
   onResolveMemory,
   anchor,
+  anchorIds,
 }: {
   sessionId: string | null;
   open: boolean;
@@ -214,6 +248,10 @@ export function SessionInspector({
    * from turn 7 of 30 does not just dump the reader at the top of the session
    * timeline with no idea which rows are theirs. */
   anchor?: { from: string; to: string } | null;
+  /** The EXACT call ids the anchored turn produced (v0.57.0). When present these
+   * decide which tool rows highlight, instead of a wall-clock guess that also
+   * catches a concurrently-running inline run. */
+  anchorIds?: ReadonlySet<string> | null;
 }) {
   const { t } = useI18n();
   const [overview, setOverview] = useState<SessionOverview | null>(null);
@@ -302,7 +340,7 @@ export function SessionInspector({
   }, [tools, audit, showTools, showAudit, errorsOnly]);
 
   const firstAnchoredIndex = useMemo(
-    () => (anchor ? entries.findIndex((e) => inAnchor(e.at, anchor)) : -1),
+    () => (anchor || anchorIds ? entries.findIndex((e) => entryAnchored(e, anchor, anchorIds)) : -1),
     [entries, anchor],
   );
 
@@ -522,7 +560,7 @@ export function SessionInspector({
 
           <ul className="mt-3 space-y-0.5">
             {entries.map((e, i) => {
-              const hit = inAnchor(e.at, anchor);
+              const hit = entryAnchored(e, anchor, anchorIds);
               // Scroll target: the FIRST row of the anchored turn, so the reader
               // lands at the start of that turn's work, not its middle.
               const isFirstHit = hit && i === firstAnchoredIndex;

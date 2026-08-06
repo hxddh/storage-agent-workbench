@@ -21,12 +21,53 @@ import { Chart, chartSpec } from "./Chart";
  */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   const blocks = useMemo(() => parseBlocks(text || ""), [text]);
+  // A long diagnostic answer is this product's main output, and it had no way
+  // to be navigated (v0.57.0). The outline appears only when there is genuinely
+  // something to navigate — see outlineOf.
+  const outline = useMemo(() => outlineOf(blocks), [blocks]);
   return (
     <div className="space-y-3 text-sm leading-[1.7] text-gray-200">
+      {outline.length > 0 && <Outline entries={outline} />}
       <Blocks blocks={blocks} />
     </div>
   );
 });
+
+/** Section headings worth offering as an outline, or [] when there aren't any.
+ *
+ * Deliberately conservative: an outline above a three-paragraph answer is
+ * clutter, and an outline that lists every h4 sub-point is a second copy of the
+ * answer. Top two levels only, and only once there are enough of them that
+ * scrolling is actually the problem. */
+export function outlineOf(blocks: Block[]): Array<{ id: string; text: string; level: number }> {
+  const heads = blocks.filter(
+    (b): b is Extract<Block, { type: "heading" }> => b.type === "heading" && b.level <= 2,
+  );
+  if (heads.length < 3) return [];
+  return heads.map((h) => ({ id: headingId(h.text), text: h.text, level: h.level }));
+}
+
+function Outline({ entries }: { entries: Array<{ id: string; text: string; level: number }> }) {
+  const { t } = useI18n();
+  return (
+    <nav aria-label={t("answer.outline")} data-testid="answer-outline"
+         className="rounded-lg border border-edge bg-panel px-3 py-2">
+      <div className="mb-1 text-3xs font-medium uppercase tracking-wider text-gray-700">
+        {t("answer.outline")}
+      </div>
+      <ul className="space-y-0.5">
+        {entries.map((e) => (
+          <li key={e.id} className={e.level === 2 ? "pl-3" : ""}>
+            <a href={`#${e.id}`}
+               className="text-xs text-gray-500 transition-colors hover:text-accent-soft">
+              {e.text}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
 
 /** Block renderer, shared by the top level and by nested list content. */
 function Blocks({ blocks }: { blocks: Block[] }) {
@@ -38,10 +79,24 @@ function Blocks({ blocks }: { blocks: Block[] }) {
             return <CodeBlock key={i} lang={b.lang} content={b.content} />;
           case "heading": {
             const cls = HEADING_CLASS[b.level] ?? HEADING_CLASS[6];
+            // A REAL heading element with a stable id (v0.57.0). These were
+            // `<div>`s: a long diagnostic answer — the thing this product exists
+            // to produce — had no document structure at all. A screen reader got
+            // one undifferentiated wall of text with no heading level to navigate
+            // by, browser "jump to heading" did nothing, and nothing could link
+            // to a section. The id is derived from the text so it survives
+            // re-renders and can be deep-linked.
+            const Tag = `h${Math.min(Math.max(b.level, 1), 6)}` as
+              "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
             return (
-              <div key={i} className={`font-semibold text-gray-100 first:mt-0 ${cls}`}>
+              <Tag
+                key={i}
+                id={headingId(b.text)}
+                data-heading-level={b.level}
+                className={`scroll-mt-4 font-semibold text-gray-100 first:mt-0 ${cls}`}
+              >
                 {inline(b.text)}
-              </div>
+              </Tag>
             );
           }
           case "table":
@@ -71,6 +126,23 @@ function Blocks({ blocks }: { blocks: Block[] }) {
   );
 }
 
+/** A stable, URL-safe id for a heading, derived from its own text.
+ *
+ * Derived rather than positional so it survives a re-render and an edit
+ * elsewhere in the answer: `#why-is-acme-logs-large` keeps pointing at the same
+ * section, which is what makes a deep link worth having. */
+export function headingId(text: string): string {
+  const slug = text
+    .toLowerCase()
+    .replace(/`/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  // A heading of only punctuation would otherwise produce an empty id, which is
+  // invalid as a fragment target.
+  return slug ? `sec-${slug}` : "sec";
+}
+
 /** h5/h6 exist so a deep answer does not print `##### text` at the reader. They
  * share h4's treatment — below h4 the distinction is emphasis, not scale. */
 const HEADING_CLASS: Record<number, string> = {
@@ -97,7 +169,7 @@ function ListBlock({ block }: { block: ListBlockT }) {
               aria-checked={it.task}
               aria-disabled
               data-testid="task-marker"
-              className={`mt-[5px] flex h-[11px] w-[11px] shrink-0 items-center justify-center rounded-[3px] border ${
+              className={`mt-1 flex h-[11px] w-[11px] shrink-0 items-center justify-center rounded-[3px] border ${
                 it.task ? "border-accent bg-accent/25 text-accent-soft" : "border-edge-strong"
               }`}
             >
@@ -112,7 +184,7 @@ function ListBlock({ block }: { block: ListBlockT }) {
               className={`select-none ${
                 block.ordered
                   ? "min-w-[1.1rem] text-right font-medium text-gray-500"
-                  : "mt-[9px] h-[3px] w-[3px] shrink-0 rounded-full bg-gray-500"
+                  : "mt-2 h-[3px] w-[3px] shrink-0 rounded-full bg-gray-500"
               }`}
               aria-hidden
             >
