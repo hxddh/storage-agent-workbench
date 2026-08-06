@@ -79,21 +79,45 @@ def update(conn: sqlite3.Connection, session_id: str, data: SessionUpdate) -> No
 
 def delete(conn: sqlite3.Connection, session_id: str) -> list[str]:
     """Delete a session and all its child rows (thread, runs links, findings,
-    evidence refs, summary), plus the INTERNAL ('agent'-origin) runs it spawned —
+    evidence refs, summary, agent memory, datasets, triage cases, turn metrics,
+    tool calls), plus the INTERNAL ('agent'-origin) runs it spawned —
     surveys/config-reviews that exist only to serve this investigation. Returns
     the ids of those deleted runs so the caller can remove their on-disk
     ``data/runs/{id}/`` trees. User-authored report runs are left intact.
 
-    (Child session_* rows would cascade via FK, but they are deleted explicitly
-    here too — unchanged from before — so the behavior is identical if PRAGMA
-    foreign_keys is ever off.)"""
+    Every child row is deleted EXPLICITLY as well as by FK cascade, so the
+    behaviour is identical if ``PRAGMA foreign_keys`` is ever off. That claim was
+    made here before and was not true (v0.60.0): four cascading tables —
+    ``error_triage_cases``, ``session_agent_memory``, ``session_datasets``,
+    ``turn_metrics`` — had no explicit delete, so the stated safety property held
+    only while the pragma did.
+
+    ``tool_calls`` is the sharper case: its only foreign key is ``run_id ->
+    runs``, so a conversational tool call (``run_id IS NULL``) had NO cascade and
+    no explicit delete either. Those rows survived the session forever — and
+    ``data_maintenance.prune_audit_logs`` deliberately skips any row with a
+    ``session_id``, on the stated grounds that it is "reachable through its
+    session (cascade-equivalent: the session's own delete path)". It was not.
+    A deleted investigation left its sanitized tool inputs and outputs — bucket
+    names, object-key prefixes — in the database permanently. The explicit delete
+    below is what makes that comment true.
+
+    ``audit_logs`` is deliberately NOT deleted here. It is an append-only
+    security trail bounded by its own retention window (rule 17), not user
+    content that a session owns."""
     from . import runs as runs_repo
 
     agent_run_ids = runs_repo.agent_run_ids_for_session(conn, session_id)
     for rid in agent_run_ids:
         conn.execute("DELETE FROM runs WHERE id = ?", (rid,))
     for tbl in ("session_messages", "session_runs", "session_findings",
-                "session_evidence_refs", "session_summaries"):
+                "session_evidence_refs", "session_summaries",
+                # v0.60.0 — these cascade, but the docstring above promises an
+                # explicit delete too, and that promise was previously false.
+                "session_agent_memory", "session_datasets",
+                "error_triage_cases", "turn_metrics",
+                # v0.60.0 — this one does NOT cascade on session_id at all.
+                "tool_calls"):
         conn.execute(f"DELETE FROM {tbl} WHERE session_id = ?", (session_id,))
     conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
     conn.commit()
