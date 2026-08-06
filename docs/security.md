@@ -124,6 +124,30 @@ A *bare* 40-character secret key carries no label to match on, so it is masked
 only when the text also contains an `AKIA`/`ASIA…` key-id — the pair-paste that
 is how one actually shows up. Bucket names cannot collide with that shape.
 
+### Credential query parameters beyond the presigned shapes (v0.60.0)
+
+"Sensitive query parameters" above used to mean the presigned/SigV4 set. Twelve
+credential-bearing names outside it — `password`, `passwd`, `pwd`, `secret`,
+`client_secret`, `access_token`, `refresh_token`, `credential`, `credentials`,
+`auth`, `session`, `sessionid` — were **not** redacted, so a pasted endpoint URL
+carrying one reached the model prompt verbatim (rule 1) and was persisted the
+same way. `_contains_secret()` does not recognise that shape and
+`assert_no_secrets_in_context` guards only the context block, which the user's
+message is appended after, so the redactor was the only line and it was open.
+
+Both the URL form (`?password=…`, anchored to `?`/`&`) and the config-line form
+(`MINIO_ROOT_PASSWORD=…`) are covered, each accepting a vendor prefix.
+
+Two exclusions are deliberate and should stay: **`key`** is the object key in an
+S3 URL, and **`Expires`/`se`/`sp`/`sv`** are SAS expiry and permission metadata.
+Masking either destroys the diagnostic without protecting anything — the secret
+of the SAS family, `sig`, is covered separately.
+
+`tests/test_v060_rule15_coverage.py` is table-driven against the list above, so a
+category that stops being covered fails CI rather than shipping. That is the
+actual lesson of this gap: the existing redaction tests were organised by
+pattern, and a requirement nobody enumerated is a requirement nobody checks.
+
 ### Streaming is redacted separately, and more eagerly
 
 The live answer stream cannot wait for the whole text before deciding what to

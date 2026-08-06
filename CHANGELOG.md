@@ -6,6 +6,102 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.60.0] - 2026-08-06
+
+_What the product promises about your data, and what it actually did._
+
+### Fixed — twelve credential query parameters reached the model prompt (rule 1 + rule 15)
+
+Rule 15 requires "sensitive query parameters" to be redacted. Measured against
+`redact_text`, twelve credential-bearing names passed through untouched:
+
+`password` · `passwd` · `pwd` · `secret` · `client_secret` · `access_token` ·
+`refresh_token` · `credential` · `credentials` · `auth` · `session` · `sessionid`
+
+The damaging path is the most ordinary one this product has. An operator pastes
+a failing URL from a self-hosted MinIO or Ceph endpoint:
+
+```
+Getting 403 from https://minio.internal:9000/acme-logs/report.csv
+  ?password=Pr0d-M1nio-R00t&access_token=eyJhbGciOiJIUzI1NiJ9.payload.sig
+```
+
+That string reached the LLM prompt **verbatim** — rule 1, not just rule 15 — and
+was persisted the same way, because `add_message`'s persistence boundary calls
+the same redactor. There was no second line of defense: `_contains_secret()`
+returns `False` for this shape, and `assert_no_secrets_in_context` guards only
+the context block, which the user's message is appended *after*.
+
+Two new rules cover it: one anchored to `?`/`&` for URLs, one for the same
+credentials pasted as a config line. Both accept a vendor prefix, which is what
+`MINIO_ROOT_PASSWORD=` needs — `\b` does not match between `_` and `PASSWORD`,
+so the canonical MinIO root-password variable, this product's single most likely
+paste, went straight through the first version of the fix too.
+
+Two names were deliberately **excluded**. `key` is the OBJECT key in an S3 URL,
+and masking it would destroy the most useful fact in a diagnostic paste;
+`Expires`/`se`/`sp`/`sv` are SAS expiry and permission metadata, not secrets, and
+the secret of that family (`sig`) was already covered. Over-redaction destroys
+the diagnostic this product exists to produce as surely as under-redaction leaks.
+Nine ordinary-prose cases were checked to confirm the new rules change none of
+them.
+
+### Added — rule 15 is a test now, not a memory
+
+`test_redaction.py` has twenty-odd good tests, organised by PATTERN: each covers
+a shape somebody thought of. Nothing walked rule 15's list and asserted every
+category on it was covered. `?password=` was never redacted not because anyone
+judged it safe, but because no test existed to say otherwise.
+
+The new suite is table-driven on purpose — one row per rule-15 category, plus
+every leaking parameter name, plus the over-redaction cases. The requirement is
+the test, so the next category that drifts fails CI. Verified: **31 of its 48
+assertions fail** against the unfixed redactor.
+
+### Fixed — deleting an investigation did not delete it
+
+`sessions.delete()` promised in its own docstring that every child row is deleted
+explicitly as well as by FK cascade, "so the behavior is identical if PRAGMA
+foreign_keys is ever off". Four cascading tables had no explicit delete —
+`error_triage_cases`, `session_agent_memory`, `session_datasets`,
+`turn_metrics` — so the stated property held only while the pragma did.
+
+`tool_calls` was worse. Its only foreign key is `run_id -> runs`, so a
+conversational tool call (`run_id IS NULL`) had **no cascade and no explicit
+delete**. Worse still, `data_maintenance.prune_audit_logs` skips any row carrying
+a `session_id`, on the stated grounds that it is "reachable through its session
+(cascade-equivalent: the session's own delete path)" — which was not true. Three
+paths closed at once: no FK, no explicit delete, and a prune predicate that could
+never match them. Those rows survived forever.
+
+The weight is not disk — about 14 KiB for a 20-turn investigation. It is that a
+user who deleted an investigation kept its sanitized tool inputs and outputs, the
+bucket names and object-key prefixes, in SQLite permanently. The explicit delete
+also makes the prune's stated reasoning true rather than aspirational.
+
+`audit_logs` is deliberately still kept: an append-only security trail bounded by
+its own retention window (rule 17), not user content a session owns. A test
+asserts that, so removing it would have to be a decision rather than a side
+effect.
+
+### Verified — three hypotheses that turned out to be wrong
+
+Recorded because a version's value includes what it ruled out:
+
+- **uploaded files leak on delete** — false. `routers/sessions.py` `rmtree`s the
+  whole session directory, so a 2 GiB upload does go.
+- **repositories and routers share connections like the tool path did** (the gap
+  v0.59.0's own PR flagged as next) — false. `get_conn` opens a fresh connection
+  per request; the account-survey pool gives each worker its own read-only
+  connection; the SSE worker uses its own `wconn`. All three multi-thread sites
+  were already correct, and the concurrency line closed with v0.59.0.
+- **destructive S3 operations present** — none anywhere in the tree.
+
+One pre-existing over-redaction was found and deliberately **not** changed:
+`X-Amz-SignedHeaders=host` is masked by the presigned-URL rule although it is not
+a secret. It predates this release and is left alone to keep the diff on the
+actual defect.
+
 ## [0.59.0] - 2026-08-06
 
 _The lock was in the right place for two files and absent from the two that

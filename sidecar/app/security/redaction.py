@@ -112,6 +112,47 @@ _VALUE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # in prose isn't touched. Kept AFTER the AWS rule so an already-masked URL is
     # untouched. `se`/`sp`/`sv` etc. are non-secret and intentionally left.
     (re.compile(r"(?i)([?&]sig=)([^&\s]+)"), r"\1" + REDACTED),
+    # Credential-bearing query parameters that are NOT presigned-URL specific
+    # (rule 15: "sensitive query parameters"). v0.60.0: measured, twelve of these
+    # names passed through untouched, and the most damaging path was the most
+    # ordinary one — an operator pasting a failing URL from a self-hosted MinIO or
+    # Ceph endpoint goes straight into the model prompt via `redact_text`, with no
+    # second line of defense (`_contains_secret` does not recognise this shape,
+    # and `assert_no_secrets_in_context` guards only the context block, which the
+    # user's message is appended after). That is rule 1 as well as rule 15.
+    #
+    # Anchored to `?`/`&` so prose is never mangled — the same discipline the
+    # Azure `sig=` rule uses.
+    #
+    # `key` is deliberately NOT in this list. In an S3 URL `key=` is the OBJECT
+    # key, and masking it would destroy the single most useful fact in a
+    # diagnostic paste. `Expires`/`se`/`sp`/`sv` are likewise left: they are SAS
+    # expiry/permission metadata, not secrets, and the secret of that family
+    # (`sig`) is covered above.
+    (
+        re.compile(
+            r"(?i)([?&][A-Za-z0-9_.-]*(?:password|passwd|pwd|client_secret|secret|"
+            r"access_token|refresh_token|credentials|credential|"
+            r"sessionid|session|auth)=)([^&\s]+)"
+        ),
+        r"\1" + REDACTED,
+    ),
+    # The same credentials pasted as a CONFIG LINE rather than a URL
+    # (`password=hunter2`, `client_secret: abc…`) — the other half of how these
+    # actually arrive. Only the names that cannot be ordinary prose are listed
+    # here: `secret`, `auth` and `session` are query-anchored above but excluded
+    # from this rule, because "the secret: rotated last week" is a sentence a user
+    # may legitimately write and over-redaction destroys diagnostic text as surely
+    # as under-redaction leaks it. Requires a credential-shaped value so a bare
+    # label is untouched.
+    (
+        re.compile(
+            r"(?i)\b([A-Za-z0-9_.-]*(?:password|passwd|pwd|client[_-]?secret|"
+            r"access[_-]?token|refresh[_-]?token))(\s*[:=]\s*)(['\"]?)"
+            r"[A-Za-z0-9/+=_.\-]{4,}"
+        ),
+        r"\1\2\3" + REDACTED,
+    ),
     # Bare `token=` / `api_key=` in free text or query strings (e.g. the local
     # SSE auth `?token=...`, a pasted `api_key=...` config line). Label kept,
     # value masked. `\b` keeps compound labels like `next_token=` (preceded by a
