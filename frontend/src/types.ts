@@ -352,6 +352,12 @@ export interface ToolActivity {
   // for the same call, so the UI can show an in-progress row that resolves in
   // place. Absent/other values mean the call is finished.
   status?: string;
+  /** Set ONLY when the sidecar could not write this call's audit row (v0.59.0).
+   * The call itself still ran and is still persisted; what is missing is its
+   * audit_logs entry, which rule 17 requires. Absent on every healthy call, so
+   * its presence — not its value — is the signal. A gap the reader cannot see
+   * reads as "nothing happened", which is why it reaches the UI at all. */
+  audit_error?: string | null;
 }
 
 // The per-turn result shared by the blocking POST and the SSE `done` event.

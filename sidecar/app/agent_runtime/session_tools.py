@@ -19,6 +19,7 @@ confirmed runs proposed as next steps.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 import threading
@@ -34,6 +35,8 @@ from ..s3 import tools as s3
 from ..s3.scope import check_scope
 from ..security.redaction import redact, redact_text
 from . import guardrails
+
+logger = logging.getLogger(__name__)
 
 # Max object keys echoed to the model per list_objects call — equal to the S3
 # layer's page cap (MAX_LIST_KEYS = 1000), and it MUST stay >= that cap: the S3
@@ -238,14 +241,24 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         # `NoSuchBucket`, `SignatureDoesNotMatch`), so failed calls rendered
         # green and the "N failed" badge under-counted.
         ok = not (isinstance(result, dict) and result.get("success") is False)
+        # The audit failure `rec` carried, if this note belongs to that call. A
+        # gap in the audit trail must be visible where the call is read, not only
+        # in a server log the user never sees (v0.59.0, rule 17).
+        audit_error = _open.get("audit_error") if matched else None
         if activity is not None:
             # Carry the args forward from the matching `started` record so the
             # finished row reads the same as the live one. Only when the open
             # call IS this tool — stale args would misdescribe the call.
             args = dict(_open.get("args") or {}) if matched else {}
-            activity.append({"id": call_id, "tool": tool, "target": target[:80],
-                             "result": summary, "args": args, "ok": ok,
-                             "duration_ms": duration_ms, "status": "completed"})
+            row: dict[str, Any] = {"id": call_id, "tool": tool, "target": target[:80],
+                                   "result": summary, "args": args, "ok": ok,
+                                   "duration_ms": duration_ms, "status": "completed"}
+            # Only present when `rec`'s audit write failed (v0.59.0). Absent on
+            # the overwhelmingly normal path, so nothing downstream has to learn
+            # a new always-there field to say "fine".
+            if audit_error:
+                row["audit_error"] = audit_error
+            activity.append(row)
         _open.clear()
         if session_id is None:
             return
@@ -263,7 +276,8 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
                     # persisted input/output instead of guessing by time window.
                     (call_id, session_id, tool,
                      json.dumps(redact({"target": target[:200], **(call_input or {})})),
-                     json.dumps(redact({"summary": summary})),
+                     json.dumps(redact({"summary": summary,
+                                        **({"audit_error": audit_error} if audit_error else {})})),
                      "success" if ok else "error", duration_ms, utcnow()),
                 )
                 conn.commit()
@@ -328,11 +342,29 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         # Under db.WRITE_LOCK: with parallel tool calls two bodies share this
         # ONE connection, so an unguarded commit here can commit the other call's
         # half-written work and then raise on its own commit (v0.55.0).
-        with db.WRITE_LOCK:
-            audit.record(conn, "session_tool",
-                         {"tool": tool, **{k: str(v)[:200] for k, v in kw.items()}},
-                         run_id=None, session_id=session_id)
-            conn.commit()
+        #
+        # The audit write must not be able to KILL the call (v0.59.0). It sat
+        # unprotected while `note`'s persist block next to it had always been
+        # best-effort, so a bookkeeping failure here failed the read-only tool the
+        # user actually asked for — and did it after the S3 work was already done,
+        # so the cost was paid and the answer thrown away.
+        #
+        # Swallowing it silently is the other wrong answer: rule 17 requires tool
+        # calls to be recorded, and a gap nobody can see is a gap that reads as
+        # "nothing happened". So the failure is CARRIED to `note`, which surfaces
+        # it on the live trace row and stores it on the persisted call. The
+        # `tool_calls` row is still written either way, so the call itself remains
+        # recorded; what is marked is that its audit_logs entry is missing.
+        audit_error: str | None = None
+        try:
+            with db.WRITE_LOCK:
+                audit.record(conn, "session_tool",
+                             {"tool": tool, **{k: str(v)[:200] for k, v in kw.items()}},
+                             run_id=None, session_id=session_id)
+                conn.commit()
+        except Exception as exc:  # noqa: BLE001 — never fail a tool on bookkeeping
+            audit_error = f"{type(exc).__name__}: {exc}"[:200]
+            logger.warning("audit write failed for tool %s: %s", tool, audit_error)
         # One id per call, minted here and carried to both the live row and the
         # persisted tool_calls row (v0.55.0). Matching a completed record to its
         # started row by (tool, target) broke the moment v0.54.0 turned on
@@ -343,7 +375,8 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         _open = _open_slot()
         _open.clear()
         _open.update({"tool": tool, "input": {k: str(v)[:200] for k, v in kw.items()},
-                      "args": _args_of(kw), "t0": time.monotonic(), "call_id": call_id})
+                      "args": _args_of(kw), "t0": time.monotonic(), "call_id": call_id,
+                      "audit_error": audit_error})
         # Emit a START record so the live stream can show "running <tool>…"
         # while the (possibly slow) call executes. Only "completed" records are
         # persisted on the message; the UI ignores fields it doesn't know.

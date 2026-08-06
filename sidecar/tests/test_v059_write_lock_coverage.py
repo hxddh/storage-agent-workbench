@@ -22,8 +22,18 @@ the 2/240 (0.8%) that motivated the lock in the first place. All 120 memory rows
 were nonetheless present, which is the expensive part: the write LANDED and the
 agent was told it had not.
 
-All three tests below were verified to FAIL against the unfixed code before the
-fix was written.
+A second, related gap is covered at the bottom of this file: ``rec``'s audit
+write was itself unprotected, while the ``note`` persist block beside it had
+always been best-effort — so a bookkeeping failure killed the read-only tool the
+user actually asked for, after the S3 work was already paid for.
+
+Which tests detect a bug, stated honestly, because it is not uniform:
+
+- the three race tests and two of the three audit tests were each verified to
+  FAIL against the unfixed code and pass after;
+- ``test_a_healthy_call_carries_no_audit_noise`` passes either way by design. It
+  is a NON-REGRESSION guard for the clean path — that surfacing the failure did
+  not leave a new always-present field behind — not a bug detector.
 """
 from __future__ import annotations
 
@@ -199,3 +209,70 @@ def test_the_unguarded_commit_sites_are_gone():
     assert checked == 4, "the tool modules moved — this guard is not looking at them"
     assert offenders == [], (
         "unguarded conn.commit() on the shared turn connection: " + ", ".join(offenders))
+
+
+# --- B: a bookkeeping failure must not kill the tool, and must not hide -------
+
+def _list_providers(conn, activity):
+    from agents import function_tool
+    from app.agent_runtime import session_tools
+    tools = session_tools.build(conn, function_tool, activity, session_id="s1")
+    return [t for t in tools if t.name == "list_providers"][0]
+
+
+def test_an_audit_write_failure_no_longer_kills_the_tool(conn, monkeypatch):
+    """`rec`'s audit write sat unprotected while `note`'s persist next to it had
+    always been best-effort. A bookkeeping failure therefore failed the read-only
+    tool the user asked for — after the S3 work was already done, so the cost was
+    paid and the answer thrown away."""
+    from app import audit as audit_mod
+
+    activity: list = []
+    tool = _list_providers(conn, activity)
+    monkeypatch.setattr(audit_mod, "record",
+                        lambda *a, **k: (_ for _ in ()).throw(sqlite3.OperationalError("disk I/O error")))
+
+    out = asyncio.run(tool.on_invoke_tool(_Ctx(), "{}"))
+    assert "provider" in out, f"the tool did not answer: {out[:200]}"
+    assert "disk I/O error" not in out, "the bookkeeping error leaked into the answer"
+
+
+def test_the_audit_gap_is_visible_rather_than_silent(conn, monkeypatch):
+    """Swallowing the failure silently is the OTHER wrong answer: rule 17
+    requires tool calls to be recorded, and a gap nobody can see reads as
+    'nothing happened'. It must reach the trace row and the persisted call."""
+    from app import audit as audit_mod
+
+    activity: list = []
+    tool = _list_providers(conn, activity)
+    monkeypatch.setattr(audit_mod, "record",
+                        lambda *a, **k: (_ for _ in ()).throw(sqlite3.OperationalError("disk I/O error")))
+    asyncio.run(tool.on_invoke_tool(_Ctx(), "{}"))
+
+    done = [a for a in activity if a.get("status") == "completed"]
+    assert len(done) == 1
+    assert "disk I/O error" in (done[0].get("audit_error") or ""), \
+        "the trace row does not show the audit gap"
+
+    row = conn.execute(
+        "SELECT output_json_sanitized FROM tool_calls WHERE session_id = 's1'").fetchone()
+    assert row is not None, "the call itself must still be recorded"
+    assert "audit_error" in row[0], "the persisted call does not show the audit gap"
+
+
+def test_a_healthy_call_carries_no_audit_noise(conn):
+    """The normal path must stay clean: nothing downstream should have to learn a
+    new always-present field just to be told everything is fine."""
+    activity: list = []
+    tool = _list_providers(conn, activity)
+    asyncio.run(tool.on_invoke_tool(_Ctx(), "{}"))
+
+    done = [a for a in activity if a.get("status") == "completed"]
+    assert len(done) == 1
+    assert "audit_error" not in done[0]
+    row = conn.execute(
+        "SELECT output_json_sanitized FROM tool_calls WHERE session_id = 's1'").fetchone()
+    assert "audit_error" not in row[0]
+    audits = conn.execute(
+        "SELECT count(*) FROM audit_logs WHERE session_id = 's1'").fetchone()[0]
+    assert audits == 1, "rule 17: a healthy call is audited"

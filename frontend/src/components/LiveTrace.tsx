@@ -170,6 +170,21 @@ export function LiveTrace({ items, sessionId }: { items: ToolActivity[]; session
                 </span>
               )}
             </span>
+            {a.audit_error && !running && (
+              // Rule 17 requires every tool call to be audited. When that write
+              // fails the call still runs and is still persisted — but the gap
+              // must be visible where the call is READ, not only in a server log
+              // the operator never opens. Presence is the signal; the value is
+              // the reason, on hover.
+              <span
+                className="shrink-0 text-warn-fg"
+                data-testid="trace-audit-gap"
+                title={t("trace.auditGap", { reason: a.audit_error })}
+                aria-label={t("trace.auditGap", { reason: a.audit_error })}
+              >
+                ⚠
+              </span>
+            )}
             {ms && !running && (
               // Measured since v0.45.0, written to `tool_calls`, and never sent
               // to the client until now — so "which step was slow" had no answer
