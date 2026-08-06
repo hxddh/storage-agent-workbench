@@ -65,6 +65,87 @@ describe("the type scale", () => {
   });
 });
 
+describe("the radius scale", () => {
+  it("has no arbitrary corner radii left", () => {
+    // v0.58.0 migrated `rounded-[3px]`, `rounded-[5px]` and `rounded-[22px]`
+    // onto real steps. Corners are the most repeated shape in the UI, so a
+    // stray radius reads as two components built by two different people.
+    const offenders: string[] = [];
+    for (const { file, text } of ALL) {
+      for (const m of text.matchAll(/rounded[a-z-]*-\[[^\]]+\]/g)) {
+        offenders.push(`${file}: ${m[0]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("uses only steps the config actually defines", () => {
+    const config = readFileSync(join(__dirname, "..", "tailwind.config.js"), "utf8");
+    const block = config.slice(config.indexOf("borderRadius:"));
+    const defined = new Set(
+      [...block.slice(0, block.indexOf("},")).matchAll(/^\s*"?([A-Za-z0-9]+)"?:\s*"/gm)]
+        .map((m) => (m[1] === "DEFAULT" ? "" : m[1])),
+    );
+    expect(defined.size).toBeGreaterThan(4);
+    const sides = "(?:[tbrl]|tl|tr|bl|br)";
+    const used = new Set<string>();
+    for (const { text } of ALL) {
+      for (const m of text.matchAll(new RegExp(`\\brounded(?:-${sides})?(?:-([a-z0-9]+))?\\b`, "g"))) {
+        used.add(m[1] ?? "");
+      }
+    }
+    // A side-only class (`rounded-t`) resolves to the DEFAULT radius, which the
+    // empty-string entry above represents.
+    const unknown = [...used].filter((u) => !defined.has(u));
+    expect(unknown).toEqual([]);
+  });
+});
+
+describe("stacking layers", () => {
+  it("are named, never raw numbers", () => {
+    // Eight z-index values were in use and four were arbitrary, with the
+    // intended order recorded nowhere but in the numbers. Adding the ninth
+    // overlay meant grepping for the highest and adding one.
+    const offenders: string[] = [];
+    for (const { file, text } of ALL) {
+      for (const m of text.matchAll(/\bz-(?:\[[^\]]+\]|\d+)/g)) {
+        offenders.push(`${file}: ${m[0]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("only uses layers the config defines", () => {
+    const config = readFileSync(join(__dirname, "..", "tailwind.config.js"), "utf8");
+    const block = config.slice(config.indexOf("zIndex:"));
+    const defined = new Set(
+      [...block.slice(0, block.indexOf("},")).matchAll(/^\s*([a-z]+):\s*"/gm)].map((m) => m[1]),
+    );
+    expect(defined.size).toBeGreaterThan(3);
+    const used = new Set<string>();
+    for (const { text } of ALL) {
+      for (const m of text.matchAll(/\bz-([a-z]+)\b/g)) used.add(m[1]);
+    }
+    // `z-auto` is Tailwind's own and carries no layer meaning.
+    const unknown = [...used].filter((u) => u !== "auto" && !defined.has(u));
+    expect(unknown).toEqual([]);
+  });
+});
+
+describe("motion", () => {
+  it("never animates every property at once", () => {
+    // `transition-all` animates width, height, and every colour the element
+    // has — including properties that change for reasons unrelated to the
+    // interaction, which is how a hover ends up animating a layout shift.
+    // v0.58.0 replaced all nine uses with the properties actually animated.
+    const offenders: string[] = [];
+    for (const { file, text } of ALL) {
+      for (const m of text.matchAll(/\btransition-all\b/g)) offenders.push(`${file}: ${m[0]}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe("spacing classes", () => {
   it("never uses a bare step Tailwind does not define", () => {
     // `w-6.5` and `w-13` look plausible and compile to NOTHING. This is the only

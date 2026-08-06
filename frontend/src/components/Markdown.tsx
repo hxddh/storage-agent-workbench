@@ -169,7 +169,7 @@ function ListBlock({ block }: { block: ListBlockT }) {
               aria-checked={it.task}
               aria-disabled
               data-testid="task-marker"
-              className={`mt-1 flex h-[11px] w-[11px] shrink-0 items-center justify-center rounded-[3px] border ${
+              className={`mt-1 flex h-[11px] w-[11px] shrink-0 items-center justify-center rounded-sm border ${
                 it.task ? "border-accent bg-accent/25 text-accent-soft" : "border-edge-strong"
               }`}
             >
@@ -246,7 +246,7 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
         <span className="font-mono text-3xs uppercase tracking-wide text-gray-500">{lang || "code"}</span>
         <button
           onClick={copy}
-          className="ml-auto flex items-center gap-1 text-2xs text-gray-500 opacity-0 transition-all hover:text-gray-200 group-hover/code:opacity-100"
+          className="ml-auto flex items-center gap-1 text-2xs text-gray-500 opacity-0 transition-[color,opacity] hover:text-gray-200 group-hover/code:opacity-100"
         >
           {copied ? (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>

@@ -134,7 +134,7 @@ function ToastViewport({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id:
       role="status"
       aria-live="polite"
       data-testid="toast-viewport"
-      className="pointer-events-none fixed bottom-4 right-4 z-[80] flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2"
+      className="pointer-events-none fixed bottom-4 right-4 z-toast flex w-[min(380px,calc(100vw-2rem))] flex-col gap-2"
     >
       {toasts.map((t) => {
         const tone = TONE[t.kind];

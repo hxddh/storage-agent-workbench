@@ -10,7 +10,7 @@ const GROUPS = [
 
 function Key({ children }: { children: string }) {
   return (
-    <kbd className="min-w-6 rounded-[5px] border border-edge-strong bg-elevated px-1.5 py-0.5 text-center font-sans text-2xs font-medium text-gray-300">
+    <kbd className="min-w-6 rounded-md border border-edge-strong bg-elevated px-1.5 py-0.5 text-center font-sans text-2xs font-medium text-gray-300">
       {children}
     </kbd>
   );
@@ -38,7 +38,7 @@ export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () =
 
   return (
     <div
-      className="fixed inset-0 z-[75] flex items-center justify-center bg-scrim p-4 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-shortcuts flex items-center justify-center bg-scrim p-4 backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
       <div

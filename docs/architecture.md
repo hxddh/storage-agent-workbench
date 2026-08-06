@@ -611,10 +611,31 @@ adding one later costs the saving, never the capability.
 
 The unlock is seeded so it rarely costs a round-trip: reading a skill opens the
 groups its method names (derived from the skill text, so it cannot drift), a
-session's previously-used groups start open (memory — the tools genuinely ran),
+session's recently-used groups start open (memory — the tools genuinely ran),
 and an attached file opens the file tools (a fact, not a guess). On the same
 8-tool turn: 201,838 input tokens before, 142,351 core-only (−29%), 161,312 with
 one unlock and its extra round-trip (−20%).
+
+**The seed is a window, not the session (v0.58.0).** It originally read the
+session's entire `tool_calls` history, which made the gate a one-way ratchet: a
+group touched once stayed open forever, so a long investigation converged on
+carrying every schema and a trivial follow-up paid for the scan that opened
+them. Measured: 8,507 chars of schema cold against 34,826 fully open — 26,319
+chars (~6,579 tokens) on every step, ~52,600 on an 8-step turn. The seed now
+spans the last 40 tool calls (~5 typical turns), ordered by `rowid` as well as
+`created_at` because the column's one-second resolution would otherwise slice a
+burst arbitrarily. A group that falls out of the window is one `load_tools` call
+away, which is the design working, not a capability lost.
+
+**A locked tool is a correction, not a dead turn (v0.58.0).** The SDK defaults
+`tool_not_found_behavior` to `raise_error`, and a gated tool is genuinely "not
+found" to the runtime — while the instructions tell the agent every group
+exists. Naming one before unlocking it raised `ModelBehaviorError`, which is not
+in the turn's recoverable set, so a single wrong name discarded the whole
+investigation. The run now returns the error to the model with a formatter that
+names the group and the exact `load_tools(group=...)` call, distinguishes a
+group that is already open (so the agent cannot loop re-unlocking it), and defers
+to the SDK's own message for a name it does not recognise.
 
 Two more repetitions went with it: Pydantic's `title` keys (3,601 chars, 30% of
 the parameter schemas, restating the property name) and the skill method, which

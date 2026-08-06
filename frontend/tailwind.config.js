@@ -100,9 +100,49 @@ export default {
         ],
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "monospace"],
       },
+      // The product radius scale (v0.58.0).
+      //
+      // Same drift the type scale had before v0.56.0, one layer down: a count
+      // found TEN distinct corner radii in use — seven named steps plus
+      // `[3px]`, `[5px]` and `[22px]` written inline. Corners are the most
+      // repeated shape in the UI, so a stray radius reads as two components
+      // built by two people.
+      //
+      // The existing steps keep their existing values on purpose: renumbering
+      // them would silently restyle 100+ elements with no way to verify the
+      // result short of looking at every screen. What changes is that the scale
+      // is now DECLARED (so it can be enumerated and guarded) and the three
+      // inline values were migrated onto it — `sm` and `3xl` exist because the
+      // UI genuinely needed a 3px mark and a 22px composer pill, not to make
+      // the table look complete.
       borderRadius: {
-        xl: "0.75rem",
-        "2xl": "1rem",
+        sm: "0.1875rem",    // 3px  — inline marks, checkbox glyphs
+        DEFAULT: "0.25rem", // 4px  — dense chips
+        md: "0.375rem",     // 6px  — controls: buttons, inputs, keycaps
+        lg: "0.5rem",       // 8px  — cards and rows
+        xl: "0.75rem",      // 12px — panels
+        "2xl": "1rem",      // 16px — overlays
+        "3xl": "1.375rem",  // 22px — the composer pill
+        full: "9999px",     // pills and dots
+      },
+      // Named stacking layers (v0.58.0).
+      //
+      // Eight z-index values were in use and four of them were arbitrary —
+      // `z-[60]`, `z-[70]`, `z-[75]`, `z-[80]` — with the intended order living
+      // nowhere but in the numbers themselves. Whoever added the ninth overlay
+      // had to grep for the highest number and add one.
+      //
+      // The NUMBERS are unchanged; only the names are new. Renumbering would
+      // have risked a stacking regression for no benefit, and the point here is
+      // that a layer now has a name to reason about.
+      zIndex: {
+        sticky: "30",    // in-flow chrome that pins: find bar, rail headers
+        floating: "40",  // in-page affordances: jump-to-latest, rail scrim
+        drawer: "50",    // settings, inspector, import dialog
+        wizard: "60",    // first-run — above the drawers it explains
+        palette: "70",   // ⌘K — reachable from anywhere, so above the wizard
+        shortcuts: "75", // the help sheet, openable from the palette
+        toast: "80",     // always visible; nothing may cover a failure notice
       },
       boxShadow: {
         elev: "0 1px 2px rgba(0,0,0,0.35), 0 8px 28px -18px rgba(0,0,0,0.7)",

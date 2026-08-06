@@ -273,31 +273,60 @@ _GROUP_OF_TOOL: dict[str, str] = {
 }
 
 
+# How far back the unlock memory reaches, in tool calls. v0.55.0 seeded from
+# the session's ENTIRE history, which made unlocking a one-way ratchet: a group
+# touched once stayed open for every later turn, so a long investigation
+# converged on carrying all 43 schemas forever. Measured (v0.58.0): the gated
+# schema block is 8,507 chars cold and 34,826 fully open — 26,319 chars, ~6,579
+# tokens, re-sent on EVERY step. An 8-step turn pays ~52,600 tokens for tools it
+# is not using, and a trivial follow-up question pays the same as the scan that
+# opened them.
+#
+# 40 is chosen against the product's own numbers, not picked round: a typical
+# turn runs ~8 tool calls, so 40 spans roughly the last five turns of real work
+# — a continuing investigation never re-unlocks — while a single heavy turn (the
+# survey path can issue dozens) still keeps everything it just used. The
+# alternative, decaying by wall-clock, misreads how these sessions are worked:
+# an operator leaves a thread open for hours and returns mid-investigation.
+_UNLOCK_RECENT_CALLS = 40
+
+
 def seed_unlocked_groups(conn: Any, session_id: str | None,
                          has_attachments: bool = False) -> set[str]:
     """Which gated groups this turn starts with already open.
 
     Two seeds, both FACTS about the session rather than a guess at the question:
 
-    - **What this session already used.** A bucket-configuration investigation
+    - **What this session used RECENTLY.** A bucket-configuration investigation
       asks a second and a third question about bucket configuration. Re-charging
       the unlock round-trip every turn would spend more than the gate saves, so
-      the groups whose tools appear in this session's persisted ``tool_calls``
-      start open. This is memory, not planning — the tools genuinely ran.
+      the groups whose tools appear in the last ``_UNLOCK_RECENT_CALLS`` calls
+      start open. This is memory, not planning — the tools genuinely ran — and it
+      is a WINDOW rather than the whole session, so the cost decays back down
+      when an investigation moves on instead of ratcheting to the maximum and
+      staying there.
     - **An attached file.** The user putting a file in the composer is not a
       prediction about intent; the file is there, and the whole point of
       attaching it is that it gets analyzed.
 
     Everything else starts closed and the agent opens it with ``load_tools``.
+    Nothing is lost when the window slides past a group: ``load_tools`` still
+    reaches it in one cheap call, which is the whole design.
+
     Best-effort: a bookkeeping failure must never cost the agent a capability, so
     any error falls back to the empty set (the agent can still unlock)."""
     seeded: set[str] = {"uploaded_files"} if has_attachments else set()
     if conn is None or not session_id:
         return seeded
     try:
+        # Ordered by rowid as well as created_at: created_at has one-second
+        # resolution here, and a turn issues many calls inside one second, so
+        # timestamp alone would slice the window at an arbitrary point within a
+        # burst. rowid breaks the tie in true insertion order.
         rows = conn.execute(
-            "SELECT DISTINCT tool_name FROM tool_calls WHERE session_id = ?",
-            (session_id,)).fetchall()
+            "SELECT tool_name FROM tool_calls WHERE session_id = ? "
+            "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+            (session_id, _UNLOCK_RECENT_CALLS)).fetchall()
     except Exception:  # noqa: BLE001
         return seeded
     for r in rows:
@@ -1284,6 +1313,52 @@ def _compact_consumed_outputs(items: list[Any]) -> tuple[list[Any], int]:
     return out, reclaimed
 
 
+def _make_tool_not_found_formatter(unlocked: set[str]) -> Any:
+    """Turn "tool not found" into "that tool is in group X — unlock it".
+
+    With progressive disclosure a not-found tool is almost never a hallucinated
+    name: it is a REAL tool of this product sitting behind a gate the agent has
+    not opened. `_GROUP_OF_TOOL` knows exactly which gate, so the correction can
+    name it and the agent recovers in one step instead of guessing.
+
+    Three cases, kept distinct because they need different answers:
+
+    - a known tool in a locked group  → name the group and the `load_tools` call;
+    - a known tool in an OPEN group   → the gate is not the problem, so say so
+      rather than sending the agent to re-unlock something already unlocked
+      (that would loop);
+    - anything else                   → fall through to the SDK's own message by
+      returning None; inventing a group for a name we do not recognise would be
+      a confident lie.
+
+    Never raises: the formatter runs inside the SDK's error path, and an
+    exception here would replace a recoverable mistake with an unrecoverable one.
+    """
+    def _fmt(args: Any) -> str | None:
+        try:
+            if getattr(args, "kind", None) != "tool_not_found":
+                return None
+            name = str(getattr(args, "tool_name", "") or "")
+            group = _GROUP_OF_TOOL.get(name)
+            if not group:
+                return None
+            if group in unlocked:
+                return (
+                    f"`{name}` is not available under that exact name. Its group "
+                    f"'{group}' is already unlocked, so do NOT call load_tools "
+                    "again — check the tool list you were given and use the "
+                    "correct name."
+                )
+            return (
+                f"`{name}` exists but its tool group is not open yet. Call "
+                f"load_tools(group=\"{group}\") first, then call `{name}`. "
+                "Nothing you have already gathered is lost."
+            )
+        except Exception:  # noqa: BLE001 — never break the SDK's error path
+            return None
+    return _fmt
+
+
 def _make_input_filter(stats: dict[str, int]) -> Any:
     """The `call_model_input_filter` that applies the compaction per request.
 
@@ -1762,7 +1837,22 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     # hook for this — the input list is handed to us and taken back modified.
     compaction: dict[str, int] = {}
     spec["compaction"] = compaction
-    run_config = RunConfig(call_model_input_filter=_make_input_filter(compaction))
+    # A call to a still-locked tool must be a CORRECTION, not the end of the turn
+    # (v0.58.0). The SDK defaults `tool_not_found_behavior` to "raise_error", and
+    # since v0.55.0 gated 29 of 43 tools behind `is_enabled`, a locked tool is
+    # genuinely "not found" to the runtime. The model is TOLD those tools exist —
+    # `tool_group_catalog()` lists every group in the instructions — so naming one
+    # before unlocking it is a predictable move, and it raised ModelBehaviorError,
+    # which is not in this turn's `recoverable` set. One wrong tool name therefore
+    # discarded an entire investigation's evidence with a raw error.
+    #
+    # Returning the error to the model instead costs one step and turns a fatal
+    # mistake into a self-correcting one; the formatter below makes it actionable
+    # rather than merely non-fatal.
+    unlock_hint = _make_tool_not_found_formatter(unlocked)
+    run_config = RunConfig(call_model_input_filter=_make_input_filter(compaction),
+                           tool_not_found_behavior="return_error_to_model",
+                           tool_error_formatter=unlock_hint)
     result = Runner.run_streamed(agent, spec["prompt"], max_turns=_MAX_TURNS,
                                  run_config=run_config)
     # Tag the run with the endpoint it targets, so a stream_options rejection
