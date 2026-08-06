@@ -129,6 +129,10 @@ GET    /sessions/{session_id}               # session detail
 PATCH  /sessions/{session_id}               # rename / pin / archive
 DELETE /sessions/{session_id}               # delete a session (cascades)
 POST   /sessions/{session_id}/fork          # duplicate a session (thread, memory, datasets)
+                                           #   ?from_message_id=… BRANCHES from that point:
+                                           #   everything through that message, nothing after
+                                           #   (v0.61.0). Unknown id -> 404, never a silent
+                                           #   whole-session fork.
 POST   /sessions/{session_id}/runs/{run_id} # link an existing run to a session
 GET    /sessions/{session_id}/runs          # runs linked to the session
 GET    /sessions/{session_id}/summary       # deterministic session summary

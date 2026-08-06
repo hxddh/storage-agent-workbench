@@ -122,6 +122,23 @@ assert _MAX_REPLAY_TOOLS == _MAX_TURNS, "replay must cover a full turn's probes"
 # `error_as_result` (not `raise_exception`) keeps a timeout in the same shape as
 # every other bounded failure in this product: the agent receives it as a tool
 # RESULT it can reason about and route around, instead of the turn dying.
+# How many of a step's tool calls may execute at once (v0.61.0).
+#
+# v0.54.0 turned on `parallel_tool_calls`, and the SDK's default for
+# `max_function_tool_concurrency` is None — documented as "starts ALL function
+# tool calls emitted in a turn". So a model emitting fifteen `head_object` calls
+# fired fifteen concurrent S3 requests, with nothing between the model's whim and
+# the endpoint. That is the opposite of the discipline this product applies
+# everywhere else: the account survey bounds its own probes to
+# `_PROBE_WORKERS = 4` precisely because an unbounded fan-out at a
+# self-hosted MinIO or Ceph endpoint is how a diagnostic turns into a load test.
+#
+# 6, not 4: this is one step of an interactive turn rather than a bulk walk, the
+# calls are usually different tools against different buckets, and the latency
+# saved by overlapping them is the whole reason parallel calls are on. It stays
+# well under any provider's per-connection concurrency expectations, and the
+# SDK queues the rest rather than dropping them — nothing is lost, only paced.
+_MAX_PARALLEL_TOOLS = 6
 _TOOL_TIMEOUT_S = 120.0
 # Account survey / bucket-config review walk many buckets in one call and are
 # already internally bounded; they need room the single probes do not.
@@ -1785,6 +1802,7 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     try:
         import openai  # noqa: F401
         from agents import RunConfig, Runner, function_tool
+        from agents.run_config import ToolExecutionConfig
     except Exception as exc:  # noqa: BLE001
         raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
 
@@ -1852,7 +1870,9 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     unlock_hint = _make_tool_not_found_formatter(unlocked)
     run_config = RunConfig(call_model_input_filter=_make_input_filter(compaction),
                            tool_not_found_behavior="return_error_to_model",
-                           tool_error_formatter=unlock_hint)
+                           tool_error_formatter=unlock_hint,
+                           tool_execution=ToolExecutionConfig(
+                               max_function_tool_concurrency=_MAX_PARALLEL_TOOLS))
     result = Runner.run_streamed(agent, spec["prompt"], max_turns=_MAX_TURNS,
                                  run_config=run_config)
     # Tag the run with the endpoint it targets, so a stream_options rejection

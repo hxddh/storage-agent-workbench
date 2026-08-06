@@ -124,19 +124,46 @@ def delete(conn: sqlite3.Connection, session_id: str) -> list[str]:
     return agent_run_ids
 
 
-def fork(conn: sqlite3.Connection, session_id: str) -> str | None:
-    """Create a new session that copies another's title/goal/provider, its full
+def fork(conn: sqlite3.Connection, session_id: str,
+         up_to_message_id: str | None = None) -> str | None:
+    """Create a new session that copies another's title/goal/provider, its
     message thread, the agent's working memory, its uploaded datasets, and its
     run LINKS (read-only references to the shared run records — needed so
     run-dependent proposal cards stay actionable in the fork). Deterministic
     findings and the derived summary are NOT copied (they are rebuilt from the
-    linked runs on demand)."""
+    linked runs on demand).
+
+    ``up_to_message_id`` branches from a POINT IN the thread instead of copying
+    all of it (v0.61.0). An investigation that took a wrong turn at exchange 30
+    could only be duplicated whole and then manually unwound; this keeps
+    everything through that message and drops what came after, so the user can
+    ask the other question from there and keep both threads.
+
+    The message cut uses ``rowid``, which is exact. The other three copies —
+    memory, datasets, run links — have only ``created_at`` to filter on, so a row
+    written in the SAME SECOND as the branch message is included rather than
+    dropped: erring toward carrying a fact the agent had established is the
+    recoverable direction, and it is stated here rather than left as a surprise.
+
+    An unknown ``up_to_message_id``, or one belonging to another session, returns
+    None rather than silently forking the whole thread — a branch point the
+    caller cannot see is worse than a refusal."""
     src = get_row(conn, session_id)
     if src is None:
         return None
+    cut_rowid: int | None = None
+    cut_created: str | None = None
+    if up_to_message_id is not None:
+        row = conn.execute(
+            "SELECT rowid, created_at FROM session_messages WHERE id = ? AND session_id = ?",
+            (up_to_message_id, session_id)).fetchone()
+        if row is None:
+            return None
+        cut_rowid, cut_created = row["rowid"], row["created_at"]
     new_id = uuid.uuid4().hex
     now = utcnow()
-    title = (src["title"] or "Untitled")[:160] + " (fork)"
+    suffix = " (branch)" if up_to_message_id is not None else " (fork)"
+    title = (src["title"] or "Untitled")[:160] + suffix
     conn.execute(
         "INSERT INTO sessions (id, title, goal, provider_id, primary_bucket, status, pinned, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, 'active', 0, ?, ?)",
@@ -145,7 +172,8 @@ def fork(conn: sqlite3.Connection, session_id: str) -> str | None:
     msgs = conn.execute(
         "SELECT role, content, referenced_run_ids, referenced_evidence_ids, tool_activity, "
         "grounding, proposed_actions, created_at "
-        "FROM session_messages WHERE session_id = ? ORDER BY rowid", (session_id,)
+        "FROM session_messages WHERE session_id = ? AND (? IS NULL OR rowid <= ?) "
+        "ORDER BY rowid", (session_id, cut_rowid, cut_rowid)
     ).fetchall()
     for m in msgs:
         keys = m.keys()
@@ -167,8 +195,9 @@ def fork(conn: sqlite3.Connection, session_id: str) -> str | None:
     # Copy the agent's working memory so a fork doesn't lose what the agent learned.
     mem = conn.execute(
         "SELECT kind, text, severity, confidence, source_run_id, status, created_at "
-        "FROM session_agent_memory WHERE session_id = ? AND status = 'active' ORDER BY rowid",
-        (session_id,),
+        "FROM session_agent_memory WHERE session_id = ? AND status = 'active' "
+        "AND (? IS NULL OR created_at <= ?) ORDER BY rowid",
+        (session_id, cut_created, cut_created),
     ).fetchall()
     for r in mem:
         conn.execute(
@@ -185,7 +214,8 @@ def fork(conn: sqlite3.Connection, session_id: str) -> str | None:
     from .. import config
     ds_rows = conn.execute(
         "SELECT dataset_type, source_filename, stored_path, detected_format "
-        "FROM session_datasets WHERE session_id = ? ORDER BY rowid", (session_id,)
+        "FROM session_datasets WHERE session_id = ? AND (? IS NULL OR created_at <= ?) "
+        "ORDER BY rowid", (session_id, cut_created, cut_created)
     ).fetchall()
     for d in ds_rows:
         new_stored_rel = d["stored_path"]
@@ -210,7 +240,8 @@ def fork(conn: sqlite3.Connection, session_id: str) -> str | None:
     # account_discovery run) dead-ends in the fork with "run discovery first".
     run_links = conn.execute(
         "SELECT run_id, role, created_at FROM session_runs "
-        "WHERE session_id = ? ORDER BY rowid", (session_id,)
+        "WHERE session_id = ? AND (? IS NULL OR created_at <= ?) ORDER BY rowid",
+        (session_id, cut_created, cut_created)
     ).fetchall()
     for rl in run_links:
         conn.execute(

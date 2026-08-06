@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   correctSessionMemory,
+  forkSession,
   getSession,
   getSessionMessages,
   getSessionOverview,
@@ -600,6 +601,25 @@ export function Thread({
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   };
 
+  // Branch a new investigation from one message (v0.61.0). The whole-session
+  // fork has existed since v0.28.0; what was missing is the Cursor-style "take
+  // it from here" — an investigation that went wrong at exchange 30 could only
+  // be duplicated whole and unwound by hand. Both threads survive, which is the
+  // point: the original is evidence, not a draft.
+  const branchFrom = useCallback(
+    async (messageId: string) => {
+      if (!sessionId) return;
+      try {
+        const forked = await forkSession(sessionId, messageId);
+        onSessionCreated(forked.id);
+        onChanged();
+      } catch (e) {
+        setViewError(cleanError(String(e), t));
+      }
+    },
+    [sessionId, onSessionCreated, onChanged, t],
+  );
+
   // --- find in thread (v0.58.0) ---------------------------------------------
   // The command palette searches session titles; nothing searched what was
   // actually said. Eighty turns into an investigation that is the difference
@@ -1016,6 +1036,11 @@ export function Thread({
                       content={it.content}
                       toolActivity={it.toolActivity}
                       onEdit={it.role === "user" && !busy ? seedComposer : undefined}
+                      onBranch={
+                        it.role === "user" && !busy && sessionId
+                          ? () => void branchFrom(it.id)
+                          : undefined
+                      }
                       onRegenerate={
                         it.role === "assistant" && !busy && questionBefore(idx)
                           ? () => seedComposer(questionBefore(idx) as string)

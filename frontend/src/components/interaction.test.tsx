@@ -244,3 +244,61 @@ describe("shortcut registry", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+describe("branching from a message (v0.61.0)", () => {
+  it("offers a branch action on a user message", () => {
+    // Whole-session fork existed since v0.28.0; what was missing is departing
+    // from a POINT in the thread. Both threads survive — the original is the
+    // record of what was actually asked, not a draft.
+    wrap(
+      createElement(MessageCard, {
+        role: "user",
+        content: "why is acme-logs growing?",
+        onBranch: () => {},
+      }),
+    );
+    expect(screen.getByTestId("branch-message")).toBeInTheDocument();
+  });
+
+  it("calls back with no arguments — the caller owns the message id", () => {
+    const onBranch = vi.fn();
+    wrap(createElement(MessageCard, { role: "user", content: "q", onBranch }));
+    fireEvent.click(screen.getByTestId("branch-message"));
+    expect(onBranch).toHaveBeenCalledTimes(1);
+  });
+
+  it("is absent when branching is not available", () => {
+    // Mid-turn, or before the session exists: the affordance must not be a
+    // button that does nothing.
+    wrap(createElement(MessageCard, { role: "user", content: "q" }));
+    expect(screen.queryByTestId("branch-message")).toBeNull();
+  });
+
+  it("is not offered on an assistant answer", () => {
+    // You branch from a question you want to re-ask differently. Offering it on
+    // the answer would suggest the answer can be re-run in place, which is what
+    // "Ask again" already does.
+    wrap(
+      createElement(MessageCard, {
+        role: "assistant",
+        content: "because versioning is on",
+        onBranch: () => {},
+      }),
+    );
+    expect(screen.queryByTestId("branch-message")).toBeNull();
+  });
+
+  it("keeps edit and branch as separate actions", () => {
+    // They are different acts: edit rewrites in place, branch keeps both.
+    wrap(
+      createElement(MessageCard, {
+        role: "user",
+        content: "q",
+        onEdit: () => {},
+        onBranch: () => {},
+      }),
+    );
+    expect(screen.getByTestId("edit-message")).toBeInTheDocument();
+    expect(screen.getByTestId("branch-message")).toBeInTheDocument();
+  });
+});

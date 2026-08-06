@@ -36,6 +36,7 @@ export const MessageCard = memo(function MessageCard({
   sessionId,
   onEdit,
   onRegenerate,
+  onBranch,
 }: {
   role: string;
   content: string | null;
@@ -48,10 +49,13 @@ export const MessageCard = memo(function MessageCard({
   onEdit?: (text: string) => void;
   /** Re-ask the question that produced this answer, as a NEW turn. */
   onRegenerate?: () => void;
+  /** Branch a NEW investigation from this message (v0.61.0). Distinct from
+   * edit, which rewrites the question in place — branching keeps both threads. */
+  onBranch?: () => void;
 }) {
   const { t } = useI18n();
   if (role === "user") {
-    return <UserMessage content={content} onEdit={onEdit} />;
+    return <UserMessage content={content} onEdit={onEdit} onBranch={onBranch} />;
   }
   // While streaming, the raw deltas may include the trailing metadata JSON block
   // (the backend strips it for the persisted message); hide it from the live view.
@@ -116,7 +120,16 @@ export const MessageCard = memo(function MessageCard({
  * conversation around it. The clamp is visual only — nothing is truncated, and
  * "show more" reveals the rest in place.
  */
-function UserMessage({ content, onEdit }: { content: string | null; onEdit?: (text: string) => void }) {
+function UserMessage({
+  content,
+  onEdit,
+  onBranch,
+}: {
+  content: string | null;
+  onEdit?: (text: string) => void;
+  /** Branch a new investigation from THIS point in the thread (v0.61.0). */
+  onBranch?: () => void;
+}) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const text = content || "";
@@ -152,6 +165,23 @@ function UserMessage({ content, onEdit }: { content: string | null; onEdit?: (te
                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
                 <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+          )}
+          {onBranch && (
+            <button
+              onClick={onBranch}
+              title={t("msg.branch")}
+              aria-label={t("msg.branch")}
+              data-testid="branch-message"
+              className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <line x1="6" y1="3" x2="6" y2="15" />
+                <circle cx="18" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <path d="M18 9a9 9 0 0 1-9 9" />
               </svg>
             </button>
           )}

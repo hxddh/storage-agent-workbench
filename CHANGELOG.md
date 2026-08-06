@@ -6,6 +6,96 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.61.0] - 2026-08-06
+
+_Paying twice for the same method, firing without a ceiling, drawing the wrong
+shape, and only ever being able to copy a whole investigation._
+
+### Fixed — the skill body was paid for twice, every turn
+
+v0.54.0 put the most recently read skill into the STABLE half of the context
+(`active_skill_block`) precisely so a multi-turn investigation would stop
+re-reading the same method. The only thing enforcing that was a sentence in the
+instructions — *"do not read_skill it again"* — and `read_skill` contained no
+check whatsoever. A model that re-read paid for the body **twice in one turn**:
+once in the cached context prefix, once as a tool result that then rides every
+later step.
+
+Measured across the shipped skills: 20 bodies totalling **65,224 chars**, mean
+**3,261**, largest **5,966** (`storageops-security-iam-policy`).
+
+The in-turn dedupe (`_call_key`) does not cover this — it catches the same call
+twice *within* one turn, and this is a cross-turn repeat. That was verified
+before concluding the gap was real.
+
+`read_skill` now returns a short pointer when the requested skill is the one
+already in context. The active skill is resolved **once, at tool-build time**,
+and that timing is the whole trick: no tool has run yet, so the newest
+`read_skill` row necessarily belongs to a previous turn. Resolving inside the
+tool would also see this turn's own row and refuse the first, legitimate read.
+
+### Fixed — a step could fire unlimited concurrent tool calls
+
+v0.54.0 turned on `parallel_tool_calls`. The SDK's
+`max_function_tool_concurrency` default is `None`, documented as *"starts ALL
+function tool calls emitted in a turn"* — so a model emitting fifteen
+`head_object` calls fired fifteen concurrent requests at the endpoint, with
+nothing in between.
+
+That is the opposite of the discipline this product applies elsewhere: the
+account survey bounds its own probes to `_PROBE_WORKERS = 4`, for exactly the
+reason that an unbounded fan-out at a self-hosted MinIO or Ceph endpoint turns a
+diagnostic into a load test. One path was disciplined and the other was not.
+
+The ceiling is **6** — above the survey's 4, because this is one step of an
+interactive turn rather than a bulk walk and overlapping latency is why parallel
+calls are on at all. The SDK queues the remainder rather than dropping it:
+nothing is lost, only paced. A test asserts the SDK still exposes the knob, so a
+lock bump cannot silently remove the bound.
+
+### Fixed — the keyboard focus ring drew the wrong shape
+
+The global `:focus-visible` rule forced `border-radius: 0.5rem` on everything it
+touched, which is correct for exactly one shape. Measured across the focusable
+elements, **24 are a different one**: 10 `rounded-full` pills and dot buttons, 8
+`rounded-md`, 6 `rounded`. A keyboard user tabbing through the rail or the
+composer saw an 8px-cornered box drawn around a fully round button, at every
+stop.
+
+The fix is to declare **no radius at all**: `box-shadow` already follows the
+element's own `border-radius`, so removing the override is what makes the ring
+follow the shape.
+
+`border-radius: inherit` was tried first and is wrong — `inherit` takes the
+*parent's* radius, and this rule's specificity ties Tailwind's `.rounded-*`
+utilities while coming later in source order, so it would have replaced every
+element's real radius with its container's. That reasoning is recorded in the
+CSS so the next person does not repeat it.
+
+### Added — branch a new investigation from a point in the thread
+
+Whole-session `fork` has existed since v0.28.0. What was missing is the
+Cursor-style *take it from here*: an investigation that went wrong at exchange 30
+could only be duplicated whole and then unwound by hand.
+
+`fork(..., up_to_message_id=…)` keeps everything through that message and drops
+what followed; `POST /sessions/{id}/fork?from_message_id=…` exposes it, and a
+branch icon sits beside edit on every user message. Both threads survive on
+purpose — the original is the record of what was actually asked, not a draft,
+which is what makes this different from the in-place edit next to it.
+
+Three decisions worth stating rather than leaving to be discovered:
+
+- the **message cut uses `rowid`**, which is exact;
+- memory, datasets and run links have only `created_at`, so a row written in the
+  **same second** as the branch message is carried rather than dropped — erring
+  toward keeping a fact the agent established is the recoverable direction;
+- an **unknown message id is a 404**, never a silent whole-session fork: quietly
+  doing something else would hand back a session that looks right and is not.
+
+The new session is titled `(branch)` rather than `(fork)`, so a rail full of
+copies can still be read.
+
 ## [0.60.0] - 2026-08-06
 
 _What the product promises about your data, and what it actually did._

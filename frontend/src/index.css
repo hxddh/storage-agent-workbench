@@ -171,11 +171,28 @@ body {
   background-clip: content-box;
 }
 
-/* Visible keyboard focus only (not on mouse click). */
+/* Visible keyboard focus only (not on mouse click).
+ *
+ * The ring FOLLOWS the element's own corner radius (v0.61.0). It used to force
+ * `border-radius: 0.5rem` on everything it touched, which is right for exactly
+ * one shape: a `rounded-lg` control. Measured across the focusable elements,
+ * 24 of them are a different shape — 10 `rounded-full` pills and dot buttons,
+ * 8 `rounded-md`, 6 `rounded` — so a keyboard user tabbing through the rail or
+ * the composer saw an 8px-cornered box drawn around a fully round button, on
+ * every stop.
+ *
+ * The fix is to declare NO radius here at all. `box-shadow` is already drawn
+ * following the element's own `border-radius`, so removing the override is
+ * exactly what makes the ring follow the shape — a round button gets a round
+ * ring, a square one gets square corners.
+ *
+ * `border-radius: inherit` would NOT work and was tried first: `inherit` takes
+ * the PARENT's radius, not the element's, and this rule's specificity (0,1,0)
+ * ties Tailwind's `.rounded-*` utilities while coming later in source order, so
+ * it would have overridden each element's real radius with its container's. */
 :focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--focus-ring);
-  border-radius: 0.5rem;
 }
 
 /* Long conversation histories: let the browser skip layout/paint for
