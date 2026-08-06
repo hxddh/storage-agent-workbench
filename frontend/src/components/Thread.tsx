@@ -889,7 +889,11 @@ export function Thread({
   );
 
   return (
-    <div className="flex h-full flex-1 flex-col bg-canvas">
+    /* The conversation is the app's main landmark. It had none: the whole shell
+       was anonymous <div>s, so a screen reader offered no way to skip the rail
+       and jump to what was actually said — and a test asserting "in the thread"
+       had nothing to scope to and silently matched the rail instead. */
+    <main aria-label={t("a11y.conversation")} className="flex h-full flex-1 flex-col bg-canvas">
       {loadError ? (
         /* Loading an existing session failed — show an explicit error + retry
            instead of silently presenting the empty new-chat surface (M6). */
@@ -1310,7 +1314,7 @@ export function Thread({
           </div>
         </Overlay>
       )}
-    </div>
+    </main>
   );
 }
 

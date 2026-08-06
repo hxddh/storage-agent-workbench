@@ -614,6 +614,26 @@ DEFAULT_MESSAGE_PAGE = 60
 MAX_MESSAGE_PAGE = 500
 
 
+def _loads(raw: Any, fallback: Any) -> Any:
+    """Decode a persisted JSON column, degrading to ``fallback`` if it is not
+    readable.
+
+    Every one of these columns is written by this process, so a malformed value
+    means a truncated write or a corrupted file — rare, but the failure mode was
+    catastrophic and out of proportion: one unreadable trace column raised
+    inside the row loop and took down `GET /sessions/{id}` for the WHOLE
+    session, so the entire conversation became unopenable because one turn's
+    tool trace was damaged. Losing that trace is the honest loss; losing the
+    investigation is not.
+    """
+    if not raw:
+        return fallback
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return fallback
+
+
 def count_messages(conn: sqlite3.Connection, session_id: str) -> int:
     return int(conn.execute(
         "SELECT count(*) FROM session_messages WHERE session_id = ?", (session_id,)
@@ -661,11 +681,11 @@ def list_messages(conn: sqlite3.Connection, session_id: str,
             # Opaque paging cursor: the client hands the oldest one back as
             # `before` to fetch the page above it.
             "seq": r["seq"] if "seq" in keys else None,
-            "referenced_run_ids": json.loads(r["referenced_run_ids"] or "[]"),
-            "referenced_evidence_ids": json.loads(r["referenced_evidence_ids"] or "[]"),
-            "tool_activity": json.loads((r["tool_activity"] if "tool_activity" in keys else None) or "[]"),
-            "grounding": json.loads(r["grounding"]) if ("grounding" in keys and r["grounding"]) else None,
-            "proposed_actions": json.loads(r["proposed_actions"]) if ("proposed_actions" in keys and r["proposed_actions"]) else [],
+            "referenced_run_ids": _loads(r["referenced_run_ids"], []),
+            "referenced_evidence_ids": _loads(r["referenced_evidence_ids"], []),
+            "tool_activity": _loads(r["tool_activity"] if "tool_activity" in keys else None, []),
+            "grounding": _loads(r["grounding"], None) if "grounding" in keys else None,
+            "proposed_actions": _loads(r["proposed_actions"], []) if "proposed_actions" in keys else [],
             "created_at": r["created_at"],
         })
     return out

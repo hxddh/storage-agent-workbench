@@ -27,6 +27,7 @@ test suite — auth is left open so the local workflow keeps working.
 from __future__ import annotations
 
 import hmac
+import logging
 import os
 from contextlib import asynccontextmanager
 from importlib import metadata
@@ -53,6 +54,8 @@ from .routers import (
 )
 
 SERVICE_NAME = health.SERVICE_NAME
+
+logger = logging.getLogger(__name__)
 
 
 def _service_version() -> str:
@@ -120,6 +123,31 @@ async def _sanitized_validation_handler(request: Request, exc: RequestValidation
             item["msg"] = redact_text(item["msg"])
         cleaned.append(item)
     return JSONResponse({"detail": cleaned}, status_code=422)
+
+
+@app.exception_handler(Exception)
+async def _unhandled_error_handler(request: Request, exc: Exception):
+    """Answer an unhandled server fault with a readable, CORS-visible 500.
+
+    Starlette's default lets the exception escape as a bare ASGI error, and that
+    response is produced OUTSIDE ``CORSMiddleware`` — so the browser sees a
+    cross-origin response with no ``Access-Control-Allow-Origin`` and reports it
+    as ``TypeError: Failed to fetch``. The frontend then shows a network error
+    for what is really a server bug, which is how a 500 on
+    ``GET /sessions/{id}`` read for several releases as "the sidecar is
+    unreachable" instead of "this endpoint is broken".
+
+    The body carries only the exception TYPE, never its message: a message can
+    quote the request that produced it, and this is the one response shape that
+    is reached by definition without having been reasoned about. The full
+    traceback still goes to the local server log.
+    """
+    logger.exception("unhandled error on %s %s", request.method, request.url.path)
+    origin = request.headers.get("origin")
+    headers = {"Access-Control-Allow-Origin": origin} if origin in _ALLOWED_ORIGINS else {}
+    return JSONResponse(
+        {"detail": f"internal error ({type(exc).__name__})"}, status_code=500, headers=headers,
+    )
 
 
 @app.middleware("http")

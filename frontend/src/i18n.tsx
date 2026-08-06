@@ -437,6 +437,7 @@ const en: Dict = {
   "thread.remoteTurn": "A turn started earlier is still running ({age}). Its answer will appear here.",
 
   // screen-reader announcements
+  "a11y.conversation": "Conversation",
   "a11y.working": "The agent is working.",
   "a11y.answerReady": "Answer ready.",
   "a11y.turnFailed": "The turn failed.",
@@ -876,6 +877,7 @@ const zh: Dict = {
   "inspector.anchored": "高亮部分：本轮所做的事。",
   "thread.remoteTurn": "此前开始的一轮仍在运行（{age}），答案会显示在这里。",
 
+  "a11y.conversation": "对话",
   "a11y.working": "Agent 正在工作。",
   "a11y.answerReady": "答案已就绪。",
   "a11y.turnFailed": "本轮失败。",

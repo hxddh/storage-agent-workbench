@@ -6,6 +6,89 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-08-06
+
+_Every investigation that called a tool became unopenable. The test suite was
+green because its fixtures described the schema instead of the writer._
+
+### Fixed — a session that ran a tool answered 500 and could not be opened
+
+`SessionMessageOut.tool_activity` was declared `list[dict[str, str]]` back when a
+trace row really was four strings. v0.56.0 then started recording what a call
+actually did:
+
+| field | written since | type |
+| --- | --- | --- |
+| `duration_ms` | v0.56.0 | `int \| None` |
+| `ok` | v0.55.0 | `bool` |
+| `args` | v0.53.0 | `dict` |
+
+Pydantic v2 does not coerce any of those into `str`, so the response model
+raised and **`GET /sessions/{id}` returned 500 for every session containing a
+completed tool call** — that is, every real investigation. Measured, not
+inferred: the same rows served fine from `GET /sessions/{id}/messages`, which
+returns a plain dict and is therefore unvalidated.
+
+What that looked like in the app, and why both reported symptoms follow from it:
+
+- **The thread stopped growing.** `Thread.reload()` deliberately keeps the
+  previous content on a failed refresh rather than blanking a populated thread,
+  so `detail` froze at the state before the first tool call. Every later answer
+  was persisted and never displayed.
+- **The three actions under an answer disappeared.** With the reload failing,
+  the finished answer stayed on screen as the *live streaming* bubble. The turn
+  footer, copy / edit / branch and the proposal chips all hang off a persisted
+  message, so none of them rendered.
+- **The failure named the wrong layer.** An unhandled exception escapes outside
+  `CORSMiddleware`, so the browser got a response with no
+  `Access-Control-Allow-Origin` and reported `TypeError: Failed to fetch`. A
+  broken endpoint read as an unreachable sidecar.
+
+`ToolActivityOut` now types the row against its producer, with `extra="allow"`
+so a field the writer adds reaches the reader instead of being dropped
+(`audit_error`, present only when a rule-17 audit write failed, is exactly such
+a field — its presence is the signal).
+
+### Fixed — relaunching the app opened a blank page
+
+`activeId` started as `null` and nothing restored it, so quitting the app — or
+any reload — landed on the empty "New chat" surface with the conversation
+sitting unread in the rail. An investigation here runs over days, which makes
+"where was I" the app's most common first question. The open session id is now
+remembered, and restored only onto a session that still exists.
+
+### Fixed — one corrupt column no longer takes a whole session down
+
+`list_messages` decoded five JSON columns with a bare `json.loads` inside the row
+loop, so a single unreadable value made the entire conversation unopenable.
+A damaged trace now degrades to an empty trace.
+
+### Fixed — an unhandled server fault answers a readable 500
+
+It carries the exception *type* and nothing else (a message can quote the
+request that produced it), with the CORS grant the browser needs to read the
+status at all. The traceback still goes to the local log.
+
+### Added — the conversation is a landmark, and the suite finally reads it
+
+The shell had no `<main>`: a screen reader could not skip the rail, and a test
+asserting "in the thread" had nothing to scope to. It had been matching the
+**rail**, which repeats every session title — the ordering assertion in this
+work passed against a thread that showed the opposite until it was rescoped.
+
+`e2e/history.spec.ts` covers what nothing covered: a second exchange that must
+not erase the first, history across a reload, chronological order, a 12-exchange
+conversation where every turn must be present, old answers that collapse and
+reopen, the newest answer's footer, and copy / edit / branch on a user message.
+`e2e/seed.ts` writes a realistic multi-turn session into the sidecar's own
+SQLite, because the composer path without a model provider can only produce
+triage cards and therefore exercised none of the message rendering.
+
+**Why 1142 passing tests missed a 500 on the app's main endpoint.** Every
+existing fixture built `tool_activity` from all-string dicts — encoding the
+schema's assumption rather than the writer's real output — and no test in any
+suite opened a session that had called a tool.
+
 ## [0.62.0] - 2026-08-06
 
 _The product knew which errors were not errors. The part that answers when
