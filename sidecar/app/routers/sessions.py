@@ -183,13 +183,26 @@ def delete_session(session_id: str, conn: sqlite3.Connection = Depends(get_conn)
 
 
 @router.post("/{session_id}/fork", response_model=SessionDetail, status_code=status.HTTP_201_CREATED)
-def fork_session(session_id: str, conn: sqlite3.Connection = Depends(get_conn)):
+def fork_session(session_id: str, from_message_id: str | None = None,
+                 conn: sqlite3.Connection = Depends(get_conn)):
+    """Copy a session. With ``from_message_id``, BRANCH from that point in the
+    thread instead of copying all of it (v0.61.0) — everything through that
+    message comes along and what followed does not.
+
+    An unknown message id is a 404, not a silent whole-session fork: the caller
+    asked to branch somewhere specific, and quietly doing something else would
+    hand back a session that looks right and is not."""
     if repo.get_row(conn, session_id) is None:
         raise HTTPException(status_code=404, detail="session not found")
-    new_id = repo.fork(conn, session_id)
+    new_id = repo.fork(conn, session_id, up_to_message_id=from_message_id)
     if new_id is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    audit.record(conn, "session.fork", {"session_id": session_id, "new_session_id": new_id},
+        raise HTTPException(
+            status_code=404,
+            detail=("message not found in this session" if from_message_id
+                    else "session not found"))
+    audit.record(conn, "session.fork",
+                 {"session_id": session_id, "new_session_id": new_id,
+                  "from_message_id": from_message_id or ""},
                  run_id=None, session_id=session_id)
     conn.commit()
     return _detail(conn, new_id)

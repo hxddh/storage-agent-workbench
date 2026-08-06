@@ -183,3 +183,28 @@ describe("contrast", () => {
     });
   }
 });
+
+describe("the keyboard focus ring (v0.61.0)", () => {
+  const css = fs.readFileSync(path.join(SRC, "index.css"), "utf8");
+  const rule = css.slice(css.indexOf(":focus-visible {"), css.indexOf("}", css.indexOf(":focus-visible {")));
+
+  it("exists at all", () => {
+    expect(rule).toContain("box-shadow");
+  });
+
+  it("does not force a corner radius on the elements it decorates", () => {
+    // It used to hardcode `border-radius: 0.5rem`, which is right for exactly
+    // one shape. Measured across the focusable elements, 24 were a different
+    // one — 10 `rounded-full` pills, 8 `rounded-md`, 6 `rounded` — so tabbing
+    // drew an 8px-cornered box around a fully round button, every stop.
+    //
+    // box-shadow already follows the element's own border-radius, so declaring
+    // nothing is what makes the ring follow the shape.
+    expect(rule).not.toMatch(/border-radius/);
+  });
+
+  it("still suppresses the default outline it replaces", () => {
+    // Dropping the radius must not also drop the reason the rule exists.
+    expect(rule).toContain("outline: none");
+  });
+});

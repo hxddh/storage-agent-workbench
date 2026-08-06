@@ -170,6 +170,29 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
     with, so LOADING the skill is the statement of intent that opening those
     groups would otherwise cost a separate round-trip to express.
     """
+    # Which skill this session's STABLE context already carries (v0.61.0).
+    #
+    # Resolved ONCE here, at build time, and that timing is the whole trick: the
+    # tools cannot have run yet, so the most recent `read_skill` row belongs to a
+    # PREVIOUS turn — exactly the skill `active_skill_block` will put in this
+    # turn's prompt. Querying inside the tool instead would also see this turn's
+    # own rows and make the tool refuse a first, legitimate read.
+    #
+    # Best-effort: any failure leaves it None and `read_skill` behaves exactly as
+    # before. A bookkeeping miss must cost tokens, never a capability.
+    _active_skill_name: str | None = None
+    if conn is not None and session_id:
+        try:
+            _row = conn.execute(
+                "SELECT input_json_sanitized FROM tool_calls "
+                "WHERE session_id = ? AND tool_name = 'read_skill' "
+                "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                (session_id,)).fetchone()
+            if _row:
+                _active_skill_name = (json.loads(_row[0]) or {}).get("name") or None
+        except Exception:  # noqa: BLE001
+            _active_skill_name = None
+
     def provider(provider_id: str):
         return cloud_repo.get(conn, provider_id)
 
@@ -724,6 +747,25 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         body = skill_context.read_skill_text(name)
         if body is None:
             return _err("Unknown skill name. Use a name from the StorageOps skills catalog.")
+        # The skill this session already carries in its STABLE context
+        # (`active_skill_block`, v0.54.0). Its whole point was to stop a
+        # multi-turn investigation re-reading the same method every turn — but
+        # that was only ever a REQUEST in the instructions ("do not read_skill it
+        # again"), and nothing enforced it. A model that re-read paid for the
+        # body twice in one turn: once in the context prefix, once as this tool
+        # result, which then rides every later step of the turn. Measured, the
+        # bodies average 3,261 chars and reach 5,966.
+        #
+        # The in-turn dedupe (`_call_key`) does not cover this: it only catches
+        # the SAME call twice within one turn, and this is a cross-turn repeat.
+        if _active_skill_name and name == _active_skill_name:
+            return json.dumps({
+                "status": "already_loaded",
+                "name": name,
+                "note": "This skill's full method is already in your context this "
+                        "turn (agent_memory / active_skill). Do not re-read it — "
+                        "apply it from there.",
+            })
         skill_loads["n"] += 1
         rec("read_skill", name=name)
         note("read_skill", name, "loaded")

@@ -268,8 +268,16 @@ export const patchSession = (
   body: { title?: string; status?: "active" | "archived"; pinned?: boolean },
 ) => request<SessionDetail>(`/sessions/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 
-export const forkSession = (id: string) =>
-  request<SessionDetail>(`/sessions/${id}/fork`, { method: "POST" });
+/** Copy a session. With `fromMessageId`, BRANCH from that point in the thread
+ * instead of copying all of it (v0.61.0): everything through that message comes
+ * along and what followed does not. An unknown message id is a 404 rather than a
+ * silent whole-session fork. */
+export const forkSession = (id: string, fromMessageId?: string) =>
+  request<SessionDetail>(
+    `/sessions/${id}/fork` +
+      (fromMessageId ? `?from_message_id=${encodeURIComponent(fromMessageId)}` : ""),
+    { method: "POST" },
+  );
 
 export const deleteSession = (id: string) =>
   request<void>(`/sessions/${id}`, { method: "DELETE" });
