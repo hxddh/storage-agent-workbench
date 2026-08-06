@@ -170,6 +170,28 @@ What it now proves, all against real turns:
 - a JSON policy example inside an answer is not eaten as the contract block;
 - a secret the model echoes back is redacted before it is stored.
 
+The **streaming** endpoint gets the same treatment. `POST /messages` is only the
+fallback; the app streams every question, and that is where the shipped bug was
+felt — the stream succeeded, the answer was watched arriving, and the reload that
+turns the live bubble into a persisted message hit the 500. So the assertions are
+about the seam *after* the stream ends: tool → delta → done in order, the deltas
+adding up to the answer, the contract block never scrolling past mid-answer, the
+session opening afterwards, the trace and grounding persisted, the turn no longer
+reported as running, a second streamed turn keeping the first, and a stream with
+no model configured being a clean 422 that leaves no half-written user message.
+
+And the **untrusted-data envelope**, read off the wire for the first time. The
+instructions tell the model that everything between
+`<<external_untrusted_data>>` markers is third-party content and never an
+instruction; that defence is worth exactly as much as the envelope actually being
+present in the request, and it had only ever been unit-tested on the wrapping
+helper. The injection arrives through an ordinary path — a cloud provider's name,
+which `list_providers` returns — and carries a closing marker to try to escape
+the fence. Verified: the result is wrapped, the smuggled marker is defanged, the
+text still arrives **readable** rather than censored (the agent must be able to
+report that a provider is named this), no provider secret is in what the model
+received, and nothing destructive reaches the thread.
+
 ### Added — coverage for the surfaces that had none
 
 A second sweep over the untested seams, all against the real stack. **Everything
