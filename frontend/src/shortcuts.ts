@@ -20,6 +20,7 @@ export type ShortcutId =
   | "shortcuts"
   | "close"
   | "inspector"
+  | "find"
   | "send"
   | "newline";
 
@@ -48,6 +49,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "shortcuts", keys: ["?"], labelKey: "keys.thisSheet", group: "global", mod: null, key: "?", handled: true },
   { id: "close", keys: ["Esc"], labelKey: "keys.close", group: "global", mod: null, key: "Escape", handled: true },
   { id: "inspector", keys: [MOD, "I"], labelKey: "keys.inspector", group: "chat", mod: "mod", key: "i", handled: true },
+  { id: "find", keys: [MOD, "F"], labelKey: "keys.find", group: "chat", mod: "mod", key: "f", handled: true },
   { id: "send", keys: ["Enter"], labelKey: "keys.send", group: "chat", handled: false },
   { id: "newline", keys: ["Shift", "Enter"], labelKey: "keys.newline", group: "chat", handled: false },
 ];

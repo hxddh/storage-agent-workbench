@@ -131,7 +131,7 @@ export function Composer({
   const running = busy || uploading;
 
   return (
-    <div className="relative rounded-[22px] border border-edge bg-panel px-3.5 pb-2.5 pt-3 shadow-elev transition-all duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
+    <div className="relative rounded-3xl border border-edge bg-panel px-3.5 pb-2.5 pt-3 shadow-elev transition-[border-color,box-shadow] duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
       {slashOpen && (
         <div className="absolute bottom-full left-1 right-1 mb-2 overflow-hidden rounded-xl border border-edge bg-panel shadow-pop animate-fade-in">
           <div className="px-3 py-1.5 text-3xs font-medium uppercase tracking-wider text-gray-600">{t("thread.commands")}</div>
@@ -268,7 +268,7 @@ export function Composer({
             onClick={onSteer}
             aria-label={t("thread.redirect")}
             title={t("thread.redirectHint")}
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-edge bg-elevated text-gray-100 transition-all hover:bg-hover active:scale-95"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-edge bg-elevated text-gray-100 transition-[background-color,transform] hover:bg-hover active:scale-95"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="19" x2="12" y2="5" />
@@ -281,7 +281,7 @@ export function Composer({
             onClick={onStop}
             aria-label={t("thread.stop")}
             title={t("thread.stop")}
-            className="group/stop grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-all hover:bg-accent-soft active:scale-95"
+            className="group/stop grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-[background-color,transform] hover:bg-accent-soft active:scale-95"
           >
             {/* Stop square inside a subtle spinner ring so it reads as "running,
                 click to cancel". */}
@@ -297,7 +297,7 @@ export function Composer({
             onClick={onSend}
             disabled={uploading || (!text.trim() && !attached)}
             aria-label={t("thread.send")}
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-all hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-600"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-[background-color,transform] hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-600"
           >
             {uploading ? (
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />

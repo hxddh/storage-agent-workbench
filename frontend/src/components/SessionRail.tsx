@@ -197,14 +197,14 @@ export function SessionRail({
         <button
           aria-label={t("menu.more")}
           onClick={(e) => { e.stopPropagation(); setConfirmId(null); setMenuId(open ? null : s.id); }}
-          className={`grid h-6 w-6 shrink-0 place-items-center rounded-md text-gray-500 transition-all hover:bg-hover hover:text-gray-200 ${
+          className={`grid h-6 w-6 shrink-0 place-items-center rounded-md text-gray-500 transition-colors hover:bg-hover hover:text-gray-200 ${
             open || confirming ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           }`}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
         </button>
         {open && (
-          <div className="absolute right-1.5 top-8 z-40 w-40 overflow-hidden rounded-lg border border-edge bg-panel py-1 shadow-pop animate-fade-in">
+          <div className="absolute right-1.5 top-8 z-floating w-40 overflow-hidden rounded-lg border border-edge bg-panel py-1 shadow-pop animate-fade-in">
             <MenuItem onClick={act(() => setRenamingId(s.id))}>{t("menu.rename")}</MenuItem>
             {!isArchived && (
               <MenuItem onClick={act(() => actions.onTogglePin(s))}>{s.pinned ? t("menu.unpin") : t("menu.pin")}</MenuItem>
@@ -216,7 +216,7 @@ export function SessionRail({
           </div>
         )}
         {confirming && (
-          <div className="absolute right-1.5 top-8 z-40 w-48 overflow-hidden rounded-lg border border-edge bg-panel p-3 shadow-pop animate-fade-in" onClick={(e) => e.stopPropagation()}>
+          <div className="absolute right-1.5 top-8 z-floating w-48 overflow-hidden rounded-lg border border-edge bg-panel p-3 shadow-pop animate-fade-in" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 text-xs text-gray-200">{t("rail.deleteConfirmShort")}</div>
             <div className="flex justify-end gap-1.5">
               <button
@@ -322,10 +322,10 @@ export function SessionRail({
         aria-orientation="vertical"
         aria-label={t("rail.resize")}
         data-testid="rail-resize"
-        className="absolute -right-[2px] top-0 z-40 h-full w-[5px] cursor-col-resize transition-colors hover:bg-accent/30"
+        className="absolute -right-[2px] top-0 z-floating h-full w-[5px] cursor-col-resize transition-colors hover:bg-accent/30"
       />
       {/* click-away backdrop for the open item menu / delete confirm */}
-      {(menuId || confirmId) && <div className="fixed inset-0 z-30" onClick={closeAll} />}
+      {(menuId || confirmId) && <div className="fixed inset-0 z-sticky" onClick={closeAll} />}
 
       <div className="group/brand flex items-center gap-2.5 px-3.5 pb-2.5 pt-3.5">
         <div className="grid h-[26px] w-[26px] place-items-center rounded-md border border-edge-strong bg-elevated text-accent-soft">
@@ -338,7 +338,7 @@ export function SessionRail({
           aria-label={t("rail.collapse")}
           aria-expanded
           data-testid="rail-toggle"
-          className="ml-auto grid h-6 w-6 place-items-center rounded-md text-gray-600 opacity-0 transition-all hover:bg-hover hover:text-gray-200 group-hover/brand:opacity-100"
+          className="ml-auto grid h-6 w-6 place-items-center rounded-md text-gray-600 opacity-0 transition-[color,background-color,opacity] hover:bg-hover hover:text-gray-200 group-hover/brand:opacity-100"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <rect x="3" y="4" width="18" height="16" rx="2" /><line x1="9" y1="4" x2="9" y2="20" />

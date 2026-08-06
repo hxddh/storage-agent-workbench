@@ -41,7 +41,7 @@ export function SettingsDrawer(
 
   return (
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-scrim backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-drawer flex justify-end bg-scrim backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
       <div

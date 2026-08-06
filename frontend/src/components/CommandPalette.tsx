@@ -73,7 +73,7 @@ export function CommandPalette({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center bg-scrim pt-[14vh] backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-palette flex items-start justify-center bg-scrim pt-[14vh] backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div
         ref={trapRef}
         role="dialog"

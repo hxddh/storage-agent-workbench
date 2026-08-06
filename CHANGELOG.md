@@ -6,6 +6,118 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-08-06
+
+_The gate that only ever opened, the mistake that ended the turn, the search
+that was never there, and three scales still drifting._
+
+### Fixed — the tool gate ratcheted open and never closed
+
+v0.55.0 seeded each turn's unlocked tool groups from the session's **entire**
+`tool_calls` history. A group touched once therefore stayed open for every later
+turn, so a long investigation converged on carrying every schema forever and a
+trivial follow-up question paid the same as the scan that opened them.
+
+Measured on the shipped tool set:
+
+| unlocked | schema block | ~tokens |
+| --- | --- | --- |
+| cold (core only, 14 tools) | 8,507 chars | 2,126 |
+| everything (43 tools) | 34,826 chars | 8,706 |
+| **ratchet delta** | **26,319 chars** | **6,579 per step — ~52,600 on an 8-step turn** |
+
+Per group: object_forensics 6,961 · bucket_config 4,699 · account_wide 4,343 ·
+uploaded_files 3,796 · storage_pileup 3,673 · endpoint_probes 2,847.
+
+The seed is now a **window** — the last 40 tool calls — rather than the whole
+session. 40 is chosen against the product's own numbers: a typical turn runs ~8
+calls, so the window spans roughly five turns of real work (a continuing
+investigation never re-unlocks), while a single heavy survey turn still keeps
+everything it just used. Decaying by wall-clock instead would misread how these
+sessions are worked — an operator leaves a thread open for hours and comes back
+mid-investigation. Nothing is lost when the window slides past a group:
+`load_tools` still reaches it in one cheap call, which is the whole design.
+
+Ordering breaks ties by `rowid`, not `created_at` alone: the column has
+one-second resolution and a turn fires many calls inside one second, so a
+timestamp-only window would slice a burst at an arbitrary point.
+
+### Fixed — calling a locked tool destroyed the whole turn
+
+The same v0.55.0 gate created a second, worse problem. The SDK defaults
+`RunConfig.tool_not_found_behavior` to `"raise_error"`, and a tool disabled by
+`is_enabled` is genuinely "not found" to the runtime. The agent is **told those
+tools exist** — `tool_group_catalog()` lists every group in the instructions —
+so naming one before unlocking it is a predictable move, not a hallucination.
+It raised `ModelBehaviorError`, which this product does not classify as
+recoverable, so one wrong tool name discarded an entire investigation's evidence
+and surfaced a raw error. That shipped in three releases.
+
+The behaviour is now `"return_error_to_model"` with a formatter that makes the
+correction actionable rather than merely non-fatal — it names the group and the
+exact call, `load_tools(group="storage_pileup")`, and says nothing gathered is
+lost. Three cases stay distinct: a known tool in a locked group gets the unlock;
+a known tool in an **already open** group is told so explicitly, because sending
+it to re-unlock would loop; an unrecognised name falls through to the SDK's own
+message, since inventing a group would be a confident lie. The formatter runs
+inside the SDK's error path and never raises.
+
+### Added — find inside one investigation
+
+The command palette searched session **titles**. Nothing searched what was
+actually said, so eighty turns into a bucket investigation there was no way back
+to the line where the retention rule was named — the one thing a long thread is
+for.
+
+`⌘F` / `Ctrl+F` opens a find bar over the thread: match count across the whole
+conversation, `Enter` / `Shift+Enter` to step, wrap at both ends, `Esc` to close.
+A match inside a **collapsed old turn expands it**, because finding something
+the user then cannot see would be worse than not finding it. The matching is
+literal, not a RegExp — an object key or an ARN routinely contains `*`, `(`, `[`
+— and highlighting returns segments rather than HTML, since the thread renders
+model and tool text this product deliberately never treats as markup.
+
+### Changed — three more scales stopped drifting
+
+v0.56.0 gave the UI a type scale and v0.57.0 guarded it. Three others were still
+loose, all the same class of problem one layer down:
+
+| | before | after |
+| --- | --- | --- |
+| corner radii | **10 distinct** — 7 named + `[3px]` `[5px]` `[22px]` | one declared 8-step scale |
+| stacking layers | 8 values, **4 arbitrary** (`z-[60]` `[70]` `[75]` `[80]`) | 7 **named** layers |
+| motion | `transition-all` ×9 | the properties each element actually animates |
+
+The existing radius and z-index **values are unchanged on purpose**: renumbering
+would have silently restyled a hundred elements and risked a stacking regression
+with no way to verify short of looking at every screen. What changed is that
+both are now declared — so they can be enumerated, named and guarded — and the
+inline values were migrated onto them. `sm` (3px) and `3xl` (22px) exist because
+the UI genuinely needed an inline mark and a composer pill, not to round out a
+table. A layer now has a name to reason about: `z-toast` above `z-shortcuts`
+above `z-palette` above `z-wizard` above `z-drawer`.
+
+`transition-all` animates every property an element has, including ones that
+change for reasons unrelated to the interaction — which is how a hover ends up
+animating a layout shift. Each of the nine now lists what it means to animate.
+
+`design-tokens.test.ts` grew from 3 checks to 8, covering all three. Each new
+guard was **verified to fail** on reintroduced drift before being trusted.
+
+### Verified — the dependency floor is already at the top
+
+Every locked runtime dependency was checked against PyPI and all eleven key
+packages are already latest: openai-agents 0.19.4, openai 2.53.0, fastapi
+0.141.1, uvicorn 0.52.1, boto3/botocore 1.43.65, duckdb 1.5.5, pyarrow 25.0.0,
+pandas 3.0.5, pydantic 2.13.4, httpx 0.28.1. Nothing to upgrade — so this
+release spent the dependency work on SDK surface that was installed and unused
+instead, which is where the two defects above were found.
+
+`ModelSettings.truncation="auto"` was evaluated and **deliberately not adopted**:
+it lets the endpoint silently drop the middle of the conversation, which
+contradicts the product's own rule that a cut is always stated. The existing
+finalize pass handles overflow explicitly and says so in the answer.
+
 ## [0.57.0] - 2026-08-06
 
 _The turn's cost had a new shape, the answer had no shape at all, and the

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   correctSessionMemory,
   getSession,
@@ -35,6 +35,9 @@ import { SessionInspector } from "./SessionInspector";
 import { TurnFooter } from "./TurnFooter";
 import { fmtDuration } from "./TurnMetrics";
 import { useI18n } from "../i18n";
+import { matches } from "../shortcuts";
+import { findInThread, stepHit } from "../threadFind";
+import { FindBar } from "./FindBar";
 
 type Item =
   | {
@@ -596,6 +599,52 @@ export function Thread({
     setPinned(true);
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   };
+
+  // --- find in thread (v0.58.0) ---------------------------------------------
+  // The command palette searches session titles; nothing searched what was
+  // actually said. Eighty turns into an investigation that is the difference
+  // between a record and a wall of text.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [findIdx, setFindIdx] = useState(0);
+  const hits = useMemo(() => findInThread(items, findQuery), [items, findQuery]);
+  // A new query starts from the top rather than keeping a cursor that pointed
+  // into the previous result set.
+  useEffect(() => setFindIdx(0), [findQuery]);
+  const activeHitId = hits.length ? hits[Math.min(findIdx, hits.length - 1)]?.id : null;
+  useEffect(() => {
+    if (!findOpen || !activeHitId) return;
+    // A match inside a collapsed old turn has to open it. Finding something the
+    // user cannot then see would be worse than not finding it — it would claim
+    // the text is there and show them a summary line instead.
+    setExpandedTurns((prev) => (prev.has(activeHitId) ? prev : new Set(prev).add(activeHitId)));
+    // Let the expansion land before measuring where to scroll.
+    const raf = requestAnimationFrame(() => {
+      document
+        .getElementById(`thread-item-${activeHitId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [findOpen, activeHitId]);
+  const stepFind = useCallback(
+    (delta: number) => setFindIdx((i) => stepHit(i, hits.length, delta)),
+    [hits.length],
+  );
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    setFindQuery("");
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!matches(e, "find")) return;
+      e.preventDefault();
+      // Re-pressing the chord while open re-focuses the field rather than
+      // toggling it shut — the browser behaviour every user already has.
+      setFindOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   useEffect(() => {
     if (pinnedRef.current) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [items.length, proposals.length, pending, streamText?.length, streamTools.length]);
@@ -889,6 +938,16 @@ export function Thread({
           </header>
 
           <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-auto px-6 py-7">
+            {findOpen && (
+              <FindBar
+                query={findQuery}
+                onQuery={setFindQuery}
+                hits={hits}
+                index={findIdx}
+                onStep={stepFind}
+                onClose={closeFind}
+              />
+            )}
             <div className="mx-auto max-w-3xl space-y-6">
               {hiddenCount > 0 && (
                 <div className="flex justify-center">
@@ -927,7 +986,7 @@ export function Thread({
                   const question = questionBefore(idx);
                   const calls = (it.toolActivity ?? []).filter((a) => a.status !== "started").length;
                   return (
-                    <div key={it.id} className="thread-item">
+                    <div key={it.id} id={`thread-item-${it.id}`} className="thread-item">
                       <button
                         type="button"
                         onClick={() => setExpandedTurns((prev) => new Set(prev).add(it.id))}
@@ -951,7 +1010,7 @@ export function Thread({
                   );
                 }
                 return it.kind === "message" ? (
-                  <div key={it.id} className="thread-item space-y-3">
+                  <div key={it.id} id={`thread-item-${it.id}`} className="thread-item space-y-3">
                     <MessageCard
                       role={it.role}
                       content={it.content}
@@ -1128,7 +1187,7 @@ export function Thread({
                   type="button"
                   onClick={jumpToLatest}
                   data-testid="jump-to-latest"
-                  className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-edge bg-elevated/95 px-3 py-1.5 text-2xs text-gray-300 shadow-elev backdrop-blur transition-all hover:border-edge-strong hover:text-gray-100 animate-fade-in-up"
+                  className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-edge bg-elevated/95 px-3 py-1.5 text-2xs text-gray-300 shadow-elev backdrop-blur transition-colors hover:border-edge-strong hover:text-gray-100 animate-fade-in-up"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                        strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -1240,7 +1299,7 @@ function Overlay({ children, onClose }: { children: React.ReactNode; onClose: ()
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-40 flex bg-scrim backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-floating flex bg-scrim backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div
         className="m-auto h-[88vh] w-[min(900px,92vw)] overflow-hidden rounded-2xl border border-edge bg-canvas shadow-pop animate-scale-in"
         onClick={(e) => e.stopPropagation()}
