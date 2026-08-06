@@ -99,6 +99,29 @@ so the product type scale and token remaps carry over unchanged — verified in 
 built CSS, not assumed; TypeScript 7 stopped resolving `@types/node` implicitly,
 which the file-reading guard tests need.
 
+A fourth break surfaced only in CI: the new generation needs a newer **Node**
+than CI was running. jsdom 30 declares `engines.node: ^22.22.2 || …` and its
+undici 8 declares `>=22.19.0`, but all eight `setup-node` sites across `ci.yml`
+and `release.yml` pinned **Node 20** — where `worker_threads.markAsUncloneable`
+does not exist, having landed in 22.10 and never been backported. npm does not
+enforce `engines` without `engine-strict`, so `npm ci` succeeded and the
+mismatch appeared only as `webidl.util.markAsUncloneable is not a function`
+inside the vitest worker, reported as eleven unrelated-looking "failed to start
+worker" errors. It passed locally on Node 22.22.2. All eight sites now pin 22.
+
+### Added — the Node floor is declared, and CI is held to it
+
+The deeper fault was that nothing said what Node this frontend needs, so nothing
+could check it. `frontend/package.json` now declares
+`engines.node: ">=22.22.2"`, and a guard test asserts two things: that the
+declared floor is no lower than the strictest floor any installed package
+requires (max-of-floors is a sound lower bound on the true intersection), and
+that every `node-version:` across every workflow is at least that major. The
+guard was verified to fail — with `ci.yml: node-version 20 < 22` — before being
+trusted. It compares majors; a within-major floor still relies on `setup-node`
+resolving `"22"` to the latest 22.x, which the test says plainly rather than
+implying coverage it does not have.
+
 ### Added — the design tokens are enforced, not merely applied
 
 v0.56.0 migrated 157 arbitrary font sizes onto a scale. Nothing stopped the

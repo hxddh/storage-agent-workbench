@@ -109,7 +109,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       # Stamp BEFORE `pip install`: the sidecar reports its version via
       # importlib.metadata, which is frozen from pyproject.toml at install time.
       # Installing first would bake in the pre-stamp version (0.23.0) and the
@@ -154,7 +154,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Install Tauri Linux system deps
         run: |
           sudo apt-get update
@@ -205,7 +205,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       # Stamp BEFORE `pip install` (importlib.metadata freezes the version at
       # install time — see the macOS job note).
       - name: Stamp bundle version from tag
