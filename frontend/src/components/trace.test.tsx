@@ -275,3 +275,40 @@ describe("what a turn cost", () => {
     expect(screen.getByText("list_objects")).toBeTruthy();
   });
 });
+
+describe("the audit gap marker (v0.59.0)", () => {
+  it("marks a call whose audit row could not be written", () => {
+    // Rule 17 requires every tool call to be audited. When that write fails the
+    // call still runs and is still persisted — but a gap the reader cannot see
+    // reads as "nothing happened".
+    wrap(createElement(LiveTrace, {
+      items: [call({ audit_error: "OperationalError: disk I/O error" })],
+    }));
+    const mark = screen.getByTestId("trace-audit-gap");
+    expect(mark).toBeInTheDocument();
+    // The reason is reachable, not just a bare glyph.
+    expect(mark.getAttribute("title") ?? "").toContain("disk I/O error");
+  });
+
+  it("says the call itself DID run, so the mark is not read as a failure", () => {
+    wrap(createElement(LiveTrace, {
+      items: [call({ audit_error: "OperationalError: disk I/O error" })],
+    }));
+    const title = screen.getByTestId("trace-audit-gap").getAttribute("title") ?? "";
+    expect(title).toMatch(/ran and was saved/i);
+  });
+
+  it("is absent on every healthy call", () => {
+    // Presence is the signal. A marker that is always there says nothing.
+    wrap(createElement(LiveTrace, { items: [call({ ok: true })] }));
+    expect(screen.queryByTestId("trace-audit-gap")).toBeNull();
+  });
+
+  it("does not show while the call is still running", () => {
+    // A started row has no outcome yet; the audit write has not been attempted.
+    wrap(createElement(LiveTrace, {
+      items: [call({ status: "started", audit_error: "x" })],
+    }));
+    expect(screen.queryByTestId("trace-audit-gap")).toBeNull();
+  });
+});

@@ -149,6 +149,7 @@ const en: Dict = {
   "thread.loadingEarlier": "Loading…",
   "thread.jumpToStart": "Jump to start",
   "trace.ran": "Ran {n} checks",
+  "trace.auditGap": "This call ran and was saved, but its audit-log entry could not be written: {reason}",
   // unified turn footer (v0.49.0)
   "turn.checks": "{n} checks",
   "turn.failed": "{n} failed",
@@ -602,6 +603,7 @@ const zh: Dict = {
   "thread.loadingEarlier": "载入中…",
   "thread.jumpToStart": "跳到最早",
   "trace.ran": "已运行 {n} 项检查",
+  "trace.auditGap": "该调用已执行并已保存，但它的审计日志条目写入失败：{reason}",
   // 统一的回合信息条 (v0.49.0)
   "turn.checks": "{n} 项检查",
   "turn.failed": "{n} 项失败",

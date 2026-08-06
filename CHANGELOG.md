@@ -6,6 +6,84 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.59.0] - 2026-08-06
+
+_The lock was in the right place for two files and absent from the two that
+needed it most._
+
+### Fixed — eleven unguarded commits on the shared turn connection
+
+v0.55.0 added `db.WRITE_LOCK` for a specific reason: parallel tool calls share
+ONE connection, and a connection has ONE transaction, so thread A's `commit()`
+commits B's half-written work and B's own `commit()` then raises
+`cannot commit - no transaction is active`.
+
+The lock reached `session_tools`' bookkeeping and the five memory tools. It
+never reached `session_action_tools` or `session_analysis_tools`, which held
+**eleven unguarded `conn.commit()` calls** between them — on agent-callable
+tools (`survey_account`, `review_bucket_config`, `read_run_result`,
+`list_uploaded_files`, `analyze_uploaded_file`, `aggregate_uploaded_file`, …)
+that run in parallel with the guarded ones, on the same connection.
+
+An unguarded `commit()` is worse than an unguarded INSERT: it commits whatever
+transaction is open, including another thread's lock-held work in progress.
+
+Measured against the unfixed code over 120 forced pairs:
+
+| | |
+| --- | --- |
+| calls that died | **12 of 240 — 5.0%** |
+| the rate that motivated the lock in v0.55.0 | 2 of 240 — 0.8% |
+| memory rows nonetheless present | **120 of 120** |
+
+That last row is the expensive part. The write **landed** and the agent was told
+it had not. An agent that believes `note_fact` failed records the fact again, or
+tells the user it could not save a finding that is sitting in the database — and
+rule 17's audit trail disagrees with reality for the same reason.
+
+All eleven sites, plus `runs_repo.create` and `sessions_repo.link_run`, now take
+the existing lock. **This is not a change to the concurrency model.** The lock is
+held for the microseconds of the write while the S3 and DuckDB calls it brackets
+stay entirely outside it, so v0.54.0's parallel tool calls keep their benefit.
+The worst site was the post-wait commit in `_execute_run`, which fires after
+minutes of waiting on an inline run and so was maximally likely to land
+mid-write.
+
+### Fixed — a failed audit write no longer kills the tool, and no longer hides
+
+`rec`'s audit write sat unprotected while the `note` persist block beside it had
+always been best-effort. A bookkeeping failure therefore failed the read-only
+tool the user actually asked for — *after* the S3 work was done, so the cost was
+paid and the answer thrown away.
+
+Swallowing it silently is the other wrong answer: rule 17 requires tool calls to
+be recorded, and a gap nobody can see reads as "nothing happened". So the failure
+is carried to `note`, which puts it on the live trace row (a ⚠ with the reason on
+hover) and stores it on the persisted call. The `tool_calls` row is still written
+either way, so the call itself stays recorded; what is marked is that its
+`audit_logs` entry is missing. Absent on every healthy call — its presence, not
+its value, is the signal.
+
+### Added — the coverage is guarded structurally, not just behaviourally
+
+Six tests. Which of them detect a bug is stated in the file rather than implied:
+the three race tests and two of the three audit tests were each verified to
+**fail** against the unfixed code and pass after;
+`test_a_healthy_call_carries_no_audit_noise` passes either way by design — it is
+a non-regression guard for the clean path.
+
+The behavioural tests are probabilistic; a lucky run could pass. The third is
+not: it reads the source and fails on any `conn.commit()` in the tool modules
+that sits outside a `with db.WRITE_LOCK:` block, so the eleven sites cannot come
+back quietly. It also asserts it actually found the four modules, so a rename
+cannot turn it into a guard over nothing.
+
+One implementation note worth keeping: the collision barrier in those tests runs
+at a **50 ms** timeout, and that is load-bearing. After the fix the two bodies
+can no longer be inside `audit.record` together — that is precisely what the fix
+does — so the barrier can only ever time out, and the 10 s timeout it was
+written with turned a passing run into a twenty-minute hang.
+
 ## [0.58.0] - 2026-08-06
 
 _The gate that only ever opened, the mistake that ended the turn, the search
