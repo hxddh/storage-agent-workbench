@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   SessionRail,
   DEFAULT_RAIL_WIDTH,
@@ -28,6 +28,11 @@ import { matches } from "./shortcuts";
 const ONBOARDED_KEY = "saw.onboarded";
 const RAIL_WIDTH_KEY = "saw.railWidth";
 const RAIL_COLLAPSED_KEY = "saw.railCollapsed";
+// Which investigation was open. Without it, quitting the app — or any reload —
+// reopened on the empty "New chat" surface with the conversation still sitting
+// in the rail, unread. An investigation runs over days here, so "where was I"
+// is the app's most common first question, and the answer was a blank page.
+const ACTIVE_SESSION_KEY = "saw.activeSession";
 
 // Read once at mount. A rail that forgets its width every launch is worse than
 // one that was never resizable — the user re-does the same drag daily.
@@ -39,7 +44,19 @@ function storedRailWidth(): number {
 export default function App() {
   const { status, slow } = useSidecarHealth();
   const [sessions, setSessions] = useState<SessionSummaryRow[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveIdState] = useState<string | null>(null);
+  // Remember the open investigation across launches. `null` is a real choice
+  // (the user pressed "New chat"), so it is stored as a removal rather than
+  // left behind — otherwise the next launch would reopen what they just closed.
+  const setActiveId = useCallback((id: string | null) => {
+    setActiveIdState(id);
+    if (id) localStorage.setItem(ACTIVE_SESSION_KEY, id);
+    else localStorage.removeItem(ACTIVE_SESSION_KEY);
+  }, []);
+  // Restore ONCE, and only onto a session that still exists — a stored id can
+  // point at an investigation deleted from another window, and reopening it
+  // would surface "Couldn't load this session" on launch.
+  const restored = useRef(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -66,6 +83,15 @@ export default function App() {
   useEffect(() => {
     if (status === "connected") refreshSessions();
   }, [status, refreshSessions]);
+
+  // ...then reopen where the user left off.
+  useEffect(() => {
+    if (restored.current || sessions.length === 0) return;
+    restored.current = true;
+    const stored = localStorage.getItem(ACTIVE_SESSION_KEY);
+    if (stored && sessions.some((s) => s.id === stored)) setActiveIdState(stored);
+    else if (stored) localStorage.removeItem(ACTIVE_SESSION_KEY);
+  }, [sessions]);
 
   // First-run: show the wizard if no providers are configured and it hasn't been dismissed.
   useEffect(() => {

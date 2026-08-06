@@ -38,6 +38,7 @@ import { fmtDuration } from "./TurnMetrics";
 import { useI18n } from "../i18n";
 import { matches } from "../shortcuts";
 import { findInThread, stepHit } from "../threadFind";
+import { answerGist } from "../answerGist";
 import { FindBar } from "./FindBar";
 
 type Item =
@@ -889,7 +890,11 @@ export function Thread({
   );
 
   return (
-    <div className="flex h-full flex-1 flex-col bg-canvas">
+    /* The conversation is the app's main landmark. It had none: the whole shell
+       was anonymous <div>s, so a screen reader offered no way to skip the rail
+       and jump to what was actually said — and a test asserting "in the thread"
+       had nothing to scope to and silently matched the rail instead. */
+    <main aria-label={t("a11y.conversation")} className="flex h-full flex-1 flex-col bg-canvas">
       {loadError ? (
         /* Loading an existing session failed — show an explicit error + retry
            instead of silently presenting the empty new-chat surface (M6). */
@@ -1003,7 +1008,14 @@ export function Thread({
                   idx < items.length - OPEN_TAIL &&
                   !expandedTurns.has(it.id);
                 if (collapsible && it.kind === "message") {
-                  const question = questionBefore(idx);
+                  // Label the collapsed turn with what it CONCLUDED, not with
+                  // the question — collapsing hides only the assistant half, so
+                  // the user's message is still rendered in full directly above
+                  // and a question label printed the same sentence twice, one
+                  // line apart. The answer's opening line is the thing a reader
+                  // scans a long investigation for. The question stays as the
+                  // fallback for an answer that is empty (a stopped turn).
+                  const gist = answerGist(it.content) || questionBefore(idx);
                   const calls = (it.toolActivity ?? []).filter((a) => a.status !== "started").length;
                   return (
                     <div key={it.id} id={`thread-item-${it.id}`} className="thread-item">
@@ -1018,7 +1030,7 @@ export function Thread({
                           <polyline points="9 18 15 12 9 6" />
                         </svg>
                         <span className="min-w-0 flex-1 truncate text-xs text-gray-500 group-hover:text-gray-300">
-                          {question || it.content || t("common.untitled")}
+                          {gist || t("common.untitled")}
                         </span>
                         {calls > 0 && (
                           <span className="shrink-0 tabular-nums text-3xs text-gray-700">
@@ -1310,7 +1322,7 @@ export function Thread({
           </div>
         </Overlay>
       )}
-    </div>
+    </main>
   );
 }
 

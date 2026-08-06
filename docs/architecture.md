@@ -270,7 +270,21 @@ errors — NOT a static FAQ or error-code dictionary page.
   `sk-` model keys).
 - **`error_triage/playbooks.py`** is a small curated rule set (not a dictionary):
   per category it gives likely causes, evidence to check, safe read-only next
-  checks, related run types, and provider caveats.
+  checks, related run types, and provider caveats. 53 codes as of v0.62.0.
+
+  One category earns its own note. **`not_configured`** covers the twelve codes
+  that mean *this bucket has no such configuration* — `NoSuchLifecycleConfiguration`,
+  `NoSuchTagSet`, `ObjectLockConfigurationNotFoundError` and the rest. They are
+  not faults, and the config-reading path has always known that
+  (`s3/config_tools._NOT_CONFIGURED_CODES`); the triage did not, so all twelve
+  fell through to `unknown` until v0.62.0. That mattered because offline triage
+  is exactly what answers when no model provider is configured — the state in
+  which a wrong verdict costs most. The playbook entries are GENERATED from that
+  same set, and a test walks it, so the two cannot drift apart.
+
+  `not_configured` is deliberately distinct from `provider_unsupported`: one says
+  the bucket has no such setting, the other says the endpoint has no such API.
+  A test asserts no code is ever classified as both.
 - **`error_triage/engine.py`** runs deterministically: parse → match → candidate
   causes + safe next checks + next-action proposals (sanitized via
   `normalize_proposal`). It performs NO S3 call, run, download, or mutation.

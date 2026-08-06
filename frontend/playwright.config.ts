@@ -36,14 +36,24 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${WEB_PORT}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
-    // Local sandboxes ship a preinstalled browser at a pinned revision that may
-    // not match this Playwright build; CI installs the matching one in the
-    // default location. Honour an explicit override when present.
-    launchOptions: process.env.PW_CHROMIUM_PATH
-      ? { executablePath: process.env.PW_CHROMIUM_PATH }
-      : {},
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // The override has to live on the PROJECT, not on the top-level `use`:
+  // `devices["Desktop Chrome"]` is spread into the project and replaces the
+  // inherited `launchOptions` wholesale, so a top-level one silently vanishes.
+  // Local sandboxes ship a preinstalled browser at a pinned revision that may
+  // not match this Playwright build; CI installs the matching one in the
+  // default location and leaves PW_CHROMIUM_PATH unset.
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        ...(process.env.PW_CHROMIUM_PATH
+          ? { launchOptions: { executablePath: process.env.PW_CHROMIUM_PATH } }
+          : {}),
+      },
+    },
+  ],
   webServer: {
     command: `npm run build && npx vite preview --port ${WEB_PORT} --strictPort`,
     url: `http://127.0.0.1:${WEB_PORT}`,

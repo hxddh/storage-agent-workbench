@@ -6,6 +6,281 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-08-06
+
+_Every investigation that called a tool became unopenable. The test suite was
+green because its fixtures described the schema instead of the writer._
+
+### Fixed — a session that ran a tool answered 500 and could not be opened
+
+`SessionMessageOut.tool_activity` was declared `list[dict[str, str]]` back when a
+trace row really was four strings. v0.56.0 then started recording what a call
+actually did:
+
+| field | written since | type |
+| --- | --- | --- |
+| `duration_ms` | v0.56.0 | `int \| None` |
+| `ok` | v0.55.0 | `bool` |
+| `args` | v0.53.0 | `dict` |
+
+Pydantic v2 does not coerce any of those into `str`, so the response model
+raised and **`GET /sessions/{id}` returned 500 for every session containing a
+completed tool call** — that is, every real investigation. Measured, not
+inferred: the same rows served fine from `GET /sessions/{id}/messages`, which
+returns a plain dict and is therefore unvalidated.
+
+What that looked like in the app, and why both reported symptoms follow from it:
+
+- **The thread stopped growing.** `Thread.reload()` deliberately keeps the
+  previous content on a failed refresh rather than blanking a populated thread,
+  so `detail` froze at the state before the first tool call. Every later answer
+  was persisted and never displayed.
+- **The three actions under an answer disappeared.** With the reload failing,
+  the finished answer stayed on screen as the *live streaming* bubble. The turn
+  footer, copy / edit / branch and the proposal chips all hang off a persisted
+  message, so none of them rendered.
+- **The failure named the wrong layer.** An unhandled exception escapes outside
+  `CORSMiddleware`, so the browser got a response with no
+  `Access-Control-Allow-Origin` and reported `TypeError: Failed to fetch`. A
+  broken endpoint read as an unreachable sidecar.
+
+`ToolActivityOut` now types the row against its producer, with `extra="allow"`
+so a field the writer adds reaches the reader instead of being dropped
+(`audit_error`, present only when a rule-17 audit write failed, is exactly such
+a field — its presence is the signal).
+
+### Fixed — relaunching the app opened a blank page
+
+`activeId` started as `null` and nothing restored it, so quitting the app — or
+any reload — landed on the empty "New chat" surface with the conversation
+sitting unread in the rail. An investigation here runs over days, which makes
+"where was I" the app's most common first question. The open session id is now
+remembered, and restored only onto a session that still exists.
+
+### Fixed — one corrupt column no longer takes a whole session down
+
+`list_messages` decoded five JSON columns with a bare `json.loads` inside the row
+loop, so a single unreadable value made the entire conversation unopenable.
+A damaged trace now degrades to an empty trace.
+
+### Fixed — an unhandled server fault answers a readable 500
+
+It carries the exception *type* and nothing else (a message can quote the
+request that produced it), with the CORS grant the browser needs to read the
+status at all. The traceback still goes to the local log.
+
+### Added — the conversation is a landmark, and the suite finally reads it
+
+The shell had no `<main>`: a screen reader could not skip the rail, and a test
+asserting "in the thread" had nothing to scope to. It had been matching the
+**rail**, which repeats every session title — the ordering assertion in this
+work passed against a thread that showed the opposite until it was rescoped.
+
+`e2e/history.spec.ts` covers what nothing covered: a second exchange that must
+not erase the first, history across a reload, chronological order, a 12-exchange
+conversation where every turn must be present, old answers that collapse and
+reopen, the newest answer's footer, and copy / edit / branch on a user message.
+`e2e/seed.ts` writes a realistic multi-turn session into the sidecar's own
+SQLite, because the composer path without a model provider can only produce
+triage cards and therefore exercised none of the message rendering.
+
+**Why 1142 passing tests missed a 500 on the app's main endpoint.** Every
+existing fixture built `tool_activity` from all-string dicts — encoding the
+schema's assumption rather than the writer's real output — and no test in any
+suite opened a session that had called a tool.
+
+### Fixed — a collapsed turn repeated the question instead of the answer
+
+Collapsing hides only the assistant half of an old turn, so the user's message
+is still rendered in full directly above the collapsed row — which was labelled
+with that same question. Scrolling back through thirty turns showed your own
+words twice, one line apart, and never what the agent concluded. The row now
+carries the answer's first claim, with the markdown stripped (`answerGist`); the
+question remains the fallback for a stopped turn that persisted no answer.
+
+### Fixed — a case with no summary could not be read
+
+`error_triage_cases.summary` is nullable while `TriageCaseOut.summary` is `str`,
+and the router used `.get("summary", "")` — which returns the stored `None`, not
+the default. Same shape of defect as the one above, on a read-only endpoint.
+
+### Fixed — the summary loader had the same unguarded decode
+
+`get_summary` decoded five JSON columns with a bare `json.loads`, and it is read
+by the same endpoint. One damaged column now costs its own field.
+
+### Fixed — a destructive proposal could reach the thread as a chip
+
+`FORBIDDEN_PHRASES` matches a **contiguous** token sequence, which one word in
+the middle defeats. Measured against the real filter, before the fix:
+
+| proposed `action_type` | accepted? |
+| --- | --- |
+| `delete_objects` | blocked ✓ |
+| `delete_all_objects` | **accepted** |
+| `recursive_delete` | **accepted** |
+| `purge_all_objects` | **accepted** |
+
+Rule 8 names *recursive delete* and *mass object mutation* explicitly, and the
+module's own docstring says a proposal "must never even *suggest* a
+mutating/dangerous operation". A surviving proposal renders as a chip under the
+answer — a button offering exactly what the rules forbid.
+
+Scope, stated plainly: **nothing could have executed it.** There is no
+destructive tool in the product, and `is_forbidden_tool` gates only proposal
+labels — it is not on the tool-call path, where the curated `@function_tool`
+registration is the whitelist. What was broken is the promise, and the chip in
+front of the user.
+
+`DESTRUCTIVE_VERBS` now refuses a label carrying `delete` / `remove` / `purge` /
+`destroy` / `wipe` / `erase` / `drop` / `truncate` / `empty` / `clear` / `reset` /
+`abort` / `terminate` / `revoke` / `disable` / `overwrite` / `rename` / `expire` /
+`prune` / `detach` / `unset` wherever the verb sits. A denylist over free-form
+model output is only safe if it collides with nothing legitimate, so a test
+holds it against the **actual registered tools** — parsed from the
+`@function_tool` decorators — rather than against the comment beside it.
+`upload`, `import` and `restore` are deliberately absent: they are nouns or
+reads here (`list_upload_parts`, `import_inventory_file`).
+
+### Added — a model, so a real turn can be tested
+
+`tests/fake_model.py` is a local OpenAI-compatible endpoint. `build_agent` puts
+the provider's `base_url` on a per-session client and speaks
+`/chat/completions`, so a socket that speaks it is a model as far as this app is
+concerned. The turn loop — SDK, tool dispatch, contract parsing, persistence —
+had never been driven end-to-end, because that needed an API key. **That is
+precisely the gap the 500 shipped through**, and the first test in the new file
+is: run a turn that calls a tool, then open the session.
+
+What it now proves, all against real turns:
+
+- both halves of the exchange persist, the contract block never leaks into the
+  prose, the trace row reaches the thread with its real types, and its id
+  resolves to the persisted `tool_calls` row;
+- a second turn appends rather than replacing — the shape the released app
+  failed at;
+- **no credential value reaches the model or the database** (rules 1, 2, 15),
+  checked against the bytes that went over the socket, with recognizable probe
+  secrets configured first — asserting on credential-shaped *words* would fail
+  on the instructions, which name `Authorization` precisely to forbid echoing it;
+- a hallucinated tool name, unparseable tool arguments, an empty answer, a
+  35,000-word answer, a repeated `turn_id`, and an answer that is nothing but
+  the metadata block all leave the session openable;
+- a model cannot claim a skill it never opened, nor invent one;
+- a JSON policy example inside an answer is not eaten as the contract block;
+- a secret the model echoes back is redacted before it is stored.
+
+The **streaming** endpoint gets the same treatment. `POST /messages` is only the
+fallback; the app streams every question, and that is where the shipped bug was
+felt — the stream succeeded, the answer was watched arriving, and the reload that
+turns the live bubble into a persisted message hit the 500. So the assertions are
+about the seam *after* the stream ends: tool → delta → done in order, the deltas
+adding up to the answer, the contract block never scrolling past mid-answer, the
+session opening afterwards, the trace and grounding persisted, the turn no longer
+reported as running, a second streamed turn keeping the first, and a stream with
+no model configured being a clean 422 that leaves no half-written user message.
+
+And the **untrusted-data envelope**, read off the wire for the first time. The
+instructions tell the model that everything between
+`<<external_untrusted_data>>` markers is third-party content and never an
+instruction; that defence is worth exactly as much as the envelope actually being
+present in the request, and it had only ever been unit-tested on the wrapping
+helper. The injection arrives through an ordinary path — a cloud provider's name,
+which `list_providers` returns — and carries a closing marker to try to escape
+the fence. Verified: the result is wrapped, the smuggled marker is defanged, the
+text still arrives **readable** rather than censored (the agent must be able to
+report that a provider is named this), no provider secret is in what the model
+received, and nothing destructive reaches the thread.
+
+### Added — coverage for the surfaces that had none
+
+A second sweep over the untested seams, all against the real stack. **Everything
+below was measured, and all of it passed** — reported because "we checked and it
+holds" is a result:
+
+| surface | what is now asserted |
+| --- | --- |
+| paging | 40 exchanges → the tail is shown, the server's own "20 more" count, load-earlier prepends, jump-to-start reaches turn 0, all 40 present |
+| find | a match inside a *collapsed* turn opens it |
+| branching | a branch from a message creates a second investigation and leaves the first intact |
+| drafts | an unsent question survives switching away and back |
+| rail | rename reaches the thread header, duplicate, archive, search, delete-the-open-one leaves a usable app — and stays deleted after a relaunch |
+| turn footer | persisted tokens/duration reach the screen; the trace expands; a row opens to the call's real persisted input/output; inspect opens the inspector |
+
+E2E: 33 → 52.
+
+## [0.62.0] - 2026-08-06
+
+_The product knew which errors were not errors. The part that answers when
+nothing else can did not._
+
+### Fixed — twelve "not configured" codes were reported as unknown faults
+
+`s3/config_tools._NOT_CONFIGURED_CODES` already encodes exactly which S3 codes
+mean *there is no such configuration on this bucket*, and the config-reading path
+uses it to report `not_configured` rather than an error. The offline triage
+playbooks knew **none of the twelve**:
+
+| pasted code | triage said |
+| --- | --- |
+| `NoSuchLifecycleConfiguration` | **unknown** |
+| `NoSuchTagSet` | **unknown** |
+| `ObjectLockConfigurationNotFoundError` | **unknown** |
+| `NoSuchBucketPolicy` | **unknown** |
+| `ReplicationConfigurationNotFoundError` | **unknown** |
+| `AccessDenied` *(control)* | authz ✓ |
+| `NoSuchBucket` *(control)* | routing ✓ |
+
+That lands on the worst possible reader. Offline triage is what runs when **no
+model provider is configured** — an operator holding a pasted error with no agent
+to ask, which is the most degraded state this product supports. For these codes
+the true answer is *nothing is broken; this bucket simply has no lifecycle rule*.
+Answering `unknown` turns a benign fact into a suspected fault, while the
+product's own neighbouring path had the right answer all along.
+
+All twelve now resolve to a new `not_configured` category that says plainly what
+is absent and what its absence means — no lifecycle rule means nothing expires,
+no public-access block means policy and ACL decide exposure alone. The entries
+are **generated from `_NOT_CONFIGURED_CODES` itself** rather than retyped, and a
+test walks that set, so the two lists cannot drift apart.
+
+A separate test asserts `not_configured` and `provider_unsupported` never share a
+code: one says the bucket has no such setting, the other says the endpoint has no
+such API, and conflating them sends the reader down the wrong path.
+
+### Added — ten more codes an operator actually pastes
+
+`InvalidArgument`, `XAmzContentSHA256Mismatch`,
+`AuthorizationQueryParametersError`, `IllegalLocationConstraintException`,
+`EntityTooLarge`, `MalformedXML`, `OperationAborted`, `BucketNotEmpty`,
+`RequestHeaderSectionTooLarge`, `CrossLocationLoggingProhibited`, plus
+`KMS.KMSInvalidStateException`.
+
+Several are **write-path** codes. This product performs no writes — but offline
+triage exists for errors the user hit *anywhere*: in aws-cli, in rclone, in their
+own application. Refusing to explain a write error would be answering a question
+nobody asked. `BucketNotEmpty` is the one where a reader could infer the product
+will clear the bucket for them, so it says the opposite explicitly, and a test
+holds that line.
+
+Coverage went from **30 codes to 53**. Tests assert every new entry names a cause
+and a next check (a label is not an answer), proposes only non-mutating actions,
+and never names a tool that does not exist.
+
+### Verified — two hypotheses that turned out wrong
+
+- **rule 18 has gaps** — false. All nine capability-sensitive tools
+  (`get_object_lock_status`, `get_object_acl`, `get_object_tagging`,
+  `get_object_attributes`, `list_object_versions`, `list_multipart_uploads`,
+  `list_upload_parts`, `get_bucket_location`, `test_conditional_get`) route
+  through the `provider_unsupported` classifier.
+- **the per-step prefix grew again** — false. Still 19,148 chars (~4,787 tokens),
+  unchanged since v0.58.0.
+
+One correction to the assessment that produced this release: the triage was first
+counted at 27 codes by grepping the source. The real figure was **30** — aliases
+are entries too. The measurement was redone against `_BY_CODE` itself.
+
 ## [0.61.0] - 2026-08-06
 
 _Paying twice for the same method, firing without a ceiling, drawing the wrong

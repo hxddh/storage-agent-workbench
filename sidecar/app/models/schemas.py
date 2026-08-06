@@ -8,7 +8,7 @@ stored or echoed. Output models expose only ``*_ref`` references plus
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -549,13 +549,45 @@ class TriageCaseOut(BaseModel):
     updated_at: str | None = None
 
 
+class ToolActivityOut(BaseModel):
+    """One line of a turn's tool trace, as `session_tools.note()` writes it.
+
+    This was `dict[str, str]` while a trace row really was four strings. It then
+    grew the fields that say what a call MEANT and what it COST — `args`
+    (dict), `ok` (bool), `duration_ms` (int) — and pydantic v2 does not coerce
+    those into `str`, so the response model raised and `GET /sessions/{id}`
+    answered 500 for any session that had ever called a tool. The thread showed
+    "Couldn't load this session"; the rail still listed it. Typing the row
+    against its producer is what keeps the two from drifting apart again.
+
+    `extra="allow"` is deliberate: a trace row is diagnostic output, and a field
+    the writer adds must reach the reader rather than be silently dropped on the
+    way out (`audit_error` — present only when a rule-17 audit write failed — is
+    exactly such a field, and its PRESENCE is the signal).
+    """
+
+    model_config = {"extra": "allow"}
+
+    tool: str = ""
+    target: str = ""
+    result: str = ""
+    # The call's identity and its link to the persisted `tool_calls` row.
+    # Absent on pre-v0.55.0 history, which must keep loading.
+    id: str | None = None
+    ok: bool | None = None
+    # None means "not measured", which is not the same claim as 0 ms.
+    duration_ms: int | None = None
+    args: dict[str, Any] | None = None
+    status: str | None = None
+
+
 class SessionMessageOut(BaseModel):
     id: str
     role: str
     content: str | None
     referenced_run_ids: list[str] = Field(default_factory=list)
     referenced_evidence_ids: list[str] = Field(default_factory=list)
-    tool_activity: list[dict[str, str]] = Field(default_factory=list)
+    tool_activity: list[ToolActivityOut] = Field(default_factory=list)
     # Persisted per-message transparency (migration 016): the grounding
     # ("why this answer") and the proposed next actions. These MUST be surfaced
     # on GET /sessions/{id} so a reloaded thread can re-render the chips/card —

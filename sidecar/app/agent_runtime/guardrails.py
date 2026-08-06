@@ -64,6 +64,26 @@ FORBIDDEN_PHRASES = {
     ("run", "sql"), ("execute", "sql"), ("raw", "sql"), ("sql", "query"),
     ("execute", "query"), ("run", "query"), ("sql", "exec"),
 }
+# Verbs that are destructive or mutating on their own, matched as a bare token.
+#
+# The phrase list above is CONTIGUOUS-only, which a single word walks straight
+# through: `recursive_delete` and `purge_all_objects` were accepted as proposal
+# labels, and so was `delete_all_objects` — the canonical phrasing — because the
+# one word between "delete" and "objects" broke the ("delete", "objects")
+# sequence. Rule 8 names recursive delete and mass object mutation explicitly, so
+# a label carrying any of these is refused wherever the verb sits.
+#
+# Every verb here is one that NO read-only tool or action type in this product
+# uses; `test_no_real_tool_name_is_caught_by_the_verb_list` holds that line
+# against the actual tool list rather than against this comment. Note what is
+# deliberately absent: `upload` (`list_upload_parts`), `import`
+# (`import_inventory_file`) and `restore` are nouns or reads here, and the
+# mutating forms of those are already covered by the phrase list.
+DESTRUCTIVE_VERBS = {
+    "delete", "deletion", "remove", "purge", "destroy", "wipe", "erase", "drop",
+    "truncate", "empty", "clear", "reset", "abort", "terminate", "revoke",
+    "disable", "overwrite", "rename", "expire", "prune", "detach", "unset",
+}
 
 
 class GuardrailBlocked(Exception):
@@ -83,6 +103,8 @@ def is_forbidden_tool(name: str) -> bool:
     """
     tokens = re.findall(r"[a-z0-9]+", (name or "").lower())
     if set(tokens) & FORBIDDEN_TOKENS:
+        return True
+    if set(tokens) & DESTRUCTIVE_VERBS:
         return True
     for phrase in FORBIDDEN_PHRASES:
         n = len(phrase)
@@ -202,7 +224,7 @@ def redacted(text: str) -> str:
 
 __all__ = [
     "GuardrailBlocked", "FORBIDDEN_TOKENS",
-    "FORBIDDEN_PHRASES", "AGENT_DEFAULT_LIST_KEYS",
+    "FORBIDDEN_PHRASES", "DESTRUCTIVE_VERBS", "AGENT_DEFAULT_LIST_KEYS",
     "AGENT_MAX_LIST_KEYS", "REDACTED",
     "is_forbidden_tool", "bound_tool_args",
     "assert_no_secrets_in_context",
