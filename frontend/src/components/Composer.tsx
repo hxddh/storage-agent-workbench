@@ -60,8 +60,11 @@ export function Composer({
   onPickFile: (f: File | null) => void;
   /** Open the file picker with no preset type (plain 📎 attach). */
   onOpenFilePicker: () => void;
-  fileRef: React.RefObject<HTMLInputElement>;
-  taRef: React.RefObject<HTMLTextAreaElement>;
+  // `| null` because React 19 types `useRef<T>(null)` as RefObject<T | null>:
+  // the ref genuinely IS null before mount, and React 18's type quietly claimed
+  // otherwise. Widening here matches what the caller actually holds.
+  fileRef: React.RefObject<HTMLInputElement | null>;
+  taRef: React.RefObject<HTMLTextAreaElement | null>;
   busy: boolean;
   uploading: boolean;
   onSend: () => void;

@@ -6,6 +6,112 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-08-06
+
+_The turn's cost had a new shape, the answer had no shape at all, and the
+frontend was a generation behind._
+
+### Changed — 81% of the tool-output bill was re-sending what was already read
+
+After v0.56.0 the measured 8-tool turn costs 94,817 input tokens and the split
+had flipped — the fixed prefix 34%, **tool outputs 33%**, no longer a distant
+third. Splitting that 33%:
+
+| | chars | ~tokens |
+| --- | --- | --- |
+| first delivery of each result | 23,100 | 5,775 |
+| **re-sends of consumed output** | **100,900** | **25,225 — 81%** |
+
+An 8,000-char skill body or a 1000-key listing page read at step 3 is re-sent at
+full price on steps 4 through 9.
+
+v0.54.0 deferred this as "riskier, wants its own release" because it meant
+rewriting history mid-turn. The SDK has a first-class hook for exactly this —
+`RunConfig.call_model_input_filter` hands over the input list about to go to the
+model and takes back a modified one — which is what makes it safe now rather
+than surgery on SDK internals.
+
+A result older than two later results and larger than 1,200 chars keeps its
+first 800 characters. Measured on one request's accumulated outputs: **23,580 →
+10,339 chars, −56%**; modelled across the turn, ~−60% of tool-output cost.
+
+Two things it must not break, both handled:
+
+- the **untrusted-data envelope survives** around the head that remains (it is
+  still third-party data, SEC4), while the accounting line sits outside it — the
+  same inside/outside split the budget notes use;
+- **the cut is stated in the item**, never silent, so a compacted listing can
+  never be mistaken for a complete one and reported as the whole bucket.
+
+v0.54.0's dedupe pointer told the model its earlier result was "above in the
+conversation" — only partly true once that result may be compacted. The wording
+was corrected rather than left to mislead.
+
+### Changed — the finalize pass no longer reads instructions it cannot act on
+
+It runs with `tools=[]` — it exists to write an answer from work already done —
+yet was handed the full 6,235-char system prompt, 8 of whose 25 lines teach tool
+selection, group unlocking and probe sequencing. `FINALIZE_INSTRUCTIONS` is
+**3,431 chars (−45%)** and keeps every safety rule **verbatim** plus all
+answer-shape guidance. A shorter prompt is never a reason to relax a safety rule.
+
+### Fixed — the answer had no document structure
+
+Headings rendered as `<div>`. A long diagnostic report — this product's main
+output — therefore had no heading levels for a screen reader, no anchors to link
+a section, and nothing for a browser's "jump to heading" to find.
+
+They are real `<h1>`–`<h6>` now, each with a stable id derived from its own text
+(`#sec-why-it-is-large`), so a deep link survives edits elsewhere in the answer.
+Answers with three or more top-level sections also get an outline; answers with
+fewer do not, because an outline above three paragraphs is clutter, and h3s are
+excluded because listing them makes the outline a second copy of the answer.
+
+### Fixed — "inspect this turn" was a wall-clock guess
+
+v0.55.0 gave every activity record the same id as its persisted `tool_calls`
+row. The inspector still matched by time window — which also catches a
+concurrently running inline run's rows, since those land in the same wall-clock
+span. Tool rows now match by id; audit rows, which genuinely have no id, still
+use the window.
+
+### Changed — the whole frontend moved up a generation
+
+Every package was a major version behind. All of it, in one isolated commit so a
+regression has one place to look:
+
+| | from | to |
+| --- | --- | --- |
+| React / React DOM | 18.3 | **19.2** |
+| Vite | 5.4 | **8.2** |
+| Tailwind CSS | 3.4 | **4.3** |
+| TypeScript | 5.9 | **7.0** |
+| Vitest | 2.1 | **4.1** |
+| jsdom | 25 | **30** |
+| @testing-library/jest-dom | 6 | **7** |
+
+`npm outdated` is now empty. Three real breaks, each fixed rather than
+suppressed: React 19 types `useRef<T>(null)` as `RefObject<T | null>` (the ref
+genuinely IS null before mount, and React 18's type quietly claimed otherwise);
+Tailwind 4 replaces the three `@tailwind` directives with one `@import` and moves
+its PostCSS plugin to a separate package, with the JS config kept via `@config`
+so the product type scale and token remaps carry over unchanged — verified in the
+built CSS, not assumed; TypeScript 7 stopped resolving `@types/node` implicitly,
+which the file-reading guard tests need.
+
+### Added — the design tokens are enforced, not merely applied
+
+v0.56.0 migrated 157 arbitrary font sizes onto a scale. Nothing stopped the
+158th. A guard test now fails on any arbitrary text size and on any bare spacing
+step Tailwind does not define.
+
+That second check earned itself immediately: `w-6.5` and `w-13`, written during
+this very release, are **not** Tailwind steps and compiled to nothing at all —
+typecheck passed, build passed, and the elements silently lost their size. The
+guard was verified to fail on both classes of drift before being trusted. Eight
+further spacing values moved onto real steps; the seventeen that remain are
+bespoke glyph and content bounds, deliberately left as visible arbitrary values.
+
 ## [0.56.0] - 2026-08-05
 
 _Four fronts: what we depend on, what a turn costs, what a step actually did,

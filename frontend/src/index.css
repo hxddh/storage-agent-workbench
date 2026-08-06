@@ -1,6 +1,10 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind 4: one import replaces the three @tailwind directives. The JS config
+ * is loaded explicitly with @config — v4 defaults to CSS-first configuration,
+ * and this keeps the product type scale, the gray→CSS-variable remap and the
+ * keyframes in the file that already owns them rather than porting them mid
+ * upgrade. */
+@import "tailwindcss";
+@config "../tailwind.config.js";
 
 /* ---------------------------------------------------------------------------
  * Theming. All surface/accent/neutral colors are CSS variables so the app can
