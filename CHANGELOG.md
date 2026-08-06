@@ -109,6 +109,67 @@ the default. Same shape of defect as the one above, on a read-only endpoint.
 `get_summary` decoded five JSON columns with a bare `json.loads`, and it is read
 by the same endpoint. One damaged column now costs its own field.
 
+### Fixed — a destructive proposal could reach the thread as a chip
+
+`FORBIDDEN_PHRASES` matches a **contiguous** token sequence, which one word in
+the middle defeats. Measured against the real filter, before the fix:
+
+| proposed `action_type` | accepted? |
+| --- | --- |
+| `delete_objects` | blocked ✓ |
+| `delete_all_objects` | **accepted** |
+| `recursive_delete` | **accepted** |
+| `purge_all_objects` | **accepted** |
+
+Rule 8 names *recursive delete* and *mass object mutation* explicitly, and the
+module's own docstring says a proposal "must never even *suggest* a
+mutating/dangerous operation". A surviving proposal renders as a chip under the
+answer — a button offering exactly what the rules forbid.
+
+Scope, stated plainly: **nothing could have executed it.** There is no
+destructive tool in the product, and `is_forbidden_tool` gates only proposal
+labels — it is not on the tool-call path, where the curated `@function_tool`
+registration is the whitelist. What was broken is the promise, and the chip in
+front of the user.
+
+`DESTRUCTIVE_VERBS` now refuses a label carrying `delete` / `remove` / `purge` /
+`destroy` / `wipe` / `erase` / `drop` / `truncate` / `empty` / `clear` / `reset` /
+`abort` / `terminate` / `revoke` / `disable` / `overwrite` / `rename` / `expire` /
+`prune` / `detach` / `unset` wherever the verb sits. A denylist over free-form
+model output is only safe if it collides with nothing legitimate, so a test
+holds it against the **actual registered tools** — parsed from the
+`@function_tool` decorators — rather than against the comment beside it.
+`upload`, `import` and `restore` are deliberately absent: they are nouns or
+reads here (`list_upload_parts`, `import_inventory_file`).
+
+### Added — a model, so a real turn can be tested
+
+`tests/fake_model.py` is a local OpenAI-compatible endpoint. `build_agent` puts
+the provider's `base_url` on a per-session client and speaks
+`/chat/completions`, so a socket that speaks it is a model as far as this app is
+concerned. The turn loop — SDK, tool dispatch, contract parsing, persistence —
+had never been driven end-to-end, because that needed an API key. **That is
+precisely the gap the 500 shipped through**, and the first test in the new file
+is: run a turn that calls a tool, then open the session.
+
+What it now proves, all against real turns:
+
+- both halves of the exchange persist, the contract block never leaks into the
+  prose, the trace row reaches the thread with its real types, and its id
+  resolves to the persisted `tool_calls` row;
+- a second turn appends rather than replacing — the shape the released app
+  failed at;
+- **no credential value reaches the model or the database** (rules 1, 2, 15),
+  checked against the bytes that went over the socket, with recognizable probe
+  secrets configured first — asserting on credential-shaped *words* would fail
+  on the instructions, which name `Authorization` precisely to forbid echoing it;
+- a hallucinated tool name, unparseable tool arguments, an empty answer, a
+  35,000-word answer, a repeated `turn_id`, and an answer that is nothing but
+  the metadata block all leave the session openable;
+- a model cannot claim a skill it never opened, nor invent one;
+- a JSON policy example inside an answer is not eaten as the contract block;
+- a secret the model echoes back is redacted before it is stored.
+
 ### Added — coverage for the surfaces that had none
 
 A second sweep over the untested seams, all against the real stack. **Everything
