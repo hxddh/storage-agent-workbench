@@ -68,7 +68,7 @@ function MemoryRow({
   return (
     <li className="group/mem flex items-start gap-2 rounded px-1 py-1 hover:bg-hover/50" data-testid="memory-row">
       <span
-        className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${
+        className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
           item.kind === "finding" ? "bg-warn" : item.kind === "open_question" ? "bg-accent/70" : "bg-success/70"
         }`}
         aria-hidden

@@ -10,7 +10,7 @@ const GROUPS = [
 
 function Key({ children }: { children: string }) {
   return (
-    <kbd className="min-w-[1.5rem] rounded-[5px] border border-edge-strong bg-elevated px-1.5 py-0.5 text-center font-sans text-2xs font-medium text-gray-300">
+    <kbd className="min-w-6 rounded-[5px] border border-edge-strong bg-elevated px-1.5 py-0.5 text-center font-sans text-2xs font-medium text-gray-300">
       {children}
     </kbd>
   );

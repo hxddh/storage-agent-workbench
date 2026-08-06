@@ -441,6 +441,9 @@ const en: Dict = {
   // deep-turn trace fold (v0.55.0)
   "trace.showEarlier": "show {n} earlier steps",
 
+  // answer outline (v0.57.0)
+  "answer.outline": "In this answer",
+
   // in-place call detail (v0.56.0)
   "call.input": "sent",
   "call.output": "returned",
@@ -865,6 +868,9 @@ const zh: Dict = {
 
   // deep-turn trace fold (v0.55.0)
   "trace.showEarlier": "展开前面 {n} 步",
+
+  // answer outline (v0.57.0)
+  "answer.outline": "本回答目录",
 
   // in-place call detail (v0.56.0)
   "call.input": "发送",

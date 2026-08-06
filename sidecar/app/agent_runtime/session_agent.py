@@ -126,6 +126,34 @@ _TOOL_TIMEOUT_S = 120.0
 # Account survey / bucket-config review walk many buckets in one call and are
 # already internally bounded; they need room the single probes do not.
 _SLOW_TOOL_TIMEOUT_S = 900.0
+
+# --- mid-turn tool-output compaction (v0.57.0) -------------------------------
+# Measured on the same 8-tool turn used throughout: after v0.56.0 the turn costs
+# 94,817 input tokens, of which tool outputs are 31,522 (33%) — now co-equal with
+# the fixed prefix as the largest single component. Splitting that 33%:
+#
+#   first delivery of each output      23,100 chars   5,775 tok
+#   RE-SENDS of already-consumed output 100,900 chars  25,225 tok  = 81%
+#
+# An 8,000-char skill body or a 1000-key listing page that the agent read at
+# step 3 is re-sent at full price on steps 4 through 9. Compacting an output
+# once it is _COMPACT_AFTER_STEPS old cuts tool-output cost ~60% (~20% of the
+# whole turn).
+#
+# This is done through the SDK's `call_model_input_filter`, which hands us the
+# exact input list about to go to the model and takes a modified one back — a
+# supported hook, not history surgery. v0.54.0 deferred this as "riskier, wants
+# its own release"; the hook is what makes it safe to do now.
+#
+# Two rules keep it honest:
+#  - the head of the payload SURVIVES (a listing's first entries are usually the
+#    part that was actually being reasoned about), and
+#  - the cut is stated in the item itself, never silent — the same rule every
+#    other bound in this product follows.
+_COMPACT_AFTER_STEPS = 2      # how many later tool results before one is compacted
+_COMPACT_MIN_CHARS = 1200     # below this there is nothing worth reclaiming
+_COMPACT_KEEP_HEAD = 800      # of the original payload, kept verbatim
+
 _SLOW_TOOLS = {"survey_account", "review_bucket_config", "analyze_uploaded_file",
                "aggregate_uploaded_file", "read_run_result"}
 # Bound on the user's message as embedded in the prompt. Truncation is NEVER
@@ -396,6 +424,40 @@ INSTRUCTIONS = (
     "Your step budget is bounded: probe what the question needs, and if a "
     "complete answer would need more steps, give your best grounded answer and "
     "say what remains.\n"
+    "Your answer is rendered as markdown: headings, **bold**, `code`, fenced "
+    "blocks with a language tag (json/xml/bash/sql get syntax highlighting), "
+    "nested and task lists, and pipe tables with column alignment all render. "
+    "When you report a measure per group (bytes per prefix, errors per hour, "
+    "objects per storage class), use a table with the group in the FIRST column "
+    "and one plain numeric column — the UI draws a chart from that shape.\n\n"
+    "SAFETY RULES:\n" + "\n".join(f"- {r}" for r in SESSION_SAFETY_RULES) + "\n\n"
+    f"When you propose a concrete next step, write it in your own words — you "
+    f"are NOT limited to a fixed menu. These well-known types get a one-click "
+    f"affordance: {_PROPOSAL_ACTION_TYPES}; the data-moving imports always "
+    f"route through a confirm-before-download planner; any other proposal is "
+    f"handed back to you to carry out with your own tools."
+)
+
+
+# The instruction set for the TOOL-LESS finalize pass (v0.57.0).
+#
+# That pass runs with `tools=[]` — it exists to write an answer from work already
+# done — yet it was handed the full 6,235-char system prompt, 8 of whose 25 lines
+# teach tool selection, group unlocking and probe sequencing. None of it is
+# actionable there.
+#
+# What it keeps is everything that still governs what it is about to do: the
+# grounding rule, every SAFETY RULE (unchanged and complete — a shorter prompt is
+# never a reason to relax one), and the markdown/answer-shape guidance, since
+# writing the answer IS the job. It gains one line the tool prompt cannot have:
+# no more tools are coming, so say what remains unknown rather than implying a
+# probe is still in flight.
+FINALIZE_INSTRUCTIONS = (
+    "You are Storage Agent, an expert object-storage diagnostician. You have "
+    "finished investigating and are now WRITING THE ANSWER. No further tools are "
+    "available to you — do not say you will check something, and do not imply a "
+    "probe is still running. Answer from the investigation trace and context "
+    "below, and state plainly what remains unknown.\n"
     "Your answer is rendered as markdown: headings, **bold**, `code`, fenced "
     "blocks with a language tag (json/xml/bash/sql get syntax highlighting), "
     "nested and task lists, and pipe tables with column alignment all render. "
@@ -1011,8 +1073,14 @@ def _finalize_agent_and_prompt(creds: dict[str, Any], prompt: str,
                                activity: list[dict[str, Any]] | None,
                                client_registry: list[Any] | None = None):
     """A TOOL-LESS agent + the original prompt augmented with a finalize directive
-    and the investigation trace. Tools=[] guarantees the next call emits text."""
-    return (_make_agent(creds, [], INSTRUCTIONS, client_registry),
+    and the investigation trace. Tools=[] guarantees the next call emits text.
+
+    The instructions are the WRITING half only (v0.57.0). This pass has no tools,
+    yet it was being sent the full 6,235-char system prompt — 8 of whose 25 lines
+    teach tool selection, group unlocking and probe sequencing, none of which it
+    can act on. What it still needs is every safety rule and the rules about how
+    to write the answer; those are what it is about to do."""
+    return (_make_agent(creds, [], FINALIZE_INSTRUCTIONS, client_registry),
             prompt + _finalize_directive(activity))
 
 
@@ -1143,6 +1211,101 @@ def _strip_schema_titles(tools: list[Any]) -> int:
         removed += len(json.dumps(schema, separators=(",", ":"))) - \
             len(json.dumps(lean, separators=(",", ":")))
     return removed
+
+
+def _compact_output_text(text: str) -> str:
+    """One consumed tool result, reduced to its head plus an explicit accounting.
+
+    The envelope is preserved when it was there: the head slice is still
+    third-party data and must keep saying so (SEC4), while the accounting line
+    is runtime text ABOUT the data and sits outside it — the same inside/outside
+    split the budget notes use.
+    """
+    body, open_m, close_m = text, "", ""
+    if text.startswith(_UNTRUSTED_OPEN) and text.rstrip().endswith(_UNTRUSTED_CLOSE):
+        open_m, close_m = _UNTRUSTED_OPEN, _UNTRUSTED_CLOSE
+        body = text[len(_UNTRUSTED_OPEN):text.rstrip().rfind(_UNTRUSTED_CLOSE)].strip("\n")
+    if len(body) <= _COMPACT_KEEP_HEAD:
+        return text
+    dropped = len(body) - _COMPACT_KEEP_HEAD
+    head = body[:_COMPACT_KEEP_HEAD]
+    kept = f"{open_m}\n{head}\n{close_m}" if open_m else head
+    # Never a silent cut. The model must be able to tell a compacted listing from
+    # a complete one, or it will report a partial page as the whole bucket.
+    return (f"{kept}\n[COMPACTED: this result is {_COMPACT_AFTER_STEPS}+ steps old; "
+            f"{dropped} characters of it were dropped to make room. You already "
+            f"used it. If you need the full result again, call the tool again "
+            f"with the same arguments.]")
+
+
+def _compact_consumed_outputs(items: list[Any]) -> tuple[list[Any], int]:
+    """Shrink tool results the agent has already had for several steps.
+
+    Returns (new_items, chars_reclaimed). Only ``function_call_output`` items are
+    touched, and only those that are both old enough and big enough — every other
+    item, including the user's question, the agent's own messages and the tool
+    CALLS themselves, is passed through untouched so the transcript the model
+    sees stays structurally identical.
+
+    Interaction with v0.54.0's in-turn dedupe, stated rather than discovered
+    later: a repeated identical call already returns a pointer instead of
+    re-running, and that pointer's summary was captured at call time, so
+    compaction does not degrade it. What compaction does change is that the
+    pointer's "its result is above in the conversation" is now only partly true —
+    the wording was corrected to match.
+    """
+    if not items:
+        return items, 0
+    # Index the tool results so "age" is measured in RESULTS, not in raw items:
+    # a step is a result, and interleaved assistant/tool-call items would
+    # otherwise make an output look older than it is.
+    positions = [i for i, it in enumerate(items)
+                 if isinstance(it, dict) and it.get("type") == "function_call_output"]
+    if len(positions) <= _COMPACT_AFTER_STEPS:
+        return items, 0
+    compactable = set(positions[:-_COMPACT_AFTER_STEPS]) if _COMPACT_AFTER_STEPS else set(positions)
+    out: list[Any] = []
+    reclaimed = 0
+    for i, it in enumerate(items):
+        if i not in compactable:
+            out.append(it)
+            continue
+        text = it.get("output")
+        if not isinstance(text, str) or len(text) < _COMPACT_MIN_CHARS:
+            out.append(it)
+            continue
+        shrunk = _compact_output_text(text)
+        if len(shrunk) >= len(text):
+            out.append(it)
+            continue
+        reclaimed += len(text) - len(shrunk)
+        # Copy: the SDK owns this list and may reuse the items elsewhere.
+        out.append({**it, "output": shrunk})
+    return out, reclaimed
+
+
+def _make_input_filter(stats: dict[str, int]) -> Any:
+    """The `call_model_input_filter` that applies the compaction per request.
+
+    Never raises: a bookkeeping helper must not be able to fail a turn, so any
+    unexpected item shape falls through to the untouched input.
+    """
+    from agents.run import ModelInputData
+
+    def _filter(data: Any) -> Any:
+        try:
+            items = list(getattr(data.model_data, "input", None) or [])
+            new_items, reclaimed = _compact_consumed_outputs(items)
+            if not reclaimed:
+                return data.model_data
+            stats["compacted_chars"] = stats.get("compacted_chars", 0) + reclaimed
+            stats["compacted_calls"] = stats.get("compacted_calls", 0) + 1
+            return ModelInputData(input=new_items,
+                                  instructions=data.model_data.instructions)
+        except Exception:  # noqa: BLE001 — never let an optimization break a turn
+            return data.model_data
+
+    return _filter
 
 
 def _install_tool_timeouts(tools: list[Any]) -> int:
@@ -1335,8 +1498,13 @@ def _install_tool_output_budget(tools: list[Any],
                     spent["deduped"] += 1
                     return json.dumps({
                         "status": "repeat_call",
-                        "note": "This exact call was already made in this turn; its "
-                                "result is above in the conversation. Reuse it.",
+                        # Accurate after v0.57.0's compaction: an older result
+                        # is still in the conversation but may have been reduced
+                        # to its head, so "reuse it" must not promise the full
+                        # payload is sitting there intact.
+                        "note": "This exact call was already made in this turn. Its "
+                                "result is earlier in the conversation (possibly "
+                                "compacted to its head). Work from that.",
                         "result_summary": prior})
                 if spent["chars"] >= limit:
                     # A soft per-turn boundary, NOT a tool failure: shape it as a
@@ -1541,7 +1709,7 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     """
     try:
         import openai  # noqa: F401
-        from agents import Runner, function_tool
+        from agents import RunConfig, Runner, function_tool
     except Exception as exc:  # noqa: BLE001
         raise AgentUnavailable("OpenAI Agents SDK is not available in this environment.") from exc
 
@@ -1588,7 +1756,15 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     # _NO_PARALLEL_ENDPOINTS. It uses a per-run client so concurrent sessions
     # don't race on SDK globals.
     agent = _make_agent(creds, tools, INSTRUCTIONS, clients)
-    result = Runner.run_streamed(agent, spec["prompt"], max_turns=_MAX_TURNS)
+    # Compact already-consumed tool results before each model call (v0.57.0).
+    # Measured: 81% of the turn's tool-output cost is re-sending output the agent
+    # read several steps ago. RunConfig.call_model_input_filter is the SDK's own
+    # hook for this — the input list is handed to us and taken back modified.
+    compaction: dict[str, int] = {}
+    spec["compaction"] = compaction
+    run_config = RunConfig(call_model_input_filter=_make_input_filter(compaction))
+    result = Runner.run_streamed(agent, spec["prompt"], max_turns=_MAX_TURNS,
+                                 run_config=run_config)
     # Tag the run with the endpoint it targets, so a stream_options rejection
     # raised mid-stream can be attributed to THIS endpoint without threading
     # creds through the (creds-free) event pump.
@@ -2041,4 +2217,5 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
 
 
 __all__ = ["SESSION_LOOP", "build_session_context", "render_context_text", "answer",
-           "build_stream", "stream_events_for", "SESSION_SAFETY_RULES", "INSTRUCTIONS"]
+           "build_stream", "stream_events_for", "SESSION_SAFETY_RULES", "INSTRUCTIONS",
+           "FINALIZE_INSTRUCTIONS"]

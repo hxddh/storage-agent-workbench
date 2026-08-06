@@ -120,6 +120,11 @@ export function Thread({
   // Set when the inspector was opened FROM a turn: the [from, to] window whose
   // rows it highlights and scrolls to. Cleared on close.
   const [inspectorAnchor, setInspectorAnchor] = useState<{ from: string; to: string } | null>(null);
+  // The EXACT call ids that turn produced (v0.57.0). v0.55.0 gave every activity
+  // record the same id as its persisted row; this is what makes "inspect" land
+  // on precisely this turn's calls instead of everything in its wall-clock
+  // window, which also catches a concurrently-running inline run.
+  const [inspectorAnchorIds, setInspectorAnchorIds] = useState<ReadonlySet<string> | null>(null);
   // Pages fetched by "load earlier", oldest-first, held separately from
   // `detail.messages` (the tail) so a reload can refresh the tail without
   // discarding history the user deliberately pulled in.
@@ -979,6 +984,11 @@ export function Thread({
                           // at the top of a whole session's timeline with no
                           // way to tell which entries were theirs.
                           setInspectorAnchor(turnWindow(idx));
+                          setInspectorAnchorIds(
+                            new Set((it.toolActivity ?? [])
+                              .map((a) => a.id)
+                              .filter((x): x is string => Boolean(x))),
+                          );
                           setInspectorOpen(true);
                         }}
                       />
@@ -1155,7 +1165,7 @@ export function Thread({
         open={inspectorOpen && !!sessionId}
         onClose={() => {
           setInspectorOpen(false);
-          setInspectorAnchor(null);
+          setInspectorAnchor(null); setInspectorAnchorIds(null);
         }}
         findings={detail?.findings}
         memory={detail?.agent_memory}
@@ -1165,6 +1175,7 @@ export function Thread({
         onCorrectMemory={correctMemory}
         onResolveMemory={resolveMemory}
         anchor={inspectorAnchor}
+        anchorIds={inspectorAnchorIds}
       />
 
       {report !== null && (
