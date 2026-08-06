@@ -1,0 +1,83 @@
+# Pinned runtime closure for the sidecar. GENERATED — see scripts/lock-sidecar-deps.py.
+#
+# WHY THIS EXISTS. `pyproject.toml` declares deliberately loose ranges so new
+# agent-SDK features flow in. With no lockfile those ranges resolved at INSTALL
+# time, so three environments disagreed: v0.55.0 was developed against
+# openai-agents 0.17.8 while CI validated it against 0.19.4, and a packaged build
+# got whatever was newest that day. Both passed, which was luck — v0.55.0's whole
+# token saving rests on `is_enabled` being re-evaluated every step, and
+# `>=0.17,<1` would have let a 0.20 that changed it in silently, first visible as
+# a broken release.
+#
+# WHAT IT IS. The exact versions the suite is green against. The ranges in
+# pyproject.toml stay as they are: they express what the code SUPPORTS, while
+# this records what was actually VERIFIED. CI and packaging install with
+# `-c requirements.lock`, so the pins constrain the resolve without turning the
+# editable install into a pinned-only one.
+#
+# Upgrading is a deliberate act: upgrade, run the suite, regenerate, commit.
+
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.14.1
+attrs==26.1.0
+backports.tarfile==1.2.0
+boto3==1.43.65
+botocore==1.43.65
+certifi==2026.2.25
+cffi==2.1.0
+charset-normalizer==3.4.6
+click==8.4.2
+colorama==0.4.6
+cryptography==49.0.0
+distro==1.9.0
+duckdb==1.5.5
+fastapi==0.141.1
+griffelib==2.1.0
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+httpx-sse==0.4.3
+idna==3.11
+importlib-metadata==9.0.0
+jaraco.classes==3.4.0
+jaraco.context==6.1.2
+jaraco.functools==4.5.0
+jeepney==0.9.0
+jiter==0.16.0
+jmespath==1.1.0
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+keyring==25.7.0
+mcp==1.28.1
+more-itertools==11.1.0
+numpy==2.4.6
+openai==2.53.0
+openai-agents==0.19.4
+pandas==3.0.5
+pyarrow==25.0.0
+pycparser==3.0
+pydantic==2.13.4
+pydantic-core==2.46.4
+pydantic-settings==2.14.2
+pyjwt==2.13.0
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.2
+python-multipart==0.0.32
+pyyaml==6.0.3
+referencing==0.37.0
+requests==2.33.1
+rpds-py==2026.6.3
+s3transfer==0.19.0
+secretstorage==3.5.0
+six==1.17.0
+sniffio==1.3.1
+sse-starlette==3.4.5
+starlette==1.3.1
+tqdm==4.68.3
+typing-extensions==4.16.0
+typing-inspection==0.4.2
+urllib3==2.6.3
+uvicorn==0.52.1
+websockets==16.0
+zipp==4.1.0

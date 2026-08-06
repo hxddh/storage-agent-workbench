@@ -25,10 +25,14 @@ dependencies = [
     # here — `openai-agents` already constrains it (currently `openai<3,>=2.36`).
     # `openai-agents` is pre-1.0 and ships features in 0.x minors, so we allow all
     # of them and only guard the 1.0 boundary (a pre-1.0 SDK's 1.0 is typically a
-    # rewrite → worth a human-reviewed bump). CI installs from this file with no
-    # lockfile, so `<1` is the only reproducibility guard we keep.
+    # rewrite → worth a human-reviewed bump).
     "openai>=2.40",
     "openai-agents>=0.17,<1",
+    # NOTE: the ranges above say what the code SUPPORTS. What was actually
+    # VERIFIED is pinned in requirements.lock, which CI and packaging install
+    # with `-c`. Before that file existed these ranges resolved at install time,
+    # so v0.55.0 was developed against openai-agents 0.17.8 while CI validated it
+    # against 0.19.4 — see scripts/lock-sidecar-deps.py.
     "pyyaml>=6.0",
 ]
 

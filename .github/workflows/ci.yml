@@ -57,7 +57,7 @@ jobs:
       # suites can't reach — composer -> HTTP -> SQLite -> render — using only
       # the offline paths, so it needs no model or cloud credentials.
       - name: Install sidecar
-        run: pip install -e "./sidecar[dev]"
+        run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]"
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
@@ -87,7 +87,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install package (with dev extras)
-        run: pip install -e ".[dev]"
+        run: pip install -c requirements.lock -e ".[dev]"
       - name: Lint (ruff)
         run: ruff check app
       - name: Import check
@@ -109,7 +109,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install package (dev + packaging extras)
-        run: pip install -e ".[dev]" -e ".[packaging]"
+        run: pip install -c requirements.lock -e ".[dev]" -e ".[packaging]"
       - name: Build packaged sidecar (PyInstaller)
         run: python packaging/build_sidecar.py
       - name: Smoke test packaged sidecar (no AWS / no OPENAI_API_KEY)
@@ -132,7 +132,7 @@ jobs:
           node-version: "20"
 
       - name: Install sidecar deps (dev + packaging)
-        run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
+        run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]" -e "./sidecar[packaging]"
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
@@ -223,7 +223,7 @@ jobs:
             xvfb
 
       - name: Install sidecar deps (dev + packaging)
-        run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
+        run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]" -e "./sidecar[packaging]"
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
@@ -280,7 +280,7 @@ jobs:
           node-version: "20"
 
       - name: Install sidecar deps (dev + packaging)
-        run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
+        run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]" -e "./sidecar[packaging]"
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"

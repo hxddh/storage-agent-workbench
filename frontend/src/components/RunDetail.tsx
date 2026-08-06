@@ -343,7 +343,7 @@ export function RunDetail({
               <div className="mb-6 grid grid-cols-2 gap-2" data-testid="metrics-cards">
                 {metricsCards.map((c) => (
                   <div key={c.label} className="rounded-md border border-edge bg-panel p-3">
-                    <div className="text-[11px] text-gray-500">{c.label}</div>
+                    <div className="text-2xs text-gray-500">{c.label}</div>
                     <div className="text-sm font-medium text-gray-100">{c.value}</div>
                   </div>
                 ))}

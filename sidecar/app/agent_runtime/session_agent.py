@@ -107,6 +107,27 @@ _MAX_COMPLETION_TOKENS = 16384
 # enough not to clip a legitimately long adaptive investigation on a large model.
 _MAX_TURNS = 60
 assert _MAX_REPLAY_TOOLS == _MAX_TURNS, "replay must cover a full turn's probes"
+
+# Per-tool wall-clock ceiling (v0.56.0). The SDK has offered `timeout_seconds`
+# all along and nothing set it, so a single call had NO time bound: an endpoint
+# that accepts a TCP connection and then never answers — precisely the failure
+# this product exists to diagnose — could hold a turn open indefinitely, with the
+# user watching a spinner and no way to learn which step was stuck.
+#
+# 120s is deliberately generous. botocore already retries internally and a cold
+# ListObjectsV2 over a large prefix on a slow gateway legitimately takes tens of
+# seconds; this is the "something is wrong" bound, not a performance target. The
+# heavier survey/review tools opt into a longer one below.
+#
+# `error_as_result` (not `raise_exception`) keeps a timeout in the same shape as
+# every other bounded failure in this product: the agent receives it as a tool
+# RESULT it can reason about and route around, instead of the turn dying.
+_TOOL_TIMEOUT_S = 120.0
+# Account survey / bucket-config review walk many buckets in one call and are
+# already internally bounded; they need room the single probes do not.
+_SLOW_TOOL_TIMEOUT_S = 900.0
+_SLOW_TOOLS = {"survey_account", "review_bucket_config", "analyze_uploaded_file",
+               "aggregate_uploaded_file", "read_run_result"}
 # Bound on the user's message as embedded in the prompt. Truncation is NEVER
 # silent: the cut is marked in the prompt so the agent knows it saw a prefix
 # (see build_session_prompt) — the same "no silent caps" rule as ingestion.
@@ -839,7 +860,7 @@ def _is_cache_retention_rejection(exc: BaseException) -> bool:
 def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str,
                 client_registry: list[Any] | None = None) -> Any:
     """Build the session Agent via the shared per-run builder (no SDK globals)."""
-    from .agent_service import build_agent
+    from .agent_service import AGENT_TEMPERATURE, build_agent
     # Completion budget scales with the model's context window (floor =
     # _MAX_COMPLETION_TOKENS), so a large-window model isn't capped to the value
     # a small one needs. Never below the floor, never above provider max-output.
@@ -852,7 +873,10 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str,
                        include_usage=_endpoint_key(creds) not in _NO_USAGE_ENDPOINTS,
                        prompt_cache_retention=(
                            None if _endpoint_key(creds) in _NO_CACHE_RETENTION_ENDPOINTS
-                           else _PROMPT_CACHE_RETENTION))
+                           else _PROMPT_CACHE_RETENTION),
+                       # An operator may override per provider; None keeps the
+                       # investigator default (AGENT_TEMPERATURE).
+                       temperature=creds.get("temperature", AGENT_TEMPERATURE))
 
 
 # --- graceful step-budget finalize -----------------------------------------
@@ -1119,6 +1143,32 @@ def _strip_schema_titles(tools: list[Any]) -> int:
         removed += len(json.dumps(schema, separators=(",", ":"))) - \
             len(json.dumps(lean, separators=(",", ":")))
     return removed
+
+
+def _install_tool_timeouts(tools: list[Any]) -> int:
+    """Give every tool a wall-clock ceiling. Returns how many were bounded.
+
+    An unbounded tool call is the one failure mode this product is least
+    entitled to have: it diagnoses storage endpoints, and an endpoint that
+    completes a TCP handshake and then goes silent is a routine finding. Without
+    a bound, that endpoint holds the turn open for as long as the socket does.
+
+    A timeout arrives as a tool RESULT (`error_as_result`), so the agent reads it
+    as evidence — "this probe never came back" is itself a diagnosis — instead of
+    the turn dying on an exception."""
+    bounded = 0
+    for t in tools:
+        name = getattr(t, "name", "")
+        if not hasattr(t, "timeout_seconds"):
+            continue
+        try:
+            t.timeout_seconds = (_SLOW_TOOL_TIMEOUT_S if name in _SLOW_TOOLS
+                                 else _TOOL_TIMEOUT_S)
+            t.timeout_behavior = "error_as_result"
+        except Exception:  # noqa: BLE001 — frozen/foreign tool object: skip
+            continue
+        bounded += 1
+    return bounded
 
 
 def _install_tool_gating(tools: list[Any], unlocked: set[str]) -> set[str]:
@@ -1518,6 +1568,7 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     tools.append(_build_load_tools(function_tool, unlocked, activity))
     _install_tool_gating(tools, unlocked)
     _strip_schema_titles(tools)
+    _install_tool_timeouts(tools)
     spec["unlocked_groups"] = unlocked
     # Envelope first (inner), budget second (outer): the budget's runtime status
     # notes bypass the envelope, real payloads are wrapped, and the budget

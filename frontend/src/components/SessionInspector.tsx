@@ -41,9 +41,9 @@ function Stat({
 }) {
   return (
     <div className="min-w-0 rounded-lg border border-edge bg-panel/60 px-3 py-2.5">
-      <div className="truncate text-[10.5px] font-medium uppercase tracking-wider text-gray-600">{label}</div>
-      <div className={`mt-0.5 truncate text-[15px] tabular-nums ${tone ?? "text-gray-100"}`}>{value}</div>
-      {sub && <div className="mt-0.5 truncate text-[11px] text-gray-600">{sub}</div>}
+      <div className="truncate text-3xs font-medium uppercase tracking-wider text-gray-600">{label}</div>
+      <div className={`mt-0.5 truncate text-base tabular-nums ${tone ?? "text-gray-100"}`}>{value}</div>
+      {sub && <div className="mt-0.5 truncate text-2xs text-gray-600">{sub}</div>}
     </div>
   );
 }
@@ -64,7 +64,7 @@ function Chip({
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] transition-colors ${
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-2xs transition-colors ${
         on
           ? "border-accent/40 bg-accent/12 text-gray-100"
           : "border-edge text-gray-500 hover:border-edge-strong hover:text-gray-300"
@@ -110,23 +110,23 @@ function ToolRow({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 rounded py-1 text-left transition-colors hover:bg-hover/60"
       >
-        <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-gray-700">{clock(item.created_at)}</span>
+        <span className="shrink-0 font-mono text-3xs tabular-nums text-gray-700">{clock(item.created_at)}</span>
         <span
           className={`h-1.5 w-1.5 shrink-0 rounded-full ${failed ? "bg-danger" : "bg-success/80"}`}
           aria-hidden
         />
-        <span className="min-w-0 truncate font-mono text-[12px] text-gray-300">{item.tool_name}</span>
-        {dur && <span className="ml-auto shrink-0 tabular-nums text-[11px] text-gray-600">{dur}</span>}
+        <span className="min-w-0 truncate font-mono text-xs text-gray-300">{item.tool_name}</span>
+        {dur && <span className="ml-auto shrink-0 tabular-nums text-2xs text-gray-600">{dur}</span>}
       </button>
       {open && (
         <div className="mb-1 space-y-1.5 pb-1">
           {(["input", "output"] as const).map((k) =>
             item[k] ? (
               <div key={k}>
-                <div className="text-[10px] font-medium uppercase tracking-wider text-gray-700">
+                <div className="text-3xs font-medium uppercase tracking-wider text-gray-700">
                   {k === "input" ? t("inspector.input") : t("inspector.output")}
                 </div>
-                <pre className="mt-0.5 max-h-52 overflow-auto rounded bg-sidebar p-2 text-[10.5px] leading-relaxed text-gray-400">
+                <pre className="mt-0.5 max-h-52 overflow-auto rounded bg-sidebar p-2 text-3xs leading-relaxed text-gray-400">
                   {JSON.stringify(item[k], null, 2)}
                 </pre>
               </div>
@@ -160,12 +160,12 @@ function AuditRow({
         onClick={() => hasPayload && setOpen((v) => !v)}
         className="flex w-full items-center gap-2 rounded py-1 text-left transition-colors hover:bg-hover/60"
       >
-        <span className="shrink-0 font-mono text-[10.5px] tabular-nums text-gray-700">{clock(item.created_at)}</span>
+        <span className="shrink-0 font-mono text-3xs tabular-nums text-gray-700">{clock(item.created_at)}</span>
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent/50" aria-hidden />
-        <span className="min-w-0 truncate text-[12px] text-gray-400">{item.event_type}</span>
+        <span className="min-w-0 truncate text-xs text-gray-400">{item.event_type}</span>
       </button>
       {open && hasPayload && (
-        <pre className="mb-1 max-h-52 overflow-auto rounded bg-sidebar p-2 text-[10.5px] leading-relaxed text-gray-400">
+        <pre className="mb-1 max-h-52 overflow-auto rounded bg-sidebar p-2 text-3xs leading-relaxed text-gray-400">
           {JSON.stringify(item.payload, null, 2)}
         </pre>
       )}
@@ -430,7 +430,7 @@ export function SessionInspector({
 
         <div className="flex-1 overflow-auto px-5 py-4">
           {error && (
-            <div className="mb-4 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-[12px] text-danger">
+            <div className="mb-4 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger">
               {error}
             </div>
           )}
@@ -497,7 +497,7 @@ export function SessionInspector({
             { key: "audit" as const, have: audit.length, all: total.audit, label: t("inspector.chipAudit") },
           ]).map((s) =>
             s.have < s.all ? (
-              <div key={s.key} className="mt-2 flex items-center gap-2 text-[11px] text-warn-fg">
+              <div key={s.key} className="mt-2 flex items-center gap-2 text-2xs text-warn-fg">
                 <span>
                   {s.label} — {t("inspector.showing", { n: s.have, total: s.all })}
                 </span>
@@ -515,7 +515,7 @@ export function SessionInspector({
           )}
 
           {anchor && (
-            <p className="mt-3 text-[11px] text-accent-soft" data-testid="anchor-note">
+            <p className="mt-3 text-2xs text-accent-soft" data-testid="anchor-note">
               {t("inspector.anchored")}
             </p>
           )}
@@ -540,7 +540,7 @@ export function SessionInspector({
           </ul>
 
           {!loading && entries.length === 0 && (
-            <p className="mt-6 text-center text-[12px] text-gray-600">{t("inspector.empty")}</p>
+            <p className="mt-6 text-center text-xs text-gray-600">{t("inspector.empty")}</p>
           )}
         </div>
       </div>

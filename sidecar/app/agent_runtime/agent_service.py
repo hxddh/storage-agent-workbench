@@ -18,6 +18,10 @@ from ..security import keyring_store
 # enumerations aren't truncated; the provider still bounds the actual length).
 _DEFAULT_MAX_TOKENS = 8192
 
+# Sampling temperature for the investigator (v0.56.0). See build_agent for why
+# this is set at all, and why it is low rather than zero.
+AGENT_TEMPERATURE = 0.2
+
 
 class AgentUnavailable(Exception):
     """Agent mode cannot run (no model/key, unsupported type, SDK missing).
@@ -37,6 +41,7 @@ def build_agent(
     client_registry: list[Any] | None = None,
     include_usage: bool = True,
     prompt_cache_retention: str | None = None,
+    temperature: float | None = None,
 ) -> Any:
     """Build an Agents-SDK Agent with a PER-RUN model client.
 
@@ -82,6 +87,19 @@ def build_agent(
     # the unknown parameter is retried without it (see session_agent's usage
     # fallback), because provider compatibility outranks a metrics field.
     settings_kwargs: dict[str, Any] = {"parallel_tool_calls": parallel_tool_calls}
+    # Temperature was never set, so every endpoint applied its own default —
+    # typically 1.0, and not the same across providers (v0.56.0). This agent
+    # reports what storage endpoints actually returned; two runs of the same
+    # investigation should not diverge because the sampler felt creative, and an
+    # operator comparing today's answer to last week's is entitled to assume the
+    # difference is the BUCKET, not the decoder.
+    #
+    # Not 0: a strict-greedy decode makes some models loop on a tool call that
+    # keeps failing instead of trying another approach, and adaptive
+    # investigation is the whole product. Low-but-not-zero keeps tool choice
+    # stable while leaving room to change tack.
+    if temperature is not None:
+        settings_kwargs["temperature"] = temperature
     if include_usage:
         settings_kwargs["include_usage"] = True
     if max_tokens:

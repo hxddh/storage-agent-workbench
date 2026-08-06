@@ -117,7 +117,7 @@ jobs:
       - name: Stamp bundle version from tag
         run: python3 scripts/stamp-version.py "${{ github.event.inputs.version }}"
       - name: Install sidecar deps (dev + packaging)
-        run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
+        run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]" -e "./sidecar[packaging]"
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
       - name: Build ad-hoc-sealed macOS bundle (.app + DMG)
@@ -166,7 +166,7 @@ jobs:
       - name: Stamp bundle version from tag
         run: python3 scripts/stamp-version.py "${{ github.event.inputs.version }}"
       - name: Install sidecar deps (dev + packaging)
-        run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
+        run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]" -e "./sidecar[packaging]"
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
       - name: Build frontend
@@ -212,7 +212,7 @@ jobs:
         shell: bash
         run: python scripts/stamp-version.py "${{ github.event.inputs.version }}"
       - name: Install sidecar deps (dev + packaging)
-        run: pip install -e "./sidecar[dev]" -e "./sidecar[packaging]"
+        run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]" -e "./sidecar[packaging]"
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
       - name: Build frontend

@@ -57,8 +57,36 @@ def catalog() -> list[dict[str, str]]:
     return [{"name": m.name, "description": m.description} for m in loader.load_registry()]
 
 
+def routing_line(description: str) -> str:
+    """The first sentence of a skill's description — its routing signal.
+
+    The catalog is in the prompt on EVERY step of every turn. Measured after
+    v0.55.0 shrank the tool block, it had become the second-largest fixed cost:
+    7,542 chars (~1,886 tokens), 33% of the per-step prefix, for 20 skills of
+    which a turn loads at most one or two.
+
+    Cutting at the first SENTENCE rather than at a character count is the
+    difference between compression and damage. A description's opening sentence
+    states what the skill is for; the ones after it enumerate more symptoms. A
+    160-char cut measured 8 points smaller but sliced mid-list — exactly through
+    the error codes that make a skill findable ("…expired presigned URLs,…").
+    This way every entry keeps a complete, self-contained sentence (the shortest
+    is 70 chars) and nothing is truncated mid-phrase.
+
+    Nothing is lost that the agent cannot reach: `read_skill(name)` still returns
+    the full method, which is far richer than any description.
+    """
+    text = " ".join((description or "").split())
+    parts = re.split(r"(?<=[.;])\s+", text)
+    return parts[0] if parts else text
+
+
 def catalog_text() -> str:
-    """The always-in-context skill catalog for the tool-using agent."""
+    """The always-in-context skill catalog for the tool-using agent.
+
+    Name + routing sentence per skill: 7,140 chars of entries becomes 4,023
+    (−44%), re-sent on every step (v0.56.0).
+    """
     items = catalog()
     if not items:
         return ""
@@ -72,7 +100,7 @@ def catalog_text() -> str:
         "",
     ]
     for it in items:
-        lines.append(f"- {it['name']}: {it['description']}")
+        lines.append(f"- {it['name']}: {routing_line(it['description'])}")
     return "\n".join(lines)
 
 
@@ -90,5 +118,6 @@ def read_skill_text(name: str, limit: int = MAX_CHARS_PER_SKILL) -> str | None:
 
 __all__ = [
     "strip_frontmatter", "skill_names", "catalog", "catalog_text", "read_skill_text",
+    "routing_line",
     "MAX_CHARS_PER_SKILL",
 ]

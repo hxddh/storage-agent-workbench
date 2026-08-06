@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CallDetail } from "./CallDetail";
 import { useI18n } from "../i18n";
 import type { ToolActivity } from "../types";
 
@@ -83,9 +84,13 @@ const Wrench = (
   </svg>
 );
 
-export function LiveTrace({ items }: { items: ToolActivity[] }) {
+export function LiveTrace({ items, sessionId }: { items: ToolActivity[]; sessionId?: string | null }) {
   const { t } = useI18n();
   const [showAll, setShowAll] = useState(false);
+  // Which row the reader has opened. One at a time: this sits inside a live
+  // trace, and stacking open payloads would push the answer off screen — the
+  // exact problem the fold above exists to prevent.
+  const [openCall, setOpenCall] = useState<string | null>(null);
   if (!items.length) return null;
 
   // Fold the head, never the tail: the newest rows are what explains what the
@@ -104,7 +109,7 @@ export function LiveTrace({ items }: { items: ToolActivity[] }) {
           type="button"
           onClick={() => setShowAll(true)}
           data-testid="trace-fold"
-          className="flex items-center gap-2 text-[11.5px] text-gray-600 transition-colors hover:text-gray-400"
+          className="flex items-center gap-2 text-2xs text-gray-600 transition-colors hover:text-gray-400"
         >
           <span className="w-3" aria-hidden />
           {t("trace.showEarlier", { n: hiddenCount })}
@@ -115,8 +120,32 @@ export function LiveTrace({ items }: { items: ToolActivity[] }) {
         const args = argSummary(a.args);
         const failed = isFailed(a);
         const ms = fmtCallMs(a.duration_ms);
+        // A row is openable once the call has finished and carries its id — the
+        // id is the link to the persisted row holding its real input/output.
+        const canOpen = Boolean(sessionId && a.id && !running);
+        const isOpen = canOpen && openCall === a.id;
         return (
-          <div key={a.id ?? i} className="flex items-center gap-2 text-[11.5px] text-gray-500">
+          <div key={a.id ?? i}>
+          <div
+            className={`flex items-center gap-2 text-2xs text-gray-500 ${
+              canOpen ? "cursor-pointer rounded transition-colors hover:bg-hover" : ""
+            }`}
+            {...(canOpen
+              ? {
+                  role: "button" as const,
+                  tabIndex: 0,
+                  "aria-expanded": isOpen,
+                  "data-testid": "trace-row-open",
+                  onClick: () => setOpenCall(isOpen ? null : (a.id as string)),
+                  onKeyDown: (e: React.KeyboardEvent) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setOpenCall(isOpen ? null : (a.id as string));
+                    }
+                  },
+                }
+              : {})}
+          >
             {running ? (
               <span
                 className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent text-warn-fg"
@@ -135,7 +164,7 @@ export function LiveTrace({ items }: { items: ToolActivity[] }) {
                 <span className="truncate text-gray-600" title={a.target}>· {a.target}</span>
               )}
               {args && (
-                <span className="shrink-0 truncate font-mono text-[10.5px] text-gray-700"
+                <span className="shrink-0 truncate font-mono text-3xs text-gray-700"
                       data-testid="trace-args" title={args}>
                   {args}
                 </span>
@@ -145,21 +174,23 @@ export function LiveTrace({ items }: { items: ToolActivity[] }) {
               // Measured since v0.45.0, written to `tool_calls`, and never sent
               // to the client until now — so "which step was slow" had no answer
               // in the thread.
-              <span className="shrink-0 tabular-nums text-[10.5px] text-gray-700"
+              <span className="shrink-0 tabular-nums text-3xs text-gray-700"
                     data-testid="trace-duration">
                 {ms}
               </span>
             )}
             {running ? (
-              <span className="shrink-0 text-[11px] text-warn-fg">{t("tool.running")}</span>
+              <span className="shrink-0 text-2xs text-warn-fg">{t("tool.running")}</span>
             ) : (
               <span
-                className={`shrink-0 truncate font-mono text-[11px] ${failed ? "text-danger" : "text-gray-500"}`}
+                className={`shrink-0 truncate font-mono text-2xs ${failed ? "text-danger" : "text-gray-500"}`}
                 title={a.result}
               >
                 {a.result}
               </span>
             )}
+          </div>
+          {isOpen && <CallDetail sessionId={sessionId as string} callId={a.id as string} />}
           </div>
         );
       })}

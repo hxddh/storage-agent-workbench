@@ -503,6 +503,15 @@ export const getSessionActivity = (id: string, limit?: number, offset?: number) 
     `/sessions/${id}/activity?limit=${limit ?? 200}&offset=${offset ?? 0}`,
   );
 
+/** ONE tool call by the id its thread row carries (v0.56.0).
+ *
+ * This is what makes a trace row expandable in place: the reader opens the step
+ * and sees the sanitized arguments it was called with and the output it
+ * returned, instead of scrolling the whole-session inspector to a guessed time
+ * window. Scoped to the session server-side. */
+export const getSessionCall = (id: string, callId: string) =>
+  request<SessionActivityItem>(`/sessions/${id}/activity/${encodeURIComponent(callId)}`);
+
 export const getSessionAudit = (id: string, limit?: number, offset?: number) =>
   request<BoundedList<SessionAuditItem>>(
     `/sessions/${id}/audit?limit=${limit ?? 200}&offset=${offset ?? 0}`,

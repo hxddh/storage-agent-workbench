@@ -64,6 +64,30 @@ export default {
           700: "var(--gray-700)",
         },
       },
+      // The product type scale (v0.56.0).
+      //
+      // Before this there was no scale. A count across the components found 157
+      // uses of arbitrary pixel sizes spanning FOURTEEN distinct values — 9.5,
+      // 10, 10.5, 11, 11.5, 12, 12.5, 13, 13.5, 14, 14.5, 15, 16 and 23px —
+      // alongside 70 uses of Tailwind's own steps. Half-pixel neighbours like
+      // 10.5 against 11 are invisible to a reader and guarantee that two panels
+      // built a week apart never line up.
+      //
+      // Eight steps, each with a line-height chosen for its job rather than
+      // inherited: the dense ones (3xs/2xs) are trace rows and metadata where
+      // vertical rhythm matters more than air; `sm` is the reading size for
+      // conversation text. Every arbitrary value was migrated to its nearest
+      // step, so the scale is what the UI actually uses, not an aspiration.
+      fontSize: {
+        "3xs": ["0.625rem", { lineHeight: "0.875rem" }],   // 10px — dense metadata
+        "2xs": ["0.6875rem", { lineHeight: "1rem" }],      // 11px — trace rows
+        xs: ["0.75rem", { lineHeight: "1.125rem" }],       // 12px — secondary UI
+        sm: ["0.8125rem", { lineHeight: "1.375rem" }],     // 13px — body / answers
+        base: ["0.875rem", { lineHeight: "1.5rem" }],      // 14px — emphasis
+        lg: ["1rem", { lineHeight: "1.5rem" }],            // 16px — section titles
+        xl: ["1.1875rem", { lineHeight: "1.625rem" }],     // 19px
+        "2xl": ["1.4375rem", { lineHeight: "1.875rem" }],  // 23px — display
+      },
       fontFamily: {
         sans: [
           "-apple-system",

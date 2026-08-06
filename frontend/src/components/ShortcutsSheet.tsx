@@ -10,7 +10,7 @@ const GROUPS = [
 
 function Key({ children }: { children: string }) {
   return (
-    <kbd className="min-w-[1.5rem] rounded-[5px] border border-edge-strong bg-elevated px-1.5 py-0.5 text-center font-sans text-[11px] font-medium text-gray-300">
+    <kbd className="min-w-[1.5rem] rounded-[5px] border border-edge-strong bg-elevated px-1.5 py-0.5 text-center font-sans text-2xs font-medium text-gray-300">
       {children}
     </kbd>
   );
@@ -52,7 +52,7 @@ export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () =
         className="w-[min(460px,94vw)] overflow-hidden rounded-2xl border border-edge bg-panel shadow-pop animate-scale-in"
       >
         <div className="flex items-center justify-between border-b border-edge px-5 py-3.5">
-          <span className="text-[13px] font-semibold text-gray-100">{t("keys.title")}</span>
+          <span className="text-sm font-semibold text-gray-100">{t("keys.title")}</span>
           <button
             onClick={onClose}
             aria-label={t("common.close")}
@@ -66,13 +66,13 @@ export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () =
         <div className="max-h-[70vh] space-y-4 overflow-auto px-5 py-4">
           {GROUPS.map((g) => (
             <div key={g.group}>
-              <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-600">
+              <div className="mb-1.5 text-3xs font-medium uppercase tracking-wider text-gray-600">
                 {t(g.titleKey)}
               </div>
               <ul className="space-y-1">
                 {shortcutsIn(g.group).map((r: Shortcut) => (
                   <li key={r.id} className="flex items-center gap-3 py-0.5">
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-gray-300">{t(r.labelKey)}</span>
+                    <span className="min-w-0 flex-1 truncate text-xs text-gray-300">{t(r.labelKey)}</span>
                     <span className="flex shrink-0 items-center gap-1">
                       {r.keys.map((k) => <Key key={k}>{k}</Key>)}
                     </span>

@@ -122,14 +122,14 @@ export function Chart({ spec }: { spec: ChartSpec }) {
       aria-label={`${caption}. ${summary}`}
       className="border-b border-edge bg-elevated/40 px-3.5 py-3"
     >
-      <div className="mb-2 flex items-baseline gap-2 text-[10.5px] uppercase tracking-wide text-gray-500">
+      <div className="mb-2 flex items-baseline gap-2 text-3xs uppercase tracking-wide text-gray-500">
         <span>{caption}</span>
       </div>
       {spec.kind === "bar" ? (
         <div className="space-y-1">
           {spec.points.map((p, i) => (
             <div key={i} className="grid grid-cols-[minmax(0,8rem)_1fr_auto] items-center gap-2.5">
-              <span className="truncate text-[11.5px] text-gray-400" title={p.label}>
+              <span className="truncate text-2xs text-gray-400" title={p.label}>
                 {p.label}
               </span>
               <div className="h-[7px] overflow-hidden rounded-full bg-edge">
@@ -141,7 +141,7 @@ export function Chart({ spec }: { spec: ChartSpec }) {
                   style={{ width: `${max > 0 ? Math.max((p.value / max) * 100, 1.5) : 0}%` }}
                 />
               </div>
-              <span className="shrink-0 text-right font-mono text-[11px] tabular-nums text-gray-300">
+              <span className="shrink-0 text-right font-mono text-2xs tabular-nums text-gray-300">
                 {p.raw}
               </span>
             </div>
@@ -168,7 +168,7 @@ export function Chart({ spec }: { spec: ChartSpec }) {
           </div>
           {/* Only the ends are labelled: a per-column axis at this width would
               overlap into unreadable ink. The table below carries every value. */}
-          <div className="mt-1.5 flex justify-between font-mono text-[10px] text-gray-500">
+          <div className="mt-1.5 flex justify-between font-mono text-3xs text-gray-500">
             <span>{spec.points[0].label}</span>
             <span className="text-gray-400">
               {t("chart.peak")} {peak.label} · {fmt(peak.value)}

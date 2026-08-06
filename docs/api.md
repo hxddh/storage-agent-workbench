@@ -183,6 +183,14 @@ the result text) and `duration_ms` (measured since v0.45.0, sent since this
 release). Records replayed from older history carry none of the three; a client
 must treat them as absent rather than false/zero.
 
+One call by id (v0.56.0): `GET /sessions/{id}/activity/{call_id}` returns a
+single `tool_calls` row — the sanitized input, the output, the status and the
+measured duration — keyed by the `id` every thread activity record has carried
+since v0.55.0. This is what makes a trace row expandable in place. It is scoped
+to the session in the path: a call id belonging to another session returns 404,
+identically to an unknown id, so the response cannot be used to probe which ids
+exist. Nothing new is exposed; it is the same row `/activity` returns in bulk.
+
 Observability (v0.45.0): `/activity` and `/audit` are bounded — `limit` is capped
 at 500 (default 200) and every response carries `total` / `offset` / `limit` /
 `truncated`, so a partial timeline is never presented as a complete one. They

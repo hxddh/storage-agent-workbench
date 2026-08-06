@@ -33,6 +33,7 @@ export const MessageCard = memo(function MessageCard({
   content,
   toolActivity,
   streaming,
+  sessionId,
   onEdit,
   onRegenerate,
 }: {
@@ -40,6 +41,9 @@ export const MessageCard = memo(function MessageCard({
   content: string | null;
   toolActivity?: ToolActivity[];
   streaming?: boolean;
+  /** Lets a finished trace row be opened to the call's real persisted
+   * input/output (v0.56.0). Absent = rows stay read-only. */
+  sessionId?: string | null;
   /** Put this user message back in the composer to send again (a NEW turn). */
   onEdit?: (text: string) => void;
   /** Re-ask the question that produced this answer, as a NEW turn. */
@@ -54,7 +58,7 @@ export const MessageCard = memo(function MessageCard({
   const shown = streaming ? stripMetaBlock(content || "") : content || "";
   return (
     <div className="group animate-fade-in-up">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-accent-soft">
+      <div className="mb-1.5 flex items-center gap-1.5 text-2xs font-medium text-accent-soft">
         {Spark}
         {t("card.agentName")}
         {!streaming && (
@@ -82,7 +86,7 @@ export const MessageCard = memo(function MessageCard({
           single expansion, in execution order and next to the grounding it
           supports — see TurnFooter. */}
       {streaming && toolActivity && toolActivity.length > 0 && (
-        <LiveTrace items={toolActivity} />
+        <LiveTrace items={toolActivity} sessionId={sessionId} />
       )}
       <Markdown text={shown} />
       {streaming &&
@@ -92,7 +96,7 @@ export const MessageCard = memo(function MessageCard({
         ) : (
           // No answer text yet (model still working after / between tool calls —
           // often the longest wait). Show explicit progress so it doesn't look frozen.
-          <div className="flex items-center gap-2.5 text-[13px] text-gray-500">
+          <div className="flex items-center gap-2.5 text-sm text-gray-500">
             <span className="flex gap-1">
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "0ms" }} />
               <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "150ms" }} />
@@ -121,14 +125,14 @@ function UserMessage({ content, onEdit }: { content: string | null; onEdit?: (te
   return (
     <div className="group flex justify-end animate-fade-in-up">
       <div className="flex max-w-[82%] flex-col items-end gap-1">
-        <div className="w-full whitespace-pre-wrap break-words rounded-2xl border border-edge bg-elevated px-3.5 py-2.5 text-[13px] leading-relaxed text-gray-100">
+        <div className="w-full whitespace-pre-wrap break-words rounded-2xl border border-edge bg-elevated px-3.5 py-2.5 text-sm leading-relaxed text-gray-100">
           <div className={long && !expanded ? "max-h-[11.5rem] overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" : ""}>
             {text}
           </div>
           {long && (
             <button
               onClick={() => setExpanded((v) => !v)}
-              className="mt-1 text-[11.5px] text-gray-500 transition-colors hover:text-accent-soft"
+              className="mt-1 text-2xs text-gray-500 transition-colors hover:text-accent-soft"
             >
               {expanded ? t("msg.showLess") : t("msg.showMore")}
             </button>
@@ -142,7 +146,7 @@ function UserMessage({ content, onEdit }: { content: string | null; onEdit?: (te
               title={t("msg.edit")}
               aria-label={t("msg.edit")}
               data-testid="edit-message"
-              className="text-[11px] text-gray-500 transition-colors hover:text-gray-200"
+              className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -213,7 +217,7 @@ function CopyButton({ text }: { text: string }) {
           setTimeout(() => setCopied(false), 1400);
         })
       }
-      className="ml-1 flex items-center gap-1 rounded px-1 py-0.5 text-[10px] font-normal text-gray-600 opacity-0 transition-opacity hover:text-gray-300 group-hover:opacity-100"
+      className="ml-1 flex items-center gap-1 rounded px-1 py-0.5 text-3xs font-normal text-gray-600 opacity-0 transition-opacity hover:text-gray-300 group-hover:opacity-100"
       aria-label={t("common.copy")}
     >
       {copied ? (
@@ -238,11 +242,11 @@ export function ThinkingBubble() {
   }, []);
   return (
     <div className="animate-fade-in">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-accent-soft">
+      <div className="mb-1.5 flex items-center gap-1.5 text-2xs font-medium text-accent-soft">
         {Spark}
         {t("card.agentName")}
       </div>
-      <div className="flex items-center gap-2.5 text-[13px] text-gray-500">
+      <div className="flex items-center gap-2.5 text-sm text-gray-500">
         <span className="flex gap-1">
           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "0ms" }} />
           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "150ms" }} />
@@ -270,10 +274,10 @@ export function GroundingCard({ g }: { g: Grounding }) {
   const Section = ({ label, items, tone }: { label: string; items: string[]; tone: string }) =>
     items.length ? (
       <div className="mt-1.5">
-        <span className={`text-[10.5px] font-medium uppercase tracking-wider ${tone}`}>{label}</span>
+        <span className={`text-3xs font-medium uppercase tracking-wider ${tone}`}>{label}</span>
         <ul className="mt-0.5 space-y-0.5">
           {items.map((s, i) => (
-            <li key={i} className="text-[12px] text-gray-400">· {s}</li>
+            <li key={i} className="text-xs text-gray-400">· {s}</li>
           ))}
         </ul>
       </div>
@@ -282,12 +286,12 @@ export function GroundingCard({ g }: { g: Grounding }) {
     <div className="animate-fade-in">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 text-[11px] text-gray-600 transition-colors hover:text-gray-400"
+        className="flex items-center gap-1.5 text-2xs text-gray-600 transition-colors hover:text-gray-400"
       >
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
              className={`transition-transform ${open ? "rotate-90" : ""}`}><polyline points="9 18 15 12 9 6" /></svg>
         {t("grounding.title")}
-        {gaps.length ? <span className="rounded bg-warn-bg px-1.5 py-0.5 text-[10px] text-warn-fg">{gaps.length}</span> : null}
+        {gaps.length ? <span className="rounded bg-warn-bg px-1.5 py-0.5 text-3xs text-warn-fg">{gaps.length}</span> : null}
       </button>
       {open && (
         <div className="mt-1 border-l border-edge/70 pl-3">
@@ -326,19 +330,19 @@ export function FindingsCard({ findings }: { findings: SessionFinding[] }) {
     <div className="animate-fade-in rounded-lg border border-edge bg-panel/60 p-3">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 text-[12px] font-medium text-gray-300 transition-colors hover:text-gray-100"
+        className="flex w-full items-center gap-1.5 text-xs font-medium text-gray-300 transition-colors hover:text-gray-100"
       >
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
              className={`transition-transform ${open ? "rotate-90" : ""}`}><polyline points="9 18 15 12 9 6" /></svg>
         {t("findings.title")}
-        <span className="rounded bg-elevated px-1.5 py-0.5 text-[10px] text-gray-400">{items.length}</span>
+        <span className="rounded bg-elevated px-1.5 py-0.5 text-3xs text-gray-400">{items.length}</span>
       </button>
       {open && (
         <ul className="mt-2 space-y-1.5 border-l border-edge/70 pl-3">
           {items.map((f) => (
-            <li key={f.id} className="text-[12px]">
+            <li key={f.id} className="text-xs">
               <div className="flex items-baseline gap-1.5">
-                <span className={`text-[10px] font-medium uppercase tracking-wider ${FINDING_TONE[(f.severity || f.kind || "info").toLowerCase()] || "text-gray-400"}`}>
+                <span className={`text-3xs font-medium uppercase tracking-wider ${FINDING_TONE[(f.severity || f.kind || "info").toLowerCase()] || "text-gray-400"}`}>
                   {severityLabel(t, (f.severity || f.kind || "info").toLowerCase())}
                 </span>
                 <span className="text-gray-200">{f.title || "—"}</span>
@@ -367,14 +371,14 @@ export function RunCard({ run }: { run: SessionRunLink }) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-accent-soft">
           <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z" />
         </svg>
-        <span className="font-mono text-[12px] text-gray-300">{run.run_type}</span>
-        <span className={`flex items-center gap-1 text-[11px] ${st.cls}`}>
+        <span className="font-mono text-xs text-gray-300">{run.run_type}</span>
+        <span className={`flex items-center gap-1 text-2xs ${st.cls}`}>
           {run.status === "completed" && (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
           )}
           {statusLabel}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[11.5px] text-gray-500">{run.final_summary || ""}</span>
+        <span className="min-w-0 flex-1 truncate text-2xs text-gray-500">{run.final_summary || ""}</span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`shrink-0 text-gray-600 transition-transform ${open ? "rotate-180" : ""}`}>
           <polyline points="6 9 12 15 18 9" />
         </svg>
@@ -398,14 +402,14 @@ export function TriageCard({ c, onRun }: { c: TriageCase; onRun?: (p: NextAction
           <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
           <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
-        <span className="text-[11px] font-medium uppercase tracking-wider text-gray-500">{t("triage.title")}</span>
+        <span className="text-2xs font-medium uppercase tracking-wider text-gray-500">{t("triage.title")}</span>
       </div>
-      <div className="px-3.5 py-3 text-[13px]">
+      <div className="px-3.5 py-3 text-sm">
         <div className="text-gray-200">{c.summary}</div>
         <ul className="mt-2.5 space-y-1.5">
           {c.candidate_causes.map((cc, i) => (
-            <li key={i} className="flex items-start gap-2 text-[12px]">
-              <span className={`mt-px shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${CONF_PILL[cc.confidence ?? "low"] ?? "bg-gray-700/40 text-gray-400"}`}>
+            <li key={i} className="flex items-start gap-2 text-xs">
+              <span className={`mt-px shrink-0 rounded px-1.5 py-0.5 text-3xs font-medium ${CONF_PILL[cc.confidence ?? "low"] ?? "bg-gray-700/40 text-gray-400"}`}>
                 {cc.confidence}
               </span>
               <span className="min-w-0">
@@ -419,7 +423,7 @@ export function TriageCard({ c, onRun }: { c: TriageCase; onRun?: (p: NextAction
         </ul>
         {onRun && c.safe_next_actions?.length ? (
           <div className="mt-3 border-t border-edge/60 pt-2.5">
-            <span className="text-[11px] text-gray-600">{t("thread.suggestedNext")}</span>
+            <span className="text-2xs text-gray-600">{t("thread.suggestedNext")}</span>
             <div className="mt-1.5 flex flex-wrap gap-2">
               {c.safe_next_actions.map((p, i) => (
                 <ProposalCard key={`${p.action_type}-${i}`} proposal={p} onRun={onRun} />
@@ -454,7 +458,7 @@ export function ProposalCard({
     <button
       onClick={() => onRun(proposal)}
       title={proposal.reason || label}
-      className="group/prop inline-flex max-w-full animate-fade-in items-center gap-1.5 rounded-full border border-edge bg-panel/60 px-3 py-1.5 text-[12.5px] text-gray-300 transition-colors hover:border-accent/45 hover:bg-accent-dim/60 hover:text-gray-100"
+      className="group/prop inline-flex max-w-full animate-fade-in items-center gap-1.5 rounded-full border border-edge bg-panel/60 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/45 hover:bg-accent-dim/60 hover:text-gray-100"
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" className="shrink-0 text-accent-soft">
         <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />

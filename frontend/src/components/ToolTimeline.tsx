@@ -51,7 +51,7 @@ function TimelineRow({ item }: { item: TimelineItem }) {
         )}
       </div>
       {open && item.output && (
-        <pre className="mt-2 max-h-64 overflow-auto rounded bg-sidebar p-2 text-[11px] text-gray-300">
+        <pre className="mt-2 max-h-64 overflow-auto rounded bg-sidebar p-2 text-2xs text-gray-300">
           {JSON.stringify(item.output, null, 2)}
         </pre>
       )}

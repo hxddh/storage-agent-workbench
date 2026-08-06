@@ -68,18 +68,18 @@ export function AccountProfilePanel({
       <h2 className="mb-2 text-sm font-semibold text-gray-200">{t("profile.title")}</h2>
       <div className="mb-3 grid grid-cols-3 gap-2 text-xs">
         <div className="rounded-md border border-edge bg-panel p-2">
-          <div className="text-[11px] text-gray-500">{t("profile.visibleBuckets")}</div>
+          <div className="text-2xs text-gray-500">{t("profile.visibleBuckets")}</div>
           <div className="text-sm font-medium text-gray-100">{profile.visible_count}</div>
         </div>
         <div className="rounded-md border border-edge bg-panel p-2">
-          <div className="text-[11px] text-gray-500">{t("profile.processed")}</div>
+          <div className="text-2xs text-gray-500">{t("profile.processed")}</div>
           <div className="text-sm font-medium text-gray-100">
             {profile.processed_count}
             {profile.truncated ? ` ${t("profile.truncatedSuffix")}` : ""}
           </div>
         </div>
         <div className="rounded-md border border-edge bg-panel p-2">
-          <div className="text-[11px] text-gray-500">ListBuckets</div>
+          <div className="text-2xs text-gray-500">ListBuckets</div>
           <div className={`text-sm font-medium ${statusClass(profile.list_status)}`}>{profile.list_status}</div>
         </div>
       </div>
@@ -89,7 +89,7 @@ export function AccountProfilePanel({
           <button
             key={f.value}
             onClick={() => setFilter(f.value)}
-            className={`rounded-full border px-2 py-0.5 text-[11px] ${
+            className={`rounded-full border px-2 py-0.5 text-2xs ${
               filter === f.value ? "border-violet-700 text-violet-300" : "border-edge text-gray-400 hover:text-gray-200"
             }`}
           >
@@ -99,7 +99,7 @@ export function AccountProfilePanel({
       </div>
 
       <div className="overflow-auto rounded-md border border-edge">
-        <table className="w-full text-left text-[11px]">
+        <table className="w-full text-left text-2xs">
           <thead className="bg-sidebar text-gray-400">
             <tr>
               <th className="px-2 py-1">{t("profile.colBucket")}</th>
