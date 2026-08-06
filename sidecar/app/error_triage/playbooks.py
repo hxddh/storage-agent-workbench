@@ -48,6 +48,9 @@ _CATEGORY_SKILL: dict[str, str] = {
     "routing": "storageops-s3-protocol-compatibility",
     "throttling": "storageops-performance-diagnosis",
     "lifecycle": "storageops-lifecycle-cost",
+    # v0.62.0 — "this configuration does not exist" is not a fault, so it maps to
+    # the skill that explains what the configuration would DO, not to triage.
+    "not_configured": "storageops-observability-audit",
     "unknown": "storageops-triage",
 }
 
@@ -306,6 +309,221 @@ _BY_CODE.update({
                                     "KMS key is disabled (SSE-KMS object unreadable)"),
     "KMS.NotFoundException": _alias("KMS.NotFoundException", _KMS,
                                     "KMS key not found (deleted or wrong region)"),
+    "KMS.KMSInvalidStateException": _alias(
+        "KMS.KMSInvalidStateException", _KMS,
+        "KMS key is in an unusable state (pending deletion / pending import)"),
+})
+
+
+# --- "this configuration does not exist" is NOT a fault (v0.62.0) ------------
+#
+# `s3/config_tools._NOT_CONFIGURED_CODES` already encodes exactly which codes
+# mean "there is no such configuration on this bucket", and the config-reading
+# path uses it to report `not_configured` instead of an error. The offline
+# triage knew NONE of the twelve, so every one of them landed in `unknown`.
+#
+# That lands on the worst possible reader. Offline triage is what runs when no
+# model provider is configured — an operator with a pasted error and no agent to
+# ask — and for these codes the true answer is "nothing is broken; this bucket
+# simply has no lifecycle rule". Answering `unknown` turns a benign state into a
+# suspected fault, while the product's own config path had the right answer all
+# along.
+#
+# Sourced from `_NOT_CONFIGURED_CODES` rather than retyped, so the two lists
+# cannot drift apart — a test asserts every code in that set has an entry here.
+def _not_configured(code: str, what: str, why_it_matters: str) -> dict[str, Any]:
+    return _entry(
+        code, "not_configured", f"No {what} is set on this bucket", "high",
+        [f"this bucket simply has no {what} — the API reports its absence as an error code",
+         "the request itself succeeded; there was nothing to return"],
+        [f"whether a {what} is expected here at all", "who owns this bucket's configuration"],
+        [f"review the bucket's configuration to see what IS set",
+         "compare against a bucket you consider correctly configured"],
+        ["bucket_config_review"],
+        ["Most S3-compatible providers return this same shape; a few return an "
+         "empty document instead, which is the same fact."],
+        [_CFG, _ASK],
+    )
+
+
+_NOT_CONFIGURED_PLAYBOOKS: dict[str, tuple[str, str]] = {
+    "NoSuchLifecycleConfiguration": (
+        "lifecycle configuration",
+        "Nothing expires or transitions automatically, so storage grows until "
+        "something else removes it."),
+    "NoSuchBucketPolicy": (
+        "bucket policy",
+        "Access is governed by IAM and ACLs alone — which may be correct, or may "
+        "mean an intended restriction was never applied."),
+    "NoSuchCORSConfiguration": (
+        "CORS configuration",
+        "Browser clients on another origin cannot read from this bucket."),
+    "ServerSideEncryptionConfigurationNotFoundError": (
+        "default encryption configuration",
+        "New objects are not encrypted by a bucket default; they may still be "
+        "encrypted per-request."),
+    "ReplicationConfigurationNotFoundError": (
+        "replication configuration",
+        "Nothing is copied to another bucket or region automatically."),
+    "NoSuchPublicAccessBlockConfiguration": (
+        "public access block",
+        "The bucket has no account/bucket-level guard against being made public; "
+        "policy and ACL decide exposure on their own."),
+    "NoSuchTagSet": (
+        "tag set",
+        "Cost allocation and tag-based policies have nothing to match on."),
+    "NoSuchTagSetError": (
+        "tag set",
+        "Cost allocation and tag-based policies have nothing to match on."),
+    "NoSuchWebsiteConfiguration": (
+        "static website configuration",
+        "The bucket does not serve as a website endpoint."),
+    "ObjectLockConfigurationNotFoundError": (
+        "Object Lock configuration",
+        "No WORM retention default applies; objects can be deleted normally."),
+    "OwnershipControlsNotFoundError": (
+        "Object Ownership setting",
+        "The provider default applies — worth confirming, since it decides "
+        "whether ACLs are honoured at all."),
+    "NoSuchConfiguration": (
+        "configuration of the requested kind",
+        "The specific sub-resource asked for is absent."),
+}
+
+_BY_CODE.update({
+    code: _not_configured(code, what, why)
+    for code, (what, why) in _NOT_CONFIGURED_PLAYBOOKS.items()
+})
+
+
+# --- codes an operator actually pastes, that had no playbook (v0.62.0) -------
+#
+# These ARE faults, unlike the family above. Several are write-path codes: this
+# product performs no writes, but offline triage exists for errors the user hit
+# ANYWHERE — in aws-cli, rclone, or their own application — so refusing to
+# explain a write error would be answering a question nobody asked.
+_BY_CODE.update({
+    "InvalidArgument": _entry(
+        "InvalidArgument", "client", "A request parameter was rejected", "medium",
+        ["a parameter this endpoint does not accept (very common on S3-compatible "
+         "providers that implement a subset)",
+         "a value out of range — page size, part number, retention days",
+         "an SDK feature (checksum algorithm, request payer) the endpoint ignores"],
+        ["the exact operation and the parameter named in the message",
+         "whether the same call works against AWS S3"],
+        ["retry the same call with the optional parameter removed",
+         "test_credentials", "inspect_endpoint_tls"],
+        ["diagnostic"],
+        ["The message text — not the code — names the offending parameter, and "
+         "S3-compatible providers word it differently."],
+        [_DIAG, _ASK]),
+    "XAmzContentSHA256Mismatch": _entry(
+        "XAmzContentSHA256Mismatch", "auth",
+        "Body hash did not match the signed value", "high",
+        ["a proxy, WAF or TLS-terminating gateway altered the request body",
+         "the client computed the payload hash over different bytes than it sent",
+         "a retry replayed a consumed stream"],
+        ["whether the request passes through a proxy or gateway",
+         "whether the same call succeeds directly against the endpoint"],
+        ["inspect_endpoint_tls", "test_addressing_style",
+         "retry bypassing any intermediary"],
+        ["diagnostic"],
+        ["Anything that rewrites the body — including transparent compression — "
+         "breaks SigV4 by design; this is not a credential problem."],
+        [_DIAG]),
+    "AuthorizationQueryParametersError": _entry(
+        "AuthorizationQueryParametersError", "auth",
+        "Presigned URL query parameters are malformed or incomplete", "high",
+        ["a required X-Amz-* parameter is missing or reordered",
+         "the URL was truncated, wrapped, or HTML-escaped in transit",
+         "expiry beyond the provider's maximum"],
+        ["the full URL exactly as used, including every query parameter",
+         "how long the signature was requested for"],
+        ["diagnose_presigned_url on the pasted URL (parse only, no network call)"],
+        ["diagnostic"],
+        ["Providers differ on the maximum expiry they will sign."],
+        [_DIAG, _ASK]),
+    "IllegalLocationConstraintException": _entry(
+        "IllegalLocationConstraintException", "routing",
+        "The region in the request does not match the endpoint", "high",
+        ["client region set to one value while the endpoint belongs to another",
+         "a global endpoint used for a region-locked bucket"],
+        ["the configured region and endpoint side by side",
+         "where the bucket actually lives"],
+        ["get_bucket_location", "test_addressing_style"],
+        ["diagnostic"],
+        ["S3-compatible providers often accept any region string, so this "
+         "surfaces only on AWS or on strict gateways."],
+        [_DIAG]),
+    "EntityTooLarge": _entry(
+        "EntityTooLarge", "client", "Object exceeds the provider's size limit", "high",
+        ["a single PUT above the 5 GiB single-operation limit",
+         "a multipart part above the per-part maximum",
+         "a provider-specific ceiling lower than AWS's"],
+        ["the object size and whether multipart was used",
+         "the provider's documented per-object and per-part limits"],
+        ["list_multipart_uploads to see whether a multipart attempt is stuck"],
+        ["diagnostic"],
+        ["Per-object and per-part maxima vary widely across S3-compatible providers."],
+        [_ASK]),
+    "MalformedXML": _entry(
+        "MalformedXML", "client", "The request document was not valid", "high",
+        ["a hand-written or templated policy / lifecycle / CORS document",
+         "a required element missing or in the wrong order",
+         "a document valid on AWS using an element this provider does not parse"],
+        ["the exact document submitted",
+         "whether it validates against the provider's own schema"],
+        ["get_bucket_config_detail for the aspect, to see what IS currently stored"],
+        ["bucket_config_review"],
+        ["Element ORDER matters in several S3 XML schemas; some providers are "
+         "stricter than AWS."],
+        [_CFG, _ASK]),
+    "OperationAborted": _entry(
+        "OperationAborted", "client",
+        "A conflicting operation on the same resource was in progress", "medium",
+        ["two configuration changes to one bucket at the same time",
+         "an automation retry racing its own earlier attempt"],
+        ["what else was writing to this bucket's configuration at that moment"],
+        ["retry once after a short pause", "get_bucket_config_detail to see what landed"],
+        ["bucket_config_review"],
+        [],
+        [_CFG]),
+    "BucketNotEmpty": _entry(
+        "BucketNotEmpty", "client", "The bucket still contains objects", "high",
+        ["objects remain under some prefix",
+         "non-current VERSIONS or delete markers remain, though the bucket looks empty",
+         "an incomplete multipart upload is holding data"],
+        ["whether versioning is enabled — a versioned bucket looks empty while "
+         "still holding every prior version",
+         "whether incomplete multipart uploads exist"],
+        ["list_object_versions", "list_multipart_uploads", "list_objects"],
+        ["diagnostic"],
+        ["This product performs no deletions; the checks above only show you what "
+         "is still there."],
+        [_DIAG]),
+    "RequestHeaderSectionTooLarge": _entry(
+        "RequestHeaderSectionTooLarge", "client",
+        "The request headers exceeded the server's limit", "medium",
+        ["very many or very long metadata headers",
+         "a proxy appending forwarding/tracing headers",
+         "an oversized signed-headers list on a presigned URL"],
+        ["the number and size of x-amz-meta-* headers",
+         "whether a proxy sits in front of the endpoint"],
+        ["retry with fewer metadata headers", "inspect_endpoint_tls"],
+        ["diagnostic"],
+        ["Header limits are lower on many S3-compatible gateways than on AWS."],
+        [_DIAG, _ASK]),
+    "CrossLocationLoggingProhibited": _entry(
+        "CrossLocationLoggingProhibited", "client",
+        "Log target bucket is in a different location", "high",
+        ["server access logging pointed at a bucket in another region",
+         "source and target buckets created in different locations"],
+        ["the region of both the source and the target bucket"],
+        ["get_bucket_location on both buckets",
+         "get_bucket_config_detail(aspect='logging')"],
+        ["bucket_config_review"],
+        [],
+        [_CFG]),
 })
 
 

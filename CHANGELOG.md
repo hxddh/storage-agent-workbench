@@ -6,6 +6,78 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.62.0] - 2026-08-06
+
+_The product knew which errors were not errors. The part that answers when
+nothing else can did not._
+
+### Fixed — twelve "not configured" codes were reported as unknown faults
+
+`s3/config_tools._NOT_CONFIGURED_CODES` already encodes exactly which S3 codes
+mean *there is no such configuration on this bucket*, and the config-reading path
+uses it to report `not_configured` rather than an error. The offline triage
+playbooks knew **none of the twelve**:
+
+| pasted code | triage said |
+| --- | --- |
+| `NoSuchLifecycleConfiguration` | **unknown** |
+| `NoSuchTagSet` | **unknown** |
+| `ObjectLockConfigurationNotFoundError` | **unknown** |
+| `NoSuchBucketPolicy` | **unknown** |
+| `ReplicationConfigurationNotFoundError` | **unknown** |
+| `AccessDenied` *(control)* | authz ✓ |
+| `NoSuchBucket` *(control)* | routing ✓ |
+
+That lands on the worst possible reader. Offline triage is what runs when **no
+model provider is configured** — an operator holding a pasted error with no agent
+to ask, which is the most degraded state this product supports. For these codes
+the true answer is *nothing is broken; this bucket simply has no lifecycle rule*.
+Answering `unknown` turns a benign fact into a suspected fault, while the
+product's own neighbouring path had the right answer all along.
+
+All twelve now resolve to a new `not_configured` category that says plainly what
+is absent and what its absence means — no lifecycle rule means nothing expires,
+no public-access block means policy and ACL decide exposure alone. The entries
+are **generated from `_NOT_CONFIGURED_CODES` itself** rather than retyped, and a
+test walks that set, so the two lists cannot drift apart.
+
+A separate test asserts `not_configured` and `provider_unsupported` never share a
+code: one says the bucket has no such setting, the other says the endpoint has no
+such API, and conflating them sends the reader down the wrong path.
+
+### Added — ten more codes an operator actually pastes
+
+`InvalidArgument`, `XAmzContentSHA256Mismatch`,
+`AuthorizationQueryParametersError`, `IllegalLocationConstraintException`,
+`EntityTooLarge`, `MalformedXML`, `OperationAborted`, `BucketNotEmpty`,
+`RequestHeaderSectionTooLarge`, `CrossLocationLoggingProhibited`, plus
+`KMS.KMSInvalidStateException`.
+
+Several are **write-path** codes. This product performs no writes — but offline
+triage exists for errors the user hit *anywhere*: in aws-cli, in rclone, in their
+own application. Refusing to explain a write error would be answering a question
+nobody asked. `BucketNotEmpty` is the one where a reader could infer the product
+will clear the bucket for them, so it says the opposite explicitly, and a test
+holds that line.
+
+Coverage went from **30 codes to 53**. Tests assert every new entry names a cause
+and a next check (a label is not an answer), proposes only non-mutating actions,
+and never names a tool that does not exist.
+
+### Verified — two hypotheses that turned out wrong
+
+- **rule 18 has gaps** — false. All nine capability-sensitive tools
+  (`get_object_lock_status`, `get_object_acl`, `get_object_tagging`,
+  `get_object_attributes`, `list_object_versions`, `list_multipart_uploads`,
+  `list_upload_parts`, `get_bucket_location`, `test_conditional_get`) route
+  through the `provider_unsupported` classifier.
+- **the per-step prefix grew again** — false. Still 19,148 chars (~4,787 tokens),
+  unchanged since v0.58.0.
+
+One correction to the assessment that produced this release: the triage was first
+counted at 27 codes by grepping the source. The real figure was **30** — aliases
+are entries too. The measurement was redone against `_BY_CODE` itself.
+
 ## [0.61.0] - 2026-08-06
 
 _Paying twice for the same method, firing without a ceiling, drawing the wrong
