@@ -337,7 +337,7 @@ def _not_configured(code: str, what: str, why_it_matters: str) -> dict[str, Any]
         [f"this bucket simply has no {what} — the API reports its absence as an error code",
          "the request itself succeeded; there was nothing to return"],
         [f"whether a {what} is expected here at all", "who owns this bucket's configuration"],
-        [f"review the bucket's configuration to see what IS set",
+        ["review the bucket's configuration to see what IS set",
          "compare against a bucket you consider correctly configured"],
         ["bucket_config_review"],
         ["Most S3-compatible providers return this same shape; a few return an "
