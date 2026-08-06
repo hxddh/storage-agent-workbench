@@ -28,7 +28,7 @@ import uuid
 from typing import Any, Callable
 
 from . import turn_guard
-from .. import audit, run_service
+from .. import audit, db, run_service
 from ..events import bus
 from ..models.schemas import RunCreate
 from ..repositories import account_discovery as account_repo
@@ -89,12 +89,13 @@ def _execute_run(conn: sqlite3.Connection, body: RunCreate,
         existing = turn_guard.get_run(turn_id, dedup_key)
         if existing:
             return existing
-    run_id = runs_repo.create(conn, body, status="pending", origin="agent")
-    if body.session_id:
-        from ..repositories import sessions as sessions_repo
-        sessions_repo.link_run(conn, body.session_id, run_id,
-                               sessions_repo.RUN_ROLE.get(body.run_type))
-    conn.commit()
+    with db.WRITE_LOCK:
+        run_id = runs_repo.create(conn, body, status="pending", origin="agent")
+        if body.session_id:
+            from ..repositories import sessions as sessions_repo
+            sessions_repo.link_run(conn, body.session_id, run_id,
+                                   sessions_repo.RUN_ROLE.get(body.run_type))
+        conn.commit()
     if turn_id and dedup_key:
         turn_guard.set_run(turn_id, dedup_key, run_id)
     bus.create(run_id)
@@ -114,7 +115,8 @@ def _execute_run(conn: sqlite3.Connection, body: RunCreate,
         if cancel_event is not None and cancel_event.is_set():
             break  # user stopped the turn — return the run's current status now
         done.wait(1.0)
-    conn.commit()  # end any read snapshot so the re-read sees run_sync's writes
+    with db.WRITE_LOCK:
+        conn.commit()  # end any read snapshot so the re-read sees run_sync's writes
     return run_id
 
 
@@ -287,12 +289,14 @@ def build(
             if cancel_event is not None and cancel_event.is_set():
                 break  # user stopped the turn — stop waiting on the background run
             _time.sleep(1.0)
-            conn.commit()  # end the read snapshot so run_sync's writes are visible
+            with db.WRITE_LOCK:
+                conn.commit()  # end the read snapshot so run_sync's writes are visible
             result = _run_result(conn, run_id, summary_cap)
-        audit.record(conn, "session.read_run_result",
-                     {"session_id": session_id, "run_id": run_id, "status": result["status"]},
-                     run_id=run_id, session_id=session_id)
-        conn.commit()
+        with db.WRITE_LOCK:
+            audit.record(conn, "session.read_run_result",
+                         {"session_id": session_id, "run_id": run_id, "status": result["status"]},
+                         run_id=run_id, session_id=session_id)
+            conn.commit()
         note("read_run_result", run_id[:8], result["status"])
         return json.dumps(result)
 
@@ -319,10 +323,11 @@ def build(
             diff = account_repo.diff_profiles(old_p, new_p)
         except Exception as exc:  # noqa: BLE001 — a tool returns an error string, never raises
             return _err(f"compare_to_last_survey failed: {exc}")
-        audit.record(conn, "session.compare_to_last_survey",
-                     {"provider_id": provider_id, "change_count": diff.get("change_count")},
-                     run_id=None, session_id=session_id)
-        conn.commit()
+        with db.WRITE_LOCK:
+            audit.record(conn, "session.compare_to_last_survey",
+                         {"provider_id": provider_id, "change_count": diff.get("change_count")},
+                         run_id=None, session_id=session_id)
+            conn.commit()
         note("compare_to_last_survey", provider_name(provider_id), f"{diff['change_count']} change(s)")
         return json.dumps({
             "success": True, "comparable": True,
@@ -400,10 +405,11 @@ def build(
         buckets = prof.get("buckets") or []
         rows = [{"bucket": b.get("bucket_name"), **{k: b.get(k) for k in _FLAGS}}
                 for b in buckets if matches(b)]
-        audit.record(conn, "session.query_account_profile",
-                     {"session_id": session_id, "provider_id": provider_id,
-                      "filter": filter, "matched": len(rows)}, run_id=None, session_id=session_id)
-        conn.commit()
+        with db.WRITE_LOCK:
+            audit.record(conn, "session.query_account_profile",
+                         {"session_id": session_id, "provider_id": provider_id,
+                          "filter": filter, "matched": len(rows)}, run_id=None, session_id=session_id)
+            conn.commit()
         note("query_account_profile", provider_name(provider_id),
              f"{len(rows)}/{len(buckets)} match '{filter}'")
         return json.dumps({

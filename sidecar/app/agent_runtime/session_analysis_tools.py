@@ -28,7 +28,7 @@ import uuid
 
 from typing import Any, Callable
 
-from .. import audit, config
+from .. import audit, config, db
 from ..analysis import access_logs, aggregate as agg, inventory
 from ..repositories import session_datasets as ds_repo
 from ..security.redaction import redact_text
@@ -89,9 +89,10 @@ def build(
             }
             for r in rows
         ]
-        audit.record(conn, "session.list_uploaded_files",
-                     {"session_id": session_id, "count": len(items)}, run_id=None, session_id=session_id)
-        conn.commit()
+        with db.WRITE_LOCK:
+            audit.record(conn, "session.list_uploaded_files",
+                         {"session_id": session_id, "count": len(items)}, run_id=None, session_id=session_id)
+            conn.commit()
         note("list_uploaded_files", session_id or "", f"{len(items)} file(s)")
         return json.dumps({"files": items})
 
@@ -130,24 +131,27 @@ def build(
         # import is of the now-stale file — don't stamp it 'imported' over the new
         # upload. mark_imported returns False in that case; treat the result as a
         # transient miss so the next call re-imports the current file.
-        imported = ds_repo.mark_imported(
-            conn, dataset_id, config.rel_path(duckdb_abs),
-            imp.get("table_name") or "", int(imp.get("row_count") or 0),
-            detected_format=detected, expected_stored_path=ds.get("stored_path"))
+        with db.WRITE_LOCK:
+            imported = ds_repo.mark_imported(
+                conn, dataset_id, config.rel_path(duckdb_abs),
+                imp.get("table_name") or "", int(imp.get("row_count") or 0),
+                detected_format=detected, expected_stored_path=ds.get("stored_path"))
+            if not imported:
+                conn.commit()
         if not imported:
-            conn.commit()
             raise FileNotFoundError(
                 "The uploaded file was replaced during analysis; retry to analyze the new upload.")
         # Rule 17: audit the DATA IMPORT here, at the import itself — not only as a
         # side effect of a SUCCESSFUL analyze/aggregate. An aggregate that imports
         # the whole file and then fails (e.g. a bad metric) otherwise left a
         # completed import with no audit trail.
-        audit.record(conn, "session.import_dataset",
-                     {"session_id": session_id, "dataset_id": dataset_id,
-                      "dataset_type": ds["dataset_type"], "detected_format": detected,
-                      "row_count": int(imp.get("row_count") or 0)},
-                     run_id=None, session_id=session_id)
-        conn.commit()
+        with db.WRITE_LOCK:
+            audit.record(conn, "session.import_dataset",
+                         {"session_id": session_id, "dataset_id": dataset_id,
+                          "dataset_type": ds["dataset_type"], "detected_format": detected,
+                          "row_count": int(imp.get("row_count") or 0)},
+                         run_id=None, session_id=session_id)
+            conn.commit()
         return duckdb_abs, imp, detected
 
     @function_tool
@@ -217,12 +221,13 @@ def build(
             result["note"] = (prior + " " + cap_note) if prior else cap_note
 
         # Rule 17: a data import + analysis must leave an audit trail.
-        audit.record(conn, "session.analyze_uploaded_file", {
-            "session_id": session_id, "dataset_id": dataset_id,
-            "type": ds["dataset_type"], "detected_format": detected,
-            "row_count": int(result.get("row_count") or 0),
-        }, run_id=None, session_id=session_id)
-        conn.commit()
+        with db.WRITE_LOCK:
+            audit.record(conn, "session.analyze_uploaded_file", {
+                "session_id": session_id, "dataset_id": dataset_id,
+                "type": ds["dataset_type"], "detected_format": detected,
+                "row_count": int(result.get("row_count") or 0),
+            }, run_id=None, session_id=session_id)
+            conn.commit()
         note("analyze_uploaded_file", ds.get("source_filename") or dataset_id,
              f"{result.get('row_count', 0)} rows")
         # Redact defensively before it reaches the model.
@@ -273,12 +278,13 @@ def build(
             return _err(f"Could not aggregate the file: {exc}")
 
         # Rule 17: record the ACTUAL SQL + bound params in the audit trail.
-        audit.record(conn, "session.aggregate_uploaded_file", {
-            "session_id": session_id, "dataset_id": dataset_id,
-            "sql": out["sql"], "params": [redact_text(str(p))[:100] for p in out["params"]],
-            "groups": len(out.get("groups", [])),
-        }, run_id=None, session_id=session_id)
-        conn.commit()
+        with db.WRITE_LOCK:
+            audit.record(conn, "session.aggregate_uploaded_file", {
+                "session_id": session_id, "dataset_id": dataset_id,
+                "sql": out["sql"], "params": [redact_text(str(p))[:100] for p in out["params"]],
+                "groups": len(out.get("groups", [])),
+            }, run_id=None, session_id=session_id)
+            conn.commit()
 
         result = {
             "dataset_id": dataset_id,
