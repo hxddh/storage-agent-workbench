@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -32,12 +33,17 @@ def _chunk(delta: dict, finish: str | None = None) -> bytes:
     return b"data: " + json.dumps(payload).encode() + b"\n\n"
 
 
-def text_turn(text: str) -> list[bytes]:
-    """A final answer, streamed in two deltas so the split is exercised."""
-    half = len(text) // 2
+def text_turn(text: str, chunk_size: int = 24) -> list[bytes]:
+    """A final answer, streamed in many small deltas.
+
+    Small on purpose: two halves left nothing for ``delay_s`` to spread out, so a
+    "slow" model still finished in milliseconds and a cancellation test raced a
+    turn that was already over.
+    """
+    parts = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)] or [""]
     return [
-        _chunk({"role": "assistant", "content": text[:half]}),
-        _chunk({"content": text[half:]}),
+        _chunk({"role": "assistant", "content": parts[0]}),
+        *[_chunk({"content": p}) for p in parts[1:]],
         _chunk({}, "stop"),
     ]
 
@@ -54,10 +60,15 @@ def tool_turn(name: str, arguments: dict) -> list[bytes]:
 
 
 class FakeModel:
-    """Serves `turns` one per request; the last one repeats if asked again."""
+    """Serves `turns` one per request; the last one repeats if asked again.
 
-    def __init__(self, turns: list[list[bytes]]):
+    ``delay_s`` spaces the chunks out. A model that answers instantly leaves no
+    window to cancel in, so cancellation could not be tested at all.
+    """
+
+    def __init__(self, turns: list[list[bytes]], delay_s: float = 0.0):
         self.turns = turns
+        self.delay_s = delay_s
         self.requests: list[dict] = []
         self._i = 0
         self._lock = threading.Lock()
@@ -85,7 +96,13 @@ class FakeModel:
                 self.send_header("Transfer-Encoding", "chunked")
                 self.end_headers()
                 for c in chunks:
-                    self.wfile.write(hex(len(c))[2:].encode() + b"\r\n" + c + b"\r\n")
+                    try:
+                        self.wfile.write(hex(len(c))[2:].encode() + b"\r\n" + c + b"\r\n")
+                        self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError):
+                        return  # the client hung up: stop generating
+                    if fake.delay_s:
+                        time.sleep(fake.delay_s)
                 done = b"data: [DONE]\n\n"
                 self.wfile.write(hex(len(done))[2:].encode() + b"\r\n" + done + b"\r\n")
                 self.wfile.write(b"0\r\n\r\n")

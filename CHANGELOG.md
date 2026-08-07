@@ -10,6 +10,42 @@ follow semantic versioning once it reaches 1.0.
 
 _The other file this product ingests was read as the wrong one, on both sides._
 
+### Fixed — a conversation could stay invisible for as long as the window was open
+
+The thread fetched its session ONCE on open and never again. Reload the app in
+the moment between a turn ending and the worker committing it — reliably
+reachable by pressing Stop and reloading — and that single fetch came back
+empty, so the investigation was not there. Measured, with the app and the server
+asked at the same time:
+
+```
+UI-EMPTY: true | SERVER-MESSAGES: 2
+AFTER-5S: UI-EMPTY: true | SERVER-MESSAGES: 2
+```
+
+The data was safe. The window simply never asked again. This is the shape of
+"the history is all gone" that survives a correct backend.
+
+An existing session that loads EMPTY now gets one more look, 1.2 s later, once
+per session. A genuinely empty session pays a single request; the alternative is
+a conversation the user cannot get back to without clicking somewhere else and
+back. Reproduced at 3-in-6 before the fix, 8-in-8 after.
+
+**What it is NOT:** the server was checked first, in isolation, and keeps
+everything — the partial answer with its stopped marker, the question, the
+released turn handle — whether the cancel lands after 50 ms or a second, and
+even when the client hangs up mid-stream (`test_v065_cancelled_turn_is_kept.py`,
+12 tests). Separating the two is what turned an intermittent browser symptom
+into a one-line cause.
+
+### Fixed — the E2E seeded three sessions with the same name
+
+`seedSession` numbered its titles from a module-level counter, and Playwright
+runs each spec file in its own process — so three files each produced "seeded
+investigation 1" and a rail assertion found four rows where it expected one. It
+passed locally and failed on CI, which is the worst way for a fixture to be
+wrong: it reads as a product failure. Titles are random now.
+
 ### Fixed — the Stop button never stopped anything
 
 `Thread` passed the runner's `stop` straight to the button:

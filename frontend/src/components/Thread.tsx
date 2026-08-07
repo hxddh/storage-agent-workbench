@@ -541,6 +541,35 @@ export function Thread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadKey]);
 
+  // An existing session that loaded EMPTY gets one more look.
+  //
+  // The thread fetched once on open and never again. Reload the app in the
+  // moment between a turn ending and the worker committing it — reliably
+  // reachable by pressing Stop and reloading — and that single fetch came back
+  // with nothing, so the investigation stayed invisible for as long as the
+  // window was open. Measured: the server had both messages; the UI was still
+  // empty five seconds later, and stayed empty.
+  //
+  // One retry, once per session. A session that really is empty pays a single
+  // request; the alternative is a conversation the user cannot get back to
+  // without clicking somewhere else and back.
+  const recheckedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sessionId || loadError) return;
+    if (detail?.id !== sessionId) return; // still loading; not "empty"
+    const empty =
+      (detail.messages?.length ?? 0) === 0 &&
+      (detail.runs?.length ?? 0) === 0 &&
+      triage.length === 0;
+    if (!empty || recheckedRef.current === sessionId) return;
+    recheckedRef.current = sessionId;
+    const timer = window.setTimeout(() => {
+      if (localId.current === sessionId) void reload(sessionId);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail, triage.length, sessionId, loadError]);
+
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
     for (const m of [...earlier, ...(detail?.messages ?? [])])

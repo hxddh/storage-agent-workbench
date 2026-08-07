@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { STATE_FILE } from "./global-setup";
 
@@ -81,17 +82,24 @@ conn.commit()
 print(sid)
 `;
 
-let seq = 0;
-
 /**
  * Seed a session with `exchanges` user+assistant pairs; returns its id.
  *
  * The title is unique per call because the sidecar's data dir lives for the
  * whole run: a shared title makes every rail assertion ambiguous, and a test
- * that deletes "the" session would leave the other copies behind and report a
+ * that deletes "the" session leaves the other copies behind and reports a
  * product failure that is really a fixture collision.
+ *
+ * Random, not a counter. A counter is per-MODULE, and Playwright runs each spec
+ * file in its own process — so three files each produced "seeded investigation
+ * 1" and a rail assertion found four rows where it expected one. That surfaced
+ * as a flaky product failure on CI and passed locally, which is the worst way
+ * for a fixture to be wrong.
  */
-export function seedSession(exchanges: number, title = `seeded investigation ${++seq}`): {
+export function seedSession(
+  exchanges: number,
+  title = `seeded investigation ${randomUUID().slice(0, 8)}`,
+): {
   id: string;
   title: string;
 } {
