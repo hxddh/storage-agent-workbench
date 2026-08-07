@@ -57,6 +57,28 @@ export function toolTurn(name: string, args: Record<string, unknown>): string[] 
   ];
 }
 
+/** A scripted turn, or one computed from the request the model just received.
+ *
+ * Reactive turns exist because some tools take an id the script cannot know:
+ * `analyze_uploaded_file(dataset_id)` needs the id that `list_uploaded_files`
+ * just returned. A real model reads it out of the tool result, so the double
+ * has to be able to as well — otherwise the only testable shape is a tool call
+ * with constant arguments, which is not what the agent does.
+ */
+export type Turn = string[] | ((req: ChatRequest) => string[]);
+
+export interface ChatRequest {
+  messages?: Array<{ role?: string; content?: unknown }>;
+}
+
+/** The text of every tool result in the request, concatenated. */
+export function toolResults(req: ChatRequest): string {
+  return (req.messages ?? [])
+    .filter((m) => m.role === "tool")
+    .map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))
+    .join("\n");
+}
+
 export interface FakeModel {
   baseUrl: string;
   requests: unknown[];
@@ -72,7 +94,7 @@ export interface FakeModel {
  * does.
  */
 export async function startFakeModel(
-  turns: string[][],
+  turns: Turn[],
   opts: { deltaDelayMs?: number } = {},
 ): Promise<FakeModel> {
   const requests: unknown[] = [];
@@ -88,7 +110,11 @@ export async function startFakeModel(
       } catch {
         requests.push({});
       }
-      const take = turns[Math.min(i, turns.length - 1)];
+      const chosen = turns[Math.min(i, turns.length - 1)];
+      const take =
+        typeof chosen === "function"
+          ? chosen((requests[requests.length - 1] ?? {}) as ChatRequest)
+          : chosen;
       i += 1;
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
