@@ -6,6 +6,63 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.66.0] - 2026-08-07
+
+_The S3 layer had never spoken HTTP._
+
+### Added — the read-only S3 tools, driven against a real socket
+
+Everything below the tools was covered with a botocore `Stubber`, which replaces
+the client's response **after** the request is built. That covers response
+handling and nothing else: it never serializes a request, never signs one, never
+sees a URL, and **cannot tell path-style from virtual-host addressing** — the
+single most common S3-compatible misconfiguration, and the thing this product
+exists to diagnose.
+
+`tests/fake_s3.py` is a socket that answers S3 XML. It does not verify
+signatures — a double that re-implemented SigV4 would be testing botocore, not
+this app — and implements only the read-only operations the whitelist uses. What
+it buys is the request half.
+
+**Nothing was found broken.** 19 tests, all passing, over both halves:
+
+| | |
+| --- | --- |
+| the request boto3 **built** | path-style puts the bucket in the path; `max-keys=1` is on the wire (rule 12 bounds the *request*, not a post-filter); a prefix is applied at the endpoint; the access key is signed into `Authorization`, never a query param |
+| real HTTP → this app's shape | a live listing returns the real objects; a 404 is a structured failure, not an exception; `GetBucketLocation` answers where the bucket lives |
+| the rules | at most 20 sample keys out of 100 real ones (rule 16); `NotImplemented` is `Provider unsupported`, never broken credentials (rule 18); no credential value survives into a result even when the endpoint echoes both back in an error (rules 1/15) |
+
+The flagship probe gets its own test. botocore never virtual-hosts against an IP
+endpoint — it silently sends the identical path-style URL — so probing both would
+report "both work" on the single most common S3-compatible setup (MinIO/Ceph on
+an `IP:port`). The fake endpoint **is** an IP, which is what makes this testable
+at all: the probe must say it cannot be tested rather than answer wrongly. It
+does.
+
+### Corrected — two assertions of mine that were wrong about the product
+
+Written, run, failed, and then read the code rather than "fixing" it:
+
+- **`AccessDenied` on ListBuckets is not a credentials failure.** Plenty of S3
+  deployments deny `s3:ListAllMyBuckets` to perfectly valid credentials, and
+  reporting that as "your credentials are broken" would send an operator to
+  rotate keys that were never the problem. `test_credentials` deliberately
+  returns success with *authenticated (ListBuckets denied)*. Both sides are now
+  pinned — including that a genuine auth-failure **code** at the same 403 is
+  still a failure.
+- **`NotImplemented` is a capability gap, not an error** (rule 18). Same shape.
+
+### Fixed — the double read every S3 sub-resource as a plain listing
+
+`parse_qs` drops valueless keys by default, and S3 sub-resources are exactly
+that: `?location`, `?versions`, `?uploads`. So `GET /bucket?location` fell
+through to the object-listing branch and returned a `ListBucketResult`, which
+boto3 parsed into a region of `"\n  "`. A defect in the test double, found
+because the assertion was written against the real answer rather than against
+whatever came back.
+
+Sidecar: 1274 → 1293.
+
 ## [0.65.0] - 2026-08-07
 
 _Two capabilities that had never been driven end to end, and a sweep for the
