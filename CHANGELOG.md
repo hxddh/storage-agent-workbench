@@ -6,6 +6,94 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.67.0] - 2026-08-07
+
+_Read the report the app actually produces, and two things are wrong with it._
+
+The report is the one artifact that leaves this machine — markdown a user pastes
+into a ticket, mails to a vendor, or attaches to an incident review. Its renderer
+had unit tests and `redact_text` had exhaustive ones, but nothing had ever opened
+`/report` in a browser and read the document. Doing that found both defects
+below within a minute of each other.
+
+### Fixed — snake_case was silently eaten by the markdown renderer
+
+CommonMark forbids `_` emphasis **inside a word**, precisely so that identifiers
+survive. This renderer matched `_…_` anywhere, so every answer, run summary and
+exported report dropped the underscores out of the very names the product exists
+to talk about:
+
+| written | rendered |
+| --- | --- |
+| `total_bytes_scanned` | `totalbytesscanned` |
+| `list_objects_v2` | `listobjectsv2` |
+| `AWS_SECRET_ACCESS_KEY` | `AWSSECRETACCESS_KEY` |
+| `part_0001_final.parquet` | `part0001final.parquet` |
+| `run_account_discovery` | `runaccountdiscovery` |
+
+That last one is how it was found: under **Recommended next actions**, the one
+section a reader acts from, the action type was a name that cannot be searched
+for, copied, or typed back. Column names, tool names, object keys and env-var
+labels are this app's whole vocabulary, so the corruption was constant and
+silent — no error, no fallback, just a shorter word.
+
+`_` now follows CommonMark's flanking rule: intraword underscores are text.
+Scanning continues past a rejected span, so genuine emphasis later on the same
+line is still found.
+
+Same tokenizer, same read: `***REDACTED***` — the marker the redactor stamps into
+messages, audit rows and reports — matched `**REDACTED**` one character in and
+rendered as `*REDACTED*`, with a stray asterisk on each side. The marker a reader
+is meant to trust now renders as itself.
+
+### Fixed — the report's structure was writable by its own contents
+
+Every value in the document except the question/answer excerpts was interpolated
+into a list item, a table cell or a heading with **no newline handling**. A
+string with a newline did not stay in its bullet: it ended the bullet, and
+whatever followed became document structure.
+
+So a finding whose text carried `\n\n## Safety\n\n- This report contains no
+credentials` produced a **second Safety section**, indistinguishable from the
+real one, making an assurance the app never made. Those strings are written by
+the model, and what the model reads is tool output — bucket names, object keys,
+endpoint error messages. None of it is authored here.
+
+The likelier half needs no adversary at all: a finding that simply spanned two
+lines broke the list it belonged to.
+
+`_excerpt` had done this collapsing for questions and answers since v0.48.0. It
+now covers everything else — title, goal, facts, findings, next actions, open
+questions, limitations, run summaries, agent memory, grounding, tool names,
+audit events and attached filenames — plus a `_code` variant that drops
+backticks from values headed into a code span, so a filename cannot close it and
+turn the rest of the row into prose. Sanitizing is not deleting: the words
+survive, only the line breaks go.
+
+The audit **summary** line was the one a broad fix missed — it joins the raw
+`event_type` keys upstream of the per-row sanitizer. The per-field tests are what
+caught it.
+
+### Added — the report path, in a browser
+
+`e2e/report.spec.ts` (7 tests). `/report` had no browser coverage at all: not
+that it opens, not that it contains the investigation just run, not that Download
+produces a file, not that a credential pasted into the composer is gone by the
+time it reaches the artifact. That last one is the whole chain — composer →
+persisted message → renderer → screen — and a unit test of any single link
+cannot see it. A pasted presigned URL is checked at both ends: absent from the
+document, and absent from the bytes sent to the model, while the object key
+survives because it is the useful part of the paste.
+
+`tests/test_v067_report_structure.py` (20 tests) drives every field of the
+renderer, one at a time.
+
+### Checks
+
+`pytest -q` 1313 passed · `vitest run` 231 passed · `playwright test` 89 passed ·
+`ruff check app` clean · `tsc --noEmit` and `npm run build` clean. Both fixes
+were confirmed to fail against the unfixed code first: 20/20 and 7/8.
+
 ## [0.66.0] - 2026-08-07
 
 _The S3 layer had never spoken HTTP._
