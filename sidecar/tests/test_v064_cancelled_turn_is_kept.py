@@ -1,4 +1,4 @@
-"""v0.65.0 — stopping a turn could throw the whole exchange away.
+"""v0.64.0 — what a stopped turn keeps.
 
 The streaming worker persists the user message and the assistant answer
 **together**, and only when the run produced a final contract:
@@ -14,9 +14,11 @@ nothing unless cancellation still finalizes: not the partial answer the user had
 already read, and not the question they asked.
 
 Found from the browser: after pressing Stop the thread said *Stopped by user* and
-showed the partial text, and a reload came back to an empty investigation.
-Roughly half the time. This is the server half of that, isolated from the
-client's stream abort so the two cannot be confused.
+showed the partial text, and a reload came back to an empty investigation,
+roughly half the time. This file is the SERVER half of that question, isolated
+from the client's stream abort so the two could not be confused — and it says
+the server keeps everything. That is what located the real cause in the window
+(the thread never re-fetched), rather than in the persistence path.
 """
 from __future__ import annotations
 
