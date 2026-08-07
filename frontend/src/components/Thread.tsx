@@ -766,7 +766,13 @@ export function Thread({
     seed(prompt);
   };
 
-  const isEmpty = items.length === 0 && !pending && !loadError;
+  // A session is OPEN but its content has not arrived yet. That is not an empty
+  // chat, and rendering the start surface for it told a returning user "there is
+  // nothing here" about an investigation that was right there — the exact
+  // sentence to avoid showing someone who just reopened the app. The thread
+  // shell (header + composer) renders instead, and the messages appear in it.
+  const loadingSession = Boolean(sessionId) && detail?.id !== sessionId && !loadError;
+  const isEmpty = items.length === 0 && !pending && !loadError && !loadingSession;
 
   // Live-store fallback for the just-completed turn (H1): the SSE `done` event
   // writes proposals/grounding into the run store, so we can show the chips +

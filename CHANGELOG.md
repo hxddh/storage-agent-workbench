@@ -10,6 +10,52 @@ follow semantic versioning once it reaches 1.0.
 
 _The other file this product ingests was read as the wrong one, on both sides._
 
+### Added — a real agent turn, in a browser, at last
+
+Every E2E spec runs with no model provider — deliberately, because the offline
+paths must work on a fresh install. The consequence was that the app's **main**
+path had never been driven from a browser at all: nothing ever watched a question
+become a streamed answer and then a persisted turn with a footer and actions
+under it. That is precisely where the v0.63.0 bug was felt, and no browser test
+could reach it.
+
+`e2e/fake-model.ts` is a local OpenAI-compatible endpoint (the node counterpart
+of `sidecar/tests/fake_model.py`). `e2e/agent.spec.ts` now covers, against the
+real stack: the answer arriving without the metadata block leaking into the
+prose, the finished turn keeping its footer and expanding to the trace, copy /
+edit / branch on the question, the agent's proposal rendering as a chip, a second
+turn appending rather than replacing, both exchanges surviving a reload, and no
+credential value reaching the model.
+
+### Changed — the app no longer says "nothing here" while it is loading
+
+Two changes, both about the same moment: reopening the app.
+
+- The open investigation is read from local storage **at mount** instead of after
+  the session list returns. It used to wait on that fetch, so a returning user
+  watched the empty start surface until it came back.
+- `isEmpty` did not distinguish "a session is open and its content is still
+  loading" from "this is a new chat", so the start surface — *How can I help with
+  your storage?* — rendered over an investigation that was right there. For
+  someone who has just been told their history vanished, that is the worst
+  possible sentence to flash.
+
+**Stated honestly:** this was found as a 1-in-6 flake in which the new reload
+test caught the start surface on screen. Neither reverting the change nor
+delaying `/sessions` reproduces it on this machine, so the flake's cause is
+**not proven** — these are defensible improvements and a guard for the
+behaviour, not a demonstrated fix for that failure.
+
+### Fixed — a leaked sidecar made the E2E fail several layers from the cause
+
+If an interrupted run left a sidecar holding the port, the new one exited with
+"address already in use" while the health probe passed against the stranger. The
+suite then seeded one data directory and talked to another, surfacing as
+`no such table: sessions`. Global setup now notices that its own child exited and
+says so.
+
+E2E: 61 → 68.
+
 ### Fixed — an object inventory was silently parsed as access logs
 
 `detect_log_format` called a CSV "access-log csv" when its header shared **one**
