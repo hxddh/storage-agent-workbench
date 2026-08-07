@@ -40,7 +40,12 @@ def text_turn(text: str, chunk_size: int = 24) -> list[bytes]:
     "slow" model still finished in milliseconds and a cancellation test raced a
     turn that was already over.
     """
-    parts = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)] or [""]
+    # Bounded chunk COUNT, not just size. Fine granularity matters for a normal
+    # answer (it is what `delay_s` spreads out), but a test that streams a
+    # deliberately enormous answer would otherwise become 12,500 HTTP chunks and
+    # take minutes — measured: it turned a 110 s suite into 13 minutes.
+    size = max(chunk_size, -(-len(text) // 200))
+    parts = [text[i:i + size] for i in range(0, len(text), size)] or [""]
     return [
         _chunk({"role": "assistant", "content": parts[0]}),
         *[_chunk({"content": p}) for p in parts[1:]],
