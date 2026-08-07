@@ -531,9 +531,26 @@ function dedent(lines: string[]): string {
 
 // Inline spans, matched left-to-right; only known elements are emitted (no raw
 // HTML). Order matters: the link form is tried before a bare URL so the URL
-// inside `[text](url)` is never linkified twice, and `**` before `*`.
+// inside `[text](url)` is never linkified twice, and `***` before `**` before
+// `*` — without the triple form, `***REDACTED***` (the redaction marker this
+// app stamps everywhere) matched `**REDACTED**` one character in and rendered
+// with a stray asterisk on each side.
 const INLINE_RE =
-  /(`[^`]+`)|(\*\*[^*]+\*\*)|(~~[^~]+~~)|(\*[^*\n]+\*)|(_[^_\n]+_)|(\[[^\]]+\]\([^)]+\))|(<https?:\/\/[^>\s]+>)|(https?:\/\/[^\s<>()[\]]+)/g;
+  /(`[^`]+`)|(\*\*\*[^*]+\*\*\*)|(\*\*[^*]+\*\*)|(~~[^~]+~~)|(\*[^*\n]+\*)|(_[^_\n]+_)|(\[[^\]]+\]\([^)]+\))|(<https?:\/\/[^>\s]+>)|(https?:\/\/[^\s<>()[\]]+)/g;
+
+/**
+ * A character that makes a `_` INTRAWORD, per CommonMark's flanking rules.
+ *
+ * CommonMark deliberately forbids `_` emphasis inside a word — precisely so
+ * that snake_case survives. This renderer did not implement that, and the
+ * consequence was constant, silent corruption of the product's own vocabulary:
+ * `total_bytes_scanned` rendered as `totalbytesscanned`, `list_objects_v2` as
+ * `listobjectsv2`, `AWS_SECRET_ACCESS_KEY` as `AWSSECRETACCESS_KEY`, and the
+ * report's own action types as `runaccountdiscovery`. Column names, object
+ * keys, tool names and env-var labels are what this app talks about, so the
+ * mangling hit answers, run summaries and the exported report alike.
+ */
+const WORDISH = /[\p{L}\p{N}]/u;
 
 /** Trailing sentence punctuation is prose, not part of the URL. */
 const URL_TAIL = /[.,;:!?]+$/;
@@ -553,6 +570,12 @@ function inline(text: string): ReactNode {
         <code key={k++} className="rounded bg-elevated px-1.5 py-0.5 font-mono text-xs text-accent-soft">
           {tok.slice(1, -1)}
         </code>,
+      );
+    } else if (tok.startsWith("***")) {
+      nodes.push(
+        <em key={k++} className="italic">
+          <strong className="font-semibold text-gray-100">{tok.slice(3, -3)}</strong>
+        </em>,
       );
     } else if (tok.startsWith("**")) {
       nodes.push(<strong key={k++} className="font-semibold text-gray-100">{tok.slice(2, -2)}</strong>);
@@ -578,6 +601,13 @@ function inline(text: string): ReactNode {
         }
       }
       nodes.push(link(href, href, k++));
+    } else if (tok.startsWith("_") && (WORDISH.test(text[m.index - 1] ?? "") ||
+                                       WORDISH.test(text[m.index + tok.length] ?? ""))) {
+      // Intraword `_` is not emphasis: this is the middle of an identifier.
+      // Emitted verbatim, so `total_bytes_scanned` stays what it is. Scanning
+      // continues after the token, so a genuine `_emphasis_` later on the same
+      // line is still found.
+      nodes.push(<Fragment key={k++}>{tok}</Fragment>);
     } else {
       // *italic* or _italic_
       nodes.push(<em key={k++} className="italic text-gray-200">{tok.slice(1, -1)}</em>);

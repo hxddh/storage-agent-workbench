@@ -40,6 +40,40 @@ def _excerpt(text: str | None, limit: int = ANSWER_EXCERPT) -> str:
     return t[:limit].rstrip() + " …_(trimmed)_"
 
 
+def _oneline(text: Any, limit: int = 400) -> str:
+    """Collapse a free-text value onto ONE line, bounded.
+
+    Every value in this document other than the answer excerpts is interpolated
+    into a list item, a table cell or a heading. A newline in any of them ends
+    that item, and whatever follows becomes document STRUCTURE: a finding whose
+    text carries ``\\n\\n## Safety\\n\\n- This report contains no credentials``
+    forges a section of the one artifact that leaves this app, complete with its
+    own safety assurance. The strings come from the model, and what the model
+    reads includes bucket names, object keys and endpoint error text — none of
+    which this app authors.
+
+    The mundane half matters as much: a merely multi-line finding, with no
+    adversary anywhere, silently broke the bullet list it belonged to.
+
+    ``_excerpt`` has always done this for questions and answers; this is the
+    same defense for everything else.
+    """
+    t = " ".join(str(text or "").split())
+    if len(t) <= limit:
+        return t
+    return t[:limit].rstrip() + " …_(trimmed)_"
+
+
+def _code(text: Any) -> str:
+    """A value that is about to sit inside a `code span`.
+
+    Backticks are dropped rather than escaped: these are identifiers — filenames,
+    tool names, event types — where a backtick carries no meaning and its only
+    possible effect is to close the span early and turn the rest into prose.
+    """
+    return _oneline(text, 200).replace("`", "")
+
+
 def _fmt_ms(ms: Any) -> str:
     try:
         v = int(ms or 0)
@@ -94,11 +128,11 @@ def _investigation_md(messages: list[dict[str, Any]] | None,
         if used:
             out.append("")
             out.append("Grounded in:")
-            out.extend(f"- {u}" for u in used[:8])
+            out.extend(f"- {_oneline(u)}" for u in used[:8])
         if gaps:
             out.append("")
             out.append("Not verified:")
-            out.extend(f"- {g}" for g in gaps[:8])
+            out.extend(f"- {_oneline(g)}" for g in gaps[:8])
 
         tools = [t for t in (a.get("tool_activity") or []) if t.get("status") != "started"]
         met = by_msg.get(str(a.get("id")))
@@ -135,7 +169,7 @@ def _tools_md(activity: list[dict[str, Any]] | None) -> str:
     ordered = sorted(agg.items(), key=lambda kv: (-kv[1]["n"], kv[0]))
     out = ["| Tool | Calls | Failed | Time |", "| --- | ---: | ---: | ---: |"]
     for name, v in ordered[:MAX_TOOL_ROWS]:
-        out.append(f"| `{name}` | {v['n']} | {v['errors'] or '—'} | {_fmt_ms(v['ms'])} |")
+        out.append(f"| `{_code(name)}` | {v['n']} | {v['errors'] or '—'} | {_fmt_ms(v['ms'])} |")
     if len(ordered) > MAX_TOOL_ROWS:
         out.append("")
         out.append(f"_{len(ordered) - MAX_TOOL_ROWS} further tool(s) omitted._")
@@ -167,11 +201,14 @@ def _audit_md(events: list[dict[str, Any]] | None) -> str:
         return "_No audit events recorded for this session._"
     counts: dict[str, int] = {}
     for e in rows:
-        counts[e.get("event_type") or "?"] = counts.get(e.get("event_type") or "?", 0) + 1
+        # Normalize on the way IN: the summary line joins these keys, so a raw
+        # one would smuggle its newlines past the per-row sanitizer below.
+        k = _oneline(e.get("event_type"), 80) or "?"
+        counts[k] = counts.get(k, 0) + 1
     summary = ", ".join(f"{k} ×{v}" for k, v in sorted(counts.items(), key=lambda kv: -kv[1]))
     out = [f"{len(rows)} event(s): {summary}", ""]
     for e in rows[-MAX_AUDIT_ROWS:]:
-        out.append(f"- `{e.get('created_at','')}` {e.get('event_type','')}")
+        out.append(f"- `{_code(e.get('created_at'))}` {_oneline(e.get('event_type'), 80)}")
     if len(rows) > MAX_AUDIT_ROWS:
         out.append("")
         out.append(f"_Showing the most recent {MAX_AUDIT_ROWS} of {len(rows)}._")
@@ -182,7 +219,8 @@ def _facts_md(facts: list[dict[str, Any]]) -> str:
     if not facts:
         return "- —"
     return "\n".join(
-        f"- {f.get('text','')} _(run {str(f.get('source_run_id') or '')[:8]}, {f.get('confidence','')})_"
+        f"- {_oneline(f.get('text'))} _(run {str(f.get('source_run_id') or '')[:8]}, "
+        f"{_oneline(f.get('confidence'), 40)})_"
         for f in facts
     )
 
@@ -191,7 +229,8 @@ def _findings_md(findings: list[dict[str, Any]]) -> str:
     if not findings:
         return "- —"
     return "\n".join(
-        f"- **[{f.get('severity','info')}]** {f.get('title','')} — {f.get('interpretation','')} "
+        f"- **[{_oneline(f.get('severity') or 'info', 40)}]** {_oneline(f.get('title'))} "
+        f"— {_oneline(f.get('interpretation'))} "
         f"_(run {str(f.get('source_run_id') or '')[:8]}, {f.get('confidence','')})_"
         for f in findings
     )
@@ -201,13 +240,14 @@ def _actions_md(actions: list[dict[str, Any]]) -> str:
     if not actions:
         return "- —"
     return "\n".join(
-        f"- **{a.get('title','')}** ({a.get('action_type','')}, {a.get('confidence','medium')}) — {a.get('reason','')}"
+        f"- **{_oneline(a.get('title'))}** (`{_code(a.get('action_type'))}`, "
+        f"{_oneline(a.get('confidence') or 'medium', 40)}) — {_oneline(a.get('reason'))}"
         for a in actions
     )
 
 
 def _bullets(items: list[str]) -> str:
-    return "\n".join(f"- {x}" for x in items) if items else "- —"
+    return "\n".join(f"- {_oneline(x)}" for x in items) if items else "- —"
 
 
 def _timeline_md(runs: list[dict[str, Any]]) -> str:
@@ -219,7 +259,8 @@ def _timeline_md(runs: list[dict[str, Any]]) -> str:
     done = [r for r in runs if r.get("status") in ("completed", "failed", "not_implemented")]
     in_flight = len(runs) - len(done)
     lines = [
-        f"- `{r.get('run_type')}` ({r.get('status')}) — {r.get('final_summary') or '—'} "
+        f"- `{_code(r.get('run_type'))}` ({_oneline(r.get('status'), 40)}) "
+        f"— {_oneline(r.get('final_summary')) or '—'} "
         f"[{str(r.get('run_id') or '')[:8]}]"
         for r in done
     ]
@@ -237,17 +278,17 @@ def _triage_md(cases: list[dict[str, Any]]) -> str:
         code = parsed.get("error_code") or "unrecognized"
         http = parsed.get("http_status")
         head = f"{code}" + (f" / HTTP {http}" if http else "")
-        lines.append(f"- **{head}** — {c.get('summary', '')}")
+        lines.append(f"- **{_oneline(head, 80)}** — {_oneline(c.get('summary'))}")
         for cc in (c.get("candidate_causes") or [])[:3]:
             checks = "; ".join((cc.get("next_checks") or [])[:3])
-            lines.append(f"    - _{cc.get('confidence')}_ {cc.get('title')}"
-                         + (f" — next checks: {checks}" if checks else ""))
+            lines.append(f"    - _{_oneline(cc.get('confidence'), 40)}_ {_oneline(cc.get('title'))}"
+                         + (f" — next checks: {_oneline(checks)}" if checks else ""))
         # Lightly absorb skill-grounded Agent output if it was recorded.
         agent = parsed.get("_agent", {}) or {}
         if agent.get("skills_used"):
-            lines.append(f"    - Methods (skills): {', '.join(agent['skills_used'][:3])}")
+            lines.append(f"    - Methods (skills): {_oneline(', '.join(agent['skills_used'][:3]))}")
         if agent.get("evidence_gaps"):
-            lines.append(f"    - Missing evidence: {'; '.join(agent['evidence_gaps'][:3])}")
+            lines.append(f"    - Missing evidence: {_oneline('; '.join(agent['evidence_gaps'][:3]))}")
     return "\n".join(lines)
 
 
@@ -258,7 +299,7 @@ def _agent_findings_md(memory: list[dict[str, Any]]) -> str:
     out = []
     for m in rows[:50]:
         sev = str(m.get("severity") or "info")
-        out.append(f"- **[{sev}]** {m.get('text', '')}")
+        out.append(f"- **[{_oneline(sev, 40)}]** {_oneline(m.get('text'))}")
     return "\n".join(out)
 
 
@@ -284,7 +325,7 @@ def _agent_facts_md(memory: list[dict[str, Any]], total: int | None = None) -> s
     out = []
     for m in shown:
         conf = str(m.get("confidence") or "medium")
-        out.append(f"- {m.get('text', '')} _(confidence: {conf})_")
+        out.append(f"- {_oneline(m.get('text'))} _(confidence: {_oneline(conf, 40)})_")
     return "\n".join(out) + _memory_truncation(len(shown), total, "facts")
 
 
@@ -294,7 +335,7 @@ def _agent_questions_md(memory: list[dict[str, Any]], total: int | None = None) 
     if not rows:
         return "_None recorded._"
     shown = rows[:_MAX_MEMORY_ROWS]
-    return "\n".join(f"- {m.get('text', '')}" for m in shown) + _memory_truncation(
+    return "\n".join(f"- {_oneline(m.get('text'))}" for m in shown) + _memory_truncation(
         len(shown), total, "questions")
 
 
@@ -306,12 +347,12 @@ def _attached_files_md(files: list[dict[str, Any]] | None) -> str:
     out = []
     for f in rows[:_MAX_MEMORY_ROWS]:
         rc = f.get("row_count")
-        bits = [str(f.get("dataset_type") or "file")]
+        bits = [_oneline(f.get("dataset_type") or "file", 60)]
         if f.get("detected_format"):
-            bits.append(str(f["detected_format"]))
+            bits.append(_oneline(f["detected_format"], 60))
         if rc:
             bits.append(f"{int(rc):,} rows")
-        out.append(f"- `{f.get('source_filename') or '(unnamed)'}` — {' · '.join(bits)}")
+        out.append(f"- `{_code(f.get('source_filename') or '(unnamed)')}` — {' · '.join(bits)}")
     return "\n".join(out)
 
 
@@ -347,17 +388,17 @@ def render_session_report(
     # The summary now counts the work that actually happened. Before v0.48.0 it
     # counted only linked runs, which for an agent-driven session is always zero.
     exec_summary = (
-        f"This session pursued the goal: \"{session.get('goal') or '—'}\". "
+        f"This session pursued the goal: \"{_oneline(session.get('goal')) or '—'}\". "
         f"{turn_count} conversational turn(s) ran {tool_count} read-only tool call(s); "
         f"{len(runs)} run(s) were linked; {len(findings)} finding(s) and "
         f"{len(facts)} fact(s) were collected."
     )
 
-    content = f"""# Session Report: {session.get('title')}
+    content = f"""# Session Report: {_oneline(session.get('title'), 200)}
 
 ## Session goal
 
-{session.get('goal') or '—'}
+{_oneline(session.get('goal')) or '—'}
 
 ## Executive summary
 

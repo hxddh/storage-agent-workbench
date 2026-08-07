@@ -282,3 +282,64 @@ describe("answer structure", () => {
     expect(screen.getByTestId("answer-outline").querySelectorAll("a").length).toBe(3);
   });
 });
+
+/**
+ * v0.67.0 — snake_case is this product's vocabulary, and the renderer ate it.
+ *
+ * CommonMark forbids `_` emphasis inside a word precisely so that identifiers
+ * survive. This renderer matched `_..._` anywhere, so every answer, run summary
+ * and exported report silently dropped the underscores out of the very names
+ * the app exists to talk about: column names, tool names, object keys, env vars.
+ *
+ * Found by reading a generated report, where "Run account discovery
+ * (run_account_discovery)" had rendered as "(runaccountdiscovery)" — a name the
+ * reader cannot search for, copy, or type back.
+ */
+describe("identifiers survive the renderer", () => {
+  const survives = (src: string, needle: string) => {
+    const { container } = md(src);
+    expect(container.textContent).toContain(needle);
+  };
+
+  it("keeps a column name whole", () => {
+    survives("Group by storage_class and total_bytes.", "storage_class");
+  });
+
+  it("keeps a name with three underscores whole", () => {
+    survives("The column is total_bytes_scanned.", "total_bytes_scanned");
+  });
+
+  it("keeps a tool name whole", () => {
+    survives("The agent called list_objects_v2 on that prefix.", "list_objects_v2");
+  });
+
+  it("keeps an object key whole", () => {
+    survives("why is logs/2026/part_0001_final.parquet missing?", "part_0001_final.parquet");
+  });
+
+  it("keeps an env-var label whole", () => {
+    survives("Set AWS_SECRET_ACCESS_KEY in the environment.", "AWS_SECRET_ACCESS_KEY");
+  });
+
+  it("still renders real emphasis around a word", () => {
+    const { container } = md("this is _emphasised_ text");
+    expect(container.querySelector("em")?.textContent).toBe("emphasised");
+  });
+
+  it("still renders emphasis that follows an identifier on the same line", () => {
+    // The rejected span must not stop the scan: a genuine emphasis later on the
+    // line is still found.
+    const { container } = md("total_bytes_scanned is _high_ today");
+    expect(container.textContent).toContain("total_bytes_scanned");
+    expect(container.querySelector("em")?.textContent).toBe("high");
+  });
+
+  it("renders the redaction marker without stray asterisks", () => {
+    // `***REDACTED***` is stamped by the redactor into messages, audit rows and
+    // the report. It matched `**REDACTED**` one character in, so the marker the
+    // reader is meant to trust rendered as `*REDACTED*`.
+    const { container } = md("X-Amz-Signature=***REDACTED***&x=1");
+    expect(container.textContent).toBe("X-Amz-Signature=REDACTED&x=1");
+    expect(container.querySelector("strong")?.textContent).toBe("REDACTED");
+  });
+});
