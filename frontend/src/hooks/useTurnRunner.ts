@@ -569,7 +569,12 @@ export function useTurnRunner(opts: {
   // no-op) while leaving the steered session's turn running for the full
   // waitForIdle timeout.
   const stop = (sessionId?: string) => {
-    const id = sessionId ?? localId.current;
+    // Defensive about the argument, because the way this gets misused is to hand
+    // it to onClick — which calls it with the click event. That is not a session
+    // id, so the lookup below found nothing and returned silently: the Stop
+    // button did nothing, the model kept generating, and the tokens kept being
+    // spent, with no error anywhere to say so.
+    const id = typeof sessionId === "string" ? sessionId : localId.current;
     if (!id) return;
     const flight = turnsRef.current.get(id);
     if (!flight) return;

@@ -39,6 +39,7 @@ import { useI18n } from "../i18n";
 import { matches } from "../shortcuts";
 import { findInThread, stepHit } from "../threadFind";
 import { answerGist } from "../answerGist";
+import { inferDatasetType } from "../datasetType";
 import { FindBar } from "./FindBar";
 
 type Item =
@@ -56,21 +57,6 @@ type Item =
   | { kind: "triage"; ts: string; data: TriageCase };
 
 const propKey = (p: NextAction) => `${p.action_type}::${p.title}`;
-
-// Infer the dataset type for an attached analysis file from its extension.
-// null = ambiguous → the composer shows an Inventory/Access-log toggle.
-const inferDatasetType = (name: string): "inventory" | "access_log" | null => {
-  const n = name.toLowerCase();
-  // Name hints BEFORE the extension mapping: "access-logs.parquet" /
-  // "s3_access_log.csv" are columnar ACCESS-LOG exports — the extension rule
-  // alone auto-chipped them "inventory" and ran the wrong engine.
-  if (n.includes("access") || n.includes("log")) return "access_log";
-  if (/\.(csv|parquet|tsv)(\.gz)?$/.test(n)) return "inventory";
-  // JSONL is a fully-supported access-log shape (the backend parses it) — it
-  // just wasn't selectable before.
-  if (/\.(log|txt|json|jsonl)(\.gz)?$/.test(n)) return "access_log";
-  return null;
-};
 
 // The agent's full capability surface — not just error triage. Each seeds the
 // composer with a natural-language prompt (localized); the agent routes from there.
@@ -555,6 +541,35 @@ export function Thread({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadKey]);
 
+  // An existing session that loaded EMPTY gets one more look.
+  //
+  // The thread fetched once on open and never again. Reload the app in the
+  // moment between a turn ending and the worker committing it — reliably
+  // reachable by pressing Stop and reloading — and that single fetch came back
+  // with nothing, so the investigation stayed invisible for as long as the
+  // window was open. Measured: the server had both messages; the UI was still
+  // empty five seconds later, and stayed empty.
+  //
+  // One retry, once per session. A session that really is empty pays a single
+  // request; the alternative is a conversation the user cannot get back to
+  // without clicking somewhere else and back.
+  const recheckedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sessionId || loadError) return;
+    if (detail?.id !== sessionId) return; // still loading; not "empty"
+    const empty =
+      (detail.messages?.length ?? 0) === 0 &&
+      (detail.runs?.length ?? 0) === 0 &&
+      triage.length === 0;
+    if (!empty || recheckedRef.current === sessionId) return;
+    recheckedRef.current = sessionId;
+    const timer = window.setTimeout(() => {
+      if (localId.current === sessionId) void reload(sessionId);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail, triage.length, sessionId, loadError]);
+
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
     for (const m of [...earlier, ...(detail?.messages ?? [])])
@@ -780,7 +795,13 @@ export function Thread({
     seed(prompt);
   };
 
-  const isEmpty = items.length === 0 && !pending && !loadError;
+  // A session is OPEN but its content has not arrived yet. That is not an empty
+  // chat, and rendering the start surface for it told a returning user "there is
+  // nothing here" about an investigation that was right there — the exact
+  // sentence to avoid showing someone who just reopened the app. The thread
+  // shell (header + composer) renders instead, and the messages appear in it.
+  const loadingSession = Boolean(sessionId) && detail?.id !== sessionId && !loadError;
+  const isEmpty = items.length === 0 && !pending && !loadError && !loadingSession;
 
   // Live-store fallback for the just-completed turn (H1): the SSE `done` event
   // writes proposals/grounding into the run store, so we can show the chips +
@@ -819,7 +840,10 @@ export function Thread({
       busy={busy}
       uploading={uploading}
       onSend={send}
-      onStop={runner.stop}
+      // Called, not passed: `stop` takes an optional session id, and handing it
+      // straight to onClick fed it the click EVENT, which is not a session id —
+      // so it looked up a turn that could not exist and returned silently.
+      onStop={() => runner.stop()}
       onSteer={() => {
         // A pending attachment rides along on a redirect (via the dataset-upload
         // path) instead of being silently dropped — same rules as send().

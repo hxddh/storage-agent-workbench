@@ -66,8 +66,26 @@ export default async function globalSetup(): Promise<void> {
     if (code !== 0 && code !== null) log += `\n[sidecar exited with code ${code}]`;
   });
 
+  // Did OUR sidecar answer, or someone else's? A leaked sidecar from an
+  // interrupted run still holds the port, uvicorn then exits with "address
+  // already in use", and the health probe passes against the stranger — so the
+  // suite talks to one process while seeding the data dir of another, and fails
+  // as `no such table: sessions` several layers away from the cause. Cost an
+  // afternoon once; the check is two lines.
+  let exited = false;
+  child.on("exit", () => {
+    exited = true;
+  });
+
   try {
     await waitForHealth(`http://127.0.0.1:${SIDECAR_PORT}/health`, 60_000);
+    if (exited) {
+      throw new Error(
+        `port ${SIDECAR_PORT} is already serving a DIFFERENT sidecar — the one ` +
+          `started here exited immediately. Stop the stray process (it is usually ` +
+          `a leaked sidecar from an interrupted run) or set E2E_SIDECAR_PORT.`,
+      );
+    }
   } catch (err) {
     child.kill("SIGKILL");
     throw new Error(`${(err as Error).message}\n--- sidecar output ---\n${log}`);

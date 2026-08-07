@@ -6,6 +6,191 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.64.0] - 2026-08-07
+
+_The other file this product ingests was read as the wrong one, on both sides._
+
+### Fixed — a conversation could stay invisible for as long as the window was open
+
+The thread fetched its session ONCE on open and never again. Reload the app in
+the moment between a turn ending and the worker committing it — reliably
+reachable by pressing Stop and reloading — and that single fetch came back
+empty, so the investigation was not there. Measured, with the app and the server
+asked at the same time:
+
+```
+UI-EMPTY: true | SERVER-MESSAGES: 2
+AFTER-5S: UI-EMPTY: true | SERVER-MESSAGES: 2
+```
+
+The data was safe. The window simply never asked again. This is the shape of
+"the history is all gone" that survives a correct backend.
+
+An existing session that loads EMPTY now gets one more look, 1.2 s later, once
+per session. A genuinely empty session pays a single request; the alternative is
+a conversation the user cannot get back to without clicking somewhere else and
+back. Reproduced at 3-in-6 before the fix, 8-in-8 after.
+
+**What it is NOT:** the server was checked first, in isolation, and keeps
+everything — the partial answer with its stopped marker, the question, the
+released turn handle — whether the cancel lands after 50 ms or a second, and
+even when the client hangs up mid-stream (`test_v065_cancelled_turn_is_kept.py`,
+12 tests). Separating the two is what turned an intermittent browser symptom
+into a one-line cause.
+
+### Fixed — the E2E seeded three sessions with the same name
+
+`seedSession` numbered its titles from a module-level counter, and Playwright
+runs each spec file in its own process — so three files each produced "seeded
+investigation 1" and a rail assertion found four rows where it expected one. It
+passed locally and failed on CI, which is the worst way for a fixture to be
+wrong: it reads as a product failure. Titles are random now.
+
+### Fixed — the Stop button never stopped anything
+
+`Thread` passed the runner's `stop` straight to the button:
+
+```tsx
+onStop={runner.stop}          // React calls it with the CLICK EVENT
+```
+
+`stop(sessionId?: string)` then did `turnsRef.current.get(<SyntheticEvent>)`,
+found nothing, and took its silent early return. So pressing Stop **did nothing
+at all**: no cancel request reached the server, the stream was never aborted, the
+model kept generating, the tokens kept being spent, and the full answer arrived
+minutes later over the one the user had tried to stop. No error appeared
+anywhere, because nothing failed — the wrong lookup simply missed.
+
+Measured before the fix: after clicking Stop, the network log contained **no**
+`POST /sessions/{id}/turns/{turn_id}/cancel`, and the answer streamed to
+completion. After: the cancel lands, the partial answer is persisted, the thread
+says *Stopped by user*, and the turn takes seconds instead of running out the
+clock. Three of the four new tests fail against the unfixed code.
+
+`stop` is now also defensive about its argument, because handing it to `onClick`
+is exactly how it gets misused, and a silent miss is the worst possible way to
+find out.
+
+### Added — interrupting a turn is tested
+
+`e2e/interrupt.spec.ts`: Stop replaces Send while streaming; pressing it ends the
+turn and says who ended it; the partial answer is kept and survives a reload; and
+a stopped turn does not block the next question (the server-side turn handle has
+to be released, or the next one waits behind a turn nobody is running).
+
+The scripted model gained a `deltaDelayMs` knob. A model that answers instantly
+leaves no window to press Stop in — which is why this could not be tested
+before, rather than why it was skipped.
+
+E2E: 68 → 72.
+
+### Added — a real agent turn, in a browser, at last
+
+Every E2E spec runs with no model provider — deliberately, because the offline
+paths must work on a fresh install. The consequence was that the app's **main**
+path had never been driven from a browser at all: nothing ever watched a question
+become a streamed answer and then a persisted turn with a footer and actions
+under it. That is precisely where the v0.63.0 bug was felt, and no browser test
+could reach it.
+
+`e2e/fake-model.ts` is a local OpenAI-compatible endpoint (the node counterpart
+of `sidecar/tests/fake_model.py`). `e2e/agent.spec.ts` now covers, against the
+real stack: the answer arriving without the metadata block leaking into the
+prose, the finished turn keeping its footer and expanding to the trace, copy /
+edit / branch on the question, the agent's proposal rendering as a chip, a second
+turn appending rather than replacing, both exchanges surviving a reload, and no
+credential value reaching the model.
+
+### Changed — the app no longer says "nothing here" while it is loading
+
+Two changes, both about the same moment: reopening the app.
+
+- The open investigation is read from local storage **at mount** instead of after
+  the session list returns. It used to wait on that fetch, so a returning user
+  watched the empty start surface until it came back.
+- `isEmpty` did not distinguish "a session is open and its content is still
+  loading" from "this is a new chat", so the start surface — *How can I help with
+  your storage?* — rendered over an investigation that was right there. For
+  someone who has just been told their history vanished, that is the worst
+  possible sentence to flash.
+
+**Stated honestly:** this was found as a 1-in-6 flake in which the new reload
+test caught the start surface on screen. Neither reverting the change nor
+delaying `/sessions` reproduces it on this machine, so the flake's cause is
+**not proven** — these are defensible improvements and a guard for the
+behaviour, not a demonstrated fix for that failure.
+
+### Fixed — a leaked sidecar made the E2E fail several layers from the cause
+
+If an interrupted run left a sidecar holding the port, the new one exited with
+"address already in use" while the health probe passed against the stranger. The
+suite then seeded one data directory and talked to another, surfacing as
+`no such table: sessions`. Global setup now notices that its own child exited and
+says so.
+
+E2E: 61 → 68.
+
+### Fixed — an object inventory was silently parsed as access logs
+
+`detect_log_format` called a CSV "access-log csv" when its header shared **one**
+token with the access-log column list. An S3 inventory header is
+`bucket,key,size,storage_class,last_modified` — `key` and `size` are both on that
+list. So an inventory attached as access logs was ingested with the object key as
+the request path and the object size as bytes sent: no status, no method, no
+timestamp, no row rejected, and nothing said. The user got a table of request
+metrics in which every number was meaningless.
+
+An inventory is the *other* file this product ingests, which makes it the one
+false positive that matters. It is now identified by the columns only an
+inventory has (`storage_class`, `version_id`, `is_latest`, `e_tag`,
+`is_delete_marker`, `replication_status`, …) and **only** when the header carries
+no request-shaped column — an access-log export may legitimately name a
+`storage_class` alongside a status, and that is still a log. `import_access_logs`
+refuses such a file with a message that names the fix, rather than producing a
+plausible-looking table of nonsense.
+
+### Fixed — `catalog.csv` was auto-typed as an access log
+
+The frontend half of the same defect. `inferDatasetType` ran a name hint before
+the extension rule — deliberately, because `access-logs.parquet` is a columnar
+log export that the extension alone gets wrong — but the hint was
+`name.includes("log")`. Measured:
+
+| filename | typed as | should be |
+| --- | --- | --- |
+| `catalog.csv` | **access log** | inventory |
+| `logistics-export.csv` | **access log** | inventory |
+| `backlog.csv` · `dialog.csv` | **access log** | inventory |
+| `logical-inventory.parquet` | **access log** | inventory |
+| `accessories.csv` | **access log** | inventory |
+
+`logical-inventory.parquet` is the one that says it: the filename contains the
+word *inventory* and it still went to the log engine. Matching is now on word
+boundaries, with the run-together spellings (`accesslog`, `accesslogs`) named
+explicitly rather than reached by accident. The rule moved to `datasetType.ts`
+with its own tests — it was a closure inside `Thread.tsx` and could not be tested
+at all.
+
+### Fixed — an inferred file type could not be corrected
+
+The type chip rendered as a plain label once inferred, and as a pair of buttons
+only when nothing could be inferred. So the case where the guess is **wrong** was
+exactly the case with no way to say so. It is now always a two-way choice with
+the current one marked; the "Analyze as:" prompt appears only when there is
+genuinely nothing to go on.
+
+### Added — the attachment path is tested through a browser at last
+
+"Analyze the file you attached" is a headline capability whose browser half had
+**no** coverage: the sidecar suite tests the upload endpoint and the DuckDB
+engine directly, and no E2E ever picked a file. `e2e/attach.spec.ts` drives the
+hidden file input, inference for each extension, the ambiguous-type prompt,
+correcting an inferred type, the send button's dependence on an attachment, and
+that the file actually reaches the sidecar — asked of the sidecar directly rather
+than through the page, whose origin is the preview server.
+
+E2E: 52 → 61.
+
 ## [0.63.0] - 2026-08-06
 
 _Every investigation that called a tool became unopenable. The test suite was

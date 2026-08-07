@@ -44,7 +44,13 @@ function storedRailWidth(): number {
 export default function App() {
   const { status, slow } = useSidecarHealth();
   const [sessions, setSessions] = useState<SessionSummaryRow[]>([]);
-  const [activeId, setActiveIdState] = useState<string | null>(null);
+  // Read at mount, not after the session list arrives: waiting made a returning
+  // user watch the empty "How can I help with your storage?" surface until the
+  // fetch came back — the app announcing it had nothing, to someone whose
+  // investigation was right there. The id is VALIDATED once the list loads.
+  const [activeId, setActiveIdState] = useState<string | null>(
+    () => localStorage.getItem(ACTIVE_SESSION_KEY),
+  );
   // Remember the open investigation across launches. `null` is a real choice
   // (the user pressed "New chat"), so it is stored as a removal rather than
   // left behind — otherwise the next launch would reopen what they just closed.
@@ -53,10 +59,10 @@ export default function App() {
     if (id) localStorage.setItem(ACTIVE_SESSION_KEY, id);
     else localStorage.removeItem(ACTIVE_SESSION_KEY);
   }, []);
-  // Restore ONCE, and only onto a session that still exists — a stored id can
-  // point at an investigation deleted from another window, and reopening it
-  // would surface "Couldn't load this session" on launch.
-  const restored = useRef(false);
+  // The restored id is checked ONCE against the real list: a stored id can point
+  // at an investigation deleted from another window, and holding it open would
+  // surface "Couldn't load this session" on launch.
+  const validated = useRef(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -84,13 +90,15 @@ export default function App() {
     if (status === "connected") refreshSessions();
   }, [status, refreshSessions]);
 
-  // ...then reopen where the user left off.
+  // ...then confirm the reopened investigation still exists.
   useEffect(() => {
-    if (restored.current || sessions.length === 0) return;
-    restored.current = true;
+    if (validated.current || sessions.length === 0) return;
+    validated.current = true;
     const stored = localStorage.getItem(ACTIVE_SESSION_KEY);
-    if (stored && sessions.some((s) => s.id === stored)) setActiveIdState(stored);
-    else if (stored) localStorage.removeItem(ACTIVE_SESSION_KEY);
+    if (stored && !sessions.some((s) => s.id === stored)) {
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
+      setActiveIdState(null);
+    }
   }, [sessions]);
 
   // First-run: show the wizard if no providers are configured and it hasn't been dismissed.
