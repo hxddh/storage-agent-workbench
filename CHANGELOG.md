@@ -6,6 +6,59 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.65.0] - 2026-08-07
+
+_Two capabilities that had never been driven end to end, and a sweep for the
+defect class behind the Stop button._
+
+### Added — attach a file, ask about it, get an answer, in a browser
+
+The pieces were covered separately: the sidecar suite tests the upload endpoint
+and the DuckDB engine directly, and `attach.spec.ts` covers the picker. What
+nothing covered was the path a user actually takes — pick a file, ask, watch the
+agent find the upload, run the local analysis, and answer from real numbers.
+
+The scripted model is **reactive** for this. `analyze_uploaded_file` takes the id
+that `list_uploaded_files` just returned, so a constant script cannot call it;
+the double now reads that id out of the tool result the way a model does. Without
+it, the only testable shape is a tool call with constant arguments — which is not
+what the agent does, and would have made this test a decoration.
+
+`e2e/analyze.spec.ts` asserts, against the real stack: the answer arrives; the
+trace shows both tools **in the order they ran**; the DuckDB result handed to the
+model carries this file's real numbers (120 rows, `GLACIER`, storage classes) so
+the analysis is not a guess; **at most 20 object keys reach the model** out of 120
+distinct ones (rule 16 — aggregates, not a row dump); and the whole exchange
+survives a reload.
+
+### Added — redirecting a running turn is tested
+
+Pressing Enter while an answer streams does not queue and does not no-op: it
+cancels the running turn and sends the new one, keeping what the first had
+already produced. Real machinery — a cancel, a wait for the turn to settle, a
+latest-wins payload, a composer that must not be left holding text it already
+sent — and no browser coverage.
+
+`e2e/steer.spec.ts` covers all of it, plus the thing the UI cannot show: the
+redirected turn is not left **registered server-side**, asked of the sidecar
+directly, because a turn nobody is running is what the next question would wait
+behind. **Everything passed** — reported because "we checked and it holds" is a
+result, and because steering shares `stop()` with the Stop button, which turned
+out never to have worked at all (v0.64.0). Steering was unaffected only because
+it passes a session id explicitly.
+
+### Checked — the Stop button's defect class does not recur
+
+The Stop button broke because a function with an optional first parameter was
+handed to `onClick`, which called it with the click event. Every
+`onX={someFunction}` binding in the components was re-read: the rest take no
+meaningful first argument, so the event is simply ignored. **No second
+instance.** Worth stating that the type system cannot catch this —
+`(x?: string) => void` is assignable to `() => void` — so the only defence is
+not passing such a function bare.
+
+E2E: 72 → 82.
+
 ## [0.64.0] - 2026-08-07
 
 _The other file this product ingests was read as the wrong one, on both sides._
