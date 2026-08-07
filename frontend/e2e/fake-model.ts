@@ -63,15 +63,26 @@ export interface FakeModel {
   close: () => Promise<void>;
 }
 
-/** Serve `turns` one per request; the last repeats if asked again. */
-export async function startFakeModel(turns: string[][]): Promise<FakeModel> {
+/**
+ * Serve `turns` one per request; the last repeats if asked again.
+ *
+ * `deltaDelayMs` spaces the chunks out. A model that answers instantly leaves no
+ * window to press Stop in, so cancellation could not be tested at all — this is
+ * the knob that makes a turn last long enough to interrupt, the way a real one
+ * does.
+ */
+export async function startFakeModel(
+  turns: string[][],
+  opts: { deltaDelayMs?: number } = {},
+): Promise<FakeModel> {
   const requests: unknown[] = [];
+  const delay = opts.deltaDelayMs ?? 0;
   let i = 0;
 
   const server = http.createServer((req, res) => {
     const body: Buffer[] = [];
     req.on("data", (c: Buffer) => body.push(c));
-    req.on("end", () => {
+    req.on("end", async () => {
       try {
         requests.push(JSON.parse(Buffer.concat(body).toString() || "{}"));
       } catch {
@@ -84,7 +95,11 @@ export async function startFakeModel(turns: string[][]): Promise<FakeModel> {
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
       });
-      for (const c of take) res.write(c);
+      for (const c of take) {
+        if (res.writableEnded || res.destroyed) return; // the client hung up: stop
+        res.write(c);
+        if (delay) await new Promise((r) => setTimeout(r, delay));
+      }
       res.write("data: [DONE]\n\n");
       res.end();
     });

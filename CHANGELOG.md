@@ -10,6 +10,44 @@ follow semantic versioning once it reaches 1.0.
 
 _The other file this product ingests was read as the wrong one, on both sides._
 
+### Fixed — the Stop button never stopped anything
+
+`Thread` passed the runner's `stop` straight to the button:
+
+```tsx
+onStop={runner.stop}          // React calls it with the CLICK EVENT
+```
+
+`stop(sessionId?: string)` then did `turnsRef.current.get(<SyntheticEvent>)`,
+found nothing, and took its silent early return. So pressing Stop **did nothing
+at all**: no cancel request reached the server, the stream was never aborted, the
+model kept generating, the tokens kept being spent, and the full answer arrived
+minutes later over the one the user had tried to stop. No error appeared
+anywhere, because nothing failed — the wrong lookup simply missed.
+
+Measured before the fix: after clicking Stop, the network log contained **no**
+`POST /sessions/{id}/turns/{turn_id}/cancel`, and the answer streamed to
+completion. After: the cancel lands, the partial answer is persisted, the thread
+says *Stopped by user*, and the turn takes seconds instead of running out the
+clock. Three of the four new tests fail against the unfixed code.
+
+`stop` is now also defensive about its argument, because handing it to `onClick`
+is exactly how it gets misused, and a silent miss is the worst possible way to
+find out.
+
+### Added — interrupting a turn is tested
+
+`e2e/interrupt.spec.ts`: Stop replaces Send while streaming; pressing it ends the
+turn and says who ended it; the partial answer is kept and survives a reload; and
+a stopped turn does not block the next question (the server-side turn handle has
+to be released, or the next one waits behind a turn nobody is running).
+
+The scripted model gained a `deltaDelayMs` knob. A model that answers instantly
+leaves no window to press Stop in — which is why this could not be tested
+before, rather than why it was skipped.
+
+E2E: 68 → 72.
+
 ### Added — a real agent turn, in a browser, at last
 
 Every E2E spec runs with no model provider — deliberately, because the offline

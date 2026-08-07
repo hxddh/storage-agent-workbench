@@ -811,7 +811,10 @@ export function Thread({
       busy={busy}
       uploading={uploading}
       onSend={send}
-      onStop={runner.stop}
+      // Called, not passed: `stop` takes an optional session id, and handing it
+      // straight to onClick fed it the click EVENT, which is not a session id —
+      // so it looked up a turn that could not exist and returned silently.
+      onStop={() => runner.stop()}
       onSteer={() => {
         // A pending attachment rides along on a redirect (via the dataset-upload
         // path) instead of being silently dropped — same rules as send().
