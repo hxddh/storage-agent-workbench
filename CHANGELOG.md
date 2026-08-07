@@ -6,6 +6,71 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.64.0] - 2026-08-07
+
+_The other file this product ingests was read as the wrong one, on both sides._
+
+### Fixed — an object inventory was silently parsed as access logs
+
+`detect_log_format` called a CSV "access-log csv" when its header shared **one**
+token with the access-log column list. An S3 inventory header is
+`bucket,key,size,storage_class,last_modified` — `key` and `size` are both on that
+list. So an inventory attached as access logs was ingested with the object key as
+the request path and the object size as bytes sent: no status, no method, no
+timestamp, no row rejected, and nothing said. The user got a table of request
+metrics in which every number was meaningless.
+
+An inventory is the *other* file this product ingests, which makes it the one
+false positive that matters. It is now identified by the columns only an
+inventory has (`storage_class`, `version_id`, `is_latest`, `e_tag`,
+`is_delete_marker`, `replication_status`, …) and **only** when the header carries
+no request-shaped column — an access-log export may legitimately name a
+`storage_class` alongside a status, and that is still a log. `import_access_logs`
+refuses such a file with a message that names the fix, rather than producing a
+plausible-looking table of nonsense.
+
+### Fixed — `catalog.csv` was auto-typed as an access log
+
+The frontend half of the same defect. `inferDatasetType` ran a name hint before
+the extension rule — deliberately, because `access-logs.parquet` is a columnar
+log export that the extension alone gets wrong — but the hint was
+`name.includes("log")`. Measured:
+
+| filename | typed as | should be |
+| --- | --- | --- |
+| `catalog.csv` | **access log** | inventory |
+| `logistics-export.csv` | **access log** | inventory |
+| `backlog.csv` · `dialog.csv` | **access log** | inventory |
+| `logical-inventory.parquet` | **access log** | inventory |
+| `accessories.csv` | **access log** | inventory |
+
+`logical-inventory.parquet` is the one that says it: the filename contains the
+word *inventory* and it still went to the log engine. Matching is now on word
+boundaries, with the run-together spellings (`accesslog`, `accesslogs`) named
+explicitly rather than reached by accident. The rule moved to `datasetType.ts`
+with its own tests — it was a closure inside `Thread.tsx` and could not be tested
+at all.
+
+### Fixed — an inferred file type could not be corrected
+
+The type chip rendered as a plain label once inferred, and as a pair of buttons
+only when nothing could be inferred. So the case where the guess is **wrong** was
+exactly the case with no way to say so. It is now always a two-way choice with
+the current one marked; the "Analyze as:" prompt appears only when there is
+genuinely nothing to go on.
+
+### Added — the attachment path is tested through a browser at last
+
+"Analyze the file you attached" is a headline capability whose browser half had
+**no** coverage: the sidecar suite tests the upload endpoint and the DuckDB
+engine directly, and no E2E ever picked a file. `e2e/attach.spec.ts` drives the
+hidden file input, inference for each extension, the ambiguous-type prompt,
+correcting an inferred type, the send button's dependence on an attachment, and
+that the file actually reaches the sidecar — asked of the sidecar directly rather
+than through the page, whose origin is the preview server.
+
+E2E: 52 → 61.
+
 ## [0.63.0] - 2026-08-06
 
 _Every investigation that called a tool became unopenable. The test suite was

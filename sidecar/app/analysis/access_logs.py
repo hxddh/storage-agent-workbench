@@ -232,7 +232,36 @@ _CSV_HEADER_TOKENS = frozenset({
 })
 
 
+# Columns that only an object INVENTORY has. An S3 inventory is the other file
+# this product ingests, which makes it the one false positive that matters: its
+# header carries `key` and `size`, both of which are access-log column names, so
+# a single-token intersection was enough to call it access-log CSV — and it was
+# then parsed with the object key as the request path and the object size as
+# bytes sent. Silently, with no row rejected.
+_INVENTORY_ONLY_TOKENS = frozenset({
+    "storage_class", "last_modified_date", "is_latest", "is_delete_marker",
+    "version_id", "e_tag", "etag", "is_multipart_uploaded", "replication_status",
+    "encryption_status", "intelligent_tiering_access_tier", "checksum_algorithm",
+    "object_lock_mode", "object_lock_retain_until_date", "object_lock_legal_hold_status",
+})
+# Columns that only a REQUEST log has. Their presence means the file really is a
+# log, whatever else it carries — an access-log export may legitimately name a
+# `storage_class` column alongside a status and a user agent.
+_REQUEST_ONLY_TOKENS = frozenset({
+    "status", "status_code", "method", "verb", "user_agent", "ua", "remote_ip",
+    "client_ip", "latency", "latency_ms", "duration_ms", "request_id", "req_id",
+    "bytes_sent", "uri",
+})
+
+
 def detect_log_format(path: str | Path) -> dict[str, Any]:
+    """Identify what a file actually is, before anything parses it.
+
+    ``format`` is one of ``jsonl`` / ``text`` / ``csv`` / ``inventory`` /
+    ``unknown``. ``inventory`` is not a log format — it is the honest answer for
+    a file attached as access logs that is really an object inventory, so the
+    caller can say so instead of ingesting nonsense.
+    """
     sample = _nonempty_lines(path, limit=20)
     fmt = "unknown"
     if sample:
@@ -253,7 +282,9 @@ def detect_log_format(path: str | Path) -> dict[str, Any]:
             # no commas).
             delim = "\t" if "\t" in first else ","
             cells = {c.strip().lower() for c in first.split(delim)}
-            if cells & _CSV_HEADER_TOKENS:
+            if cells & _INVENTORY_ONLY_TOKENS and not (cells & _REQUEST_ONLY_TOKENS):
+                fmt = "inventory"
+            elif cells & _CSV_HEADER_TOKENS:
                 fmt = "csv"
     return {"format": fmt, "sampled_lines": len(sample)}
 
@@ -370,6 +401,17 @@ def _parse_csv(path: str | Path) -> list[dict[str, Any]]:
 
 
 def import_access_logs(raw_path: str | Path, duckdb_path: str | Path, fmt: str) -> dict[str, Any]:
+    if fmt == "inventory":
+        # Refuse rather than produce a plausible-looking table of nonsense: the
+        # object key would become the request path and the object size the bytes
+        # sent, with no status, method or timestamp — an "analysis" whose every
+        # number is meaningless, presented as a result. The message names the fix
+        # because the user chose the type and can change it.
+        raise ValueError(
+            "This file looks like an object INVENTORY (a row per object), not "
+            "access logs (a row per request). Re-attach it as an inventory to "
+            "analyze storage size, growth and storage classes."
+        )
     if fmt == "jsonl":
         rows = _parse_jsonl(raw_path) or _parse_csv(raw_path) or _parse_text(raw_path)
     elif fmt == "csv":

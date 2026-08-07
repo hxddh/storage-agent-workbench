@@ -156,17 +156,31 @@ export function Composer({
               <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
               {t("thread.uploading", { name: attached.name })}
             </span>
-          ) : attachType ? (
-            <span className="rounded-full border border-edge px-2 py-0.5 text-2xs text-gray-400">
-              {attachType === "inventory" ? t("attach.inventory") : t("attach.accessLog")}
-            </span>
           ) : (
+            /* The type is always a CHOICE, never a verdict. It used to render as
+               a plain label once inferred, so a wrong guess — and the guess is
+               made from the filename — could not be corrected from here: the
+               file went to the wrong engine with no way to say otherwise. When
+               nothing could be inferred the prompt asks; either way both options
+               are on screen and the current one is marked. */
             <span className="flex items-center gap-1">
-              <span className="text-gray-500">{t("attach.pickType")}</span>
-              <button className="rounded-full border border-edge px-2 py-0.5 text-2xs text-gray-300 hover:bg-hover"
-                onClick={() => setAttachType("inventory")}>{t("attach.inventory")}</button>
-              <button className="rounded-full border border-edge px-2 py-0.5 text-2xs text-gray-300 hover:bg-hover"
-                onClick={() => setAttachType("access_log")}>{t("attach.accessLog")}</button>
+              {!attachType && <span className="text-gray-500">{t("attach.pickType")}</span>}
+              {(["inventory", "access_log"] as const).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  aria-pressed={attachType === kind}
+                  data-testid={`attach-type-${kind}`}
+                  onClick={() => setAttachType(kind)}
+                  className={`rounded-full border px-2 py-0.5 text-2xs transition-colors ${
+                    attachType === kind
+                      ? "border-accent/50 bg-accent/12 text-accent-soft"
+                      : "border-edge text-gray-400 hover:bg-hover hover:text-gray-200"
+                  }`}
+                >
+                  {kind === "inventory" ? t("attach.inventory") : t("attach.accessLog")}
+                </button>
+              ))}
             </span>
           )}
           {!uploading && (
