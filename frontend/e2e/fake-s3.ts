@@ -49,6 +49,59 @@ const ERROR = (code: string, message: string) => `<?xml version="1.0" encoding="
 <Error><Code>${code}</Code><Message>${message}</Message>
 <RequestId>FAKEREQ0001</RequestId><HostId>fakehost</HostId></Error>`;
 
+/** The config sub-resources a bucket snapshot reads, and what they answer. */
+export interface BucketConfig {
+  /** `?policyStatus` → IsPublic. undefined = the endpoint does not support it. */
+  policyIsPublic?: boolean;
+  /** `?acl` → whether a grant targets AllUsers / AuthenticatedUsers. */
+  aclPublic?: boolean;
+  encrypted?: boolean;
+}
+
+const POLICY_STATUS = (isPublic: boolean) =>
+  `<?xml version="1.0" encoding="UTF-8"?>` +
+  `<PolicyStatus xmlns="http://s3.amazonaws.com/doc/2006-03-01/">` +
+  `<IsPublic>${isPublic ? "true" : "false"}</IsPublic></PolicyStatus>`;
+
+const ACL = (isPublic: boolean) =>
+  `<?xml version="1.0" encoding="UTF-8"?>` +
+  `<AccessControlPolicy xmlns="http://s3.amazonaws.com/doc/2006-03-01/">` +
+  `<Owner><ID>acme-owner-id</ID></Owner><AccessControlList>` +
+  (isPublic
+    ? `<Grant><Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ` +
+      `xsi:type="Group"><URI>http://acs.amazonaws.com/groups/global/AllUsers</URI></Grantee>` +
+      `<Permission>READ</Permission></Grant>`
+    : `<Grant><Grantee xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ` +
+      `xsi:type="CanonicalUser"><ID>acme-owner-id</ID></Grantee>` +
+      `<Permission>FULL_CONTROL</Permission></Grant>`) +
+  `</AccessControlList></AccessControlPolicy>`;
+
+const ENCRYPTION = () =>
+  `<?xml version="1.0" encoding="UTF-8"?>` +
+  `<ServerSideEncryptionConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">` +
+  `<Rule><ApplyServerSideEncryptionByDefault><SSEAlgorithm>AES256</SSEAlgorithm>` +
+  `</ApplyServerSideEncryptionByDefault></Rule></ServerSideEncryptionConfiguration>`;
+
+/** What AWS itself returns when a configuration simply is not set. */
+const NOT_CONFIGURED: Record<string, [number, string]> = {
+  policy: [404, "NoSuchBucketPolicy"],
+  lifecycle: [404, "NoSuchLifecycleConfiguration"],
+  encryption: [404, "ServerSideEncryptionConfigurationNotFoundError"],
+  replication: [404, "ReplicationConfigurationNotFoundError"],
+  publicAccessBlock: [404, "NoSuchPublicAccessBlockConfiguration"],
+  tagging: [404, "NoSuchTagSet"],
+  "object-lock": [404, "ObjectLockConfigurationNotFoundError"],
+  ownershipControls: [404, "OwnershipControlsNotFoundError"],
+  cors: [404, "NoSuchCORSConfiguration"],
+};
+
+/** Sub-resources answered with an empty-but-valid document when supported. */
+const EMPTY_DOC: Record<string, string> = {
+  versioning: '<VersioningConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>',
+  logging: '<BucketLoggingStatus xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>',
+  notification: '<NotificationConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>',
+};
+
 const LOCATION = (region: string) =>
   `<?xml version="1.0" encoding="UTF-8"?>` +
   `<LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${region}</LocationConstraint>`;
@@ -63,10 +116,31 @@ export interface FakeS3 {
   close: () => Promise<void>;
 }
 
+export interface FakeS3Options {
+  region?: string;
+  /**
+   * How the endpoint answers bucket-configuration sub-resources.
+   *
+   * `"full"` behaves like AWS. `"unsupported"` is the minimal S3-compatible
+   * endpoint — MinIO, Ceph, garage — which answers `501 NotImplemented` for
+   * most of them; `"denied"` is an AWS account whose credentials lack the
+   * `s3:GetBucketPolicyStatus` / `s3:GetBucketAcl` permissions. Both are
+   * ordinary real-world setups, and both mean the exposure question CANNOT be
+   * answered — which is a different fact from "nothing is exposed".
+   */
+  subresources?: "full" | "unsupported" | "denied";
+  /** Per-bucket configuration, used when `subresources` is "full". */
+  config?: Record<string, BucketConfig>;
+}
+
 export async function startFakeS3(
   buckets: Record<string, string[]> = { "acme-logs": ["logs/2026/06/a.parquet"] },
-  region = "us-east-1",
+  opts: FakeS3Options | string = {},
 ): Promise<FakeS3> {
+  const o: FakeS3Options = typeof opts === "string" ? { region: opts } : opts;
+  const region = o.region ?? "us-east-1";
+  const mode = o.subresources ?? "full";
+  const config = o.config ?? {};
   const requests: string[] = [];
   let failure: { status: number; code: string; message: string } | null = null;
 
@@ -115,6 +189,33 @@ export async function startFakeS3(
     // S3 sub-resources are VALUELESS flags; `has` sees them, a value lookup
     // would not.
     if (url.searchParams.has("location")) return send(200, LOCATION(region));
+
+    const sub = [...url.searchParams.keys()].find((k) => k !== "prefix" && k !== "max-keys" &&
+      k !== "delimiter" && k !== "list-type" && k !== "encoding-type" && k !== "continuation-token");
+    if (sub) {
+      if (mode === "unsupported") {
+        return send(501, ERROR("NotImplemented", `A ${sub} configuration is not implemented`));
+      }
+      if (mode === "denied") {
+        return send(403, ERROR("AccessDenied", `not authorized to read the ${sub} configuration`));
+      }
+      const cfg = config[bucket] ?? {};
+      if (sub === "policyStatus") {
+        if (cfg.policyIsPublic === undefined) {
+          return send(404, ERROR("NoSuchBucketPolicy", "The bucket policy does not exist"));
+        }
+        return send(200, POLICY_STATUS(cfg.policyIsPublic));
+      }
+      if (sub === "acl") return send(200, ACL(cfg.aclPublic === true));
+      if (sub === "encryption" && cfg.encrypted) return send(200, ENCRYPTION());
+      if (sub === "policy" && cfg.policyIsPublic !== undefined) {
+        return send(200, JSON.stringify({ Version: "2012-10-17", Statement: [] }));
+      }
+      if (EMPTY_DOC[sub]) return send(200, `<?xml version="1.0" encoding="UTF-8"?>${EMPTY_DOC[sub]}`);
+      const na = NOT_CONFIGURED[sub];
+      if (na) return send(na[0], ERROR(na[1], `no ${sub} configuration`));
+      return send(501, ERROR("NotImplemented", `${sub} is not implemented`));
+    }
 
     const prefix = url.searchParams.get("prefix") ?? "";
     const maxKeys = Number(url.searchParams.get("max-keys") ?? 1000);

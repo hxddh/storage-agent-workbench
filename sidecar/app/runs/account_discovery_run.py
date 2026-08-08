@@ -154,6 +154,16 @@ def _build_summary(buckets: list[dict[str, Any]], visible: int, processed: int, 
     # ACL-public bucket makes the review list regardless of anything else.
     public_buckets = names_where(lambda b: b.get("publicly_exposed") is True
                                  or b.get("policy_is_public") is True)
+    # …and the buckets where the question could not be ANSWERED. `account_tools`
+    # already models this honestly: `publicly_exposed` is None when the policy
+    # and ACL probes did not both yield a verdict. Collapsing that into the
+    # "none detected" branch is how a minimal S3-compatible endpoint (MinIO,
+    # Ceph, garage — the systems this product exists for, which answer 501 to
+    # most config sub-resources) and an AWS credential without
+    # `s3:GetBucketPolicyStatus` both got told their buckets are not public.
+    exposure_unknown = names_where(
+        lambda b: b.get("publicly_exposed") is None and b.get("policy_is_public") is not True
+    )
     needs_review = names_where(
         lambda b: b.get("encryption_status") == _NOT_CONFIGURED
         or b.get("public_access_block_status") == _NOT_CONFIGURED
@@ -166,6 +176,8 @@ def _build_summary(buckets: list[dict[str, Any]], visible: int, processed: int, 
     return {
         "public_buckets": public_buckets,
         "public_bucket_count": len(public_buckets),
+        "exposure_unknown_buckets": exposure_unknown,
+        "exposure_unknown_count": len(exposure_unknown),
         "acls_disabled_count": sum(1 for b in buckets if b.get("acls_disabled") is True),
         "visible_buckets": visible,
         "processed_buckets": processed,
@@ -188,6 +200,46 @@ def _build_summary(buckets: list[dict[str, Any]], visible: int, processed: int, 
         "access_denied_buckets": access_denied,
         "error_buckets": errored,
     }
+
+
+def exposure_note(summary: dict[str, Any]) -> str:
+    """The survey's public-exposure sentence — THREE outcomes, not two.
+
+    This is the highest-stakes thing the survey says. It is not a UI string: it
+    lands in the run's ``final_summary``, the agent reads it, and the agent
+    narrates it to the user as a security conclusion.
+
+    It used to be binary — exposed, or "No publicly exposed buckets detected" —
+    so a bucket whose policy/ACL probes never ANSWERED fell into the reassuring
+    branch. That is the normal case for a minimal S3-compatible endpoint (MinIO,
+    Ceph, garage answer 501 to most config sub-resources) and for a
+    least-privilege AWS role without ``s3:GetBucketPolicyStatus``. Both were
+    told their buckets are not public, on the strength of a check that never
+    ran.
+
+    "I checked and nothing is exposed" and "I could not check" are different
+    facts, and only one of them is reassuring. Rule 18: a capability gap is
+    reported, never silently resolved.
+    """
+    unknown_n = summary.get("exposure_unknown_count") or 0
+    unknown_note = (
+        f" Public exposure UNDETERMINED for {unknown_n} bucket(s)"
+        f" ({', '.join(summary['exposure_unknown_buckets'][:5])}"
+        f"{'…' if unknown_n > 5 else ''}) — the endpoint did not answer the"
+        " policy/ACL checks (unsupported or denied), so this is not a clean bill of health."
+        if unknown_n else ""
+    )
+    if summary.get("public_bucket_count"):
+        # The severe fact leads, but a remaining gap is not swallowed by it:
+        # fixing the named bucket must not look like fixing the account.
+        return (
+            f" PUBLIC EXPOSURE: {summary['public_bucket_count']} bucket(s) publicly exposed"
+            f" ({', '.join(summary['public_buckets'][:5])}"
+            f"{'…' if summary['public_bucket_count'] > 5 else ''})." + unknown_note
+        )
+    if unknown_n:
+        return unknown_note
+    return " No publicly exposed buckets detected."
 
 
 def execute_account_discovery_run(conn: sqlite3.Connection, run_id: str) -> None:
@@ -362,6 +414,16 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
                                         f"exposed (policy verdict and/or ACL grants): {names}"
                                         + (f" (+{more} more)" if more > 0 else "") + ". "
                                         "Review each with review_bucket_security.")})
+    if summary["exposure_unknown_count"]:
+        names = ", ".join(summary["exposure_unknown_buckets"][:5])
+        more = summary["exposure_unknown_count"] - 5
+        bus.publish(run_id, {"type": "finding", "severity": "warning",
+                             "title": "Public exposure could not be determined",
+                             "detail": (f"{summary['exposure_unknown_count']} bucket(s) did not answer "
+                                        f"the policy/ACL exposure checks: {names}"
+                                        + (f" (+{more} more)" if more > 0 else "") + ". "
+                                        "The provider may not support them, or the credentials may "
+                                        "lack permission. This is NOT the same as 'not public'.")})
     if summary["encryption_not_configured"]:
         bus.publish(run_id, {"type": "finding", "severity": "warning",
                              "title": "Buckets without default encryption",
@@ -378,12 +440,7 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
                                        "access logging that can feed access_log_analysis."})
 
     counts = dict(Counter(b["access_status"] for b in per_bucket))
-    public_note = (
-        f" PUBLIC EXPOSURE: {summary['public_bucket_count']} bucket(s) publicly exposed"
-        f" ({', '.join(summary['public_buckets'][:5])}"
-        f"{'…' if summary['public_bucket_count'] > 5 else ''})."
-        if summary["public_bucket_count"] else " No publicly exposed buckets detected."
-    )
+    public_note = exposure_note(summary)
     summary_text = (
         f"Account discovery via provider '{provider_id}': {visible} bucket(s) visible, "
         f"{len(per_bucket)} processed{' (truncated)' if truncated else ''}. "
