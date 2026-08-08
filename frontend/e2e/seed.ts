@@ -103,7 +103,20 @@ export function seedSession(
   id: string;
   title: string;
 } {
-  const { dataDir } = JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) as { dataDir: string };
+  // A bare JSON.parse here reports "Unexpected end of JSON input" and nothing
+  // else, from four specs at once, with the actual cause — a leaked sidecar
+  // holding the port, so this run never recorded its own data dir — nowhere on
+  // screen. Say what happened and what to do about it.
+  const raw = fs.existsSync(STATE_FILE) ? fs.readFileSync(STATE_FILE, "utf8") : "";
+  if (!raw.trim()) {
+    throw new Error(
+      `the E2E sidecar state file (${STATE_FILE}) is missing or empty, so this ` +
+        `run does not know which data dir to seed. It is usually left behind by ` +
+        `an interrupted run: stop any stray sidecar (pkill -f "uvicorn app.main"), ` +
+        `delete ${STATE_FILE}, and run again.`,
+    );
+  }
+  const { dataDir } = JSON.parse(raw) as { dataDir: string };
   const id = execFileSync(
     process.env.E2E_PYTHON || "python3",
     ["-c", PY, `${dataDir}/app.db`, String(exchanges), title],
