@@ -6,6 +6,61 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.68.0] - 2026-08-08
+
+_Connecting to storage had never been driven end to end, and the form you do it
+in named its own fields wrong._
+
+### Added — browser → sidecar → boto3 → a real S3 socket
+
+`e2e/fake-s3.ts` is the Node counterpart of v0.66.0's `tests/fake_s3.py`: a
+socket that answers S3 XML, reachable from the Playwright process the way
+`fake-model.ts` is. With it, `e2e/connect.spec.ts` (9 tests) drives the whole
+chain for the first time in this repo.
+
+`providers.spec.ts` creates a provider whose endpoint points nowhere — right for
+its security assertions, but it left the question a user asks FIRST on a fresh
+install unanswered by any test: *does this connection work?*
+`CloudProviderTester`, the panel that answers it, had **no coverage of any
+kind** — not a unit test, not a browser test.
+
+**On this surface nothing was found broken.** What now holds, measured:
+
+| | |
+| --- | --- |
+| the happy path | Test Connection reaches the endpoint and reports which one answered; List Objects returns the bucket's real keys; the agent answers "what is in acme-logs?" from a listing that came off the socket |
+| the failure path | a 404 arrives as `NoSuchBucket`, not a blank card; a 403 `SignatureDoesNotMatch` is named, not swallowed — an operator with a wrong endpoint sees this panel and nothing else, so what it says IS the diagnosis |
+| the rules | `max-keys` is on the WIRE, not applied after the response (rule 12); 100 real objects summarise to ≤20 samples while the count stays truthful (rule 16); no secret reaches the DOM or the API after a call that actually signed with it (rules 1/2/4); a bucket outside the configured allowlist is refused **without the endpoint being contacted at all** |
+
+### Fixed — form controls were named by their own hint text
+
+`Field` wrapped a `<label>` around the control *and* the hint. A wrapping label
+with no `for` contributes its whole subtree to the control's accessible name, so
+measured in a browser against the real Add-cloud-provider form:
+
+| control | announced as |
+| --- | --- |
+| Provider | `ProviderAWS S3Alibaba Cloud OSSTencent Cloud COSBaidu BOSVolcengine TO…` |
+| Access key ID | `Access key IDStored only in the encrypted local vault — never shown ag…` |
+| Secret access key | `Secret access keyStored only in the encrypted local vault — never show…` |
+
+A `<select>` is the worst case: its own option list becomes part of its name, so
+a screen-reader user hears every preset read out before anything useful.
+
+`Field` backs 25 controls across the add-provider form and the evidence-import
+dialog, 12 of them with a hint — the two forms a user must complete before the
+app does anything at all.
+
+Fixed the ordinary way: `<label for>` names the control, and the hint attaches
+with `aria-describedby`, which is what a hint IS — a description, announced
+after the name, not part of it. An explicit `id` on the control still wins.
+
+### Checks
+
+`pytest -q` 1313 passed · `vitest run` 236 passed · `tsc --noEmit` and
+`npm run build` clean. The fix was confirmed to fail against the unfixed code
+first (2 of 5 new `Field` tests).
+
 ## [0.67.0] - 2026-08-07
 
 _Read the report the app actually produces, and two things are wrong with it._
