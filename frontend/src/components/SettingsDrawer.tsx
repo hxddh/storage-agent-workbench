@@ -74,16 +74,18 @@ export function SettingsDrawer(
             <p className="mb-4 text-xs leading-relaxed text-gray-500">{t("settings.appearanceHint")}</p>
             <div className="flex flex-wrap gap-8">
               <div>
-                <div className="mb-1.5 text-xs font-medium text-gray-400">{t("settings.theme")}</div>
+                <div id="seg-theme-label" className="mb-1.5 text-xs font-medium text-gray-400">{t("settings.theme")}</div>
                 <Segmented
+                  labelId="seg-theme-label"
                   options={themes}
                   value={theme}
                   onChange={(v) => setTheme(v as Theme)}
                 />
               </div>
               <div>
-                <div className="mb-1.5 text-xs font-medium text-gray-400">{t("settings.language")}</div>
+                <div id="seg-lang-label" className="mb-1.5 text-xs font-medium text-gray-400">{t("settings.language")}</div>
                 <Segmented
+                  labelId="seg-lang-label"
                   options={LANGS}
                   value={lang}
                   onChange={(v) => setLang(v as Lang)}
@@ -103,21 +105,41 @@ export function SettingsDrawer(
   );
 }
 
-/** A small segmented control used for theme/language selection. */
+/**
+ * A small segmented control used for theme/language selection.
+ *
+ * Which option is active was carried by `bg-accent` and nothing else — no
+ * `aria-pressed`, no group name. So a screen reader announced "English, button"
+ * and "简体中文, button" with no way to tell which one the app is currently
+ * using, and forced-colours / high-contrast mode loses the accent entirely.
+ *
+ * `aria-pressed` is the app's own established pattern for this (the composer's
+ * attach-type toggle and the inspector's filter chips both use it); these two
+ * controls had simply diverged from it. The visible caption above each group
+ * now names it, via `aria-labelledby`, instead of floating unattached.
+ */
 function Segmented<T extends string>({
   options,
   value,
   onChange,
+  labelId,
 }: {
   options: { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
+  labelId?: string;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-edge bg-elevated p-0.5">
+    <div
+      className="inline-flex rounded-lg border border-edge bg-elevated p-0.5"
+      role="group"
+      aria-labelledby={labelId}
+    >
       {options.map((o) => (
         <button
           key={o.value}
+          type="button"
+          aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
           className={`rounded-md px-3 py-1 text-xs transition-colors ${
             value === o.value

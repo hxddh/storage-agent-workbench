@@ -34,11 +34,23 @@ export function ProvidersView() {
       <header className="border-b border-edge px-8 py-5">
         <div className="mb-1 text-sm font-semibold text-gray-100">{t("prov.title")}</div>
         <p className="mb-4 text-xs leading-relaxed text-gray-500">{t("prov.subtitle")}</p>
-        <div className="flex gap-2">
-          <Button variant={tab === "model" ? "primary" : "default"} onClick={() => setTab("model")}>
+        {/* Which tab is open was carried by the button VARIANT and nothing
+            else, so the state existed only as a colour. `aria-pressed` is what
+            the rest of the app uses for exactly this (composer attach-type,
+            inspector filter chips). */}
+        <div className="flex gap-2" role="group" aria-label={t("prov.title")}>
+          <Button
+            aria-pressed={tab === "model"}
+            variant={tab === "model" ? "primary" : "default"}
+            onClick={() => setTab("model")}
+          >
             {t("prov.tabModel")}
           </Button>
-          <Button variant={tab === "cloud" ? "primary" : "default"} onClick={() => setTab("cloud")}>
+          <Button
+            aria-pressed={tab === "cloud"}
+            variant={tab === "cloud" ? "primary" : "default"}
+            onClick={() => setTab("cloud")}
+          >
             {t("prov.tabCloud")}
           </Button>
         </div>

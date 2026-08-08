@@ -6,6 +6,65 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.69.0] - 2026-08-08
+
+_The settings drawer again — v0.68.0 fixed how its controls are NAMED; this is
+how they report what is CHOSEN._
+
+### Fixed — selection state that existed only as a colour
+
+Theme, Language, and the two provider tabs each carried the active option in
+`bg-accent` and nothing else. Measured in a browser, all four buttons came back
+`aria-pressed=null aria-checked=null aria-current=null`, with no group name
+either:
+
+| control | active option conveyed by |
+| --- | --- |
+| Language (English / 简体中文) | `bg-accent`, nothing else |
+| Theme (Dark / Light) | `bg-accent`, nothing else |
+| Model Providers / Cloud Providers | the button `variant`, nothing else |
+
+So a screen reader announced "English, button" and "简体中文, button" with no way
+to tell which one the app is using — and forced-colours / high-contrast mode
+loses the accent entirely, leaving no signal at all.
+
+`aria-pressed` is the app's OWN pattern for this: the composer's attach-type
+toggle and the session inspector's filter chips both set it. These two controls
+had simply diverged from it. The visible caption above each group is now the
+group's accessible name (`role="group"` + `aria-labelledby`) rather than
+unattached text.
+
+`e2e/a11y.spec.ts` (5 tests) reads the state the way assistive tech does, not by
+class name. 5/5 fail against the unfixed code.
+
+### Added — the app in Chinese, rendered by a test for the first time
+
+All fifteen prior E2E specs open with `localStorage.setItem("saw.lang", "en")`.
+Deliberate — assertions on English copy are stable — but it meant the Simplified
+Chinese UI had never been rendered by any test, in a product whose users work in
+Chinese.
+
+`e2e/zh.spec.ts` (5 tests) drives it: the start surface, the rail and its ⋯
+menu, the settings drawer down to the provider form, a finished turn's own
+footer and trace, and switching language mid-session then surviving a reload.
+
+**Nothing was found broken.** The dictionaries check out too — parsing the
+actual `const en` / `const zh` object ranges gives **414 keys each, zero missing
+on either side, zero placeholder mismatches**; the only three shared values
+(`Head Bucket`, `Base URL`, `Endpoint URL`) are terms Chinese operators use in
+English anyway, and `prov.fAccessKey` / `prov.fSecretKey` stay English on
+purpose because that is what the consoles and SDKs call them. Those are now
+pinned so a well-meaning future translation does not make them unfindable.
+
+An earlier pass of this analysis reported 147 keys missing from Chinese. That
+was a bad file split, not a real gap — recorded here because the corrected
+number is the one that matters.
+
+### Checks
+
+`pytest -q` 1313 passed · `vitest run` 236 passed · `playwright test` 108 passed
+· `tsc --noEmit` and `npm run build` clean.
+
 ## [0.68.0] - 2026-08-08
 
 _Connecting to storage had never been driven end to end, and the form you do it
