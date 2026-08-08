@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { cloneElement, isValidElement, useId } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 /** The Storage Agent brand mark — an object-storage bucket with an agent spark.
  * Stroke uses currentColor; set color via the parent (white on the indigo tile,
@@ -29,13 +30,49 @@ const inputCls =
   "placeholder:text-gray-600 transition-colors hover:border-edge-strong " +
   "focus:border-accent/60 focus:outline-none focus:ring-2 focus:ring-accent/25";
 
+/**
+ * A labelled form control.
+ *
+ * The label is associated by `for`/`id`, and the hint by `aria-describedby` —
+ * not by nesting both inside a `<label>`. A wrapping label with no `for`
+ * contributes its whole subtree to the control's accessible NAME, so the name
+ * used to be label + hint, and for a `<select>` label + hint + every option's
+ * text: the Provider control announced as "Provider AWS S3 Alibaba Cloud OSS
+ * Tencent Cloud COS …" before the user heard anything useful, and the key
+ * fields as "Access key ID Stored only in the encrypted local vault — never
+ * shown again after saving".
+ *
+ * A hint is a description, not a name: it belongs after the name, in
+ * `aria-describedby`. This backs every control on the add-provider form and the
+ * evidence-import dialog — the two forms a user must complete before the app
+ * does anything.
+ */
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+  const auto = useId();
+  const hintId = hint ? `${auto}-hint` : undefined;
+  // An explicit id on the control wins, so a caller that already wires up its
+  // own labelling is not overridden.
+  const child = isValidElement(children)
+    ? (children as ReactElement<Record<string, unknown>>)
+    : null;
+  const controlId = (child?.props.id as string | undefined) ?? auto;
   return (
-    <label className="mb-3 block">
-      <span className="mb-1.5 block text-xs font-medium text-gray-400">{label}</span>
-      {children}
-      {hint ? <span className="mt-1 block text-xs text-gray-600">{hint}</span> : null}
-    </label>
+    <div className="mb-3 block">
+      <label htmlFor={controlId} className="mb-1.5 block text-xs font-medium text-gray-400">
+        {label}
+      </label>
+      {child
+        ? cloneElement(child, {
+            id: controlId,
+            "aria-describedby": hintId ?? child.props["aria-describedby"],
+          })
+        : children}
+      {hint ? (
+        <span id={hintId} className="mt-1 block text-xs text-gray-600">
+          {hint}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
