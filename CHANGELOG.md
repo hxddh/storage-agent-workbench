@@ -6,6 +6,77 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.70.0] - 2026-08-08
+
+_"No publicly exposed buckets detected" was also what the survey said when it
+never looked._
+
+### Fixed — a clean bill of health for a check that never ran
+
+The account survey's public-exposure line is the highest-stakes sentence this
+product emits. It is not a UI string: it lands in the run's `final_summary`, the
+agent reads it, and narrates it to the user as a security conclusion.
+
+It had **two** branches — exposed, or "No publicly exposed buckets detected" —
+and none for *could not determine*, so a bucket whose policy/ACL probes never
+**answered** fell into the reassuring one. Measured in a browser against four
+endpoints; three produced the identical verdict:
+
+| endpoint | exposure probes | verdict (before) |
+| --- | --- | --- |
+| minimal S3-compatible (`501 NotImplemented`) | **never ran** | "No publicly exposed buckets detected." |
+| AWS creds without `s3:GetBucketPolicyStatus` (403) | **never ran** | "No publicly exposed buckets detected." |
+| full AWS, genuinely private | ran | "No publicly exposed buckets detected." |
+| full AWS, one bucket public | ran | "PUBLIC EXPOSURE: 1 bucket(s)…" |
+
+The first two are not corner cases. MinIO, Ceph and garage — the S3-compatible
+systems this product exists to diagnose — answer 501 to most bucket-config
+sub-resources, and a least-privilege AWS role routinely lacks
+`s3:GetBucketPolicyStatus`. **Rule 18** is exactly this: a capability gap is
+reported, never silently resolved into a verdict.
+
+`account_tools` already modelled it honestly — `publicly_exposed` is `None` when
+the probes do not both answer. The collapse was one level up. `exposure_note()`
+now has three outcomes, names the buckets and the reason, publishes a
+warning-severity finding, and does not let the severe case swallow a remaining
+gap:
+
+> Public exposure **UNDETERMINED** for 2 bucket(s) (acme-logs, acme-public) —
+> the endpoint did not answer the policy/ACL checks (unsupported or denied), so
+> this is not a clean bill of health.
+
+### Added — the agent's heavy path, end to end
+
+Of 43 agent tools, four had ever run end to end. `e2e/survey.spec.ts` (6 tests)
+adds the stateful ones and **found nothing else broken**: `load_tools`
+progressive disclosure, `survey_account` spawning a real run,
+`query_account_profile` answering from the persisted profile with no new S3
+calls and no raw keys, and — verified in a browser for the first time —
+CLAUDE.md's rule that an agent-invoked run **never surfaces as a run card**.
+
+`e2e/fake-s3.ts` grew realistic sub-resource behaviour to make this testable:
+`full` / `unsupported` / `denied`, per-bucket `policyStatus` and ACL, and the 404
+codes AWS really returns for unset configuration.
+`tests/test_v070_exposure_undetermined.py` (10 tests) pins the branch against the
+**production** function — an earlier draft rebuilt the logic locally and would
+have passed against a copy while the app kept lying.
+
+### Fixed — the E2E harness now fails loudly when a stray sidecar owns the port
+
+A sidecar leaked from an interrupted run held the port; later runs talked to that
+stranger while the state file sat empty, so `seedSession`'s bare `JSON.parse`
+threw and exactly the four seeding specs failed with `Unexpected end of JSON
+input`. The existing guard read `exited` at a single instant — a race, because
+health passes on the first probe against the stranger while the child's "address
+already in use" exit event is still queued. It now confirms **identity, not
+timing**: our sidecar creates `app.db` in the data dir we just made for it, and a
+stranger never touches it. `seedSession` names the situation and the remedy.
+
+### Checks
+
+`pytest -q` 1323 passed · `ruff check app` clean · `vitest run` 236 passed ·
+`playwright test` 114 passed · `tsc --noEmit` and `npm run build` clean · CI 7/7.
+
 ## [0.69.0] - 2026-08-08
 
 _The settings drawer again — v0.68.0 fixed how its controls are NAMED; this is
