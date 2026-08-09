@@ -148,6 +148,14 @@ _COT_BACKSTOP = 60000  # defensive only; callers bound the real length (answer
 # Paired hidden-reasoning blocks: <think>…</think> / <thinking>…</thinking>
 # (case-insensitive, spanning newlines). Removed entirely, surrounding text kept.
 _THINK_BLOCK = re.compile(r"(?is)<(think|thinking)\b[^>]*>.*?</\1\s*>")
+# An opener with NO close: the stream ended (or was cut) mid-thought. This is
+# still hidden reasoning. The streaming stripper already holds it back, so the
+# live view is clean — but the persist-time stripper handled only PAIRED blocks,
+# so the stored answer kept the raw `<think>…` verbatim. The user watched a
+# clean answer stream in and then, once the thread reloaded the turn, saw the
+# model's reasoning appear in its place. Runs after the paired rule, so a
+# complete block is already gone and only a genuine orphan can match.
+_OPEN_THINK = re.compile(r"(?is)<(think|thinking)\b[^>]*>.*\Z")
 # An OPENING hidden-reasoning tag with no closing pair yet (streaming case).
 _THINK_OPEN = re.compile(r"(?is)<(think|thinking)\b[^>]*>")
 # A leading chain-of-thought preamble (only at the very start of the message).
@@ -173,8 +181,10 @@ def strip_chain_of_thought(text: str | None, max_len: int = _COT_BACKSTOP) -> st
     """
     if not text:
         return ""
-    # 1. Never persist hidden reasoning blocks.
+    # 1. Never persist hidden reasoning blocks — paired, or left open by a
+    #    stream that ended mid-thought.
     text = _THINK_BLOCK.sub("", text)
+    text = _OPEN_THINK.sub("", text)
     # 2. Strip a leading CoT preamble only — never mid-answer content.
     if _LEADING_COT.match(text):
         answer_at = _ANSWER_MARKER.search(text)

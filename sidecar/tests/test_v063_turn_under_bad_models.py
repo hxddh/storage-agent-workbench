@@ -68,12 +68,23 @@ def test_unparseable_tool_arguments_do_not_end_the_turn(client):
     assert client.get(f"/sessions/{sid}").status_code == 200
 
 
-def test_an_empty_answer_is_persisted_as_an_empty_answer_not_a_crash(client):
+def test_an_empty_answer_is_not_a_crash_AND_not_an_empty_bubble(client):
+    """Changed in v0.72.0.
+
+    This asserted `content == ""` — the turn survives a model that says nothing.
+    Surviving is still the point, but persisting an empty message turned out to
+    be the other half of a defect reported from the shipped app: an answer
+    streams in, the thread reloads the turn, and the blank persisted message
+    replaces what the user was reading. An empty bubble is indistinguishable
+    from a broken app, so the floor is now "says something", not "stores
+    nothing".
+    """
     res, sid = _ask(client, [text_turn("")])
     assert res.status_code == 200, res.text
     detail = client.get(f"/sessions/{sid}")
     assert detail.status_code == 200, detail.text
-    assert (detail.json()["messages"][-1]["content"] or "") == ""
+    content = detail.json()["messages"][-1]["content"] or ""
+    assert content.strip(), "a turn must never persist an empty answer"
 
 
 def test_a_model_cannot_claim_a_skill_it_never_opened(client):
