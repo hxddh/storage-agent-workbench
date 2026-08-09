@@ -195,13 +195,25 @@ body {
   box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--focus-ring);
 }
 
-/* Long conversation histories: let the browser skip layout/paint for
- * off-screen thread items while the stream mutates the DOM (UX1). The
- * intrinsic-size fallback keeps the scrollbar stable for unrendered items. */
-.thread-item {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 96px;
-}
+/* `.thread-item` deliberately carries NO `content-visibility` (removed in
+ * v0.73.0). It was added to skip layout/paint for off-screen items in a long
+ * history (UX1), with `contain-intrinsic-size: auto 96px` standing in for the
+ * unrendered ones. Measurement retired it on both counts:
+ *
+ *  - 96px does not fit the content. Real items are bimodal — a collapsed old
+ *    turn is 36–65px, an expanded answer with a table was 1616px, a 45x spread
+ *    no single constant covers. On a thread of realistic answers the container
+ *    reported 6310px and grew to 9927px as items were actually measured, so the
+ *    scrollbar under-reported the conversation by 52% until you had scrolled
+ *    through all of it — and the "bottom" receded as you chased it.
+ *  - It bought nothing. Scripted scroll over 400 items / 34622px — the very
+ *    case it was written for — measured p50 16.6ms both ways, with the tail
+ *    WORSE with it on (p90 19.6 vs 17.9ms, p99 29.8 vs 27.4ms, max 31.7 vs
+ *    27.9ms). At 60 items likewise. The thread already bounds its own DOM by
+ *    paging ("load earlier"), which is the optimization that does work.
+ *
+ * The under-reported height is also what broke scroll-to-bottom (see
+ * `Thread.tsx`), so this is not only a paint concern. */
 
 /* Respect reduced-motion. */
 @media (prefers-reduced-motion: reduce) {

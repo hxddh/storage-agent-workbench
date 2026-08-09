@@ -22,6 +22,13 @@ import { STATE_FILE } from "./global-setup";
 const PY = `
 import json, sqlite3, sys, uuid
 db, n, title = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+# "tall": answers the SIZE a real agent writes — headings, paragraphs, a wide
+# table, a list. The default one-line answer is ~36-65px tall, which is roughly
+# what the thread's layout assumptions were tuned against; a real answer with a
+# table measured 1616px. Anything about scrolling, height or landing position is
+# untestable against the short shape, because the short shape never makes the
+# container grow after first layout.
+shape = sys.argv[4] if len(sys.argv) > 4 else "short"
 conn = sqlite3.connect(db)
 sid = "e2e-" + uuid.uuid4().hex[:12]
 conn.execute(
@@ -31,6 +38,26 @@ conn.execute(
 cols = {r[1] for r in conn.execute("PRAGMA table_info(session_messages)")}
 def call_id(i):
     return "call-%s-%03d" % (sid, i)
+
+def answer_text(i):
+    if shape != "tall":
+        return "ANSWER-%02d bucket-%d denies list because the policy omits s3:ListBucket." % (i, i)
+    rows = "\\n".join(
+        "| bucket-%03d-%02d | %d | %d GiB | STANDARD | %s |" % (i, k, k * 137, k * 41, "yes" if k % 3 else "no")
+        for k in range(24)
+    )
+    paras = "\\n\\n".join(
+        "Paragraph %d of the finding for bucket-%03d. The bucket policy omits "
+        "s3:ListBucket for the caller principal, so every list call returns 403 "
+        "AccessDenied while head_object on a known key still succeeds." % (p, i)
+        for p in range(4)
+    )
+    return ("ANSWER-%02d\\n\\n## Finding %02d — bucket-%03d denies list\\n\\n%s\\n\\n"
+            "| bucket | objects | size | class | versioned |\\n"
+            "| --- | --- | --- | --- | --- |\\n%s\\n\\n"
+            "- point one about lifecycle\\n- point two about replication\\n"
+            "- point three about logging\\n- point four about encryption\\n") % (i, i, i, paras, rows)
+
 for i in range(n):
     ts = "2026-01-01T00:%02d:00Z" % (i * 2)
     # The row shape session_tools.note() really writes: mixed types, not the
@@ -42,7 +69,7 @@ for i in range(n):
     ])
     for role, body, act in (
         ("user", "QUESTION-%02d why does bucket-%d return 403" % (i, i), None),
-        ("assistant", "ANSWER-%02d bucket-%d denies list because the policy omits s3:ListBucket." % (i, i), activity),
+        ("assistant", answer_text(i), activity),
     ):
         row = {
             "id": "m-%s-%s" % (sid, uuid.uuid4().hex[:8]),
@@ -99,6 +126,7 @@ print(sid)
 export function seedSession(
   exchanges: number,
   title = `seeded investigation ${randomUUID().slice(0, 8)}`,
+  shape: "short" | "tall" = "short",
 ): {
   id: string;
   title: string;
@@ -119,7 +147,7 @@ export function seedSession(
   const { dataDir } = JSON.parse(raw) as { dataDir: string };
   const id = execFileSync(
     process.env.E2E_PYTHON || "python3",
-    ["-c", PY, `${dataDir}/app.db`, String(exchanges), title],
+    ["-c", PY, `${dataDir}/app.db`, String(exchanges), title, shape],
     { encoding: "utf8" },
   ).trim();
   return { id, title };
