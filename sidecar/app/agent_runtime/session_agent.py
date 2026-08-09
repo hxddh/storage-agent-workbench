@@ -1771,7 +1771,7 @@ def _answer_cap(creds: dict[str, Any] | None) -> int:
 
 
 def _finalize_contract(raw: Any, skill_names: list[str], activity: list[dict[str, Any]],
-                       cap: int | None = None) -> dict[str, Any]:
+                       cap: int | None = None, streamed: str = "") -> dict[str, Any]:
     # The answer cap is applied INSIDE parse_agent_contract (it owns the only
     # slice), model-elastic via ``cap`` and never silent — the cut is marked.
     contract = skill_contract.parse_agent_contract(raw, allowed_skill_names=skill_names,
@@ -1786,6 +1786,9 @@ def _finalize_contract(raw: Any, skill_names: list[str], activity: list[dict[str
     # Persist only COMPLETED tool records; transient "started" markers are for
     # the live SSE stream, not the durable transcript.
     contract["tool_activity"] = [a for a in activity if a.get("status") != "started"]
+    # The last gate before persistence: a turn must never store an empty answer
+    # over text the user already watched stream in.
+    contract["answer"] = finalize_answer_text(contract.get("answer"), streamed)
     return contract
 
 
@@ -2056,6 +2059,49 @@ def _hold_back_contract(text: str) -> str:
         pos = close + 3
 
 
+_EMPTY_ANSWER_FALLBACK = (
+    "The model returned no readable answer for this turn — what it did is in the "
+    "trace above. Ask again, or rephrase, and I'll re-run it."
+)
+
+
+def finalize_answer_text(parsed_answer: Any, streamed: str) -> str:
+    """The text a finished turn PERSISTS, given what the contract parser produced.
+
+    The live bubble is built from the accumulated deltas; the persisted answer
+    comes from `result.final_output` by way of the contract parser. Those are two
+    different objects, and the client's streamed bubble survives only until the
+    thread reloads the turn from the server — so a parse that yields nothing does
+    not fail loudly. It silently replaces text the user watched arrive with
+    nothing at all. Reported from the shipped app as "it streams, then the
+    content disappears".
+
+    An OpenAI-compatible server that streams `delta.content` but returns an empty
+    aggregate message is a real shape this app does not control, and it is
+    precisely the shape a scripted double never produces — which is why every
+    test passed while answers were being lost.
+
+    Judged on the PARSED answer, deliberately: a model may put its whole reply in
+    the contract block's `answer` field (a documented fallback), which looks like
+    "no prose" to any check made before parsing.
+
+    1. A parsed answer wins — it is authoritative.
+    2. Otherwise fall back to what the user actually saw, sanitized exactly as
+       the cancel path does, since streamed text has not been through the
+       persist-time sanitizer.
+    3. Never persist nothing. An empty bubble is indistinguishable from a broken
+       app, so a turn with no usable text says so.
+    """
+    if isinstance(parsed_answer, str) and parsed_answer.strip():
+        return parsed_answer
+    # Strip BEFORE redacting and again after: redaction can eat a `</think>`
+    # abutting a credential-shaped token, after which the strip would keep the
+    # whole block. Same order as the cancel path.
+    recovered = _hold_back_contract(strip_chain_of_thought(
+        redact_text(strip_chain_of_thought(streamed if isinstance(streamed, str) else "")))).strip()
+    return recovered or _EMPTY_ANSWER_FALLBACK
+
+
 # A still-growing trailing token in the live stream that could be a secret: a
 # long unbroken run of secret-alphabet chars (base64/JWT/hex/url-safe). The
 # fixed char holdback alone is beaten by patterns whose match is recognizable
@@ -2319,9 +2365,11 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
             if _BUDGET_CUT_MARKER not in final_text:
                 final_text = (final_text + "\n\n" + _BUDGET_CUT_MARKER).strip()
             yield ("final", _stamped(_with_continue_proposal(
-                _finalize_contract(final_text, skill_names, activity, cap=answer_cap))))
+                _finalize_contract(final_text, skill_names, activity, cap=answer_cap,
+                                   streamed=raw_acc))))
         else:
-            yield ("final", _stamped(_finalize_contract(final_text, skill_names, activity, cap=answer_cap)))
+            yield ("final", _stamped(_finalize_contract(final_text, skill_names, activity,
+                                                        cap=answer_cap, streamed=raw_acc)))
     finally:
         await _close_clients(clients)
 

@@ -6,6 +6,73 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.72.0] - 2026-08-09
+
+_The answer streamed, then the turn persisted nothing._
+
+### Fixed — the content disappeared when the turn settled
+
+Reported from the shipped app: the answer streams in, and when the turn settles
+it is gone.
+
+The live bubble and the persisted message come from **two different objects**.
+The stream is built from the accumulated text deltas; what got stored was
+`result.final_output`, with no guard:
+
+```python
+final_text = getattr(result, "final_output", "") or ""
+```
+
+The client keeps its streamed bubble only until the thread reloads the turn from
+the server — at which point the persisted message replaces it. So an empty
+finalization never failed loudly. It silently replaced text the user had watched
+arrive with nothing.
+
+Measured by driving **both** turn endpoints and reading the stored row back
+(`assistant: ''` on each). Four realistic inputs persisted an empty answer:
+
+| model output | persisted before |
+| --- | --- |
+| `final_output` empty — a server that streams `delta.content` but returns an empty aggregate | **empty** |
+| `final_output` is `None` | **empty** |
+| the answer wrapped entirely in `<think>…</think>` | **empty** |
+| the answer is only the contract JSON block | **empty** |
+
+The first two are provider behaviour this app does not control, and **none** of
+the four is a shape a scripted test double produces — which is why 1300+ tests
+were green while the shipped app lost answers.
+
+The cancel path already rebuilt the answer from the streamed text. The success
+path — the overwhelmingly common one — did not. That asymmetry was the bug.
+
+The guard now lives inside `_finalize_contract`, **after** the parse, so every
+call site is covered: a parsed answer wins (it is authoritative); otherwise the
+sanitized streamed text, exactly as the cancel path does it; otherwise a message
+saying the model returned nothing readable. Never an empty bubble — that is
+indistinguishable from a broken app.
+
+### Fixed — reasoning that appeared after the turn settled
+
+The persist-time chain-of-thought stripper removed only **paired** `<think>`
+blocks. The live stripper correctly holds back an unclosed one, so the user read
+a clean answer while it streamed — and then the model's raw reasoning appeared in
+its place once the thread reloaded the turn. Unclosed openers are now stripped
+too, so hidden reasoning never reaches the answer by either route.
+
+### Changed — an empty answer is no longer a valid outcome
+
+`test_an_empty_answer_is_persisted_as_an_empty_answer_not_a_crash` asserted
+`content == ""`. Surviving a silent model is still the point, but storing an
+empty message is the other half of the defect above, so the floor is now "says
+something".
+
+### Checks
+
+`pytest -q` 1333 passed · `ruff check app` clean · `vitest run` 236 passed ·
+`playwright test` 121 passed · `tsc --noEmit` and `npm run build` clean · CI 7/7.
+The 10 new sidecar tests fail 10/10 against the unfixed code, and
+`e2e/persisted.spec.ts` (4) reproduces the symptom in a browser.
+
 ## [0.71.0] - 2026-08-09
 
 _The predicted defect was not there; the two that were are both in our own
