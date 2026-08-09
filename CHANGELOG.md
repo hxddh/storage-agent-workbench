@@ -6,6 +6,128 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.71.0] - 2026-08-09
+
+_The predicted defect was not there; the two that were are both in our own
+tooling._
+
+### Added — the four review lenses, against endpoints that cannot answer
+
+v0.70.0 found the account survey saying "No publicly exposed buckets detected"
+for a check that never ran. The bucket review produces the same **shape** of
+output — a verdict the agent narrates — from the same config sub-resources, so
+it was the obvious next place to look for that bug.
+
+**It is not there.** Measured against three endpoints, the review distinguishes
+all three states in its own `overall_status`:
+
+| endpoint | `overall_status` | findings |
+| --- | --- | --- |
+| minimal S3-compatible (`501 NotImplemented`) | `provider_limited` | 33 × "Provider unsupported", named aspect by aspect |
+| credentials without access (403) | `partial_access` | 33 × "Access denied reading …" |
+| an endpoint that answers | `reviewed` | `[Good] Not public (policy verdict + ACL check)` |
+
+The clean verdict states its own basis, and `_unsupported_findings` even covers
+the unexpected-error case with a comment that reads like the lesson v0.70.0 had
+to learn the hard way: a read error "is NOT 'no problem'".
+
+`e2e/review.spec.ts` (3 tests) pins it. Pinning good behaviour is worth doing
+precisely because the survey shows how quietly this property is lost: the data
+was honest there too, and one collapsed branch one level up turned "could not
+check" into "nothing wrong".
+
+### Fixed — the release shipped placeholder notes without complaining
+
+`release.yml` fell back to `See [CHANGELOG.md](CHANGELOG.md).` when the version
+had no CHANGELOG section — pointing at a file that, by definition, did not
+document the release. **v0.70.0 shipped exactly that way**, and nothing anywhere
+said so. A missing section is always an authoring mistake and is trivially
+fixable *before* the tag exists, so the release is the right thing to stop. It
+now fails with a message naming the missing section.
+
+### Changed — a race detector that failed without evidence
+
+`test_many_concurrent_pairs_lose_no_audit_or_call_row` failed once on CI
+(239/240) and has not reproduced in **34 local runs**, including six parallel
+copies under contention. Three candidate mechanisms were measured and
+**disproven**: the test is faithful to production (the SDK gives each concurrent
+sync tool body its own thread — measured, two distinct thread ids, both off the
+event loop); a read racing a commit on the shared connection does not raise (0
+errors in 4000 rounds); and leaked fixtures were ruled out on a clean sidecar.
+
+The failure remains **unexplained**. Rather than theorise a fourth time, the
+detector now captures every invocation's return value and asserts none raised or
+returned an error, so the next occurrence names the dead call and carries its
+message instead of printing `239 == 240`.
+
+### Checks
+
+`pytest -q` 1323 passed · `ruff check app` clean · `vitest run` 236 passed ·
+`playwright test` 117 passed · `tsc --noEmit` and `npm run build` clean · CI 7/7.
+
+## [0.70.0] - 2026-08-08
+
+_"No publicly exposed buckets detected" was also what the survey said when it
+never looked._
+
+Documented after the fact: v0.70.0 shipped with placeholder release notes
+because this section was missing at tag time. That gap is what the v0.71.0
+release-workflow fix above now prevents.
+
+### Fixed — a clean bill of health for a check that never ran
+
+The account survey's public-exposure line is not a UI string: it lands in the
+run's `final_summary`, the agent reads it, and narrates it to the user as a
+security conclusion.
+
+It had **two** branches — exposed, or "No publicly exposed buckets detected" —
+and none for *could not determine*, so a bucket whose policy/ACL probes never
+**answered** fell into the reassuring one. Measured in a browser against four
+endpoints; three produced the identical verdict:
+
+| endpoint | exposure probes | verdict (before) |
+| --- | --- | --- |
+| minimal S3-compatible (`501 NotImplemented`) | **never ran** | "No publicly exposed buckets detected." |
+| AWS creds without `s3:GetBucketPolicyStatus` (403) | **never ran** | "No publicly exposed buckets detected." |
+| full AWS, genuinely private | ran | "No publicly exposed buckets detected." |
+| full AWS, one bucket public | ran | "PUBLIC EXPOSURE: 1 bucket(s)…" |
+
+The first two are not corner cases. MinIO, Ceph and garage — the S3-compatible
+systems this product exists to diagnose — answer 501 to most bucket-config
+sub-resources, and a least-privilege AWS role routinely lacks
+`s3:GetBucketPolicyStatus`. **Rule 18** is exactly this: a capability gap is
+reported, never silently resolved into a verdict.
+
+`account_tools` already modelled it honestly — `publicly_exposed` is `None` when
+the probes do not both answer. The collapse was one level up. `exposure_note()`
+now has three outcomes, names the buckets and the reason, publishes a
+warning-severity finding, and does not let the severe case swallow a remaining
+gap.
+
+### Added — the agent's heavy path, end to end
+
+Of 43 agent tools, four had ever run end to end. `e2e/survey.spec.ts` (6 tests)
+adds the stateful ones and **found nothing else broken**: `load_tools`
+progressive disclosure, `survey_account` spawning a real run,
+`query_account_profile` answering from the persisted profile with no new S3
+calls and no raw keys, and — verified in a browser for the first time —
+CLAUDE.md's rule that an agent-invoked run **never surfaces as a run card**.
+
+`e2e/fake-s3.ts` grew realistic sub-resource behaviour (`full` / `unsupported` /
+`denied`, per-bucket `policyStatus` and ACL, and the 404 codes AWS really
+returns for unset configuration).
+`tests/test_v070_exposure_undetermined.py` (10 tests) pins the branch against the
+**production** function.
+
+### Fixed — the E2E harness now fails loudly when a stray sidecar owns the port
+
+A sidecar leaked from an interrupted run held the port; later runs talked to that
+stranger while the state file sat empty, so `seedSession`'s bare `JSON.parse`
+threw and exactly the four seeding specs failed with `Unexpected end of JSON
+input`. The guard read `exited` at a single instant — a race — so it now confirms
+**identity, not timing**: our sidecar creates `app.db` in the data dir we just
+made for it, and a stranger never touches it.
+
 ## [0.69.0] - 2026-08-08
 
 _The settings drawer again — v0.68.0 fixed how its controls are NAMED; this is

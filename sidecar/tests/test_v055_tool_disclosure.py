@@ -506,10 +506,20 @@ def test_many_concurrent_pairs_lose_no_audit_or_call_row(conn):
         return real_list_all(*a, **kw)
 
     cloud_repo.list_all = blocking_list_all
+    # What each invocation actually RETURNED. The assertions below count rows; a
+    # count tells you a call died but not which one or why, and this test has
+    # failed once on CI (239/240) with no reproduction in 34 local runs — three
+    # candidate mechanisms measured and disproven, including the two obvious
+    # ones (the SDK does give each concurrent body its own thread; a read racing
+    # a commit on the shared connection does not raise in 4000 rounds). So
+    # capture the evidence rather than theorise again: the next failure names the
+    # call and carries its message.
+    returns: list = []
     try:
         async def pair():
-            await asyncio.gather(lp.on_invoke_tool(_Ctx(), "{}"),
-                                 lp.on_invoke_tool(_Ctx(), "{}"))
+            returns.extend(await asyncio.gather(lp.on_invoke_tool(_Ctx(), "{}"),
+                                                lp.on_invoke_tool(_Ctx(), "{}"),
+                                                return_exceptions=True))
 
         for _ in range(rounds):
             barrier.reset()
@@ -518,6 +528,12 @@ def test_many_concurrent_pairs_lose_no_audit_or_call_row(conn):
         cloud_repo.list_all = real_list_all
 
     expected = rounds * 2
+    raised = [r for r in returns if isinstance(r, BaseException)]
+    assert not raised, f"{len(raised)} invocation(s) raised, first: {raised[0]!r}"
+    # A tool that fails returns an error STRING rather than raising; a healthy
+    # `list_providers` always returns its JSON payload.
+    errored = [r for r in returns if isinstance(r, str) and '"providers"' not in r]
+    assert not errored, f"{len(errored)} call(s) returned an error, first: {errored[0][:300]!r}"
     done = [a for a in activity if a.get("status") != "started"]
     calls = conn.execute("SELECT count(*) FROM tool_calls WHERE session_id = 's1'").fetchone()[0]
     audits = conn.execute(

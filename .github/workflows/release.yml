@@ -69,7 +69,18 @@ jobs:
             /^## \[/ { if (found) exit; if (index($0, v) == 1) { found=1; next } }
             found { print }
           ' CHANGELOG.md)"
-          [ -z "$(printf "%s" "$CHANGES" | tr -d "[:space:]")" ] && CHANGES="See [CHANGELOG.md](CHANGELOG.md)."
+          # FAIL, don't paper over it. This used to fall back to "See
+          # CHANGELOG.md" — which pointed at a file that, by definition, did not
+          # document the version being released. v0.70.0 shipped that way: a real
+          # release with placeholder notes, and nothing anywhere said so. The
+          # missing section is always an authoring mistake, and it is trivially
+          # fixable BEFORE the tag exists, so the release is the right thing to
+          # stop.
+          if [ -z "$(printf "%s" "$CHANGES" | tr -d "[:space:]")" ]; then
+            echo "::error::CHANGELOG.md has no '## [$VER_NO_V]' section, so this release" \
+                 "would ship with placeholder notes. Add the section and re-dispatch." >&2
+            exit 1
+          fi
 
           INSTALL="### Install
 
