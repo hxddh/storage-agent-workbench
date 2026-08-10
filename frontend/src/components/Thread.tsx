@@ -42,6 +42,18 @@ import { answerGist } from "../answerGist";
 import { inferDatasetType } from "../datasetType";
 import { FindBar } from "./FindBar";
 
+/** Frames a scroll-to-bottom run may spend chasing a thread that is still
+ *  laying itself out (~1.5s at 60fps). A ceiling, not a target: a session of
+ *  short answers settles in 2-3 frames. Counted in frames rather than
+ *  milliseconds so a busy main thread gets the same number of CHANCES to
+ *  correct, not the same amount of clock. */
+const AUTOSCROLL_FRAME_BUDGET = 90;
+/** Consecutive frames at an unchanged scrollHeight that count as "settled".
+ *  One is not enough — a table or a collapsed turn can resolve a frame after
+ *  the item around it did, and stopping there is precisely the short landing
+ *  this replaces. */
+const AUTOSCROLL_SETTLED_FRAMES = 3;
+
 type Item =
   | {
       kind: "message";
@@ -164,7 +176,6 @@ export function Thread({
   // Monotonic reload token: a stale in-flight reload must never overwrite a newer
   // one for the same session (F2). Captured at call start, checked after await.
   const reloadSeqRef = useRef(0);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   // Composer file attachment (dataset for inventory/access-log analysis). type is
   // auto-inferred from the extension; null means "ask" (show the 2-option chip).
@@ -604,17 +615,83 @@ export function Thread({
   // used to be invisible: you scrolled up to re-read a tool result, the answer
   // kept growing below, and nothing told you so or offered a way back.
   const [pinned, setPinned] = useState(true);
+  // Non-null while the THREAD is driving its own scroll (see scrollToBottom).
+  const autoScrollRef = useRef<number | null>(null);
+  const autoBudgetRef = useRef(0);
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
+    // A convergence run emits scroll events of its own, and mid-run the thread
+    // is by definition not yet at the bottom. Measuring pin state from those is
+    // exactly how the app used to unpin the user it was scrolling FOR.
+    if (autoScrollRef.current !== null) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     pinnedRef.current = atBottom;
     setPinned((was) => (was === atBottom ? was : atBottom));
   };
+
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollRef.current !== null) cancelAnimationFrame(autoScrollRef.current);
+    autoScrollRef.current = null;
+    autoBudgetRef.current = 0;
+  }, []);
+
+  /**
+   * Go to the newest message and keep correcting until the thread stops growing.
+   *
+   * `scrollIntoView({ behavior: "smooth" })` animates toward a target measured
+   * when it STARTS. A thread of real answers is still discovering its own
+   * height at that moment — long markdown, tables and collapsed turns all land
+   * after the first layout — so the animation finishes short and never corrects.
+   * Measured on a 60-turn session of realistically-sized answers: opening it
+   * settled 1530px (2.7 viewports) above the newest message and stayed there,
+   * and clicking the "jump to latest" button built to rescue exactly that ended
+   * up 1717px away — FURTHER than where it started. Chasing a bottom that keeps
+   * receding, through regions the browser had not painted yet, is what the bug
+   * report "一直玩下拉，就会无限白屏" describes.
+   *
+   * So: jump, re-measure next frame, jump again, until the height holds still
+   * across a few frames or the frame budget runs out. Bounded by frames rather
+   * than by wall-clock, so it cannot spin, and idempotent — a stream calling it
+   * on every delta just extends the budget of the run already going.
+   */
+  const scrollToBottom = useCallback(() => {
+    if (!scrollRef.current) return;
+    autoBudgetRef.current = AUTOSCROLL_FRAME_BUDGET;
+    if (autoScrollRef.current !== null) return; // one run is enough
+    let last = -1;
+    let stable = 0;
+    const step = () => {
+      const node = scrollRef.current;
+      if (!node) {
+        autoScrollRef.current = null;
+        return;
+      }
+      node.scrollTop = node.scrollHeight;
+      stable = node.scrollHeight === last ? stable + 1 : 0;
+      last = node.scrollHeight;
+      if (stable >= AUTOSCROLL_SETTLED_FRAMES || --autoBudgetRef.current <= 0) {
+        autoScrollRef.current = null;
+        pinnedRef.current = true;
+        setPinned(true);
+        return;
+      }
+      autoScrollRef.current = requestAnimationFrame(step);
+    };
+    autoScrollRef.current = requestAnimationFrame(step);
+  }, []);
+
+  // A real scroll gesture hands control straight back, so following a stream
+  // never fights someone scrolling up to re-read a tool result. The gesture's
+  // own scroll event then re-measures the pin state through `onScroll`.
+  const releaseToUser = useCallback(() => stopAutoScroll(), [stopAutoScroll]);
+
+  useEffect(() => stopAutoScroll, [stopAutoScroll]);
+
   const jumpToLatest = () => {
     pinnedRef.current = true;
     setPinned(true);
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    scrollToBottom();
   };
 
   // Branch a new investigation from one message (v0.61.0). The whole-session
@@ -682,8 +759,8 @@ export function Thread({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   useEffect(() => {
-    if (pinnedRef.current) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [items.length, proposals.length, pending, streamText?.length, streamTools.length]);
+    if (pinnedRef.current) scrollToBottom();
+  }, [items.length, proposals.length, pending, streamText?.length, streamTools.length, scrollToBottom]);
 
   const send = () => {
     if (busy || uploading) return;
@@ -986,7 +1063,14 @@ export function Thread({
             </div>
           </header>
 
-          <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-auto px-6 py-7">
+          <div
+            ref={scrollRef}
+            onScroll={onScroll}
+            onWheel={releaseToUser}
+            onTouchMove={releaseToUser}
+            onKeyDown={releaseToUser}
+            className="flex-1 overflow-auto px-6 py-7"
+          >
             {findOpen && (
               <FindBar
                 query={findQuery}
@@ -1234,7 +1318,6 @@ export function Thread({
                   )}
                 </div>
               )}
-              <div ref={bottomRef} />
             </div>
           </div>
 

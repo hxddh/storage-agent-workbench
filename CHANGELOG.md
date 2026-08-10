@@ -6,6 +6,74 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.73.0] - 2026-08-09
+
+_Scrolling down never arrived._
+
+### Fixed — opening a conversation left you three screens above the newest message
+
+Reported from the shipped app: *"界面一直玩下拉。就会无限白屏"* — you keep scrolling
+down, you never get there, and what you scroll through is blank.
+
+The thread went to the bottom with a one-shot
+`scrollIntoView({ behavior: "smooth" })`. A smooth scroll animates toward a
+target measured **when it starts**. A thread of real answers is still working
+out its own height at that moment — long markdown, tables and collapsed turns
+all resolve after the first layout — so the animation finished short of a bottom
+that had since moved, and never corrected. Worse, the scroll events it emitted
+went through the thread's own `onScroll`, which measures "am I at the bottom?"
+— mid-flight the answer is no, so **the app unpinned the very user it was
+scrolling for**, and the follow-up that would have fixed it never ran.
+
+Measured on a 40-turn session of realistically-sized answers:
+
+| | before | after |
+| --- | --- | --- |
+| distance from the newest message after opening | **1530 px** (2.7 viewports), stable at 3 s | **0 px** |
+| after clicking "jump to latest" | **1717 px** — *further away than before the click* | **0 px** |
+| "jump to latest" offered after landing | yes | no |
+
+Going to the bottom now converges instead of animating once: jump, re-measure
+next frame, jump again, until the height holds still for three consecutive
+frames or a 90-frame budget runs out. It is bounded by frames rather than by
+clock, so it cannot spin, and a real scroll gesture (`wheel` / `touchmove` /
+`keydown`) hands control straight back — following the conversation must not
+become a trap for someone scrolling up to re-read a tool result.
+
+### Fixed — `content-visibility` on thread items, removed on measurement
+
+`.thread-item` carried `content-visibility: auto` with
+`contain-intrinsic-size: auto 96px`, added to skip layout/paint for off-screen
+items in a long history. Both halves failed measurement:
+
+- **96 px does not fit the content.** Real items are bimodal — a collapsed old
+  turn measures 36–65 px, an expanded answer with a table measured 1616 px, a
+  45× spread no single constant covers. On a thread of realistic answers the
+  scroll container reported 6310 px and grew to 9927 px as items were actually
+  laid out, so the scrollbar under-reported the conversation by **52%** until
+  you had scrolled through all of it — which is also what made the bottom
+  recede while you chased it.
+- **It bought nothing.** Scripted scroll over 400 items / 34622 px — precisely
+  the case it was written for — measured p50 16.6 ms either way, with the tail
+  *worse* with it on: p90 19.6 vs 17.9 ms, p99 29.8 vs 27.4 ms, max 31.7 vs
+  27.9 ms. Same at 60 items. The thread already bounds its own DOM by paging
+  ("load earlier"), which is the optimization that does work.
+
+### Why the suite could not see either one
+
+`longthread.spec.ts` opens a 30-turn session and passes, because its seeded
+answers are one line each — 36–65 px, small enough that the container barely
+grows after first layout. Every scroll assumption in the app had only ever been
+exercised against content that never moves. The seeder now takes a `"tall"`
+shape (heading, paragraphs, a 24-row table, a list) and `landing.spec.ts` drives
+it; all three of its cases fail against the previous code.
+
+### Verification
+
+- `frontend`: 124/124 E2E (Playwright, real sidecar + production bundle),
+  236/236 unit, `tsc --noEmit` and the E2E project typecheck clean.
+- `sidecar`: 1333/1333 pytest, `ruff check app` clean.
+
 ## [0.72.0] - 2026-08-09
 
 _The answer streamed, then the turn persisted nothing._
