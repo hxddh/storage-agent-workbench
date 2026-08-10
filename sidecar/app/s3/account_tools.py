@@ -79,7 +79,13 @@ def get_bucket_config_snapshot(
         http = resp.get("ResponseMetadata", {}).get("HTTPStatusCode")
         if code in ct._DENIED_CODES or http == 403:
             head_status = ct.ACCESS_DENIED
-        elif code in ct._UNSUPPORTED_CODES or http == 501:
+        # 405 counts too, not just 501. A gateway that rejects an unimplemented
+        # operation with a code-less `405 Method Not Allowed` is the same
+        # capability gap, and every other status in this snapshot already
+        # treated it as one — measured on a code-less 405, head_bucket came back
+        # `error` while versioning/encryption/lifecycle/logging in the SAME
+        # snapshot came back `provider_unsupported` for the identical response.
+        elif code in ct._UNSUPPORTED_CODES or http in (501, 405):
             head_status = ct.PROVIDER_UNSUPPORTED
         elif code in ("PermanentRedirect", "301") or http == 301:
             # A healthy bucket in ANOTHER region answers HeadBucket with a 301

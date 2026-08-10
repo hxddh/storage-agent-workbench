@@ -6,6 +6,75 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.74.0] - 2026-08-10
+
+_What the tools said about providers they had never actually reached._
+
+### Fixed — an object nobody could inspect was reported as cleanly deletable
+
+`get_object_lock_status` answers *"why can't I delete this object?"*. On a hard
+error it carried a guard meant to flip its optimistic defaults to `unknown`,
+with a comment saying that reporting `retention_status: "none"` would read as
+"exists and is cleanly deletable" — the exact wrong answer for a mistyped key.
+
+The guard was dead. It tested `"retention_mode" not in result` for a key that
+`base` seeds as `None` on every call, so the condition was always false and the
+flip never ran. Measured, before the fix:
+
+| provider response | reported |
+| --- | --- |
+| `NoSuchKey` — a mistyped key | **`retention_status: "none"`** |
+| `NoSuchBucket` — the wrong bucket | **`retention_status: "none"`** |
+| `InternalError` 500 — a provider fault | **`retention_status: "none"`** |
+| a bare gateway error | **`retention_status: "none"`** |
+
+Now `unknown`, and the guard tests the value rather than the key's presence. A
+genuinely determined "no lock configured" is still `none` — that distinction is
+the whole point.
+
+### Fixed — a capability gap with no error code was called a hard failure
+
+Rule 18 says a provider capability gap is `Provider unsupported`, never a hard
+failure. `_is_unsupported` implements that as *code* `NotImplemented`/
+`MethodNotAllowed`/… **or** a bare HTTP 501/405 — because an nginx or CDN in
+front of an S3-compatible service answers with an HTML body and no S3 XML, so
+botocore has no `<Code>` to parse.
+
+Nine call sites used that helper. Three did not:
+
+- `get_object_lock_status`, both the retention and the legal-hold branch, matched
+  the code set only. A code-less 501/405 became a hard failure.
+- the account survey's `head_bucket` checked `http == 501` and not 405 — so one
+  response produced two verdicts inside a single snapshot: `head_bucket_status:
+  "error"` while `versioning` / `encryption` / `lifecycle` / `logging` all said
+  `provider_unsupported` for the identical 405.
+
+### Fixed — a failure that said nothing at all
+
+A code-less gateway failure left botocore with neither a code nor a message, and
+the tool returned `error_code: ""`, `error_message_sanitized: ""` — a failure the
+agent cannot explain and the user cannot act on. The message now names the HTTP
+status.
+
+`error_code` itself is deliberately **not** synthesized: its emptiness is
+load-bearing. `test_credentials` refuses to call a code-less 403 "valid
+credentials" precisely because the code is falsy, and filling it in from the
+status would have silently inverted that. A test pins it.
+
+### Why the suite could not see any of it
+
+Every existing test for these paths feeds a **coded** error through a Stubber
+(`NotImplemented` + 501) — the one shape that cannot expose a missing
+HTTP-status fallback. And the existing hard-error test asserted only
+`success is False` and the error code, never the statuses, so the
+"cleanly deletable" answer sat under a passing test. The new tests drive the
+real client against a real socket answering like a gateway; 8 of the 13 fail
+against the previous code.
+
+### Verification
+
+- `sidecar`: 1346/1346 pytest (1333 + 13 new), `ruff check app` clean.
+
 ## [0.73.0] - 2026-08-09
 
 _Scrolling down never arrived._

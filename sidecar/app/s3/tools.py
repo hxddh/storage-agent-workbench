@@ -102,10 +102,23 @@ def _client_error_fields(exc: ClientError) -> dict[str, Any]:
     resp = exc.response or {}
     err = resp.get("Error", {})
     meta = resp.get("ResponseMetadata", {})
+    status = meta.get("HTTPStatusCode")
+    code = err.get("Code")
+    message = redact_text(str(err.get("Message") or ""))
+    # A gateway that answers without an S3 XML body leaves botocore with neither
+    # a code nor a message, and the tool then reported a failure that said
+    # literally nothing: `error_code: "", error_message_sanitized: ""`. Name the
+    # HTTP status instead so the agent has something to reason from and the user
+    # sees a cause. `error_code` itself is deliberately NOT synthesized — its
+    # emptiness is load-bearing (test_credentials refuses to call a CODE-LESS
+    # 403 "valid credentials" precisely because the code is falsy), so filling
+    # it in would silently invert that decision.
+    if not code and not message and status:
+        message = f"HTTP {status} from the endpoint, with no S3 error code or message."
     return {
-        "error_code": err.get("Code"),
-        "error_message_sanitized": redact_text(str(err.get("Message") or "")),
-        "status_code": meta.get("HTTPStatusCode"),
+        "error_code": code,
+        "error_message_sanitized": message,
+        "status_code": status,
         **_diag_meta(meta),
     }
 
@@ -1280,10 +1293,9 @@ def get_object_lock_status(
             result["retain_until_date"] = until.isoformat() if hasattr(until, "isoformat") else until
             result["retention_status"] = "active"
     except ClientError as exc:
-        code = (exc.response or {}).get("Error", {}).get("Code")
         if _is_no_lock(exc):
             result["retention_status"] = "none"
-        elif code in _UNSUPPORTED_CODES:
+        elif _is_unsupported(exc):
             result["retention_status"] = PROVIDER_UNSUPPORTED
         else:
             hard_error = _client_error_fields(exc)
@@ -1296,10 +1308,9 @@ def get_object_lock_status(
         status = (resp.get("LegalHold") or {}).get("Status")
         result["legal_hold_status"] = status.lower() if isinstance(status, str) else "none"
     except ClientError as exc:
-        code = (exc.response or {}).get("Error", {}).get("Code")
         if _is_no_lock(exc):
             result["legal_hold_status"] = "none"
-        elif code in _UNSUPPORTED_CODES:
+        elif _is_unsupported(exc):
             result["legal_hold_status"] = PROVIDER_UNSUPPORTED
         elif hard_error is None:
             hard_error = _client_error_fields(exc)
@@ -1318,12 +1329,23 @@ def get_object_lock_status(
         # mistyped key. Statuses a probe actually determined are kept; the
         # optimistic defaults flip to "unknown", and the call is not a success.
         result["success"] = False
-        if result["retention_status"] == "none" and "retention_mode" not in result:
+        # `"retention_mode" not in result` was ALWAYS false: the key is seeded
+        # into `base` as None, so it is present on every call and this guard
+        # never fired. Measured consequence — for a mistyped key (NoSuchKey), a
+        # wrong bucket, a provider 500 or a code-less gateway, the tool returned
+        # `retention_status: "none"`, i.e. "no retention, cleanly deletable",
+        # about an object it never managed to inspect. Test for the VALUE, which
+        # is what "we never learned a mode" actually means.
+        if result["retention_status"] == "none" and result.get("retention_mode") is None:
             result["retention_status"] = "unknown"
         if result["legal_hold_status"] == "none":
             result["legal_hold_status"] = "unknown"
         result["error_code"] = hard_error.get("error_code")
         result["error_message_sanitized"] = hard_error.get("error_message_sanitized")
+        # Carry the HTTP status too: for a code-less gateway failure it is the
+        # only thing that identifies the failure at all.
+        if hard_error.get("status_code") is not None:
+            result["status_code"] = hard_error.get("status_code")
     return result
 
 
