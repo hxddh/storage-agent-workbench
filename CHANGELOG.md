@@ -6,6 +6,70 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.76.0] - 2026-08-11
+
+_Every read-only tool, against every way a real endpoint misbehaves._
+
+No product code changed in this release. It exists so that the class of defect
+v0.74.0 fixed cannot come back.
+
+### Added — a real-socket endpoint fixture and a tool × failure-shape matrix
+
+v0.74.0 fixed three defects found by pointing the real client at a real socket
+for one afternoon. All three lived in code with substantial unit coverage —
+`get_object_lock_status` alone had 21 test references — because every existing
+test feeds a **coded** error through a Stubber, which constructs botocore's
+parsed error dict directly and therefore always hands the tool a well-formed
+`<Code>`. That is the one shape which cannot expose a missing HTTP-status
+fallback, a dead guard, or an empty error report.
+
+`tests/fake_endpoint.py` serves seven shapes that real deployments produce:
+
+| shape | why it is different |
+| --- | --- |
+| code-less `501` / `405` | an nginx / CDN / gateway answering with an HTML body — botocore parses no `<Code>` |
+| code-less `403` | auth failure and permission denial are genuinely indistinguishable; the tool must not guess |
+| `200` with an empty body | a plain web server at the wrong URL; parses as valid-but-empty for nearly every operation |
+| truncated XML `200` | raises `ParseError`, **not** `ClientError` — a branch most tools never exercise |
+| HTML `500` | a retryable failure with no S3 payload |
+| connection reset | not a `ClientError` at all |
+
+`tests/test_v076_endpoint_matrix.py` runs **18 read-only tools × 7 shapes = 126
+cases**, asserting invariants rather than per-tool expectations:
+
+| # | invariant |
+| --- | --- |
+| I1 | a tool never raises — a failure is a returned shape, not a traceback |
+| I2 | a failure names its cause; an empty code *and* empty message *and* no status is not a report |
+| I3 | a failure never leaves a determined verdict standing |
+| I4 | no path echoes an access key, secret key or session token |
+| I5 | a capability gap is never dressed up as a *successful* positive finding |
+
+I3 is the generalization of v0.74.0's worst bug: `retention_status: "none"` —
+"no retention, cleanly deletable" — about an object the call never reached.
+
+A meta-test pins the matrix against the agent's own `_TOOL_GROUPS` table, so
+adding a tool to `object_forensics` or `storage_pileup` without adding it here
+fails rather than leaving a silent hole.
+
+### Verified against the bug it exists to prevent
+
+A passing suite proves nothing on its own. Re-introducing the three v0.74.0
+defects makes the matrix fail on **6 of the 7 shapes** — including
+`truncated_xml`, `html_500` and `reset`, three that were never probed by hand
+when those defects were found and fixed. Restored, it is green again.
+
+### Findings
+
+The matrix reports **no new defects** against current code. That is the result,
+stated plainly rather than dressed up: its value is the revert experiment above
+and the coverage it makes permanent, not a fresh bug count.
+
+### Verification
+
+- `sidecar`: 1474/1474 pytest (1346 + 128 new), `ruff check` clean.
+- `frontend`: untouched this release; not re-run locally.
+
 ## [0.75.0] - 2026-08-11
 
 _The answer kept its shape._
