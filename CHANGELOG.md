@@ -6,6 +6,43 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Fixed — `openai-agents` 0.20.0 was never broken; the test double was
+
+v0.77.0 took 0.20.0, measured it, and reverted it: `analyze.spec.ts` went 5/5
+fail on 30s timeouts, the full Playwright suite 27 failed / 101 passed in 15.2
+minutes, and "the cause inside 0.20.0 is not yet identified". The cause was not
+inside 0.20.0.
+
+Driving one real turn through a live uvicorn + SSE sidecar on 0.20.0 — no
+browser, so the sidecar's own output was visible — the turn completed normally.
+The browser run's page snapshot then showed what the timeout had hidden, sitting
+in an error banner on the start surface:
+
+> Model reused a completed tool call ID for a different invocation. Use a unique
+> call ID for each tool invocation.
+
+`e2e/fake-model.ts` emitted the constant `id: "call_fake_1"` for **every** tool
+call, so a two-step turn reused one completed call's ID for a different tool. No
+real model does that. 0.20.0 added a check for it
+(`agents/run_internal/tool_planning.py`) and correctly refused the turn; 0.19.4
+had no such check and let the malformed conversation through. The symptom read
+as "the turn never starts" because the failure lands before the thread leaves
+the start surface, with the question still in the composer.
+
+The double now mints a unique ID per invocation. With that one-line change and
+nothing else:
+
+| | `analyze.spec.ts` | full Playwright suite | sidecar suite |
+| --- | --- | --- | --- |
+| **0.20.0**, before | 5/5 fail | 27 failed / 101 passed, 15.2 min | 1481 passed |
+| **0.20.0**, after | **5/5 pass** | **128/128, 3.3 min** | **1481 passed** |
+| 0.19.4, after (no regression) | 5/5 pass | 128/128, 3.3 min | 1481 passed |
+
+`requirements.lock` therefore moves to `openai-agents==0.20.0`. The three SDK
+facts v0.55.0's tool gating depends on — `get_all_tools` called inside the run
+loop, `is_enabled` honoured, `FunctionTool` unfrozen — are still asserted by
+`test_v056_deps_and_detail.py` and still hold.
+
 ### Fixed — the tool call that died on a row another thread was reading
 
 `test_many_concurrent_pairs_lose_no_audit_or_call_row` had been failing on CI a

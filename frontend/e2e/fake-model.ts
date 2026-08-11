@@ -44,13 +44,32 @@ export function textTurn(text: string): string[] {
   ];
 }
 
+/**
+ * A tool call ID has to be unique per invocation, the way a real model's is.
+ *
+ * This was a constant `"call_fake_1"`, which no real model would ever send: a
+ * two-step turn then reused one completed call's ID for a different tool.
+ * openai-agents 0.20.0 added a check for exactly that and refuses the turn with
+ * "Model reused a completed tool call ID for a different invocation", which is
+ * the SDK being right about a broken double — the app was never involved. It
+ * cost the 0.20.0 upgrade a release (see CHANGELOG 0.77.0) because the symptom
+ * read as "the turn never starts": the error renders as a banner on the start
+ * surface with the question still in the composer.
+ */
+let callSeq = 0;
+
 /** A single function call. */
 export function toolTurn(name: string, args: Record<string, unknown>): string[] {
   return [
     chunk({
       role: "assistant",
       tool_calls: [
-        { index: 0, id: "call_fake_1", type: "function", function: { name, arguments: JSON.stringify(args) } },
+        {
+          index: 0,
+          id: `call_fake_${++callSeq}`,
+          type: "function",
+          function: { name, arguments: JSON.stringify(args) },
+        },
       ],
     }),
     chunk({}, "tool_calls"),
