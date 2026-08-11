@@ -6,6 +6,47 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Fixed — the tool call that died on a row another thread was reading
+
+`test_many_concurrent_pairs_lose_no_audit_or_call_row` had been failing on CI a
+few times a release — always the same way, never locally, and with nothing to go
+on:
+
+```
+AssertionError: 1 call(s) returned an error, first: 'An error occurred while
+running the tool. Please try again. Error: tuple index out of range'
+```
+
+That message is the Agents SDK's `default_tool_error_function`, which
+stringifies whatever the tool body raised and discards the traceback. Handing
+the test a `failure_error_function` that keeps the stack named the throw site on
+the first reproduction: `row["id"]` in `_row_to_out`, on a **torn row**.
+
+Two tool bodies share the turn's one connection — the SDK dispatches each sync
+tool with `asyncio.to_thread` — and two threads stepping statements on a single
+`sqlite3.Connection` can hand back a `sqlite3.Row` whose description carries
+more columns than the row has values. `sqlite3.threadsafety` is 3, but that says
+the SQLite *library* is serialized; CPython's per-connection bookkeeping is not.
+It reproduces with no app code involved, and only on Pythons newer than the
+developer machines — which is the whole reason it lived in CI. Tears per 6000
+forced-concurrent rounds on one in-memory connection:
+
+| | 3.11 | 3.12 (CI) | 3.13 |
+| --- | --- | --- | --- |
+| write under the lock, read unguarded (the shipped code) | 0 | 1 | 2 |
+| **two pure reads, no writer at all** | 0 | **3** | **10** |
+
+The second row is the one that matters: `db.WRITE_LOCK` guarded writes, so no
+amount of write locking could have closed this. `db.connect()` now returns a
+`SerializedConnection` that runs **every** statement under the lock — renamed
+`db.DB_LOCK`, since it is no longer only about writes — and drains the statement
+before releasing it, so no caller can be left fetching rows outside the lock.
+Explicit `with db.DB_LOCK:` blocks stay: a per-statement lock cannot know that an
+INSERT and its commit belong together.
+
+The user-visible symptom was an agent told a read-only tool had failed when it
+had in fact succeeded, and an audit trail that quietly did not hold (rule 17).
+
 ## [0.77.0] - 2026-08-11
 
 _A count we were already making and throwing away — and an SDK upgrade that did

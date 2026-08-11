@@ -1,6 +1,6 @@
 """v0.59.0 — the write lock never reached the action and analysis tools.
 
-v0.55.0 introduced ``db.WRITE_LOCK`` because parallel tool calls share ONE
+v0.55.0 introduced ``db.DB_LOCK`` because parallel tool calls share ONE
 connection, and a connection has ONE transaction: thread A's ``commit()``
 commits B's half-written work, and B's own ``commit()`` then raises
 ``cannot commit - no transaction is active``. The agent sees a FAILED call for
@@ -43,7 +43,7 @@ import threading
 
 import pytest
 
-from app import migrations
+from app import db, migrations
 from app.agent_runtime import session_analysis_tools, session_memory_tools
 
 
@@ -58,10 +58,13 @@ class _Ctx:
 
 @pytest.fixture()
 def conn():
-    # check_same_thread=False mirrors app/db.py, and it matters here: the SDK
-    # dispatches a sync tool with asyncio.to_thread, so tool bodies genuinely run
-    # off the creating thread — which is what this test reproduces.
-    c = sqlite3.connect(":memory:", check_same_thread=False)
+    # Mirrors app/db.py, and it matters here: the SDK dispatches a sync tool with
+    # asyncio.to_thread, so tool bodies genuinely run off the creating thread —
+    # which is what this test reproduces. db.serialized is the other half of that
+    # mirror (v0.78.0): without it the concurrent bodies below can tear each
+    # other's rows, a failure that has nothing to do with the commit grouping
+    # this file is about.
+    c = db.serialized(sqlite3.connect(":memory:", check_same_thread=False))
     c.row_factory = sqlite3.Row
     migrations.apply_migrations(c)
     c.execute("INSERT INTO sessions (id, title, created_at, updated_at) "
@@ -84,7 +87,7 @@ def _pair_tools(conn, activity):
 def _run_forced_pair(conn, rounds: int) -> tuple[int, list[str]]:
     """Drive a GUARDED write and an UNGUARDED commit into the same instant.
 
-    ``note_fact`` writes agent memory under db.WRITE_LOCK. ``list_uploaded_files``
+    ``note_fact`` writes agent memory under db.DB_LOCK. ``list_uploaded_files``
     writes an audit row and commits. Both are agent tools the model can call in
     one parallel step, and both run on the turn's single shared connection.
     """
@@ -182,7 +185,7 @@ def test_the_unguarded_commit_sites_are_gone():
     The behavioural tests above are probabilistic — they detect the race, but a
     lucky run could pass. This one is deterministic: it reads the source and
     fails if any `conn.commit()` in the agent-callable tool modules sits outside
-    a `with db.WRITE_LOCK:` block.
+    a `with db.DB_LOCK:` block.
     """
     import re
     from pathlib import Path
@@ -201,7 +204,7 @@ def test_the_unguarded_commit_sites_are_gone():
             indent = len(line) - len(line.lstrip())
             if depth is not None and line.strip() and indent <= depth:
                 depth = None
-            if "with db.WRITE_LOCK" in line:
+            if "with db.DB_LOCK" in line:
                 depth = indent
             if re.search(r"\bconn\.commit\(\)", line) and depth is None:
                 offenders.append(f"{name}:{lineno}")
