@@ -6,6 +6,72 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.75.0] - 2026-08-11
+
+_The answer kept its shape._
+
+Reported from the shipped app: *"输出格式不优雅了…表格没有了，内容很杂乱"* — the output
+stopped being tidy, a session's tables were gone, the content was a mess. Two
+separate causes.
+
+### Fixed — one unbreakable token dragged the whole thread sideways
+
+This product's prose is full of tokens with no break opportunity: object keys,
+`arn:aws:s3:::…/very/deep/prefix/name.json.gz`, endpoint URLs, presigned URLs,
+checksums. The prose container declared no `overflow-wrap`, so one of them set
+the paragraph's content width and the thread became horizontally scrollable.
+
+Measured at a 1280px viewport, on an answer containing a single 300-character
+token:
+
+| | before | after |
+| --- | --- | --- |
+| thread `scrollWidth` (column is 1036px) | **2881 px** | 1036 px |
+| prose elements overflowing their own column | 1 | 0 |
+| wide table still scrolls in its own box | yes | yes |
+
+Every answer had to be read by scrolling right, and a wide table was carried
+off-screen along with everything else — which is what "tables are gone, content
+is a mess" is from the reader's side. The container now sets `break-words` and
+`min-w-0`; the wide-table wrapper still scrolls in place, so the wrap is not paid
+for by flattening tables.
+
+**This was masked until v0.73.0, by v0.73.0's own subject.** `.thread-item`
+carried `content-visibility: auto`, which implies `contain: paint` — the overflow
+was being *clipped*, so the text was silently unreachable instead of visibly
+misplaced. Removing that (on its own measurements, for a different bug) exposed
+the real defect underneath. Re-adding the containment would only hide it again,
+and hiding an answer is worse than wrapping it. Verified both ways: with the
+containment restored the sideways scroll is 0, without it 1845px.
+
+### Fixed — tables an agent writes that the renderer dropped
+
+Measured by rendering a corpus of 32 real answer shapes and asking the DOM what
+came out: 27 produced a table, now 30. The two that still do not are the two
+that are not tables (a `===` separator, a header row with no pipes).
+
+- **A single-column table never parsed.** The separator test required a cell on
+  both sides of a pipe, and `| --- |` ends at the closing pipe with nothing
+  after it. "Which buckets are public?" is a one-column answer; its rows fell
+  through to paragraph text as literal `| acme-logs |` lines.
+- **A table inside a blockquote never parsed.** A quote's body was rendered as
+  one `<p>` per line, so any block inside it — table, list, code fence — came out
+  as literal text. It now goes through the shared recursive block renderer, the
+  same way list items already did.
+
+### Why the suites were green throughout
+
+jsdom has no layout, so the unit suite could not see an element overflow — the
+entire first half of this is invisible to it by construction. That half is now
+an E2E test (`e2e/layout.spec.ts`) that measures real geometry in a real
+browser, at two viewport widths; 3 of its 4 cases fail against the previous
+code, and 4 of the 15 new unit cases do.
+
+### Verification
+
+- `frontend`: 128/128 E2E, 251/251 unit, `tsc --noEmit` + E2E typecheck clean.
+- `sidecar`: untouched this release; not re-run locally.
+
 ## [0.74.0] - 2026-08-10
 
 _What the tools said about providers they had never actually reached._

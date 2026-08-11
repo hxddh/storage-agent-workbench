@@ -26,7 +26,26 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
   // something to navigate — see outlineOf.
   const outline = useMemo(() => outlineOf(blocks), [blocks]);
   return (
-    <div className="space-y-3 text-sm leading-[1.7] text-gray-200">
+    // `min-w-0` + `break-words`: this product's prose is FULL of tokens that
+    // contain no break opportunity — object keys, `arn:aws:s3:::…/very/deep/
+    // prefix/name.json.gz`, endpoint URLs, presigned URLs, checksums. Without an
+    // explicit `overflow-wrap`, one of them sets the paragraph's minimum content
+    // width and drags the whole thread sideways: measured at a 1280px viewport,
+    // a single 300-character token pushed the thread's scrollWidth to 2881px in
+    // a 1036px column, so every answer had to be read by scrolling right and
+    // wide tables were carried off-screen with it.
+    //
+    // `min-w-0` matters as much as the wrap: a flex/grid child defaults to
+    // `min-width: auto`, i.e. "never shrink below my content", which is what
+    // lets an unbreakable token win against the column in the first place.
+    //
+    // This was masked until v0.73.0. `.thread-item` carried
+    // `content-visibility: auto`, which implies `contain: paint` — the overflow
+    // was being CLIPPED, not fixed, so the text was silently unreachable rather
+    // than visibly misplaced. Removing that (on its own measurements) exposed
+    // the real defect underneath. Re-adding the containment would only hide it
+    // again, and hiding an answer is worse than wrapping it.
+    <div className="min-w-0 space-y-3 break-words text-sm leading-[1.7] text-gray-200">
       {outline.length > 0 && <Outline entries={outline} />}
       <Blocks blocks={blocks} />
     </div>
@@ -109,10 +128,13 @@ function Blocks({ blocks }: { blocks: Block[] }) {
                 key={i}
                 className="border-l-2 border-accent/40 bg-elevated/40 py-1.5 pl-3.5 pr-3 text-sm text-gray-400"
               >
+                {/* Parse the quoted body as blocks rather than as a run of
+                    bare paragraphs: a quote can contain a table, a list or a
+                    code fence, and rendering each line as a <p> turned a quoted
+                    table into literal `| a | b |` text. `Blocks` is already the
+                    shared recursive renderer — list items use it the same way. */}
                 <div className="space-y-1.5">
-                  {b.lines.map((ln, j) => (
-                    <p key={j}>{inline(ln)}</p>
-                  ))}
+                  <Blocks blocks={parseBlocks(b.lines.join("\n"))} />
                 </div>
               </blockquote>
             );
@@ -357,6 +379,22 @@ const cells = (line: string) =>
 
 const isHr = (line: string) => /^\s*([-*_])(\s*\1){2,}\s*$/.test(line);
 
+/** The `| --- | ---: |` row under a table's header.
+ *
+ * The old test was `/^\s*\|?[\s:|-]+\|[\s:|-]+$/`, which requires a cell on BOTH
+ * sides of a pipe and so could never match a ONE-column separator: `| --- |`
+ * ends at the closing pipe with nothing after it. A single-column table — the
+ * shape an agent produces for "which buckets are public?" — therefore failed to
+ * parse, and its rows fell through to paragraph text as literal `| acme-logs |`
+ * lines. Written out as a cell sequence instead, so column count is not part of
+ * the question. */
+const isTableSep = (line: string) => {
+  const t = line.trim();
+  // `-` rules out `| a | b |`; `|` rules out a plain `---` horizontal rule.
+  if (!t.includes("-") || !t.includes("|")) return false;
+  return /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/.test(t);
+};
+
 /** `1.` / `1)` / `-` / `*` / `+`, with the leading indent captured — the indent
  * is what decides nesting. */
 const ITEM_RE = /^(\s*)(?:([-*+])|(\d{1,9})[.)])\s+(.*)$/;
@@ -415,7 +453,7 @@ function parseBlocks(text: string, depth = 0): Block[] {
       continue;
     }
     // table: a pipe row followed by a separator row
-    if (line.includes("|") && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|[\s:|-]+$/.test(lines[i + 1]) && lines[i + 1].includes("-")) {
+    if (line.includes("|") && i + 1 < lines.length && isTableSep(lines[i + 1])) {
       flush();
       const headers = cells(line);
       const aligns = cells(lines[i + 1]).map(alignOf);
