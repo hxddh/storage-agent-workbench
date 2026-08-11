@@ -137,8 +137,29 @@ def test_a_genuine_zero_is_still_reported():
     assert snap["cached_input_tokens"] == 0
 
 
-def test_usage_stays_unavailable_when_nothing_was_reported():
+def test_tokens_stay_unavailable_when_nothing_was_reported():
+    """The TOKEN counts must read as unreported — never as a confident zero.
+
+    Sharpened in v0.77.0. This used to assert the whole snapshot was None, which
+    also threw away the request count. `requests` is not a provider figure: the
+    SDK counts the model calls it makes, so it is a real measurement even when
+    the endpoint reports no usage at all.
+    """
     u = _usage(input_tokens_details=SimpleNamespace(cached_tokens=0))
+    snap = sa._usage_snapshot(_result(u))
+    assert snap is not None
+    assert snap["requests"] == 1
+    # None, not 0: the renderer decides "were tokens reported?" by formatting
+    # them, and 0 formats as "0" — which would put "↑0 ↓0" on screen.
+    assert snap["input_tokens"] is None
+    assert snap["output_tokens"] is None
+    assert snap["total_tokens"] is None
+
+
+def test_nothing_at_all_is_still_nothing():
+    """No tokens AND no requests — an SDK too old to count them, or a turn that
+    never reached the model. There is no measurement to report."""
+    u = _usage(requests=0, input_tokens_details=SimpleNamespace(cached_tokens=0))
     assert sa._usage_snapshot(_result(u)) is None
 
 

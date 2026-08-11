@@ -92,4 +92,37 @@ describe("the footer", () => {
     });
     expect(screen.getByText(/1 tool calls/)).toBeTruthy();
   });
+
+  // --- model calls when the endpoint reports no tokens (v0.77.0) ------------
+
+  it("shows the model-call count when the endpoint reported no tokens", () => {
+    // Many OpenAI-compatible endpoints omit usage on streamed responses. The
+    // request count is not a provider figure — the SDK counts the calls it makes
+    // — so it survives, and it is the difference between a one-shot answer and a
+    // six-step investigation. Before v0.77.0 both rendered as a bare em dash.
+    draw({ durationMs: 2000, usage: { requests: 4 }, tools: [] });
+    expect(screen.getByText(/4 model calls/)).toBeTruthy();
+    expect(screen.getByTitle(/did not report token usage/i)).toBeTruthy();
+    // …and still no invented token figures.
+    expect(screen.queryByText("0")).toBeNull();
+  });
+
+  it("does not repeat the model-call count when tokens ARE reported", () => {
+    // With real token counts the row already says what the turn cost; the call
+    // count is in the expandable breakdown, and duplicating it is noise.
+    draw({ durationMs: 2000, usage: { requests: 4, input_tokens: 900, output_tokens: 120 }, tools: [] });
+    expect(screen.queryByText(/model calls/)).toBeNull();
+  });
+
+  it("shows no model-call count when there is none", () => {
+    draw({ durationMs: 2000, usage: { requests: 0 }, tools: [] });
+    expect(screen.queryByText(/model calls/)).toBeNull();
+  });
+
+  it("renders a turn whose ONLY measurement is its model calls", () => {
+    // No duration, no tools, no tokens — the row must still appear rather than
+    // collapsing to nothing, because a model call did happen.
+    const { container } = draw({ durationMs: null, usage: { requests: 2 }, tools: [] });
+    expect(container.textContent).toContain("2 model calls");
+  });
 });

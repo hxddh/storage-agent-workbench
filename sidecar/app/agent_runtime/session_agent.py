@@ -889,8 +889,23 @@ def _usage_snapshot(result: Any) -> dict[str, Any] | None:
             except (TypeError, ValueError):
                 pass
     # An endpoint that answered without usage yields a zeroed Usage object. That
-    # is "not reported", not "free" — report it as unavailable.
+    # is "not reported", not "free" — the TOKEN counts must read as unavailable.
     if out["total_tokens"] <= 0 and out["input_tokens"] <= 0 and out["output_tokens"] <= 0:
+        # …but the REQUEST count is ours, not the provider's: the SDK counts the
+        # model calls it made, so it is a real measurement even when the endpoint
+        # reports nothing. Measured against `FakeModel` (which omits `usage`, as
+        # many OpenAI-compatible endpoints do on streamed responses) for a turn
+        # of one tool step plus one answer step: openai-agents 0.19.4 reported
+        # `requests=0`, 0.20.0 reports `requests=2`. This used to return None and
+        # throw that away, so those users saw nothing at all about their turn.
+        #
+        # The token fields go back to None rather than staying 0 — deliberately.
+        # The renderer decides "were tokens reported?" by formatting them, and
+        # `0` formats as "0", which would put a confident "↑0 ↓0" on screen. An
+        # unreported count is not a zero.
+        if out["requests"] > 0:
+            return {"requests": out["requests"], "input_tokens": None,
+                    "output_tokens": None, "total_tokens": None}
         return None
     out.update(_usage_details(parts))
     return out

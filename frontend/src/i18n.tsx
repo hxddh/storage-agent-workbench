@@ -121,6 +121,9 @@ const en: Dict = {
   "metrics.modelHint": "Reported by {model}",
   "metrics.tokensUnavailableHint":
     "This model endpoint did not report token usage for the turn. Nothing is estimated.",
+  "metrics.requests": "{n} model calls",
+  "metrics.requestsHint":
+    "Model calls this turn made, counted here rather than reported by the endpoint — so it is available even when token usage is not.",
   "inspector.title": "Session inspector",
   "inspector.copyRecord": "Copy record",
   "inspector.statCalls": "Tool calls",
@@ -577,6 +580,8 @@ const zh: Dict = {
   "metrics.durationHint": "从发送消息到回答完成的耗时。",
   "metrics.modelHint": "由 {model} 上报",
   "metrics.tokensUnavailableHint": "该模型服务未上报本轮的 token 用量；这里不做任何估算。",
+  "metrics.requests": "{n} 次模型调用",
+  "metrics.requestsHint": "本轮发起的模型调用次数，由本地统计而非服务端上报，因此在 token 用量缺失时依然可用。",
   "inspector.title": "会话检查器",
   "inspector.copyRecord": "复制记录",
   "inspector.statCalls": "工具调用",

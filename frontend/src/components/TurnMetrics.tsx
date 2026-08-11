@@ -72,10 +72,14 @@ export function TurnMetricsBar({
   const inTok = fmtTokens(usage?.input_tokens);
   const outTok = fmtTokens(usage?.output_tokens);
   const hasTokens = inTok !== null || outTok !== null;
+  // Model calls the turn made. Counted by the SDK, not reported by the endpoint,
+  // so it is present exactly when token usage may not be.
+  const r = usage?.requests;
+  const reqs = typeof r === "number" && Number.isFinite(r) && r > 0 ? r : null;
 
   // Nothing measured at all (an old message from before v0.45.0, or a turn that
   // never reached the server). Render nothing rather than a row of dashes.
-  if (dur === null && !calls && !hasTokens) return null;
+  if (dur === null && !calls && !hasTokens && reqs === null) return null;
 
   const max = breakdown.length ? breakdown[0].n : 1;
 
@@ -121,9 +125,24 @@ export function TurnMetricsBar({
           </span>
         ) : (
           // Honest absence. The tooltip explains WHY, so it doesn't read as a bug.
+          //
+          // The model-call count is shown BESIDE it when we have one (v0.77.0).
+          // It is not a provider figure — the SDK counts the calls it makes — so
+          // it survives an endpoint that reports no usage at all, which is the
+          // only situation this branch renders in. Before, such a turn showed
+          // nothing but an em dash; a multi-step investigation and a one-shot
+          // answer looked identical.
           <span className="text-gray-700" title={t("metrics.tokensUnavailableHint")}>
             {t("metrics.tokens")} —
           </span>
+        )}
+        {!hasTokens && reqs !== null && (
+          <>
+            <Dot />
+            <span className="tabular-nums" title={t("metrics.requestsHint")}>
+              {t("metrics.requests", { n: reqs })}
+            </span>
+          </>
         )}
         {onOpenInspector && (
           <>

@@ -6,6 +6,80 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.77.0] - 2026-08-11
+
+_A count we were already making, and throwing away._
+
+### Changed — dependency refresh
+
+| package | from | to |
+| --- | --- | --- |
+| `openai-agents` | 0.19.4 | **0.20.0** |
+| `boto3` / `botocore` | 1.43.65 | 1.43.68 |
+| `pyarrow` | 25.0.0 | 25.0.1 |
+| `ruff` | 0.16.1 | 0.16.2 |
+| `vite` · `postcss` · `@types/node` · `@testing-library/jest-dom` | — | latest patch |
+
+`openai-agents` is pre-1.0, and `requirements.lock` exists precisely because a
+minor bump there can change behaviour the product depends on. Two specific risks
+were checked rather than assumed:
+
+- **0.20.0 changes the SDK's default model.** It cannot reach us:
+  `agent_service.py` always constructs an explicit
+  `OpenAIChatCompletionsModel(model=…)` and never relies on the default.
+- **v0.55.0's progressive tool disclosure rests on `is_enabled` being
+  re-evaluated every step.** That is pinned by a source-level assertion
+  (`assert "is_enabled" in inspect.getsource(Agent.get_all_tools)`), which still
+  passes.
+
+`openai` (2.53.0), `fastapi`, `duckdb` and `pandas` were already current.
+`cryptography` 50.0.0 is available and deliberately **not** taken here: it is the
+secret vault's AES-256-GCM dependency and a major version deserves its own
+release rather than a line in a refresh.
+
+### Fixed — a turn against a usage-silent endpoint showed nothing at all
+
+Many OpenAI-compatible endpoints omit `usage` on streamed responses. The turn
+footer correctly refuses to invent token counts for them — but it also showed
+*nothing else*, so a one-shot answer and a six-step investigation rendered
+identically, as a bare em dash.
+
+The SDK counts the model calls it makes, which is a real measurement regardless
+of what the endpoint reports. `_usage_snapshot()` was summing that count and then
+discarding it along with the zeroed tokens. Measured against `FakeModel` (which
+omits `usage`, exactly like those endpoints) on a turn of one tool step plus one
+answer step:
+
+| openai-agents | `requests` | tokens | what we stored |
+| --- | --- | --- | --- |
+| 0.19.4 | 0 | none | nothing |
+| 0.20.0 | **2** | none | nothing — *the count was thrown away* |
+| 0.20.0, after this change | **2** | none | **2 model calls** |
+
+The token fields are returned as `null`, not `0`, on purpose: the renderer
+decides "were tokens reported?" by formatting them, and `0` formats as `"0"` —
+which would put a confident `↑0 ↓0` on screen. An unreported count is not a zero,
+and that distinction is the whole reason this footer says "—" at all.
+
+The count is shown only when tokens are absent; when the provider does report
+usage, the row already says what the turn cost and repeating the call count
+would be noise.
+
+### Not adopted, deliberately
+
+0.20.0 also brings MCP Python SDK v1/v2 support, `ProgrammaticToolCallingTool`
+(JavaScript coordination of tool calls) and sandbox mount strategies. All three
+are out of scope by the project's own rules — no MCP runtime, and no generic
+code or shell execution — so they stay unused rather than "not yet".
+
+### Verification
+
+- `sidecar`: 1475/1475 pytest, `ruff check app` clean, lockfile regenerated.
+- `frontend`: 255/255 unit, `tsc --noEmit` + E2E typecheck clean; i18n 416 keys
+  per locale with no missing key and no placeholder mismatch.
+- Playwright E2E: running at the time of this commit — see the follow-up commit
+  or PR for its result rather than assuming it.
+
 ## [0.76.0] - 2026-08-11
 
 _Every read-only tool, against every way a real endpoint misbehaves._

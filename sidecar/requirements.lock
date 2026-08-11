@@ -22,8 +22,8 @@ annotated-types==0.7.0
 anyio==4.14.1
 attrs==26.1.0
 backports.tarfile==1.2.0
-boto3==1.43.65
-botocore==1.43.65
+boto3==1.43.68
+botocore==1.43.68
 certifi==2026.2.25
 cffi==2.1.0
 charset-normalizer==3.4.6
@@ -53,9 +53,9 @@ mcp==1.28.1
 more-itertools==11.1.0
 numpy==2.4.6
 openai==2.53.0
-openai-agents==0.19.4
+openai-agents==0.20.0
 pandas==3.0.5
-pyarrow==25.0.0
+pyarrow==25.0.1
 pycparser==3.0
 pydantic==2.13.4
 pydantic-core==2.46.4
