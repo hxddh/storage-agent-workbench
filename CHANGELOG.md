@@ -6,6 +6,85 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.77.0] - 2026-08-11
+
+_A count we were already making and throwing away — and an SDK upgrade that did
+not survive contact with the real stack._
+
+### Changed — dependency refresh
+
+| package | from | to |
+| --- | --- | --- |
+| `boto3` / `botocore` | 1.43.65 | 1.43.68 |
+| `pyarrow` | 25.0.0 | 25.0.1 |
+| `ruff` | 0.16.1 | 0.16.2 |
+| `vite` · `postcss` · `@types/node` · `@testing-library/jest-dom` | — | latest patch |
+
+### Not upgraded — `openai-agents` 0.20.0 breaks the agent turn
+
+0.20.0 was taken, measured, and **reverted**. It passes the sidecar's 1475
+in-process tests and both of the risks the lockfile names — the changed SDK
+default model cannot reach us (`agent_service.py` always constructs an explicit
+`OpenAIChatCompletionsModel`), and the `is_enabled` source assertion still holds
+— and then fails the moment a turn runs through the real uvicorn + SSE path:
+
+| | `analyze.spec.ts` alone | full Playwright suite |
+| --- | --- | --- |
+| **0.20.0** | **5/5 fail**, 30s timeouts | **27 failed** / 101 passed, 15.2 min |
+| **0.19.4** | **5/5 pass**, 16.7s | **128/128 pass**, 3.1 min |
+
+Everything else held constant. At the failure the sidecar reports *Connected*
+and the session row is created, but the question is still sitting in the composer
+and the thread never leaves the start surface — the turn never begins. The cause
+inside 0.20.0 is not yet identified; the pin stays at 0.19.4 until it is.
+
+This is the lockfile doing its job. Its header predicted a bad 0.20 would be
+"first visible as a broken release"; it was instead visible as a broken E2E run.
+The in-process suite is not sufficient evidence for an agent-SDK bump, and that
+is now written down.
+
+`cryptography` 50.0.0 is also available and deliberately not taken: it is the
+secret vault's AES-256-GCM dependency and a major version deserves its own
+release.
+
+### Fixed — a model-call count we were discarding
+
+Many OpenAI-compatible endpoints omit `usage` on streamed responses. The turn
+footer correctly refuses to invent token counts for them, but showed *nothing
+else*, so a one-shot answer and a six-step investigation rendered identically as
+a bare em dash. `_usage_snapshot()` was summing the SDK's model-call count and
+then throwing it away along with the zeroed tokens.
+
+Token fields are now returned as `null` rather than `0` — the renderer decides
+"were tokens reported?" by formatting them, and `0` formats as `"0"`, which would
+put a confident `↑0 ↓0` on screen. An unreported count is not a zero, and that
+distinction is the whole reason the footer says "—" at all. The call count renders
+only when tokens are absent.
+
+**This change has no visible effect yet, and saying otherwise would be a lie.**
+The count is only non-zero from `openai-agents` 0.20.0, which is blocked above —
+measured on a turn of one tool step plus one answer step, 0.19.4 reports
+`requests=0` and 0.20.0 reports `requests=2`. The code and its tests are correct
+under 0.19.4; the payoff arrives with the SDK.
+
+### Changed test
+
+`test_usage_stays_unavailable_when_nothing_was_reported` asserted the whole
+snapshot was `None` — the behaviour that discarded the count. It now pins the
+sharper contract (tokens unavailable, requests reported), with a new sibling
+covering `requests=0` still returning `None`.
+
+### Verification
+
+- `sidecar`: 1475/1475 pytest, `ruff check app` clean, lockfile regenerated then
+  re-pinned to `openai-agents==0.19.4`.
+- `frontend`: 255/255 unit, `tsc --noEmit` + E2E typecheck clean; i18n 416 keys
+  per locale, no missing key, no placeholder mismatch.
+- Playwright E2E on the shipped dependency set: **128/128 pass in 3.1 min** —
+  the same baseline as before this release, which is itself the confirmation
+  that the 27 failures and the 15.2-minute run belonged to 0.20.0 and nothing
+  else.
+
 ## [0.76.0] - 2026-08-11
 
 _Every read-only tool, against every way a real endpoint misbehaves._
