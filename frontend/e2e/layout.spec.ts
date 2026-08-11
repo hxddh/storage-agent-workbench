@@ -1,0 +1,130 @@
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import { expect, test, type Page } from "@playwright/test";
+import { STATE_FILE } from "./global-setup";
+
+/**
+ * An answer must not drag the thread sideways.
+ *
+ * Reported from the shipped app: *"输出格式不优雅了…表格没有了，内容很杂乱"*.
+ *
+ * This product's prose is full of tokens with no break opportunity — object
+ * keys, `arn:aws:s3:::…/very/deep/prefix/name.json.gz`, endpoint URLs,
+ * presigned URLs, checksums. The prose container declared no `overflow-wrap`,
+ * so one of them set the paragraph's content width and the whole thread became
+ * horizontally scrollable. Measured at a 1280px viewport: a single 300-character
+ * token pushed the thread's `scrollWidth` to **2881px in a 1036px column**. Every
+ * answer then had to be read by scrolling right, and wide tables were carried
+ * off-screen with it — which is what "tables are gone, content is a mess" is.
+ *
+ * It was masked until v0.73.0: `.thread-item` carried `content-visibility: auto`,
+ * which implies `contain: paint`, so the overflow was being CLIPPED rather than
+ * fixed — the text was silently unreachable instead of visibly misplaced.
+ * Removing that (on its own measurements) exposed the defect underneath.
+ *
+ * jsdom cannot see any of this — it has no layout — which is why the unit suite
+ * was green throughout. This runs in a real browser.
+ */
+
+const PY = `
+import sqlite3, sys, uuid
+db = sys.argv[1]
+conn = sqlite3.connect(db)
+sid = "ly-" + uuid.uuid4().hex[:12]
+conn.execute("INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?,?,?,?)",
+             (sid, "layout " + sid, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"))
+WIDE = ("| bucket | region | objects | size | class | versioned | encrypted | lifecycle | logging | replication | public |\\n"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\\n"
+        + "\\n".join("| acme-production-logs-%02d | us-east-1 | 1204993 | 812 GiB | STANDARD_IA | yes | SSE-KMS | 3 rules | enabled | cross-region | no |" % i
+                    for i in range(6)))
+ARN = "arn:aws:s3:::acme-production-logs-archive-bucket/very/deep/prefix/path/that/never/breaks/object-name-0001.json.gz"
+ANSWER = ("## Wide table\\n\\n" + WIDE
+          + "\\n\\n## A key with no break opportunity\\n\\nThe object is at " + ARN + " and the policy denies it."
+          + "\\n\\n## A 300-character token\\n\\n" + ("A" * 300)
+          + "\\n\\n## A presigned URL\\n\\nhttps://acme-logs.s3.us-east-1.amazonaws.com/deep/prefix/object.json.gz?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=3600&X-Amz-SignedHeaders=host"
+          + "\\n\\n- a list item mentioning " + ARN + "\\n\\nThat is the whole account.")
+for role, body in (("user", "why is acme-logs denying list?"), ("assistant", ANSWER)):
+    conn.execute("INSERT INTO session_messages (id, session_id, role, content, created_at)"
+                 " VALUES (?,?,?,?,?)",
+                 ("m-%s-%s" % (sid, uuid.uuid4().hex[:8]), sid, role, body, "2026-01-01T00:00:00Z"))
+conn.commit()
+print(sid)
+`;
+
+function seed(): string {
+  const { dataDir } = JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) as { dataDir: string };
+  return execFileSync(process.env.E2E_PYTHON || "python3", ["-c", PY, `${dataDir}/app.db`], {
+    encoding: "utf8",
+  }).trim();
+}
+
+async function openSeeded(page: Page, sid: string) {
+  await page.addInitScript(() => {
+    localStorage.setItem("saw.lang", "en");
+    localStorage.setItem("saw.onboarded", "1");
+  });
+  await page.goto("/");
+  await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible({ timeout: 20_000 });
+  await page.getByText(new RegExp(`layout ${sid}`)).first().click();
+  await expect(page.locator("main table").first()).toBeVisible({ timeout: 20_000 });
+  await page.waitForTimeout(600);
+}
+
+const measure = (page: Page) =>
+  page.evaluate(() => {
+    const sc = document.querySelector("main .overflow-auto") as HTMLElement;
+    const doc = document.documentElement;
+    const table = document.querySelector("main table") as HTMLElement | null;
+    const wrap = table?.parentElement as HTMLElement | undefined;
+    return {
+      threadScrollW: sc.scrollWidth,
+      threadClientW: sc.clientWidth,
+      pageScrollW: doc.scrollWidth,
+      pageClientW: doc.clientWidth,
+      tableExists: !!table,
+      tableScrolls: wrap ? wrap.scrollWidth > wrap.clientWidth + 1 : false,
+      // Any element whose own content overflows it horizontally, excluding the
+      // ones that are SUPPOSED to scroll (a table wrapper, a code block).
+      leaks: (Array.from(document.querySelectorAll("main p, main li, main h1, main h2, main h3")) as HTMLElement[])
+        .filter((el) => el.scrollWidth > el.clientWidth + 1)
+        .map((el) => `${el.tagName.toLowerCase()}:${el.scrollWidth}/${el.clientWidth}`),
+    };
+  });
+
+test.describe("an answer full of unbreakable tokens", () => {
+  test("does not make the thread scroll sideways", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openSeeded(page, seed());
+    const m = await measure(page);
+    expect(m.threadScrollW, `thread scrolls sideways: ${JSON.stringify(m)}`)
+      .toBeLessThanOrEqual(m.threadClientW + 1);
+    expect(m.pageScrollW).toBeLessThanOrEqual(m.pageClientW + 1);
+  });
+
+  test("no paragraph, list item or heading overflows its own column", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openSeeded(page, seed());
+    const m = await measure(page);
+    expect(m.leaks, `overflowing prose: ${m.leaks.join(", ")}`).toEqual([]);
+  });
+
+  test("the wide table still scrolls inside its own box rather than being squashed", async ({
+    page,
+  }) => {
+    // The wrap rule must not be paid for by flattening tables: a wide table is
+    // supposed to scroll in place, which is the whole point of its wrapper.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openSeeded(page, seed());
+    const m = await measure(page);
+    expect(m.tableExists).toBe(true);
+    expect(m.tableScrolls, "the wide table should scroll inside its wrapper").toBe(true);
+  });
+
+  test("holds at a narrow window too", async ({ page }) => {
+    await page.setViewportSize({ width: 820, height: 700 });
+    await openSeeded(page, seed());
+    const m = await measure(page);
+    expect(m.threadScrollW).toBeLessThanOrEqual(m.threadClientW + 1);
+    expect(m.leaks).toEqual([]);
+  });
+});
