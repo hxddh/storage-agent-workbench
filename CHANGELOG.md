@@ -31,7 +31,7 @@ default model cannot reach us (`agent_service.py` always constructs an explicit
 | | `analyze.spec.ts` alone | full Playwright suite |
 | --- | --- | --- |
 | **0.20.0** | **5/5 fail**, 30s timeouts | **27 failed** / 101 passed, 15.2 min |
-| **0.19.4** | **5/5 pass**, 16.7s | (see Verification) |
+| **0.19.4** | **5/5 pass**, 16.7s | **128/128 pass**, 3.1 min |
 
 Everything else held constant. At the failure the sidecar reports *Connected*
 and the session row is created, but the question is still sitting in the composer
@@ -80,8 +80,10 @@ covering `requests=0` still returning `None`.
   re-pinned to `openai-agents==0.19.4`.
 - `frontend`: 255/255 unit, `tsc --noEmit` + E2E typecheck clean; i18n 416 keys
   per locale, no missing key, no placeholder mismatch.
-- Playwright E2E on the shipped dependency set: running at commit time, reported
-  separately rather than assumed.
+- Playwright E2E on the shipped dependency set: **128/128 pass in 3.1 min** —
+  the same baseline as before this release, which is itself the confirmation
+  that the 27 failures and the 15.2-minute run belonged to 0.20.0 and nothing
+  else.
 
 ## [0.76.0] - 2026-08-11
 
