@@ -6,6 +6,18 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.78.0] - 2026-08-12
+
+_Two failures that reported themselves as something else: a tool call that died
+on a row another thread was reading, and an SDK upgrade blamed for a broken test
+double._
+
+Both were long-standing, both had been investigated before, and both had left
+the same kind of trail — a plausible message with the evidence stripped out of
+it. The Agents SDK's `default_tool_error_function` discards the traceback; a 30s
+Playwright timeout hides the error banner the page is already showing. In each
+case the fix was cheap once the real evidence was in hand.
+
 ### Fixed — `openai-agents` 0.20.0 was never broken; the test double was
 
 v0.77.0 took 0.20.0, measured it, and reverted it: `analyze.spec.ts` went 5/5
