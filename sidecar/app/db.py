@@ -75,13 +75,10 @@ def _new_lock() -> threading.RLock:
     return threading.RLock()
 
 
-# The lock for a connection this module did not wrap. `sqlite3.Connection`
-# supports neither attributes nor weak references, so a raw connection cannot
-# carry its own — tests that build one and hand it to threaded code get this
-# shared fallback instead. Correct (it only over-serializes) and never the
-# deadlock above, because every connection the APP opens is wrapped and so has
-# its own.
-_FALLBACK_LOCK = _new_lock()
+# A specimen to type-check against, so `transaction()` can tell a real lock from
+# whatever else an object's `.lock` attribute might be. `threading.RLock` is a
+# factory, not a class, so there is nothing else to isinstance against.
+_A_LOCK = _new_lock()
 
 
 class _Result:
@@ -202,11 +199,28 @@ def transaction(conn) -> threading.RLock:
             conn.execute("INSERT ...")
             conn.commit()
 
-    Reentrant, so the statements inside re-acquire it freely. Returns the shared
-    fallback for a connection this module did not wrap.
+    Reentrant, so the statements inside re-acquire it freely.
+
+    REFUSES a connection this module did not wrap, rather than falling back to
+    something process-wide. v0.78.0 shipped that fallback, and it was a landmine:
+    a shared fallback lock held across a write section is exactly the shape that
+    deadlocks two writing connections (see the lock comment at the top of this
+    module), so the one construct built to prevent that hazard would have
+    silently reintroduced it for anyone who passed a bare `sqlite3.Connection`.
+    Nothing in `app/` can hit this — `connect()` is the only place a connection
+    is opened and it always wraps — so the error is aimed at a test, or at future
+    code, that would otherwise get the unsafe behavior without being told.
     """
     lock = getattr(conn, "lock", None)
-    return lock if isinstance(lock, type(_FALLBACK_LOCK)) else _FALLBACK_LOCK
+    if not isinstance(lock, type(_A_LOCK)):
+        raise TypeError(
+            "db.transaction() needs a serialized connection. Wrap it: "
+            "db.serialized(sqlite3.connect(...)) — the same thing db.connect() "
+            "returns. A bare sqlite3.Connection cannot carry its own lock "
+            "(the type supports neither attributes nor weak references), and "
+            "sharing one process-wide would deadlock two writing connections."
+        )
+    return lock
 
 
 def serialized(conn: sqlite3.Connection) -> SerializedConnection:

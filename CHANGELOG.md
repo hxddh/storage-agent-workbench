@@ -6,6 +6,48 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Fixed — the fallback lock v0.78.0 shipped was the hazard it was guarding against
+
+`db.transaction()` returned one **process-wide** lock for a connection the
+module had not wrapped. Held across a write section, that is exactly the shape
+that deadlocks two writing connections — the defect caught in review on #163 —
+so the single construct built to prevent it would have silently reintroduced it
+for anyone passing a bare `sqlite3.Connection`.
+
+Nothing in `app/` could reach it: `connect()` is the only place a connection is
+opened and it always wraps. That is what made it worth removing rather than
+documenting — an unreachable trap is one nobody trips until they do, and it
+would have failed as a 30-second stall, not as an error pointing anywhere useful.
+
+`db.transaction()` now refuses such a connection with a `TypeError` naming the
+fix. Five test fixtures were passing bare connections into threaded tool code
+and are now wrapped the way the app wraps them; they were the only callers.
+
+### Changed — the commit guard reads the package, not a list of file names
+
+The structural guard from v0.59.0 scanned four hardcoded module names — the four
+that held `conn.commit()` when it was written. A **new** module in
+`app/agent_runtime`, which is the likeliest way an unguarded commit would
+actually arrive, was never looked at, and the guard's own "did I check
+everything" assertion passed anyway. It now globs the package. Verified by
+dropping a module with an unguarded commit into it: the old form passed, the new
+form names the file and line.
+
+### Docs — a known gap that had stopped being true, and a direction that misled
+
+`roadmap.md` claimed the E2E suite "covers the credential-free paths only" and
+that a model-backed turn was "deliberately out of scope". Eleven of the 22 specs
+drive a full model-backed turn against a scripted local endpoint, and have for
+some time. The real gap is narrower and worth stating precisely: nothing runs
+against a live provider key or a live bucket, so provider-specific behavior is
+only ever found by hand — and v0.78.0 is the standing example of what the
+doubles can hide.
+
+The Direction section led with notarization + auto-update, which are blocked on
+purchasing signing credentials. Leading with them dressed a spending decision up
+as the next engineering step and pushed the work that can actually be done down
+the page. They move to Known gaps; Direction now lists only what is actionable.
+
 ## [0.78.0] - 2026-08-12
 
 _Two failures that reported themselves as something else: a tool call that died

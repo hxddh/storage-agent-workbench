@@ -227,6 +227,41 @@ def test_serialized_is_idempotent(conn):
     assert db.serialized(conn) is conn
 
 
+def test_transaction_refuses_a_connection_it_cannot_lock():
+    """v0.79.0 — the fallback that v0.78.0 shipped was a landmine.
+
+    `db.transaction()` used to hand back one process-wide lock for a bare
+    `sqlite3.Connection`. Held across a write section, that is precisely the
+    shape that deadlocks two writing connections — so the construct built to
+    prevent the hazard would have quietly reintroduced it. Nothing in `app/` can
+    reach it (`connect()` is the only place a connection is opened, and it always
+    wraps), which is exactly why it would have gone unnoticed until something
+    new did. Refusing is the honest answer: the caller is told, and told how.
+    """
+    raw = sqlite3.connect(":memory:")
+    try:
+        with pytest.raises(TypeError, match="serialized connection"):
+            db.transaction(raw)
+        # And the wrapped form it points you at works.
+        wrapped = db.serialized(raw)
+        with db.transaction(wrapped):
+            wrapped.execute("SELECT 1")
+    finally:
+        raw.close()
+
+
+def test_transaction_hands_each_connection_its_own_lock():
+    """Two connections must not share a lock — see the deadlock test above."""
+    a = db.serialized(sqlite3.connect(":memory:"))
+    b = db.serialized(sqlite3.connect(":memory:"))
+    try:
+        assert db.transaction(a) is not db.transaction(b)
+        assert db.transaction(a) is db.transaction(a)  # stable per connection
+    finally:
+        a.close()
+        b.close()
+
+
 def test_the_wrapper_keeps_the_cursor_contract(conn):
     """`execute` returns rows already fetched, so the shim has to behave like the
     cursor the 197 call sites in `app/` still expect."""
