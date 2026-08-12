@@ -193,6 +193,10 @@ def test_the_unguarded_commit_sites_are_gone():
     the `checked == 4` assertion below still passed while it was missed. Every
     module in here runs on the turn's one shared connection, so every module is
     in scope.
+
+    RECURSIVELY, so a subpackage is not the same hole one directory down: a
+    non-recursive glob would miss `agent_runtime/whatever/tools.py` while the
+    completeness assertion below still passed on the four top-level modules.
     """
     import re
     from pathlib import Path
@@ -200,8 +204,9 @@ def test_the_unguarded_commit_sites_are_gone():
     root = Path(__file__).resolve().parents[1] / "app" / "agent_runtime"
     offenders: list[str] = []
     scanned: set[str] = set()
-    for path in sorted(root.glob("*.py")):
-        scanned.add(path.name)
+    for path in sorted(root.rglob("*.py")):
+        rel = path.relative_to(root).as_posix()
+        scanned.add(rel)
         depth: int | None = None
         for lineno, line in enumerate(path.read_text().splitlines(), 1):
             indent = len(line) - len(line.lstrip())
@@ -210,7 +215,7 @@ def test_the_unguarded_commit_sites_are_gone():
             if "with db.transaction(" in line:
                 depth = indent
             if re.search(r"\bconn\.commit\(\)", line) and depth is None:
-                offenders.append(f"{path.name}:{lineno}")
+                offenders.append(f"{rel}:{lineno}")
     # If the package is ever moved this guard would silently pass on nothing, and
     # the four modules that motivated it must still be among what was read.
     assert scanned >= {"session_action_tools.py", "session_analysis_tools.py",

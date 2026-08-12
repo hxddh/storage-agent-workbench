@@ -215,10 +215,14 @@ def transaction(conn) -> threading.RLock:
     if not isinstance(lock, type(_A_LOCK)):
         raise TypeError(
             "db.transaction() needs a serialized connection. Wrap it: "
-            "db.serialized(sqlite3.connect(...)) — the same thing db.connect() "
-            "returns. A bare sqlite3.Connection cannot carry its own lock "
-            "(the type supports neither attributes nor weak references), and "
-            "sharing one process-wide would deadlock two writing connections."
+            "db.serialized(sqlite3.connect(..., check_same_thread=False)) — "
+            "both halves matter, and together they are what db.connect() "
+            "returns. Without check_same_thread=False the first statement from "
+            "a tool body's thread raises ProgrammingError; without serialized() "
+            "the connection has no lock of its own, because a bare "
+            "sqlite3.Connection can carry neither attributes nor weak "
+            "references, and sharing one process-wide would deadlock two "
+            "writing connections."
         )
     return lock
 

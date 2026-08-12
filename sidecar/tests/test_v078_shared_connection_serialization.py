@@ -240,7 +240,7 @@ def test_transaction_refuses_a_connection_it_cannot_lock():
     """
     raw = sqlite3.connect(":memory:")
     try:
-        with pytest.raises(TypeError, match="serialized connection"):
+        with pytest.raises(TypeError, match="check_same_thread=False"):
             db.transaction(raw)
         # And the wrapped form it points you at works.
         wrapped = db.serialized(raw)
