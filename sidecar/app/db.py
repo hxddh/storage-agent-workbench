@@ -6,8 +6,10 @@ from the dev server well-behaved.
 
 A connection is NOT per thread, though: a turn's connection is shared by the tool
 bodies the Agents SDK dispatches with `asyncio.to_thread`. `connect()` therefore
-returns a `SerializedConnection`, which runs every statement under `DB_LOCK` and
-drains it before releasing — see `DB_LOCK` for what goes wrong without it.
+returns a `SerializedConnection`, which runs every statement under that
+connection's own lock and drains it before releasing — see the lock comment
+below for what goes wrong without it, and for why the lock is per connection
+rather than process-wide.
 """
 
 from __future__ import annotations
@@ -27,25 +29,25 @@ from .migrations import apply_migrations
 # that is exactly what happens: the Agents SDK dispatches each sync tool with
 # `asyncio.to_thread`, and every tool in a turn shares the turn's connection.
 #
-# Two distinct hazards, and the lock answers both:
+# Two distinct hazards, both PER CONNECTION, which is why the lock is too:
 #
 # 1. WRITE-THEN-COMMIT (v0.55.0). A connection has ONE transaction, so thread A's
 #    `commit()` commits B's half-written work and B's own `commit()` then raises
 #    "cannot commit - no transaction is active". That is why callers still wrap
-#    an INSERT and its commit in an explicit `with db.DB_LOCK:` block — the lock
-#    taken per statement below cannot know two statements belong together.
+#    an INSERT and its commit in an explicit `with db.transaction(conn):` block —
+#    the lock taken per statement below cannot know two statements belong
+#    together.
 #
-# 2. ANY TWO CONCURRENT STATEMENTS (this release). `sqlite3.threadsafety` is 3,
-#    which says the SQLite *library* is serialized — it does not make CPython's
-#    per-connection bookkeeping safe. Two threads stepping statements on one
-#    connection can hand back a TORN row: a `sqlite3.Row` whose description has
-#    more columns than the row has values, so `row["id"]` raises
-#    `IndexError: tuple index out of range`. Reproduced on CPython 3.12 (the
-#    version CI runs) with a plain read/write pair on one in-memory connection —
-#    1 tear in 6000 rounds — and with two pure READS, no writer at all, 3 tears
-#    in 6000. Serializing writes alone therefore never closed it. CPython 3.11
-#    does not tear in the same 6000 rounds, which is why this only ever showed
-#    up in CI.
+# 2. ANY TWO CONCURRENT STATEMENTS. `sqlite3.threadsafety` is 3, which says the
+#    SQLite *library* is serialized — it does not make CPython's per-connection
+#    bookkeeping safe. Two threads stepping statements on one connection can hand
+#    back a TORN row: a `sqlite3.Row` whose description has more columns than the
+#    row has values, so `row["id"]` raises `IndexError: tuple index out of
+#    range`. Reproduced on CPython 3.12 (the version CI runs) with a plain
+#    read/write pair on one in-memory connection — 1 tear in 6000 rounds — and
+#    with two pure READS, no writer at all, 3 tears in 6000. Serializing writes
+#    alone therefore never closed it. CPython 3.11 does not tear in the same 6000
+#    rounds, which is why this only ever showed up in CI.
 #
 #    The agent felt it as a dead tool call: the Agents SDK catches whatever the
 #    tool body raises and hands the model
@@ -53,20 +55,43 @@ from .migrations import apply_migrations
 #    index out of range" — a failure for work that had actually succeeded, with
 #    the traceback discarded.
 #
-# One process-wide lock is the right grain: a statement against a local SQLite
-# file is microseconds, and the slow part these calls bracket — the S3 request,
-# the part parallelism exists to overlap — stays entirely outside it.
-DB_LOCK = threading.RLock()
+# PER CONNECTION, NOT PROCESS-WIDE, and that distinction is load-bearing. A
+# process-wide lock taken per statement DEADLOCKS two writing connections:
+# connection A's INSERT opens a SQLite write transaction and then releases the
+# lock; connection B's INSERT takes the lock and parks inside `sqlite3_step`
+# waiting for A's transaction to end; A's `commit()` — the only thing that would
+# end it — cannot get the lock back. Nothing moves until B's `busy_timeout`
+# expires and B fails with "database is locked", and every other statement in the
+# process is stuck behind them meanwhile. Measured against exactly that shape:
+# an 8s `busy_timeout` produced an 8.0s stall and B raised; the real setting is
+# 30s. Two connections is not hypothetical — every request opens one, and a turn's
+# worker owns another for its whole lifetime.
+#
+# A per-connection lock has no such interaction: B parking in `sqlite3_step`
+# holds only B's lock, so A's commit proceeds immediately and SQLite's own
+# busy_timeout does the cross-connection coordination it exists for.
+def _new_lock() -> threading.RLock:
+    """Reentrant so `transaction()` can nest around the statements it groups."""
+    return threading.RLock()
+
+
+# The lock for a connection this module did not wrap. `sqlite3.Connection`
+# supports neither attributes nor weak references, so a raw connection cannot
+# carry its own — tests that build one and hand it to threaded code get this
+# shared fallback instead. Correct (it only over-serializes) and never the
+# deadlock above, because every connection the APP opens is wrapped and so has
+# its own.
+_FALLBACK_LOCK = _new_lock()
 
 
 class _Result:
     """One finished statement: rows already fetched, counters already read.
 
     A `sqlite3.Cursor` fetches lazily, so returning one would let the caller step
-    the statement *after* `DB_LOCK` was released — exactly the race the lock
-    exists to close. Draining inside the lock makes "run the statement" atomic
-    from the caller's point of view, and this shim then serves the rows with the
-    cursor's own semantics (`fetchone`/`fetchmany`/`fetchall` consume).
+    the statement *after* the connection's lock was released — exactly the race
+    the lock exists to close. Draining inside the lock makes "run the statement"
+    atomic from the caller's point of view, and this shim then serves the rows
+    with the cursor's own semantics (`fetchone`/`fetchmany`/`fetchall` consume).
     """
 
     __slots__ = ("description", "lastrowid", "rowcount", "_rows", "_i")
@@ -106,10 +131,10 @@ class _Result:
 class SerializedConnection:
     """A `sqlite3.Connection` that is safe to use from several threads at once.
 
-    Every statement runs under `DB_LOCK` and is drained before the lock is
-    released (see `_Result`). Attribute access, including `row_factory`, passes
-    straight through, so this is a drop-in for the real connection everywhere the
-    app uses one.
+    Every statement runs under THIS connection's lock and is drained before the
+    lock is released (see `_Result`). Attribute access, including `row_factory`,
+    passes straight through, so this is a drop-in for the real connection
+    everywhere the app uses one.
 
     Statements must go through `execute` / `executemany` / `executescript`. A
     cursor obtained from `.cursor()` would step outside the lock, so nothing in
@@ -118,6 +143,7 @@ class SerializedConnection:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.__dict__["_conn"] = conn
+        self.__dict__["lock"] = _new_lock()
 
     # -- passthrough ---------------------------------------------------------
     def __getattr__(self, name: str):
@@ -128,40 +154,59 @@ class SerializedConnection:
 
     # -- serialized statements ----------------------------------------------
     def execute(self, sql: str, parameters=()) -> _Result:
-        with DB_LOCK:
+        with self.__dict__["lock"]:
             return _Result(self.__dict__["_conn"].execute(sql, parameters))
 
     def executemany(self, sql: str, parameters) -> _Result:
-        with DB_LOCK:
+        with self.__dict__["lock"]:
             return _Result(self.__dict__["_conn"].executemany(sql, parameters))
 
     def executescript(self, script: str) -> _Result:
-        with DB_LOCK:
+        with self.__dict__["lock"]:
             return _Result(self.__dict__["_conn"].executescript(script))
 
     def commit(self) -> None:
-        with DB_LOCK:
+        with self.__dict__["lock"]:
             self.__dict__["_conn"].commit()
 
     def rollback(self) -> None:
-        with DB_LOCK:
+        with self.__dict__["lock"]:
             self.__dict__["_conn"].rollback()
 
     def close(self) -> None:
-        with DB_LOCK:
+        with self.__dict__["lock"]:
             self.__dict__["_conn"].close()
 
     def __enter__(self):
         # `with conn:` is a transaction, so hold the lock for the whole body —
         # otherwise another thread's statement lands inside this transaction.
-        DB_LOCK.acquire()
+        self.__dict__["lock"].acquire()
         return self
 
     def __exit__(self, *exc_info) -> bool:
         try:
             return bool(self.__dict__["_conn"].__exit__(*exc_info))
         finally:
-            DB_LOCK.release()
+            self.__dict__["lock"].release()
+
+
+def transaction(conn) -> threading.RLock:
+    """The lock that groups several statements on `conn` into one transaction.
+
+    `conn.execute(...)` already serializes a SINGLE statement. A write and its
+    `commit()` are two, and on a shared connection another thread's commit
+    landing between them commits half-written work — so every write section
+    holds this across both:
+
+        with db.transaction(conn):
+            conn.execute("INSERT ...")
+            conn.commit()
+
+    Reentrant, so the statements inside re-acquire it freely. Returns the shared
+    fallback for a connection this module did not wrap.
+    """
+    lock = getattr(conn, "lock", None)
+    return lock if isinstance(lock, type(_FALLBACK_LOCK)) else _FALLBACK_LOCK
 
 
 def serialized(conn: sqlite3.Connection) -> SerializedConnection:
@@ -181,7 +226,7 @@ def connect() -> SerializedConnection:
 
     Returned already serialized: a turn's connection is shared by the tool
     bodies the SDK dispatches with `asyncio.to_thread`, and an unguarded one
-    tears rows between them (see `DB_LOCK`)."""
+    tears rows between them (see the lock comment above)."""
     path = config.db_path()
     config.ensure_secure_dir(path.parent)  # 0700 data dir (not umask-dependent)
     db_existed = path.exists()

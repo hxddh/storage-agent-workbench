@@ -87,11 +87,23 @@ forced-concurrent rounds on one in-memory connection:
 
 The second row is the one that matters: `db.WRITE_LOCK` guarded writes, so no
 amount of write locking could have closed this. `db.connect()` now returns a
-`SerializedConnection` that runs **every** statement under the lock — renamed
-`db.DB_LOCK`, since it is no longer only about writes — and drains the statement
-before releasing it, so no caller can be left fetching rows outside the lock.
-Explicit `with db.DB_LOCK:` blocks stay: a per-statement lock cannot know that an
-INSERT and its commit belong together.
+`SerializedConnection` that runs **every** statement under the connection's lock
+and drains the statement before releasing it, so no caller can be left fetching
+rows outside the lock. Explicit write sections stay, as
+`with db.transaction(conn):`: a per-statement lock cannot know that an INSERT and
+its commit belong together.
+
+**The lock is per connection, and that is not a detail.** The first cut used one
+process-wide lock and deadlocked two writing connections: A's INSERT opens a
+SQLite write transaction and releases the lock, B's INSERT takes the lock and
+parks inside `sqlite3_step` waiting for A, and A's `commit()` — the only thing
+that would end the wait — cannot get the lock back. Nothing moves until B's
+`busy_timeout` expires, B fails with `database is locked`, and every other
+statement in the process queues behind it; in production that wait is 30
+seconds. Two connections is the normal shape, not a corner case — every request
+opens one and a turn's worker owns another for its lifetime. Caught in review
+before release, reproduced (8.0s stall on an 8s timeout), fixed, and pinned by
+`test_two_writing_connections_do_not_deadlock_each_other`.
 
 The user-visible symptom was an agent told a read-only tool had failed when it
 had in fact succeeded, and an audit trail that quietly did not hold (rule 17).

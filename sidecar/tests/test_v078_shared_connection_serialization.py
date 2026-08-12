@@ -32,17 +32,28 @@ CI. Measured over 6000 forced-concurrent rounds on one in-memory connection:
 | write under the lock, read unguarded (the shipped code) | 0 | 1 | 2 |
 | **two pure reads, no writer at all** | 0 | **3** | **10** |
 
-The second row is the important one: `db.DB_LOCK` guarded writes, so no amount
-of write locking could ever have closed this. Every statement has to be
+The second row is the important one: the old `WRITE_LOCK` guarded writes, so no
+amount of write locking could ever have closed this. Every statement has to be
 serialized, and it has to stay serialized until its rows are fetched — which is
 what `db.serialized` now does, and what `db.connect()` now returns.
 
-Which tests here detect the bug, stated honestly, because it is not uniform.
-Verified by reverting `db.serialized` to a passthrough:
+**And the lock has to be PER CONNECTION.** The first cut of this fix used one
+process-wide lock, which deadlocks two writing connections: A's INSERT opens a
+SQLite write transaction and releases the lock, B's INSERT takes the lock and
+parks inside `sqlite3_step` waiting for A's transaction, and A's `commit()` —
+the only thing that would end it — cannot get the lock back. Measured on that
+version with an 8s `busy_timeout`: an 8.0s stall, B raising `database is
+locked`, and every other statement in the process queued behind it. In
+production the wait is 30s. Caught in review, before release.
+
+Which tests here detect a bug, stated honestly, because it is not uniform:
 
 - `test_concurrent_readers_never_see_a_torn_row` and
-  `test_the_app_opens_serialized_connections` FAIL against the unguarded code —
-  they are the detectors;
+  `test_the_app_opens_serialized_connections` FAIL against the unguarded code
+  (verified by reverting `db.serialized` to a passthrough);
+- `test_two_writing_connections_do_not_deadlock_each_other` FAILS against the
+  process-wide version (verified by pointing the wrapper back at one shared
+  lock);
 - the rest pin the wrapper's drop-in contract, including the draining that a
   bare `with lock: execute(...)` would have missed. They pass either way by
   design and are non-regression guards, not detectors.
@@ -56,10 +67,11 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 
 import pytest
 
-from app import db
+from app import db, migrations
 
 _COLUMNS = ("id", "a", "b", "c", "d")
 
@@ -117,6 +129,68 @@ def test_concurrent_readers_never_see_a_torn_row(conn):
         t.join(120)
     assert not errors, f"{len(errors)} torn read(s), first: {errors[0]!r}"
     assert widths == {len(_COLUMNS)}, f"a row came back short: widths={sorted(widths)}"
+
+
+def test_two_writing_connections_do_not_deadlock_each_other(tmp_path, monkeypatch):
+    """The hazard a process-wide statement lock creates, and this one must not.
+
+    Two connections — which is the normal shape, not a corner case: every request
+    opens one and a turn's worker owns another for its whole lifetime. A writes
+    and holds its transaction; B writes at the same time and blocks inside SQLite
+    waiting for A. If B's wait also held the lock A needs to commit, neither
+    moves until B's `busy_timeout` expires.
+
+    `busy_timeout` is dropped to 2s here so a regression costs the suite two
+    seconds instead of the production thirty.
+    """
+    monkeypatch.setattr(db.config, "db_path", lambda: tmp_path / "app.sqlite3")
+    a, b = db.connect(), db.connect()
+    try:
+        migrations.apply_migrations(a)
+        for c in (a, b):
+            c.execute("PRAGMA busy_timeout = 2000")
+        a_wrote, b_started = threading.Event(), threading.Event()
+        errors: list[BaseException] = []
+
+        def rows(who):
+            return (f"s-{who}", who, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")
+
+        def writer_a():
+            try:
+                a.execute("INSERT INTO sessions (id, title, created_at, updated_at) "
+                          "VALUES (?,?,?,?)", rows("a"))
+                a_wrote.set()
+                b_started.wait(5)
+                time.sleep(0.2)  # let B get all the way into sqlite3_step
+                a.commit()
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        def writer_b():
+            try:
+                a_wrote.wait(5)
+                b_started.set()
+                b.execute("INSERT INTO sessions (id, title, created_at, updated_at) "
+                          "VALUES (?,?,?,?)", rows("b"))
+                b.commit()
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=writer_a), threading.Thread(target=writer_b)]
+        started = time.monotonic()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(30)
+        elapsed = time.monotonic() - started
+
+        assert not errors, f"a writer failed: {errors[0]!r}"
+        # Under the deadlock this is the full busy_timeout; without it, instant.
+        assert elapsed < 1.5, f"the two writers stalled on each other for {elapsed:.1f}s"
+        assert a.execute("SELECT count(*) FROM sessions").fetchone()[0] == 2
+    finally:
+        a.close()
+        b.close()
 
 
 # --- the wrapper stays a drop-in ---------------------------------------------

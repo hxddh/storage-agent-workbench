@@ -1,11 +1,11 @@
 """v0.59.0 — the write lock never reached the action and analysis tools.
 
-v0.55.0 introduced ``db.DB_LOCK`` because parallel tool calls share ONE
-connection, and a connection has ONE transaction: thread A's ``commit()``
-commits B's half-written work, and B's own ``commit()`` then raises
-``cannot commit - no transaction is active``. The agent sees a FAILED call for
-work that actually succeeded, and rule 17's "every tool call is recorded"
-quietly does not hold.
+v0.55.0 introduced the write lock (``db.transaction(conn)`` since v0.78.0)
+because parallel tool calls share ONE connection, and a connection has ONE
+transaction: thread A's ``commit()`` commits B's half-written work, and B's own
+``commit()`` then raises ``cannot commit - no transaction is active``. The agent
+sees a FAILED call for work that actually succeeded, and rule 17's "every tool
+call is recorded" quietly does not hold.
 
 The lock was applied to ``session_tools`` bookkeeping and the five memory tools.
 It was never applied to ``session_action_tools`` or ``session_analysis_tools``,
@@ -87,8 +87,8 @@ def _pair_tools(conn, activity):
 def _run_forced_pair(conn, rounds: int) -> tuple[int, list[str]]:
     """Drive a GUARDED write and an UNGUARDED commit into the same instant.
 
-    ``note_fact`` writes agent memory under db.DB_LOCK. ``list_uploaded_files``
-    writes an audit row and commits. Both are agent tools the model can call in
+    ``note_fact`` writes agent memory under db.transaction(conn).
+    ``list_uploaded_files`` writes an audit row and commits. Both are agent tools the model can call in
     one parallel step, and both run on the turn's single shared connection.
     """
     activity: list = []
@@ -185,7 +185,7 @@ def test_the_unguarded_commit_sites_are_gone():
     The behavioural tests above are probabilistic — they detect the race, but a
     lucky run could pass. This one is deterministic: it reads the source and
     fails if any `conn.commit()` in the agent-callable tool modules sits outside
-    a `with db.DB_LOCK:` block.
+    a `with db.transaction(conn):` block.
     """
     import re
     from pathlib import Path
@@ -204,7 +204,7 @@ def test_the_unguarded_commit_sites_are_gone():
             indent = len(line) - len(line.lstrip())
             if depth is not None and line.strip() and indent <= depth:
                 depth = None
-            if "with db.DB_LOCK" in line:
+            if "with db.transaction(" in line:
                 depth = indent
             if re.search(r"\bconn\.commit\(\)", line) and depth is None:
                 offenders.append(f"{name}:{lineno}")

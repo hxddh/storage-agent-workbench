@@ -89,7 +89,7 @@ def build(
             }
             for r in rows
         ]
-        with db.DB_LOCK:
+        with db.transaction(conn):
             audit.record(conn, "session.list_uploaded_files",
                          {"session_id": session_id, "count": len(items)}, run_id=None, session_id=session_id)
             conn.commit()
@@ -131,7 +131,7 @@ def build(
         # import is of the now-stale file — don't stamp it 'imported' over the new
         # upload. mark_imported returns False in that case; treat the result as a
         # transient miss so the next call re-imports the current file.
-        with db.DB_LOCK:
+        with db.transaction(conn):
             imported = ds_repo.mark_imported(
                 conn, dataset_id, config.rel_path(duckdb_abs),
                 imp.get("table_name") or "", int(imp.get("row_count") or 0),
@@ -145,7 +145,7 @@ def build(
         # side effect of a SUCCESSFUL analyze/aggregate. An aggregate that imports
         # the whole file and then fails (e.g. a bad metric) otherwise left a
         # completed import with no audit trail.
-        with db.DB_LOCK:
+        with db.transaction(conn):
             audit.record(conn, "session.import_dataset",
                          {"session_id": session_id, "dataset_id": dataset_id,
                           "dataset_type": ds["dataset_type"], "detected_format": detected,
@@ -221,7 +221,7 @@ def build(
             result["note"] = (prior + " " + cap_note) if prior else cap_note
 
         # Rule 17: a data import + analysis must leave an audit trail.
-        with db.DB_LOCK:
+        with db.transaction(conn):
             audit.record(conn, "session.analyze_uploaded_file", {
                 "session_id": session_id, "dataset_id": dataset_id,
                 "type": ds["dataset_type"], "detected_format": detected,
@@ -278,7 +278,7 @@ def build(
             return _err(f"Could not aggregate the file: {exc}")
 
         # Rule 17: record the ACTUAL SQL + bound params in the audit trail.
-        with db.DB_LOCK:
+        with db.transaction(conn):
             audit.record(conn, "session.aggregate_uploaded_file", {
                 "session_id": session_id, "dataset_id": dataset_id,
                 "sql": out["sql"], "params": [redact_text(str(p))[:100] for p in out["params"]],
