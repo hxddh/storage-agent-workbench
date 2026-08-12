@@ -8,7 +8,7 @@ frontend/node_modules/
 # ---- Python / sidecar ----
 __pycache__/
 *.py[cod]
-.venv/
+.venv*/
 venv/
 *.egg-info/
 .pytest_cache/

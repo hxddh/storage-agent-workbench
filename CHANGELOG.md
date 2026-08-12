@@ -6,6 +6,108 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.78.0] - 2026-08-12
+
+_Two failures that reported themselves as something else: a tool call that died
+on a row another thread was reading, and an SDK upgrade blamed for a broken test
+double._
+
+Both were long-standing, both had been investigated before, and both had left
+the same kind of trail — a plausible message with the evidence stripped out of
+it. The Agents SDK's `default_tool_error_function` discards the traceback; a 30s
+Playwright timeout hides the error banner the page is already showing. In each
+case the fix was cheap once the real evidence was in hand.
+
+### Fixed — `openai-agents` 0.20.0 was never broken; the test double was
+
+v0.77.0 took 0.20.0, measured it, and reverted it: `analyze.spec.ts` went 5/5
+fail on 30s timeouts, the full Playwright suite 27 failed / 101 passed in 15.2
+minutes, and "the cause inside 0.20.0 is not yet identified". The cause was not
+inside 0.20.0.
+
+Driving one real turn through a live uvicorn + SSE sidecar on 0.20.0 — no
+browser, so the sidecar's own output was visible — the turn completed normally.
+The browser run's page snapshot then showed what the timeout had hidden, sitting
+in an error banner on the start surface:
+
+> Model reused a completed tool call ID for a different invocation. Use a unique
+> call ID for each tool invocation.
+
+`e2e/fake-model.ts` emitted the constant `id: "call_fake_1"` for **every** tool
+call, so a two-step turn reused one completed call's ID for a different tool. No
+real model does that. 0.20.0 added a check for it
+(`agents/run_internal/tool_planning.py`) and correctly refused the turn; 0.19.4
+had no such check and let the malformed conversation through. The symptom read
+as "the turn never starts" because the failure lands before the thread leaves
+the start surface, with the question still in the composer.
+
+The double now mints a unique ID per invocation. With that one-line change and
+nothing else:
+
+| | `analyze.spec.ts` | full Playwright suite | sidecar suite |
+| --- | --- | --- | --- |
+| **0.20.0**, before | 5/5 fail | 27 failed / 101 passed, 15.2 min | 1481 passed |
+| **0.20.0**, after | **5/5 pass** | **128/128, 3.3 min** | **1481 passed** |
+| 0.19.4, after (no regression) | 5/5 pass | 128/128, 3.3 min | 1481 passed |
+
+`requirements.lock` therefore moves to `openai-agents==0.20.0`. The three SDK
+facts v0.55.0's tool gating depends on — `get_all_tools` called inside the run
+loop, `is_enabled` honoured, `FunctionTool` unfrozen — are still asserted by
+`test_v056_deps_and_detail.py` and still hold.
+
+### Fixed — the tool call that died on a row another thread was reading
+
+`test_many_concurrent_pairs_lose_no_audit_or_call_row` had been failing on CI a
+few times a release — always the same way, never locally, and with nothing to go
+on:
+
+```
+AssertionError: 1 call(s) returned an error, first: 'An error occurred while
+running the tool. Please try again. Error: tuple index out of range'
+```
+
+That message is the Agents SDK's `default_tool_error_function`, which
+stringifies whatever the tool body raised and discards the traceback. Handing
+the test a `failure_error_function` that keeps the stack named the throw site on
+the first reproduction: `row["id"]` in `_row_to_out`, on a **torn row**.
+
+Two tool bodies share the turn's one connection — the SDK dispatches each sync
+tool with `asyncio.to_thread` — and two threads stepping statements on a single
+`sqlite3.Connection` can hand back a `sqlite3.Row` whose description carries
+more columns than the row has values. `sqlite3.threadsafety` is 3, but that says
+the SQLite *library* is serialized; CPython's per-connection bookkeeping is not.
+It reproduces with no app code involved, and only on Pythons newer than the
+developer machines — which is the whole reason it lived in CI. Tears per 6000
+forced-concurrent rounds on one in-memory connection:
+
+| | 3.11 | 3.12 (CI) | 3.13 |
+| --- | --- | --- | --- |
+| write under the lock, read unguarded (the shipped code) | 0 | 1 | 2 |
+| **two pure reads, no writer at all** | 0 | **3** | **10** |
+
+The second row is the one that matters: `db.WRITE_LOCK` guarded writes, so no
+amount of write locking could have closed this. `db.connect()` now returns a
+`SerializedConnection` that runs **every** statement under the connection's lock
+and drains the statement before releasing it, so no caller can be left fetching
+rows outside the lock. Explicit write sections stay, as
+`with db.transaction(conn):`: a per-statement lock cannot know that an INSERT and
+its commit belong together.
+
+**The lock is per connection, and that is not a detail.** The first cut used one
+process-wide lock and deadlocked two writing connections: A's INSERT opens a
+SQLite write transaction and releases the lock, B's INSERT takes the lock and
+parks inside `sqlite3_step` waiting for A, and A's `commit()` — the only thing
+that would end the wait — cannot get the lock back. Nothing moves until B's
+`busy_timeout` expires, B fails with `database is locked`, and every other
+statement in the process queues behind it; in production that wait is 30
+seconds. Two connections is the normal shape, not a corner case — every request
+opens one and a turn's worker owns another for its lifetime. Caught in review
+before release, reproduced (8.0s stall on an 8s timeout), fixed, and pinned by
+`test_two_writing_connections_do_not_deadlock_each_other`.
+
+The user-visible symptom was an agent told a read-only tool had failed when it
+had in fact succeeded, and an audit trail that quietly did not hold (rule 17).
+
 ## [0.77.0] - 2026-08-11
 
 _A count we were already making and throwing away — and an SDK upgrade that did

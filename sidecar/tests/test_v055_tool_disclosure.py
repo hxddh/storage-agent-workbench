@@ -35,7 +35,7 @@ import sqlite3
 
 import pytest
 
-from app import migrations
+from app import db, migrations
 from app.agent_runtime import session_agent as sa
 from app.agent_runtime import session_tools
 
@@ -51,11 +51,13 @@ class _Ctx:
 
 @pytest.fixture()
 def conn():
-    # check_same_thread=False mirrors app/db.py. It matters here: the SDK
+    # Mirrors app/db.py, and both halves of the mirror matter here: the SDK
     # dispatches a sync tool with asyncio.to_thread, so a tool body genuinely
-    # runs off the creating thread — which is exactly what the concurrency test
-    # below needs to reproduce.
-    c = sqlite3.connect(":memory:", check_same_thread=False)
+    # runs off the creating thread (check_same_thread=False), and several of them
+    # run at once on this one connection (db.serialized — without it two threads
+    # stepping statements on one connection hand back a torn row, and the
+    # concurrency test below catches it).
+    c = db.serialized(sqlite3.connect(":memory:", check_same_thread=False))
     c.row_factory = sqlite3.Row
     migrations.apply_migrations(c)
     return c
@@ -480,6 +482,18 @@ def test_many_concurrent_pairs_lose_no_audit_or_call_row(conn):
     Measured before the fix, over 60 forced-concurrent pairs: 2 of 120 calls died
     that way — the agent saw a failure for a call that had actually succeeded,
     and the audit trail rule 17 requires quietly did not hold.
+
+    v0.78.0 — a SECOND way to kill a call, which this test kept catching on CI
+    and never locally. The lock above serialized writes; the READ beside them was
+    unguarded, and two threads stepping statements on one connection can hand
+    back a torn `sqlite3.Row` whose description is wider than its values. The
+    tool then died on ``row["id"]`` with ``IndexError: tuple index out of
+    range``, delivered to the model as the SDK's generic "An error occurred while
+    running the tool". It reproduces on CPython 3.12/3.13 and not on 3.11 —
+    which is why CI saw it and developer machines did not. The fixture's
+    connection is now serialized the way ``db.connect()`` serializes the real
+    one; the mechanism and its measurements are in
+    ``test_v078_shared_connection_serialization.py``.
     """
     import threading
 
@@ -507,13 +521,16 @@ def test_many_concurrent_pairs_lose_no_audit_or_call_row(conn):
 
     cloud_repo.list_all = blocking_list_all
     # What each invocation actually RETURNED. The assertions below count rows; a
-    # count tells you a call died but not which one or why, and this test has
-    # failed once on CI (239/240) with no reproduction in 34 local runs — three
-    # candidate mechanisms measured and disproven, including the two obvious
-    # ones (the SDK does give each concurrent body its own thread; a read racing
-    # a commit on the shared connection does not raise in 4000 rounds). So
-    # capture the evidence rather than theorise again: the next failure names the
-    # call and carries its message.
+    # count tells you a call died but not which one or why, and that is how this
+    # test spent several releases failing on CI with nothing to go on — the SDK's
+    # `default_tool_error_function` stringifies the exception and drops the
+    # traceback. Keep returning the message: with the row race closed, the next
+    # failure here is a NEW one, and its text is the only evidence that survives.
+    #
+    # (Reproducing it took a `failure_error_function` that kept the traceback, on
+    # CPython 3.12. If this ever fires again, do that first — the stack named the
+    # throw site immediately, after three theories had been measured and
+    # disproven from the message alone.)
     returns: list = []
     try:
         async def pair():

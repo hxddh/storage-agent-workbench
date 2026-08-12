@@ -290,7 +290,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         # "which step was slow" was unanswerable). Best-effort — a bookkeeping
         # failure must never break the tool the user actually asked for.
         try:
-            with db.WRITE_LOCK:
+            with db.transaction(conn):
                 conn.execute(
                     "INSERT INTO tool_calls (id, run_id, session_id, tool_name, "
                     " input_json_sanitized, output_json_sanitized, status, duration_ms, created_at) "
@@ -362,7 +362,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         # makes the connection hold the SQLite/WAL write lock across the next
         # slow S3 tool call, which can starve a concurrently-running inline run's
         # writes for >busy_timeout → "database is locked". Keep the write txn tiny.
-        # Under db.WRITE_LOCK: with parallel tool calls two bodies share this
+        # Under db.transaction(conn): with parallel tool calls two bodies share this
         # ONE connection, so an unguarded commit here can commit the other call's
         # half-written work and then raise on its own commit (v0.55.0).
         #
@@ -380,7 +380,7 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         # recorded; what is marked is that its audit_logs entry is missing.
         audit_error: str | None = None
         try:
-            with db.WRITE_LOCK:
+            with db.transaction(conn):
                 audit.record(conn, "session_tool",
                              {"tool": tool, **{k: str(v)[:200] for k, v in kw.items()}},
                              run_id=None, session_id=session_id)
