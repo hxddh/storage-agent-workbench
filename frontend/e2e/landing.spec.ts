@@ -52,6 +52,80 @@ async function distanceFromBottom(page: Page): Promise<number> {
 // sub-pixel layout, while still failing hard at the measured 1530px.
 const AT_BOTTOM_PX = 120;
 
+/**
+ * Record the scroller's position every frame, so a failure can say WHY.
+ *
+ * `'jump to latest' actually reaches the latest` has failed on CI a few times —
+ * measured at 1 in 23 full-file runs on a loaded developer machine, 0 in 16 on
+ * the same machine unloaded, and 0 in 20 when run alone. It has never been
+ * reproduced deliberately: 6 forced attempts with no settle wait, 6 with a wheel
+ * gesture, and 8 full-file runs under 6 CPU hogs all passed.
+ *
+ * So this does NOT fix it. Guessing at a fix for a race nobody has reproduced
+ * is how the v0.78.0 torn row survived three releases and three wrong theories.
+ * This captures the evidence instead, and the trace is built to separate the
+ * candidates rather than merely prove something went wrong:
+ *
+ * - scrollTop returns to the bottom on its own → the thread scrolled back, and
+ *   the convergence run in `scrollToBottom` is the mechanism (it re-jumps every
+ *   frame until the height settles, and `onScroll` ignores scroll events while
+ *   it runs — so a programmatic scroll made mid-run is both undone and never
+ *   measured, which a real user's wheel gesture would have prevented by
+ *   cancelling the run through `releaseToUser` first);
+ * - scrollTop stays put and the button is still absent → the pin state did not
+ *   update, and the fault is in `onScroll` or the render, not the scrolling;
+ * - scrollHeight is still growing → the thread had not finished laying out, and
+ *   the test moved too early.
+ */
+async function traceScroll(page: Page, forMs = 12_000): Promise<void> {
+  await page.evaluate((ms) => {
+    const sc = document.querySelector("main .overflow-auto") as HTMLElement | null;
+    if (!sc) return;
+    const trace: number[][] = [];
+    (window as unknown as { __scrollTrace: number[][] }).__scrollTrace = trace;
+    const t0 = performance.now();
+    const tick = () => {
+      const at = performance.now() - t0;
+      trace.push([Math.round(at), Math.round(sc.scrollTop), Math.round(sc.scrollHeight)]);
+      if (at < ms) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, forMs);
+}
+
+/** Assert the rescue affordance appeared; on failure, report the trace. */
+async function expectJumpToLatestOffered(page: Page): Promise<void> {
+  try {
+    await expect(page.getByTestId("jump-to-latest")).toBeVisible({ timeout: 10_000 });
+  } catch (original) {
+    const trace = await page.evaluate(
+      () => (window as unknown as { __scrollTrace?: number[][] }).__scrollTrace ?? []);
+    const el = await page.evaluate(() => {
+      const sc = document.querySelector("main .overflow-auto") as HTMLElement | null;
+      return sc
+        ? { scrollTop: Math.round(sc.scrollTop), scrollHeight: Math.round(sc.scrollHeight),
+            clientHeight: Math.round(sc.clientHeight) }
+        : null;
+    });
+    const inDom = await page.getByTestId("jump-to-latest").count();
+    // Every frame is too much to read; the shape is in the first second and in
+    // where it ended up.
+    const head = trace.slice(0, 60).map(([t, top, h]) => `${t}:${top}/${h}`).join(" ");
+    const tail = trace.slice(-10).map(([t, top, h]) => `${t}:${top}/${h}`).join(" ");
+    const returned = trace.length > 1 && trace[trace.length - 1][1] > 200;
+    throw new Error(
+      `'jump to latest' never appeared after scrolling away.\n` +
+      `  button nodes in DOM: ${inDom} (0 = never rendered, 1 = rendered but not visible)\n` +
+      `  scroller at failure: ${JSON.stringify(el)}\n` +
+      `  scrolled itself back to the bottom: ${returned} ` +
+      `(true → the convergence run undid the scroll; false → the pin state never updated)\n` +
+      `  trace ms:scrollTop/scrollHeight, first 60 frames: ${head}\n` +
+      `  last 10 frames: ${tail}\n` +
+      `  original: ${(original as Error).message}`,
+    );
+  }
+}
+
 test.describe("a long thread of realistically-sized answers", () => {
   test("opens on the newest message, not partway up", async ({ page }) => {
     const { title } = seedSession(40, `landing tall ${Date.now()}`, "tall");
@@ -79,12 +153,15 @@ test.describe("a long thread of realistically-sized answers", () => {
     await openSeeded(page, title);
     await expect.poll(() => distanceFromBottom(page), { timeout: 15_000 }).toBeLessThanOrEqual(AT_BOTTOM_PX);
 
-    // Scroll away, the way a user re-reading an earlier turn does.
+    // Scroll away, the way a user re-reading an earlier turn does. Traced from
+    // just before the scroll, so an occurrence of the known flake reports the
+    // scroller's own behaviour rather than only "the button was not there".
+    await traceScroll(page);
     await page.evaluate(() => {
       const sc = document.querySelector("main .overflow-auto") as HTMLElement;
       sc.scrollTop = 0;
     });
-    await expect(page.getByTestId("jump-to-latest")).toBeVisible({ timeout: 10_000 });
+    await expectJumpToLatestOffered(page);
 
     await page.getByTestId("jump-to-latest").click();
     await expect

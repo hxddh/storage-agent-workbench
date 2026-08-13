@@ -6,6 +6,35 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Changed — the `jump to latest` flake now reports why, because nobody can reproduce it
+
+`landing.spec.ts › 'jump to latest' actually reaches the latest` fails on CI
+every so often: the test scrolls the thread to the top and the rescue button
+never appears. Measured on a developer machine — 1 failure in 23 full-file runs
+while the machine was loaded, 0 in 16 against `main`'s sidecar, 0 in 20 run
+alone. Every deliberate attempt to provoke it **passed**: 6 runs scrolling with
+no settle wait, 6 with a wheel gesture, 8 full-file runs under 6 CPU hogs.
+
+There is a plausible mechanism — `scrollToBottom` re-jumps every frame until the
+thread's height settles, and `onScroll` ignores scroll events while that run is
+in flight, so a *programmatic* scroll made mid-run would be both undone and
+never measured, where a real user's wheel gesture cancels the run first through
+`releaseToUser`. The sibling test that scrolls by wheel does not flake, which
+fits. But it is a story, not evidence, and the same kind of story was wrong
+three times about the v0.78.0 torn row. Changing the test to match the theory
+would most likely just hide the failure and make the next one harder to read.
+
+So the test now records the scroller's position every frame and, on failure,
+reports a trace built to tell the candidates apart: whether the thread scrolled
+itself back to the bottom (the convergence run), whether it stayed put with the
+button still absent (the pin state), or whether the height was still growing
+(the test moved too early). The failure path was exercised deliberately — by
+pointing the assertion at a locator that cannot exist — rather than left as
+diagnostic code that first runs on the day it is needed.
+
+This does not fix the flake, and the test can still fail. The next occurrence
+will say what happened.
+
 ### Fixed — the fallback lock v0.78.0 shipped was the hazard it was guarding against
 
 `db.transaction()` returned one **process-wide** lock for a connection the
