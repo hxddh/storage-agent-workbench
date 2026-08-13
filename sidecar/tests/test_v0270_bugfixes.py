@@ -25,14 +25,14 @@ import json
 import sqlite3
 
 
-from app import config
+from app import config, db
 from app.models.schemas import RunCreate
 from app.repositories import account_discovery as account_repo
 from app.repositories import runs as runs_repo
 
 
 def _db():
-    c = sqlite3.connect(str(config.db_path()))
+    c = db.serialized(sqlite3.connect(str(config.db_path())))
     c.row_factory = sqlite3.Row
     return c
 

@@ -184,21 +184,29 @@ def test_the_unguarded_commit_sites_are_gone():
 
     The behavioural tests above are probabilistic — they detect the race, but a
     lucky run could pass. This one is deterministic: it reads the source and
-    fails if any `conn.commit()` in the agent-callable tool modules sits outside
-    a `with db.transaction(conn):` block.
+    fails if any `conn.commit()` in the agent runtime sits outside a
+    `with db.transaction(conn):` block.
+
+    Scans the whole PACKAGE, not a list of file names (v0.79.0). The list was
+    the four modules that held commits when it was written, so a new module —
+    the likeliest way for an unguarded commit to arrive — was not looked at, and
+    the `checked == 4` assertion below still passed while it was missed. Every
+    module in here runs on the turn's one shared connection, so every module is
+    in scope.
+
+    RECURSIVELY, so a subpackage is not the same hole one directory down: a
+    non-recursive glob would miss `agent_runtime/whatever/tools.py` while the
+    completeness assertion below still passed on the four top-level modules.
     """
     import re
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1] / "app" / "agent_runtime"
     offenders: list[str] = []
-    checked = 0
-    for name in ("session_action_tools.py", "session_analysis_tools.py",
-                 "session_tools.py", "session_memory_tools.py"):
-        path = root / name
-        if not path.exists():
-            continue
-        checked += 1
+    scanned: set[str] = set()
+    for path in sorted(root.rglob("*.py")):
+        rel = path.relative_to(root).as_posix()
+        scanned.add(rel)
         depth: int | None = None
         for lineno, line in enumerate(path.read_text().splitlines(), 1):
             indent = len(line) - len(line.lstrip())
@@ -207,9 +215,12 @@ def test_the_unguarded_commit_sites_are_gone():
             if "with db.transaction(" in line:
                 depth = indent
             if re.search(r"\bconn\.commit\(\)", line) and depth is None:
-                offenders.append(f"{name}:{lineno}")
-    # If the modules are ever renamed this guard would silently pass on nothing.
-    assert checked == 4, "the tool modules moved — this guard is not looking at them"
+                offenders.append(f"{rel}:{lineno}")
+    # If the package is ever moved this guard would silently pass on nothing, and
+    # the four modules that motivated it must still be among what was read.
+    assert scanned >= {"session_action_tools.py", "session_analysis_tools.py",
+                       "session_tools.py", "session_memory_tools.py"}, \
+        f"the tool modules moved — this guard is not looking at them: {sorted(scanned)}"
     assert offenders == [], (
         "unguarded conn.commit() on the shared turn connection: " + ", ".join(offenders))
 

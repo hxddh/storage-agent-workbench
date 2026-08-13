@@ -40,20 +40,47 @@ CI runs all three on every PR, alongside desktop builds for the three platforms.
 - Inventory import is CSV / Parquet only (no ORC).
 - CloudTrail / Storage Lens / provider-native access-log sources are not yet
   integrated.
-- The E2E suite covers the credential-free paths only; a model-backed turn is
-  deliberately out of scope there, since it would need a live provider key and
-  would make the gate flaky.
+- Nothing is tested against a **real** model provider or a **real** cloud
+  endpoint. Model-backed turns are covered — 11 of the 22 E2E specs drive a full
+  turn, tools and all, against a scripted local OpenAI-compatible endpoint
+  (`e2e/fake-model.ts`), and the S3 tools are covered against a real socket
+  serving canned S3 responses. What no gate exercises is a live provider key or
+  a live bucket, which is deliberate: it would need credentials in CI and would
+  make the gate flaky. The cost is that provider-specific behavior is only ever
+  found by hand. (v0.78.0 is the standing example of what the doubles can hide:
+  the scripted model emitted one tool-call ID for every call, which no real
+  model does, and that alone was read as an SDK regression for a whole release.)
 
 ## Direction
 
-Likely next steps, in rough priority order: notarization + auto-update (blocked
-on signing credentials, not on code), broader evidence sources (ORC inventory is
-the small one; CloudTrail / Storage Lens each need their own confirmed-import
-flow), and richer agent-assisted analysis.
+This list is what is *actionable*, in order. It is deliberately not led by the
+biggest-sounding item.
+
+1. **Broader evidence sources.** ORC inventory is the small one. CloudTrail and
+   Storage Lens each need their own confirmed-import flow, so each is a release
+   of its own.
+2. **Richer agent-assisted analysis** over what is already imported.
+3. **macOS x64 / universal builds**, if anyone is actually on Intel.
+
+**Signing, notarization and auto-update are not on this list, and that is a
+change.** They used to head it, which misread the situation: they are blocked on
+somebody buying an Apple Developer ID and a Windows code-signing certificate, so
+listing them as the next engineering step made a purchasing decision look like a
+backlog item and pushed the things that *can* be built down the page. They stay
+in Known gaps until that decision is made. When it is, the payoff is larger than
+just signed installers: auto-update becomes possible, and macOS could move
+secrets back to the system keychain without the update-time re-prompt that ruled
+it out (see the vault rationale in `CLAUDE.md`).
+
+A note on sequencing, learned the hard way. Recent releases have mostly deepened
+the safety and correctness floor rather than widening the feature surface, and
+that has been the right call more often than not — v0.78.0 fixed a concurrency
+defect that had been making CI red for several releases and was mis-diagnosed
+three times before the evidence was captured properly. Feature work on top of a
+floor that is still moving costs more than it looks like it will.
 
 None of these change the safety model — read-only (no write/destructive tool),
 secrets only in the encrypted local vault, no data-moving action without
-explicit confirmation, and every tool result treated as untrusted data. Recent
-releases have mostly *deepened* that model rather than extending the feature
-surface: see [security.md](security.md) for the current state of the floor and
-the CHANGELOG for what each release hardened.
+explicit confirmation, and every tool result treated as untrusted data. See
+[security.md](security.md) for the current state of that floor, and the
+CHANGELOG for what each release hardened.

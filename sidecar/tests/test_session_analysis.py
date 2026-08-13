@@ -10,7 +10,7 @@ metrics, and that the message turn surfaces pending attachments to the agent.
 import json
 import sqlite3
 
-from app import config, run_service
+from app import config, db, run_service
 from app.agent_runtime import session_agent, session_analysis_tools
 
 ACCESS_LOG_TEXT = (
@@ -31,7 +31,7 @@ def _fake_function_tool(fn):
 
 
 def _conn():
-    c = sqlite3.connect(str(config.db_path()))
+    c = db.serialized(sqlite3.connect(str(config.db_path())))
     c.row_factory = sqlite3.Row
     return c
 

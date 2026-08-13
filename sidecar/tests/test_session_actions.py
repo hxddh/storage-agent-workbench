@@ -13,7 +13,7 @@ import sqlite3
 
 import pytest
 
-from app import config, run_service
+from app import config, db, run_service
 from app.agent_runtime import session_agent
 from app.models.schemas import RunCreate
 from app.repositories import account_discovery as account_repo
@@ -25,7 +25,7 @@ MODEL_KEY = "sk-MODEL-SECRET-DO-NOT-LEAK"
 
 
 def _db():
-    c = sqlite3.connect(str(config.db_path()))
+    c = db.serialized(sqlite3.connect(str(config.db_path())))
     c.row_factory = sqlite3.Row
     return c
 

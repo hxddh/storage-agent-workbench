@@ -8,7 +8,7 @@ redacted before storage like every other agent output.
 import json
 import sqlite3
 
-from app import config
+from app import config, db
 from app.agent_runtime import session_agent, session_memory_tools
 from app.repositories import sessions as sessions_repo
 
@@ -27,7 +27,7 @@ def _session(conn) -> str:
 
 
 def _db():
-    conn = sqlite3.connect(str(config.db_path()))
+    conn = db.serialized(sqlite3.connect(str(config.db_path())))
     conn.row_factory = sqlite3.Row
     return conn
 
