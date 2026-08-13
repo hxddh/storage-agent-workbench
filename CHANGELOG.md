@@ -32,6 +32,14 @@ button still absent (the pin state), or whether the height was still growing
 pointing the assertion at a locator that cannot exist — rather than left as
 diagnostic code that first runs on the day it is needed.
 
+Review caught the flaw in that plan: the suite's per-test deadline is 30s, and
+this test can spend most of it before the assertion even starts, so on a loaded
+CI box Playwright would kill it mid-`catch` and print a generic timeout — losing
+the trace in exactly the run it exists for. The test now buys explicit headroom.
+Demonstrated both ways: with an assertion deliberately outlasting the old
+deadline, the unfixed test reports `Test timeout of 30000ms exceeded` and zero
+diagnostic lines; the fixed one reports the full trace.
+
 This does not fix the flake, and the test can still fail. The next occurrence
 will say what happened.
 

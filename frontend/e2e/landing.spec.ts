@@ -149,6 +149,15 @@ test.describe("a long thread of realistically-sized answers", () => {
   });
 
   test("'jump to latest' actually reaches the latest", async ({ page }) => {
+    // The diagnostic below is only worth having if it gets to RUN. The suite's
+    // per-test deadline is 30s (playwright.config.ts) and this test can spend
+    // most of that before the assertion starts — up to 20s waiting for the
+    // composer, 20s for the first thread item, 15s polling for the bottom. On a
+    // loaded CI box the 10s assertion can therefore reach the deadline, and
+    // Playwright kills the test mid-`catch`: no trace, just a generic timeout,
+    // in precisely the flaky run this whole change exists to explain. Buy the
+    // headroom explicitly rather than leave the diagnostic to chance.
+    test.setTimeout(90_000);
     const { title } = seedSession(40, `landing jump ${Date.now()}`, "tall");
     await openSeeded(page, title);
     await expect.poll(() => distanceFromBottom(page), { timeout: 15_000 }).toBeLessThanOrEqual(AT_BOTTOM_PX);
