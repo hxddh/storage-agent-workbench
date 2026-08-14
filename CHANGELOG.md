@@ -6,6 +6,17 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.79.0] - 2026-08-13
+
+_Cleaning up after v0.78.0: a trap that release left behind, a guard that could
+not see a new file, a flake nobody can reproduce, and two documented claims that
+had stopped being true._
+
+No new capability. v0.78.0 changed how every query in the app reaches SQLite and
+moved a pinned dependency, so this release makes that floor hold still —
+enforcing the invariants it introduced instead of trusting convention, and
+saying out loud which of its claims are actually verified.
+
 ### Changed — the `jump to latest` flake now reports why, because nobody can reproduce it
 
 `landing.spec.ts › 'jump to latest' actually reaches the latest` fails on CI
