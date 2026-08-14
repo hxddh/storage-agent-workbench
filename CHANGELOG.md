@@ -6,7 +6,7 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
-## [0.79.0] - 2026-08-13
+## [0.79.0] - 2026-08-14
 
 _Cleaning up after v0.78.0: a trap that release left behind, a guard that could
 not see a new file, a flake nobody can reproduce, and two documented claims that
