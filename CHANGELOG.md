@@ -6,6 +6,18 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.80.0] - 2026-08-15
+
+_The first instance of a defect class this project keeps re-fixing: the product
+stating a verdict it did not establish._
+
+Found by mining fourteen releases of changelog headings for what keeps coming
+back, rather than from the roadmap. One theme dominates — "a clean bill of
+health for a check that never ran", "why the suite could not see any of it", a
+guard whose own completeness assertion passed while it checked nothing. This
+release fixes the first live instance found by going and testing it, and states
+what was checked and found already correct so the sweep has a boundary.
+
 ### Fixed — the "only part of your file was analyzed" caveat that only the first question got
 
 An upload larger than the ingest cap (2,000,000 rows) is analyzed over its first
