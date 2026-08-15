@@ -96,6 +96,58 @@ def build(
         note("list_uploaded_files", session_id or "", f"{len(items)} file(s)")
         return json.dumps({"files": items})
 
+    def _truncation_of(ds: dict[str, Any],
+                       imp: dict[str, Any] | None) -> tuple[int, int] | None:
+        """``(ingest_cap, rows_analyzed)`` when this dataset was truncated, else None.
+
+        Prefers the live import result and falls back to what the dataset row
+        recorded, so the answer is the same whether or not THIS call did the
+        import. Rows imported before the columns existed cannot reach this with
+        NULL: migration 24 sent them back to 'uploaded', so the next analysis
+        re-imports and establishes the fact. (Without that, nothing ever would —
+        the built table is reused while the row says 'imported', so the importer
+        would never run again and an old oversized upload would answer
+        uncaveated forever.)
+        """
+        if imp is not None:
+            if not imp.get("truncated"):
+                return None
+            return int(imp.get("ingest_cap") or 0), int(imp.get("row_count") or 0)
+        if not ds.get("truncated"):
+            return None
+        return int(ds.get("ingest_cap") or 0), int(ds.get("row_count") or 0)
+
+    def _truncation_unknown(ds: dict[str, Any], imp: dict[str, Any] | None) -> bool:
+        """True when the table was reused and nothing ever recorded whether the
+        import was complete.
+
+        Migration 24 resets pre-existing rows so this should not arise, but the
+        whole point of this sweep is that an unknown quietly rendered as "fine"
+        is the defect. If one appears anyway, say so rather than answer as if
+        the file were whole."""
+        return imp is None and ds.get("truncated") is None
+
+    # How a metric behaves when only the first N rows of a file are read.
+    #
+    # "Lower bound" is true for counts, sums, maxima and distinct-counts: the
+    # unread rows can only add. It is FALSE for averages and percentiles, which
+    # can move either way, and backwards for minima, which can only fall. Saying
+    # "lower bound" for `avg_size` would hand the model a wrong inequality and
+    # invite it to reason from it — a caveat that misleads is worse than none.
+    _MONOTONE_UP = ("count", "sum_", "total_", "max_", "distinct_")
+    _MONOTONE_DOWN = ("min_",)
+
+    def _bound_phrase(metric: str) -> str:
+        if metric.startswith(_MONOTONE_UP):
+            return ("a LOWER BOUND — the unanalyzed rows can only add to it, "
+                    "never subtract")
+        if metric.startswith(_MONOTONE_DOWN):
+            return ("an UPPER BOUND — an unanalyzed row can only be smaller, "
+                    "never larger")
+        return ("neither an upper nor a lower bound — an average or percentile "
+                "over the first rows can be higher OR lower than over the whole "
+                "file, so treat it as describing the analyzed rows only")
+
     def _ensure_imported(ds: dict[str, Any]) -> tuple[Path, dict[str, Any] | None, str | None]:
         """Return ``(duckdb_path, imp_or_none, detected_format)`` for a dataset,
         importing the raw upload only if needed.
@@ -135,7 +187,9 @@ def build(
             imported = ds_repo.mark_imported(
                 conn, dataset_id, config.rel_path(duckdb_abs),
                 imp.get("table_name") or "", int(imp.get("row_count") or 0),
-                detected_format=detected, expected_stored_path=ds.get("stored_path"))
+                detected_format=detected, expected_stored_path=ds.get("stored_path"),
+                truncated=bool(imp.get("truncated")),
+                ingest_cap=int(imp.get("ingest_cap") or 0) or None)
             if not imported:
                 conn.commit()
         if not imported:
@@ -205,20 +259,39 @@ def build(
             note("analyze_uploaded_file", ds.get("source_filename") or dataset_id, "error", ok=False)
             return _err(f"Could not analyze the file: {exc}")
 
-        # No silent cap: if THIS import hit the row ceiling, tell the model the
+        # No silent cap: if the import hit the row ceiling, tell the model the
         # metrics are a lower bound over the first N rows, not the whole file.
-        if imp and imp.get("truncated"):
-            cap = int(imp.get("ingest_cap") or 0)
+        #
+        # Read from the DATASET, not from `imp` (v0.80.0). `imp` is only present
+        # on the call that actually imported, so this used to caveat the first
+        # turn and then go quiet: every follow-up question re-read the same
+        # truncated table and got the metrics described as the whole file.
+        # Multi-turn is the normal way this product is used, so the silent case
+        # was the common one.
+        trunc = _truncation_of(ds, imp)
+        if trunc:
+            cap, analyzed = trunc
             result["truncated"] = True
-            result["rows_analyzed"] = int(imp.get("row_count") or 0)
+            result["rows_analyzed"] = analyzed
             cap_note = (
                 f"This file exceeded the analysis ingest cap ({cap:,} rows); only the "
-                f"first {result['rows_analyzed']:,} rows were analyzed. Report the metrics "
-                "as a LOWER BOUND over the analyzed rows — NOT the whole file — and, if the "
-                "user needs full coverage, suggest splitting the file or a narrower slice."
+                f"first {result['rows_analyzed']:,} rows were analyzed — NOT the whole "
+                "file. Counts, totals and maxima below are LOWER BOUNDS (the unanalyzed "
+                "rows can only add). Averages, ratios and minima are NOT bounds: they "
+                "describe the analyzed rows and can move either way over the full file, "
+                "so do not reason from them as if they were limits. If the user needs "
+                "full coverage, suggest splitting the file or a narrower slice."
             )
             prior = result.get("note")
             result["note"] = (prior + " " + cap_note) if prior else cap_note
+        elif _truncation_unknown(ds, imp):
+            result["truncation_unknown"] = True
+            unk = ("It is NOT recorded whether this file was read in full or stopped at "
+                   "the ingest cap, so the metrics may cover only part of it. Say that "
+                   "the coverage is unknown rather than presenting them as the whole "
+                   "file; re-uploading the file re-establishes it.")
+            prior = result.get("note")
+            result["note"] = (prior + " " + unk) if prior else unk
 
         # Rule 17: a data import + analysis must leave an audit trail.
         with db.transaction(conn):
@@ -263,6 +336,7 @@ def build(
 
         try:
             duckdb_abs, _imp, _detected = _ensure_imported(ds)
+            _trunc = _truncation_of(ds, _imp)
             out = agg.aggregate(
                 duckdb_abs, ds["dataset_type"], metric,
                 group_by=group_by or None, group_by_2=group_by_2 or None, filters=filters,
@@ -303,6 +377,22 @@ def build(
                 )
         else:
             result["value"] = out["value"]
+        # The dataset itself may be a truncated read of the file, which this tool
+        # never mentioned — not even on the importing call, since it discarded the
+        # import metadata (v0.80.0). Deliberately NOT called `truncated`: that key
+        # already means "more GROUPS exist beyond the limit" here, and collapsing
+        # a partial file into the same word is how a caveat stops being read.
+        if _trunc:
+            cap, analyzed = _trunc
+            result["source_truncated"] = True
+            result["rows_analyzed"] = analyzed
+            src_note = (
+                f"The underlying file exceeded the analysis ingest cap ({cap:,} rows); "
+                f"this aggregate covers only the first {analyzed:,} rows, not the whole "
+                f"file. For `{metric}` that makes the value {_bound_phrase(metric)}."
+            )
+            prior = result.get("note")
+            result["note"] = (prior + " " + src_note) if prior else src_note
         summary = (f"{len(out['groups'])} groups" if "groups" in out
                    else f"value={out.get('value')}")
         note("aggregate_uploaded_file", ds.get("source_filename") or dataset_id,

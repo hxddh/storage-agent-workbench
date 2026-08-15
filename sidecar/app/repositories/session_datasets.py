@@ -24,6 +24,12 @@ def _clean_name(name: str | None) -> str | None:
     return redact_text(name) if name else name
 
 
+def _bool_or_none(v: Any) -> bool | None:
+    """SQLite has no boolean. Keep NULL distinct from 0 — "never recorded" is not
+    the same claim as "checked, and it was not truncated"."""
+    return None if v is None else bool(v)
+
+
 def _to_dict(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
@@ -35,6 +41,12 @@ def _to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "table_name": row["table_name"],
         "row_count": row["row_count"],
         "detected_format": row["detected_format"],
+        # Whether the import stopped at the row ceiling, and where that ceiling
+        # was. Carried so a LATER analysis of the same dataset can still say the
+        # numbers cover part of the file — the caveat used to exist only on the
+        # importing call. NULL = imported before these columns existed.
+        "truncated": _bool_or_none(row["truncated"]),
+        "ingest_cap": row["ingest_cap"],
         "status": row["status"],
         "created_at": row["created_at"],
     }
@@ -81,9 +93,13 @@ def upsert(
     ).fetchone()
     if existing is not None:
         conn.execute(
+            # truncated/ingest_cap describe the PREVIOUS import; a re-upload
+            # replaces the file, so carrying them over would caveat (or fail to
+            # caveat) the new one on the old one's evidence.
             "UPDATE session_datasets SET dataset_type = ?, stored_path = ?, "
             "duckdb_path = NULL, table_name = NULL, row_count = NULL, "
-            "detected_format = NULL, status = 'uploaded' WHERE id = ?",
+            "detected_format = NULL, truncated = NULL, ingest_cap = NULL, "
+            "status = 'uploaded' WHERE id = ?",
             (dataset_type, stored_path_rel, existing["id"]),
         )
         return existing["id"]
@@ -98,6 +114,8 @@ def mark_imported(
     row_count: int,
     detected_format: str | None = None,
     expected_stored_path: str | None = None,
+    truncated: bool | None = None,
+    ingest_cap: int | None = None,
 ) -> bool:
     """Flag a dataset imported. Returns True if the row was updated.
 
@@ -106,19 +124,27 @@ def mark_imported(
     changed (a re-upload of the same filename overwrote it and reset status to
     'uploaded'), the UPDATE matches 0 rows and returns False — so a slow import of
     the OLD file can't stamp a stale table as freshly imported over the new one.
+
+    ``truncated``/``ingest_cap`` record that the import hit the row ceiling, so
+    every LATER analysis of this dataset can say so too. They used to live only
+    on the importing call's return value, which meant the second turn to ask
+    about a too-large file described a truncated table as the whole thing.
     """
     if expected_stored_path is not None:
         cur = conn.execute(
             "UPDATE session_datasets SET duckdb_path=?, table_name=?, row_count=?, "
-            "detected_format=?, status='imported' WHERE id=? AND stored_path=?",
+            "detected_format=?, truncated=?, ingest_cap=?, status='imported' "
+            "WHERE id=? AND stored_path=?",
             (duckdb_path_rel, table_name, row_count, detected_format,
+             None if truncated is None else int(truncated), ingest_cap,
              dataset_id, expected_stored_path),
         )
     else:
         cur = conn.execute(
             "UPDATE session_datasets SET duckdb_path=?, table_name=?, row_count=?, "
-            "detected_format=?, status='imported' WHERE id=?",
-            (duckdb_path_rel, table_name, row_count, detected_format, dataset_id),
+            "detected_format=?, truncated=?, ingest_cap=?, status='imported' WHERE id=?",
+            (duckdb_path_rel, table_name, row_count, detected_format,
+             None if truncated is None else int(truncated), ingest_cap, dataset_id),
         )
     return cur.rowcount > 0
 
