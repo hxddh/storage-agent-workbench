@@ -609,6 +609,20 @@ ALTER TABLE turn_metrics ADD COLUMN budget_tokens INTEGER;
 ALTER TABLE turn_metrics ADD COLUMN repeat_calls_avoided INTEGER;
 """
 
+# Whether an uploaded dataset hit the ingest row cap, and what the cap was.
+#
+# The import already computed both, and the analysis tool already told the model
+# "these metrics are a lower bound" — but only on the call that DID the import.
+# The fact lived on that call's return value and nowhere else, so every later
+# turn re-read the same truncated table and described it as the whole file.
+# Persisting it on the row makes the caveat a property of the dataset rather
+# than of one lucky call. NULL means "imported before this column existed" —
+# unknown, not false.
+_M024 = """
+ALTER TABLE session_datasets ADD COLUMN truncated INTEGER;
+ALTER TABLE session_datasets ADD COLUMN ingest_cap INTEGER;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -638,6 +652,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     # model's invisible output were indistinguishable from ordinary spend.
     (22, "turn_metrics_token_details", _M022),
     (23, "turn_metrics_budget", _M023),
+    (24, "session_datasets_truncation", _M024),
 ]
 
 

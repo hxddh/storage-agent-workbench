@@ -6,6 +6,47 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Fixed — the "only part of your file was analyzed" caveat that only the first question got
+
+An upload larger than the ingest cap (2,000,000 rows) is analyzed over its first
+N rows, and `analyze_uploaded_file` said so — on the call that performed the
+import, and only that one. The flag lived on that call's return value and
+nowhere else: once the dataset row says `imported`, the import metadata comes
+back as `None`, and `session_datasets` had no column to remember it.
+
+So the second question about the same file, and every one after, re-read the
+same truncated table and got the numbers with no caveat — including verdicts
+like "No capacity concerns detected". **Multi-turn is how this product is used,
+so the silent case was the common one**, and it fails in the expensive
+direction: the agent tells you your storage looks balanced having seen a slice
+of it. Measured with the cap lowered to 5 rows:
+
+```
+analyze turn 1: truncated=True  rows_analyzed=5
+analyze turn 2: truncated=None  rows_analyzed=None     <-- same file
+analyze turn 3: truncated=None  rows_analyzed=None
+aggregate:      source_truncated=None                  <-- never, on any call
+```
+
+`aggregate_uploaded_file` was worse: it discarded the import metadata outright,
+so it never reported truncation even on the importing call.
+
+Truncation is now recorded on the dataset row — a property of the dataset rather
+than of one lucky call — and both tools read it. In the aggregate payload the
+file-level fact is `source_truncated`, deliberately **not** folded into
+`truncated`, which already means "more GROUPS exist beyond this limit" there;
+collapsing the two into one word is how a caveat stops being read.
+
+This is the first of a sweep for one recurring class: **the product stating a
+verdict it did not establish**. Mining fourteen releases of changelog headings,
+it is the single most repeated theme — "a clean bill of health for a check that
+never ran" (v0.70.0), an object reported cleanly deletable that could not be
+inspected (v0.74.0), a capability gap reported as a hard failure (v0.74.0), a
+guard whose own completeness assertion passed while it checked nothing
+(v0.79.0). Two places were checked and found already correct: the four review
+lenses (`_unsupported_findings` per aspect, v0.71.0) and account-survey exposure
+(`exposure_unknown_count`, v0.70.0).
+
 ## [0.79.0] - 2026-08-14
 
 _Cleaning up after v0.78.0: a trap that release left behind, a guard that could

@@ -96,6 +96,24 @@ def build(
         note("list_uploaded_files", session_id or "", f"{len(items)} file(s)")
         return json.dumps({"files": items})
 
+    def _truncation_of(ds: dict[str, Any],
+                       imp: dict[str, Any] | None) -> tuple[int, int] | None:
+        """``(ingest_cap, rows_analyzed)`` when this dataset was truncated, else None.
+
+        Prefers the live import result and falls back to what the dataset row
+        recorded, so the answer is the same whether or not THIS call did the
+        import. A row imported before the columns existed has `truncated` NULL —
+        unknown, which is reported as not-truncated rather than invented, and
+        self-corrects the next time the file is re-imported.
+        """
+        if imp is not None:
+            if not imp.get("truncated"):
+                return None
+            return int(imp.get("ingest_cap") or 0), int(imp.get("row_count") or 0)
+        if not ds.get("truncated"):
+            return None
+        return int(ds.get("ingest_cap") or 0), int(ds.get("row_count") or 0)
+
     def _ensure_imported(ds: dict[str, Any]) -> tuple[Path, dict[str, Any] | None, str | None]:
         """Return ``(duckdb_path, imp_or_none, detected_format)`` for a dataset,
         importing the raw upload only if needed.
@@ -135,7 +153,9 @@ def build(
             imported = ds_repo.mark_imported(
                 conn, dataset_id, config.rel_path(duckdb_abs),
                 imp.get("table_name") or "", int(imp.get("row_count") or 0),
-                detected_format=detected, expected_stored_path=ds.get("stored_path"))
+                detected_format=detected, expected_stored_path=ds.get("stored_path"),
+                truncated=bool(imp.get("truncated")),
+                ingest_cap=int(imp.get("ingest_cap") or 0) or None)
             if not imported:
                 conn.commit()
         if not imported:
@@ -205,12 +225,20 @@ def build(
             note("analyze_uploaded_file", ds.get("source_filename") or dataset_id, "error", ok=False)
             return _err(f"Could not analyze the file: {exc}")
 
-        # No silent cap: if THIS import hit the row ceiling, tell the model the
+        # No silent cap: if the import hit the row ceiling, tell the model the
         # metrics are a lower bound over the first N rows, not the whole file.
-        if imp and imp.get("truncated"):
-            cap = int(imp.get("ingest_cap") or 0)
+        #
+        # Read from the DATASET, not from `imp` (v0.80.0). `imp` is only present
+        # on the call that actually imported, so this used to caveat the first
+        # turn and then go quiet: every follow-up question re-read the same
+        # truncated table and got the metrics described as the whole file.
+        # Multi-turn is the normal way this product is used, so the silent case
+        # was the common one.
+        trunc = _truncation_of(ds, imp)
+        if trunc:
+            cap, analyzed = trunc
             result["truncated"] = True
-            result["rows_analyzed"] = int(imp.get("row_count") or 0)
+            result["rows_analyzed"] = analyzed
             cap_note = (
                 f"This file exceeded the analysis ingest cap ({cap:,} rows); only the "
                 f"first {result['rows_analyzed']:,} rows were analyzed. Report the metrics "
@@ -263,6 +291,7 @@ def build(
 
         try:
             duckdb_abs, _imp, _detected = _ensure_imported(ds)
+            _trunc = _truncation_of(ds, _imp)
             out = agg.aggregate(
                 duckdb_abs, ds["dataset_type"], metric,
                 group_by=group_by or None, group_by_2=group_by_2 or None, filters=filters,
@@ -303,6 +332,22 @@ def build(
                 )
         else:
             result["value"] = out["value"]
+        # The dataset itself may be a truncated read of the file, which this tool
+        # never mentioned — not even on the importing call, since it discarded the
+        # import metadata (v0.80.0). Deliberately NOT called `truncated`: that key
+        # already means "more GROUPS exist beyond the limit" here, and collapsing
+        # a partial file into the same word is how a caveat stops being read.
+        if _trunc:
+            cap, analyzed = _trunc
+            result["source_truncated"] = True
+            result["rows_analyzed"] = analyzed
+            src_note = (
+                f"The underlying file exceeded the analysis ingest cap ({cap:,} rows); "
+                f"this aggregate covers only the first {analyzed:,} rows. Every number "
+                "here is a LOWER BOUND over the analyzed rows, not the whole file."
+            )
+            prior = result.get("note")
+            result["note"] = (prior + " " + src_note) if prior else src_note
         summary = (f"{len(out['groups'])} groups" if "groups" in out
                    else f"value={out.get('value')}")
         note("aggregate_uploaded_file", ds.get("source_filename") or dataset_id,
