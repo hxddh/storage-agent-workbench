@@ -616,11 +616,19 @@ ALTER TABLE turn_metrics ADD COLUMN repeat_calls_avoided INTEGER;
 # The fact lived on that call's return value and nowhere else, so every later
 # turn re-read the same truncated table and described it as the whole file.
 # Persisting it on the row makes the caveat a property of the dataset rather
-# than of one lucky call. NULL means "imported before this column existed" —
-# unknown, not false.
+# than of one lucky call.
+#
+# The UPDATE is the other half, and it is not optional. Rows imported BEFORE
+# this migration have NULL — unknown — and nothing would ever resolve it:
+# `_ensure_imported` reuses the built table while the row says 'imported', so
+# the importer never runs again and a large upload from a previous version
+# would keep answering uncaveated, forever. Sending those rows back to
+# 'uploaded' costs one re-import each (local DuckDB, once) and establishes the
+# truth instead of preserving an unknown that reads as "fine".
 _M024 = """
 ALTER TABLE session_datasets ADD COLUMN truncated INTEGER;
 ALTER TABLE session_datasets ADD COLUMN ingest_cap INTEGER;
+UPDATE session_datasets SET status = 'uploaded' WHERE status = 'imported';
 """
 
 # Ordered list of migrations. Append new ones; never edit shipped entries.

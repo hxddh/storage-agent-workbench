@@ -102,9 +102,12 @@ def build(
 
         Prefers the live import result and falls back to what the dataset row
         recorded, so the answer is the same whether or not THIS call did the
-        import. A row imported before the columns existed has `truncated` NULL —
-        unknown, which is reported as not-truncated rather than invented, and
-        self-corrects the next time the file is re-imported.
+        import. Rows imported before the columns existed cannot reach this with
+        NULL: migration 24 sent them back to 'uploaded', so the next analysis
+        re-imports and establishes the fact. (Without that, nothing ever would —
+        the built table is reused while the row says 'imported', so the importer
+        would never run again and an old oversized upload would answer
+        uncaveated forever.)
         """
         if imp is not None:
             if not imp.get("truncated"):
@@ -113,6 +116,37 @@ def build(
         if not ds.get("truncated"):
             return None
         return int(ds.get("ingest_cap") or 0), int(ds.get("row_count") or 0)
+
+    def _truncation_unknown(ds: dict[str, Any], imp: dict[str, Any] | None) -> bool:
+        """True when the table was reused and nothing ever recorded whether the
+        import was complete.
+
+        Migration 24 resets pre-existing rows so this should not arise, but the
+        whole point of this sweep is that an unknown quietly rendered as "fine"
+        is the defect. If one appears anyway, say so rather than answer as if
+        the file were whole."""
+        return imp is None and ds.get("truncated") is None
+
+    # How a metric behaves when only the first N rows of a file are read.
+    #
+    # "Lower bound" is true for counts, sums, maxima and distinct-counts: the
+    # unread rows can only add. It is FALSE for averages and percentiles, which
+    # can move either way, and backwards for minima, which can only fall. Saying
+    # "lower bound" for `avg_size` would hand the model a wrong inequality and
+    # invite it to reason from it — a caveat that misleads is worse than none.
+    _MONOTONE_UP = ("count", "sum_", "total_", "max_", "distinct_")
+    _MONOTONE_DOWN = ("min_",)
+
+    def _bound_phrase(metric: str) -> str:
+        if metric.startswith(_MONOTONE_UP):
+            return ("a LOWER BOUND — the unanalyzed rows can only add to it, "
+                    "never subtract")
+        if metric.startswith(_MONOTONE_DOWN):
+            return ("an UPPER BOUND — an unanalyzed row can only be smaller, "
+                    "never larger")
+        return ("neither an upper nor a lower bound — an average or percentile "
+                "over the first rows can be higher OR lower than over the whole "
+                "file, so treat it as describing the analyzed rows only")
 
     def _ensure_imported(ds: dict[str, Any]) -> tuple[Path, dict[str, Any] | None, str | None]:
         """Return ``(duckdb_path, imp_or_none, detected_format)`` for a dataset,
@@ -241,12 +275,23 @@ def build(
             result["rows_analyzed"] = analyzed
             cap_note = (
                 f"This file exceeded the analysis ingest cap ({cap:,} rows); only the "
-                f"first {result['rows_analyzed']:,} rows were analyzed. Report the metrics "
-                "as a LOWER BOUND over the analyzed rows — NOT the whole file — and, if the "
-                "user needs full coverage, suggest splitting the file or a narrower slice."
+                f"first {result['rows_analyzed']:,} rows were analyzed — NOT the whole "
+                "file. Counts, totals and maxima below are LOWER BOUNDS (the unanalyzed "
+                "rows can only add). Averages, ratios and minima are NOT bounds: they "
+                "describe the analyzed rows and can move either way over the full file, "
+                "so do not reason from them as if they were limits. If the user needs "
+                "full coverage, suggest splitting the file or a narrower slice."
             )
             prior = result.get("note")
             result["note"] = (prior + " " + cap_note) if prior else cap_note
+        elif _truncation_unknown(ds, imp):
+            result["truncation_unknown"] = True
+            unk = ("It is NOT recorded whether this file was read in full or stopped at "
+                   "the ingest cap, so the metrics may cover only part of it. Say that "
+                   "the coverage is unknown rather than presenting them as the whole "
+                   "file; re-uploading the file re-establishes it.")
+            prior = result.get("note")
+            result["note"] = (prior + " " + unk) if prior else unk
 
         # Rule 17: a data import + analysis must leave an audit trail.
         with db.transaction(conn):
@@ -343,8 +388,8 @@ def build(
             result["rows_analyzed"] = analyzed
             src_note = (
                 f"The underlying file exceeded the analysis ingest cap ({cap:,} rows); "
-                f"this aggregate covers only the first {analyzed:,} rows. Every number "
-                "here is a LOWER BOUND over the analyzed rows, not the whole file."
+                f"this aggregate covers only the first {analyzed:,} rows, not the whole "
+                f"file. For `{metric}` that makes the value {_bound_phrase(metric)}."
             )
             prior = result.get("note")
             result["note"] = (prior + " " + src_note) if prior else src_note

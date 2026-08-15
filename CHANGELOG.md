@@ -37,6 +37,19 @@ file-level fact is `source_truncated`, deliberately **not** folded into
 `truncated`, which already means "more GROUPS exist beyond this limit" there;
 collapsing the two into one word is how a caveat stops being read.
 
+Review caught two things in the first cut, both real. The upgrade path was the
+worse one: rows imported by an earlier version have NULL, NULL was read as
+"complete", and **nothing would ever have corrected it** — the built table is
+reused while the row says `imported`, so the importer never runs again. The
+claim that it "self-corrects on the next re-import" described an event that does
+not happen. Migration 24 now sends imported rows back for one re-import, and a
+NULL that somehow survives is reported as *unknown coverage* rather than
+silently as whole. Second: "every number is a LOWER BOUND" is false for
+averages, percentiles and minima — the caveat is now per metric (sums, maxima
+and distinct-counts are lower bounds; minima are upper bounds; averages and
+percentiles are neither). A caveat that hands the model a wrong inequality is
+worse than none, because it invites reasoning from it.
+
 This is the first of a sweep for one recurring class: **the product stating a
 verdict it did not establish**. Mining fourteen releases of changelog headings,
 it is the single most repeated theme — "a clean bill of health for a check that

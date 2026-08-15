@@ -191,6 +191,84 @@ def test_re_uploading_clears_the_previous_file_s_caveat(env):
     assert out["row_count"] == 1
 
 
+def test_a_dataset_imported_before_this_release_gets_re_established(env):
+    """Review on #167, and the hole was real.
+
+    Rows imported by an older version have `truncated` NULL, and NULL was read as
+    "not truncated". Nothing would ever have corrected it: `_ensure_imported`
+    reuses the built table while the row says 'imported', so the importer never
+    runs again and a large upload from before the upgrade would answer
+    uncaveated forever — the docstring's claim that it "self-corrects on the next
+    re-import" was describing an event that does not happen.
+
+    Migration 24 sends imported rows back to 'uploaded' so the next analysis
+    re-derives the fact. Simulated here by putting a row in exactly the state an
+    upgrade leaves behind.
+    """
+    conn, dataset_id, tools = env
+    _call(tools["analyze_uploaded_file"], dataset_id=dataset_id)  # imports, records
+
+    # The pre-upgrade shape: imported, with the columns never filled in, and
+    # migration 24 not yet applied to it.
+    conn.execute("UPDATE session_datasets SET truncated = NULL, ingest_cap = NULL, "
+                 "status = 'imported' WHERE id = ?", (dataset_id,))
+    conn.execute("DELETE FROM schema_migrations WHERE version = 24")
+    conn.commit()
+
+    migrations.apply_migrations(conn)  # the upgrade
+
+    out = _call(tools["analyze_uploaded_file"], dataset_id=dataset_id)
+    assert out.get("truncated") is True, (
+        "an upload imported before the upgrade still answers uncaveated: " + repr(out))
+    assert out.get("rows_analyzed") == _CAP
+
+
+def test_an_unrecorded_coverage_is_reported_as_unknown_not_as_whole(env):
+    """Belt and braces for the same hole.
+
+    Migration 24 means a NULL on an imported row should not arise. If one does
+    anyway, the answer must not be silence — "we never recorded whether this was
+    the whole file" is the exact shape of unknown-rendered-as-fine that this
+    sweep exists to remove."""
+    conn, dataset_id, tools = env
+    _call(tools["analyze_uploaded_file"], dataset_id=dataset_id)
+    conn.execute("UPDATE session_datasets SET truncated = NULL, ingest_cap = NULL, "
+                 "status = 'imported' WHERE id = ?", (dataset_id,))
+    conn.commit()
+
+    out = _call(tools["analyze_uploaded_file"], dataset_id=dataset_id)
+    assert out.get("truncation_unknown") is True, out
+    assert "coverage is unknown" in (out.get("note") or ""), out.get("note")
+    assert out.get("truncated") is not True, "unknown must not be reported as truncated"
+
+
+def test_the_migration_sends_imported_rows_back_for_re_import(env):
+    """The mechanism the test above depends on, asserted directly: an existing
+    install's imported datasets are reset so the fact gets established once."""
+    conn, dataset_id, _tools = env
+    conn.execute("UPDATE session_datasets SET status = 'imported' WHERE id = ?", (dataset_id,))
+    conn.execute("DELETE FROM schema_migrations WHERE version = 24")
+    conn.commit()
+    migrations.apply_migrations(conn)
+    assert sds.get(conn, dataset_id)["status"] == "uploaded"
+
+
+@pytest.mark.parametrize(("metric", "expected"), [
+    ("total_size", "LOWER BOUND"),        # sum: unread rows can only add
+    ("max_size", "LOWER BOUND"),
+    ("distinct_prefixes", "LOWER BOUND"),
+    ("min_size", "UPPER BOUND"),          # an unread row can only be smaller
+    ("avg_size", "neither an upper nor a lower bound"),
+])
+def test_the_caveat_states_the_bound_the_metric_actually_has(env, metric, expected):
+    """Review on #167: "every number is a LOWER BOUND" is false for averages,
+    percentiles and minima. A caveat that hands the model a wrong inequality is
+    worse than no caveat — it invites reasoning from it."""
+    _conn, dataset_id, tools = env
+    out = _call(tools["aggregate_uploaded_file"], dataset_id=dataset_id, metric=metric)
+    assert expected in (out.get("note") or ""), f"{metric}: {out.get('note')!r}"
+
+
 def test_never_recorded_is_kept_distinct_from_not_truncated(env):
     """A row imported before these columns existed has NULL, which is unknown —
     not a claim that the file was complete. It must not be stored as 0, or the
