@@ -338,7 +338,7 @@ def build(
 
     @function_tool
     def query_account_profile(provider_id: str, filter: str = "all") -> str:
-        """Read-only: query the MOST RECENT persisted account survey for a cross-bucket posture matrix — answers "which of my buckets are public / have no encryption / no public-access-block / no lifecycle / logging off?" across the whole account WITHOUT re-scanning. Reads ALREADY-PERSISTED, sanitized snapshot flags (no new S3 call, no LLM, no object keys/bodies — statuses only). Returns, per matching bucket, its region + config-flag statuses (versioning/encryption/lifecycle/logging/replication/policy/public_access_block/tagging/inventory + access + policy_is_public/object_ownership). `filter` ∈ all | public_buckets (publicly exposed via the bucket POLICY verdict AND/OR public ACL grants) | missing_public_access_block | missing_encryption | missing_lifecycle | missing_logging | no_versioning | access_issues. Needs a completed survey_account first (run it if none exists; surveys before v0.29.0 lack the public-posture flags — re-survey to fill them). Args: provider_id, filter? (default 'all')."""
+        """Read-only: query the MOST RECENT persisted account survey for a cross-bucket posture matrix — answers "which of my buckets are public / have no encryption / no public-access-block / no lifecycle / logging off?" across the whole account WITHOUT re-scanning. Reads ALREADY-PERSISTED, sanitized snapshot flags (no new S3 call, no LLM, no object keys/bodies — statuses only). Returns, per matching bucket, its region + config-flag statuses (versioning/encryption/lifecycle/logging/replication/policy/public_access_block/tagging/inventory + access + policy_is_public/object_ownership). `filter` ∈ all | public_buckets (publicly exposed via the bucket POLICY verdict AND/OR public ACL grants) | missing_public_access_block | missing_encryption | missing_lifecycle | missing_logging | no_versioning | access_issues. Needs a completed survey_account first (run it if none exists; surveys before v0.29.0 lack the public-posture flags — re-survey to fill them). The result also carries undetermined_count/undetermined_buckets: buckets whose status on THIS dimension could not be read (access_denied / provider_unsupported / never recorded). They are NOT in the match list and they are NOT clean — when undetermined_count > 0 the match count covers only total_buckets minus that, so name the unchecked buckets instead of stating an account-wide verdict. Args: provider_id, filter? (default 'all')."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Use a configured provider.")
@@ -371,6 +371,19 @@ def build(
                   "object_ownership", "acls_disabled", "acl_status", "acl_public",
                   "publicly_exposed")
         _NC = "not_configured"
+        # A dimension is ESTABLISHED only when the read landed: "available"
+        # (configured) or "not_configured" (confirmed absent). Everything else —
+        # access_denied, provider_unsupported, error, or a column the survey
+        # never wrote — means we do not know.
+        _ESTABLISHED = ("available", _NC)
+        # Which persisted status each "missing X" filter actually reads.
+        _DIMENSION = {
+            "missing_public_access_block": "public_access_block_status",
+            "missing_encryption": "encryption_status",
+            "missing_lifecycle": "lifecycle_status",
+            "missing_logging": "logging_status",
+            "no_versioning": "versioning_status",
+        }
 
         def matches(b: dict[str, Any]) -> bool:
             if filter == "all":
@@ -402,17 +415,54 @@ def build(
                         or b.get("head_bucket_status") in ("access_denied", "error"))
             return True
 
+        def undetermined_status(b: dict[str, Any]) -> str | None:
+            """Why this NON-matching bucket cannot be counted as a clean answer —
+            or None if it genuinely was established.
+
+            Excluding an unreadable bucket from "missing encryption" is correct;
+            excluding it SILENTLY is not. Without this, matched_count over
+            total_buckets reads as a whole-account verdict, so the agent reports
+            "3 of your 24 buckets lack encryption" when 8 of the 24 were never
+            checked at all.
+            """
+            dim = _DIMENSION.get(filter)
+            if dim is not None:
+                st = b.get(dim)
+                return None if st in _ESTABLISHED else (st or "not_recorded")
+            if filter == "public_buckets":
+                # publicly_exposed is the tri-state: False needs BOTH the policy
+                # verdict and the ACL read to have landed. None = we cannot say
+                # this bucket is private (includes surveys predating the ACL read).
+                if b.get("publicly_exposed") is False:
+                    return None
+                st = b.get("acl_status")
+                if st not in _ESTABLISHED and st is not None:
+                    return st
+                st = b.get("policy_public_status")
+                return st if st not in _ESTABLISHED else "not_recorded"
+            if filter == "access_issues":
+                # Matching IS the finding here; a bucket is only unaccounted for
+                # when the survey recorded no reachability at all.
+                return None if b.get("access_status") else "not_recorded"
+            return None  # 'all' asserts nothing per-dimension
+
         buckets = prof.get("buckets") or []
         rows = [{"bucket": b.get("bucket_name"), **{k: b.get(k) for k in _FLAGS}}
                 for b in buckets if matches(b)]
+        unknown = [{"bucket": b.get("bucket_name"), "status": st}
+                   for b in buckets if not matches(b)
+                   for st in (undetermined_status(b),) if st is not None]
         with db.transaction(conn):
             audit.record(conn, "session.query_account_profile",
                          {"session_id": session_id, "provider_id": provider_id,
-                          "filter": filter, "matched": len(rows)}, run_id=None, session_id=session_id)
+                          "filter": filter, "matched": len(rows),
+                          "undetermined": len(unknown)},
+                         run_id=None, session_id=session_id)
             conn.commit()
+        suffix = f" ({len(unknown)} undetermined)" if unknown else ""
         note("query_account_profile", provider_name(provider_id),
-             f"{len(rows)}/{len(buckets)} match '{filter}'")
-        return json.dumps({
+             f"{len(rows)}/{len(buckets)} match '{filter}'{suffix}")
+        out: dict[str, Any] = {
             "success": True, "has_survey": True,
             "survey_run_id": run_ids[0], "surveyed_at": prof.get("created_at"),
             # Honesty: a truncated survey means this matrix is PARTIAL — say so
@@ -420,7 +470,22 @@ def build(
             "survey_truncated": bool(prof.get("truncated")),
             "filter": filter, "total_buckets": len(buckets),
             "matched_count": len(rows), "buckets": rows,
-        })
+            # Buckets the survey could not settle on THIS dimension. 0 is itself
+            # a statement: the answer covers every bucket in the survey.
+            "undetermined_count": len(unknown),
+        }
+        if unknown:
+            out["undetermined_buckets"] = unknown[:20]  # rule 16 sample cap
+            out["undetermined_truncated"] = len(unknown) > 20
+            out["coverage_note"] = (
+                f"{len(rows)} of {len(buckets)} buckets match '{filter}', but "
+                f"{len(unknown)} could not be checked for it (unreadable or "
+                f"unsupported), so their state is UNKNOWN — not 'fine'. Report the "
+                f"match count as covering {len(buckets) - len(unknown)} established "
+                f"buckets, and name the unchecked ones instead of implying a "
+                f"whole-account verdict."
+            )
+        return json.dumps(out)
 
     return [review_bucket_config, survey_account, read_run_result,
             compare_to_last_survey, query_account_profile]

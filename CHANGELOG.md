@@ -6,6 +6,59 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+_Second instance of the same defect class as v0.80.0: the product stating a
+verdict it did not establish._
+
+### Fixed — "which buckets have no encryption?" answered over buckets that were never checked
+
+`query_account_profile` reads the persisted account survey and returns the
+buckets matching a posture filter (`missing_encryption`, `missing_lifecycle`,
+`public_buckets`, …). Its filters are deliberately strict: a bucket only counts
+as missing encryption when the survey recorded `not_configured` — a confirmed
+absence. A bucket whose `GetBucketEncryption` came back `access_denied`, or
+whose provider does not implement it at all, is **excluded**, because
+"unreadable" is not evidence of "missing".
+
+That exclusion is right. Making it *silent* is the defect. The result carried
+only `matched_count` and `total_buckets`, so a survey of four buckets where one
+is unencrypted, one is encrypted, and two were unreadable came back as:
+
+```
+total_buckets: 4        matched_count: 1        buckets: [enc-off]
+```
+
+Nothing distinguishes "the other three are fine" from "one is fine and two were
+never checked" — and one-out-of-four is exactly the shape that gets narrated as
+an account-wide verdict. The agent reports *"only one of your four buckets lacks
+encryption"* about two buckets whose encryption nobody established, and it fails
+in the expensive direction on a security question.
+
+The result now accounts for every bucket it did not match. Each non-matching
+bucket is either established (`available` / `not_configured` on that dimension)
+or named in `undetermined_buckets` with the status that blocked it:
+
+```
+matched_count: 1   undetermined_count: 2
+undetermined_buckets: [{enc-denied, access_denied},
+                       {enc-unsupported, provider_unsupported}]
+coverage_note: "... 2 could not be checked for it ... so their state is
+                UNKNOWN — not 'fine'. Report the match count as covering
+                2 established buckets ..."
+```
+
+`undetermined_count: 0` is itself a claim — it says the answer really does cover
+the whole survey — so it is always present, while the caveat fields appear only
+when there is something to caveat. `public_buckets` gets the strictest reading:
+"not public" needs *both* the policy verdict and the ACL read to have landed, so
+a bucket with a non-public policy and an unreadable ACL is undetermined rather
+than private. The `all` filter asserts nothing per-dimension and so manufactures
+no caveat. Bucket names in the undetermined list are capped at 20 (rule 16).
+
+Found by testing the tool against a survey with mixed statuses rather than by
+reading the filters, which look correct in isolation — the gap is only visible
+in what the JSON does *not* say. Four regression tests, all verified failing
+against the previous code.
+
 ## [0.80.0] - 2026-08-15
 
 _The first instance of a defect class this project keeps re-fixing: the product
