@@ -302,7 +302,7 @@ def build(
 
     @function_tool
     def compare_to_last_survey(provider_id: str) -> str:
-        """Read-only: what CHANGED between this provider's two most recent account surveys — buckets added/removed, per-bucket config changes (versioning / encryption / lifecycle / logging / replication / policy / public-access / tagging / inventory), and evidence-source changes. Answers "what changed since last time?" from ALREADY-PERSISTED survey data — no new S3 calls, no LLM. Needs two completed surveys to exist (run survey_account now and it compares against the previous one). Args: provider_id."""
+        """Read-only: what CHANGED between this provider's two most recent account surveys — buckets added/removed, per-bucket config changes (versioning / encryption / lifecycle / logging / replication / policy / public-access / tagging / inventory), and evidence-source changes. Answers "what changed since last time?" from ALREADY-PERSISTED survey data — no new S3 calls, no LLM. Needs two completed surveys to exist (run survey_account now and it compares against the previous one). Membership changes are only trustworthy when both surveys enumerated the whole account: a bucket_added/bucket_removed entry carrying unverified:true came from a survey that stopped at its bucket cap and may be a scan-coverage artifact rather than a real addition or deletion — say so instead of reporting a deletion. surveys_truncated / coverage_note describe that coverage; the separate top-level truncated flag only means the CHANGES LIST was capped, never that the account was fully seen. Args: provider_id."""
         p = provider(provider_id)
         if p is None:
             return _err("Unknown provider_id. Use a configured provider.")
@@ -331,8 +331,12 @@ def build(
         note("compare_to_last_survey", provider_name(provider_id), f"{diff['change_count']} change(s)")
         return json.dumps({
             "success": True, "comparable": True,
-            "newer_survey": {"run_id": run_ids[0], "at": new_p.get("created_at")},
-            "older_survey": {"run_id": run_ids[1], "at": old_p.get("created_at")},
+            "newer_survey": {"run_id": run_ids[0], "at": new_p.get("created_at"),
+                             "truncated": bool(new_p.get("truncated")),
+                             "buckets_seen": len(new_p.get("buckets") or [])},
+            "older_survey": {"run_id": run_ids[1], "at": old_p.get("created_at"),
+                             "truncated": bool(old_p.get("truncated")),
+                             "buckets_seen": len(old_p.get("buckets") or [])},
             **diff,
         })
 

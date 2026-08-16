@@ -59,6 +59,36 @@ reading the filters, which look correct in isolation — the gap is only visible
 in what the JSON does *not* say. Four regression tests, all verified failing
 against the previous code.
 
+### Fixed — "what changed?" reporting buckets as deleted that were never scanned
+
+`compare_to_last_survey` diffs the two most recent account surveys. A survey
+stops at its bucket cap (default 100, `max_buckets` up to 500) and records
+`truncated`; the diff ignored that entirely. So a bucket present in a complete
+older survey and absent from a capped newer one came back as a flat fact:
+
+```
+changes: [{bucket: b4, change: bucket_removed},
+          {bucket: b5, change: bucket_removed}]
+change_count: 2      truncated: false
+```
+
+Those buckets still exist — the newer survey just never got to them. Two
+default-capped re-surveys of a growing account is the ordinary way to reach this,
+and the agent narrates it as *"b4 and b5 were deleted from your account"*.
+
+Worse, `truncated: false` sits right next to it. That flag means *the changes
+list was not capped at 200*; it says nothing about how much of the account each
+survey saw. One key, two subjects — the same trap the v0.80.0 fix avoided by
+naming its field `source_truncated`.
+
+Membership changes are now only asserted when the relevant survey saw the whole
+account. Otherwise the entry is emitted with `unverified: true` and a note
+saying which survey was capped, alongside `surveys_truncated: {older, newer}`,
+per-survey `truncated` + `buckets_seen`, a `coverage_note`, and an unambiguous
+`changes_truncated` alias for the list cap. When both surveys are complete, a
+removal is still reported as a plain removal — the caveat must not water down a
+real finding. Three regression tests, verified failing against the previous code.
+
 ## [0.80.0] - 2026-08-15
 
 _The first instance of a defect class this project keeps re-fixing: the product
