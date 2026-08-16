@@ -229,14 +229,32 @@ def diff_profiles(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
     """Deterministic diff of two account profiles (as returned by get_profile):
     buckets added/removed, per-bucket config-aspect changes, and evidence-source
     changes. Pure function — no LLM, no S3, no raw object listings; it reads only
-    the already-persisted, already-sanitized profile facts. Bounded output."""
+    the already-persisted, already-sanitized profile facts. Bounded output.
+
+    Membership changes are only trustworthy when BOTH surveys enumerated the
+    whole account. A survey that stopped at its bucket cap did not observe the
+    buckets past it, so "present then, absent now" can mean "deleted" or merely
+    "not scanned this time" — and the second reading is the common one after a
+    default-capped re-survey. Those entries are emitted with ``unverified`` set
+    rather than dropped or silently asserted."""
     old_b = {b["bucket_name"]: b for b in (old.get("buckets") or [])}
     new_b = {b["bucket_name"]: b for b in (new.get("buckets") or [])}
+    old_cut, new_cut = bool(old.get("truncated")), bool(new.get("truncated"))
     changes: list[dict[str, Any]] = []
     for name in sorted(set(new_b) - set(old_b)):
-        changes.append({"bucket": name, "change": "bucket_added"})
+        entry: dict[str, Any] = {"bucket": name, "change": "bucket_added"}
+        if old_cut:
+            entry["unverified"] = True
+            entry["note"] = ("the older survey was truncated — this bucket may have "
+                             "existed then and simply not been scanned")
+        changes.append(entry)
     for name in sorted(set(old_b) - set(new_b)):
-        changes.append({"bucket": name, "change": "bucket_removed"})
+        entry = {"bucket": name, "change": "bucket_removed"}
+        if new_cut:
+            entry["unverified"] = True
+            entry["note"] = ("the newer survey was truncated — this bucket may still "
+                             "exist and simply not have been scanned")
+        changes.append(entry)
     baselined: set[str] = set()
     for name in sorted(set(old_b) & set(new_b)):
         ob, nb = old_b[name], new_b[name]
@@ -269,8 +287,23 @@ def diff_profiles(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {
         "changes": changes[:_MAX_DIFF_CHANGES],
         "change_count": len(changes),
+        # NOTE: this flag is about THIS LIST being capped at _MAX_DIFF_CHANGES.
+        # It says nothing about how much of the account each survey saw — that
+        # is surveys_truncated below. Two different subjects; do not conflate
+        # them, and never read `truncated: false` as "full account coverage".
         "truncated": len(changes) > _MAX_DIFF_CHANGES,
+        "changes_truncated": len(changes) > _MAX_DIFF_CHANGES,
+        "surveys_truncated": {"older": old_cut, "newer": new_cut},
     }
+    if old_cut or new_cut:
+        which = " and ".join(w for w, c in (("older", old_cut), ("newer", new_cut)) if c)
+        out["coverage_note"] = (
+            f"The {which} survey stopped at its bucket cap, so this comparison did not "
+            "see the whole account. Bucket added/removed entries marked unverified may "
+            "be scan-coverage artifacts, not real additions or deletions, and a change "
+            "on an unscanned bucket would not appear here at all. Do not report this as "
+            "a complete account diff; re-survey with a higher max_buckets to settle it."
+        )
     if baselined:
         out["fields_baselined"] = sorted(baselined)
         out["note"] = ("Some posture fields exist only in the newer survey (app upgrade); "

@@ -6,6 +6,95 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.81.0] - 2026-08-16
+
+_The sweep continues: two more live instances of the v0.80.0 defect class — the
+product stating a verdict it did not establish. Both are in the persisted-survey
+readers, the two tools that answer account-wide questions without re-scanning,
+and both were found by executing the tool against a survey with mixed statuses
+rather than by reading code that looks correct in isolation. The gap in each
+case is not in what the JSON says; it is in what the JSON leaves out._
+
+### Fixed — "which buckets have no encryption?" answered over buckets that were never checked
+
+`query_account_profile` reads the persisted account survey and returns the
+buckets matching a posture filter (`missing_encryption`, `missing_lifecycle`,
+`public_buckets`, …). Its filters are deliberately strict: a bucket only counts
+as missing encryption when the survey recorded `not_configured` — a confirmed
+absence. A bucket whose `GetBucketEncryption` came back `access_denied`, or
+whose provider does not implement it at all, is **excluded**, because
+"unreadable" is not evidence of "missing".
+
+That exclusion is right. Making it *silent* is the defect. The result carried
+only `matched_count` and `total_buckets`, so a survey of four buckets where one
+is unencrypted, one is encrypted, and two were unreadable came back as:
+
+```
+total_buckets: 4        matched_count: 1        buckets: [enc-off]
+```
+
+Nothing distinguishes "the other three are fine" from "one is fine and two were
+never checked" — and one-out-of-four is exactly the shape that gets narrated as
+an account-wide verdict. The agent reports *"only one of your four buckets lacks
+encryption"* about two buckets whose encryption nobody established, and it fails
+in the expensive direction on a security question.
+
+The result now accounts for every bucket it did not match. Each non-matching
+bucket is either established (`available` / `not_configured` on that dimension)
+or named in `undetermined_buckets` with the status that blocked it:
+
+```
+matched_count: 1   undetermined_count: 2
+undetermined_buckets: [{enc-denied, access_denied},
+                       {enc-unsupported, provider_unsupported}]
+coverage_note: "... 2 could not be checked for it ... so their state is
+                UNKNOWN — not 'fine'. Report the match count as covering
+                2 established buckets ..."
+```
+
+`undetermined_count: 0` is itself a claim — it says the answer really does cover
+the whole survey — so it is always present, while the caveat fields appear only
+when there is something to caveat. `public_buckets` gets the strictest reading:
+"not public" needs *both* the policy verdict and the ACL read to have landed, so
+a bucket with a non-public policy and an unreadable ACL is undetermined rather
+than private. The `all` filter asserts nothing per-dimension and so manufactures
+no caveat. Bucket names in the undetermined list are capped at 20 (rule 16).
+
+Found by testing the tool against a survey with mixed statuses rather than by
+reading the filters, which look correct in isolation — the gap is only visible
+in what the JSON does *not* say. Four regression tests, all verified failing
+against the previous code.
+
+### Fixed — "what changed?" reporting buckets as deleted that were never scanned
+
+`compare_to_last_survey` diffs the two most recent account surveys. A survey
+stops at its bucket cap (default 100, `max_buckets` up to 500) and records
+`truncated`; the diff ignored that entirely. So a bucket present in a complete
+older survey and absent from a capped newer one came back as a flat fact:
+
+```
+changes: [{bucket: b4, change: bucket_removed},
+          {bucket: b5, change: bucket_removed}]
+change_count: 2      truncated: false
+```
+
+Those buckets still exist — the newer survey just never got to them. Two
+default-capped re-surveys of a growing account is the ordinary way to reach this,
+and the agent narrates it as *"b4 and b5 were deleted from your account"*.
+
+Worse, `truncated: false` sits right next to it. That flag means *the changes
+list was not capped at 200*; it says nothing about how much of the account each
+survey saw. One key, two subjects — the same trap the v0.80.0 fix avoided by
+naming its field `source_truncated`.
+
+Membership changes are now only asserted when the relevant survey saw the whole
+account. Otherwise the entry is emitted with `unverified: true` and a note
+saying which survey was capped, alongside `surveys_truncated: {older, newer}`,
+per-survey `truncated` + `buckets_seen`, a `coverage_note`, and an unambiguous
+`changes_truncated` alias for the list cap. When both surveys are complete, a
+removal is still reported as a plain removal — the caveat must not water down a
+real finding. Three regression tests, verified failing against the previous code.
+
 ## [0.80.0] - 2026-08-15
 
 _The first instance of a defect class this project keeps re-fixing: the product
