@@ -6,8 +6,14 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
-_Second instance of the same defect class as v0.80.0: the product stating a
-verdict it did not establish._
+## [0.81.0] - 2026-08-16
+
+_The sweep continues: two more live instances of the v0.80.0 defect class — the
+product stating a verdict it did not establish. Both are in the persisted-survey
+readers, the two tools that answer account-wide questions without re-scanning,
+and both were found by executing the tool against a survey with mixed statuses
+rather than by reading code that looks correct in isolation. The gap in each
+case is not in what the JSON says; it is in what the JSON leaves out._
 
 ### Fixed — "which buckets have no encryption?" answered over buckets that were never checked
 
