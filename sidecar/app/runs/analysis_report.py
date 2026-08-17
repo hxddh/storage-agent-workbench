@@ -407,19 +407,35 @@ def render_account_profile(
         ["Encryption configured", str(s.get("encryption_configured", 0))],
         ["Encryption not configured", str(s.get("encryption_not_configured", 0))],
         ["Encryption provider-unsupported", str(s.get("encryption_unsupported", 0))],
+        # Every dimension carries its "could not be read" row so the tally adds
+        # up to the processed-bucket count. Without it, a reader totalling
+        # configured + not-configured had no way to see the remainder was
+        # UNKNOWN rather than accounted for.
+        ["Encryption undetermined (denied / errored)",
+         str(s.get("encryption_undetermined", 0))
+         + (f" ({_cap(s.get('encryption_undetermined_buckets') or [])})"
+            if s.get("encryption_undetermined") else "")],
         ["Public access block configured", str(s.get("public_access_block_configured", 0))],
+        ["Public access block not configured", str(s.get("public_access_block_not_configured", 0))],
+        ["Public access block provider-unsupported", str(s.get("public_access_block_unsupported", 0))],
+        ["Public access block undetermined (denied / errored)",
+         str(s.get("public_access_block_undetermined", 0))],
     ]
     observability_rows = [
         ["Logging configured", str(s.get("logging_configured", 0))],
         ["Logging not configured", str(s.get("logging_not_configured", 0))],
         ["Logging provider-unsupported", str(s.get("logging_unsupported", 0))],
+        ["Logging undetermined (denied / errored)", str(s.get("logging_undetermined", 0))],
         ["Inventory configured", str(s.get("inventory_configured", 0))],
         ["Inventory not configured", str(s.get("inventory_not_configured", 0))],
         ["Inventory provider-unsupported", str(s.get("inventory_unsupported", 0))],
+        ["Inventory undetermined (denied / errored)", str(s.get("inventory_undetermined", 0))],
     ]
     cost_rows = [
         ["Lifecycle configured", str(s.get("lifecycle_configured", 0))],
         ["Lifecycle not configured", str(s.get("lifecycle_not_configured", 0))],
+        ["Lifecycle provider-unsupported", str(s.get("lifecycle_unsupported", 0))],
+        ["Lifecycle undetermined (denied / errored)", str(s.get("lifecycle_undetermined", 0))],
     ]
 
     return f"""# Account Discovery Report

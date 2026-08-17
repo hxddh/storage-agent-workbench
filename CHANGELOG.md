@@ -6,6 +6,51 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.82.0] - 2026-08-16
+
+_Sweep, continued: the same v0.80.0 defect class one layer up — in the survey
+that produces the data the v0.81.0 tools read. v0.81.0 taught the readers to
+say what they had not established; this teaches the writer not to lose it in
+the first place._
+
+### Fixed — the survey's own tallies left out the buckets it could not read
+
+`account_discovery` already handles public exposure with real care: three
+outcomes, and an explicit *"this is NOT the same as 'not public'"* when the
+policy/ACL probes do not both answer. No other dimension got that treatment.
+
+On a four-bucket account where `GetBucketEncryption` returns `access_denied` for
+one bucket and `NotImplemented` for another, the survey reported:
+
+```
+Encryption configured 1 | not configured 1 | provider-unsupported 1
+```
+
+Three numbers over four buckets. The denied one appeared in **no** count, no
+finding, and no note — and the finding that did fire said flatly *"1 bucket(s)
+have no default encryption"*, a claim whose denominator is the whole account.
+Lifecycle and public-access-block were thinner still: lifecycle had no
+unsupported row at all, and public-access-block had only *configured*, so
+"1 configured" out of ten buckets invites "nine lack a public access block"
+when some of the nine were never readable.
+
+Every dimension now satisfies one invariant — **configured + not_configured +
+provider_unsupported + undetermined == buckets processed** — so no tally can
+imply a verdict over buckets whose read never landed. `undetermined` is the
+honest residue: denied, errored, or never recorded, kept distinct from
+`provider_unsupported`, which is itself an answer (the provider has no such
+feature). The survey emits a matching *"Encryption could not be determined …
+This is NOT the same as 'encrypted'"* finding, names the affected buckets, and
+states what the not-configured count actually covers; the report grows an
+"undetermined (denied / errored)" row per dimension so the table reconciles on
+sight.
+
+Found by running the survey against a provider that denies one config read —
+the per-bucket table showed `access_denied` correctly all along; it was the
+summary built from it that dropped the bucket. Seven regression tests, all
+verified failing against the previous code, including a parametrized one that
+asserts the invariant per dimension rather than hand-picking a case.
+
 ## [0.81.0] - 2026-08-16
 
 _The sweep continues: two more live instances of the v0.80.0 defect class — the

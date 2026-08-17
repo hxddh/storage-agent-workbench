@@ -78,6 +78,20 @@ def _count(buckets: list[dict[str, Any]], field: str, value: str) -> int:
     return sum(1 for b in buckets if b.get(field) == value)
 
 
+def _undetermined(buckets: list[dict[str, Any]], field: str) -> list[str]:
+    """Buckets whose status on this dimension was never established — the read
+    was denied, errored, or the field was never written.
+
+    ``provider_unsupported`` is counted separately (the provider genuinely has no
+    such feature, which IS an answer); everything here is "we do not know". The
+    per-dimension tallies used to report only configured/not_configured (+
+    unsupported for some), so on an account where GetBucketEncryption is denied
+    the numbers quietly failed to add up to the bucket count and "1 bucket has
+    no default encryption" read as a verdict on all of them."""
+    return [b["bucket_name"] for b in buckets
+            if b.get(field) not in (_CONFIGURED, _NOT_CONFIGURED, _UNSUPPORTED)]
+
+
 def _replay(probe: dict[str, Any], which: str) -> dict[str, Any]:
     """Hand back a probe's finished result, or re-raise how it failed.
 
@@ -172,6 +186,15 @@ def _build_summary(buckets: list[dict[str, Any]], visible: int, processed: int, 
     )
     access_denied = names_where(lambda b: b.get("access_status") == _DENIED)
     errored = names_where(lambda b: b.get("access_status") == "error")
+    # Per dimension: configured + not_configured + unsupported + undetermined
+    # must account for every processed bucket, so no tally can imply a verdict
+    # over buckets whose read never landed. (`test_account_survey_tallies_*`
+    # pins the arithmetic.)
+    enc_unknown = _undetermined(buckets, "encryption_status")
+    log_unknown = _undetermined(buckets, "logging_status")
+    inv_unknown = _undetermined(buckets, "inventory_status")
+    lc_unknown = _undetermined(buckets, "lifecycle_status")
+    pab_unknown = _undetermined(buckets, "public_access_block_status")
 
     return {
         "public_buckets": public_buckets,
@@ -185,15 +208,24 @@ def _build_summary(buckets: list[dict[str, Any]], visible: int, processed: int, 
         "encryption_configured": _count(buckets, "encryption_status", _CONFIGURED),
         "encryption_not_configured": _count(buckets, "encryption_status", _NOT_CONFIGURED),
         "encryption_unsupported": _count(buckets, "encryption_status", _UNSUPPORTED),
+        "encryption_undetermined": len(enc_unknown),
+        "encryption_undetermined_buckets": enc_unknown,
         "logging_configured": _count(buckets, "logging_status", _CONFIGURED),
         "logging_not_configured": _count(buckets, "logging_status", _NOT_CONFIGURED),
         "logging_unsupported": _count(buckets, "logging_status", _UNSUPPORTED),
+        "logging_undetermined": len(log_unknown),
         "inventory_configured": _count(buckets, "inventory_status", _CONFIGURED),
         "inventory_not_configured": _count(buckets, "inventory_status", _NOT_CONFIGURED),
         "inventory_unsupported": _count(buckets, "inventory_status", _UNSUPPORTED),
+        "inventory_undetermined": len(inv_unknown),
         "lifecycle_configured": _count(buckets, "lifecycle_status", _CONFIGURED),
         "lifecycle_not_configured": _count(buckets, "lifecycle_status", _NOT_CONFIGURED),
+        "lifecycle_unsupported": _count(buckets, "lifecycle_status", _UNSUPPORTED),
+        "lifecycle_undetermined": len(lc_unknown),
         "public_access_block_configured": _count(buckets, "public_access_block_status", _CONFIGURED),
+        "public_access_block_not_configured": _count(buckets, "public_access_block_status", _NOT_CONFIGURED),
+        "public_access_block_unsupported": _count(buckets, "public_access_block_status", _UNSUPPORTED),
+        "public_access_block_undetermined": len(pab_unknown),
         "buckets_with_inventory_evidence": with_inventory,
         "buckets_with_logging_evidence": with_logging,
         "buckets_needing_review": needs_review,
@@ -425,9 +457,24 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
                                         "The provider may not support them, or the credentials may "
                                         "lack permission. This is NOT the same as 'not public'.")})
     if summary["encryption_not_configured"]:
+        # Say what the count covers. "3 buckets have no default encryption" over
+        # an account where 8 more were never readable is a verdict on 11.
+        est = (len(per_bucket) - summary["encryption_undetermined"])
         bus.publish(run_id, {"type": "finding", "severity": "warning",
                              "title": "Buckets without default encryption",
-                             "detail": f"{summary['encryption_not_configured']} bucket(s) have no default encryption."})
+                             "detail": (f"{summary['encryption_not_configured']} bucket(s) have no "
+                                        f"default encryption, out of {est} whose encryption was "
+                                        f"established (of {len(per_bucket)} processed).")})
+    if summary["encryption_undetermined"]:
+        names = ", ".join(summary["encryption_undetermined_buckets"][:5])
+        more = summary["encryption_undetermined"] - 5
+        bus.publish(run_id, {"type": "finding", "severity": "warning",
+                             "title": "Encryption could not be determined",
+                             "detail": (f"{summary['encryption_undetermined']} bucket(s) did not answer "
+                                        f"the default-encryption check: {names}"
+                                        + (f" (+{more} more)" if more > 0 else "") + ". "
+                                        "The credentials may lack permission, or the read errored. "
+                                        "This is NOT the same as 'encrypted'.")})
     if summary["buckets_with_inventory_evidence"]:
         bus.publish(run_id, {"type": "finding", "severity": "info",
                              "title": "Inventory evidence available",
