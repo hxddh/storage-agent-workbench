@@ -6,8 +6,12 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.82.0] - 2026-08-16
+
 _Sweep, continued: the same v0.80.0 defect class one layer up — in the survey
-that produces the data the v0.81.0 tools read._
+that produces the data the v0.81.0 tools read. v0.81.0 taught the readers to
+say what they had not established; this teaches the writer not to lose it in
+the first place._
 
 ### Fixed — the survey's own tallies left out the buckets it could not read
 
