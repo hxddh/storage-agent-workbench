@@ -33,7 +33,9 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
         {"path": raw_rel, "duckdb_path": duckdb_rel},
         lambda: inventory.import_inventory_file(raw_abs, duckdb_abs),
     ))
-    datasets_repo.mark_imported(conn, ds.id, duckdb_rel, imp["table_name"], imp["row_count"])
+    datasets_repo.mark_imported(conn, ds.id, duckdb_rel, imp["table_name"], imp["row_count"],
+                                truncated=bool(imp.get("truncated")),
+                                ingest_cap=int(imp.get("ingest_cap") or 0) or None)
 
     metrics = require_success(run_tool_with_events(
         conn, run_id, "analyze_inventory",

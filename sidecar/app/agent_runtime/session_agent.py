@@ -172,7 +172,8 @@ _COMPACT_MIN_CHARS = 1200     # below this there is nothing worth reclaiming
 _COMPACT_KEEP_HEAD = 800      # of the original payload, kept verbatim
 
 _SLOW_TOOLS = {"survey_account", "review_bucket_config", "analyze_uploaded_file",
-               "aggregate_uploaded_file", "read_run_result"}
+               "aggregate_uploaded_file", "aggregate_imported_evidence",
+               "read_run_result"}
 # Bound on the user's message as embedded in the prompt. Truncation is NEVER
 # silent: the cut is marked in the prompt so the agent knows it saw a prefix
 # (see build_session_prompt) — the same "no silent caps" rule as ingestion.
@@ -274,9 +275,11 @@ _TOOL_GROUPS: dict[str, tuple[str, frozenset[str]]] = {
                    "review_bucket_observability", "review_bucket_cost_optimization",
                    "review_bucket_performance_profile", "review_bucket_config"})),
     "uploaded_files": (
-        "a file the user attached — list it, analyze it, aggregate it",
+        "local data already on this machine — a file the user attached, or "
+        "evidence this session already imported: list it, analyze it, aggregate it",
         frozenset({"list_uploaded_files", "analyze_uploaded_file",
-                   "aggregate_uploaded_file"})),
+                   "aggregate_uploaded_file", "list_imported_evidence",
+                   "aggregate_imported_evidence"})),
     "account_wide": (
         "the whole account — survey it, query the persisted profile, diff against "
         "the last survey, read a backgrounded run's result",
@@ -454,6 +457,11 @@ INSTRUCTIONS = (
     "After a survey_account, if this provider has an earlier survey, call "
     "compare_to_last_survey(provider_id) and tell the user what CHANGED since "
     "last time — it reuses persisted snapshots, no new scan.\n"
+    "A follow-up question about evidence this session ALREADY imported is "
+    "answered locally: list_imported_evidence then aggregate_imported_evidence "
+    "(same whitelist as the uploaded-file tools, no new download). Never propose "
+    "a re-import, and never ask the user to attach the file by hand, just to ask "
+    "a second question of data that is already here.\n"
     "When preview_object truncates a large object and the answer needs its FULL "
     "content, don't guess from the head: propose the confirmed evidence import "
     "(for a bucket file) or use analyze_uploaded_file (for a file the user "

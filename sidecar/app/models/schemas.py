@@ -293,6 +293,9 @@ class DatasetOut(BaseModel):
     duckdb_path: str | None
     table_name: str | None
     row_count: int | None
+    # None = the import predates these columns (UNKNOWN), not "not truncated".
+    truncated: bool | None = None
+    ingest_cap: int | None = None
     status: str
     created_at: str
 

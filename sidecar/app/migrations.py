@@ -631,6 +631,11 @@ ALTER TABLE session_datasets ADD COLUMN ingest_cap INTEGER;
 UPDATE session_datasets SET status = 'uploaded' WHERE status = 'imported';
 """
 
+_M025 = """
+ALTER TABLE datasets ADD COLUMN truncated INTEGER;
+ALTER TABLE datasets ADD COLUMN ingest_cap INTEGER;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -661,6 +666,7 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (22, "turn_metrics_token_details", _M022),
     (23, "turn_metrics_budget", _M023),
     (24, "session_datasets_truncation", _M024),
+    (25, "datasets_truncation", _M025),
 ]
 
 

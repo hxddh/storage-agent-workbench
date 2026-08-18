@@ -6,6 +6,53 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Added — the agent can now ask a second question of evidence it already imported
+
+There were two dataset stores, reachable asymmetrically. A file you drag into
+the conversation could be aggregated freely — whitelisted metric, up to two
+group-by dimensions, equality filters, status ranges (`aggregate_uploaded_file`).
+Access logs the session had just **downloaded from your bucket**, after a
+confirmed and expensive import, could only be read back through the run's
+**fixed** `final_summary`.
+
+So "which masked IP got the most 403s?" was answerable for the cheap source and
+not for the expensive one. The only ways forward were to re-import, or to ask
+the user to hand-attach the same file to the chat — for data already sitting in
+a local DuckDB file three directories away.
+
+`list_imported_evidence` enumerates what this session has imported;
+`aggregate_imported_evidence` runs one aggregation over it. Same engine, same
+whitelist, same caps as the upload path — no SQL, no raw rows.
+
+**Boundaries, since this is a new door onto imported data:**
+
+- **Session-scoped.** A dataset is reachable only through a run *this session*
+  owns, so knowing a `dataset_id` is not enough — another session's evidence is
+  neither listed nor queryable.
+- **No network.** It reads the run's existing local DuckDB. It cannot trigger a
+  download, and it cannot widen what an import is allowed to fetch; the
+  confirmed-import flow is untouched.
+- **Audited** (rule 17) with the real SQL, the bound parameters, and the
+  originating `run_id`, so an aggregate is traceable to the import that produced
+  its data.
+
+### Fixed — the run importer did not record whether an import covered the whole file
+
+v0.80.0 fixed this for conversation uploads. The run-scoped importer never had
+it: `datasets` had no `truncated` / `ingest_cap` column, so an import that
+stopped at the ingest cap said so once, in the run summary, and nowhere else.
+
+That was invisible while the only reader was the run's own summary. The moment
+imported evidence became queryable in a later turn it would have become the
+v0.80.0 defect again on day one — aggregates over the first N rows of a large
+log, presented as the whole thing. Both are now persisted (migration 25) and
+every answer carries the caveat.
+
+A pre-upgrade row has `truncated = NULL`, and unlike an upload a run dataset is
+never re-imported, so that NULL never self-corrects. It is reported as
+**UNKNOWN** — `covers_whole_source: null`, and a note saying to re-import if the
+answer must be exact — rather than rendered as "covers the whole file".
+
 ## [0.82.0] - 2026-08-16
 
 _Sweep, continued: the same v0.80.0 defect class one layer up — in the survey
