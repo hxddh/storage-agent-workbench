@@ -272,7 +272,7 @@ def build(
 
     @function_tool
     def read_run_result(run_id: str, wait_seconds: int = 0) -> str:
-        """Read the current status + sanitized summary of a run already linked to this session — e.g. a survey/review that exceeded the inline time budget and finished in the background, or an evidence-import analysis. Set wait_seconds (up to 60) to wait in-turn for a still-running run to finish instead of asking the user to send another message; 0 returns immediately. Returns status + final_summary (no raw rows/keys). Args: run_id; wait_seconds (optional)."""
+        """Read the current status + sanitized summary of a run already linked to this session — e.g. a survey/review that exceeded the inline time budget and finished in the background, or an evidence-import analysis. Set wait_seconds (up to 60) to wait in-turn for a still-running run to finish instead of asking the user to send another message; 0 returns immediately. Returns status + final_summary (no raw rows/keys) — a FIXED summary. If the user then asks something the summary does not cover and the run imported evidence (access logs / inventory), do NOT re-import: call list_imported_evidence and aggregate_imported_evidence to query the imported data locally. Args: run_id; wait_seconds (optional)."""
         import time as _time
 
         from ..repositories import sessions as sessions_repo

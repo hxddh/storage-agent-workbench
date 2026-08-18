@@ -262,8 +262,10 @@ def test_migrations_are_sequential_and_capped():
     versions = [v for v, _n, _s in migrations.MIGRATIONS]
     assert versions == list(range(1, len(versions) + 1))  # 1..N, no gaps/dupes
     # 24 adds session_datasets.truncated/ingest_cap, so a later analysis of an
-    # over-cap upload can still say the numbers cover part of the file.
-    assert max(versions) == 24
+    # over-cap upload can still say the numbers cover part of the file; 25 does
+    # the same for run-scoped `datasets`, now that imported evidence can be
+    # aggregated in a later turn too.
+    assert max(versions) == 25
 
 
 def test_no_public_skills_api(client):
