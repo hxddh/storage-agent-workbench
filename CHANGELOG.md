@@ -6,6 +6,14 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.83.0] - 2026-08-18
+
+_The first widening in a while. Recent releases deepened the honesty floor —
+what the product may claim when a read did not land. This one adds a capability
+on top of it, and the floor immediately earned its keep: the new surface would
+have shipped the v0.80.0 defect on day one if the run importer's missing
+truncation record had not been caught with it._
+
 ### Added — the agent can now ask a second question of evidence it already imported
 
 There were two dataset stores, reachable asymmetrically. A file you drag into
