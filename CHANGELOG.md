@@ -6,6 +6,70 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.84.0] - 2026-08-24
+
+_First step of a route to 1.0 that is deliberately about evidence rather than
+features. What would make a 1.0 claim hollow is not a missing capability — it is
+that nothing had ever driven this product against a server that keeps state, and
+that no build has been opened on real Mac hardware since v0.78.0. This release
+closes the first of those two, and says exactly how far it goes._
+
+### Added — the read-only tools now run against a real, stateful S3 server
+
+Route to 1.0 starts here, and not with a feature. The thing that would make a
+1.0 claim hollow is that nothing had ever driven this product against a server
+that keeps state.
+
+Three doubles already existed and each stopped at the same line: the botocore
+`Stubber` never speaks HTTP; `fake_s3.py` is a socket answering canned XML;
+`fake_endpoint.py` (v0.76.0) is a socket answering the way a *hostile* endpoint
+answers — the failure half. The **success half** was still asserted against
+fixed documents: a fixed `IsTruncated`, a fixed version list, a fixed
+`Content-Range`. A tool can copy fields out of a fixed document correctly and
+still be wrong about the protocol.
+
+`tests/live_s3.py` runs a real S3 server (moto) on a loopback port and seeds it
+with state worth observing; `tests/test_v084_live_s3.py` drives the read-only
+tools at it **through the app's own provider row and client factory** — really
+built, really signed, really addressed path-style. Twelve tests covering:
+pagination that actually continues (the continuation token has to survive a
+round trip), versions and delete markers the server produced, a range GET that
+is a real 206, a conditional GET that is a real 304, an incomplete multipart
+upload with a real part, unconfigured sub-resources answering with their own
+error codes and mapping to `not_configured` rather than `error`, an empty bucket
+that reads as empty rather than broken, and no credential echoed on any path.
+
+**The gate was checked, not assumed.** Four mutations were injected into the
+tool code to see what it actually catches:
+
+| mutation | live gate | rest of suite |
+| --- | --- | --- |
+| drop the continuation token | fails | **also fails** (a Stubber test asserts the request params) |
+| stop recognising a 304 by status code | passes | passes — the mutation is a no-op; botocore surfaces it as `error_code == "304"` |
+| take `bytes_returned` from `ContentLength` | passes | passes — for a 206 the two agree, so not a behaviour change |
+| mangle key encoding (`" "` → `"+"`) | **fails** | **1520 passed** |
+
+So the honest score is one in four. Three mutations were already covered or were
+not real changes; the fourth — request encoding of a key containing a space,
+`+`, `#`, `?`, `=` and non-ASCII — is a defect class a canned double
+*structurally* cannot expose, because it never encodes anything and therefore
+still "finds" a mangled key in its fixture. That one test is the gate's
+demonstrated value, and it is stated as one test rather than dressed up as
+coverage.
+
+**What this does not establish**, recorded in `live_s3.py`, the test module, and
+Known gaps rather than left to inference: moto **does not verify signatures**
+(it accepted a wrong secret key — verified, not assumed), and it is not a
+specific S3-compatible product, so signature rejection and provider quirks
+(MinIO's 501s, Ceph's pagination edges) remain uncovered. Those need a
+container, which is why they are not in this release.
+
+A missing `moto[server]` **fails** the gate rather than skipping it. A gate that
+skips itself silently stops being a gate — the same defect class this project
+spent v0.80.0 through v0.82.0 removing from the product, applied to its own
+tests. It is in the dev extra and, like `pytest` and `ruff`, deliberately not in
+`requirements.lock` (the generator excludes dev extras on purpose).
+
 ## [0.83.0] - 2026-08-18
 
 _The first widening in a while. Recent releases deepened the honesty floor —

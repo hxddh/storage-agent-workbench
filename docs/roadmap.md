@@ -40,16 +40,28 @@ CI runs all three on every PR, alongside desktop builds for the three platforms.
 - Inventory import is CSV / Parquet only (no ORC).
 - CloudTrail / Storage Lens / provider-native access-log sources are not yet
   integrated.
-- Nothing is tested against a **real** model provider or a **real** cloud
-  endpoint. Model-backed turns are covered — 11 of the 22 E2E specs drive a full
-  turn, tools and all, against a scripted local OpenAI-compatible endpoint
-  (`e2e/fake-model.ts`), and the S3 tools are covered against a real socket
-  serving canned S3 responses. What no gate exercises is a live provider key or
-  a live bucket, which is deliberate: it would need credentials in CI and would
-  make the gate flaky. The cost is that provider-specific behavior is only ever
-  found by hand. (v0.78.0 is the standing example of what the doubles can hide:
-  the scripted model emitted one tool-call ID for every call, which no real
-  model does, and that alone was read as an SDK regression for a whole release.)
+- Nothing is tested against a **real** model provider, a **signature-checking**
+  S3 server, or a **live** bucket. What IS covered, precisely: 11 of the 22 E2E
+  specs drive a full model-backed turn against a scripted local
+  OpenAI-compatible endpoint (`e2e/fake-model.ts`); v0.76.0 drives every
+  read-only tool against a real socket answering the way a *hostile* endpoint
+  answers; and v0.84.0 drives them against a real *stateful* S3 server
+  (`tests/live_s3.py`, moto) for the success half — pagination that continues,
+  versions and delete markers, 206, 304, multipart parts, and keys that need URL
+  encoding.
+
+  What remains uncovered is narrower than it was, and worth naming exactly:
+  **signature verification** (moto accepts a wrong secret — verified, not
+  assumed), **provider-specific quirks** (MinIO's 501s on config sub-resources,
+  Ceph's pagination edges), and **a live provider key or bucket**. The last is
+  deliberate — credentials in CI, and a flaky gate. The first two are not
+  deliberate, just unbuilt: they need a container, not a pip install.
+
+  (v0.78.0 is the standing example of what a double can hide: the scripted model
+  emitted one tool-call ID for every call, which no real model does, and that
+  alone was read as an SDK regression for a whole release. The v0.84.0 gate was
+  itself checked the same way — a mutation that mangles key encoding fails it
+  while all 1520 other tests pass.)
 
 ## Direction
 
