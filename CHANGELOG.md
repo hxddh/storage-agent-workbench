@@ -6,6 +6,14 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.84.0] - 2026-08-24
+
+_First step of a route to 1.0 that is deliberately about evidence rather than
+features. What would make a 1.0 claim hollow is not a missing capability — it is
+that nothing had ever driven this product against a server that keeps state, and
+that no build has been opened on real Mac hardware since v0.78.0. This release
+closes the first of those two, and says exactly how far it goes._
+
 ### Added — the read-only tools now run against a real, stateful S3 server
 
 Route to 1.0 starts here, and not with a feature. The thing that would make a
