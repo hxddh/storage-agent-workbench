@@ -926,8 +926,9 @@ def _usage_snapshot(result: Any) -> dict[str, Any] | None:
         # The renderer decides "were tokens reported?" by formatting them, and
         # `0` formats as "0", which would put a confident "↑0 ↓0" on screen. An
         # unreported count is not a zero.
-        if out["requests"] > 0:
-            return {"requests": out["requests"], "input_tokens": None,
+        aborted = max(0, int(getattr(result, "_sa_unreported_requests", 0) or 0))
+        if out["requests"] + aborted > 0:
+            return {"requests": out["requests"] + aborted, "input_tokens": None,
                     "output_tokens": None, "total_tokens": None}
         return None
     out.update(_usage_details(parts))
@@ -952,6 +953,17 @@ def _usage_snapshot(result: Any) -> dict[str, Any] | None:
             reported += len(getattr(u, "request_usage_entries", None) or [])
         except TypeError:
             pass
+    # A model call that FAILED is invisible to both counters: usage is added
+    # only when a response completes, so an attempt aborted mid-stream — by the
+    # `_MODEL_TIMEOUT_S` deadline, by a cancel, by a provider error — increments
+    # neither `requests` nor `request_usage_entries` (verified against the SDK,
+    # and pinned in test_v086). Left alone, the two counters agree and a turn
+    # that lost a whole billable call would render as an exact total.
+    #
+    # We know that call happened, because we caught its error. Counting it here
+    # makes `requests` true AND makes the ratio unequal, so the floor marker
+    # follows from the same rule rather than needing a second flag.
+    out["requests"] += max(0, int(getattr(result, "_sa_unreported_requests", 0) or 0))
     if 0 < reported < out["requests"]:
         out["reported_requests"] = reported
     return out
@@ -2317,6 +2329,12 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
             async for event in result.stream_events():
                 if cancel_event is not None and cancel_event.is_set():
                     _cancel_streaming(result)
+                    # The model call we just cut off produced tokens the endpoint
+                    # will never report — a completed response is what adds usage.
+                    # Record that it happened so the footer shows a floor rather
+                    # than a total that quietly omits it.
+                    result._sa_unreported_requests = (
+                        getattr(result, "_sa_unreported_requests", 0) + 1)
                     while len(activity) > emitted_tools:
                         yield ("tool", activity[emitted_tools])
                         emitted_tools += 1
@@ -2362,6 +2380,21 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
                 contract["stopped"] = True
                 yield ("final", _stamped(contract))
                 return
+            # The turn is ending on an exception. Unless the SDK simply ran out
+            # of turns — which happens AFTER a completed response, so nothing is
+            # missing — a model call was in flight and died without completing,
+            # and an incomplete response adds no usage. Record it before the
+            # recovery paths below build the answer, so the token counts read as
+            # a floor instead of a total with a whole call missing.
+            #
+            # Deliberately unconditional on the error KIND. A 429 that produced
+            # no tokens and a mid-stream timeout that produced many are both
+            # "one model call whose cost we do not know" — and overstating our
+            # uncertainty is the safe direction, while understating it is the
+            # defect this whole line of work exists to remove.
+            if not _is_max_turns(exc):
+                result._sa_unreported_requests = (
+                    getattr(result, "_sa_unreported_requests", 0) + 1)
             cut_short = _is_context_overflow(exc) and not _is_max_turns(exc)
             # A transient provider error (429/5xx/reset) is recoverable: rather
             # than discard the whole investigation with a raw error, finalize

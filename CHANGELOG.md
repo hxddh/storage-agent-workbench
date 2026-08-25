@@ -62,6 +62,31 @@ rows for empty payloads fails here instead of silently turning the floor back
 into a total. `agents.testing` (new in 0.21) is what makes that expressible with
 no network and no endpoint double.
 
+### Fixed — the model call that failed, and therefore vanished from the bill
+
+Raised in review of the change above, and correct. Usage is added only when a
+response **completes**, so a model call killed by the new deadline — or by a
+cancel, or by a provider error — increments neither `requests` nor
+`request_usage_entries`. The two counters still agree, the floor marker stays
+off, and a turn that lost a whole billable call renders as an exact total. The
+new recovery path made that reachable on purpose: a timed-out call is precisely
+one that streamed tokens the provider will never report.
+
+Demonstrated rather than argued: a scripted model whose second call hangs past a
+0.5 s deadline leaves `requests == 1`, `entries == 1` and `input_tokens == 10`,
+with the second call's 999 input tokens nowhere in the numbers.
+
+The turn knows that call happened — it caught its error — so it now records it.
+`requests` becomes true, and because the recorded call reported nothing, the
+existing `reported < requests` rule produces the floor marker with no second
+flag and no new UI concept.
+
+Counted for **any** ending exception except `MaxTurnsExceeded` (which is raised
+after a completed response, so nothing is missing) and for a user cancel.
+Deliberately not conditioned on the error kind: a 429 that produced no tokens
+and a mid-stream timeout that produced many are both "one model call whose cost
+we do not know", and overstating that uncertainty is the safe direction.
+
 ### Fixed — a test that passed for the wrong reason, and the lint gap that hid it
 
 v0.85.0's `httpx` → `httpx2` rewrite updated the imports and the monkeypatch

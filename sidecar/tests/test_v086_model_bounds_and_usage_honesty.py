@@ -162,3 +162,92 @@ def test_the_sdk_still_counts_usage_the_way_this_rests_on():
     # The call happened; the endpoint said nothing about it. That asymmetry is
     # the whole signal.
     assert silent.requests == 1 and len(silent.request_usage_entries) == 0
+
+# --- the call that failed, and therefore reported nothing --------------------
+
+
+def test_an_aborted_call_is_counted_and_forces_a_floor():
+    """Raised in review of this change, and it was right.
+
+    Usage is added only when a response COMPLETES. A model call killed by the
+    `_MODEL_TIMEOUT_S` deadline (or a cancel, or a provider error) increments
+    neither `requests` nor `request_usage_entries` — so the two counters still
+    agree, `reported_requests` stays absent, and a turn that lost a whole
+    billable call renders as an exact total. Which is the very defect this file
+    was written to close, one path further along.
+    """
+    u = _usage(requests=1, input_tokens=10, output_tokens=5, total_tokens=15)
+    u.request_usage_entries = [object()]
+    result = _Result(u)
+    result._sa_unreported_requests = 1          # the turn caught its error
+
+    out = session_agent._usage_snapshot(result)
+    assert out["requests"] == 2, out            # the failed call did happen
+    assert out["reported_requests"] == 1, out   # …and told us nothing
+    assert out["input_tokens"] == 10            # a floor, and marked as one
+
+
+def test_an_aborted_call_still_shows_when_nothing_at_all_was_reported():
+    """The all-silent branch must count it too, or a turn that made one call and
+    timed out reports zero model calls — indistinguishable from never starting."""
+    u = _usage(requests=0, input_tokens=0, output_tokens=0, total_tokens=0)
+    result = _Result(u)
+    result._sa_unreported_requests = 1
+
+    out = session_agent._usage_snapshot(result)
+    assert out["requests"] == 1, out
+    assert out["input_tokens"] is None, out
+
+
+def test_the_sdk_really_does_drop_a_timed_out_calls_usage():
+    """The premise, demonstrated rather than assumed.
+
+    Two model calls: the first completes with usage and a tool call, the second
+    hangs past a deliberately tiny deadline. If the SDK counted the aborted
+    attempt this compensation would double-count, so the product's correctness
+    depends on it NOT counting it — pin that.
+    """
+    from agents import Agent, ModelSettings, Runner, function_tool
+    from agents.exceptions import ModelTimeoutError
+    from agents.testing import ScriptedModel, assistant_message, function_call
+
+    @function_tool
+    def ping() -> str:
+        """A tool, so the loop takes a second turn."""
+        return "pong"
+
+    class _SlowSecondCall(ScriptedModel):
+        def __init__(self, steps: Any) -> None:
+            super().__init__(steps)
+            # NOT `_calls`: ScriptedModel keeps its own recorded-call list there.
+            self._seen = 0
+
+        async def stream_response(self, *a: Any, **k: Any):
+            self._seen += 1
+            if self._seen > 1:
+                await asyncio.sleep(5)          # past the deadline below
+            async for event in super().stream_response(*a, **k):
+                yield event
+
+    model = _SlowSecondCall([
+        {"output": [function_call("ping", "{}", call_id="c1")],
+         "usage": _usage(requests=1, input_tokens=10, output_tokens=5, total_tokens=15)},
+        {"output": [assistant_message("too late")],
+         "usage": _usage(requests=1, input_tokens=999, output_tokens=99, total_tokens=1098)},
+    ])
+    agent = Agent(name="probe", instructions="x", model=model, tools=[ping],
+                  model_settings=ModelSettings(timeout=0.5))
+
+    async def drive() -> Any:
+        res = Runner.run_streamed(agent, "go", max_turns=5)
+        with pytest.raises(ModelTimeoutError):
+            async for _ in res.stream_events():
+                pass
+        return res.context_wrapper.usage
+
+    usage = asyncio.run(drive())
+    # Only the first call is accounted for. The second one burned 999 input
+    # tokens on the provider's side and is nowhere in these numbers.
+    assert usage.requests == 1, usage
+    assert len(usage.request_usage_entries) == 1, usage
+    assert usage.input_tokens == 10, usage
