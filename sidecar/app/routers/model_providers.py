@@ -109,12 +109,19 @@ def test_model_provider(
 
     # Live probe. /models is the standard OpenAI-compatible listing endpoint;
     # providers that don't expose it still prove reachability by answering.
-    import httpx
+    # `httpx2`, not `httpx`: the OpenAI 3.x line moved to the httpx 2 major, which
+    # ships under a DIFFERENT distribution name. Importing `httpx` here worked
+    # only because the old SDK dragged it in transitively — after the upgrade it
+    # survives solely in the dev extra, so a plain `pip install -e .` and the
+    # packaged bundle would both raise ModuleNotFoundError and answer this route
+    # with a 500. It is declared in `[project].dependencies` rather than taken
+    # transitively from `openai`, and test_v085_runtime_imports.py holds the line.
+    import httpx2
     base = (provider.base_url or "https://api.openai.com/v1").rstrip("/")
     api_key_verified: bool | None = None
     live_detail = ""
     try:
-        resp = httpx.get(base + "/models", headers={"Authorization": f"Bearer {secret}"}, timeout=5.0)
+        resp = httpx2.get(base + "/models", headers={"Authorization": f"Bearer {secret}"}, timeout=5.0)
         checks["endpoint_reachable"] = True
         if resp.status_code in (401, 403):
             api_key_verified = False

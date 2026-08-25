@@ -117,7 +117,7 @@ class _FakeResp:
 
 
 def test_test_endpoint_reports_complete(client, monkeypatch):
-    import httpx
+    import httpx2
 
     provider_id = _create(client).json()["id"]
     seen = {}
@@ -127,7 +127,7 @@ def test_test_endpoint_reports_complete(client, monkeypatch):
         seen["auth"] = (headers or {}).get("Authorization", "")
         return _FakeResp(200)
 
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(httpx2, "get", fake_get)
     resp = client.post(f"/model-providers/{provider_id}/test")
     assert resp.status_code == 200
     body = resp.json()
@@ -142,33 +142,33 @@ def test_test_endpoint_reports_complete(client, monkeypatch):
 
 
 def test_test_endpoint_flags_rejected_key(client, monkeypatch):
-    import httpx
+    import httpx2
 
     provider_id = _create(client).json()["id"]
-    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(401))
+    monkeypatch.setattr(httpx2, "get", lambda *a, **k: _FakeResp(401))
     body = client.post(f"/model-providers/{provider_id}/test").json()
     assert body["ok"] is False
     assert body["api_key_verified"] is False
 
 
 def test_test_endpoint_unreachable_is_reported(client, monkeypatch):
-    import httpx
+    import httpx2
 
     def boom(*a, **k):
         raise httpx.ConnectError("no route")
 
     provider_id = _create(client).json()["id"]
-    monkeypatch.setattr(httpx, "get", boom)
+    monkeypatch.setattr(httpx2, "get", boom)
     body = client.post(f"/model-providers/{provider_id}/test").json()
     assert body["ok"] is False
     assert body["checks"]["endpoint_reachable"] is False
 
 
 def test_test_endpoint_5xx_is_not_ok(client, monkeypatch):
-    import httpx
+    import httpx2
 
     provider_id = _create(client).json()["id"]
-    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(503))
+    monkeypatch.setattr(httpx2, "get", lambda *a, **k: _FakeResp(503))
     body = client.post(f"/model-providers/{provider_id}/test").json()
     # Reachable but 5xx must NOT pass the test (detail said "server error").
     assert body["ok"] is False
@@ -176,10 +176,10 @@ def test_test_endpoint_5xx_is_not_ok(client, monkeypatch):
 
 
 def test_test_endpoint_no_models_endpoint_is_reachable_unverified(client, monkeypatch):
-    import httpx
+    import httpx2
 
     provider_id = _create(client).json()["id"]
-    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(404))
+    monkeypatch.setattr(httpx2, "get", lambda *a, **k: _FakeResp(404))
     body = client.post(f"/model-providers/{provider_id}/test").json()
     # Endpoint answered (reachable); key neither proven nor disproven → ok.
     assert body["ok"] is True

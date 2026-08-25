@@ -17,11 +17,13 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# OS CSPRNG for the per-launch sidecar auth token. Already present transitively
-# (Tauri depends on it); pinned to the 0.2 line that is in Cargo.lock. Do NOT
-# hand-roll the token from clock/pid/ports — those are locally observable and
-# low-entropy (see gen_token in src/lib.rs).
-getrandom = "0.2"
+# OS CSPRNG for the per-launch sidecar auth token. Tracks the current release
+# line rather than a hand-picked one: the old `0.2` pin was justified as "the
+# line Tauri already pulls", and that stopped being true — Tauri moved to 0.3.x,
+# so pinning 0.2 was adding a SECOND copy to the tree instead of avoiding one.
+# Do NOT hand-roll the token from clock/pid/ports — those are locally observable
+# and low-entropy (see gen_token in src/lib.rs).
+getrandom = "0.4"
 # Single-instance guard. Two launches would otherwise run two sidecars over the
 # SAME app data dir: the secret vault rewrites the whole file on every save, so
 # the second instance's write silently discarded whatever the first had stored
