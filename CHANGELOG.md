@@ -59,6 +59,29 @@ upstream and the project should sit on supported lines, **not** because a live
 hole was demonstrated in this product. Only the `cryptography` row was actually
 traced to a conclusion.
 
+### Fixed — a runtime import the product never declared, and stopped shipping
+
+Found in review of this very upgrade. `model_providers.py` imported `httpx` to
+make the provider-test route's one live HTTP call — but `httpx` was never a
+declared dependency. It was simply always installed, because the old `openai`
+line pulled it in. The OpenAI 3.x major moved to the httpx 2 line, which ships
+under a **different distribution name** (`httpx2`), so `httpx` fell out of the
+runtime closure and survived only in the dev extra. Tests stayed green — the
+test environment installs the dev extra — while a plain `pip install -e .` and
+the packaged desktop app would raise `ModuleNotFoundError` and answer that route
+with a 500.
+
+The route now uses `httpx2`, which is **declared** in `[project].dependencies`
+rather than inherited from `openai`. Verified in the packaged bundle rather than
+argued: the frozen binary answers the route HTTP 200 (reporting the endpoint
+unreachable, against a deliberately dead port) instead of 500.
+
+`tests/test_v085_runtime_imports.py` holds the class, not the instance: every
+top-level module `app/` imports anywhere — function-local imports included,
+since this one was inside a route handler — must be provided by a distribution
+in `requirements.lock`, which is the shipped runtime closure. Checked against
+the old code first: it fails, naming `httpx`.
+
 ### Fixed — the packaged agent runtime, dead in the bundle while `/health` said 200
 
 `openai-agents` 0.22 resolves the installed `mcp` version through

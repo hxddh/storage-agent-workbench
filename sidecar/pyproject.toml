@@ -20,6 +20,12 @@ dependencies = [
     "pyarrow>=14",
     "pandas>=2.0",
     "python-multipart>=0.0.9",
+    # The provider-test route makes one live HTTP call. `openai` pulls httpx2 in
+    # anyway, but declaring it is the point: it used to be taken transitively
+    # (as `httpx`), and when the OpenAI 3.x major switched distributions the
+    # import silently became dev-extra-only — green tests, 500 in the packaged
+    # app. Runtime imports are declared here, not inherited.
+    "httpx2>=2.0",
     # Floors keep us off ancient versions; upper bounds are deliberately loose so
     # new agent-SDK features flow in automatically. `openai` still needs no
     # explicit cap here — `openai-agents` constrains it, and that constraint MOVED
