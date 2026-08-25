@@ -15,11 +15,9 @@ Survey — conditional ACL read (skipped under BucketOwnerEnforced), acl_public
 C-1 — turn_guard.register_session_turn serializes turns per session.
 C-2 — /runs/{id}/message claims the run atomically (second POST → 409).
 """
-import json
 import sqlite3
 from typing import Any
 
-import pytest
 from botocore.exceptions import ClientError
 
 from app import config

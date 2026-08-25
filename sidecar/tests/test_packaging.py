@@ -4,7 +4,6 @@ No PyInstaller build is required for these — they exercise the CLI/env handlin
 and confirm production mode never enables reload and never prints secrets.
 """
 
-import sqlite3
 
 from app import config, packaged_main
 

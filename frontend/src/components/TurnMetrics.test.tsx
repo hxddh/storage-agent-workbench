@@ -119,6 +119,28 @@ describe("the footer", () => {
     expect(screen.queryByText(/model calls/)).toBeNull();
   });
 
+  it("marks token counts as a FLOOR when only some model calls reported usage", () => {
+    // Three calls, one of them reported. Rendering "↑900" bare would state a
+    // total the endpoint never gave us — the same lie the em-dash branch already
+    // refuses to tell when nothing is reported at all.
+    const { container } = draw({
+      durationMs: 2000,
+      usage: { requests: 3, reported_requests: 1, input_tokens: 900, output_tokens: 120 },
+      tools: [],
+    });
+    expect(container.textContent).toContain("≥");
+    expect(screen.getByTitle(/only 1 of this turn's 3 model calls/i)).toBeTruthy();
+  });
+
+  it("does NOT mark a floor when every model call reported", () => {
+    const { container } = draw({
+      durationMs: 2000,
+      usage: { requests: 3, reported_requests: 3, input_tokens: 900, output_tokens: 120 },
+      tools: [],
+    });
+    expect(container.textContent).not.toContain("≥");
+  });
+
   it("renders a turn whose ONLY measurement is its model calls", () => {
     // No duration, no tools, no tokens — the row must still appear rather than
     // collapsing to nothing, because a model call did happen.

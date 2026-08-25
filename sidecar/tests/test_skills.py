@@ -8,11 +8,9 @@ mapping), frontmatter stripping, the minimal output contract, and that no
 forbidden surface is added.
 """
 
-import json
 import sqlite3
 from pathlib import Path
 
-import pytest
 
 from app import config
 from app.agent_runtime import session_agent

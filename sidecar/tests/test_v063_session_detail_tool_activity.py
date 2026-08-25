@@ -112,7 +112,6 @@ def test_the_paged_endpoint_and_the_detail_endpoint_agree(client):
 def test_corrupt_persisted_activity_does_not_take_the_session_down(client, bad):
     """A malformed column must degrade to an empty trace, not a dead session."""
     from app import db
-    from app.repositories import sessions as repo
 
     sid = _session_with_activity(client, [REAL_ROW])
     with db.connect() as conn:

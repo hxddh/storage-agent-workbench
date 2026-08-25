@@ -42,6 +42,7 @@ def build_agent(
     include_usage: bool = True,
     prompt_cache_retention: str | None = None,
     temperature: float | None = None,
+    model_timeout: float | None = None,
 ) -> Any:
     """Build an Agents-SDK Agent with a PER-RUN model client.
 
@@ -119,6 +120,20 @@ def build_agent(
     # session_agent), because provider compatibility outranks a cost optimization.
     if prompt_cache_retention:
         settings_kwargs["prompt_cache_retention"] = prompt_cache_retention
+    # Bound ONE model-call attempt (openai-agents 0.21.1). Every tool has had a
+    # wall-clock ceiling since v0.56.0; the model call had none, which left the
+    # slowest thing in a turn as the only unbounded one. The client's own read
+    # timeout is 600 s and it retries twice, so a stalled endpoint could hold a
+    # turn for half an hour while a tool doing the same work would have been cut
+    # off at 120 s.
+    #
+    # Enforced by the SDK's run loop through asyncio cancellation, so it is
+    # model-agnostic and applies to the chat-completions path this app uses. It
+    # bounds the WHOLE attempt including the stream, not the gap between events —
+    # which is why the value is generous rather than tight (see _MODEL_TIMEOUT_S).
+    # It does not replace the client's retries: the ceiling is per attempt.
+    if model_timeout:
+        settings_kwargs["timeout"] = model_timeout
     return Agent(name=name, instructions=instructions, tools=tools or [], model=model,
                  model_settings=ModelSettings(**settings_kwargs))
 

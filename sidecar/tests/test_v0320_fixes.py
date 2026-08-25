@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import sqlite3
 
-import pytest
 
 from app import config
 from app.migrations import MIGRATIONS, apply_migrations

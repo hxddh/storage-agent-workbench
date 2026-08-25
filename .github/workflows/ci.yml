@@ -89,7 +89,11 @@ jobs:
       - name: Install package (with dev extras)
         run: pip install -c requirements.lock -e ".[dev]"
       - name: Lint (ruff)
-        run: ruff check app
+        # `tests` is in scope too: a stale reference inside a test is invisible
+        # otherwise. v0.85.0 shipped one — a monkeypatch rewrite left
+        # `httpx.ConnectError` behind, so the test raised NameError instead and
+        # still passed, asserting nothing about the connection path it named.
+        run: ruff check app tests
       - name: Import check
         run: python -c "import app.main; print(app.main.SERVICE_NAME)"
       - name: Run tests

@@ -4,6 +4,128 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [Unreleased]
+
+_What the v0.85.0 SDK upgrade actually unlocked, plus the two gaps looking for it
+exposed. The honest headline is that the upgrade unlocked very little: the
+agents SDK's top-level API gained exactly one name between 0.20 and 0.22
+(verified by diffing `__all__` against the 0.20.0 wheel), and the S3 API surface
+in botocore 1.43.68 → 1.43.79 is byte-identical (116 operations, 718 shapes,
+none added or removed). Two things were worth taking._
+
+### Added — a wall-clock bound on the model call
+
+Every tool has had a ceiling since v0.56.0 (`_TOOL_TIMEOUT_S`, 120 s; 900 s for
+the account-wide ones). The model call had none: it inherited the OpenAI
+client's 600 s read timeout, and the client retries twice, so a stalled endpoint
+could hold a turn for roughly half an hour while a tool doing the same work
+would have been cut off at two minutes. The slowest component of a turn was also
+its only unbounded one.
+
+`ModelSettings.timeout` (new in openai-agents 0.21.1) is the first release that
+can express this. It is enforced in the SDK's run loop through asyncio
+cancellation, so it is model-agnostic and applies to the Chat Completions path
+this app uses for provider compatibility — verified in the SDK source, not
+assumed from the field's presence.
+
+Set to 300 s, and the number is reasoned rather than picked: the SDK's deadline
+covers the **whole attempt including the streamed answer**, not the gap between
+events, so a tight value would truncate a legitimately long answer instead of
+catching a hang. It is a hang bound, and the figure to compare it against is the
+600 s it replaces.
+
+A trip is **recoverable, not fatal**. `ModelTimeoutError` joins the same class as
+a 429: the finalize pass writes a grounded best-effort answer from the trace
+already gathered, rather than discarding a real investigation because the
+provider was slow.
+
+### Fixed — token counts that stated a total they had not established
+
+The same defect class this project has been sweeping since v0.80.0, found in the
+turn footer. Usage is reported per **response**, not per endpoint: within one
+turn a streamed answer often carries usage while the tool-call steps do not.
+Summing whatever came back produced a confident `↑12.4k`, which was really
+"12.4k out of an unknown larger number".
+
+The SDK supplies the denominator for free — `Usage.add()` appends a
+`request_usage_entries` row only for a response that carried non-zero usage,
+while `requests` counts every model call — so `entries < requests` is exactly
+"some calls reported nothing". `_usage_snapshot` now reports
+`reported_requests`, and the footer renders `↑≥12.4k ↓≥1.1k` with a tooltip
+naming the ratio. Absent when every call reported (the total is a total) and
+absent when none did (that case already read as unavailable, not zero).
+
+That the counts rest on SDK behaviour rather than documented API is itself
+pinned: a contract test drives a scripted model twice — one response with usage,
+one without — and asserts the asymmetry, so a future SDK that starts appending
+rows for empty payloads fails here instead of silently turning the floor back
+into a total. `agents.testing` (new in 0.21) is what makes that expressible with
+no network and no endpoint double.
+
+### Fixed — the model call that failed, and therefore vanished from the bill
+
+Raised in review of the change above, and correct. Usage is added only when a
+response **completes**, so a model call killed by the new deadline — or by a
+cancel, or by a provider error — increments neither `requests` nor
+`request_usage_entries`. The two counters still agree, the floor marker stays
+off, and a turn that lost a whole billable call renders as an exact total. The
+new recovery path made that reachable on purpose: a timed-out call is precisely
+one that streamed tokens the provider will never report.
+
+Demonstrated rather than argued: a scripted model whose second call hangs past a
+0.5 s deadline leaves `requests == 1`, `entries == 1` and `input_tokens == 10`,
+with the second call's 999 input tokens nowhere in the numbers.
+
+The turn knows that call happened — it caught its error — so it now records it.
+`requests` becomes true, and because the recorded call reported nothing, the
+existing `reported < requests` rule produces the floor marker with no second
+flag and no new UI concept.
+
+Counted for **any** ending exception except `MaxTurnsExceeded` (which is raised
+after a completed response, so nothing is missing) and for a user cancel.
+Deliberately not conditioned on the error kind: a 429 that produced no tokens
+and a mid-stream timeout that produced many are both "one model call whose cost
+we do not know", and overstating that uncertainty is the safe direction.
+
+### Fixed — a test that passed for the wrong reason, and the lint gap that hid it
+
+v0.85.0's `httpx` → `httpx2` rewrite updated the imports and the monkeypatch
+targets in `test_model_providers.py` but left one `httpx.ConnectError` in a test
+body. The route catches broadly, so the resulting `NameError` produced the same
+assertion outcome and the test passed — while asserting nothing about the
+connection-failure path it is named after.
+
+`ruff check` ran over `app` only, so nothing flagged it. CI now lints `tests`
+too, and the 25 pre-existing findings that turned up (unused imports, ambiguous
+`l`/`O` names, one dead assignment whose comment claimed it was "validated
+below" in a function that ended on the next line) are fixed rather than
+suppressed.
+
+### Notes — what was evaluated and deliberately NOT taken
+
+Recorded because "we looked and decided no" and "we never looked" are different
+facts:
+
+- **`prompt_cache_options`** — prompt caching is already on via
+  `prompt_cache_retention` (v0.55.0). This is a different field: it needs
+  gpt-5.6+ **and** explicit `prompt_cache_breakpoint` content blocks, and setting
+  `mode: "explicit"` without them *disables* the implicit breakpoint. Net harm.
+- **`ModelSettings.retry`** — `AsyncOpenAI` already retries twice on 429/5xx with
+  backoff (`DEFAULT_MAX_RETRIES = 2`, verified). Runner-managed retry would be a
+  third layer multiplying worst-case latency, on top of a salvage path that is
+  deliberately not a retry.
+- **`preserve_raw_usage`** — superseded by `request_usage_entries`, which is a
+  stable public field rather than a provider-shaped diagnostic blob.
+- **SDK output guardrails** (and 0.22's redaction of guardrail-blocked output
+  from persisted state) — the product already sanitizes in its own tool
+  wrappers, which holds regardless of SDK behaviour. Migrating buys no new
+  guarantee.
+- **Starlette 1.6 `max_body_size`** — not reachable: FastAPI 0.141.1 exposes it
+  on neither `FastAPI` nor `APIRoute`. Uploads are already stream-capped at
+  2 GiB during read.
+- **`ToolSearchTool`, MCP, `RunState`** — progressive disclosure already exists
+  (`read_skill` plus tool gating); an MCP runtime is out of scope by design.
+
 ## [0.85.0] - 2026-08-25
 
 _A maintenance release with no product behaviour change: the whole dependency

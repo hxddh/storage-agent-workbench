@@ -155,7 +155,7 @@ def test_test_endpoint_unreachable_is_reported(client, monkeypatch):
     import httpx2
 
     def boom(*a, **k):
-        raise httpx.ConnectError("no route")
+        raise httpx2.ConnectError("no route")
 
     provider_id = _create(client).json()["id"]
     monkeypatch.setattr(httpx2, "get", boom)

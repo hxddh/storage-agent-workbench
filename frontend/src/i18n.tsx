@@ -124,6 +124,8 @@ const en: Dict = {
   "metrics.requests": "{n} model calls",
   "metrics.requestsHint":
     "Model calls this turn made, counted here rather than reported by the endpoint — so it is available even when token usage is not.",
+  "metrics.partialHint":
+    "Only {reported} of this turn's {total} model calls reported token usage, so these counts are a floor, not a total. The rest is unknown, not zero.",
   "inspector.title": "Session inspector",
   "inspector.copyRecord": "Copy record",
   "inspector.statCalls": "Tool calls",
@@ -582,6 +584,7 @@ const zh: Dict = {
   "metrics.tokensUnavailableHint": "该模型服务未上报本轮的 token 用量；这里不做任何估算。",
   "metrics.requests": "{n} 次模型调用",
   "metrics.requestsHint": "本轮发起的模型调用次数，由本地统计而非服务端上报，因此在 token 用量缺失时依然可用。",
+  "metrics.partialHint": "本轮 {total} 次模型调用中只有 {reported} 次上报了 token 用量，因此这些数字是下限而非总量。其余部分是未知，不是零。",
   "inspector.title": "会话检查器",
   "inspector.copyRecord": "复制记录",
   "inspector.statCalls": "工具调用",

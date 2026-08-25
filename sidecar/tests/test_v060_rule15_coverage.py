@@ -32,7 +32,7 @@ SECRET = "Zq7SuperSecretValue123456"
 # One row per category rule 15 enumerates, with a representative real-world
 # carrier for each. If a rule-15 line has no row here, that is the bug.
 RULE_15_CATEGORIES: list[tuple[str, str, str]] = [
-    ("access keys", f"AKIAIOSFODNN7EXAMPLE in the log", "AKIAIOSFODNN7EXAMPLE"),
+    ("access keys", "AKIAIOSFODNN7EXAMPLE in the log", "AKIAIOSFODNN7EXAMPLE"),
     ("secret keys",
      "aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
      "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),

@@ -16,10 +16,9 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-import pytest
 from botocore.exceptions import ClientError
 
-from app import config, run_service
+from app import config
 from app.s3 import client_factory
 from app.s3 import config_tools as ct
 from app.s3 import tools as s3

@@ -76,6 +76,16 @@ export function TurnMetricsBar({
   // so it is present exactly when token usage may not be.
   const r = usage?.requests;
   const reqs = typeof r === "number" && Number.isFinite(r) && r > 0 ? r : null;
+  // PARTIAL reporting: some of the turn's model calls reported usage and some
+  // did not, so the totals are a floor. Rendering them bare would state a figure
+  // the endpoint never gave us — the same "confident number for an incomplete
+  // measurement" the em-dash branch below already refuses to do for the
+  // all-silent case. A "≥" and a tooltip naming the ratio is the whole fix.
+  const rep = usage?.reported_requests;
+  const partial =
+    hasTokens && typeof rep === "number" && Number.isFinite(rep) && reqs !== null && rep < reqs
+      ? { reported: rep, total: reqs }
+      : null;
 
   // Nothing measured at all (an old message from before v0.45.0, or a turn that
   // never reached the server). Render nothing rather than a row of dashes.
@@ -117,10 +127,21 @@ export function TurnMetricsBar({
         )}
         {(dur || calls > 0) && <Dot />}
         {hasTokens ? (
-          <span className="tabular-nums" title={model ? t("metrics.modelHint", { model }) : undefined}>
+          <span
+            className="tabular-nums"
+            title={
+              partial
+                ? t("metrics.partialHint", { reported: partial.reported, total: partial.total })
+                : model
+                  ? t("metrics.modelHint", { model })
+                  : undefined
+            }
+          >
             <span className="text-gray-700">↑</span>
+            {partial && <span className="text-gray-700">≥</span>}
             {inTok ?? "?"}
             <span className="ml-1.5 text-gray-700">↓</span>
+            {partial && <span className="text-gray-700">≥</span>}
             {outTok ?? "?"}
           </span>
         ) : (

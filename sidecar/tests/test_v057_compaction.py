@@ -18,11 +18,11 @@ from __future__ import annotations
 
 from app.agent_runtime import session_agent as sa
 
-O, C = sa._UNTRUSTED_OPEN, sa._UNTRUSTED_CLOSE
+OPEN, CLOSE = sa._UNTRUSTED_OPEN, sa._UNTRUSTED_CLOSE
 
 
 def _out(cid: str, payload: str, wrapped: bool = True) -> dict:
-    body = f"{O}\n{payload}\n{C}" if wrapped else payload
+    body = f"{OPEN}\n{payload}\n{CLOSE}" if wrapped else payload
     return {"type": "function_call_output", "call_id": cid, "output": body}
 
 
@@ -72,9 +72,9 @@ def test_the_untrusted_envelope_survives_compaction():
     first = [i for i in new if i["type"] == "function_call_output"][0]["output"]
     # The surviving head is still third-party data and must still say so (SEC4);
     # the accounting line is runtime text and sits outside the envelope.
-    assert first.startswith(O)
-    assert C in first
-    assert first.rindex(C) < first.index("[COMPACTED")
+    assert first.startswith(OPEN)
+    assert CLOSE in first
+    assert first.rindex(CLOSE) < first.index("[COMPACTED")
 
 
 def test_the_head_of_the_payload_survives():
@@ -112,7 +112,7 @@ def test_an_unwrapped_payload_gains_no_stray_markers():
     items = [_out("a", "Z" * 9000, wrapped=False), _out("b", "x"), _out("c", "y")]
     new, reclaimed = sa._compact_consumed_outputs(items)
     assert reclaimed > 0
-    assert O not in new[0]["output"] and C not in new[0]["output"]
+    assert OPEN not in new[0]["output"] and CLOSE not in new[0]["output"]
 
 
 # --- the filter itself -------------------------------------------------------
