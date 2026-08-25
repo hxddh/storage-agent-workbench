@@ -4,7 +4,11 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
-## [Unreleased]
+## [0.85.0] - 2026-08-25
+
+_A maintenance release with no product behaviour change: the whole dependency
+closure moved to its latest stable, and the packaged desktop bundle was the only
+thing that broke doing it._
 
 ### Changed — every dependency moved to its latest stable, including three coupled majors
 
@@ -54,6 +58,22 @@ Stated that way on purpose: the upgrade is right because these are fixed
 upstream and the project should sit on supported lines, **not** because a live
 hole was demonstrated in this product. Only the `cryptography` row was actually
 traced to a conclusion.
+
+### Fixed — the packaged agent runtime, dead in the bundle while `/health` said 200
+
+`openai-agents` 0.22 resolves the installed `mcp` version through
+`importlib.metadata` at import time. A frozen bundle carries no dist-info unless
+it is collected, so in the packaged desktop app the SDK raised
+`PackageNotFoundError` and the agent runtime never started — while the sidecar's
+`/health` still answered 200. The deep self-check in
+`packaging/smoke_test_sidecar.py` exists for exactly that gap and is what caught
+it (in CI, not locally: the bundle had been built here for the cargo build but
+the self-check had never been run against it).
+
+The fix is `copy_metadata("mcp")` — metadata only. `collect_all("mcp")` is wrong
+twice over: it imports `mcp.cli`, which needs an optional `typer` this project
+does not install, so the build dies; and an MCP runtime is explicitly out of
+scope here. Only the dist-info is needed, and only the dist-info is taken.
 
 ### Notes
 
