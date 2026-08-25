@@ -12,7 +12,6 @@ import sqlite3
 
 from pathlib import Path
 
-import pytest
 
 from app import config, run_service
 from app.error_triage import engine, parser

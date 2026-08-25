@@ -11,7 +11,6 @@ audit events are recorded.
 import json
 import sqlite3
 
-import pytest
 
 from app import config, db, run_service
 from app.agent_runtime import session_agent

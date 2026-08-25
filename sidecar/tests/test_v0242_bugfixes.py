@@ -13,7 +13,6 @@ import io
 import threading
 import time
 
-import pytest
 
 from app.agent_runtime import turn_guard
 from app.s3.scope import check_scope

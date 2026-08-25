@@ -12,7 +12,6 @@ real `_streamed_session_loop` and only stubs the SDK boundary.
 """
 import asyncio
 
-import pytest
 
 from app.agent_runtime import session_agent
 
@@ -25,7 +24,7 @@ def test_streamed_loop_starts_run_inside_running_loop(monkeypatch):
         try:
             asyncio.get_running_loop()
             started_with_running_loop["ok"] = True
-        except RuntimeError as exc:  # "no running event loop" — the bug
+        except RuntimeError:  # "no running event loop" — the bug
             started_with_running_loop["ok"] = False
             raise
         return ("fake-result", lambda: None, [])

@@ -265,9 +265,6 @@ def test_inventory_import_into_analysis_and_app_dir(client, monkeypatch, sync_ru
     assert (tmp_path / mine[0]["stored_path"]).exists()
     assert mine[0]["name"] == "managed_evidence_import"
 
-    # only the evidence destination was ever touched; business bucket never scanned
-    fake_calls = []  # validated below via the shared fake
-
 
 def test_inventory_only_touches_destination_bucket(client, monkeypatch, sync_runs):
     pid = _provider(client)

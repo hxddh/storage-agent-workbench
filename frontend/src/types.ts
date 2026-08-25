@@ -496,6 +496,12 @@ export interface TokenUsage {
   cached_input_tokens?: number | null;
   /** Output tokens spent on reasoning — paid for, never displayed as text. */
   reasoning_tokens?: number | null;
+  /** How many of the turn's `requests` model calls actually reported usage.
+   * Present ONLY when some did and some did not, in which case the token counts
+   * above are a FLOOR, not a total, and must be rendered as such. Absent means
+   * either every call reported (the totals are complete) or none did (the
+   * counts are null). */
+  reported_requests?: number | null;
 }
 
 /** Live per-turn metrics from the SSE `done` event. */

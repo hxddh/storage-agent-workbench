@@ -143,6 +143,21 @@ _TOOL_TIMEOUT_S = 120.0
 # Account survey / bucket-config review walk many buckets in one call and are
 # already internally bounded; they need room the single probes do not.
 _SLOW_TOOL_TIMEOUT_S = 900.0
+# Per-model-call ceiling (openai-agents 0.21.1). The turn's slowest component was
+# also its only unbounded one: every tool has had a ceiling since v0.56.0, while a
+# model call inherited the OpenAI client's 600 s read timeout — and the client
+# retries twice, so a stalled endpoint could hold a turn for ~30 minutes.
+#
+# 300 s, not 120 s: the SDK's deadline covers the WHOLE attempt including the
+# streamed answer, so a tight value would cut off a legitimately long answer
+# rather than a hang. This is a hang bound, not a latency target — it must sit
+# above the slowest honest answer, and the number to compare it against is the
+# 600 s it replaces.
+#
+# A trip is RECOVERABLE, not fatal: `_is_model_timeout` routes it into the same
+# finalize salvage as a 429, so the turn answers from the trace it already has
+# instead of discarding the investigation.
+_MODEL_TIMEOUT_S = 300.0
 
 # --- mid-turn tool-output compaction (v0.57.0) -------------------------------
 # Measured on the same 8-tool turn used throughout: after v0.56.0 the turn costs
@@ -916,6 +931,29 @@ def _usage_snapshot(result: Any) -> dict[str, Any] | None:
                     "output_tokens": None, "total_tokens": None}
         return None
     out.update(_usage_details(parts))
+    # PARTIAL reporting is its own state, and it used to render as a confident
+    # total. A turn makes several model calls; an OpenAI-compatible endpoint may
+    # report usage on some and omit it on others (it is omitted per RESPONSE, not
+    # per endpoint — a streamed answer often carries usage while a tool-call step
+    # does not). Summing what came back then produced a precise-looking "↑12.4k"
+    # that was really "↑12.4k out of an unknown larger number" — the product
+    # stating a figure it had not established.
+    #
+    # The SDK gives the denominator for free: `Usage.add()` appends a
+    # `request_usage_entries` row only for a response that carried non-zero
+    # usage, while `requests` counts every model call it made. So
+    # `entries < requests` is exactly "some calls reported nothing", and the
+    # totals below are a FLOOR. Pinned against the SDK in
+    # test_v086_model_bounds_and_usage_honesty.py, since it rests on that
+    # behaviour rather than on documented API.
+    reported = 0
+    for u in parts:
+        try:
+            reported += len(getattr(u, "request_usage_entries", None) or [])
+        except TypeError:
+            pass
+    if 0 < reported < out["requests"]:
+        out["reported_requests"] = reported
     return out
 
 
@@ -1007,7 +1045,8 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str,
                            else _PROMPT_CACHE_RETENTION),
                        # An operator may override per provider; None keeps the
                        # investigator default (AGENT_TEMPERATURE).
-                       temperature=creds.get("temperature", AGENT_TEMPERATURE))
+                       temperature=creds.get("temperature", AGENT_TEMPERATURE),
+                       model_timeout=_MODEL_TIMEOUT_S)
 
 
 # --- graceful step-budget finalize -----------------------------------------
@@ -1098,6 +1137,27 @@ def _is_transient_provider_error(exc: BaseException) -> bool:
         return True
     msg = str(exc).lower()
     return any(f"error code: {s}" in msg for s in _TRANSIENT_STATUS)
+
+
+def _is_model_timeout(exc: BaseException) -> bool:
+    """True for the SDK's per-model-call deadline (`_MODEL_TIMEOUT_S`).
+
+    Treated exactly like a 429: the endpoint did not answer in time, and the
+    investigation gathered so far is still good. Discarding it to show a raw
+    "model call timed out" would throw away real tool evidence over a slow
+    provider, so this joins the recoverable set and the finalize pass writes a
+    grounded best-effort answer.
+
+    Matched by TYPE first (the SDK raises `ModelTimeoutError`), with a name
+    fallback for the case where the SDK is absent or the error was re-raised
+    through a wrapper — the same shape as `_is_max_turns`."""
+    try:
+        from agents.exceptions import ModelTimeoutError
+        if isinstance(exc, ModelTimeoutError):
+            return True
+    except Exception:  # noqa: BLE001 — SDK not installed (test envs)
+        pass
+    return type(exc).__name__ == "ModelTimeoutError"
 
 
 def _is_tool_call_sequence_error(exc: BaseException) -> bool:
@@ -2307,7 +2367,7 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
             # than discard the whole investigation with a raw error, finalize
             # synthesizes a grounded best-effort answer from the trace gathered so
             # far and offers to continue. Not cut_short (context wasn't the cause).
-            transient = (_is_transient_provider_error(exc)
+            transient = ((_is_transient_provider_error(exc) or _is_model_timeout(exc))
                          and not _is_max_turns(exc) and not cut_short)
             # A tool-call sequencing 400 is recoverable too: finalize rebuilds
             # from a fresh prompt (no tool_calls history), so the turn synthesizes

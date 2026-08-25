@@ -364,7 +364,8 @@ def test_access_log_run_sse_events(client, sync_runs):
     run_id = _run_analysis(client, "access_log_analysis", "access_log",
                            "a.log", ACCESS_LOG_TEXT, "analyze")
     text = client.get(f"/runs/{run_id}/events").text
-    types = [json.loads(l[5:].strip())["type"] for l in text.splitlines() if l.startswith("data:")]
+    types = [json.loads(ln[5:].strip())["type"]
+             for ln in text.splitlines() if ln.startswith("data:")]
     # No canned 'plan' event — runs expose their real tool trace, not a fixed plan.
     for required in ("tool_call_started", "tool_call_finished", "finding", "report_ready"):
         assert required in types

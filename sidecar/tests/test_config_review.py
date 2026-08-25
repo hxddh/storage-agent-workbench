@@ -359,7 +359,8 @@ def test_config_review_report_sanitized_no_raw_policy(cfg):
 def test_config_review_sse_events(cfg):
     run_id = _start_review(cfg)
     text = cfg.client.get(f"/runs/{run_id}/events").text
-    types = [json.loads(l[5:].strip())["type"] for l in text.splitlines() if l.startswith("data:")]
+    types = [json.loads(ln[5:].strip())["type"]
+             for ln in text.splitlines() if ln.startswith("data:")]
     for required in ("tool_call_started", "tool_call_finished", "finding", "report_ready"):
         assert required in types
     assert "plan" not in types  # no canned plan — the real tool trace stands in for it

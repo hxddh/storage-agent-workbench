@@ -193,7 +193,6 @@ def test_fork_copies_session_datasets(client):
 def test_agent_survey_run_is_origin_agent_and_not_a_card(client, monkeypatch):
     """The agent's survey_account / review_bucket_config run with origin='agent'
     and are therefore filtered out of the thread's run cards."""
-    from app import run_service
     from app.agent_runtime import session_action_tools
     from app.db import connect as db_connect
 

@@ -12,14 +12,12 @@ sanitized, that the report is secret-free, and that no kanban/PM tables exist.
 import json
 import sqlite3
 import uuid
-from typing import Any
 
 import pytest
 
 from app import config, run_service
 from app.agent_runtime import session_agent
 from app.repositories import sessions as sessions_repo
-from app.s3 import client_factory
 
 ACCESS = "AKIAIOSFODNN7EXAMPLE"
 MODEL_KEY = "sk-MODEL-SECRET-DO-NOT-LEAK"
@@ -367,7 +365,6 @@ def test_cancel_unknown_turn_is_404(client):
 
 
 def test_cancel_completed_turn_reports_completed(client, monkeypatch):
-    from app.agent_runtime import turn_guard
     s = _session(client)
     _add_model_provider(client)
     monkeypatch.setattr(session_agent, "SESSION_LOOP", lambda spec: "done")
