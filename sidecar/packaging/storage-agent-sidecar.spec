@@ -24,7 +24,7 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
 datas = []
 binaries = []
@@ -64,6 +64,19 @@ for pkg in ("duckdb", "pyarrow", "pandas", "openai", "agents", "griffe",
 
 # Dynamically/lazily imported at runtime (uvicorn loads its loop/protocol
 # implementations by name; keyring resolves backends by name).
+# METADATA ONLY, deliberately not the package. openai-agents 0.22 resolves the
+# installed `mcp` version through importlib.metadata at import time; a frozen
+# bundle carries no dist-info unless it is collected, so without this the SDK
+# raises PackageNotFoundError and the agent runtime is dead in the packaged app
+# while /health still answers 200 — which is why the deep self-check below
+# exists, and it is what caught this on the openai 2->3 / agents 0.20->0.22 bump.
+#
+# `collect_all("mcp")` is the wrong tool twice over: it imports `mcp.cli`, which
+# needs the optional `typer` we do not install (the build dies), and an MCP
+# RUNTIME is explicitly out of scope for this product. Only the dist-info is
+# needed, and only the dist-info is taken.
+datas += copy_metadata("mcp")
+
 hiddenimports += collect_submodules("uvicorn")
 hiddenimports += [
     "app.main",
