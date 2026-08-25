@@ -126,7 +126,8 @@ fn await_sidecar_ready(
 /// panicking rather than emitting a predictable token.
 fn gen_token() -> String {
     let mut bytes = [0u8; 16]; // 128 bits
-    getrandom::getrandom(&mut bytes).expect("OS CSPRNG unavailable for auth token");
+    // `fill` since getrandom 0.3 (the 0.2 spelling was `getrandom::getrandom`).
+    getrandom::fill(&mut bytes).expect("OS CSPRNG unavailable for auth token");
     let mut out = String::with_capacity(32);
     for b in bytes {
         out.push_str(&format!("{b:02x}"));

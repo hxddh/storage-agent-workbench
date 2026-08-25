@@ -21,12 +21,16 @@ dependencies = [
     "pandas>=2.0",
     "python-multipart>=0.0.9",
     # Floors keep us off ancient versions; upper bounds are deliberately loose so
-    # new agent-SDK features flow in automatically. `openai` needs no explicit cap
-    # here — `openai-agents` already constrains it (currently `openai<3,>=2.36`).
-    # `openai-agents` is pre-1.0 and ships features in 0.x minors, so we allow all
-    # of them and only guard the 1.0 boundary (a pre-1.0 SDK's 1.0 is typically a
-    # rewrite → worth a human-reviewed bump).
-    "openai>=2.40",
+    # new agent-SDK features flow in automatically. `openai` still needs no
+    # explicit cap here — `openai-agents` constrains it, and that constraint MOVED
+    # in 0.21: it was `openai<3,>=2.36`, it is now `openai<4,>=3.0.0`. The floor
+    # below is raised to match, because the two are coupled and an `openai>=2.40`
+    # floor no longer describes any installable combination with a current agents
+    # line. `openai-agents` is pre-1.0 and ships features in 0.x minors, so we
+    # allow all of them and only guard the 1.0 boundary (a pre-1.0 SDK's 1.0 is
+    # typically a rewrite → worth a human-reviewed bump); the openai floor is what
+    # keeps the resolver on an agents line that agrees with it.
+    "openai>=3.0",
     "openai-agents>=0.17,<1",
     # NOTE: the ranges above say what the code SUPPORTS. What was actually
     # VERIFIED is pinned in requirements.lock, which CI and packaging install

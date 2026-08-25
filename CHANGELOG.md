@@ -6,6 +6,79 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Changed — every dependency moved to its latest stable, including three coupled majors
+
+A full sweep of the runtime closure, the dev tooling, the frontend and the Rust
+crate graph. **DuckDB was checked first and did not move: 1.5.5 already is the
+latest stable.** PyPI carries only `1.6.0.dev*` nightlies, and upstream's next
+release is 2.0, planned for autumn 2026 — so there was no DuckDB major to take.
+
+**Three majors, and two of them were coupled.** `openai-agents` 0.21 changed its
+own requirement from `openai<3,>=2.36` to `openai<4,>=3.0.0`, so the agents SDK
+and the OpenAI SDK could only move together:
+
+| | from | to |
+| --- | --- | --- |
+| `openai` | 2.53.0 | **3.3.1** |
+| `openai-agents` | 0.20.0 | **0.22.0** |
+| `cryptography` | 49.0.0 | **50.0.0** |
+| `getrandom` (Rust) | 0.2 | **0.4** |
+
+The coupling also made `pyproject.toml` wrong rather than merely stale: it
+declared `openai>=2.40` and explained that no cap was needed because
+`openai-agents` pins it to `<3`. That sentence described an upstream constraint
+that no longer exists, and the floor no longer described any installable
+combination with a current agents line. Floor raised to `openai>=3.0`, comment
+rewritten to record what actually constrains what.
+
+`getrandom` was pinned at `0.2` with the rationale "the line Tauri already
+pulls" — Tauri had since moved to 0.3.x, so the pin was *adding* a second copy
+to the tree rather than avoiding one. Now on 0.4, and `gen_token` uses the
+`fill` spelling that replaced `getrandom::getrandom` in 0.3. (A `getrandom`
+0.2.17 remains in `Cargo.lock`, reachable only through `redox_users` — a
+**Redox OS** target dependency of `dirs` ← Tauri. It is not compiled for any
+platform this project ships.)
+
+### Fixed — three known advisories in the locked closure
+
+`pip-audit` over `requirements.lock` reported **6 advisories across 3 packages**
+before this change and **none** after:
+
+| package | fix | advisory | exposure here |
+| --- | --- | --- | --- |
+| `cryptography` 49.0.0 → 50.0.0 | PYSEC-2026-3552 | Bleichenbacher oracle in `pkcs7_decrypt_*` | **not reachable** — the only use of this library in the product is `AESGCM` in the secret vault; there is no PKCS#7 anywhere |
+| `urllib3` 2.6.3 → 2.7.0 | PYSEC-2026-141/142 | cross-origin redirect header forwarding; decompression amplification | transitive via botocore; whether botocore takes either path was **not** established |
+| `idna` 3.11 → 3.19 | PYSEC-2026-215 | `idna.encode()` DoS on crafted long input | transitive; a user-pasted endpoint hostname does reach it, but the "attacker" is the local user of a desktop app |
+
+Stated that way on purpose: the upgrade is right because these are fixed
+upstream and the project should sit on supported lines, **not** because a live
+hole was demonstrated in this product. Only the `cryptography` row was actually
+traced to a conclusion.
+
+### Notes
+
+The rest of the closure moved too — 23 packages upgraded, 5 added, 8 removed —
+mostly because the OpenAI SDK major re-shaped its own dependencies (`httpx` →
+`httpx2`, `httpcore` → `httpcore2`, `mcp` 1.28 → 2.1, `starlette` 1.3 → 1.6, new
+`opentelemetry-api`; `distro`, `tqdm`, `python-dotenv` and `pydantic-settings`
+dropped out). Frontend and Rust moved within their current majors: `vite` 8.2.2,
+`vitest` 4.1.11, `tauri` 2.11.5, and the rest of the crate graph via
+`cargo update`.
+
+Four crates remain behind their latest (`generic-array` 0.14.7, `toml` 0.8.2,
+`toml_datetime` 0.6.3, `toml_edit` 0.20.2). They are held by other crates'
+requirements, not by anything in this repository, and `cargo update` cannot move
+them until those parents relax.
+
+**How this was verified**, given that v0.77.0 is the standing example of an SDK
+bump judged on the wrong evidence: the sidecar suite is green (**1532 passed**),
+and — because a green sidecar suite is exactly what v0.77.0 also had — the full
+**Playwright E2E suite was run against the upgraded stack on a real uvicorn +
+SSE sidecar: 128/128 passed**. Frontend `tsc`, lint, 255 Vitest tests and the
+production build are green. The Rust crate `cargo check` and `cargo build` both
+succeed against a really-staged PyInstaller sidecar resource, so the `getrandom`
+API change is compiled, not assumed.
+
 ## [0.84.0] - 2026-08-24
 
 _First step of a route to 1.0 that is deliberately about evidence rather than
