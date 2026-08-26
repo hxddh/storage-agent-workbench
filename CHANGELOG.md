@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to
 follow semantic versioning once it reaches 1.0.
 
+## [Unreleased]
+
 ## [0.86.0] - 2026-08-26
 
 _Two passes over the layer below the product. The first asked what the v0.85.0
