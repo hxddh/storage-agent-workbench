@@ -149,6 +149,64 @@ Verified where it counts: the rebuilt bundle's deep self-check reports
 'vault_crypto': 'ok'}` — `vault_crypto` being the check that would break first if
 any of this had mattered to the vault.
 
+### Changed — 82 MB out of the download, none of it load-bearing
+
+The one-dir bundle was 553 MB. Two things in it were measured rather than
+assumed to be needed, and neither was.
+
+**Arrow Flight, 57 MB.** Arrow ships its optional engines as separate shared
+libraries and the hooks take the lot; Flight is its gRPC network RPC stack, and
+it arrived twice — once as package data, once from PyInstaller's binary analysis
+— at 28.6 MB each. `ldd` on both `pyarrow/lib*.so` and `pyarrow/_parquet*.so`
+shows what they actually link (libarrow, acero, compute, dataset, python,
+substrait) and Flight is not among them. The product's entire use of pyarrow is
+`pyarrow.parquet` plus one table in the self-check. A network RPC stack inside
+an app whose rules forbid unbounded network I/O is worth removing at any size.
+
+`libarrow_substrait` looks equally severable and is **not** — both extension
+modules link it, so it stays. That is the difference between a checked name list
+and a guess, and it is why the exclusion is a list of names rather than a
+pattern.
+
+**433 AWS service models, 25 MB.** `collect_all("botocore")` takes the whole
+`botocore/data` tree — API models for every AWS service that exists. This
+product builds exactly two boto3 clients and both are S3. Instrumenting
+`Loader.load_service_model` while building a real client shows it reaches for
+`s3/endpoint-rule-set-1` and `s3/service-2`, over the top-level
+`endpoints.json` / `partitions.json` / `_retry.json` /
+`sdk-default-configuration.json`. Those are kept; the other 1,904 files are not.
+
+The filtering had to move **after** `Analysis`: pyinstaller-hooks-contrib ships
+its own pyarrow hook that collects these independently, so filtering
+`collect_all`'s output changed nothing — measured, the rebuilt bundle came out
+the same 553 MB.
+
+553 MB → **471 MB**, and the installers shrink with it.
+
+Both filters were mutation-tested rather than trusted, because a bundle that
+silently loses a library is precisely the failure this project has been bitten
+by (v0.85.0, `mcp` metadata): adding `libarrow_dataset` — which IS linked — to
+the exclusion list produces `/health` 200 and `analysis_engine: error:
+ImportError: libarrow_dataset.so.2500: cannot open shared object file`; emptying
+the botocore keep-list produces `s3_client: error: UnknownServiceError: Unknown
+service: 's3'`. The safety net is real, and it fails at build time rather than
+on a user's first call.
+
+**`strip` was left off**, deliberately and not by omission: it would shave more,
+but PyInstaller's strip interacts with the macOS ad-hoc sealing step
+(`scripts/sign-macos-app-bundle.sh`) in ways this Linux environment cannot
+test, and an unverifiable saving on the one platform whose bundle is hardest to
+repair is not a trade worth making blind.
+
+### Added — the packaged self-check now covers Parquet, not just Arrow
+
+`analysis_engine` proved DuckDB and an in-memory Arrow table round-tripped.
+`pyarrow.parquet` is a separate extension module over separate shared libraries,
+and the bundle now filters Arrow's engines by name — so "Arrow works" stopped
+being evidence that "reading a customer's inventory export works". The check now
+writes a Parquet file, reads its metadata and reads it back. Inventory ingest
+and the S3 inventory tool both depend on that path.
+
 ### Added — the dependency gate now runs in both directions
 
 `test_v085_runtime_imports.py` checked that everything `app/` imports is
