@@ -129,19 +129,46 @@ a = Analysis(
 # It has to happen HERE rather than at collect_all: pyinstaller-hooks-contrib
 # ships its own pyarrow hook that collects these independently, so filtering the
 # collect_all output changed nothing (measured: same 553 MB).
-_UNUSED_SHARED_LIBS = ("libarrow_flight",)
+# Matched on the STEM, with any `lib` prefix stripped first, because the same
+# library is named three ways: `libarrow_flight.so.2500` (Linux),
+# `libarrow_flight.dylib` (macOS), `arrow_flight.dll` + `arrow_flight.lib`
+# (Windows — no `lib` prefix, which a naive prefix match silently misses, and
+# the Windows job builds this same spec).
+_UNUSED_LIB_STEMS = ("arrow_flight", "arrow_python_flight")
+
+
+def _stem(dest) -> str:
+    name = os.path.basename(str(dest))
+    return name[3:] if name.startswith("lib") else name
 
 
 def _without_unused_libs(toc):
-    return [entry for entry in toc
-            if not os.path.basename(str(entry[0])).startswith(_UNUSED_SHARED_LIBS)]
+    return [e for e in toc if not _stem(e[0]).startswith(_UNUSED_LIB_STEMS)]
 
 
-_before = len(a.binaries) + len(a.datas)
+_removed = {stem: 0 for stem in _UNUSED_LIB_STEMS}
+for _toc in (a.binaries, a.datas):
+    for _entry in _toc:
+        for _stem_name in _UNUSED_LIB_STEMS:
+            if _stem(_entry[0]).startswith(_stem_name):
+                _removed[_stem_name] += 1
 a.binaries = _without_unused_libs(a.binaries)
 a.datas = _without_unused_libs(a.datas)
-print(f"spec: dropped {_before - len(a.binaries) - len(a.datas)} unused shared-library "
-      f"entries ({', '.join(_UNUSED_SHARED_LIBS)})")
+print(f"spec: dropped {sum(_removed.values())} unused shared-library entries "
+      f"({', '.join(f'{k}={v}' for k, v in _removed.items())})")
+
+# A saving that silently becomes a no-op is worse than no saving: it reads as
+# done in the changelog while the installer keeps the weight. If a name stops
+# matching — pyarrow renames it, or a platform spells it a fourth way — say so
+# at BUILD time instead of shipping quietly.
+_missing = [stem for stem, count in _removed.items() if count == 0]
+if _missing:
+    raise SystemExit(
+        "storage-agent-sidecar.spec: expected to drop " + ", ".join(_missing) +
+        " but found no matching entry. Either pyarrow no longer ships it (remove "
+        "the name from _UNUSED_LIB_STEMS, deliberately) or it is spelled "
+        "differently on this platform (add that spelling). Do not leave this "
+        "silently matching nothing.")
 
 
 # --- botocore ships 434 service models; this product speaks one --------------

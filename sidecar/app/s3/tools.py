@@ -432,6 +432,30 @@ def get_bucket_location(conn: sqlite3.Connection, provider_id: str,
 # --- 3. list_objects_v2 -----------------------------------------------------
 
 
+# Codes a provider uses to say "I don't accept that parameter". Directory
+# buckets answer the OptionalObjectAttributes ask this way (AWS documents the
+# option as unsupported for them), and so do gateways that validate strictly.
+_PARAM_REJECTION_CODES = {
+    "InvalidRequest", "InvalidArgument", "InvalidArgumentException",
+    "NotImplemented", "MethodNotAllowed", "BadRequest",
+}
+
+
+def _rejects_optional_attributes(exc: ClientError) -> bool:
+    """True when the error reads as "that request parameter is not accepted".
+
+    Deliberately narrow. A retry is only correct for a parameter the caller can
+    give up; retrying a NoSuchBucket or an AccessDenied would turn one clear
+    failure into two and tell the operator nothing new.
+    """
+    resp = exc.response or {}
+    code = resp.get("Error", {}).get("Code") or ""
+    http = resp.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    if code in _PARAM_REJECTION_CODES or http in (400, 501):
+        return True
+    return "optional-object-attributes" in str(exc).lower()
+
+
 def _restore_status(entry: dict[str, Any]) -> dict[str, Any] | None:
     """Archive-restore state for one listing entry, or None when unreported.
 
@@ -500,7 +524,22 @@ def list_objects_v2(
             kw["Delimiter"] = delimiter
         if continuation_token:
             kw["ContinuationToken"] = continuation_token
-        resp = client.list_objects_v2(**kw)
+        try:
+            resp = client.list_objects_v2(**kw)
+        except ClientError as exc:
+            # The optional attribute must never cost us the listing itself.
+            # AWS does not accept it for S3 EXPRESS DIRECTORY BUCKETS (stated in
+            # the service model's own note), and a strict S3-compatible gateway
+            # may reject an unknown header outright. Either way the right answer
+            # is the objects, without restore state — so drop the ask and repeat
+            # the call once.
+            #
+            # Narrow on purpose: a NoSuchBucket or an AccessDenied must surface
+            # as itself, not be retried into a confusing second failure.
+            if not _rejects_optional_attributes(exc):
+                raise
+            kw.pop("OptionalObjectAttributes", None)
+            resp = client.list_objects_v2(**kw)
         contents = resp.get("Contents", []) or []
         common = [p.get("Prefix") for p in resp.get("CommonPrefixes", []) or []]
         all_keys = [c.get("Key") for c in contents]

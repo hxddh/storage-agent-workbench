@@ -128,6 +128,33 @@ facts:
 
 ## [Unreleased]
 
+### Fixed — two things review caught in the above, both real
+
+**The restore ask could cost the listing itself (P1).** AWS does not accept
+`OptionalObjectAttributes` for S3 Express **directory buckets** — the service
+model says so in its own note on the field — and a strict S3-compatible gateway
+may reject an unknown header outright. Sending it unconditionally would then
+break `list_objects_v2`, the core diagnostic, in order to add an optional
+field. A rejection now drops the ask and repeats the call once; the listing is
+the deliverable and restore state is the bonus. Narrow on purpose: a
+`NoSuchBucket` or an `AccessDenied` still surfaces as itself rather than being
+retried into a second identical failure.
+
+**The Flight exclusion was a no-op on Windows (P2).** pyarrow names it
+`libarrow_flight.so` on Linux, `libarrow_flight.dylib` on macOS and
+`arrow_flight.dll` on Windows — no `lib` prefix — so `startswith("libarrow_
+flight")` silently dropped nothing in the installer built by the Windows job.
+Confirmed against the actual `win_amd64` wheel rather than assumed: it carries
+`arrow_flight.dll` (14 MB), `arrow_flight.lib` and `arrow_python_flight.dll`.
+Matching now strips any `lib` prefix and compares stems, which also caught
+`arrow_python_flight` on every platform.
+
+And the better half of that review comment: **the build now fails when a name
+matches nothing.** A saving that silently becomes a no-op is worse than no
+saving — it reads as done in the changelog while the installer keeps the
+weight. If pyarrow renames a library or a fourth spelling appears, the build
+says so instead of shipping quietly.
+
 ### Fixed — a checksum the client cannot verify is a provider gap, not an anonymous error
 
 botocore >= 1.36 asks for and validates flexible checksums by default

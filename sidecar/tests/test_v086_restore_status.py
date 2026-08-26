@@ -140,3 +140,58 @@ def test_the_rollup_counts_the_whole_page_not_just_the_detail_window(stub, provi
         assert out["restore_in_progress_count"] == n, out["restore_in_progress_count"]
     finally:
         conn.close()
+
+
+# --- the ask must never cost us the listing ----------------------------------
+
+
+def test_a_directory_bucket_still_gets_its_objects(stub, provider):
+    """Raised in review, and it is the P1 of the two.
+
+    AWS does not accept `OptionalObjectAttributes` for S3 Express DIRECTORY
+    buckets — the service model says so in its own note on the field — and a
+    strict S3-compatible gateway may reject an unknown header outright. Sending
+    it unconditionally would then break `list_objects_v2` itself, which is the
+    core diagnostic, to add an optional field.
+
+    So a rejection drops the ask and repeats the call. The listing is the
+    deliverable; restore state is the bonus.
+    """
+    _c, s = stub
+    s.add_client_error("list_objects_v2", service_error_code="InvalidRequest",
+                       service_message="OptionalObjectAttributes is not supported "
+                                       "for directory buckets",
+                       http_status_code=400, expected_params=_EXPECTED)
+    s.add_response("list_objects_v2", {
+        "Contents": [{"Key": "a", "Size": 1, "StorageClass": "EXPRESS_ONEZONE"}],
+        "KeyCount": 1, "IsTruncated": False,
+    }, expected_params={"Bucket": BUCKET, "Prefix": "", "MaxKeys": 1000})
+
+    conn = _db()
+    try:
+        out = s3.list_objects_v2(conn, provider, BUCKET, 1000, delimiter=None)
+        assert out["success"] is True, out
+        assert out["keys"] == ["a"], out
+        # …and it says it does not know, rather than "nothing is restoring".
+        assert out["restore_status_reported"] is False, out
+        s.assert_no_pending_responses()
+    finally:
+        conn.close()
+
+
+def test_a_real_error_is_not_retried_into_a_second_one(stub, provider):
+    """The guard on the retry. NoSuchBucket must surface as itself — retrying it
+    without the attribute produces the same failure and tells nobody anything.
+    Only ONE response is queued, so a second call fails the test."""
+    _c, s = stub
+    s.add_client_error("list_objects_v2", service_error_code="NoSuchBucket",
+                       service_message="The specified bucket does not exist",
+                       http_status_code=404, expected_params=_EXPECTED)
+    conn = _db()
+    try:
+        out = s3.list_objects_v2(conn, provider, BUCKET, 1000, delimiter=None)
+        assert out["success"] is False
+        assert out["error_code"] == "NoSuchBucket", out
+        s.assert_no_pending_responses()
+    finally:
+        conn.close()
