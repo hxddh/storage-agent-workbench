@@ -126,6 +126,43 @@ facts:
 - **`ToolSearchTool`, MCP, `RunState`** — progressive disclosure already exists
   (`read_skill` plus tool gating); an MCP runtime is out of scope by design.
 
+## [Unreleased]
+
+### Removed — the OS-keychain stack the security rules refuse, still being shipped
+
+`keyring` was a declared runtime dependency and nothing imported it. Every
+"keyring" in this codebase is the product's own `app/security/keyring_store`
+module, which merely shares the word: secrets live in a self-managed
+AES-256-GCM vault, and rule 3 says in as many words that this is **deliberately
+not** the OS keychain.
+
+The declaration was a fossil of the design that was abandoned, and it was not
+inert. It pulled `jeepney` and `secretstorage` into the shipped closure — D-Bus
+clients whose entire purpose is talking to the very keychain the rules reject —
+plus `jaraco.classes`, `jaraco.context`, `jaraco.functools`, `backports.tarfile`,
+`more-itertools`, `zipp` and `importlib-metadata`. Ten pins gone; the lock drops
+from 61 to 51. The PyInstaller spec was also force-including
+`hiddenimports = ["keyring.backends"]`, actively reaching for that machinery.
+
+Verified where it counts: the rebuilt bundle's deep self-check reports
+`{'agents_sdk': 'ok', 's3_client': 'ok', 'analysis_engine': 'ok',
+'vault_crypto': 'ok'}` — `vault_crypto` being the check that would break first if
+any of this had mattered to the vault.
+
+### Added — the dependency gate now runs in both directions
+
+`test_v085_runtime_imports.py` checked that everything `app/` imports is
+provided by the shipped closure. That is one direction, and the blind spot is
+the same size: a dependency can be declared and shipped while nothing imports
+it, which is exactly how the above survived.
+
+The reverse check treats an unused declaration as a failure. Dependencies that
+a working product genuinely needs without importing them live in an explicit
+`IMPLICIT_RUNTIME_DEPS` allowlist that must name the library reaching them —
+currently one entry, `python-multipart`, which FastAPI uses to parse the
+evidence-upload bodies. An unexplained name would turn the gate back into the
+rubber stamp it replaces. Run against the old code it fails, naming `keyring`.
+
 ## [0.85.0] - 2026-08-25
 
 _A maintenance release with no product behaviour change: the whole dependency

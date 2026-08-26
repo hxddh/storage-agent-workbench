@@ -62,8 +62,15 @@ for pkg in ("duckdb", "pyarrow", "pandas", "openai", "agents", "griffe",
     binaries += b
     hiddenimports += h
 
-# Dynamically/lazily imported at runtime (uvicorn loads its loop/protocol
-# implementations by name; keyring resolves backends by name).
+# Dynamically/lazily imported at runtime: uvicorn loads its loop/protocol
+# implementations by name, so they are invisible to static analysis.
+#
+# `keyring.backends` used to be forced in here too. It was a fossil: secrets
+# moved to the self-managed AES-256-GCM vault (`security/keyring_store`, a
+# module of ours that merely shares the word) and the OS keychain is something
+# the security rules explicitly refuse. The packaging was still pulling in the
+# backend machinery for it — along with jeepney and secretstorage, whose whole
+# job is talking to that keychain. Removed with the dependency itself.
 # METADATA ONLY, deliberately not the package. openai-agents 0.22 resolves the
 # installed `mcp` version through importlib.metadata at import time; a frozen
 # bundle carries no dist-info unless it is collected, so without this the SDK
@@ -78,10 +85,7 @@ for pkg in ("duckdb", "pyarrow", "pandas", "openai", "agents", "griffe",
 datas += copy_metadata("mcp")
 
 hiddenimports += collect_submodules("uvicorn")
-hiddenimports += [
-    "app.main",
-    "keyring.backends",
-]
+hiddenimports += ["app.main"]
 
 block_cipher = None
 
