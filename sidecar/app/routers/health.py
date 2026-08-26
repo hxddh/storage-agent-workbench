@@ -80,15 +80,35 @@ def _run_selfcheck() -> dict[str, object]:
         )
 
     def _analysis_engine() -> None:
+        import tempfile
+        from pathlib import Path
+
         import duckdb
         import pyarrow as pa
+        import pyarrow.parquet as pq
 
         con = duckdb.connect(":memory:")
         try:
-            con.register("selfcheck_tbl", pa.table({"n": [1, 2, 3]}))
+            table = pa.table({"n": [1, 2, 3]})
+            con.register("selfcheck_tbl", table)
             got = con.execute("SELECT sum(n) FROM selfcheck_tbl").fetchone()
             if not got or got[0] != 6:
                 raise RuntimeError("duckdb/pyarrow round-trip returned wrong result")
+
+            # Parquet specifically, not just Arrow in memory. `pyarrow.parquet`
+            # is a separate extension module over separate shared libraries, and
+            # the bundle now filters Arrow's optional engines by name
+            # (packaging/storage-agent-sidecar.spec) — so "Arrow works" is no
+            # longer evidence that "reading a customer's inventory export works".
+            # Inventory ingest (analysis/inventory.py) and the S3 inventory tool
+            # both go through this path.
+            with tempfile.TemporaryDirectory() as tmp:
+                target = Path(tmp) / "selfcheck.parquet"
+                pq.write_table(table, target)
+                if pq.read_metadata(target).num_rows != 3:
+                    raise RuntimeError("parquet metadata round-trip returned wrong row count")
+                if pq.read_table(target).column("n").to_pylist() != [1, 2, 3]:
+                    raise RuntimeError("parquet read-back returned wrong values")
         finally:
             con.close()
 

@@ -135,7 +135,55 @@ def _is_unsupported(exc: ClientError) -> bool:
     return code in _UNSUPPORTED_CODES or http in (501, 405)
 
 
+# botocore >= 1.36 asks for and VALIDATES flexible checksums by default
+# (`response_checksum_validation="when_supported"`). Against AWS that is free
+# integrity checking. Against the S3-COMPATIBLE endpoints this product exists to
+# diagnose it is a known interop edge: a gateway that returns a checksum header
+# botocore cannot verify — wrong algorithm, wrong value for a ranged read,
+# CRC64NVME it does not implement correctly — makes the READ fail even though
+# the bytes are fine.
+#
+# Unrecognised, that surfaced as `error_code: "FlexibleChecksumError"` and a raw
+# message: technically honest, but it tells the operator nothing, and diagnosing
+# exactly this class of provider disagreement is the product's whole job (rule
+# 18). Named, it becomes an answer.
+_CHECKSUM_ERROR_TYPES = ("ChecksumError", "FlexibleChecksumError")
+
+
+def _is_checksum_failure(exc: BaseException) -> bool:
+    """True when the READ succeeded but client-side checksum validation refused it.
+
+    Matched by exception TYPE NAME rather than by `isinstance`, deliberately:
+    these live in `botocore.exceptions` and have moved before, and a diagnosis
+    that silently stops matching after a botocore bump is worse than one that
+    was never written. The names are stable; the import path is not."""
+    return type(exc).__name__ in _CHECKSUM_ERROR_TYPES
+
+
+def _checksum_failure_fields() -> dict[str, Any]:
+    """A named capability gap, not a hard failure — and not a data-loss claim.
+
+    The object is not reported as unreadable or corrupt: what failed is the
+    client's verification of the endpoint's checksum, which is a statement about
+    the ENDPOINT, not the bytes."""
+    return {
+        "error_code": "checksum_validation_unsupported",
+        "error_message_sanitized": (
+            "The endpoint returned a checksum this client could not verify, so the "
+            "read was refused before the data was used. This is a known gap in some "
+            "S3-compatible implementations, not evidence that the object is corrupt: "
+            "the transfer itself completed. Re-check with a provider that implements "
+            "flexible checksums, or compare the object's own checksum with "
+            "get_object_attributes."
+        ),
+    }
+
+
 def _generic_error_fields(exc: Exception) -> dict[str, Any]:
+    # A checksum-validation refusal is a recognised provider gap, not an
+    # anonymous failure — answer it by name wherever an error is shaped.
+    if _is_checksum_failure(exc):
+        return _checksum_failure_fields()
     # Never include the raw exception text without redaction — it may carry a
     # presigned URL or header value.
     return {
@@ -384,6 +432,49 @@ def get_bucket_location(conn: sqlite3.Connection, provider_id: str,
 # --- 3. list_objects_v2 -----------------------------------------------------
 
 
+# Codes a provider uses to say "I don't accept that parameter". Directory
+# buckets answer the OptionalObjectAttributes ask this way (AWS documents the
+# option as unsupported for them), and so do gateways that validate strictly.
+_PARAM_REJECTION_CODES = {
+    "InvalidRequest", "InvalidArgument", "InvalidArgumentException",
+    "NotImplemented", "MethodNotAllowed", "BadRequest",
+}
+
+
+def _rejects_optional_attributes(exc: ClientError) -> bool:
+    """True when the error reads as "that request parameter is not accepted".
+
+    Deliberately narrow. A retry is only correct for a parameter the caller can
+    give up; retrying a NoSuchBucket or an AccessDenied would turn one clear
+    failure into two and tell the operator nothing new.
+    """
+    resp = exc.response or {}
+    code = resp.get("Error", {}).get("Code") or ""
+    http = resp.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    if code in _PARAM_REJECTION_CODES or http in (400, 501):
+        return True
+    return "optional-object-attributes" in str(exc).lower()
+
+
+def _restore_status(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """Archive-restore state for one listing entry, or None when unreported.
+
+    None means the endpoint did not tell us — most S3-compatible implementations
+    do not — and must never be rendered as "not archived". A returned dict is a
+    positive statement: whether a restore is running now, and when the restored
+    copy expires. Both come from the listing, so answering "which of these are
+    still in Glacier" costs nothing beyond the page already fetched.
+    """
+    raw = entry.get("RestoreStatus")
+    if not raw:
+        return None
+    expiry = raw.get("RestoreExpiryDate")
+    return {
+        "restore_in_progress": bool(raw.get("IsRestoreInProgress")),
+        "restore_expiry": expiry.isoformat() if hasattr(expiry, "isoformat") else expiry,
+    }
+
+
 def list_objects_v2(
     conn: sqlite3.Connection,
     provider_id: str,
@@ -405,6 +496,8 @@ def list_objects_v2(
         "keys": [],
         "is_truncated": False,
         "next_token": None,
+        "restore_status_reported": False,
+        "restore_in_progress_count": 0,
         "error_code": None,
         "error_message_sanitized": None,
     }
@@ -412,12 +505,41 @@ def list_objects_v2(
     clamped = max(1, min(int(max_keys), MAX_LIST_KEYS))
     try:
         client = client_factory.build_s3_client(conn, provider_id)
-        kw: dict[str, Any] = {"Bucket": bucket, "Prefix": prefix or "", "MaxKeys": clamped}
+        kw: dict[str, Any] = {"Bucket": bucket, "Prefix": prefix or "", "MaxKeys": clamped,
+                              # Ask the listing to carry restore state. "Why can't
+                              # I read these?" is answered by GLACIER + whether a
+                              # restore is running, and without this the only way
+                              # to know is one HeadObject per key — the exact
+                              # N-follow-up-calls problem `objects` already exists
+                              # to avoid.
+                              #
+                              # Safe to send unconditionally: it travels as the
+                              # `x-amz-optional-object-attributes` HEADER, not a
+                              # query parameter, so an S3-compatible gateway that
+                              # does not implement it ignores it and simply omits
+                              # the field — which is reported as unknown, never as
+                              # "not archived" (see `restore_status_reported`).
+                              "OptionalObjectAttributes": ["RestoreStatus"]}
         if delimiter:
             kw["Delimiter"] = delimiter
         if continuation_token:
             kw["ContinuationToken"] = continuation_token
-        resp = client.list_objects_v2(**kw)
+        try:
+            resp = client.list_objects_v2(**kw)
+        except ClientError as exc:
+            # The optional attribute must never cost us the listing itself.
+            # AWS does not accept it for S3 EXPRESS DIRECTORY BUCKETS (stated in
+            # the service model's own note), and a strict S3-compatible gateway
+            # may reject an unknown header outright. Either way the right answer
+            # is the objects, without restore state — so drop the ask and repeat
+            # the call once.
+            #
+            # Narrow on purpose: a NoSuchBucket or an AccessDenied must surface
+            # as itself, not be retried into a confusing second failure.
+            if not _rejects_optional_attributes(exc):
+                raise
+            kw.pop("OptionalObjectAttributes", None)
+            resp = client.list_objects_v2(**kw)
         contents = resp.get("Contents", []) or []
         common = [p.get("Prefix") for p in resp.get("CommonPrefixes", []) or []]
         all_keys = [c.get("Key") for c in contents]
@@ -439,9 +561,22 @@ def list_objects_v2(
                 {"key": c.get("Key"), "size": c.get("Size"),
                  "storage_class": c.get("StorageClass"),
                  "last_modified": c["LastModified"].isoformat()
-                 if hasattr(c.get("LastModified"), "isoformat") else c.get("LastModified")}
+                 if hasattr(c.get("LastModified"), "isoformat") else c.get("LastModified"),
+                 "restore_status": _restore_status(c)}
                 for c in contents[:OBJECT_DETAIL_LIMIT]
             ],
+            # Page-level rollup, over ALL keys in the page rather than the first
+            # OBJECT_DETAIL_LIMIT: "how many of these are mid-restore" is the
+            # question, and truncating the answer at 100 would misstate it.
+            #
+            # `restore_status_reported` is the tri-state guard. False means the
+            # endpoint said nothing about restore state, which is NOT the same as
+            # "nothing is archived" — the count below is then meaningless and the
+            # agent must not read it as zero.
+            "restore_status_reported": any("RestoreStatus" in c for c in contents),
+            "restore_in_progress_count": sum(
+                1 for c in contents
+                if (c.get("RestoreStatus") or {}).get("IsRestoreInProgress")),
             "is_truncated": bool(resp.get("IsTruncated", False)),
             "next_token": resp.get("NextContinuationToken"),
             # Report the applied cap so the caller can tell a requested max_keys

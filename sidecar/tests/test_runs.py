@@ -62,7 +62,7 @@ def _queue_success(s):
     s.add_response(
         "list_objects_v2",
         {"KeyCount": 2, "Contents": [{"Key": "a"}, {"Key": "b"}], "IsTruncated": False},
-        expected_params={"Bucket": BUCKET, "Prefix": "", "MaxKeys": 100, "Delimiter": "/"},
+        expected_params={"Bucket": BUCKET, "Prefix": "", "MaxKeys": 100, "Delimiter": "/", "OptionalObjectAttributes": ["RestoreStatus"]},
     )
 
 
@@ -234,7 +234,7 @@ def test_unhealthy_target_still_completes(diag):
     s.add_response(
         "list_objects_v2",
         {"KeyCount": 0, "Contents": [], "IsTruncated": False},
-        expected_params={"Bucket": BUCKET, "Prefix": "", "MaxKeys": 100, "Delimiter": "/"},
+        expected_params={"Bucket": BUCKET, "Prefix": "", "MaxKeys": 100, "Delimiter": "/", "OptionalObjectAttributes": ["RestoreStatus"]},
     )
     run_id = _start_run(diag)
     detail = diag.client.get(f"/runs/{run_id}").json()

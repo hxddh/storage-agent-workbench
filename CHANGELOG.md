@@ -126,6 +126,190 @@ facts:
 - **`ToolSearchTool`, MCP, `RunState`** — progressive disclosure already exists
   (`read_skill` plus tool gating); an MCP runtime is out of scope by design.
 
+## [Unreleased]
+
+### Fixed — two things review caught in the above, both real
+
+**The restore ask could cost the listing itself (P1).** AWS does not accept
+`OptionalObjectAttributes` for S3 Express **directory buckets** — the service
+model says so in its own note on the field — and a strict S3-compatible gateway
+may reject an unknown header outright. Sending it unconditionally would then
+break `list_objects_v2`, the core diagnostic, in order to add an optional
+field. A rejection now drops the ask and repeats the call once; the listing is
+the deliverable and restore state is the bonus. Narrow on purpose: a
+`NoSuchBucket` or an `AccessDenied` still surfaces as itself rather than being
+retried into a second identical failure.
+
+**The Flight exclusion was a no-op on Windows (P2).** pyarrow names it
+`libarrow_flight.so` on Linux, `libarrow_flight.dylib` on macOS and
+`arrow_flight.dll` on Windows — no `lib` prefix — so `startswith("libarrow_
+flight")` silently dropped nothing in the installer built by the Windows job.
+Confirmed against the actual `win_amd64` wheel rather than assumed: it carries
+`arrow_flight.dll` (14 MB), `arrow_flight.lib` and `arrow_python_flight.dll`.
+Matching now strips any `lib` prefix and compares stems, which also caught
+`arrow_python_flight` on every platform.
+
+And the better half of that review comment: **the build now fails when a name
+matches nothing.** A saving that silently becomes a no-op is worse than no
+saving — it reads as done in the changelog while the installer keeps the
+weight. If pyarrow renames a library or a fourth spelling appears, the build
+says so instead of shipping quietly.
+
+### Fixed — a checksum the client cannot verify is a provider gap, not an anonymous error
+
+botocore >= 1.36 asks for and validates flexible checksums by default
+(`response_checksum_validation="when_supported"`), and this product had never
+taken a position on it. Against AWS it is free integrity checking. Against the
+S3-compatible endpoints the product exists to diagnose it is a known interop
+edge: a gateway returning a checksum botocore cannot verify — wrong algorithm,
+wrong value for a ranged read, a CRC64NVME implementation that disagrees — makes
+the READ fail while the bytes are fine.
+
+Unrecognised, that surfaced as `error_code: "FlexibleChecksumError"` plus a raw
+message. Technically honest and useless to an operator — and naming exactly this
+class of provider disagreement is the product's job (rule 18). It is now
+reported as `checksum_validation_unsupported` with an explanation that says what
+failed, what it does **not** mean (the object is not corrupt; the transfer
+completed), and what to do next.
+
+The fix went into the shared error shaper, so all 23 call sites that shape an
+error get it — the class, not the one tool where it was noticed. Matched by
+exception type NAME rather than `isinstance`: these live in
+`botocore.exceptions`, that path has moved before, and a diagnosis that silently
+stops matching after a dependency bump is worse than one never written.
+
+The switch itself is deliberately **not** flipped to `when_required`. Silently
+disabling integrity validation to make a symptom disappear is the opposite of
+what a diagnostic tool should do; explaining the symptom is the product.
+
+### Fixed — the ingest row cap bounded the result, not the read, for Parquet
+
+`_load_dataframe` caps CSV at read time with `nrows` so a multi-GB export never
+materializes only to be thrown away. Parquet was read **whole** and trimmed
+after, justified in a comment by the columnar form being far smaller than
+per-row Python structures. True, but relative: the upload limit is 2 GiB and a
+compressed columnar file that size expands to many times it in Arrow, and
+DuckDB's `memory_limit` does not apply because this is pandas/pyarrow, outside
+the engine. The ceiling that bounded the CSV path bounded nothing here.
+
+Now `pq.read_metadata()` reads the exact row count from the footer without
+touching data — so truncation is *known* rather than inferred from how much was
+loaded — and `ParquetFile.iter_batches()` materializes only the rows that will
+be kept. Pinned by a test that counts the rows `iter_batches` hands out: the old
+code satisfies every other assertion while reading all 50,000.
+
+### Added — restore state comes back with the listing
+
+"Why can't I read these objects?" is often answered by GLACIER plus whether a
+restore is running, and that state was reachable only one `HeadObject` at a time
+— the N-follow-up-calls problem the `objects` block already exists to avoid for
+size and storage class. `ListObjectsV2` carries it via
+`OptionalObjectAttributes=["RestoreStatus"]`, now requested on every listing:
+safe unconditionally because it travels as the
+`x-amz-optional-object-attributes` **header**, so an implementation that does
+not support it ignores it.
+
+Per key, `restore_status` is `null` when unreported or a positive statement
+(`restore_in_progress`, `restore_expiry`) when the endpoint answers. Per page,
+`restore_in_progress_count` counts **all** keys rather than the first
+`OBJECT_DETAIL_LIMIT`, since truncating that answer at 100 would misstate it —
+and it is paired with `restore_status_reported`, because most S3-compatible
+implementations say nothing and a bare `0` would read as "no restores running"
+from an endpoint that was never asked.
+
+### Removed — the OS-keychain stack the security rules refuse, still being shipped
+
+`keyring` was a declared runtime dependency and nothing imported it. Every
+"keyring" in this codebase is the product's own `app/security/keyring_store`
+module, which merely shares the word: secrets live in a self-managed
+AES-256-GCM vault, and rule 3 says in as many words that this is **deliberately
+not** the OS keychain.
+
+The declaration was a fossil of the design that was abandoned, and it was not
+inert. It pulled `jeepney` and `secretstorage` into the shipped closure — D-Bus
+clients whose entire purpose is talking to the very keychain the rules reject —
+plus `jaraco.classes`, `jaraco.context`, `jaraco.functools`, `backports.tarfile`,
+`more-itertools`, `zipp` and `importlib-metadata`. Ten pins gone; the lock drops
+from 61 to 51. The PyInstaller spec was also force-including
+`hiddenimports = ["keyring.backends"]`, actively reaching for that machinery.
+
+Verified where it counts: the rebuilt bundle's deep self-check reports
+`{'agents_sdk': 'ok', 's3_client': 'ok', 'analysis_engine': 'ok',
+'vault_crypto': 'ok'}` — `vault_crypto` being the check that would break first if
+any of this had mattered to the vault.
+
+### Changed — 82 MB out of the download, none of it load-bearing
+
+The one-dir bundle was 553 MB. Two things in it were measured rather than
+assumed to be needed, and neither was.
+
+**Arrow Flight, 57 MB.** Arrow ships its optional engines as separate shared
+libraries and the hooks take the lot; Flight is its gRPC network RPC stack, and
+it arrived twice — once as package data, once from PyInstaller's binary analysis
+— at 28.6 MB each. `ldd` on both `pyarrow/lib*.so` and `pyarrow/_parquet*.so`
+shows what they actually link (libarrow, acero, compute, dataset, python,
+substrait) and Flight is not among them. The product's entire use of pyarrow is
+`pyarrow.parquet` plus one table in the self-check. A network RPC stack inside
+an app whose rules forbid unbounded network I/O is worth removing at any size.
+
+`libarrow_substrait` looks equally severable and is **not** — both extension
+modules link it, so it stays. That is the difference between a checked name list
+and a guess, and it is why the exclusion is a list of names rather than a
+pattern.
+
+**433 AWS service models, 25 MB.** `collect_all("botocore")` takes the whole
+`botocore/data` tree — API models for every AWS service that exists. This
+product builds exactly two boto3 clients and both are S3. Instrumenting
+`Loader.load_service_model` while building a real client shows it reaches for
+`s3/endpoint-rule-set-1` and `s3/service-2`, over the top-level
+`endpoints.json` / `partitions.json` / `_retry.json` /
+`sdk-default-configuration.json`. Those are kept; the other 1,904 files are not.
+
+The filtering had to move **after** `Analysis`: pyinstaller-hooks-contrib ships
+its own pyarrow hook that collects these independently, so filtering
+`collect_all`'s output changed nothing — measured, the rebuilt bundle came out
+the same 553 MB.
+
+553 MB → **471 MB**, and the installers shrink with it.
+
+Both filters were mutation-tested rather than trusted, because a bundle that
+silently loses a library is precisely the failure this project has been bitten
+by (v0.85.0, `mcp` metadata): adding `libarrow_dataset` — which IS linked — to
+the exclusion list produces `/health` 200 and `analysis_engine: error:
+ImportError: libarrow_dataset.so.2500: cannot open shared object file`; emptying
+the botocore keep-list produces `s3_client: error: UnknownServiceError: Unknown
+service: 's3'`. The safety net is real, and it fails at build time rather than
+on a user's first call.
+
+**`strip` was left off**, deliberately and not by omission: it would shave more,
+but PyInstaller's strip interacts with the macOS ad-hoc sealing step
+(`scripts/sign-macos-app-bundle.sh`) in ways this Linux environment cannot
+test, and an unverifiable saving on the one platform whose bundle is hardest to
+repair is not a trade worth making blind.
+
+### Added — the packaged self-check now covers Parquet, not just Arrow
+
+`analysis_engine` proved DuckDB and an in-memory Arrow table round-tripped.
+`pyarrow.parquet` is a separate extension module over separate shared libraries,
+and the bundle now filters Arrow's engines by name — so "Arrow works" stopped
+being evidence that "reading a customer's inventory export works". The check now
+writes a Parquet file, reads its metadata and reads it back. Inventory ingest
+and the S3 inventory tool both depend on that path.
+
+### Added — the dependency gate now runs in both directions
+
+`test_v085_runtime_imports.py` checked that everything `app/` imports is
+provided by the shipped closure. That is one direction, and the blind spot is
+the same size: a dependency can be declared and shipped while nothing imports
+it, which is exactly how the above survived.
+
+The reverse check treats an unused declaration as a failure. Dependencies that
+a working product genuinely needs without importing them live in an explicit
+`IMPLICIT_RUNTIME_DEPS` allowlist that must name the library reaching them —
+currently one entry, `python-multipart`, which FastAPI uses to parse the
+evidence-upload bodies. An unexplained name would turn the gate back into the
+rubber stamp it replaces. Run against the old code it fails, naming `keyring`.
+
 ## [0.85.0] - 2026-08-25
 
 _A maintenance release with no product behaviour change: the whole dependency
