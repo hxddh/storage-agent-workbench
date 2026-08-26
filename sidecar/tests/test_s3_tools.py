@@ -218,7 +218,7 @@ def test_list_objects_v2_success_and_sample_cap(client, cloud_id, stub):
     s.add_response(
         "list_objects_v2",
         {"KeyCount": 50, "Contents": contents, "CommonPrefixes": [{"Prefix": "logs/"}], "IsTruncated": True},
-        expected_params={"Bucket": BUCKET, "Prefix": "", "MaxKeys": 50, "Delimiter": "/"},
+        expected_params={"Bucket": BUCKET, "Prefix": "", "MaxKeys": 50, "Delimiter": "/", "OptionalObjectAttributes": ["RestoreStatus"]},
     )
     body = client.post(
         "/tools/list-objects-v2", json={"provider_id": cloud_id, "bucket": BUCKET, "max_keys": 50}
@@ -241,7 +241,7 @@ def test_list_objects_v2_clamped_to_hard_cap(client, cloud_id, stub):
     s.add_response(
         "list_objects_v2",
         {"KeyCount": 0, "Contents": [], "IsTruncated": False},
-        expected_params={"Bucket": BUCKET, "Prefix": "", "MaxKeys": 1000, "Delimiter": "/"},
+        expected_params={"Bucket": BUCKET, "Prefix": "", "MaxKeys": 1000, "Delimiter": "/", "OptionalObjectAttributes": ["RestoreStatus"]},
     )
     body = client.post(
         "/tools/list-objects-v2",
@@ -264,7 +264,7 @@ def test_list_objects_v2_paginates_and_lists_recursively(client, cloud_id, stub)
          "IsTruncated": True, "NextContinuationToken": "TOK2"},
         # recursive → no Delimiter; continuation token threaded through.
         expected_params={"Bucket": BUCKET, "Prefix": "logs/", "MaxKeys": 1000,
-                         "ContinuationToken": "TOK1"},
+                         "ContinuationToken": "TOK1", "OptionalObjectAttributes": ["RestoreStatus"]},
     )
     with _db() as conn:
         res = s3.list_objects_v2(conn, cloud_id, BUCKET, 1000, "logs/",

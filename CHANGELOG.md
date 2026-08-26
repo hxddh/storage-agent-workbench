@@ -128,6 +128,68 @@ facts:
 
 ## [Unreleased]
 
+### Fixed — a checksum the client cannot verify is a provider gap, not an anonymous error
+
+botocore >= 1.36 asks for and validates flexible checksums by default
+(`response_checksum_validation="when_supported"`), and this product had never
+taken a position on it. Against AWS it is free integrity checking. Against the
+S3-compatible endpoints the product exists to diagnose it is a known interop
+edge: a gateway returning a checksum botocore cannot verify — wrong algorithm,
+wrong value for a ranged read, a CRC64NVME implementation that disagrees — makes
+the READ fail while the bytes are fine.
+
+Unrecognised, that surfaced as `error_code: "FlexibleChecksumError"` plus a raw
+message. Technically honest and useless to an operator — and naming exactly this
+class of provider disagreement is the product's job (rule 18). It is now
+reported as `checksum_validation_unsupported` with an explanation that says what
+failed, what it does **not** mean (the object is not corrupt; the transfer
+completed), and what to do next.
+
+The fix went into the shared error shaper, so all 23 call sites that shape an
+error get it — the class, not the one tool where it was noticed. Matched by
+exception type NAME rather than `isinstance`: these live in
+`botocore.exceptions`, that path has moved before, and a diagnosis that silently
+stops matching after a dependency bump is worse than one never written.
+
+The switch itself is deliberately **not** flipped to `when_required`. Silently
+disabling integrity validation to make a symptom disappear is the opposite of
+what a diagnostic tool should do; explaining the symptom is the product.
+
+### Fixed — the ingest row cap bounded the result, not the read, for Parquet
+
+`_load_dataframe` caps CSV at read time with `nrows` so a multi-GB export never
+materializes only to be thrown away. Parquet was read **whole** and trimmed
+after, justified in a comment by the columnar form being far smaller than
+per-row Python structures. True, but relative: the upload limit is 2 GiB and a
+compressed columnar file that size expands to many times it in Arrow, and
+DuckDB's `memory_limit` does not apply because this is pandas/pyarrow, outside
+the engine. The ceiling that bounded the CSV path bounded nothing here.
+
+Now `pq.read_metadata()` reads the exact row count from the footer without
+touching data — so truncation is *known* rather than inferred from how much was
+loaded — and `ParquetFile.iter_batches()` materializes only the rows that will
+be kept. Pinned by a test that counts the rows `iter_batches` hands out: the old
+code satisfies every other assertion while reading all 50,000.
+
+### Added — restore state comes back with the listing
+
+"Why can't I read these objects?" is often answered by GLACIER plus whether a
+restore is running, and that state was reachable only one `HeadObject` at a time
+— the N-follow-up-calls problem the `objects` block already exists to avoid for
+size and storage class. `ListObjectsV2` carries it via
+`OptionalObjectAttributes=["RestoreStatus"]`, now requested on every listing:
+safe unconditionally because it travels as the
+`x-amz-optional-object-attributes` **header**, so an implementation that does
+not support it ignores it.
+
+Per key, `restore_status` is `null` when unreported or a positive statement
+(`restore_in_progress`, `restore_expiry`) when the endpoint answers. Per page,
+`restore_in_progress_count` counts **all** keys rather than the first
+`OBJECT_DETAIL_LIMIT`, since truncating that answer at 100 would misstate it —
+and it is paired with `restore_status_reported`, because most S3-compatible
+implementations say nothing and a bare `0` would read as "no restores running"
+from an endpoint that was never asked.
+
 ### Removed — the OS-keychain stack the security rules refuse, still being shipped
 
 `keyring` was a declared runtime dependency and nothing imported it. Every

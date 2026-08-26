@@ -23,6 +23,9 @@ SMALL_OBJECT_BYTES = 1024 * 1024  # objects under 1 MiB count as "small"
 # Bound rows materialized in memory during import (see analysis/access_logs.py).
 # A huge inventory export must not OOM the sidecar; rows beyond this are dropped.
 MAX_INGEST_ROWS = 2_000_000
+# Row-group-sized reads: big enough that a 2M-row cap is a handful of
+# iterations, small enough that the last batch cannot overshoot far.
+_PARQUET_BATCH_ROWS = 100_000
 
 COLUMNS = ["bucket", "key", "prefix", "size", "last_modified", "storage_class", "etag"]
 
@@ -175,22 +178,56 @@ def _to_int(value: Any) -> int | None:
         return None
 
 
+
+def _read_parquet_capped(path: Path) -> tuple[pd.DataFrame, bool, str]:
+    """At most ``MAX_INGEST_ROWS`` rows, without reading the rest of the file.
+
+    ``read_metadata`` gives the exact row count from the footer with no data
+    read, so truncation is *known* rather than inferred from how much was loaded
+    — which also means the cap no longer has to be exceeded to be detected.
+    ``iter_batches`` then materializes only the rows that will be kept.
+    """
+    import pyarrow.parquet as pq
+
+    total_rows = pq.read_metadata(path).num_rows
+    parquet_file = pq.ParquetFile(path)
+    batches = []
+    kept = 0
+    for batch in parquet_file.iter_batches(batch_size=_PARQUET_BATCH_ROWS):
+        batches.append(batch)
+        kept += batch.num_rows
+        if kept >= MAX_INGEST_ROWS:
+            break
+    if batches:
+        import pyarrow as pa
+
+        table = pa.Table.from_batches(batches).slice(0, MAX_INGEST_ROWS)
+        df = table.to_pandas()
+    else:
+        # A parquet file with zero rows still has a schema; preserve the columns
+        # so downstream mapping reports "no rows", not "unrecognised export".
+        df = parquet_file.schema_arrow.empty_table().to_pandas()
+    return df, total_rows > MAX_INGEST_ROWS, "parquet"
+
+
 def _load_dataframe(raw_path: str | Path) -> tuple[pd.DataFrame, bool, str]:
     """Load at most MAX_INGEST_ROWS rows, reporting whether the source had more.
 
-    CSV is capped AT READ TIME (``nrows``) — reading one row past the cap only
-    to detect overflow — so a multi-GB export never materializes in memory just
-    to be thrown away (mirrors access_logs.py's capped parsers). Parquet is
-    loaded via pyarrow and trimmed after; its columnar in-memory form is far
-    smaller than the per-row Python structures the cap exists to bound.
+    BOTH formats are capped AT READ TIME so a multi-GB export never materializes
+    in memory just to be thrown away: CSV via ``nrows`` (reading one row past the
+    cap only to detect overflow), parquet via ``ParquetFile.iter_batches``.
+
+    Parquet used to be read whole and trimmed after, justified by the columnar
+    form being far smaller than per-row Python structures. True, but relative:
+    the upload limit is 2 GiB (``routers/datasets.MAX_UPLOAD_BYTES``) and a
+    compressed columnar file that size expands to many times it in Arrow. The
+    DuckDB ``memory_limit`` does not apply here — this is pandas/pyarrow, outside
+    the engine — so the ceiling that bounded the CSV path bounded nothing on the
+    parquet one.
     """
     path = Path(raw_path)
     if path.suffix.lower() in (".parquet", ".pq"):
-        df = pd.read_parquet(path)  # uses pyarrow
-        truncated = len(df) > MAX_INGEST_ROWS
-        if truncated:
-            df = df.head(MAX_INGEST_ROWS)
-        return df, truncated, "parquet"
+        return _read_parquet_capped(path)
     try:
         # header=None: S3 Inventory CSVs are HEADERLESS (the column schema lives in
         # the manifest, not the file). Read every row as data; import_inventory_file
