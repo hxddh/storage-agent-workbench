@@ -6,12 +6,24 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
-_What the v0.85.0 SDK upgrade actually unlocked, plus the two gaps looking for it
-exposed. The honest headline is that the upgrade unlocked very little: the
-agents SDK's top-level API gained exactly one name between 0.20 and 0.22
-(verified by diffing `__all__` against the 0.20.0 wheel), and the S3 API surface
-in botocore 1.43.68 → 1.43.79 is byte-identical (116 operations, 718 shapes,
-none added or removed). Two things were worth taking._
+## [0.86.0] - 2026-08-26
+
+_Two passes over the layer below the product. The first asked what the v0.85.0
+dependency upgrade actually unlocked and found the answer was: very little, so
+the work became the two gaps that looking for it exposed. The second went
+through the rest of the stack — botocore, pyarrow, PyInstaller, the declared
+dependency set — and found five more, none of them things a release note would
+have told us._
+
+_Nothing here is a new feature the user asked for. It is a bound on the one
+unbounded thing in a turn, three numbers the product was stating without having
+established them, 82 MB it was making people download for nothing, and a
+library stack for the mechanism the security rules explicitly refuse._
+
+_The "very little" is measured, not impressionistic: the agents SDK's top-level
+API gained exactly one name between 0.20 and 0.22 (diffed `__all__` against the
+0.20.0 wheel), and botocore's S3 surface is byte-identical across
+1.43.68 → 1.43.79 — 116 operations, 718 shapes, none added or removed._
 
 ### Added — a wall-clock bound on the model call
 
@@ -86,74 +98,6 @@ after a completed response, so nothing is missing) and for a user cancel.
 Deliberately not conditioned on the error kind: a 429 that produced no tokens
 and a mid-stream timeout that produced many are both "one model call whose cost
 we do not know", and overstating that uncertainty is the safe direction.
-
-### Fixed — a test that passed for the wrong reason, and the lint gap that hid it
-
-v0.85.0's `httpx` → `httpx2` rewrite updated the imports and the monkeypatch
-targets in `test_model_providers.py` but left one `httpx.ConnectError` in a test
-body. The route catches broadly, so the resulting `NameError` produced the same
-assertion outcome and the test passed — while asserting nothing about the
-connection-failure path it is named after.
-
-`ruff check` ran over `app` only, so nothing flagged it. CI now lints `tests`
-too, and the 25 pre-existing findings that turned up (unused imports, ambiguous
-`l`/`O` names, one dead assignment whose comment claimed it was "validated
-below" in a function that ended on the next line) are fixed rather than
-suppressed.
-
-### Notes — what was evaluated and deliberately NOT taken
-
-Recorded because "we looked and decided no" and "we never looked" are different
-facts:
-
-- **`prompt_cache_options`** — prompt caching is already on via
-  `prompt_cache_retention` (v0.55.0). This is a different field: it needs
-  gpt-5.6+ **and** explicit `prompt_cache_breakpoint` content blocks, and setting
-  `mode: "explicit"` without them *disables* the implicit breakpoint. Net harm.
-- **`ModelSettings.retry`** — `AsyncOpenAI` already retries twice on 429/5xx with
-  backoff (`DEFAULT_MAX_RETRIES = 2`, verified). Runner-managed retry would be a
-  third layer multiplying worst-case latency, on top of a salvage path that is
-  deliberately not a retry.
-- **`preserve_raw_usage`** — superseded by `request_usage_entries`, which is a
-  stable public field rather than a provider-shaped diagnostic blob.
-- **SDK output guardrails** (and 0.22's redaction of guardrail-blocked output
-  from persisted state) — the product already sanitizes in its own tool
-  wrappers, which holds regardless of SDK behaviour. Migrating buys no new
-  guarantee.
-- **Starlette 1.6 `max_body_size`** — not reachable: FastAPI 0.141.1 exposes it
-  on neither `FastAPI` nor `APIRoute`. Uploads are already stream-capped at
-  2 GiB during read.
-- **`ToolSearchTool`, MCP, `RunState`** — progressive disclosure already exists
-  (`read_skill` plus tool gating); an MCP runtime is out of scope by design.
-
-## [Unreleased]
-
-### Fixed — two things review caught in the above, both real
-
-**The restore ask could cost the listing itself (P1).** AWS does not accept
-`OptionalObjectAttributes` for S3 Express **directory buckets** — the service
-model says so in its own note on the field — and a strict S3-compatible gateway
-may reject an unknown header outright. Sending it unconditionally would then
-break `list_objects_v2`, the core diagnostic, in order to add an optional
-field. A rejection now drops the ask and repeats the call once; the listing is
-the deliverable and restore state is the bonus. Narrow on purpose: a
-`NoSuchBucket` or an `AccessDenied` still surfaces as itself rather than being
-retried into a second identical failure.
-
-**The Flight exclusion was a no-op on Windows (P2).** pyarrow names it
-`libarrow_flight.so` on Linux, `libarrow_flight.dylib` on macOS and
-`arrow_flight.dll` on Windows — no `lib` prefix — so `startswith("libarrow_
-flight")` silently dropped nothing in the installer built by the Windows job.
-Confirmed against the actual `win_amd64` wheel rather than assumed: it carries
-`arrow_flight.dll` (14 MB), `arrow_flight.lib` and `arrow_python_flight.dll`.
-Matching now strips any `lib` prefix and compares stems, which also caught
-`arrow_python_flight` on every platform.
-
-And the better half of that review comment: **the build now fails when a name
-matches nothing.** A saving that silently becomes a no-op is worse than no
-saving — it reads as done in the changelog while the installer keeps the
-weight. If pyarrow renames a library or a fourth spelling appears, the build
-says so instead of shipping quietly.
 
 ### Fixed — a checksum the client cannot verify is a provider gap, not an anonymous error
 
@@ -309,6 +253,73 @@ a working product genuinely needs without importing them live in an explicit
 currently one entry, `python-multipart`, which FastAPI uses to parse the
 evidence-upload bodies. An unexplained name would turn the gate back into the
 rubber stamp it replaces. Run against the old code it fails, naming `keyring`.
+
+### Fixed — a test that passed for the wrong reason, and the lint gap that hid it
+
+v0.85.0's `httpx` → `httpx2` rewrite updated the imports and the monkeypatch
+targets in `test_model_providers.py` but left one `httpx.ConnectError` in a test
+body. The route catches broadly, so the resulting `NameError` produced the same
+assertion outcome and the test passed — while asserting nothing about the
+connection-failure path it is named after.
+
+`ruff check` ran over `app` only, so nothing flagged it. CI now lints `tests`
+too, and the 25 pre-existing findings that turned up (unused imports, ambiguous
+`l`/`O` names, one dead assignment whose comment claimed it was "validated
+below" in a function that ended on the next line) are fixed rather than
+suppressed.
+
+### Fixed — two things review caught in the above, both real
+
+**The restore ask could cost the listing itself (P1).** AWS does not accept
+`OptionalObjectAttributes` for S3 Express **directory buckets** — the service
+model says so in its own note on the field — and a strict S3-compatible gateway
+may reject an unknown header outright. Sending it unconditionally would then
+break `list_objects_v2`, the core diagnostic, in order to add an optional
+field. A rejection now drops the ask and repeats the call once; the listing is
+the deliverable and restore state is the bonus. Narrow on purpose: a
+`NoSuchBucket` or an `AccessDenied` still surfaces as itself rather than being
+retried into a second identical failure.
+
+**The Flight exclusion was a no-op on Windows (P2).** pyarrow names it
+`libarrow_flight.so` on Linux, `libarrow_flight.dylib` on macOS and
+`arrow_flight.dll` on Windows — no `lib` prefix — so `startswith("libarrow_
+flight")` silently dropped nothing in the installer built by the Windows job.
+Confirmed against the actual `win_amd64` wheel rather than assumed: it carries
+`arrow_flight.dll` (14 MB), `arrow_flight.lib` and `arrow_python_flight.dll`.
+Matching now strips any `lib` prefix and compares stems, which also caught
+`arrow_python_flight` on every platform.
+
+And the better half of that review comment: **the build now fails when a name
+matches nothing.** A saving that silently becomes a no-op is worse than no
+saving — it reads as done in the changelog while the installer keeps the
+weight. If pyarrow renames a library or a fourth spelling appears, the build
+says so instead of shipping quietly.
+
+### Notes — what was evaluated and deliberately NOT taken
+
+Recorded because "we looked and decided no" and "we never looked" are different
+facts:
+
+- **`prompt_cache_options`** — prompt caching is already on via
+  `prompt_cache_retention` (v0.55.0). This is a different field: it needs
+  gpt-5.6+ **and** explicit `prompt_cache_breakpoint` content blocks, and setting
+  `mode: "explicit"` without them *disables* the implicit breakpoint. Net harm.
+- **`ModelSettings.retry`** — `AsyncOpenAI` already retries twice on 429/5xx with
+  backoff (`DEFAULT_MAX_RETRIES = 2`, verified). Runner-managed retry would be a
+  third layer multiplying worst-case latency, on top of a salvage path that is
+  deliberately not a retry.
+- **`preserve_raw_usage`** — superseded by `request_usage_entries`, which is a
+  stable public field rather than a provider-shaped diagnostic blob.
+- **SDK output guardrails** (and 0.22's redaction of guardrail-blocked output
+  from persisted state) — the product already sanitizes in its own tool
+  wrappers, which holds regardless of SDK behaviour. Migrating buys no new
+  guarantee.
+- **Starlette 1.6 `max_body_size`** — not reachable: FastAPI 0.141.1 exposes it
+  on neither `FastAPI` nor `APIRoute`. Uploads are already stream-capped at
+  2 GiB during read.
+- **`ToolSearchTool`, MCP, `RunState`** — progressive disclosure already exists
+  (`read_skill` plus tool gating); an MCP runtime is out of scope by design.
+
 
 ## [0.85.0] - 2026-08-25
 
