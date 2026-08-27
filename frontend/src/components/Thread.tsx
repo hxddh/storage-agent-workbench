@@ -1191,7 +1191,16 @@ export function Thread({
                   <div
                     key={it.id}
                     id={`thread-item-${it.id}`}
-                    className="thread-item space-y-3"
+                    // A turn is a question and its answer. The thread used to
+                    // space every item the same 24px, so a new question read as
+                    // no more of a break than the paragraph above it and a long
+                    // investigation became one undifferentiated column. Padding
+                    // rather than margin: the container's `space-y` already owns
+                    // margins, and two rules fighting over the same box is how
+                    // spacing bugs start.
+                    className={`thread-item space-y-3 ${
+                      it.role === "user" && idx > 0 ? "pt-6" : ""
+                    }`}
                     // The sticky turn-context bar finds questions by this
                     // attribute rather than by walking the item list, so it does
                     // not need to know the list's shape — which is what keeps it

@@ -319,7 +319,11 @@ function TableBlock({
 }) {
   const { t } = useI18n();
   const spec = useMemo(() => chartSpec(headers, rows), [headers, rows]);
-  const [showChart, setShowChart] = useState(true);
+  // Shown by default only when it ADDS something. A 24-bar chart stacked above
+  // the same 24 rows is the same information twice, and it is what pushes the
+  // table it belongs to off the screen. Past the point where the table is long
+  // enough to need its own scroll, the chart becomes opt-in.
+  const [showChart, setShowChart] = useState(rows.length <= TALL_TABLE_ROWS);
   // Per column: the alignment actually used, and whether it holds quantities.
   // A right-aligned column of PROPORTIONAL digits still does not line up — `1`
   // is narrower than `8` in the UI face — so the two go together or neither is
@@ -352,7 +356,13 @@ function TableBlock({
         * long enough to lose their own header get one. `sticky` needs the
         * scroll container to be this element, which is also why the header can
         * only stick once the cap applies. */}
-      <div className={`overflow-auto ${tall ? "max-h-[60vh]" : ""}`}>
+      {/* A capped table used to end on whatever pixel row 14 happened to reach:
+        * a row sliced through the middle with nothing to say why, which reads as
+        * a rendering fault rather than as "there is more below". The mask fades
+        * the last few pixels out, so a partial row is legibly a partial row. */}
+      <div
+        className={`overflow-auto ${tall ? "max-h-[60vh] [mask-image:linear-gradient(to_bottom,black_calc(100%-2.5rem),transparent)]" : ""}`}
+      >
         <table className="w-full border-collapse text-xs">
           <thead>
             <tr className={`bg-elevated ${tall ? "sticky top-0 z-sticky" : ""}`}>
@@ -372,7 +382,7 @@ function TableBlock({
           </thead>
           <tbody>
             {rows.map((r, ri) => (
-              <tr key={ri} className="border-b border-edge/40 last:border-0 odd:bg-elevated/30">
+              <tr key={ri} className="border-b border-edge/30 last:border-0">
                 {r.map((c, ci) => (
                   <td
                     key={ci}
@@ -393,7 +403,7 @@ function TableBlock({
           type="button"
           onClick={() => setShowChart((v) => !v)}
           data-testid="chart-toggle"
-          className="w-full border-t border-edge px-3.5 py-1 text-left text-3xs text-gray-600 transition-colors hover:text-gray-400"
+          className="w-full border-t border-edge px-3.5 py-1.5 text-left text-2xs text-gray-500 transition-colors hover:text-gray-300"
         >
           {showChart ? t("chart.hide") : t("chart.show")}
         </button>

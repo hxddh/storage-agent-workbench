@@ -110,7 +110,11 @@ export function TurnFooter({
   if (!expandable && dur === null && !hasTokens) return null;
 
   return (
-    <div className="animate-fade-in text-2xs text-gray-600">
+    // gray-600 on the panel is the contrast this app uses for text it does NOT
+    // expect to be read — a disabled hint, a watermark. The turn footer is the
+    // opposite: it is the only place the cost and the tool count of a turn are
+    // stated, and people go looking for it. One step up.
+    <div className="animate-fade-in text-2xs text-gray-500">
       <div className="flex flex-wrap items-center gap-1.5">
         {expandable ? (
           <button
@@ -140,7 +144,7 @@ export function TurnFooter({
         {dur && hasTokens && <Dot />}
         {hasTokens ? (
           <span className="tabular-nums" title={model ? t("metrics.modelHint", { model }) : undefined}>
-            <span className="text-gray-700">↑</span>{inTok ?? "?"}
+            <span className="text-gray-600">↑</span>{inTok ?? "?"}
             {cachedTok !== null && (
               <span
                 className="ml-1 text-success"

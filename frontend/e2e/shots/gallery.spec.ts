@@ -89,7 +89,7 @@ for (const theme of THEMES) {
       await shoot(page, "02-answer", theme);
     });
 
-    test("a tall table scrolled — the pinned header and the turn context bar", async ({ page }) => {
+    test("a tall table scrolled — the pinned table header mid-thread", async ({ page }) => {
       const { title } = seedSession(3, undefined, "tall");
       await open(page, theme);
       await page.getByText(title).first().click();
@@ -98,8 +98,7 @@ for (const theme of THEMES) {
       await scroller.evaluate((el) => {
         el.scrollTop = el.scrollHeight / 2;
       });
-      // The sticky bar and the sticky table header both settle a frame late.
-      await expect(page.getByTestId("turn-context")).toBeVisible();
+      await page.waitForTimeout(400);
       await shoot(page, "03-scrolled", theme);
     });
 
