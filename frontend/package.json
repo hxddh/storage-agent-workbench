@@ -15,7 +15,8 @@
     "lint": "tsc --noEmit && tsc -p tsconfig.e2e.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "shots": "SHOTS=1 playwright test e2e/shots"
   },
   "dependencies": {
     "react": "^19.2.8",

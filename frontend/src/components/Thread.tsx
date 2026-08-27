@@ -54,6 +54,11 @@ const AUTOSCROLL_FRAME_BUDGET = 90;
  *  this replaces. */
 const AUTOSCROLL_SETTLED_FRAMES = 3;
 
+/** DOM id of the in-flight question, so the turn-context bar can scroll back to
+ * it exactly as it does for a persisted one. Persisted messages use
+ * `thread-item-<id>`; the pending question has no message id yet. */
+const PENDING_QUESTION_ID = "thread-pending-question";
+
 type Item =
   | {
       kind: "message";
@@ -618,7 +623,43 @@ export function Thread({
   // Non-null while the THREAD is driving its own scroll (see scrollToBottom).
   const autoScrollRef = useRef<number | null>(null);
   const autoBudgetRef = useRef(0);
+  /** The question of the turn you are currently reading, once it has scrolled
+   * out of sight.
+   *
+   * A real answer is tall — the suite's own fixture measures one at 1616px, and
+   * a survey answer with a table is taller — so by the time you are in the
+   * middle of it the question is several screens above and there is nothing on
+   * screen saying what is being answered. Codex and ChatGPT both keep it
+   * visible; this app dropped it.
+   *
+   * Deliberately NOT done by restructuring the flat item list into per-turn
+   * wrappers, which is the tidier design and also the one that would put new DOM
+   * underneath the thread's scroll maths. That is precisely how the "scrolling
+   * down never arrives" bug happened. This is additive and removable. */
+  const [turnContext, setTurnContext] = useState<{ id: string; text: string } | null>(null);
+
+  const syncTurnContext = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top;
+    let found: HTMLElement | null = null;
+    // Rects, not offsetTop: offsetTop is relative to the offsetParent, which is
+    // whichever ancestor happens to be positioned — a layout detail this must
+    // not depend on.
+    for (const n of el.querySelectorAll<HTMLElement>("[data-question]")) {
+      if (n.getBoundingClientRect().bottom < top) found = n;
+      else break;
+    }
+    const next = found
+      ? { id: found.id, text: (found.getAttribute("data-question") || "").trim() }
+      : null;
+    setTurnContext((was) =>
+      was?.id === next?.id && was?.text === next?.text ? was : next && next.text ? next : null,
+    );
+  }, []);
+
   const onScroll = () => {
+    syncTurnContext();
     const el = scrollRef.current;
     if (!el) return;
     // A convergence run emits scroll events of its own, and mid-run the thread
@@ -1063,14 +1104,27 @@ export function Thread({
             </div>
           </header>
 
-          <div
-            ref={scrollRef}
-            onScroll={onScroll}
-            onWheel={releaseToUser}
-            onTouchMove={releaseToUser}
-            onKeyDown={releaseToUser}
-            className="flex-1 overflow-auto px-6 py-7"
-          >
+          {/* The scroller and the things that float OVER it, in a positioned
+            * box of its own. The bar below must not live inside the scroller:
+            * everything in there — even a zero-height sticky element — is part
+            * of the content whose height the thread's convergence run measures,
+            * and that run re-jumps to the bottom every frame until the height
+            * holds still. A bar that mounts and unmounts as a function of
+            * scroll position is therefore a height that changes as a function
+            * of scroll position, which is a feedback loop with the one piece of
+            * machinery this file warns hardest about. Out here it cannot touch
+            * `scrollHeight` at all — the same reason "jump to latest" has always
+            * been rendered next to the composer rather than in the thread. */}
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <div
+              ref={scrollRef}
+              data-testid="thread-scroll"
+              onScroll={onScroll}
+              onWheel={releaseToUser}
+              onTouchMove={releaseToUser}
+              onKeyDown={releaseToUser}
+              className="flex-1 overflow-auto px-6 py-7"
+            >
             {findOpen && (
               <FindBar
                 query={findQuery}
@@ -1150,7 +1204,17 @@ export function Thread({
                   );
                 }
                 return it.kind === "message" ? (
-                  <div key={it.id} id={`thread-item-${it.id}`} className="thread-item space-y-3">
+                  <div
+                    key={it.id}
+                    id={`thread-item-${it.id}`}
+                    className="thread-item space-y-3"
+                    // The sticky turn-context bar finds questions by this
+                    // attribute rather than by walking the item list, so it does
+                    // not need to know the list's shape — which is what keeps it
+                    // additive to a thread whose scroll behaviour has been hard
+                    // won (see e2e/landing.spec.ts).
+                    data-question={it.role === "user" ? (it.content ?? "") : undefined}
+                  >
                     <MessageCard
                       role={it.role}
                       content={it.content}
@@ -1235,7 +1299,18 @@ export function Thread({
 
               {pending && (
                 <>
-                  <MessageCard role="user" content={pending} />
+                  {/* Tagged the same way a persisted question is, and for the
+                    * same reason. This branch renders the question of the turn
+                    * that is CURRENTLY STREAMING — the longest an answer is ever
+                    * left unread, and the one case the first version of the
+                    * turn-context bar missed: with no `data-question` here, a
+                    * first turn showed no bar at all, and a later turn showed
+                    * the PREVIOUS question, labelling the answer you are
+                    * reading with someone else's question. Caught in review on
+                    * this PR. */}
+                  <div id={PENDING_QUESTION_ID} data-question={pending}>
+                    <MessageCard role="user" content={pending} />
+                  </div>
                   {streamText !== null || streamTools.length ? (
                     <>
                       <MessageCard
@@ -1319,6 +1394,28 @@ export function Thread({
                 </div>
               )}
             </div>
+            </div>
+
+            {/* The question whose answer you are reading, once it has scrolled
+              * away. Painted over the top of the scroller, never inside it. */}
+            {turnContext && (
+              <div className="pointer-events-none absolute inset-x-0 top-0 px-6 pt-5">
+                <button
+                  type="button"
+                  data-testid="turn-context"
+                  onClick={() =>
+                    document
+                      .getElementById(turnContext.id)
+                      ?.scrollIntoView({ block: "start", behavior: "smooth" })
+                  }
+                  title={turnContext.text}
+                  className="pointer-events-auto flex w-full items-center gap-2 rounded-lg border border-edge bg-panel/95 px-3 py-1.5 text-left text-2xs text-gray-500 shadow-elev backdrop-blur transition-colors hover:border-edge-strong hover:text-gray-300"
+                >
+                  <span aria-hidden className="text-gray-600">↑</span>
+                  <span className="truncate">{turnContext.text}</span>
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="relative px-6 pb-5 pt-1">

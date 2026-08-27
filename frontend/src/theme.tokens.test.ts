@@ -175,6 +175,39 @@ describe("contrast", () => {
       }
     });
 
+    it(`${theme}: the layered surfaces are actually distinguishable from each other`, () => {
+      // Depth is carried by four surfaces — canvas < sidebar/panel < elevated <
+      // hover — and in dark it works, because each step is visibly lighter than
+      // the last. The light theme was written by inverting the FOREGROUNDS and
+      // leaving the grounds near-white, so it arrived with `--panel` and
+      // `--canvas` both at #ffffff: a card had zero surface distinction from the
+      // page behind it and depended entirely on a 1px border to exist. The
+      // sidebar was #f7f7f8 against a #ffffff canvas, a separation of well under
+      // 1%, which reads as a rendering artefact rather than a boundary.
+      //
+      // CIELAB lightness, not a relative-luminance delta: luminance compresses
+      // at the dark end, so an absolute delta calls a near-black stack identical
+      // when it is perfectly legible, and calls a near-white one fine when it is
+      // not. L* is perceptually uniform, so one floor works for both themes.
+      // (Measured before this gate existed: dark canvas->sidebar was 1.26 and
+      // light canvas->panel was 0.00.)
+      const lstar = (c: string) => {
+        const Y = lum(parse(v[c]));
+        const d = 6 / 29;
+        return 116 * (Y > d ** 3 ? Math.cbrt(Y) : Y / (3 * d * d) + 4 / 29) - 16;
+      };
+      const step = (a: string, b: string) => Math.abs(lstar(a) - lstar(b));
+      const FLOOR = 2.5;
+      for (const [a, b] of [
+        ["--canvas", "--sidebar"],
+        ["--canvas", "--panel"],
+        ["--panel", "--elevated"],
+        ["--elevated", "--hover"],
+      ]) {
+        expect(step(a, b), `${theme} ${a} vs ${b}`).toBeGreaterThanOrEqual(FLOOR);
+      }
+    });
+
     it(`${theme}: the neutral ramp keeps its ordering`, () => {
       // 100 is strongest through 700 faintest; an out-of-order step silently
       // inverts emphasis wherever it is used.
@@ -186,7 +219,12 @@ describe("contrast", () => {
 
 describe("the keyboard focus ring (v0.61.0)", () => {
   const css = fs.readFileSync(path.join(SRC, "index.css"), "utf8");
-  const rule = css.slice(css.indexOf(":focus-visible {"), css.indexOf("}", css.indexOf(":focus-visible {")));
+  // Located by the START of the selector, not by the literal `:focus-visible {`.
+  // The selector grew a `:not(...)` for the documented opt-out and the old
+  // exact-match extractor silently sliced from -1, which makes every assertion
+  // below read a garbage string.
+  const start = css.search(/^:focus-visible[^{]*\{/m);
+  const rule = css.slice(start, css.indexOf("}", start));
 
   it("exists at all", () => {
     expect(rule).toContain("box-shadow");
@@ -201,6 +239,25 @@ describe("the keyboard focus ring (v0.61.0)", () => {
     // box-shadow already follows the element's own border-radius, so declaring
     // nothing is what makes the ring follow the shape.
     expect(rule).not.toMatch(/border-radius/);
+  });
+
+  it("can only be opted out of through the one documented attribute", () => {
+    // A component cannot decline this ring with a utility class: the rule is
+    // unlayered and Tailwind v4 emits utilities inside `@layer utilities`, so
+    // unlayered wins regardless of specificity and `focus-visible:shadow-none`
+    // is inert. The attribute is the supported way, and it exists for one case
+    // — an element whose focus is already drawn by an ancestor.
+    expect(rule).toContain('data-focus-ring="container"');
+  });
+
+  it("is not opted out of widely", () => {
+    // Every use is an element choosing to show no ring of its own, which is only
+    // honest when something else shows one. Keep that reviewable: if this count
+    // grows, the ring is being switched off rather than delegated.
+    const users = sourceFiles(SRC).filter((f) =>
+      fs.readFileSync(f, "utf8").includes('data-focus-ring="container"'),
+    );
+    expect(users.map((f) => path.basename(f))).toEqual(["Composer.tsx"]);
   });
 
   it("still suppresses the default outline it replaces", () => {

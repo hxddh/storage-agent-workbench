@@ -305,24 +305,64 @@ const ALIGN_CLASS: Record<Align, string> = {
   right: "text-right",
 };
 
-function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: Align[]; rows: string[][] }) {
+/** Rows past which a table scrolls inside itself and pins its header. */
+export const TALL_TABLE_ROWS = 12;
+
+function TableBlock({
+  headers,
+  aligns,
+  rows,
+}: {
+  headers: string[];
+  aligns: (Align | null)[];
+  rows: string[][];
+}) {
   const { t } = useI18n();
   const spec = useMemo(() => chartSpec(headers, rows), [headers, rows]);
   const [showChart, setShowChart] = useState(true);
+  // Per column: the alignment actually used, and whether it holds quantities.
+  // A right-aligned column of PROPORTIONAL digits still does not line up — `1`
+  // is narrower than `8` in the UI face — so the two go together or neither is
+  // worth doing.
+  const columns = useMemo(() => {
+    return headers.map((_, i) => {
+      const declared = aligns[i] ?? null;
+      const inferred = declared === null ? inferAlign(rows.map((r) => r[i] ?? "")) : null;
+      const align = declared ?? inferred ?? "left";
+      return { align, numeric: align === "right" };
+    });
+  }, [headers, aligns, rows]);
+  // Past this many rows a table has lost its own header by the time you reach
+  // the bottom of it, at any window height this app is usable in.
+  const tall = rows.length > TALL_TABLE_ROWS;
   return (
     <div className="overflow-hidden rounded-lg border border-edge">
       {spec && showChart && <Chart spec={spec} />}
-      <div className="overflow-auto">
+      {/* A long table scrolls INSIDE itself instead of owning three screens of
+        * the thread, and its header stays put while it does.
+        *
+        * Observed on a seeded investigation: 24 rows put the header off-screen
+        * well before the last row, leaving a full viewport of bare numbers with
+        * no column labels — the reader has to scroll back up to learn which
+        * column is bytes and which is object count.
+        *
+        * The cap is conditional because it is not free: a short table that
+        * scrolls internally is worse than one that simply sits in the flow, and
+        * a nested scroll region is a real cost to trap a wheel in. Only tables
+        * long enough to lose their own header get one. `sticky` needs the
+        * scroll container to be this element, which is also why the header can
+        * only stick once the cap applies. */}
+      <div className={`overflow-auto ${tall ? "max-h-[60vh]" : ""}`}>
         <table className="w-full border-collapse text-xs">
           <thead>
-            <tr className="bg-elevated">
+            <tr className={`bg-elevated ${tall ? "sticky top-0 z-sticky" : ""}`}>
               {headers.map((h, i) => (
                 <th
                   key={i}
                   // Alignment is information: a right-aligned numeric column is
                   // how a reader compares magnitudes down a column at all.
                   className={`border-b border-edge px-3.5 py-2 text-2xs font-semibold uppercase tracking-wide text-gray-400 ${
-                    ALIGN_CLASS[aligns[i] ?? "left"]
+                    ALIGN_CLASS[columns[i]?.align ?? "left"]
                   }`}
                 >
                   {inline(h)}
@@ -336,7 +376,9 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: Alig
                 {r.map((c, ci) => (
                   <td
                     key={ci}
-                    className={`px-3.5 py-2 align-top text-gray-300 ${ALIGN_CLASS[aligns[ci] ?? "left"]}`}
+                    className={`px-3.5 py-2 align-top text-gray-300 ${
+                      ALIGN_CLASS[columns[ci]?.align ?? "left"]
+                    } ${columns[ci]?.numeric ? "tabular-nums" : ""}`}
                   >
                     {inline(c)}
                   </td>
@@ -372,7 +414,7 @@ type Block =
   | ListBlockT
   | { type: "quote"; lines: string[] }
   | { type: "hr" }
-  | { type: "table"; headers: string[]; aligns: Align[]; rows: string[][] };
+  | { type: "table"; headers: string[]; aligns: (Align | null)[]; rows: string[][] };
 
 const cells = (line: string) =>
   line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
@@ -513,12 +555,46 @@ function parseBlocks(text: string, depth = 0): Block[] {
   return blocks;
 }
 
-function alignOf(cell: string): Align {
+/** The declared alignment of one column, or `null` when the author declared none.
+ *
+ * `---` and `:---` used to collapse to the same `"left"`, which threw away the
+ * only signal that says whether a choice was MADE. It matters because the tables
+ * here are written by the agent and by the report generator, and neither has any
+ * reason to remember `---:` for a column of byte counts — so "undeclared" is the
+ * common case, and it is the case worth inferring from (see `inferAlign`). An
+ * explicit `:---` still means left and is left alone. */
+function alignOf(cell: string): Align | null {
   const left = cell.startsWith(":");
   const right = cell.endsWith(":");
   if (left && right) return "center";
   if (right) return "right";
-  return "left";
+  if (left) return "left";
+  return null;
+}
+
+/** A number, optionally signed, grouped, fractional, and carrying a unit.
+ *
+ * Anchored at both ends on purpose: `bucket-003-09` and `2026-08-26` contain
+ * digits and must not be read as quantities. */
+const NUMERIC_CELL =
+  /^[+-]?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?\s*(%|[KMGTPE]i?B|B|ms|s|m|h|d|bytes?|objects?|reqs?)?$/i;
+
+/** Right-align a column the author did not align, when it reads as quantities.
+ *
+ * Alignment is not decoration: a left-aligned column of `1233 / 2877 / 943` has
+ * its digits at different x positions on every row, so comparing magnitudes down
+ * the column means reading each value instead of seeing the shape. The renderer
+ * has always honoured a DECLARED alignment; nothing decided one when the markdown
+ * omitted it, which is every table the agent writes.
+ *
+ * Requires a clear majority rather than unanimity, so one `n/a` or `—` in an
+ * otherwise numeric column does not flip it back, and requires at least two
+ * values so a single-row table is not "inferred" from one sample. */
+export function inferAlign(cells: string[]): Align | null {
+  const values = cells.map((c) => c.trim()).filter((c) => c !== "");
+  if (values.length < 2) return null;
+  const numeric = values.filter((c) => NUMERIC_CELL.test(c)).length;
+  return numeric / values.length >= 0.8 ? "right" : null;
 }
 
 /**

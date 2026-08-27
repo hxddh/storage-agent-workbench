@@ -21,6 +21,11 @@ const WEB_PORT = 5173;
 
 export default defineConfig({
   testDir: "./e2e",
+  // `e2e/shots/` is a development contact sheet, not a gate: it writes PNGs for
+  // a human to look at and asserts nothing about them. It is reached only via
+  // `npm run shots`, which sets SHOTS=1. See e2e/shots/gallery.spec.ts for why
+  // pixel-diff baselines are not viable here.
+  testIgnore: process.env.SHOTS ? [] : ["shots/**"],
   // The suite is a smoke gate, not a matrix: keep it serial and fast so it can
   // sit in the CI critical path without becoming the slowest job.
   fullyParallel: false,
