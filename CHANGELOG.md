@@ -6,6 +6,52 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+_Three things reported against v0.87.0, from using it: the session page goes to
+an endless blank screen when you pull down; the strip that named the question is
+not an elegant way to do it; the page is rough where Codex and Cursor are not._
+
+### Fixed — the blank screen was the thread hiding itself
+
+Not a rendering failure. Every assistant answer older than the last six
+exchanges folded to a single grey row, automatically. Measured on a seeded
+40-turn session at 1440×900, same session, same scroll position: `scrollHeight`
+9117px folded against 49840px unfolded — **82% of the investigation was not on
+the page**, and scrolling back through it showed a question, a one-line row, a
+question, a one-line row, mostly whitespace.
+
+The fold is gone entirely, along with the manual re-open, the per-session
+expanded set, the find-must-unfold special case, and `answerGist`, which existed
+only to label a folded row. Every one of those is also one less thing that
+changes the thread's height after first layout — the mechanism behind this
+file's whole history of scroll bugs.
+
+### Changed — the question goes where the reader is looking
+
+The sticky strip that named the question is replaced by the arrangement ChatGPT,
+Codex and Cursor all use: the newest question anchors near the top of the
+reading area and the answer grows beneath it, with no furniture at all.
+
+A thread cannot scroll past its own last pixel, so for a turn shorter than the
+viewport this needs somewhere to scroll into. That space is solved for, not
+estimated — `want = questionOffset + clientHeight − gap`, then the spacer makes
+up the difference against the measured `scrollHeight` — which is self-correcting
+and does not care what the scroller's padding is. The first attempt subtracted a
+padding constant and left the question 24px above the top of the screen. An
+answer taller than the viewport gets no spacer at all, so nothing scrolls into
+blankness it does not need.
+
+### Changed — the thread stops saying everything twice
+
+A capped table used to end on a row sliced through the middle; it now fades.
+Every numeric table auto-drew a bar chart of itself, which for a 24-row table is
+the same numbers twice and is what pushed the table off screen — the chart is
+now default-on only where it adds something. Row striping and row separators
+were both drawing the same line; the striping is gone. The turn footer and the
+chart toggle were rendered at the contrast and size this app uses for text it
+does not expect to be read, and both are read. And a new question now opens with
+a real break, instead of being spaced from the answer above exactly as far as
+that answer's paragraphs are spaced from each other.
+
 ## [0.87.0] - 2026-08-27
 
 _A pass over the surface the product is actually used through. The brief was a
