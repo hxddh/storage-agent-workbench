@@ -51,5 +51,8 @@ data/
 # Playwright E2E artifacts (frontend/e2e is source; these are run output).
 frontend/playwright-report/
 frontend/test-results/
+# …and the same output if playwright is ever run from the repo root.
+playwright-report/
+test-results/
 # Visual contact sheet (npm run shots): review evidence, never a baseline.
 frontend/shots/
