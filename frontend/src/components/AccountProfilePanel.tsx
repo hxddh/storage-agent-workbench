@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { AccountBucket, AccountProfile } from "../types";
 import { useI18n } from "../i18n";
+import { isEstablished, statusClass, statusLabelKey, type PostureStatus } from "../lib/status";
 
 type Filter = "all" | "has_inventory" | "has_logging" | "issues" | "unsupported";
 
@@ -16,24 +17,35 @@ function hasEvidence(b: AccountBucket, sourceType: string): boolean {
   return b.evidence_sources.some((s) => s.source_type === sourceType && s.status === "available");
 }
 
-function statusClass(status: string | null | undefined): string {
-  switch (status) {
-    case "available":
-      return "text-success";
-    case "not_configured":
-      return "text-warn";
-    case "access_denied":
-    case "error":
-      return "text-danger";
-    case "provider_unsupported":
-      return "text-gray-500";
-    default:
-      return "text-gray-400";
+/** One posture cell.
+ *
+ * Two things changed here. The raw snake_case token is no longer printed at a
+ * person — `access_denied` is a wire value, not a word — and an UNDETERMINED
+ * cell is now visibly not a finding: it is dimmed and underlined with a dotted
+ * rule, the typographic convention for "this is not a value", with the reason on
+ * hover.
+ *
+ * The distinction is the sidecar's, and it had nowhere to land: `available` and
+ * `not_configured` are answers we got, while `access_denied`,
+ * `provider_unsupported`, `error` and a missing value are answers we did not.
+ * Rendered flat, a bucket nobody could read looked like a bucket that was fine.
+ *
+ * `not_configured` deliberately keeps its warning colour: encryption being off
+ * IS a fact about the bucket. "Denied" is a fact about our credentials. */
+function Cell({ status }: { status: PostureStatus }) {
+  const { t } = useI18n();
+  const label = t(statusLabelKey(status));
+  if (isEstablished(status)) {
+    return <span className={statusClass(status)}>{label}</span>;
   }
-}
-
-function Cell({ status }: { status: string | null | undefined }) {
-  return <span className={statusClass(status)}>{status ?? "—"}</span>;
+  return (
+    <span
+      className={`${statusClass(status)} decoration-dotted underline underline-offset-2 opacity-80`}
+      title={t("status.undeterminedHint")}
+    >
+      {label}
+    </span>
+  );
 }
 
 export function AccountProfilePanel({
@@ -80,7 +92,9 @@ export function AccountProfilePanel({
         </div>
         <div className="rounded-md border border-edge bg-panel p-2">
           <div className="text-2xs text-gray-500">ListBuckets</div>
-          <div className={`text-sm font-medium ${statusClass(profile.list_status)}`}>{profile.list_status}</div>
+          <div className={`text-sm font-medium ${statusClass(profile.list_status)}`}>
+            {t(statusLabelKey(profile.list_status))}
+          </div>
         </div>
       </div>
 
