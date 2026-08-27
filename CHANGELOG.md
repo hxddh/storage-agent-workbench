@@ -6,6 +6,8 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.88.0] - 2026-08-27
+
 _Three things reported against v0.87.0, from using it: the session page goes to
 an endless blank screen when you pull down; the strip that named the question is
 not an elegant way to do it; the page is rough where Codex and Cursor are not._
