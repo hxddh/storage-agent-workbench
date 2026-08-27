@@ -205,7 +205,20 @@ body {
  * the PARENT's radius, not the element's, and this rule's specificity (0,1,0)
  * ties Tailwind's `.rounded-*` utilities while coming later in source order, so
  * it would have overridden each element's real radius with its container's. */
-:focus-visible {
+/* The opt-out is an ATTRIBUTE, not a utility class, because a utility cannot win
+ * here. This rule is unlayered and Tailwind v4 emits its utilities inside
+ * `@layer utilities` — unlayered CSS beats layered CSS regardless of
+ * specificity, so `focus-visible:shadow-none` on an element is silently inert.
+ * (Measured: the composer's textarea carried exactly that class and still
+ * computed `box-shadow: … 0 0 0 2px, … 0 0 0 4px` while its own border-radius
+ * was 0, which is why a square ring appeared inside a 22px pill.)
+ *
+ * Moving this rule into `@layer base` would restore the normal precedence for
+ * the whole app, and would also let any element with a `shadow-*` utility
+ * silently delete its own focus ring — trading a visual nit for an
+ * accessibility hole. An explicit, greppable opt-out is the smaller change:
+ * only an element whose focus is already shown by an ancestor may take it. */
+:focus-visible:not([data-focus-ring="container"]) {
   outline: none;
   box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--focus-ring);
 }

@@ -214,7 +214,12 @@ export function Composer({
       />
       <textarea
         ref={taRef}
-        className="block max-h-[220px] h-[22px] w-full resize-none bg-transparent px-1 text-base leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none focus-visible:shadow-none"
+        // The pill around this textarea already shows focus (`focus-within:` on the
+        // container, matching its 22px radius). Without the opt-out the global
+        // ring draws a SECOND, square one hugging the text — see index.css for
+        // why the `focus-visible:shadow-none` that used to be here could not work.
+        data-focus-ring="container"
+        className="block max-h-[220px] h-[22px] w-full resize-none bg-transparent px-1 text-base leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none"
         rows={1}
         value={text}
         onChange={(e) => setText(e.target.value)}

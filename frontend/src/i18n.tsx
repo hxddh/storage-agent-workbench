@@ -86,7 +86,7 @@ const en: Dict = {
   "thread.addModel": "Add a model",
   "thread.greeting": "How can I help with your storage?",
   "thread.subtitle": "Read-only and never destructive — I'll ask before moving any data.",
-  "thread.placeholder": "Ask Storage Agent…  ( / for commands )",
+  "thread.placeholder": "Ask Storage Agent…   type / for commands",
   "thread.send": "send",
   "attach.button": "Attach a dataset (inventory CSV/Parquet or access logs) to analyze",
   "attach.tooLarge": "File is {size} — larger than the 2 GiB upload limit. Split or filter it first.",
