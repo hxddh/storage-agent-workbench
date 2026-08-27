@@ -78,12 +78,14 @@ test.describe("a paged investigation", () => {
 });
 
 test.describe("finding something said 30 turns ago", () => {
-  test("a match inside a collapsed turn opens it", async ({ page }) => {
+  test("a match 30 turns back is found and scrolled to", async ({ page }) => {
     await openLong(page);
     await page.keyboard.press("ControlOrMeta+f");
     const box = page.getByPlaceholder(/Find in this investigation/i);
     await expect(box).toBeVisible();
-    // bucket-25's answer is old enough to be collapsed.
+    // This used to also assert that finding a match OPENED a folded turn. Turns
+    // no longer fold, so what is left is the part that was always the point:
+    // the match is reachable and on screen.
     await box.fill("bucket-25 denies");
     await expect(thread(page).getByText(/ANSWER-25/)).toBeVisible({ timeout: 10_000 });
   });

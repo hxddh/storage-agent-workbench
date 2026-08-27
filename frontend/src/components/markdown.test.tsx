@@ -201,6 +201,34 @@ describe("charts derived from a table", () => {
     expect(container.querySelectorAll("tbody tr").length).toBe(2);
   });
 
+  it("does not draw itself over a table long enough to need its own scroll", () => {
+    // 24 bars stacked above the same 24 rows is the same information twice, and
+    // it is what pushes the table off the screen.
+    const rows = Array.from({ length: 24 }, (_, i) => `| p${i} | ${i * 7 + 1} |`).join("\n");
+    md(`| prefix | objects |\n| --- | ---: |\n${rows}`);
+    expect(screen.queryByTestId("table-chart")).toBeNull();
+    // Still one click away.
+    fireEvent.click(screen.getByTestId("chart-toggle"));
+    expect(screen.getByTestId("table-chart")).toBeTruthy();
+  });
+
+  it("decides that on the rows it HAS, not the rows it mounted with", () => {
+    // A streamed table mounts with its header and grows on later deltas without
+    // remounting — the block keeps its index, so React keeps its state. A
+    // `useState` initialiser therefore decided this while the table was still
+    // two rows long, and a long live answer kept a chart it should not have had
+    // until the next reload.
+    const head = "| prefix | objects |\n| --- | ---: |\n";
+    const short = `${head}| a | 10 |\n| b | 20 |`;
+    const { rerender } = md(short);
+    expect(screen.getByTestId("table-chart")).toBeTruthy();
+
+    const grown =
+      head + Array.from({ length: 24 }, (_, i) => `| p${i} | ${i * 7 + 1} |`).join("\n");
+    rerender(createElement(I18nProvider, null, createElement(Markdown, { text: grown })));
+    expect(screen.queryByTestId("table-chart")).toBeNull();
+  });
+
   it("draws nothing for a table that is not a measure", () => {
     // A status matrix. Bars over "Enabled"/"Not set" would be meaningless.
     md("| bucket | versioning |\n| --- | --- |\n| a | Enabled |\n| b | Not set |");

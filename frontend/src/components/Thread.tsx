@@ -38,7 +38,6 @@ import { fmtDuration } from "./TurnMetrics";
 import { useI18n } from "../i18n";
 import { matches } from "../shortcuts";
 import { findInThread, stepHit } from "../threadFind";
-import { answerGist } from "../answerGist";
 import { inferDatasetType } from "../datasetType";
 import { FindBar } from "./FindBar";
 
@@ -53,6 +52,10 @@ const AUTOSCROLL_FRAME_BUDGET = 90;
  *  the item around it did, and stopping there is precisely the short landing
  *  this replaces. */
 const AUTOSCROLL_SETTLED_FRAMES = 3;
+
+/** Breathing room under the last turn: the question anchors near the top of the
+ * screen rather than flush against its edge. */
+const TAIL_GAP_PX = 28;
 
 /** DOM id of the in-flight question, so the turn-context bar can scroll back to
  * it exactly as it does for a persisted one. Persisted messages use
@@ -138,10 +141,6 @@ export function Thread({
   // discarding history the user deliberately pulled in.
   const [earlier, setEarlier] = useState<SessionMessage[]>([]);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
-  // Turns the user has explicitly re-opened. Old turns collapse to one line so
-  // scrolling back through a long investigation is scannable rather than a wall
-  // of prose; expanding is per-turn and sticky for the session.
-  const [expandedTurns, setExpandedTurns] = useState<Set<string>>(() => new Set());
   // Persisted per-turn metrics, keyed by the assistant message they belong to,
   // so the footer under an OLD answer still shows what that turn cost.
   const [metrics, setMetrics] = useState<Record<string, TurnMetricsRow>>({});
@@ -281,9 +280,6 @@ export function Thread({
 
   // How many messages exist above what is currently rendered. `message_total`
   // comes from the server, so this is a fact rather than a guess.
-  // Only the most recent exchanges stay open. Anything older is one line until
-  // asked for — the same move Codex makes on a long session.
-  const OPEN_TAIL = 6;
   const shownCount = (earlier.length + (detail?.messages?.length ?? 0));
   const hiddenCount = Math.max(0, (detail?.message_total ?? shownCount) - shownCount);
 
@@ -623,43 +619,52 @@ export function Thread({
   // Non-null while the THREAD is driving its own scroll (see scrollToBottom).
   const autoScrollRef = useRef<number | null>(null);
   const autoBudgetRef = useRef(0);
-  /** The question of the turn you are currently reading, once it has scrolled
-   * out of sight.
+  /** How much empty space to leave under the last turn.
    *
-   * A real answer is tall — the suite's own fixture measures one at 1616px, and
-   * a survey answer with a table is taller — so by the time you are in the
-   * middle of it the question is several screens above and there is nothing on
-   * screen saying what is being answered. Codex and ChatGPT both keep it
-   * visible; this app dropped it.
+   * The reader's question should sit at the TOP of the screen while they read
+   * the answer to it — the way ChatGPT, Codex and Cursor all place it. A thread
+   * cannot scroll past its own last pixel, so for any turn shorter than the
+   * viewport that is simply impossible without somewhere to scroll INTO. This is
+   * that somewhere: `viewport − height of the last turn`, and nothing more, so
+   * the thread never scrolls into blankness it does not need.
    *
-   * Deliberately NOT done by restructuring the flat item list into per-turn
-   * wrappers, which is the tidier design and also the one that would put new DOM
-   * underneath the thread's scroll maths. That is precisely how the "scrolling
-   * down never arrives" bug happened. This is additive and removable. */
-  const [turnContext, setTurnContext] = useState<{ id: string; text: string } | null>(null);
-
-  const syncTurnContext = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const top = el.getBoundingClientRect().top;
-    let found: HTMLElement | null = null;
-    // Rects, not offsetTop: offsetTop is relative to the offsetParent, which is
-    // whichever ancestor happens to be positioned — a layout detail this must
-    // not depend on.
-    for (const n of el.querySelectorAll<HTMLElement>("[data-question]")) {
-      if (n.getBoundingClientRect().bottom < top) found = n;
-      else break;
+   * It also replaces the sticky bar that named the question — a horizontal strip
+   * over the thread, which was the wrong shape for the job. Keeping the question
+   * itself on screen says the same thing with no furniture at all.
+   */
+  const [tailSpace, setTailSpace] = useState(0);
+  const tailSpaceRef = useRef(0);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const syncTailSpace = useCallback(() => {
+    const sc = scrollRef.current;
+    const content = contentRef.current;
+    if (!sc || !content) return;
+    const qs = content.querySelectorAll<HTMLElement>("[data-question]");
+    const last = qs[qs.length - 1];
+    if (!last) {
+      tailSpaceRef.current = 0;
+      setTailSpace(0);
+      return;
     }
-    const next = found
-      ? { id: found.id, text: (found.getAttribute("data-question") || "").trim() }
-      : null;
-    setTurnContext((was) =>
-      was?.id === next?.id && was?.text === next?.text ? was : next && next.text ? next : null,
-    );
+    // Solve for the spacer instead of estimating it. Where the last question
+    // sits when the thread is scrolled to its end is
+    //   scrollHeight − clientHeight  vs  the question's offset in the content,
+    // so the spacer only has to make up the difference. Derived from measured
+    // positions rather than from padding constants, which is why it does not
+    // care that the scroller has its own padding, or how much.
+    const qOffset = last.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+    const want = qOffset + sc.clientHeight - TAIL_GAP_PX;
+    const delta = want - sc.scrollHeight;
+    const next = Math.max(0, Math.round(tailSpaceRef.current + delta));
+    // A spacer that twitches by a pixel is a scrollHeight that twitches by a
+    // pixel, and the thread's convergence run re-jumps to the bottom every frame
+    // until the height holds still. Ignore noise below the threshold.
+    if (Math.abs(next - tailSpaceRef.current) < 4) return;
+    tailSpaceRef.current = next;
+    setTailSpace(next);
   }, []);
 
   const onScroll = () => {
-    syncTurnContext();
     const el = scrollRef.current;
     if (!el) return;
     // A convergence run emits scroll events of its own, and mid-run the thread
@@ -670,6 +675,32 @@ export function Thread({
     pinnedRef.current = atBottom;
     setPinned((was) => (was === atBottom ? was : atBottom));
   };
+
+  // Keep the spacer measured. A ResizeObserver on the content column catches
+  // everything that changes a turn's height — a streamed delta, a table that
+  // lays out a frame late, a window resize, an expanded trace — without this
+  // component having to enumerate them. `requestAnimationFrame` defers the
+  // measurement out of the observer callback, which is what stops the
+  // "ResizeObserver loop completed with undelivered notifications" error that
+  // measuring-and-writing in the same tick produces.
+  useEffect(() => {
+    const content = contentRef.current;
+    const sc = scrollRef.current;
+    if (!content || !sc) return;
+    let raf = 0;
+    const schedule = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(syncTailSpace);
+    };
+    const ro = new ResizeObserver(schedule);
+    ro.observe(content);
+    ro.observe(sc);
+    schedule();
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [syncTailSpace, sessionId]);
 
   const stopAutoScroll = useCallback(() => {
     if (autoScrollRef.current !== null) cancelAnimationFrame(autoScrollRef.current);
@@ -768,11 +799,6 @@ export function Thread({
   const activeHitId = hits.length ? hits[Math.min(findIdx, hits.length - 1)]?.id : null;
   useEffect(() => {
     if (!findOpen || !activeHitId) return;
-    // A match inside a collapsed old turn has to open it. Finding something the
-    // user cannot then see would be worse than not finding it — it would claim
-    // the text is there and show them a summary line instead.
-    setExpandedTurns((prev) => (prev.has(activeHitId) ? prev : new Set(prev).add(activeHitId)));
-    // Let the expansion land before measuring where to scroll.
     const raf = requestAnimationFrame(() => {
       document
         .getElementById(`thread-item-${activeHitId}`)
@@ -1135,7 +1161,7 @@ export function Thread({
                 onClose={closeFind}
               />
             )}
-            <div className="mx-auto max-w-3xl space-y-6">
+            <div ref={contentRef} className="mx-auto max-w-3xl space-y-6">
               {hiddenCount > 0 && (
                 <div className="flex justify-center">
                   <div className="flex items-center gap-1.5">
@@ -1161,53 +1187,20 @@ export function Thread({
                 </div>
               )}
               {items.map((it, idx) => {
-                // A turn is "old" once several exchanges have happened after it.
-                // Old turns collapse to one line; the user can reopen any of
-                // them, and that choice sticks for the session.
-                const collapsible =
-                  it.kind === "message" &&
-                  it.role === "assistant" &&
-                  idx < items.length - OPEN_TAIL &&
-                  !expandedTurns.has(it.id);
-                if (collapsible && it.kind === "message") {
-                  // Label the collapsed turn with what it CONCLUDED, not with
-                  // the question — collapsing hides only the assistant half, so
-                  // the user's message is still rendered in full directly above
-                  // and a question label printed the same sentence twice, one
-                  // line apart. The answer's opening line is the thing a reader
-                  // scans a long investigation for. The question stays as the
-                  // fallback for an answer that is empty (a stopped turn).
-                  const gist = answerGist(it.content) || questionBefore(idx);
-                  const calls = (it.toolActivity ?? []).filter((a) => a.status !== "started").length;
-                  return (
-                    <div key={it.id} id={`thread-item-${it.id}`} className="thread-item">
-                      <button
-                        type="button"
-                        onClick={() => setExpandedTurns((prev) => new Set(prev).add(it.id))}
-                        data-testid="collapsed-turn"
-                        className="group flex w-full items-center gap-2 rounded-lg border border-edge/70 px-3 py-2 text-left transition-colors hover:border-edge-strong hover:bg-hover/40"
-                      >
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                             strokeWidth="2.5" className="shrink-0 text-gray-700" aria-hidden>
-                          <polyline points="9 18 15 12 9 6" />
-                        </svg>
-                        <span className="min-w-0 flex-1 truncate text-xs text-gray-500 group-hover:text-gray-300">
-                          {gist || t("common.untitled")}
-                        </span>
-                        {calls > 0 && (
-                          <span className="shrink-0 tabular-nums text-3xs text-gray-700">
-                            {t("turn.checks", { n: calls })}
-                          </span>
-                        )}
-                      </button>
-                    </div>
-                  );
-                }
                 return it.kind === "message" ? (
                   <div
                     key={it.id}
                     id={`thread-item-${it.id}`}
-                    className="thread-item space-y-3"
+                    // A turn is a question and its answer. The thread used to
+                    // space every item the same 24px, so a new question read as
+                    // no more of a break than the paragraph above it and a long
+                    // investigation became one undifferentiated column. Padding
+                    // rather than margin: the container's `space-y` already owns
+                    // margins, and two rules fighting over the same box is how
+                    // spacing bugs start.
+                    className={`thread-item space-y-3 ${
+                      it.role === "user" && idx > 0 ? "pt-6" : ""
+                    }`}
                     // The sticky turn-context bar finds questions by this
                     // attribute rather than by walking the item list, so it does
                     // not need to know the list's shape — which is what keeps it
@@ -1394,28 +1387,12 @@ export function Thread({
                 </div>
               )}
             </div>
+              {/* Room to put the last question at the top of the screen. Its
+                * height is measured, not guessed, so the thread never scrolls
+                * into more blankness than the turn actually needs. */}
+              <div aria-hidden data-testid="tail-space" style={{ height: tailSpace }} />
             </div>
 
-            {/* The question whose answer you are reading, once it has scrolled
-              * away. Painted over the top of the scroller, never inside it. */}
-            {turnContext && (
-              <div className="pointer-events-none absolute inset-x-0 top-0 px-6 pt-5">
-                <button
-                  type="button"
-                  data-testid="turn-context"
-                  onClick={() =>
-                    document
-                      .getElementById(turnContext.id)
-                      ?.scrollIntoView({ block: "start", behavior: "smooth" })
-                  }
-                  title={turnContext.text}
-                  className="pointer-events-auto flex w-full items-center gap-2 rounded-lg border border-edge bg-panel/95 px-3 py-1.5 text-left text-2xs text-gray-500 shadow-elev backdrop-blur transition-colors hover:border-edge-strong hover:text-gray-300"
-                >
-                  <span aria-hidden className="text-gray-600">↑</span>
-                  <span className="truncate">{turnContext.text}</span>
-                </button>
-              </div>
-            )}
           </div>
 
           <div className="relative px-6 pb-5 pt-1">
