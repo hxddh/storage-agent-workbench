@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { STATE_FILE } from "./global-setup";
+import { seedSession } from "./seed";
 
 /**
  * An answer must not drag the thread sideways.
@@ -126,5 +127,46 @@ test.describe("an answer full of unbreakable tokens", () => {
     const m = await measure(page);
     expect(m.threadScrollW).toBeLessThanOrEqual(m.threadClientW + 1);
     expect(m.leaks).toEqual([]);
+  });
+});
+
+/**
+ * The fade at the foot of a capped table is a signal, not a decoration.
+ *
+ * A table past 12 rows scrolls inside itself, and the last visible row used to
+ * be sliced through the middle with nothing saying why — which reads as a
+ * rendering fault rather than as "there is more below". The fix was a mask over
+ * the last 40px. Applied unconditionally, that fix has its own bug: at the END
+ * of the scroll there is nothing below, and the final row — the one a reader
+ * scrolled all the way down for — sits permanently dimmed with no way to bring
+ * it clear. So the fade has to follow the scroll.
+ *
+ * jsdom cannot see this: with no layout, `scrollHeight` and `clientHeight` are
+ * both 0 and the mask never applies at all. It needs a real browser.
+ */
+test.describe("a capped table's fade", () => {
+  const box = (page: Page) => page.locator(".thread-item table").first().locator("xpath=..");
+
+  test("says 'more below' only while there is more below", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { title } = seedSession(2, `fade ${Date.now()}`, "tall");
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "en");
+      localStorage.setItem("saw.onboarded", "1");
+    });
+    await page.goto("/");
+    await page.getByText(title, { exact: true }).first().click();
+    await expect(page.locator(".thread-item table").first()).toBeVisible({ timeout: 20_000 });
+
+    const maskAt = async (scrollTop: number | "end") => {
+      await box(page).evaluate((el, top) => {
+        el.scrollTop = top === "end" ? el.scrollHeight : (top as number);
+      }, scrollTop);
+      await page.waitForTimeout(250);
+      return await box(page).evaluate((el) => getComputedStyle(el).maskImage || "none");
+    };
+
+    expect(await maskAt(0), "at the top there IS more below").not.toBe("none");
+    expect(await maskAt("end"), "at the end there is not").toBe("none");
   });
 });

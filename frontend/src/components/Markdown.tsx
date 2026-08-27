@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { openExternal, tauriInvoke } from "../config";
 import { useI18n } from "../i18n";
 import { highlight, TOK_CLASS } from "../lib/highlight";
@@ -323,7 +323,14 @@ function TableBlock({
   // the same 24 rows is the same information twice, and it is what pushes the
   // table it belongs to off the screen. Past the point where the table is long
   // enough to need its own scroll, the chart becomes opt-in.
-  const [showChart, setShowChart] = useState(rows.length <= TALL_TABLE_ROWS);
+  //
+  // Derived, not stored. A streamed table mounts as soon as its header and
+  // separator arrive — two rows, maybe none — and grows on later deltas without
+  // remounting, because the block keeps its index. A `useState` initialiser runs
+  // once, so the default was decided while the table was still short and a long
+  // live answer kept a chart it should not have had until the next reload.
+  // What IS state is the user overruling the default, and only that.
+  const [chartOverride, setChartOverride] = useState<boolean | null>(null);
   // Per column: the alignment actually used, and whether it holds quantities.
   // A right-aligned column of PROPORTIONAL digits still does not line up — `1`
   // is narrower than `8` in the UI face — so the two go together or neither is
@@ -339,6 +346,21 @@ function TableBlock({
   // Past this many rows a table has lost its own header by the time you reach
   // the bottom of it, at any window height this app is usable in.
   const tall = rows.length > TALL_TABLE_ROWS;
+  const showChart = chartOverride ?? !tall;
+
+  // The fade at the foot of a capped table says "there is more below". At the
+  // END of the scroll there is not, and a permanent fade would leave the last
+  // row permanently dimmed with no way to bring it clear — the one row a reader
+  // scrolled all the way down for. So it tracks the scroll instead of being a
+  // fixed decoration, and is re-measured when the table grows under a stream.
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const [more, setMore] = useState(false);
+  const measure = useCallback(() => {
+    const el = boxRef.current;
+    setMore(!!el && el.scrollHeight - el.scrollTop - el.clientHeight > 1);
+  }, []);
+  useEffect(measure, [measure, rows.length, tall, showChart]);
+
   return (
     <div className="overflow-hidden rounded-lg border border-edge">
       {spec && showChart && <Chart spec={spec} />}
@@ -361,7 +383,11 @@ function TableBlock({
         * a rendering fault rather than as "there is more below". The mask fades
         * the last few pixels out, so a partial row is legibly a partial row. */}
       <div
-        className={`overflow-auto ${tall ? "max-h-[60vh] [mask-image:linear-gradient(to_bottom,black_calc(100%-2.5rem),transparent)]" : ""}`}
+        ref={boxRef}
+        onScroll={measure}
+        className={`overflow-auto ${tall ? "max-h-[60vh]" : ""} ${
+          tall && more ? "[mask-image:linear-gradient(to_bottom,black_calc(100%-2.5rem),transparent)]" : ""
+        }`}
       >
         <table className="w-full border-collapse text-xs">
           <thead>
@@ -401,7 +427,7 @@ function TableBlock({
       {spec && (
         <button
           type="button"
-          onClick={() => setShowChart((v) => !v)}
+          onClick={() => setChartOverride(!showChart)}
           data-testid="chart-toggle"
           className="w-full border-t border-edge px-3.5 py-1.5 text-left text-2xs text-gray-500 transition-colors hover:text-gray-300"
         >
