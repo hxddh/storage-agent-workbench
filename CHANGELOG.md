@@ -6,6 +6,8 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.87.0] - 2026-08-27
+
 _A pass over the surface the product is actually used through. The brief was a
 qualitative lift in aesthetics and interaction; the work that survived scrutiny
 was not a restyle but seven places where the interface was stating something it
