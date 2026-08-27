@@ -6,6 +6,75 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+_A pass over the surface the product is actually used through. The brief was a
+qualitative lift in aesthetics and interaction; the work that survived scrutiny
+was not a restyle but seven places where the interface was stating something it
+had not established, or losing something the reader needed._
+
+### Added — alignment as information
+
+Markdown tables declared no alignment, so a column of byte counts rendered
+ragged-left and could not be compared down the column at all. `inferAlign()`
+now right-aligns a column when ≥80% of its non-empty cells parse as a quantity
+(number, optional thousands separators, optional unit — `%`, `GiB`, `ms`, …)
+and applies `tabular-nums` so digits line up by place value. Explicit `:---:`
+markers still win; inference only fills the undeclared case.
+
+### Added — a long table keeps its header
+
+Past ~12 rows a table's header scrolled away, leaving a screen of bare numbers
+with no column labels. Tall tables now scroll inside themselves (`max-h-[60vh]`)
+with a pinned header row. Short tables are untouched: a nested scroll region is
+a real cost and is only worth paying when the header would otherwise be lost.
+
+### Added — the question stays with the answer
+
+A long answer pushes its own question off-screen, and the reader loses what was
+asked halfway through reading the reply. A sticky bar now names the question
+whose answer is on screen and scrolls back to it when clicked. It has zero flow
+height on purpose — a bar that occupies space when it appears shifts the text
+under the reader's eye.
+
+### Added — established vs undetermined posture
+
+`access_denied`, `provider_unsupported` and `error` are not `false`. The account
+profile matrix rendered all three the same as a configured-off bucket, so the
+product asserted a security posture it had never established. `lib/status.ts`
+separates established from undetermined; undetermined cells now render with a
+dotted underline and a hint saying so.
+
+### Changed — measured surface separation, in both themes
+
+The layered surfaces were separated by amounts that looked deliberate in dark
+and vanished in light. The ladders are now set by CIELAB L\* — a perceptually
+uniform metric, unlike the relative-luminance deltas that compress at the dark
+end — with a test asserting a floor of 2.5 L\* between adjacent layers in both
+themes.
+
+### Fixed — one byte formatter, and a real zero
+
+Bytes were formatted three ways in three components. `lib/format.ts` is now the
+single ladder, and `fmtBytes()` returns `null` for an absent value rather than
+`"0 B"` — "we don't know" and "zero bytes" are different claims.
+
+### Fixed — a square focus ring inside a 22px pill
+
+Not a missing radius on the component, as it first appeared: Tailwind v4 emits
+utilities inside `@layer utilities`, and unlayered CSS beats layered CSS
+regardless of specificity, so the global focus rule could not be overridden by
+any class. Components that draw their own ring now opt out with
+`data-focus-ring="container"`, with tests covering both directions.
+
+### Added — a visual contact sheet (`npm run shots`)
+
+Five surfaces × dark/light in one command, written to a gitignored
+`frontend/shots/` with an `index.html` that pairs each theme on one row.
+Deliberately not a CI gate: the sandbox runs a preinstalled `headless_shell`
+and CI installs Playwright's own Chromium, so committed pixels would be a wall
+of diffs — and the escapes (a loose `maxDiffPixels`, skipping off-CI) each turn
+the gate into something that no longer catches what it exists for. The reasoning
+is written down in `e2e/shots/gallery.spec.ts`.
+
 ## [0.86.0] - 2026-08-26
 
 _Two passes over the layer below the product. The first asked what the v0.85.0
