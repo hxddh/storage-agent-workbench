@@ -85,20 +85,37 @@ test("the question appears once it has scrolled away, and leads back to it", asy
   expect(top).toBeLessThan(height * 0.9);
 });
 
-test("it takes no space in the flow, so appearing cannot shift the thread", async ({ page }) => {
+test("it cannot change the height of the thread it floats over", async ({ page }) => {
   await openTall(page);
   await scroller(page).evaluate((el) => { el.scrollTop = el.scrollHeight; });
   await page.waitForTimeout(400);
   await expect(bar(page)).toBeVisible();
 
-  // Asserted directly on the element rather than inferred from scrollHeight
-  // before/after: the thread lazy-loads earlier messages when you reach the top,
-  // so a before/after comparison races that load and measures it instead of the
-  // bar. (It passed alone and failed in the full suite — the timing gave it
-  // away.) The claim is that the sticky wrapper contributes zero flow height,
-  // which is a property of one element and can simply be read off it.
-  const flowHeight = await bar(page).evaluate((el) => (el.parentElement as HTMLElement).offsetHeight);
-  expect(flowHeight).toBe(0);
+  // The bar mounts and unmounts as a function of scroll position. If it lives
+  // inside the scroller, that makes the CONTENT HEIGHT a function of scroll
+  // position — and the thread's convergence run re-jumps to the bottom every
+  // frame until the height holds still, ignoring scroll events while it does.
+  // The first version of this bar was a zero-height sticky element inside the
+  // scroller and still moved `scrollHeight` by 8px (its `-mt-2`), which was
+  // enough to turn `landing.spec.ts`'s 'jump to latest' test red on CI: the
+  // scroller sat at 8785 with the bar and 8793 without.
+  //
+  // So the invariant is not "it takes no flow height" — that was the weaker
+  // claim the earlier version of this test made, and the earlier version of the
+  // bar satisfied it while still being an 8px lie. It is that the bar is not
+  // part of the scrolled content at all.
+  const out = await page.evaluate(() => {
+    const sc = document.querySelector('[data-testid="thread-scroll"]') as HTMLElement;
+    const el = document.querySelector('[data-testid="turn-context"]') as HTMLElement;
+    const holder = el.parentElement as HTMLElement;
+    const withBar = sc.scrollHeight;
+    holder.style.display = "none";
+    const without = sc.scrollHeight;
+    holder.style.display = "";
+    return { inside: sc.contains(el), withBar, without };
+  });
+  expect(out.inside).toBe(false);
+  expect(out.withBar).toBe(out.without);
 
   // …and the bar itself is still a real, visible target despite that.
   const box = await bar(page).boundingBox();

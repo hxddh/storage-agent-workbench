@@ -1099,37 +1099,27 @@ export function Thread({
             </div>
           </header>
 
-          <div
-            ref={scrollRef}
-            data-testid="thread-scroll"
-            onScroll={onScroll}
-            onWheel={releaseToUser}
-            onTouchMove={releaseToUser}
-            onKeyDown={releaseToUser}
-            className="flex-1 overflow-auto px-6 py-7"
-          >
-            {/* Zero flow height on purpose: a bar that appears and disappears in
-              * the flow shifts the content under the reader's eye by its own
-              * height, which in a scroll container reads as the thread jumping.
-              * The sticky element takes no space and its child paints over. */}
-            {turnContext && (
-              <div className="sticky top-0 z-sticky h-0 overflow-visible">
-                <button
-                  type="button"
-                  data-testid="turn-context"
-                  onClick={() =>
-                    document
-                      .getElementById(turnContext.id)
-                      ?.scrollIntoView({ block: "start", behavior: "smooth" })
-                  }
-                  title={turnContext.text}
-                  className="-mt-2 flex w-full items-center gap-2 rounded-lg border border-edge bg-panel/95 px-3 py-1.5 text-left text-2xs text-gray-500 shadow-elev backdrop-blur transition-colors hover:border-edge-strong hover:text-gray-300"
-                >
-                  <span aria-hidden className="text-gray-600">↑</span>
-                  <span className="truncate">{turnContext.text}</span>
-                </button>
-              </div>
-            )}
+          {/* The scroller and the things that float OVER it, in a positioned
+            * box of its own. The bar below must not live inside the scroller:
+            * everything in there — even a zero-height sticky element — is part
+            * of the content whose height the thread's convergence run measures,
+            * and that run re-jumps to the bottom every frame until the height
+            * holds still. A bar that mounts and unmounts as a function of
+            * scroll position is therefore a height that changes as a function
+            * of scroll position, which is a feedback loop with the one piece of
+            * machinery this file warns hardest about. Out here it cannot touch
+            * `scrollHeight` at all — the same reason "jump to latest" has always
+            * been rendered next to the composer rather than in the thread. */}
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <div
+              ref={scrollRef}
+              data-testid="thread-scroll"
+              onScroll={onScroll}
+              onWheel={releaseToUser}
+              onTouchMove={releaseToUser}
+              onKeyDown={releaseToUser}
+              className="flex-1 overflow-auto px-6 py-7"
+            >
             {findOpen && (
               <FindBar
                 query={findQuery}
@@ -1388,6 +1378,28 @@ export function Thread({
                 </div>
               )}
             </div>
+            </div>
+
+            {/* The question whose answer you are reading, once it has scrolled
+              * away. Painted over the top of the scroller, never inside it. */}
+            {turnContext && (
+              <div className="pointer-events-none absolute inset-x-0 top-0 px-6 pt-5">
+                <button
+                  type="button"
+                  data-testid="turn-context"
+                  onClick={() =>
+                    document
+                      .getElementById(turnContext.id)
+                      ?.scrollIntoView({ block: "start", behavior: "smooth" })
+                  }
+                  title={turnContext.text}
+                  className="pointer-events-auto flex w-full items-center gap-2 rounded-lg border border-edge bg-panel/95 px-3 py-1.5 text-left text-2xs text-gray-500 shadow-elev backdrop-blur transition-colors hover:border-edge-strong hover:text-gray-300"
+                >
+                  <span aria-hidden className="text-gray-600">↑</span>
+                  <span className="truncate">{turnContext.text}</span>
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="relative px-6 pb-5 pt-1">
