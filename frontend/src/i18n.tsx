@@ -281,6 +281,7 @@ const en: Dict = {
   "posture.unsupported": "unsupported",
   "posture.error": "error",
   "posture.notChecked": "not checked",
+  "posture.regionMismatch": "wrong region",
   "posture.undeterminedHint":
     "Not established — this is what we could not find out, not a finding about the bucket.",
   "profile.title": "Account asset picture",
@@ -737,6 +738,7 @@ const zh: Dict = {
   "posture.unsupported": "不支持",
   "posture.error": "出错",
   "posture.notChecked": "未检查",
+  "posture.regionMismatch": "区域不匹配",
   "posture.undeterminedHint": "未确证 —— 这是我们没能查明的部分，不是关于该桶的结论。",
   "profile.title": "账号资产全景",
   "profile.filterAll": "全部",

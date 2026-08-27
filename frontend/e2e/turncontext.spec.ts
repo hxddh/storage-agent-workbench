@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { dropModelProvider, startFakeModel, textTurn, useFakeModel } from "./fake-model";
 import { seedSession } from "./seed";
 
 /**
@@ -120,4 +121,64 @@ test("it cannot change the height of the thread it floats over", async ({ page }
   // …and the bar itself is still a real, visible target despite that.
   const box = await bar(page).boundingBox();
   expect(box?.height ?? 0).toBeGreaterThan(16);
+});
+
+/**
+ * The turn that is still being written is the one most in need of a label.
+ *
+ * Every other test here drives a PERSISTED thread, and the bar found its
+ * questions through a `data-question` attribute set only on persisted messages.
+ * The in-flight question is rendered from `pending` on a different branch, and
+ * it carried no such attribute — so during the longest an answer is ever left
+ * unread, the bar either showed nothing (a first turn) or named the PREVIOUS
+ * question, labelling the answer you are reading with someone else's. Caught in
+ * review on this PR; this asserts the streaming case the other tests could not
+ * reach, which needs a real model turn held open on purpose.
+ */
+const LIVE_QUESTION = "why does the streaming bucket deny every list call";
+const LIVE_ANSWER =
+  "## Finding\n\n" +
+  Array.from(
+    { length: 40 },
+    (_, i) =>
+      `Paragraph ${i} of the live answer. The bucket policy omits s3:ListBucket ` +
+      `for the caller principal, so every list returns 403 AccessDenied while ` +
+      `head_object on a known key still succeeds.`,
+  ).join("\n\n");
+
+test("names the question of the turn that is still streaming", async ({ page }) => {
+  test.setTimeout(120_000);
+  // Held open on purpose. `textTurn` emits one delta per 24 characters, so this
+  // answer streams for roughly 40 × ~180 / 24 × 40ms ≈ 12s — the same knob
+  // interrupt.spec.ts uses to have a window to press Stop in. Without it the
+  // turn finishes before the assertion runs, the pending question becomes a
+  // persisted one, and the test silently measures the case it is not about
+  // (that is exactly what the first draft of this test did: it passed against
+  // the unfixed component).
+  const model = await startFakeModel([textTurn(LIVE_ANSWER)], { deltaDelayMs: 40 });
+  const providerId = await useFakeModel(model.baseUrl);
+  try {
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "en");
+      localStorage.setItem("saw.onboarded", "1");
+    });
+    await page.goto("/");
+    await expect(composer(page)).toBeVisible({ timeout: 30_000 });
+    await composer(page).click();
+    await composer(page).fill(LIVE_QUESTION);
+    await composer(page).press("Enter");
+
+    // The thread follows the stream, so the question leaves the top of its own
+    // accord — no manual scroll, which is how a reader meets this.
+    const stop = page.getByRole("button", { name: /stop/i });
+    await expect(stop).toBeVisible({ timeout: 30_000 });
+    await expect(bar(page)).toBeVisible({ timeout: 8_000 });
+    await expect(bar(page)).toContainText(LIVE_QUESTION.slice(0, 24));
+    // …and it was the LIVE turn being described, not a finished one: the answer
+    // was still arriving when the bar named its question.
+    await expect(stop).toBeVisible();
+  } finally {
+    await dropModelProvider(providerId);
+    await model.close();
+  }
 });

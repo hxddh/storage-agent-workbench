@@ -54,6 +54,11 @@ const AUTOSCROLL_FRAME_BUDGET = 90;
  *  this replaces. */
 const AUTOSCROLL_SETTLED_FRAMES = 3;
 
+/** DOM id of the in-flight question, so the turn-context bar can scroll back to
+ * it exactly as it does for a persisted one. Persisted messages use
+ * `thread-item-<id>`; the pending question has no message id yet. */
+const PENDING_QUESTION_ID = "thread-pending-question";
+
 type Item =
   | {
       kind: "message";
@@ -1294,7 +1299,18 @@ export function Thread({
 
               {pending && (
                 <>
-                  <MessageCard role="user" content={pending} />
+                  {/* Tagged the same way a persisted question is, and for the
+                    * same reason. This branch renders the question of the turn
+                    * that is CURRENTLY STREAMING — the longest an answer is ever
+                    * left unread, and the one case the first version of the
+                    * turn-context bar missed: with no `data-question` here, a
+                    * first turn showed no bar at all, and a later turn showed
+                    * the PREVIOUS question, labelling the answer you are
+                    * reading with someone else's question. Caught in review on
+                    * this PR. */}
+                  <div id={PENDING_QUESTION_ID} data-question={pending}>
+                    <MessageCard role="user" content={pending} />
+                  </div>
                   {streamText !== null || streamTools.length ? (
                     <>
                       <MessageCard

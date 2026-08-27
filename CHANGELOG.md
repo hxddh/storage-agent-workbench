@@ -65,6 +65,23 @@ regardless of specificity, so the global focus rule could not be overridden by
 any class. Components that draw their own ring now opt out with
 `data-focus-ring="container"`, with tests covering both directions.
 
+### Fixed — two statuses the interface was getting wrong (from review)
+
+`region_mismatch` is a real, deliberately distinct survey status: a bucket that
+exists but lives in another region (HeadBucket → 301), reachable with the right
+region and therefore not an error. The new status module knew five tokens and
+sent everything else to "not checked" — turning an actionable misconfiguration
+into "we never looked", which is precisely the class of lie the module exists to
+remove. It is now an established finding with its own label and warning colour;
+a genuinely unknown token still falls through to undetermined.
+
+The turn-context bar found questions through an attribute set only on PERSISTED
+messages, while the in-flight question renders from `pending` on another branch.
+So during a live answer — the longest an answer is ever left unread — a first
+turn showed no bar and a later turn named the PREVIOUS question. The pending
+question is now tagged the same way, covered by an E2E test that holds a model
+turn open to assert mid-stream.
+
 ### Added — a visual contact sheet (`npm run shots`)
 
 Five surfaces × dark/light in one command, written to a gitignored

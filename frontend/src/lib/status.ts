@@ -28,8 +28,16 @@
  * lie would live. */
 export type PostureStatus = string | null | undefined;
 
-/** The two answers that are answers. Everything else is an absence of one. */
-const ESTABLISHED = new Set(["available", "not_configured"]);
+/** The answers that are answers. Everything else is an absence of one.
+ *
+ * `region_mismatch` belongs here and it is easy to get wrong. HeadBucket
+ * answering 301 IS an answer: the bucket exists and is reachable with the right
+ * region, which is why the survey brands it distinctly instead of folding it
+ * into `error` (`s3/account_tools.py`, `runs/account_discovery_run.py`). Sending
+ * it through the unknown-status fallback would render an actionable
+ * misconfiguration as "Not checked" — the exact class of lie this module was
+ * written to remove. Caught in review on this PR. */
+const ESTABLISHED = new Set(["available", "not_configured", "region_mismatch"]);
 
 export function isEstablished(status: PostureStatus): boolean {
   return !!status && ESTABLISHED.has(status);
@@ -48,6 +56,8 @@ export function statusLabelKey(status: PostureStatus): string {
       return "posture.unsupported";
     case "error":
       return "posture.error";
+    case "region_mismatch":
+      return "posture.regionMismatch";
     default:
       return "posture.notChecked";
   }
@@ -60,6 +70,9 @@ export function statusClass(status: PostureStatus): string {
     case "available":
       return "text-success";
     case "not_configured":
+    // A finding about the bucket, like encryption being off: something to fix,
+    // not something we failed to learn.
+    case "region_mismatch":
       return "text-warn";
     case "access_denied":
     case "error":

@@ -63,3 +63,31 @@ describe("colour", () => {
     expect(statusClass(null)).toContain("gray");
   });
 });
+
+describe("region_mismatch — the status the fallback nearly swallowed", () => {
+  // A bucket that exists but lives in another region answers HeadBucket with a
+  // 301. The survey brands that distinctly on purpose (`s3/account_tools.py`,
+  // `runs/account_discovery_run.py`) rather than folding it into `error`,
+  // because the bucket IS reachable — with the right region. The first version
+  // of this module knew five tokens and sent everything else to "not checked",
+  // which turned an actionable misconfiguration into "we never looked".
+  it("is an answer, not an absence of one", () => {
+    expect(isEstablished("region_mismatch")).toBe(true);
+  });
+
+  it("says what is wrong instead of claiming nobody checked", () => {
+    expect(statusLabelKey("region_mismatch")).not.toBe(statusLabelKey(null));
+    expect(statusLabelKey("region_mismatch")).toBe("posture.regionMismatch");
+  });
+
+  it("is a finding, so it carries a finding's colour", () => {
+    expect(statusClass("region_mismatch")).toContain("warn");
+  });
+
+  // The fallback itself must stay — a status this build has never heard of is
+  // genuinely undetermined, and that is the truthful reading.
+  it("still sends a genuinely unknown token to undetermined", () => {
+    expect(isEstablished("some_status_from_a_newer_sidecar")).toBe(false);
+    expect(statusLabelKey("some_status_from_a_newer_sidecar")).toBe("posture.notChecked");
+  });
+});
