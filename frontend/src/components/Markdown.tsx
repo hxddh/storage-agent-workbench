@@ -305,6 +305,9 @@ const ALIGN_CLASS: Record<Align, string> = {
   right: "text-right",
 };
 
+/** Rows past which a table scrolls inside itself and pins its header. */
+export const TALL_TABLE_ROWS = 12;
+
 function TableBlock({
   headers,
   aligns,
@@ -329,13 +332,30 @@ function TableBlock({
       return { align, numeric: align === "right" };
     });
   }, [headers, aligns, rows]);
+  // Past this many rows a table has lost its own header by the time you reach
+  // the bottom of it, at any window height this app is usable in.
+  const tall = rows.length > TALL_TABLE_ROWS;
   return (
     <div className="overflow-hidden rounded-lg border border-edge">
       {spec && showChart && <Chart spec={spec} />}
-      <div className="overflow-auto">
+      {/* A long table scrolls INSIDE itself instead of owning three screens of
+        * the thread, and its header stays put while it does.
+        *
+        * Observed on a seeded investigation: 24 rows put the header off-screen
+        * well before the last row, leaving a full viewport of bare numbers with
+        * no column labels — the reader has to scroll back up to learn which
+        * column is bytes and which is object count.
+        *
+        * The cap is conditional because it is not free: a short table that
+        * scrolls internally is worse than one that simply sits in the flow, and
+        * a nested scroll region is a real cost to trap a wheel in. Only tables
+        * long enough to lose their own header get one. `sticky` needs the
+        * scroll container to be this element, which is also why the header can
+        * only stick once the cap applies. */}
+      <div className={`overflow-auto ${tall ? "max-h-[60vh]" : ""}`}>
         <table className="w-full border-collapse text-xs">
           <thead>
-            <tr className="bg-elevated">
+            <tr className={`bg-elevated ${tall ? "sticky top-0 z-sticky" : ""}`}>
               {headers.map((h, i) => (
                 <th
                   key={i}

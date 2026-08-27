@@ -21,7 +21,7 @@ import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import { createElement } from "react";
 import { Markdown } from "./Markdown";
-import { inferAlign } from "./Markdown";
+import { inferAlign, TALL_TABLE_ROWS } from "./Markdown";
 import { I18nProvider } from "../i18n";
 
 function draw(md: string) {
@@ -103,5 +103,28 @@ describe("a rendered table", () => {
     expect(count.className).not.toContain("tabular-nums");
     // …and the neighbouring undeclared column is still inferred.
     expect(size.className).toContain("text-right");
+  });
+});
+
+describe("a long table", () => {
+  const rowsOf = (n: number) =>
+    Array.from({ length: n }, (_, i) => `| bucket-${i} | ${i * 137} | ${i * 41} GiB |`);
+  const scroller = (c: HTMLElement) => c.querySelector("table")?.parentElement as HTMLElement;
+  const headRow = (c: HTMLElement) => c.querySelector("thead tr") as HTMLElement;
+
+  it("keeps its header in view by scrolling inside itself", () => {
+    // Observed on a seeded investigation at 1440x900: 24 rows put the header
+    // off-screen before the last row, leaving a viewport of bare numbers.
+    const { container } = draw(table("| --- | --- | --- |", rowsOf(TALL_TABLE_ROWS + 12)));
+    expect(scroller(container).className).toContain("max-h-");
+    expect(headRow(container).className).toContain("sticky");
+  });
+
+  it("leaves a short table alone in the page flow", () => {
+    // A nested scroll region is a real cost — a trapped wheel — and a short
+    // table never loses its header, so it must not pay for the fix.
+    const { container } = draw(table("| --- | --- | --- |", rowsOf(4)));
+    expect(scroller(container).className).not.toContain("max-h-");
+    expect(headRow(container).className).not.toContain("sticky");
   });
 });

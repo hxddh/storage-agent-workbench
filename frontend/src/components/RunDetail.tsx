@@ -5,6 +5,7 @@ import { ToolTimeline, type TimelineItem } from "./ToolTimeline";
 import { AccountProfilePanel } from "./AccountProfilePanel";
 import { Markdown } from "./Markdown";
 import { useI18n } from "../i18n";
+import { fmtBytes } from "../lib/format";
 
 const STATUS_COLOR: Record<string, string> = {
   pending: "text-gray-400",
@@ -211,14 +212,7 @@ export function RunDetail({
     if (!finished) return [];
     const o = finished.output as Record<string, any>;
     const pct = (n: unknown) => `${((Number(n) || 0) * 100).toFixed(1)}%`;
-    const bytesH = (n: unknown) => {
-      let v = Number(n) || 0;
-      // Binary divisors (÷1024) → binary labels, matching the backend (KiB/MiB).
-      const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
-      let i = 0;
-      while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
-      return i === 0 ? `${v} B` : `${v.toFixed(1)} ${units[i]}`;
-    };
+    const bytesH = (n: unknown) => fmtBytes(Number(n) || 0) ?? "0 B";
     if (finished.tool_name === "analyze_access_logs") {
       const topStatus = (o.status_code_distribution || [])[0];
       const topMethod = (o.method_distribution || [])[0];

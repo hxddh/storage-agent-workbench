@@ -8,18 +8,9 @@ import {
 import type { EvidenceImport } from "../types";
 import { Button, Field, TextInput } from "./ui";
 import { useI18n } from "../i18n";
+import { fmtBytes } from "../lib/format";
 
-function bytesH(n: number): string {
-  let v = n || 0;
-  // Binary divisors (÷1024) → binary labels, matching the backend (KiB/MiB).
-  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return i === 0 ? `${v} B` : `${v.toFixed(1)} ${units[i]}`;
-}
+const bytesH = (n: number): string => fmtBytes(n) ?? "0 B";
 
 export function EvidenceImportDialog({
   accountRunId,
