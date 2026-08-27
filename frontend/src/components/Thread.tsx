@@ -53,6 +53,10 @@ const AUTOSCROLL_FRAME_BUDGET = 90;
  *  this replaces. */
 const AUTOSCROLL_SETTLED_FRAMES = 3;
 
+/** Breathing room under the last turn: the question anchors near the top of the
+ * screen rather than flush against its edge. */
+const TAIL_GAP_PX = 28;
+
 /** DOM id of the in-flight question, so the turn-context bar can scroll back to
  * it exactly as it does for a persisted one. Persisted messages use
  * `thread-item-<id>`; the pending question has no message id yet. */
@@ -615,43 +619,52 @@ export function Thread({
   // Non-null while the THREAD is driving its own scroll (see scrollToBottom).
   const autoScrollRef = useRef<number | null>(null);
   const autoBudgetRef = useRef(0);
-  /** The question of the turn you are currently reading, once it has scrolled
-   * out of sight.
+  /** How much empty space to leave under the last turn.
    *
-   * A real answer is tall — the suite's own fixture measures one at 1616px, and
-   * a survey answer with a table is taller — so by the time you are in the
-   * middle of it the question is several screens above and there is nothing on
-   * screen saying what is being answered. Codex and ChatGPT both keep it
-   * visible; this app dropped it.
+   * The reader's question should sit at the TOP of the screen while they read
+   * the answer to it — the way ChatGPT, Codex and Cursor all place it. A thread
+   * cannot scroll past its own last pixel, so for any turn shorter than the
+   * viewport that is simply impossible without somewhere to scroll INTO. This is
+   * that somewhere: `viewport − height of the last turn`, and nothing more, so
+   * the thread never scrolls into blankness it does not need.
    *
-   * Deliberately NOT done by restructuring the flat item list into per-turn
-   * wrappers, which is the tidier design and also the one that would put new DOM
-   * underneath the thread's scroll maths. That is precisely how the "scrolling
-   * down never arrives" bug happened. This is additive and removable. */
-  const [turnContext, setTurnContext] = useState<{ id: string; text: string } | null>(null);
-
-  const syncTurnContext = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const top = el.getBoundingClientRect().top;
-    let found: HTMLElement | null = null;
-    // Rects, not offsetTop: offsetTop is relative to the offsetParent, which is
-    // whichever ancestor happens to be positioned — a layout detail this must
-    // not depend on.
-    for (const n of el.querySelectorAll<HTMLElement>("[data-question]")) {
-      if (n.getBoundingClientRect().bottom < top) found = n;
-      else break;
+   * It also replaces the sticky bar that named the question — a horizontal strip
+   * over the thread, which was the wrong shape for the job. Keeping the question
+   * itself on screen says the same thing with no furniture at all.
+   */
+  const [tailSpace, setTailSpace] = useState(0);
+  const tailSpaceRef = useRef(0);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const syncTailSpace = useCallback(() => {
+    const sc = scrollRef.current;
+    const content = contentRef.current;
+    if (!sc || !content) return;
+    const qs = content.querySelectorAll<HTMLElement>("[data-question]");
+    const last = qs[qs.length - 1];
+    if (!last) {
+      tailSpaceRef.current = 0;
+      setTailSpace(0);
+      return;
     }
-    const next = found
-      ? { id: found.id, text: (found.getAttribute("data-question") || "").trim() }
-      : null;
-    setTurnContext((was) =>
-      was?.id === next?.id && was?.text === next?.text ? was : next && next.text ? next : null,
-    );
+    // Solve for the spacer instead of estimating it. Where the last question
+    // sits when the thread is scrolled to its end is
+    //   scrollHeight − clientHeight  vs  the question's offset in the content,
+    // so the spacer only has to make up the difference. Derived from measured
+    // positions rather than from padding constants, which is why it does not
+    // care that the scroller has its own padding, or how much.
+    const qOffset = last.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+    const want = qOffset + sc.clientHeight - TAIL_GAP_PX;
+    const delta = want - sc.scrollHeight;
+    const next = Math.max(0, Math.round(tailSpaceRef.current + delta));
+    // A spacer that twitches by a pixel is a scrollHeight that twitches by a
+    // pixel, and the thread's convergence run re-jumps to the bottom every frame
+    // until the height holds still. Ignore noise below the threshold.
+    if (Math.abs(next - tailSpaceRef.current) < 4) return;
+    tailSpaceRef.current = next;
+    setTailSpace(next);
   }, []);
 
   const onScroll = () => {
-    syncTurnContext();
     const el = scrollRef.current;
     if (!el) return;
     // A convergence run emits scroll events of its own, and mid-run the thread
@@ -662,6 +675,32 @@ export function Thread({
     pinnedRef.current = atBottom;
     setPinned((was) => (was === atBottom ? was : atBottom));
   };
+
+  // Keep the spacer measured. A ResizeObserver on the content column catches
+  // everything that changes a turn's height — a streamed delta, a table that
+  // lays out a frame late, a window resize, an expanded trace — without this
+  // component having to enumerate them. `requestAnimationFrame` defers the
+  // measurement out of the observer callback, which is what stops the
+  // "ResizeObserver loop completed with undelivered notifications" error that
+  // measuring-and-writing in the same tick produces.
+  useEffect(() => {
+    const content = contentRef.current;
+    const sc = scrollRef.current;
+    if (!content || !sc) return;
+    let raf = 0;
+    const schedule = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(syncTailSpace);
+    };
+    const ro = new ResizeObserver(schedule);
+    ro.observe(content);
+    ro.observe(sc);
+    schedule();
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [syncTailSpace, sessionId]);
 
   const stopAutoScroll = useCallback(() => {
     if (autoScrollRef.current !== null) cancelAnimationFrame(autoScrollRef.current);
@@ -1122,7 +1161,7 @@ export function Thread({
                 onClose={closeFind}
               />
             )}
-            <div className="mx-auto max-w-3xl space-y-6">
+            <div ref={contentRef} className="mx-auto max-w-3xl space-y-6">
               {hiddenCount > 0 && (
                 <div className="flex justify-center">
                   <div className="flex items-center gap-1.5">
@@ -1339,28 +1378,12 @@ export function Thread({
                 </div>
               )}
             </div>
+              {/* Room to put the last question at the top of the screen. Its
+                * height is measured, not guessed, so the thread never scrolls
+                * into more blankness than the turn actually needs. */}
+              <div aria-hidden data-testid="tail-space" style={{ height: tailSpace }} />
             </div>
 
-            {/* The question whose answer you are reading, once it has scrolled
-              * away. Painted over the top of the scroller, never inside it. */}
-            {turnContext && (
-              <div className="pointer-events-none absolute inset-x-0 top-0 px-6 pt-5">
-                <button
-                  type="button"
-                  data-testid="turn-context"
-                  onClick={() =>
-                    document
-                      .getElementById(turnContext.id)
-                      ?.scrollIntoView({ block: "start", behavior: "smooth" })
-                  }
-                  title={turnContext.text}
-                  className="pointer-events-auto flex w-full items-center gap-2 rounded-lg border border-edge bg-panel/95 px-3 py-1.5 text-left text-2xs text-gray-500 shadow-elev backdrop-blur transition-colors hover:border-edge-strong hover:text-gray-300"
-                >
-                  <span aria-hidden className="text-gray-600">↑</span>
-                  <span className="truncate">{turnContext.text}</span>
-                </button>
-              </div>
-            )}
           </div>
 
           <div className="relative px-6 pb-5 pt-1">
