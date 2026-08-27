@@ -16,11 +16,18 @@
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
+  /* Layer separation is measured, not eyeballed: theme.tokens.test.ts holds each
+   * neighbouring pair to dL* >= 2.5 (CIELAB lightness, which is perceptually
+   * uniform — a relative-luminance delta compresses to nothing at the dark end
+   * and would have called this stack fine when it was not).
+   *
+   * The rail used to sit 1.26 dL* from the canvas, which reads as a rendering
+   * artefact rather than a boundary. */
   --canvas: #0b0b0d;
-  --sidebar: #0e0f12;
-  --panel: #141519;
-  --elevated: #1a1c21;
-  --hover: #202329;
+  --sidebar: #121318;
+  --panel: #16171d;
+  --elevated: #1e2027;
+  --hover: #262a32;
   --edge: #1d1f25;
   --edge-strong: #2a2d35;
   --accent: #6d8bff;
@@ -74,11 +81,19 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
+  /* The light theme arrived by inverting the FOREGROUNDS and leaving the grounds
+   * near-white, so `--panel` and `--canvas` were both #ffffff: a card had zero
+   * surface distinction from the page behind it and existed only by its 1px
+   * border. The rail was #f7f7f8 on #ffffff — under 3 dL*.
+   *
+   * The reading surface stays the brightest (it is a thread; text wants the
+   * cleanest ground), and everything that is NOT the reading surface steps down
+   * from it. Same dL* >= 2.5 floor as dark, same test. */
   --canvas: #ffffff;
-  --sidebar: #f7f7f8;
-  --panel: #ffffff;
-  --elevated: #f3f4f6;
-  --hover: #eceef1;
+  --sidebar: #eff1f5;
+  --panel: #f6f7fa;
+  --elevated: #e9ebf1;
+  --hover: #dfe2ea;
   --edge: #e6e7ea;
   --edge-strong: #d3d5da;
   --accent: #4f63e0;

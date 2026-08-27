@@ -175,6 +175,39 @@ describe("contrast", () => {
       }
     });
 
+    it(`${theme}: the layered surfaces are actually distinguishable from each other`, () => {
+      // Depth is carried by four surfaces — canvas < sidebar/panel < elevated <
+      // hover — and in dark it works, because each step is visibly lighter than
+      // the last. The light theme was written by inverting the FOREGROUNDS and
+      // leaving the grounds near-white, so it arrived with `--panel` and
+      // `--canvas` both at #ffffff: a card had zero surface distinction from the
+      // page behind it and depended entirely on a 1px border to exist. The
+      // sidebar was #f7f7f8 against a #ffffff canvas, a separation of well under
+      // 1%, which reads as a rendering artefact rather than a boundary.
+      //
+      // CIELAB lightness, not a relative-luminance delta: luminance compresses
+      // at the dark end, so an absolute delta calls a near-black stack identical
+      // when it is perfectly legible, and calls a near-white one fine when it is
+      // not. L* is perceptually uniform, so one floor works for both themes.
+      // (Measured before this gate existed: dark canvas->sidebar was 1.26 and
+      // light canvas->panel was 0.00.)
+      const lstar = (c: string) => {
+        const Y = lum(parse(v[c]));
+        const d = 6 / 29;
+        return 116 * (Y > d ** 3 ? Math.cbrt(Y) : Y / (3 * d * d) + 4 / 29) - 16;
+      };
+      const step = (a: string, b: string) => Math.abs(lstar(a) - lstar(b));
+      const FLOOR = 2.5;
+      for (const [a, b] of [
+        ["--canvas", "--sidebar"],
+        ["--canvas", "--panel"],
+        ["--panel", "--elevated"],
+        ["--elevated", "--hover"],
+      ]) {
+        expect(step(a, b), `${theme} ${a} vs ${b}`).toBeGreaterThanOrEqual(FLOOR);
+      }
+    });
+
     it(`${theme}: the neutral ramp keeps its ordering`, () => {
       // 100 is strongest through 700 faintest; an out-of-order step silently
       // inverts emphasis wherever it is used.
