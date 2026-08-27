@@ -111,24 +111,30 @@ test.describe("a long conversation", () => {
     expect(txt.indexOf("QUESTION-00")).toBeLessThan(txt.indexOf("QUESTION-11"));
   });
 
-  test("older answers collapse but reopen in place", async ({ page }) => {
-    await openSeeded(page, 12);
+  test("an old answer is still the whole answer, not a one-line summary", async ({ page }) => {
+    // The "tall" shape on purpose: the default one-line answers look the same
+    // folded or not, so only a realistically-sized answer can tell the two apart.
+    const { title } = seedSession(12, `history tall ${Date.now()}`, "tall");
+    await seedFreshApp(page);
+    await page.goto("/");
+    await page.getByText(title, { exact: true }).first().click();
+    await expect(thread(page).getByText(/ANSWER-/).first()).toBeVisible({ timeout: 20_000 });
 
-    const collapsed = page.getByTestId("collapsed-turn");
-    const n = await collapsed.count();
-    expect(n, "older answers are expected to collapse to one line").toBeGreaterThan(0);
+    // Old turns used to fold to a single grey row, and the fold was on by
+    // default. Measured on a seeded 40-turn session at 1440x900: the thread's
+    // own scrollHeight was 9117px folded against 49840px unfolded — 82% of what
+    // the user wrote and the agent answered was not on the page. Scrolling back
+    // through your own investigation showed rows and whitespace, which is what
+    // "pull down and you get an endless blank screen" was.
+    //
+    // So there is no folding any more: history renders as it was written, the
+    // way every comparable tool renders it.
+    await expect(page.getByTestId("collapsed-turn")).toHaveCount(0);
 
-    await collapsed.first().click();
-    await expect(page.getByTestId("collapsed-turn")).toHaveCount(n - 1);
-  });
-
-  test("a collapsed turn is labelled with the answer, not the question", async ({ page }) => {
-    await openSeeded(page, 12);
-    // Collapsing hides only the assistant half, so the question is still on
-    // screen in full right above the row. Repeating it there says nothing.
-    const label = await page.getByTestId("collapsed-turn").first().innerText();
-    expect(label).toContain("ANSWER-");
-    expect(label).not.toContain("QUESTION-");
+    const txt = (await thread(page).evaluate((el) => el.textContent ?? "")).replace(/\s+/g, " ");
+    // The BODY of an old answer, not just its first line: paragraph 3 of the
+    // oldest rendered finding only exists if the answer is rendered in full.
+    expect(txt).toContain("Paragraph 3 of the finding for bucket-000");
   });
 
   test("the newest answer keeps its turn footer", async ({ page }) => {

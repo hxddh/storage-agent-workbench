@@ -38,7 +38,6 @@ import { fmtDuration } from "./TurnMetrics";
 import { useI18n } from "../i18n";
 import { matches } from "../shortcuts";
 import { findInThread, stepHit } from "../threadFind";
-import { answerGist } from "../answerGist";
 import { inferDatasetType } from "../datasetType";
 import { FindBar } from "./FindBar";
 
@@ -138,10 +137,6 @@ export function Thread({
   // discarding history the user deliberately pulled in.
   const [earlier, setEarlier] = useState<SessionMessage[]>([]);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
-  // Turns the user has explicitly re-opened. Old turns collapse to one line so
-  // scrolling back through a long investigation is scannable rather than a wall
-  // of prose; expanding is per-turn and sticky for the session.
-  const [expandedTurns, setExpandedTurns] = useState<Set<string>>(() => new Set());
   // Persisted per-turn metrics, keyed by the assistant message they belong to,
   // so the footer under an OLD answer still shows what that turn cost.
   const [metrics, setMetrics] = useState<Record<string, TurnMetricsRow>>({});
@@ -281,9 +276,6 @@ export function Thread({
 
   // How many messages exist above what is currently rendered. `message_total`
   // comes from the server, so this is a fact rather than a guess.
-  // Only the most recent exchanges stay open. Anything older is one line until
-  // asked for — the same move Codex makes on a long session.
-  const OPEN_TAIL = 6;
   const shownCount = (earlier.length + (detail?.messages?.length ?? 0));
   const hiddenCount = Math.max(0, (detail?.message_total ?? shownCount) - shownCount);
 
@@ -768,11 +760,6 @@ export function Thread({
   const activeHitId = hits.length ? hits[Math.min(findIdx, hits.length - 1)]?.id : null;
   useEffect(() => {
     if (!findOpen || !activeHitId) return;
-    // A match inside a collapsed old turn has to open it. Finding something the
-    // user cannot then see would be worse than not finding it — it would claim
-    // the text is there and show them a summary line instead.
-    setExpandedTurns((prev) => (prev.has(activeHitId) ? prev : new Set(prev).add(activeHitId)));
-    // Let the expansion land before measuring where to scroll.
     const raf = requestAnimationFrame(() => {
       document
         .getElementById(`thread-item-${activeHitId}`)
@@ -1161,48 +1148,6 @@ export function Thread({
                 </div>
               )}
               {items.map((it, idx) => {
-                // A turn is "old" once several exchanges have happened after it.
-                // Old turns collapse to one line; the user can reopen any of
-                // them, and that choice sticks for the session.
-                const collapsible =
-                  it.kind === "message" &&
-                  it.role === "assistant" &&
-                  idx < items.length - OPEN_TAIL &&
-                  !expandedTurns.has(it.id);
-                if (collapsible && it.kind === "message") {
-                  // Label the collapsed turn with what it CONCLUDED, not with
-                  // the question — collapsing hides only the assistant half, so
-                  // the user's message is still rendered in full directly above
-                  // and a question label printed the same sentence twice, one
-                  // line apart. The answer's opening line is the thing a reader
-                  // scans a long investigation for. The question stays as the
-                  // fallback for an answer that is empty (a stopped turn).
-                  const gist = answerGist(it.content) || questionBefore(idx);
-                  const calls = (it.toolActivity ?? []).filter((a) => a.status !== "started").length;
-                  return (
-                    <div key={it.id} id={`thread-item-${it.id}`} className="thread-item">
-                      <button
-                        type="button"
-                        onClick={() => setExpandedTurns((prev) => new Set(prev).add(it.id))}
-                        data-testid="collapsed-turn"
-                        className="group flex w-full items-center gap-2 rounded-lg border border-edge/70 px-3 py-2 text-left transition-colors hover:border-edge-strong hover:bg-hover/40"
-                      >
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                             strokeWidth="2.5" className="shrink-0 text-gray-700" aria-hidden>
-                          <polyline points="9 18 15 12 9 6" />
-                        </svg>
-                        <span className="min-w-0 flex-1 truncate text-xs text-gray-500 group-hover:text-gray-300">
-                          {gist || t("common.untitled")}
-                        </span>
-                        {calls > 0 && (
-                          <span className="shrink-0 tabular-nums text-3xs text-gray-700">
-                            {t("turn.checks", { n: calls })}
-                          </span>
-                        )}
-                      </button>
-                    </div>
-                  );
-                }
                 return it.kind === "message" ? (
                   <div
                     key={it.id}
