@@ -116,6 +116,85 @@ for (const theme of THEMES) {
       await shoot(page, "04-triage", theme);
     });
 
+    test("first run — the wizard a fresh install opens with", async ({ page }) => {
+      await page.addInitScript(([t]) => {
+        localStorage.setItem("saw.lang", "en");
+        localStorage.removeItem("saw.onboarded");
+        localStorage.setItem("saw.theme", t as string);
+      }, [theme] as const);
+      await page.goto("/");
+      await page.waitForTimeout(1200);
+      await shoot(page, "06-firstrun", theme);
+    });
+
+    test("command palette", async ({ page }) => {
+      await open(page, theme);
+      await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
+      await page.keyboard.press("ControlOrMeta+k");
+      await page.waitForTimeout(400);
+      await shoot(page, "07-palette", theme);
+    });
+
+    test("keyboard shortcuts sheet", async ({ page }) => {
+      await open(page, theme);
+      await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
+      await page.locator("body").press("?");
+      await page.waitForTimeout(400);
+      await shoot(page, "08-shortcuts", theme);
+    });
+
+    test("find in an investigation", async ({ page }) => {
+      const { title } = seedSession(8, undefined, "tall");
+      await open(page, theme);
+      await page.getByText(title).first().click();
+      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+      await page.keyboard.press("ControlOrMeta+f");
+      await page.waitForTimeout(300);
+      await page.keyboard.type("bucket-003");
+      await page.waitForTimeout(700);
+      await shoot(page, "09-find", theme);
+    });
+
+    test("session inspector", async ({ page }) => {
+      const { title } = seedSession(6, undefined, "tall");
+      await open(page, theme);
+      await page.getByText(title).first().click();
+      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+      await page.getByTestId("open-inspector").click();
+      await page.waitForTimeout(700);
+      await shoot(page, "10-inspector", theme);
+    });
+
+    test("the turn trace, expanded", async ({ page }) => {
+      const { title } = seedSession(4, undefined, "tall");
+      await open(page, theme);
+      await page.getByText(title).first().click();
+      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+      await page.getByTestId("turn-footer-toggle").last().click();
+      await page.waitForTimeout(500);
+      await shoot(page, "11-trace", theme);
+    });
+
+    test("the rail collapsed", async ({ page }) => {
+      const { title } = seedSession(4, undefined, "tall");
+      await open(page, theme);
+      await page.getByText(title).first().click();
+      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+      await page.getByRole("button", { name: /collapse sidebar/i }).first().click();
+      await page.waitForTimeout(400);
+      await shoot(page, "12-rail-collapsed", theme);
+    });
+
+    test("a narrow window", async ({ page }) => {
+      const { title } = seedSession(4, undefined, "tall");
+      await open(page, theme);
+      await page.setViewportSize({ width: 900, height: 800 });
+      await page.getByText(title).first().click();
+      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+      await page.waitForTimeout(500);
+      await shoot(page, "13-narrow", theme);
+    });
+
     test("settings — the drawer over the thread", async ({ page }) => {
       await open(page, theme);
       await page.getByRole("button", { name: /settings/i }).first().click();
