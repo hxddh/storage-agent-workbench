@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useReducer, useState, type ReactNode } from "react";
-import { getSession, getSessionReport } from "../api";
-import type { SessionDetail, SessionSummaryRow } from "../types";
+import { useEffect, useMemo, useReducer, type ReactNode } from "react";
+import type { SessionSummaryRow } from "../types";
 import { EvidenceWorkspace } from "./EvidenceWorkspace";
 import { ReportWorkspace } from "./ReportWorkspace";
 import { RunsWorkspace } from "./RunsWorkspace";
 import { SurfaceTabs } from "./SurfaceTabs";
 import { initialWorkbenchState, workbenchReducer } from "./model";
+import { useWorkbenchProjection } from "./useWorkbenchProjection";
 
 function ConnectionMark({ status }: { status: string }) {
   return (
@@ -34,55 +34,11 @@ export function WorkbenchShell({
   onOpenSettings: () => void;
 }) {
   const [state, dispatch] = useReducer(workbenchReducer, sessionId, initialWorkbenchState);
-  const [detail, setDetail] = useState<SessionDetail | null>(null);
-  const [surfaceError, setSurfaceError] = useState<string | null>(null);
-  const [report, setReport] = useState<string | null>(null);
-  const [reportLoading, setReportLoading] = useState(false);
+  const { detail, report, reportLoading, error: surfaceError } = useWorkbenchProjection(sessionId, state.surface);
 
   useEffect(() => {
     dispatch({ type: "session.changed", sessionId });
-    setDetail(null);
-    setReport(null);
-    setSurfaceError(null);
   }, [sessionId]);
-
-  // Evidence and Runs are projections of the persisted investigation. Refresh
-  // when either surface becomes active so a just-finished turn is reflected
-  // without teaching the root shell about the Thread implementation's state.
-  useEffect(() => {
-    if (!sessionId || (state.surface !== "evidence" && state.surface !== "runs")) return;
-    let cancelled = false;
-    setSurfaceError(null);
-    void getSession(sessionId)
-      .then((next) => {
-        if (!cancelled) setDetail(next);
-      })
-      .catch((error) => {
-        if (!cancelled) setSurfaceError(String(error));
-      });
-    return () => { cancelled = true; };
-  }, [sessionId, state.surface]);
-
-  useEffect(() => {
-    if (!sessionId || state.surface !== "report") return;
-    let cancelled = false;
-    setReportLoading(true);
-    setSurfaceError(null);
-    void getSessionReport(sessionId)
-      .then((next) => {
-        if (!cancelled) setReport(next.content);
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setReport(null);
-          setSurfaceError(String(error));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setReportLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [sessionId, state.surface]);
 
   const title = session?.title || "New investigation";
   const goal = session?.goal?.trim() || null;
