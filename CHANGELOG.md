@@ -72,6 +72,15 @@ gates that let this through are replaced._
   ground with an outer border drew a rule between all six suggestions and a box
   around the lot. And each row's arrow sat 320px to the right of the phrase it
   points at; it now follows the words, on hover.
+- **A table is a block in an answer, not the answer.** A capped table was still
+  allowed `60vh` — 540px of a 900px window for one block — and its rows were
+  31px tall. 22rem and 26px rows: the prose above it, the table, the list below
+  it and the trace now fit on one screen together.
+- **The rail is an index again.** A title over a timestamp made every row 53px,
+  so nine conversations filled a 900px rail. Moving the time alongside halved
+  that and then ate 60px of every title to repeat what the section heading above
+  it already said — the buckets are today / yesterday / this week / this month /
+  older. The name gets the row; the exact time is a hover away.
 - **One measure for the whole conversation.** The turn footer sits outside the
   prose grid, so it laid out across the full 64rem column while the answer above
   it used 46rem: a trace row put `head_bucket · bucket-2` on the left and its

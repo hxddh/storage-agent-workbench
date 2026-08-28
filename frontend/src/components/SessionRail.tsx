@@ -184,19 +184,29 @@ export function SessionRail({
       <div
         key={s.id}
         onClick={() => onSelect(s.id)}
-        className={`group relative mb-px flex w-full cursor-pointer items-start rounded-lg py-1.5 pl-3 pr-1.5 text-left transition-colors duration-150 ${
+        // Recency is one hover away rather than 60px of every row.
+        title={`${s.title || t("common.untitled")} — ${relTime(s.updated_at, t)}`}
+        className={`group relative mb-px flex w-full cursor-pointer items-center rounded-lg py-1.5 pl-3 pr-1.5 text-left transition-colors duration-150 ${
           isActive ? "bg-elevated" : "hover:bg-hover/60"
         }`}
       >
         {isActive && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent" />}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1">
-            {s.pinned && <PinIcon size={10} />}
-            <span className={`truncate text-sm ${isActive ? "text-gray-100" : "text-gray-300 group-hover:text-gray-200"}`}>
-              {s.title || t("common.untitled")}
-            </span>
-          </div>
-          <span className="mt-0.5 block truncate text-2xs text-gray-500">{relTime(s.updated_at, t)}</span>
+        {/* One line, and the whole line is the title.
+          *
+          * A title over a timestamp made every row 53px tall, so nine
+          * conversations filled a 900px rail and the list read as a stack of
+          * cards rather than an index you scan. Moving the time alongside
+          * halved the height and then ate 60px of every title —
+          * "seeded investigatio… 34w ago" — to repeat what the section heading
+          * above it already says. The buckets are today / yesterday / this week
+          * / this month / older, so per-row recency is redundant in four of the
+          * five, and in the fifth "34w" is not a fact anyone acts on. The rail
+          * is for finding a conversation by its name; the name gets the row. */}
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          {s.pinned && <PinIcon size={10} />}
+          <span className={`min-w-0 flex-1 truncate text-sm ${isActive ? "text-gray-100" : "text-gray-300 group-hover:text-gray-200"}`}>
+            {s.title || t("common.untitled")}
+          </span>
         </div>
         <button
           aria-label={t("menu.more")}

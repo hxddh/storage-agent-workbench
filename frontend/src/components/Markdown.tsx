@@ -418,7 +418,12 @@ function TableBlock({
       <div
         ref={boxRef}
         onScroll={measure}
-        className={`overflow-auto ${tall ? "max-h-[60vh]" : ""} ${
+        // 22rem, not 60vh. A capped table was still allowed 540px of a 900px
+        // window — 60% of the screen for one block inside one answer, which is
+        // not a table in a document, it is a document inside a table. At 22rem
+        // roughly eleven rows are visible, the scroll says there are more, and
+        // the answer around it stays the thing you are reading.
+        className={`overflow-auto ${tall ? "max-h-[22rem]" : ""} ${
           tall && more ? "[mask-image:linear-gradient(to_bottom,black_calc(100%-2.5rem),transparent)]" : ""
         }`}
       >
@@ -460,7 +465,7 @@ function TableBlock({
                 {r.map((c, ci) => (
                   <td
                     key={ci}
-                    className={`px-3 py-1.5 align-top text-gray-300 ${
+                    className={`px-3 py-1 align-top text-gray-300 ${
                       ALIGN_CLASS[columns[ci]?.align ?? "left"]
                     } ${columns[ci]?.numeric ? "whitespace-nowrap tabular-nums" : ""}`}
                   >
