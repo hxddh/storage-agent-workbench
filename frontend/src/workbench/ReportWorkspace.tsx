@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Markdown } from "../components/Markdown";
 import { saveTextFile } from "../config";
 import { useI18n } from "../i18n";
+import { useWorkbenchCopy } from "./copy";
 
 function browserDownload(content: string) {
   const blob = new Blob([content], { type: "text/markdown" });
@@ -23,10 +24,11 @@ export function ReportWorkspace({
   error: string | null;
 }) {
   const { t } = useI18n();
+  const copy = useWorkbenchCopy();
   const [copied, setCopied] = useState(false);
   const [savedPath, setSavedPath] = useState<string | null>(null);
 
-  const copy = async () => {
+  const copyReport = async () => {
     if (!report) return;
     try {
       await navigator.clipboard.writeText(report);
@@ -53,16 +55,16 @@ export function ReportWorkspace({
       <header className="workbench-document-heading">
         <div className="flex items-start justify-between gap-6">
           <div className="min-w-0">
-            <p className="workbench-eyebrow">Report</p>
-            <h1>Durable investigation output</h1>
-            <p>The report is a first-class work surface: readable, reviewable and exportable without returning to the conversation.</p>
+            <p className="workbench-eyebrow">{copy.report.eyebrow}</p>
+            <h1>{copy.report.title}</h1>
+            <p>{copy.report.description}</p>
           </div>
           {report && !loading && !error ? (
-            <div className="flex shrink-0 items-center gap-1.5 pt-0.5" aria-label="Report actions">
+            <div className="flex shrink-0 items-center gap-1.5 pt-0.5" aria-label={copy.report.actions}>
               <button
                 type="button"
                 className="agent-os-command"
-                onClick={() => void copy()}
+                onClick={() => void copyReport()}
                 data-testid="report-copy"
               >
                 {copied ? t("thread.copied") : t("common.copy")}
@@ -81,7 +83,7 @@ export function ReportWorkspace({
         </div>
       </header>
 
-      {loading ? <p className="workbench-empty-line">Preparing report…</p> : null}
+      {loading ? <p className="workbench-empty-line">{copy.report.preparing}</p> : null}
       {!loading && error ? <p className="workbench-surface-error">{error}</p> : null}
       {!loading && !error && report ? (
         <div className="workbench-report-body">
@@ -89,7 +91,7 @@ export function ReportWorkspace({
         </div>
       ) : null}
       {!loading && !error && !report ? (
-        <p className="workbench-empty-line">No durable report has been generated yet.</p>
+        <p className="workbench-empty-line">{copy.report.empty}</p>
       ) : null}
     </article>
   );
