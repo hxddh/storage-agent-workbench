@@ -93,7 +93,10 @@ test.describe("a real agent turn", () => {
       // that the post-turn reload actually landed. This is the exact affordance
       // that disappeared in the released build.
       await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 30_000 });
-      await page.getByTestId("turn-footer-toggle").click();
+      // No click: the newest turn shows what it ran without being asked. The
+      // live trace is removed the moment the answer arrives, so if what replaced
+      // it were also folded, the one turn you just watched work would hide that
+      // work behind a click.
       await expect(thread(page).getByText("read_skill").first()).toBeVisible();
     } finally {
       await cleanup();

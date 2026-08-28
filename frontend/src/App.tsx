@@ -24,7 +24,7 @@ import { useSidecarHealth } from "./hooks/useSidecarHealth";
 import { useI18n } from "./i18n";
 import { useToast } from "./components/Toast";
 import { ShortcutsSheet } from "./components/ShortcutsSheet";
-import { matches } from "./shortcuts";
+import { isEditable, matches } from "./shortcuts";
 
 const ONBOARDED_KEY = "saw.onboarded";
 const RAIL_WIDTH_KEY = "saw.railWidth";
@@ -192,12 +192,6 @@ export default function App() {
     // overlays" shortcut — otherwise a stray Escape while typing in the drawer
     // would slam it shut mid-edit. Overlays with their own input (the command
     // palette) handle Escape in their own onKeyDown.
-    const isEditable = (el: EventTarget | null): boolean => {
-      const node = el as HTMLElement | null;
-      if (!node) return false;
-      const tag = node.tagName;
-      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || node.isContentEditable;
-    };
     // Matching goes through the shared registry (src/shortcuts.ts), so the help
     // sheet and this handler can never document different chords.
     const onKey = (e: KeyboardEvent) => {

@@ -102,7 +102,6 @@ test.describe("analyzing an attached file", () => {
     try {
       await attachAndAsk(page, "what is in this inventory?");
       await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 90_000 });
-      await page.getByTestId("turn-footer-toggle").click();
 
       const trace = await thread(page).evaluate((el) => el.textContent ?? "");
       expect(trace).toContain("list_uploaded_files");

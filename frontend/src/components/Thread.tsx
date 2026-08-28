@@ -40,6 +40,7 @@ import { useI18n } from "../i18n";
 import { matches } from "../shortcuts";
 import { clearFind, findRanges, paintFind } from "../lib/findHighlight";
 import { stepHit } from "../threadFind";
+import { isEditable } from "../shortcuts";
 import { inferDatasetType } from "../datasetType";
 import { FindBar } from "./FindBar";
 
@@ -856,6 +857,46 @@ export function Thread({
     setFindOpen(false);
     setFindQuery("");
   }, []);
+  /* Move through the conversation without the mouse.
+   *
+   * Everything else in this app has a chord — the palette, find, the inspector,
+   * the rail — and the thread itself, the surface you spend all your time in,
+   * had none: reading back through a long investigation meant reaching for the
+   * scrollbar. `j`/`k` are the bindings every reader-first tool uses, and they
+   * are bare letters, so they must never fire while someone is typing. That is
+   * what `isEditable` is for, and it is the same guard the "?" sheet uses.
+   *
+   * It scrolls rather than focuses: a turn is a region to read, not a control
+   * to operate, and moving focus into it would strand the next keystroke
+   * somewhere the user did not ask for. */
+  const stepTurn = useCallback((delta: number) => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const marks = Array.from(root.querySelectorAll<HTMLElement>("[data-question]"));
+    if (marks.length === 0) return;
+    const top = root.getBoundingClientRect().top;
+    // The one at or just above the top of the reading area is where we are.
+    let here = marks.findIndex((m) => m.getBoundingClientRect().top > top + 4);
+    if (here === -1) here = marks.length;
+    const next = Math.min(Math.max((delta > 0 ? here : here - 2) + (delta > 0 ? 0 : 0), 0), marks.length - 1);
+    marks[next]?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isEditable(e.target)) return;
+      if (matches(e, "nextTurn")) {
+        e.preventDefault();
+        stepTurn(1);
+      } else if (matches(e, "prevTurn")) {
+        e.preventDefault();
+        stepTurn(-1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [stepTurn]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!matches(e, "find")) return;
@@ -1316,6 +1357,7 @@ export function Thread({
                         opposite sides of the answer. */}
                     {it.role === "assistant" && (
                       <TurnFooter
+                        latest={it.id === lastAssistant?.id}
                         tools={it.toolActivity}
                         grounding={it.grounding}
                         durationMs={metricsFor(it.id)?.duration_ms}

@@ -49,6 +49,7 @@ export function TurnFooter({
   budgetTokens,
   repeatCallsAvoided,
   sessionId,
+  latest,
   onOpenInspector,
 }: {
   tools?: ToolActivity[];
@@ -60,10 +61,32 @@ export function TurnFooter({
   repeatCallsAvoided?: number | null;
   /** Lets a trace row be opened to the call's real persisted input/output. */
   sessionId?: string | null;
+  /** This is the newest answer in the thread. */
+  latest?: boolean;
   onOpenInspector?: () => void;
 }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
+  /* The turn you just watched keeps its steps; older ones fold.
+   *
+   * The live trace is removed the moment the answer arrives, and what replaces
+   * it is a collapsed "1 checks". So the one turn a reader is actually looking
+   * at — the one whose work they just watched happen — hides that work behind a
+   * click, while every older turn does the same, which is at least consistent
+   * and wrong in one direction.
+   *
+   * Codex keeps the steps of the current turn on screen and folds the history.
+   * `latest` is that: open by default for the newest answer only, so a long
+   * thread does not become a wall of traces, and still collapsible by hand.
+   *
+   * Derived, not stored — the same lesson the chart default had to learn. A
+   * `useState` initialiser runs once, at mount, and a turn becomes "the newest
+   * one" a beat AFTER its message first renders: the footer mounted while
+   * `latest` was still false and never reconsidered, so a turn you had just
+   * watched run came back folded. What IS state is the user overruling it. */
+  const [override, setOverride] = useState<boolean | null>(null);
+  const open = override ?? Boolean(latest);
+  const setOpen = (v: boolean | ((p: boolean) => boolean)) =>
+    setOverride(typeof v === "function" ? v(open) : v);
   const [highlight, setHighlight] = useState<string | null>(null);
   // The one trace row the reader has opened, if any (v0.56.0).
   const [openCall, setOpenCall] = useState<string | null>(null);

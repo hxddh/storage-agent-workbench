@@ -34,16 +34,32 @@ test.describe("the turn footer", () => {
     await expect(footer).toContainText(/2\.4\s*s/);
   });
 
-  test("expands to the trace in execution order", async ({ page }) => {
+  test("the newest turn shows what it ran, without being asked", async ({ page }) => {
+    // The live trace is removed the moment the answer arrives. If what replaced
+    // it were also collapsed, the one turn the reader is actually looking at —
+    // the one whose work they just watched — would hide that work behind a
+    // click. Codex keeps the current turn's steps and folds the history.
     await open(page);
-    await page.getByTestId("turn-footer-toggle").last().click();
     await expect(page.getByTestId("footer-row-open").last()).toBeVisible();
     await expect(thread(page).getByText("head_bucket").last()).toBeVisible();
+
+    // …and it still folds by hand.
+    await page.getByTestId("turn-footer-toggle").last().click();
+    await expect(page.getByTestId("footer-row-open")).toHaveCount(0);
+  });
+
+  test("older turns stay folded, so a long thread is not a wall of traces", async ({ page }) => {
+    await open(page);
+    // Every footer but the newest is closed: one open trace, not twelve.
+    await expect(page.getByTestId("turn-footer-toggle")).not.toHaveCount(1);
+    const rows = await page.getByTestId("footer-row-open").count();
+    const footers = await page.getByTestId("turn-footer-toggle").count();
+    expect(footers).toBeGreaterThan(1);
+    expect(rows).toBeLessThanOrEqual(2);
   });
 
   test("a trace row opens to the call's real persisted input and output", async ({ page }) => {
     await open(page);
-    await page.getByTestId("turn-footer-toggle").last().click();
     await page.getByTestId("footer-row-open").last().click();
     // Fetched from /sessions/{id}/activity/{call_id} — neither string is in the
     // thread payload, so seeing them proves the round trip happened.
@@ -85,7 +101,6 @@ test("an opened tool call is brought into view, not left below the fold", async 
   await page.getByText(title, { exact: true }).first().click();
   await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
 
-  await page.getByTestId("turn-footer-toggle").last().click();
   await page.getByTestId("footer-row-open").last().click();
   // The payload is fetched; wait for the row to actually carry it.
   await expect(page.getByText(/RETURNED|SENT/i).first()).toBeVisible({ timeout: 20_000 });
