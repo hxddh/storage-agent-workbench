@@ -83,4 +83,37 @@ test.describe("workspace-first investigation UI", () => {
       await cleanup();
     }
   });
+
+  test("a durable report opens as a full review workspace, not the old centered modal", async ({ page }) => {
+    const cleanup = await setup(page);
+    try {
+      await completeTurn(page);
+      await composer(page).fill("/report");
+      await composer(page).press("Enter");
+      await expect(page.getByText(/Session Report|Executive summary/).first()).toBeVisible({ timeout: 30_000 });
+
+      const geometry = await page.evaluate(() => {
+        const main = document.querySelector("[data-testid='agent-workspace'] main") as HTMLElement;
+        const overlay = main.querySelector(":scope > .fixed.inset-0.z-floating") as HTMLElement;
+        const shell = overlay?.firstElementChild as HTMLElement | null;
+        if (!overlay || !shell) return null;
+        const r = shell.getBoundingClientRect();
+        return {
+          x: r.x,
+          y: r.y,
+          width: r.width,
+          height: r.height,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+        };
+      });
+      expect(geometry).not.toBeNull();
+      expect(geometry!.x).toBeLessThanOrEqual(2);
+      expect(geometry!.y).toBeLessThanOrEqual(2);
+      expect(geometry!.width / geometry!.viewportWidth).toBeGreaterThanOrEqual(0.98);
+      expect(geometry!.height / geometry!.viewportHeight).toBeGreaterThanOrEqual(0.98);
+    } finally {
+      await cleanup();
+    }
+  });
 });
