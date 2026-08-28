@@ -8,6 +8,8 @@ type Entry =
   | { kind: "tool"; at: string; id: string; data: SessionActivityItem }
   | { kind: "audit"; at: string; id: string; data: SessionAuditItem };
 
+const PAYLOAD_CHAR_LIMIT = 6000;
+
 function clock(iso: string): string {
   const date = new Date(iso.endsWith("Z") ? iso : `${iso}Z`);
   if (Number.isNaN(date.getTime())) return iso;
@@ -49,12 +51,27 @@ function Filter({
   );
 }
 
+function formatPayload(value: Record<string, unknown>) {
+  const full = JSON.stringify(value, null, 2);
+  if (full.length <= PAYLOAD_CHAR_LIMIT) return { text: full, clipped: 0 };
+  return {
+    text: full.slice(0, PAYLOAD_CHAR_LIMIT),
+    clipped: full.length - PAYLOAD_CHAR_LIMIT,
+  };
+}
+
 function Payload({ label, value }: { label: string; value: Record<string, unknown> | null }) {
   if (!value) return null;
+  const formatted = formatPayload(value);
   return (
     <div className="evidence-payload">
-      <span>{label}</span>
-      <pre>{JSON.stringify(value, null, 2)}</pre>
+      <div className="flex items-center justify-between gap-3">
+        <span>{label}</span>
+        {formatted.clipped > 0 ? (
+          <span className="text-2xs text-gray-500">+{formatted.clipped.toLocaleString()} chars not rendered</span>
+        ) : null}
+      </div>
+      <pre>{formatted.text}</pre>
     </div>
   );
 }
