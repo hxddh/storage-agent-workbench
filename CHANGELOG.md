@@ -95,6 +95,9 @@ gates that let this through are replaced._
   that and then ate 60px of every title to repeat what the section heading above
   it already said — the buckets are today / yesterday / this week / this month /
   older. The name gets the row; the exact time is a hover away.
+- **The pasted-error card gets the measure too.** Capping the prose path and
+  not the card path left the product's signature input as the single widest
+  object in the thread: a 1024px card holding four short lines.
 - **One measure for the whole conversation.** The turn footer sits outside the
   prose grid, so it laid out across the full 64rem column while the answer above
   it used 46rem: a trace row put `head_bucket · bucket-2` on the left and its

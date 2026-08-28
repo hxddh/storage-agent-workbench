@@ -305,7 +305,10 @@ function UserMessage({
 
   if (asCard) {
     return (
-      <div className="group animate-fade-in-up">
+      // Same measure as the prose path below. Capping one and not the other
+      // left a pasted error — the product's signature input — as the single
+      // widest object in the thread: a 1024px card holding four short lines.
+      <div className="group max-w-[min(46rem,100%)] animate-fade-in-up">
         <S3ErrorCard err={err} raw={text} />
         <MessageActions text={text} onEdit={onEdit} onBranch={onBranch} />
       </div>
