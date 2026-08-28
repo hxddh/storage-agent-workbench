@@ -23,26 +23,36 @@
    *
    * The rail used to sit 1.26 dL* from the canvas, which reads as a rendering
    * artefact rather than a boundary. */
-  --canvas: #0b0b0d;
-  --sidebar: #121318;
-  --panel: #16171d;
-  --elevated: #1e2027;
-  --hover: #262a32;
-  --edge: #1d1f25;
-  --edge-strong: #2a2d35;
+  /* One hue axis, and enough of a ladder to see.
+   *
+   * Measured on what this replaces: the four surfaces spanned 9.2 L* in total
+   * (canvas 3.1 → elevated 12.3), all four crushed into the darkest eighth of
+   * the range, so "layered" was a claim the pixels did not support. Worse, the
+   * surfaces sat at hue 281-290 while the text ramp sat at 269-271 — two
+   * different greys, pulling opposite ways, which is the un-nameable "cheap"
+   * quality of a screen where nothing is technically wrong.
+   *
+   * Everything neutral is now generated on h=268 with a deliberate L* and a
+   * little chroma, so the greys are a colour rather than an absence of one, and
+   * the ladder spans 12.5 L*. `theme.tokens.test.ts` holds both invariants. */
+  --canvas: #111317;
+  --sidebar: #191c20;
+  --panel: #202327;
+  --elevated: #2a2d33;
+  --hover: #33373e;
+  --edge: #31353b;
+  --edge-strong: #444951;
   --accent: #6d8bff;
   --accent-soft: #84acff;
   --accent-dim: #161a2b;
   /* Neutral ramp: 100 = strongest (near-white), 700 = faintest. */
-  --gray-100: #f3f4f6;
-  --gray-200: #e5e7eb;
-  --gray-300: #d1d5db;
-  --gray-400: #9ca3af;
-  --gray-500: #6b7280;
-  /* 3.2:1 on canvas. The old #4b5563 measured 2.60:1 — below the 3.0
-   * floor — and it carries the metrics footer and every timestamp. */
-  --gray-600: #596371;
-  --gray-700: #374151;
+  --gray-100: #eff1f4;
+  --gray-200: #d8dade;
+  --gray-300: #bbbec4;
+  --gray-400: #9a9ea4;
+  --gray-500: #7b7f86;
+  --gray-600: #5f636b;
+  --gray-700: #494e55;
   --scrollbar-thumb: #262a33;
   --scrollbar-thumb-hover: #3a3f4b;
   --selection: rgba(109, 139, 255, 0.3);
@@ -89,26 +99,26 @@
    * The reading surface stays the brightest (it is a thread; text wants the
    * cleanest ground), and everything that is NOT the reading surface steps down
    * from it. Same dL* >= 2.5 floor as dark, same test. */
-  --canvas: #ffffff;
-  --sidebar: #eff1f5;
-  --panel: #f6f7fa;
-  --elevated: #e9ebf1;
-  --hover: #dfe2ea;
-  --edge: #e6e7ea;
-  --edge-strong: #d3d5da;
+  /* The same h=268 axis as dark, so the two themes are one design rather than
+   * two. Canvas stays the brightest surface and everything steps down from it. */
+  --canvas: #fbfcfe;
+  --sidebar: #ebeef2;
+  --panel: #f2f4f7;
+  --elevated: #e5e8ee;
+  --hover: #d1d5db;
+  --edge: #cbcfd6;
+  --edge-strong: #aeb4bc;
   --accent: #4f63e0;
   --accent-soft: #3f52d4;
   --accent-dim: #eef1fe;
   /* Neutral ramp inverted: 100 = strongest (near-black), 700 = faintest. */
-  --gray-100: #18181b;
-  --gray-200: #27272a;
-  --gray-300: #3f3f46;
-  --gray-400: #52525b;
-  --gray-500: #6b7280;
-  /* 3.2:1 on canvas; the old #9aa0aa measured 2.63:1. Same hue, raised
-   * only in lightness so the neutral ramp keeps its ordering. */
-  --gray-600: #8a909a;
-  --gray-700: #c4c7ce;
+  --gray-100: #212428;
+  --gray-200: #36393e;
+  --gray-300: #4d5056;
+  --gray-400: #676b72;
+  --gray-500: #787c84;
+  --gray-600: #878c93;
+  --gray-700: #a7abb2;
   --scrollbar-thumb: #d4d4d8;
   --scrollbar-thumb-hover: #b8b9c0;
   --selection: rgba(79, 99, 224, 0.22);

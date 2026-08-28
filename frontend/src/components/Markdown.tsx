@@ -371,7 +371,15 @@ function TableBlock({
   useEffect(measure, [measure, rows.length, tall, showChart]);
 
   return (
-    <div className="thread-bleed overflow-hidden rounded-lg border border-edge">
+    /* No box around it.
+     *
+     * A four-sided border turns a table into a form pasted into the answer: the
+     * single biggest block of visual mass on the page, competing with the prose
+     * it belongs to. Data does not need a container to be data — it needs
+     * alignment and a rule under the header, which is what a printed table has
+     * always used. The rules are hairlines; the header is the only thing with
+     * weight. */
+    <div className="thread-bleed my-1 overflow-hidden">
       {spec && showChart && <Chart spec={spec} />}
       {/* A long table scrolls INSIDE itself instead of owning three screens of
         * the thread, and its header stays put while it does.
@@ -400,13 +408,13 @@ function TableBlock({
       >
         <table className="w-full border-collapse text-xs">
           <thead>
-            <tr className={`bg-elevated ${tall ? "sticky top-0 z-sticky" : ""}`}>
+            <tr className={`bg-canvas ${tall ? "sticky top-0 z-sticky" : ""}`}>
               {headers.map((h, i) => (
                 <th
                   key={i}
                   // Alignment is information: a right-aligned numeric column is
                   // how a reader compares magnitudes down a column at all.
-                  className={`border-b border-edge px-3.5 py-2 text-2xs font-semibold uppercase tracking-wide text-gray-400 ${
+                  className={`border-b border-edge-strong px-3 pb-1.5 pt-0.5 text-2xs font-semibold uppercase tracking-[0.08em] text-gray-400 ${
                     ALIGN_CLASS[columns[i]?.align ?? "left"]
                   }`}
                 >
@@ -417,11 +425,11 @@ function TableBlock({
           </thead>
           <tbody>
             {rows.map((r, ri) => (
-              <tr key={ri} className="border-b border-edge/30 last:border-0">
+              <tr key={ri} className="border-b border-edge/50 last:border-0">
                 {r.map((c, ci) => (
                   <td
                     key={ci}
-                    className={`px-3.5 py-2 align-top text-gray-300 ${
+                    className={`px-3 py-1.5 align-top text-gray-300 ${
                       ALIGN_CLASS[columns[ci]?.align ?? "left"]
                     } ${columns[ci]?.numeric ? "tabular-nums" : ""}`}
                   >
@@ -438,7 +446,7 @@ function TableBlock({
           type="button"
           onClick={() => setChartOverride(!showChart)}
           data-testid="chart-toggle"
-          className="w-full border-t border-edge px-3.5 py-1.5 text-left text-2xs text-gray-500 transition-colors hover:text-gray-300"
+          className="mt-1 rounded px-1 py-0.5 text-left text-2xs text-gray-500 transition-colors hover:text-gray-300"
         >
           {showChart ? t("chart.hide") : t("chart.show")}
         </button>

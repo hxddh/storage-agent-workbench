@@ -208,6 +208,63 @@ describe("contrast", () => {
       }
     });
 
+    it(`${theme}: every neutral sits on ONE hue axis`, () => {
+      // The un-nameable "cheap" quality of a screen where nothing is technically
+      // wrong. Measured on what this replaced: the surfaces sat at hue 281-290
+      // and the text ramp at 269-271 — two different greys pulling opposite
+      // ways, so text never quite belonged to the surface under it. A neutral
+      // is allowed to be a colour; it is not allowed to be a DIFFERENT colour
+      // from the neutral next to it.
+      //
+      // Hue is meaningless below a chroma floor (pure white and pure black have
+      // no hue at all), so only tokens with real chroma are judged.
+      const lch = (hex: string) => {
+        const [r, g, b] = parse(hex).map((c: number) => {
+          const s = c / 255;
+          return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        });
+        const X = 0.4124 * r + 0.3576 * g + 0.1805 * b;
+        const Y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        const Z = 0.0193 * r + 0.1192 * g + 0.9505 * b;
+        const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+        const fx = f(X / 0.95047);
+        const fy = f(Y);
+        const fz = f(Z / 1.08883);
+        const A = 500 * (fx - fy);
+        const B = 200 * (fy - fz);
+        return { c: Math.hypot(A, B), h: ((Math.atan2(B, A) * 180) / Math.PI + 360) % 360 };
+      };
+      const names = [
+        "--canvas", "--sidebar", "--panel", "--elevated", "--hover", "--edge", "--edge-strong",
+        "--gray-100", "--gray-200", "--gray-300", "--gray-400", "--gray-500", "--gray-600", "--gray-700",
+      ];
+      const hues = names
+        .map((n) => ({ n, ...lch(v[n]) }))
+        .filter((x) => x.c >= 1.5);
+      expect(hues.length, `${theme}: too few tinted neutrals to judge`).toBeGreaterThan(8);
+      const spread = (a: number, b: number) => {
+        const d = Math.abs(a - b) % 360;
+        return d > 180 ? 360 - d : d;
+      };
+      for (const x of hues) {
+        expect(spread(x.h, 268), `${theme} ${x.n} hue ${x.h.toFixed(1)}`).toBeLessThanOrEqual(12);
+      }
+    });
+
+    it(`${theme}: the surface ladder has somewhere to climb`, () => {
+      // Adjacent steps clearing the floor is not the same as the stack having
+      // range. Before this, all four dark surfaces lived inside 9.2 L* at the
+      // very bottom of the scale: every pair passed, and the result still read
+      // flat because there was nowhere for depth to happen.
+      const lstar = (c: string) => {
+        const Y = lum(parse(v[c]));
+        const d = 6 / 29;
+        return 116 * (Y > d ** 3 ? Math.cbrt(Y) : Y / (3 * d * d) + 4 / 29) - 16;
+      };
+      const span = Math.abs(lstar("--canvas") - lstar("--hover"));
+      expect(span, `${theme}: canvas..hover span`).toBeGreaterThanOrEqual(12);
+    });
+
     it(`${theme}: the neutral ramp keeps its ordering`, () => {
       // 100 is strongest through 700 faintest; an out-of-order step silently
       // inverts emphasis wherever it is used.
