@@ -235,3 +235,28 @@ test("the thread stops inviting actions it cannot perform", async ({ page }) => 
   await composer(page).fill("this must not be thrown away");
   await expect(composer(page)).toHaveValue("this must not be thrown away");
 });
+
+/**
+ * A failure says what failed before it says what the service said.
+ *
+ * `cleanError` turns the shapes it recognises into an actionable sentence and
+ * passes everything else through verbatim, so an unrecognised failure reached
+ * the user as the raw `detail` and nothing else. Captured from a 500: the
+ * entire message on screen was the word "boom", above two buttons.
+ */
+test("an unrecognised failure is framed, not dumped", async ({ page }) => {
+  await seedFreshApp(page);
+  await page.goto("/");
+  await expect(composer(page)).toBeVisible({ timeout: 30_000 });
+  await page.route("**/messages**", (r) => r.fulfill({ status: 500, body: '{"detail":"boom"}' }));
+
+  await composer(page).click();
+  await composer(page).fill("why does acme-logs deny list");
+  await composer(page).press("Enter");
+
+  // The frame, and the detail kept under it — it is what you would paste into a
+  // bug report, it is just not the whole explanation.
+  await expect(page.getByText(/Couldn’t send your message/i)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/boom/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /retry/i })).toBeVisible();
+});

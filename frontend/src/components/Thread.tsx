@@ -1143,8 +1143,18 @@ export function Thread({
         </div>
       )}
       {error && (
-        <div className="animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-3.5 text-sm text-danger">
-          {error}
+        <div className="animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-3.5 text-sm">
+          {/* What failed, then what the service said.
+            *
+            * `cleanError` turns the shapes it recognises into an actionable
+            * sentence and passes everything else through verbatim — so an
+            * unrecognised failure reached the user as the raw `detail` and
+            * nothing else. Captured from a 500: the entire message on screen
+            * was the word "boom", above two buttons. The detail is worth
+            * keeping (it is what you would paste into a bug report); it is not
+            * worth being the whole explanation. */}
+          <div className="font-medium text-danger">{t("thread.errTitle")}</div>
+          <div className="mt-1 break-words text-xs text-gray-300">{error}</div>
           <div className="mt-2.5 flex flex-wrap gap-2">
             {/* Retry re-sends the message (the failed turn restored it into the
                 composer), so a transient/network error isn't a dead-end whose

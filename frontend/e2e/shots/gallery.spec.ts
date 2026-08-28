@@ -274,6 +274,30 @@ test.describe("states", () => {
     await shoot(page, "23-rail-menu", "dark");
   });
 
+  test("a session that will not load", async ({ page }) => {
+    const { title } = seedSession(3, undefined, "tall");
+    await open(page, "dark");
+    await page.getByText(title).first().click();
+    await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+    // The session endpoint starts failing while the app is on it.
+    await page.route("**/sessions/*", (r) => r.fulfill({ status: 500, body: "{}" }));
+    await page.reload();
+    await page.waitForTimeout(2500);
+    await shoot(page, "26-load-failed", "dark");
+  });
+
+  test("a turn the server rejects", async ({ page }) => {
+    await open(page, "dark");
+    await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
+    await page.route("**/messages**", (r) => r.fulfill({ status: 500, body: '{"detail":"boom"}' }));
+    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    await box.click();
+    await box.fill("why does acme-logs deny list");
+    await box.press("Enter");
+    await page.waitForTimeout(3000);
+    await shoot(page, "27-turn-failed", "dark");
+  });
+
   test("the whole product in Chinese", async ({ page }) => {
     const { title } = seedSession(3, undefined, "tall");
     await page.addInitScript(() => {
