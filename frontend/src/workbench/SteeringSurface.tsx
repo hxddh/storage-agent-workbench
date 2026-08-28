@@ -44,10 +44,13 @@ export function SteeringSurface({
   const blocked = offline || !controller || run.uploading;
   const actionLabel = run.busy ? t("thread.redirect") : t("thread.send");
 
+  // Timeline owns the primary Composer. Deep work surfaces mount this steering
+  // controller instead, so the application exposes exactly one Agent input at a time.
+  if (!visible || !sessionId) return null;
+
   return (
     <div
       className="pointer-events-none absolute inset-x-0 bottom-0 z-sticky flex justify-center px-4 pb-4"
-      hidden={!visible || !sessionId}
       data-testid="workbench-steering"
     >
       <div className="pointer-events-auto w-full max-w-[760px] rounded-xl border border-edge bg-panel/95 p-2 shadow-pop backdrop-blur-xl">
