@@ -60,12 +60,6 @@ const propKey = (p: NextAction) => `${p.action_type}::${p.title}`;
 // composer with a natural-language prompt (localized); the agent routes from there.
 const SUGGESTION_KEYS = ["diagnose", "logs", "inventory", "config", "account", "optimize"] as const;
 
-const Spark = ({ size = 12 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2z" />
-  </svg>
-);
-
 export function Thread({
   sessionId,
   onSessionCreated,
@@ -91,8 +85,9 @@ export function Thread({
    * e.g. after the active session is renamed, so the header title refreshes. */
   reloadKey?: number;
 }) {
+  const { t } = useI18n();
   const {
-    scrollRef, contentRef, pinned, onScroll, releaseToUser, scrollToBottom,
+    scrollRef, contentRef, pinned, onScroll, releaseToUser,
     jumpToLatest, resetPinned, followLatest,
   } = useThreadViewport();
   const [text, setTextState] = useState("");
@@ -110,12 +105,6 @@ export function Thread({
     { sourceType: "inventory" | "access_log"; accountRunId: string; bucketName: string } | null
   >(null);
   const [modelName, setModelName] = useState<string | null>(null);
-  // Pages fetched by "load earlier", oldest-first, held separately from
-  // `detail.messages` (the tail) so a reload can refresh the tail without
-  // discarding history the user deliberately pulled in.
-  // Persisted per-turn metrics, keyed by the assistant message they belong to,
-  // so the footer under an OLD answer still shows what that turn cost.
-
   // Per-session run state lives in a store keyed by session id (see sessionRuns)
   // so an in-flight turn keeps streaming — and keeps its content — when you
   // switch away and come back. `run` is the active session's slice; the run loop
@@ -150,7 +139,6 @@ export function Thread({
   // One-shot: when a proposal opens the picker it presets the type; a plain 📎
   // attach leaves this null and the type is inferred from the filename.
   const presetTypeRef = useRef<"inventory" | "access_log" | null>(null);
-  const { t } = useI18n();
   const suggestions = SUGGESTION_KEYS.map((k) => ({ key: k, label: t(`sugg.${k}`), prompt: t(`prompt.${k}`) }));
 
   // Fetch the configured model name, retrying a few times on a transient sidecar
