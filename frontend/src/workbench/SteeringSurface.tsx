@@ -46,7 +46,7 @@ export function SteeringSurface({
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center px-4 pb-4"
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-sticky flex justify-center px-4 pb-4"
       hidden={!visible || !sessionId}
       data-testid="workbench-steering"
     >
@@ -71,8 +71,7 @@ export function SteeringSurface({
                 }
               }}
               rows={1}
-              data-focus-ring="container"
-              className="block max-h-28 min-h-9 w-full resize-none bg-transparent px-2 py-1.5 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-none"
+              className="block max-h-28 min-h-9 w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-gray-100 placeholder:text-gray-500"
               placeholder={run.busy ? t("thread.redirectHint") : t("thread.placeholder")}
               aria-label={run.busy ? t("thread.redirectCurrent") : t("thread.placeholder")}
             />

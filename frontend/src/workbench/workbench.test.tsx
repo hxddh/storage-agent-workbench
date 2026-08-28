@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { I18nProvider } from "../i18n";
 import { SurfaceTabs } from "./SurfaceTabs";
 import { initialWorkbenchState, workbenchReducer } from "./model";
 
@@ -34,7 +35,11 @@ describe("Agent OS work surfaces", () => {
   });
 
   it("exposes real tabs and disables session-bound surfaces on a blank investigation", () => {
-    render(<SurfaceTabs active="timeline" sessionReady={false} onChange={() => undefined} />);
+    render(
+      <I18nProvider>
+        <SurfaceTabs active="timeline" sessionReady={false} onChange={() => undefined} />
+      </I18nProvider>,
+    );
     expect(screen.getByRole("tab", { name: "Timeline" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Evidence" })).toBeDisabled();
     expect(screen.getByRole("tab", { name: "Runs" })).toBeDisabled();
@@ -43,7 +48,11 @@ describe("Agent OS work surfaces", () => {
 
   it("arrow keys move between work surfaces instead of trapping focus in chrome", () => {
     const onChange = vi.fn();
-    render(<SurfaceTabs active="evidence" sessionReady onChange={onChange} />);
+    render(
+      <I18nProvider>
+        <SurfaceTabs active="evidence" sessionReady onChange={onChange} />
+      </I18nProvider>,
+    );
     const evidence = screen.getByRole("tab", { name: "Evidence" });
     evidence.focus();
     fireEvent.keyDown(evidence.parentElement as HTMLElement, { key: "ArrowRight" });
