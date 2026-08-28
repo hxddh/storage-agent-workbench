@@ -9,7 +9,18 @@ import {
 export { cleanError, looksLikeError, mergeTool };
 
 export type TurnRunnerOptions = Parameters<typeof useTurnRunnerImplementation>[0];
-export type TurnController = ReturnType<typeof useTurnRunnerImplementation>;
+type ImplementationController = ReturnType<typeof useTurnRunnerImplementation>;
+
+export type TurnController = ImplementationController & {
+  /**
+   * Submit a normal turn to an explicit investigation.
+   *
+   * Deep Work Surfaces (Evidence / Runs / Report) must never depend on the
+   * hidden Timeline's mutable `localId.current`. The Workbench already knows
+   * which investigation it is displaying, so it passes that id explicitly.
+   */
+  submitToSession: (sessionId: string, text: string) => Promise<void>;
+};
 
 let activeController: TurnController | null = null;
 const controllerListeners = new Set<() => void>();
@@ -44,9 +55,9 @@ export function useActiveTurnController(): TurnController | null {
 /**
  * Public turn-runner boundary.
  *
- * The large proven implementation remains byte-for-byte behind this module for
- * now. The wrapper publishes a stable semantic controller to the Agent OS shell;
- * the proxy forwards to the latest implementation callbacks so streaming renders
+ * The large proven implementation remains behind this module for now. The
+ * wrapper publishes a stable semantic controller to the Agent OS shell; the
+ * proxy forwards to the latest implementation callbacks so streaming renders
  * do not cause controller identity churn across the workbench.
  */
 export function useTurnRunner(opts: TurnRunnerOptions): TurnController {
@@ -56,6 +67,7 @@ export function useTurnRunner(opts: TurnRunnerOptions): TurnController {
 
   const controller = useMemo<TurnController>(() => ({
     submit: (text) => latest.current.submit(text),
+    submitToSession: (sessionId, text) => latest.current.submitToSession(sessionId, text),
     submitWithDataset: (message, file, type) => latest.current.submitWithDataset(message, file, type),
     stop: (sessionId) => latest.current.stop(sessionId),
     steer: (text, resend) => latest.current.steer(text, resend),
