@@ -1,9 +1,10 @@
-import { memo, useEffect, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import type { Grounding, NextAction, SessionFinding, SessionRunLink, ToolActivity, TriageCase } from "../types";
 import { RunDetail } from "./RunDetail";
 import { Markdown } from "./Markdown";
 import { useI18n } from "../i18n";
 import { LiveTrace } from "./LiveTrace";
+import { isMostlyError, parseS3Error, type S3Error } from "../lib/s3error";
 
 const RUN_STATUS: Record<string, { cls: string; key: string }> = {
   pending: { cls: "text-gray-400", key: "run.queued" },
@@ -113,6 +114,75 @@ export const MessageCard = memo(function MessageCard({
   );
 });
 
+
+/**
+ * A pasted S3 error, read back as the object it is.
+ *
+ * This is the app's signature input — the thing a person is looking at when
+ * they open it — and the thread showed it as a wall of angle brackets in a grey
+ * bubble. A storage tool that cannot recognise a storage error is asking the
+ * person to be the parser.
+ *
+ * The raw body stays one click away and stays copyable: the identifiers in it
+ * are what support asks for, and a card that swallowed them would be a
+ * downgrade dressed as an upgrade.
+ */
+function S3ErrorCard({ err, raw }: { err: S3Error; raw: string }) {
+  const { t } = useI18n();
+  const [showRaw, setShowRaw] = useState(false);
+  const facts: { label: string; value: string; mono?: boolean }[] = [];
+  if (err.bucket) facts.push({ label: t("s3err.bucket"), value: err.bucket, mono: true });
+  if (err.key) facts.push({ label: t("s3err.key"), value: err.key, mono: true });
+  if (err.operation) facts.push({ label: t("s3err.operation"), value: err.operation, mono: true });
+  if (err.requestId) facts.push({ label: t("s3err.requestId"), value: err.requestId, mono: true });
+  if (err.hostId) facts.push({ label: t("s3err.hostId"), value: err.hostId, mono: true });
+
+  return (
+    <div
+      data-testid="s3-error-card"
+      className="w-full overflow-hidden rounded-xl border border-danger-border bg-danger-bg/40"
+    >
+      <div className="flex items-baseline gap-2 px-3.5 pt-3">
+        <span className="font-mono text-sm font-semibold text-danger" data-testid="s3-error-code">
+          {err.code}
+        </span>
+        <span className="text-2xs uppercase tracking-wider text-gray-500">{t("s3err.label")}</span>
+      </div>
+      {err.message && (
+        <p className="px-3.5 pt-1 text-prose text-gray-200">{err.message}</p>
+      )}
+      {facts.length > 0 && (
+        <dl className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 px-3.5 pb-1 text-xs">
+          {facts.map((f) => (
+            <Fragment key={f.label}>
+              <dt className="text-gray-500">{f.label}</dt>
+              <dd className={`min-w-0 truncate text-gray-300 ${f.mono ? "font-mono" : ""}`} title={f.value}>
+                {f.value}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
+      <div className="mt-2 flex items-center gap-1 border-t border-danger-border/60 px-2.5 py-1">
+        <button
+          type="button"
+          onClick={() => setShowRaw((v) => !v)}
+          data-testid="s3-error-raw-toggle"
+          className="rounded px-1 py-0.5 text-2xs text-gray-500 transition-colors hover:text-gray-300"
+        >
+          {showRaw ? t("s3err.hideRaw") : t("s3err.showRaw")}
+        </button>
+        <CopyButton text={raw} />
+      </div>
+      {showRaw && (
+        <pre className="max-h-64 overflow-auto border-t border-danger-border/60 bg-code px-3.5 py-2.5 text-2xs leading-relaxed text-gray-400">
+          {raw}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 /** A user turn.
  *
  * Long pastes get clamped: this app's most common user message is a full S3
@@ -134,11 +204,42 @@ function UserMessage({
   const [expanded, setExpanded] = useState(false);
   const text = content || "";
   const long = text.length > 600 || text.split("\n").length > 12;
+  // Recognise the error rather than print it. A question that merely QUOTES one
+  // stays prose — see `isMostlyError`.
+  const err = useMemo(() => parseS3Error(text), [text]);
+  const asCard = err !== null && isMostlyError(text, err);
+
+  if (asCard) {
+    return (
+      <div className="group flex justify-end animate-fade-in-up">
+        <div className="flex w-full max-w-[42rem] flex-col items-end gap-1">
+          <S3ErrorCard err={err} raw={text} />
+          <div className="flex items-center gap-1 pr-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            {onEdit && (
+              <button
+                onClick={() => onEdit(text)}
+                title={t("msg.edit")}
+                aria-label={t("msg.edit")}
+                data-testid="edit-message"
+                className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="group flex justify-end animate-fade-in-up">
       <div className="flex max-w-[82%] flex-col items-end gap-1">
-        <div className="w-full whitespace-pre-wrap break-words rounded-2xl border border-edge bg-elevated px-3.5 py-2.5 text-sm leading-relaxed text-gray-100">
+        <div className="w-full whitespace-pre-wrap break-words rounded-2xl border border-edge bg-elevated px-3.5 py-2.5 text-prose text-gray-100">
           <div className={long && !expanded ? "max-h-[11.5rem] overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" : ""}>
             {text}
           </div>

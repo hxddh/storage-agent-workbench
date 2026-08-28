@@ -86,6 +86,23 @@ def create_triage(body: ErrorTriageRequest, conn: sqlite3.Connection = Depends(g
     # concept exists anymore (there is one conversational agent + deterministic
     # compute); write NULL rather than the vestigial 'deterministic' marker. The
     # column stays for back-compat (migrations are append-only).
+    # The conversation keeps what the person said.
+    #
+    # This path is the documented first run: no model provider, paste the error
+    # you are staring at, get deterministic triage. It wrote a case and NOTHING
+    # else, so the user's own message existed only as optimistic client state —
+    # the moment the thread reloaded from the server, the question vanished and
+    # the session showed an answer to nothing. It was also absent from the
+    # report, the inspector and the exported record.
+    #
+    # The REDACTED text, never the raw: `parser.redact_input` has already run
+    # (rule 15), and `add_message` redacts again at the persistence boundary.
+    if body.session_id:
+        try:
+            sessions_repo.add_message(conn, body.session_id, "user", redacted)
+        except Exception:  # noqa: BLE001 - never fail triage over session bookkeeping
+            pass
+
     case_id = repo.create_case(
         conn, session_id=body.session_id, provider_id=body.provider_id, bucket=body.bucket,
         run_id=None, input_kind=body.input_kind, raw_input_redacted=redacted,

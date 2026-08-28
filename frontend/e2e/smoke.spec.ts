@@ -108,3 +108,63 @@ test.describe("workbench smoke", () => {
     await expect(composer(page)).toBeVisible();
   });
 });
+
+/**
+ * The app recognises its own domain's objects.
+ *
+ * An S3 error body is the signature input here — it is what a person is looking
+ * at when they open the app at all — and the thread rendered it as a wall of
+ * angle brackets in a grey bubble. A storage tool that cannot read a storage
+ * error is asking the person to be the parser.
+ */
+test.describe("a pasted storage error", () => {
+  const BODY =
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    "<Error><Code>AccessDenied</Code><Message>Access Denied</Message>" +
+    "<RequestId>ABC123</RequestId><BucketName>acme-logs</BucketName></Error>";
+
+  test("is read back as the error it is, with the raw body one click away", async ({ page }) => {
+    await seedFreshApp(page);
+    await page.goto("/");
+    const box = composer(page);
+    await box.click();
+    await box.fill(BODY);
+    await box.press("Enter");
+
+    const card = page.getByTestId("s3-error-card");
+    await expect(card).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("s3-error-code")).toHaveText("AccessDenied");
+    // The identifiers support asks for are not swallowed by the card.
+    await expect(card).toContainText("ABC123");
+    await expect(card).toContainText("acme-logs");
+
+    // Let the turn settle first: the optimistic message is replaced by the
+    // persisted one when the turn ends, which remounts this card. Clicking into
+    // that swap detaches the button mid-click.
+    await expect(page.getByText(/Thinking/)).toHaveCount(0, { timeout: 30_000 });
+    await page.waitForTimeout(500);
+
+    // The raw body is still there, and still exact.
+    await expect(card.locator("pre")).toHaveCount(0);
+    await page.getByTestId("s3-error-raw-toggle").click();
+    await expect(card.locator("pre")).toContainText("<?xml version");
+  });
+
+  test("a question that merely quotes one stays prose", async ({ page }) => {
+    // Replacing a paragraph with a card because it contains an error body would
+    // be the tool overruling the person.
+    await seedFreshApp(page);
+    await page.goto("/");
+    const box = composer(page);
+    await box.click();
+    await box.fill(
+      "I have been chasing this for two days across three roles and two regions and I still " +
+        "cannot tell whether it is the policy or the ACL. It only happens from the analytics " +
+        "role, never from my laptop: An error occurred (AccessDenied) when calling the " +
+        "ListObjectsV2 operation: Denied",
+    );
+    await box.press("Enter");
+    await expect(page.getByText(/chasing this for two days/)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("s3-error-card")).toHaveCount(0);
+  });
+});

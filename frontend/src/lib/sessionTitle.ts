@@ -15,19 +15,10 @@
  * the first keystroke of a new session, offline, before any provider exists.
  */
 
+import { parseS3Error } from "./s3error";
+
 /** Longest title we will produce, before the ellipsis. */
 const MAX = 60;
-
-/** `<Code>AccessDenied</Code>` — the S3 REST error body. */
-const XML_CODE = /<Code>\s*([A-Za-z][A-Za-z0-9]{2,40})\s*<\/Code>/;
-/** `"Code": "NoSuchBucket"` — the JSON shape some SDKs and gateways return. */
-const JSON_CODE = /"Code"\s*:\s*"([A-Za-z][A-Za-z0-9]{2,40})"/;
-/** botocore's own sentence, which is what a Python traceback pastes in. */
-const BOTO_CODE = /An error occurred \(([A-Za-z][A-Za-z0-9]{2,40})\)/;
-/** A bucket named by the error body itself. */
-const BUCKET = /<BucketName>\s*([^<\s][^<]{0,62})\s*<\/BucketName>/;
-/** …or by an `s3://bucket/key` anywhere in the pasted text. */
-const S3_URI = /\bs3:\/\/([a-z0-9][a-z0-9.-]{1,62})/i;
 
 function squash(s: string): string {
   return s.replace(/\s+/g, " ").trim();
@@ -51,11 +42,9 @@ export function deriveSessionTitle(text: string | null | undefined): string | nu
   const raw = (text ?? "").trim();
   if (!raw) return null;
 
-  const code =
-    raw.match(XML_CODE)?.[1] ?? raw.match(JSON_CODE)?.[1] ?? raw.match(BOTO_CODE)?.[1] ?? null;
-  if (code) {
-    const bucket = raw.match(BUCKET)?.[1] ?? raw.match(S3_URI)?.[1] ?? null;
-    return clip(bucket ? `${code} · ${squash(bucket)}` : code);
+  const err = parseS3Error(raw);
+  if (err) {
+    return clip(err.bucket ? `${err.code} · ${squash(err.bucket)}` : err.code);
   }
 
   // Not a recognised error body: the first line that carries something, which
