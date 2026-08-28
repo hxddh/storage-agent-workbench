@@ -6,6 +6,8 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.89.0] - 2026-08-28
+
 _A full pass over the product's UI, UE and UX against what a top-tier agent app
 does, after the report that it was "rough and ugly, nowhere near Codex or
 Cursor". The first attempt at this was defect-hunting — screenshot something,
