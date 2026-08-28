@@ -6,6 +6,8 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.90.0] - 2026-08-28
+
 _A rebuild of the interface layer, after "the aesthetics and the texture both
 fail" — and after being told the left-hand line was mine, not the references'.
 It was. The comment justifying it claimed "this is the arrangement Codex and
