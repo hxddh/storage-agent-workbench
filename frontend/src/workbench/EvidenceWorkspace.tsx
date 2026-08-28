@@ -1,7 +1,8 @@
+import type { ReactNode } from "react";
 import type { SessionDetail } from "../types";
 import { Markdown } from "../components/Markdown";
 
-function EmptyLine({ children }: { children: React.ReactNode }) {
+function EmptyLine({ children }: { children: ReactNode }) {
   return <p className="workbench-empty-line">{children}</p>;
 }
 
