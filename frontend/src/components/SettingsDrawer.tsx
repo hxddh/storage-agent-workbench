@@ -4,6 +4,7 @@ import { useI18n, LANGS, type Lang } from "../i18n";
 import { useTheme, type Theme } from "../theme";
 import { getVaultStatus } from "../api";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 
 /**
  * Right slide-over for setup. Embeds the existing model + cloud provider CRUD
@@ -32,6 +33,13 @@ export function SettingsDrawer(
   const { t, lang, setLang } = useI18n();
   const { theme, setTheme } = useTheme();
   const trapRef = useFocusTrap<HTMLDivElement>(open);
+  // Registers with the overlay stack rather than relying on App's catch-all,
+  // which used to close this drawer alongside whatever else was open.
+  //
+  // `ignoreInFields` because this drawer is a form full of credentials: an
+  // Escape with the caret in one belongs to that field, not to the drawer, and
+  // closing it discards a secret that cannot be read back to retype.
+  useDismissOnEscape(open, onClose, { ignoreInFields: true });
   if (!open) return null;
 
   const themes: { value: Theme; label: string }[] = [

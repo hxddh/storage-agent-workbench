@@ -6,6 +6,108 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+_A full pass over the product's UI, UE and UX against what a top-tier agent app
+does, after the report that it was "rough and ugly, nowhere near Codex or
+Cursor". The first attempt at this was defect-hunting — screenshot something,
+notice a problem, fix it — which is not an evaluation. This one enumerates the
+surfaces × STATES from the code, photographs all 34 of them, and judges each._
+
+### Changed — a palette that was designed
+
+The four dark surfaces spanned **9.2 L\*** in total, all crushed into the
+darkest eighth of the range: every adjacent pair cleared the existing 2.5 floor,
+and the stack still read flat, because clearing a floor is not having range. The
+surfaces sat at hue 281-290 while the text ramp sat at 269-271 — and that ramp
+was Tailwind's stock `gray`, pasted in unchanged. Two different greys pulling
+opposite ways is the un-nameable "cheap" quality of a screen where nothing is
+individually wrong.
+
+Every neutral in both themes is now generated on one axis (h=268) with a
+deliberate L\* and a little chroma, and the dark ladder spans 17 L\*. Two new
+invariants hold it: every tinted neutral within 12° of the axis, and a
+canvas→hover span of at least 12 L\*. Both caught errors in the first attempt.
+
+### Changed — composition, not just colour
+
+- **A turn is one thing.** A gutter carries the speaker's mark and a hairline
+  down the height of the turn, so an answer, its trace and its cost read as one
+  unit — and the "✦ Storage Agent" label above every single answer is gone.
+- **The table stopped being a form.** No box, hairline rules, weight only on the
+  header: sixteen rows fit where fourteen did.
+- **The composer is one control.** One radius family, one control height, and
+  the permanent "⏎ send · ⇧⏎ newline" now appears only while the field is
+  engaged. The field itself was 14px — smaller than the 15px prose it produces.
+- **The empty state has somewhere to land**: a labelled two-column list of
+  starting points instead of six identical pills in a centred cloud.
+- **The rail's primary label was 12px**, the smallest type in the app carrying
+  its main navigation.
+
+### Fixed — the states nobody had looked at
+
+- **When the backend is gone, the app stops pretending.** With `/health`
+  failing, the only signal was an 8px dot; the composer, the six starting points
+  and the accent-coloured send button all still invited actions that would fail.
+  The thread now says what happened, disables what cannot work, and keeps your
+  draft.
+- **A failed first turn no longer leaves an empty session.** Sessions are
+  created before the turn is attempted, so every failure left a dead
+  conversation in the rail — on a fresh install, one per attempt.
+- **An unrecognised failure is framed.** A 500 rendered as the single word
+  "boom" above two buttons.
+
+### Added — reachability
+
+- **`j`/`k` walk the thread.** Every other surface had a chord; the one you
+  spend all your time in had none. They never fire while typing.
+- **The newest turn keeps its steps.** The live trace vanished the moment the
+  answer arrived, folding the one turn whose work you had just watched.
+
+### Added — the product's own domain, recognised
+
+A pasted S3 error is the signature input here and rendered as a wall of angle
+brackets. It is now read back as the error it is — code, message, bucket, key,
+operation, request id — with the raw body one click away. The same parser names
+the session, so `<?xml version="1.0"…` in the rail became **AccessDenied ·
+acme-logs**. And the triage path was **deleting the question**: it wrote a case
+and no message, so the thread reloaded to an answer with nothing above it.
+
+### Added — find that points at the match
+
+Find reported "1 / 29" and marked nothing, and the two halves of that counter
+counted different things: occurrences for the total, messages for the cursor.
+Now one range per occurrence, painted with the CSS Custom Highlight API so
+searching a streaming answer rewrites no DOM.
+
+### Fixed — the rest
+
+Escape closes the topmost overlay rather than every open one; an opened tool
+call is scrolled into view instead of unfolding 205px below the fold; prose and
+data get two widths from one grid; the rail folds itself below 1000px and can
+still reach your conversations when it does.
+
+### Fixed — what the review found in the pass itself
+
+Five holes in the changes above, each one a case where the new behaviour was
+applied to the mouse and not to the keyboard, or to one render path and not its
+twin:
+
+- **Escape inside a settings field** closed the whole drawer. The new
+  topmost-only rule replaced a guard that used to ask where the caret was, so a
+  half-typed endpoint — or a secret key, which cannot be read back — was thrown
+  away by the key people press to dismiss autocomplete. The rule belongs to the
+  overlay, not to a global handler: an overlay that is a FORM opts into
+  `ignoreInFields`, while one whose field IS the overlay (the command palette)
+  still closes on Escape from inside it.
+- **Offline blocked the buttons, not the keyboard.** Type, press Enter still
+  dispatched into the dead service; so did `/report`.
+- **Find counted text nobody can see.** The visible "Storage Agent" label became
+  an `sr-only` one, so every answer carried an invisible match.
+- **The S3 error card lost branch.** The message most worth forking from — a
+  pasted error is the seed of an investigation — was the one you could not fork.
+- **Sweeping the empty session cleared the wrong pointer.** Switching
+  investigations while the async cleanup ran left the next message opening a
+  second, empty conversation.
+
 ## [0.88.0] - 2026-08-27
 
 _Three things reported against v0.87.0, from using it: the session page goes to

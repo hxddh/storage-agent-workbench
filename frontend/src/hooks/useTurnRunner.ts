@@ -8,9 +8,11 @@
  * (and keeps its content) if the user switches sessions mid-run.
  */
 import { useRef } from "react";
+import { deriveSessionTitle } from "../lib/sessionTitle";
 import {
   ApiError,
   cancelSessionTurn,
+  deleteSession,
   createSession,
   getSession,
   postSessionMessage,
@@ -106,6 +108,8 @@ export function useTurnRunner(opts: {
   /** Ref tracking the visible session id (owned by Thread). */
   localId: React.MutableRefObject<string | null>;
   onSessionCreated: (id: string) => void;
+  /** The session this turn created turned out to be empty and was removed. */
+  onSessionDiscarded: (id: string) => void;
   reload: (id: string | null) => Promise<boolean>;
   onChanged: () => void;
   /** Composer text setter — used to restore the user's message on a failed turn. */
@@ -114,7 +118,7 @@ export function useTurnRunner(opts: {
   /** Called after a dataset upload succeeded (clear the attachment chip). */
   onUploaded: () => void;
 }) {
-  const { getText, localId, onSessionCreated, reload, onChanged, setText, setViewError, onUploaded } = opts;
+  const { getText, localId, onSessionCreated, onSessionDiscarded, reload, onChanged, setText, setViewError, onUploaded } = opts;
   const { t } = useI18n();
   // Per-session in-flight turn (AbortController + turn id) so Stop can abort the
   // stream AND ask the server to cancel. Keyed by the id the turn started with.
@@ -156,12 +160,17 @@ export function useTurnRunner(opts: {
     };
   };
 
+  /** True when the session on screen was created by the attempt now running,
+   * and nothing has been written to it yet. See the cleanup in `failed`. */
+  const createdForThisTurn = useRef(false);
+
   const ensureSession = (seed: string): Promise<string> => {
     if (localId.current) return Promise.resolve(localId.current);
     if (!ensureFlight.current) {
-      ensureFlight.current = createSession({ title: (seed || "New chat").slice(0, 80) })
+      ensureFlight.current = createSession({ title: deriveSessionTitle(seed) ?? "New chat" })
         .then((s) => {
           localId.current = s.id;
+          createdForThisTurn.current = true;
           onSessionCreated(s.id);
           return s.id;
         })
@@ -393,6 +402,40 @@ export function useTurnRunner(opts: {
       }
 
       if (outcome === "failed") {
+        // A failure on the FIRST turn leaves nothing behind.
+        //
+        // The session is created before the turn is attempted, because the
+        // stream needs an id to attach to. When that first attempt then fails —
+        // no model key, a rejected provider, a network error — the session
+        // survives with zero messages, and the rail collects one dead
+        // conversation per attempt. On a fresh install, where "no model key" is
+        // the expected outcome until you add one, that is a rail full of
+        // identical empty rows before the product has done anything at all.
+        // Measured: sessions 0 → 1, newest `{title: "why does my bucket deny
+        // list calls", total: 0}`.
+        //
+        // Only ever the session THIS attempt created, and only while it is
+        // still empty — a failure in an established conversation must not touch
+        // it. The triage path persists the question, so it is not empty and is
+        // not swept.
+        if (createdForThisTurn.current) {
+          void getSession(id)
+            .then((d) => {
+              if ((d.messages?.length ?? 0) > 0) return;
+              return deleteSession(id).then(() => {
+                // Only if it is STILL the open one. The delete is async, and a
+                // user who switched to another investigation while it was in
+                // flight would otherwise have that session's id cleared from
+                // under them — the next message would open a second, empty
+                // conversation instead of continuing theirs.
+                if (localId.current === id) localId.current = null;
+                onSessionDiscarded(id);
+              });
+            })
+            .catch(() => {
+              /* leaving a session behind is better than losing one */
+            });
+        }
         // Nothing was persisted (error or missing key): drop the pending bubble
         // and preserve the user's message. If this session is on screen, restore
         // it straight into the composer; otherwise stash it as failedText so it's

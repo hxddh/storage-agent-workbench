@@ -92,12 +92,16 @@ export function SessionRail({
   actions,
   width,
   collapsed,
+  onOpenPalette,
   onToggleCollapse,
   onResize,
 }: {
   /** Current rail width in px (ignored while collapsed). */
   width: number;
   collapsed: boolean;
+  /** Open the command palette — the collapsed rail's way back to the sessions
+   * it is no longer listing. */
+  onOpenPalette: () => void;
   onToggleCollapse: () => void;
   /** Called with a new width while the user drags the edge. */
   onResize: (px: number) => void;
@@ -188,7 +192,7 @@ export function SessionRail({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
             {s.pinned && <PinIcon size={10} />}
-            <span className={`truncate text-xs ${isActive ? "text-gray-100" : "text-gray-300 group-hover:text-gray-200"}`}>
+            <span className={`truncate text-sm ${isActive ? "text-gray-100" : "text-gray-300 group-hover:text-gray-200"}`}>
               {s.title || t("common.untitled")}
             </span>
           </div>
@@ -275,6 +279,28 @@ export function SessionRail({
           className="grid h-[26px] w-[26px] place-items-center rounded-md border border-edge-strong bg-elevated text-accent-soft transition-colors hover:border-accent/50"
         >
           <BrandMark size={15} />
+        </button>
+        {/* The way back to your conversations.
+          *
+          * The collapsed strip offered expand / new chat / settings and nothing
+          * else, so with the rail folded there was no route to an existing
+          * session at all — you had to unfold it first. That was survivable
+          * while folding was a deliberate choice; it stopped being survivable
+          * when a narrow window folds the rail for you.
+          *
+          * The palette rather than a second list: it already searches every
+          * session and it is the same surface ⌘K opens, so this is one door to
+          * one room instead of a small copy of the rail. */}
+        <button
+          onClick={onOpenPalette}
+          title={t("rail.searchPlaceholder")}
+          aria-label={t("rail.searchPlaceholder")}
+          data-testid="rail-open-palette"
+          className="mt-1.5 grid h-8 w-8 place-items-center rounded-lg text-gray-400 transition-colors hover:bg-hover hover:text-gray-100"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" /><line x1="20" y1="20" x2="16.65" y2="16.65" />
+          </svg>
         </button>
         <button
           onClick={onNew}
@@ -436,6 +462,7 @@ export function SessionRail({
         <button
           onClick={onOpenSettings}
           aria-label={t("rail.settingsAria")}
+          data-testid="rail-settings"
           className="ml-auto grid h-7 w-7 place-items-center rounded-md text-gray-500 transition-colors hover:bg-hover hover:text-gray-200"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

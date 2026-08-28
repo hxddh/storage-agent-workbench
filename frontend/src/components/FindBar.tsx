@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useI18n } from "../i18n";
-import { MIN_QUERY, type FindHit, totalMatches } from "../threadFind";
+import { MIN_QUERY } from "../threadFind";
 
 /**
  * Find inside the open investigation.
@@ -14,14 +14,17 @@ import { MIN_QUERY, type FindHit, totalMatches } from "../threadFind";
 export function FindBar({
   query,
   onQuery,
-  hits,
+  total,
   index,
   onStep,
   onClose,
 }: {
   query: string;
   onQuery: (q: string) => void;
-  hits: FindHit[];
+  /** Occurrences in the thread — the same unit `index` steps through. These
+   * used to disagree: the total counted every match, the index counted the
+   * MESSAGES that held at least one. */
+  total: number;
   index: number;
   onStep: (delta: number) => void;
   onClose: () => void;
@@ -34,7 +37,6 @@ export function FindBar({
     inputRef.current?.select();
   }, []);
 
-  const total = totalMatches(hits);
   const short = query.trim().length > 0 && query.trim().length < MIN_QUERY;
   // Three states, and they are genuinely different: nothing typed yet, a query
   // too short to run, and a query that ran and found nothing. Collapsing the
@@ -54,6 +56,7 @@ export function FindBar({
                  rounded-b-lg border border-t-0 border-edge bg-elevated/95 px-3 py-2
                  shadow-pop backdrop-blur-sm animate-fade-in"
       role="search"
+      data-find-skip
       data-testid="find-bar"
     >
       <input

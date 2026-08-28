@@ -1,9 +1,10 @@
-import { memo, useEffect, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useState } from "react";
 import type { Grounding, NextAction, SessionFinding, SessionRunLink, ToolActivity, TriageCase } from "../types";
 import { RunDetail } from "./RunDetail";
 import { Markdown } from "./Markdown";
 import { useI18n } from "../i18n";
 import { LiveTrace } from "./LiveTrace";
+import { isMostlyError, parseS3Error, type S3Error } from "../lib/s3error";
 
 const RUN_STATUS: Record<string, { cls: string; key: string }> = {
   pending: { cls: "text-gray-400", key: "run.queued" },
@@ -61,12 +62,43 @@ export const MessageCard = memo(function MessageCard({
   // (the backend strips it for the persisted message); hide it from the live view.
   const shown = streaming ? stripMetaBlock(content || "") : content || "";
   return (
-    <div className="group animate-fade-in-up">
-      <div className="mb-1.5 flex items-center gap-1.5 text-2xs font-medium text-accent-soft">
-        {Spark}
-        {t("card.agentName")}
+    /* A turn is one thing, and it says so.
+     *
+     * The thread was a flat column: an answer, a metadata line, the next
+     * question, all spaced alike and none of them grouped. The agent announced
+     * itself with "✦ Storage Agent" above every single answer — a label that
+     * stops being information the second time you read it, and still left the
+     * answer and its own footer looking like two unrelated blocks.
+     *
+     * A gutter does both jobs at once. The mark identifies the speaker without
+     * a word, the hairline runs the height of the turn so the answer, its trace
+     * and its cost read as one unit, and the indent gives the thread the rhythm
+     * it had none of. This is the arrangement Codex and Cursor both settle on,
+     * and it costs one grid column.
+     */
+    <div className="group grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-2.5 animate-fade-in-up">
+      <div className="relative flex justify-center" aria-hidden>
+        {/* A badge, not a loose glyph. At 11px on a dark ground an unbacked mark
+          * is not an identity, it is a speck — the first version measured that
+          * way on screen. A filled chip reads as the speaker at a glance, and
+          * it is the only thing in the thread carrying the accent, which is how
+          * an accent earns its place. */}
+        <span
+          className={`grid h-[18px] w-[18px] shrink-0 place-items-center rounded-md border border-accent/30 bg-accent/12 text-accent ${
+            streaming ? "animate-pulse" : ""
+          }`}
+        >
+          {Spark}
+        </span>
+        <span className="absolute inset-x-0 top-[22px] bottom-1 mx-auto w-px bg-edge-strong/70" />
+      </div>
+      <div className="min-w-0">
+      {/* The speaker is the mark in the gutter; this row is only the actions,
+        * and only on hover. */}
+      <div className="mb-0.5 flex h-4 items-center gap-1.5">
+        <span className="sr-only">{t("card.agentName")}</span>
         {!streaming && (
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             <CopyButton text={content || ""} />
             {onRegenerate && (
               <button
@@ -74,7 +106,7 @@ export const MessageCard = memo(function MessageCard({
                 title={t("msg.regenerate")}
                 aria-label={t("msg.regenerate")}
                 data-testid="regenerate"
-                className="opacity-0 transition-opacity group-hover:opacity-100 text-gray-500 hover:text-gray-200"
+                className="text-gray-500 transition-colors hover:text-gray-200"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -109,9 +141,138 @@ export const MessageCard = memo(function MessageCard({
             <span className="animate-pulse">{t("think.working")}</span>
           </div>
         ))}
+      </div>
     </div>
   );
 });
+
+
+/**
+ * A pasted S3 error, read back as the object it is.
+ *
+ * This is the app's signature input — the thing a person is looking at when
+ * they open it — and the thread showed it as a wall of angle brackets in a grey
+ * bubble. A storage tool that cannot recognise a storage error is asking the
+ * person to be the parser.
+ *
+ * The raw body stays one click away and stays copyable: the identifiers in it
+ * are what support asks for, and a card that swallowed them would be a
+ * downgrade dressed as an upgrade.
+ */
+function S3ErrorCard({ err, raw }: { err: S3Error; raw: string }) {
+  const { t } = useI18n();
+  const [showRaw, setShowRaw] = useState(false);
+  const facts: { label: string; value: string; mono?: boolean }[] = [];
+  if (err.bucket) facts.push({ label: t("s3err.bucket"), value: err.bucket, mono: true });
+  if (err.key) facts.push({ label: t("s3err.key"), value: err.key, mono: true });
+  if (err.operation) facts.push({ label: t("s3err.operation"), value: err.operation, mono: true });
+  if (err.requestId) facts.push({ label: t("s3err.requestId"), value: err.requestId, mono: true });
+  if (err.hostId) facts.push({ label: t("s3err.hostId"), value: err.hostId, mono: true });
+
+  return (
+    <div
+      data-testid="s3-error-card"
+      className="w-full overflow-hidden rounded-xl border border-danger-border bg-danger-bg/40"
+    >
+      <div className="flex items-baseline gap-2 px-3.5 pt-3">
+        <span className="font-mono text-sm font-semibold text-danger" data-testid="s3-error-code">
+          {err.code}
+        </span>
+        <span className="text-2xs uppercase tracking-wider text-gray-500">{t("s3err.label")}</span>
+      </div>
+      {err.message && (
+        <p className="px-3.5 pt-1 text-prose text-gray-200">{err.message}</p>
+      )}
+      {facts.length > 0 && (
+        <dl className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 px-3.5 pb-1 text-xs">
+          {facts.map((f) => (
+            <Fragment key={f.label}>
+              <dt className="text-gray-500">{f.label}</dt>
+              <dd className={`min-w-0 truncate text-gray-300 ${f.mono ? "font-mono" : ""}`} title={f.value}>
+                {f.value}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
+      <div className="mt-2 flex items-center gap-1 border-t border-danger-border/60 px-2.5 py-1">
+        <button
+          type="button"
+          onClick={() => setShowRaw((v) => !v)}
+          data-testid="s3-error-raw-toggle"
+          className="rounded px-1 py-0.5 text-2xs text-gray-500 transition-colors hover:text-gray-300"
+        >
+          {showRaw ? t("s3err.hideRaw") : t("s3err.showRaw")}
+        </button>
+        <CopyButton text={raw} />
+      </div>
+      {showRaw && (
+        <pre className="max-h-64 overflow-auto border-t border-danger-border/60 bg-code px-3.5 py-2.5 text-2xs leading-relaxed text-gray-400">
+          {raw}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Edit / branch (and optionally copy) under a user message.
+ *
+ * Shared rather than repeated per layout: the S3-error card is a second render
+ * path for the same message, and when it inlined its own row it silently lost
+ * branch — the one message people most want to fork from (a pasted error is a
+ * whole investigation's starting point) was the one you could not fork.
+ */
+function MessageActions({
+  text,
+  onEdit,
+  onBranch,
+  copy = false,
+}: {
+  text: string;
+  onEdit?: (text: string) => void;
+  onBranch?: () => void;
+  copy?: boolean;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="flex items-center gap-1 pr-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      {copy && <CopyButton text={text} />}
+      {onEdit && (
+        <button
+          onClick={() => onEdit(text)}
+          title={t("msg.edit")}
+          aria-label={t("msg.edit")}
+          data-testid="edit-message"
+          className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+        </button>
+      )}
+      {onBranch && (
+        <button
+          onClick={onBranch}
+          title={t("msg.branch")}
+          aria-label={t("msg.branch")}
+          data-testid="branch-message"
+          className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <line x1="6" y1="3" x2="6" y2="15" />
+            <circle cx="18" cy="6" r="3" />
+            <circle cx="6" cy="18" r="3" />
+            <path d="M18 9a9 9 0 0 1-9 9" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+}
 
 /** A user turn.
  *
@@ -134,11 +295,26 @@ function UserMessage({
   const [expanded, setExpanded] = useState(false);
   const text = content || "";
   const long = text.length > 600 || text.split("\n").length > 12;
+  // Recognise the error rather than print it. A question that merely QUOTES one
+  // stays prose — see `isMostlyError`.
+  const err = useMemo(() => parseS3Error(text), [text]);
+  const asCard = err !== null && isMostlyError(text, err);
+
+  if (asCard) {
+    return (
+      <div className="group flex justify-end animate-fade-in-up">
+        <div className="flex w-full max-w-[42rem] flex-col items-end gap-1">
+          <S3ErrorCard err={err} raw={text} />
+          <MessageActions text={text} onEdit={onEdit} onBranch={onBranch} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="group flex justify-end animate-fade-in-up">
       <div className="flex max-w-[82%] flex-col items-end gap-1">
-        <div className="w-full whitespace-pre-wrap break-words rounded-2xl border border-edge bg-elevated px-3.5 py-2.5 text-sm leading-relaxed text-gray-100">
+        <div className="w-full whitespace-pre-wrap break-words rounded-2xl border border-edge bg-elevated px-3.5 py-2.5 text-prose text-gray-100">
           <div className={long && !expanded ? "max-h-[11.5rem] overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" : ""}>
             {text}
           </div>
@@ -151,41 +327,7 @@ function UserMessage({
             </button>
           )}
         </div>
-        <div className="flex items-center gap-1 pr-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-          <CopyButton text={text} />
-          {onEdit && (
-            <button
-              onClick={() => onEdit(text)}
-              title={t("msg.edit")}
-              aria-label={t("msg.edit")}
-              data-testid="edit-message"
-              className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-            </button>
-          )}
-          {onBranch && (
-            <button
-              onClick={onBranch}
-              title={t("msg.branch")}
-              aria-label={t("msg.branch")}
-              data-testid="branch-message"
-              className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <line x1="6" y1="3" x2="6" y2="15" />
-                <circle cx="18" cy="6" r="3" />
-                <circle cx="6" cy="18" r="3" />
-                <path d="M18 9a9 9 0 0 1-9 9" />
-              </svg>
-            </button>
-          )}
-        </div>
+        <MessageActions text={text} onEdit={onEdit} onBranch={onBranch} copy />
       </div>
     </div>
   );

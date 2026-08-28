@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { closeTopOverlay } from "./lib/overlayStack";
 import {
   SessionRail,
   DEFAULT_RAIL_WIDTH,
@@ -23,11 +24,13 @@ import { useSidecarHealth } from "./hooks/useSidecarHealth";
 import { useI18n } from "./i18n";
 import { useToast } from "./components/Toast";
 import { ShortcutsSheet } from "./components/ShortcutsSheet";
-import { matches } from "./shortcuts";
+import { isEditable, matches } from "./shortcuts";
 
 const ONBOARDED_KEY = "saw.onboarded";
 const RAIL_WIDTH_KEY = "saw.railWidth";
 const RAIL_COLLAPSED_KEY = "saw.railCollapsed";
+/** Window width below which the rail folds itself. */
+const RAIL_FOLD_PX = 1000;
 // Which investigation was open. Without it, quitting the app — or any reload —
 // reopened on the empty "New chat" surface with the conversation still sitting
 // in the rail, unread. An investigation runs over days here, so "where was I"
@@ -71,6 +74,24 @@ export default function App() {
   const [railCollapsed, setRailCollapsed] = useState(
     () => localStorage.getItem(RAIL_COLLAPSED_KEY) === "1",
   );
+  // Below this the rail stops being furniture and starts being the window.
+  // Measured at 900px: the rail held 244px — 27% of everything — and the
+  // thread's own column was squeezed to 630px, narrower than the reading
+  // measure an answer wants. So the rail folds itself, and unfolds again when
+  // there is room. The stored preference is NOT overwritten: this is the window
+  // being small, not the user changing their mind, and widening the window has
+  // to give them back the rail they chose.
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < RAIL_FOLD_PX,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${RAIL_FOLD_PX - 1}px)`);
+    const sync = () => setNarrow(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  const railFolded = railCollapsed || narrow;
   // Bumped to force the open Thread to reload when the ACTIVE session changed in
   // a way the thread mirrors (a rename → header title) without a session switch.
   const [threadReloadKey, setThreadReloadKey] = useState(0);
@@ -171,12 +192,6 @@ export default function App() {
     // overlays" shortcut — otherwise a stray Escape while typing in the drawer
     // would slam it shut mid-edit. Overlays with their own input (the command
     // palette) handle Escape in their own onKeyDown.
-    const isEditable = (el: EventTarget | null): boolean => {
-      const node = el as HTMLElement | null;
-      if (!node) return false;
-      const tag = node.tagName;
-      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || node.isContentEditable;
-    };
     // Matching goes through the shared registry (src/shortcuts.ts), so the help
     // sheet and this handler can never document different chords.
     const onKey = (e: KeyboardEvent) => {
@@ -198,10 +213,14 @@ export default function App() {
         e.preventDefault();
         setShortcutsOpen((o) => !o);
       } else if (matches(e, "close")) {
-        if (isEditable(e.target)) return;
-        setPaletteOpen(false);
-        setDrawerOpen(false);
-        setShortcutsOpen(false);
+        // One overlay, the topmost. This branch used to close the palette, the
+        // settings drawer and the shortcuts sheet together, and the inspector
+        // and the run overlay each ran a window listener of their own — so with
+        // two open, a single Escape closed both, and dismissing what you had
+        // just opened threw away what you opened it from. Measured:
+        // `{palette: 0, inspector: 0}` after one Escape. The stack knows who is
+        // on top; nothing here needs to know what is open.
+        if (closeTopOverlay()) e.preventDefault();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -220,7 +239,8 @@ export default function App() {
         slow={slow}
         actions={sessionActions}
         width={railWidth}
-        collapsed={railCollapsed}
+        collapsed={railFolded}
+        onOpenPalette={() => setPaletteOpen(true)}
         onToggleCollapse={() => setRailCollapsed((v) => {
           localStorage.setItem(RAIL_COLLAPSED_KEY, v ? "0" : "1");
           return !v;
@@ -235,6 +255,13 @@ export default function App() {
         sessionId={activeId}
         onSessionCreated={(id) => {
           setActiveId(id);
+          refreshSessions();
+        }}
+        sidecarStatus={status}
+        onSessionDiscarded={(id) => {
+          // The empty session a failed first turn left behind has been removed;
+          // stop pointing at it before the thread tries to load a 404.
+          if (activeId === id) setActiveId(null);
           refreshSessions();
         }}
         onOpenSettings={() => setDrawerOpen(true)}

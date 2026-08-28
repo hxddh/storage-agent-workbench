@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { seedSession } from "./seed";
 
 /**
  * v0.46.0 shell interactions, against the real stack.
@@ -245,5 +246,46 @@ test.describe("turn structure", () => {
     // Standing session state belongs in the inspector, not at the newest
     // position of a time-ordered thread.
     await expect(page.getByText(/^Session findings/)).toHaveCount(0);
+  });
+});
+
+/**
+ * Escape closes what you just opened, not everything you had open.
+ *
+ * Five window-level Escape handlers had grown up independently — the shortcuts
+ * sheet, the session inspector, the run overlay, the import dialog, and a
+ * catch-all in App that closed the palette, the settings drawer and the sheet
+ * together. Each is correct alone; stacked they are not. Measured before the
+ * fix: inspector open, palette opened over it, one Escape → `{palette: 0,
+ * inspector: 0}`. Dismissing the thing you had just opened threw away the thing
+ * you opened it from.
+ */
+test.describe("Escape with two overlays open", () => {
+  test("closes only the topmost one", async ({ page }) => {
+    test.setTimeout(90_000);
+    const { title } = seedSession(3, `esc ${Date.now()}`);
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "en");
+      localStorage.setItem("saw.onboarded", "1");
+    });
+    await page.goto("/");
+    await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible({ timeout: 30_000 });
+    await page.getByText(title, { exact: true }).first().click();
+    await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+
+    await page.getByTestId("open-inspector").click();
+    await expect(page.getByText(/Session inspector/i).first()).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+k");
+    const palette = page.getByPlaceholder(/Search chats or run a command/i);
+    await expect(palette).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(palette).toHaveCount(0);
+    // …and the inspector it was opened over is still there.
+    await expect(page.getByText(/Session inspector/i).first()).toBeVisible();
+
+    // A second Escape then takes the inspector, in order.
+    await page.keyboard.press("Escape");
+    await expect(page.getByText(/Session inspector/i)).toHaveCount(0);
   });
 });

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 import {
   correctSessionMemory,
   forkSession,
@@ -37,7 +38,9 @@ import { TurnFooter } from "./TurnFooter";
 import { fmtDuration } from "./TurnMetrics";
 import { useI18n } from "../i18n";
 import { matches } from "../shortcuts";
-import { findInThread, stepHit } from "../threadFind";
+import { clearFind, findRanges, paintFind } from "../lib/findHighlight";
+import { stepHit } from "../threadFind";
+import { isEditable } from "../shortcuts";
 import { inferDatasetType } from "../datasetType";
 import { FindBar } from "./FindBar";
 
@@ -91,6 +94,8 @@ const Spark = ({ size = 12 }: { size?: number }) => (
 export function Thread({
   sessionId,
   onSessionCreated,
+  onSessionDiscarded,
+  sidecarStatus,
   onOpenSettings,
   onChanged,
   sidecarReady,
@@ -99,6 +104,10 @@ export function Thread({
 }: {
   sessionId: string | null;
   onSessionCreated: (id: string) => void;
+  onSessionDiscarded: (id: string) => void;
+  /** Whether the backend is reachable. Everything the composer offers goes
+   * through it, so a thread that does not know this cannot tell the truth. */
+  sidecarStatus: "starting" | "connected" | "disconnected" | "error";
   onOpenSettings: () => void;
   onChanged: () => void;
   sidecarReady: boolean;
@@ -500,6 +509,7 @@ export function Thread({
     getText: () => taRef.current?.value ?? "",
     localId,
     onSessionCreated,
+    onSessionDiscarded,
     reload,
     onChanged,
     setText,
@@ -792,28 +802,101 @@ export function Thread({
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [findIdx, setFindIdx] = useState(0);
-  const hits = useMemo(() => findInThread(items, findQuery), [items, findQuery]);
   // A new query starts from the top rather than keeping a cursor that pointed
   // into the previous result set.
   useEffect(() => setFindIdx(0), [findQuery]);
-  const activeHitId = hits.length ? hits[Math.min(findIdx, hits.length - 1)]?.id : null;
+
+  /* Every occurrence, not every message that has one.
+   *
+   * The counter summed occurrences while the cursor stepped messages, so an
+   * answer with twelve mentions was one stop out of eight and next/previous
+   * wrapped long before reaching the total the bar was displaying. `findRanges`
+   * produces the unit the counter always claimed to use, and painting them is
+   * what makes stepping mean anything on a two-thousand-word answer.
+   *
+   * Recomputed when the query changes and when the thread's own content does —
+   * a streamed delta, a loaded earlier page — because a Range holds a text node
+   * that a re-render can replace. */
+  const [ranges, setRanges] = useState<Range[]>([]);
+  const matchTotal = ranges.length;
   useEffect(() => {
-    if (!findOpen || !activeHitId) return;
+    if (!findOpen) {
+      clearFind();
+      setRanges([]);
+      return;
+    }
+    const root = scrollRef.current;
+    if (!root) return;
+    const found = findQuery.trim().length >= 2 ? findRanges(root, findQuery) : [];
+    setRanges(found);
+    return () => clearFind();
+  }, [findOpen, findQuery, items, earlier.length, streamText]);
+
+  const activeRange = matchTotal ? ranges[Math.min(findIdx, matchTotal - 1)] : null;
+  useEffect(() => {
+    if (!findOpen) return;
+    paintFind(ranges, Math.min(findIdx, Math.max(0, matchTotal - 1)));
+  }, [findOpen, ranges, findIdx, matchTotal]);
+  useEffect(() => {
+    if (!findOpen || !activeRange) return;
     const raf = requestAnimationFrame(() => {
-      document
-        .getElementById(`thread-item-${activeHitId}`)
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      // A Range cannot be scrolled to directly; its first client rect can, via
+      // the element that owns it. `center` keeps the match clear of the find
+      // bar, which floats over the top of the thread.
+      const el = activeRange.startContainer.parentElement;
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
     return () => cancelAnimationFrame(raf);
-  }, [findOpen, activeHitId]);
+  }, [findOpen, activeRange]);
+
   const stepFind = useCallback(
-    (delta: number) => setFindIdx((i) => stepHit(i, hits.length, delta)),
-    [hits.length],
+    (delta: number) => setFindIdx((i) => stepHit(i, matchTotal, delta)),
+    [matchTotal],
   );
   const closeFind = useCallback(() => {
     setFindOpen(false);
     setFindQuery("");
   }, []);
+  /* Move through the conversation without the mouse.
+   *
+   * Everything else in this app has a chord — the palette, find, the inspector,
+   * the rail — and the thread itself, the surface you spend all your time in,
+   * had none: reading back through a long investigation meant reaching for the
+   * scrollbar. `j`/`k` are the bindings every reader-first tool uses, and they
+   * are bare letters, so they must never fire while someone is typing. That is
+   * what `isEditable` is for, and it is the same guard the "?" sheet uses.
+   *
+   * It scrolls rather than focuses: a turn is a region to read, not a control
+   * to operate, and moving focus into it would strand the next keystroke
+   * somewhere the user did not ask for. */
+  const stepTurn = useCallback((delta: number) => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const marks = Array.from(root.querySelectorAll<HTMLElement>("[data-question]"));
+    if (marks.length === 0) return;
+    const top = root.getBoundingClientRect().top;
+    // The one at or just above the top of the reading area is where we are.
+    let here = marks.findIndex((m) => m.getBoundingClientRect().top > top + 4);
+    if (here === -1) here = marks.length;
+    const next = Math.min(Math.max((delta > 0 ? here : here - 2) + (delta > 0 ? 0 : 0), 0), marks.length - 1);
+    marks[next]?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isEditable(e.target)) return;
+      if (matches(e, "nextTurn")) {
+        e.preventDefault();
+        stepTurn(1);
+      } else if (matches(e, "prevTurn")) {
+        e.preventDefault();
+        stepTurn(-1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [stepTurn]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!matches(e, "find")) return;
@@ -969,6 +1052,15 @@ export function Thread({
   const showLiveGrounding =
     !pending && !lastPersisted && (!!run.grounding || proposals.length > 0);
 
+  // The backend is gone, and the interface must stop implying otherwise.
+  //
+  // Measured before this: with `/health` failing, the ONLY signal anywhere on
+  // screen was an 8px dot at the bottom of the rail reading "Disconnected".
+  // The composer still invited a question, the starting points still invited a
+  // click, and the send button was still the accent colour. Every one of those
+  // actions goes through the sidecar; every one of them would have failed.
+  const offline = sidecarStatus === "disconnected" || sidecarStatus === "error";
+
   const composer = (
     <Composer
       text={text}
@@ -982,6 +1074,7 @@ export function Thread({
       fileRef={fileRef}
       taRef={taRef}
       busy={busy}
+      offline={offline}
       uploading={uploading}
       onSend={send}
       // Called, not passed: `stop` takes an optional session id, and handing it
@@ -1032,6 +1125,15 @@ export function Thread({
 
   const banners = (
     <>
+      {offline && (
+        <div
+          data-testid="offline-banner"
+          className="animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-3.5 text-sm text-danger"
+        >
+          {t("thread.offline")}
+          <div className="mt-1 text-xs text-gray-400">{t("thread.offlineHint")}</div>
+        </div>
+      )}
       {needKey && (
         <div className="animate-fade-in-up rounded-xl border border-warn-border bg-warn-bg p-3.5 text-sm text-warn-fg">
           {t("thread.needKey")}
@@ -1041,8 +1143,18 @@ export function Thread({
         </div>
       )}
       {error && (
-        <div className="animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-3.5 text-sm text-danger">
-          {error}
+        <div className="animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-3.5 text-sm">
+          {/* What failed, then what the service said.
+            *
+            * `cleanError` turns the shapes it recognises into an actionable
+            * sentence and passes everything else through verbatim — so an
+            * unrecognised failure reached the user as the raw `detail` and
+            * nothing else. Captured from a 500: the entire message on screen
+            * was the word "boom", above two buttons. The detail is worth
+            * keeping (it is what you would paste into a bug report); it is not
+            * worth being the whole explanation. */}
+          <div className="font-medium text-danger">{t("thread.errTitle")}</div>
+          <div className="mt-1 break-words text-xs text-gray-300">{error}</div>
           <div className="mt-2.5 flex flex-wrap gap-2">
             {/* Retry re-sends the message (the failed turn restored it into the
                 composer), so a transient/network error isn't a dead-end whose
@@ -1088,16 +1200,35 @@ export function Thread({
               </p>
             </div>
             {composer}
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {suggestions.map((s) => (
-                <button
-                  key={s.key}
-                  onClick={() => onSuggestion(s.key, s.prompt)}
-                  className="rounded-full border border-edge bg-panel/60 px-3.5 py-1.5 text-xs text-gray-400 transition-colors hover:border-edge-strong hover:bg-hover hover:text-gray-100"
-                >
-                  {s.label}
-                </button>
-              ))}
+            {/* Starting points, not a button bar.
+              *
+              * Six identical pills in a centred cloud give six things equal
+              * weight and none of them a shape — the eye has nowhere to land,
+              * which is why an empty state built from them reads as unfinished
+              * however carefully the pills are styled. A left-aligned list under
+              * the composer, each row a verb with a quiet arrow, is scannable in
+              * one pass and puts the first one where reading already starts. */}
+            <div className="mt-5">
+              <div className="mb-1.5 px-1 text-2xs font-medium uppercase tracking-[0.08em] text-gray-600">
+                {t("thread.startWith")}
+              </div>
+              <div className="grid gap-px overflow-hidden rounded-xl border border-edge bg-edge sm:grid-cols-2">
+                {suggestions.map((s) => (
+                  <button
+                    key={s.key}
+                    onClick={() => onSuggestion(s.key, s.prompt)}
+                    disabled={offline}
+                    className="group flex items-center gap-2 bg-panel px-3.5 py-2.5 text-left text-sm text-gray-300 transition-colors hover:bg-hover hover:text-gray-100 disabled:cursor-default disabled:text-gray-600 disabled:hover:bg-panel"
+                  >
+                    <span className="min-w-0 flex-1 truncate">{s.label}</span>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden
+                         className="shrink-0 text-gray-700 transition-colors group-hover:text-accent">
+                      <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="mt-4 space-y-2">{banners}</div>
           </div>
@@ -1155,13 +1286,18 @@ export function Thread({
               <FindBar
                 query={findQuery}
                 onQuery={setFindQuery}
-                hits={hits}
+                total={matchTotal}
                 index={findIdx}
                 onStep={stepFind}
                 onClose={closeFind}
               />
             )}
-            <div ref={contentRef} className="mx-auto max-w-3xl space-y-6">
+            {/* Wider than the reading measure on purpose. The column is what a
+              * TABLE gets; prose inside an answer is capped separately by
+              * `.thread-prose` (index.css), so a paragraph stays at a readable
+              * line length while a twelve-column table can use the room that
+              * was previously empty margin. */}
+            <div ref={contentRef} className="mx-auto max-w-[min(64rem,100%)] space-y-6">
               {hiddenCount > 0 && (
                 <div className="flex justify-center">
                   <div className="flex items-center gap-1.5">
@@ -1231,6 +1367,7 @@ export function Thread({
                         opposite sides of the answer. */}
                     {it.role === "assistant" && (
                       <TurnFooter
+                        latest={it.id === lastAssistant?.id}
                         tools={it.toolActivity}
                         grounding={it.grounding}
                         durationMs={metricsFor(it.id)?.duration_ms}
@@ -1416,7 +1553,7 @@ export function Thread({
                 </button>
               </div>
             )}
-            <div className="mx-auto max-w-3xl">{composer}</div>
+            <div className="mx-auto max-w-[min(64rem,100%)]">{composer}</div>
           </div>
         </>
       )}
@@ -1509,13 +1646,7 @@ export function Thread({
 
 function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   // Escape closes (keyboard users had no way out — only backdrop click/button).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useDismissOnEscape(true, onClose);
   return (
     <div className="fixed inset-0 z-floating flex bg-scrim backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div

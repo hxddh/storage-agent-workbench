@@ -291,3 +291,39 @@ def test_existing_run_apis_unaffected(client, monkeypatch):
                 files={"file": ("a.log", log.encode(), "text/plain")}, data={"dataset_type": "access_log"})
     client.post(f"/runs/{rid}/message", json={"content": "go"})
     assert client.get(f"/runs/{rid}").json()["status"] == "completed"
+
+
+def test_triage_keeps_the_users_message_in_the_conversation(client):
+    """The offline path is the documented first run, and it erased the question.
+
+    No model provider, paste the error you are staring at, get deterministic
+    triage: it wrote a case and nothing else, so the user's own message lived
+    only as optimistic client state. The moment the thread reloaded from the
+    server the question was gone and the session showed an answer to nothing —
+    and the report, the inspector and the exported record never had it at all.
+    """
+    session_id = client.post("/sessions", json={"title": "t"}).json()["id"]
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<Error><Code>AccessDenied</Code><Message>Access Denied</Message>"
+        "<RequestId>ABC123</RequestId></Error>"
+    )
+    r = client.post(
+        "/error-triage",
+        json={"content": body, "input_kind": "mixed", "session_id": session_id},
+    )
+    assert r.status_code == 200, r.text
+
+    msgs = client.get(f"/sessions/{session_id}/messages").json()["messages"]
+    users = [m for m in msgs if m["role"] == "user"]
+    assert len(users) == 1, f"the question must be in the thread, got {msgs}"
+    assert "AccessDenied" in users[0]["content"]
+
+
+def test_triage_without_a_session_writes_no_message(client):
+    """A case can be created outside any session; there is nothing to append to."""
+    r = client.post(
+        "/error-triage",
+        json={"content": "<Error><Code>NoSuchBucket</Code></Error>", "input_kind": "mixed"},
+    )
+    assert r.status_code == 200, r.text

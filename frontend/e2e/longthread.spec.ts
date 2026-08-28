@@ -123,3 +123,98 @@ test.describe("the composer on a loaded session", () => {
     });
   });
 });
+
+/**
+ * Find steps through matches, and marks them.
+ *
+ * It used to report "1 / 29" and move between MESSAGES: the total counted every
+ * occurrence, the cursor counted the messages that held at least one, so an
+ * answer with twelve mentions was a single stop and next/previous wrapped long
+ * before reaching the number on screen. Nothing was marked either — it scrolled
+ * a two-thousand-word answer into view and left you to find the word by eye.
+ *
+ * Painted with the CSS Custom Highlight API, so this asserts through
+ * `CSS.highlights` rather than by looking for <mark> elements: nothing is
+ * wrapped, which is the point — a streaming answer's DOM is not rewritten by
+ * searching it.
+ */
+test.describe("finding a term that appears many times in one answer", () => {
+  test("moves within the answer, not just to it, and marks what it found", async ({ page }) => {
+    test.setTimeout(90_000);
+    // The "tall" shape on purpose: the default one-line answers mention a
+    // bucket once each, so nothing there can tell "stepped to the message" from
+    // "stepped to the match". A realistic answer names its bucket in four
+    // paragraphs and twenty-four table rows.
+    const { title } = seedSession(6, `find ${Date.now()}`, "tall");
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "en");
+      localStorage.setItem("saw.onboarded", "1");
+    });
+    await page.goto("/");
+    await page.getByText(title, { exact: true }).first().click();
+    await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+    await page.keyboard.press("ControlOrMeta+f");
+    await expect(page.getByTestId("find-input")).toBeVisible();
+    await page.getByTestId("find-input").fill("bucket-003");
+    await page.waitForTimeout(900);
+
+    const paint = await page.evaluate(() => {
+      const reg = (CSS as unknown as { highlights?: Map<string, { size: number }> }).highlights;
+      return {
+        supported: !!reg,
+        rest: reg?.get("saw-find")?.size ?? 0,
+        active: reg?.get("saw-find-active")?.size ?? 0,
+      };
+    });
+    // The browser this suite runs is Chromium, so the API is there; if that ever
+    // changes the assertion should fail loudly rather than skip itself.
+    expect(paint.supported).toBe(true);
+    expect(paint.active).toBe(1);
+    expect(paint.rest).toBeGreaterThan(1);
+
+    // Stepping moves the view WITHIN the answer. On the old cursor every one of
+    // these steps stayed on the same message and the thread did not move.
+    const at = () => page.getByTestId("thread-scroll").evaluate((el) => Math.round(el.scrollTop));
+    const before = await at();
+    for (let i = 0; i < 4; i++) {
+      await page.getByRole("button", { name: /next match/i }).click();
+      await page.waitForTimeout(350);
+    }
+    expect(Math.abs((await at()) - before)).toBeGreaterThan(20);
+  });
+});
+
+/**
+ * The conversation itself is reachable from the keyboard.
+ *
+ * Everything else in this app had a chord — the palette, find, the inspector,
+ * the rail — and the thread, the surface you spend all your time in, had none:
+ * reading back through a long investigation meant reaching for the scrollbar.
+ * `j`/`k` are bare letters, so the first thing to prove is that they do NOT
+ * fire while someone is typing.
+ */
+test.describe("moving through the conversation from the keyboard", () => {
+  test("j and k step through exchanges, and never while typing", async ({ page }) => {
+    await openLong(page);
+    const at = () => page.getByTestId("thread-scroll").evaluate((el) => Math.round(el.scrollTop));
+
+    const start = await at();
+    await page.locator("body").press("k");
+    await page.waitForTimeout(700);
+    const up = await at();
+    expect(up, "k moves back through the thread").toBeLessThan(start);
+
+    await page.locator("body").press("j");
+    await page.waitForTimeout(700);
+    expect(await at(), "j moves forward again").toBeGreaterThan(up);
+
+    // In the composer they are letters, not commands.
+    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    await box.click();
+    const before = await at();
+    await box.type("jkjk");
+    await page.waitForTimeout(500);
+    await expect(box).toHaveValue("jkjk");
+    expect(await at(), "typing must not scroll the thread").toBe(before);
+  });
+});

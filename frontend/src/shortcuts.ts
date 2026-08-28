@@ -21,6 +21,8 @@ export type ShortcutId =
   | "close"
   | "inspector"
   | "find"
+  | "prevTurn"
+  | "nextTurn"
   | "send"
   | "newline";
 
@@ -50,6 +52,8 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "close", keys: ["Esc"], labelKey: "keys.close", group: "global", mod: null, key: "Escape", handled: true },
   { id: "inspector", keys: [MOD, "I"], labelKey: "keys.inspector", group: "chat", mod: "mod", key: "i", handled: true },
   { id: "find", keys: [MOD, "F"], labelKey: "keys.find", group: "chat", mod: "mod", key: "f", handled: true },
+  { id: "prevTurn", keys: ["K"], labelKey: "keys.prevTurn", group: "chat", mod: null, key: "k", handled: true },
+  { id: "nextTurn", keys: ["J"], labelKey: "keys.nextTurn", group: "chat", mod: null, key: "j", handled: true },
   { id: "send", keys: ["Enter"], labelKey: "keys.send", group: "chat", handled: false },
   { id: "newline", keys: ["Shift", "Enter"], labelKey: "keys.newline", group: "chat", handled: false },
 ];
@@ -66,4 +70,21 @@ export function matches(e: KeyboardEvent, id: ShortcutId): boolean {
   // different chord, and swallowing it would break whatever owns it.
   if (s.mod !== "mod" && mod) return false;
   return s.key.length === 1 ? e.key.toLowerCase() === s.key : e.key === s.key;
+}
+
+
+/**
+ * Is the keystroke going into a text field?
+ *
+ * Bare-letter chords (`?`, `j`, `k`) must never fire while someone is typing,
+ * and Escape in a field must not tear down the surrounding surface. This lived
+ * as a local helper inside App's key handler; the thread's own navigation needs
+ * the same rule, and two copies of "what counts as typing" is exactly the kind
+ * of pair that drifts.
+ */
+export function isEditable(el: EventTarget | null): boolean {
+  const node = el as HTMLElement | null;
+  if (!node) return false;
+  const tag = node.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || node.isContentEditable;
 }

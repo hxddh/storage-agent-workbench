@@ -42,6 +42,7 @@ export function Composer({
   fileRef,
   taRef,
   busy,
+  offline,
   uploading,
   onSend,
   onStop,
@@ -66,6 +67,8 @@ export function Composer({
   fileRef: React.RefObject<HTMLInputElement | null>;
   taRef: React.RefObject<HTMLTextAreaElement | null>;
   busy: boolean;
+  /** The sidecar is unreachable; sending would go nowhere. */
+  offline: boolean;
   uploading: boolean;
   onSend: () => void;
   onStop: () => void;
@@ -112,7 +115,19 @@ export function Composer({
   const slashOpen = slashItems.length > 0 && !slashSuppressed;
   const slashIdx = Math.min(slashSel, slashItems.length - 1);
 
+  // The backend is unreachable: everything this control offers goes through it.
+  // Left typable on purpose — losing what someone was writing because a service
+  // blinked would be a worse failure than the one being reported — but nothing
+  // that would be dispatched into a void is offered.
+  const running = busy || uploading;
+  const blocked = offline;
+
   const selectSlash = (c: Slash) => {
+    // A slash command is a send by another name: /report dispatches a turn and
+    // /logs opens a picker that uploads. With the backend down both go nowhere,
+    // so the menu stays readable but its actions do not fire. Seeding a prompt
+    // is local and harmless, so it is still allowed.
+    if (blocked && c.action) return;
     if (c.action === "report") {
       setText("");
       onSlashReport();
@@ -128,10 +143,8 @@ export function Composer({
     setSlashSel(0);
   };
 
-  const running = busy || uploading;
-
   return (
-    <div className="relative rounded-3xl border border-edge bg-panel px-3.5 pb-2.5 pt-3 shadow-elev transition-[border-color,box-shadow] duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
+    <div className="group/composer relative rounded-2xl border border-edge bg-panel px-3.5 pb-2.5 pt-3 shadow-elev transition-[border-color,box-shadow] duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
       {slashOpen && (
         <div className="absolute bottom-full left-1 right-1 mb-2 overflow-hidden rounded-xl border border-edge bg-panel shadow-pop animate-fade-in">
           <div className="px-3 py-1.5 text-3xs font-medium uppercase tracking-wider text-gray-600">{t("thread.commands")}</div>
@@ -219,7 +232,10 @@ export function Composer({
         // ring draws a SECOND, square one hugging the text — see index.css for
         // why the `focus-visible:shadow-none` that used to be here could not work.
         data-focus-ring="container"
-        className="block max-h-[220px] h-[22px] w-full resize-none bg-transparent px-1 text-base leading-relaxed text-gray-100 placeholder:text-gray-600 focus:outline-none"
+        // The size of what you WRITE matches the size of what you read: the
+        // thread's prose is 15px, and typing into something smaller than the
+        // answer it produces is the composer quietly saying it matters less.
+        className="block max-h-[220px] h-[24px] w-full resize-none bg-transparent px-1 text-prose text-gray-100 placeholder:text-gray-600 focus:outline-none"
         rows={1}
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -236,6 +252,11 @@ export function Composer({
           }
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
+            // The send BUTTON is disabled while the sidecar is unreachable; the
+            // key that does the same thing has to agree with it. Without this,
+            // the one path most people actually use — type, press Enter — still
+            // fired into a dead service and came back as a raw fetch failure.
+            if (blocked) return;
             // While a turn is streaming, Enter REDIRECTS it (cancel + resend as a
             // trace-aware turn) instead of no-opping; otherwise it sends normally.
             if (busy) onSteer();
@@ -247,10 +268,10 @@ export function Composer({
       <div className="mt-2 flex items-center gap-2">
         <button
           onClick={onOpenFilePicker}
-          disabled={running}
+          disabled={running || blocked}
           aria-label={t("attach.button")}
           title={t("attach.button")}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-gray-500 transition-colors hover:bg-hover hover:text-gray-300 disabled:cursor-default disabled:opacity-50"
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-gray-500 transition-colors hover:bg-hover hover:text-gray-300 disabled:cursor-default disabled:opacity-50"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
@@ -258,7 +279,7 @@ export function Composer({
         </button>
         <button
           onClick={onOpenSettings}
-          className={`group/chip flex items-center gap-1.5 rounded-lg border px-2 py-1 text-2xs transition-colors ${
+          className={`group/chip flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-2xs transition-colors ${
             modelName
               ? "border-edge text-gray-400 hover:border-edge-strong hover:text-gray-200"
               : "border-warn-border text-warn-fg hover:border-warn-border hover:text-warn-fg"
@@ -270,7 +291,10 @@ export function Composer({
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
-        <span className="ml-auto hidden text-2xs text-gray-600 sm:inline">
+        {/* Shown while the field is engaged, not always. A permanent
+          * "⏎ send · ⇧⏎ newline" is chrome that every user has read once and
+          * nobody reads again, sitting in the composer forever. */}
+        <span className="ml-auto hidden text-2xs text-gray-600 opacity-0 transition-opacity group-focus-within/composer:opacity-100 sm:inline">
           {busy && text.trim() ? (
             // While a turn runs, Enter REDIRECTS it (cancel + resend) — say so,
             // instead of the misleading "Send".
@@ -314,7 +338,7 @@ export function Composer({
         ) : (
           <button
             onClick={onSend}
-            disabled={uploading || (!text.trim() && !attached)}
+            disabled={uploading || blocked || (!text.trim() && !attached)}
             aria-label={t("thread.send")}
             className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-[background-color,transform] hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-600"
           >

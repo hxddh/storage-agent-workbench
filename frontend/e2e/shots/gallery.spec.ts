@@ -1,7 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "../fake-model";
 import { seedSession } from "../seed";
+
+/** A realistically-sized streamed answer, for the "working" capture. */
+const LIVE_ANSWER =
+  "## Finding\n\n" +
+  Array.from(
+    { length: 20 },
+    (_, i) => `Paragraph ${i}. The bucket policy omits s3:ListBucket for the caller principal.`,
+  ).join("\n\n");
 
 /**
  * A visual contact sheet — a development tool, NOT a CI gate.
@@ -116,6 +125,88 @@ for (const theme of THEMES) {
       await shoot(page, "04-triage", theme);
     });
 
+    test("first run — the wizard a fresh install opens with", async ({ page }) => {
+      await page.addInitScript(([t]) => {
+        localStorage.setItem("saw.lang", "en");
+        localStorage.removeItem("saw.onboarded");
+        localStorage.setItem("saw.theme", t as string);
+      }, [theme] as const);
+      await page.goto("/");
+      await page.waitForTimeout(1200);
+      await shoot(page, "06-firstrun", theme);
+    });
+
+    test("command palette", async ({ page }) => {
+      await open(page, theme);
+      await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
+      await page.keyboard.press("ControlOrMeta+k");
+      await page.waitForTimeout(400);
+      await shoot(page, "07-palette", theme);
+    });
+
+    test("keyboard shortcuts sheet", async ({ page }) => {
+      await open(page, theme);
+      await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
+      await page.locator("body").press("?");
+      await page.waitForTimeout(400);
+      await shoot(page, "08-shortcuts", theme);
+    });
+
+    test("find in an investigation", async ({ page }) => {
+      const { title } = seedSession(8, undefined, "tall");
+      await open(page, theme);
+      await page.getByText(title).first().click();
+      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+      await page.keyboard.press("ControlOrMeta+f");
+      await page.waitForTimeout(300);
+      await page.keyboard.type("bucket-003");
+      await page.waitForTimeout(700);
+      await shoot(page, "09-find", theme);
+    });
+
+    test("session inspector", async ({ page }) => {
+      const { title } = seedSession(6, undefined, "tall");
+      await open(page, theme);
+      await page.getByText(title).first().click();
+      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+      await page.getByTestId("open-inspector").click();
+      await page.waitForTimeout(700);
+      await shoot(page, "10-inspector", theme);
+    });
+
+    test("the turn trace, expanded", async ({ page }) => {
+      const { title } = seedSession(4, undefined, "tall");
+      await open(page, theme);
+      await page.getByText(title).first().click();
+      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+      await page.getByTestId("turn-footer-toggle").last().click();
+      await page.waitForTimeout(500);
+      await shoot(page, "11-trace", theme);
+    });
+
+    test("the rail collapsed", async ({ page }) => {
+      const { title } = seedSession(4, undefined, "tall");
+      await open(page, theme);
+      await page.getByText(title).first().click();
+      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+      await page.getByRole("button", { name: /collapse sidebar/i }).first().click();
+      await page.waitForTimeout(400);
+      await shoot(page, "12-rail-collapsed", theme);
+    });
+
+    test("a narrow window", async ({ page }) => {
+      const { title } = seedSession(4, undefined, "tall");
+      await open(page, theme);
+      // Pick the session BEFORE narrowing: below 1000px the rail folds itself,
+      // and a folded rail lists no sessions to click.
+      await page.getByText(title).first().click();
+      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+      await page.setViewportSize({ width: 900, height: 800 });
+      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+      await page.waitForTimeout(500);
+      await shoot(page, "13-narrow", theme);
+    });
+
     test("settings — the drawer over the thread", async ({ page }) => {
       await open(page, theme);
       await page.getByRole("button", { name: /settings/i }).first().click();
@@ -124,6 +215,115 @@ for (const theme of THEMES) {
     });
   });
 }
+
+/* ── States a user hits that the theme loop above never reaches ───────────────
+ *
+ * The loop covers the happy path in two themes. Most of what makes an app feel
+ * unfinished is NOT on the happy path: it is the first run before anything is
+ * configured, the seconds while the agent is working, the moment the backend
+ * goes away, and the whole product in the other language. Dark only, because
+ * these are about behaviour and content rather than palette.
+ */
+test.describe("states", () => {
+  test("no model configured — what a fresh install can and cannot do", async ({ page }) => {
+    await open(page, "dark");
+    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    await box.click();
+    await box.fill("why does my bucket deny list calls");
+    await box.press("Enter");
+    await page.waitForTimeout(2500);
+    await shoot(page, "20-no-model", "dark");
+  });
+
+  test("the agent working — tools running under a streamed answer", async ({ page }) => {
+    test.setTimeout(120_000);
+    const model = await startFakeModel(
+      [toolTurn("head_bucket", { bucket: "acme-logs" }), textTurn(LIVE_ANSWER)],
+      { deltaDelayMs: 40 },
+    );
+    const providerId = await useFakeModel(model.baseUrl);
+    try {
+      await open(page, "dark");
+      const box = page.getByPlaceholder(/Ask Storage Agent/i);
+      await box.click();
+      await box.fill("why does acme-logs deny every list call");
+      await box.press("Enter");
+      await page.waitForTimeout(3500);
+      await shoot(page, "21-working", "dark");
+    } finally {
+      await dropModelProvider(providerId);
+      await model.close();
+    }
+  });
+
+  test("the sidecar goes away mid-session", async ({ page }) => {
+    await open(page, "dark");
+    await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
+    await page.route("**/health", (r) => r.abort());
+    await page.waitForTimeout(6000);
+    await shoot(page, "22-sidecar-down", "dark");
+  });
+
+  test("the rail's own menu", async ({ page }) => {
+    const { title } = seedSession(3, undefined, "tall");
+    await open(page, "dark");
+    await page.getByText(title).first().click();
+    await page.getByText(title).first().hover();
+    await page.getByRole("button", { name: /more actions/i }).first().click();
+    await page.waitForTimeout(400);
+    await shoot(page, "23-rail-menu", "dark");
+  });
+
+  test("a session that will not load", async ({ page }) => {
+    const { title } = seedSession(3, undefined, "tall");
+    await open(page, "dark");
+    await page.getByText(title).first().click();
+    await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+    // The session endpoint starts failing while the app is on it.
+    await page.route("**/sessions/*", (r) => r.fulfill({ status: 500, body: "{}" }));
+    await page.reload();
+    await page.waitForTimeout(2500);
+    await shoot(page, "26-load-failed", "dark");
+  });
+
+  test("a turn the server rejects", async ({ page }) => {
+    await open(page, "dark");
+    await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
+    await page.route("**/messages**", (r) => r.fulfill({ status: 500, body: '{"detail":"boom"}' }));
+    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    await box.click();
+    await box.fill("why does acme-logs deny list");
+    await box.press("Enter");
+    await page.waitForTimeout(3000);
+    await shoot(page, "27-turn-failed", "dark");
+  });
+
+  test("the whole product in Chinese", async ({ page }) => {
+    const { title } = seedSession(3, undefined, "tall");
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "zh");
+      localStorage.setItem("saw.onboarded", "1");
+      localStorage.setItem("saw.theme", "dark");
+    });
+    await page.goto("/");
+    await page.getByText(title).first().click();
+    await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+    await shoot(page, "24-chinese", "dark");
+  });
+
+  test("settings, in Chinese, where the text is longest", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "zh");
+      localStorage.setItem("saw.onboarded", "1");
+      localStorage.setItem("saw.theme", "dark");
+    });
+    await page.goto("/");
+    await page.waitForTimeout(2000);
+    await page.getByTestId("rail-settings").click();
+    await page.waitForTimeout(900);
+    await shoot(page, "25-settings-zh", "dark");
+  });
+});
 
 test.afterAll(() => {
   // One page, both themes on the same row, so the pair is compared by eye

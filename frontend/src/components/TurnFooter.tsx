@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../i18n";
 import { fmtDuration, fmtTokens } from "./TurnMetrics";
 import { fmtCallMs, isFailed } from "./LiveTrace";
@@ -49,6 +49,7 @@ export function TurnFooter({
   budgetTokens,
   repeatCallsAvoided,
   sessionId,
+  latest,
   onOpenInspector,
 }: {
   tools?: ToolActivity[];
@@ -60,13 +61,62 @@ export function TurnFooter({
   repeatCallsAvoided?: number | null;
   /** Lets a trace row be opened to the call's real persisted input/output. */
   sessionId?: string | null;
+  /** This is the newest answer in the thread. */
+  latest?: boolean;
   onOpenInspector?: () => void;
 }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
+  /* The turn you just watched keeps its steps; older ones fold.
+   *
+   * The live trace is removed the moment the answer arrives, and what replaces
+   * it is a collapsed "1 checks". So the one turn a reader is actually looking
+   * at — the one whose work they just watched happen — hides that work behind a
+   * click, while every older turn does the same, which is at least consistent
+   * and wrong in one direction.
+   *
+   * Codex keeps the steps of the current turn on screen and folds the history.
+   * `latest` is that: open by default for the newest answer only, so a long
+   * thread does not become a wall of traces, and still collapsible by hand.
+   *
+   * Derived, not stored — the same lesson the chart default had to learn. A
+   * `useState` initialiser runs once, at mount, and a turn becomes "the newest
+   * one" a beat AFTER its message first renders: the footer mounted while
+   * `latest` was still false and never reconsidered, so a turn you had just
+   * watched run came back folded. What IS state is the user overruling it. */
+  const [override, setOverride] = useState<boolean | null>(null);
+  const open = override ?? Boolean(latest);
+  const setOpen = (v: boolean | ((p: boolean) => boolean)) =>
+    setOverride(typeof v === "function" ? v(open) : v);
   const [highlight, setHighlight] = useState<string | null>(null);
   // The one trace row the reader has opened, if any (v0.56.0).
   const [openCall, setOpenCall] = useState<string | null>(null);
+  // Bring what you just opened into view.
+  //
+  // Measured on a finished turn at the bottom of a thread: the row's detail
+  // renders 231px of SENT/RETURNED payload, and its bottom landed at 995px in a
+  // reading area that ends at 790px. 205px of the answer to the question you
+  // just asked was below the fold, with nothing to say so — you clicked a step
+  // and appeared to get nothing.
+  //
+  // `block: "nearest"` scrolls the minimum: a row already fully visible does not
+  // move at all, which matters because moving the thread under a reader who did
+  // not ask for it is its own defect. Deferred a frame so the detail has laid
+  // out and there is a real height to bring into view.
+  const openRowRef = useRef<HTMLLIElement | null>(null);
+  useEffect(() => {
+    if (!openCall) return;
+    const li = openRowRef.current;
+    if (!li) return;
+    // Watching the row rather than scrolling once on open. The detail is
+    // FETCHED — `getSessionCall` resolves a tick or two later — so a single
+    // scroll on the next frame moves a row that is still 20px tall and then
+    // never runs again. Measured that way: the payload still ended 195px below
+    // the reading area. The observer catches the row growing to its real height
+    // and brings that into view.
+    const ro = new ResizeObserver(() => li.scrollIntoView({ block: "nearest" }));
+    ro.observe(li);
+    return () => ro.disconnect();
+  }, [openCall]);
 
   const done = useMemo(
     () => (tools ?? []).filter((a) => a.status !== "started"),
@@ -217,7 +267,7 @@ export function TurnFooter({
         <div className="mt-2 space-y-3 border-l border-edge pl-3">
           {done.length > 0 && (
             <div>
-              <div className="mb-1 text-3xs font-medium uppercase tracking-wider text-gray-700">
+              <div className="mb-1.5 text-2xs font-medium uppercase tracking-wider text-gray-500">
                 {t("turn.trace")}
               </div>
               <ul className="space-y-[3px]">
@@ -229,7 +279,7 @@ export function TurnFooter({
                   const canOpen = Boolean(sessionId && a.id);
                   const isOpen = canOpen && openCall === a.id;
                   return (
-                    <li key={a.id ?? i} data-tool={a.tool}>
+                    <li key={a.id ?? i} data-tool={a.tool} ref={isOpen ? openRowRef : undefined}>
                     <div
                       className={`flex items-center gap-2 rounded px-1 transition-colors ${
                         highlight === a.tool ? "bg-accent/12" : ""
@@ -250,7 +300,7 @@ export function TurnFooter({
                           }
                         : {})}
                     >
-                      <span className="w-4 shrink-0 text-right tabular-nums text-3xs text-gray-700">
+                      <span className="w-4 shrink-0 text-right tabular-nums text-2xs text-gray-500">
                         {i + 1}
                       </span>
                       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${bad ? "bg-danger" : "bg-success/70"}`} aria-hidden />
@@ -261,13 +311,13 @@ export function TurnFooter({
                         </span>
                       )}
                       {ms && (
-                        <span className="ml-auto shrink-0 tabular-nums text-3xs text-gray-700"
+                        <span className="ml-auto shrink-0 tabular-nums text-2xs text-gray-500"
                               data-testid="footer-duration">
                           {ms}
                         </span>
                       )}
                       <span
-                        className={`${ms ? "" : "ml-auto "}shrink-0 truncate font-mono text-3xs ${bad ? "text-danger" : "text-gray-500"}`}
+                        className={`${ms ? "" : "ml-auto "}shrink-0 truncate font-mono text-2xs ${bad ? "text-danger" : "text-gray-500"}`}
                         title={a.result}
                       >
                         {a.result}
@@ -285,7 +335,7 @@ export function TurnFooter({
 
           {evidence.length > 0 && (
             <div>
-              <div className="mb-1 text-3xs font-medium uppercase tracking-wider text-gray-700">
+              <div className="mb-1.5 text-2xs font-medium uppercase tracking-wider text-gray-500">
                 {t("grounding.evidence")}
               </div>
               <ul className="space-y-0.5">
