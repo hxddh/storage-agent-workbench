@@ -1,22 +1,16 @@
 export type TurnDirection = -1 | 1;
 
 /**
- * Resolve the turn a reader should land on when stepping through a long thread.
+ * Infer the semantic turn currently under the reader's eye.
  *
- * The old implementation inferred the current turn from a 4px viewport
- * threshold. `scrollIntoView({ block: "start" })` does not guarantee that the
- * target's top is within four pixels of the scroll container's top (padding,
- * browser rounding and layout all matter), so a following `j` could select the
- * same turn again and leave scrollTop unchanged.
- *
- * Use document positions instead. A small reading anchor inside the viewport
- * identifies the turn the reader is currently in; stepping then moves exactly
- * one semantic exchange backward or forward.
+ * Browser scroll positions are not exact turn positions: scroll padding,
+ * fractional layout and max-scroll clamping mean a turn aligned with
+ * `scrollIntoView({ block: "start" })` can still land dozens of pixels away
+ * from its nominal top. A small reading anchor gives us a stable initial turn.
  */
-export function nextTurnIndex(
+export function currentTurnIndex(
   turnPositions: readonly number[],
   scrollTop: number,
-  direction: TurnDirection,
   readingAnchorOffset = 64,
 ): number | null {
   if (turnPositions.length === 0) return null;
@@ -27,6 +21,30 @@ export function nextTurnIndex(
     if (turnPositions[i] <= anchor) current = i;
     else break;
   }
+  return current;
+}
 
-  return Math.min(Math.max(current + direction, 0), turnPositions.length - 1);
+/** Move exactly one semantic exchange from a known navigation cursor. */
+export function stepTurnIndex(
+  current: number,
+  turnCount: number,
+  direction: TurnDirection,
+): number | null {
+  if (turnCount <= 0) return null;
+  return Math.min(Math.max(current + direction, 0), turnCount - 1);
+}
+
+/**
+ * Resolve the first keyboard step when there is no navigation cursor yet.
+ * Subsequent j/k presses should use `stepTurnIndex` from the stored semantic
+ * cursor rather than re-inferring from in-flight smooth-scroll geometry.
+ */
+export function nextTurnIndex(
+  turnPositions: readonly number[],
+  scrollTop: number,
+  direction: TurnDirection,
+  readingAnchorOffset = 64,
+): number | null {
+  const current = currentTurnIndex(turnPositions, scrollTop, readingAnchorOffset);
+  return current === null ? null : stepTurnIndex(current, turnPositions.length, direction);
 }
