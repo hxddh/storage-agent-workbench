@@ -1,5 +1,6 @@
 import type { SessionDetail } from "../types";
 import { RunDetail } from "../components/RunDetail";
+import { useWorkbenchCopy } from "./copy";
 
 export function RunsWorkspace({
   detail,
@@ -12,6 +13,7 @@ export function RunsWorkspace({
   onOpenRun: (runId: string) => void;
   onCloseRun: () => void;
 }) {
+  const copy = useWorkbenchCopy();
   if (selectedRunId) {
     return <RunDetail runId={selectedRunId} onBack={onCloseRun} />;
   }
@@ -20,12 +22,12 @@ export function RunsWorkspace({
   return (
     <article className="workbench-document" data-testid="runs-workspace">
       <header className="workbench-document-heading">
-        <p className="workbench-eyebrow">Runs</p>
-        <h1>Auditable execution</h1>
-        <p>Execution has its own identity and review surface instead of appearing as an implementation detail inside chat.</p>
+        <p className="workbench-eyebrow">{copy.run.eyebrow}</p>
+        <h1>{copy.run.title}</h1>
+        <p>{copy.run.description}</p>
       </header>
       {runs.length === 0 ? (
-        <p className="workbench-empty-line">No explicit runs are attached to this investigation.</p>
+        <p className="workbench-empty-line">{copy.run.empty}</p>
       ) : (
         <div className="workbench-run-list">
           {runs.map((run) => (
