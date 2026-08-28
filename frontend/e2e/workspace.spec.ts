@@ -2,11 +2,16 @@ import { expect, test, type Page } from "@playwright/test";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "./fake-model";
 
 const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const SKILL = "storageops-security-iam-policy";
 
 async function setup(page: Page) {
+  // Use the same fully supported, credential-free tool path as agent.spec.
+  // `head_bucket` needs a configured storage provider; using it here meant the
+  // geometry tests timed out before an investigation ever reached its finished
+  // state, so they were not testing workspace geometry at all.
   const model = await startFakeModel([
-    toolTurn("head_bucket", { bucket: "acme-logs" }),
-    textTurn("The bucket is reachable. I verified it with a read-only HEAD request."),
+    toolTurn("read_skill", { name: SKILL }),
+    textTurn("The investigation is ready for review. The persisted skill evidence is available below."),
   ]);
   const providerId = await useFakeModel(model.baseUrl);
   await page.addInitScript(() => {
@@ -24,9 +29,9 @@ async function setup(page: Page) {
 }
 
 async function completeTurn(page: Page) {
-  await composer(page).fill("Can you verify whether acme-logs is reachable?");
+  await composer(page).fill("Review the IAM-policy diagnostic method and keep the evidence available for inspection.");
   await composer(page).press("Enter");
-  await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 20_000 });
 }
 
 test.describe("workspace-first investigation UI", () => {
