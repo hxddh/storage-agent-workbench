@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { getSessionActivity, getSessionAudit, getSessionOverview } from "../api";
 import type { SessionActivityItem, SessionAuditItem, SessionOverview } from "../types";
 import { useI18n } from "../i18n";
@@ -33,7 +33,7 @@ function Filter({
   active: boolean;
   count?: number;
   onClick: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <button
