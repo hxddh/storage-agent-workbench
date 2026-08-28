@@ -89,6 +89,29 @@ test.describe("workspace-first investigation UI", () => {
     }
   });
 
+  test("Evidence keeps the real Agent steering controller reachable", async ({ page }) => {
+    const cleanup = await setup(page);
+    try {
+      await completeTurn(page);
+      await page.getByRole("tab", { name: "Evidence" }).click();
+
+      const steering = page.getByTestId("workbench-steering");
+      await expect(steering).toBeVisible();
+      const field = steering.getByRole("textbox");
+      await field.fill("Summarize the evidence again from this review surface.");
+      await field.press("Enter");
+
+      // The question is sent through the SAME Timeline-owned runner while the
+      // Timeline is hidden. Returning to Timeline must reveal a second persisted
+      // exchange, proving this is real Agent control rather than a navigation
+      // shortcut or decorative prompt.
+      await page.getByRole("tab", { name: "Timeline" }).click();
+      await expect(page.getByTestId("turn-footer-toggle")).toHaveCount(2, { timeout: 20_000 });
+    } finally {
+      await cleanup();
+    }
+  });
+
   test("a durable report opens as a full review workspace, not the old centered modal", async ({ page }) => {
     const cleanup = await setup(page);
     try {
