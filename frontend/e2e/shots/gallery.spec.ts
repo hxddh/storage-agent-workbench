@@ -188,8 +188,11 @@ for (const theme of THEMES) {
     test("a narrow window", async ({ page }) => {
       const { title } = seedSession(4, undefined, "tall");
       await open(page, theme);
-      await page.setViewportSize({ width: 900, height: 800 });
+      // Pick the session BEFORE narrowing: below 1000px the rail folds itself,
+      // and a folded rail lists no sessions to click.
       await page.getByText(title).first().click();
+      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+      await page.setViewportSize({ width: 900, height: 800 });
       await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
       await page.waitForTimeout(500);
       await shoot(page, "13-narrow", theme);

@@ -45,7 +45,16 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
     // than visibly misplaced. Removing that (on its own measurements) exposed
     // the real defect underneath. Re-adding the containment would only hide it
     // again, and hiding an answer is worse than wrapping it.
-    <div className="min-w-0 space-y-3 break-words text-sm leading-[1.7] text-gray-200">
+    // A reading measure for prose, the full column for data.
+    //
+    // One width for everything is why a 1440px window showed 428px of empty
+    // space beside a 768px column: wide enough for a paragraph is not wide
+    // enough for a twelve-column table, and a table cannot borrow the room
+    // sitting unused right next to it. The grid gives every block a narrow
+    // `content` track by default, and lets a table, a chart or a code fence
+    // claim the `full` track instead — the standard documentation-site
+    // arrangement, and the one Codex uses.
+    <div className="thread-prose min-w-0 break-words text-prose text-gray-200">
       {outline.length > 0 && <Outline entries={outline} />}
       <Blocks blocks={blocks} />
     </div>
@@ -263,7 +272,7 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
     }
   };
   return (
-    <div className="group/code overflow-hidden rounded-lg border border-edge bg-code">
+    <div className="thread-bleed group/code overflow-hidden rounded-lg border border-edge bg-code">
       <div className="flex items-center gap-2 border-b border-edge/70 px-3 py-1.5">
         <span className="font-mono text-3xs uppercase tracking-wide text-gray-500">{lang || "code"}</span>
         <button
@@ -362,7 +371,7 @@ function TableBlock({
   useEffect(measure, [measure, rows.length, tall, showChart]);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-edge">
+    <div className="thread-bleed overflow-hidden rounded-lg border border-edge">
       {spec && showChart && <Chart spec={spec} />}
       {/* A long table scrolls INSIDE itself instead of owning three screens of
         * the thread, and its header stays put while it does.

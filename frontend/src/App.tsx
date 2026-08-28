@@ -28,6 +28,8 @@ import { matches } from "./shortcuts";
 const ONBOARDED_KEY = "saw.onboarded";
 const RAIL_WIDTH_KEY = "saw.railWidth";
 const RAIL_COLLAPSED_KEY = "saw.railCollapsed";
+/** Window width below which the rail folds itself. */
+const RAIL_FOLD_PX = 1000;
 // Which investigation was open. Without it, quitting the app — or any reload —
 // reopened on the empty "New chat" surface with the conversation still sitting
 // in the rail, unread. An investigation runs over days here, so "where was I"
@@ -71,6 +73,24 @@ export default function App() {
   const [railCollapsed, setRailCollapsed] = useState(
     () => localStorage.getItem(RAIL_COLLAPSED_KEY) === "1",
   );
+  // Below this the rail stops being furniture and starts being the window.
+  // Measured at 900px: the rail held 244px — 27% of everything — and the
+  // thread's own column was squeezed to 630px, narrower than the reading
+  // measure an answer wants. So the rail folds itself, and unfolds again when
+  // there is room. The stored preference is NOT overwritten: this is the window
+  // being small, not the user changing their mind, and widening the window has
+  // to give them back the rail they chose.
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < RAIL_FOLD_PX,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${RAIL_FOLD_PX - 1}px)`);
+    const sync = () => setNarrow(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  const railFolded = railCollapsed || narrow;
   // Bumped to force the open Thread to reload when the ACTIVE session changed in
   // a way the thread mirrors (a rename → header title) without a session switch.
   const [threadReloadKey, setThreadReloadKey] = useState(0);
@@ -220,7 +240,8 @@ export default function App() {
         slow={slow}
         actions={sessionActions}
         width={railWidth}
-        collapsed={railCollapsed}
+        collapsed={railFolded}
+        onOpenPalette={() => setPaletteOpen(true)}
         onToggleCollapse={() => setRailCollapsed((v) => {
           localStorage.setItem(RAIL_COLLAPSED_KEY, v ? "0" : "1");
           return !v;

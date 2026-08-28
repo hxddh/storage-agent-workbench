@@ -243,6 +243,38 @@ body {
  * The under-reported height is also what broke scroll-to-bottom (see
  * `Thread.tsx`), so this is not only a paint concern. */
 
+/* An answer's reading measure, and the escape hatch out of it.
+ *
+ * Prose and data want different widths. A paragraph is easiest to read at
+ * 60-75 characters; a twelve-column bucket table wants every pixel it can get.
+ * The app gave both the same 768px column, so on a 1440px window a table was
+ * cramped while 428px sat empty beside it.
+ *
+ * The grid names two tracks. Everything lands in `content` — capped at a
+ * reading measure — and a block that is data rather than prose (a table, a
+ * chart, a code fence) opts into `full` instead. Nothing has to know the
+ * window width, and the two rules cannot drift apart because there is only
+ * one grid.
+ */
+.thread-prose {
+  display: grid;
+  /* Content is LEFT-aligned in the column, not centred in it. A centred
+   * reading measure inside a wider column gives prose and tables different
+   * left edges — the paragraph starts 150px to the right of the table above
+   * it, and the answer stops reading as one thing. */
+  grid-template-columns:
+    [full-start content-start] min(46rem, 100%) [content-end]
+    minmax(0, 1fr) [full-end];
+  row-gap: 0.75rem;
+}
+.thread-prose > * {
+  grid-column: content;
+  min-width: 0;
+}
+.thread-prose > .thread-bleed {
+  grid-column: full;
+}
+
 /* Respect reduced-motion. */
 @media (prefers-reduced-motion: reduce) {
   *,

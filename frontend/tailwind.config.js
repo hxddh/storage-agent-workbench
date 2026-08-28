@@ -82,7 +82,12 @@ export default {
         "3xs": ["0.625rem", { lineHeight: "0.875rem" }],   // 10px — dense metadata
         "2xs": ["0.6875rem", { lineHeight: "1rem" }],      // 11px — trace rows
         xs: ["0.75rem", { lineHeight: "1.125rem" }],       // 12px — secondary UI
-        sm: ["0.8125rem", { lineHeight: "1.375rem" }],     // 13px — body / answers
+        sm: ["0.8125rem", { lineHeight: "1.375rem" }],     // 13px — dense UI chrome
+        // The surface people READ. 13px is what a dense admin panel uses, and
+        // the reference set for this product (ChatGPT, Codex) sets an agent's
+        // prose at 15-16px. Separate from `sm` on purpose: raising `sm` would
+        // inflate every button and label in the app along with the prose.
+        prose: ["0.9375rem", { lineHeight: "1.75" }],       // 15px — answers
         base: ["0.875rem", { lineHeight: "1.5rem" }],      // 14px — emphasis
         lg: ["1rem", { lineHeight: "1.5rem" }],            // 16px — section titles
         xl: ["1.1875rem", { lineHeight: "1.625rem" }],     // 19px

@@ -1161,7 +1161,12 @@ export function Thread({
                 onClose={closeFind}
               />
             )}
-            <div ref={contentRef} className="mx-auto max-w-3xl space-y-6">
+            {/* Wider than the reading measure on purpose. The column is what a
+              * TABLE gets; prose inside an answer is capped separately by
+              * `.thread-prose` (index.css), so a paragraph stays at a readable
+              * line length while a twelve-column table can use the room that
+              * was previously empty margin. */}
+            <div ref={contentRef} className="mx-auto max-w-[min(64rem,100%)] space-y-6">
               {hiddenCount > 0 && (
                 <div className="flex justify-center">
                   <div className="flex items-center gap-1.5">
@@ -1416,7 +1421,7 @@ export function Thread({
                 </button>
               </div>
             )}
-            <div className="mx-auto max-w-3xl">{composer}</div>
+            <div className="mx-auto max-w-[min(64rem,100%)]">{composer}</div>
           </div>
         </>
       )}

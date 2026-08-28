@@ -122,8 +122,12 @@ test.describe("an answer full of unbreakable tokens", () => {
   });
 
   test("holds at a narrow window too", async ({ page }) => {
-    await page.setViewportSize({ width: 820, height: 700 });
+    // Open first, then narrow: below 1000px the rail folds itself and stops
+    // listing the session this would click. The assertion is about the answer's
+    // layout at 820px, not about how you got there.
     await openSeeded(page, seed());
+    await page.setViewportSize({ width: 820, height: 700 });
+    await page.waitForTimeout(500);
     const m = await measure(page);
     expect(m.threadScrollW).toBeLessThanOrEqual(m.threadClientW + 1);
     expect(m.leaks).toEqual([]);
@@ -168,5 +172,109 @@ test.describe("a capped table's fade", () => {
 
     expect(await maskAt(0), "at the top there IS more below").not.toBe("none");
     expect(await maskAt("end"), "at the end there is not").toBe("none");
+  });
+});
+
+/**
+ * Prose and data are not the same width, and the window is not one column.
+ *
+ * A 1440px window used to render a 768px column with 428px of empty space
+ * beside it — wide enough for a paragraph, and not nearly wide enough for a
+ * twelve-column bucket table, which then scrolled inside itself while the room
+ * it needed sat unused. One width cannot serve both, so there are two: a
+ * reading measure for prose, the full column for data, sharing a left edge.
+ */
+test.describe("the two widths of an answer", () => {
+  async function widths(page: Page) {
+    return await page.evaluate(() => {
+      const prose = document.querySelector(".thread-prose li, .thread-prose p") as HTMLElement;
+      const table = document.querySelector(".thread-prose .thread-bleed") as HTMLElement;
+      const col = document.querySelector('[data-testid="thread-scroll"] .mx-auto') as HTMLElement;
+      const px = (s: string) => Math.round(parseFloat(s));
+      return {
+        prose: Math.round(prose.getBoundingClientRect().width),
+        proseLeft: Math.round(prose.getBoundingClientRect().left),
+        proseFont: px(getComputedStyle(prose).fontSize),
+        table: Math.round(table.getBoundingClientRect().width),
+        tableLeft: Math.round(table.getBoundingClientRect().left),
+        column: Math.round(col.getBoundingClientRect().width),
+      };
+    });
+  }
+
+  test("a table uses the room a paragraph does not want", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const { title } = seedSession(2, `widths ${Date.now()}`, "tall");
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "en");
+      localStorage.setItem("saw.onboarded", "1");
+    });
+    await page.goto("/");
+    await page.getByText(title, { exact: true }).first().click();
+    await expect(page.locator(".thread-prose table").first()).toBeVisible({ timeout: 20_000 });
+
+    const w = await widths(page);
+    // The table is wider than the paragraph — the whole point.
+    expect(w.table).toBeGreaterThan(w.prose + 100);
+    // …and it is the column, so the space is actually used.
+    expect(w.table).toBeGreaterThanOrEqual(w.column - 2);
+    // The paragraph stays at a reading measure rather than growing with it.
+    expect(w.prose).toBeLessThanOrEqual(46 * 16 + 2);
+    // Both start at the same place. A centred reading measure inside a wider
+    // column gives an answer two left edges and stops it reading as one thing.
+    expect(Math.abs(w.proseLeft - w.tableLeft)).toBeLessThanOrEqual(1);
+    // And the prose is set at a size meant for reading, not for a control strip.
+    expect(w.proseFont).toBeGreaterThanOrEqual(15);
+  });
+});
+
+/**
+ * The rail folds itself when the window stops having room for it.
+ *
+ * Measured at 900px before this: the rail held 244px — 27% of the window — and
+ * the thread's column was squeezed to 630px, narrower than the measure an
+ * answer is set at. It is not a preference at that size, it is a squeeze.
+ */
+test.describe("the rail at a small window", () => {
+  const rail = (page: Page) => page.getByTestId("session-rail");
+
+  test("folds below 1000px and comes back above it", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "en");
+      localStorage.setItem("saw.onboarded", "1");
+    });
+    await page.goto("/");
+    await expect(rail(page)).toHaveAttribute("data-collapsed", "false");
+
+    await page.setViewportSize({ width: 900, height: 800 });
+    await expect(rail(page)).toHaveAttribute("data-collapsed", "true");
+
+    // Widening gives back the rail the user chose: the fold was the window's
+    // doing, and it must not be remembered as if it were theirs.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(rail(page)).toHaveAttribute("data-collapsed", "false");
+  });
+
+  test("a folded rail still has a way back to your conversations", async ({ page }) => {
+    // It did not. Expand / new chat / settings, and no route to an existing
+    // session — survivable while folding was a choice, not survivable once a
+    // narrow window folds it for you.
+    const { title } = seedSession(3, `folded ${Date.now()}`);
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "en");
+      localStorage.setItem("saw.onboarded", "1");
+      localStorage.setItem("saw.railCollapsed", "1");
+    });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/");
+    await expect(rail(page)).toHaveAttribute("data-collapsed", "true");
+
+    await page.getByTestId("rail-open-palette").click();
+    const box = page.getByPlaceholder(/Search chats or run a command/i);
+    await expect(box).toBeVisible();
+    await box.fill(title.slice(0, 18));
+    await page.getByText(title).first().click();
+    await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
   });
 });
