@@ -62,6 +62,59 @@
   margin-block: 1.8rem;
 }
 
+/* Provenance belongs to the document's review edge, not to a card footer. These
+ * controls are intentionally small, text-first links into global work surfaces:
+ * they tell the reader exactly where the answer can be audited without turning
+ * every paragraph into citation-chip confetti. */
+.answer-document-references {
+  display: flex;
+  max-width: 72ch;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid color-mix(in srgb, var(--edge) 56%, transparent);
+  color: var(--gray-500);
+  font-size: 0.6875rem;
+}
+
+.answer-document-reference-label {
+  margin-right: 0.2rem;
+  font-weight: 620;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.answer-document-references button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  padding: 0.2rem 0.35rem;
+  color: var(--gray-400);
+  font: inherit;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.answer-document-references button:hover,
+.answer-document-references button:focus-visible {
+  background: color-mix(in srgb, var(--hover) 48%, transparent);
+  color: var(--gray-100);
+}
+
+.answer-document-references button span {
+  min-width: 1.1rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--elevated) 72%, transparent);
+  padding-inline: 0.35rem;
+  color: var(--gray-500);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 /* Completed answers are calm documents. Streaming keeps the same geometry so
  * the page does not jump when the final persisted artifact replaces live text. */
 .answer-document[data-streaming="false"] {
@@ -71,5 +124,11 @@
 @container (min-width: 900px) {
   .answer-document[data-document-shape="data-rich"] .thread-bleed {
     width: min(100%, 68rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .answer-document-references button {
+    transition: none;
   }
 }
