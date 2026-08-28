@@ -39,7 +39,7 @@ test.describe("workspace-first investigation UI", () => {
     const cleanup = await setup(page);
     try {
       await completeTurn(page);
-      await page.getByRole("button", { name: /inspect/i }).click();
+      await page.getByTestId("open-inspector").click();
 
       const inspector = page.getByTestId("session-inspector");
       await expect(inspector).toBeVisible();
@@ -47,7 +47,7 @@ test.describe("workspace-first investigation UI", () => {
       expect(box).not.toBeNull();
       expect(box!.width / 1440).toBeGreaterThanOrEqual(0.98);
       expect(box!.height / 900).toBeGreaterThanOrEqual(0.98);
-      expect(box!.x).toBeLessThanOrEqual(2);
+      expect(Math.abs(box!.x)).toBeLessThanOrEqual(3);
     } finally {
       await cleanup();
     }
@@ -57,7 +57,7 @@ test.describe("workspace-first investigation UI", () => {
     const cleanup = await setup(page);
     try {
       await completeTurn(page);
-      await page.getByRole("button", { name: /inspect/i }).click();
+      await page.getByTestId("open-inspector").click();
       const inspector = page.getByTestId("session-inspector");
       await expect(inspector).toBeVisible();
 
@@ -113,8 +113,11 @@ test.describe("workspace-first investigation UI", () => {
         };
       });
       expect(geometry).not.toBeNull();
-      expect(geometry!.x).toBeLessThanOrEqual(2);
-      expect(geometry!.y).toBeLessThanOrEqual(2);
+      // Fractional device-pixel layout can report ~2.03px here on Chromium.
+      // The 3px tolerance absorbs rounding only; the 98% width/height contract
+      // below is what rejects the old centered 900px / 88vh modal.
+      expect(Math.abs(geometry!.x)).toBeLessThanOrEqual(3);
+      expect(Math.abs(geometry!.y)).toBeLessThanOrEqual(3);
       expect(geometry!.width / geometry!.viewportWidth).toBeGreaterThanOrEqual(0.98);
       expect(geometry!.height / geometry!.viewportHeight).toBeGreaterThanOrEqual(0.98);
     } finally {
