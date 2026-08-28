@@ -1126,16 +1126,34 @@ export function Thread({
               </p>
             </div>
             {composer}
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {suggestions.map((s) => (
-                <button
-                  key={s.key}
-                  onClick={() => onSuggestion(s.key, s.prompt)}
-                  className="rounded-full border border-edge bg-panel/60 px-3.5 py-1.5 text-xs text-gray-400 transition-colors hover:border-edge-strong hover:bg-hover hover:text-gray-100"
-                >
-                  {s.label}
-                </button>
-              ))}
+            {/* Starting points, not a button bar.
+              *
+              * Six identical pills in a centred cloud give six things equal
+              * weight and none of them a shape — the eye has nowhere to land,
+              * which is why an empty state built from them reads as unfinished
+              * however carefully the pills are styled. A left-aligned list under
+              * the composer, each row a verb with a quiet arrow, is scannable in
+              * one pass and puts the first one where reading already starts. */}
+            <div className="mt-5">
+              <div className="mb-1.5 px-1 text-2xs font-medium uppercase tracking-[0.08em] text-gray-600">
+                {t("thread.startWith")}
+              </div>
+              <div className="grid gap-px overflow-hidden rounded-xl border border-edge bg-edge sm:grid-cols-2">
+                {suggestions.map((s) => (
+                  <button
+                    key={s.key}
+                    onClick={() => onSuggestion(s.key, s.prompt)}
+                    className="group flex items-center gap-2 bg-panel px-3.5 py-2.5 text-left text-sm text-gray-300 transition-colors hover:bg-hover hover:text-gray-100"
+                  >
+                    <span className="min-w-0 flex-1 truncate">{s.label}</span>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden
+                         className="shrink-0 text-gray-700 transition-colors group-hover:text-accent">
+                      <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="mt-4 space-y-2">{banners}</div>
           </div>

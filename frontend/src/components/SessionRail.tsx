@@ -192,7 +192,7 @@ export function SessionRail({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1">
             {s.pinned && <PinIcon size={10} />}
-            <span className={`truncate text-xs ${isActive ? "text-gray-100" : "text-gray-300 group-hover:text-gray-200"}`}>
+            <span className={`truncate text-sm ${isActive ? "text-gray-100" : "text-gray-300 group-hover:text-gray-200"}`}>
               {s.title || t("common.untitled")}
             </span>
           </div>
