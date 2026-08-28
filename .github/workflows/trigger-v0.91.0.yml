@@ -10,7 +10,49 @@ permissions:
   actions: write
 
 jobs:
-  validate-trigger:
+  dispatch-release:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "permissions are valid"
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Prepare v0.91.0 changelog on main
+        env:
+          NOTES_B64: "IyMgWzAuOTEuMF0gLSAyMDI2LTA4LTI5CgpfQSB3b3Jrc3BhY2UtZmlyc3QgcmVidWlsZCBvZiBTdG9yYWdlIEFnZW50IFdvcmtiZW5jaDogY29udmVyc2F0aW9uIHJlbWFpbnMgbGlnaHR3ZWlnaHQsIHdoaWxlIGludmVzdGlnYXRpb25zLCBldmlkZW5jZSBhbmQgZHVyYWJsZSByZXBvcnRzIGJlY29tZSBmaXJzdC1jbGFzcyBmdWxsLWNhbnZhcyB3b3JrIHN1cmZhY2VzLl8KCiMjIyBDaGFuZ2VkCgotICoqV29ya3NwYWNlLWZpcnN0IGFnZW50IGNsaWVudC4qKiBJbnZlc3RpZ2F0aW9uIGFuZCByZXZpZXcgc3VyZmFjZXMgbm93IHVzZSB0aGUgZnVsbCB3b3JrIGFyZWEgaW5zdGVhZCBvZiBuYXJyb3cgZHJhd2VycyBvciBjZW50ZXJlZCBtb2RhbHMsIHdpdGggZG9jdW1lbnQtc3R5bGUgYW5zd2VyIHJlbmRlcmluZyBhbmQgYSBtb3JlIGNvbXBhY3Qgc3RlZXJpbmcgc3VyZmFjZS4KLSAqKkFnZW50IEFjdGl2aXR5IGlzIHByb2dyZXNzaXZlIHJhdGhlciB0aGFuIG5vaXN5LioqIEZpbmlzaGVkIHRvb2wgYWN0aXZpdHkgaXMgZGVuc2VyIGFuZCBlYXNpZXIgdG8gc2NhbiB3aGlsZSBwcmVzZXJ2aW5nIGRpcmVjdCBhY2Nlc3MgdG8gZXZpZGVuY2UgYW5kIGNhbGwgZGV0YWlscy4KLSAqKkV2aWRlbmNlIGluc3BlY3Rpb24gaXMgcHJvbW90ZWQgdG8gYSByZWFsIHdvcmtzcGFjZS4qKiBJbnNwZWN0b3IgYW5kIGR1cmFibGUgcmVwb3J0IHZpZXdzIHVzZSBkZWRpY2F0ZWQgcmV2aWV3IGdlb21ldHJ5IHN1aXRhYmxlIGZvciBwYXlsb2FkcywgdGltZWxpbmVzIGFuZCBsb25nLWZvcm0gaW52ZXN0aWdhdGlvbiBvdXRwdXQuCi0gKipMb25nLXRocmVhZCBuYXZpZ2F0aW9uIGlzIHNlbWFudGljLioqIEJhcmUgYGpgIC8gYGtgIG5hdmlnYXRpb24gbW92ZXMgYmV0d2VlbiBjb252ZXJzYXRpb24gdHVybnMgd2hpbGUgcmVzcGVjdGluZyBlZGl0YWJsZSBmaWVsZHMgYW5kIHJlYWRlci1jb250cm9sbGVkIHNjcm9sbGluZy4KLSAqKkNvbnZlcnNhdGlvbiBnZW9tZXRyeSBpcyBtb3JlIGNvaGVyZW50LioqIFByb21wdCwgYW5zd2VyLCB0dXJuIGZvb3RlciBhbmQgcmV2aWV3IHN1cmZhY2VzIG5vdyBzaGFyZSBkZWxpYmVyYXRlIHJlYWRpbmcgbWVhc3VyZXMgaW5zdGVhZCBvZiBjb21wZXRpbmcgY2hhdC1jYXJkIHdpZHRocy4KCiMjIyBGaXhlZAoKLSAqKkZ1bGwtY2FudmFzIHJldmlldyBnZW9tZXRyeSBpcyBzdGFibGUgZnJvbSB0aGUgZmlyc3QgZnJhbWUuKiogVGhlIHJlcG9ydC9pbnNwZWN0aW9uIGVudHJ5IG1vdGlvbiBubyBsb25nZXIgc2NhbGVzIHRoZSB2aWV3cG9ydC1zaXplZCBzdXJmYWNlLCByZW1vdmluZyB0cmFuc2llbnQgNOKAkzYgcHggaW5zZXRzIHRoYXQgY2F1c2VkIHRoZSBzdHJpY3QgcmVhbC1zaWRlY2FyIEUyRSBnZW9tZXRyeSByZWdyZXNzaW9uIGFmdGVyIHRoZSB3b3Jrc3BhY2UtZmlyc3QgbWVyZ2UuCi0gKipUaGUgc3RyaWN0IGdlb21ldHJ5IGNvbnRyYWN0IHJlbWFpbnMgdW5jaGFuZ2VkLioqIFRoZSBmaXggY2hhbmdlcyBwcm9kdWN0IG1vdGlvbiBzZW1hbnRpY3MgcmF0aGVyIHRoYW4gd2Vha2VuaW5nIHRlc3QgdG9sZXJhbmNlczsgdGhlIGNvbXBsZXRlIHNldmVuLWpvYiBDSSBtYXRyaXggcGFzc2VzIG9uIHRoZSBjb3JyZWN0ZWQgbWFpbiBicmFuY2guCgo="
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+          path = Path("CHANGELOG.md")
+          text = path.read_text()
+          heading = "## [0.91.0] - 2026-08-29"
+          if heading not in text:
+              notes = base64.b64decode(os.environ["NOTES_B64"]).decode()
+              marker = "## [Unreleased]\n\n"
+              if marker not in text:
+                  raise SystemExit("CHANGELOG.md is missing the Unreleased marker")
+              path.write_text(text.replace(marker, marker + notes, 1))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): prepare v0.91.0"
+            git push origin HEAD:main
+          fi
+          git rev-parse HEAD > /tmp/release-ref
+
+      - name: Dispatch canonical release workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF="$(cat /tmp/release-ref)"
+          gh workflow run release.yml --repo hxddh/storage-agent-workbench --ref main -f version=v0.91.0 -f ref="$REF" -f prerelease=false -f draft=false
+          echo "Dispatched v0.91.0 from $REF"
