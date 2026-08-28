@@ -3,7 +3,7 @@ import type { Grounding, NextAction, SessionFinding, SessionRunLink, ToolActivit
 import { RunDetail } from "./RunDetail";
 import { Markdown } from "./Markdown";
 import { useI18n } from "../i18n";
-import { LiveTrace } from "./LiveTrace";
+import { LiveTrace, WorkingRow } from "./LiveTrace";
 import { isMostlyError, parseS3Error, type S3Error } from "../lib/s3error";
 
 const RUN_STATUS: Record<string, { cls: string; key: string }> = {
@@ -141,15 +141,9 @@ export const MessageCard = memo(function MessageCard({
           <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-accent-soft align-middle" />
         ) : (
           // No answer text yet (model still working after / between tool calls —
-          // often the longest wait). Show explicit progress so it doesn't look frozen.
-          <div className="flex items-center gap-2.5 text-sm text-gray-500">
-            <span className="flex gap-1">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "0ms" }} />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "150ms" }} />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "300ms" }} />
-            </span>
-            <span className="animate-pulse">{t("think.working")}</span>
-          </div>
+          // often the longest wait). Same row as a live tool call, so the wait
+          // and the work it turns into are one list, not two components.
+          <WorkingRow label={t("think.working")} />
         ))}
     </AgentTurn>
   );
@@ -436,14 +430,7 @@ export function ThinkingBubble() {
   return (
     <AgentTurn streaming>
       <div className="flex h-4 items-center" />
-      <div className="flex items-center gap-2.5 text-sm text-gray-500">
-        <span className="flex gap-1">
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "0ms" }} />
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "150ms" }} />
-          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "300ms" }} />
-        </span>
-        <span className="animate-pulse">{labels[i]}</span>
-      </div>
+      <WorkingRow label={labels[i]} />
     </AgentTurn>
   );
 }

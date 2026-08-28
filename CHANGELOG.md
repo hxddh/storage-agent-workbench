@@ -72,6 +72,12 @@ gates that let this through are replaced._
   ground with an outer border drew a rule between all six suggestions and a box
   around the lot. And each row's arrow sat 320px to the right of the phrase it
   points at; it now follows the words, on hover.
+- **The wait is a step, not a spinner in an empty screen.** The signature
+  moment of an agent app was three bouncing dots and a rotating sentence, in a
+  component laid out nothing like the tool rows that replaced it a second later
+  — so the whole block was swapped for a different-looking list the instant work
+  began. It is now the same row as a live call: one list from the first moment,
+  growing.
 - **A table is a block in an answer, not the answer.** A capped table was still
   allowed `60vh` — 540px of a 900px window for one block — and its rows were
   31px tall. 22rem and 26px rows: the prose above it, the table, the list below

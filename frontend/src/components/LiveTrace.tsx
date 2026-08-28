@@ -84,6 +84,32 @@ const Wrench = (
   </svg>
 );
 
+/**
+ * The agent working, before it has run anything.
+ *
+ * This used to be three bouncing dots and a rotating sentence, in a component
+ * of its own, laid out nothing like the trace rows that replace it a second
+ * later. So the signature moment of an agent app — the wait — was a spinner in
+ * an otherwise empty screen, and then the whole block was swapped for a
+ * different-looking list. Both references show one list from the first moment,
+ * growing: thinking is a step, and the steps that follow it are the same shape.
+ *
+ * Same row geometry as a live tool call: the spinner sits where a call's
+ * spinner sits, and the label where the tool name goes, so a step finishing and
+ * the next one starting is a list growing rather than a component changing.
+ */
+export function WorkingRow({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 text-2xs text-gray-500" data-testid="working-row">
+      <span
+        className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent text-warn-fg"
+        aria-hidden
+      />
+      <span className="min-w-0 truncate">{label}</span>
+    </div>
+  );
+}
+
 export function LiveTrace({ items, sessionId }: { items: ToolActivity[]; sessionId?: string | null }) {
   const { t } = useI18n();
   const [showAll, setShowAll] = useState(false);
