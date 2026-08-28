@@ -5,6 +5,7 @@ import { ReportWorkspace } from "./ReportWorkspace";
 import { RunsWorkspace } from "./RunsWorkspace";
 import { SteeringSurface } from "./SteeringSurface";
 import { SurfaceTabs } from "./SurfaceTabs";
+import { useWorkbenchCopy } from "./copy";
 import { initialWorkbenchState, workbenchReducer } from "./model";
 import { useWorkbenchProjection } from "./useWorkbenchProjection";
 
@@ -34,6 +35,7 @@ export function WorkbenchShell({
   onOpenPalette: () => void;
   onOpenSettings: () => void;
 }) {
+  const copy = useWorkbenchCopy();
   const [state, dispatch] = useReducer(workbenchReducer, sessionId, initialWorkbenchState);
   const { detail, report, reportLoading, error: surfaceError } = useWorkbenchProjection(sessionId, state.surface);
 
@@ -41,7 +43,7 @@ export function WorkbenchShell({
     dispatch({ type: "session.changed", sessionId });
   }, [sessionId]);
 
-  const title = session?.title || "New investigation";
+  const title = session?.title || copy.newInvestigation;
   const goal = session?.goal?.trim() || null;
   const runCount = session?.run_count ?? 0;
   const findingCount = session?.finding_count ?? 0;
@@ -49,12 +51,14 @@ export function WorkbenchShell({
 
   const surfaceTitle = useMemo(() => {
     switch (state.surface) {
-      case "evidence": return `${findingCount} finding${findingCount === 1 ? "" : "s"}`;
-      case "runs": return `${runCount} run${runCount === 1 ? "" : "s"}`;
-      case "report": return "durable output";
-      default: return goal || "agent timeline";
+      case "evidence": return copy.findings(findingCount);
+      case "runs": return copy.runs(runCount);
+      case "report": return copy.durableOutput;
+      default: return goal || copy.agentTimeline;
     }
-  }, [state.surface, findingCount, runCount, goal]);
+  }, [state.surface, findingCount, runCount, goal, copy]);
+
+  const focusLabel = state.mode === "focus" ? copy.exitFocus : copy.focus;
 
   return (
     <div
@@ -86,10 +90,10 @@ export function WorkbenchShell({
 
           <div className="agent-os-actions">
             <ConnectionMark status={sidecarStatus} />
-            <button type="button" className="agent-os-command" onClick={onOpenPalette} title="Command palette">
-              <span>Command</span><kbd>⌘K</kbd>
+            <button type="button" className="agent-os-command" onClick={onOpenPalette} title={copy.commandPalette}>
+              <span>{copy.command}</span><kbd>⌘K</kbd>
             </button>
-            <button type="button" className="agent-os-icon-command" onClick={onOpenSettings} aria-label="Settings and providers" title="Settings and providers">
+            <button type="button" className="agent-os-icon-command" onClick={onOpenSettings} aria-label={copy.settings} title={copy.settings}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
                 <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21h-4v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H3v-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3h4a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9A1.7 1.7 0 0 0 21 10h.1v4H21a1.7 1.7 0 0 0-1.6 1Z" />
               </svg>
@@ -98,8 +102,8 @@ export function WorkbenchShell({
               type="button"
               className="agent-os-icon-command"
               onClick={() => dispatch({ type: state.mode === "focus" ? "surface.restore" : "surface.focus" })}
-              aria-label={state.mode === "focus" ? "Exit focus mode" : "Focus work surface"}
-              title={state.mode === "focus" ? "Exit focus mode" : "Focus work surface"}
+              aria-label={focusLabel}
+              title={focusLabel}
             >
               {state.mode === "focus" ? "↙" : "↗"}
             </button>
@@ -110,7 +114,7 @@ export function WorkbenchShell({
           <section
             id="work-surface-timeline"
             role="tabpanel"
-            aria-label="Timeline"
+            aria-label={copy.surfaces.timeline.label}
             className="agent-os-surface agent-os-timeline"
             hidden={state.surface !== "timeline"}
           >
@@ -118,19 +122,19 @@ export function WorkbenchShell({
           </section>
 
           {state.surface === "evidence" && (
-            <section id="work-surface-evidence" role="tabpanel" aria-label="Evidence" className="agent-os-surface agent-os-scroll-surface agent-os-steerable-surface">
+            <section id="work-surface-evidence" role="tabpanel" aria-label={copy.surfaces.evidence.label} className="agent-os-surface agent-os-scroll-surface agent-os-steerable-surface">
               {surfaceError ? (
                 <p className="workbench-surface-error">{surfaceError}</p>
               ) : sessionId ? (
                 <EvidenceWorkspace detail={detail} sessionId={sessionId} />
               ) : (
-                <p className="workbench-empty-line">Select an investigation to review its evidence.</p>
+                <p className="workbench-empty-line">{copy.selectEvidence}</p>
               )}
             </section>
           )}
 
           {state.surface === "runs" && (
-            <section id="work-surface-runs" role="tabpanel" aria-label="Runs" className="agent-os-surface agent-os-scroll-surface agent-os-steerable-surface">
+            <section id="work-surface-runs" role="tabpanel" aria-label={copy.surfaces.runs.label} className="agent-os-surface agent-os-scroll-surface agent-os-steerable-surface">
               {surfaceError ? (
                 <p className="workbench-surface-error">{surfaceError}</p>
               ) : (
@@ -145,7 +149,7 @@ export function WorkbenchShell({
           )}
 
           {state.surface === "report" && (
-            <section id="work-surface-report" role="tabpanel" aria-label="Report" className="agent-os-surface agent-os-scroll-surface agent-os-steerable-surface">
+            <section id="work-surface-report" role="tabpanel" aria-label={copy.surfaces.report.label} className="agent-os-surface agent-os-scroll-surface agent-os-steerable-surface">
               <ReportWorkspace report={report} loading={reportLoading} error={surfaceError} />
             </section>
           )}
