@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useActiveTurnController } from "../hooks/useTurnRunner";
 import { getSessionRun, useSessionRun } from "../sessionRuns";
 import { useI18n } from "../i18n";
+import { useWorkbenchCopy } from "./copy";
 
 export function SteeringSurface({
   sessionId,
@@ -13,6 +14,7 @@ export function SteeringSurface({
   offline: boolean;
 }) {
   const { t } = useI18n();
+  const copy = useWorkbenchCopy();
   const controller = useActiveTurnController();
   const run = useSessionRun(sessionId);
   const [text, setTextState] = useState("");
@@ -31,9 +33,6 @@ export function SteeringSurface({
     const question = textRef.current.trim();
     if (!sessionId || !controller || offline || !question || run.uploading) return;
 
-    // Clear optimistically so the same sentence cannot be accidentally sent
-    // twice while the turn is registering. If the turn fails and the user has
-    // not typed something newer, restore this exact sentence into this surface.
     setText("");
     if (run.busy) await controller.steer(question);
     else await controller.submit(question);
@@ -56,7 +55,7 @@ export function SteeringSurface({
           <div className="min-w-0 flex-1">
             <div className="mb-1.5 flex items-center gap-2 px-1 text-2xs text-gray-500">
               <span className={`h-1.5 w-1.5 rounded-full ${run.busy ? "bg-warn" : "bg-success"}`} aria-hidden />
-              <span>{run.busy ? t("thread.redirectCurrent") : "Agent steering"}</span>
+              <span>{run.busy ? t("thread.redirectCurrent") : copy.steering}</span>
               {run.busy && run.pending ? (
                 <span className="min-w-0 truncate text-gray-500" title={run.pending}>{run.pending}</span>
               ) : null}
@@ -91,7 +90,7 @@ export function SteeringSurface({
           ) : null}
           <button
             type="button"
-            className="h-8 shrink-0 rounded-lg bg-accent px-3 text-xs font-medium text-white transition-opacity disabled:cursor-default disabled:opacity-35"
+            className="h-8 shrink-0 rounded-lg bg-accent px-3 text-xs font-medium text-[var(--accent-fg)] transition-opacity disabled:cursor-default disabled:opacity-35"
             onClick={() => void dispatch()}
             disabled={blocked || text.trim().length === 0}
           >
