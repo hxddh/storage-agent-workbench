@@ -9,6 +9,7 @@ import "./index.css";
 import "./answer-document.css";
 import "./workspace-overhaul.css";
 import "./run-workspace.css";
+import "./workspace-motion.css";
 
 // Apply the saved theme before first paint to avoid a flash.
 applyTheme(initialTheme());
@@ -24,5 +25,5 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
         </I18nProvider>
       </ThemeProvider>
     </ErrorBoundary>
-  </React.StrictMode>
+  </React.StrictMode>,
 );
