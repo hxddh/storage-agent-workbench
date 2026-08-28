@@ -3,7 +3,6 @@ import re
 
 ROOT = Path("frontend/src")
 CARDS = ROOT / "components/ThreadCardsImplementation.tsx"
-PUBLIC_CARDS = ROOT / "components/ThreadCards.tsx"
 WORKSPACE_CSS = ROOT / "workspace-overhaul.css"
 RUN_CSS = ROOT / "run-workspace.css"
 
@@ -44,14 +43,16 @@ cards = regex_once(
     '',
     "remove dead inline RunCard",
 )
-for forbidden in ["SessionRunLink", "RunDetail", "RUN_STATUS", "export function RunCard"]:
+for forbidden in [
+    "SessionRunLink",
+    'import { RunDetail } from "./RunDetail"',
+    "<RunDetail",
+    "RUN_STATUS",
+    "export function RunCard",
+]:
     if forbidden in cards:
         raise SystemExit(f"legacy inline run ownership remains in ThreadCardsImplementation: {forbidden}")
 CARDS.write_text(cards)
-
-public_cards = PUBLIC_CARDS.read_text()
-public_cards = replace_once(public_cards, '  RunCard,\n', '', "remove RunCard public export")
-PUBLIC_CARDS.write_text(public_cards)
 
 # Everything after this marker was a v0.91 compatibility shim that stretched the
 # old Inspector and Report modals to viewport size. v0.92 has native Evidence and
