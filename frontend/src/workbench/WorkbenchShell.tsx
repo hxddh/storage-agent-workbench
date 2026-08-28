@@ -222,7 +222,13 @@ export function WorkbenchShell({
 
           {state.surface === "evidence" && (
             <section id="work-surface-evidence" role="tabpanel" aria-label="Evidence" className="agent-os-surface agent-os-scroll-surface">
-              {surfaceError ? <p className="workbench-surface-error">{surfaceError}</p> : <EvidenceWorkspace detail={detail} />}
+              {surfaceError ? (
+                <p className="workbench-surface-error">{surfaceError}</p>
+              ) : sessionId ? (
+                <EvidenceWorkspace detail={detail} sessionId={sessionId} />
+              ) : (
+                <p className="workbench-empty-line">Select an investigation to review its evidence.</p>
+              )}
             </section>
           )}
 
