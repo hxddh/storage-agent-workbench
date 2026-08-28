@@ -154,7 +154,7 @@
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: var(--gray-600);
+  background: var(--gray-500);
 }
 
 .workbench-connection[data-status="connected"] > span { background: var(--success); }
@@ -188,7 +188,7 @@
 }
 
 .agent-os-command kbd {
-  color: var(--gray-600);
+  color: var(--gray-500);
   font-family: "JetBrains Mono Variable", ui-monospace, monospace;
   font-size: 9px;
 }
@@ -277,7 +277,7 @@
 
 .workbench-section-index {
   padding-top: 3px;
-  color: var(--gray-600);
+  color: var(--gray-500);
   font-family: "JetBrains Mono Variable", ui-monospace, monospace;
   font-size: 10px;
 }
@@ -305,7 +305,7 @@
   flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 7px;
-  color: var(--gray-600);
+  color: var(--gray-500);
   font-family: "JetBrains Mono Variable", ui-monospace, monospace;
   font-size: 9px;
   text-transform: uppercase;
@@ -368,13 +368,13 @@
 }
 
 .workbench-run-row:hover { background: color-mix(in srgb, var(--hover) 30%, transparent); }
-.workbench-run-status { width: 6px; height: 6px; border-radius: 999px; background: var(--gray-600); }
+.workbench-run-status { width: 6px; height: 6px; border-radius: 999px; background: var(--gray-500); }
 .workbench-run-status[data-status="completed"] { background: var(--success); }
 .workbench-run-status[data-status="running"] { background: var(--warn); }
 .workbench-run-status[data-status="failed"] { background: var(--danger); }
 .workbench-run-main { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
 .workbench-run-main strong { overflow: hidden; color: var(--gray-200); font-size: 11px; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
-.workbench-run-main small, .workbench-run-state, .workbench-run-arrow { color: var(--gray-600); font-size: 9px; }
+.workbench-run-main small, .workbench-run-state, .workbench-run-arrow { color: var(--gray-500); font-size: 9px; }
 .workbench-run-state { font-family: "JetBrains Mono Variable", ui-monospace, monospace; text-transform: uppercase; }
 
 .workbench-report-body {
