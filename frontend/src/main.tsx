@@ -12,6 +12,7 @@ import "./run-workspace.css";
 import "./workbench/workbench.css";
 import "./workbench/steering.css";
 import "./workbench/answer-artifact.css";
+import "./workbench/workbench-accessibility.css";
 
 // Apply the saved theme before first paint to avoid a flash.
 applyTheme(initialTheme());

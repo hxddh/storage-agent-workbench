@@ -52,7 +52,7 @@ test.describe("investigation navigation", () => {
     await field.press("Enter");
 
     await expect(rail(page).getByText("403 on acme-logs")).toBeVisible({ timeout: 15_000 });
-    await expect(thread(page).getByText("403 on acme-logs")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("workbench-commandbar").getByText("403 on acme-logs")).toBeVisible({ timeout: 15_000 });
   });
 
   test("duplicating it produces a second investigation with the same history", async ({ page }) => {

@@ -102,6 +102,10 @@ test.describe("Agent OS workbench", () => {
 
       const steering = page.getByTestId("workbench-steering");
       await expect(steering).toBeVisible();
+      // The footer appears before the session run necessarily publishes its
+      // final idle state. Wait for the controller to say Send rather than
+      // accidentally testing redirect-in-flight semantics.
+      await expect(steering.getByRole("button", { name: /^send$/i })).toBeVisible({ timeout: 20_000 });
       const field = steering.getByRole("textbox");
       await field.fill("Summarize the evidence again from this review surface.");
       await field.press("Enter");

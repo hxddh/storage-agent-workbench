@@ -1,13 +1,4 @@
 import { expect, test, type Page } from "@playwright/test";
-import { seedSession } from "./seed";
-
-/**
- * v0.46.0 shell interactions, against the real stack.
- *
- * These are the parts unit tests cannot reach: the rail's width and collapsed
- * state have to survive an actual page reload (they live in localStorage and are
- * read at mount), and the keyboard shortcuts have to reach a real document.
- */
 
 async function seedFreshApp(page: Page) {
   await page.addInitScript(() => {
@@ -18,7 +9,7 @@ async function seedFreshApp(page: Page) {
 
 const rail = (page: Page) => page.getByTestId("session-rail");
 
-test.describe("session rail", () => {
+test.describe("investigation navigation shell", () => {
   test("collapses, and stays collapsed across a reload", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
@@ -27,12 +18,10 @@ test.describe("session rail", () => {
     await page.getByTestId("rail-toggle").click();
     await expect(rail(page)).toHaveAttribute("data-collapsed", "true");
 
-    // The point of a preference is that you set it once.
     await page.reload();
     await expect(rail(page)).toHaveAttribute("data-collapsed", "true");
+    await expect(page.getByRole("button", { name: /new investigation/i })).toBeVisible();
 
-    // And the collapsed strip still offers the two things you reach for most.
-    await expect(page.getByRole("button", { name: /new chat/i })).toBeVisible();
     await page.getByTestId("rail-toggle").click();
     await expect(rail(page)).toHaveAttribute("data-collapsed", "false");
   });
@@ -51,7 +40,6 @@ test.describe("session rail", () => {
 
     const after = (await rail(page).boundingBox())!.width;
     expect(after).toBeGreaterThan(before);
-    // Clamped: never wide enough to starve the thread.
     expect(after).toBeLessThanOrEqual(420);
 
     await page.reload();
@@ -68,8 +56,6 @@ test.describe("session rail", () => {
     await page.mouse.down();
     await page.mouse.move(20, box.y + 200, { steps: 8 });
     await page.mouse.up();
-    // Below this the rail stops earning its space — collapse is the answer, not
-    // a sliver of clipped text.
     expect((await rail(page).boundingBox())!.width).toBeGreaterThanOrEqual(189);
   });
 });
@@ -81,7 +67,6 @@ test.describe("keyboard", () => {
     await page.keyboard.press("?");
     const sheet = page.getByTestId("shortcuts-sheet");
     await expect(sheet).toBeVisible();
-    // It documents the shortcuts that already existed but were undiscoverable.
     await expect(sheet.getByText(/command palette/i)).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
@@ -114,7 +99,6 @@ test.describe("overlay focus", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
-    // Focus must not walk out into the composer hidden behind the scrim.
     for (let i = 0; i < 6; i++) await page.keyboard.press("Tab");
     const inside = await dialog.evaluate((el) => el.contains(document.activeElement));
     expect(inside).toBe(true);
@@ -130,7 +114,6 @@ test.describe("thread paging", () => {
     await box.fill("<Error><Code>AccessDenied</Code></Error>");
     await box.press("Enter");
     await expect(page.getByText(/error triage/i).first()).toBeVisible({ timeout: 20_000 });
-    // Nothing is hidden, so nothing claims to be.
     await expect(page.getByTestId("load-earlier")).toHaveCount(0);
   });
 
@@ -154,15 +137,14 @@ test.describe("thread paging", () => {
       return await r.json();
     }, sid);
 
-    // The contract the thread relies on: a page, plus how many exist.
     expect(Array.isArray(body.messages)).toBe(true);
     expect(typeof body.total).toBe("number");
     expect(typeof body.has_more).toBe("boolean");
   });
 });
 
-test.describe("what the agent knows (v0.51.0)", () => {
-  test("the session endpoint reports its memory, its files, and its context reach", async ({ page }) => {
+test.describe("what the agent knows", () => {
+  test("the session endpoint reports its memory, files, and context reach", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
     const body = await page.evaluate(async () => {
@@ -176,8 +158,6 @@ test.describe("what the agent knows (v0.51.0)", () => {
       ).json();
       return await (await fetch(`${url}/sessions/${created.id}`)).json();
     });
-    // The contract the memory panel relies on. Before v0.51.0 the agent's own
-    // memory was persisted, replayed into every turn, and returned by nothing.
     expect(Array.isArray(body.agent_memory)).toBe(true);
     expect(Array.isArray(body.attached_files)).toBe(true);
     expect(typeof body.context_messages).toBe("number");
@@ -197,13 +177,11 @@ test.describe("what the agent knows (v0.51.0)", () => {
       ).json();
       return await (await fetch(`${url}/sessions/${created.id}/turn`)).json();
     });
-    // This is what a client that reloaded mid-turn asks. "Nothing running" has
-    // to be a real answer, not a 404.
     expect(state.running).toBe(false);
   });
 });
 
-test.describe("composer drafts (v0.51.0)", () => {
+test.describe("composer drafts", () => {
   test("an unsent question survives a reload", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
@@ -211,8 +189,6 @@ test.describe("composer drafts (v0.51.0)", () => {
     await box.click();
     await box.fill("why can I not delete this object");
 
-    // A draft is UI state, so localStorage is where it lives — and a reload is
-    // exactly the event that used to destroy it.
     const stored = await page.evaluate(() => localStorage.getItem("saw.drafts"));
     expect(stored ?? "").toContain("why can I not delete this object");
   });
@@ -228,10 +204,7 @@ test.describe("turn structure", () => {
     await box.press("Enter");
     await expect(page.getByText(/error triage/i).first()).toBeVisible({ timeout: 20_000 });
 
-    // The old split layout put a trace above the answer AND a metrics strip
-    // below it, each with its own expander, describing the same calls.
     await expect(page.getByTestId("tool-trace-toggle")).toHaveCount(0);
-    // "Why this answer" is no longer a separate card either.
     await expect(page.getByText(/^Why this answer/)).toHaveCount(0);
   });
 
@@ -243,66 +216,38 @@ test.describe("turn structure", () => {
     await box.fill("<Error><Code>AccessDenied</Code></Error>");
     await box.press("Enter");
     await expect(page.getByText(/error triage/i).first()).toBeVisible({ timeout: 20_000 });
-    // Standing session state belongs in the inspector, not at the newest
-    // position of a time-ordered thread.
     await expect(page.getByText(/^Session findings/)).toHaveCount(0);
   });
 });
 
 /**
- * Escape closes what you just opened, not everything you had open.
- *
- * Five window-level Escape handlers had grown up independently — the shortcuts
- * sheet, the session inspector, the run overlay, the import dialog, and a
- * catch-all in App that closed the palette, the settings drawer and the sheet
- * together. Each is correct alone; stacked they are not. Measured before the
- * fix: inspector open, palette opened over it, one Escape → `{palette: 0,
- * inspector: 0}`. Dismissing the thing you had just opened threw away the thing
- * you opened it from.
+ * Escape is an overlay-stack contract. The removed Session Inspector is not an
+ * overlay anymore, so exercise two overlays that still exist: Settings, then
+ * the Command Palette above it.
  */
 test.describe("Escape with two overlays open", () => {
   test("closes only the topmost one", async ({ page }) => {
-    test.setTimeout(90_000);
-    const { title } = seedSession(3, `esc ${Date.now()}`);
-    await page.addInitScript(() => {
-      localStorage.setItem("saw.lang", "en");
-      localStorage.setItem("saw.onboarded", "1");
-    });
+    await seedFreshApp(page);
     await page.goto("/");
     await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible({ timeout: 30_000 });
-    await page.getByText(title, { exact: true }).first().click();
-    await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
 
-    await page.getByTestId("open-inspector").click();
-    await expect(page.getByText(/Session inspector/i).first()).toBeVisible();
+    await page.getByTestId("rail-settings").click();
+    const settings = page.getByRole("dialog").filter({ hasText: /Settings & providers/i });
+    await expect(settings).toBeVisible();
+
     await page.keyboard.press("ControlOrMeta+k");
     const palette = page.getByPlaceholder(/Search chats or run a command/i);
     await expect(palette).toBeVisible();
 
     await page.keyboard.press("Escape");
     await expect(palette).toHaveCount(0);
-    // …and the inspector it was opened over is still there.
-    await expect(page.getByText(/Session inspector/i).first()).toBeVisible();
+    await expect(settings).toBeVisible();
 
-    // A second Escape then takes the inspector, in order.
     await page.keyboard.press("Escape");
-    await expect(page.getByText(/Session inspector/i)).toHaveCount(0);
+    await expect(settings).toHaveCount(0);
   });
 });
 
-/**
- * An opaque panel is opaque, including while it is arriving.
- *
- * The settings drawer spent the length of its open animation translucent: you
- * could read the thread's heading straight through it, on every single open.
- * The first fix removed `opacity` from the panel's own keyframe and changed
- * nothing, because the opacity was never on the panel — the scrim was its
- * PARENT, and fading the scrim faded everything inside it.
- *
- * Asserted on pixels rather than on CSS: sample a point well inside the panel a
- * few frames after it opens and require it to be the panel's own colour. A
- * declaration can be correct and still inherit a fade from four levels up.
- */
 test("the settings drawer is never see-through, even mid-animation", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("saw.lang", "en");
@@ -313,10 +258,8 @@ test("the settings drawer is never see-through, even mid-animation", async ({ pa
   await page.goto("/");
   await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible({ timeout: 30_000 });
 
-  // The start surface's heading is behind where the drawer will be.
   await page.getByTestId("rail-settings").click();
 
-  // Two frames in: the slide is still running.
   const mid = await page.evaluate(async () => {
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     const panel = document.querySelector('[role="dialog"]') as HTMLElement;
@@ -325,10 +268,8 @@ test("the settings drawer is never see-through, even mid-animation", async ({ pa
     const y = Math.round(r.top + r.height / 2);
     const under = document.elementFromPoint(x, y);
     return {
-      // Whatever is painted at the middle of the panel must belong to it.
       inPanel: panel.contains(under),
       panelOpacity: Number(getComputedStyle(panel).opacity),
-      // …and nothing between it and the root may be fading either.
       chainOpacity: (() => {
         let o = 1;
         for (let n: Element | null = panel; n; n = n.parentElement) o *= Number(getComputedStyle(n).opacity);

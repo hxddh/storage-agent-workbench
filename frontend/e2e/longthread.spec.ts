@@ -115,7 +115,7 @@ test.describe("the composer on a loaded session", () => {
   test("a draft survives switching away and back", async ({ page }) => {
     const title = await openLong(page);
     await composer(page).fill("does bucket-7 have a lifecycle rule");
-    await page.getByText("New chat").first().click();
+    await page.getByRole("button", { name: /new investigation/i }).first().click();
     await expect(composer(page)).toHaveValue("", { timeout: 10_000 });
     await page.getByText(title).first().click();
     await expect(composer(page)).toHaveValue("does bucket-7 have a lifecycle rule", {
