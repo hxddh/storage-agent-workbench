@@ -17,25 +17,34 @@ import { useSyncExternalStore } from "react";
  */
 export type ActivityDensity = "compact" | "balanced" | "detailed";
 
+const zh = () =>
+  typeof window !== "undefined" && window.localStorage.getItem("saw.lang")?.toLowerCase().startsWith("zh");
+
+/**
+ * Labels are getters rather than module-load constants. Language can be changed
+ * while the app is open; the surrounding TurnFooter already re-renders through
+ * I18nProvider, so reading the getter at render time follows that change without
+ * creating a second language store just for this preference menu.
+ */
 export const ACTIVITY_DENSITIES: ReadonlyArray<{
   value: ActivityDensity;
-  label: string;
-  description: string;
+  readonly label: string;
+  readonly description: string;
 }> = [
   {
     value: "compact",
-    label: "Compact",
-    description: "Results first · tool traces stay folded",
+    get label() { return zh() ? "精简" : "Compact"; },
+    get description() { return zh() ? "结果优先 · 默认收起工具过程" : "Results first · tool traces stay folded"; },
   },
   {
     value: "balanced",
-    label: "Balanced",
-    description: "Keep the newest turn's important steps visible",
+    get label() { return zh() ? "均衡" : "Balanced"; },
+    get description() { return zh() ? "保留最新回合的重要步骤" : "Keep the newest turn's important steps visible"; },
   },
   {
     value: "detailed",
-    label: "Detailed",
-    description: "Keep finished tool traces visible across the thread",
+    get label() { return zh() ? "详细" : "Detailed"; },
+    get description() { return zh() ? "在整个会话中保留已完成的工具过程" : "Keep finished tool traces visible across the thread"; },
   },
 ];
 
