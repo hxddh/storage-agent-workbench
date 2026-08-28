@@ -204,3 +204,34 @@ test("a send that fails for want of a model does not leave an empty session", as
   // …and the message is not lost with it: it goes back into the composer.
   await expect(box).toHaveValue(/why does my bucket deny list calls/);
 });
+
+/**
+ * When the backend is gone, the interface says so and stops offering.
+ *
+ * Measured before this: with `/health` failing, the ONLY signal anywhere on
+ * screen was an 8px dot at the bottom of the rail reading "Disconnected". The
+ * composer still invited a question, the six starting points still invited a
+ * click, and the send button was still the accent colour. Every one of those
+ * actions goes through the sidecar; every one of them would have failed. An
+ * interface that keeps inviting actions it cannot perform is not "quiet", it is
+ * wrong.
+ */
+test("the thread stops inviting actions it cannot perform", async ({ page }) => {
+  await seedFreshApp(page);
+  await page.goto("/");
+  await expect(composer(page)).toBeVisible({ timeout: 30_000 });
+  // Healthy first, so this cannot pass by accident on a page that never loaded.
+  await expect(page.getByTestId("offline-banner")).toHaveCount(0);
+  const start = page.getByRole("button", { name: /diagnose an error/i });
+  await expect(start).toBeEnabled();
+
+  await page.route("**/health", (r) => r.abort());
+  await expect(page.getByTestId("offline-banner")).toBeVisible({ timeout: 20_000 });
+  await expect(start).toBeDisabled();
+
+  // The field stays typable: losing what someone was writing because a service
+  // blinked would be a worse failure than the one being reported.
+  await composer(page).click();
+  await composer(page).fill("this must not be thrown away");
+  await expect(composer(page)).toHaveValue("this must not be thrown away");
+});

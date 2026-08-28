@@ -94,6 +94,7 @@ export function Thread({
   sessionId,
   onSessionCreated,
   onSessionDiscarded,
+  sidecarStatus,
   onOpenSettings,
   onChanged,
   sidecarReady,
@@ -103,6 +104,9 @@ export function Thread({
   sessionId: string | null;
   onSessionCreated: (id: string) => void;
   onSessionDiscarded: (id: string) => void;
+  /** Whether the backend is reachable. Everything the composer offers goes
+   * through it, so a thread that does not know this cannot tell the truth. */
+  sidecarStatus: "starting" | "connected" | "disconnected" | "error";
   onOpenSettings: () => void;
   onChanged: () => void;
   sidecarReady: boolean;
@@ -1007,6 +1011,15 @@ export function Thread({
   const showLiveGrounding =
     !pending && !lastPersisted && (!!run.grounding || proposals.length > 0);
 
+  // The backend is gone, and the interface must stop implying otherwise.
+  //
+  // Measured before this: with `/health` failing, the ONLY signal anywhere on
+  // screen was an 8px dot at the bottom of the rail reading "Disconnected".
+  // The composer still invited a question, the starting points still invited a
+  // click, and the send button was still the accent colour. Every one of those
+  // actions goes through the sidecar; every one of them would have failed.
+  const offline = sidecarStatus === "disconnected" || sidecarStatus === "error";
+
   const composer = (
     <Composer
       text={text}
@@ -1020,6 +1033,7 @@ export function Thread({
       fileRef={fileRef}
       taRef={taRef}
       busy={busy}
+      offline={offline}
       uploading={uploading}
       onSend={send}
       // Called, not passed: `stop` takes an optional session id, and handing it
@@ -1070,6 +1084,15 @@ export function Thread({
 
   const banners = (
     <>
+      {offline && (
+        <div
+          data-testid="offline-banner"
+          className="animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-3.5 text-sm text-danger"
+        >
+          {t("thread.offline")}
+          <div className="mt-1 text-xs text-gray-400">{t("thread.offlineHint")}</div>
+        </div>
+      )}
       {needKey && (
         <div className="animate-fade-in-up rounded-xl border border-warn-border bg-warn-bg p-3.5 text-sm text-warn-fg">
           {t("thread.needKey")}
@@ -1143,7 +1166,8 @@ export function Thread({
                   <button
                     key={s.key}
                     onClick={() => onSuggestion(s.key, s.prompt)}
-                    className="group flex items-center gap-2 bg-panel px-3.5 py-2.5 text-left text-sm text-gray-300 transition-colors hover:bg-hover hover:text-gray-100"
+                    disabled={offline}
+                    className="group flex items-center gap-2 bg-panel px-3.5 py-2.5 text-left text-sm text-gray-300 transition-colors hover:bg-hover hover:text-gray-100 disabled:cursor-default disabled:text-gray-600 disabled:hover:bg-panel"
                   >
                     <span className="min-w-0 flex-1 truncate">{s.label}</span>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"

@@ -42,6 +42,7 @@ export function Composer({
   fileRef,
   taRef,
   busy,
+  offline,
   uploading,
   onSend,
   onStop,
@@ -66,6 +67,8 @@ export function Composer({
   fileRef: React.RefObject<HTMLInputElement | null>;
   taRef: React.RefObject<HTMLTextAreaElement | null>;
   busy: boolean;
+  /** The sidecar is unreachable; sending would go nowhere. */
+  offline: boolean;
   uploading: boolean;
   onSend: () => void;
   onStop: () => void;
@@ -128,7 +131,12 @@ export function Composer({
     setSlashSel(0);
   };
 
+  // The backend is unreachable: everything this control offers goes through it.
+  // Left typable on purpose — losing what someone was writing because a service
+  // blinked would be a worse failure than the one being reported — but nothing
+  // that would be dispatched into a void is offered.
   const running = busy || uploading;
+  const blocked = offline;
 
   return (
     <div className="group/composer relative rounded-2xl border border-edge bg-panel px-3.5 pb-2.5 pt-3 shadow-elev transition-[border-color,box-shadow] duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
@@ -250,7 +258,7 @@ export function Composer({
       <div className="mt-2 flex items-center gap-2">
         <button
           onClick={onOpenFilePicker}
-          disabled={running}
+          disabled={running || blocked}
           aria-label={t("attach.button")}
           title={t("attach.button")}
           className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-gray-500 transition-colors hover:bg-hover hover:text-gray-300 disabled:cursor-default disabled:opacity-50"
@@ -320,7 +328,7 @@ export function Composer({
         ) : (
           <button
             onClick={onSend}
-            disabled={uploading || (!text.trim() && !attached)}
+            disabled={uploading || blocked || (!text.trim() && !attached)}
             aria-label={t("thread.send")}
             className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-[background-color,transform] hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-600"
           >

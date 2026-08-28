@@ -263,6 +263,7 @@ export default function App() {
           setActiveId(id);
           refreshSessions();
         }}
+        sidecarStatus={status}
         onSessionDiscarded={(id) => {
           // The empty session a failed first turn left behind has been removed;
           // stop pointing at it before the thread tries to load a 404.
