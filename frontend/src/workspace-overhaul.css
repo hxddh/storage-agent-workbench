@@ -1,16 +1,15 @@
 /*
  * v0.91 workspace architecture pass
  *
- * The app has two modes of attention:
- *   1. conversation — read an answer, steer the agent, keep moving;
- *   2. investigation — inspect evidence, audit a long run, compare payloads.
+ * Two modes of attention, one coherent product:
+ *   1. Conversation — read an answer, steer the agent, keep moving.
+ *   2. Investigation — inspect evidence, audit a run, compare payloads/reports.
  *
- * Until now both modes were squeezed through the same chat-first geometry. The
- * Session Inspector in particular was a 680px drawer containing statistics,
- * findings, memory, audit history and raw payloads. That is not a drawer-sized
- * task. Deep inspection now owns the work area, in the same spirit as Cursor's
- * full-screen tabs: once the user explicitly asks to inspect, the evidence is
- * the primary object and the chat recedes.
+ * The old product squeezed both through the same chat-first geometry. v0.91
+ * makes conversation deliberately light and promotes deep inspection to a real
+ * work surface. These rules sit above the token/theme layer and below component
+ * semantics; they change product composition without weakening any state or
+ * evidence contract.
  */
 
 /* -------------------------------------------------------------------------
@@ -21,9 +20,14 @@
   overflow: hidden;
 }
 
-/* The rail is navigation furniture, not a second content column. Preserve the
- * user's resizable width but make its internal contrast quieter than the work
- * canvas so attention stays on the investigation. */
+[data-testid="agent-workspace"] {
+  background:
+    radial-gradient(70rem 30rem at 55% -14rem, color-mix(in srgb, var(--accent) 5%, transparent), transparent 72%),
+    var(--canvas);
+}
+
+/* Navigation is furniture, not a second content column. The right edge is a
+ * perceptual boundary, not a decorative border asking for attention. */
 [data-testid="session-rail"] {
   box-shadow: inset -1px 0 0 color-mix(in srgb, var(--edge) 58%, transparent);
 }
@@ -32,13 +36,142 @@
   scrollbar-gutter: stable;
 }
 
+/* Active/session rows already own their semantic state. The rail surface should
+ * remain quieter than the canvas, so menu/search chrome does not compete with
+ * the answer. */
+[data-testid="session-rail"] button,
+[data-testid="session-rail"] input {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* -------------------------------------------------------------------------
+ * Conversation header + start surface
+ * ---------------------------------------------------------------------- */
+[data-testid="agent-workspace"] main > header {
+  min-height: 48px;
+  padding-inline: 24px !important;
+  border-bottom-color: color-mix(in srgb, var(--edge) 66%, transparent) !important;
+  background: color-mix(in srgb, var(--canvas) 94%, transparent);
+  backdrop-filter: blur(14px) saturate(1.06);
+}
+
+/* The model indicator is context, not a form control. Keep it discoverable but
+ * stop drawing a miniature input around static state. */
+[data-testid="agent-workspace"] main > header > div:last-child > div:last-child {
+  border-color: transparent !important;
+  background: color-mix(in srgb, var(--panel) 42%, transparent);
+}
+
+/* New chat is an entry point to work, not a centered AI landing poster. The
+ * implementation already anchors it high; align the content to the same left
+ * reading edge the answer and composer use after the first turn. */
+[data-testid="agent-workspace"] main > div:has(h1) > div > div:has(> h1) {
+  align-items: flex-start !important;
+  text-align: left !important;
+  margin-bottom: 1.25rem !important;
+}
+
+[data-testid="agent-workspace"] main > div:has(h1) h1 {
+  max-width: 34rem;
+  text-wrap: balance;
+}
+
+[data-testid="agent-workspace"] main > div:has(h1) h1 + p {
+  max-width: 36rem !important;
+  text-wrap: pretty;
+}
+
+/* Start suggestions are secondary affordances. On a large display two columns
+ * still scan quickly; on smaller widths they collapse naturally in the existing
+ * layout. Reduce the row's visual weight so the prompt remains the first action. */
+[data-testid="agent-workspace"] main > div:has(h1) button:not([aria-label]) {
+  min-height: 36px;
+}
+
+/* -------------------------------------------------------------------------
+ * Thread reading surface
+ * ---------------------------------------------------------------------- */
+[data-testid="thread-scroll"] {
+  scrollbar-gutter: stable;
+  scroll-padding-block: 24px 120px;
+}
+
+/* A turn boundary should be created by rhythm, not by cards or rails. */
+[data-testid="thread-scroll"] .thread-item[data-question] {
+  scroll-margin-top: 72px;
+}
+
+/* The bottom composer zone should visually belong to the conversation rather
+ * than look like a footer bar stapled beneath it. */
+[data-testid="agent-workspace"] main > div.relative.px-6 {
+  background:
+    linear-gradient(to top, var(--canvas) 70%, color-mix(in srgb, var(--canvas) 0%, transparent));
+}
+
+/* -------------------------------------------------------------------------
+ * Composer: prompt bar, not form card
+ * ---------------------------------------------------------------------- */
+[data-testid="prompt-surface"] {
+  width: 100%;
+}
+
+/* `:has()` is supported by the Tauri webviews we ship. Targeting the semantic
+ * textarea hook avoids coupling this layer to generated Tailwind class names. */
+div:has(> textarea[data-focus-ring="container"]) {
+  border-radius: 14px !important;
+  background: color-mix(in srgb, var(--panel) 92%, transparent) !important;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--gray-100) 5%, transparent) inset,
+    0 12px 38px -24px rgba(0, 0, 0, 0.65) !important;
+}
+
+div:has(> textarea[data-focus-ring="container"]):focus-within {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--edge-strong)) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent),
+    0 16px 44px -24px rgba(0, 0, 0, 0.72) !important;
+}
+
+textarea[data-focus-ring="container"] {
+  min-height: 28px;
+  line-height: 1.55 !important;
+}
+
+/* The slash palette is command UI. It should feel attached to the prompt, not
+ * like a separate modal floating over it. */
+div:has(> textarea[data-focus-ring="container"]) > [role="menu"],
+div:has(> textarea[data-focus-ring="container"]) > .absolute.bottom-full {
+  transform-origin: bottom left;
+}
+
+/* -------------------------------------------------------------------------
+ * Finished Agent Activity + evidence continuity
+ * ---------------------------------------------------------------------- */
+[data-testid="turn-activity-panel"] {
+  border: 1px solid color-mix(in srgb, var(--edge) 66%, transparent);
+  background: color-mix(in srgb, var(--panel) 44%, transparent) !important;
+}
+
+[data-testid="turn-activity"] [data-testid="footer-row-open"] {
+  min-height: 30px;
+}
+
+[data-testid="call-detail"] {
+  container-type: inline-size;
+}
+
+@container (min-width: 720px) {
+  [data-testid="call-detail"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
 /* -------------------------------------------------------------------------
  * Full investigation workspace
  * ---------------------------------------------------------------------- */
 [data-testid="session-inspector"] {
-  /* Inline width from the legacy drawer is intentionally overruled. This is no
-   * longer a side drawer: opening "Inspect" means entering the investigation
-   * workspace. */
+  /* Inline width from the old drawer is intentionally overruled. Opening
+   * Inspect now means entering the investigation workspace. */
   width: 100vw !important;
   max-width: none !important;
   border-left: 0 !important;
@@ -49,8 +182,6 @@
   animation: workspace-enter 180ms cubic-bezier(0.21, 0.6, 0.35, 1) !important;
 }
 
-/* The old drawer scrim no longer has a visual job once the workspace fills the
- * entire app. Keep the overlay node for dismissal semantics, make it inert. */
 .fixed.inset-0:has(> [data-testid="session-inspector"]) > [aria-hidden="true"] {
   background: transparent !important;
   backdrop-filter: none !important;
@@ -68,8 +199,8 @@
 }
 
 /* The scroll body becomes a centered review document. 1180px is wide enough
- * for two payload columns and a readable timeline, but prevents metrics from
- * stretching into a dashboard billboard on large displays. */
+ * for two payload columns and a readable timeline without becoming a dashboard
+ * billboard on an ultrawide display. */
 [data-testid="session-inspector"] > div:last-child {
   width: min(1180px, 100%);
   margin-inline: auto;
@@ -77,8 +208,7 @@
   scrollbar-gutter: stable;
 }
 
-/* Summary metrics become a quiet status strip instead of four independent
- * admin-dashboard cards. The inspector is an evidence reader, not BI. */
+/* Summary metrics become a status strip, not four unrelated BI cards. */
 [data-testid="session-inspector"] > div:last-child > .grid.grid-cols-2 {
   gap: 0 !important;
   overflow: hidden;
@@ -99,9 +229,8 @@
   border-left: 1px solid var(--edge) !important;
 }
 
-/* Timeline rows should scan like an activity log, not a stack of left-border
- * callouts. Anchored and failed states keep semantic color through the small
- * status mark already in each row. */
+/* Timeline rows scan like an activity log. Anchored state remains explicit but
+ * no longer turns every row into a left-border callout. */
 [data-testid="session-inspector"] ul.mt-3 > li {
   border-left-width: 0 !important;
   padding-left: 0 !important;
@@ -115,8 +244,6 @@
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-/* Payloads inside the historical inspector are evidence too. Make them match
- * the new CallDetail reading scale rather than reverting to 11px debug text. */
 [data-testid="session-inspector"] pre {
   font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
   font-size: 12px !important;
@@ -125,51 +252,39 @@
 }
 
 /* -------------------------------------------------------------------------
- * Composer: prompt bar, not form card
+ * Reports are work surfaces too
  * ---------------------------------------------------------------------- */
-/* `:has()` is supported by the Tauri webviews we ship. Targeting the semantic
- * textarea hook avoids coupling this pass to Tailwind's generated class names. */
-div:has(> textarea[data-focus-ring="container"]) {
-  border-radius: 14px !important;
-  background: color-mix(in srgb, var(--panel) 92%, transparent) !important;
-  box-shadow:
-    0 1px 0 color-mix(in srgb, var(--gray-100) 5%, transparent) inset,
-    0 12px 38px -24px rgba(0, 0, 0, 0.65) !important;
+/* Thread's report used to reopen as an 88vh × 900px modal even though the report
+ * itself is the durable output of a storage investigation. Promote it to the
+ * same full-canvas review model as Inspector. Settings/confirmation overlays are
+ * intentionally not touched. */
+[data-testid="agent-workspace"] main > .fixed.inset-0.z-floating {
+  background: var(--canvas) !important;
+  backdrop-filter: none !important;
+  animation: workspace-enter 180ms cubic-bezier(0.21, 0.6, 0.35, 1) !important;
 }
 
-div:has(> textarea[data-focus-ring="container"]):focus-within {
-  border-color: color-mix(in srgb, var(--accent) 48%, var(--edge-strong)) !important;
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent),
-    0 16px 44px -24px rgba(0, 0, 0, 0.72) !important;
+[data-testid="agent-workspace"] main > .fixed.inset-0.z-floating > div {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  animation: none !important;
 }
 
-/* A long answer can have large data blocks, but the prompt remains a compact
- * steering surface. Keep the typed text readable while reducing visual mass. */
-textarea[data-focus-ring="container"] {
-  min-height: 28px;
-  line-height: 1.55 !important;
+[data-testid="agent-workspace"] main > .fixed.inset-0.z-floating > div > div > header {
+  min-height: 56px;
+  padding-inline: clamp(20px, 4vw, 56px) !important;
+  background: color-mix(in srgb, var(--canvas) 92%, transparent);
 }
 
-/* -------------------------------------------------------------------------
- * Finished activity + evidence continuity
- * ---------------------------------------------------------------------- */
-[data-testid="turn-activity-panel"] {
-  border: 1px solid color-mix(in srgb, var(--edge) 66%, transparent);
-  background: color-mix(in srgb, var(--panel) 44%, transparent) !important;
-}
-
-[data-testid="call-detail"] {
-  container-type: inline-size;
-}
-
-/* CallDetail uses lg:grid-cols-2 for normal app widths. A container query makes
- * the comparison respond to the actual evidence surface rather than viewport
- * width when the rail or inspector geometry changes. */
-@container (min-width: 720px) {
-  [data-testid="call-detail"] {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
+[data-testid="agent-workspace"] main > .fixed.inset-0.z-floating > div > div > div:last-child {
+  width: min(1180px, 100%);
+  margin-inline: auto;
+  padding: 32px clamp(20px, 4vw, 48px) 64px !important;
 }
 
 /* -------------------------------------------------------------------------
@@ -187,6 +302,10 @@ textarea[data-focus-ring="container"] {
 }
 
 @media (max-width: 760px) {
+  [data-testid="agent-workspace"] main > header {
+    padding-inline: 14px !important;
+  }
+
   [data-testid="session-inspector"] > header {
     padding-inline: 14px !important;
   }
@@ -199,10 +318,15 @@ textarea[data-focus-ring="container"] {
     border-left: 0 !important;
     border-top: 1px solid var(--edge) !important;
   }
+
+  [data-testid="agent-workspace"] main > .fixed.inset-0.z-floating > div > div > div:last-child {
+    padding: 20px 14px 44px !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-testid="session-inspector"] {
+  [data-testid="session-inspector"],
+  [data-testid="agent-workspace"] main > .fixed.inset-0.z-floating {
     animation: none !important;
   }
 }
