@@ -1130,8 +1130,12 @@ export function Thread({
           </div>
         </div>
       ) : isEmpty ? (
-        /* New chat: a centered, composer-forward "start" view (Codex/Cursor). */
-        <div className="flex flex-1 items-center justify-center overflow-auto px-6 py-10">
+        /* New chat is a work surface, not a poster: keep the action cluster in
+           the upper reading band so the composer is where the eye starts, while
+           leaving one spacing-scale step of deliberate air above it. Vertical
+           centring made this ~300px block float between two large empty regions
+           on a 900px window — the final known gap from the v0.90 visual pass. */
+        <div className="flex flex-1 items-start justify-center overflow-auto px-6 pb-10 pt-20">
           <div className="w-full max-w-[44rem] animate-fade-in-up">
             <div className="mb-7 flex flex-col items-center text-center">
               <h1 className="text-2xl font-semibold tracking-[-0.02em] text-gray-100">{t("thread.greeting")}</h1>
