@@ -6,6 +6,7 @@ import { I18nProvider } from "./i18n";
 import { ThemeProvider, applyTheme, initialTheme } from "./theme";
 import { ToastProvider } from "./components/Toast";
 import "./index.css";
+import "./answer-document.css";
 
 // Apply the saved theme before first paint to avoid a flash.
 applyTheme(initialTheme());
