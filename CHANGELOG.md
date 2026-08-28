@@ -91,9 +91,13 @@ gates that let this through are replaced._
   prose grid, so it laid out across the full 64rem column while the answer above
   it used 46rem: a trace row put `head_bucket · bucket-2` on the left and its
   `200` at x=1340, with 800px of nothing between a call and its own result.
-- **An opaque panel no longer animates its own opacity.** The settings drawer
-  spent 260ms of every open with the thread legible straight through it. The
-  scrim carries the fade; the panel slides.
+- **An opaque panel is opaque, including while it is arriving.** The settings
+  drawer and the session inspector spent the whole of every open translucent —
+  the thread's heading legible straight through them. Removing `opacity` from
+  the panel's own keyframe changed nothing, because the opacity was never on the
+  panel: the scrim was its PARENT, so fading the scrim faded everything inside
+  it. The scrim is a sibling now, and the test asserts the composited chain
+  (measured before: 0.59).
 - **One placeholder.** It was `"Ask Storage Agent…   type / for commands"` — a
   single string with three spaces in it, rendering as two grey fragments.
 

@@ -289,3 +289,54 @@ test.describe("Escape with two overlays open", () => {
     await expect(page.getByText(/Session inspector/i)).toHaveCount(0);
   });
 });
+
+/**
+ * An opaque panel is opaque, including while it is arriving.
+ *
+ * The settings drawer spent the length of its open animation translucent: you
+ * could read the thread's heading straight through it, on every single open.
+ * The first fix removed `opacity` from the panel's own keyframe and changed
+ * nothing, because the opacity was never on the panel — the scrim was its
+ * PARENT, and fading the scrim faded everything inside it.
+ *
+ * Asserted on pixels rather than on CSS: sample a point well inside the panel a
+ * few frames after it opens and require it to be the panel's own colour. A
+ * declaration can be correct and still inherit a fade from four levels up.
+ */
+test("the settings drawer is never see-through, even mid-animation", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("saw.lang", "en");
+    localStorage.setItem("saw.onboarded", "1");
+    localStorage.setItem("saw.theme", "light");
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible({ timeout: 30_000 });
+
+  // The start surface's heading is behind where the drawer will be.
+  await page.getByTestId("rail-settings").click();
+
+  // Two frames in: the slide is still running.
+  const mid = await page.evaluate(async () => {
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const panel = document.querySelector('[role="dialog"]') as HTMLElement;
+    const r = panel.getBoundingClientRect();
+    const x = Math.round(r.left + r.width / 2);
+    const y = Math.round(r.top + r.height / 2);
+    const under = document.elementFromPoint(x, y);
+    return {
+      // Whatever is painted at the middle of the panel must belong to it.
+      inPanel: panel.contains(under),
+      panelOpacity: Number(getComputedStyle(panel).opacity),
+      // …and nothing between it and the root may be fading either.
+      chainOpacity: (() => {
+        let o = 1;
+        for (let n: Element | null = panel; n; n = n.parentElement) o *= Number(getComputedStyle(n).opacity);
+        return Math.round(o * 1000) / 1000;
+      })(),
+    };
+  });
+  expect(mid.inPanel).toBe(true);
+  expect(mid.panelOpacity).toBe(1);
+  expect(mid.chainOpacity, "the panel or an ancestor is fading, so the panel is see-through").toBe(1);
+});

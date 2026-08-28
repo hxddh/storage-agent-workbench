@@ -49,16 +49,26 @@ export function SettingsDrawer(
 
   return (
     <div
-      className="fixed inset-0 z-drawer flex justify-end bg-scrim backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-drawer flex justify-end"
       onClick={onClose}
     >
+      {/* The scrim is a SIBLING of the panel, not its parent.
+        *
+        * It used to be the container: `bg-scrim … animate-fade-in` on the
+        * element the panel lives inside, so fading the scrim faded the panel
+        * with it, and for the length of the animation an opaque drawer was
+        * translucent — the thread's heading legible straight through it, on
+        * every open. Removing the opacity from the panel's own keyframe did
+        * nothing, because the opacity was never on the panel; it was inherited.
+        * Now the scrim fades and the panel only slides. */}
+      <div className="absolute inset-0 bg-scrim backdrop-blur-sm animate-fade-in" aria-hidden />
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         tabIndex={-1}
         aria-label={t("settings.title")}
-        className="flex h-full w-[min(860px,96vw)] flex-col border-l border-edge bg-canvas shadow-pop animate-slide-in-right"
+        className="relative flex h-full w-[min(860px,96vw)] flex-col border-l border-edge bg-canvas shadow-pop animate-slide-in-right"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-edge px-6 py-3.5">
