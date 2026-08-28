@@ -1,0 +1,104 @@
+/*
+ * Answer document layer — deliberately separate from the application chrome.
+ *
+ * The agent's answer is the primary artifact of Storage Agent Workbench. It is
+ * closer to a technical report than to a chat bubble, so it gets document rules
+ * of its own: paragraph rhythm, section wrapping, semantic quotations, identifiers
+ * and long-form navigation. The parser remains untouched; these rules only change
+ * how already-correct semantic markup is read.
+ */
+
+.thread-prose {
+  /* Slightly more air than the UI around it. Agent answers routinely mix prose,
+     object keys and numeric evidence; 1.7 keeps dense diagnostic paragraphs from
+     turning into a grey block without inflating the whole thread. */
+  line-height: 1.7;
+  text-rendering: optimizeLegibility;
+}
+
+.thread-prose p {
+  text-wrap: pretty;
+}
+
+.thread-prose h1,
+.thread-prose h2,
+.thread-prose h3 {
+  max-width: 42rem;
+  text-wrap: balance;
+  letter-spacing: -0.012em;
+}
+
+/* Long-answer navigation should read as part of the document, not as a settings
+   card pasted above it. The renderer already gives it a real <nav> landmark and
+   stable section links; remove the four-sided furniture and let typography carry
+   the hierarchy. */
+.thread-prose nav[data-testid="answer-outline"] {
+  margin-block: 0.15rem 0.35rem;
+  padding: 0.25rem 0 0.45rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.thread-prose nav[data-testid="answer-outline"] ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 1.25rem;
+  row-gap: 0.1rem;
+}
+
+.thread-prose nav[data-testid="answer-outline"] a {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+/* A blockquote is semantic quoted evidence, not another assistant-message rail.
+   The old left rule visually echoed the answer gutter that v0.90 removed. A
+   quiet inset surface distinguishes quoted material without rebuilding that
+   vertical-line motif. */
+.thread-prose blockquote {
+  margin-block: 0.2rem;
+  padding: 0.7rem 0.9rem;
+  border-left: 0;
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  color: var(--gray-300);
+}
+
+/* Inline identifiers are frequent enough here that a border around every one
+   creates visual confetti. Keep the identifier surface and mono face, remove the
+   miniature input-field outline. Fenced code keeps its own full block chrome. */
+.thread-prose code:not(pre code) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--elevated) 82%, transparent);
+  padding-inline: 0.34em;
+  font-weight: 500;
+}
+
+/* Code is evidence, often copied line by line while diagnosing a request. Give
+   it a slightly calmer scan rhythm and keep tabs deterministic across platforms. */
+.thread-prose pre[data-testid="code-block"] {
+  tab-size: 2;
+  line-height: 1.65;
+  scrollbar-gutter: stable;
+}
+
+/* Tables already infer numeric alignment and pin tall headers. These rules tune
+   the document-level rhythm only: a little more separation after the header and
+   a stable number face when the browser can provide it. */
+.thread-prose table {
+  font-variant-numeric: tabular-nums;
+}
+
+.thread-prose tbody tr:last-child td {
+  padding-bottom: 0.4rem;
+}
+
+@media (max-width: 760px) {
+  .thread-prose nav[data-testid="answer-outline"] ul {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
