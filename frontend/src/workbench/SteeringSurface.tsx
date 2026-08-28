@@ -35,7 +35,7 @@ export function SteeringSurface({
 
     setText("");
     if (run.busy) await controller.steer(question);
-    else await controller.submit(question);
+    else await controller.submitToSession(sessionId, question);
 
     const finished = getSessionRun(sessionId);
     if ((finished.error || finished.needKey) && textRef.current === "") setText(question);
