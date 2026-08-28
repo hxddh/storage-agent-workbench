@@ -3,6 +3,7 @@ import type { SessionSummaryRow } from "../types";
 import { EvidenceWorkspace } from "./EvidenceWorkspace";
 import { ReportWorkspace } from "./ReportWorkspace";
 import { RunsWorkspace } from "./RunsWorkspace";
+import { SteeringSurface } from "./SteeringSurface";
 import { SurfaceTabs } from "./SurfaceTabs";
 import { initialWorkbenchState, workbenchReducer } from "./model";
 import { useWorkbenchProjection } from "./useWorkbenchProjection";
@@ -117,7 +118,7 @@ export function WorkbenchShell({
           </section>
 
           {state.surface === "evidence" && (
-            <section id="work-surface-evidence" role="tabpanel" aria-label="Evidence" className="agent-os-surface agent-os-scroll-surface">
+            <section id="work-surface-evidence" role="tabpanel" aria-label="Evidence" className="agent-os-surface agent-os-scroll-surface agent-os-steerable-surface">
               {surfaceError ? (
                 <p className="workbench-surface-error">{surfaceError}</p>
               ) : sessionId ? (
@@ -129,7 +130,7 @@ export function WorkbenchShell({
           )}
 
           {state.surface === "runs" && (
-            <section id="work-surface-runs" role="tabpanel" aria-label="Runs" className="agent-os-surface agent-os-scroll-surface">
+            <section id="work-surface-runs" role="tabpanel" aria-label="Runs" className="agent-os-surface agent-os-scroll-surface agent-os-steerable-surface">
               {surfaceError ? (
                 <p className="workbench-surface-error">{surfaceError}</p>
               ) : (
@@ -144,10 +145,16 @@ export function WorkbenchShell({
           )}
 
           {state.surface === "report" && (
-            <section id="work-surface-report" role="tabpanel" aria-label="Report" className="agent-os-surface agent-os-scroll-surface">
+            <section id="work-surface-report" role="tabpanel" aria-label="Report" className="agent-os-surface agent-os-scroll-surface agent-os-steerable-surface">
               <ReportWorkspace report={report} loading={reportLoading} error={surfaceError} />
             </section>
           )}
+
+          <SteeringSurface
+            sessionId={sessionId}
+            visible={state.surface !== "timeline"}
+            offline={sidecarStatus !== "connected"}
+          />
         </div>
       </section>
     </div>
