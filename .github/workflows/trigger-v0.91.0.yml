@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   dispatch-release:
-    if: ${{ github.event.head_commit.message == 'chore(release): dispatch v0.91.0' }}
+    if: ${{ github.event.head_commit.message == 'dispatch-v0.91.0' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
