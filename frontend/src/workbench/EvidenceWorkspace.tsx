@@ -1,12 +1,19 @@
 import type { ReactNode } from "react";
 import type { SessionDetail } from "../types";
 import { Markdown } from "../components/Markdown";
+import { EvidenceActivity } from "./EvidenceActivity";
 
 function EmptyLine({ children }: { children: ReactNode }) {
   return <p className="workbench-empty-line">{children}</p>;
 }
 
-export function EvidenceWorkspace({ detail }: { detail: SessionDetail | null }) {
+export function EvidenceWorkspace({
+  detail,
+  sessionId,
+}: {
+  detail: SessionDetail | null;
+  sessionId: string;
+}) {
   if (!detail) {
     return (
       <div className="workbench-document" data-testid="evidence-workspace">
@@ -108,6 +115,21 @@ export function EvidenceWorkspace({ detail }: { detail: SessionDetail | null }) 
               ))}
             </div>
           )}
+        </div>
+      </section>
+
+      <section className="workbench-doc-section workbench-activity-section">
+        <div className="workbench-section-index">05</div>
+        <div>
+          <div className="workbench-section-heading-row">
+            <div>
+              <h2>Activity record</h2>
+              <p className="workbench-section-description">
+                Tool calls and audit events stay in one ordered record so cause, action and result remain reviewable together.
+              </p>
+            </div>
+          </div>
+          <EvidenceActivity sessionId={sessionId} />
         </div>
       </section>
     </article>
