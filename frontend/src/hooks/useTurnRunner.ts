@@ -423,7 +423,12 @@ export function useTurnRunner(opts: {
             .then((d) => {
               if ((d.messages?.length ?? 0) > 0) return;
               return deleteSession(id).then(() => {
-                localId.current = null;
+                // Only if it is STILL the open one. The delete is async, and a
+                // user who switched to another investigation while it was in
+                // flight would otherwise have that session's id cleared from
+                // under them — the next message would open a second, empty
+                // conversation instead of continuing theirs.
+                if (localId.current === id) localId.current = null;
                 onSessionDiscarded(id);
               });
             })

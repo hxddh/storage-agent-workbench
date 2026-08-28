@@ -31,12 +31,21 @@ function registry(): HighlightRegistry | null {
   return css?.highlights && Ctor ? css.highlights : null;
 }
 
-/** Skip text that is not part of the answer: script, style, and the find bar. */
+/**
+ * Skip text that is not part of the answer: script, style, the find bar — and
+ * anything on screen only for a screen reader.
+ *
+ * That last one is not hypothetical. Every answer carries an `sr-only` "Storage
+ * Agent" label (the visible name was replaced by the gutter mark), so a search
+ * for "storage" counted one hit per answer that no reader could ever see, and
+ * next/previous stopped on a zero-sized range at the top of each turn.
+ */
 function skip(node: Node): boolean {
   const el = node.parentElement;
   if (!el) return true;
   if (el.closest("script,style,noscript")) return true;
   if (el.closest("[data-find-skip]")) return true;
+  if (el.closest(".sr-only,[hidden],[aria-hidden='true']")) return true;
   return false;
 }
 

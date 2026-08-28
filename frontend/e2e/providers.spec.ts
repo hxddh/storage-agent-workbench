@@ -111,10 +111,48 @@ test.describe("command palette", () => {
     const palette = page.getByPlaceholder(/Search chats or run a command/i);
     await expect(palette).toBeVisible();
 
-    // Escape is handled by the palette's own onKeyDown (App's global handler
-    // deliberately ignores keys typed inside an input).
+    // The palette's field IS the palette, so Escape in it is the way out — the
+    // opposite of the settings drawer below, where a field's Escape belongs to
+    // the field. Both go through the overlay stack; only the drawer opts into
+    // `ignoreInFields`.
     await palette.press("Escape");
     await expect(palette).toHaveCount(0);
     await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
+  });
+});
+
+/**
+ * Escape belongs to the field you are typing in.
+ *
+ * The global handler closes the topmost overlay, and for a while it did so
+ * without asking where the caret was. So a half-entered endpoint — or a secret
+ * key, typed once and not stored anywhere it can be read back — was thrown away
+ * by a keypress people use to dismiss autocomplete. The drawer still closes on
+ * Escape; just not from inside a field.
+ */
+test.describe("Escape inside the settings drawer", () => {
+  test("does not close the drawer out from under a half-typed field", async ({ page }) => {
+    await boot(page);
+    await openCloudProviders(page);
+    await page.getByRole("button", { name: /Add cloud provider/i }).first().click();
+
+    await page.getByRole("button", { name: /^Advanced$/ }).first().click();
+    const field = page.getByLabel("Access key ID").first();
+    await expect(field).toBeVisible();
+    await field.click();
+    await field.fill("AKIAE2EHALFTYPED0000");
+    await field.press("Escape");
+
+    await expect(page.getByText(/settings & providers/i)).toBeVisible();
+    await expect(field).toHaveValue("AKIAE2EHALFTYPED0000");
+  });
+
+  test("still closes it from outside a field", async ({ page }) => {
+    await boot(page);
+    await page.getByRole("button", { name: /settings/i }).first().click();
+    await expect(page.getByText(/settings & providers/i)).toBeVisible();
+    await page.getByRole("dialog").click({ position: { x: 300, y: 12 } });
+    await page.keyboard.press("Escape");
+    await expect(page.getByText(/settings & providers/i)).toHaveCount(0);
   });
 });

@@ -85,6 +85,29 @@ call is scrolled into view instead of unfolding 205px below the fold; prose and
 data get two widths from one grid; the rail folds itself below 1000px and can
 still reach your conversations when it does.
 
+### Fixed — what the review found in the pass itself
+
+Five holes in the changes above, each one a case where the new behaviour was
+applied to the mouse and not to the keyboard, or to one render path and not its
+twin:
+
+- **Escape inside a settings field** closed the whole drawer. The new
+  topmost-only rule replaced a guard that used to ask where the caret was, so a
+  half-typed endpoint — or a secret key, which cannot be read back — was thrown
+  away by the key people press to dismiss autocomplete. The rule belongs to the
+  overlay, not to a global handler: an overlay that is a FORM opts into
+  `ignoreInFields`, while one whose field IS the overlay (the command palette)
+  still closes on Escape from inside it.
+- **Offline blocked the buttons, not the keyboard.** Type, press Enter still
+  dispatched into the dead service; so did `/report`.
+- **Find counted text nobody can see.** The visible "Storage Agent" label became
+  an `sr-only` one, so every answer carried an invisible match.
+- **The S3 error card lost branch.** The message most worth forking from — a
+  pasted error is the seed of an investigation — was the one you could not fork.
+- **Sweeping the empty session cleared the wrong pointer.** Switching
+  investigations while the async cleanup ran left the next message opening a
+  second, empty conversation.
+
 ## [0.88.0] - 2026-08-27
 
 _Three things reported against v0.87.0, from using it: the session page goes to

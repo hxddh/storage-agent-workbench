@@ -26,6 +26,7 @@ const api = vi.hoisted(() => ({
   cancelSessionTurn: vi.fn(),
   uploadSessionDataset: vi.fn(),
   submitErrorTriage: vi.fn(),
+  deleteSession: vi.fn(),
 }));
 
 vi.mock("../api", async (importOriginal) => {
@@ -103,5 +104,65 @@ describe("turn failure while viewing THIS session", () => {
     expect(result.current.setText).toHaveBeenCalledWith("keep me");
     expect(getSessionRun(id).failedText).toBeNull();
     expect(getSessionRun(id).needKey).toBe(true);
+  });
+});
+
+/**
+ * Sweeping the empty session a failed FIRST turn left behind must not clear the
+ * pointer to a DIFFERENT session.
+ *
+ * The sweep is async — read the session back, confirm it is empty, delete it —
+ * and it used to end with an unconditional `localId.current = null`. A user who
+ * switched to another investigation while that was in flight (which is exactly
+ * what people do after a turn fails: go back to what was working) had the ref
+ * to the session they were now looking at cleared under them, so their next
+ * message opened a second, empty conversation instead of continuing theirs.
+ */
+describe("the empty-session sweep after a failed first turn", () => {
+  it("keeps the ref when the user has already switched away", async () => {
+    api.createSession.mockResolvedValue({ id: "new1" });
+    api.streamSessionMessage.mockRejectedValue(new Error("stream broke"));
+    api.postSessionMessage.mockRejectedValue(new Error("no model provider configured"));
+    api.deleteSession.mockResolvedValue(undefined);
+
+    const { result } = renderHook(() => useHarness(null), { wrapper });
+    // The switch happens while the sweep is reading the session back.
+    api.getSession.mockImplementation(async () => {
+      result.current.localId.current = "other-session";
+      return { messages: [] };
+    });
+
+    await act(async () => {
+      await result.current.runner.submit("first question, no key configured");
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The dead session really was swept...
+    expect(api.deleteSession).toHaveBeenCalledWith("new1");
+    // ...and the investigation the user is now in is still the open one.
+    expect(result.current.localId.current).toBe("other-session");
+  });
+
+  it("still clears the ref when that session is the one on screen", async () => {
+    api.createSession.mockResolvedValue({ id: "new2" });
+    api.streamSessionMessage.mockRejectedValue(new Error("stream broke"));
+    api.postSessionMessage.mockRejectedValue(new Error("no model provider configured"));
+    api.deleteSession.mockResolvedValue(undefined);
+    api.getSession.mockResolvedValue({ messages: [] });
+
+    const { result } = renderHook(() => useHarness(null), { wrapper });
+    await act(async () => {
+      await result.current.runner.submit("first question, no key configured");
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(api.deleteSession).toHaveBeenCalledWith("new2");
+    expect(result.current.localId.current).toBeNull();
   });
 });

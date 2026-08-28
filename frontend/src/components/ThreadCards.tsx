@@ -215,6 +215,65 @@ function S3ErrorCard({ err, raw }: { err: S3Error; raw: string }) {
   );
 }
 
+/**
+ * Edit / branch (and optionally copy) under a user message.
+ *
+ * Shared rather than repeated per layout: the S3-error card is a second render
+ * path for the same message, and when it inlined its own row it silently lost
+ * branch — the one message people most want to fork from (a pasted error is a
+ * whole investigation's starting point) was the one you could not fork.
+ */
+function MessageActions({
+  text,
+  onEdit,
+  onBranch,
+  copy = false,
+}: {
+  text: string;
+  onEdit?: (text: string) => void;
+  onBranch?: () => void;
+  copy?: boolean;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="flex items-center gap-1 pr-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      {copy && <CopyButton text={text} />}
+      {onEdit && (
+        <button
+          onClick={() => onEdit(text)}
+          title={t("msg.edit")}
+          aria-label={t("msg.edit")}
+          data-testid="edit-message"
+          className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+        </button>
+      )}
+      {onBranch && (
+        <button
+          onClick={onBranch}
+          title={t("msg.branch")}
+          aria-label={t("msg.branch")}
+          data-testid="branch-message"
+          className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <line x1="6" y1="3" x2="6" y2="15" />
+            <circle cx="18" cy="6" r="3" />
+            <circle cx="6" cy="18" r="3" />
+            <path d="M18 9a9 9 0 0 1-9 9" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** A user turn.
  *
  * Long pastes get clamped: this app's most common user message is a full S3
@@ -246,23 +305,7 @@ function UserMessage({
       <div className="group flex justify-end animate-fade-in-up">
         <div className="flex w-full max-w-[42rem] flex-col items-end gap-1">
           <S3ErrorCard err={err} raw={text} />
-          <div className="flex items-center gap-1 pr-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-            {onEdit && (
-              <button
-                onClick={() => onEdit(text)}
-                title={t("msg.edit")}
-                aria-label={t("msg.edit")}
-                data-testid="edit-message"
-                className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                  <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                </svg>
-              </button>
-            )}
-          </div>
+          <MessageActions text={text} onEdit={onEdit} onBranch={onBranch} />
         </div>
       </div>
     );
@@ -284,41 +327,7 @@ function UserMessage({
             </button>
           )}
         </div>
-        <div className="flex items-center gap-1 pr-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-          <CopyButton text={text} />
-          {onEdit && (
-            <button
-              onClick={() => onEdit(text)}
-              title={t("msg.edit")}
-              aria-label={t("msg.edit")}
-              data-testid="edit-message"
-              className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-            </button>
-          )}
-          {onBranch && (
-            <button
-              onClick={onBranch}
-              title={t("msg.branch")}
-              aria-label={t("msg.branch")}
-              data-testid="branch-message"
-              className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                   strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <line x1="6" y1="3" x2="6" y2="15" />
-                <circle cx="18" cy="6" r="3" />
-                <circle cx="6" cy="18" r="3" />
-                <path d="M18 9a9 9 0 0 1-9 9" />
-              </svg>
-            </button>
-          )}
-        </div>
+        <MessageActions text={text} onEdit={onEdit} onBranch={onBranch} copy />
       </div>
     </div>
   );

@@ -56,6 +56,14 @@ describe("finding every occurrence", () => {
     expect(findRanges(el, "bucket-003")).toHaveLength(1);
   });
 
+  it("does not count text that exists only for a screen reader", () => {
+    // Every answer carries an sr-only "Storage Agent" label since the visible
+    // name became a gutter mark. Counting it made find promise a match at the
+    // top of each turn that nobody could see.
+    const el = root('<span class="sr-only">Storage Agent</span><p>the storage agent said</p>');
+    expect(findRanges(el, "storage")).toHaveLength(1);
+  });
+
   it("has nothing to point at for an empty query", () => {
     const el = root("<p>anything</p>");
     expect(findRanges(el, "")).toHaveLength(0);

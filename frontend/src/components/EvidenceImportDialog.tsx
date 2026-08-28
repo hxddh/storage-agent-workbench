@@ -45,13 +45,11 @@ export function EvidenceImportDialog({
   // dismissed out from under the user (FE10). The comment above the backdrop
   // promised this but no handler existed.
   // Escape focused in an input (incl. a zh user's habitual IME-cancel) must not
-  // destroy the whole form, and neither must Escape while the plan is running.
+  // destroy the whole form — that is `ignoreInFields`, shared with the settings
+  // drawer — and neither must Escape while the plan is running.
   useDismissOnEscape(true, () => {
-    const el = document.activeElement as HTMLElement | null;
-    const editable = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" ||
-      el.tagName === "SELECT" || el.isContentEditable);
-    if (!busy && !editable) onClose();
-  });
+    if (!busy) onClose();
+  }, { ignoreInFields: true });
 
   const generatePlan = async () => {
     setError(null);

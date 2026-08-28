@@ -115,7 +115,19 @@ export function Composer({
   const slashOpen = slashItems.length > 0 && !slashSuppressed;
   const slashIdx = Math.min(slashSel, slashItems.length - 1);
 
+  // The backend is unreachable: everything this control offers goes through it.
+  // Left typable on purpose — losing what someone was writing because a service
+  // blinked would be a worse failure than the one being reported — but nothing
+  // that would be dispatched into a void is offered.
+  const running = busy || uploading;
+  const blocked = offline;
+
   const selectSlash = (c: Slash) => {
+    // A slash command is a send by another name: /report dispatches a turn and
+    // /logs opens a picker that uploads. With the backend down both go nowhere,
+    // so the menu stays readable but its actions do not fire. Seeding a prompt
+    // is local and harmless, so it is still allowed.
+    if (blocked && c.action) return;
     if (c.action === "report") {
       setText("");
       onSlashReport();
@@ -130,13 +142,6 @@ export function Composer({
     }
     setSlashSel(0);
   };
-
-  // The backend is unreachable: everything this control offers goes through it.
-  // Left typable on purpose — losing what someone was writing because a service
-  // blinked would be a worse failure than the one being reported — but nothing
-  // that would be dispatched into a void is offered.
-  const running = busy || uploading;
-  const blocked = offline;
 
   return (
     <div className="group/composer relative rounded-2xl border border-edge bg-panel px-3.5 pb-2.5 pt-3 shadow-elev transition-[border-color,box-shadow] duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
@@ -247,6 +252,11 @@ export function Composer({
           }
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
+            // The send BUTTON is disabled while the sidecar is unreachable; the
+            // key that does the same thing has to agree with it. Without this,
+            // the one path most people actually use — type, press Enter — still
+            // fired into a dead service and came back as a raw fetch failure.
+            if (blocked) return;
             // While a turn is streaming, Enter REDIRECTS it (cancel + resend as a
             // trace-aware turn) instead of no-opping; otherwise it sends normally.
             if (busy) onSteer();

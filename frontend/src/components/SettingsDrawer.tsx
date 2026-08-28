@@ -35,7 +35,11 @@ export function SettingsDrawer(
   const trapRef = useFocusTrap<HTMLDivElement>(open);
   // Registers with the overlay stack rather than relying on App's catch-all,
   // which used to close this drawer alongside whatever else was open.
-  useDismissOnEscape(open, onClose);
+  //
+  // `ignoreInFields` because this drawer is a form full of credentials: an
+  // Escape with the caret in one belongs to that field, not to the drawer, and
+  // closing it discards a secret that cannot be read back to retype.
+  useDismissOnEscape(open, onClose, { ignoreInFields: true });
   if (!open) return null;
 
   const themes: { value: Theme; label: string }[] = [
