@@ -8,6 +8,11 @@ async function setup(page: Page) {
   const model = await startFakeModel([
     toolTurn("read_skill", { name: SKILL }),
     textTurn("The investigation is ready for review. The persisted skill evidence is available below."),
+    // The steering contract below submits a real second turn from Evidence.
+    // Give the scripted provider a second response so this gate proves that
+    // cross-surface idle submit persists into the Timeline rather than merely
+    // proving that the button dispatched a request.
+    textTurn("The evidence still supports the same IAM-policy conclusion after review."),
   ]);
   const providerId = await useFakeModel(model.baseUrl);
   await page.addInitScript(() => {
