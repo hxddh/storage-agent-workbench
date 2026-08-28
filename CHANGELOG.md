@@ -72,6 +72,10 @@ gates that let this through are replaced._
   ground with an outer border drew a rule between all six suggestions and a box
   around the lot. And each row's arrow sat 320px to the right of the phrase it
   points at; it now follows the words, on hover.
+- **One measure for the whole conversation.** The turn footer sits outside the
+  prose grid, so it laid out across the full 64rem column while the answer above
+  it used 46rem: a trace row put `head_bucket · bucket-2` on the left and its
+  `200` at x=1340, with 800px of nothing between a call and its own result.
 - **An opaque panel no longer animates its own opacity.** The settings drawer
   spent 260ms of every open with the thread legible straight through it. The
   scrim carries the fade; the panel slides.

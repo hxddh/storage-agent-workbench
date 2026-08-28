@@ -1316,7 +1316,14 @@ export function Thread({
                         in — previously three separate expanders, two of which
                         described the same tool calls in different words on
                         opposite sides of the answer. */}
+                    {/* Capped to the same reading measure as the answer above
+                      * it. The footer sits outside `.thread-prose`, so it was
+                      * laid out across the full 64rem column while the answer
+                      * used 46rem: a trace row put `head_bucket · bucket-2` on
+                      * the left and its `200` at x=1340, with 800px of nothing
+                      * between a call and its own result. */}
                     {it.role === "assistant" && (
+                      <div className="max-w-[min(46rem,100%)]">
                       <TurnFooter
                         latest={it.id === lastAssistant?.id}
                         tools={it.toolActivity}
@@ -1341,6 +1348,7 @@ export function Thread({
                           setInspectorOpen(true);
                         }}
                       />
+                      </div>
                     )}
                     {it.proposals && it.proposals.length > 0 && (
                       <div className="flex flex-wrap items-center gap-2 pt-0.5">
