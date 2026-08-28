@@ -9,7 +9,6 @@ import "./index.css";
 import "./answer-document.css";
 import "./workspace-overhaul.css";
 import "./run-workspace.css";
-import "./fullscreen-workspace-stability.css";
 import "./workbench/workbench.css";
 import "./workbench/steering.css";
 import "./workbench/answer-artifact.css";
