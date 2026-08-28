@@ -1,18 +1,9 @@
 import { Fragment, memo, useEffect, useMemo, useState } from "react";
-import type { Grounding, NextAction, SessionFinding, SessionRunLink, ToolActivity, TriageCase } from "../types";
-import { RunDetail } from "./RunDetail";
+import type { Grounding, NextAction, SessionFinding, ToolActivity, TriageCase } from "../types";
 import { Markdown } from "./Markdown";
 import { useI18n } from "../i18n";
 import { LiveTrace, WorkingRow } from "./LiveTrace";
 import { isMostlyError, parseS3Error, type S3Error } from "../lib/s3error";
-
-const RUN_STATUS: Record<string, { cls: string; key: string }> = {
-  pending: { cls: "text-gray-400", key: "run.queued" },
-  running: { cls: "text-warn-fg", key: "run.running" },
-  completed: { cls: "text-success", key: "run.done" },
-  failed: { cls: "text-danger", key: "run.failed" },
-  not_implemented: { cls: "text-gray-500", key: "run.na" },
-};
 
 const CONF_PILL: Record<string, string> = {
   high: "bg-accent/15 text-accent-soft",
@@ -531,42 +522,6 @@ export function FindingsCard({ findings }: { findings: SessionFinding[] }) {
             </li>
           ))}
         </ul>
-      )}
-    </div>
-  );
-}
-
-/** A run rendered as a collapsible tool-call block (embeds the full transcript). */
-export function RunCard({ run }: { run: SessionRunLink }) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  const st = RUN_STATUS[run.status] ?? { cls: "text-gray-400", key: "" };
-  const statusLabel = st.key ? t(st.key) : run.status;
-  return (
-    <div className="animate-fade-in-up overflow-hidden rounded-xl border border-edge bg-panel/60">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left transition-colors hover:bg-hover/40"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-accent-soft">
-          <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z" />
-        </svg>
-        <span className="font-mono text-xs text-gray-300">{run.run_type}</span>
-        <span className={`flex items-center gap-1 text-2xs ${st.cls}`}>
-          {run.status === "completed" && (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
-          )}
-          {statusLabel}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-2xs text-gray-500">{run.final_summary || ""}</span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`shrink-0 text-gray-500 transition-transform ${open ? "rotate-180" : ""}`}>
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-      {open && (
-        <div className="max-h-[28rem] overflow-auto border-t border-edge animate-fade-in">
-          <RunDetail runId={run.run_id} onBack={() => setOpen(false)} />
-        </div>
       )}
     </div>
   );
