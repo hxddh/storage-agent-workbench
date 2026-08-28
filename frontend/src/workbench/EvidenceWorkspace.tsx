@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { SessionDetail } from "../types";
 import { Markdown } from "../components/Markdown";
 import { EvidenceActivity } from "./EvidenceActivity";
+import { useWorkbenchCopy } from "./copy";
 
 function EmptyLine({ children }: { children: ReactNode }) {
   return <p className="workbench-empty-line">{children}</p>;
@@ -14,10 +15,11 @@ export function EvidenceWorkspace({
   detail: SessionDetail | null;
   sessionId: string;
 }) {
+  const copy = useWorkbenchCopy();
   if (!detail) {
     return (
       <div className="workbench-document" data-testid="evidence-workspace">
-        <EmptyLine>Select an investigation to review its evidence.</EmptyLine>
+        <EmptyLine>{copy.selectEvidence}</EmptyLine>
       </div>
     );
   }
@@ -26,25 +28,23 @@ export function EvidenceWorkspace({
   const memory = detail.agent_memory ?? [];
   const files = detail.attached_files ?? [];
   const summary = detail.summary?.summary_md?.trim();
+  const context = typeof detail.context_messages === "number" && typeof detail.message_total === "number"
+    ? ` · ${copy.evidence.context(detail.context_messages, detail.message_total)}`
+    : "";
 
   return (
     <article className="workbench-document" data-testid="evidence-workspace">
       <header className="workbench-document-heading">
-        <p className="workbench-eyebrow">Evidence</p>
+        <p className="workbench-eyebrow">{copy.evidence.eyebrow}</p>
         <h1>{detail.title}</h1>
-        <p>
-          {findings.length} findings · {memory.length} remembered facts/questions · {files.length} files
-          {typeof detail.context_messages === "number" && typeof detail.message_total === "number"
-            ? ` · context ${detail.context_messages}/${detail.message_total} messages`
-            : ""}
-        </p>
+        <p>{copy.evidence.overview(findings.length, memory.length, files.length)}{context}</p>
       </header>
 
       {summary && (
         <section className="workbench-doc-section workbench-summary-section">
           <div className="workbench-section-index">01</div>
           <div>
-            <h2>Current understanding</h2>
+            <h2>{copy.evidence.understanding}</h2>
             <Markdown text={summary} />
           </div>
         </section>
@@ -53,9 +53,9 @@ export function EvidenceWorkspace({
       <section className="workbench-doc-section">
         <div className="workbench-section-index">02</div>
         <div>
-          <h2>Findings</h2>
+          <h2>{copy.evidence.findings}</h2>
           {findings.length === 0 ? (
-            <EmptyLine>No persisted findings yet.</EmptyLine>
+            <EmptyLine>{copy.evidence.noFindings}</EmptyLine>
           ) : (
             <div className="workbench-record-list">
               {findings.map((finding) => (
@@ -65,7 +65,7 @@ export function EvidenceWorkspace({
                     {finding.confidence && <span>{finding.confidence}</span>}
                     {finding.category && <span>{finding.category}</span>}
                   </div>
-                  <strong>{finding.title || "Finding"}</strong>
+                  <strong>{finding.title || copy.evidence.findings}</strong>
                   {finding.interpretation && <p>{finding.interpretation}</p>}
                 </div>
               ))}
@@ -77,9 +77,9 @@ export function EvidenceWorkspace({
       <section className="workbench-doc-section">
         <div className="workbench-section-index">03</div>
         <div>
-          <h2>Agent memory</h2>
+          <h2>{copy.evidence.memory}</h2>
           {memory.length === 0 ? (
-            <EmptyLine>No durable memory has been recorded for this investigation.</EmptyLine>
+            <EmptyLine>{copy.evidence.noMemory}</EmptyLine>
           ) : (
             <div className="workbench-record-list">
               {memory.map((item) => (
@@ -100,16 +100,16 @@ export function EvidenceWorkspace({
       <section className="workbench-doc-section">
         <div className="workbench-section-index">04</div>
         <div>
-          <h2>Attached evidence</h2>
+          <h2>{copy.evidence.attached}</h2>
           {files.length === 0 ? (
-            <EmptyLine>No files are attached to this investigation.</EmptyLine>
+            <EmptyLine>{copy.evidence.noFiles}</EmptyLine>
           ) : (
             <div className="workbench-file-table">
               {files.map((file) => (
                 <div className="workbench-file-row" key={file.id}>
                   <span className="workbench-file-name">{file.source_filename || file.id}</span>
                   <span>{file.dataset_type}</span>
-                  <span>{file.row_count == null ? "—" : `${file.row_count.toLocaleString()} rows`}</span>
+                  <span>{file.row_count == null ? "—" : file.row_count.toLocaleString()}</span>
                   <span>{file.status || "ready"}</span>
                 </div>
               ))}
@@ -123,10 +123,8 @@ export function EvidenceWorkspace({
         <div>
           <div className="workbench-section-heading-row">
             <div>
-              <h2>Activity record</h2>
-              <p className="workbench-section-description">
-                Tool calls and audit events stay in one ordered record so cause, action and result remain reviewable together.
-              </p>
+              <h2>{copy.evidence.activity}</h2>
+              <p className="workbench-section-description">{copy.evidence.activityDescription}</p>
             </div>
           </div>
           <EvidenceActivity sessionId={sessionId} />
