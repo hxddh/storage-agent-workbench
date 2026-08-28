@@ -62,12 +62,43 @@ export const MessageCard = memo(function MessageCard({
   // (the backend strips it for the persisted message); hide it from the live view.
   const shown = streaming ? stripMetaBlock(content || "") : content || "";
   return (
-    <div className="group animate-fade-in-up">
-      <div className="mb-1.5 flex items-center gap-1.5 text-2xs font-medium text-accent-soft">
-        {Spark}
-        {t("card.agentName")}
+    /* A turn is one thing, and it says so.
+     *
+     * The thread was a flat column: an answer, a metadata line, the next
+     * question, all spaced alike and none of them grouped. The agent announced
+     * itself with "✦ Storage Agent" above every single answer — a label that
+     * stops being information the second time you read it, and still left the
+     * answer and its own footer looking like two unrelated blocks.
+     *
+     * A gutter does both jobs at once. The mark identifies the speaker without
+     * a word, the hairline runs the height of the turn so the answer, its trace
+     * and its cost read as one unit, and the indent gives the thread the rhythm
+     * it had none of. This is the arrangement Codex and Cursor both settle on,
+     * and it costs one grid column.
+     */
+    <div className="group grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-2.5 animate-fade-in-up">
+      <div className="relative flex justify-center" aria-hidden>
+        {/* A badge, not a loose glyph. At 11px on a dark ground an unbacked mark
+          * is not an identity, it is a speck — the first version measured that
+          * way on screen. A filled chip reads as the speaker at a glance, and
+          * it is the only thing in the thread carrying the accent, which is how
+          * an accent earns its place. */}
+        <span
+          className={`grid h-[18px] w-[18px] shrink-0 place-items-center rounded-md border border-accent/30 bg-accent/12 text-accent ${
+            streaming ? "animate-pulse" : ""
+          }`}
+        >
+          {Spark}
+        </span>
+        <span className="absolute inset-x-0 top-[22px] bottom-1 mx-auto w-px bg-edge-strong/70" />
+      </div>
+      <div className="min-w-0">
+      {/* The speaker is the mark in the gutter; this row is only the actions,
+        * and only on hover. */}
+      <div className="mb-0.5 flex h-4 items-center gap-1.5">
+        <span className="sr-only">{t("card.agentName")}</span>
         {!streaming && (
-          <span className="flex items-center gap-1">
+          <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             <CopyButton text={content || ""} />
             {onRegenerate && (
               <button
@@ -75,7 +106,7 @@ export const MessageCard = memo(function MessageCard({
                 title={t("msg.regenerate")}
                 aria-label={t("msg.regenerate")}
                 data-testid="regenerate"
-                className="opacity-0 transition-opacity group-hover:opacity-100 text-gray-500 hover:text-gray-200"
+                className="text-gray-500 transition-colors hover:text-gray-200"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -110,6 +141,7 @@ export const MessageCard = memo(function MessageCard({
             <span className="animate-pulse">{t("think.working")}</span>
           </div>
         ))}
+      </div>
     </div>
   );
 });

@@ -189,7 +189,10 @@ test.describe("the two widths of an answer", () => {
     return await page.evaluate(() => {
       const prose = document.querySelector(".thread-prose li, .thread-prose p") as HTMLElement;
       const table = document.querySelector(".thread-prose .thread-bleed") as HTMLElement;
-      const col = document.querySelector('[data-testid="thread-scroll"] .mx-auto') as HTMLElement;
+      // The track the answer actually owns, not the outer column: an assistant
+      // turn is indented by its gutter, so "the width available to this answer"
+      // and "the width of the thread" stopped being the same number.
+      const col = prose.closest(".thread-prose") as HTMLElement;
       const px = (s: string) => Math.round(parseFloat(s));
       return {
         prose: Math.round(prose.getBoundingClientRect().width),
@@ -216,7 +219,7 @@ test.describe("the two widths of an answer", () => {
     const w = await widths(page);
     // The table is wider than the paragraph — the whole point.
     expect(w.table).toBeGreaterThan(w.prose + 100);
-    // …and it is the column, so the space is actually used.
+    // …and it fills the track the answer owns, so the space is actually used.
     expect(w.table).toBeGreaterThanOrEqual(w.column - 2);
     // The paragraph stays at a reading measure rather than growing with it.
     expect(w.prose).toBeLessThanOrEqual(46 * 16 + 2);
