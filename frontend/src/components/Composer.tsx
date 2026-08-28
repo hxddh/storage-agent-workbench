@@ -1,21 +1,371 @@
-import type { ComponentProps } from "react";
-import { Composer as ComposerImplementation } from "./ComposerImplementation";
-
-export type { Slash } from "./ComposerImplementation";
-export type ComposerProps = ComponentProps<typeof ComposerImplementation>;
-
 /**
- * Public prompt surface.
- *
- * The transport/attachment/slash-command implementation stays independently
- * replaceable behind this boundary. The workspace can now change how the prompt
- * is positioned or presented without importing the 18 KB control implementation
- * into every caller or pushing more state back into Thread.
+ * The sticky composer: textarea + slash-command menu + attachment chip +
+ * model chip + send/stop buttons. Extracted from Thread.tsx (behavior-
+ * preserving); all session/turn logic stays in Thread + useTurnRunner.
  */
-export function Composer(props: ComposerProps) {
+import { useEffect, useState } from "react";
+import { useI18n } from "../i18n";
+
+// Mirror of the backend's upload cap (routers/datasets.py MAX_UPLOAD_BYTES) so
+// an oversized file is rejected before any bytes are sent.
+const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024; // 2 GiB
+const formatGiB = (n: number) => `${(n / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
+
+// Slash commands: "/" in the composer opens this menu. Capability commands seed
+// a prompt; "report" runs the session report; logs/inventory open the picker.
+export type Slash = { cmd: string; labelKey: string; promptKey?: string; action?: "report" | "pickFile" };
+const SLASH: Slash[] = [
+  { cmd: "diagnose", labelKey: "sugg.diagnose", promptKey: "prompt.diagnose" },
+  { cmd: "logs", labelKey: "sugg.logs", action: "pickFile" },
+  { cmd: "inventory", labelKey: "sugg.inventory", action: "pickFile" },
+  { cmd: "config", labelKey: "sugg.config", promptKey: "prompt.config" },
+  { cmd: "account", labelKey: "sugg.account", promptKey: "prompt.account" },
+  { cmd: "optimize", labelKey: "sugg.optimize", promptKey: "prompt.optimize" },
+  { cmd: "report", labelKey: "slash.report", action: "report" },
+];
+
+const Spark = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2z" />
+  </svg>
+);
+
+export function Composer({
+  text,
+  setText,
+  attached,
+  attachType,
+  setAttachType,
+  onClearAttachment,
+  onPickFile,
+  onOpenFilePicker,
+  fileRef,
+  taRef,
+  busy,
+  offline,
+  uploading,
+  onSend,
+  onStop,
+  onSteer,
+  modelName,
+  onOpenSettings,
+  onSlashReport,
+  onSlashPickFile,
+}: {
+  text: string;
+  setText: (v: string) => void;
+  attached: File | null;
+  attachType: "inventory" | "access_log" | null;
+  setAttachType: (t: "inventory" | "access_log") => void;
+  onClearAttachment: () => void;
+  onPickFile: (f: File | null) => void;
+  /** Open the file picker with no preset type (plain 📎 attach). */
+  onOpenFilePicker: () => void;
+  // `| null` because React 19 types `useRef<T>(null)` as RefObject<T | null>:
+  // the ref genuinely IS null before mount, and React 18's type quietly claimed
+  // otherwise. Widening here matches what the caller actually holds.
+  fileRef: React.RefObject<HTMLInputElement | null>;
+  taRef: React.RefObject<HTMLTextAreaElement | null>;
+  busy: boolean;
+  /** The sidecar is unreachable; sending would go nowhere. */
+  offline: boolean;
+  uploading: boolean;
+  onSend: () => void;
+  onStop: () => void;
+  /** Redirect the in-flight turn: cancel it (keeping what it found) and send the
+   *  composer text as a new, trace-aware turn. Only meaningful while `busy`. */
+  onSteer: () => void;
+  modelName: string | null;
+  onOpenSettings: () => void;
+  onSlashReport: () => void;
+  onSlashPickFile: (type: "inventory" | "access_log") => void;
+}) {
+  const { t } = useI18n();
+  const [slashSel, setSlashSel] = useState(0);
+  const [sizeError, setSizeError] = useState<string | null>(null);
+  // Escape closes the slash menu WITHOUT destroying the typed text (it used to
+  // wipe the whole composer); typing again re-enables the menu.
+  const [slashSuppressed, setSlashSuppressed] = useState(false);
+  useEffect(() => {
+    setSlashSuppressed(false);
+  }, [text]);
+  // A stale size error must not read as a live error forever: clear it when the
+  // attachment state changes (picked/cleared) or the user starts typing.
+  useEffect(() => {
+    setSizeError(null);
+  }, [attached]);
+
+  // Auto-grow the composer (pin one line when empty so the wrapping placeholder
+  // doesn't inflate scrollHeight).
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    if (!text) {
+      ta.style.height = "22px";
+      return;
+    }
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
+
+  // Slash commands: open when the composer is exactly "/" + word chars.
+  const slashQ = /^\/(\w*)$/.exec(text)?.[1];
+  const slashItems = slashQ !== undefined ? SLASH.filter((c) => c.cmd.startsWith(slashQ.toLowerCase())) : [];
+  const slashOpen = slashItems.length > 0 && !slashSuppressed;
+  const slashIdx = Math.min(slashSel, slashItems.length - 1);
+
+  // The backend is unreachable: everything this control offers goes through it.
+  // Left typable on purpose — losing what someone was writing because a service
+  // blinked would be a worse failure than the one being reported — but nothing
+  // that would be dispatched into a void is offered.
+  const running = busy || uploading;
+  const blocked = offline;
+
+  const selectSlash = (c: Slash) => {
+    // A slash command is a send by another name: /report dispatches a turn and
+    // /logs opens a picker that uploads. With the backend down both go nowhere,
+    // so the menu stays readable but its actions do not fire. Seeding a prompt
+    // is local and harmless, so it is still allowed.
+    if (blocked && c.action) return;
+    if (c.action === "report") {
+      setText("");
+      onSlashReport();
+    } else if (c.action === "pickFile") {
+      // Log/inventory analysis needs a local file → open the picker (same as
+      // the empty-state chips), not just seed a prompt the agent has no file for.
+      setText("");
+      onSlashPickFile(c.cmd === "logs" ? "access_log" : "inventory");
+    } else if (c.promptKey) {
+      setText(t(c.promptKey));
+      requestAnimationFrame(() => taRef.current?.focus());
+    }
+    setSlashSel(0);
+  };
+
   return (
-    <div data-testid="prompt-surface" className="min-w-0">
-      <ComposerImplementation {...props} />
+    /* Tighter, and one radius family with the rest of the app.
+     *
+     * Empty, this box was 95px tall — the largest single object on the start
+     * surface, for a control that at rest holds one line of grey text. Most of
+     * that was padding above the field and a 32px circular send button orbiting
+     * in the corner. The references both keep this to a field and a thin row of
+     * small controls under it. */
+    <div className="group/composer relative rounded-xl border border-edge bg-panel px-3 pb-2 pt-2.5 shadow-elev transition-[border-color,box-shadow] duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
+      {slashOpen && (
+        <div className="absolute bottom-full left-1 right-1 mb-2 overflow-hidden rounded-xl border border-edge bg-panel shadow-pop animate-fade-in">
+          <div className="px-3 py-1.5 text-2xs font-medium uppercase tracking-wider text-gray-500">{t("thread.commands")}</div>
+          {slashItems.map((c, i) => (
+            <button
+              key={c.cmd}
+              onMouseEnter={() => setSlashSel(i)}
+              onClick={() => selectSlash(c)}
+              className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors ${i === slashIdx ? "bg-hover" : "hover:bg-hover/50"}`}
+            >
+              <span className="font-mono text-xs text-accent-soft">/{c.cmd}</span>
+              <span className="text-sm text-gray-300">{t(c.labelKey)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {attached && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-edge bg-elevated px-2.5 py-1.5 text-xs">
+          <span className="text-gray-300">📎 {attached.name}</span>
+          {uploading ? (
+            <span className="flex items-center gap-1.5 text-gray-400">
+              <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              {t("thread.uploading", { name: attached.name })}
+            </span>
+          ) : (
+            /* The type is always a CHOICE, never a verdict. It used to render as
+               a plain label once inferred, so a wrong guess — and the guess is
+               made from the filename — could not be corrected from here: the
+               file went to the wrong engine with no way to say otherwise. When
+               nothing could be inferred the prompt asks; either way both options
+               are on screen and the current one is marked. */
+            <span className="flex items-center gap-1">
+              {!attachType && <span className="text-gray-500">{t("attach.pickType")}</span>}
+              {(["inventory", "access_log"] as const).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  aria-pressed={attachType === kind}
+                  data-testid={`attach-type-${kind}`}
+                  onClick={() => setAttachType(kind)}
+                  className={`rounded-full border px-2 py-0.5 text-2xs transition-colors ${
+                    attachType === kind
+                      ? "border-accent/50 bg-accent/12 text-accent-soft"
+                      : "border-edge text-gray-400 hover:bg-hover hover:text-gray-200"
+                  }`}
+                >
+                  {kind === "inventory" ? t("attach.inventory") : t("attach.accessLog")}
+                </button>
+              ))}
+            </span>
+          )}
+          {!uploading && (
+            <button className="ml-auto text-gray-500 hover:text-gray-300"
+              onClick={onClearAttachment} aria-label={t("common.cancel")}>✕</button>
+          )}
+        </div>
+      )}
+      {sizeError && (
+        <div className="mb-2 rounded-md border border-danger-border bg-danger-bg px-3 py-1.5 text-xs text-danger">
+          {sizeError}
+        </div>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".csv,.parquet,.tsv,.log,.txt,.gz,.json,.jsonl"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0] ?? null;
+          e.target.value = "";
+          // Pre-check against the backend's 2 GiB cap so an oversized file fails
+          // instantly with a clear message instead of uploading for minutes → 413.
+          if (f && f.size > MAX_UPLOAD_BYTES) {
+            setSizeError(t("attach.tooLarge", { size: formatGiB(f.size) }));
+            return;
+          }
+          setSizeError(null);
+          onPickFile(f);
+        }}
+      />
+      <textarea
+        ref={taRef}
+        // The pill around this textarea already shows focus (`focus-within:` on the
+        // container, matching its 22px radius). Without the opt-out the global
+        // ring draws a SECOND, square one hugging the text — see index.css for
+        // why the `focus-visible:shadow-none` that used to be here could not work.
+        data-focus-ring="container"
+        // The size of what you WRITE matches the size of what you read: the
+        // thread's prose is 15px, and typing into something smaller than the
+        // answer it produces is the composer quietly saying it matters less.
+        className="block max-h-[220px] h-[24px] w-full resize-none bg-transparent px-1 text-prose text-gray-100 placeholder:text-gray-500 focus:outline-none"
+        rows={1}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          // IME composition: Enter here commits a candidate (zh/ja/ko input),
+          // not a submit — without this guard it sent half-composed text, and
+          // during a running turn it CANCELLED the user's own turn via steer.
+          if (e.nativeEvent.isComposing) return;
+          if (slashOpen) {
+            if (e.key === "ArrowDown") { e.preventDefault(); setSlashSel((s) => Math.min(slashItems.length - 1, s + 1)); return; }
+            if (e.key === "ArrowUp") { e.preventDefault(); setSlashSel((s) => Math.max(0, s - 1)); return; }
+            if (e.key === "Enter") { e.preventDefault(); selectSlash(slashItems[slashIdx]); return; }
+            if (e.key === "Escape") { e.preventDefault(); setSlashSuppressed(true); return; }
+          }
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            // The send BUTTON is disabled while the sidecar is unreachable; the
+            // key that does the same thing has to agree with it. Without this,
+            // the one path most people actually use — type, press Enter — still
+            // fired into a dead service and came back as a raw fetch failure.
+            if (blocked) return;
+            // While a turn is streaming, Enter REDIRECTS it (cancel + resend as a
+            // trace-aware turn) instead of no-opping; otherwise it sends normally.
+            if (busy) onSteer();
+            else onSend();
+          }
+        }}
+        // One prompt, not two. This string used to be
+        // "Ask Storage Agent…   type / for commands" — a single placeholder
+        // with three spaces inside it, which renders as two unrelated grey
+        // fragments floating at different points on the same line and reads as
+        // a layout bug. What a slash does belongs in the hint row below, which
+        // already appears when the field is engaged.
+        placeholder={t("thread.placeholder")}
+      />
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          onClick={onOpenFilePicker}
+          disabled={running || blocked}
+          aria-label={t("attach.button")}
+          title={t("attach.button")}
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-gray-500 transition-colors hover:bg-hover hover:text-gray-300 disabled:cursor-default disabled:opacity-50"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+          </svg>
+        </button>
+        <button
+          onClick={onOpenSettings}
+          className={`group/chip flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-2xs transition-colors ${
+            modelName
+              ? "border-edge text-gray-400 hover:border-edge-strong hover:text-gray-200"
+              : "border-warn-border text-warn-fg hover:border-warn-border hover:text-warn-fg"
+          }`}
+        >
+          <Spark size={11} />
+          <span className="max-w-[14rem] truncate">{modelName ?? t("thread.addModel")}</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-500 group-hover/chip:text-gray-400">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+        {/* Shown while the field is engaged, not always. A permanent
+          * "⏎ send · ⇧⏎ newline" is chrome that every user has read once and
+          * nobody reads again, sitting in the composer forever. */}
+        <span className="ml-auto hidden text-2xs text-gray-500 opacity-0 transition-opacity group-focus-within/composer:opacity-100 sm:inline">
+          {busy && text.trim() ? (
+            // While a turn runs, Enter REDIRECTS it (cancel + resend) — say so,
+            // instead of the misleading "Send".
+            <><kbd className="font-sans">⏎</kbd> {t("thread.redirectCurrent")}</>
+          ) : (
+            <><kbd className="font-sans">⏎</kbd> {t("thread.send")} · <kbd className="font-sans">⇧⏎</kbd> {t("thread.newline")}</>
+          )}
+        </span>
+        {busy && text.trim() && (
+          // Redirect the running turn: cancel it (keeping what it found) and
+          // resend this text as a trace-aware turn. Secondary look next to the
+          // prominent Stop, so the two actions read distinctly.
+          <button
+            onClick={onSteer}
+            aria-label={t("thread.redirect")}
+            title={t("thread.redirectHint")}
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-edge bg-elevated text-gray-100 transition-[background-color,transform] hover:bg-hover active:scale-95"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5" />
+              <polyline points="5 12 12 5 19 12" />
+            </svg>
+          </button>
+        )}
+        {busy ? (
+          <button
+            onClick={onStop}
+            aria-label={t("thread.stop")}
+            title={t("thread.stop")}
+            className="group/stop grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent text-accent-fg transition-[background-color,transform] hover:bg-accent-soft active:scale-95"
+          >
+            {/* Stop square inside a subtle spinner ring so it reads as "running,
+                click to cancel". */}
+            <span className="relative grid h-4 w-4 place-items-center">
+              <span className="absolute inset-0 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+            </span>
+          </button>
+        ) : (
+          <button
+            onClick={onSend}
+            disabled={uploading || blocked || (!text.trim() && !attached)}
+            aria-label={t("thread.send")}
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent text-accent-fg transition-[background-color,transform] hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-500"
+          >
+            {uploading ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="19" x2="12" y2="5" />
+                <polyline points="5 12 12 5 19 12" />
+              </svg>
+            )}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
