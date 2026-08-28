@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { getSession } from "../api";
+import { getSessionRun } from "../sessionRuns";
 import {
   cleanError,
   looksLikeError,
@@ -18,6 +20,8 @@ export type TurnController = ImplementationController & {
    * Deep Work Surfaces (Evidence / Runs / Report) must never depend on the
    * hidden Timeline's mutable `localId.current`. The Workbench already knows
    * which investigation it is displaying, so it passes that id explicitly.
+   * Resolution also means the durable investigation document has observed the
+   * new assistant message, not merely that the model stream emitted its answer.
    */
   submitToSession: (sessionId: string, text: string) => Promise<void>;
 };
@@ -38,6 +42,17 @@ function subscribeController(listener: () => void) {
 
 function controllerSnapshot() {
   return activeController;
+}
+
+const settleDelay = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+async function assistantIds(sessionId: string): Promise<Set<string> | null> {
+  try {
+    const detail = await getSession(sessionId);
+    return new Set(detail.messages.filter((message) => message.role === "assistant").map((message) => message.id));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -77,9 +92,30 @@ export function useTurnRunner(opts: TurnRunnerOptions): TurnController {
       // whole turn so acquireSubmit / runTurn / reload all target the same session.
       const localId = options.current.localId;
       const previous = localId.current;
+      const before = await assistantIds(sessionId);
       localId.current = sessionId;
       try {
         await latest.current.submit(text);
+
+        // The model stream's SSE `done` event and the durable session document
+        // are two different boundaries. A successful stream can finish a few
+        // milliseconds before its assistant message becomes visible to GET
+        // /sessions/:id. Timeline's normal submit path already reloads once, but
+        // a deep Work Surface can expose that tiny window by navigating back to
+        // Timeline immediately after the live answer appears. Confirm the new
+        // assistant message, then refresh the document once more before this
+        // semantic operation is considered settled.
+        const finished = getSessionRun(sessionId);
+        if (!finished.error && !finished.needKey && !finished.stalled && before) {
+          for (const delay of [0, 50, 100, 200, 400, 800, 1600]) {
+            if (delay) await settleDelay(delay);
+            const after = await assistantIds(sessionId);
+            if (after && [...after].some((id) => !before.has(id))) {
+              if (localId.current === sessionId) await options.current.reload(sessionId);
+              break;
+            }
+          }
+        }
       } finally {
         // Do not overwrite a legitimate navigation/session transition that may
         // have happened while the async turn was settling.
