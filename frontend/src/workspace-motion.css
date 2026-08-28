@@ -1,0 +1,25 @@
+/*
+ * Full-canvas workspace motion must never change viewport geometry.
+ *
+ * The report workspace is measured and perceived as a viewport replacement,
+ * not a centered dialog. Scaling the fixed overlay during entry temporarily
+ * inset every edge by several pixels, which both exposed the old modal motion
+ * language and made geometry nondeterministic while the 180ms animation ran.
+ * Keep the shell locked to the viewport from the first frame and animate only
+ * opacity.
+ */
+@keyframes report-workspace-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+[data-testid="agent-workspace"] main > .fixed.inset-0.z-floating {
+  transform: none !important;
+  animation: report-workspace-enter 160ms ease-out !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-testid="agent-workspace"] main > .fixed.inset-0.z-floating {
+    animation: none !important;
+  }
+}
