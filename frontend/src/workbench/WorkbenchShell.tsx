@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useReducer, type ReactNode } from "react";
 import type { SessionSummaryRow } from "../types";
+import { publishWorkbenchCommands } from "./commands";
 import { EvidenceWorkspace } from "./EvidenceWorkspace";
 import { ReportWorkspace } from "./ReportWorkspace";
 import { RunsWorkspace } from "./RunsWorkspace";
@@ -42,6 +43,11 @@ export function WorkbenchShell({
   useEffect(() => {
     dispatch({ type: "session.changed", sessionId });
   }, [sessionId]);
+
+  useEffect(() => publishWorkbenchCommands((command) => {
+    if (command.type === "run.open") dispatch({ type: "run.open", runId: command.runId });
+    else dispatch({ type: "surface.open", surface: command.surface });
+  }), []);
 
   const title = session?.title || copy.newInvestigation;
   const goal = session?.goal?.trim() || null;
