@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useReducer, useState, type ReactNode } from "react";
 import { getSession, getSessionReport } from "../api";
 import type { SessionDetail, SessionSummaryRow } from "../types";
-import { Markdown } from "../components/Markdown";
-import { RunDetail } from "../components/RunDetail";
 import { EvidenceWorkspace } from "./EvidenceWorkspace";
+import { ReportWorkspace } from "./ReportWorkspace";
+import { RunsWorkspace } from "./RunsWorkspace";
 import { SurfaceTabs } from "./SurfaceTabs";
 import { initialWorkbenchState, workbenchReducer } from "./model";
 
@@ -13,66 +13,6 @@ function ConnectionMark({ status }: { status: string }) {
       <span aria-hidden />
       {status}
     </span>
-  );
-}
-
-function RunsWorkspace({
-  detail,
-  selectedRunId,
-  onOpenRun,
-  onCloseRun,
-}: {
-  detail: SessionDetail | null;
-  selectedRunId: string | null;
-  onOpenRun: (runId: string) => void;
-  onCloseRun: () => void;
-}) {
-  if (selectedRunId) {
-    return <RunDetail runId={selectedRunId} onBack={onCloseRun} />;
-  }
-
-  const runs = detail?.runs ?? [];
-  return (
-    <article className="workbench-document" data-testid="runs-workspace">
-      <header className="workbench-document-heading">
-        <p className="workbench-eyebrow">Runs</p>
-        <h1>Auditable execution</h1>
-        <p>Explicit runs stay separate from the conversation so execution can be inspected as evidence.</p>
-      </header>
-      {runs.length === 0 ? (
-        <p className="workbench-empty-line">No explicit runs are attached to this investigation.</p>
-      ) : (
-        <div className="workbench-run-list">
-          {runs.map((run) => (
-            <button key={run.run_id} type="button" className="workbench-run-row" onClick={() => onOpenRun(run.run_id)}>
-              <span className="workbench-run-status" data-status={run.status} aria-hidden />
-              <span className="workbench-run-main">
-                <strong>{run.title || run.run_type}</strong>
-                <small>{run.run_type}{run.origin ? ` · ${run.origin}` : ""}</small>
-              </span>
-              <span className="workbench-run-state">{run.status}</span>
-              <span aria-hidden className="workbench-run-arrow">→</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </article>
-  );
-}
-
-function ReportWorkspace({ report, loading, error }: { report: string | null; loading: boolean; error: string | null }) {
-  return (
-    <article className="workbench-document workbench-report" data-testid="report-workspace">
-      <header className="workbench-document-heading">
-        <p className="workbench-eyebrow">Report</p>
-        <h1>Durable investigation output</h1>
-        <p>The report is a first-class work surface rather than a modal layered over the conversation.</p>
-      </header>
-      {loading ? <p className="workbench-empty-line">Preparing report…</p> : null}
-      {!loading && error ? <p className="workbench-empty-line">{error}</p> : null}
-      {!loading && !error && report ? <div className="workbench-report-body"><Markdown text={report} /></div> : null}
-      {!loading && !error && !report ? <p className="workbench-empty-line">No durable report has been generated yet.</p> : null}
-    </article>
   );
 }
 
