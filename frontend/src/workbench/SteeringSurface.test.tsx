@@ -6,6 +6,7 @@ import { SteeringSurface } from "./SteeringSurface";
 const mocks = vi.hoisted(() => ({
   controller: {
     submit: vi.fn(async () => undefined),
+    submitToSession: vi.fn(async () => undefined),
     submitWithDataset: vi.fn(async () => undefined),
     stop: vi.fn(),
     steer: vi.fn(async () => undefined),
@@ -38,6 +39,7 @@ function renderSteering() {
 
 beforeEach(() => {
   mocks.controller.submit.mockClear();
+  mocks.controller.submitToSession.mockClear();
   mocks.controller.submitWithDataset.mockClear();
   mocks.controller.stop.mockClear();
   mocks.controller.steer.mockClear();
@@ -52,14 +54,15 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("Workbench steering surface", () => {
-  it("sends through the Timeline-owned controller while the Agent is idle", async () => {
+  it("sends through the Timeline-owned controller to the explicit investigation while idle", async () => {
     renderSteering();
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "compare the failed calls" } });
     fireEvent.click(screen.getByRole("button", { name: "send" }));
 
     await vi.waitFor(() => {
-      expect(mocks.controller.submit).toHaveBeenCalledWith("compare the failed calls");
+      expect(mocks.controller.submitToSession).toHaveBeenCalledWith("s1", "compare the failed calls");
     });
+    expect(mocks.controller.submit).not.toHaveBeenCalled();
     expect(mocks.controller.steer).not.toHaveBeenCalled();
   });
 
@@ -73,6 +76,7 @@ describe("Workbench steering surface", () => {
     await vi.waitFor(() => {
       expect(mocks.controller.steer).toHaveBeenCalledWith("focus on lifecycle instead");
     });
+    expect(mocks.controller.submitToSession).not.toHaveBeenCalled();
     expect(mocks.controller.submit).not.toHaveBeenCalled();
   });
 
