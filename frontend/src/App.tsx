@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { closeTopOverlay } from "./lib/overlayStack";
 import {
   SessionRail,
   DEFAULT_RAIL_WIDTH,
@@ -218,10 +219,14 @@ export default function App() {
         e.preventDefault();
         setShortcutsOpen((o) => !o);
       } else if (matches(e, "close")) {
-        if (isEditable(e.target)) return;
-        setPaletteOpen(false);
-        setDrawerOpen(false);
-        setShortcutsOpen(false);
+        // One overlay, the topmost. This branch used to close the palette, the
+        // settings drawer and the shortcuts sheet together, and the inspector
+        // and the run overlay each ran a window listener of their own — so with
+        // two open, a single Escape closed both, and dismissing what you had
+        // just opened threw away what you opened it from. Measured:
+        // `{palette: 0, inspector: 0}` after one Escape. The stack knows who is
+        // on top; nothing here needs to know what is open.
+        if (closeTopOverlay()) e.preventDefault();
       }
     };
     window.addEventListener("keydown", onKey);

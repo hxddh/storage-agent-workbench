@@ -1,5 +1,5 @@
-import { useEffect } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 import { useI18n } from "../i18n";
 import { shortcutsIn, type Shortcut } from "../shortcuts";
 
@@ -27,12 +27,7 @@ export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () =
   const { t } = useI18n();
   const trapRef = useFocusTrap<HTMLDivElement>(open);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  useDismissOnEscape(open, onClose);
 
   if (!open) return null;
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { SessionSummaryRow } from "../types";
 import { useI18n } from "../i18n";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 
 type Cmd = { id: string; label: string; hint?: string; icon: React.ReactNode; run: () => void };
 
@@ -32,6 +33,10 @@ export function CommandPalette({
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const trapRef = useFocusTrap<HTMLDivElement>(open);
+  // Escape lives on the overlay stack now, not on this input: bound to the
+  // input it only worked while the input had focus, and it could not know
+  // whether the palette was the topmost overlay.
+  useDismissOnEscape(open, onClose);
 
   useEffect(() => {
     if (open) {
@@ -69,7 +74,6 @@ export function CommandPalette({
     if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(items.length - 1, s + 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
     else if (e.key === "Enter") { e.preventDefault(); items[sel]?.run(); }
-    else if (e.key === "Escape") { e.preventDefault(); onClose(); }
   };
 
   return (

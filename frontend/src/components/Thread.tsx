@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 import {
   correctSessionMemory,
   forkSession,
@@ -1514,13 +1515,7 @@ export function Thread({
 
 function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   // Escape closes (keyboard users had no way out — only backdrop click/button).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useDismissOnEscape(true, onClose);
   return (
     <div className="fixed inset-0 z-floating flex bg-scrim backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div

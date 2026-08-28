@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSessionActivity, getSessionAudit, getSessionOverview } from "../api";
 import { saveTextFile } from "../config";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 import { useI18n } from "../i18n";
 import { Button } from "./ui";
 import { fmtDuration, fmtTokens } from "./TurnMetrics";
@@ -318,12 +319,7 @@ export function SessionInspector({
     }
   };
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  useDismissOnEscape(open, onClose);
 
   const entries = useMemo<Entry[]>(() => {
     const out: Entry[] = [];
