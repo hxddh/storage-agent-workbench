@@ -93,6 +93,7 @@ const Spark = ({ size = 12 }: { size?: number }) => (
 export function Thread({
   sessionId,
   onSessionCreated,
+  onSessionDiscarded,
   onOpenSettings,
   onChanged,
   sidecarReady,
@@ -101,6 +102,7 @@ export function Thread({
 }: {
   sessionId: string | null;
   onSessionCreated: (id: string) => void;
+  onSessionDiscarded: (id: string) => void;
   onOpenSettings: () => void;
   onChanged: () => void;
   sidecarReady: boolean;
@@ -502,6 +504,7 @@ export function Thread({
     getText: () => taRef.current?.value ?? "",
     localId,
     onSessionCreated,
+    onSessionDiscarded,
     reload,
     onChanged,
     setText,

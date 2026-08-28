@@ -462,6 +462,7 @@ export function SessionRail({
         <button
           onClick={onOpenSettings}
           aria-label={t("rail.settingsAria")}
+          data-testid="rail-settings"
           className="ml-auto grid h-7 w-7 place-items-center rounded-md text-gray-500 transition-colors hover:bg-hover hover:text-gray-200"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

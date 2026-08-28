@@ -41,6 +41,7 @@ function useHarness(initialId: string | null, onFail?: (v: string) => void) {
     getText: () => "",
     localId,
     onSessionCreated: () => {},
+    onSessionDiscarded: () => {},
     reload: vi.fn(async () => true),
     onChanged: () => {},
     setText,

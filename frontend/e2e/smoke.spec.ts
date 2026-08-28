@@ -168,3 +168,39 @@ test.describe("a pasted storage error", () => {
     await expect(page.getByTestId("s3-error-card")).toHaveCount(0);
   });
 });
+
+/**
+ * A failed first turn leaves nothing behind.
+ *
+ * The session is created before the turn is attempted, because the stream needs
+ * an id to attach to. When that first attempt failed — no model key, a rejected
+ * provider, a network error — the session survived with zero messages, and the
+ * rail collected one dead conversation per attempt. On a fresh install, where
+ * "no model key" is the expected outcome until you add one, that is a rail full
+ * of identical empty rows before the product has done anything at all.
+ *
+ * Asserted against the sidecar rather than the rail: the rail is a view, and
+ * what was wrong was the record.
+ */
+test("a send that fails for want of a model does not leave an empty session", async ({ page }) => {
+  const api = `http://127.0.0.1:${process.env.E2E_SIDECAR_PORT || "8799"}`;
+  const count = async () => {
+    const j = await (await page.request.get(`${api}/sessions`)).json();
+    return (Array.isArray(j) ? j : (j.sessions ?? j.items ?? [])).length;
+  };
+
+  await seedFreshApp(page);
+  await page.goto("/");
+  const before = await count();
+
+  const box = composer(page);
+  await box.click();
+  await box.fill("why does my bucket deny list calls");
+  await box.press("Enter");
+  await expect(page.getByText(/Add a model API key/i).first()).toBeVisible({ timeout: 20_000 });
+  await page.waitForTimeout(2500);
+
+  expect(await count()).toBe(before);
+  // …and the message is not lost with it: it goes back into the composer.
+  await expect(box).toHaveValue(/why does my bucket deny list calls/);
+});
