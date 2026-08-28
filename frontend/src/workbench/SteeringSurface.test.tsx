@@ -83,19 +83,19 @@ describe("Workbench steering surface", () => {
     expect(mocks.controller.stop).toHaveBeenCalledWith("s1");
   });
 
-  it("does not offer a steering dock on Timeline or without an investigation", () => {
+  it("does not mount a steering dock on Timeline or without an investigation", () => {
     const { rerender } = render(
       <I18nProvider>
         <SteeringSurface sessionId="s1" visible={false} offline={false} />
       </I18nProvider>,
     );
-    expect(screen.getByTestId("workbench-steering")).toHaveAttribute("hidden");
+    expect(screen.queryByTestId("workbench-steering")).toBeNull();
 
     rerender(
       <I18nProvider>
         <SteeringSurface sessionId={null} visible offline={false} />
       </I18nProvider>,
     );
-    expect(screen.getByTestId("workbench-steering")).toHaveAttribute("hidden");
+    expect(screen.queryByTestId("workbench-steering")).toBeNull();
   });
 });
