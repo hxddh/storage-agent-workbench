@@ -62,7 +62,17 @@ export default defineConfig({
   webServer: {
     command: `npm run build && npx vite preview --port ${WEB_PORT} --strictPort`,
     url: `http://127.0.0.1:${WEB_PORT}`,
-    reuseExistingServer: !process.env.CI,
+    // A shots run NEVER reuses a server.
+    //
+    // The web server here is `vite build && vite preview`, not a dev server, so
+    // a reused one keeps serving whatever bundle it was started with — no HMR,
+    // no rebuild. That is fine for a test run (Playwright starts and stops its
+    // own), and it is a trap for the contact sheet: a gallery regenerated
+    // against a leftover preview photographs the PREVIOUS build, which is
+    // exactly how a rail change that was already committed came back showing
+    // the old rail. The whole point of the sheet is to show what the code does
+    // now, so it pays for a rebuild every time.
+    reuseExistingServer: !process.env.CI && !process.env.SHOTS,
     timeout: 120_000,
     env: { VITE_SIDECAR_URL: `http://127.0.0.1:${SIDECAR_PORT}` },
   },

@@ -370,7 +370,7 @@ export function RunDetail({
                 <span className="text-gray-500">— {f.detail}</span>
               </li>
             ))}
-            {findings.length === 0 && <li className="text-xs text-gray-600">{t("run.noFindings")}</li>}
+            {findings.length === 0 && <li className="text-xs text-gray-500">{t("run.noFindings")}</li>}
           </ul>
         </section>
 

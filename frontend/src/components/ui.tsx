@@ -27,7 +27,7 @@ export function BrandMark({ size = 24, className = "" }: { size?: number; classN
 
 const inputCls =
   "w-full rounded-lg border border-edge bg-canvas px-3 py-2 text-sm text-gray-100 " +
-  "placeholder:text-gray-600 transition-colors hover:border-edge-strong " +
+  "placeholder:text-gray-500 transition-colors hover:border-edge-strong " +
   "focus:border-accent/60 focus:outline-none focus:ring-2 focus:ring-accent/25";
 
 /**
@@ -68,7 +68,7 @@ export function Field({ label, children, hint }: { label: string; children: Reac
           })
         : children}
       {hint ? (
-        <span id={hintId} className="mt-1 block text-xs text-gray-600">
+        <span id={hintId} className="mt-1 block text-xs text-gray-500">
           {hint}
         </span>
       ) : null}
@@ -90,12 +90,16 @@ export function Button({
   className = "",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "default" | "primary" | "danger" | "ghost";
+  variant?: "default" | "primary" | "selected" | "danger" | "ghost";
   size?: "sm" | "md";
 }) {
   const variants: Record<string, string> = {
     default: "border border-edge bg-elevated text-gray-200 hover:bg-hover hover:border-edge-strong",
-    primary: "bg-accent text-white hover:bg-accent-soft",
+    primary: "bg-accent text-accent-fg hover:bg-accent-soft",
+    // "This one is on", not "press this". A tab used `primary` because it was
+    // the only emphatic variant there was, so a settings panel carried four
+    // filled accent objects and none of them was the action to take.
+    selected: "border border-edge-strong bg-elevated font-semibold text-gray-100",
     danger: "border border-danger-border text-danger hover:bg-danger-bg",
     ghost: "text-gray-400 hover:text-gray-100 hover:bg-hover",
   };

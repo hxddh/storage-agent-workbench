@@ -7,6 +7,80 @@
 @config "../tailwind.config.js";
 
 /* ---------------------------------------------------------------------------
+ * The typeface. Vendored, not linked.
+ *
+ * Until v0.90.0 this app shipped no font at all: the stack was
+ * `-apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, "Segoe UI",
+ * Roboto, sans-serif`, so it rendered in San Francisco on a Mac, Segoe UI on
+ * Windows and whatever DejaVu-ish face a Linux box happened to have. Three
+ * different products wearing one layout: every measurement a designer makes —
+ * the reading measure, the row heights, the alignment of a number column —
+ * was true on exactly one of them. That is the difference between a program
+ * with a UI and an app with a voice, and it is not a thing a palette can fix.
+ *
+ * Inter for the interface, JetBrains Mono for keys, payloads and code. Both are
+ * SIL OFL (licences alongside the files). Variable weight axes, so one file per
+ * face covers 100-900 and the app can use real weight for hierarchy instead of
+ * fading text out — which is what it was doing.
+ *
+ * Vendored under src/fonts and referenced by relative URL rather than imported
+ * from node_modules: this is a Tauri desktop app that must render identically
+ * with no network, and the four latin subsets are 228 KB total. CJK is NOT
+ * bundled — Inter has no Han glyphs, and shipping one would add megabytes — so
+ * the stack falls through to the platform's own CJK face, which is the right
+ * one on each OS.
+ * ------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/inter-latin-ext-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Inter Variable";
+  font-style: italic;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/inter-latin-wght-italic.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "JetBrains Mono Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  /* Optically matched to Inter rather than nominally matched.
+   *
+   * JetBrains Mono has a noticeably larger x-height than Inter, so `bucket-002`
+   * set inline at the same px reads a size larger than the sentence around it —
+   * which is why inline code used to carry a hand-written `0.9em`. Correcting
+   * the FACE instead of every use site means mono and sans agree everywhere,
+   * including in code blocks, and the type scale keeps its rule that there are
+   * no arbitrary font sizes in this codebase. */
+  size-adjust: 93%;
+  src: url("./fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ---------------------------------------------------------------------------
  * Theming. All surface/accent/neutral colors are CSS variables so the app can
  * switch between dark (default) and light without touching component classes.
  * Tailwind's `gray` ramp is remapped to these vars too (see tailwind.config),
@@ -45,14 +119,30 @@
   --accent: #6d8bff;
   --accent-soft: #84acff;
   --accent-dim: #161a2b;
-  /* Neutral ramp: 100 = strongest (near-white), 700 = faintest. */
-  --gray-100: #eff1f4;
-  --gray-200: #d8dade;
-  --gray-300: #bbbec4;
-  --gray-400: #9a9ea4;
-  --gray-500: #7b7f86;
-  --gray-600: #5f636b;
-  --gray-700: #494e55;
+  /* The ink that goes ON the accent fill — NOT white here. White on this blue
+   * measures 3.09:1: the app's primary action was the least readable label on
+   * the screen. Darkening the accent until white worked would have cost the one
+   * saturated colour the dark theme has, so the fill keeps its brightness and
+   * carries dark ink instead, the way a light button on a dark UI always has. */
+  --accent-fg: #0b0d10;
+  /* Neutral INK ramp: 100 = strongest, 500 = faintest text this app may draw.
+   *
+   * Every step is solved to clear WCAG AA body contrast (4.5:1) against the
+   * LIGHTEST surface it can land on (`--hover`), not against the canvas. The
+   * previous ramp was checked against the canvas only, and only to the 3.0 UI
+   * floor — so gray-600 on a hovered rail row measured 2.29:1 and gray-700 in
+   * the tool trace measured 2.22:1, while the token test was green.
+   *
+   * 600 and 700 are GONE rather than repaired. They existed to make text
+   * disappear, and a ramp whose bottom two rungs are unreadable is not a
+   * hierarchy — it is a hierarchy of one readable step and two decorative ones.
+   * Rank now comes from size, weight and space; colour only separates the top
+   * of the ramp from the bottom. */
+  --gray-100: #ebedf2;
+  --gray-200: #d3d6db;
+  --gray-300: #bdc1c6;
+  --gray-400: #abafb4;
+  --gray-500: #9ea1a5;
   --scrollbar-thumb: #262a33;
   --scrollbar-thumb-hover: #3a3f4b;
   --selection: rgba(109, 139, 255, 0.3);
@@ -111,14 +201,14 @@
   --accent: #4f63e0;
   --accent-soft: #3f52d4;
   --accent-dim: #eef1fe;
-  /* Neutral ramp inverted: 100 = strongest (near-black), 700 = faintest. */
-  --gray-100: #212428;
-  --gray-200: #36393e;
-  --gray-300: #4d5056;
-  --gray-400: #676b72;
-  --gray-500: #787c84;
-  --gray-600: #878c93;
-  --gray-700: #a7abb2;
+  /* On a light ground the accent is deep enough to carry white (5.01:1). */
+  --accent-fg: #ffffff;
+  /* The same ink ramp, solved against light's worst ground (`--hover`). */
+  --gray-100: #24262a;
+  --gray-200: #34363a;
+  --gray-300: #424449;
+  --gray-400: #4e5156;
+  --gray-500: #595b60;
   --scrollbar-thumb: #d4d4d8;
   --scrollbar-thumb-hover: #b8b9c0;
   --selection: rgba(79, 99, 224, 0.22);
@@ -159,7 +249,20 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  font-family: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
+    sans-serif;
+  /* Inter's defaults are drawn for display sizes. `cv05` gives the lowercase l
+   * a tail so it stops reading as a capital I in a bucket name, `ss03` fixes the
+   * ampersand, and `cv11` opens the single-storey a — all three matter more here
+   * than in prose, because half the words on this screen are identifiers.
+   * `tnum` is NOT global: proportional figures are correct in a sentence; the
+   * data surfaces opt into tabular ones themselves. */
+  font-feature-settings: "cv05" 1, "cv11" 1, "ss03" 1;
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -283,6 +386,18 @@ body {
 }
 .thread-prose > .thread-bleed {
   grid-column: full;
+}
+
+/* The bullet is drawn, not written.
+ *
+ * A `\u2022` in the markup lands in the text layer, so copying a list out of an
+ * answer yields a column of dots interleaved with the words, and every test
+ * that reads an item's textContent sees the marker too. Rendering it from CSS
+ * keeps the list copyable as a list. It is also, unlike the 3px `<span>` it
+ * replaces, a real glyph on the first line's baseline rather than a dot pushed
+ * two lines down by a margin. */
+.marker-dot::before {
+  content: "\2022";
 }
 
 /* What find marks.

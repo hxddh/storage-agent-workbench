@@ -49,16 +49,26 @@ export function SettingsDrawer(
 
   return (
     <div
-      className="fixed inset-0 z-drawer flex justify-end bg-scrim backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-drawer flex justify-end"
       onClick={onClose}
     >
+      {/* The scrim is a SIBLING of the panel, not its parent.
+        *
+        * It used to be the container: `bg-scrim … animate-fade-in` on the
+        * element the panel lives inside, so fading the scrim faded the panel
+        * with it, and for the length of the animation an opaque drawer was
+        * translucent — the thread's heading legible straight through it, on
+        * every open. Removing the opacity from the panel's own keyframe did
+        * nothing, because the opacity was never on the panel; it was inherited.
+        * Now the scrim fades and the panel only slides. */}
+      <div className="absolute inset-0 bg-scrim backdrop-blur-sm animate-fade-in" aria-hidden />
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         tabIndex={-1}
         aria-label={t("settings.title")}
-        className="flex h-full w-[min(860px,96vw)] flex-col border-l border-edge bg-canvas shadow-pop animate-slide-in-right"
+        className="relative flex h-full w-[min(620px,96vw)] flex-col border-l border-edge bg-canvas shadow-pop animate-slide-in-right"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-edge px-6 py-3.5">
@@ -149,9 +159,14 @@ function Segmented<T extends string>({
           type="button"
           aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
+          // Selected, not primary. A filled accent says "this is the action to
+          // take"; there is exactly one of those on a settings panel, and it is
+          // "Add provider". Theme, language and the provider tabs were all
+          // wearing it too, so the screen had four things shouting and no way
+          // to tell which one was a button you should press.
           className={`rounded-md px-3 py-1 text-xs transition-colors ${
             value === o.value
-              ? "bg-accent text-white"
+              ? "bg-elevated font-medium text-gray-100 shadow-elev"
               : "text-gray-400 hover:text-gray-100"
           }`}
         >

@@ -75,9 +75,9 @@ function Stat({
 }) {
   return (
     <div className="min-w-0 rounded-lg border border-edge bg-panel/60 px-3 py-2.5">
-      <div className="truncate text-3xs font-medium uppercase tracking-wider text-gray-600">{label}</div>
+      <div className="truncate text-2xs font-medium uppercase tracking-wider text-gray-500">{label}</div>
       <div className={`mt-0.5 truncate text-base tabular-nums ${tone ?? "text-gray-100"}`}>{value}</div>
-      {sub && <div className="mt-0.5 truncate text-2xs text-gray-600">{sub}</div>}
+      {sub && <div className="mt-0.5 truncate text-2xs text-gray-500">{sub}</div>}
     </div>
   );
 }
@@ -105,7 +105,7 @@ function Chip({
       }`}
     >
       {children}
-      {count != null && <span className="tabular-nums text-gray-600">{count}</span>}
+      {count != null && <span className="tabular-nums text-gray-500">{count}</span>}
     </button>
   );
 }
@@ -144,23 +144,23 @@ function ToolRow({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 rounded py-1 text-left transition-colors hover:bg-hover/60"
       >
-        <span className="shrink-0 font-mono text-3xs tabular-nums text-gray-700">{clock(item.created_at)}</span>
+        <span className="shrink-0 font-mono text-2xs tabular-nums text-gray-500">{clock(item.created_at)}</span>
         <span
           className={`h-1.5 w-1.5 shrink-0 rounded-full ${failed ? "bg-danger" : "bg-success/80"}`}
           aria-hidden
         />
         <span className="min-w-0 truncate font-mono text-xs text-gray-300">{item.tool_name}</span>
-        {dur && <span className="ml-auto shrink-0 tabular-nums text-2xs text-gray-600">{dur}</span>}
+        {dur && <span className="ml-auto shrink-0 tabular-nums text-2xs text-gray-500">{dur}</span>}
       </button>
       {open && (
         <div className="mb-1 space-y-1.5 pb-1">
           {(["input", "output"] as const).map((k) =>
             item[k] ? (
               <div key={k}>
-                <div className="text-3xs font-medium uppercase tracking-wider text-gray-700">
+                <div className="text-2xs font-medium uppercase tracking-wider text-gray-500">
                   {k === "input" ? t("inspector.input") : t("inspector.output")}
                 </div>
-                <pre className="mt-0.5 max-h-52 overflow-auto rounded bg-sidebar p-2 text-3xs leading-relaxed text-gray-400">
+                <pre className="mt-0.5 max-h-52 overflow-auto rounded bg-sidebar p-2 text-2xs leading-relaxed text-gray-400">
                   {JSON.stringify(item[k], null, 2)}
                 </pre>
               </div>
@@ -194,12 +194,12 @@ function AuditRow({
         onClick={() => hasPayload && setOpen((v) => !v)}
         className="flex w-full items-center gap-2 rounded py-1 text-left transition-colors hover:bg-hover/60"
       >
-        <span className="shrink-0 font-mono text-3xs tabular-nums text-gray-700">{clock(item.created_at)}</span>
+        <span className="shrink-0 font-mono text-2xs tabular-nums text-gray-500">{clock(item.created_at)}</span>
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent/50" aria-hidden />
         <span className="min-w-0 truncate text-xs text-gray-400">{item.event_type}</span>
       </button>
       {open && hasPayload && (
-        <pre className="mb-1 max-h-52 overflow-auto rounded bg-sidebar p-2 text-3xs leading-relaxed text-gray-400">
+        <pre className="mb-1 max-h-52 overflow-auto rounded bg-sidebar p-2 text-2xs leading-relaxed text-gray-400">
           {JSON.stringify(item.payload, null, 2)}
         </pre>
       )}
@@ -394,9 +394,19 @@ export function SessionInspector({
 
   return (
     <div
-      className="fixed inset-0 z-drawer flex justify-end bg-scrim backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-drawer flex justify-end"
       onClick={onClose}
     >
+      {/* The scrim is a SIBLING of the panel, not its parent.
+        *
+        * It used to be the container: `bg-scrim … animate-fade-in` on the
+        * element the panel lives inside, so fading the scrim faded the panel
+        * with it, and for the length of the animation an opaque drawer was
+        * translucent — the thread's heading legible straight through it, on
+        * every open. Removing the opacity from the panel's own keyframe did
+        * nothing, because the opacity was never on the panel; it was inherited.
+        * Now the scrim fades and the panel only slides. */}
+      <div className="absolute inset-0 bg-scrim backdrop-blur-sm animate-fade-in" aria-hidden />
       <div
         ref={trapRef}
         role="dialog"
@@ -404,7 +414,7 @@ export function SessionInspector({
         tabIndex={-1}
         aria-label={t("inspector.title")}
         data-testid="session-inspector"
-        className="flex h-full w-[min(680px,96vw)] flex-col border-l border-edge bg-canvas shadow-pop animate-slide-in-right"
+        className="relative flex h-full w-[min(680px,96vw)] flex-col border-l border-edge bg-canvas shadow-pop animate-slide-in-right"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between border-b border-edge px-5 py-3.5">
@@ -488,7 +498,7 @@ export function SessionInspector({
                     : t("inspector.tokensIn", { n: fmtTokens(usage.input_tokens) ?? "0" })
                   : t("inspector.tokensUnavailable")
               }
-              tone={usage?.available ? undefined : "text-gray-600"}
+              tone={usage?.available ? undefined : "text-gray-500"}
             />
             <Stat
               label={t("inspector.statAudit")}
@@ -574,7 +584,7 @@ export function SessionInspector({
           </ul>
 
           {!loading && entries.length === 0 && (
-            <p className="mt-6 text-center text-xs text-gray-600">{t("inspector.empty")}</p>
+            <p className="mt-6 text-center text-xs text-gray-500">{t("inspector.empty")}</p>
           )}
         </div>
       </div>

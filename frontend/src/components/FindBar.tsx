@@ -75,7 +75,7 @@ export function FindBar({
         placeholder={t("find.placeholder")}
         aria-label={t("find.placeholder")}
         data-testid="find-input"
-        className="min-w-0 flex-1 bg-transparent text-sm text-gray-100 placeholder:text-gray-600
+        className="min-w-0 flex-1 bg-transparent text-sm text-gray-100 placeholder:text-gray-500
                    outline-none"
       />
       <span

@@ -144,10 +144,17 @@ export function Composer({
   };
 
   return (
-    <div className="group/composer relative rounded-2xl border border-edge bg-panel px-3.5 pb-2.5 pt-3 shadow-elev transition-[border-color,box-shadow] duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
+    /* Tighter, and one radius family with the rest of the app.
+     *
+     * Empty, this box was 95px tall — the largest single object on the start
+     * surface, for a control that at rest holds one line of grey text. Most of
+     * that was padding above the field and a 32px circular send button orbiting
+     * in the corner. The references both keep this to a field and a thin row of
+     * small controls under it. */
+    <div className="group/composer relative rounded-xl border border-edge bg-panel px-3 pb-2 pt-2.5 shadow-elev transition-[border-color,box-shadow] duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
       {slashOpen && (
         <div className="absolute bottom-full left-1 right-1 mb-2 overflow-hidden rounded-xl border border-edge bg-panel shadow-pop animate-fade-in">
-          <div className="px-3 py-1.5 text-3xs font-medium uppercase tracking-wider text-gray-600">{t("thread.commands")}</div>
+          <div className="px-3 py-1.5 text-2xs font-medium uppercase tracking-wider text-gray-500">{t("thread.commands")}</div>
           {slashItems.map((c, i) => (
             <button
               key={c.cmd}
@@ -235,7 +242,7 @@ export function Composer({
         // The size of what you WRITE matches the size of what you read: the
         // thread's prose is 15px, and typing into something smaller than the
         // answer it produces is the composer quietly saying it matters less.
-        className="block max-h-[220px] h-[24px] w-full resize-none bg-transparent px-1 text-prose text-gray-100 placeholder:text-gray-600 focus:outline-none"
+        className="block max-h-[220px] h-[24px] w-full resize-none bg-transparent px-1 text-prose text-gray-100 placeholder:text-gray-500 focus:outline-none"
         rows={1}
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -263,6 +270,12 @@ export function Composer({
             else onSend();
           }
         }}
+        // One prompt, not two. This string used to be
+        // "Ask Storage Agent…   type / for commands" — a single placeholder
+        // with three spaces inside it, which renders as two unrelated grey
+        // fragments floating at different points on the same line and reads as
+        // a layout bug. What a slash does belongs in the hint row below, which
+        // already appears when the field is engaged.
         placeholder={t("thread.placeholder")}
       />
       <div className="mt-2 flex items-center gap-2">
@@ -287,14 +300,14 @@ export function Composer({
         >
           <Spark size={11} />
           <span className="max-w-[14rem] truncate">{modelName ?? t("thread.addModel")}</span>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-600 group-hover/chip:text-gray-400">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-500 group-hover/chip:text-gray-400">
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </button>
         {/* Shown while the field is engaged, not always. A permanent
           * "⏎ send · ⇧⏎ newline" is chrome that every user has read once and
           * nobody reads again, sitting in the composer forever. */}
-        <span className="ml-auto hidden text-2xs text-gray-600 opacity-0 transition-opacity group-focus-within/composer:opacity-100 sm:inline">
+        <span className="ml-auto hidden text-2xs text-gray-500 opacity-0 transition-opacity group-focus-within/composer:opacity-100 sm:inline">
           {busy && text.trim() ? (
             // While a turn runs, Enter REDIRECTS it (cancel + resend) — say so,
             // instead of the misleading "Send".
@@ -311,7 +324,7 @@ export function Composer({
             onClick={onSteer}
             aria-label={t("thread.redirect")}
             title={t("thread.redirectHint")}
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-edge bg-elevated text-gray-100 transition-[background-color,transform] hover:bg-hover active:scale-95"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-edge bg-elevated text-gray-100 transition-[background-color,transform] hover:bg-hover active:scale-95"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="19" x2="12" y2="5" />
@@ -324,7 +337,7 @@ export function Composer({
             onClick={onStop}
             aria-label={t("thread.stop")}
             title={t("thread.stop")}
-            className="group/stop grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-[background-color,transform] hover:bg-accent-soft active:scale-95"
+            className="group/stop grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent text-accent-fg transition-[background-color,transform] hover:bg-accent-soft active:scale-95"
           >
             {/* Stop square inside a subtle spinner ring so it reads as "running,
                 click to cancel". */}
@@ -340,7 +353,7 @@ export function Composer({
             onClick={onSend}
             disabled={uploading || blocked || (!text.trim() && !attached)}
             aria-label={t("thread.send")}
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-white transition-[background-color,transform] hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-600"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent text-accent-fg transition-[background-color,transform] hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-500"
           >
             {uploading ? (
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />

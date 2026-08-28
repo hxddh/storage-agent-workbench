@@ -6,6 +6,112 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+_A rebuild of the interface layer, after "the aesthetics and the texture both
+fail" — and after being told the left-hand line was mine, not the references'.
+It was. The comment justifying it claimed "this is the arrangement Codex and
+Cursor both settle on"; that was asserted, never checked, and neither draws a
+rule beside an assistant message. Everything below is measured, and the two
+gates that let this through are replaced._
+
+### Fixed — two gates that were written to pass
+
+- **Contrast was checked on tokens, never on pixels.** `theme.tokens.test.ts`
+  held `--gray-600` to **3.0:1** — WCAG's floor for a UI *component*, not for
+  text — and only against `--canvas`, while its own comment said the token
+  "carries the metrics footer and timestamps, quiet but not decorative", which
+  is content, which needs 4.5. So the table was green while the screen was
+  unreadable. `e2e/contrast.spec.ts` now audits **every text node the app
+  actually renders**, resolving each one's real foreground and its real
+  composited background in a real browser. It found **46 failures** across six
+  surfaces: the tool trace at 2.05:1, a hovered rail row at 2.29:1, and white on
+  the primary button at **3.09:1** — the app's main action was the least
+  readable label on screen.
+- **The blank screen was permitted by the test named after it.** The spacer
+  under the last turn existed so a question could sit at the top; its test said
+  "a spacer taller than the viewport would be scrollable emptiness — the thing
+  this product was just reported for" and then asserted `spacer < clientHeight`.
+  On a 900px window, 899px of blank passed. The spacer is gone.
+
+### Changed — the interface layer
+
+- **A typeface, vendored.** The app shipped none: it rendered in San Francisco
+  on a Mac, Segoe UI on Windows and whatever a Linux box had. Inter and JetBrains
+  Mono (SIL OFL, 228 KB of latin subsets, no network) with the optical tracking
+  the scale never had, and the mono face optically size-matched to the sans so
+  inline code stops needing a hand-written `0.9em`.
+- **The ink ramp is solved, not picked.** Every step clears 4.5:1 against the
+  *lightest* surface it can land on. `--gray-600` and `--gray-700` are deleted
+  rather than repaired — they existed to make text disappear. Rank now comes
+  from size, weight and space.
+- **The accent carries its own label.** The bright blue keeps its brightness and
+  takes dark ink, the way a light button on a dark UI always has.
+- **10px is gone** as a size this app says anything at.
+- **No rule beside the answer**, no badge, no gutter. The answer starts at the
+  column's left edge.
+- **The question moved to that same left edge.** It was a bubble pinned right:
+  at 1440px the question began at x=1028 and its answer at x=370 — one exchange
+  spanning the full width of the window.
+- **Headings are bigger than the text they introduce.** They were not: body
+  prose is 15px and the scale ran h2 at 14px and h3 at 13px, so a structured
+  answer rendered as a wall.
+- **Bullets are bullets** — a glyph on the first line's baseline, drawn from CSS
+  so a copied list is still a list — not a 3px dot pushed level with line two.
+- **Inline code is an identifier, not a link**: mono on a quiet surface instead
+  of accent blue on every one.
+- **Tables are their content's width.** `width:100%` handed every column a share
+  of the leftover track, so a bucket name and its object count sat 300px apart;
+  a wide table still overflows into its scroll wrapper rather than wrapping every
+  cell to fit.
+- **The composer is the width of the answers it produces.** It spanned the full
+  64rem column while prose is capped at the 46rem measure — the input and the
+  output of one conversation set to two different widths, with the composer
+  running 290px further right than every answer above it. It is also 10px
+  shorter and on the app's own radius scale instead of a pill with two circular
+  buttons orbiting in it.
+- **One filled accent per screen.** The settings panel had four: the theme
+  segment, the language segment, the open provider tab, and the actual primary
+  action. A filled accent says "press this"; when everything selected wears it,
+  nothing does. Selection is a surface and a weight now; the accent is left to
+  "Add provider" alone.
+- **The settings drawer is 620px, not 860px.** It held a theme switch, a
+  language switch, two tabs and an empty list across a slab nearly as wide as
+  the thread behind it.
+- **The start surface is a list, not a spreadsheet.** `gap-px` over a tinted
+  ground with an outer border drew a rule between all six suggestions and a box
+  around the lot. And each row's arrow sat 320px to the right of the phrase it
+  points at; it now follows the words, on hover.
+- **The wait is a step, not a spinner in an empty screen.** The signature
+  moment of an agent app was three bouncing dots and a rotating sentence, in a
+  component laid out nothing like the tool rows that replaced it a second later
+  — so the whole block was swapped for a different-looking list the instant work
+  began. It is now the same row as a live call: one list from the first moment,
+  growing.
+- **A table is a block in an answer, not the answer.** A capped table was still
+  allowed `60vh` — 540px of a 900px window for one block — and its rows were
+  31px tall. 22rem and 26px rows: the prose above it, the table, the list below
+  it and the trace now fit on one screen together.
+- **The rail is an index again.** A title over a timestamp made every row 53px,
+  so nine conversations filled a 900px rail. Moving the time alongside halved
+  that and then ate 60px of every title to repeat what the section heading above
+  it already said — the buckets are today / yesterday / this week / this month /
+  older. The name gets the row; the exact time is a hover away.
+- **The pasted-error card gets the measure too.** Capping the prose path and
+  not the card path left the product's signature input as the single widest
+  object in the thread: a 1024px card holding four short lines.
+- **One measure for the whole conversation.** The turn footer sits outside the
+  prose grid, so it laid out across the full 64rem column while the answer above
+  it used 46rem: a trace row put `head_bucket · bucket-2` on the left and its
+  `200` at x=1340, with 800px of nothing between a call and its own result.
+- **An opaque panel is opaque, including while it is arriving.** The settings
+  drawer and the session inspector spent the whole of every open translucent —
+  the thread's heading legible straight through them. Removing `opacity` from
+  the panel's own keyframe changed nothing, because the opacity was never on the
+  panel: the scrim was its PARENT, so fading the scrim faded everything inside
+  it. The scrim is a sibling now, and the test asserts the composited chain
+  (measured before: 0.59).
+- **One placeholder.** It was `"Ask Storage Agent…   type / for commands"` — a
+  single string with three spaces in it, rendering as two grey fragments.
+
 ## [0.89.0] - 2026-08-28
 
 _A full pass over the product's UI, UE and UX against what a top-tier agent app

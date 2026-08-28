@@ -3,44 +3,45 @@ import { dropModelProvider, startFakeModel, textTurn, useFakeModel } from "./fak
 import { seedSession } from "./seed";
 
 /**
- * Your question sits at the top of the screen while you read the answer.
+ * The thread ends where the conversation ends.
  *
- * The first attempt at this was a sticky horizontal strip over the thread that
- * NAMED the question once it had scrolled away. It worked, and it was the wrong
- * shape for the job: a bar of furniture describing content that is only
- * off-screen because the thread scrolled past it. ChatGPT, Codex and Cursor all
- * solve it the other way — put the question where the reader is looking and let
- * the answer grow beneath it — and that needs no furniture at all.
+ * v0.88.0 replaced a sticky bar naming the question with "anchoring": a spacer
+ * under the last turn, sized so that scrolling to the end put the question at
+ * the top of the screen. A thread cannot scroll past its own last pixel, so for
+ * a turn shorter than the viewport that spacer was most of a viewport of
+ * nothing — and "scroll down and you get a blank screen" was reported again,
+ * against the release that was supposed to have fixed it.
  *
- * A thread cannot scroll past its own last pixel, so for a turn shorter than the
- * viewport this is impossible without somewhere to scroll into. The spacer under
- * the last turn is that somewhere, and it is SOLVED for rather than guessed:
- * exactly enough that scrolling to the end puts the question `TAIL_GAP_PX` below
- * the top, and no more, so the thread never scrolls into blankness it does not
- * need.
+ * The test that was supposed to prevent this said, in its own comment, "a
+ * spacer taller than the viewport would be scrollable emptiness — the thing
+ * this product was just reported for", and then asserted `spacer < clientH`.
+ * A spacer of clientH − 1 passed. On a 900px window that is 899px of blank
+ * screen, green.
+ *
+ * The spacer is gone. What these assert now is the plain property it violated:
+ * below the last thing the agent said there is nothing left to scroll into.
  */
 const composer = (p: Page) => p.getByPlaceholder(/Ask Storage Agent/i);
 const scroller = (p: Page) => p.getByTestId("thread-scroll");
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
-/** Where the newest question sits, in pixels from the top of the reading area. */
-async function questionTop(page: Page): Promise<number> {
-  return await page.evaluate(() => {
-    const sc = document.querySelector('[data-testid="thread-scroll"]') as HTMLElement;
-    const qs = sc.querySelectorAll<HTMLElement>("[data-question]");
-    const last = qs[qs.length - 1];
-    return Math.round(last.getBoundingClientRect().top - sc.getBoundingClientRect().top);
-  });
-}
-
-const geometry = (page: Page) =>
+/** How much scrollable nothing is left under the last painted content. */
+const emptiness = (page: Page) =>
   page.evaluate(() => {
     const sc = document.querySelector('[data-testid="thread-scroll"]') as HTMLElement;
-    const sp = sc.querySelector('[data-testid="tail-space"]') as HTMLElement;
+    const area = sc.getBoundingClientRect();
+    let lowest = area.top;
+    for (const n of Array.from(sc.querySelectorAll<HTMLElement>("*"))) {
+      const paints = (n.textContent ?? "").trim().length > 0 || n.tagName === "svg";
+      if (!paints) continue;
+      const r = n.getBoundingClientRect();
+      if (r.height >= 1 && r.width >= 1 && r.bottom > lowest) lowest = r.bottom;
+    }
     return {
-      spacer: Math.round(sp.getBoundingClientRect().height),
       clientH: sc.clientHeight,
+      // Anything below the last painted pixel that can still be scrolled to.
+      below: Math.round(sc.scrollHeight - (lowest - area.top + sc.scrollTop)),
       fromBottom: Math.round(sc.scrollHeight - sc.scrollTop - sc.clientHeight),
     };
   });
@@ -72,7 +73,7 @@ const LONG =
               `so every list returns 403 AccessDenied while head_object still succeeds.`,
   ).join("\n\n");
 
-test("a short answer leaves the question at the top of the screen", async ({ page }) => {
+test("a short answer leaves nothing to scroll into", async ({ page }) => {
   test.setTimeout(120_000);
   const { cleanup } = await ask(page, SHORT, "does the ACL matter here");
   try {
@@ -80,44 +81,53 @@ test("a short answer leaves the question at the top of the screen", async ({ pag
       timeout: 60_000,
     });
     await page.waitForTimeout(2000);
-    // Measured, not approximated: the anchor is 28px and this asserts the real
-    // number, because "roughly near the top" is what a broken spacer also looks
-    // like at a glance.
-    expect(await questionTop(page)).toBeLessThanOrEqual(40);
-    expect(await questionTop(page)).toBeGreaterThanOrEqual(0);
+    const g = await emptiness(page);
+    // The padding at the foot of the scroller is real and deliberate; a
+    // viewport of it is not. Measured against what this replaces: the spacer
+    // alone was within a pixel of the full 900px window.
+    expect(
+      g.below,
+      `${g.below}px of scrollable nothing under the last turn, in a ${g.clientH}px window`,
+    ).toBeLessThanOrEqual(96);
   } finally {
     await cleanup();
   }
 });
 
-test("the space it adds is exactly what the turn needs, never more", async ({ page }) => {
+test("the answer is on screen when it finishes, not scrolled past", async ({ page }) => {
   test.setTimeout(120_000);
   const { cleanup } = await ask(page, SHORT, "does the ACL matter here");
   try {
-    await expect(page.getByText(/omits s3:ListBucket for that principal/).first()).toBeVisible({
-      timeout: 60_000,
-    });
+    const answer = page.getByText(/omits s3:ListBucket for that principal/).first();
+    await expect(answer).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(2000);
-    const g = await geometry(page);
-    // A spacer taller than the viewport would be scrollable emptiness — the
-    // thing this product was just reported for.
-    expect(g.spacer).toBeGreaterThan(0);
-    expect(g.spacer).toBeLessThan(g.clientH);
-    // And the thread is genuinely at its end, not stranded above it.
-    expect(g.fromBottom).toBeLessThanOrEqual(2);
+    // Removing the spacer must not reintroduce the opposite fault: the reader
+    // ends the turn looking at the answer, inside the reading area.
+    const seen = await page.evaluate(() => {
+      const sc = document.querySelector('[data-testid="thread-scroll"]') as HTMLElement;
+      const el = Array.from(sc.querySelectorAll<HTMLElement>("p, li")).find((n) =>
+        (n.textContent ?? "").includes("omits s3:ListBucket for that principal"),
+      )!;
+      const a = sc.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      return { top: Math.round(r.top - a.top), bottom: Math.round(r.bottom - a.top), h: Math.round(a.height) };
+    });
+    expect(seen.top).toBeGreaterThanOrEqual(0);
+    expect(seen.bottom).toBeLessThanOrEqual(seen.h);
   } finally {
     await cleanup();
   }
 });
 
-test("an answer taller than the screen adds no space at all", async ({ page }) => {
+test("a long answer still lands at its end", async ({ page }) => {
   test.setTimeout(120_000);
   const { cleanup } = await ask(page, LONG, "walk me through the whole policy");
   try {
     await expect(page.getByText(/Paragraph 29/).first()).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(2500);
-    const g = await geometry(page);
-    expect(g.spacer).toBe(0);
+    const g = await emptiness(page);
+    expect(g.fromBottom).toBeLessThanOrEqual(4);
+    expect(g.below).toBeLessThanOrEqual(96);
   } finally {
     await cleanup();
   }

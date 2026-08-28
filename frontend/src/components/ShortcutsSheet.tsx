@@ -61,7 +61,7 @@ export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () =
         <div className="max-h-[70vh] space-y-4 overflow-auto px-5 py-4">
           {GROUPS.map((g) => (
             <div key={g.group}>
-              <div className="mb-1.5 text-3xs font-medium uppercase tracking-wider text-gray-600">
+              <div className="mb-1.5 text-2xs font-medium uppercase tracking-wider text-gray-500">
                 {t(g.titleKey)}
               </div>
               <ul className="space-y-1">

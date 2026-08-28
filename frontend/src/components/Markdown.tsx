@@ -80,7 +80,7 @@ function Outline({ entries }: { entries: Array<{ id: string; text: string; level
   return (
     <nav aria-label={t("answer.outline")} data-testid="answer-outline"
          className="rounded-lg border border-edge bg-panel px-3 py-2">
-      <div className="mb-1 text-3xs font-medium uppercase tracking-wider text-gray-700">
+      <div className="mb-1 text-2xs font-medium uppercase tracking-wider text-gray-500">
         {t("answer.outline")}
       </div>
       <ul className="space-y-0.5">
@@ -135,7 +135,7 @@ function Blocks({ blocks }: { blocks: Block[] }) {
             return (
               <blockquote
                 key={i}
-                className="border-l-2 border-accent/40 bg-elevated/40 py-1.5 pl-3.5 pr-3 text-sm text-gray-400"
+                className="border-l-2 border-edge-strong pl-4 text-prose text-gray-300"
               >
                 {/* Parse the quoted body as blocks rather than as a run of
                     bare paragraphs: a quote can contain a table, a list or a
@@ -174,15 +174,26 @@ export function headingId(text: string): string {
   return slug ? `sec-${slug}` : "sec";
 }
 
-/** h5/h6 exist so a deep answer does not print `##### text` at the reader. They
- * share h4's treatment — below h4 the distinction is emphasis, not scale. */
+/** Headings, at sizes that are actually bigger than the text they introduce.
+ *
+ * They were not. Body prose is 15px and the scale ran h1 16px, h2 14px, h3 13px,
+ * h4-h6 12px uppercase — so every heading below h1 was SMALLER than the
+ * paragraph under it, and h3, the level a long diagnostic answer uses most, was
+ * two steps down from the body. That is why a structured answer rendered as an
+ * undifferentiated wall: the structure was there in the markup and inverted in
+ * the type.
+ *
+ * A heading also needs more air above it than below — the space belongs to the
+ * section break, not to the heading — which is what `mt-*` with a smaller `mb`
+ * buys. h5/h6 exist so a deep answer does not print `##### text` at the reader;
+ * below h4 the distinction is weight and colour, not scale. */
 const HEADING_CLASS: Record<number, string> = {
-  1: "mt-3 text-lg",
-  2: "mt-3 text-base",
-  3: "mt-2 text-sm",
-  4: "mt-2 text-xs uppercase tracking-wide text-gray-400",
-  5: "mt-2 text-xs uppercase tracking-wide text-gray-400",
-  6: "mt-2 text-2xs uppercase tracking-wide text-gray-500",
+  1: "mt-5 mb-0.5 text-xl leading-tight",
+  2: "mt-5 mb-0.5 text-lg leading-snug",
+  3: "mt-4 mb-0 text-prose leading-snug",
+  4: "mt-4 mb-0 text-sm",
+  5: "mt-3 mb-0 text-sm text-gray-300",
+  6: "mt-3 mb-0 text-xs uppercase tracking-[0.06em] text-gray-400",
 };
 
 function ListBlock({ block }: { block: ListBlockT }) {
@@ -191,9 +202,9 @@ function ListBlock({ block }: { block: ListBlockT }) {
     // A real <ol>/<ul>: screen readers announce "list, 4 items" and copying the
     // text out keeps its structure. The visible marker is still drawn by hand so
     // it can be a checkbox for a task item.
-    <Tag className={block.ordered ? "space-y-1.5" : "space-y-1"} start={block.ordered ? block.start : undefined}>
+    <Tag className="space-y-1" start={block.ordered ? block.start : undefined}>
       {block.items.map((it, j) => (
-        <li key={j} className="flex gap-2.5">
+        <li key={j} className="flex gap-1.5">
           {it.task !== null ? (
             <span
               role="checkbox"
@@ -212,10 +223,15 @@ function ListBlock({ block }: { block: ListBlockT }) {
             </span>
           ) : (
             <span
-              className={`select-none ${
+              // A marker on the FIRST LINE's baseline, at a size you can see.
+              // The unordered marker was a 3px dot pushed down by `mt-2`, which
+              // put it level with the second line of any item that wrapped and
+              // read as dirt on the screen rather than as a list. Ordered
+              // numbers are tabular so 9. and 10. line up their full stops.
+              className={`select-none leading-[1.75] ${
                 block.ordered
-                  ? "min-w-[1.1rem] text-right font-medium text-gray-500"
-                  : "mt-2 h-[3px] w-[3px] shrink-0 rounded-full bg-gray-500"
+                  ? "min-w-[1.35rem] shrink-0 text-right font-medium tabular-nums text-gray-400"
+                  : "w-[0.7rem] shrink-0 text-center text-gray-400 marker-dot"
               }`}
               aria-hidden
             >
@@ -274,7 +290,7 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
   return (
     <div className="thread-bleed group/code overflow-hidden rounded-lg border border-edge bg-code">
       <div className="flex items-center gap-2 border-b border-edge/70 px-3 py-1.5">
-        <span className="font-mono text-3xs uppercase tracking-wide text-gray-500">{lang || "code"}</span>
+        <span className="font-mono text-2xs uppercase tracking-wide text-gray-500">{lang || "code"}</span>
         <button
           onClick={copy}
           className="ml-auto flex items-center gap-1 text-2xs text-gray-500 opacity-0 transition-[color,opacity] hover:text-gray-200 group-hover/code:opacity-100"
@@ -402,11 +418,31 @@ function TableBlock({
       <div
         ref={boxRef}
         onScroll={measure}
-        className={`overflow-auto ${tall ? "max-h-[60vh]" : ""} ${
+        // 22rem, not 60vh. A capped table was still allowed 540px of a 900px
+        // window — 60% of the screen for one block inside one answer, which is
+        // not a table in a document, it is a document inside a table. At 22rem
+        // roughly eleven rows are visible, the scroll says there are more, and
+        // the answer around it stays the thing you are reading.
+        className={`overflow-auto ${tall ? "max-h-[22rem]" : ""} ${
           tall && more ? "[mask-image:linear-gradient(to_bottom,black_calc(100%-2.5rem),transparent)]" : ""
         }`}
       >
-        <table className="w-full border-collapse text-xs">
+        {/* Content-width, NOT `w-full`.
+          *
+          * With `width:100%` and auto layout the browser hands every column a
+          * share of the leftover track, so a five-column table of short values
+          * in a 1000px column came out with a 300px hole between a bucket name
+          * and its object count — two related numbers placed as far apart as
+          * the layout could manage. A table is as wide as its contents; the
+          * scroll wrapper around it is what owns the wide track, so a genuinely
+          * wide table still gets the room and still scrolls inside itself.
+          *
+          * `w-max`, not `max-w-full`: capping at the container brings the
+          * squashing back by another route — an eleven-column table is made to
+          * fit by wrapping every cell, which is worse than scrolling. At
+          * max-content a narrow table is its own width and a wide one overflows
+          * into the wrapper, which is a scroll region precisely for that. */}
+        <table className="w-max border-collapse text-xs">
           <thead>
             <tr className={`bg-canvas ${tall ? "sticky top-0 z-sticky" : ""}`}>
               {headers.map((h, i) => (
@@ -429,9 +465,9 @@ function TableBlock({
                 {r.map((c, ci) => (
                   <td
                     key={ci}
-                    className={`px-3 py-1.5 align-top text-gray-300 ${
+                    className={`px-3 py-1 align-top text-gray-300 ${
                       ALIGN_CLASS[columns[ci]?.align ?? "left"]
-                    } ${columns[ci]?.numeric ? "tabular-nums" : ""}`}
+                    } ${columns[ci]?.numeric ? "whitespace-nowrap tabular-nums" : ""}`}
                   >
                     {inline(c)}
                   </td>
@@ -734,7 +770,7 @@ function inline(text: string): ReactNode {
     let trailing = "";
     if (tok.startsWith("`")) {
       nodes.push(
-        <code key={k++} className="rounded bg-elevated px-1.5 py-0.5 font-mono text-xs text-accent-soft">
+        <code key={k++} className="rounded border border-edge/70 bg-elevated px-[0.3em] py-[0.1em] font-mono text-gray-200">
           {tok.slice(1, -1)}
         </code>,
       );

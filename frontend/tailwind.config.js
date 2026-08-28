@@ -51,6 +51,7 @@ export default {
           DEFAULT: "var(--accent)",
           soft: "var(--accent-soft)",
           dim: "var(--accent-dim)",
+          fg: "var(--accent-fg)",
         },
         // Remap the neutral ramp to theme vars so text-gray-100..700 inverts
         // correctly between dark and light (100 = strongest, 700 = faintest).
@@ -60,8 +61,6 @@ export default {
           300: "var(--gray-300)",
           400: "var(--gray-400)",
           500: "var(--gray-500)",
-          600: "var(--gray-600)",
-          700: "var(--gray-700)",
         },
       },
       // The product type scale (v0.56.0).
@@ -78,32 +77,50 @@ export default {
       // vertical rhythm matters more than air; `sm` is the reading size for
       // conversation text. Every arbitrary value was migrated to its nearest
       // step, so the scale is what the UI actually uses, not an aspiration.
+      // Optical tracking is part of the size, so it lives in the scale.
+      //
+      // Inter is drawn on a single optical size and needs the tracking a
+      // typeface with real optical sizes would give you for free: opened up at
+      // caption sizes so 11px chrome does not clot, tightened at display sizes
+      // so a heading does not read as a row of separate letters. rsms publishes
+      // a curve for this; these are its values at our steps. Shipping a webfont
+      // without them is most of the way to still looking unset.
       fontSize: {
-        "3xs": ["0.625rem", { lineHeight: "0.875rem" }],   // 10px — dense metadata
-        "2xs": ["0.6875rem", { lineHeight: "1rem" }],      // 11px — trace rows
-        xs: ["0.75rem", { lineHeight: "1.125rem" }],       // 12px — secondary UI
-        sm: ["0.8125rem", { lineHeight: "1.375rem" }],     // 13px — dense UI chrome
+        "2xs": ["0.6875rem", { lineHeight: "1rem", letterSpacing: "0.006em" }],   // 11px — badges, keycaps, indices
+        xs: ["0.75rem", { lineHeight: "1.125rem", letterSpacing: "0.003em" }],    // 12px — secondary UI, metadata
+        sm: ["0.8125rem", { lineHeight: "1.375rem", letterSpacing: "0.001em" }],  // 13px — dense UI chrome
         // The surface people READ. 13px is what a dense admin panel uses, and
-        // the reference set for this product (ChatGPT, Codex) sets an agent's
-        // prose at 15-16px. Separate from `sm` on purpose: raising `sm` would
-        // inflate every button and label in the app along with the prose.
-        prose: ["0.9375rem", { lineHeight: "1.75" }],       // 15px — answers
-        base: ["0.875rem", { lineHeight: "1.5rem" }],      // 14px — emphasis
-        lg: ["1rem", { lineHeight: "1.5rem" }],            // 16px — section titles
-        xl: ["1.1875rem", { lineHeight: "1.625rem" }],     // 19px
-        "2xl": ["1.4375rem", { lineHeight: "1.875rem" }],  // 23px — display
+        // the reference set for this product sets an agent's prose at 15-16px.
+        // Separate from `sm` on purpose: raising `sm` would inflate every button
+        // and label in the app along with the prose.
+        prose: ["0.9375rem", { lineHeight: "1.75", letterSpacing: "-0.003em" }],  // 15px — answers
+        base: ["0.875rem", { lineHeight: "1.5rem", letterSpacing: "0em" }],       // 14px — emphasis
+        lg: ["1rem", { lineHeight: "1.5rem", letterSpacing: "-0.008em" }],        // 16px — section titles
+        xl: ["1.1875rem", { lineHeight: "1.625rem", letterSpacing: "-0.014em" }], // 19px
+        "2xl": ["1.4375rem", { lineHeight: "1.875rem", letterSpacing: "-0.019em" }], // 23px — display
       },
+      // Vendored faces first, then the platform's own — including its CJK face,
+      // which Inter cannot supply. See the @font-face block in index.css.
       fontFamily: {
         sans: [
+          "Inter Variable",
           "-apple-system",
           "BlinkMacSystemFont",
-          "ui-sans-serif",
-          "system-ui",
           "Segoe UI",
-          "Roboto",
+          "PingFang SC",
+          "Hiragino Sans GB",
+          "Microsoft YaHei",
+          "Noto Sans CJK SC",
           "sans-serif",
         ],
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "monospace"],
+        mono: [
+          "JetBrains Mono Variable",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Monaco",
+          "monospace",
+        ],
       },
       // The product radius scale (v0.58.0).
       //
@@ -163,9 +180,16 @@ export default {
           "0%": { opacity: "0" },
           "100%": { opacity: "1" },
         },
+        // Transform only. An opaque panel that animates its own opacity is
+        // TRANSLUCENT for the length of the animation: the settings drawer
+        // spent 260ms with the thread's heading legible straight through it, on
+        // every single open. The scrim behind it carries the fade; the panel
+        // slides. (The same rule is why `scale-in` keeps its opacity — a
+        // menu popping from 97% wants the fade, and it is not covering
+        // anything the eye is reading.)
         "slide-in-right": {
-          "0%": { opacity: "0", transform: "translateX(24px)" },
-          "100%": { opacity: "1", transform: "translateX(0)" },
+          "0%": { transform: "translateX(24px)" },
+          "100%": { transform: "translateX(0)" },
         },
         "scale-in": {
           "0%": { opacity: "0", transform: "scale(0.97)" },
@@ -180,7 +204,7 @@ export default {
       animation: {
         "fade-in-up": "fade-in-up 0.28s cubic-bezier(0.21,0.6,0.35,1)",
         "fade-in": "fade-in 0.2s ease-out",
-        "slide-in-right": "slide-in-right 0.26s cubic-bezier(0.21,0.6,0.35,1)",
+        "slide-in-right": "slide-in-right 0.22s cubic-bezier(0.21,0.6,0.35,1)",
         "scale-in": "scale-in 0.2s cubic-bezier(0.21,0.6,0.35,1)",
         "pulse-ring": "pulse-ring 2s ease-out infinite",
       },

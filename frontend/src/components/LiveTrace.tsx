@@ -79,10 +79,36 @@ const TAIL_WHEN_FOLDED = 6;
 
 const Wrench = (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-       className="shrink-0 text-gray-600" aria-hidden>
+       className="shrink-0 text-gray-500" aria-hidden>
     <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z" />
   </svg>
 );
+
+/**
+ * The agent working, before it has run anything.
+ *
+ * This used to be three bouncing dots and a rotating sentence, in a component
+ * of its own, laid out nothing like the trace rows that replace it a second
+ * later. So the signature moment of an agent app — the wait — was a spinner in
+ * an otherwise empty screen, and then the whole block was swapped for a
+ * different-looking list. Both references show one list from the first moment,
+ * growing: thinking is a step, and the steps that follow it are the same shape.
+ *
+ * Same row geometry as a live tool call: the spinner sits where a call's
+ * spinner sits, and the label where the tool name goes, so a step finishing and
+ * the next one starting is a list growing rather than a component changing.
+ */
+export function WorkingRow({ label }: { label: string }) {
+  return (
+    <div className="flex items-center gap-2 text-2xs text-gray-500" data-testid="working-row">
+      <span
+        className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent text-warn-fg"
+        aria-hidden
+      />
+      <span className="min-w-0 truncate">{label}</span>
+    </div>
+  );
+}
 
 export function LiveTrace({ items, sessionId }: { items: ToolActivity[]; sessionId?: string | null }) {
   const { t } = useI18n();
@@ -109,7 +135,7 @@ export function LiveTrace({ items, sessionId }: { items: ToolActivity[]; session
           type="button"
           onClick={() => setShowAll(true)}
           data-testid="trace-fold"
-          className="flex items-center gap-2 text-2xs text-gray-600 transition-colors hover:text-gray-400"
+          className="flex items-center gap-2 text-2xs text-gray-500 transition-colors hover:text-gray-400"
         >
           <span className="w-3" aria-hidden />
           {t("trace.showEarlier", { n: hiddenCount })}
@@ -161,10 +187,10 @@ export function LiveTrace({ items, sessionId }: { items: ToolActivity[]; session
             </span>
             <span className="flex min-w-0 flex-1 items-baseline gap-1.5 truncate">
               {a.target && (
-                <span className="truncate text-gray-600" title={a.target}>· {a.target}</span>
+                <span className="truncate text-gray-500" title={a.target}>· {a.target}</span>
               )}
               {args && (
-                <span className="shrink-0 truncate font-mono text-3xs text-gray-700"
+                <span className="shrink-0 truncate font-mono text-2xs text-gray-500"
                       data-testid="trace-args" title={args}>
                   {args}
                 </span>
@@ -189,7 +215,7 @@ export function LiveTrace({ items, sessionId }: { items: ToolActivity[]; session
               // Measured since v0.45.0, written to `tool_calls`, and never sent
               // to the client until now — so "which step was slow" had no answer
               // in the thread.
-              <span className="shrink-0 tabular-nums text-3xs text-gray-700"
+              <span className="shrink-0 tabular-nums text-2xs text-gray-500"
                     data-testid="trace-duration">
                 {ms}
               </span>
