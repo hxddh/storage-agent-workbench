@@ -6,6 +6,23 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.91.0] - 2026-08-29
+
+_A workspace-first rebuild of Storage Agent Workbench: conversation remains lightweight, while investigations, evidence and durable reports become first-class full-canvas work surfaces._
+
+### Changed
+
+- **Workspace-first agent client.** Investigation and review surfaces now use the full work area instead of narrow drawers or centered modals, with document-style answer rendering and a more compact steering surface.
+- **Agent Activity is progressive rather than noisy.** Finished tool activity is denser and easier to scan while preserving direct access to evidence and call details.
+- **Evidence inspection is promoted to a real workspace.** Inspector and durable report views use dedicated review geometry suitable for payloads, timelines and long-form investigation output.
+- **Long-thread navigation is semantic.** Bare `j` / `k` navigation moves between conversation turns while respecting editable fields and reader-controlled scrolling.
+- **Conversation geometry is more coherent.** Prompt, answer, turn footer and review surfaces now share deliberate reading measures instead of competing chat-card widths.
+
+### Fixed
+
+- **Full-canvas review geometry is stable from the first frame.** The report/inspection entry motion no longer scales the viewport-sized surface, removing transient 4–6 px insets that caused the strict real-sidecar E2E geometry regression after the workspace-first merge.
+- **The strict geometry contract remains unchanged.** The fix changes product motion semantics rather than weakening test tolerances; the complete seven-job CI matrix passes on the corrected main branch.
+
 ## [0.90.0] - 2026-08-28
 
 _A rebuild of the interface layer, after "the aesthetics and the texture both
