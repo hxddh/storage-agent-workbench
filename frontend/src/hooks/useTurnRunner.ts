@@ -64,10 +64,30 @@ export function useTurnRunner(opts: TurnRunnerOptions): TurnController {
   const implementation = useTurnRunnerImplementation(opts);
   const latest = useRef(implementation);
   latest.current = implementation;
+  const options = useRef(opts);
+  options.current = opts;
 
   const controller = useMemo<TurnController>(() => ({
     submit: (text) => latest.current.submit(text),
-    submitToSession: (sessionId, text) => latest.current.submitToSession(sessionId, text),
+    submitToSession: async (sessionId, text) => {
+      // The implementation intentionally owns a single mutable session pointer.
+      // Timeline keeps that pointer synchronized while it is the visible surface,
+      // but deep Work Surfaces can submit while Timeline is not the interaction
+      // owner. Pin the pointer to the Workbench's explicit investigation for the
+      // whole turn so acquireSubmit / runTurn / reload all target the same session.
+      const localId = options.current.localId;
+      const previous = localId.current;
+      localId.current = sessionId;
+      try {
+        await latest.current.submit(text);
+      } finally {
+        // Do not overwrite a legitimate navigation/session transition that may
+        // have happened while the async turn was settling.
+        if (localId.current === sessionId && previous !== sessionId) {
+          localId.current = previous;
+        }
+      }
+    },
     submitWithDataset: (message, file, type) => latest.current.submitWithDataset(message, file, type),
     stop: (sessionId) => latest.current.stop(sessionId),
     steer: (text, resend) => latest.current.steer(text, resend),
