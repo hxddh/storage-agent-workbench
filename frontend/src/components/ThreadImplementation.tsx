@@ -1,60 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 import {
-  correctSessionMemory,
   forkSession,
-  getSession,
-  getSessionMessages,
-  getSessionOverview,
-  getSessionReport,
-  getSessionTriage,
-  getSessionTurnState,
   listModelProviders,
   prepareSessionAction,
-  resolveSessionMemory,
 } from "../api";
 import type {
   Grounding,
   TokenUsage,
   NextAction,
   SessionDetail,
-  SessionMessage,
-  SessionTurnState,
   ToolActivity,
   TriageCase,
   TurnMetricsRow,
 } from "../types";
-import { saveTextFile } from "../config";
 import { useSessionRun, patchSessionRun, getSessionRun } from "../sessionRuns";
 import { loadDraft, saveDraft } from "../drafts";
 import { useTurnRunner, cleanError } from "../hooks/useTurnRunner";
+import { useSessionDocument } from "../hooks/useSessionDocument";
+import { useThreadViewport } from "../hooks/useThreadViewport";
+import { openWorkbenchRun, openWorkbenchSurface } from "../workbench/commands";
 import { Button } from "./ui";
-import { Markdown } from "./Markdown";
 import { Composer } from "./Composer";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
-import { GroundingCard, MessageCard, ProposalCard, RunCard, ThinkingBubble, TriageCard, copyText } from "./ThreadCards";
-import { SessionInspector } from "./SessionInspector";
+import { GroundingCard, MessageCard, ProposalCard, ThinkingBubble, TriageCard } from "./ThreadCards";
 import { TurnFooter } from "./TurnFooter";
 import { fmtDuration } from "./TurnMetrics";
 import { useI18n } from "../i18n";
 import { matches } from "../shortcuts";
 import { clearFind, findRanges, paintFind } from "../lib/findHighlight";
 import { stepHit } from "../threadFind";
-import { isEditable } from "../shortcuts";
 import { inferDatasetType } from "../datasetType";
 import { FindBar } from "./FindBar";
 
-/** Frames a scroll-to-bottom run may spend chasing a thread that is still
- *  laying itself out (~1.5s at 60fps). A ceiling, not a target: a session of
- *  short answers settles in 2-3 frames. Counted in frames rather than
- *  milliseconds so a busy main thread gets the same number of CHANCES to
- *  correct, not the same amount of clock. */
-const AUTOSCROLL_FRAME_BUDGET = 90;
-/** Consecutive frames at an unchanged scrollHeight that count as "settled".
- *  One is not enough — a table or a collapsed turn can resolve a frame after
- *  the item around it did, and stopping there is precisely the short landing
- *  this replaces. */
-const AUTOSCROLL_SETTLED_FRAMES = 3;
 
 /** DOM id of the in-flight question, so the turn-context bar can scroll back to
  * it exactly as it does for a persisted one. Persisted messages use
@@ -71,6 +48,8 @@ type Item =
       toolActivity?: ToolActivity[];
       grounding?: Grounding | null;
       proposals?: NextAction[];
+      referencedRunIds?: string[];
+      referencedEvidenceIds?: string[];
     }
   | { kind: "run"; ts: string; data: SessionDetail["runs"][number] }
   | { kind: "triage"; ts: string; data: TriageCase };
@@ -112,8 +91,10 @@ export function Thread({
    * e.g. after the active session is renamed, so the header title refreshes. */
   reloadKey?: number;
 }) {
-  const [detail, setDetail] = useState<SessionDetail | null>(null);
-  const [triage, setTriage] = useState<TriageCase[]>([]);
+  const {
+    scrollRef, contentRef, pinned, onScroll, releaseToUser, scrollToBottom,
+    jumpToLatest, resetPinned, followLatest,
+  } = useThreadViewport();
   const [text, setTextState] = useState("");
   // Every composer write persists the draft for the session it belongs to
   // (v0.51.0). Done here rather than in an effect on purpose: an effect keyed on
@@ -128,33 +109,12 @@ export function Thread({
   const [importHandoff, setImportHandoff] = useState<
     { sourceType: "inventory" | "access_log"; accountRunId: string; bucketName: string } | null
   >(null);
-  const [report, setReport] = useState<string | null>(null);
-  const [reportCopied, setReportCopied] = useState(false);
-  const [reportSavedPath, setReportSavedPath] = useState<string | null>(null);
   const [modelName, setModelName] = useState<string | null>(null);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
-  // Set when the inspector was opened FROM a turn: the [from, to] window whose
-  // rows it highlights and scrolls to. Cleared on close.
-  const [inspectorAnchor, setInspectorAnchor] = useState<{ from: string; to: string } | null>(null);
-  // The EXACT call ids that turn produced (v0.57.0). v0.55.0 gave every activity
-  // record the same id as its persisted row; this is what makes "inspect" land
-  // on precisely this turn's calls instead of everything in its wall-clock
-  // window, which also catches a concurrently-running inline run.
-  const [inspectorAnchorIds, setInspectorAnchorIds] = useState<ReadonlySet<string> | null>(null);
   // Pages fetched by "load earlier", oldest-first, held separately from
   // `detail.messages` (the tail) so a reload can refresh the tail without
   // discarding history the user deliberately pulled in.
-  const [earlier, setEarlier] = useState<SessionMessage[]>([]);
-  const [loadingEarlier, setLoadingEarlier] = useState(false);
   // Persisted per-turn metrics, keyed by the assistant message they belong to,
   // so the footer under an OLD answer still shows what that turn cost.
-  const [metrics, setMetrics] = useState<Record<string, TurnMetricsRow>>({});
-  // A turn running server-side that THIS client did not start (a reload mid-turn,
-  // or a second window). Mirrored into a ref so the poll's closure can tell
-  // "ended" from "was never running" without re-subscribing.
-  const [remoteTurn, setRemoteTurn] = useState<SessionTurnState | null>(null);
-  const remoteTurnRef = useRef<SessionTurnState | null>(null);
-  remoteTurnRef.current = remoteTurn;
 
   // Per-session run state lives in a store keyed by session id (see sessionRuns)
   // so an in-flight turn keeps streaming — and keeps its content — when you
@@ -175,16 +135,12 @@ export function Thread({
     if (run.busy) setViewError(null);
   }, [run.busy]);
   const error = run.error ?? viewError;
-  // Set when loading an EXISTING session fails, so we show an explicit error +
-  // retry instead of silently rendering the empty new-chat surface (M6).
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const localId = useRef<string | null>(sessionId);
-  // Tracks which session id the loaded `detail` belongs to, so a failed refresh
-  // for the current session doesn't get mistaken for a first-load failure.
-  const loadedIdRef = useRef<string | null>(null);
-  // Monotonic reload token: a stale in-flight reload must never overwrite a newer
-  // one for the same session (F2). Captured at call start, checked after await.
-  const reloadSeqRef = useRef(0);
+  const {
+    detail, triage, earlier, loadingEarlier, metrics, remoteTurn, loadError,
+    localId, reload, loadEarlier, loadAllEarlier, hiddenCount,
+  } = useSessionDocument({
+    sessionId, sidecarReady, reloadKey, t, scrollRef, setViewError,
+  });
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   // Composer file attachment (dataset for inventory/access-log analysis). type is
   // auto-inferred from the extension; null means "ask" (show the 2-option chip).
@@ -227,205 +183,6 @@ export function Thread({
     if (!settingsOpen && sidecarReady) refreshModel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsOpen]);
-
-  // Returns true iff it actually applied fresh session detail for `id`. Callers
-  // (post-turn cleanup) rely on this: a transient failure that keeps the stale
-  // thread must NOT be treated as a successful reload, or they'd clear the
-  // streamed answer bubble and the just-completed answer would vanish (F1).
-  const reload = async (id: string | null): Promise<boolean> => {
-    if (id !== loadedIdRef.current) setEarlier([]);
-    if (!id) {
-      setDetail(null);
-      setTriage([]);
-      setLoadError(null);
-      return false;
-    }
-    const seq = ++reloadSeqRef.current;
-    let d: SessionDetail | null = null;
-    let failed: string | null = null;
-    const [dRes, tRes] = await Promise.allSettled([getSession(id), getSessionTriage(id)]);
-    if (dRes.status === "fulfilled") d = dRes.value;
-    // Session-load failures get a NEUTRAL message — the model-provider hints
-    // (bad key / model 404) only apply to turn failures (D2).
-    else failed = cleanError(String(dRes.reason), t, "load");
-    const triageCases = tRes.status === "fulfilled" ? tRes.value.cases : [];
-    // Drop the result if the user switched sessions OR a newer reload for this
-    // session has since started (F2 last-writer-wins guard).
-    if (id !== localId.current || seq !== reloadSeqRef.current) return false;
-    if (d) {
-      loadedIdRef.current = id;
-      setDetail(d);
-      setLoadError(null);
-      // Best-effort: the thread must still render if the overview call fails.
-      void getSessionOverview(id)
-        .then((o) => {
-          if (id !== localId.current) return;
-          const byId: Record<string, TurnMetricsRow> = {};
-          for (const row of o.turns) if (row.message_id) byId[row.message_id] = row;
-          setMetrics(byId);
-        })
-        .catch(() => undefined);
-      if (tRes.status === "fulfilled") setTriage(triageCases);
-      return true;
-    }
-    if (failed) {
-      // A transient refresh blip for the session we're already showing shouldn't
-      // wipe the populated thread — keep it. Otherwise (no content for this id)
-      // surface an explicit error + retry instead of the empty new-chat surface.
-      if (loadedIdRef.current !== id) {
-        setDetail(null);
-        setLoadError(failed);
-      }
-    }
-    // Only replace triage cards when the fetch actually succeeded — a transient
-    // failure used to flash them out of the thread until the next reload.
-    if (tRes.status === "fulfilled") setTriage(triageCases);
-    return false;
-  };
-
-  // How many messages exist above what is currently rendered. `message_total`
-  // comes from the server, so this is a fact rather than a guess.
-  const shownCount = (earlier.length + (detail?.messages?.length ?? 0));
-  const hiddenCount = Math.max(0, (detail?.message_total ?? shownCount) - shownCount);
-
-  /** Reattach to a turn this client did not start.
-   *
-   * Run state lives in the client's memory, so reloading the app (or opening the
-   * session in a second window) while a turn is generating showed an idle
-   * session — while the worker kept running and kept spending. The server knows;
-   * this asks it.
-   *
-   * One check per session switch and per return-to-foreground, then a short poll
-   * only WHILE a turn is known to be running: a turn cannot start without this
-   * client's knowledge except through those two doors, so idle polling would buy
-   * nothing. When it ends, the answer is persisted — reload and show it.
-   */
-  useEffect(() => {
-    if (!sessionId || !sidecarReady) return;
-    let stopped = false;
-    let timer = 0;
-    const tick = async () => {
-      if (stopped) return;
-      // Our own in-flight turn already renders live; never report it twice.
-      if (getSessionRun(sessionId).busy) {
-        setRemoteTurn(null);
-        return;
-      }
-      let state: SessionTurnState | null = null;
-      try {
-        state = await getSessionTurnState(sessionId);
-      } catch {
-        // A sidecar blip is not evidence that nothing is running; try again on
-        // the next door rather than clearing a banner that may be true.
-        return;
-      }
-      if (stopped || localId.current !== sessionId) return;
-      if (state.running) {
-        setRemoteTurn(state);
-        timer = window.setTimeout(tick, 3000);
-      } else {
-        // It ended (or never ran). If we were tracking one, its answer is
-        // persisted now.
-        if (remoteTurnRef.current) void reload(sessionId);
-        setRemoteTurn(null);
-      }
-    };
-    void tick();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void tick();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      stopped = true;
-      window.clearTimeout(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, sidecarReady]);
-
-  /** Correct one of the agent's memory items, in place.
-   *
-   * The agent replays its memory into every later turn, so this is not
-   * cosmetic: an uncorrected wrong fact keeps steering the investigation. The
-   * server returns the refreshed detail, which is what the panel re-renders
-   * from. */
-  const correctMemory = async (memId: string, next: string) => {
-    const id = localId.current;
-    if (!id) return;
-    try {
-      setDetail(await correctSessionMemory(id, memId, next));
-    } catch (e) {
-      setViewError(String((e as Error)?.message ?? e));
-    }
-  };
-
-  const resolveMemory = async (memId: string) => {
-    const id = localId.current;
-    if (!id) return;
-    try {
-      setDetail(await resolveSessionMemory(id, memId));
-    } catch (e) {
-      setViewError(String((e as Error)?.message ?? e));
-    }
-  };
-
-  /** Pull every remaining older page in one go.
-   *
-   * A thousand-turn session is ~17 clicks of "load earlier" to reach the start,
-   * which is not a scroll — it is a chore. The pages are fetched in sequence
-   * (each needs the previous cursor) and bounded by the same server caps.
-   */
-  const loadAllEarlier = async () => {
-    const id = localId.current;
-    if (!id || loadingEarlier) return;
-    setLoadingEarlier(true);
-    try {
-      let cursor = (earlier[0] ?? detail?.messages?.[0])?.seq;
-      const collected: SessionMessage[] = [];
-      // Bounded loop: the server page size is fixed, so this terminates on
-      // has_more; the cap is a backstop against a pathological cursor.
-      for (let i = 0; i < 200 && cursor != null; i++) {
-        const page = await getSessionMessages(id, { before: cursor });
-        if (id !== localId.current) return;
-        if (page.messages.length === 0) break;
-        collected.unshift(...page.messages);
-        cursor = page.messages[0]?.seq ?? undefined;
-        if (!page.has_more) break;
-      }
-      setEarlier((prev) => [...collected, ...prev]);
-      // Land at the top, which is what "jump to start" means.
-      requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" }));
-    } catch (e) {
-      setViewError(String((e as Error)?.message ?? e));
-    } finally {
-      setLoadingEarlier(false);
-    }
-  };
-
-  const loadEarlier = async () => {
-    const id = localId.current;
-    if (!id || loadingEarlier) return;
-    const oldest = (earlier[0] ?? detail?.messages?.[0])?.seq;
-    if (oldest == null) return;
-    setLoadingEarlier(true);
-    try {
-      const page = await getSessionMessages(id, { before: oldest });
-      // Guard against a session switch mid-fetch.
-      if (id !== localId.current) return;
-      // Anchor the scroll: prepending content would otherwise yank the reader
-      // upward by exactly the height of what was just inserted.
-      const el = scrollRef.current;
-      const before = el ? el.scrollHeight - el.scrollTop : 0;
-      setEarlier((prev) => [...page.messages, ...prev]);
-      requestAnimationFrame(() => {
-        if (el) el.scrollTop = el.scrollHeight - before;
-      });
-    } catch (e) {
-      setViewError(String((e as Error)?.message ?? e));
-    } finally {
-      setLoadingEarlier(false);
-    }
-  };
 
   // Persisted metrics win once the reload has them; until then the live `done`
   // event's copy fills the gap, so the footer never lags the answer it describes.
@@ -470,29 +227,13 @@ export function Thread({
     return null;
   };
 
-  /** The wall-clock window one turn occupied: from the question that started it
-   * to the answer that ended it. Everything the agent did for that turn — every
-   * tool call, every audit row — happened inside it, so this is what the
-   * inspector highlights when "inspect" is clicked from that turn's footer.
-   * Timestamps are fixed-width ISO-8601 Z, so string order IS chronological. */
-  const turnWindow = (idx: number): { from: string; to: string } | null => {
-    const end = items[idx];
-    if (!end || end.kind !== "message") return null;
-    for (let i = idx - 1; i >= 0; i--) {
-      const it = items[i];
-      if (it.kind === "message" && it.role === "user") return { from: it.ts, to: end.ts };
-    }
-    return null;
-  };
-
-  // ⌘I / Ctrl+I opens the inspector — the same "show me the details" reflex as a
-  // browser's dev tools. Ignored while the settings drawer owns the screen.
+  // ⌘I / Ctrl+I is now a semantic Workbench navigation command.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "i") {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "i") {
         if (settingsOpen || !localId.current) return;
-        e.preventDefault();
-        setInspectorOpen((v) => !v);
+        event.preventDefault();
+        openWorkbenchSurface("evidence");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -518,75 +259,19 @@ export function Thread({
   });
 
   useEffect(() => {
-    // Only VIEW-local state is reset on session change. Run state (busy /
-    // pending / streaming text / proposals / errors) lives per-session in the
-    // sessionRuns store, so an in-flight turn keeps going and keeps its content
-    // when you switch away and back — nothing to reset here.
-    localId.current = sessionId;
-    // Clear the previous session's thread immediately on a real switch so B never
-    // briefly renders A's messages/title/findings while B's reload is in flight
-    // (FE4). The reload's stale-guard still protects against out-of-order fetches.
-    if (sessionId !== loadedIdRef.current) {
-      setDetail(null);
-      setTriage([]);
-    }
-    // Restore a message a prior turn FAILED on in this session (possibly while it
-    // was off-screen) into the composer, so it's never silently lost (FE2).
     const failed = sessionId ? getSessionRun(sessionId).failedText : null;
     if (failed) {
       setText(failed);
       patchSessionRun(sessionId!, { failedText: null });
     } else {
-      // Otherwise restore this session's saved draft (v0.51.0). Switching
-      // sessions used to wipe the composer unconditionally, so a half-written
-      // question was lost the moment you looked at another investigation.
       setText(loadDraft(sessionId));
     }
     setImportHandoff(null);
-    setReport(null);
     setViewError(null);
-    setLoadError(null);
-    pinnedRef.current = true;
-    reload(sessionId);
+    resetPinned();
     refreshModel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
-
-  // Parent-driven reload without a session switch (e.g. the active session was
-  // renamed): refresh the thread so its header title matches the rail (FE6).
-  useEffect(() => {
-    if (reloadKey && sessionId) reload(sessionId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reloadKey]);
-
-  // An existing session that loaded EMPTY gets one more look.
-  //
-  // The thread fetched once on open and never again. Reload the app in the
-  // moment between a turn ending and the worker committing it — reliably
-  // reachable by pressing Stop and reloading — and that single fetch came back
-  // with nothing, so the investigation stayed invisible for as long as the
-  // window was open. Measured: the server had both messages; the UI was still
-  // empty five seconds later, and stayed empty.
-  //
-  // One retry, once per session. A session that really is empty pays a single
-  // request; the alternative is a conversation the user cannot get back to
-  // without clicking somewhere else and back.
-  const recheckedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!sessionId || loadError) return;
-    if (detail?.id !== sessionId) return; // still loading; not "empty"
-    const empty =
-      (detail.messages?.length ?? 0) === 0 &&
-      (detail.runs?.length ?? 0) === 0 &&
-      triage.length === 0;
-    if (!empty || recheckedRef.current === sessionId) return;
-    recheckedRef.current = sessionId;
-    const timer = window.setTimeout(() => {
-      if (localId.current === sessionId) void reload(sessionId);
-    }, 1200);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail, triage.length, sessionId, loadError]);
 
   const items = useMemo<Item[]>(() => {
     const out: Item[] = [];
@@ -594,6 +279,8 @@ export function Thread({
       out.push({
         kind: "message", ts: m.created_at, role: m.role, content: m.content, id: m.id,
         toolActivity: m.tool_activity, grounding: m.grounding, proposals: m.proposed_actions,
+        referencedRunIds: m.referenced_run_ids ?? [],
+        referencedEvidenceIds: m.referenced_evidence_ids ?? [],
       });
     // Agent-initiated surveys/reviews (origin 'agent') are internal compute the
     // agent narrates inline — never a standalone run card. Only explicit
@@ -611,110 +298,6 @@ export function Thread({
   // has spoken the user sees capability chips, not a rule-engine menu. This keeps
   // the agent the sole source of suggested next steps.
   const proposals = liveProposals ?? [];
-
-  // Follow the conversation while the user is "pinned" to the bottom. The flag
-  // is updated in the scroll handler — BEFORE the DOM grows — so a fast stream
-  // can't outrun the measurement and detach auto-scroll (UX2): scrolling up
-  // unpins; scrolling back to the bottom re-pins.
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const pinnedRef = useRef(true);
-  // Mirrored into state so the "jump to latest" affordance can render. Unpinning
-  // used to be invisible: you scrolled up to re-read a tool result, the answer
-  // kept growing below, and nothing told you so or offered a way back.
-  const [pinned, setPinned] = useState(true);
-  // Non-null while the THREAD is driving its own scroll (see scrollToBottom).
-  const autoScrollRef = useRef<number | null>(null);
-  const autoBudgetRef = useRef(0);
-  /** How much empty space to leave under the last turn.
-   *
-   * The reader's question should sit at the TOP of the screen while they read
-   * the answer to it — the way ChatGPT, Codex and Cursor all place it. A thread
-   * cannot scroll past its own last pixel, so for any turn shorter than the
-   * viewport that is simply impossible without somewhere to scroll INTO. This is
-   * that somewhere: `viewport − height of the last turn`, and nothing more, so
-   * the thread never scrolls into blankness it does not need.
-   *
-   * It also replaces the sticky bar that named the question — a horizontal strip
-   * over the thread, which was the wrong shape for the job. Keeping the question
-   * itself on screen says the same thing with no furniture at all.
-   */
-  const contentRef = useRef<HTMLDivElement | null>(null);
-
-  const onScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    // A convergence run emits scroll events of its own, and mid-run the thread
-    // is by definition not yet at the bottom. Measuring pin state from those is
-    // exactly how the app used to unpin the user it was scrolling FOR.
-    if (autoScrollRef.current !== null) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    pinnedRef.current = atBottom;
-    setPinned((was) => (was === atBottom ? was : atBottom));
-  };
-
-  const stopAutoScroll = useCallback(() => {
-    if (autoScrollRef.current !== null) cancelAnimationFrame(autoScrollRef.current);
-    autoScrollRef.current = null;
-    autoBudgetRef.current = 0;
-  }, []);
-
-  /**
-   * Go to the newest message and keep correcting until the thread stops growing.
-   *
-   * `scrollIntoView({ behavior: "smooth" })` animates toward a target measured
-   * when it STARTS. A thread of real answers is still discovering its own
-   * height at that moment — long markdown, tables and collapsed turns all land
-   * after the first layout — so the animation finishes short and never corrects.
-   * Measured on a 60-turn session of realistically-sized answers: opening it
-   * settled 1530px (2.7 viewports) above the newest message and stayed there,
-   * and clicking the "jump to latest" button built to rescue exactly that ended
-   * up 1717px away — FURTHER than where it started. Chasing a bottom that keeps
-   * receding, through regions the browser had not painted yet, is what the bug
-   * report "一直玩下拉，就会无限白屏" describes.
-   *
-   * So: jump, re-measure next frame, jump again, until the height holds still
-   * across a few frames or the frame budget runs out. Bounded by frames rather
-   * than by wall-clock, so it cannot spin, and idempotent — a stream calling it
-   * on every delta just extends the budget of the run already going.
-   */
-  const scrollToBottom = useCallback(() => {
-    if (!scrollRef.current) return;
-    autoBudgetRef.current = AUTOSCROLL_FRAME_BUDGET;
-    if (autoScrollRef.current !== null) return; // one run is enough
-    let last = -1;
-    let stable = 0;
-    const step = () => {
-      const node = scrollRef.current;
-      if (!node) {
-        autoScrollRef.current = null;
-        return;
-      }
-      node.scrollTop = node.scrollHeight;
-      stable = node.scrollHeight === last ? stable + 1 : 0;
-      last = node.scrollHeight;
-      if (stable >= AUTOSCROLL_SETTLED_FRAMES || --autoBudgetRef.current <= 0) {
-        autoScrollRef.current = null;
-        pinnedRef.current = true;
-        setPinned(true);
-        return;
-      }
-      autoScrollRef.current = requestAnimationFrame(step);
-    };
-    autoScrollRef.current = requestAnimationFrame(step);
-  }, []);
-
-  // A real scroll gesture hands control straight back, so following a stream
-  // never fights someone scrolling up to re-read a tool result. The gesture's
-  // own scroll event then re-measures the pin state through `onScroll`.
-  const releaseToUser = useCallback(() => stopAutoScroll(), [stopAutoScroll]);
-
-  useEffect(() => stopAutoScroll, [stopAutoScroll]);
-
-  const jumpToLatest = () => {
-    pinnedRef.current = true;
-    setPinned(true);
-    scrollToBottom();
-  };
 
   // Branch a new investigation from one message (v0.61.0). The whole-session
   // fork has existed since v0.28.0; what was missing is the Cursor-style "take
@@ -797,46 +380,6 @@ export function Thread({
     setFindOpen(false);
     setFindQuery("");
   }, []);
-  /* Move through the conversation without the mouse.
-   *
-   * Everything else in this app has a chord — the palette, find, the inspector,
-   * the rail — and the thread itself, the surface you spend all your time in,
-   * had none: reading back through a long investigation meant reaching for the
-   * scrollbar. `j`/`k` are the bindings every reader-first tool uses, and they
-   * are bare letters, so they must never fire while someone is typing. That is
-   * what `isEditable` is for, and it is the same guard the "?" sheet uses.
-   *
-   * It scrolls rather than focuses: a turn is a region to read, not a control
-   * to operate, and moving focus into it would strand the next keystroke
-   * somewhere the user did not ask for. */
-  const stepTurn = useCallback((delta: number) => {
-    const root = scrollRef.current;
-    if (!root) return;
-    const marks = Array.from(root.querySelectorAll<HTMLElement>("[data-question]"));
-    if (marks.length === 0) return;
-    const top = root.getBoundingClientRect().top;
-    // The one at or just above the top of the reading area is where we are.
-    let here = marks.findIndex((m) => m.getBoundingClientRect().top > top + 4);
-    if (here === -1) here = marks.length;
-    const next = Math.min(Math.max((delta > 0 ? here : here - 2) + (delta > 0 ? 0 : 0), 0), marks.length - 1);
-    marks[next]?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (isEditable(e.target)) return;
-      if (matches(e, "nextTurn")) {
-        e.preventDefault();
-        stepTurn(1);
-      } else if (matches(e, "prevTurn")) {
-        e.preventDefault();
-        stepTurn(-1);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [stepTurn]);
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!matches(e, "find")) return;
@@ -849,8 +392,8 @@ export function Thread({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   useEffect(() => {
-    if (pinnedRef.current) scrollToBottom();
-  }, [items.length, proposals.length, pending, streamText?.length, streamTools.length, scrollToBottom]);
+    followLatest();
+  }, [items.length, proposals.length, pending, streamText?.length, streamTools.length, followLatest]);
 
   const send = () => {
     if (busy || uploading) return;
@@ -877,10 +420,7 @@ export function Thread({
   };
 
   const openReport = () => {
-    if (localId.current)
-      getSessionReport(localId.current)
-        .then((r) => setReport(r.content))
-        .catch((e) => setViewError(cleanError(String(e), t)));
+    if (localId.current) openWorkbenchSurface("report");
     else setViewError(t("thread.startChatFirst"));
   };
 
@@ -929,8 +469,7 @@ export function Thread({
           bucketName: r.prefill.bucket_name,
         });
       } else if (r.open === "session_report") {
-        const rep = await getSessionReport(localId.current);
-        setReport(rep.content);
+        openWorkbenchSurface("report");
       } else if (r.open === "message_composer") {
         setText(r.prefill.question || "");
         taRef.current?.focus();
@@ -1190,32 +729,6 @@ export function Thread({
         </div>
       ) : (
         <>
-          <header className="flex items-center gap-3 border-b border-edge px-6 py-2.5">
-            <div className="truncate text-xs font-medium text-gray-200">{detail?.title || t("thread.titleNew")}</div>
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setInspectorOpen(true)}
-                disabled={!sessionId}
-                title={t("thread.inspect")}
-                aria-label={t("thread.inspect")}
-                data-testid="open-inspector"
-                className="grid h-7 w-7 place-items-center rounded-md text-gray-500 transition-colors hover:bg-hover hover:text-gray-200 disabled:opacity-40"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                     strokeWidth="1.8" strokeLinecap="round" aria-hidden>
-                  <line x1="4" y1="7" x2="20" y2="7" />
-                  <line x1="4" y1="12" x2="14" y2="12" />
-                  <line x1="4" y1="17" x2="17" y2="17" />
-                </svg>
-              </button>
-              <div className="flex items-center gap-1.5 rounded-md border border-edge px-2 py-1 text-2xs text-gray-500">
-                <Spark size={11} />
-                <span className="text-gray-400">{modelName ?? t("thread.noModel")}</span>
-              </div>
-            </div>
-          </header>
-
           {/* The scroller and the things that float OVER it, in a positioned
             * box of its own. The bar below must not live inside the scroller:
             * everything in there — even a zero-height sticky element — is part
@@ -1314,6 +827,8 @@ export function Thread({
                           ? () => seedComposer(questionBefore(idx) as string)
                           : undefined
                       }
+                      referencedRunIds={it.referencedRunIds}
+                      referencedEvidenceIds={it.referencedEvidenceIds}
                     />
                     {/* ONE affordance for the whole turn (v0.49.0): what it ran,
                         how long it took, what it cost, and what it was grounded
@@ -1338,19 +853,7 @@ export function Thread({
                         budgetTokens={metricsFor(it.id)?.budget_tokens}
                         repeatCallsAvoided={metricsFor(it.id)?.repeat_calls_avoided}
                         sessionId={sessionId}
-                        onOpenInspector={() => {
-                          // Anchored: the inspector highlights and scrolls to
-                          // THIS turn's rows. Unanchored it dropped the reader
-                          // at the top of a whole session's timeline with no
-                          // way to tell which entries were theirs.
-                          setInspectorAnchor(turnWindow(idx));
-                          setInspectorAnchorIds(
-                            new Set((it.toolActivity ?? [])
-                              .map((a) => a.id)
-                              .filter((x): x is string => Boolean(x))),
-                          );
-                          setInspectorOpen(true);
-                        }}
+                        onOpenInspector={() => openWorkbenchSurface("evidence")}
                       />
                       </div>
                     )}
@@ -1364,9 +867,18 @@ export function Thread({
                     )}
                   </div>
                 ) : it.kind === "run" ? (
-                  <div key={it.data.run_id} className="thread-item">
-                    <RunCard run={it.data} />
-                  </div>
+                  <button
+                    key={it.data.run_id}
+                    type="button"
+                    data-testid="timeline-run-link"
+                    onClick={() => openWorkbenchRun(it.data.run_id)}
+                    className="thread-item flex w-full items-center gap-3 border-y border-edge/70 py-3 text-left text-xs transition-colors hover:bg-hover/30"
+                  >
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-500" aria-hidden />
+                    <span className="min-w-0 flex-1 truncate text-gray-300">{it.data.title || it.data.run_type}</span>
+                    <span className="font-mono text-2xs uppercase text-gray-500">{it.data.status}</span>
+                    <span className="text-gray-500" aria-hidden>→</span>
+                  </button>
                 ) : (
                   <div key={it.data.id} className="thread-item">
                     <TriageCard c={it.data} onRun={runProposal} />
@@ -1544,87 +1056,7 @@ export function Thread({
         />
       )}
 
-      <SessionInspector
-        sessionId={sessionId}
-        open={inspectorOpen && !!sessionId}
-        onClose={() => {
-          setInspectorOpen(false);
-          setInspectorAnchor(null); setInspectorAnchorIds(null);
-        }}
-        findings={detail?.findings}
-        memory={detail?.agent_memory}
-        files={detail?.attached_files}
-        contextMessages={detail?.context_messages}
-        messageTotal={detail?.message_total}
-        onCorrectMemory={correctMemory}
-        onResolveMemory={resolveMemory}
-        anchor={inspectorAnchor}
-        anchorIds={inspectorAnchorIds}
-      />
-
-      {report !== null && (
-        <Overlay onClose={() => setReport(null)}>
-          <div className="flex h-full flex-col bg-canvas">
-            <header className="flex items-center justify-between border-b border-edge px-6 py-3">
-              <span className="text-sm font-semibold text-gray-100">{t("thread.report")}</span>
-              <div className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    void copyText(report).then((ok) => {
-                      if (ok) setReportCopied(true);
-                      window.setTimeout(() => setReportCopied(false), 1500);
-                    });
-                  }}
-                >
-                  {reportCopied ? t("thread.copied") : t("common.copy")}
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    void saveTextFile("report.md", report).then((path) => {
-                      if (path) {
-                        setReportSavedPath(path);
-                        window.setTimeout(() => setReportSavedPath(null), 4000);
-                        return;
-                      }
-                      // Not in Tauri (dev/browser): the anchor download works there.
-                      const blob = new Blob([report], { type: "text/markdown" });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = "report.md";
-                      a.click();
-                      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-                    });
-                  }}
-                >
-                  {reportSavedPath ? t("thread.savedTo", { path: reportSavedPath }) : t("thread.download")}
-                </Button>
-                <Button variant="ghost" onClick={() => setReport(null)}>{t("common.close")}</Button>
-              </div>
-            </header>
-            <div className="flex-1 overflow-auto p-6">
-              <Markdown text={report} />
-            </div>
-          </div>
-        </Overlay>
-      )}
     </main>
   );
 }
 
-function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  // Escape closes (keyboard users had no way out — only backdrop click/button).
-  useDismissOnEscape(true, onClose);
-  return (
-    <div className="fixed inset-0 z-floating flex bg-scrim backdrop-blur-sm animate-fade-in" onClick={onClose}>
-      <div
-        className="m-auto h-[88vh] w-[min(900px,92vw)] overflow-hidden rounded-2xl border border-edge bg-canvas shadow-pop animate-scale-in"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
