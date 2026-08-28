@@ -47,7 +47,7 @@ export function CloudProviderTester({ provider }: { provider: CloudProvider }) {
         <Button onClick={() => run("cred", async () => setCred(await testCloudProvider(provider.id)))} disabled={busy !== null}>
           {busy === "cred" ? t("tester.testing") : t("tester.testConnection")}
         </Button>
-        <span className="text-xs text-gray-600">{t("tester.readonly")}</span>
+        <span className="text-xs text-gray-500">{t("tester.readonly")}</span>
       </div>
 
       <div className="mb-2 flex flex-wrap items-center gap-2">

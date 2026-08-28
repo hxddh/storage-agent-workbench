@@ -36,7 +36,7 @@ function countByTool(tools: ToolActivity[]): { tool: string; n: number; errs: nu
 }
 
 function Dot() {
-  return <span className="select-none text-edge-strong" aria-hidden>·</span>;
+  return <span className="select-none text-gray-500" aria-hidden>·</span>;
 }
 
 /**
@@ -94,7 +94,7 @@ export function TurnMetricsBar({
   const max = breakdown.length ? breakdown[0].n : 1;
 
   return (
-    <div className="animate-fade-in select-none text-2xs text-gray-600">
+    <div className="animate-fade-in select-none text-2xs text-gray-500">
       <div className="flex flex-wrap items-center gap-1.5">
         {dur && (
           <span className="tabular-nums" title={t("metrics.durationHint")}>
@@ -122,7 +122,7 @@ export function TurnMetricsBar({
               <polyline points="9 18 15 12 9 6" />
             </svg>
             <span className="tabular-nums">{t("metrics.tools", { n: calls })}</span>
-            <span className="text-gray-700">({breakdown.length})</span>
+            <span className="text-gray-500">({breakdown.length})</span>
           </button>
         )}
         {(dur || calls > 0) && <Dot />}
@@ -137,11 +137,11 @@ export function TurnMetricsBar({
                   : undefined
             }
           >
-            <span className="text-gray-700">↑</span>
-            {partial && <span className="text-gray-700">≥</span>}
+            <span className="text-gray-500">↑</span>
+            {partial && <span className="text-gray-500">≥</span>}
             {inTok ?? "?"}
-            <span className="ml-1.5 text-gray-700">↓</span>
-            {partial && <span className="text-gray-700">≥</span>}
+            <span className="ml-1.5 text-gray-500">↓</span>
+            {partial && <span className="text-gray-500">≥</span>}
             {outTok ?? "?"}
           </span>
         ) : (
@@ -153,7 +153,7 @@ export function TurnMetricsBar({
           // only situation this branch renders in. Before, such a turn showed
           // nothing but an em dash; a multi-step investigation and a one-shot
           // answer looked identical.
-          <span className="text-gray-700" title={t("metrics.tokensUnavailableHint")}>
+          <span className="text-gray-500" title={t("metrics.tokensUnavailableHint")}>
             {t("metrics.tokens")} —
           </span>
         )}
@@ -183,7 +183,7 @@ export function TurnMetricsBar({
         <ul className="mt-1.5 space-y-1 border-l border-edge pl-3">
           {breakdown.map((r) => (
             <li key={r.tool} className="flex items-center gap-2">
-              <span className="w-1/2 min-w-0 truncate font-mono text-3xs text-gray-500" title={r.tool}>
+              <span className="w-1/2 min-w-0 truncate font-mono text-2xs text-gray-500" title={r.tool}>
                 {r.tool}
               </span>
               <span className="h-[3px] flex-1 overflow-hidden rounded-full bg-edge">

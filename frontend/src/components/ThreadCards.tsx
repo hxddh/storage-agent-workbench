@@ -17,18 +17,45 @@ const RUN_STATUS: Record<string, { cls: string; key: string }> = {
 const CONF_PILL: Record<string, string> = {
   high: "bg-accent/15 text-accent-soft",
   medium: "bg-warn-bg text-warn-fg",
-  low: "bg-gray-700/40 text-gray-400",
+  low: "bg-gray-500/40 text-gray-400",
 };
 
-const Spark = (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2z" />
-  </svg>
-);
+/** A user or agent turn. Memoized: historical messages have stable props, so
+ * re-renders during a fast stream skip everything except the actively-streaming
+ * card (UX1). */
+/** An agent turn.
+ *
+ * No gutter, no rail, no badge, and above all no vertical hairline down the
+ * left of the answer. v0.89.0 introduced all of that and the comment justifying
+ * it claimed "this is the arrangement Codex and Cursor both settle on". That
+ * was not true — it was asserted, not checked, and the line was the first thing
+ * anyone looking at the result asked about. Neither reference draws a rule
+ * beside an assistant message; both let the answer start at the column's left
+ * edge and carry no ornament at all. An answer is a document, and a document
+ * does not need a bracket to prove it is one.
+ *
+ * What identifies the speaker instead is what identifies it in both references:
+ * position and typography. The user's turn is set apart (see `UserMessage`);
+ * everything else in the column is the agent talking. The name is kept for
+ * screen readers, where "who is speaking" genuinely is not conveyed by layout.
+ */
+function AgentTurn({
+  streaming,
+  children,
+}: {
+  streaming?: boolean;
+  children: React.ReactNode;
+}) {
+  const { t } = useI18n();
+  void streaming;
+  return (
+    <div className="group animate-fade-in-up">
+      <span className="sr-only">{t("card.agentName")}</span>
+      {children}
+    </div>
+  );
+}
 
-/** A user or agent turn. User = subtle bubble; agent = clean prose with a label.
- * Memoized: historical messages have stable props, so re-renders during a fast
- * stream skip everything except the actively-streaming card (UX1). */
 export const MessageCard = memo(function MessageCard({
   role,
   content,
@@ -76,27 +103,10 @@ export const MessageCard = memo(function MessageCard({
      * it had none of. This is the arrangement Codex and Cursor both settle on,
      * and it costs one grid column.
      */
-    <div className="group grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-2.5 animate-fade-in-up">
-      <div className="relative flex justify-center" aria-hidden>
-        {/* A badge, not a loose glyph. At 11px on a dark ground an unbacked mark
-          * is not an identity, it is a speck — the first version measured that
-          * way on screen. A filled chip reads as the speaker at a glance, and
-          * it is the only thing in the thread carrying the accent, which is how
-          * an accent earns its place. */}
-        <span
-          className={`grid h-[18px] w-[18px] shrink-0 place-items-center rounded-md border border-accent/30 bg-accent/12 text-accent ${
-            streaming ? "animate-pulse" : ""
-          }`}
-        >
-          {Spark}
-        </span>
-        <span className="absolute inset-x-0 top-[22px] bottom-1 mx-auto w-px bg-edge-strong/70" />
-      </div>
-      <div className="min-w-0">
+    <AgentTurn streaming={streaming}>
       {/* The speaker is the mark in the gutter; this row is only the actions,
         * and only on hover. */}
       <div className="mb-0.5 flex h-4 items-center gap-1.5">
-        <span className="sr-only">{t("card.agentName")}</span>
         {!streaming && (
           <span className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             <CopyButton text={content || ""} />
@@ -141,8 +151,7 @@ export const MessageCard = memo(function MessageCard({
             <span className="animate-pulse">{t("think.working")}</span>
           </div>
         ))}
-      </div>
-    </div>
+    </AgentTurn>
   );
 });
 
@@ -302,19 +311,31 @@ function UserMessage({
 
   if (asCard) {
     return (
-      <div className="group flex justify-end animate-fade-in-up">
-        <div className="flex w-full max-w-[42rem] flex-col items-end gap-1">
-          <S3ErrorCard err={err} raw={text} />
-          <MessageActions text={text} onEdit={onEdit} onBranch={onBranch} />
-        </div>
+      <div className="group animate-fade-in-up">
+        <S3ErrorCard err={err} raw={text} />
+        <MessageActions text={text} onEdit={onEdit} onBranch={onBranch} />
       </div>
     );
   }
 
   return (
-    <div className="group flex justify-end animate-fade-in-up">
-      <div className="flex max-w-[82%] flex-col items-end gap-1">
-        <div className="w-full whitespace-pre-wrap break-words rounded-2xl border border-edge bg-elevated px-3.5 py-2.5 text-prose text-gray-100">
+    /* The question, at the same left edge as its answer.
+     *
+     * It used to be a bubble pinned to the RIGHT: at 1440px the question started
+     * at x=1028 and the answer under it at x=370, so a turn was two blocks at
+     * opposite ends of the screen with 650px of nothing between them, and the
+     * eye had to travel the full width of the window to read one exchange. That
+     * is a messaging-app arrangement, and this is not a messaging app — the two
+     * references for it both keep a single left edge and set the question apart
+     * with a surface, which is also what makes a long thread scannable: every
+     * turn begins in the same place.
+     */
+    <div className="group animate-fade-in-up">
+      {/* Capped at the reading measure, like the prose it sits above. Spanning
+        * the full column turned a one-line question into a 1024px slab — the
+        * largest object on the screen, for the shortest text on it. */}
+      <div className="flex max-w-[min(46rem,100%)] flex-col items-start gap-1">
+        <div className="w-full whitespace-pre-wrap break-words rounded-lg border border-edge bg-elevated px-3 py-2 text-prose text-gray-100">
           <div className={long && !expanded ? "max-h-[11.5rem] overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" : ""}>
             {text}
           </div>
@@ -389,7 +410,7 @@ function CopyButton({ text }: { text: string }) {
           setTimeout(() => setCopied(false), 1400);
         })
       }
-      className="ml-1 flex items-center gap-1 rounded px-1 py-0.5 text-3xs font-normal text-gray-600 opacity-0 transition-opacity hover:text-gray-300 group-hover:opacity-100"
+      className="ml-1 flex items-center gap-1 rounded px-1 py-0.5 text-2xs font-normal text-gray-500 opacity-0 transition-opacity hover:text-gray-300 group-hover:opacity-100"
       aria-label={t("common.copy")}
     >
       {copied ? (
@@ -413,11 +434,8 @@ export function ThinkingBubble() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
-    <div className="animate-fade-in">
-      <div className="mb-1.5 flex items-center gap-1.5 text-2xs font-medium text-accent-soft">
-        {Spark}
-        {t("card.agentName")}
-      </div>
+    <AgentTurn streaming>
+      <div className="flex h-4 items-center" />
       <div className="flex items-center gap-2.5 text-sm text-gray-500">
         <span className="flex gap-1">
           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-500" style={{ animationDelay: "0ms" }} />
@@ -426,7 +444,7 @@ export function ThinkingBubble() {
         </span>
         <span className="animate-pulse">{labels[i]}</span>
       </div>
-    </div>
+    </AgentTurn>
   );
 }
 
@@ -446,7 +464,7 @@ export function GroundingCard({ g }: { g: Grounding }) {
   const Section = ({ label, items, tone }: { label: string; items: string[]; tone: string }) =>
     items.length ? (
       <div className="mt-1.5">
-        <span className={`text-3xs font-medium uppercase tracking-wider ${tone}`}>{label}</span>
+        <span className={`text-2xs font-medium uppercase tracking-wider ${tone}`}>{label}</span>
         <ul className="mt-0.5 space-y-0.5">
           {items.map((s, i) => (
             <li key={i} className="text-xs text-gray-400">· {s}</li>
@@ -458,12 +476,12 @@ export function GroundingCard({ g }: { g: Grounding }) {
     <div className="animate-fade-in">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 text-2xs text-gray-600 transition-colors hover:text-gray-400"
+        className="flex items-center gap-1.5 text-2xs text-gray-500 transition-colors hover:text-gray-400"
       >
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
              className={`transition-transform ${open ? "rotate-90" : ""}`}><polyline points="9 18 15 12 9 6" /></svg>
         {t("grounding.title")}
-        {gaps.length ? <span className="rounded bg-warn-bg px-1.5 py-0.5 text-3xs text-warn-fg">{gaps.length}</span> : null}
+        {gaps.length ? <span className="rounded bg-warn-bg px-1.5 py-0.5 text-2xs text-warn-fg">{gaps.length}</span> : null}
       </button>
       {open && (
         <div className="mt-1 border-l border-edge/70 pl-3">
@@ -507,14 +525,14 @@ export function FindingsCard({ findings }: { findings: SessionFinding[] }) {
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
              className={`transition-transform ${open ? "rotate-90" : ""}`}><polyline points="9 18 15 12 9 6" /></svg>
         {t("findings.title")}
-        <span className="rounded bg-elevated px-1.5 py-0.5 text-3xs text-gray-400">{items.length}</span>
+        <span className="rounded bg-elevated px-1.5 py-0.5 text-2xs text-gray-400">{items.length}</span>
       </button>
       {open && (
         <ul className="mt-2 space-y-1.5 border-l border-edge/70 pl-3">
           {items.map((f) => (
             <li key={f.id} className="text-xs">
               <div className="flex items-baseline gap-1.5">
-                <span className={`text-3xs font-medium uppercase tracking-wider ${FINDING_TONE[(f.severity || f.kind || "info").toLowerCase()] || "text-gray-400"}`}>
+                <span className={`text-2xs font-medium uppercase tracking-wider ${FINDING_TONE[(f.severity || f.kind || "info").toLowerCase()] || "text-gray-400"}`}>
                   {severityLabel(t, (f.severity || f.kind || "info").toLowerCase())}
                 </span>
                 <span className="text-gray-200">{f.title || "—"}</span>
@@ -551,7 +569,7 @@ export function RunCard({ run }: { run: SessionRunLink }) {
           {statusLabel}
         </span>
         <span className="min-w-0 flex-1 truncate text-2xs text-gray-500">{run.final_summary || ""}</span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`shrink-0 text-gray-600 transition-transform ${open ? "rotate-180" : ""}`}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`shrink-0 text-gray-500 transition-transform ${open ? "rotate-180" : ""}`}>
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
@@ -581,7 +599,7 @@ export function TriageCard({ c, onRun }: { c: TriageCase; onRun?: (p: NextAction
         <ul className="mt-2.5 space-y-1.5">
           {c.candidate_causes.map((cc, i) => (
             <li key={i} className="flex items-start gap-2 text-xs">
-              <span className={`mt-px shrink-0 rounded px-1.5 py-0.5 text-3xs font-medium ${CONF_PILL[cc.confidence ?? "low"] ?? "bg-gray-700/40 text-gray-400"}`}>
+              <span className={`mt-px shrink-0 rounded px-1.5 py-0.5 text-2xs font-medium ${CONF_PILL[cc.confidence ?? "low"] ?? "bg-gray-500/40 text-gray-400"}`}>
                 {cc.confidence}
               </span>
               <span className="min-w-0">
@@ -595,7 +613,7 @@ export function TriageCard({ c, onRun }: { c: TriageCase; onRun?: (p: NextAction
         </ul>
         {onRun && c.safe_next_actions?.length ? (
           <div className="mt-3 border-t border-edge/60 pt-2.5">
-            <span className="text-2xs text-gray-600">{t("thread.suggestedNext")}</span>
+            <span className="text-2xs text-gray-500">{t("thread.suggestedNext")}</span>
             <div className="mt-1.5 flex flex-wrap gap-2">
               {c.safe_next_actions.map((p, i) => (
                 <ProposalCard key={`${p.action_type}-${i}`} proposal={p} onRun={onRun} />

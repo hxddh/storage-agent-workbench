@@ -94,11 +94,11 @@ export function CommandPalette({
             onChange={(e) => { setQ(e.target.value); setSel(0); }}
             onKeyDown={onKeyDown}
             placeholder={t("palette.placeholder")}
-            className="w-full bg-transparent py-3.5 text-base text-gray-100 placeholder:text-gray-600 focus:outline-none"
+            className="w-full bg-transparent py-3.5 text-base text-gray-100 placeholder:text-gray-500 focus:outline-none"
           />
         </div>
         <div className="max-h-[52vh] overflow-auto p-1.5">
-          {items.length === 0 && <div className="px-3 py-6 text-center text-sm text-gray-600">{t("palette.noResults")}</div>}
+          {items.length === 0 && <div className="px-3 py-6 text-center text-sm text-gray-500">{t("palette.noResults")}</div>}
           {items.map((c, i) => (
             <button
               key={c.id}
@@ -108,7 +108,7 @@ export function CommandPalette({
             >
               <span className={i === sel ? "text-accent-soft" : "text-gray-500"}>{c.icon}</span>
               <span className="min-w-0 flex-1 truncate text-sm text-gray-200">{c.label}</span>
-              {c.hint && <span className="shrink-0 text-2xs text-gray-600">{c.hint}</span>}
+              {c.hint && <span className="shrink-0 text-2xs text-gray-500">{c.hint}</span>}
             </button>
           ))}
         </div>

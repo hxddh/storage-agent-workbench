@@ -149,7 +149,7 @@ export function AccountProfilePanel({
             })}
             {buckets.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-2 py-2 text-gray-600">{t("profile.noMatch")}</td>
+                <td colSpan={9} className="px-2 py-2 text-gray-500">{t("profile.noMatch")}</td>
               </tr>
             )}
           </tbody>

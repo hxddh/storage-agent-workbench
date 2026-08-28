@@ -56,10 +56,6 @@ const AUTOSCROLL_FRAME_BUDGET = 90;
  *  this replaces. */
 const AUTOSCROLL_SETTLED_FRAMES = 3;
 
-/** Breathing room under the last turn: the question anchors near the top of the
- * screen rather than flush against its edge. */
-const TAIL_GAP_PX = 28;
-
 /** DOM id of the in-flight question, so the turn-context bar can scroll back to
  * it exactly as it does for a persisted one. Persisted messages use
  * `thread-item-<id>`; the pending question has no message id yet. */
@@ -642,37 +638,7 @@ export function Thread({
    * over the thread, which was the wrong shape for the job. Keeping the question
    * itself on screen says the same thing with no furniture at all.
    */
-  const [tailSpace, setTailSpace] = useState(0);
-  const tailSpaceRef = useRef(0);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const syncTailSpace = useCallback(() => {
-    const sc = scrollRef.current;
-    const content = contentRef.current;
-    if (!sc || !content) return;
-    const qs = content.querySelectorAll<HTMLElement>("[data-question]");
-    const last = qs[qs.length - 1];
-    if (!last) {
-      tailSpaceRef.current = 0;
-      setTailSpace(0);
-      return;
-    }
-    // Solve for the spacer instead of estimating it. Where the last question
-    // sits when the thread is scrolled to its end is
-    //   scrollHeight − clientHeight  vs  the question's offset in the content,
-    // so the spacer only has to make up the difference. Derived from measured
-    // positions rather than from padding constants, which is why it does not
-    // care that the scroller has its own padding, or how much.
-    const qOffset = last.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
-    const want = qOffset + sc.clientHeight - TAIL_GAP_PX;
-    const delta = want - sc.scrollHeight;
-    const next = Math.max(0, Math.round(tailSpaceRef.current + delta));
-    // A spacer that twitches by a pixel is a scrollHeight that twitches by a
-    // pixel, and the thread's convergence run re-jumps to the bottom every frame
-    // until the height holds still. Ignore noise below the threshold.
-    if (Math.abs(next - tailSpaceRef.current) < 4) return;
-    tailSpaceRef.current = next;
-    setTailSpace(next);
-  }, []);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -685,32 +651,6 @@ export function Thread({
     pinnedRef.current = atBottom;
     setPinned((was) => (was === atBottom ? was : atBottom));
   };
-
-  // Keep the spacer measured. A ResizeObserver on the content column catches
-  // everything that changes a turn's height — a streamed delta, a table that
-  // lays out a frame late, a window resize, an expanded trace — without this
-  // component having to enumerate them. `requestAnimationFrame` defers the
-  // measurement out of the observer callback, which is what stops the
-  // "ResizeObserver loop completed with undelivered notifications" error that
-  // measuring-and-writing in the same tick produces.
-  useEffect(() => {
-    const content = contentRef.current;
-    const sc = scrollRef.current;
-    if (!content || !sc) return;
-    let raf = 0;
-    const schedule = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(syncTailSpace);
-    };
-    const ro = new ResizeObserver(schedule);
-    ro.observe(content);
-    ro.observe(sc);
-    schedule();
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-    };
-  }, [syncTailSpace, sessionId]);
 
   const stopAutoScroll = useCallback(() => {
     if (autoScrollRef.current !== null) cancelAnimationFrame(autoScrollRef.current);
@@ -1209,7 +1149,7 @@ export function Thread({
               * the composer, each row a verb with a quiet arrow, is scannable in
               * one pass and puts the first one where reading already starts. */}
             <div className="mt-5">
-              <div className="mb-1.5 px-1 text-2xs font-medium uppercase tracking-[0.08em] text-gray-600">
+              <div className="mb-1.5 px-1 text-2xs font-medium uppercase tracking-[0.08em] text-gray-500">
                 {t("thread.startWith")}
               </div>
               <div className="grid gap-px overflow-hidden rounded-xl border border-edge bg-edge sm:grid-cols-2">
@@ -1218,12 +1158,12 @@ export function Thread({
                     key={s.key}
                     onClick={() => onSuggestion(s.key, s.prompt)}
                     disabled={offline}
-                    className="group flex items-center gap-2 bg-panel px-3.5 py-2.5 text-left text-sm text-gray-300 transition-colors hover:bg-hover hover:text-gray-100 disabled:cursor-default disabled:text-gray-600 disabled:hover:bg-panel"
+                    className="group flex items-center gap-2 bg-panel px-3.5 py-2.5 text-left text-sm text-gray-300 transition-colors hover:bg-hover hover:text-gray-100 disabled:cursor-default disabled:text-gray-500 disabled:hover:bg-panel"
                   >
                     <span className="min-w-0 flex-1 truncate">{s.label}</span>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden
-                         className="shrink-0 text-gray-700 transition-colors group-hover:text-accent">
+                         className="shrink-0 text-gray-500 transition-colors group-hover:text-accent">
                       <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
                     </svg>
                   </button>
@@ -1315,7 +1255,7 @@ export function Thread({
                       onClick={loadAllEarlier}
                       disabled={loadingEarlier}
                       data-testid="jump-to-start"
-                      className="rounded-full border border-edge px-3 py-1.5 text-2xs text-gray-600 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50"
+                      className="rounded-full border border-edge px-3 py-1.5 text-2xs text-gray-500 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50"
                     >
                       {t("thread.jumpToStart")}
                     </button>
@@ -1393,7 +1333,7 @@ export function Thread({
                     )}
                     {it.proposals && it.proposals.length > 0 && (
                       <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                        <span className="text-2xs text-gray-600">{t("thread.suggestedNext")}</span>
+                        <span className="text-2xs text-gray-500">{t("thread.suggestedNext")}</span>
                         {it.proposals.map((p, i) => (
                           <ProposalCard key={`${propKey(p)}-${i}`} proposal={p} onRun={runProposal} />
                         ))}
@@ -1515,7 +1455,7 @@ export function Thread({
                   {run.grounding && <GroundingCard g={run.grounding} />}
                   {proposals.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                      <span className="text-2xs text-gray-600">{t("thread.suggestedNext")}</span>
+                      <span className="text-2xs text-gray-500">{t("thread.suggestedNext")}</span>
                       {proposals.map((p, i) => (
                         <ProposalCard key={`${propKey(p)}-${i}`} proposal={p} onRun={runProposal} />
                       ))}
@@ -1524,10 +1464,6 @@ export function Thread({
                 </div>
               )}
             </div>
-              {/* Room to put the last question at the top of the screen. Its
-                * height is measured, not guessed, so the thread never scrolls
-                * into more blankness than the turn actually needs. */}
-              <div aria-hidden data-testid="tail-space" style={{ height: tailSpace }} />
             </div>
 
           </div>

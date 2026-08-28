@@ -143,11 +143,43 @@ describe("contrast", () => {
       }
     });
 
-    it(`${theme}: the faintest neutral still clears the 3.0 UI floor`, () => {
-      // gray-600 carries the metrics footer and timestamps — quiet, but not
-      // decorative, so it may not fall below the floor.
-      expect(ratio(parse(v["--gray-600"]), canvas), theme).toBeGreaterThanOrEqual(3.0);
-      expect(ratio(parse(v["--gray-500"]), canvas), theme).toBeGreaterThanOrEqual(3.0);
+    it(`${theme}: every ink step clears AA on the WORST surface it can land on`, () => {
+      // This assertion replaces one that was written to pass.
+      //
+      // The old version held gray-500 and gray-600 to 3.0:1 — WCAG's floor for
+      // a UI COMPONENT, not for text — and measured them against the canvas
+      // only. Its own comment said gray-600 "carries the metrics footer and
+      // timestamps, quiet but not decorative", which is to say: content, which
+      // needs 4.5. So the token test was green while the rendered product was
+      // being called unreadable, and it was green for two separate reasons —
+      // the wrong floor, and the wrong ground.
+      //
+      // Text does not only appear on the canvas. It appears on a hovered rail
+      // row, inside a panel, on an elevated card. The lightest of those (in
+      // dark; the darkest in light) is `--hover`, so that is the ground every
+      // ink step is judged against. Measured on what this replaces, against
+      // that ground: gray-600 2.29:1, gray-700 2.05:1.
+      //
+      // e2e/contrast.spec.ts is the other half of this and the one that cannot
+      // be gamed: it audits every text node the app actually renders, so a
+      // token used somewhere this table never imagined is still caught.
+      const worst = parse(v["--hover"]);
+      for (const n of [100, 200, 300, 400, 500]) {
+        expect(
+          ratio(parse(v[`--gray-${n}`]), worst),
+          `${theme} --gray-${n} on --hover`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+
+    it(`${theme}: the accent can carry its own label`, () => {
+      // The primary action is a filled accent button. Whatever ink sits on it
+      // has to be readable ON it — and white was not: 3.09:1 in dark, which
+      // made "Add model provider" the least readable string on the screen.
+      const fill = parse(v["--accent"]);
+      expect(ratio(parse(v["--accent-fg"]), fill), `${theme} --accent-fg`).toBeGreaterThanOrEqual(4.5);
+      // …and the accent is also used AS text, on the canvas.
+      expect(ratio(fill, canvas), `${theme} --accent as ink`).toBeGreaterThanOrEqual(4.5);
     });
 
     it(`${theme}: every syntax slot clears AA on the code slab`, () => {
@@ -236,12 +268,12 @@ describe("contrast", () => {
       };
       const names = [
         "--canvas", "--sidebar", "--panel", "--elevated", "--hover", "--edge", "--edge-strong",
-        "--gray-100", "--gray-200", "--gray-300", "--gray-400", "--gray-500", "--gray-600", "--gray-700",
+        "--gray-100", "--gray-200", "--gray-300", "--gray-400", "--gray-500",
       ];
       const hues = names
         .map((n) => ({ n, ...lch(v[n]) }))
         .filter((x) => x.c >= 1.5);
-      expect(hues.length, `${theme}: too few tinted neutrals to judge`).toBeGreaterThan(8);
+      expect(hues.length, `${theme}: too few tinted neutrals to judge`).toBeGreaterThan(6);
       const spread = (a: number, b: number) => {
         const d = Math.abs(a - b) % 360;
         return d > 180 ? 360 - d : d;
@@ -266,10 +298,18 @@ describe("contrast", () => {
     });
 
     it(`${theme}: the neutral ramp keeps its ordering`, () => {
-      // 100 is strongest through 700 faintest; an out-of-order step silently
-      // inverts emphasis wherever it is used.
-      const ramp = [100, 200, 300, 400, 500, 600, 700].map((n) => ratio(parse(v[`--gray-${n}`]), canvas));
+      // 100 is strongest through 500 faintest; an out-of-order step silently
+      // inverts emphasis wherever it is used. (600 and 700 were removed in
+      // v0.90.0 — they existed only to make text disappear.)
+      const ramp = [100, 200, 300, 400, 500].map((n) => ratio(parse(v[`--gray-${n}`]), canvas));
       for (let i = 1; i < ramp.length; i++) expect(ramp[i]).toBeLessThan(ramp[i - 1]);
+    });
+
+    it(`${theme}: the ramp that was removed stays removed`, () => {
+      // A reintroduced --gray-600 would sail past every assertion above (they
+      // enumerate 100-500) and land straight back in the trace rows.
+      expect(v["--gray-600"], `${theme} --gray-600 is back`).toBeUndefined();
+      expect(v["--gray-700"], `${theme} --gray-700 is back`).toBeUndefined();
     });
   }
 });

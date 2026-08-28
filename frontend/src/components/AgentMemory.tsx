@@ -119,10 +119,10 @@ function MemoryRow({
         ) : (
           <>
             <p className="text-xs leading-relaxed text-gray-300">{item.text}</p>
-            <div className="mt-0.5 flex items-center gap-2 text-3xs">
+            <div className="mt-0.5 flex items-center gap-2 text-2xs">
               {item.severity && <span className={sevTone(item.severity)}>{item.severity}</span>}
               {item.confidence && (
-                <span className="text-gray-600">{t("memory.confidence", { level: item.confidence })}</span>
+                <span className="text-gray-500">{t("memory.confidence", { level: item.confidence })}</span>
               )}
               <span className="ml-auto flex gap-1.5 opacity-0 transition-opacity group-hover/mem:opacity-100 focus-within:opacity-100">
                 <button
@@ -200,7 +200,7 @@ export function AgentMemoryPanel({
       {KIND_ORDER.map((kind) =>
         groups[kind].length > 0 ? (
           <div key={kind} className="mb-2.5 last:mb-0">
-            <div className="mb-0.5 text-3xs font-medium uppercase tracking-wider text-gray-700">
+            <div className="mb-0.5 text-2xs font-medium uppercase tracking-wider text-gray-500">
               {t(`memory.kind.${kind}`)} · {groups[kind].length}
             </div>
             <ul className="space-y-px">
@@ -214,7 +214,7 @@ export function AgentMemoryPanel({
 
       {attached.length > 0 && (
         <div className="mt-2.5 border-t border-edge pt-2.5">
-          <div className="mb-1 text-3xs font-medium uppercase tracking-wider text-gray-700">
+          <div className="mb-1 text-2xs font-medium uppercase tracking-wider text-gray-500">
             {t("memory.attached")} · {attached.length}
           </div>
           <ul className="space-y-0.5" data-testid="attached-files">
@@ -223,7 +223,7 @@ export function AgentMemoryPanel({
                 <span className="min-w-0 truncate font-mono text-gray-300" title={f.source_filename ?? ""}>
                   {f.source_filename || t("common.untitled")}
                 </span>
-                <span className="ml-auto shrink-0 tabular-nums text-3xs text-gray-600">
+                <span className="ml-auto shrink-0 tabular-nums text-2xs text-gray-500">
                   {f.detected_format || f.dataset_type}
                   {f.row_count ? ` · ${f.row_count.toLocaleString()}` : ""}
                 </span>

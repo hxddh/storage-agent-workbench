@@ -6,6 +6,65 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+_A rebuild of the interface layer, after "the aesthetics and the texture both
+fail" — and after being told the left-hand line was mine, not the references'.
+It was. The comment justifying it claimed "this is the arrangement Codex and
+Cursor both settle on"; that was asserted, never checked, and neither draws a
+rule beside an assistant message. Everything below is measured, and the two
+gates that let this through are replaced._
+
+### Fixed — two gates that were written to pass
+
+- **Contrast was checked on tokens, never on pixels.** `theme.tokens.test.ts`
+  held `--gray-600` to **3.0:1** — WCAG's floor for a UI *component*, not for
+  text — and only against `--canvas`, while its own comment said the token
+  "carries the metrics footer and timestamps, quiet but not decorative", which
+  is content, which needs 4.5. So the table was green while the screen was
+  unreadable. `e2e/contrast.spec.ts` now audits **every text node the app
+  actually renders**, resolving each one's real foreground and its real
+  composited background in a real browser. It found **46 failures** across six
+  surfaces: the tool trace at 2.05:1, a hovered rail row at 2.29:1, and white on
+  the primary button at **3.09:1** — the app's main action was the least
+  readable label on screen.
+- **The blank screen was permitted by the test named after it.** The spacer
+  under the last turn existed so a question could sit at the top; its test said
+  "a spacer taller than the viewport would be scrollable emptiness — the thing
+  this product was just reported for" and then asserted `spacer < clientHeight`.
+  On a 900px window, 899px of blank passed. The spacer is gone.
+
+### Changed — the interface layer
+
+- **A typeface, vendored.** The app shipped none: it rendered in San Francisco
+  on a Mac, Segoe UI on Windows and whatever a Linux box had. Inter and JetBrains
+  Mono (SIL OFL, 228 KB of latin subsets, no network) with the optical tracking
+  the scale never had, and the mono face optically size-matched to the sans so
+  inline code stops needing a hand-written `0.9em`.
+- **The ink ramp is solved, not picked.** Every step clears 4.5:1 against the
+  *lightest* surface it can land on. `--gray-600` and `--gray-700` are deleted
+  rather than repaired — they existed to make text disappear. Rank now comes
+  from size, weight and space.
+- **The accent carries its own label.** The bright blue keeps its brightness and
+  takes dark ink, the way a light button on a dark UI always has.
+- **10px is gone** as a size this app says anything at.
+- **No rule beside the answer**, no badge, no gutter. The answer starts at the
+  column's left edge.
+- **The question moved to that same left edge.** It was a bubble pinned right:
+  at 1440px the question began at x=1028 and its answer at x=370 — one exchange
+  spanning the full width of the window.
+- **Headings are bigger than the text they introduce.** They were not: body
+  prose is 15px and the scale ran h2 at 14px and h3 at 13px, so a structured
+  answer rendered as a wall.
+- **Bullets are bullets** — a glyph on the first line's baseline, drawn from CSS
+  so a copied list is still a list — not a 3px dot pushed level with line two.
+- **Inline code is an identifier, not a link**: mono on a quiet surface instead
+  of accent blue on every one.
+- **Tables are their content's width.** `width:100%` handed every column a share
+  of the leftover track, so a bucket name and its object count sat 300px apart;
+  a wide table still overflows into its scroll wrapper rather than wrapping every
+  cell to fit.
+- **One placeholder.** It was `"Ask Storage Agent…   type / for commands"` — a
+  single string with three spaces in it, rendering as two grey fragments.
+
 ## [0.89.0] - 2026-08-28
 
 _A full pass over the product's UI, UE and UX against what a top-tier agent app

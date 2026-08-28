@@ -269,14 +269,14 @@ function ModelProvidersPanel() {
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-100">
                   {p.name}
                   {p.active && (
-                    <span className="rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-3xs font-semibold uppercase tracking-wide text-success" data-testid="active-model-badge">
+                    <span className="rounded-full border border-success-border bg-success-bg px-2 py-0.5 text-2xs font-semibold uppercase tracking-wide text-success" data-testid="active-model-badge">
                       {t("prov.active")}
                     </span>
                   )}
                 </div>
                 <div className="text-xs text-gray-500">{p.provider_type} · {p.model || "—"} · {p.base_url || "—"}</div>
                 <div className="mt-1 text-xs text-gray-500">
-                  {t("prov.apiKeyLabel")}: {p.has_api_key ? <span className="text-success">{t("prov.savedKeychain")}</span> : <span className="text-gray-600">{t("prov.notSet")}</span>}
+                  {t("prov.apiKeyLabel")}: {p.has_api_key ? <span className="text-success">{t("prov.savedKeychain")}</span> : <span className="text-gray-500">{t("prov.notSet")}</span>}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -297,7 +297,7 @@ function ModelProvidersPanel() {
             </div>
           </li>
         ))}
-        {items.length === 0 && !showForm && <li className="text-sm text-gray-600">{t("prov.noModel")}</li>}
+        {items.length === 0 && !showForm && <li className="text-sm text-gray-500">{t("prov.noModel")}</li>}
       </ul>
     </div>
   );
@@ -602,7 +602,7 @@ function CloudProvidersPanel() {
             <Button variant="primary" onClick={submit}>{editing ? t("prov.save") : t("prov.addProvider")}</Button>
             <Button variant="ghost" onClick={close}>{t("prov.cancel")}</Button>
           </div>
-          <p className="mt-2 text-2xs text-gray-600">{t("prov.footerKeys")}</p>
+          <p className="mt-2 text-2xs text-gray-500">{t("prov.footerKeys")}</p>
         </div>
       ) : null}
 
@@ -615,11 +615,11 @@ function CloudProvidersPanel() {
                 <div className="text-xs text-gray-500">{p.provider_type} · {p.region || "—"} · {p.endpoint_url || "—"}</div>
                 <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-gray-500">
                   <span>{t("prov.modeLabel")}: <span className={p.mode === "readonly" ? "text-success" : "text-warn"}>{p.mode}</span></span>
-                  <span>{t("prov.accessKeyLabel")}: {p.has_access_key ? <span className="text-success">{t("prov.savedKeychain")}</span> : <span className="text-gray-600">{t("prov.notSet")}</span>}</span>
-                  <span>{t("prov.secretKeyLabel")}: {p.has_secret_key ? <span className="text-success">{t("prov.savedKeychain")}</span> : <span className="text-gray-600">{t("prov.notSet")}</span>}</span>
+                  <span>{t("prov.accessKeyLabel")}: {p.has_access_key ? <span className="text-success">{t("prov.savedKeychain")}</span> : <span className="text-gray-500">{t("prov.notSet")}</span>}</span>
+                  <span>{t("prov.secretKeyLabel")}: {p.has_secret_key ? <span className="text-success">{t("prov.savedKeychain")}</span> : <span className="text-gray-500">{t("prov.notSet")}</span>}</span>
                 </div>
                 {(p.allowed_buckets.length > 0 || p.allowed_prefixes.length > 0) && (
-                  <div className="mt-1 text-xs text-gray-600">
+                  <div className="mt-1 text-xs text-gray-500">
                     {t("prov.bucketsLabel")}: {p.allowed_buckets.join(", ") || "—"} · {t("prov.prefixesLabel")}: {p.allowed_prefixes.join(", ") || "—"}
                   </div>
                 )}
@@ -642,7 +642,7 @@ function CloudProvidersPanel() {
             {testingIds.has(p.id) && <CloudProviderTester provider={p} />}
           </li>
         ))}
-        {items.length === 0 && !showForm && <li className="text-sm text-gray-600">{t("prov.noCloud")}</li>}
+        {items.length === 0 && !showForm && <li className="text-sm text-gray-500">{t("prov.noCloud")}</li>}
       </ul>
     </div>
   );

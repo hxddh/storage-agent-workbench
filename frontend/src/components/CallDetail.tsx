@@ -56,7 +56,7 @@ export function CallDetail({ sessionId, callId }: { sessionId: string; callId: s
 
   if (error) {
     return (
-      <div className="ml-6 mt-1 rounded border border-edge bg-panel px-2.5 py-2 text-2xs text-gray-600"
+      <div className="ml-6 mt-1 rounded border border-edge bg-panel px-2.5 py-2 text-2xs text-gray-500"
            data-testid="call-detail-error">
         {t("call.unavailable")}
       </div>
@@ -64,7 +64,7 @@ export function CallDetail({ sessionId, callId }: { sessionId: string; callId: s
   }
   if (!row) {
     return (
-      <div className="ml-6 mt-1 animate-pulse text-2xs text-gray-700" data-testid="call-detail-loading">
+      <div className="ml-6 mt-1 animate-pulse text-2xs text-gray-500" data-testid="call-detail-loading">
         {t("call.loading")}
       </div>
     );
@@ -83,7 +83,7 @@ export function CallDetail({ sessionId, callId }: { sessionId: string; callId: s
         const clipped = text.length > MAX_RENDER;
         return (
           <div key={label}>
-            <div className="mb-1 text-3xs font-medium uppercase tracking-wider text-gray-700">
+            <div className="mb-1 text-2xs font-medium uppercase tracking-wider text-gray-500">
               {label}
             </div>
             <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-elevated px-2 py-1.5 font-mono text-2xs leading-relaxed text-gray-400">
@@ -91,7 +91,7 @@ export function CallDetail({ sessionId, callId }: { sessionId: string; callId: s
             </pre>
             {clipped && (
               // Never a silent cut — the same rule the sidecar follows.
-              <div className="mt-0.5 text-3xs text-gray-700">
+              <div className="mt-0.5 text-2xs text-gray-500">
                 {t("call.clipped", { n: text.length - MAX_RENDER })}
               </div>
             )}

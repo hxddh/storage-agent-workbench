@@ -196,7 +196,7 @@ export function SessionRail({
               {s.title || t("common.untitled")}
             </span>
           </div>
-          <span className="mt-0.5 block truncate text-2xs text-gray-600">{relTime(s.updated_at, t)}</span>
+          <span className="mt-0.5 block truncate text-2xs text-gray-500">{relTime(s.updated_at, t)}</span>
         </div>
         <button
           aria-label={t("menu.more")}
@@ -364,7 +364,7 @@ export function SessionRail({
           aria-label={t("rail.collapse")}
           aria-expanded
           data-testid="rail-toggle"
-          className="ml-auto grid h-6 w-6 place-items-center rounded-md text-gray-600 opacity-0 transition-[color,background-color,opacity] hover:bg-hover hover:text-gray-200 group-hover/brand:opacity-100"
+          className="ml-auto grid h-6 w-6 place-items-center rounded-md text-gray-500 opacity-0 transition-[color,background-color,opacity] hover:bg-hover hover:text-gray-200 group-hover/brand:opacity-100"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <rect x="3" y="4" width="18" height="16" rx="2" /><line x1="9" y1="4" x2="9" y2="20" />
@@ -382,7 +382,7 @@ export function SessionRail({
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
           <span className="flex-1">{t("rail.newChat")}</span>
-          <kbd className="rounded border border-edge bg-elevated/70 px-1.5 py-px text-3xs font-medium tracking-wide text-gray-500 opacity-0 transition-opacity group-hover:opacity-100">⌘N</kbd>
+          <kbd className="rounded border border-edge bg-elevated/70 px-1.5 py-px text-2xs font-medium tracking-wide text-gray-500 opacity-0 transition-opacity group-hover:opacity-100">⌘N</kbd>
         </button>
       </div>
 
@@ -397,13 +397,13 @@ export function SessionRail({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("rail.searchPlaceholder")}
-            className="w-full bg-transparent text-xs text-gray-200 placeholder:text-gray-600 focus:outline-none focus-visible:shadow-none"
+            className="w-full bg-transparent text-xs text-gray-200 placeholder:text-gray-500 focus:outline-none focus-visible:shadow-none"
           />
           {query && (
             <button
               onClick={() => setQuery("")}
               aria-label={t("rail.clearSearch")}
-              className="shrink-0 text-gray-600 transition-colors hover:text-gray-300"
+              className="shrink-0 text-gray-500 transition-colors hover:text-gray-300"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </button>
@@ -413,14 +413,14 @@ export function SessionRail({
 
       <nav className="flex-1 overflow-auto px-1.5 pb-2">
         {noResults ? (
-          <div className="px-3 py-5 text-xs leading-relaxed text-gray-600">{t("rail.noResults")}</div>
+          <div className="px-3 py-5 text-xs leading-relaxed text-gray-500">{t("rail.noResults")}</div>
         ) : sessions.length === 0 ? (
-          <div className="px-3 py-5 text-xs leading-relaxed text-gray-600">{t("rail.noChats")}</div>
+          <div className="px-3 py-5 text-xs leading-relaxed text-gray-500">{t("rail.noChats")}</div>
         ) : null}
 
         {pinned.length > 0 && (
           <>
-            <div className="px-2 pb-1 pt-2 text-3xs font-medium uppercase tracking-wider text-gray-600">{t("rail.pinned")}</div>
+            <div className="px-2 pb-1 pt-2 text-2xs font-medium uppercase tracking-wider text-gray-500">{t("rail.pinned")}</div>
             {pinned.map(item)}
           </>
         )}
@@ -430,7 +430,7 @@ export function SessionRail({
           if (rows.length === 0) return null;
           return (
             <div key={bucket}>
-              <div className="px-2 pb-1 pt-2 text-3xs font-medium uppercase tracking-wider text-gray-600">
+              <div className="px-2 pb-1 pt-2 text-2xs font-medium uppercase tracking-wider text-gray-500">
                 {t(`rail.day.${bucket}`)}
               </div>
               {rows.map(item)}
@@ -442,7 +442,7 @@ export function SessionRail({
           <>
             <button
               onClick={() => setShowArchived((v) => !v)}
-              className="mt-2 flex w-full items-center gap-1.5 px-2 py-1 text-3xs font-medium uppercase tracking-wider text-gray-600 transition-colors hover:text-gray-400"
+              className="mt-2 flex w-full items-center gap-1.5 px-2 py-1 text-2xs font-medium uppercase tracking-wider text-gray-500 transition-colors hover:text-gray-400"
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" className={`transition-transform ${showArchived ? "rotate-90" : ""}`}>
                 <polyline points="9 18 15 12 9 6" />

@@ -37,7 +37,7 @@ export function linkEvidence(text: string, tools: ToolActivity[]): string | null
 }
 
 function Dot() {
-  return <span className="select-none text-edge-strong" aria-hidden>·</span>;
+  return <span className="select-none text-gray-500" aria-hidden>·</span>;
 }
 
 export function TurnFooter({
@@ -160,10 +160,10 @@ export function TurnFooter({
   if (!expandable && dur === null && !hasTokens) return null;
 
   return (
-    // gray-600 on the panel is the contrast this app uses for text it does NOT
-    // expect to be read — a disabled hint, a watermark. The turn footer is the
-    // opposite: it is the only place the cost and the tool count of a turn are
-    // stated, and people go looking for it. One step up.
+    // The faintest ink in the ramp — and, since v0.90.0, that still means
+    // readable: this row is the only place a turn's cost and tool count are
+    // stated, and people go looking for it. It used to be drawn in a step that
+    // measured 2.61:1 against the canvas, which is a watermark, not a reading.
     <div className="animate-fade-in text-2xs text-gray-500">
       <div className="flex flex-wrap items-center gap-1.5">
         {expandable ? (
@@ -181,7 +181,7 @@ export function TurnFooter({
             </svg>
             <span className="tabular-nums">{t("turn.checks", { n: done.length })}</span>
             {failed > 0 && (
-              <span className="ml-0.5 rounded bg-danger-bg px-1.5 py-px text-3xs text-danger">
+              <span className="ml-0.5 rounded bg-danger-bg px-1.5 py-px text-2xs text-danger">
                 {t("turn.failed", { n: failed })}
               </span>
             )}
@@ -194,7 +194,7 @@ export function TurnFooter({
         {dur && hasTokens && <Dot />}
         {hasTokens ? (
           <span className="tabular-nums" title={model ? t("metrics.modelHint", { model }) : undefined}>
-            <span className="text-gray-600">↑</span>{inTok ?? "?"}
+            <span className="text-gray-500">↑</span>{inTok ?? "?"}
             {cachedTok !== null && (
               <span
                 className="ml-1 text-success"
@@ -204,10 +204,10 @@ export function TurnFooter({
                 ({cachedShare !== null ? `${cachedShare}%` : cachedTok}⚡)
               </span>
             )}
-            <span className="ml-1.5 text-gray-700">↓</span>{outTok ?? "?"}
+            <span className="ml-1.5 text-gray-500">↓</span>{outTok ?? "?"}
             {reasonTok !== null && Number(usage?.reasoning_tokens) > 0 && (
               <span
-                className="ml-1 text-gray-600"
+                className="ml-1 text-gray-500"
                 data-testid="reasoning-tokens"
                 title={t("metrics.reasoningHint", { n: reasonTok })}
               >
@@ -218,7 +218,7 @@ export function TurnFooter({
         ) : (
           // Honest absence: the provider never reported usage. A zero here would
           // be a false claim about spend.
-          <span className="text-gray-700" title={t("metrics.tokensUnavailableHint")}>
+          <span className="text-gray-500" title={t("metrics.tokensUnavailableHint")}>
             {t("metrics.tokens")} —
           </span>
         )}
@@ -226,7 +226,7 @@ export function TurnFooter({
           <>
             <Dot />
             <span
-              className="tabular-nums text-gray-700"
+              className="tabular-nums text-gray-500"
               data-testid="budget-share"
               title={t("metrics.budgetHint", {
                 n: fmtTokens(budgetTokens) ?? "?",
@@ -306,7 +306,7 @@ export function TurnFooter({
                       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${bad ? "bg-danger" : "bg-success/70"}`} aria-hidden />
                       <span className="shrink-0 font-mono text-accent-soft">{a.tool}</span>
                       {a.target && (
-                        <span className="min-w-0 flex-1 truncate text-gray-600" title={a.target}>
+                        <span className="min-w-0 flex-1 truncate text-gray-500" title={a.target}>
                           · {a.target}
                         </span>
                       )}
@@ -354,7 +354,7 @@ export function TurnFooter({
                           onFocus={() => setHighlight(tool)}
                           onBlur={() => setHighlight(null)}
                           data-testid="evidence-link"
-                          className="ml-1.5 rounded border border-edge px-1 font-mono text-3xs text-gray-600 transition-colors hover:border-accent/50 hover:text-accent-soft"
+                          className="ml-1.5 rounded border border-edge px-1 font-mono text-2xs text-gray-500 transition-colors hover:border-accent/50 hover:text-accent-soft"
                         >
                           {tool}
                         </button>
@@ -368,7 +368,7 @@ export function TurnFooter({
 
           {gaps.length > 0 && (
             <div>
-              <div className="mb-1 text-3xs font-medium uppercase tracking-wider text-warn-fg">
+              <div className="mb-1 text-2xs font-medium uppercase tracking-wider text-warn-fg">
                 {t("grounding.gaps")}
               </div>
               <ul className="space-y-0.5">
@@ -380,8 +380,8 @@ export function TurnFooter({
           )}
 
           {skills.length > 0 && (
-            <div className="text-2xs text-gray-600">
-              <span className="text-gray-700">{t("grounding.skills")}: </span>
+            <div className="text-2xs text-gray-500">
+              <span className="text-gray-500">{t("grounding.skills")}: </span>
               {skills.join(", ")}
             </div>
           )}

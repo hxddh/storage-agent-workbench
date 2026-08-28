@@ -79,7 +79,7 @@ const TAIL_WHEN_FOLDED = 6;
 
 const Wrench = (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-       className="shrink-0 text-gray-600" aria-hidden>
+       className="shrink-0 text-gray-500" aria-hidden>
     <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2-2 2.7-2.7z" />
   </svg>
 );
@@ -109,7 +109,7 @@ export function LiveTrace({ items, sessionId }: { items: ToolActivity[]; session
           type="button"
           onClick={() => setShowAll(true)}
           data-testid="trace-fold"
-          className="flex items-center gap-2 text-2xs text-gray-600 transition-colors hover:text-gray-400"
+          className="flex items-center gap-2 text-2xs text-gray-500 transition-colors hover:text-gray-400"
         >
           <span className="w-3" aria-hidden />
           {t("trace.showEarlier", { n: hiddenCount })}
@@ -161,10 +161,10 @@ export function LiveTrace({ items, sessionId }: { items: ToolActivity[]; session
             </span>
             <span className="flex min-w-0 flex-1 items-baseline gap-1.5 truncate">
               {a.target && (
-                <span className="truncate text-gray-600" title={a.target}>· {a.target}</span>
+                <span className="truncate text-gray-500" title={a.target}>· {a.target}</span>
               )}
               {args && (
-                <span className="shrink-0 truncate font-mono text-3xs text-gray-700"
+                <span className="shrink-0 truncate font-mono text-2xs text-gray-500"
                       data-testid="trace-args" title={args}>
                   {args}
                 </span>
@@ -189,7 +189,7 @@ export function LiveTrace({ items, sessionId }: { items: ToolActivity[]; session
               // Measured since v0.45.0, written to `tool_calls`, and never sent
               // to the client until now — so "which step was slow" had no answer
               // in the thread.
-              <span className="shrink-0 tabular-nums text-3xs text-gray-700"
+              <span className="shrink-0 tabular-nums text-2xs text-gray-500"
                     data-testid="trace-duration">
                 {ms}
               </span>

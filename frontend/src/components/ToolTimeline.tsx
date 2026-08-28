@@ -42,7 +42,7 @@ function TimelineRow({ item }: { item: TimelineItem }) {
         <span className={!finished ? "text-warn" : ok ? "text-success" : "text-danger"}>
           {!finished ? t("tool.running") : ok ? t("tool.success") : t("tool.failed")}
         </span>
-        {item.duration_ms != null && <span className="text-gray-600">{item.duration_ms} ms</span>}
+        {item.duration_ms != null && <span className="text-gray-500">{item.duration_ms} ms</span>}
         <span className="ml-auto text-gray-500">{summarize(item.output)}</span>
         {item.output && (
           <button className="ml-2 text-gray-500 hover:text-gray-300" onClick={() => setOpen((v) => !v)}>
@@ -62,7 +62,7 @@ function TimelineRow({ item }: { item: TimelineItem }) {
 export function ToolTimeline({ items }: { items: TimelineItem[] }) {
   const { t } = useI18n();
   if (items.length === 0) {
-    return <p className="text-xs text-gray-600">{t("timeline.noCalls")}</p>;
+    return <p className="text-xs text-gray-500">{t("timeline.noCalls")}</p>;
   }
   return (
     <ul className="space-y-2">
