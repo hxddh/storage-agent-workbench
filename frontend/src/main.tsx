@@ -10,6 +10,7 @@ import "./answer-document.css";
 import "./workspace-overhaul.css";
 import "./run-workspace.css";
 import "./fullscreen-workspace-stability.css";
+import "./workbench/workbench.css";
 
 // Apply the saved theme before first paint to avoid a flash.
 applyTheme(initialTheme());
