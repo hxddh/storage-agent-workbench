@@ -1,12 +1,8 @@
 import { useRef, type KeyboardEvent } from "react";
 import type { WorkSurface } from "./model";
+import { useWorkbenchCopy } from "./copy";
 
-const SURFACES: Array<{ id: WorkSurface; label: string; hint: string }> = [
-  { id: "timeline", label: "Timeline", hint: "Conversation and decisions" },
-  { id: "evidence", label: "Evidence", hint: "Facts, findings and files" },
-  { id: "runs", label: "Runs", hint: "Auditable execution" },
-  { id: "report", label: "Report", hint: "Durable investigation output" },
-];
+const SURFACE_IDS: WorkSurface[] = ["timeline", "evidence", "runs", "report"];
 
 export function SurfaceTabs({
   active,
@@ -18,14 +14,16 @@ export function SurfaceTabs({
   onChange: (surface: WorkSurface) => void;
 }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
+  const copy = useWorkbenchCopy();
+  const surfaces = SURFACE_IDS.map((id) => ({ id, ...copy.surfaces[id] }));
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    const enabled = SURFACES.filter((surface) => surface.id === "timeline" || sessionReady);
+    const enabled = surfaces.filter((surface) => surface.id === "timeline" || sessionReady);
     const index = Math.max(0, enabled.findIndex((surface) => surface.id === active));
     const delta = event.key === "ArrowRight" ? 1 : -1;
     const next = enabled[(index + delta + enabled.length) % enabled.length];
-    const absoluteIndex = SURFACES.findIndex((surface) => surface.id === next.id);
+    const absoluteIndex = surfaces.findIndex((surface) => surface.id === next.id);
     event.preventDefault();
     onChange(next.id);
     requestAnimationFrame(() => refs.current[absoluteIndex]?.focus());
@@ -39,7 +37,7 @@ export function SurfaceTabs({
       onKeyDown={onKeyDown}
       data-testid="work-surface-tabs"
     >
-      {SURFACES.map((surface, index) => {
+      {surfaces.map((surface, index) => {
         const disabled = surface.id !== "timeline" && !sessionReady;
         const selected = active === surface.id;
         return (
