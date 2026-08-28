@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ComponentProps } from "react";
 import { isEditable, matches } from "../shortcuts";
-import { nextTurnIndex, type TurnDirection } from "../lib/threadNavigation";
+import { nextTurnIndex, stepTurnIndex, type TurnDirection } from "../lib/threadNavigation";
 import { Thread as ThreadImplementation } from "./ThreadImplementation";
 
 /**
@@ -21,6 +21,30 @@ export type ThreadProps = ComponentProps<typeof ThreadImplementation>;
 
 export function Thread(props: ThreadProps) {
   const workspaceRef = useRef<HTMLElement | null>(null);
+  const navigationIndexRef = useRef<number | null>(null);
+
+  // A session switch is a new document. Pointer/wheel/touch interaction hands
+  // navigation back to the reader; the next j/k press then infers a fresh
+  // semantic cursor from the viewport. Programmatic smooth-scroll events do not
+  // reset it, which is exactly what makes k -> j reversible.
+  useEffect(() => {
+    navigationIndexRef.current = null;
+  }, [props.sessionId]);
+
+  useEffect(() => {
+    const resetNavigation = () => {
+      navigationIndexRef.current = null;
+    };
+    const workspace = workspaceRef.current;
+    workspace?.addEventListener("wheel", resetNavigation, { passive: true });
+    workspace?.addEventListener("touchstart", resetNavigation, { passive: true });
+    workspace?.addEventListener("pointerdown", resetNavigation, { passive: true });
+    return () => {
+      workspace?.removeEventListener("wheel", resetNavigation);
+      workspace?.removeEventListener("touchstart", resetNavigation);
+      workspace?.removeEventListener("pointerdown", resetNavigation);
+    };
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -36,17 +60,23 @@ export function Thread(props: ThreadProps) {
       const turns = Array.from(scrollRoot.querySelectorAll<HTMLElement>("[data-question]"));
       if (turns.length === 0) return;
 
-      const rootRect = scrollRoot.getBoundingClientRect();
-      const positions = turns.map(
-        (turn) => turn.getBoundingClientRect().top - rootRect.top + scrollRoot.scrollTop,
-      );
-      const target = nextTurnIndex(positions, scrollRoot.scrollTop, direction);
+      let target: number | null;
+      if (navigationIndexRef.current === null) {
+        const rootRect = scrollRoot.getBoundingClientRect();
+        const positions = turns.map(
+          (turn) => turn.getBoundingClientRect().top - rootRect.top + scrollRoot.scrollTop,
+        );
+        target = nextTurnIndex(positions, scrollRoot.scrollTop, direction);
+      } else {
+        target = stepTurnIndex(navigationIndexRef.current, turns.length, direction);
+      }
       if (target === null) return;
+      navigationIndexRef.current = target;
 
       // Own these bare-letter shortcuts at the workspace boundary. The legacy
-      // implementation still carries its historical listener internally; the
-      // capture listener prevents two independent scroll decisions from racing
-      // while that implementation is decomposed behind this public surface.
+      // implementation still carries its historical listener internally; this
+      // capture listener prevents a second scroll decision from racing it while
+      // that implementation is decomposed behind the public surface.
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
