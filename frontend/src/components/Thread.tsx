@@ -1152,18 +1152,29 @@ export function Thread({
               <div className="mb-1.5 px-1 text-2xs font-medium uppercase tracking-[0.08em] text-gray-500">
                 {t("thread.startWith")}
               </div>
-              <div className="grid gap-px overflow-hidden rounded-xl border border-edge bg-edge sm:grid-cols-2">
+              {/* A list, which is what the note above says it is — it was drawn
+                * as a table. `gap-px` over a `bg-edge` ground with an outer
+                * border puts a rule between all six cells and a box around the
+                * lot, so six suggestions read as a spreadsheet with the
+                * gridlines left on. Rows, hover, nothing else. */}
+              <div className="grid sm:grid-cols-2">
                 {suggestions.map((s) => (
                   <button
                     key={s.key}
                     onClick={() => onSuggestion(s.key, s.prompt)}
                     disabled={offline}
-                    className="group flex items-center gap-2 bg-panel px-3.5 py-2.5 text-left text-sm text-gray-300 transition-colors hover:bg-hover hover:text-gray-100 disabled:cursor-default disabled:text-gray-500 disabled:hover:bg-panel"
+                    className="group flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-gray-300 transition-colors hover:bg-hover hover:text-gray-100 disabled:cursor-default disabled:text-gray-500 disabled:hover:bg-transparent"
                   >
-                    <span className="min-w-0 flex-1 truncate">{s.label}</span>
+                    {/* The arrow belongs to the words, not to the far edge of
+                      * the cell: `flex-1` on the label parked it 320px to the
+                      * right of the phrase it points at, which reads as two
+                      * unrelated things on one row. It also only appears on
+                      * hover — six permanent arrows are six pieces of chrome
+                      * saying what a row already says. */}
+                    <span className="min-w-0 truncate">{s.label}</span>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden
-                         className="shrink-0 text-gray-500 transition-colors group-hover:text-accent">
+                         className="shrink-0 text-gray-400 opacity-0 transition-opacity group-hover:opacity-100">
                       <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
                     </svg>
                   </button>
@@ -1489,7 +1500,18 @@ export function Thread({
                 </button>
               </div>
             )}
-            <div className="mx-auto max-w-[min(64rem,100%)]">{composer}</div>
+            {/* The composer is the same width as the answers it produces.
+              *
+              * It spanned the full 64rem column while prose is capped at the
+              * 46rem reading measure, so what you typed was 1024px wide and
+              * what came back was 736px — the input and the output of the same
+              * conversation set to two different measures, with the composer
+              * running 290px further right than every answer above it. The
+              * wider track exists for DATA (a table, a chart) to bleed into,
+              * not for the text column to wander in. */}
+            <div className="mx-auto max-w-[min(64rem,100%)]">
+              <div className="max-w-[min(46rem,100%)]">{composer}</div>
+            </div>
           </div>
         </>
       )}

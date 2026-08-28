@@ -180,9 +180,16 @@ export default {
           "0%": { opacity: "0" },
           "100%": { opacity: "1" },
         },
+        // Transform only. An opaque panel that animates its own opacity is
+        // TRANSLUCENT for the length of the animation: the settings drawer
+        // spent 260ms with the thread's heading legible straight through it, on
+        // every single open. The scrim behind it carries the fade; the panel
+        // slides. (The same rule is why `scale-in` keeps its opacity — a
+        // menu popping from 97% wants the fade, and it is not covering
+        // anything the eye is reading.)
         "slide-in-right": {
-          "0%": { opacity: "0", transform: "translateX(24px)" },
-          "100%": { opacity: "1", transform: "translateX(0)" },
+          "0%": { transform: "translateX(24px)" },
+          "100%": { transform: "translateX(0)" },
         },
         "scale-in": {
           "0%": { opacity: "0", transform: "scale(0.97)" },
@@ -197,7 +204,7 @@ export default {
       animation: {
         "fade-in-up": "fade-in-up 0.28s cubic-bezier(0.21,0.6,0.35,1)",
         "fade-in": "fade-in 0.2s ease-out",
-        "slide-in-right": "slide-in-right 0.26s cubic-bezier(0.21,0.6,0.35,1)",
+        "slide-in-right": "slide-in-right 0.22s cubic-bezier(0.21,0.6,0.35,1)",
         "scale-in": "scale-in 0.2s cubic-bezier(0.21,0.6,0.35,1)",
         "pulse-ring": "pulse-ring 2s ease-out infinite",
       },

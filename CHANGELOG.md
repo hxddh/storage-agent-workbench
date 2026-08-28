@@ -62,6 +62,19 @@ gates that let this through are replaced._
   of the leftover track, so a bucket name and its object count sat 300px apart;
   a wide table still overflows into its scroll wrapper rather than wrapping every
   cell to fit.
+- **The composer is the width of the answers it produces.** It spanned the full
+  64rem column while prose is capped at the 46rem measure — the input and the
+  output of one conversation set to two different widths, with the composer
+  running 290px further right than every answer above it. It is also 10px
+  shorter and on the app's own radius scale instead of a pill with two circular
+  buttons orbiting in it.
+- **The start surface is a list, not a spreadsheet.** `gap-px` over a tinted
+  ground with an outer border drew a rule between all six suggestions and a box
+  around the lot. And each row's arrow sat 320px to the right of the phrase it
+  points at; it now follows the words, on hover.
+- **An opaque panel no longer animates its own opacity.** The settings drawer
+  spent 260ms of every open with the thread legible straight through it. The
+  scrim carries the fade; the panel slides.
 - **One placeholder.** It was `"Ask Storage Agent…   type / for commands"` — a
   single string with three spaces in it, rendering as two grey fragments.
 

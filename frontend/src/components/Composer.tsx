@@ -144,7 +144,14 @@ export function Composer({
   };
 
   return (
-    <div className="group/composer relative rounded-2xl border border-edge bg-panel px-3.5 pb-2.5 pt-3 shadow-elev transition-[border-color,box-shadow] duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
+    /* Tighter, and one radius family with the rest of the app.
+     *
+     * Empty, this box was 95px tall — the largest single object on the start
+     * surface, for a control that at rest holds one line of grey text. Most of
+     * that was padding above the field and a 32px circular send button orbiting
+     * in the corner. The references both keep this to a field and a thin row of
+     * small controls under it. */
+    <div className="group/composer relative rounded-xl border border-edge bg-panel px-3 pb-2 pt-2.5 shadow-elev transition-[border-color,box-shadow] duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10">
       {slashOpen && (
         <div className="absolute bottom-full left-1 right-1 mb-2 overflow-hidden rounded-xl border border-edge bg-panel shadow-pop animate-fade-in">
           <div className="px-3 py-1.5 text-2xs font-medium uppercase tracking-wider text-gray-500">{t("thread.commands")}</div>
@@ -317,7 +324,7 @@ export function Composer({
             onClick={onSteer}
             aria-label={t("thread.redirect")}
             title={t("thread.redirectHint")}
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-edge bg-elevated text-gray-100 transition-[background-color,transform] hover:bg-hover active:scale-95"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-edge bg-elevated text-gray-100 transition-[background-color,transform] hover:bg-hover active:scale-95"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="19" x2="12" y2="5" />
@@ -330,7 +337,7 @@ export function Composer({
             onClick={onStop}
             aria-label={t("thread.stop")}
             title={t("thread.stop")}
-            className="group/stop grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-accent-fg transition-[background-color,transform] hover:bg-accent-soft active:scale-95"
+            className="group/stop grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent text-accent-fg transition-[background-color,transform] hover:bg-accent-soft active:scale-95"
           >
             {/* Stop square inside a subtle spinner ring so it reads as "running,
                 click to cancel". */}
@@ -346,7 +353,7 @@ export function Composer({
             onClick={onSend}
             disabled={uploading || blocked || (!text.trim() && !attached)}
             aria-label={t("thread.send")}
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-accent text-accent-fg transition-[background-color,transform] hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-500"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-accent text-accent-fg transition-[background-color,transform] hover:bg-accent-soft active:scale-95 disabled:cursor-default disabled:bg-elevated disabled:text-gray-500"
           >
             {uploading ? (
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
