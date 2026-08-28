@@ -275,6 +275,30 @@ body {
   grid-column: full;
 }
 
+/* What find marks.
+ *
+ * The CSS Custom Highlight API paints over ranges without touching the DOM, so
+ * searching a streaming answer cannot disturb the thread's layout or its scroll
+ * maths. Both entries are needed: one for every match, one for the one you are
+ * standing on, or stepping through twenty-nine identical marks tells you
+ * nothing about where you are.
+ */
+::highlight(saw-find) {
+  background-color: rgba(109, 139, 255, 0.28);
+  color: inherit;
+}
+::highlight(saw-find-active) {
+  background-color: rgba(109, 139, 255, 0.75);
+  color: #0b0d10;
+}
+:root[data-theme="light"] ::highlight(saw-find) {
+  background-color: rgba(109, 139, 255, 0.3);
+}
+:root[data-theme="light"] ::highlight(saw-find-active) {
+  background-color: rgba(76, 108, 240, 0.85);
+  color: #ffffff;
+}
+
 /* Respect reduced-motion. */
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -38,7 +38,8 @@ import { TurnFooter } from "./TurnFooter";
 import { fmtDuration } from "./TurnMetrics";
 import { useI18n } from "../i18n";
 import { matches } from "../shortcuts";
-import { findInThread, stepHit } from "../threadFind";
+import { clearFind, findRanges, paintFind } from "../lib/findHighlight";
+import { stepHit } from "../threadFind";
 import { inferDatasetType } from "../datasetType";
 import { FindBar } from "./FindBar";
 
@@ -793,23 +794,56 @@ export function Thread({
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [findIdx, setFindIdx] = useState(0);
-  const hits = useMemo(() => findInThread(items, findQuery), [items, findQuery]);
   // A new query starts from the top rather than keeping a cursor that pointed
   // into the previous result set.
   useEffect(() => setFindIdx(0), [findQuery]);
-  const activeHitId = hits.length ? hits[Math.min(findIdx, hits.length - 1)]?.id : null;
+
+  /* Every occurrence, not every message that has one.
+   *
+   * The counter summed occurrences while the cursor stepped messages, so an
+   * answer with twelve mentions was one stop out of eight and next/previous
+   * wrapped long before reaching the total the bar was displaying. `findRanges`
+   * produces the unit the counter always claimed to use, and painting them is
+   * what makes stepping mean anything on a two-thousand-word answer.
+   *
+   * Recomputed when the query changes and when the thread's own content does —
+   * a streamed delta, a loaded earlier page — because a Range holds a text node
+   * that a re-render can replace. */
+  const [ranges, setRanges] = useState<Range[]>([]);
+  const matchTotal = ranges.length;
   useEffect(() => {
-    if (!findOpen || !activeHitId) return;
+    if (!findOpen) {
+      clearFind();
+      setRanges([]);
+      return;
+    }
+    const root = scrollRef.current;
+    if (!root) return;
+    const found = findQuery.trim().length >= 2 ? findRanges(root, findQuery) : [];
+    setRanges(found);
+    return () => clearFind();
+  }, [findOpen, findQuery, items, earlier.length, streamText]);
+
+  const activeRange = matchTotal ? ranges[Math.min(findIdx, matchTotal - 1)] : null;
+  useEffect(() => {
+    if (!findOpen) return;
+    paintFind(ranges, Math.min(findIdx, Math.max(0, matchTotal - 1)));
+  }, [findOpen, ranges, findIdx, matchTotal]);
+  useEffect(() => {
+    if (!findOpen || !activeRange) return;
     const raf = requestAnimationFrame(() => {
-      document
-        .getElementById(`thread-item-${activeHitId}`)
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      // A Range cannot be scrolled to directly; its first client rect can, via
+      // the element that owns it. `center` keeps the match clear of the find
+      // bar, which floats over the top of the thread.
+      const el = activeRange.startContainer.parentElement;
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
     return () => cancelAnimationFrame(raf);
-  }, [findOpen, activeHitId]);
+  }, [findOpen, activeRange]);
+
   const stepFind = useCallback(
-    (delta: number) => setFindIdx((i) => stepHit(i, hits.length, delta)),
-    [hits.length],
+    (delta: number) => setFindIdx((i) => stepHit(i, matchTotal, delta)),
+    [matchTotal],
   );
   const closeFind = useCallback(() => {
     setFindOpen(false);
@@ -1156,7 +1190,7 @@ export function Thread({
               <FindBar
                 query={findQuery}
                 onQuery={setFindQuery}
-                hits={hits}
+                total={matchTotal}
                 index={findIdx}
                 onStep={stepFind}
                 onClose={closeFind}

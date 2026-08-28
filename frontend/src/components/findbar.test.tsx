@@ -3,18 +3,14 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { createElement, useState } from "react";
 import { I18nProvider } from "../i18n";
 import { FindBar } from "./FindBar";
-import type { FindHit } from "../threadFind";
 
 const wrap = (ui: React.ReactNode) => render(createElement(I18nProvider, null, ui));
-
-const hits = (counts: number[]): FindHit[] =>
-  counts.map((count, i) => ({ id: `m${i}`, count, index: i }));
 
 function bar(overrides: Partial<React.ComponentProps<typeof FindBar>> = {}) {
   const props: React.ComponentProps<typeof FindBar> = {
     query: "acme",
     onQuery: vi.fn(),
-    hits: hits([2, 1]),
+    total: 3,
     index: 0,
     onStep: vi.fn(),
     onClose: vi.fn(),
@@ -38,19 +34,19 @@ describe("the find bar", () => {
 
   it("distinguishes 'too short to run' from 'ran and found nothing'", () => {
     // Collapsing these would tell the user their search failed when it never ran.
-    bar({ query: "a", hits: [] });
+    bar({ query: "a", total: 0 });
     const short = screen.getByTestId("find-status").textContent ?? "";
     expect(short).not.toMatch(/no match/i);
     expect(short.length).toBeGreaterThan(0);
   });
 
   it("says so plainly when a real query matches nothing", () => {
-    bar({ query: "zzzz", hits: [] });
+    bar({ query: "zzzz", total: 0 });
     expect(screen.getByTestId("find-status").textContent).toMatch(/no match/i);
   });
 
   it("shows no status at all before anything is typed", () => {
-    bar({ query: "", hits: [] });
+    bar({ query: "", total: 0 });
     expect(screen.getByTestId("find-status").textContent).toBe("");
   });
 
@@ -70,7 +66,7 @@ describe("the find bar", () => {
   });
 
   it("disables the step buttons when there is nothing to step through", () => {
-    bar({ query: "zzzz", hits: [] });
+    bar({ query: "zzzz", total: 0 });
     expect(screen.getByTestId("find-next")).toBeDisabled();
     expect(screen.getByTestId("find-prev")).toBeDisabled();
   });
@@ -79,7 +75,7 @@ describe("the find bar", () => {
     function Harness() {
       const [q, setQ] = useState("");
       return createElement(FindBar, {
-        query: q, onQuery: setQ, hits: [], index: 0,
+        query: q, onQuery: setQ, total: 0, index: 0,
         onStep: () => {}, onClose: () => {},
       });
     }

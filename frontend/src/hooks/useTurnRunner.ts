@@ -8,6 +8,7 @@
  * (and keeps its content) if the user switches sessions mid-run.
  */
 import { useRef } from "react";
+import { deriveSessionTitle } from "../lib/sessionTitle";
 import {
   ApiError,
   cancelSessionTurn,
@@ -159,7 +160,7 @@ export function useTurnRunner(opts: {
   const ensureSession = (seed: string): Promise<string> => {
     if (localId.current) return Promise.resolve(localId.current);
     if (!ensureFlight.current) {
-      ensureFlight.current = createSession({ title: (seed || "New chat").slice(0, 80) })
+      ensureFlight.current = createSession({ title: deriveSessionTitle(seed) ?? "New chat" })
         .then((s) => {
           localId.current = s.id;
           onSessionCreated(s.id);
