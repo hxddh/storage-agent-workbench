@@ -68,7 +68,7 @@ export function SettingsDrawer(
         aria-modal="true"
         tabIndex={-1}
         aria-label={t("settings.title")}
-        className="relative flex h-full w-[min(860px,96vw)] flex-col border-l border-edge bg-canvas shadow-pop animate-slide-in-right"
+        className="relative flex h-full w-[min(620px,96vw)] flex-col border-l border-edge bg-canvas shadow-pop animate-slide-in-right"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-edge px-6 py-3.5">
@@ -159,9 +159,14 @@ function Segmented<T extends string>({
           type="button"
           aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
+          // Selected, not primary. A filled accent says "this is the action to
+          // take"; there is exactly one of those on a settings panel, and it is
+          // "Add provider". Theme, language and the provider tabs were all
+          // wearing it too, so the screen had four things shouting and no way
+          // to tell which one was a button you should press.
           className={`rounded-md px-3 py-1 text-xs transition-colors ${
             value === o.value
-              ? "bg-accent text-accent-fg"
+              ? "bg-elevated font-medium text-gray-100 shadow-elev"
               : "text-gray-400 hover:text-gray-100"
           }`}
         >

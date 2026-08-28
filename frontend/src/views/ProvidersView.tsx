@@ -41,14 +41,14 @@ export function ProvidersView() {
         <div className="flex gap-2" role="group" aria-label={t("prov.title")}>
           <Button
             aria-pressed={tab === "model"}
-            variant={tab === "model" ? "primary" : "default"}
+            variant={tab === "model" ? "selected" : "ghost"}
             onClick={() => setTab("model")}
           >
             {t("prov.tabModel")}
           </Button>
           <Button
             aria-pressed={tab === "cloud"}
-            variant={tab === "cloud" ? "primary" : "default"}
+            variant={tab === "cloud" ? "selected" : "ghost"}
             onClick={() => setTab("cloud")}
           >
             {t("prov.tabCloud")}

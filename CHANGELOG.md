@@ -68,6 +68,14 @@ gates that let this through are replaced._
   running 290px further right than every answer above it. It is also 10px
   shorter and on the app's own radius scale instead of a pill with two circular
   buttons orbiting in it.
+- **One filled accent per screen.** The settings panel had four: the theme
+  segment, the language segment, the open provider tab, and the actual primary
+  action. A filled accent says "press this"; when everything selected wears it,
+  nothing does. Selection is a surface and a weight now; the accent is left to
+  "Add provider" alone.
+- **The settings drawer is 620px, not 860px.** It held a theme switch, a
+  language switch, two tabs and an empty list across a slab nearly as wide as
+  the thread behind it.
 - **The start surface is a list, not a spreadsheet.** `gap-px` over a tinted
   ground with an outer border drew a rule between all six suggestions and a box
   around the lot. And each row's arrow sat 320px to the right of the phrase it

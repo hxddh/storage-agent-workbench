@@ -90,12 +90,16 @@ export function Button({
   className = "",
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "default" | "primary" | "danger" | "ghost";
+  variant?: "default" | "primary" | "selected" | "danger" | "ghost";
   size?: "sm" | "md";
 }) {
   const variants: Record<string, string> = {
     default: "border border-edge bg-elevated text-gray-200 hover:bg-hover hover:border-edge-strong",
     primary: "bg-accent text-accent-fg hover:bg-accent-soft",
+    // "This one is on", not "press this". A tab used `primary` because it was
+    // the only emphatic variant there was, so a settings panel carried four
+    // filled accent objects and none of them was the action to take.
+    selected: "border border-edge-strong bg-elevated font-semibold text-gray-100",
     danger: "border border-danger-border text-danger hover:bg-danger-bg",
     ghost: "text-gray-400 hover:text-gray-100 hover:bg-hover",
   };
