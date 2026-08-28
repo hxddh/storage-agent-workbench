@@ -3,16 +3,14 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
 
 const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
 const SKILL = "storageops-security-iam-policy";
+const FOLLOW_UP = "Summarize the evidence again from this review surface.";
+const FOLLOW_UP_ANSWER = "The evidence still supports the same IAM-policy conclusion after review.";
 
 async function setup(page: Page) {
   const model = await startFakeModel([
     toolTurn("read_skill", { name: SKILL }),
     textTurn("The investigation is ready for review. The persisted skill evidence is available below."),
-    // The steering contract below submits a real second turn from Evidence.
-    // Give the scripted provider a second response so this gate proves that
-    // cross-surface idle submit persists into the Timeline rather than merely
-    // proving that the button dispatched a request.
-    textTurn("The evidence still supports the same IAM-policy conclusion after review."),
+    textTurn(FOLLOW_UP_ANSWER),
   ]);
   const providerId = await useFakeModel(model.baseUrl);
   await page.addInitScript(() => {
@@ -23,9 +21,12 @@ async function setup(page: Page) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   await expect(composer(page)).toBeVisible({ timeout: 20_000 });
-  return async () => {
-    await dropModelProvider(providerId);
-    await model.close();
+  return {
+    model,
+    cleanup: async () => {
+      await dropModelProvider(providerId);
+      await model.close();
+    },
   };
 }
 
@@ -37,7 +38,7 @@ async function completeTurn(page: Page) {
 
 test.describe("Agent OS workbench", () => {
   test("Evidence is a native replaceable work surface, never a legacy Inspector overlay", async ({ page }) => {
-    const cleanup = await setup(page);
+    const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
       await page.getByRole("tab", { name: "Evidence" }).click();
@@ -65,7 +66,7 @@ test.describe("Agent OS workbench", () => {
   });
 
   test("Focus mode removes global navigation without changing the selected document identity", async ({ page }) => {
-    const cleanup = await setup(page);
+    const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
       await page.getByRole("tab", { name: "Evidence" }).click();
@@ -85,7 +86,7 @@ test.describe("Agent OS workbench", () => {
   });
 
   test("the resting Timeline prompt remains subordinate to the answer document", async ({ page }) => {
-    const cleanup = await setup(page);
+    const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
       const field = composer(page);
@@ -100,9 +101,10 @@ test.describe("Agent OS workbench", () => {
   });
 
   test("Evidence keeps the real Agent steering controller reachable", async ({ page }) => {
-    const cleanup = await setup(page);
+    const { cleanup, model } = await setup(page);
     try {
       await completeTurn(page);
+      const baselineRequests = model.requests.length;
       await page.getByRole("tab", { name: "Evidence" }).click();
 
       const steering = page.getByTestId("workbench-steering");
@@ -112,18 +114,37 @@ test.describe("Agent OS workbench", () => {
       // accidentally testing redirect-in-flight semantics.
       await expect(steering.getByRole("button", { name: /^send$/i })).toBeVisible({ timeout: 20_000 });
       const field = steering.getByRole("textbox");
-      await field.fill("Summarize the evidence again from this review surface.");
+      await field.fill(FOLLOW_UP);
       await field.press("Enter");
 
+      // Prove the deep-surface controller actually crossed the browser/sidecar
+      // boundary before judging persistence. If this fails, the bug is dispatch
+      // or runner gating. If it passes but the Timeline checks below fail, the
+      // bug is in settle/reload/render. This is intentionally stronger than the
+      // old footer-count-only assertion.
+      await expect.poll(() => model.requests.length, {
+        timeout: 10_000,
+        message: "Evidence Steering must reach the configured model",
+      }).toBeGreaterThan(baselineRequests);
+
       await page.getByRole("tab", { name: "Timeline" }).click();
+      await expect(page.locator("main").getByText(FOLLOW_UP, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator("main").getByText(FOLLOW_UP_ANSWER, { exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId("turn-footer-toggle")).toHaveCount(2, { timeout: 20_000 });
+
+      // Durability is part of this contract: a cross-surface turn that vanishes
+      // on reload is not a successful continuation of the investigation.
+      await page.reload();
+      await expect(composer(page)).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator("main").getByText(FOLLOW_UP, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator("main").getByText(FOLLOW_UP_ANSWER, { exact: true })).toBeVisible({ timeout: 20_000 });
     } finally {
       await cleanup();
     }
   });
 
   test("Report is a native durable-output surface with no centered modal path", async ({ page }) => {
-    const cleanup = await setup(page);
+    const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
       await composer(page).fill("/report");
