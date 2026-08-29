@@ -137,10 +137,12 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(e2e).toContain('test.describe("Execution Summary"');
   });
 
-  it("uses Execution Steps rather than a timeline renderer", () => {
+  it("uses Execution Steps and Execution Detail rather than timeline/run-detail renderers", () => {
     absent("../components/ToolTimeline.tsx");
+    absent("../components/RunDetail.tsx");
+    absent("../components/RunDetailImplementation.tsx");
     const steps = source("../components/ExecutionSteps.tsx");
-    const detail = source("../components/RunDetailImplementation.tsx");
+    const detail = source("../components/ExecutionDetailImplementation.tsx");
     expect(steps).toContain("export interface ExecutionStep");
     expect(steps).toContain("export function ExecutionSteps");
     expect(steps).toContain('data-testid="execution-step"');
@@ -149,6 +151,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(detail).toContain("<ExecutionSteps");
     expect(detail).not.toContain("ToolTimeline");
     expect(detail).not.toContain("TimelineItem");
+    expect(detail).not.toContain("RunDetailImplementation");
   });
 
   it("uses task/execution DOM contracts rather than thread/timeline contracts", () => {
