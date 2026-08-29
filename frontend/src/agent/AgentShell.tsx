@@ -5,6 +5,7 @@ import { publishAgentCommands } from "./commands";
 import { AgentReviewPanel } from "./AgentReviewPanel";
 import { useAgentCopy } from "./agentCopy";
 import type { ReviewSurface } from "./model";
+import { agentTaskState } from "./taskState";
 import { useAgentTaskProjection } from "./useAgentTaskProjection";
 
 function ConnectionMark({ status }: { status: string }) {
@@ -66,15 +67,18 @@ export function AgentShell({
   const scope = session?.primary_bucket?.trim() || session?.goal?.trim() || copy.task.noScope;
   const outputCount = (session?.finding_count ?? 0) + (session?.run_count ?? 0);
   const latestTool = run.streamTools.length ? run.streamTools[run.streamTools.length - 1] : null;
-  const state = run.uploading
-    ? { label: copy.states.uploading, tone: "uploading" }
-    : run.busy
-      ? { label: copy.states.working, tone: "working" }
-      : run.error || run.needKey
-        ? { label: copy.states.attention, tone: "attention" }
-        : sessionId
-          ? { label: copy.states.ready, tone: "ready" }
-          : { label: copy.states.delegate, tone: "idle" };
+  const stateKey = agentTaskState(run, Boolean(sessionId));
+  const stateLabel = stateKey === "idle"
+    ? copy.states.delegate
+    : stateKey === "ready"
+      ? copy.states.ready
+      : stateKey === "working"
+        ? copy.states.working
+        : stateKey === "uploading"
+          ? copy.states.uploading
+          : stateKey === "decision"
+            ? copy.states.decision
+            : copy.states.attention;
   const liveExecution = latestTool
     ? `${latestTool.tool}${latestTool.target ? ` · ${latestTool.target}` : ""}`
     : copy.task.startingExecution;
@@ -92,8 +96,8 @@ export function AgentShell({
               <strong title={title}>{title}</strong>
             </div>
             <div className="agent-task-meta">
-              <span className="agent-task-live-state" data-state={state.tone}>
-                <i aria-hidden />{state.label}
+              <span className="agent-task-live-state" data-state={stateKey}>
+                <i aria-hidden />{stateLabel}
               </span>
               <span aria-hidden>·</span>
               <span className="truncate" title={scope}>{scope}</span>
