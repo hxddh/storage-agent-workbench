@@ -22,6 +22,7 @@ const COPY = {
     settings: "Settings and providers",
     focus: "Focus task",
     exitFocus: "Exit focus mode",
+    selectEvidence: "Select an Agent task to review its evidence.",
     review: {
       eyebrow: "Agent output",
       title: "Review",
@@ -93,6 +94,7 @@ const COPY = {
     settings: "设置与 Providers",
     focus: "专注当前任务",
     exitFocus: "退出专注模式",
+    selectEvidence: "选择一个 Agent Task 以查看 Evidence。",
     review: {
       eyebrow: "Agent Output",
       title: "Review",

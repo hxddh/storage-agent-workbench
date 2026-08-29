@@ -4,6 +4,11 @@ import { describe, expect, it } from "vitest";
 const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8");
 
 describe("v0.93 Agent-native ownership boundaries", () => {
+  it("physically removes the v0.92 page-navigation shell", () => {
+    expect(existsSync(new URL("./InvestigationNavigation.tsx", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("./SurfaceTabs.tsx", import.meta.url))).toBe(false);
+  });
+
   it("keeps legacy inspector overlays deleted", () => {
     expect(existsSync(new URL("../components/SessionInspector.tsx", import.meta.url))).toBe(false);
     expect(existsSync(new URL("../components/SessionInspectorImplementation.tsx", import.meta.url))).toBe(false);
