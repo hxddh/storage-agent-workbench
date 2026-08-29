@@ -160,11 +160,15 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(implementation).not.toContain("stepTurn");
   });
 
-  it("does not embed RunDetail in task content", () => {
-    const cards = source("../components/TaskContentImplementation.tsx");
-    expect(cards).not.toContain('import { RunDetail } from "./RunDetail"');
-    expect(cards).not.toContain("export function RunCard");
-    expect(cards).not.toContain("<RunDetail");
+  it("physically removes the legacy conversation renderer", () => {
+    expect(existsSync(new URL("../components/TaskContentImplementation.tsx", import.meta.url))).toBe(false);
+    const boundary = source("../components/TaskContent.tsx");
+    const result = source("../components/AnswerDocument.tsx");
+    expect(boundary).not.toContain("TaskContentImplementation");
+    expect(boundary).not.toContain("export *");
+    expect(result).toContain("AgentResultRenderer");
+    expect(result).toContain("S3ErrorArtifact");
+    expect(result).not.toContain("ProvenTurnRenderer");
   });
 
   it("contains no modal-stretch compatibility CSS for deep work", () => {
