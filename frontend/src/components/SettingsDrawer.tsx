@@ -6,17 +6,12 @@ import { getVaultStatus } from "../api";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 
-/**
- * Right slide-over for setup. Embeds the existing model + cloud provider CRUD
- * (Providers view), plus appearance (theme + language) controls, so all settings
- * live in one place inline with the thread rather than a separate page.
- */
-/** Warns when the encrypted secret vault couldn't be decrypted this session. */
+/** Right slide-over for Agent setup, providers, appearance and safety policy. */
 function VaultWarning() {
   const { t } = useI18n();
   const [unreadable, setUnreadable] = useState(false);
   useEffect(() => {
-    getVaultStatus().then((s) => setUnreadable(s.unreadable)).catch(() => undefined);
+    getVaultStatus().then((status) => setUnreadable(status.unreadable)).catch(() => undefined);
   }, []);
   if (!unreadable) return null;
   return (
@@ -33,12 +28,6 @@ export function SettingsDrawer(
   const { t, lang, setLang } = useI18n();
   const { theme, setTheme } = useTheme();
   const trapRef = useFocusTrap<HTMLDivElement>(open);
-  // Registers with the overlay stack rather than relying on App's catch-all,
-  // which used to close this drawer alongside whatever else was open.
-  //
-  // `ignoreInFields` because this drawer is a form full of credentials: an
-  // Escape with the caret in one belongs to that field, not to the drawer, and
-  // closing it discards a secret that cannot be read back to retype.
   useDismissOnEscape(open, onClose, { ignoreInFields: true });
   if (!open) return null;
 
@@ -46,21 +35,12 @@ export function SettingsDrawer(
     { value: "dark", label: t("settings.themeDark") },
     { value: "light", label: t("settings.themeLight") },
   ];
+  const safety = lang === "zh"
+    ? "Secrets 只保存在本机加密 Vault，不进入数据库、日志、Report Artifact 或 Model 输入。Storage Provider 使用只读权限；Agent 没有写入或破坏性能力。下载、大规模扫描、Evidence Import 等数据移动操作必须经过明确 Decision。你主动附加到 Task 的本地文件只在当前分析流程中使用。"
+    : "Secrets stay only in the encrypted local vault and never enter the database, logs, Report artifacts, or model input. Storage Providers are read-only and the Agent has no write or destructive capability. Downloads, large scans, Evidence Import, and other data-moving operations require an explicit Decision. A local file you attach to a Task is used only by that analysis flow.";
 
   return (
-    <div
-      className="fixed inset-0 z-drawer flex justify-end"
-      onClick={onClose}
-    >
-      {/* The scrim is a SIBLING of the panel, not its parent.
-        *
-        * It used to be the container: `bg-scrim … animate-fade-in` on the
-        * element the panel lives inside, so fading the scrim faded the panel
-        * with it, and for the length of the animation an opaque drawer was
-        * translucent — the thread's heading legible straight through it, on
-        * every open. Removing the opacity from the panel's own keyframe did
-        * nothing, because the opacity was never on the panel; it was inherited.
-        * Now the scrim fades and the panel only slides. */}
+    <div className="fixed inset-0 z-drawer flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-scrim backdrop-blur-sm animate-fade-in" aria-hidden />
       <div
         ref={trapRef}
@@ -69,7 +49,7 @@ export function SettingsDrawer(
         tabIndex={-1}
         aria-label={t("settings.title")}
         className="relative flex h-full w-[min(620px,96vw)] flex-col border-l border-edge bg-canvas shadow-pop animate-slide-in-right"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-edge px-6 py-3.5">
           <span className="text-sm font-semibold text-gray-100">{t("settings.title")}</span>
@@ -78,7 +58,7 @@ export function SettingsDrawer(
             aria-label={t("common.close")}
             className="grid h-7 w-7 place-items-center rounded-md text-gray-500 transition-colors hover:bg-hover hover:text-gray-200"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -86,28 +66,17 @@ export function SettingsDrawer(
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-auto">
           <VaultWarning />
-          {/* Appearance: theme + language */}
           <section className="border-b border-edge px-8 py-5">
             <div className="mb-1 text-sm font-semibold text-gray-100">{t("settings.appearance")}</div>
             <p className="mb-4 text-xs leading-relaxed text-gray-500">{t("settings.appearanceHint")}</p>
             <div className="flex flex-wrap gap-8">
               <div>
                 <div id="seg-theme-label" className="mb-1.5 text-xs font-medium text-gray-400">{t("settings.theme")}</div>
-                <Segmented
-                  labelId="seg-theme-label"
-                  options={themes}
-                  value={theme}
-                  onChange={(v) => setTheme(v as Theme)}
-                />
+                <Segmented labelId="seg-theme-label" options={themes} value={theme} onChange={(value) => setTheme(value as Theme)} />
               </div>
               <div>
                 <div id="seg-lang-label" className="mb-1.5 text-xs font-medium text-gray-400">{t("settings.language")}</div>
-                <Segmented
-                  labelId="seg-lang-label"
-                  options={LANGS}
-                  value={lang}
-                  onChange={(v) => setLang(v as Lang)}
-                />
+                <Segmented labelId="seg-lang-label" options={LANGS} value={lang} onChange={(value) => setLang(value as Lang)} />
               </div>
             </div>
           </section>
@@ -115,7 +84,7 @@ export function SettingsDrawer(
           <ProvidersView />
           <div className="border-t border-edge px-8 py-5 text-xs leading-relaxed text-gray-500">
             <div className="mb-1 font-medium text-gray-400">{t("settings.safetyTitle")}</div>
-            {t("settings.safety")}
+            {safety}
           </div>
         </div>
       </div>
@@ -123,19 +92,6 @@ export function SettingsDrawer(
   );
 }
 
-/**
- * A small segmented control used for theme/language selection.
- *
- * Which option is active was carried by `bg-accent` and nothing else — no
- * `aria-pressed`, no group name. So a screen reader announced "English, button"
- * and "简体中文, button" with no way to tell which one the app is currently
- * using, and forced-colours / high-contrast mode loses the accent entirely.
- *
- * `aria-pressed` is the app's own established pattern for this (the composer's
- * attach-type toggle and the inspector's filter chips both use it); these two
- * controls had simply diverged from it. The visible caption above each group
- * now names it, via `aria-labelledby`, instead of floating unattached.
- */
 function Segmented<T extends string>({
   options,
   value,
@@ -144,33 +100,24 @@ function Segmented<T extends string>({
 }: {
   options: { value: T; label: string }[];
   value: T;
-  onChange: (v: T) => void;
+  onChange: (value: T) => void;
   labelId?: string;
 }) {
   return (
-    <div
-      className="inline-flex rounded-lg border border-edge bg-elevated p-0.5"
-      role="group"
-      aria-labelledby={labelId}
-    >
-      {options.map((o) => (
+    <div className="inline-flex rounded-lg border border-edge bg-elevated p-0.5" role="group" aria-labelledby={labelId}>
+      {options.map((option) => (
         <button
-          key={o.value}
+          key={option.value}
           type="button"
-          aria-pressed={value === o.value}
-          onClick={() => onChange(o.value)}
-          // Selected, not primary. A filled accent says "this is the action to
-          // take"; there is exactly one of those on a settings panel, and it is
-          // "Add provider". Theme, language and the provider tabs were all
-          // wearing it too, so the screen had four things shouting and no way
-          // to tell which one was a button you should press.
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
           className={`rounded-md px-3 py-1 text-xs transition-colors ${
-            value === o.value
+            value === option.value
               ? "bg-elevated font-medium text-gray-100 shadow-elev"
               : "text-gray-400 hover:text-gray-100"
           }`}
         >
-          {o.label}
+          {option.label}
         </button>
       ))}
     </div>
