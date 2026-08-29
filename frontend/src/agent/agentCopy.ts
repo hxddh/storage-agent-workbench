@@ -20,7 +20,7 @@ const COPY = {
       delegate: "Ready to delegate",
     },
     findings: (n: number) => `${n} finding${n === 1 ? "" : "s"}`,
-    runs: (n: number) => `${n} execution${n === 1 ? "" : "s"}`,
+    executions: (n: number) => `${n} execution${n === 1 ? "" : "s"}`,
     command: "Command",
     commandPalette: "Command palette",
     settings: "Settings and providers",
@@ -43,7 +43,7 @@ const COPY = {
       views: {
         overview: "Overview",
         evidence: "Evidence",
-        runs: "Execution",
+        execution: "Execution",
         report: "Report",
       },
     },
@@ -61,10 +61,10 @@ const COPY = {
       overview: (findings: number, memory: number, files: number) => `${findings} findings · ${memory} memory items · ${files} files`,
       context: (shown: number, total: number) => `context ${shown}/${total} entries`,
     },
-    run: {
+    execution: {
       eyebrow: "Execution",
       title: "Agent execution",
-      description: "Commands, tools and analysis runs produced while the Agent worked on this task.",
+      description: "Commands, tools and analysis operations produced while the Agent worked on this task.",
       empty: "No explicit execution records are attached to this task.",
     },
     report: {
@@ -99,7 +99,7 @@ const COPY = {
       delegate: "可以开始委派任务",
     },
     findings: (n: number) => `${n} 项发现`,
-    runs: (n: number) => `${n} 次执行`,
+    executions: (n: number) => `${n} 次执行`,
     command: "命令",
     commandPalette: "命令面板",
     settings: "设置与 Providers",
@@ -122,7 +122,7 @@ const COPY = {
       views: {
         overview: "Overview",
         evidence: "Evidence",
-        runs: "Execution",
+        execution: "Execution",
         report: "Report",
       },
     },
@@ -140,10 +140,10 @@ const COPY = {
       overview: (findings: number, memory: number, files: number) => `${findings} 项发现 · ${memory} 条 Memory · ${files} 个文件`,
       context: (shown: number, total: number) => `Context ${shown}/${total} 条记录`,
     },
-    run: {
+    execution: {
       eyebrow: "Execution",
       title: "Agent 执行",
-      description: "Agent 在完成当前任务时产生的命令、Tools 与分析 Runs。",
+      description: "Agent 在完成当前任务时产生的命令、Tools 与分析操作。",
       empty: "这个任务还没有独立执行记录。",
     },
     report: {
