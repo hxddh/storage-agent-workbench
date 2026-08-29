@@ -22,6 +22,7 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
+          import re
 
           root = Path("frontend")
           replacements = [
@@ -37,6 +38,9 @@ jobs:
               ('nextTurnIndex', 'nextTaskStepIndex'),
               ('findInThread', 'findInTask'),
               ('FindableItem', 'TaskFindableItem'),
+              ('./ThreadCardsImplementation', './TaskContentImplementation'),
+              ('./ThreadCards', './TaskContent'),
+              ('ThreadCardsImplementation', 'TaskContentImplementation'),
           ]
           paths = list((root / "src").rglob("*.ts")) + list((root / "src").rglob("*.tsx")) + list((root / "e2e").rglob("*.ts"))
           for path in paths:
@@ -66,22 +70,24 @@ jobs:
           text = text.replace("the thread renders", "the task renders")
           task_find.write_text(text)
 
-          legacy_navigation = root / "src/lib/threadNavigation.ts"
-          assert legacy_navigation.exists()
-          assert (root / "src/lib/taskNavigation.ts").exists()
-          legacy_navigation.unlink()
-
-          legacy_viewport = root / "src/hooks/useThreadViewport.ts"
-          assert legacy_viewport.exists()
-          assert (root / "src/hooks/useTaskViewport.ts").exists()
-          legacy_viewport.unlink()
+          for legacy, replacement in [
+              (root / "src/lib/threadNavigation.ts", root / "src/lib/taskNavigation.ts"),
+              (root / "src/hooks/useThreadViewport.ts", root / "src/hooks/useTaskViewport.ts"),
+              (root / "src/components/ThreadCards.tsx", root / "src/components/TaskContent.tsx"),
+              (root / "src/components/ThreadCardsImplementation.tsx", root / "src/components/TaskContentImplementation.tsx"),
+          ]:
+              assert legacy.exists(), f"missing legacy source {legacy}"
+              assert replacement.exists(), f"missing Agent-native replacement {replacement}"
+              legacy.unlink()
 
           checks = "\n".join(path.read_text() for path in (root / "src").rglob("*.ts*"))
-          for forbidden in ["useThreadViewport", "threadFind", "threadNavigation", "TurnDirection", "stepTurnIndex", "nextTurnIndex", "findInThread", "FindableItem"]:
-              assert forbidden not in checks, f"legacy primitive remains: {forbidden}"
+          forbidden_words = ["useThreadViewport", "threadFind", "threadNavigation", "TurnDirection", "stepTurnIndex", "nextTurnIndex", "findInThread", "FindableItem", "ThreadCardsImplementation"]
+          for forbidden in forbidden_words:
+              assert re.search(rf"\b{re.escape(forbidden)}\b", checks) is None, f"legacy primitive remains: {forbidden}"
           assert "useTaskViewport" in checks
           assert "taskFind" in checks
           assert "taskNavigation" in checks
+          assert "TaskContentImplementation" in checks
 
       - name: Commit task-native primitives
         run: |
