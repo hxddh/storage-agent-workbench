@@ -10,11 +10,10 @@ import "./answer-document.css";
 import "./workspace-overhaul.css";
 import "./run-workspace.css";
 import "./workbench/workbench.css";
-import "./workbench/steering.css";
+import "./workbench/agent-runtime.css";
 import "./workbench/answer-artifact.css";
 import "./workbench/workbench-accessibility.css";
 
-// Apply the saved theme before first paint to avoid a flash.
 applyTheme(initialTheme());
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

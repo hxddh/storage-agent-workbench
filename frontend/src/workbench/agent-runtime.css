@@ -1,0 +1,122 @@
+/* Agent runtime affordances that sit above the mature turn renderer. */
+.agent-execution-strip {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--edge) 70%, transparent);
+  background: color-mix(in srgb, var(--warn-bg) 28%, var(--canvas));
+  color: var(--gray-500);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.agent-execution-pulse {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--warn);
+  animation: agent-runtime-pulse 1.5s ease-in-out infinite;
+}
+
+.agent-execution-strip strong {
+  flex: none;
+  color: var(--gray-200);
+  font-weight: 600;
+}
+
+.agent-execution-current {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--gray-400);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  text-overflow: ellipsis;
+}
+
+.agent-execution-count {
+  flex: none;
+  border-left: 1px solid var(--edge);
+  padding-left: 8px;
+  color: var(--gray-500);
+}
+
+.agent-execution-steer-hint {
+  margin-left: auto;
+  flex: none;
+  color: var(--gray-500);
+}
+
+.agent-task-thread {
+  position: relative;
+}
+
+.agent-task-start-heading {
+  position: absolute;
+  z-index: 1;
+  top: 48px;
+  left: 50%;
+  width: min(44rem, calc(100% - 48px));
+  transform: translateX(-50%);
+  pointer-events: none;
+  text-align: left;
+}
+
+.agent-task-start-heading > span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--gray-500);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.agent-task-start-heading h1 {
+  margin: 0;
+  color: var(--gray-100);
+  font-size: 23px;
+  font-weight: 590;
+  letter-spacing: -.025em;
+  line-height: 1.25;
+}
+
+.agent-task-start-heading p {
+  max-width: 38rem;
+  margin: 8px 0 0;
+  color: var(--gray-500);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* Thread still owns the proven empty-task composer and task templates. The
+ * v0.92 greeting is suppressed because task identity now belongs to the Agent
+ * shell; this can disappear entirely when ThreadImplementation is decomposed. */
+.agent-task-thread[data-empty="true"] main > div.flex.flex-1.items-start {
+  padding-top: 11rem;
+}
+
+.agent-task-thread[data-empty="true"] main > div.flex.flex-1.items-start > div > div.mb-7 {
+  display: none;
+}
+
+.agent-native-composer[data-agent-state="working"] {
+  border-color: color-mix(in srgb, var(--warn) 32%, var(--edge));
+  background: color-mix(in srgb, var(--panel) 96%, var(--warn-bg));
+}
+
+@keyframes agent-runtime-pulse {
+  0%, 100% { opacity: .45; transform: scale(.82); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 860px) {
+  .agent-execution-steer-hint { display: none; }
+  .agent-task-start-heading { top: 34px; }
+  .agent-task-thread[data-empty="true"] main > div.flex.flex-1.items-start { padding-top: 9.5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-execution-pulse { animation: none; }
+}

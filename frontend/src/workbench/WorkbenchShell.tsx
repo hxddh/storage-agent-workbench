@@ -64,6 +64,7 @@ export function WorkbenchShell({
   const title = session?.title?.trim() || copy.task.newTask;
   const scope = session?.primary_bucket?.trim() || session?.goal?.trim() || copy.task.noScope;
   const outputCount = (session?.finding_count ?? 0) + (session?.run_count ?? 0);
+  const latestTool = run.streamTools.length ? run.streamTools[run.streamTools.length - 1] : null;
   const state = run.uploading
     ? { label: copy.states.uploading, tone: "uploading" }
     : run.busy
@@ -73,6 +74,11 @@ export function WorkbenchShell({
         : sessionId
           ? { label: copy.states.ready, tone: "ready" }
           : { label: copy.states.delegate, tone: "idle" };
+  const liveExecution = latestTool
+    ? `${latestTool.tool}${latestTool.target ? ` · ${latestTool.target}` : ""}`
+    : run.pending?.trim()
+      ? copy.task.startingExecution
+      : copy.task.startingExecution;
 
   return (
     <div data-testid="workbench-shell" data-review={review ?? "closed"} data-focus={focus ? "true" : "false"} className="agent-native-shell">
@@ -107,13 +113,42 @@ export function WorkbenchShell({
             ) : null}
             <ConnectionMark status={sidecarStatus} />
             <button type="button" className="agent-native-command" onClick={onOpenPalette} title={copy.commandPalette}><span>{copy.command}</span><kbd>⌘K</kbd></button>
-            <button type="button" className="agent-native-icon" onClick={onOpenSettings} aria-label={copy.settings} title={copy.settings}>⚙</button>
-            <button type="button" className="agent-native-icon" onClick={() => setFocus((value) => !value)} aria-label={focus ? copy.exitFocus : copy.focus} title={focus ? copy.exitFocus : copy.focus}>{focus ? "↙" : "↗"}</button>
+            <button type="button" className="agent-native-icon" onClick={onOpenSettings} aria-label={copy.settings} title={copy.settings}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21h-4v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H3v-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3h4a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9A1.7 1.7 0 0 0 21 10h.1v4H21a1.7 1.7 0 0 0-1.6 1Z" />
+              </svg>
+            </button>
+            <button type="button" className="agent-native-icon" onClick={() => setFocus((value) => !value)} aria-label={focus ? copy.exitFocus : copy.focus} title={focus ? copy.exitFocus : copy.focus}>
+              {focus ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="10" y1="14" x2="3" y2="21" /><line x1="14" y1="10" x2="21" y2="3" /></svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></svg>
+              )}
+            </button>
           </div>
         </header>
 
+        {run.busy || run.uploading ? (
+          <div className="agent-execution-strip" data-testid="agent-live-status">
+            <span className="agent-execution-pulse" aria-hidden />
+            <strong>{run.uploading ? copy.states.uploading : copy.states.working}</strong>
+            <span className="agent-execution-current" title={liveExecution}>{liveExecution}</span>
+            {run.streamTools.length ? <span className="agent-execution-count">{copy.task.toolsRun(run.streamTools.length)}</span> : null}
+            <span className="agent-execution-steer-hint">{copy.task.steerHint}</span>
+          </div>
+        ) : null}
+
         <div className="agent-task-workspace">
-          <section className="agent-task-thread" aria-label={copy.task.workspace}>{timeline}</section>
+          <section className="agent-task-thread" data-empty={sessionId ? "false" : "true"} aria-label={copy.task.workspace}>
+            {!sessionId ? (
+              <div className="agent-task-start-heading" aria-hidden="true">
+                <span>{copy.task.readyEyebrow}</span>
+                <h1>{copy.task.startTitle}</h1>
+                <p>{copy.task.startDescription}</p>
+              </div>
+            ) : null}
+            {timeline}
+          </section>
           {review && sessionId ? (
             <AgentReviewPanel
               view={review}
