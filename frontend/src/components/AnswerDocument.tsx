@@ -1,7 +1,7 @@
 import { memo, useMemo, useState, type ComponentProps } from "react";
 import { useI18n } from "../i18n";
 import { isMostlyError, parseS3Error } from "../lib/s3error";
-import { openWorkbenchRun, openWorkbenchSurface } from "../workbench/commands";
+import { openAgentExecution, openAgentReview } from "../workbench/commands";
 import { MessageCard as ProvenTurnRenderer } from "./ThreadCardsImplementation";
 
 type ProvenTurnRendererProps = ComponentProps<typeof ProvenTurnRenderer>;
@@ -179,11 +179,11 @@ export const AnswerDocument = memo(function AnswerDocument({
           aria-label={lang === "zh" ? "工作产物" : "Work artifacts"}
           data-testid="answer-references"
         >
-          <span className="answer-document-reference-label">{lang === "zh" ? "Artifacts" : "Artifacts"}</span>
+          <span className="answer-document-reference-label">Artifacts</span>
           {evidenceCount > 0 ? (
             <button
               type="button"
-              onClick={() => openWorkbenchSurface("evidence")}
+              onClick={() => openAgentReview("evidence")}
               data-testid="answer-open-evidence"
             >
               Evidence <span>{evidenceCount}</span>
@@ -193,8 +193,8 @@ export const AnswerDocument = memo(function AnswerDocument({
             <button
               type="button"
               onClick={() => {
-                if (runCount === 1) openWorkbenchRun(referencedRunIds[0]);
-                else openWorkbenchSurface("runs");
+                if (runCount === 1) openAgentExecution(referencedRunIds[0]);
+                else openAgentReview("runs");
               }}
               data-testid="answer-open-runs"
             >
