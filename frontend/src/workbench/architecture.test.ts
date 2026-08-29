@@ -107,6 +107,42 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(content).not.toContain("chat bubble");
   });
 
+  it("promotes completed tool work to Execution Summary with no turn-footer compatibility layer", () => {
+    expect(existsSync(new URL("../components/TurnFooter.tsx", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("../../e2e/turnfooter.spec.ts", import.meta.url))).toBe(false);
+    const execution = source("../components/ExecutionSummary.tsx");
+    const task = source("../components/AgentTaskImplementation.tsx");
+    const e2e = source("../../e2e/execution-summary.spec.ts");
+    expect(execution).toContain("export function ExecutionSummary");
+    expect(execution).toContain('data-testid="execution-summary"');
+    expect(execution).toContain('data-testid="execution-step-open"');
+    expect(task).toContain('from "./ExecutionSummary"');
+    expect(task).toContain("<ExecutionSummary");
+    expect(task).not.toContain("TurnFooter");
+    expect(e2e).toContain('test.describe("Execution Summary"');
+  });
+
+  it("uses task/execution DOM contracts rather than chat-era thread/timeline contracts", () => {
+    const task = source("../components/AgentTaskImplementation.tsx");
+    const boundary = source("../components/AgentTask.tsx");
+    expect(task).toContain('data-testid="task-scroll"');
+    expect(task).toContain("task-item-");
+    expect(task).toContain('data-direction=');
+    expect(task).toContain('data-testid="execution-link"');
+    expect(task).toContain('data-testid="remote-execution"');
+    expect(task).toContain('data-testid="task-status"');
+    expect(task).not.toContain('data-testid="thread-scroll"');
+    expect(task).not.toContain("thread-item-");
+    expect(task).not.toContain('data-question=');
+    expect(task).not.toContain('data-testid="timeline-run-link"');
+    expect(task).not.toContain('data-testid="remote-turn"');
+    expect(task).not.toContain('data-testid="turn-status"');
+    expect(boundary).toContain("[data-testid='task-scroll']");
+    expect(boundary).toContain("[data-direction]");
+    expect(boundary).not.toContain("[data-testid='thread-scroll']");
+    expect(boundary).not.toContain("[data-question]");
+  });
+
   it("uses AgentTask as the only public task boundary", () => {
     expect(existsSync(new URL("../components/Thread.tsx", import.meta.url))).toBe(false);
     expect(existsSync(new URL("../components/ThreadImplementation.tsx", import.meta.url))).toBe(false);
