@@ -26,18 +26,30 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(existsSync(new URL("../components/SessionInspectorImplementation.tsx", import.meta.url))).toBe(false);
   });
 
-  it("does not expose Evidence, Execution or Report as application-level tabs", () => {
+  it("keeps the Agent task as the primary work area", () => {
     const shell = source("./WorkbenchShell.tsx");
     expect(shell).not.toContain("<SurfaceTabs");
     expect(shell).not.toContain('role="tabpanel"');
+    expect(shell).not.toContain("timeline: ReactNode");
+    expect(shell).toContain("taskContent: ReactNode");
     expect(shell).toContain("<AgentReviewPanel");
-    expect(shell).toContain("agent-task-thread");
+    expect(shell).toContain("agent-task-content");
   });
 
-  it("routes the stable navigation boundary to Agent tasks, not investigations", () => {
-    const boundary = source("../components/SessionRail.tsx");
-    expect(boundary).toContain("AgentTaskNavigation");
-    expect(boundary).not.toContain("InvestigationNavigation");
+  it("makes AgentTaskNavigation the application boundary with no SessionRail adapter", () => {
+    expect(existsSync(new URL("../components/SessionRail.tsx", import.meta.url))).toBe(false);
+    const app = source("../App.tsx");
+    expect(app).toContain('import { AgentTaskNavigation } from "./workbench/AgentTaskNavigation"');
+    expect(app).toContain("<AgentTaskNavigation");
+    expect(app).not.toContain("SessionRail");
+  });
+
+  it("renders task history as Direction and Work Result primitives", () => {
+    const content = source("../components/AnswerDocument.tsx");
+    expect(content).toContain('data-testid="direction-event"');
+    expect(content).toContain('data-work-result="true"');
+    expect(content).toContain("Work Result");
+    expect(content).not.toContain("chat bubble");
   });
 
   it("keeps persisted session and viewport ownership out of the task renderer", () => {
@@ -59,7 +71,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(implementation).not.toContain("stepTurn");
   });
 
-  it("does not embed RunDetail in conversation content", () => {
+  it("does not embed RunDetail in task content", () => {
     const cards = source("../components/ThreadCardsImplementation.tsx");
     expect(cards).not.toContain('import { RunDetail } from "./RunDetail"');
     expect(cards).not.toContain("export function RunCard");
