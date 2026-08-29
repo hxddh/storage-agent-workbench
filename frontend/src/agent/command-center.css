@@ -1,0 +1,57 @@
+/* Agent command-center priority layer.
+ *
+ * Live and blocking task state must dominate navigation. Resting tasks are
+ * history/context, not a wall of green ticket statuses. This layer deliberately
+ * keeps the visual hierarchy tied to real runtime state from sessionRuns.
+ */
+
+.agent-task-live-state[data-state="decision"] i,
+.agent-task-row[data-state="decision"] .agent-task-state-mark {
+  background: var(--warn);
+}
+
+.agent-task-live-state[data-state="decision"] {
+  color: var(--warn-fg);
+}
+
+.agent-task-row[data-state="decision"] {
+  background: color-mix(in srgb, var(--warn-bg) 45%, transparent);
+}
+
+.agent-task-row[data-state="decision"] .agent-task-row-state > :first-child {
+  color: var(--warn-fg);
+  font-weight: 620;
+}
+
+[data-testid="task-queue-needs-you"] > .agent-task-section-label {
+  color: var(--warn-fg);
+}
+
+[data-testid="task-queue-running"] > .agent-task-section-label {
+  color: var(--gray-300);
+}
+
+/* A resting task does not need to announce Ready on every row. The task scope
+ * is the useful secondary line; live/blocked states reintroduce a status label
+ * when there is something the operator should actually notice. */
+.agent-task-row[data-state="ready"] .agent-task-row-state > :first-child,
+.agent-task-row[data-state="ready"] .agent-task-row-state > :nth-child(2) {
+  display: none;
+}
+
+.agent-task-row[data-state="ready"] .agent-task-state-mark {
+  background: var(--gray-500);
+  opacity: .32;
+}
+
+.agent-task-row[data-state="working"],
+.agent-task-row[data-state="uploading"] {
+  background: color-mix(in srgb, var(--warn-bg) 22%, transparent);
+}
+
+.agent-task-row[data-state="working"] .agent-task-row-title strong,
+.agent-task-row[data-state="uploading"] .agent-task-row-title strong,
+.agent-task-row[data-state="decision"] .agent-task-row-title strong,
+.agent-task-row[data-state="attention"] .agent-task-row-title strong {
+  color: var(--gray-100);
+}
