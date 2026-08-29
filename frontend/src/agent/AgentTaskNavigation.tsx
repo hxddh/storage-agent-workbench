@@ -7,6 +7,7 @@ import type { SessionSummaryRow } from "../types";
 import { BrandMark } from "../components/ui";
 import { useNavigationCopy } from "./navigationCopy";
 import { DEFAULT_TASK_NAV_WIDTH, clampTaskNavigationWidth, type SessionActions } from "./navigationModel";
+import { agentTaskState } from "./taskState";
 
 const STATUS_DOT: Record<SidecarStatus, string> = {
   starting: "bg-warn",
@@ -67,13 +68,16 @@ function TaskRow({ session, activeId, menuId, renamingId, confirmId, onSelect, s
     requestAnimationFrame(() => { renameRef.current?.focus(); renameRef.current?.select(); });
   }, [renaming, session.title]);
 
-  const state = run.uploading
-    ? { label: copy.uploading, tone: "uploading" }
-    : run.busy
-      ? { label: copy.working, tone: "working" }
-      : run.error || run.needKey
-        ? { label: copy.needsAttention, tone: "attention" }
-        : { label: copy.ready, tone: "ready" };
+  const stateKey = agentTaskState(run, true);
+  const stateLabel = stateKey === "working"
+    ? copy.working
+    : stateKey === "uploading"
+      ? copy.uploading
+      : stateKey === "decision"
+        ? copy.needsDecision
+        : stateKey === "attention"
+          ? copy.needsAttention
+          : copy.ready;
   const scope = session.primary_bucket?.trim() || session.goal?.trim() || copy.scopeFallback;
   const outputs = [session.finding_count > 0 ? copy.findings(session.finding_count) : null, session.run_count > 0 ? copy.executions(session.run_count) : null].filter(Boolean).join(" · ");
   const act = (fn: () => void) => (event: MouseEvent<HTMLButtonElement>) => { event.stopPropagation(); setMenuId(null); fn(); };
@@ -87,14 +91,14 @@ function TaskRow({ session, activeId, menuId, renamingId, confirmId, onSelect, s
   }
 
   return (
-    <div className="agent-task-row group" data-testid="task-row" data-selected={selected ? "true" : "false"} data-state={state.tone} onClick={() => onSelect(session.id)} title={`${session.title || t("common.untitled")} — ${relTime(session.updated_at, t)}`}>
+    <div className="agent-task-row group" data-testid="task-row" data-selected={selected ? "true" : "false"} data-state={stateKey} onClick={() => onSelect(session.id)} title={`${session.title || t("common.untitled")} — ${relTime(session.updated_at, t)}`}>
       <span className="agent-task-state-mark" aria-hidden />
       <div className="agent-task-row-content">
         <div className="agent-task-row-title">
           <strong>{session.title || t("common.untitled")}</strong>
           {session.pinned ? <svg className="agent-task-pin" width="8" height="8" viewBox="0 0 8 8" fill="currentColor" aria-label={copy.pinned}><circle cx="4" cy="4" r="2.5" /></svg> : null}
         </div>
-        <div className="agent-task-row-state"><span>{state.label}</span><span aria-hidden>·</span><span className="truncate" title={scope}>{scope}</span></div>
+        <div className="agent-task-row-state"><span>{stateLabel}</span><span aria-hidden>·</span><span className="truncate" title={scope}>{scope}</span></div>
         {outputs ? <div className="agent-task-row-output">{outputs}</div> : null}
       </div>
       <button type="button" aria-label={t("menu.more")} onClick={(event) => { event.stopPropagation(); setConfirmId(null); setMenuId(menuOpen ? null : session.id); }} className="agent-task-more"><MoreIcon /></button>
