@@ -69,12 +69,12 @@ test.describe("Agent-native task shell", () => {
 
       await page.getByRole("button", { name: "Focus task" }).click();
       await expect(page.getByTestId("workbench-shell")).toHaveAttribute("data-focus", "true");
-      await expect(page.getByTestId("session-rail")).not.toBeVisible();
+      await expect(page.getByTestId("agent-task-navigation")).not.toBeVisible();
       await expect(page.getByTestId("thread-scroll")).toBeVisible();
       await expect(page.getByTestId("evidence-review")).toBeVisible();
 
       await page.getByRole("button", { name: "Exit focus mode" }).click();
-      await expect(page.getByTestId("session-rail")).toBeVisible();
+      await expect(page.getByTestId("agent-task-navigation")).toBeVisible();
     } finally {
       await cleanup();
     }
