@@ -26,7 +26,7 @@ import { AgentTaskResult } from "./AgentTaskResult";
 import { AgentNextAction } from "./AgentDecisionCard";
 import { GroundingCard, ThinkingBubble, TriageCard } from "./AgentRuntimeArtifacts";
 import { ExecutionSummary } from "./ExecutionSummary";
-import { fmtDuration } from "./TurnMetrics";
+import { fmtDuration } from "./ExecutionMetrics";
 import { useI18n } from "../i18n";
 import { matches } from "../shortcuts";
 import { clearFind, findRanges, paintFind } from "../lib/findHighlight";
@@ -630,7 +630,7 @@ export function AgentTaskImplementation({
                           toolActivity={item.toolActivity}
                           onEdit={item.role === "user" && !busy ? seedComposer : undefined}
                           onBranch={item.role === "user" && !busy && sessionId ? () => void branchFrom(item.id) : undefined}
-                          onRegenerate={item.role === "assistant" && !busy && directionBefore(index) ? () => seedComposer(directionBefore(index) as string) : undefined}
+                          onRerun={item.role === "assistant" && !busy && directionBefore(index) ? () => seedComposer(directionBefore(index) as string) : undefined}
                           referencedRunIds={item.referencedRunIds}
                           referencedEvidenceIds={item.referencedEvidenceIds}
                         />

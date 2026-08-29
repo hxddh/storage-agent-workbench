@@ -13,7 +13,7 @@
  * sessions.
  */
 import { useCallback, useSyncExternalStore } from "react";
-import type { Grounding, NextAction, ToolActivity, TurnMetrics } from "./types";
+import type { Grounding, NextAction, ToolActivity, ExecutionMetrics } from "./types";
 
 export type SessionRun = {
   busy: boolean;
@@ -26,7 +26,7 @@ export type SessionRun = {
   // What the just-finished turn cost, straight off the SSE `done` event, keyed
   // by the message it belongs to. Lets the footer appear the moment the answer
   // lands instead of waiting for the post-turn reload to persist it.
-  lastMetrics: { messageId: string | null; metrics: TurnMetrics } | null;
+  lastMetrics: { messageId: string | null; metrics: ExecutionMetrics } | null;
   needKey: boolean;
   error: string | null;
   stopped: boolean; // the user cancelled the turn; keep the partial text visible

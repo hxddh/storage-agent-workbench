@@ -81,7 +81,7 @@ test.describe("the session report", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, QUESTION);
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
 
       await openReport(page);
       const md = await reportText(page);
@@ -96,7 +96,7 @@ test.describe("the session report", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, QUESTION);
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
 
       await openReport(page);
       const md = await reportText(page);
@@ -110,7 +110,7 @@ test.describe("the session report", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, QUESTION);
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
 
       await openReport(page);
       const md = await reportText(page);
@@ -126,7 +126,7 @@ test.describe("the session report", () => {
     const { model, cleanup } = await oneTurn(page);
     try {
       await ask(page, QUESTION);
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
 
       const sent = JSON.stringify(model.requests);
       expect(sent).not.toContain(SIGNATURE);
@@ -140,7 +140,7 @@ test.describe("the session report", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, QUESTION);
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
 
       await openReport(page);
       const md = await reportText(page);
@@ -156,7 +156,7 @@ test.describe("the session report", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, QUESTION);
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
       await openReport(page);
       await reportText(page);
 

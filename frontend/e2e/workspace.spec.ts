@@ -33,7 +33,7 @@ async function setup(page: Page, opts: { deltaDelayMs?: number } = {}) {
 async function completeTurn(page: Page) {
   await composer(page).fill("Review the IAM-policy diagnostic method and keep the evidence available for inspection.");
   await composer(page).press("Enter");
-  await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 20_000 });
 }
 
 test.describe("Agent-native task shell", () => {
@@ -87,7 +87,7 @@ test.describe("Agent-native task shell", () => {
       await expect(control).toHaveAttribute("data-agent-state", "ready");
       await expect(control.getByText("Delegate", { exact: true })).toBeVisible();
       await expect(control.getByText("fake-model", { exact: true })).toHaveCount(0);
-      await expect(page.getByTestId("answer-document").first()).toBeVisible();
+      await expect(page.getByTestId("work-result").first()).toBeVisible();
     } finally {
       await cleanup();
     }

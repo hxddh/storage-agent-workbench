@@ -22,7 +22,7 @@ const SEVERITY_KEY: Record<string, string> = {
   "access denied": "metric.accessDenied",
 };
 
-export function RunDetail({
+export function ExecutionDetailImplementation({
   runId,
   onBack,
 }: {

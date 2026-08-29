@@ -10,7 +10,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
-import { TurnMetricsBar, fmtDuration, fmtTokens } from "./TurnMetrics";
+import { TurnMetricsBar, fmtDuration, fmtTokens } from "./ExecutionMetrics";
 import type { ToolActivity } from "../types";
 
 const draw = (props: Parameters<typeof TurnMetricsBar>[0]) =>

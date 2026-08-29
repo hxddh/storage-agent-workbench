@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { getSessionActivity, getSessionAudit, getSessionOverview } from "../api";
 import type { SessionActivityItem, SessionAuditItem, SessionOverview } from "../types";
 import { useI18n } from "../i18n";
-import { fmtDuration, fmtTokens } from "../components/TurnMetrics";
+import { fmtDuration, fmtTokens } from "../components/ExecutionMetrics";
 
 type Entry =
   | { kind: "tool"; at: string; id: string; data: SessionActivityItem }

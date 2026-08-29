@@ -96,7 +96,7 @@ test.describe("branching an Agent task from a Direction", () => {
     const direction = task(page).getByText(`QUESTION-${TASK_CYCLES - 1} `).last();
     await direction.scrollIntoViewIfNeeded();
     await direction.hover();
-    await page.getByTestId("branch-message").last().click();
+    await page.getByTestId("branch-task").last().click();
 
     await expect
       .poll(async () => ((await navigation(page).textContent()) ?? "").length, { timeout: 15_000 })

@@ -92,7 +92,7 @@ test.describe("a real agent turn", () => {
       // The footer hangs off the PERSISTED message, so its presence is the proof
       // that the post-turn reload actually landed. This is the exact affordance
       // that disappeared in the released build.
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 30_000 });
       // No click: the newest turn shows what it ran without being asked. The
       // live trace is removed the moment the answer arrives, so if what replaced
       // it were also folded, the one turn you just watched work would hide that
@@ -107,12 +107,12 @@ test.describe("a real agent turn", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, "why does acme-logs return 403?");
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
 
       const q = thread(page).getByText("why does acme-logs return 403?").last();
       await q.hover();
-      await expect(page.getByTestId("edit-message").last()).toBeVisible();
-      await expect(page.getByTestId("branch-message").last()).toBeVisible();
+      await expect(page.getByTestId("redirect-direction").last()).toBeVisible();
+      await expect(page.getByTestId("branch-task").last()).toBeVisible();
     } finally {
       await cleanup();
     }
@@ -122,7 +122,7 @@ test.describe("a real agent turn", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, "why does acme-logs return 403?");
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
       await expect(thread(page).getByText(/Review the bucket's security posture/)).toBeVisible();
     } finally {
       await cleanup();
@@ -134,7 +134,7 @@ test.describe("a real agent turn", () => {
     try {
       await ask(page, "first question about acme-logs");
       await expect(thread(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 30_000 });
 
       await ask(page, "second question about acme-logs");
       await expect(thread(page).getByText(/BucketOwnerEnforced/)).toBeVisible({ timeout: 60_000 });
@@ -154,7 +154,7 @@ test.describe("a real agent turn", () => {
     const { cleanup } = await twoTurns(page);
     try {
       await ask(page, "first question about acme-logs");
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
       await ask(page, "second question about acme-logs");
       await expect(thread(page).getByText(/BucketOwnerEnforced/)).toBeVisible({ timeout: 60_000 });
 

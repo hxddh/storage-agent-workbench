@@ -179,7 +179,7 @@ for (const theme of THEMES) {
       await open(page, theme);
       await page.getByText(title).first().click();
       await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
-      await page.getByTestId("turn-footer-toggle").last().click();
+      await page.getByTestId("execution-summary-toggle").last().click();
       await page.waitForTimeout(500);
       await shoot(page, "11-trace", theme);
     });

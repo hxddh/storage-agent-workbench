@@ -9,7 +9,7 @@ export type AgentResultRendererProps = {
   toolActivity?: ToolActivity[];
   streaming?: boolean;
   sessionId?: string | null;
-  onRegenerate?: () => void;
+  onRerun?: () => void;
 };
 
 function stripMetaBlock(text: string): string {
@@ -82,7 +82,7 @@ export const AgentResultRenderer = memo(function AgentResultRenderer({
   toolActivity,
   streaming,
   sessionId,
-  onRegenerate,
+  onRerun,
 }: AgentResultRendererProps) {
   const { lang, t } = useI18n();
   const shown = streaming ? stripMetaBlock(content || "") : content || "";
@@ -94,13 +94,13 @@ export const AgentResultRenderer = memo(function AgentResultRenderer({
         {!streaming ? (
           <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             <CopyResult text={content || ""} />
-            {onRegenerate ? (
+            {onRerun ? (
               <button
                 type="button"
-                onClick={onRegenerate}
+                onClick={onRerun}
                 title={repeat}
                 aria-label={repeat}
-                data-testid="regenerate"
+                data-testid="rerun-direction"
                 className="text-gray-500 transition-colors hover:text-gray-200"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

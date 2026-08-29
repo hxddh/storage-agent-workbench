@@ -7,7 +7,7 @@ import {
   useActivityDensity,
   type ActivityDensity,
 } from "../lib/activityDensity";
-import { fmtDuration, fmtTokens } from "./TurnMetrics";
+import { fmtDuration, fmtTokens } from "./ExecutionMetrics";
 import { fmtCallMs, isFailed } from "./LiveTrace";
 import { CallDetail } from "./CallDetail";
 import type { Grounding, ToolActivity, TokenUsage } from "../types";

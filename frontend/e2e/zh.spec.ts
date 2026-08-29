@@ -68,8 +68,8 @@ test.describe("the app in Chinese", () => {
       await composerZh(page).click();
       await composerZh(page).fill("为什么 acme-logs 每次 list 都 403？");
       await composerZh(page).press("Enter");
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 60_000 });
-      await page.getByTestId("turn-footer-toggle").click();
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
+      await page.getByTestId("execution-summary-toggle").click();
 
       const thread = await page.locator("main").evaluate((el) => el.textContent ?? "");
       expect(thread).toMatch(/项检查|执行过程|查看详情/);

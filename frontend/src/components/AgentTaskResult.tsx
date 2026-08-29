@@ -13,7 +13,7 @@ export type AgentTaskResultProps = {
   streaming?: boolean;
   sessionId?: string | null;
   onEdit?: (text: string) => void;
-  onRegenerate?: () => void;
+  onRerun?: () => void;
   onBranch?: () => void;
   referencedEvidenceIds?: string[];
   referencedRunIds?: string[];
@@ -180,7 +180,7 @@ export const AgentTaskResult = memo(function AgentTaskResult({
         toolActivity={props.toolActivity}
         streaming={props.streaming}
         sessionId={props.sessionId}
-        onRegenerate={props.onRegenerate}
+        onRerun={props.onRerun}
       />
 
       {showArtifacts ? (
