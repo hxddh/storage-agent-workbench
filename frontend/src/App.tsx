@@ -105,7 +105,17 @@ export default function App() {
     let cancelled = false;
     void Promise.all([listModelProviders(), listCloudProviders()])
       .then(([models, clouds]) => {
-        if (!cancelled && models.length === 0 && clouds.length === 0) setShowWizard(true);
+        // Provider discovery may finish after the user has already dismissed the
+        // first-run surface. Re-check durable onboarding state at resolution time
+        // so a stale async result can never reopen a modal the user just closed.
+        if (
+          !cancelled &&
+          !localStorage.getItem(ONBOARDED_KEY) &&
+          models.length === 0 &&
+          clouds.length === 0
+        ) {
+          setShowWizard(true);
+        }
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
