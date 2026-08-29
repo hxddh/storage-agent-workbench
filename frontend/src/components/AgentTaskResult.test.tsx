@@ -38,17 +38,17 @@ describe("Agent Work Result provenance", () => {
     expect(commands.openReview).toHaveBeenCalledWith("evidence");
   });
 
-  it("opens the exact execution when the result references one auditable run", () => {
+  it("opens the exact execution when the result references one auditable execution", () => {
     renderResult({ referencedRunIds: ["run-7"] });
     fireEvent.click(screen.getByTestId("work-result-open-execution"));
     expect(commands.openExecution).toHaveBeenCalledWith("run-7");
-    expect(commands.openReview).not.toHaveBeenCalledWith("runs");
+    expect(commands.openReview).not.toHaveBeenCalledWith("execution");
   });
 
-  it("opens Execution review when provenance spans several runs", () => {
+  it("opens Execution review when provenance spans several executions", () => {
     renderResult({ referencedRunIds: ["run-7", "run-8"] });
     fireEvent.click(screen.getByTestId("work-result-open-execution"));
-    expect(commands.openReview).toHaveBeenCalledWith("runs");
+    expect(commands.openReview).toHaveBeenCalledWith("execution");
     expect(commands.openExecution).not.toHaveBeenCalled();
   });
 
