@@ -32,7 +32,7 @@ jobs:
               if updated != text:
                   path.write_text(updated, encoding='utf-8')
           PY
-          git rm frontend/src/agent/copy.ts
+          git rm -f frontend/src/agent/copy.ts
           git rm .github/workflows/v093-agent-copy-migration.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
