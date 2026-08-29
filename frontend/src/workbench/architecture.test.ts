@@ -45,6 +45,21 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(app).not.toContain("SessionRail");
   });
 
+  it("uses task-navigation geometry and selectors rather than rail protocols", () => {
+    const navigation = source("./AgentTaskNavigation.tsx");
+    const model = source("./navigationModel.ts");
+    expect(navigation).toContain('data-testid="agent-task-navigation"');
+    expect(navigation).toContain('data-testid="task-navigation-toggle"');
+    expect(navigation).not.toContain('data-testid="session-rail"');
+    expect(navigation).not.toContain('data-testid="rail-');
+    expect(model).toContain("DEFAULT_TASK_NAV_WIDTH");
+    expect(model).toContain("clampTaskNavigationWidth");
+    expect(model).not.toContain("DEFAULT_RAIL_WIDTH");
+    expect(model).not.toContain("clampRailWidth");
+    expect(existsSync(new URL("../../e2e/rail.spec.ts", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("../../e2e/task-navigation.spec.ts", import.meta.url))).toBe(true);
+  });
+
   it("uses review and execution commands rather than v0.92 application surfaces", () => {
     const model = source("./model.ts");
     const commands = source("./commands.ts");
