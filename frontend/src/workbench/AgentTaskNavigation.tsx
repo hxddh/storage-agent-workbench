@@ -6,7 +6,7 @@ import { useSessionRun } from "../sessionRuns";
 import type { SessionSummaryRow } from "../types";
 import { BrandMark } from "../components/ui";
 import { useNavigationCopy } from "./navigationCopy";
-import { DEFAULT_RAIL_WIDTH, clampRailWidth, type SessionActions } from "./navigationModel";
+import { DEFAULT_TASK_NAV_WIDTH, clampTaskNavigationWidth, type SessionActions } from "./navigationModel";
 
 const STATUS_DOT: Record<SidecarStatus, string> = {
   starting: "bg-warn",
@@ -167,7 +167,7 @@ export function AgentTaskNavigation({ sessions, activeId, onSelect, onNew, onOpe
     event.preventDefault();
     const handle = event.currentTarget;
     handle.setPointerCapture(event.pointerId);
-    const move = (next: globalThis.PointerEvent) => onResize(clampRailWidth(next.clientX));
+    const move = (next: globalThis.PointerEvent) => onResize(clampTaskNavigationWidth(next.clientX));
     const stop = () => { handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", stop); handle.removeEventListener("pointercancel", stop); };
     handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", stop);
@@ -178,10 +178,10 @@ export function AgentTaskNavigation({ sessions, activeId, onSelect, onNew, onOpe
 
   if (collapsed) {
     return (
-      <aside data-testid="session-rail" data-navigation="agent-tasks" data-collapsed="true" aria-label={copy.tasks} className="agent-task-nav-collapsed">
-        <button type="button" onClick={onToggleCollapse} title={copy.expand} aria-label={copy.expand} data-testid="rail-toggle" className="agent-task-nav-brand"><BrandMark size={15} /></button>
+      <aside data-testid="agent-task-navigation" data-navigation="agent-tasks" data-collapsed="true" aria-label={copy.tasks} className="agent-task-nav-collapsed">
+        <button type="button" onClick={onToggleCollapse} title={copy.expand} aria-label={copy.expand} data-testid="task-navigation-toggle" className="agent-task-nav-brand"><BrandMark size={15} /></button>
         <button type="button" onClick={onNew} title={copy.newTask} aria-label={copy.newTask} className="agent-task-nav-icon"><PlusIcon /></button>
-        <button type="button" onClick={onOpenPalette} title={copy.searchExisting} aria-label={copy.searchExisting} data-testid="rail-open-palette" className="agent-task-nav-icon"><SearchIcon /></button>
+        <button type="button" onClick={onOpenPalette} title={copy.searchExisting} aria-label={copy.searchExisting} data-testid="task-navigation-palette" className="agent-task-nav-icon"><SearchIcon /></button>
         <div className="mt-auto flex flex-col items-center gap-2">
           <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]} ${status === "starting" ? "animate-pulse" : ""}`} title={status === "starting" && slow ? t("status.slowStart") : status} />
           <button type="button" onClick={onOpenSettings} aria-label={copy.settings} className="agent-task-nav-icon"><SettingsIcon /></button>
@@ -191,14 +191,14 @@ export function AgentTaskNavigation({ sessions, activeId, onSelect, onNew, onOpe
   }
 
   return (
-    <aside data-testid="session-rail" data-navigation="agent-tasks" data-collapsed="false" aria-label={copy.tasks} style={{ width }} className="agent-task-nav">
-      <div onPointerDown={startResize} onDoubleClick={() => onResize(DEFAULT_RAIL_WIDTH)} role="separator" aria-orientation="vertical" aria-label={copy.resize} data-testid="rail-resize" className="agent-task-nav-resize" />
+    <aside data-testid="agent-task-navigation" data-navigation="agent-tasks" data-collapsed="false" aria-label={copy.tasks} style={{ width }} className="agent-task-nav">
+      <div onPointerDown={startResize} onDoubleClick={() => onResize(DEFAULT_TASK_NAV_WIDTH)} role="separator" aria-orientation="vertical" aria-label={copy.resize} data-testid="task-navigation-resize" className="agent-task-nav-resize" />
       {(menuId || confirmId) ? <div className="fixed inset-0 z-sticky" onClick={() => { setMenuId(null); setConfirmId(null); }} /> : null}
 
       <header className="agent-task-nav-header">
         <div className="agent-task-nav-brand"><BrandMark size={15} /></div>
         <div className="min-w-0 flex-1"><strong>Storage Agent</strong><span>{copy.tasks}</span></div>
-        <button type="button" onClick={onToggleCollapse} aria-label={copy.collapse} title={copy.collapse} data-testid="rail-toggle" className="agent-task-nav-collapse"><SidebarIcon /></button>
+        <button type="button" onClick={onToggleCollapse} aria-label={copy.collapse} title={copy.collapse} data-testid="task-navigation-toggle" className="agent-task-nav-collapse"><SidebarIcon /></button>
       </header>
 
       <div className="agent-task-nav-primary">
@@ -217,7 +217,7 @@ export function AgentTaskNavigation({ sessions, activeId, onSelect, onNew, onOpe
       <footer className="agent-task-nav-footer">
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[status]} ${status === "starting" ? "animate-pulse" : ""}`} aria-hidden />
         <span>{status === "starting" && slow ? t("status.slowStart") : status}</span>
-        <button type="button" onClick={onOpenSettings} aria-label={copy.settings} data-testid="rail-settings"><SettingsIcon /></button>
+        <button type="button" onClick={onOpenSettings} aria-label={copy.settings} data-testid="task-navigation-settings"><SettingsIcon /></button>
       </footer>
     </aside>
   );
