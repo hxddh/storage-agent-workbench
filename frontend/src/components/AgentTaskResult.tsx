@@ -192,7 +192,7 @@ export const AgentTaskResult = memo(function AgentTaskResult({
             </button>
           ) : null}
           {executionCount > 0 ? (
-            <button type="button" onClick={() => { if (executionCount === 1) openAgentExecution(referencedRunIds[0]); else openAgentReview("runs"); }} data-testid="work-result-open-execution">
+            <button type="button" onClick={() => { if (executionCount === 1) openAgentExecution(referencedRunIds[0]); else openAgentReview("execution"); }} data-testid="work-result-open-execution">
               Execution <span>{executionCount}</span>
             </button>
           ) : null}
