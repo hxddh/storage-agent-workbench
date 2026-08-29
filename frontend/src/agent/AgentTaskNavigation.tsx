@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from "react";
-import { listSessions } from "../api";
 import { useI18n, type TFunc } from "../i18n";
 import type { SidecarStatus } from "../hooks/useSidecarHealth";
 import { getSessionRun, useSessionRun, useSessionRunIndexVersion } from "../sessionRuns";
@@ -11,6 +10,7 @@ import {
   type AgentTaskSummary,
   type TaskActions,
 } from "./navigationModel";
+import { listAgentTasks } from "./taskApi";
 import { agentTaskState } from "./taskState";
 
 const STATUS_DOT: Record<SidecarStatus, string> = {
@@ -72,7 +72,7 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
     requestAnimationFrame(() => { renameRef.current?.focus(); renameRef.current?.select(); });
   }, [renaming, task.title]);
 
-  const stateKey = agentTaskState(run, true);
+  const stateKey = agentTaskState(run, true, task.requires_decision);
   const stateLabel = stateKey === "working"
     ? copy.working
     : stateKey === "uploading"
@@ -162,14 +162,14 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
   useEffect(() => {
     if (!q) { setResults(null); return; }
     let cancelled = false;
-    const timer = window.setTimeout(() => { void listSessions(q).then((rows) => { if (!cancelled) setResults(rows); }).catch(() => { if (!cancelled) setResults([]); }); }, 200);
+    const timer = window.setTimeout(() => { void listAgentTasks(q).then((rows) => { if (!cancelled) setResults(rows); }).catch(() => { if (!cancelled) setResults([]); }); }, 200);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [q]);
 
   const base = q ? (results ?? []) : tasks;
   const current = base.filter((task) => task.status !== "archived");
   const archived = base.filter((task) => task.status === "archived");
-  const runtimeState = (task: AgentTaskSummary) => agentTaskState(getSessionRun(task.id), true);
+  const runtimeState = (task: AgentTaskSummary) => agentTaskState(getSessionRun(task.id), true, task.requires_decision);
   const needsYou = current.filter((task) => {
     const state = runtimeState(task);
     return state === "decision" || state === "attention";
