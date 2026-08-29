@@ -41,7 +41,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(shell).not.toContain("agent-task-start-heading");
   });
 
-  it("makes AgentTaskNavigation the application boundary, not a session/chat rail", () => {
+  it("makes AgentTaskNavigation the application boundary", () => {
     const app = source("../App.tsx");
     const navigation = source("./AgentTaskNavigation.tsx");
     const model = source("./navigationModel.ts");
@@ -89,11 +89,13 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(review).not.toContain("Workspace");
   });
 
-  it("uses Direction and Work Result as the task-content primitives", () => {
+  it("uses Direction and Work Result directly with no message adapter", () => {
     absent("../components/AnswerDocument.tsx");
     absent("../components/AnswerDocument.test.tsx");
+    absent("../components/TaskContent.tsx");
+    absent("../components/TaskContentImplementation.tsx");
     const result = source("../components/AgentTaskResult.tsx");
-    const boundary = source("../components/TaskContent.tsx");
+    const task = source("../components/AgentTaskImplementation.tsx");
     expect(result).toContain('data-testid="direction-event"');
     expect(result).toContain('data-testid="work-result"');
     expect(result).toContain('data-work-result="true"');
@@ -101,8 +103,23 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(result).toContain("openAgentReview");
     expect(result).toContain("openAgentExecution");
     expect(result).not.toContain("AnswerDocument");
-    expect(boundary).toContain('from "./AgentTaskResult"');
-    expect(boundary).not.toContain("AnswerDocument");
+    expect(task).toContain('import { AgentTaskResult } from "./AgentTaskResult"');
+    expect(task).toContain("<AgentTaskResult");
+    expect(task).not.toContain("MessageCard");
+    expect(task).not.toContain("TaskContent");
+  });
+
+  it("uses Agent Next Action and explicit Decision boundaries", () => {
+    const action = source("../components/AgentDecisionCard.tsx");
+    const task = source("../components/AgentTaskImplementation.tsx");
+    const artifacts = source("../components/AgentRuntimeArtifacts.tsx");
+    expect(action).toContain("export function AgentNextAction");
+    expect(action).toContain('data-testid="agent-decision-required"');
+    expect(task).toContain('import { AgentNextAction } from "./AgentDecisionCard"');
+    expect(task).toContain("<AgentNextAction");
+    expect(task).not.toContain("ProposalCard");
+    expect(artifacts).toContain("<AgentNextAction");
+    expect(artifacts).not.toContain("ProposalCard");
   });
 
   it("promotes completed tool work to Execution Summary with no footer shim", () => {
@@ -118,6 +135,20 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(task).toContain("<ExecutionSummary");
     expect(task).not.toContain("TurnFooter");
     expect(e2e).toContain('test.describe("Execution Summary"');
+  });
+
+  it("uses Execution Steps rather than a timeline renderer", () => {
+    absent("../components/ToolTimeline.tsx");
+    const steps = source("../components/ExecutionSteps.tsx");
+    const detail = source("../components/RunDetailImplementation.tsx");
+    expect(steps).toContain("export interface ExecutionStep");
+    expect(steps).toContain("export function ExecutionSteps");
+    expect(steps).toContain('data-testid="execution-step"');
+    expect(detail).toContain('from "./ExecutionSteps"');
+    expect(detail).toContain("executionSteps");
+    expect(detail).toContain("<ExecutionSteps");
+    expect(detail).not.toContain("ToolTimeline");
+    expect(detail).not.toContain("TimelineItem");
   });
 
   it("uses task/execution DOM contracts rather than thread/timeline contracts", () => {
@@ -190,12 +221,8 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(implementation).not.toContain("stepTurn");
   });
 
-  it("physically removes the generic conversation renderer", () => {
-    absent("../components/TaskContentImplementation.tsx");
-    const boundary = source("../components/TaskContent.tsx");
+  it("uses native Agent result and error artifacts", () => {
     const result = source("../components/AgentTaskResult.tsx");
-    expect(boundary).not.toContain("TaskContentImplementation");
-    expect(boundary).not.toContain("export *");
     expect(result).toContain("AgentResultRenderer");
     expect(result).toContain("S3ErrorArtifact");
     expect(result).not.toContain("ProvenTurnRenderer");
