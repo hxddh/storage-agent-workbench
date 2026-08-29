@@ -17,6 +17,30 @@
   letter-spacing: -0.012em;
 }
 
+/*
+ * One Work Result owns the full task track, but prose does not. Modern Agent
+ * output regularly mixes explanation with tables, code and diagnostic payloads;
+ * squeezing those artifacts into the reading measure makes the UI behave like a
+ * chat transcript. Prose remains a deliberate 46rem reading column while real
+ * data artifacts can use the complete 64rem task track. Both start on the same
+ * left edge so a result still reads as one document.
+ */
+.agent-result-prose {
+  width: 100%;
+  min-width: 0;
+}
+
+.agent-result-prose > :not(.agent-result-wide) {
+  width: min(46rem, 100%);
+  max-width: 46rem;
+}
+
+.agent-result-prose > .agent-result-wide {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .agent-prose nav[data-testid="answer-outline"] {
   margin-block: 0.15rem 0.35rem;
   padding: 0.25rem 0 0.45rem;
