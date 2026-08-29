@@ -11,7 +11,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     absent("./SteeringSurface.tsx");
     absent("./SteeringSurface.test.tsx");
     absent("./steering.css");
-    absent("./workbench-accessibility.css");
+    absent("./agent-accessibility.css");
     absent("../components/SessionRail.tsx");
     absent("../components/SessionInspector.tsx");
     absent("../components/SessionInspectorImplementation.tsx");

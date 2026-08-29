@@ -41,7 +41,7 @@ test.describe("Agent-native task shell", () => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
-      const thread = page.getByTestId("thread-scroll");
+      const thread = page.getByTestId("task-scroll");
       await expect(thread).toBeVisible();
 
       await page.getByRole("button", { name: "Review" }).click();
@@ -53,7 +53,6 @@ test.describe("Agent-native task shell", () => {
       await review.getByRole("button", { name: "Evidence" }).click();
       await expect(page.getByTestId("evidence-review")).toBeVisible();
       await expect(thread).toBeVisible();
-      await expect(page.getByTestId("session-inspector")).toHaveCount(0);
     } finally {
       await cleanup();
     }
@@ -70,7 +69,7 @@ test.describe("Agent-native task shell", () => {
       await page.getByRole("button", { name: "Focus task" }).click();
       await expect(page.getByTestId("agent-shell")).toHaveAttribute("data-focus", "true");
       await expect(page.getByTestId("agent-task-navigation")).not.toBeVisible();
-      await expect(page.getByTestId("thread-scroll")).toBeVisible();
+      await expect(page.getByTestId("task-scroll")).toBeVisible();
       await expect(page.getByTestId("evidence-review")).toBeVisible();
 
       await page.getByRole("button", { name: "Exit focus mode" }).click();
@@ -152,7 +151,7 @@ test.describe("Agent-native task shell", () => {
       const review = page.getByTestId("agent-review-panel");
       await expect(review).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId("report-artifact")).toBeVisible();
-      await expect(page.getByTestId("thread-scroll")).toBeVisible();
+      await expect(page.getByTestId("task-scroll")).toBeVisible();
       await expect(page.getByRole("tab")).toHaveCount(0);
       await expect(page.locator(".fixed.inset-0.z-floating")).toHaveCount(0);
       await expect(page.getByTestId("report-copy")).toBeVisible({ timeout: 20_000 });

@@ -176,14 +176,14 @@ export function EvidenceActivity({ sessionId }: { sessionId: string }) {
     }
   };
 
-  if (loading) return <p className="workbench-empty-line">{copy.loading}</p>;
+  if (loading) return <p className="agent-empty-line">{copy.loading}</p>;
 
   const usage = overview?.usage;
   const tokenValue = usage?.available ? (fmtTokens(usage.total_tokens) ?? "—") : "—";
 
   return (
     <div className="evidence-activity" data-testid="evidence-activity">
-      {error ? <p className="workbench-surface-error evidence-inline-error">{error}</p> : null}
+      {error ? <p className="agent-surface-error evidence-inline-error">{error}</p> : null}
 
       <div className="evidence-metrics" aria-label={copy.metrics}>
         <Metric label={copy.calls} value={String(overview?.tool_calls ?? 0)} detail={overview?.tool_errors ? copy.failed(overview.tool_errors) : undefined} />
@@ -211,7 +211,7 @@ export function EvidenceActivity({ sessionId }: { sessionId: string }) {
 
       <ul className="evidence-activity-list" aria-label={copy.activity}>
         {entries.length ? entries.map((entry) => <ActivityEntry key={entry.id} entry={entry} inputLabel={copy.input} outputLabel={copy.output} />) : (
-          <li className="workbench-empty-line evidence-activity-empty">{copy.empty}</li>
+          <li className="agent-empty-line evidence-activity-empty">{copy.empty}</li>
         )}
       </ul>
 

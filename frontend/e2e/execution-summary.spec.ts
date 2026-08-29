@@ -56,7 +56,6 @@ test.describe("Execution Summary", () => {
     const evidence = page.getByTestId("evidence-review");
     await expect(evidence).toBeVisible();
     await expect(evidence.getByText(/head_bucket/).first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId("session-inspector")).toHaveCount(0);
     await expect(page.getByTestId("agent-composer")).toBeVisible();
   });
 });

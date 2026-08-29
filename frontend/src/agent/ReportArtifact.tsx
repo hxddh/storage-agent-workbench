@@ -52,11 +52,11 @@ export function ReportArtifact({
   };
 
   return (
-    <article className="workbench-document workbench-report" data-testid="report-artifact">
-      <header className="workbench-document-heading">
+    <article className="agent-document agent-report" data-testid="report-artifact">
+      <header className="agent-document-heading">
         <div className="flex items-start justify-between gap-6">
           <div className="min-w-0">
-            <p className="workbench-eyebrow">{copy.report.eyebrow}</p>
+            <p className="agent-eyebrow">{copy.report.eyebrow}</p>
             <h1>{copy.report.title}</h1>
             <p>{copy.report.description}</p>
           </div>
@@ -84,15 +84,15 @@ export function ReportArtifact({
         </div>
       </header>
 
-      {loading ? <p className="workbench-empty-line">{copy.report.preparing}</p> : null}
-      {!loading && error ? <p className="workbench-surface-error">{error}</p> : null}
+      {loading ? <p className="agent-empty-line">{copy.report.preparing}</p> : null}
+      {!loading && error ? <p className="agent-surface-error">{error}</p> : null}
       {!loading && !error && report ? (
-        <div className="workbench-report-body">
+        <div className="agent-report-body">
           <Markdown text={report} />
         </div>
       ) : null}
       {!loading && !error && !report ? (
-        <p className="workbench-empty-line">{copy.report.empty}</p>
+        <p className="agent-empty-line">{copy.report.empty}</p>
       ) : null}
     </article>
   );

@@ -14,7 +14,7 @@ import { expect, test, type Page } from "@playwright/test";
  * asserted is the attach → upload seam, not the agent's analysis of the file.
  */
 
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 const attachButton = (page: Page) => page.getByRole("button", { name: /attach a dataset/i });
 
 async function fresh(page: Page) {

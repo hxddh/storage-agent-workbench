@@ -16,7 +16,7 @@ import { dropModelProvider, startFakeModel, textTurn, useFakeModel } from "./fak
  * tested before rather than why it was skipped.
  */
 
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 const thread = (page: Page) => page.locator("main");
 const stopButton = (page: Page) => page.getByRole("button", { name: /^stop$/i });
 

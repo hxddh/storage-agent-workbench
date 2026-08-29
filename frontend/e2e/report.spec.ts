@@ -11,7 +11,7 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
  * someone else's problem.
  */
 
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 const thread = (page: Page) => page.locator("main");
 
 const SKILL = "storageops-security-iam-policy";

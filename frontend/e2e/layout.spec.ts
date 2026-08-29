@@ -18,7 +18,7 @@ import { seedSession } from "./seed";
  * answer then had to be read by scrolling right, and wide tables were carried
  * off-screen with it — which is what "tables are gone, content is a mess" is.
  *
- * It was masked until v0.73.0: `.thread-item` carried `content-visibility: auto`,
+ * It was masked until v0.73.0: `.task-item` carried `content-visibility: auto`,
  * which implies `contain: paint`, so the overflow was being CLIPPED rather than
  * fixed — the text was silently unreachable instead of visibly misplaced.
  * Removing that (on its own measurements) exposed the defect underneath.
@@ -65,7 +65,7 @@ async function openSeeded(page: Page, sid: string) {
     localStorage.setItem("saw.onboarded", "1");
   });
   await page.goto("/");
-  await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("agent-composer").getByRole("textbox")).toBeVisible({ timeout: 20_000 });
   await page.getByText(new RegExp(`layout ${sid}`)).first().click();
   await expect(page.locator("main table").first()).toBeVisible({ timeout: 20_000 });
   await page.waitForTimeout(600);
@@ -149,7 +149,7 @@ test.describe("an answer full of unbreakable tokens", () => {
  * both 0 and the mask never applies at all. It needs a real browser.
  */
 test.describe("a capped table's fade", () => {
-  const box = (page: Page) => page.locator(".thread-item table").first().locator("xpath=..");
+  const box = (page: Page) => page.locator(".task-item table").first().locator("xpath=..");
 
   test("says 'more below' only while there is more below", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -160,7 +160,7 @@ test.describe("a capped table's fade", () => {
     });
     await page.goto("/");
     await page.getByText(title, { exact: true }).first().click();
-    await expect(page.locator(".thread-item table").first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".task-item table").first()).toBeVisible({ timeout: 20_000 });
 
     const maskAt = async (scrollTop: number | "end") => {
       await box(page).evaluate((el, top) => {
@@ -239,7 +239,7 @@ test.describe("the two widths of an answer", () => {
  * answer is set at. It is not a preference at that size, it is a squeeze.
  */
 test.describe("the rail at a small window", () => {
-  const rail = (page: Page) => page.getByTestId("session-rail");
+  const rail = (page: Page) => page.getByTestId("agent-task-navigation");
 
   test("folds below 1000px and comes back above it", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -278,6 +278,6 @@ test.describe("the rail at a small window", () => {
     await expect(box).toBeVisible();
     await box.fill(title.slice(0, 18));
     await page.getByText(title).first().click();
-    await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".task-item").first()).toBeVisible({ timeout: 20_000 });
   });
 });

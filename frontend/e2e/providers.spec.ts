@@ -20,7 +20,7 @@ async function boot(page: Page) {
     localStorage.setItem("saw.onboarded", "1");
   });
   await page.goto("/");
-  await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
+  await expect(page.getByTestId("agent-composer").getByRole("textbox")).toBeVisible();
 }
 
 async function openCloudProviders(page: Page) {
@@ -81,7 +81,7 @@ test.describe("cloud provider management", () => {
 test.describe("session rail", () => {
   test("a chat can be renamed and the title persists across reload", async ({ page }) => {
     await boot(page);
-    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    const box = page.getByTestId("agent-composer").getByRole("textbox");
     await box.click();
     await box.fill("HTTP 403 Forbidden on GetObject");
     await box.press("Enter");
@@ -117,7 +117,7 @@ test.describe("command palette", () => {
     // `ignoreInFields`.
     await palette.press("Escape");
     await expect(palette).toHaveCount(0);
-    await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
+    await expect(page.getByTestId("agent-composer").getByRole("textbox")).toBeVisible();
   });
 });
 

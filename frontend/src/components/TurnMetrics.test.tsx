@@ -129,7 +129,7 @@ describe("the footer", () => {
       tools: [],
     });
     expect(container.textContent).toContain("≥");
-    expect(screen.getByTitle(/only 1 of this turn's 3 model calls/i)).toBeTruthy();
+    expect(screen.getByTitle(/only 1 of this execution's 3 model calls/i)).toBeTruthy();
   });
 
   it("does NOT mark a floor when every model call reported", () => {

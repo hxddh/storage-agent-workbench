@@ -21,30 +21,30 @@ export function ExecutionReview({
 
   const runs = detail?.runs ?? [];
   return (
-    <article className="workbench-document" data-testid="execution-review">
-      <header className="workbench-document-heading">
-        <p className="workbench-eyebrow">{copy.run.eyebrow}</p>
+    <article className="agent-document" data-testid="execution-review">
+      <header className="agent-document-heading">
+        <p className="agent-eyebrow">{copy.run.eyebrow}</p>
         <h1>{copy.run.title}</h1>
         <p>{copy.run.description}</p>
       </header>
       {runs.length === 0 ? (
-        <p className="workbench-empty-line">{copy.run.empty}</p>
+        <p className="agent-empty-line">{copy.run.empty}</p>
       ) : (
-        <div className="workbench-run-list">
+        <div className="agent-run-list">
           {runs.map((run) => (
             <button
               key={run.run_id}
               type="button"
-              className="workbench-run-row"
+              className="agent-run-row"
               onClick={() => onOpenRun(run.run_id)}
             >
-              <span className="workbench-run-status" data-status={run.status} aria-hidden />
-              <span className="workbench-run-main">
+              <span className="agent-run-status" data-status={run.status} aria-hidden />
+              <span className="agent-run-main">
                 <strong>{run.title || run.run_type}</strong>
                 <small>{run.run_type}{run.origin ? ` · ${run.origin}` : ""}</small>
               </span>
-              <span className="workbench-run-state">{run.status}</span>
-              <span aria-hidden className="workbench-run-arrow">→</span>
+              <span className="agent-run-state">{run.status}</span>
+              <span aria-hidden className="agent-run-arrow">→</span>
             </button>
           ))}
         </div>

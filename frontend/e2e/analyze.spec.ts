@@ -25,7 +25,7 @@ import {
  * chain one tool into the next at all.
  */
 
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 const thread = (page: Page) => page.locator("main");
 
 const INVENTORY_CSV =

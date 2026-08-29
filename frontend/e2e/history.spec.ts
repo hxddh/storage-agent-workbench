@@ -18,7 +18,7 @@ import { seedSession } from "./seed";
  *    the per-message actions.
  */
 
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 /** The conversation itself — never the session rail, which repeats titles. */
 const thread = (page: Page) => page.locator("main");
 

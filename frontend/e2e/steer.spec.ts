@@ -17,7 +17,7 @@ import { dropModelProvider, startFakeModel, textTurn, useFakeModel } from "./fak
  * near-miss worth pinning down.
  */
 
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 const thread = (page: Page) => page.locator("main");
 
 const FIRST = Array.from(

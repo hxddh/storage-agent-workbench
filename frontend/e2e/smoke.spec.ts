@@ -22,7 +22,7 @@ async function seedFreshApp(page: Page, opts: { onboarded?: boolean } = {}) {
   );
 }
 
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 
 test.describe("workbench smoke", () => {
   test("app boots and reaches the sidecar", async ({ page }) => {
@@ -30,7 +30,7 @@ test.describe("workbench smoke", () => {
     await page.goto("/");
 
     await expect(composer(page)).toBeVisible();
-    await expect(page.getByRole("button", { name: /new investigation/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^New task$/i })).toBeVisible();
     await expect(page.getByText(/sidecar (not|un)/i)).toHaveCount(0);
   });
 

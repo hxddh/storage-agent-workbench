@@ -18,7 +18,7 @@ import { dropModelProvider, startFakeModel, textTurn, useFakeModel } from "./fak
  * text after the turn has settled, which is the moment the user described.
  */
 
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 const thread = (page: Page) => page.locator("main");
 
 async function ask(page: Page, turns: string[][], question: string) {

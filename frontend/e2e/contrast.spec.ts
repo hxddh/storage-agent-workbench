@@ -170,10 +170,10 @@ async function boot(page: Page, theme: "dark" | "light", seeded: boolean) {
     theme,
   );
   await page.goto("/");
-  await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("agent-composer").getByRole("textbox")).toBeVisible({ timeout: 30_000 });
   if (seed) {
     await page.getByText(seed.title).first().click();
-    await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator(".task-item").first()).toBeVisible({ timeout: 30_000 });
   }
 }
 

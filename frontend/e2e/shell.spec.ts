@@ -7,7 +7,7 @@ async function seedFreshApp(page: Page) {
   });
 }
 
-const rail = (page: Page) => page.getByTestId("session-rail");
+const rail = (page: Page) => page.getByTestId("agent-task-navigation");
 
 test.describe("investigation navigation shell", () => {
   test("collapses, and stays collapsed across a reload", async ({ page }) => {
@@ -20,7 +20,7 @@ test.describe("investigation navigation shell", () => {
 
     await page.reload();
     await expect(rail(page)).toHaveAttribute("data-collapsed", "true");
-    await expect(page.getByRole("button", { name: /new investigation/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^New task$/i })).toBeVisible();
 
     await page.getByTestId("rail-toggle").click();
     await expect(rail(page)).toHaveAttribute("data-collapsed", "false");
@@ -75,7 +75,7 @@ test.describe("keyboard", () => {
   test("? typed into the composer is a character, not a shortcut", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    const box = page.getByTestId("agent-composer").getByRole("textbox");
     await box.click();
     await box.type("why?");
     await expect(page.getByTestId("shortcuts-sheet")).toHaveCount(0);
@@ -109,7 +109,7 @@ test.describe("thread paging", () => {
   test("a short thread offers no 'load earlier' control", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    const box = page.getByTestId("agent-composer").getByRole("textbox");
     await box.click();
     await box.fill("<Error><Code>AccessDenied</Code></Error>");
     await box.press("Enter");
@@ -185,7 +185,7 @@ test.describe("composer drafts", () => {
   test("an unsent question survives a reload", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    const box = page.getByTestId("agent-composer").getByRole("textbox");
     await box.click();
     await box.fill("why can I not delete this object");
 
@@ -198,7 +198,7 @@ test.describe("turn structure", () => {
   test("a finished answer carries ONE metadata affordance, not three", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    const box = page.getByTestId("agent-composer").getByRole("textbox");
     await box.click();
     await box.fill("<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>");
     await box.press("Enter");
@@ -211,7 +211,7 @@ test.describe("turn structure", () => {
   test("session findings are not rendered at the bottom of the timeline", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    const box = page.getByPlaceholder(/Ask Storage Agent/i);
+    const box = page.getByTestId("agent-composer").getByRole("textbox");
     await box.click();
     await box.fill("<Error><Code>AccessDenied</Code></Error>");
     await box.press("Enter");
@@ -229,7 +229,7 @@ test.describe("Escape with two overlays open", () => {
   test("closes only the topmost one", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("agent-composer").getByRole("textbox")).toBeVisible({ timeout: 30_000 });
 
     await page.getByTestId("rail-settings").click();
     const settings = page.getByRole("dialog").filter({ hasText: /Settings & providers/i });
@@ -256,7 +256,7 @@ test("the settings drawer is never see-through, even mid-animation", async ({ pa
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
-  await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("agent-composer").getByRole("textbox")).toBeVisible({ timeout: 30_000 });
 
   await page.getByTestId("rail-settings").click();
 
