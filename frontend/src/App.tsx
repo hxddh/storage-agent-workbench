@@ -155,10 +155,10 @@ export default function App() {
       if (matches(event, "palette")) {
         event.preventDefault();
         setPaletteOpen((open) => !open);
-      } else if (matches(event, "newChat")) {
+      } else if (matches(event, "newTask")) {
         event.preventDefault();
         setActiveId(null);
-      } else if (matches(event, "toggleRail")) {
+      } else if (matches(event, "toggleTaskNavigation")) {
         event.preventDefault();
         setNavigationCollapsed((collapsed) => {
           localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? "0" : "1");
