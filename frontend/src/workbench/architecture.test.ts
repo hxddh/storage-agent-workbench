@@ -31,6 +31,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(shell).not.toContain("<SurfaceTabs");
     expect(shell).not.toContain('role="tabpanel"');
     expect(shell).not.toContain("timeline: ReactNode");
+    expect(shell).not.toContain("agent-task-start-heading");
     expect(shell).toContain("taskContent: ReactNode");
     expect(shell).toContain("<AgentReviewPanel");
     expect(shell).toContain("agent-task-content");
@@ -42,6 +43,24 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(app).toContain('import { AgentTaskNavigation } from "./workbench/AgentTaskNavigation"');
     expect(app).toContain("<AgentTaskNavigation");
     expect(app).not.toContain("SessionRail");
+  });
+
+  it("uses review and execution commands rather than v0.92 application surfaces", () => {
+    const model = source("./model.ts");
+    const commands = source("./commands.ts");
+    const shell = source("./WorkbenchShell.tsx");
+    const result = source("../components/AnswerDocument.tsx");
+    expect(model).not.toContain("WorkSurface");
+    expect(model).not.toContain("initialWorkbenchState");
+    expect(model).not.toContain("workbenchReducer");
+    expect(commands).toContain("openAgentReview");
+    expect(commands).toContain("openAgentExecution");
+    expect(shell).toContain("publishAgentCommands");
+    expect(shell).not.toContain("openWorkbench");
+    expect(result).toContain("openAgentReview");
+    expect(result).toContain("openAgentExecution");
+    expect(result).not.toContain("openWorkbenchSurface");
+    expect(result).not.toContain("openWorkbenchRun");
   });
 
   it("renders task history as Direction and Work Result primitives", () => {
