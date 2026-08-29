@@ -9,7 +9,6 @@ import {
   forkSession,
   listCloudProviders,
   listModelProviders,
-  listSessions,
   patchSession,
 } from "./api";
 import { dropSessionRun } from "./sessionRuns";
@@ -26,6 +25,7 @@ import {
   type TaskActions,
 } from "./agent/navigationModel";
 import { AgentShell } from "./agent/AgentShell";
+import { listAgentTasks } from "./agent/taskApi";
 
 const ONBOARDED_KEY = "saw.onboarded";
 // Persisted-data migration keys from pre-v0.93 builds. Keeping them preserves
@@ -70,7 +70,7 @@ export default function App() {
 
   const refreshTasks = useCallback(async () => {
     try {
-      setTasks(await listSessions());
+      setTasks(await listAgentTasks());
     } catch {
       // Connection state belongs to the shell. A refresh failure must not turn
       // task navigation into a second, contradictory health indicator.
