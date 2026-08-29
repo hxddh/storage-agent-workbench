@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "./fake-model";
 
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
+const openReview = (page: Page) => page.getByTestId("agent-task-header").getByRole("button", { name: "Review", exact: true });
 const SKILL = "storageops-security-iam-policy";
 const FOLLOW_UP = "Summarize the evidence again while I keep the review open.";
 const FOLLOW_UP_ANSWER = "The evidence still supports the same IAM-policy conclusion after review.";
@@ -41,18 +42,18 @@ test.describe("Agent-native task shell", () => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
-      const thread = page.getByTestId("task-scroll");
-      await expect(thread).toBeVisible();
+      const task = page.getByTestId("task-scroll");
+      await expect(task).toBeVisible();
 
-      await page.getByRole("button", { name: "Review" }).click();
+      await openReview(page).click();
       const review = page.getByTestId("agent-review-panel");
       await expect(review).toBeVisible();
-      await expect(thread).toBeVisible();
+      await expect(task).toBeVisible();
       await expect(page.getByRole("tab")).toHaveCount(0);
 
-      await review.getByRole("button", { name: "Evidence" }).click();
+      await review.getByRole("button", { name: "Evidence", exact: true }).click();
       await expect(page.getByTestId("evidence-review")).toBeVisible();
-      await expect(thread).toBeVisible();
+      await expect(task).toBeVisible();
     } finally {
       await cleanup();
     }
@@ -62,9 +63,9 @@ test.describe("Agent-native task shell", () => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
-      await page.getByRole("button", { name: "Review" }).click();
+      await openReview(page).click();
       const review = page.getByTestId("agent-review-panel");
-      await review.getByRole("button", { name: "Evidence" }).click();
+      await review.getByRole("button", { name: "Evidence", exact: true }).click();
 
       await page.getByRole("button", { name: "Focus task" }).click();
       await expect(page.getByTestId("agent-shell")).toHaveAttribute("data-focus", "true");
@@ -85,7 +86,7 @@ test.describe("Agent-native task shell", () => {
       await completeTurn(page);
       const control = page.getByTestId("agent-composer");
       await expect(control).toHaveAttribute("data-agent-state", "ready");
-      await expect(control.getByText("Delegate", { exact: true })).toBeVisible();
+      await expect(control.getByRole("button", { name: "Delegate task", exact: true })).toBeVisible();
       await expect(control.getByText("fake-model", { exact: true })).toHaveCount(0);
       await expect(page.getByTestId("work-result").first()).toBeVisible();
     } finally {
@@ -98,7 +99,7 @@ test.describe("Agent-native task shell", () => {
     try {
       await completeTurn(page);
       const baselineRequests = model.requests.length;
-      await page.getByRole("button", { name: "Review" }).click();
+      await openReview(page).click();
       const review = page.getByTestId("agent-review-panel");
       await expect(review).toBeVisible();
 
@@ -109,14 +110,14 @@ test.describe("Agent-native task shell", () => {
         message: "the task Composer must continue through the configured model while Review stays open",
       }).toBeGreaterThan(baselineRequests);
 
-      await expect(page.locator("main").getByText(FOLLOW_UP, { exact: true })).toBeVisible({ timeout: 20_000 });
-      await expect(page.locator("main").getByText(FOLLOW_UP_ANSWER, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("task-scroll").getByText(FOLLOW_UP, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("task-scroll").getByText(FOLLOW_UP_ANSWER, { exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(review).toBeVisible();
 
       await page.reload();
       await expect(composer(page)).toBeVisible({ timeout: 20_000 });
-      await expect(page.locator("main").getByText(FOLLOW_UP, { exact: true })).toBeVisible({ timeout: 20_000 });
-      await expect(page.locator("main").getByText(FOLLOW_UP_ANSWER, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("task-scroll").getByText(FOLLOW_UP, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("task-scroll").getByText(FOLLOW_UP_ANSWER, { exact: true })).toBeVisible({ timeout: 20_000 });
     } finally {
       await cleanup();
     }
@@ -133,8 +134,8 @@ test.describe("Agent-native task shell", () => {
       await expect(live).toContainText("Agent working");
       const control = page.getByTestId("agent-composer");
       await expect(control).toHaveAttribute("data-agent-state", "working");
-      await expect(control.getByText("Steer", { exact: true })).toBeVisible();
-      await expect(control.getByText("Stop", { exact: true })).toBeVisible();
+      await expect(control.getByRole("button", { name: "Steer Agent", exact: true })).toBeVisible();
+      await expect(control.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
       await expect(page.getByTestId("agent-task-header")).toContainText("Agent working");
     } finally {
       await cleanup();
