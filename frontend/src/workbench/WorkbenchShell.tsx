@@ -18,7 +18,7 @@ function ConnectionMark({ status }: { status: string }) {
 
 export function WorkbenchShell({
   navigation,
-  timeline,
+  taskContent,
   sessionId,
   session,
   sidecarStatus,
@@ -26,7 +26,7 @@ export function WorkbenchShell({
   onOpenSettings,
 }: {
   navigation: ReactNode;
-  timeline: ReactNode;
+  taskContent: ReactNode;
   sessionId: string | null;
   session: SessionSummaryRow | null;
   sidecarStatus: string;
@@ -76,9 +76,7 @@ export function WorkbenchShell({
           : { label: copy.states.delegate, tone: "idle" };
   const liveExecution = latestTool
     ? `${latestTool.tool}${latestTool.target ? ` · ${latestTool.target}` : ""}`
-    : run.pending?.trim()
-      ? copy.task.startingExecution
-      : copy.task.startingExecution;
+    : copy.task.startingExecution;
 
   return (
     <div data-testid="workbench-shell" data-review={review ?? "closed"} data-focus={focus ? "true" : "false"} className="agent-native-shell">
@@ -139,7 +137,7 @@ export function WorkbenchShell({
         ) : null}
 
         <div className="agent-task-workspace">
-          <section className="agent-task-thread" data-empty={sessionId ? "false" : "true"} aria-label={copy.task.workspace}>
+          <section className="agent-task-content" data-empty={sessionId ? "false" : "true"} aria-label={copy.task.workspace}>
             {!sessionId ? (
               <div className="agent-task-start-heading" aria-hidden="true">
                 <span>{copy.task.readyEyebrow}</span>
@@ -147,7 +145,7 @@ export function WorkbenchShell({
                 <p>{copy.task.startDescription}</p>
               </div>
             ) : null}
-            {timeline}
+            {taskContent}
           </section>
           {review && sessionId ? (
             <AgentReviewPanel
