@@ -32,6 +32,8 @@ const forbidden: Array<[string, RegExp]> = [
   ["rail DOM/copy contract", /(?:rail[-.]|rail_)/i],
   ["SessionInspector contract", /\bSessionInspector\b/],
   ["inspector DOM/copy contract", /(?:inspector[-.]|inspector_)/i],
+  ["timeline-era execution component", /\b(?:ToolTimeline|TimelineItem)\b/],
+  ["timeline DOM/copy contract", /(?:timeline[-.]|timeline_)/i],
   ["v0.92 surface contract", /\b(?:SurfaceTabs|WorkSurface|SteeringSurface)\b/],
 ];
 
