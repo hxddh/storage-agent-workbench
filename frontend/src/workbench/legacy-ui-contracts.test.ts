@@ -1,9 +1,8 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const srcRoot = fileURLToPath(new URL("../", import.meta.url));
+const srcRoot = join(process.cwd(), "src");
 const roots = [join(srcRoot, "components"), join(srcRoot, "workbench")];
 const standalone = [join(srcRoot, "App.tsx"), join(srcRoot, "shortcuts.ts")];
 const extensions = /\.(?:ts|tsx|css)$/;
