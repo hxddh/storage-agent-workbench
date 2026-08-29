@@ -11,7 +11,6 @@ import "./agent-task.css";
 import "./execution-review.css";
 import "./workbench/workbench.css";
 import "./workbench/agent-runtime.css";
-import "./workbench/answer-artifact.css";
 
 applyTheme(initialTheme());
 
