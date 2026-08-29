@@ -1,25 +1,10 @@
-/**
- * v0.53.0 — what the thread says while it works, and what a turn cost.
- *
- * The live state carried the duplication v0.49.0 removed from the finished
- * state: a summary line ("5 checks run · list_objects · acme-logs") rendered
- * directly above a full list of those same calls. Two components, one event
- * stream, stacked — and neither showed the arguments that decide what a call
- * MEANS, even though the sidecar had been recording them to `tool_calls` all
- * along.
- *
- * Separately, the footer showed input and output tokens but not the two numbers
- * that explain the bill: how much of the input the endpoint served from cache
- * (the fixed prefix is re-sent on every step of a multi-step turn) and how much
- * of the output was reasoning.
- */
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
 import { LiveTrace, argLabel, argSummary } from "./LiveTrace";
 import { MessageCard } from "./TaskContent";
-import { TurnFooter } from "./TurnFooter";
+import { ExecutionSummary } from "./ExecutionSummary";
 import type { ToolActivity } from "../types";
 
 const wrap = (node: React.ReactNode) => render(createElement(I18nProvider, null, node));
@@ -31,24 +16,23 @@ const call = (over: Partial<ToolActivity> = {}): ToolActivity => ({
   ...over,
 });
 
-describe("the live trace", () => {
-  it("is the ONLY progress surface while streaming", () => {
+describe("live Agent execution", () => {
+  it("has one progress surface while the Agent is streaming", () => {
     wrap(createElement(MessageCard, {
-      role: "assistant", content: "", streaming: true,
+      role: "assistant",
+      content: "",
+      streaming: true,
       toolActivity: [call({ status: "started" }), call({ tool: "head_bucket" })],
     }));
-    // One list, not a list plus a counter above it saying the same thing.
-    expect(screen.getAllByTestId("live-trace").length).toBe(1);
-    expect(screen.queryByText(/checks run/)).toBeNull();
+    expect(screen.getAllByTestId("live-trace")).toHaveLength(1);
+    expect(screen.queryByText(/checks run/i)).toBeNull();
   });
 
-  it("shows the arguments that decide what the call meant", () => {
+  it("shows arguments that change the meaning of a tool call", () => {
     wrap(createElement(LiveTrace, {
       items: [call({ args: { prefix: "logs/2026/08/", max_keys: 1000, recursive: true } })],
     }));
     const args = screen.getByTestId("trace-args").textContent ?? "";
-    // `list_objects · acme-logs` described a one-prefix scan and a full bucket
-    // walk identically.
     expect(args).toContain("logs/2026/08/");
     expect(args).toContain("1000");
     expect(args).toContain("recursive");
@@ -60,20 +44,19 @@ describe("the live trace", () => {
     expect(screen.getByText("head_bucket")).toBeTruthy();
   });
 
-  it("marks the in-flight call and no other", () => {
+  it("marks only the in-flight call", () => {
     const { container } = wrap(createElement(LiveTrace, {
       items: [call({ tool: "head_bucket" }), call({ status: "started" })],
     }));
-    expect(container.querySelectorAll(".animate-spin").length).toBe(1);
+    expect(container.querySelectorAll(".animate-spin")).toHaveLength(1);
   });
 
-  it("shows a finished call's result, and a running one's state instead", () => {
+  it("shows a finished result and does not invent a result for a running call", () => {
     wrap(createElement(LiveTrace, {
       items: [call({ result: "404 NoSuchBucket" }), call({ status: "started" })],
     }));
     expect(screen.getByText("404 NoSuchBucket")).toBeTruthy();
-    // A running call has no result yet; printing a stale one would be a lie.
-    expect(screen.getAllByText(/list_objects/).length).toBe(2);
+    expect(screen.getAllByText(/list_objects/)).toHaveLength(2);
   });
 
   it("renders nothing before the first call", () => {
@@ -82,21 +65,11 @@ describe("the live trace", () => {
   });
 });
 
-/**
- * v0.55.0 — a call's identity, its real outcome, and its measured cost.
- *
- * The sidecar had computed all three for a long time and sent none of them: the
- * exact success/failure verdict and the measured duration went to `tool_calls`
- * and stopped there, and the thread had no id to key a row by at all.
- */
-describe("what a row says about the call", () => {
-  it("marks a failure the sidecar reported, whatever the error text is", () => {
+describe("execution truth", () => {
+  it("uses the sidecar verdict instead of guessing from result prose", () => {
     wrap(createElement(LiveTrace, {
       items: [call({ result: "AccessDenied · req 8A9F2C1B", ok: false })],
     }));
-    // The old regex (/^(error|failed)\b/) matched none of this product's real
-    // failure shapes, so AccessDenied / NoSuchBucket / SignatureDoesNotMatch
-    // all rendered as successes.
     expect(screen.getByTestId("trace-failed")).toBeTruthy();
   });
 
@@ -105,33 +78,31 @@ describe("what a row says about the call", () => {
     expect(screen.queryByTestId("trace-failed")).toBeNull();
   });
 
-  it("still reads pre-v0.55.0 history, which carries no verdict", () => {
+  it("still reads pre-verdict history conservatively", () => {
     wrap(createElement(LiveTrace, { items: [call({ result: "error: boom" })] }));
     expect(screen.getByTestId("trace-failed")).toBeTruthy();
   });
 
-  it("shows how long the call actually took", () => {
+  it("shows measured call duration", () => {
     wrap(createElement(LiveTrace, { items: [call({ duration_ms: 4200 })] }));
     expect(screen.getByTestId("trace-duration").textContent).toBe("4.2s");
   });
 
-  it("stays silent about a duration too small to act on", () => {
+  it("stays silent about sub-100ms jitter", () => {
     wrap(createElement(LiveTrace, { items: [call({ duration_ms: 12 })] }));
-    // Sub-100ms is jitter; printing it would imply a precision we don't have.
     expect(screen.queryByTestId("trace-duration")).toBeNull();
   });
 
-  it("says nothing when the duration was never measured", () => {
+  it("does not invent an unmeasured duration", () => {
     wrap(createElement(LiveTrace, { items: [call({ duration_ms: null })] }));
     expect(screen.queryByTestId("trace-duration")).toBeNull();
   });
 });
 
-describe("a deep turn", () => {
-  const many = (n: number) =>
-    Array.from({ length: n }, (_, i) => call({ tool: `probe_${i}`, id: `c${i}` }));
+describe("deep execution", () => {
+  const many = (n: number) => Array.from({ length: n }, (_, i) => call({ tool: `probe_${i}`, id: `c${i}` }));
 
-  it("folds the head so the answer is not pushed off screen", () => {
+  it("folds early steps so live execution does not bury the Work Result", () => {
     wrap(createElement(LiveTrace, { items: many(30) }));
     expect(screen.queryByText("probe_0")).toBeNull();
     expect(screen.getByText("probe_29")).toBeTruthy();
@@ -142,170 +113,158 @@ describe("a deep turn", () => {
     const items = many(30);
     items[1] = call({ tool: "head_bucket", id: "boom", result: "NoSuchBucket", ok: false });
     wrap(createElement(LiveTrace, { items }));
-    // The one row a reader most needs is the one that went wrong.
     expect(screen.getByText("head_bucket")).toBeTruthy();
   });
 
-  it("shows everything once asked", () => {
+  it("shows all steps once the operator asks", () => {
     wrap(createElement(LiveTrace, { items: many(30) }));
     fireEvent.click(screen.getByTestId("trace-fold"));
     expect(screen.getByText("probe_0")).toBeTruthy();
     expect(screen.queryByTestId("trace-fold")).toBeNull();
   });
 
-  it("leaves a short turn alone", () => {
+  it("leaves a short execution alone", () => {
     wrap(createElement(LiveTrace, { items: many(5) }));
     expect(screen.queryByTestId("trace-fold")).toBeNull();
     expect(screen.getByText("probe_0")).toBeTruthy();
   });
 });
 
-describe("argument formatting", () => {
+describe("tool argument formatting", () => {
   it("reads like an operator writes it", () => {
     expect(argLabel("prefix", "logs/2026/")).toBe("logs/2026/");
     expect(argLabel("max_keys", 1000)).toBe("·1000");
     expect(argLabel("recursive", true)).toBe("·recursive");
   });
 
-  it("keeps the head of a long opaque id", () => {
+  it("keeps the discriminating head of a long opaque id", () => {
     const id = "2~aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789abcdef";
     const out = argLabel("upload_id", id);
-    // Truncated in the middle an id is unreadable; the head is what
-    // distinguishes one upload from another.
     expect(out.startsWith("2~aBcDeFgHiJ")).toBe(true);
     expect(out.endsWith("…")).toBe(true);
     expect(out.length).toBeLessThan(id.length);
   });
 
-  it("summarizes an empty or absent arg set as nothing", () => {
+  it("summarizes an empty or absent argument set as nothing", () => {
     expect(argSummary(undefined)).toBe("");
     expect(argSummary({})).toBe("");
   });
 });
 
-describe("what a turn cost", () => {
+describe("Execution Summary cost and budget truth", () => {
   const tools = [call()];
 
-  it("shows the cache hit rate beside the input count", () => {
-    wrap(createElement(TurnFooter, {
+  it("shows the cache hit rate beside input tokens", () => {
+    wrap(createElement(ExecutionSummary, {
       tools,
       usage: { input_tokens: 12000, output_tokens: 800, cached_input_tokens: 9600 },
     }));
-    // The fixed prefix is re-sent on every step, so the hit rate — not the raw
-    // input count — is what the turn actually cost.
     expect(screen.getByTestId("cached-tokens").textContent).toContain("80%");
   });
 
-  it("separates reasoning from the output the user can read", () => {
-    wrap(createElement(TurnFooter, {
+  it("separates reasoning tokens from readable output", () => {
+    wrap(createElement(ExecutionSummary, {
       tools,
       usage: { input_tokens: 900, output_tokens: 1400, reasoning_tokens: 1100 },
     }));
     expect(screen.getByTestId("reasoning-tokens").textContent).toContain("1.1k");
   });
 
-  it("says nothing when the endpoint did not report the details", () => {
-    wrap(createElement(TurnFooter, {
-      tools, usage: { input_tokens: 12000, output_tokens: 800 },
+  it("does not invent cache or reasoning detail when the endpoint omitted it", () => {
+    wrap(createElement(ExecutionSummary, {
+      tools,
+      usage: { input_tokens: 12000, output_tokens: 800 },
     }));
-    // Absent is not zero: claiming a 0% hit rate would be a measurement we
-    // never made.
     expect(screen.queryByTestId("cached-tokens")).toBeNull();
     expect(screen.queryByTestId("reasoning-tokens")).toBeNull();
   });
 
-  it("reports a genuine cold cache, which is the actionable case", () => {
-    wrap(createElement(TurnFooter, {
-      tools, usage: { input_tokens: 12000, output_tokens: 800, cached_input_tokens: 0 },
+  it("reports a genuine cold cache", () => {
+    wrap(createElement(ExecutionSummary, {
+      tools,
+      usage: { input_tokens: 12000, output_tokens: 800, cached_input_tokens: 0 },
     }));
     expect(screen.getByTestId("cached-tokens").textContent).toContain("0%");
   });
 
-  it("does not clutter the line with a zero reasoning count", () => {
-    wrap(createElement(TurnFooter, {
-      tools, usage: { input_tokens: 900, output_tokens: 400, reasoning_tokens: 0 },
+  it("does not clutter the result with zero reasoning tokens", () => {
+    wrap(createElement(ExecutionSummary, {
+      tools,
+      usage: { input_tokens: 900, output_tokens: 400, reasoning_tokens: 0 },
     }));
-    // A non-reasoning model reports 0 every turn; that is noise, not news.
     expect(screen.queryByTestId("reasoning-tokens")).toBeNull();
   });
 
-  // --- v0.54.0: the turn's own governor, beside the provider's numbers -------
-
-  it("shows how much of the turn budget was actually used", () => {
-    wrap(createElement(TurnFooter, {
+  it("shows how much of the Agent execution budget was used", () => {
+    wrap(createElement(ExecutionSummary, {
       tools,
       usage: { input_tokens: 90000, output_tokens: 6000, total_tokens: 96000 },
       budgetTokens: 640000,
     }));
-    // The share is what says whether an investigation had room left; the raw
-    // token count alone never did.
     expect(screen.getByTestId("budget-share").textContent).toContain("15%");
   });
 
-  it("says nothing about the budget when the endpoint reported no total", () => {
-    wrap(createElement(TurnFooter, {
-      tools, usage: { input_tokens: 900 }, budgetTokens: 640000,
+  it("does not compute budget share from an unknown total", () => {
+    wrap(createElement(ExecutionSummary, {
+      tools,
+      usage: { input_tokens: 900 },
+      budgetTokens: 640000,
     }));
-    // A share computed from an unknown numerator would be invented.
     expect(screen.queryByTestId("budget-share")).toBeNull();
   });
 
-  it("reports the repeated calls it answered without re-running", () => {
-    wrap(createElement(TurnFooter, {
-      tools, usage: { input_tokens: 900, output_tokens: 100 }, repeatCallsAvoided: 3,
+  it("reports repeated calls answered without re-running", () => {
+    wrap(createElement(ExecutionSummary, {
+      tools,
+      usage: { input_tokens: 900, output_tokens: 100 },
+      repeatCallsAvoided: 3,
     }));
     expect(screen.getByTestId("repeat-calls-avoided").textContent).toContain("3");
   });
 
-  it("does not brag about zero repeats", () => {
-    wrap(createElement(TurnFooter, {
-      tools, usage: { input_tokens: 900, output_tokens: 100 }, repeatCallsAvoided: 0,
+  it("does not advertise zero avoided repeats", () => {
+    wrap(createElement(ExecutionSummary, {
+      tools,
+      usage: { input_tokens: 900, output_tokens: 100 },
+      repeatCallsAvoided: 0,
     }));
-    // Most turns repeat nothing; a "⟲0" on every answer is noise.
     expect(screen.queryByTestId("repeat-calls-avoided")).toBeNull();
   });
 
-  it("still expands to the execution trace", () => {
-    const onOpen = vi.fn();
-    wrap(createElement(TurnFooter, {
-      tools, durationMs: 4200, onOpenInspector: onOpen,
+  it("expands into the persisted execution trace", () => {
+    wrap(createElement(ExecutionSummary, {
+      tools,
+      durationMs: 4200,
       usage: { input_tokens: 12000, output_tokens: 800, cached_input_tokens: 9600 },
     }));
-    fireEvent.click(screen.getByTestId("turn-footer-toggle"));
+    fireEvent.click(screen.getByTestId("execution-summary-toggle"));
     expect(screen.getByText("list_objects")).toBeTruthy();
   });
 });
 
-describe("the audit gap marker (v0.59.0)", () => {
+describe("audit-gap truth", () => {
   it("marks a call whose audit row could not be written", () => {
-    // Rule 17 requires every tool call to be audited. When that write fails the
-    // call still runs and is still persisted — but a gap the reader cannot see
-    // reads as "nothing happened".
     wrap(createElement(LiveTrace, {
       items: [call({ audit_error: "OperationalError: disk I/O error" })],
     }));
     const mark = screen.getByTestId("trace-audit-gap");
     expect(mark).toBeInTheDocument();
-    // The reason is reachable, not just a bare glyph.
     expect(mark.getAttribute("title") ?? "").toContain("disk I/O error");
   });
 
-  it("says the call itself DID run, so the mark is not read as a failure", () => {
+  it("says the call itself ran and was saved", () => {
     wrap(createElement(LiveTrace, {
       items: [call({ audit_error: "OperationalError: disk I/O error" })],
     }));
-    const title = screen.getByTestId("trace-audit-gap").getAttribute("title") ?? "";
-    expect(title).toMatch(/ran and was saved/i);
+    expect(screen.getByTestId("trace-audit-gap").getAttribute("title") ?? "").toMatch(/ran and was saved/i);
   });
 
-  it("is absent on every healthy call", () => {
-    // Presence is the signal. A marker that is always there says nothing.
+  it("is absent on a healthy call", () => {
     wrap(createElement(LiveTrace, { items: [call({ ok: true })] }));
     expect(screen.queryByTestId("trace-audit-gap")).toBeNull();
   });
 
-  it("does not show while the call is still running", () => {
-    // A started row has no outcome yet; the audit write has not been attempted.
+  it("does not appear while a call is still running", () => {
     wrap(createElement(LiveTrace, {
       items: [call({ status: "started", audit_error: "x" })],
     }));
