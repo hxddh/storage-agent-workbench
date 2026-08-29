@@ -7,7 +7,7 @@ import {
   getActivityDensity,
   setActivityDensity,
 } from "../lib/activityDensity";
-import { TurnFooter } from "./TurnFooter";
+import { ExecutionSummary } from "./ExecutionSummary";
 import type { ToolActivity } from "../types";
 
 const tools: ToolActivity[] = [
@@ -21,49 +21,52 @@ afterEach(() => {
   setActivityDensity("balanced");
 });
 
-describe("agent activity density", () => {
-  it("has explicit disclosure semantics rather than three cosmetic labels", () => {
+describe("Agent execution detail density", () => {
+  it("has explicit disclosure semantics rather than cosmetic labels", () => {
     expect(defaultTraceOpen("compact", true)).toBe(false);
     expect(defaultTraceOpen("balanced", true)).toBe(true);
     expect(defaultTraceOpen("balanced", false)).toBe(false);
     expect(defaultTraceOpen("detailed", false)).toBe(true);
   });
 
-  it("compact keeps even the newest finished trace folded", () => {
+  it("compact keeps even the newest completed execution folded", () => {
     setActivityDensity("compact");
-    wrap(createElement(TurnFooter, { tools, latest: true }));
-    expect(screen.queryByText("head_bucket")).toBeNull();
-    expect(screen.getByTestId("turn-activity")).toHaveAttribute("data-activity-density", "compact");
+    wrap(createElement(ExecutionSummary, { tools, latest: true }));
+    expect(screen.queryByText("head_bucket")).not.toBeNull();
+    expect(screen.getByTestId("execution-summary")).toHaveAttribute("data-activity-density", "compact");
+    expect(screen.queryByTestId("execution-step-open")).toBeNull();
+    expect(screen.getByTestId("execution-latest-step")).toHaveTextContent("head_bucket");
   });
 
-  it("balanced preserves the existing newest-open/history-folded contract", () => {
+  it("balanced keeps the newest execution open and history folded", () => {
     setActivityDensity("balanced");
-    const { rerender } = wrap(createElement(TurnFooter, { tools, latest: true }));
-    expect(screen.getByText("head_bucket")).toBeInTheDocument();
-    rerender(createElement(I18nProvider, null, createElement(TurnFooter, { tools, latest: false })));
-    expect(screen.queryByText("head_bucket")).toBeNull();
+    const { rerender } = wrap(createElement(ExecutionSummary, { tools, latest: true }));
+    expect(screen.getByTestId("execution-step-open")).toBeInTheDocument();
+    rerender(createElement(I18nProvider, null, createElement(ExecutionSummary, { tools, latest: false })));
+    expect(screen.queryByTestId("execution-step-open")).toBeNull();
   });
 
-  it("detailed keeps a historical finished trace visible", () => {
+  it("detailed keeps historical completed execution visible", () => {
     setActivityDensity("detailed");
-    wrap(createElement(TurnFooter, { tools, latest: false }));
-    expect(screen.getByText("head_bucket")).toBeInTheDocument();
+    wrap(createElement(ExecutionSummary, { tools, latest: false }));
+    expect(screen.getByTestId("execution-step-open")).toBeInTheDocument();
   });
 
-  it("changes density from the newest turn and persists the preference", () => {
+  it("changes density from the newest result and persists the preference", () => {
     setActivityDensity("balanced");
-    wrap(createElement(TurnFooter, { tools, latest: true }));
+    wrap(createElement(ExecutionSummary, { tools, latest: true }));
     fireEvent.click(screen.getByTestId("activity-density-control").querySelector("button") as HTMLButtonElement);
     fireEvent.click(screen.getByRole("menuitemradio", { name: /compact/i }));
     expect(getActivityDensity()).toBe("compact");
     expect(localStorage.getItem("saw.activityDensity")).toBe("compact");
-    expect(screen.queryByText("head_bucket")).toBeNull();
+    expect(screen.queryByTestId("execution-step-open")).toBeNull();
+    expect(screen.getByTestId("execution-latest-step")).toHaveTextContent("head_bucket");
   });
 
-  it("an explicit turn override still drills into evidence in compact mode", () => {
+  it("an explicit override still drills into execution evidence in compact mode", () => {
     setActivityDensity("compact");
-    wrap(createElement(TurnFooter, { tools, latest: true }));
-    fireEvent.click(screen.getByTestId("turn-footer-toggle"));
-    expect(screen.getByText("head_bucket")).toBeInTheDocument();
+    wrap(createElement(ExecutionSummary, { tools, latest: true }));
+    fireEvent.click(screen.getByTestId("execution-summary-toggle"));
+    expect(screen.getByTestId("execution-step-open")).toBeInTheDocument();
   });
 });
