@@ -1,4 +1,3 @@
-export type WorkSurface = "timeline" | "evidence" | "runs" | "report";
 export type ReviewSurface = "overview" | "evidence" | "runs" | "report";
 
 export type AgentShellState = {
@@ -40,8 +39,3 @@ export function agentShellReducer(state: AgentShellState, action: AgentShellActi
       return { ...state, focus: !state.focus };
   }
 }
-
-/** Compatibility aliases for callers that still import the v0.92 reducer.
- * v0.93 no longer models Evidence/Runs/Report as application work surfaces. */
-export const initialWorkbenchState = initialAgentShellState;
-export const workbenchReducer = agentShellReducer;
