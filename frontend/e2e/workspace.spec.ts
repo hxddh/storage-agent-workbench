@@ -130,14 +130,22 @@ test.describe("Agent OS workbench", () => {
       await page.getByRole("tab", { name: "Timeline" }).click();
       await expect(page.locator("main").getByText(FOLLOW_UP, { exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(page.locator("main").getByText(FOLLOW_UP_ANSWER, { exact: true })).toBeVisible({ timeout: 20_000 });
-      await expect(page.getByTestId("turn-footer-toggle")).toHaveCount(2, { timeout: 20_000 });
 
-      // Durability is part of this contract: a cross-surface turn that vanishes
-      // on reload is not a successful continuation of the investigation.
+      // The first turn ran a tool, so it owns the one expandable activity toggle.
+      // The follow-up is intentionally text-only: TurnFooter renders a toggle only
+      // for tool/grounding disclosure, not for every assistant message. Requiring
+      // two toggles would confuse UI disclosure with persistence.
+      await expect(page.getByTestId("turn-footer-toggle")).toHaveCount(1);
+
+      // Durability is the real contract: a cross-surface turn that only existed
+      // as live stream state would disappear here. Reload and verify BOTH the
+      // user's follow-up and the assistant answer survive from the sidecar-backed
+      // investigation document.
       await page.reload();
       await expect(composer(page)).toBeVisible({ timeout: 20_000 });
       await expect(page.locator("main").getByText(FOLLOW_UP, { exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(page.locator("main").getByText(FOLLOW_UP_ANSWER, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("turn-footer-toggle")).toHaveCount(1);
     } finally {
       await cleanup();
     }
