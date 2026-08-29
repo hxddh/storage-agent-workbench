@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "./fake-model";
 
-/** Simplified Chinese must cover the actual Agent-task product, not a legacy chat shell. */
+/** Simplified Chinese must cover the actual Agent-task product, never a legacy conversation shell. */
 const composerZh = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 
 async function bootZh(page: Page) {
@@ -14,7 +14,7 @@ async function bootZh(page: Page) {
 }
 
 const ENGLISH_LEAK =
-  /\b(Settings|Providers|Cancel|Close|Copy|Delete|Rename|Archive|Retry|Reload|Send|Search|Loading|Failed|Error|Untitled|Yesterday|Today|Older|New chat|Show more|Show less)\b/;
+  /\b(Settings|Providers|Cancel|Close|Copy|Delete|Rename|Archive|Retry|Reload|Send|Search|Loading|Failed|Error|Untitled|Yesterday|Today|Older|New task|Show more|Show less)\b/;
 
 test.describe("Agent product in Chinese", () => {
   test("the task start surface is Chinese, not a half-translated legacy screen", async ({ page }) => {
@@ -84,12 +84,13 @@ test.describe("Agent product in Chinese", () => {
 
     await page.getByTestId("task-navigation-settings").click();
     await page.getByRole("button", { name: /^简体中文$/ }).first().click();
-    await expect(composerZh(page)).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByRole("heading", { name: "把目标交给 Agent" })).toBeVisible();
+    await expect(composerZh(page)).toHaveAttribute("placeholder", /给 Agent 一个目标/);
+    await expect(page.getByTestId("agent-task-navigation").getByRole("button", { name: /新任务/ })).toBeVisible();
 
     await page.reload();
     await expect(composerZh(page)).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByRole("heading", { name: "把目标交给 Agent" })).toBeVisible();
+    await expect(composerZh(page)).toHaveAttribute("placeholder", /给 Agent 一个目标/);
+    await expect(page.getByTestId("agent-task-navigation").getByRole("button", { name: /新任务/ })).toBeVisible();
 
     await page.getByTestId("task-navigation-settings").click();
     await page.getByRole("button", { name: /^English$/ }).first().click();
