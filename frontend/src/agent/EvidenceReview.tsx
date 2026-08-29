@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { SessionDetail } from "../types";
 import { Markdown } from "../components/Markdown";
 import { EvidenceActivity } from "./EvidenceActivity";
-import { useWorkbenchCopy } from "./copy";
+import { useAgentCopy } from "./agentCopy";
 
 function EmptyLine({ children }: { children: ReactNode }) {
   return <p className="workbench-empty-line">{children}</p>;
@@ -16,7 +16,7 @@ export function EvidenceReview({
   detail: SessionDetail | null;
   sessionId: string;
 }) {
-  const copy = useWorkbenchCopy();
+  const copy = useAgentCopy();
   if (!detail) {
     return (
       <div className="workbench-document" data-testid="evidence-review">

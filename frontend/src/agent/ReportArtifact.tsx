@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Markdown } from "../components/Markdown";
 import { saveTextFile } from "../config";
 import { useI18n } from "../i18n";
-import { useWorkbenchCopy } from "./copy";
+import { useAgentCopy } from "./agentCopy";
 
 function browserDownload(content: string) {
   const blob = new Blob([content], { type: "text/markdown" });
@@ -25,7 +25,7 @@ export function ReportArtifact({
   error: string | null;
 }) {
   const { t } = useI18n();
-  const copy = useWorkbenchCopy();
+  const copy = useAgentCopy();
   const [copied, setCopied] = useState(false);
   const [savedPath, setSavedPath] = useState<string | null>(null);
 

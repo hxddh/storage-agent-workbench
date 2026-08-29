@@ -1,6 +1,6 @@
 import type { SessionDetail } from "../types";
 import { RunDetail } from "../components/RunDetail";
-import { useWorkbenchCopy } from "./copy";
+import { useAgentCopy } from "./agentCopy";
 
 /** Contextual execution history for the active Agent task. */
 export function ExecutionReview({
@@ -14,7 +14,7 @@ export function ExecutionReview({
   onOpenRun: (runId: string) => void;
   onCloseRun: () => void;
 }) {
-  const copy = useWorkbenchCopy();
+  const copy = useAgentCopy();
   if (selectedRunId) {
     return <RunDetail runId={selectedRunId} onBack={onCloseRun} />;
   }

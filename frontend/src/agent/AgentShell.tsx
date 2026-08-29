@@ -3,7 +3,7 @@ import type { SessionSummaryRow } from "../types";
 import { useSessionRun } from "../sessionRuns";
 import { publishAgentCommands } from "./commands";
 import { AgentReviewPanel } from "./AgentReviewPanel";
-import { useWorkbenchCopy } from "./copy";
+import { useAgentCopy } from "./agentCopy";
 import type { ReviewSurface } from "./model";
 import { useAgentTaskProjection } from "./useAgentTaskProjection";
 
@@ -33,7 +33,7 @@ export function AgentShell({
   onOpenPalette: () => void;
   onOpenSettings: () => void;
 }) {
-  const copy = useWorkbenchCopy();
+  const copy = useAgentCopy();
   const run = useSessionRun(sessionId);
   const [review, setReview] = useState<ReviewSurface | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);

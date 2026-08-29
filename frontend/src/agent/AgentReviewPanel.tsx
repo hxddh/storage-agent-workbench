@@ -3,7 +3,7 @@ import { EvidenceReview } from "./EvidenceReview";
 import { ReportArtifact } from "./ReportArtifact";
 import { ExecutionReview } from "./ExecutionReview";
 import type { ReviewSurface } from "./model";
-import { useWorkbenchCopy } from "./copy";
+import { useAgentCopy } from "./agentCopy";
 
 export function AgentReviewPanel({
   view,
@@ -28,7 +28,7 @@ export function AgentReviewPanel({
   onCloseRun: () => void;
   onClose: () => void;
 }) {
-  const copy = useWorkbenchCopy();
+  const copy = useAgentCopy();
   const findingCount = detail?.findings.length ?? 0;
   const runCount = detail?.runs.filter((run) => run.origin !== "agent").length ?? 0;
   const memoryCount = detail?.agent_memory?.length ?? 0;
