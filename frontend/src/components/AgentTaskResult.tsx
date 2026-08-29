@@ -26,7 +26,7 @@ function resultShape(content: string | null): "plain" | "structured" | "data-ric
   return "plain";
 }
 
-function legacyCopy(text: string): boolean {
+function fallbackCopy(text: string): boolean {
   try {
     const node = document.createElement("textarea");
     node.value = text;
@@ -48,10 +48,10 @@ async function copyText(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text);
       return true;
     } catch {
-      return legacyCopy(text);
+      return fallbackCopy(text);
     }
   }
-  return legacyCopy(text);
+  return fallbackCopy(text);
 }
 
 function DirectionEvent({
@@ -141,8 +141,8 @@ function DirectionEvent({
 /**
  * The durable content primitive of an Agent task.
  * A user contribution is Direction. Agent output is a Work Result backed by
- * real execution and evidence artifacts. Streaming output is Execution, not a
- * chat reply waiting to become a bubble.
+ * real Execution and Evidence artifacts. Streaming output is live Execution
+ * that later resolves into the durable Work Result for the same task.
  */
 export const AgentTaskResult = memo(function AgentTaskResult({
   referencedEvidenceIds = [],
