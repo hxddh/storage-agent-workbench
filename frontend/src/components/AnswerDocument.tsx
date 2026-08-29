@@ -1,11 +1,20 @@
-import { memo, useMemo, useState, type ComponentProps } from "react";
+import { memo, useMemo, useState } from "react";
+import type { ToolActivity } from "../types";
 import { useI18n } from "../i18n";
 import { isMostlyError, parseS3Error } from "../lib/s3error";
 import { openAgentExecution, openAgentReview } from "../workbench/commands";
-import { MessageCard as ProvenTurnRenderer } from "./TaskContentImplementation";
+import { AgentResultRenderer } from "./AgentResultRenderer";
+import { S3ErrorArtifact } from "./S3ErrorArtifact";
 
-type ProvenTurnRendererProps = ComponentProps<typeof ProvenTurnRenderer>;
-export type AnswerDocumentProps = ProvenTurnRendererProps & {
+export type AnswerDocumentProps = {
+  role: string;
+  content: string | null;
+  toolActivity?: ToolActivity[];
+  streaming?: boolean;
+  sessionId?: string | null;
+  onEdit?: (text: string) => void;
+  onRegenerate?: () => void;
+  onBranch?: () => void;
   referencedEvidenceIds?: string[];
   referencedRunIds?: string[];
 };
@@ -17,15 +26,7 @@ function documentShape(content: string | null): "plain" | "structured" | "data-r
   return "plain";
 }
 
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // Fall through to the DOM fallback below.
-  }
+function legacyCopy(text: string): boolean {
   try {
     const node = document.createElement("textarea");
     node.value = text;
@@ -39,6 +40,18 @@ async function copyText(text: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return legacyCopy(text);
+    }
+  }
+  return legacyCopy(text);
 }
 
 function DirectionEvent({
@@ -56,30 +69,20 @@ function DirectionEvent({
   const label = lang === "zh" ? "Direction · 任务方向" : "Direction";
 
   return (
-    <section
-      className="group max-w-[min(46rem,100%)] animate-fade-in-up"
-      data-testid="direction-event"
-      aria-label={label}
-    >
+    <section className="group max-w-[min(46rem,100%)] animate-fade-in-up" data-testid="direction-event" aria-label={label}>
       <div className="mb-1.5 flex items-center gap-2 text-2xs font-medium uppercase tracking-wider text-gray-500">
         <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
         {label}
       </div>
 
-      {structuredError ? (
-        <ProvenTurnRenderer role="user" content={content} />
+      {structuredError && parsed ? (
+        <S3ErrorArtifact error={parsed} raw={text} onRedirect={onEdit} onBranch={onBranch} />
       ) : (
         <div className="border-l-2 border-edge-strong pl-3">
           <div className="whitespace-pre-wrap break-words text-prose text-gray-200">
-            <div className={long && !expanded ? "max-h-44 overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" : ""}>
-              {text}
-            </div>
+            <div className={long && !expanded ? "max-h-44 overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" : ""}>{text}</div>
             {long ? (
-              <button
-                type="button"
-                onClick={() => setExpanded((value) => !value)}
-                className="mt-1 text-2xs text-gray-500 transition-colors hover:text-accent-soft"
-              >
+              <button type="button" onClick={() => setExpanded((value) => !value)} className="mt-1 text-2xs text-gray-500 transition-colors hover:text-accent-soft">
                 {expanded ? t("msg.showLess") : t("msg.showMore")}
               </button>
             ) : null}
@@ -87,8 +90,8 @@ function DirectionEvent({
         </div>
       )}
 
-      <div className="mt-1.5 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-        {!structuredError ? (
+      {!structuredError ? (
+        <div className="mt-1.5 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
           <button
             type="button"
             onClick={() => void copyText(text).then((ok) => {
@@ -101,44 +104,26 @@ function DirectionEvent({
           >
             {copied ? t("common.copied") : t("common.copy")}
           </button>
-        ) : null}
-        {onEdit ? (
-          <button
-            type="button"
-            onClick={() => onEdit(text)}
-            title={t("msg.edit")}
-            aria-label={t("msg.edit")}
-            data-testid="edit-message"
-            className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
-          >
-            {lang === "zh" ? "重新定向" : "Redirect"}
-          </button>
-        ) : null}
-        {onBranch ? (
-          <button
-            type="button"
-            onClick={onBranch}
-            title={t("msg.branch")}
-            aria-label={t("msg.branch")}
-            data-testid="branch-message"
-            className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
-          >
-            {lang === "zh" ? "分支任务" : "Branch task"}
-          </button>
-        ) : null}
-      </div>
+          {onEdit ? (
+            <button type="button" onClick={() => onEdit(text)} title={t("msg.edit")} aria-label={t("msg.edit")} data-testid="edit-message" className="text-2xs text-gray-500 transition-colors hover:text-gray-200">
+              {lang === "zh" ? "重新定向" : "Redirect"}
+            </button>
+          ) : null}
+          {onBranch ? (
+            <button type="button" onClick={onBranch} title={t("msg.branch")} aria-label={t("msg.branch")} data-testid="branch-message" className="text-2xs text-gray-500 transition-colors hover:text-gray-200">
+              {lang === "zh" ? "分支任务" : "Branch task"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
 
 /**
- * Agent-task content boundary.
- *
- * A user contribution is a Direction event: it changes the objective or steers
- * the current task. An Agent contribution is a Work Result: the durable output
- * of execution, with provenance links to the real evidence and runs that support
- * it. The proven streaming/tool renderer remains underneath the Work Result so
- * the UI changes its information architecture without weakening execution truth.
+ * Agent-task content boundary: a Direction changes the task; a Work Result is
+ * the durable output of real execution. Review links expose supporting artifacts
+ * without replacing the active task.
  */
 export const AnswerDocument = memo(function AnswerDocument({
   referencedEvidenceIds = [],
@@ -171,33 +156,24 @@ export const AnswerDocument = memo(function AnswerDocument({
         {label}
       </header>
 
-      <ProvenTurnRenderer {...props} />
+      <AgentResultRenderer
+        content={props.content}
+        toolActivity={props.toolActivity}
+        streaming={props.streaming}
+        sessionId={props.sessionId}
+        onRegenerate={props.onRegenerate}
+      />
 
       {showLinks ? (
-        <nav
-          className="answer-document-references"
-          aria-label={lang === "zh" ? "工作产物" : "Work artifacts"}
-          data-testid="answer-references"
-        >
+        <nav className="answer-document-references" aria-label={lang === "zh" ? "工作产物" : "Work artifacts"} data-testid="answer-references">
           <span className="answer-document-reference-label">Artifacts</span>
           {evidenceCount > 0 ? (
-            <button
-              type="button"
-              onClick={() => openAgentReview("evidence")}
-              data-testid="answer-open-evidence"
-            >
+            <button type="button" onClick={() => openAgentReview("evidence")} data-testid="answer-open-evidence">
               Evidence <span>{evidenceCount}</span>
             </button>
           ) : null}
           {runCount > 0 ? (
-            <button
-              type="button"
-              onClick={() => {
-                if (runCount === 1) openAgentExecution(referencedRunIds[0]);
-                else openAgentReview("runs");
-              }}
-              data-testid="answer-open-runs"
-            >
+            <button type="button" onClick={() => { if (runCount === 1) openAgentExecution(referencedRunIds[0]); else openAgentReview("runs"); }} data-testid="answer-open-runs">
               Execution <span>{runCount}</span>
             </button>
           ) : null}
