@@ -1,19 +1,12 @@
 import type { SessionSummaryRow } from "../types";
 
-/**
- * Agent task navigation geometry belongs to the application shell. Below the
- * minimum width the title/scope/state stack stops being useful, so navigation
- * collapses instead of being squeezed into an unreadable sliver.
- *
- * Constant names retain `RAIL` only as persisted-layout compatibility; the
- * product and component model are Agent task navigation.
- */
-export const MIN_RAIL_WIDTH = 208;
-export const MAX_RAIL_WIDTH = 420;
-export const DEFAULT_RAIL_WIDTH = 268;
+/** Agent task navigation geometry belongs to the application shell. */
+export const MIN_TASK_NAV_WIDTH = 208;
+export const MAX_TASK_NAV_WIDTH = 420;
+export const DEFAULT_TASK_NAV_WIDTH = 268;
 
-export const clampRailWidth = (px: number) =>
-  Math.min(MAX_RAIL_WIDTH, Math.max(MIN_RAIL_WIDTH, Math.round(px)));
+export const clampTaskNavigationWidth = (px: number) =>
+  Math.min(MAX_TASK_NAV_WIDTH, Math.max(MIN_TASK_NAV_WIDTH, Math.round(px)));
 
 export const DAY_BUCKETS = ["today", "yesterday", "week", "month", "older"] as const;
 export type DayBucket = (typeof DAY_BUCKETS)[number];
