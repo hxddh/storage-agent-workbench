@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Grounding, NextAction, SessionFinding, TriageCase } from "../types";
 import { useI18n } from "../i18n";
 import { WorkingRow } from "./LiveTrace";
-import { ProposalCard } from "./AgentDecisionCard";
+import { AgentNextAction } from "./AgentDecisionCard";
 
 const CONF_PILL: Record<string, string> = {
   high: "bg-accent/15 text-accent-soft",
@@ -109,7 +109,7 @@ export function FindingsCard({ findings }: { findings: SessionFinding[] }) {
 }
 
 /** Deterministic offline error triage produced by the runtime. */
-export function TriageCard({ c, onRun }: { c: TriageCase; onRun?: (proposal: NextAction) => void }) {
+export function TriageCard({ c, onRun }: { c: TriageCase; onRun?: (action: NextAction) => void }) {
   const { lang } = useI18n();
   const copy = lang === "zh"
     ? { title: "Error Triage · 错误诊断", next: "下一步", actions: "Next actions" }
@@ -140,7 +140,7 @@ export function TriageCard({ c, onRun }: { c: TriageCase; onRun?: (proposal: Nex
           <div className="mt-3 border-t border-edge/60 pt-2.5">
             <span className="text-2xs text-gray-500">{copy.actions}</span>
             <div className="mt-1.5 flex flex-wrap gap-2">
-              {c.safe_next_actions.map((proposal, index) => <ProposalCard key={`${proposal.action_type}-${index}`} proposal={proposal} onRun={onRun} />)}
+              {c.safe_next_actions.map((action, index) => <AgentNextAction key={`${action.action_type}-${index}`} action={action} onRun={onRun} />)}
             </div>
           </div>
         ) : null}
