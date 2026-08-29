@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { SessionSummaryRow } from "../types";
 import { useSessionRun } from "../sessionRuns";
 import { publishAgentCommands } from "./commands";
 import { AgentReviewPanel } from "./AgentReviewPanel";
 import { useAgentCopy } from "./agentCopy";
 import type { ReviewSurface } from "./model";
+import type { AgentTaskSummary } from "./navigationModel";
 import { agentTaskState } from "./taskState";
 import { useAgentTaskProjection } from "./useAgentTaskProjection";
 
@@ -20,54 +20,54 @@ function ConnectionMark({ status }: { status: string }) {
 export function AgentShell({
   navigation,
   taskContent,
-  sessionId,
-  session,
+  taskId,
+  task,
   sidecarStatus,
   onOpenPalette,
   onOpenSettings,
 }: {
   navigation: ReactNode;
   taskContent: ReactNode;
-  sessionId: string | null;
-  session: SessionSummaryRow | null;
+  taskId: string | null;
+  task: AgentTaskSummary | null;
   sidecarStatus: string;
   onOpenPalette: () => void;
   onOpenSettings: () => void;
 }) {
   const copy = useAgentCopy();
-  const run = useSessionRun(sessionId);
+  const run = useSessionRun(taskId);
   const [review, setReview] = useState<ReviewSurface | null>(null);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [focus, setFocus] = useState(false);
-  const { detail, report, reportLoading, error } = useAgentTaskProjection(sessionId, review);
+  const { detail, report, reportLoading, error } = useAgentTaskProjection(taskId, review);
 
   useEffect(() => {
-    if (!sessionId) {
+    if (!taskId) {
       setReview(null);
-      setSelectedRunId(null);
+      setSelectedExecutionId(null);
     }
-  }, [sessionId]);
+  }, [taskId]);
 
   useEffect(() => publishAgentCommands((command) => {
     if (command.type === "execution.open") {
-      setSelectedRunId(command.runId);
+      setSelectedExecutionId(command.runId);
       setReview("runs");
       return;
     }
     if (command.type === "review.close") {
       setReview(null);
-      setSelectedRunId(null);
+      setSelectedExecutionId(null);
       return;
     }
-    setSelectedRunId(null);
+    setSelectedExecutionId(null);
     setReview(command.review);
   }), []);
 
-  const title = session?.title?.trim() || copy.task.newTask;
-  const scope = session?.primary_bucket?.trim() || session?.goal?.trim() || copy.task.noScope;
-  const outputCount = (session?.finding_count ?? 0) + (session?.run_count ?? 0);
+  const title = task?.title?.trim() || copy.task.newTask;
+  const scope = task?.primary_bucket?.trim() || task?.goal?.trim() || copy.task.noScope;
+  const outputCount = (task?.finding_count ?? 0) + (task?.run_count ?? 0);
   const latestTool = run.streamTools.length ? run.streamTools[run.streamTools.length - 1] : null;
-  const stateKey = agentTaskState(run, Boolean(sessionId));
+  const stateKey = agentTaskState(run, Boolean(taskId));
   const stateLabel = stateKey === "idle"
     ? copy.states.delegate
     : stateKey === "ready"
@@ -105,7 +105,7 @@ export function AgentShell({
           </div>
 
           <div className="agent-task-controls">
-            {sessionId ? (
+            {taskId ? (
               <button type="button" className="agent-task-review-button" onClick={() => setReview((current) => current ? null : "overview")} aria-expanded={Boolean(review)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
                   <path d="M4 5h16M4 12h16M4 19h10" />
@@ -142,21 +142,21 @@ export function AgentShell({
         ) : null}
 
         <div className="agent-task-workspace">
-          <section className="agent-task-content" data-empty={sessionId ? "false" : "true"} aria-label={copy.task.workspace}>
+          <section className="agent-task-content" data-empty={taskId ? "false" : "true"} aria-label={copy.task.workspace}>
             {taskContent}
           </section>
-          {review && sessionId ? (
+          {review && taskId ? (
             <AgentReviewPanel
               view={review}
               detail={detail}
               report={report}
               reportLoading={reportLoading}
               error={error}
-              selectedRunId={selectedRunId}
-              onView={(next) => { setSelectedRunId(null); setReview(next); }}
-              onOpenRun={(runId) => { setSelectedRunId(runId); setReview("runs"); }}
-              onCloseRun={() => setSelectedRunId(null)}
-              onClose={() => { setReview(null); setSelectedRunId(null); }}
+              selectedRunId={selectedExecutionId}
+              onView={(next) => { setSelectedExecutionId(null); setReview(next); }}
+              onOpenRun={(runId) => { setSelectedExecutionId(runId); setReview("runs"); }}
+              onCloseRun={() => setSelectedExecutionId(null)}
+              onClose={() => { setReview(null); setSelectedExecutionId(null); }}
             />
           ) : null}
         </div>
