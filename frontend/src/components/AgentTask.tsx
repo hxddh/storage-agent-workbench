@@ -45,26 +45,26 @@ export function AgentTask(props: AgentTaskProps) {
       else if (matches(event, "prevStep")) direction = -1;
       if (direction === null) return;
 
-      const scrollRoot = workspaceRef.current?.querySelector<HTMLElement>("[data-testid='thread-scroll']");
+      const scrollRoot = workspaceRef.current?.querySelector<HTMLElement>("[data-testid='task-scroll']");
       if (!scrollRoot) return;
-      const steps = Array.from(scrollRoot.querySelectorAll<HTMLElement>("[data-question]"));
-      if (steps.length === 0) return;
+      const directions = Array.from(scrollRoot.querySelectorAll<HTMLElement>("[data-direction]"));
+      if (directions.length === 0) return;
 
       let target: number | null;
       if (navigationIndexRef.current === null) {
         const rootRect = scrollRoot.getBoundingClientRect();
-        const positions = steps.map(
-          (step) => step.getBoundingClientRect().top - rootRect.top + scrollRoot.scrollTop,
+        const positions = directions.map(
+          (item) => item.getBoundingClientRect().top - rootRect.top + scrollRoot.scrollTop,
         );
         target = nextTaskStepIndex(positions, scrollRoot.scrollTop, direction);
       } else {
-        target = stepTaskIndex(navigationIndexRef.current, steps.length, direction);
+        target = stepTaskIndex(navigationIndexRef.current, directions.length, direction);
       }
       if (target === null) return;
       navigationIndexRef.current = target;
 
       event.preventDefault();
-      steps[target]?.scrollIntoView({ block: "start", behavior: "smooth" });
+      directions[target]?.scrollIntoView({ block: "start", behavior: "smooth" });
     };
 
     window.addEventListener("keydown", onKey);
