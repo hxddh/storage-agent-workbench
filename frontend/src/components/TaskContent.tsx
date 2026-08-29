@@ -1,10 +1,11 @@
 /**
  * Public Agent-task content boundary.
  *
- * Direction and Work Result are the primary task primitives. Specialized
- * execution, decision, finding and triage renderers remain available because
- * they are real runtime artifacts, not alternate chat surfaces.
+ * There is no generic conversation renderer here: task history is Direction +
+ * Work Result, with real execution/evidence/decision artifacts alongside it.
  */
 export { AnswerDocument as MessageCard, AnswerDocument as AgentTaskContent } from "./AnswerDocument";
 export { ProposalCard } from "./AgentDecisionCard";
-export * from "./TaskContentImplementation";
+export { ThinkingBubble, GroundingCard, FindingsCard, TriageCard } from "./AgentRuntimeArtifacts";
+export { AgentResultRenderer } from "./AgentResultRenderer";
+export { S3ErrorArtifact } from "./S3ErrorArtifact";
