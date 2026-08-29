@@ -7,7 +7,7 @@ import { ThemeProvider, applyTheme, initialTheme } from "./theme";
 import { ToastProvider } from "./components/Toast";
 import "./index.css";
 import "./answer-document.css";
-import "./workspace-overhaul.css";
+import "./agent-task.css";
 import "./run-workspace.css";
 import "./workbench/workbench.css";
 import "./workbench/agent-runtime.css";
