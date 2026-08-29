@@ -1,9 +1,10 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const srcRoot = join(process.cwd(), "src");
-const roots = [join(srcRoot, "components"), join(srcRoot, "workbench")];
+const agentRoot = join(srcRoot, "agent");
+const roots = [join(srcRoot, "components"), agentRoot];
 const standalone = [
   join(srcRoot, "App.tsx"),
   join(srcRoot, "shortcuts.ts"),
@@ -44,9 +45,19 @@ const forbidden: Array<[string, RegExp]> = [
   ["legacy continuation action", /continueInvestigation/],
   ["legacy run timeline key", /run\.timeline/],
   ["legacy user-facing phrases", /(?:Session inspector|Session findings|User prompt|finished answer|Start investigating|Storage Agent Workbench)/i],
+  ["Workbench shell identifier", /\bWorkbenchShell\b/],
+  ["Workbench projection identifier", /\buseWorkbenchProjection\b/],
+  ["Workbench copy identifier", /\buseWorkbenchCopy\b/],
+  ["Workbench module import", /(?:\.\.\/|\.\/)workbench\//],
+  ["Workbench DOM/CSS contract", /(?:workbench[-_]|workbench\.css)/i],
 ];
 
 describe("Agent-native production UI has no v0.92 Chat-era contracts", () => {
+  it("has no Workbench module directory", () => {
+    expect(existsSync(join(srcRoot, "workbench"))).toBe(false);
+    expect(existsSync(agentRoot)).toBe(true);
+  });
+
   for (const [label, pattern] of forbidden) {
     it(`contains no ${label}`, () => {
       const offenders = productionFiles()
