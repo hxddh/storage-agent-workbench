@@ -71,6 +71,24 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(content).not.toContain("chat bubble");
   });
 
+  it("uses task-native keyboard contracts", () => {
+    const shortcuts = source("../shortcuts.ts");
+    const app = source("../App.tsx");
+    const boundary = source("../components/Thread.tsx");
+    expect(shortcuts).toContain('"newTask"');
+    expect(shortcuts).toContain('"toggleTaskNavigation"');
+    expect(shortcuts).toContain('"review"');
+    expect(shortcuts).toContain('group: "task"');
+    expect(shortcuts).not.toContain('"newChat"');
+    expect(shortcuts).not.toContain('"toggleRail"');
+    expect(shortcuts).not.toContain('"inspector"');
+    expect(shortcuts).not.toContain('group: "chat"');
+    expect(app).toContain('matches(event, "newTask")');
+    expect(app).toContain('matches(event, "toggleTaskNavigation")');
+    expect(boundary).toContain('matches(event, "nextStep")');
+    expect(boundary).toContain('matches(event, "prevStep")');
+  });
+
   it("keeps persisted session and viewport ownership out of the task renderer", () => {
     const thread = source("../components/ThreadImplementation.tsx");
     expect(thread).not.toContain("getSessionTurnState");
@@ -84,9 +102,9 @@ describe("v0.93 Agent-native ownership boundaries", () => {
   it("has exactly one semantic j/k owner without capture-phase suppression", () => {
     const boundary = source("../components/Thread.tsx");
     const implementation = source("../components/ThreadImplementation.tsx");
-    expect(boundary).toContain('matches(event, "nextTurn")');
+    expect(boundary).toContain('matches(event, "nextStep")');
     expect(boundary).not.toContain("stopImmediatePropagation");
-    expect(implementation).not.toContain('matches(event, "nextTurn")');
+    expect(implementation).not.toContain('matches(event, "nextStep")');
     expect(implementation).not.toContain("stepTurn");
   });
 
