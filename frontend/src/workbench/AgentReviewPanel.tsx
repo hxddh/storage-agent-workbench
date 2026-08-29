@@ -1,7 +1,7 @@
 import type { SessionDetail } from "../types";
-import { EvidenceWorkspace } from "./EvidenceWorkspace";
-import { ReportWorkspace } from "./ReportWorkspace";
-import { RunsWorkspace } from "./RunsWorkspace";
+import { EvidenceReview } from "./EvidenceReview";
+import { ReportArtifact } from "./ReportArtifact";
+import { ExecutionReview } from "./ExecutionReview";
 import type { ReviewSurface } from "./model";
 import { useWorkbenchCopy } from "./copy";
 
@@ -116,15 +116,15 @@ export function AgentReviewPanel({
         ) : null}
 
         {!error && view === "evidence" ? (
-          detail ? <EvidenceWorkspace detail={detail} sessionId={detail.id} /> : <p className="agent-review-empty">{copy.review.loading}</p>
+          detail ? <EvidenceReview detail={detail} sessionId={detail.id} /> : <p className="agent-review-empty">{copy.review.loading}</p>
         ) : null}
 
         {!error && view === "runs" ? (
-          <RunsWorkspace detail={detail} selectedRunId={selectedRunId} onOpenRun={onOpenRun} onCloseRun={onCloseRun} />
+          <ExecutionReview detail={detail} selectedRunId={selectedRunId} onOpenRun={onOpenRun} onCloseRun={onCloseRun} />
         ) : null}
 
         {!error && view === "report" ? (
-          <ReportWorkspace report={report} loading={reportLoading} error={null} />
+          <ReportArtifact report={report} loading={reportLoading} error={null} />
         ) : null}
       </div>
     </aside>
