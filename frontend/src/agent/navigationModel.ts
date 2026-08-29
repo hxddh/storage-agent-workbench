@@ -1,5 +1,8 @@
 import type { SessionSummaryRow } from "../types";
 
+/** Backend session records are projected into Agent tasks at this UI boundary. */
+export type AgentTaskSummary = SessionSummaryRow;
+
 /** Agent task navigation geometry belongs to the application shell. */
 export const MIN_TASK_NAV_WIDTH = 208;
 export const MAX_TASK_NAV_WIDTH = 420;
@@ -24,11 +27,11 @@ export function dayBucket(iso: string, now: Date = new Date()): DayBucket {
   return "older";
 }
 
-/** Mutations on a persisted Agent task record. */
-export type SessionActions = {
-  onRename: (task: SessionSummaryRow, title: string) => void;
-  onTogglePin: (task: SessionSummaryRow) => void;
-  onFork: (task: SessionSummaryRow) => void;
-  onToggleArchive: (task: SessionSummaryRow) => void;
-  onDelete: (task: SessionSummaryRow) => void;
+/** Mutations on a durable Agent task. Backend record naming stays behind this boundary. */
+export type TaskActions = {
+  onRename: (task: AgentTaskSummary, title: string) => void;
+  onTogglePin: (task: AgentTaskSummary) => void;
+  onFork: (task: AgentTaskSummary) => void;
+  onToggleArchive: (task: AgentTaskSummary) => void;
+  onDelete: (task: AgentTaskSummary) => void;
 };
