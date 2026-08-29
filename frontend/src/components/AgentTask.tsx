@@ -6,20 +6,28 @@ import { AgentTaskImplementation } from "./AgentTaskImplementation";
 /**
  * Public boundary of one active Agent task.
  *
- * This owns document-level task interaction while the implementation owns the
- * proven persistence, streaming and execution lifecycle. Direction navigation
- * is semantic task-step navigation; there is one keyboard owner and one Agent
- * composer for the entire task.
+ * Persistence still stores task records in the historical session schema, but
+ * that implementation detail stops here. Product callers speak only in Tasks;
+ * the adapter below is the single translation into the proven persistence and
+ * streaming lifecycle.
  */
-export type AgentTaskProps = ComponentProps<typeof AgentTaskImplementation>;
+type PersistenceProps = ComponentProps<typeof AgentTaskImplementation>;
+export type AgentTaskProps = Omit<
+  PersistenceProps,
+  "sessionId" | "onSessionCreated" | "onSessionDiscarded"
+> & {
+  taskId: string | null;
+  onTaskCreated: (id: string) => void;
+  onTaskDiscarded: (id: string) => void;
+};
 
-export function AgentTask(props: AgentTaskProps) {
+export function AgentTask({ taskId, onTaskCreated, onTaskDiscarded, ...props }: AgentTaskProps) {
   const workspaceRef = useRef<HTMLElement | null>(null);
   const navigationIndexRef = useRef<number | null>(null);
 
   useEffect(() => {
     navigationIndexRef.current = null;
-  }, [props.sessionId]);
+  }, [taskId]);
 
   useEffect(() => {
     const resetNavigation = () => {
@@ -78,7 +86,12 @@ export function AgentTask(props: AgentTaskProps) {
       aria-label="Agent task workspace"
       className="relative flex h-full min-w-0 flex-1 overflow-hidden bg-canvas"
     >
-      <AgentTaskImplementation {...props} />
+      <AgentTaskImplementation
+        {...props}
+        sessionId={taskId}
+        onSessionCreated={onTaskCreated}
+        onSessionDiscarded={onTaskDiscarded}
+      />
     </section>
   );
 }
