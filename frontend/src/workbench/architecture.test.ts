@@ -63,6 +63,20 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(result).not.toContain("openWorkbenchRun");
   });
 
+  it("uses contextual reviews and artifacts, not v0.92 workspaces", () => {
+    expect(existsSync(new URL("./EvidenceWorkspace.tsx", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("./RunsWorkspace.tsx", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("./ReportWorkspace.tsx", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("./EvidenceReview.tsx", import.meta.url))).toBe(true);
+    expect(existsSync(new URL("./ExecutionReview.tsx", import.meta.url))).toBe(true);
+    expect(existsSync(new URL("./ReportArtifact.tsx", import.meta.url))).toBe(true);
+    const review = source("./AgentReviewPanel.tsx");
+    expect(review).toContain("<EvidenceReview");
+    expect(review).toContain("<ExecutionReview");
+    expect(review).toContain("<ReportArtifact");
+    expect(review).not.toContain("Workspace");
+  });
+
   it("renders task history as Direction and Work Result primitives", () => {
     const content = source("../components/AnswerDocument.tsx");
     expect(content).toContain('data-testid="direction-event"');
