@@ -1,40 +1,44 @@
-export type ReviewSurface = "overview" | "evidence" | "runs" | "report";
+export type ReviewSurface = "overview" | "evidence" | "execution" | "report";
 
 export type AgentShellState = {
   review: ReviewSurface | null;
-  selectedRunId: string | null;
+  selectedExecutionId: string | null;
   focus: boolean;
-  sessionId: string | null;
+  taskId: string | null;
 };
 
 export type AgentShellAction =
-  | { type: "session.changed"; sessionId: string | null }
+  | { type: "task.changed"; taskId: string | null }
   | { type: "review.open"; review: ReviewSurface }
   | { type: "review.close" }
-  | { type: "run.open"; runId: string }
-  | { type: "run.close" }
+  | { type: "execution.open"; executionId: string }
+  | { type: "execution.close" }
   | { type: "focus.toggle" };
 
-export function initialAgentShellState(sessionId: string | null): AgentShellState {
-  return { review: null, selectedRunId: null, focus: false, sessionId };
+export function initialAgentShellState(taskId: string | null): AgentShellState {
+  return { review: null, selectedExecutionId: null, focus: false, taskId };
 }
 
 export function agentShellReducer(state: AgentShellState, action: AgentShellAction): AgentShellState {
   switch (action.type) {
-    case "session.changed":
-      return action.sessionId
-        ? { ...state, sessionId: action.sessionId, selectedRunId: null }
+    case "task.changed":
+      return action.taskId
+        ? { ...state, taskId: action.taskId, selectedExecutionId: null }
         : initialAgentShellState(null);
     case "review.open":
-      if (!state.sessionId) return state;
-      return { ...state, review: action.review, selectedRunId: action.review === "runs" ? state.selectedRunId : null };
+      if (!state.taskId) return state;
+      return {
+        ...state,
+        review: action.review,
+        selectedExecutionId: action.review === "execution" ? state.selectedExecutionId : null,
+      };
     case "review.close":
-      return { ...state, review: null, selectedRunId: null };
-    case "run.open":
-      if (!state.sessionId) return state;
-      return { ...state, review: "runs", selectedRunId: action.runId };
-    case "run.close":
-      return { ...state, selectedRunId: null };
+      return { ...state, review: null, selectedExecutionId: null };
+    case "execution.open":
+      if (!state.taskId) return state;
+      return { ...state, review: "execution", selectedExecutionId: action.executionId };
+    case "execution.close":
+      return { ...state, selectedExecutionId: null };
     case "focus.toggle":
       return { ...state, focus: !state.focus };
   }
