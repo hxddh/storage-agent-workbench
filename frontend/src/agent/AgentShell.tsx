@@ -50,8 +50,8 @@ export function AgentShell({
 
   useEffect(() => publishAgentCommands((command) => {
     if (command.type === "execution.open") {
-      setSelectedExecutionId(command.runId);
-      setReview("runs");
+      setSelectedExecutionId(command.executionId);
+      setReview("execution");
       return;
     }
     if (command.type === "review.close") {
@@ -152,10 +152,10 @@ export function AgentShell({
               report={report}
               reportLoading={reportLoading}
               error={error}
-              selectedRunId={selectedExecutionId}
+              selectedExecutionId={selectedExecutionId}
               onView={(next) => { setSelectedExecutionId(null); setReview(next); }}
-              onOpenRun={(runId) => { setSelectedExecutionId(runId); setReview("runs"); }}
-              onCloseRun={() => setSelectedExecutionId(null)}
+              onOpenExecution={(executionId) => { setSelectedExecutionId(executionId); setReview("execution"); }}
+              onCloseExecution={() => setSelectedExecutionId(null)}
               onClose={() => { setReview(null); setSelectedExecutionId(null); }}
             />
           ) : null}
