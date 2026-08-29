@@ -1,0 +1,230 @@
+name: v0.93 Agent UI vocabulary migration
+
+on:
+  push:
+    branches:
+      - chatgpt/v0.93-agent-native-rebuild
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/v0.93-agent-native-rebuild
+          fetch-depth: 0
+
+      - name: Remove chat-era UI vocabulary and DOM contracts
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          root = Path("frontend")
+          files = (
+              list((root / "src").rglob("*.ts"))
+              + list((root / "src").rglob("*.tsx"))
+              + list((root / "src").rglob("*.css"))
+              + list((root / "e2e").rglob("*.ts"))
+          )
+
+          replacements = [
+              ("thread-pending-question", "task-pending-direction"),
+              ("thread-scroll", "task-scroll"),
+              ("thread-item-", "task-step-"),
+              ("thread-item", "task-step"),
+              ("thread-prose", "work-result-prose"),
+              ("timeline-run-link", "task-execution-link"),
+              ("remote-turn", "remote-work"),
+              ("turn-footer-toggle", "execution-details-toggle"),
+              ('"thread.', '"task.'),
+              ('"rail.', '"taskNav.'),
+              ('"inspector.', '"review.'),
+              ('"palette.', '"command.'),
+              ('"keys.', '"shortcut.'),
+              ('"timeline.', '"execution.'),
+              ('"turn.checks"', '"execution.checks"'),
+              ('"turn.failed"', '"execution.failed"'),
+              ('"turn.trace"', '"execution.trace"'),
+              ('"a11y.conversation"', '"a11y.taskWorkspace"'),
+              ('"task.redirectCurrent"', '"task.steerCurrent"'),
+              ('"task.redirectHint"', '"task.steerHint"'),
+              ('"task.redirect"', '"task.steer"'),
+              ('"taskNav.newChat"', '"taskNav.newTask"'),
+              ('"taskNav.noChats"', '"taskNav.noTasks"'),
+              ('"taskNav.deleteConfirmShort"', '"taskNav.deleteConfirm"'),
+              ('"command.newChat"', '"command.newTask"'),
+              ('"command.chat"', '"command.task"'),
+              ('"shortcut.groupChat"', '"shortcut.groupTask"'),
+              ('"shortcut.newChat"', '"shortcut.newTask"'),
+              ('"shortcut.toggleRail"', '"shortcut.toggleTaskNavigation"'),
+              ('"shortcut.inspector"', '"shortcut.review"'),
+              ('"shortcut.prevTurn"', '"shortcut.prevStep"'),
+              ('"shortcut.nextTurn"', '"shortcut.nextStep"'),
+              ('"task.titleNew"', '"task.newTaskTitle"'),
+          ]
+          for path in files:
+              text = path.read_text()
+              changed = text
+              for old, new in replacements:
+                  changed = changed.replace(old, new)
+              if changed != text:
+                  path.write_text(changed)
+
+          i18n = root / "src/i18n.tsx"
+          text = i18n.read_text()
+          copy_replacements = [
+              ('"New chat"', '"New Agent task"'),
+              ('"No chats yet."', '"No Agent tasks yet."'),
+              ('"Search chats…"', '"Search Agent tasks…"'),
+              ('"No matching chats."', '"No matching Agent tasks."'),
+              ('"In a chat"', '"Active task"'),
+              ('"Show / hide the sidebar"', '"Show / hide task navigation"'),
+              ('"Session inspector"', '"Task review"'),
+              ('"Find in this investigation"', '"Find in this task"'),
+              ('"Previous exchange"', '"Previous task step"'),
+              ('"Next exchange"', '"Next task step"'),
+              ('"Find in this investigation…"', '"Find in this task…"'),
+              ('"Delete chat?"', '"Delete task?"'),
+              ('"How can I help with your storage?"', '"Delegate a goal to the Agent"'),
+              ('"Ask Storage Agent…"', '"Give the Agent a goal, constraint, or next step…"'),
+              ('"Couldn’t send your message."', '"The Agent could not accept this direction."'),
+              ('"send"', '"delegate"'),
+              ('"Redirect"', '"Steer"'),
+              ('"Send to redirect — keeps what it already found"', '"Steer the running Agent without discarding completed work"'),
+              ('"redirect current turn"', '"steer current work"'),
+              ('"Session findings"', '"Task findings"'),
+              ('"Edit and send again"', '"Reuse as new direction"'),
+              ('"Ask again"', '"Run again"'),
+              ('"Branch a new investigation from here"', '"Branch a new task from this direction"'),
+              ('"Start a chat first, then generate a report."', '"Create an Agent task before generating a report artifact."'),
+              ('"Generate a report for this chat"', '"Generate a report artifact for this task"'),
+              ('"Continue investigation"', '"Continue task"'),
+              ('"chat"', '"task"'),
+              ('"Recent chats"', '"Recent tasks"'),
+              ('"Search chats or run a command…"', '"Search Agent tasks or run a command…"'),
+              ('"The turn failed."', '"The current task step failed."'),
+              ('"Answer ready."', '"Work result ready."'),
+              ('"Conversation"', '"Agent task workspace"'),
+              ('"A turn started earlier is still running ({age}). Its answer will appear here."', '"Earlier Agent work is still running ({age}). Its result will appear here."'),
+              ('"Attached evidence"', '"Attached evidence"'),
+              ('"Start investigating"', '"Delegate your first task"'),
+              ('"Describe an issue, or paste an S3 error for offline triage — no credentials needed."', '"Delegate a storage task, or paste an S3 error for offline triage — no credentials needed."'),
+              ('"a file you attach in the chat is local and analyzed inline."', '"a file you attach to a task is local and analyzed inline."'),
+              ('"新对话"', '"新 Agent Task"'),
+              ('"还没有对话。"', '"还没有 Agent Task。"'),
+              ('"搜索对话…"', '"搜索 Agent Tasks…"'),
+              ('"没有匹配的对话。"', '"没有匹配的 Agent Task。"'),
+              ('"会话内"', '"当前 Task"'),
+              ('"新建会话"', '"新建 Agent Task"'),
+              ('"显示 / 隐藏侧栏"', '"显示 / 隐藏 Task 导航"'),
+              ('"会话检查器"', '"Task Review"'),
+              ('"在本次调查中查找"', '"在当前 Task 中查找"'),
+              ('"上一轮对话"', '"上一个 Task Step"'),
+              ('"下一轮对话"', '"下一个 Task Step"'),
+              ('"在本次调查中查找…"', '"在当前 Task 中查找…"'),
+              ('"删除对话？"', '"删除 Task？"'),
+              ('"我能为你的存储做些什么？"', '"把目标交给 Agent"'),
+              ('"向云存储 Agent 提问…"', '"给 Agent 一个目标、约束或下一步…"'),
+              ('"消息没能发送。"', '"Agent 无法接受这条 Direction。"'),
+              ('"发送"', '"委派"'),
+              ('"改向"', '"Steer"'),
+              ('"发送以改变方向 —— 保留已查到的内容"', '"Steer 正在运行的 Agent，并保留已经完成的工作"'),
+              ('"改向当前回合"', '"Steer 当前任务"'),
+              ('"会话发现"', '"Task 发现"'),
+              ('"编辑后重新发送"', '"作为新 Direction 复用"'),
+              ('"重新提问"', '"重新执行"'),
+              ('"从这里分出一条新的调查"', '"从这条 Direction 分支新 Task"'),
+              ('"请先开始一个对话，再生成报告。"', '"请先创建 Agent Task，再生成 Report Artifact。"'),
+              ('"为此对话生成报告"', '"为当前 Task 生成 Report Artifact"'),
+              ('"继续调查"', '"继续 Task"'),
+              ('"会话"', '"Task"'),
+              ('"最近的对话"', '"最近的 Tasks"'),
+              ('"搜索对话或运行命令…"', '"搜索 Agent Tasks 或运行命令…"'),
+              ('"本轮失败。"', '"当前 Task Step 失败。"'),
+              ('"答案已就绪。"', '"Work Result 已就绪。"'),
+              ('"对话"', '"Agent Task 工作区"'),
+              ('"此前开始的一轮仍在运行（{age}），答案会显示在这里。"', '"此前启动的 Agent 工作仍在运行（{age}），结果会显示在这里。"'),
+              ('"开始排查"', '"委派第一个 Task"'),
+              ('"描述一个问题，或粘贴一段 S3 错误进行离线诊断——无需凭证。"', '"委派一个存储任务，或粘贴一段 S3 错误进行离线诊断——无需凭证。"'),
+              ('"你在对话中附加的文件属于本地文件，会就地分析。"', '"你附加到 Task 的本地文件会就地分析。"'),
+          ]
+          for old, new in copy_replacements:
+              text = text.replace(old, new)
+          i18n.write_text(text)
+
+          task_find = root / "src/taskFind.ts"
+          text = task_find.read_text()
+          text = text.replace("session TITLES", "Agent task titles")
+          text = text.replace("messages", "durable task events")
+          text = text.replace("eighty turns into a bucket investigation", "deep into a long-running storage task")
+          text = text.replace("the one thing a long thread is for", "the reason long-running task history must stay searchable")
+          text = text.replace("collapsed turns", "collapsed task steps")
+          text = text.replace("thread of several hundred messages", "task with several hundred durable events")
+          text = text.replace("run card or a triage card", "execution artifact or a triage artifact")
+          text = text.replace("the inspector", "Task Review")
+          text = text.replace("an investigation's", "a task's")
+          text = text.replace("the thread", "the task")
+          task_find.write_text(text)
+
+          find_bar = root / "src/components/FindBar.tsx"
+          text = find_bar.read_text().replace("open investigation", "active Agent task")
+          find_bar.write_text(text)
+
+          content = root / "src/components/TaskContentImplementation.tsx"
+          text = content.read_text()
+          text = text.replace("UI labels inside an otherwise fully translated thread", "UI labels inside an otherwise fully translated task")
+          text = text.replace("in the thread rather than only in the report", "in task context rather than only in the report")
+          text = text.replace("Compact live progress rollup during a streaming turn", "Compact live progress rollup during active Agent work")
+          old = '''      <span className="truncate">{label}</span>\n    </button>'''
+          new = '''      <span className="truncate">{label}</span>\n      {proposal.requires_confirmation ? (\n        <span data-testid="approval-required" className="shrink-0 rounded-full border border-warn-border bg-warn-bg px-1.5 py-0.5 text-[9px] font-medium text-warn-fg">\n          {t("task.approvalRequired")}\n        </span>\n      ) : null}\n    </button>'''
+          assert old in text, "ProposalCard anchor changed"
+          text = text.replace(old, new, 1)
+          content.write_text(text)
+
+          i18n = root / "src/i18n.tsx"
+          text = i18n.read_text()
+          en_anchor = '  "task.stop": "Stop",\n'
+          zh_anchor = '  "task.stop": "停止",\n'
+          assert en_anchor in text and zh_anchor in text
+          text = text.replace(en_anchor, en_anchor + '  "task.approvalRequired": "Approval required",\n', 1)
+          text = text.replace(zh_anchor, zh_anchor + '  "task.approvalRequired": "需要确认",\n', 1)
+          i18n.write_text(text)
+
+          ui_files = [
+              root / "src/i18n.tsx",
+              root / "src/components/AgentTask.tsx",
+              root / "src/components/AgentTaskImplementation.tsx",
+              root / "src/components/TaskContent.tsx",
+              root / "src/components/TaskContentImplementation.tsx",
+              root / "src/components/CommandPalette.tsx",
+              root / "src/components/ShortcutsSheet.tsx",
+              root / "src/workbench/WorkbenchShell.tsx",
+              root / "src/workbench/AgentTaskNavigation.tsx",
+              root / "src/workbench/agent-runtime.css",
+              root / "src/taskFind.ts",
+          ]
+          visible = "\n".join(path.read_text() for path in ui_files)
+          forbidden_tokens = [
+              "thread-scroll", "thread-item", "thread-pending-question", "timeline-run-link",
+              '"thread.', '"rail.', '"inspector.', '"palette.',
+              "Ask Storage Agent", "New chat", "Search chats", "Session inspector",
+              "Find in this investigation", "Delete chat", "Start a chat", "Continue investigation",
+              "新对话", "搜索对话", "会话检查器", "在本次调查中", "删除对话",
+          ]
+          for token in forbidden_tokens:
+              assert token not in visible, f"legacy UI vocabulary remains: {token}"
+
+      - name: Commit Agent-native UI vocabulary
+        run: |
+          git add -A frontend
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git diff --cached --quiet && exit 0
+          git commit -m "refactor(agent): remove chat-era UI vocabulary [v093-ui-language]"
+          git push origin HEAD:chatgpt/v0.93-agent-native-rebuild
