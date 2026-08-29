@@ -10,6 +10,7 @@ import "./work-result.css";
 import "./agent-task.css";
 import "./execution-review.css";
 import "./agent/agent-shell.css";
+import "./agent/agent-state.css";
 import "./agent/agent-runtime.css";
 
 applyTheme(initialTheme());
