@@ -1,31 +1,44 @@
-import type { WorkSurface } from "./model";
+import type { ReviewSurface } from "./model";
 
-export type WorkbenchCommand =
-  | { type: "surface.open"; surface: WorkSurface }
-  | { type: "run.open"; runId: string };
+export type AgentCommand =
+  | { type: "review.open"; review: ReviewSurface }
+  | { type: "review.close" }
+  | { type: "execution.open"; runId: string };
 
-type CommandHandler = (command: WorkbenchCommand) => void;
+type CommandHandler = (command: AgentCommand) => void;
 let handler: CommandHandler | null = null;
 
-/** Publish the currently mounted Workbench command target. */
-export function publishWorkbenchCommands(next: CommandHandler): () => void {
+/** Publish the currently mounted Agent command target. */
+export function publishAgentCommands(next: CommandHandler): () => void {
   handler = next;
   return () => {
     if (handler === next) handler = null;
   };
 }
 
+/** Open contextual review without replacing the active Agent task. */
+export function openAgentReview(review: ReviewSurface): void {
+  handler?.({ type: "review.open", review });
+}
+
+export function closeAgentReview(): void {
+  handler?.({ type: "review.close" });
+}
+
+export function openAgentExecution(runId: string): void {
+  handler?.({ type: "execution.open", runId });
+}
+
 /**
- * Route a semantic action to the application work surface.
- *
- * This exists for migration seams such as Timeline proposals and answer links:
- * they ask to open Evidence/Report/Run, but never know whether that surface is a
- * tab, a full-window document or something else. No DOM events or modal state.
+ * Transitional API for the proven task renderer. This seam is deliberately
+ * outside the Agent shell/model: old callers can request their historical
+ * destination while the core product only receives review/task commands.
  */
-export function openWorkbenchSurface(surface: WorkSurface): void {
-  handler?.({ type: "surface.open", surface });
+export function openWorkbenchSurface(surface: "timeline" | "evidence" | "runs" | "report"): void {
+  if (surface === "timeline") closeAgentReview();
+  else openAgentReview(surface);
 }
 
 export function openWorkbenchRun(runId: string): void {
-  handler?.({ type: "run.open", runId });
+  openAgentExecution(runId);
 }
