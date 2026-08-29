@@ -21,8 +21,7 @@ const en: Dict = {
   // application
   "app.name": "Storage Agent",
   "app.actionFailed": "Action failed:",
-  // application shell (v0.46.0)
-  // keyboard shortcuts sheet (v0.46.0)
+  // keyboard shortcuts sheet
   "find.placeholder": "Find in this task…",
   "find.counter": "{i} / {n}",
   "find.none": "No matches",
@@ -54,10 +53,10 @@ const en: Dict = {
   "attach.inventory": "Inventory",
   "attach.accessLog": "Access logs",
   "attach.pickType": "Analyze as:",
-  "attach.pickTypeHint": "Choose a type for the attached file (access log or inventory) before sending.",
+  "attach.pickTypeHint": "Choose a type for the attached file (access log or inventory) before delegating.",
   "attach.promptInventory": "Analyze this inventory file.",
   "attach.promptLog": "Analyze this log file.",
-  "grounding.title": "Why this answer",
+  "grounding.title": "Result grounding",
   "grounding.evidence": "Grounded in",
   "grounding.gaps": "Not yet verified",
   "grounding.skills": "Method",
@@ -68,28 +67,24 @@ const en: Dict = {
   "metrics.durationHint": "Time from delegation to the durable Work Result.",
   "metrics.modelHint": "Reported by {model}",
   "metrics.tokensUnavailableHint":
-    "This model endpoint did not report token usage for the turn. Nothing is estimated.",
+    "This model endpoint did not report token usage for this execution. Nothing is estimated.",
   "metrics.requests": "{n} model calls",
   "metrics.requestsHint":
     "Model calls this execution made, counted here rather than reported by the endpoint — so it is available even when token usage is not.",
   "metrics.partialHint":
     "Only {reported} of this execution's {total} model calls reported token usage, so these counts are a floor, not a total. The rest is unknown, not zero.",
-  // task interaction (v0.46.0)
+  // execution summary
   "trace.ran": "Ran {n} checks",
   "trace.auditGap": "This call ran and was saved, but its audit-log entry could not be written: {reason}",
-  // execution summary
-  "turn.checks": "{n} checks",
-  "turn.failed": "{n} failed",
-  "turn.trace": "What it ran",
   "trace.kinds": "{n} tools",
   "trace.failed": "{n} failed",
-  "msg.edit": "Edit and send again",
-  "msg.regenerate": "Ask again",
+  "msg.edit": "Revise direction",
+  "msg.regenerate": "Run this direction again",
   "msg.branch": "Branch a new task from here",
   "msg.showMore": "Show more",
   "msg.showLess": "Show less",
   "findings.title": "Task findings",
-  // suggestions (labels)
+  // suggestions
   "sugg.diagnose": "Diagnose an error",
   "sugg.logs": "Analyze access logs",
   "sugg.inventory": "Inventory & capacity",
@@ -97,19 +92,18 @@ const en: Dict = {
   "sugg.account": "Map account & buckets",
   "sugg.optimize": "Optimize storage",
   "slash.report": "Generate a report for this task",
-  // suggestion prompts (sent to the agent)
   "prompt.diagnose": "I'm getting a 403 AccessDenied when uploading to my bucket, but reads work. Help me diagnose it.",
   "prompt.logs": "Analyze my S3 access logs for traffic patterns, error rates, and the hottest object keys.",
   "prompt.inventory": "Give me an inventory and capacity breakdown of my bucket by object size and storage class.",
   "prompt.config": "Review my bucket's configuration for security, lifecycle, cost, and performance issues.",
   "prompt.account": "Discover my account and map out all my buckets, regions, and their configuration.",
   "prompt.optimize": "Find cost and performance optimization opportunities across my object storage.",
-  // task cards
+  // Agent execution states
   "card.agentName": "Storage Agent",
   "think.0": "Thinking…",
   "think.1": "Consulting StorageOps skills…",
   "think.2": "Grounding in evidence…",
-  "think.3": "Drafting a response…",
+  "think.3": "Synthesizing Work Result…",
   "think.working": "Working… (still running)",
   "run.queued": "queued",
   "run.running": "running",
@@ -206,7 +200,7 @@ const en: Dict = {
   "profile.evInventory": "inventory",
   "profile.evLogging": "logging",
   "profile.noMatch": "No buckets match this filter.",
-  // evidence import dialog
+  // evidence import
   "imp.whatLog": "access logs",
   "imp.whatInv": "inventory",
   "imp.targetLog": "logging target",
@@ -248,7 +242,7 @@ const en: Dict = {
   "settings.safetyTitle": "Safety",
   "settings.safety":
     "Secrets are stored only in the encrypted local vault — never in the database, logs, reports, or model prompts. Cloud access is read-only and the Agent has no write or destructive capability. Cloud data-moving work (downloads, large scans, evidence import) always requires your confirmation; a file you attach in the task is local and analyzed inline.",
-  // providers view
+  // providers
   "prov.title": "Providers",
   "prov.subtitle": "Configure model and cloud storage providers",
   "prov.nameTypeRequired": "Name and provider type are required.",
@@ -276,7 +270,7 @@ const en: Dict = {
   "prov.fModel": "Model",
   "prov.fApiKey": "API key",
   "prov.fContextWindow": "Context window (tokens, optional)",
-  "prov.hintContextWindow": "Overrides the built-in model table for the agent's depth budgets; leave empty to infer from the model name.",
+  "prov.hintContextWindow": "Overrides the built-in model table for the Agent's depth budgets; leave empty to infer from the model name.",
   "prov.fMaxOutput": "Max output tokens (optional)",
   "prov.hintMaxOutput": "Clamps the completion budget so a third-party or unknown model whose real cap is lower doesn't reject the request; leave empty to infer from the model name.",
   "prov.fProvider": "Provider",
@@ -311,29 +305,26 @@ const en: Dict = {
   "prov.testOk": "OK",
   "prov.testIncomplete": "incomplete",
   "prov.testUnverified": "reachable (key unverified)",
-  // command palette
   // first-run wizard
   "wizard.welcomeTitle": "Welcome to Storage Agent",
   "wizard.welcomeBody":
-    "A local-first agent for object storage on S3-compatible systems — operations, analytics, and management. Diagnose issues, analyze logs and inventory, review configuration, profile usage and cost, and optimize. Everything runs on your machine; secrets stay in the encrypted local vault.",
+    "A local-first Agent for object storage on S3-compatible systems — operations, analytics, and management. Diagnose issues, analyze logs and inventory, review configuration, profile usage and cost, and optimize. Everything runs on your machine; secrets stay in the encrypted local vault.",
   "wizard.step1Title": "Add a model provider",
-  "wizard.step1Body": "An LLM API key so the agent can interpret evidence and answer questions.",
+  "wizard.step1Body": "An LLM API key so the Agent can interpret evidence and produce Work Results.",
   "wizard.step2Title": "Add a cloud provider",
   "wizard.step2Body": "Read-only S3 credentials to run live checks and analysis against a bucket.",
   "wizard.step3Title": "Delegate your first task",
   "wizard.step3Body": "Describe an issue, or paste an S3 error for offline triage — no credentials needed.",
   "wizard.skip": "Skip for now",
   "wizard.configure": "Configure providers",
-
-  // charts derived from a rendered table
+  // charts
   "chart.caption": "{measure} by {label}",
   "chart.summary": "Highest {measure}: {label} at {value}",
   "chart.peak": "peak",
   "chart.hide": "Hide chart",
   "chart.show": "Show chart",
-
-  // what the agent knows (v0.51.0)
-  "memory.title": "What the agent knows",
+  // durable Agent memory
+  "memory.title": "What the Agent knows",
   "memory.kind.fact": "Established facts",
   "memory.kind.finding": "Recorded findings",
   "memory.kind.open_question": "Open questions",
@@ -342,39 +333,32 @@ const en: Dict = {
   "memory.resolve": "Resolve",
   "memory.save": "Save",
   "memory.confidence": "confidence: {level}",
-  "memory.rolled": "The agent replays the most recent {shown} of {total} task history; earlier steps are no longer in its active context — it works from this memory and the summary instead.",
-
+  "memory.rolled": "The Agent replays the most recent {shown} of {total} task history; earlier steps are no longer in its active context — it continues from this memory and the summary instead.",
   // screen-reader announcements
   "a11y.task": "Task",
-  "a11y.working": "The agent is working.",
-  "a11y.answerReady": "Work Result ready.",
+  "a11y.working": "The Agent is working.",
+  "a11y.resultReady": "Work Result ready.",
   "a11y.turnFailed": "Agent execution failed.",
-  "a11y.needKey": "A model provider is required before the agent can answer.",
-
-  // token detail (v0.53.0)
+  "a11y.needKey": "A model provider is required before the Agent can execute this task.",
+  // token detail
   "metrics.cachedHint":
     "{n} input tokens ({pct}%) were served from the endpoint's prompt cache — cached input is typically much cheaper.",
   "metrics.reasoningHint": "{n} of the output tokens were reasoning, which is billed but never shown as text.",
-
-  // deep-turn trace fold (v0.55.0)
   "trace.showEarlier": "show {n} earlier steps",
-
-  // answer outline (v0.57.0)
-  "answer.outline": "In this result",
-
-  // in-place call detail (v0.56.0)
+  // Work Result outline
+  "result.outline": "In this result",
+  // call detail
   "call.input": "sent",
   "call.output": "returned",
   "call.loading": "loading call…",
   "call.unavailable": "This call's detail is no longer available.",
   "call.clipped": "+{n} more characters",
-
-  // per-execution budget + in-turn dedupe (v0.54.0)
+  // execution budget + in-execution dedupe
   "metrics.ofBudget": "of budget",
   "metrics.budgetHint":
-    "This execution used {pct}% of its {n}-token task budget. The budget is the workbench's own per-execution ceiling, not a provider limit.",
+    "This execution used {pct}% of its {n}-token task budget. The budget is this Agent's per-execution ceiling, not a provider limit.",
   "metrics.repeatsHint":
-    "{n} identical tool call(s) were answered from earlier in this execution instead of being re-run — the payload was not paid for twice.",
+    "{n} identical tool call(s) were reused from earlier in this execution instead of being re-run — the payload was not paid for twice.",
 };
 
 const zh: Dict = {
@@ -386,9 +370,7 @@ const zh: Dict = {
   "common.untitled": "未命名",
   "app.name": "云存储 Agent",
   "app.actionFailed": "操作失败：",
-  // 应用外壳
-  // 快捷键面板 (v0.46.0)
-  "find.placeholder": "在当前 Task中查找…",
+  "find.placeholder": "在当前 Task 中查找…",
   "find.counter": "第 {i} / 共 {n}",
   "find.none": "无匹配",
   "find.tooShort": "请至少输入 {n} 个字符",
@@ -418,15 +400,14 @@ const zh: Dict = {
   "attach.inventory": "清单",
   "attach.accessLog": "访问日志",
   "attach.pickType": "分析为：",
-  "attach.pickTypeHint": "发送前请为附件选择类型（访问日志或清单）。",
+  "attach.pickTypeHint": "委派前请为附件选择类型（访问日志或清单）。",
   "attach.promptInventory": "请分析这个清单文件。",
   "attach.promptLog": "请分析这个日志文件。",
-  "grounding.title": "为什么这么说",
+  "grounding.title": "结果依据",
   "findings.title": "Task 发现",
   "grounding.evidence": "依据",
   "grounding.gaps": "尚未验证",
   "grounding.skills": "方法",
-  // Execution Metrics
   "metrics.tools": "{n} 次工具调用",
   "metrics.tokens": "token",
   "metrics.inspect": "查看详情",
@@ -436,18 +417,13 @@ const zh: Dict = {
   "metrics.requests": "{n} 次模型调用",
   "metrics.requestsHint": "本次执行发起的模型调用次数，由本地统计而非服务端上报，因此在 token 用量缺失时依然可用。",
   "metrics.partialHint": "本次执行 {total} 次模型调用中只有 {reported} 次上报了 token 用量，因此这些数字是下限而非总量。其余部分是未知，不是零。",
-  // Task 交互
   "trace.ran": "已运行 {n} 项检查",
   "trace.auditGap": "该调用已执行并已保存，但它的审计日志条目写入失败：{reason}",
-  // Execution Summary
-  "turn.checks": "{n} 项检查",
-  "turn.failed": "{n} 项失败",
-  "turn.trace": "执行过程",
   "trace.kinds": "{n} 种工具",
   "trace.failed": "{n} 项失败",
-  "msg.edit": "编辑后重新发送",
-  "msg.regenerate": "重新提问",
-  "msg.branch": "从这里分出一条新的任务",
+  "msg.edit": "修订 Direction",
+  "msg.regenerate": "按同一 Direction 再执行",
+  "msg.branch": "从这里分出一个新的 Task",
   "msg.showMore": "展开",
   "msg.showLess": "收起",
   "sugg.diagnose": "诊断错误",
@@ -456,7 +432,7 @@ const zh: Dict = {
   "sugg.config": "审查桶配置",
   "sugg.account": "梳理账号与桶",
   "sugg.optimize": "优化存储",
-  "slash.report": "为此Task生成报告",
+  "slash.report": "为此 Task 生成报告",
   "prompt.diagnose": "我上传对象到桶时遇到 403 AccessDenied，但读取正常。请帮我诊断原因。",
   "prompt.logs": "请分析我的 S3 访问日志，找出流量模式、错误率和访问最频繁的对象键。",
   "prompt.inventory": "请按对象大小和存储类别，给我这个桶的清单与容量分析。",
@@ -467,8 +443,8 @@ const zh: Dict = {
   "think.0": "思考中…",
   "think.1": "正在参考 StorageOps 专业方法…",
   "think.2": "正在以证据为依据…",
-  "think.3": "正在组织回答…",
-  "think.working": "正在处理…（仍在运行）",
+  "think.3": "正在生成 Work Result…",
+  "think.working": "正在执行…",
   "run.queued": "排队中",
   "run.running": "运行中",
   "run.done": "完成",
@@ -585,7 +561,7 @@ const zh: Dict = {
   "imp.planSource": "计划来源",
   "imp.filesSelFound": "文件（已选 / 找到）",
   "imp.bytesSel": "字节（已选）",
-  "imp.importing": "正在导入…",
+  "imp.importing": "导入中…",
   "imp.confirmImport": "确认并导入",
   "imp.nothingToImport": "此计划没有可导入的内容。",
   "settings.title": "设置与提供商",
@@ -599,7 +575,7 @@ const zh: Dict = {
     "本机的密钥保险库无法打开，已保存的密钥暂不可用。原文件已备份为 secrets.enc.unreadable（恢复你的 secrets.key 可找回）。请在下方重新填写密钥以继续。",
   "settings.safetyTitle": "安全",
   "settings.safety":
-    "密钥仅保存在本机加密保险库中——绝不会写入数据库、日志、报告或模型提示词。云访问为只读，Agent 没有任何写入或破坏性能力。涉及搬运云端数据的操作（下载、大规模扫描、证据导入）始终需要你确认；你在Task中附加的文件属于本地文件，会就地分析。",
+    "密钥仅保存在本机加密保险库中——绝不会写入数据库、日志、报告或模型提示词。云访问为只读，Agent 没有任何写入或破坏性能力。涉及搬运云端数据的操作（下载、大规模扫描、证据导入）始终需要你确认；Task 中附加的本地文件会就地分析。",
   "prov.title": "提供商",
   "prov.subtitle": "配置模型和云存储提供商",
   "prov.nameTypeRequired": "名称和提供商类型为必填项。",
@@ -627,7 +603,7 @@ const zh: Dict = {
   "prov.fModel": "模型",
   "prov.fApiKey": "API Key",
   "prov.fContextWindow": "上下文窗口（tokens，可选）",
-  "prov.hintContextWindow": "覆盖内置模型表，用于智能体深度预算；留空则按模型名推断。",
+  "prov.hintContextWindow": "覆盖内置模型表，用于 Agent 的深度预算；留空则按模型名推断。",
   "prov.fMaxOutput": "最大输出 tokens（可选）",
   "prov.hintMaxOutput": "限制补全预算，避免第三方或未知模型因真实上限更低而拒绝请求；留空则按模型名推断。",
   "prov.fProvider": "提供商",
@@ -639,8 +615,8 @@ const zh: Dict = {
   "prov.fMode": "模式",
   "prov.fAddressing": "寻址方式",
   "prov.fSignature": "签名版本",
-  "prov.fSessionToken": "Task令牌（可选）",
-  "prov.clearToken": "保存时清除已存的Task令牌",
+  "prov.fSessionToken": "会话令牌（可选）",
+  "prov.clearToken": "保存时清除已存的会话令牌",
   "prov.fAllowedBuckets": "允许的桶",
   "prov.fAllowedPrefixes": "允许的前缀",
   "prov.hintKeep": "已保存在本机加密保险库 · 留空则保持不变",
@@ -663,22 +639,20 @@ const zh: Dict = {
   "prov.testIncomplete": "不完整",
   "prov.testUnverified": "可达（密钥未验证）",
   "wizard.welcomeTitle": "欢迎使用 Storage Agent",
-  "wizard.welcomeBody": "一个本地优先的云存储 Agent，面向 S3 兼容系统——覆盖运维、运营分析与管理:诊断、访问日志与清单分析、账号与桶配置审查、错误排查、用量与成本画像、优化建议。一切都在本机运行;密钥仅保存在本机加密保险库中。",
+  "wizard.welcomeBody": "一个本地优先的云存储 Agent，面向 S3 兼容系统——覆盖运维、分析与管理：诊断、访问日志与清单分析、账号与桶配置审查、错误排查、用量与成本画像、优化建议。一切都在本机运行；密钥仅保存在本机加密保险库中。",
   "wizard.step1Title": "添加模型提供商",
-  "wizard.step1Body": "一个大模型 API Key，让 Agent 能够解读证据并回答问题。",
+  "wizard.step1Body": "一个大模型 API Key，让 Agent 能够解读证据并生成 Work Result。",
   "wizard.step2Title": "添加云存储提供商",
-  "wizard.step2Body": "只读的 S3 凭证，用于对桶进行实时诊断。",
+  "wizard.step2Body": "只读的 S3 凭证，用于对桶进行实时检查与分析。",
   "wizard.step3Title": "委派第一个任务",
   "wizard.step3Body": "描述一个问题，或粘贴一段 S3 错误进行离线诊断——无需凭证。",
   "wizard.skip": "暂时跳过",
   "wizard.configure": "配置提供商",
-
   "chart.caption": "{label} 的 {measure}",
   "chart.summary": "最高 {measure}：{label}，{value}",
   "chart.peak": "峰值",
   "chart.hide": "隐藏图表",
   "chart.show": "显示图表",
-
   "memory.title": "Agent 已知内容",
   "memory.kind.fact": "已确认事实",
   "memory.kind.finding": "已记录发现",
@@ -688,33 +662,23 @@ const zh: Dict = {
   "memory.resolve": "标记完结",
   "memory.save": "保存",
   "memory.confidence": "置信度：{level}",
-  "memory.rolled": "Agent 只回放最近 {shown} 条（共 {total} 条）Task 历史；更早的 Steps 已不在它的当前上下文中——它依据这份记忆和摘要作答。",
-
+  "memory.rolled": "Agent 只回放最近 {shown} 条（共 {total} 条）Task 历史；更早的 Steps 已不在当前上下文中——Agent 会基于这份 Memory 与摘要继续执行。",
   "a11y.task": "Task",
   "a11y.working": "Agent 正在工作。",
-  "a11y.answerReady": "Work Result 已就绪。",
+  "a11y.resultReady": "Work Result 已就绪。",
   "a11y.turnFailed": "Agent 执行失败。",
-  "a11y.needKey": "需要先配置模型提供商，Agent 才能作答。",
-
+  "a11y.needKey": "需要先配置模型提供商，Agent 才能执行当前任务。",
   "metrics.cachedHint": "其中 {n}（{pct}%）输入 token 命中了端点的 prompt 缓存——缓存输入通常便宜得多。",
-  "metrics.reasoningHint": "输出中有 {n} 个 token 用于推理：计费，但从不作为正文显示。",
-
-  // deep-turn trace fold (v0.55.0)
+  "metrics.reasoningHint": "输出中有 {n} 个 token 用于推理：计费，但不作为 Work Result 正文显示。",
   "trace.showEarlier": "展开前面 {n} 步",
-
-  // answer outline (v0.57.0)
-  "answer.outline": "结果目录",
-
-  // in-place call detail (v0.56.0)
+  "result.outline": "结果目录",
   "call.input": "发送",
   "call.output": "返回",
   "call.loading": "正在加载调用详情…",
   "call.unavailable": "该调用的详情已不可用。",
   "call.clipped": "还有 {n} 个字符",
-
-  // per-execution budget + in-turn dedupe (v0.54.0)
   "metrics.ofBudget": "预算",
-  "metrics.budgetHint": "本次执行用掉了 {n} token 任务预算的 {pct}%。该预算是本产品自己的每轮上限，并非服务商的限制。",
+  "metrics.budgetHint": "本次执行用掉了 {n} token 任务预算的 {pct}%。该预算是 Agent 当前执行的任务上限，并非服务商限制。",
   "metrics.repeatsHint": "本次执行有 {n} 次参数完全相同的工具调用直接复用了先前结果，没有重复付费。",
 };
 
@@ -735,9 +699,6 @@ export type TFunc = (key: string, vars?: Record<string, string | number>) => str
 
 function translate(lang: Lang, key: string, vars?: Record<string, string | number>): string {
   let s = DICTS[lang][key] ?? DICTS.en[key] ?? key;
-  // split/join, not String.replace: a value containing $-patterns ("$&", "$'")
-  // — legal in filenames — corrupted the output, and replace only hit the
-  // first occurrence of a repeated placeholder.
   if (vars) for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
   return s;
 }
