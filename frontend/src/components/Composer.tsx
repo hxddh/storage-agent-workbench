@@ -83,7 +83,7 @@ export function Composer({
         commands: "输入 / 使用任务命令",
         commandMenu: "任务命令",
         uploading: (name: string) => `正在准备 ${name}…`,
-        addModel: "配置 Model Provider",
+        modelSettings: "模型设置",
         steerCurrent: "Steer 当前执行",
         newline: "换行",
         stop: "Stop",
@@ -102,7 +102,7 @@ export function Composer({
         commands: "Type / for task commands",
         commandMenu: "Task commands",
         uploading: (name: string) => `Preparing ${name}…`,
-        addModel: "Configure Model Provider",
+        modelSettings: "Model settings",
         steerCurrent: "Steer current execution",
         newline: "new line",
         stop: "Stop",
@@ -271,12 +271,12 @@ export function Composer({
         <button
           type="button"
           onClick={onOpenSettings}
-          title={modelName ?? copy.addModel}
-          aria-label={modelName ? `${copy.model}: ${modelName}` : copy.addModel}
+          title={modelName ?? copy.modelSettings}
+          aria-label={modelName ? `${copy.model}: ${modelName}` : copy.modelSettings}
           className={`flex h-7 items-center gap-1.5 rounded-lg border px-2 text-2xs transition-colors ${modelName ? "border-transparent text-gray-500 hover:border-edge hover:bg-elevated hover:text-gray-300" : "border-warn-border text-warn-fg"}`}
         >
           <Spark size={10} />
-          <span>{modelName ? copy.model : copy.addModel}</span>
+          <span>{modelName ? copy.model : copy.modelSettings}</span>
         </button>
 
         <span className="ml-auto hidden text-2xs text-gray-500 opacity-0 transition-opacity group-focus-within/composer:opacity-100 sm:inline">
