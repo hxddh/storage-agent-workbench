@@ -48,6 +48,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
   it("uses task-navigation geometry and selectors rather than rail protocols", () => {
     const navigation = source("./AgentTaskNavigation.tsx");
     const model = source("./navigationModel.ts");
+    const e2e = source("../../e2e/task-navigation.spec.ts");
     expect(navigation).toContain('data-testid="agent-task-navigation"');
     expect(navigation).toContain('data-testid="task-navigation-toggle"');
     expect(navigation).not.toContain('data-testid="session-rail"');
@@ -57,7 +58,9 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(model).not.toContain("DEFAULT_RAIL_WIDTH");
     expect(model).not.toContain("clampRailWidth");
     expect(existsSync(new URL("../../e2e/rail.spec.ts", import.meta.url))).toBe(false);
-    expect(existsSync(new URL("../../e2e/task-navigation.spec.ts", import.meta.url))).toBe(true);
+    expect(e2e).toContain('test.describe("Agent task navigation"');
+    expect(e2e).toContain('getByTestId("agent-task-navigation")');
+    expect(e2e).not.toContain('getByTestId("session-rail")');
   });
 
   it("uses review and execution commands rather than v0.92 application surfaces", () => {
@@ -82,10 +85,14 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(existsSync(new URL("./EvidenceWorkspace.tsx", import.meta.url))).toBe(false);
     expect(existsSync(new URL("./RunsWorkspace.tsx", import.meta.url))).toBe(false);
     expect(existsSync(new URL("./ReportWorkspace.tsx", import.meta.url))).toBe(false);
-    expect(existsSync(new URL("./EvidenceReview.tsx", import.meta.url))).toBe(true);
-    expect(existsSync(new URL("./ExecutionReview.tsx", import.meta.url))).toBe(true);
-    expect(existsSync(new URL("./ReportArtifact.tsx", import.meta.url))).toBe(true);
+    const evidence = source("./EvidenceReview.tsx");
+    const execution = source("./ExecutionReview.tsx");
+    const report = source("./ReportArtifact.tsx");
     const review = source("./AgentReviewPanel.tsx");
+    expect(evidence).toContain("export function EvidenceReview");
+    expect(evidence).toContain('data-testid="evidence-review"');
+    expect(execution).toContain("export function ExecutionReview");
+    expect(report).toContain("export function ReportArtifact");
     expect(review).toContain("<EvidenceReview");
     expect(review).toContain("<ExecutionReview");
     expect(review).toContain("<ReportArtifact");
@@ -103,14 +110,17 @@ describe("v0.93 Agent-native ownership boundaries", () => {
   it("uses AgentTask as the only public task boundary", () => {
     expect(existsSync(new URL("../components/Thread.tsx", import.meta.url))).toBe(false);
     expect(existsSync(new URL("../components/ThreadImplementation.tsx", import.meta.url))).toBe(false);
-    expect(existsSync(new URL("../components/AgentTask.tsx", import.meta.url))).toBe(true);
-    expect(existsSync(new URL("../components/AgentTaskImplementation.tsx", import.meta.url))).toBe(true);
     const app = source("../App.tsx");
     const boundary = source("../components/AgentTask.tsx");
+    const implementation = source("../components/AgentTaskImplementation.tsx");
     expect(app).toContain('import { AgentTask } from "./components/AgentTask"');
     expect(app).toContain("<AgentTask");
     expect(boundary).toContain('matches(event, "nextStep")');
     expect(boundary).toContain('matches(event, "prevStep")');
+    expect(boundary).toContain('from "./AgentTaskImplementation"');
+    expect(boundary).not.toContain("Thread as AgentTaskImplementation");
+    expect(implementation).toContain("export function AgentTaskImplementation");
+    expect(implementation).not.toContain("export function Thread");
   });
 
   it("uses task-native keyboard contracts", () => {
