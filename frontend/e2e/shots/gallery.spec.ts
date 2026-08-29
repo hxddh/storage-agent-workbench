@@ -10,14 +10,12 @@ import { seedSession as seedTask } from "../seed";
  * Human visual-review contact sheet for the Agent product.
  *
  * This deliberately does not use pixel baselines: CI, local Chromium and OS font
- * stacks are not raster-identical. Instead every capture must first reach a real,
- * asserted Agent state against the real Sidecar, then writes PNG evidence for
- * human review. The gallery is therefore allowed to fail when a state disappears,
- * but it never declares visual quality from a fuzzy pixel threshold.
+ * stacks are not raster-identical. Every capture first reaches a real, asserted
+ * Agent state against the real Sidecar, then writes PNG evidence for human review.
  *
- * The states are the product model: Delegate, Working + Steer, Decision,
+ * The states are the product model: Delegate, Running + Steer, Decision,
  * Work Result, Execution and contextual Review. There are intentionally no
- * screenshots for the deleted chat-era Inspector, Rail, Timeline or page tabs.
+ * screenshots for deleted Chat-era navigation, transcript pages or inspector UI.
  */
 
 const OUT = path.resolve("shots");
@@ -151,7 +149,7 @@ for (const theme of THEMES) {
 }
 
 test.describe("Agent runtime states", () => {
-  test("Working + Steer — execution remains controllable", async ({ page }) => {
+  test("Working + Steer — execution remains controllable and promoted in the command center", async ({ page }) => {
     test.setTimeout(120_000);
     const model = await startFakeModel(
       [toolTurn("head_bucket", { bucket: "acme-logs" }), textTurn(LIVE_RESULT)],
@@ -165,6 +163,7 @@ test.describe("Agent runtime states", () => {
       await expect(page.getByTestId("agent-live-status")).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId("agent-composer")).toHaveAttribute("data-agent-state", "working");
       await expect(composer(page)).toHaveAttribute("placeholder", /Steer the Agent/);
+      await expect(navigation(page).getByTestId("task-queue-running")).toBeVisible({ timeout: 20_000 });
       await shoot(page, "10-working-steer", "dark");
     } finally {
       await dropModelProvider(providerId);
@@ -172,12 +171,13 @@ test.describe("Agent runtime states", () => {
     }
   });
 
-  test("Decision — Agent blocks before confirmation-gated work", async ({ page }) => {
+  test("Decision — Agent blocks and the task is promoted to Needs you", async ({ page }) => {
     const title = seedDecisionTask();
     await openAgent(page, "dark");
     await openTask(page, title);
     await expect(page.getByTestId("agent-decision-required")).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("agent-task-header")).toContainText(/Needs decision/i);
+    await expect(navigation(page).getByTestId("task-queue-needs-you")).toContainText(title);
     await shoot(page, "11-decision-required", "dark");
   });
 
@@ -233,6 +233,6 @@ test.afterAll(() => {
     path.join(OUT, "index.html"),
     `<!doctype html><meta charset="utf-8"><title>Storage Agent visual review</title><style>
 body{margin:0;padding:32px;background:#111318;color:#eef0f5;font:14px Inter,system-ui,sans-serif}h1{font-size:26px;margin:0 0 8px}p{color:#9ca3af;margin:0 0 32px;max-width:760px;line-height:1.6}section{margin:0 0 42px}h2{font-size:15px;font-weight:600;margin:0 0 12px;color:#c9ced8}.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}figure{margin:0;background:#191c22;border:1px solid #2a2f39;border-radius:12px;overflow:hidden}figcaption{padding:8px 12px;color:#8f98a8;border-bottom:1px solid #2a2f39}img{display:block;width:100%;height:auto}.missing{min-height:80px}@media(max-width:900px){.pair{grid-template-columns:1fr}}
-</style><h1>Storage Agent — Agent-native visual review</h1><p>Real Sidecar states used for human review: delegation, execution, steering, decisions, work results, artifacts and task navigation. No legacy chat-era surfaces are represented.</p>${rows}`,
+</style><h1>Storage Agent — Agent-native visual review</h1><p>Real Sidecar states used for human review: delegation, execution, steering, decisions, work results, artifacts and live task queues. No legacy Chat-era surfaces are represented.</p>${rows}`,
   );
 });
