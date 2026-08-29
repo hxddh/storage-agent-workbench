@@ -3,10 +3,14 @@ import { listSessions } from "../api";
 import { useI18n, type TFunc } from "../i18n";
 import type { SidecarStatus } from "../hooks/useSidecarHealth";
 import { useSessionRun } from "../sessionRuns";
-import type { SessionSummaryRow } from "../types";
 import { BrandMark } from "../components/ui";
 import { useNavigationCopy } from "./navigationCopy";
-import { DEFAULT_TASK_NAV_WIDTH, clampTaskNavigationWidth, type SessionActions } from "./navigationModel";
+import {
+  DEFAULT_TASK_NAV_WIDTH,
+  clampTaskNavigationWidth,
+  type AgentTaskSummary,
+  type TaskActions,
+} from "./navigationModel";
 import { agentTaskState } from "./taskState";
 
 const STATUS_DOT: Record<SidecarStatus, string> = {
@@ -39,34 +43,34 @@ function MenuItem({ children, onClick, danger = false }: { children: ReactNode; 
   return <button type="button" onClick={onClick} className={`block w-full px-3 py-1.5 text-left text-xs transition-colors ${danger ? "text-danger hover:bg-danger-bg" : "text-gray-300 hover:bg-hover hover:text-gray-100"}`}>{children}</button>;
 }
 
-function TaskRow({ session, activeId, menuId, renamingId, confirmId, onSelect, setMenuId, setRenamingId, setConfirmId, actions }: {
-  session: SessionSummaryRow;
-  activeId: string | null;
+function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTask, setMenuId, setRenamingId, setConfirmId, actions }: {
+  task: AgentTaskSummary;
+  activeTaskId: string | null;
   menuId: string | null;
   renamingId: string | null;
   confirmId: string | null;
-  onSelect: (id: string) => void;
+  onSelectTask: (id: string) => void;
   setMenuId: (id: string | null) => void;
   setRenamingId: (id: string | null) => void;
   setConfirmId: (id: string | null) => void;
-  actions: SessionActions;
+  actions: TaskActions;
 }) {
   const { t } = useI18n();
   const copy = useNavigationCopy();
-  const run = useSessionRun(session.id);
-  const selected = session.id === activeId;
-  const archived = session.status === "archived";
-  const menuOpen = menuId === session.id;
-  const renaming = renamingId === session.id;
-  const confirming = confirmId === session.id;
-  const [renameValue, setRenameValue] = useState(session.title || "");
+  const run = useSessionRun(task.id);
+  const selected = task.id === activeTaskId;
+  const archived = task.status === "archived";
+  const menuOpen = menuId === task.id;
+  const renaming = renamingId === task.id;
+  const confirming = confirmId === task.id;
+  const [renameValue, setRenameValue] = useState(task.title || "");
   const renameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!renaming) return;
-    setRenameValue(session.title || "");
+    setRenameValue(task.title || "");
     requestAnimationFrame(() => { renameRef.current?.focus(); renameRef.current?.select(); });
-  }, [renaming, session.title]);
+  }, [renaming, task.title]);
 
   const stateKey = agentTaskState(run, true);
   const stateLabel = stateKey === "working"
@@ -78,39 +82,39 @@ function TaskRow({ session, activeId, menuId, renamingId, confirmId, onSelect, s
         : stateKey === "attention"
           ? copy.needsAttention
           : copy.ready;
-  const scope = session.primary_bucket?.trim() || session.goal?.trim() || copy.scopeFallback;
-  const outputs = [session.finding_count > 0 ? copy.findings(session.finding_count) : null, session.run_count > 0 ? copy.executions(session.run_count) : null].filter(Boolean).join(" · ");
+  const scope = task.primary_bucket?.trim() || task.goal?.trim() || copy.scopeFallback;
+  const outputs = [task.finding_count > 0 ? copy.findings(task.finding_count) : null, task.run_count > 0 ? copy.executions(task.run_count) : null].filter(Boolean).join(" · ");
   const act = (fn: () => void) => (event: MouseEvent<HTMLButtonElement>) => { event.stopPropagation(); setMenuId(null); fn(); };
 
   if (renaming) {
     return (
       <div className="agent-task-row agent-task-row-renaming" data-testid="task-row-rename">
-        <input ref={renameRef} value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onBlur={() => { setRenamingId(null); const title = renameValue.trim(); if (title && title !== session.title) actions.onRename(session, title); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") setRenamingId(null); }} className="w-full rounded-md border border-accent/50 bg-elevated px-2 py-1.5 text-xs text-gray-100 outline-none" />
+        <input ref={renameRef} value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onBlur={() => { setRenamingId(null); const title = renameValue.trim(); if (title && title !== task.title) actions.onRename(task, title); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") setRenamingId(null); }} className="w-full rounded-md border border-accent/50 bg-elevated px-2 py-1.5 text-xs text-gray-100 outline-none" />
       </div>
     );
   }
 
   return (
-    <div className="agent-task-row group" data-testid="task-row" data-selected={selected ? "true" : "false"} data-state={stateKey} onClick={() => onSelect(session.id)} title={`${session.title || t("common.untitled")} — ${relTime(session.updated_at, t)}`}>
+    <div className="agent-task-row group" data-testid="task-row" data-selected={selected ? "true" : "false"} data-state={stateKey} onClick={() => onSelectTask(task.id)} title={`${task.title || t("common.untitled")} — ${relTime(task.updated_at, t)}`}>
       <span className="agent-task-state-mark" aria-hidden />
       <div className="agent-task-row-content">
         <div className="agent-task-row-title">
-          <strong>{session.title || t("common.untitled")}</strong>
-          {session.pinned ? <svg className="agent-task-pin" width="8" height="8" viewBox="0 0 8 8" fill="currentColor" aria-label={copy.pinned}><circle cx="4" cy="4" r="2.5" /></svg> : null}
+          <strong>{task.title || t("common.untitled")}</strong>
+          {task.pinned ? <svg className="agent-task-pin" width="8" height="8" viewBox="0 0 8 8" fill="currentColor" aria-label={copy.pinned}><circle cx="4" cy="4" r="2.5" /></svg> : null}
         </div>
         <div className="agent-task-row-state"><span>{stateLabel}</span><span aria-hidden>·</span><span className="truncate" title={scope}>{scope}</span></div>
         {outputs ? <div className="agent-task-row-output">{outputs}</div> : null}
       </div>
-      <button type="button" aria-label={t("menu.more")} onClick={(event) => { event.stopPropagation(); setConfirmId(null); setMenuId(menuOpen ? null : session.id); }} className="agent-task-more"><MoreIcon /></button>
+      <button type="button" aria-label={t("menu.more")} onClick={(event) => { event.stopPropagation(); setConfirmId(null); setMenuId(menuOpen ? null : task.id); }} className="agent-task-more"><MoreIcon /></button>
 
       {menuOpen ? (
         <div className="agent-task-menu">
-          <MenuItem onClick={act(() => setRenamingId(session.id))}>{t("menu.rename")}</MenuItem>
-          {!archived ? <MenuItem onClick={act(() => actions.onTogglePin(session))}>{session.pinned ? t("menu.unpin") : t("menu.pin")}</MenuItem> : null}
-          <MenuItem onClick={act(() => actions.onFork(session))}>{t("menu.duplicate")}</MenuItem>
-          <MenuItem onClick={act(() => actions.onToggleArchive(session))}>{archived ? t("menu.unarchive") : t("menu.archive")}</MenuItem>
+          <MenuItem onClick={act(() => setRenamingId(task.id))}>{t("menu.rename")}</MenuItem>
+          {!archived ? <MenuItem onClick={act(() => actions.onTogglePin(task))}>{task.pinned ? t("menu.unpin") : t("menu.pin")}</MenuItem> : null}
+          <MenuItem onClick={act(() => actions.onFork(task))}>{t("menu.duplicate")}</MenuItem>
+          <MenuItem onClick={act(() => actions.onToggleArchive(task))}>{archived ? t("menu.unarchive") : t("menu.archive")}</MenuItem>
           <div className="my-1 border-t border-edge" />
-          <MenuItem danger onClick={act(() => setConfirmId(session.id))}>{t("menu.delete")}</MenuItem>
+          <MenuItem danger onClick={act(() => setConfirmId(task.id))}>{t("menu.delete")}</MenuItem>
         </div>
       ) : null}
 
@@ -119,7 +123,7 @@ function TaskRow({ session, activeId, menuId, renamingId, confirmId, onSelect, s
           <div>{copy.deleteConfirm}</div>
           <div className="mt-2 flex justify-end gap-1.5">
             <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmId(null); }} className="rounded-md px-2.5 py-1 text-xs text-gray-300 hover:bg-hover">{copy.cancel}</button>
-            <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmId(null); actions.onDelete(session); }} className="rounded-md bg-danger px-2.5 py-1 text-xs font-medium text-white">{copy.delete}</button>
+            <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmId(null); actions.onDelete(task); }} className="rounded-md bg-danger px-2.5 py-1 text-xs font-medium text-white">{copy.delete}</button>
           </div>
         </div>
       ) : null}
@@ -133,24 +137,24 @@ export type AgentTaskNavigationProps = {
   onOpenPalette: () => void;
   onToggleCollapse: () => void;
   onResize: (px: number) => void;
-  sessions: SessionSummaryRow[];
-  activeId: string | null;
-  onSelect: (id: string) => void;
+  tasks: AgentTaskSummary[];
+  activeTaskId: string | null;
+  onSelectTask: (id: string) => void;
   onNew: () => void;
   onOpenSettings: () => void;
   status: SidecarStatus;
   slow: boolean;
-  actions: SessionActions;
+  actions: TaskActions;
 };
 
-export function AgentTaskNavigation({ sessions, activeId, onSelect, onNew, onOpenSettings, status, slow, actions, width, collapsed, onOpenPalette, onToggleCollapse, onResize }: AgentTaskNavigationProps) {
+export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, onOpenSettings, status, slow, actions, width, collapsed, onOpenPalette, onToggleCollapse, onResize }: AgentTaskNavigationProps) {
   const { t } = useI18n();
   const copy = useNavigationCopy();
   const [menuId, setMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SessionSummaryRow[] | null>(null);
+  const [results, setResults] = useState<AgentTaskSummary[] | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const q = query.trim();
 
@@ -161,11 +165,11 @@ export function AgentTaskNavigation({ sessions, activeId, onSelect, onNew, onOpe
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [q]);
 
-  const base = q ? (results ?? []) : sessions;
-  const current = base.filter((session) => session.status !== "archived");
-  const archived = base.filter((session) => session.status === "archived");
-  const pinned = current.filter((session) => session.pinned);
-  const recent = current.filter((session) => !session.pinned);
+  const base = q ? (results ?? []) : tasks;
+  const current = base.filter((task) => task.status !== "archived");
+  const archived = base.filter((task) => task.status === "archived");
+  const pinned = current.filter((task) => task.pinned);
+  const recent = current.filter((task) => !task.pinned);
 
   const startResize = (event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -178,7 +182,7 @@ export function AgentTaskNavigation({ sessions, activeId, onSelect, onNew, onOpe
     handle.addEventListener("pointercancel", stop);
   };
 
-  const row = (session: SessionSummaryRow) => <TaskRow key={session.id} session={session} activeId={activeId} menuId={menuId} renamingId={renamingId} confirmId={confirmId} onSelect={onSelect} setMenuId={setMenuId} setRenamingId={setRenamingId} setConfirmId={setConfirmId} actions={actions} />;
+  const row = (task: AgentTaskSummary) => <TaskRow key={task.id} task={task} activeTaskId={activeTaskId} menuId={menuId} renamingId={renamingId} confirmId={confirmId} onSelectTask={onSelectTask} setMenuId={setMenuId} setRenamingId={setRenamingId} setConfirmId={setConfirmId} actions={actions} />;
 
   if (collapsed) {
     return (
@@ -212,7 +216,7 @@ export function AgentTaskNavigation({ sessions, activeId, onSelect, onNew, onOpe
 
       <nav className="agent-task-list" aria-label={copy.tasks}>
         {q && results !== null && results.length === 0 ? <p className="agent-task-list-empty">{copy.noResults}</p> : null}
-        {!q && sessions.length === 0 ? <p className="agent-task-list-empty">{copy.noTasks}</p> : null}
+        {!q && tasks.length === 0 ? <p className="agent-task-list-empty">{copy.noTasks}</p> : null}
         {pinned.length ? <section><div className="agent-task-section-label">{copy.pinned}</div>{pinned.map(row)}</section> : null}
         {recent.length ? <section><div className="agent-task-section-label">{copy.recent}</div>{recent.map(row)}</section> : null}
         {archived.length ? <section><button type="button" className="agent-task-archive-toggle" onClick={() => setShowArchived((value) => !value)}><ChevronIcon open={showArchived} /> {copy.archived} ({archived.length})</button>{(showArchived || q) ? archived.map(row) : null}</section> : null}
