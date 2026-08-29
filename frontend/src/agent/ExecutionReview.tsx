@@ -5,45 +5,45 @@ import { useAgentCopy } from "./agentCopy";
 /** Contextual execution history for the active Agent task. */
 export function ExecutionReview({
   detail,
-  selectedRunId,
-  onOpenRun,
-  onCloseRun,
+  selectedExecutionId,
+  onOpenExecution,
+  onCloseExecution,
 }: {
   detail: SessionDetail | null;
-  selectedRunId: string | null;
-  onOpenRun: (runId: string) => void;
-  onCloseRun: () => void;
+  selectedExecutionId: string | null;
+  onOpenExecution: (executionId: string) => void;
+  onCloseExecution: () => void;
 }) {
   const copy = useAgentCopy();
-  if (selectedRunId) {
-    return <ExecutionDetail runId={selectedRunId} onBack={onCloseRun} />;
+  if (selectedExecutionId) {
+    return <ExecutionDetail runId={selectedExecutionId} onBack={onCloseExecution} />;
   }
 
-  const runs = detail?.runs ?? [];
+  const executions = detail?.runs ?? [];
   return (
     <article className="agent-document" data-testid="execution-review">
       <header className="agent-document-heading">
-        <p className="agent-eyebrow">{copy.run.eyebrow}</p>
-        <h1>{copy.run.title}</h1>
-        <p>{copy.run.description}</p>
+        <p className="agent-eyebrow">{copy.execution.eyebrow}</p>
+        <h1>{copy.execution.title}</h1>
+        <p>{copy.execution.description}</p>
       </header>
-      {runs.length === 0 ? (
-        <p className="agent-empty-line">{copy.run.empty}</p>
+      {executions.length === 0 ? (
+        <p className="agent-empty-line">{copy.execution.empty}</p>
       ) : (
         <div className="agent-run-list">
-          {runs.map((run) => (
+          {executions.map((execution) => (
             <button
-              key={run.run_id}
+              key={execution.run_id}
               type="button"
               className="agent-run-row"
-              onClick={() => onOpenRun(run.run_id)}
+              onClick={() => onOpenExecution(execution.run_id)}
             >
-              <span className="agent-run-status" data-status={run.status} aria-hidden />
+              <span className="agent-run-status" data-status={execution.status} aria-hidden />
               <span className="agent-run-main">
-                <strong>{run.title || run.run_type}</strong>
-                <small>{run.run_type}{run.origin ? ` · ${run.origin}` : ""}</small>
+                <strong>{execution.title || execution.run_type}</strong>
+                <small>{execution.run_type}{execution.origin ? ` · ${execution.origin}` : ""}</small>
               </span>
-              <span className="agent-run-state">{run.status}</span>
+              <span className="agent-run-state">{execution.status}</span>
               <span aria-hidden className="agent-run-arrow">→</span>
             </button>
           ))}
