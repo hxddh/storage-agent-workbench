@@ -1,8 +1,6 @@
-/* v0.93 Agent-native shell
- *
- * The task is the product. Conversation, execution, approvals and durable output
- * stay in one continuous workspace. Evidence/Execution/Report are contextual
- * review material, never application-level destinations.
+/* v0.93 Agent-native shell.
+ * The Agent task is the product: execution, decisions and durable output stay in
+ * one continuous work area. Evidence, Execution and Report are contextual review.
  */
 .agent-native-shell {
   display: flex;
@@ -206,23 +204,13 @@
   overflow: hidden;
 }
 
-.agent-task-thread {
+.agent-task-content {
   display: flex;
   min-width: 0;
   min-height: 0;
   flex: 1;
   overflow: hidden;
 }
-
-/* The shell owns task identity. The historical thread header would duplicate it. */
-.agent-task-thread [data-testid="agent-workspace"] > main > header { display: none; }
-
-/* A task reads as one running job, not a chat transcript floating in a huge page. */
-.agent-task-thread [data-testid="thread-scroll"] { padding-top: 34px; padding-bottom: 36px; }
-.agent-task-thread [data-testid="thread-scroll"] > div { max-width: min(58rem, 100%); }
-.agent-task-thread .thread-item { scroll-margin-top: 28px; }
-.agent-task-thread .thread-item[data-question] { padding-top: 30px; }
-.agent-task-thread .thread-item[data-question]:first-child { padding-top: 0; }
 
 .agent-review-panel {
   display: flex;
@@ -291,8 +279,7 @@
 .agent-review-empty, .agent-review-error { margin: 0; padding: 16px 18px; color: var(--gray-500); font-size: 11px; line-height: 1.55; }
 .agent-review-error { color: var(--danger); }
 
-/* Existing Evidence/Execution/Report renderers are reused as content artifacts,
- * but lose their full-page hero geometry inside contextual review. */
+/* Contextual review reuses document primitives without full-page hero geometry. */
 .agent-review-panel .workbench-document { width: auto; margin: 0; padding: 22px 18px 52px; }
 .agent-review-panel .workbench-document-heading { margin-bottom: 26px; }
 .agent-review-panel .workbench-document-heading h1 { font-size: 22px; }
@@ -353,7 +340,7 @@
 .agent-task-nav-icon { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--gray-500); font-size: 15px; }
 .agent-task-nav-icon:hover { background: var(--hover); color: var(--gray-100); }
 
-/* Existing document primitives remain content-level styles for Evidence/Report. */
+/* Content-level document primitives for Evidence and Report artifacts. */
 .workbench-document { width: min(1080px, calc(100% - 64px)); margin: 0 auto; padding: clamp(44px, 7vh, 82px) 0 96px; }
 .workbench-document-heading { max-width: 760px; margin-bottom: 52px; }
 .workbench-eyebrow { margin: 0 0 12px; color: var(--gray-500); font-size: 10px; font-weight: 650; letter-spacing: .12em; text-transform: uppercase; }
