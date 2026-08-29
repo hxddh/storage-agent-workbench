@@ -3,8 +3,8 @@ export * from "./MarkdownImplementation";
 
 /**
  * Public prose boundary for Agent Work Results, Evidence and Report artifacts.
- * The proven parser/safety implementation stays isolated underneath; product UI
- * consumes Agent prose rather than a conversation/answer-document renderer.
+ * The proven parser/safety implementation stays isolated underneath while the
+ * product consumes durable Agent prose through one width-safe rendering layer.
  */
 export function Markdown({ text }: { text: string }) {
   return (
