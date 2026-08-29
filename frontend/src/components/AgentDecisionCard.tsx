@@ -15,25 +15,25 @@ const DecisionIcon = () => (
   </svg>
 );
 
-/** A real Agent decision boundary backed by the backend confirmation contract. */
-export function ProposalCard({
-  proposal,
+/** A real Agent next-action boundary backed by the backend confirmation contract. */
+export function AgentNextAction({
+  action,
   onRun,
 }: {
-  proposal: NextAction;
-  onRun: (proposal: NextAction) => void;
+  action: NextAction;
+  onRun: (action: NextAction) => void;
 }) {
   const { lang } = useI18n();
-  const label = proposal.action_type === "continue_investigation"
+  const label = action.action_type === "continue_investigation"
     ? (lang === "zh" ? "继续当前 Task" : "Continue task")
-    : proposal.title;
+    : action.title;
 
-  if (!proposal.requires_confirmation) {
+  if (!action.requires_confirmation) {
     return (
       <button
         type="button"
-        onClick={() => onRun(proposal)}
-        title={proposal.reason || label}
+        onClick={() => onRun(action)}
+        title={action.reason || label}
         data-testid="agent-next-action"
         className="inline-flex max-w-full animate-fade-in items-center gap-1.5 rounded-lg border border-edge bg-panel/60 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/45 hover:bg-accent-dim/60 hover:text-gray-100"
       >
@@ -56,11 +56,11 @@ export function ProposalCard({
             {lang === "zh" ? "Decision required · 需要你的决定" : "Decision required"}
           </div>
           <div className="mt-1 text-sm font-medium text-gray-100">{label}</div>
-          {proposal.reason ? <p className="mt-1 text-xs leading-relaxed text-gray-400">{proposal.reason}</p> : null}
+          {action.reason ? <p className="mt-1 text-xs leading-relaxed text-gray-400">{action.reason}</p> : null}
           <div className="mt-3 flex items-center gap-2">
             <button
               type="button"
-              onClick={() => onRun(proposal)}
+              onClick={() => onRun(action)}
               data-testid="agent-approve-action"
               className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg transition-colors hover:bg-accent-soft"
             >
