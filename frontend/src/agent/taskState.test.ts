@@ -25,7 +25,7 @@ describe("Agent task state", () => {
     expect(agentTaskState(run(), true)).toBe("ready");
   });
 
-  it("surfaces a real confirmation-required proposal as Needs decision", () => {
+  it("surfaces a live confirmation-required proposal as Needs decision", () => {
     expect(agentTaskState(run({
       proposals: [{
         title: "Import bounded evidence",
@@ -38,7 +38,11 @@ describe("Agent task state", () => {
     }), true)).toBe("decision");
   });
 
-  it("keeps active execution ahead of a stale decision proposal", () => {
+  it("surfaces a persisted Decision when the browser run store is cold", () => {
+    expect(agentTaskState(run(), true, true)).toBe("decision");
+  });
+
+  it("keeps active execution ahead of a durable or stale decision proposal", () => {
     expect(agentTaskState(run({
       busy: true,
       proposals: [{
@@ -49,7 +53,7 @@ describe("Agent task state", () => {
         confidence: "high",
         source_run_ids: [],
       }],
-    }), true)).toBe("working");
+    }), true, true)).toBe("working");
   });
 
   it("treats runtime errors, missing model and stalled execution as attention", () => {
@@ -59,6 +63,6 @@ describe("Agent task state", () => {
   });
 
   it("keeps evidence preparation ahead of other states", () => {
-    expect(agentTaskState(run({ uploading: true, busy: true }), true)).toBe("uploading");
+    expect(agentTaskState(run({ uploading: true, busy: true }), true, true)).toBe("uploading");
   });
 });
