@@ -68,7 +68,7 @@ export function ReportArtifact({
                 onClick={() => void copyReport()}
                 data-testid="report-copy"
               >
-                {copied ? t("thread.copied") : t("common.copy")}
+                {copied ? copy.report.copied : t("common.copy")}
               </button>
               <button
                 type="button"
@@ -77,7 +77,7 @@ export function ReportArtifact({
                 data-testid="report-save"
                 title={savedPath ?? undefined}
               >
-                {savedPath ? t("thread.savedTo", { path: savedPath }) : t("thread.download")}
+                {savedPath ? copy.report.savedTo(savedPath) : copy.report.download}
               </button>
             </div>
           ) : null}
