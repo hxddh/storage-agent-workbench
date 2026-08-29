@@ -40,6 +40,7 @@ from fastapi.responses import JSONResponse
 from .db import init_db
 from .security.redaction import redact_text
 from .routers import (
+    agent_tasks,
     cloud_providers,
     datasets,
     error_triage,
@@ -201,5 +202,6 @@ app.include_router(reports.router)
 app.include_router(datasets.router)
 app.include_router(evidence_imports.router)
 app.include_router(sessions.router)
+app.include_router(agent_tasks.router)
 app.include_router(error_triage.router)
 app.include_router(settings.router)
