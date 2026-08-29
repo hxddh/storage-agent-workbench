@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { SessionSummaryRow } from "../types";
+import type { AgentTaskSummary } from "../agent/navigationModel";
 import { useI18n } from "../i18n";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
@@ -16,15 +16,15 @@ const I = (d: string) => (
 export function CommandPalette({
   open,
   onClose,
-  sessions,
-  onSelectSession,
+  tasks,
+  onSelectTask,
   onNew,
   onOpenSettings,
 }: {
   open: boolean;
   onClose: () => void;
-  sessions: SessionSummaryRow[];
-  onSelectSession: (id: string) => void;
+  tasks: AgentTaskSummary[];
+  onSelectTask: (id: string) => void;
   onNew: () => void;
   onOpenSettings: () => void;
 }) {
@@ -51,17 +51,17 @@ export function CommandPalette({
       { id: "new", label: copy.newTask, hint: "⌘N", icon: I("M12 5v14|M5 12h14"), run: () => { onNew(); onClose(); } },
       { id: "settings", label: copy.settings, icon: I("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z|M3 12h2|M19 12h2|M12 3v2|M12 19v2"), run: () => { onOpenSettings(); onClose(); } },
     ];
-    const tasks: Cmd[] = sessions.map((task) => ({
+    const taskItems: Cmd[] = tasks.map((task) => ({
       id: `task:${task.id}`,
       label: task.title || t("common.untitled"),
       hint: copy.task,
       icon: I("M4 5h16v14H4z|M8 9h8|M8 13h5"),
-      run: () => { onSelectSession(task.id); onClose(); },
+      run: () => { onSelectTask(task.id); onClose(); },
     }));
-    const all = [...actions, ...tasks];
+    const all = [...actions, ...taskItems];
     const query = q.trim().toLowerCase();
     return query ? all.filter((command) => command.label.toLowerCase().includes(query)) : all;
-  }, [q, sessions, onNew, onOpenSettings, onSelectSession, onClose, t, copy.newTask, copy.settings, copy.task]);
+  }, [q, tasks, onNew, onOpenSettings, onSelectTask, onClose, t, copy.newTask, copy.settings, copy.task]);
 
   useEffect(() => {
     if (sel >= items.length) setSel(Math.max(0, items.length - 1));
