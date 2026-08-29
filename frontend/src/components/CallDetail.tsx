@@ -15,9 +15,9 @@ function present(value: unknown): string {
 }
 
 // A single call can return a full listing page. Rendering megabytes inline turns
-// evidence inspection into a new performance problem, so the in-thread preview
-// is deliberately bounded. The UI always states the cut instead of pretending
-// the payload ended there.
+// execution review into a new performance problem, so the in-place preview is
+// deliberately bounded. The UI always states the cut instead of pretending the
+// payload ended there.
 const MAX_RENDER = 4000;
 
 function copyText(text: string, done: () => void) {
@@ -89,11 +89,10 @@ function PayloadBlock({ label, value }: { label: string; value: unknown }) {
 /**
  * What a tool call actually sent and got back, opened in place under the step.
  *
- * This is an evidence viewer, not a second inspector. It fetches exactly one
- * sanitized persisted call on demand, keeps input and output visually parallel,
- * and makes either side directly copyable. On a narrow window the two payloads
- * stack; on a wide work surface they sit side-by-side so request and result can
- * be compared without scrolling back and forth.
+ * This is a focused execution-evidence viewer. It fetches exactly one sanitized
+ * persisted call on demand, keeps input and output visually parallel, and makes
+ * either side directly copyable. On a narrow window the two payloads stack; on
+ * a wide task work area they sit side-by-side for direct comparison.
  */
 export function CallDetail({ sessionId, callId }: { sessionId: string; callId: string }) {
   const { t } = useI18n();
