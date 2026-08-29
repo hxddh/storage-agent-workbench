@@ -75,9 +75,12 @@ test.describe("Agent product in Chinese", () => {
   });
 
   test("switching language applies instantly and is remembered", async ({ page }) => {
+    // Seed English only on the first load. An init script that unconditionally
+    // writes English also runs on reload and would erase the user's saved choice,
+    // making the persistence test test its own reset hook instead of the product.
     await page.addInitScript(() => {
       localStorage.setItem("saw.onboarded", "1");
-      localStorage.setItem("saw.lang", "en");
+      if (!localStorage.getItem("saw.lang")) localStorage.setItem("saw.lang", "en");
     });
     await page.goto("/");
     await expect(page.getByTestId("agent-composer").getByRole("textbox")).toBeVisible({ timeout: 20_000 });
@@ -86,11 +89,13 @@ test.describe("Agent product in Chinese", () => {
     await page.getByRole("button", { name: /^简体中文$/ }).first().click();
     await expect(composerZh(page)).toHaveAttribute("placeholder", /给 Agent 一个目标/);
     await expect(page.getByTestId("agent-task-navigation").getByRole("button", { name: /新任务/ })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("saw.lang"))).toBe("zh");
 
     await page.reload();
     await expect(composerZh(page)).toBeVisible({ timeout: 20_000 });
     await expect(composerZh(page)).toHaveAttribute("placeholder", /给 Agent 一个目标/);
     await expect(page.getByTestId("agent-task-navigation").getByRole("button", { name: /新任务/ })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("saw.lang"))).toBe("zh");
 
     await page.getByTestId("task-navigation-settings").click();
     await page.getByRole("button", { name: /^English$/ }).first().click();
