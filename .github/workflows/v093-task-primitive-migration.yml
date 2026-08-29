@@ -1,0 +1,96 @@
+name: v0.93 Task primitive migration
+
+on:
+  push:
+    branches:
+      - chatgpt/v0.93-agent-native-rebuild
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/v0.93-agent-native-rebuild
+          fetch-depth: 0
+
+      - name: Replace thread-era task primitives
+        shell: python
+        run: |
+          from pathlib import Path
+
+          root = Path("frontend")
+          replacements = [
+              ('../hooks/useThreadViewport', '../hooks/useTaskViewport'),
+              ('./hooks/useThreadViewport', './hooks/useTaskViewport'),
+              ('useThreadViewport', 'useTaskViewport'),
+              ('../threadFind', '../taskFind'),
+              ('./threadFind', './taskFind'),
+              ('threadNavigation', 'taskNavigation'),
+              ('TurnDirection', 'TaskStepDirection'),
+              ('currentTurnIndex', 'currentTaskStepIndex'),
+              ('stepTurnIndex', 'stepTaskStepIndex'),
+              ('nextTurnIndex', 'nextTaskStepIndex'),
+              ('findInThread', 'findInTask'),
+              ('FindableItem', 'TaskFindableItem'),
+          ]
+          for path in list((root / "src").rglob("*.ts")) + list((root / "src").rglob("*.tsx")) + list((root / "e2e").rglob("*.ts")):
+              text = path.read_text()
+              changed = text
+              for old, new in replacements:
+                  changed = changed.replace(old, new)
+              if changed != text:
+                  path.write_text(changed)
+
+          moves = [
+              (root / "src/threadFind.ts", root / "src/taskFind.ts"),
+              (root / "src/threadFind.test.ts", root / "src/taskFind.test.ts"),
+              (root / "src/lib/threadNavigation.ts", root / "src/lib/taskNavigation.ts"),
+              (root / "src/lib/threadNavigation.test.ts", root / "src/lib/taskNavigation.test.ts"),
+          ]
+          for old, new in moves:
+              assert old.exists(), f"missing source {old}"
+              assert not new.exists(), f"destination already exists {new}"
+              old.rename(new)
+
+          task_find = root / "src/taskFind.ts"
+          text = task_find.read_text()
+          text = text.replace("find inside one investigation", "find inside one Agent task")
+          text = text.replace("thread item", "task item").replace("thread items", "task items")
+          text = text.replace("across the thread", "across the task")
+          text = text.replace("A thread of several hundred messages", "A task with several hundred durable events")
+          text = text.replace("the thread renders", "the task renders")
+          task_find.write_text(text)
+
+          nav = root / "src/lib/taskNavigation.ts"
+          text = nav.read_text()
+          text = text.replace("turnPositions", "stepPositions")
+          text = text.replace("turnCount", "stepCount")
+          text = text.replace("semantic turn", "semantic task step")
+          text = text.replace("exact turn positions", "exact task-step positions")
+          text = text.replace("a turn aligned", "a task step aligned")
+          text = text.replace("initial turn", "initial task step")
+          text = text.replace("one semantic exchange", "one semantic task step")
+          nav.write_text(text)
+
+          legacy_viewport = root / "src/hooks/useThreadViewport.ts"
+          assert legacy_viewport.exists()
+          legacy_viewport.unlink()
+
+          checks = "\n".join(path.read_text() for path in (root / "src").rglob("*.ts*"))
+          for forbidden in ["useThreadViewport", "threadFind", "threadNavigation", "TurnDirection", "stepTurnIndex", "nextTurnIndex", "findInThread", "FindableItem"]:
+              assert forbidden not in checks, f"legacy primitive remains: {forbidden}"
+
+      - name: Commit task-native primitives
+        run: |
+          git add -A frontend
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git diff --cached --quiet && exit 0
+          git commit -m "refactor(agent): remove thread-era task primitives [v093-task-primitives]"
+          git push origin HEAD:chatgpt/v0.93-agent-native-rebuild
