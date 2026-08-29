@@ -6,6 +6,8 @@ import { getVaultStatus } from "../api";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 
+const LANGUAGE_KEY = "saw.lang";
+
 /** Right slide-over for Agent setup, providers, appearance and safety policy. */
 function VaultWarning() {
   const { t } = useI18n();
@@ -38,6 +40,19 @@ export function SettingsDrawer(
   const safety = lang === "zh"
     ? "Secrets 只保存在本机加密 Vault，不进入数据库、日志、Report Artifact 或 Model 输入。Storage Provider 使用只读权限；Agent 没有写入或破坏性能力。下载、大规模扫描、Evidence Import 等数据移动操作必须经过明确 Decision。你主动附加到 Task 的本地文件只在当前分析流程中使用。"
     : "Secrets stay only in the encrypted local vault and never enter the database, logs, Report artifacts, or model input. Storage Providers are read-only and the Agent has no write or destructive capability. Downloads, large scans, Evidence Import, and other data-moving operations require an explicit Decision. A local file you attach to a Task is used only by that analysis flow.";
+
+  const selectLanguage = (next: Lang) => {
+    // Persist synchronously at the interaction boundary. React effects run after
+    // paint; a user can legitimately switch language and immediately reload or
+    // close the desktop window before that effect gets a turn. The visible
+    // selection and the durable preference must be one atomic user action.
+    try {
+      localStorage.setItem(LANGUAGE_KEY, next);
+    } catch {
+      // The in-memory selection still works when storage is unavailable.
+    }
+    setLang(next);
+  };
 
   return (
     <div className="fixed inset-0 z-drawer flex justify-end" onClick={onClose}>
@@ -76,7 +91,7 @@ export function SettingsDrawer(
               </div>
               <div>
                 <div id="seg-lang-label" className="mb-1.5 text-xs font-medium text-gray-400">{t("settings.language")}</div>
-                <Segmented labelId="seg-lang-label" options={LANGS} value={lang} onChange={(value) => setLang(value as Lang)} />
+                <Segmented labelId="seg-lang-label" options={LANGS} value={lang} onChange={(value) => selectLanguage(value as Lang)} />
               </div>
             </div>
           </section>
