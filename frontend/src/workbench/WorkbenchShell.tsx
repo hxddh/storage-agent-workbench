@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { SessionSummaryRow } from "../types";
 import { useSessionRun } from "../sessionRuns";
-import { publishWorkbenchCommands } from "./commands";
+import { publishAgentCommands } from "./commands";
 import { AgentReviewPanel } from "./AgentReviewPanel";
 import { useWorkbenchCopy } from "./copy";
 import type { ReviewSurface } from "./model";
@@ -47,18 +47,19 @@ export function WorkbenchShell({
     }
   }, [sessionId]);
 
-  useEffect(() => publishWorkbenchCommands((command) => {
-    if (command.type === "run.open") {
+  useEffect(() => publishAgentCommands((command) => {
+    if (command.type === "execution.open") {
       setSelectedRunId(command.runId);
       setReview("runs");
       return;
     }
-    if (command.surface === "timeline") {
+    if (command.type === "review.close") {
       setReview(null);
       setSelectedRunId(null);
       return;
     }
-    setReview(command.surface);
+    setSelectedRunId(null);
+    setReview(command.review);
   }), []);
 
   const title = session?.title?.trim() || copy.task.newTask;
