@@ -30,10 +30,14 @@ test.describe("Agent task navigation", () => {
     const TITLE = await open(page);
     await expect(navigation(page)).toHaveAttribute("data-navigation", "agent-tasks");
     const taskRow = await row(page, TITLE);
+    await expect(taskRow).toHaveAttribute("data-state", "ready");
     await expect(taskRow).toContainText("Ready");
     await expect(taskRow).toContainText("General storage task");
-    await expect(taskRow).not.toContainText("0F");
-    await expect(taskRow).not.toContainText("0R");
+    // Legacy F/R counters were product-internal abbreviations such as `0F` and
+    // `2R`. Match complete counter tokens instead of raw substrings: a random
+    // task title ending in `0` immediately followed by the word `Ready` can
+    // legitimately contain the character sequence `0R` across DOM text nodes.
+    await expect(taskRow).not.toContainText(/\b\d+[FR]\b/);
   });
 
   test("renaming changes navigation and active Agent task identity", async ({ page }) => {
