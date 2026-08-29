@@ -276,7 +276,7 @@ export function Composer({
             >
               <span className="relative grid h-3.5 w-3.5 place-items-center" aria-hidden>
                 <span className="absolute inset-0 animate-spin rounded-full border-[1.5px] border-gray-500 border-t-gray-200" />
-                <span className="h-1.5 w-1.5 rounded-[2px] bg-gray-200" />
+                <span className="h-1.5 w-1.5 rounded-sm bg-gray-200" />
               </span>
               {t("thread.stop")}
             </button>
