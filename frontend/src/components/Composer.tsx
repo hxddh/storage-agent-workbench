@@ -81,6 +81,15 @@ export function Composer({
         steerHint: "Steer Agent：补充方向、约束或下一步…",
         model: "Model",
         commands: "输入 / 使用任务命令",
+        commandMenu: "任务命令",
+        uploading: (name: string) => `正在准备 ${name}…`,
+        addModel: "配置 Model Provider",
+        steerCurrent: "Steer 当前执行",
+        newline: "换行",
+        stop: "Stop",
+        steerAction: "Steer Agent",
+        steerActionHint: "把新的方向或约束加入当前执行，同时保留已经完成的工作",
+        delegateAction: "Delegate task",
       }
     : {
         delegate: "Delegate",
@@ -91,6 +100,15 @@ export function Composer({
         steerHint: "Steer the Agent with new direction, constraints, or a next step…",
         model: "Model",
         commands: "Type / for task commands",
+        commandMenu: "Task commands",
+        uploading: (name: string) => `Preparing ${name}…`,
+        addModel: "Configure Model Provider",
+        steerCurrent: "Steer current execution",
+        newline: "new line",
+        stop: "Stop",
+        steerAction: "Steer Agent",
+        steerActionHint: "Add direction or constraints to the current execution while preserving completed work",
+        delegateAction: "Delegate task",
       };
   const [slashSel, setSlashSel] = useState(0);
   const [sizeError, setSizeError] = useState<string | null>(null);
@@ -145,7 +163,7 @@ export function Composer({
 
       {slashOpen ? (
         <div className="absolute bottom-full left-1 right-1 z-floating mb-2 overflow-hidden rounded-xl border border-edge bg-panel shadow-pop animate-fade-in">
-          <div className="px-3 py-1.5 text-2xs font-medium uppercase tracking-wider text-gray-500">{t("thread.commands")}</div>
+          <div className="px-3 py-1.5 text-2xs font-medium uppercase tracking-wider text-gray-500">{copy.commandMenu}</div>
           {slashItems.map((item, index) => (
             <button
               key={item.cmd}
@@ -167,7 +185,7 @@ export function Composer({
           {uploading ? (
             <span className="flex items-center gap-1.5 text-gray-400">
               <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
-              {t("thread.uploading", { name: attached.name })}
+              {copy.uploading(attached.name)}
             </span>
           ) : (
             <span className="flex items-center gap-1">
@@ -253,16 +271,16 @@ export function Composer({
         <button
           type="button"
           onClick={onOpenSettings}
-          title={modelName ?? t("thread.addModel")}
-          aria-label={modelName ? `${copy.model}: ${modelName}` : t("thread.addModel")}
+          title={modelName ?? copy.addModel}
+          aria-label={modelName ? `${copy.model}: ${modelName}` : copy.addModel}
           className={`flex h-7 items-center gap-1.5 rounded-lg border px-2 text-2xs transition-colors ${modelName ? "border-transparent text-gray-500 hover:border-edge hover:bg-elevated hover:text-gray-300" : "border-warn-border text-warn-fg"}`}
         >
           <Spark size={10} />
-          <span>{modelName ? copy.model : t("thread.addModel")}</span>
+          <span>{modelName ? copy.model : copy.addModel}</span>
         </button>
 
         <span className="ml-auto hidden text-2xs text-gray-500 opacity-0 transition-opacity group-focus-within/composer:opacity-100 sm:inline">
-          {busy ? <>{t("thread.redirectCurrent")} · <kbd className="font-sans">⇧⏎</kbd> {t("thread.newline")}</> : <><kbd className="font-sans">⏎</kbd> {copy.delegate} · <kbd className="font-sans">⇧⏎</kbd> {t("thread.newline")}</>}
+          {busy ? <>{copy.steerCurrent} · <kbd className="font-sans">⇧⏎</kbd> {copy.newline}</> : <><kbd className="font-sans">⏎</kbd> {copy.delegate} · <kbd className="font-sans">⇧⏎</kbd> {copy.newline}</>}
         </span>
 
         {busy ? (
@@ -270,22 +288,22 @@ export function Composer({
             <button
               type="button"
               onClick={onStop}
-              aria-label={t("thread.stop")}
-              title={t("thread.stop")}
+              aria-label={copy.stop}
+              title={copy.stop}
               className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-elevated px-2.5 text-2xs font-medium text-gray-200 transition-colors hover:bg-hover"
             >
               <span className="relative grid h-3.5 w-3.5 place-items-center" aria-hidden>
                 <span className="absolute inset-0 animate-spin rounded-full border-[1.5px] border-gray-500 border-t-gray-200" />
                 <span className="h-1.5 w-1.5 rounded-sm bg-gray-200" />
               </span>
-              {t("thread.stop")}
+              {copy.stop}
             </button>
             <button
               type="button"
               onClick={onSteer}
               disabled={!text.trim()}
-              aria-label={t("thread.redirect")}
-              title={t("thread.redirectHint")}
+              aria-label={copy.steerAction}
+              title={copy.steerActionHint}
               className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-2xs font-semibold text-accent-fg transition-[background-color,transform] hover:bg-accent-soft active:scale-[.98] disabled:cursor-default disabled:bg-elevated disabled:text-gray-500"
             >
               {copy.steer}
@@ -297,7 +315,7 @@ export function Composer({
             type="button"
             onClick={onSend}
             disabled={uploading || blocked || (!text.trim() && !attached)}
-            aria-label={t("thread.send")}
+            aria-label={copy.delegateAction}
             className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-2xs font-semibold text-accent-fg transition-[background-color,transform] hover:bg-accent-soft active:scale-[.98] disabled:cursor-default disabled:bg-elevated disabled:text-gray-500"
           >
             {uploading ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" /> : null}
