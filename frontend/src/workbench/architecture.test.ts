@@ -27,6 +27,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(composer).toContain("Steer");
     expect(composer).toContain("onStop");
     expect(composer).not.toContain("Ask Storage Agent");
+    expect(composer).not.toContain('t("thread.');
   });
 
   it("keeps Agent Task as the primary work area while Review stays contextual", () => {
