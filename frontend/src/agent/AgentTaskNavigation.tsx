@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type R
 import { listSessions } from "../api";
 import { useI18n, type TFunc } from "../i18n";
 import type { SidecarStatus } from "../hooks/useSidecarHealth";
-import { useSessionRun } from "../sessionRuns";
+import { getSessionRun, useSessionRun, useSessionRunIndexVersion } from "../sessionRuns";
 import { BrandMark } from "../components/ui";
 import { useNavigationCopy } from "./navigationCopy";
 import {
@@ -150,6 +150,7 @@ export type AgentTaskNavigationProps = {
 export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, onOpenSettings, status, slow, actions, width, collapsed, onOpenPalette, onToggleCollapse, onResize }: AgentTaskNavigationProps) {
   const { t } = useI18n();
   const copy = useNavigationCopy();
+  useSessionRunIndexVersion();
   const [menuId, setMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -168,8 +169,18 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
   const base = q ? (results ?? []) : tasks;
   const current = base.filter((task) => task.status !== "archived");
   const archived = base.filter((task) => task.status === "archived");
-  const pinned = current.filter((task) => task.pinned);
-  const recent = current.filter((task) => !task.pinned);
+  const runtimeState = (task: AgentTaskSummary) => agentTaskState(getSessionRun(task.id), true);
+  const needsYou = current.filter((task) => {
+    const state = runtimeState(task);
+    return state === "decision" || state === "attention";
+  });
+  const runningTasks = current.filter((task) => {
+    const state = runtimeState(task);
+    return state === "working" || state === "uploading";
+  });
+  const liveTaskIds = new Set([...needsYou, ...runningTasks].map((task) => task.id));
+  const pinned = current.filter((task) => task.pinned && !liveTaskIds.has(task.id));
+  const recent = current.filter((task) => !task.pinned && !liveTaskIds.has(task.id));
 
   const startResize = (event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -217,6 +228,8 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
       <nav className="agent-task-list" aria-label={copy.tasks}>
         {q && results !== null && results.length === 0 ? <p className="agent-task-list-empty">{copy.noResults}</p> : null}
         {!q && tasks.length === 0 ? <p className="agent-task-list-empty">{copy.noTasks}</p> : null}
+        {needsYou.length ? <section data-testid="task-queue-needs-you"><div className="agent-task-section-label">{copy.needsYou}</div>{needsYou.map(row)}</section> : null}
+        {runningTasks.length ? <section data-testid="task-queue-running"><div className="agent-task-section-label">{copy.runningTasks}</div>{runningTasks.map(row)}</section> : null}
         {pinned.length ? <section><div className="agent-task-section-label">{copy.pinned}</div>{pinned.map(row)}</section> : null}
         {recent.length ? <section><div className="agent-task-section-label">{copy.recent}</div>{recent.map(row)}</section> : null}
         {archived.length ? <section><button type="button" className="agent-task-archive-toggle" onClick={() => setShowArchived((value) => !value)}><ChevronIcon open={showArchived} /> {copy.archived} ({archived.length})</button>{(showArchived || q) ? archived.map(row) : null}</section> : null}
