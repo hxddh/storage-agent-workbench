@@ -22,7 +22,9 @@ import { openAgentExecution, openAgentReview } from "../workbench/commands";
 import { Button } from "./ui";
 import { Composer } from "./Composer";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
-import { GroundingCard, MessageCard, ProposalCard, ThinkingBubble, TriageCard } from "./TaskContent";
+import { AgentTaskResult } from "./AgentTaskResult";
+import { AgentNextAction } from "./AgentDecisionCard";
+import { GroundingCard, ThinkingBubble, TriageCard } from "./AgentRuntimeArtifacts";
 import { ExecutionSummary } from "./ExecutionSummary";
 import { fmtDuration } from "./TurnMetrics";
 import { useI18n } from "../i18n";
@@ -43,14 +45,14 @@ type Item =
       id: string;
       toolActivity?: ToolActivity[];
       grounding?: Grounding | null;
-      proposals?: NextAction[];
+      nextActions?: NextAction[];
       referencedRunIds?: string[];
       referencedEvidenceIds?: string[];
     }
   | { kind: "run"; ts: string; data: SessionDetail["runs"][number] }
   | { kind: "triage"; ts: string; data: TriageCase };
 
-const propKey = (p: NextAction) => `${p.action_type}::${p.title}`;
+const actionKey = (action: NextAction) => `${action.action_type}::${action.title}`;
 const SUGGESTION_KEYS = ["diagnose", "logs", "inventory", "config", "account", "optimize"] as const;
 
 export function AgentTaskImplementation({
@@ -93,7 +95,7 @@ export function AgentTaskImplementation({
         loadingEarlier: "正在加载…",
         loadEarlier: (n: number) => `加载更早的任务历史（${n} 条）`,
         jumpToStart: "回到任务开始",
-        suggestedNext: "下一步",
+        suggestedNext: "Next actions",
         remoteExecution: (age: string) => `这个 Task 的一次执行仍在后台进行（${age}）。结果完成后会回到这里。`,
         stalled: "这次执行比预期更久；结果可能已经持久化，可以重新同步任务。",
         reload: "重新同步",
@@ -104,6 +106,7 @@ export function AgentTaskImplementation({
         liveStopped: "Agent Task 已停止。",
         liveWorking: "Agent 正在执行 Task。",
         liveReady: "Work Result 已就绪。",
+        continueTask: "继续当前 Task，从尚未完成的线索继续推进并深入检查。",
       }
     : {
         startTitle: "Delegate a goal to the Agent",
@@ -122,7 +125,7 @@ export function AgentTaskImplementation({
         loadingEarlier: "Loading…",
         loadEarlier: (n: number) => `Load earlier task history (${n})`,
         jumpToStart: "Jump to task start",
-        suggestedNext: "Next action",
+        suggestedNext: "Next actions",
         remoteExecution: (age: string) => `Execution for this task is still running in the background (${age}). Its result will return here.`,
         stalled: "This execution is taking longer than expected; the result may already be durable. Resync the task to check.",
         reload: "Resync task",
@@ -133,6 +136,7 @@ export function AgentTaskImplementation({
         liveStopped: "Agent task stopped.",
         liveWorking: "The Agent is executing this task.",
         liveReady: "Work Result ready.",
+        continueTask: "Continue this task from the unfinished lines of work and go deeper where needed.",
       };
   const {
     scrollRef, contentRef, pinned, onScroll, releaseToUser,
@@ -149,14 +153,14 @@ export function AgentTaskImplementation({
   const [modelName, setModelName] = useState<string | null>(null);
   const run = useSessionRun(sessionId);
   const { busy, uploading, pending, streamText, streamTools, needKey } = run;
-  const liveProposals = run.proposals;
+  const liveNextActions = run.proposals;
   const [viewError, setViewError] = useState<string | null>(null);
   useEffect(() => {
     if (run.busy) setViewError(null);
   }, [run.busy]);
   const error = run.error ?? viewError;
   const {
-    detail, triage, earlier, loadingEarlier, metrics, remoteTurn, loadError,
+    detail, triage, earlier, loadingEarlier, metrics, remoteTurn: remoteExecution, loadError,
     localId, reload, loadEarlier, loadAllEarlier, hiddenCount,
   } = useSessionDocument({
     sessionId, sidecarReady, reloadKey, t, scrollRef, setViewError,
@@ -166,13 +170,13 @@ export function AgentTaskImplementation({
   const [attachType, setAttachType] = useState<"inventory" | "access_log" | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const presetTypeRef = useRef<"inventory" | "access_log" | null>(null);
-  const suggestions = SUGGESTION_KEYS.map((k) => ({ key: k, label: t(`sugg.${k}`), prompt: t(`prompt.${k}`) }));
+  const suggestions = SUGGESTION_KEYS.map((key) => ({ key, label: t(`sugg.${key}`), prompt: t(`prompt.${key}`) }));
 
   const refreshModel = (attempt = 0) =>
     listModelProviders()
-      .then((ps) => {
-        const activeP = ps.find((p) => p.active) ?? ps[0];
-        setModelName(activeP ? activeP.model || activeP.name : null);
+      .then((providers) => {
+        const activeProvider = providers.find((provider) => provider.active) ?? providers[0];
+        setModelName(activeProvider ? activeProvider.model || activeProvider.name : null);
       })
       .catch(() => {
         if (attempt < 3) setTimeout(() => refreshModel(attempt + 1), 2000);
@@ -193,14 +197,14 @@ export function AgentTaskImplementation({
     if (persisted) return persisted;
     const live = run.lastMetrics;
     if (live && live.messageId === messageId) {
-      const m = live.metrics;
+      const metric = live.metrics;
       return {
-        turn_id: null, message_id: messageId, model: m.model ?? null,
-        duration_ms: m.duration_ms ?? null, tool_calls: m.tool_calls ?? null,
-        budget_tokens: m.budget_tokens ?? null,
-        repeat_calls_avoided: m.repeat_calls_avoided ?? null,
-        created_at: "", usage: m.usage,
-        ...(m.usage ?? {}),
+        turn_id: null, message_id: messageId, model: metric.model ?? null,
+        duration_ms: metric.duration_ms ?? null, tool_calls: metric.tool_calls ?? null,
+        budget_tokens: metric.budget_tokens ?? null,
+        repeat_calls_avoided: metric.repeat_calls_avoided ?? null,
+        created_at: "", usage: metric.usage,
+        ...(metric.usage ?? {}),
       };
     }
     return null;
@@ -209,16 +213,16 @@ export function AgentTaskImplementation({
   const seedComposer = (next: string) => {
     setText(next);
     requestAnimationFrame(() => {
-      const ta = taRef.current;
-      if (!ta) return;
-      ta.focus();
-      ta.setSelectionRange(ta.value.length, ta.value.length);
+      const textarea = taRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
     });
   };
-  const directionBefore = (idx: number): string | null => {
-    for (let i = idx - 1; i >= 0; i--) {
-      const it = items[i];
-      if (it.kind === "message" && it.role === "user") return it.content ?? null;
+  const directionBefore = (index: number): string | null => {
+    for (let i = index - 1; i >= 0; i--) {
+      const item = items[i];
+      if (item.kind === "message" && item.role === "user") return item.content ?? null;
     }
     return null;
   };
@@ -266,23 +270,24 @@ export function AgentTaskImplementation({
   }, [sessionId]);
 
   const items = useMemo<Item[]>(() => {
-    const out: Item[] = [];
-    for (const m of [...earlier, ...(detail?.messages ?? [])])
-      out.push({
-        kind: "message", ts: m.created_at, role: m.role, content: m.content, id: m.id,
-        toolActivity: m.tool_activity, grounding: m.grounding, proposals: m.proposed_actions,
-        referencedRunIds: m.referenced_run_ids ?? [],
-        referencedEvidenceIds: m.referenced_evidence_ids ?? [],
+    const output: Item[] = [];
+    for (const message of [...earlier, ...(detail?.messages ?? [])]) {
+      output.push({
+        kind: "message", ts: message.created_at, role: message.role, content: message.content, id: message.id,
+        toolActivity: message.tool_activity, grounding: message.grounding, nextActions: message.proposed_actions,
+        referencedRunIds: message.referenced_run_ids ?? [],
+        referencedEvidenceIds: message.referenced_evidence_ids ?? [],
       });
-    for (const r of detail?.runs ?? []) {
-      if (r.origin === "agent") continue;
-      out.push({ kind: "run", ts: r.created_at, data: r });
     }
-    for (const c of triage) out.push({ kind: "triage", ts: c.created_at || "", data: c });
-    return out.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+    for (const execution of detail?.runs ?? []) {
+      if (execution.origin === "agent") continue;
+      output.push({ kind: "run", ts: execution.created_at, data: execution });
+    }
+    for (const record of triage) output.push({ kind: "triage", ts: record.created_at || "", data: record });
+    return output.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   }, [detail, triage, earlier]);
 
-  const proposals = liveProposals ?? [];
+  const nextActions = liveNextActions ?? [];
 
   const branchFrom = useCallback(
     async (messageId: string) => {
@@ -291,8 +296,8 @@ export function AgentTaskImplementation({
         const forked = await forkSession(sessionId, messageId);
         onSessionCreated(forked.id);
         onChanged();
-      } catch (e) {
-        setViewError(cleanError(String(e), t));
+      } catch (caught) {
+        setViewError(cleanError(String(caught), t));
       }
     },
     [sessionId, onSessionCreated, onChanged, t],
@@ -325,15 +330,14 @@ export function AgentTaskImplementation({
   }, [findOpen, ranges, findIdx, matchTotal]);
   useEffect(() => {
     if (!findOpen || !activeRange) return;
-    const raf = requestAnimationFrame(() => {
-      const el = activeRange.startContainer.parentElement;
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const frame = requestAnimationFrame(() => {
+      activeRange.startContainer.parentElement?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
-    return () => cancelAnimationFrame(raf);
+    return () => cancelAnimationFrame(frame);
   }, [findOpen, activeRange]);
 
   const stepFind = useCallback(
-    (delta: number) => setFindIdx((i) => stepHit(i, matchTotal, delta)),
+    (delta: number) => setFindIdx((index) => stepHit(index, matchTotal, delta)),
     [matchTotal],
   );
   const closeFind = useCallback(() => {
@@ -341,9 +345,9 @@ export function AgentTaskImplementation({
     setFindQuery("");
   }, []);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!matches(e, "find")) return;
-      e.preventDefault();
+    const onKey = (event: KeyboardEvent) => {
+      if (!matches(event, "find")) return;
+      event.preventDefault();
       setFindOpen(true);
     };
     window.addEventListener("keydown", onKey);
@@ -351,7 +355,7 @@ export function AgentTaskImplementation({
   }, []);
   useEffect(() => {
     followLatest();
-  }, [items.length, proposals.length, pending, streamText?.length, streamTools.length, followLatest]);
+  }, [items.length, nextActions.length, pending, streamText?.length, streamTools.length, followLatest]);
 
   const send = () => {
     if (busy || uploading) return;
@@ -367,12 +371,12 @@ export function AgentTaskImplementation({
     void runner.submit(text.trim());
   };
 
-  const onPickFile = (f: File | null) => {
-    if (!f) return;
+  const onPickFile = (file: File | null) => {
+    if (!file) return;
     const preset = presetTypeRef.current;
     presetTypeRef.current = null;
-    setAttached(f);
-    setAttachType(preset ?? inferDatasetType(f.name));
+    setAttached(file);
+    setAttachType(preset ?? inferDatasetType(file.name));
   };
 
   const openReport = () => {
@@ -384,44 +388,47 @@ export function AgentTaskImplementation({
     run_account_discovery: "act.run_account_discovery",
     run_bucket_config_review: "act.run_bucket_config_review",
     run_diagnostic: "act.run_diagnostic",
-    continue_investigation: "act.continueInvestigation",
+  };
+  const promptForAction = (actionType: string): string | null => {
+    if (actionType === "continue_investigation") return taskCopy.continueTask;
+    const key = INLINE_ACTION_PROMPT[actionType];
+    return key ? t(key) : null;
   };
 
-  const runProposal = async (p: NextAction) => {
+  const runAction = async (action: NextAction) => {
+    const actionPrompt = promptForAction(action.action_type);
     if (run.busy) {
-      const key = INLINE_ACTION_PROMPT[p.action_type];
-      if (key) void runner.steer(t(key));
+      if (actionPrompt) void runner.steer(actionPrompt);
       return;
     }
-    const inlineKey = INLINE_ACTION_PROMPT[p.action_type];
-    if (inlineKey) {
-      void runner.submit(t(inlineKey));
+    if (actionPrompt) {
+      void runner.submit(actionPrompt);
       return;
     }
-    if (p.action_type === "run_inventory_analysis" || p.action_type === "run_access_log_analysis") {
-      presetTypeRef.current = p.action_type === "run_inventory_analysis" ? "inventory" : "access_log";
+    if (action.action_type === "run_inventory_analysis" || action.action_type === "run_access_log_analysis") {
+      presetTypeRef.current = action.action_type === "run_inventory_analysis" ? "inventory" : "access_log";
       fileRef.current?.click();
       return;
     }
     if (!localId.current) return;
     try {
-      const r = await prepareSessionAction(localId.current, p);
-      if (r.open === "evidence_import" && r.status === "ready") {
+      const prepared = await prepareSessionAction(localId.current, action);
+      if (prepared.open === "evidence_import" && prepared.status === "ready") {
         setImportHandoff({
-          sourceType: r.prefill.source_type as "inventory" | "access_log",
-          accountRunId: r.prefill.account_run_id,
-          bucketName: r.prefill.bucket_name,
+          sourceType: prepared.prefill.source_type as "inventory" | "access_log",
+          accountRunId: prepared.prefill.account_run_id,
+          bucketName: prepared.prefill.bucket_name,
         });
-      } else if (r.open === "session_report") {
+      } else if (prepared.open === "session_report") {
         openAgentReview("report");
-      } else if (r.open === "message_composer") {
-        setText(r.prefill.question || "");
+      } else if (prepared.open === "message_composer") {
+        setText(prepared.prefill.question || "");
         taRef.current?.focus();
       } else {
-        void runner.submit(p.title);
+        void runner.submit(action.title);
       }
-    } catch (e) {
-      setViewError(cleanError(String(e), t));
+    } catch (caught) {
+      setViewError(cleanError(String(caught), t));
     }
   };
 
@@ -444,18 +451,17 @@ export function AgentTaskImplementation({
 
   const lastResult = useMemo(() => {
     for (let i = items.length - 1; i >= 0; i--) {
-      const it = items[i];
-      if (it.kind === "message" && it.role === "assistant") return it;
-      if (it.kind === "message" && it.role === "user") break;
+      const item = items[i];
+      if (item.kind === "message" && item.role === "assistant") return item;
+      if (item.kind === "message" && item.role === "user") break;
     }
     return undefined;
   }, [items]);
   const lastPersisted = !!(
     lastResult &&
-    (lastResult.grounding ||
-      (lastResult.proposals && lastResult.proposals.length > 0))
+    (lastResult.grounding || (lastResult.nextActions && lastResult.nextActions.length > 0))
   );
-  const showLiveGrounding = !pending && !lastPersisted && (!!run.grounding || proposals.length > 0);
+  const showLiveGrounding = !pending && !lastPersisted && (!!run.grounding || nextActions.length > 0);
 
   const offline = sidecarStatus === "disconnected" || sidecarStatus === "error";
 
@@ -609,84 +615,84 @@ export function AgentTaskImplementation({
                   </div>
                 ) : null}
 
-                {items.map((it, idx) => {
-                  if (it.kind === "message") {
+                {items.map((item, index) => {
+                  if (item.kind === "message") {
                     return (
                       <div
-                        key={it.id}
-                        id={`task-item-${it.id}`}
-                        className={`task-item space-y-3 ${it.role === "user" && idx > 0 ? "pt-6" : ""}`}
-                        data-direction={it.role === "user" ? (it.content ?? "") : undefined}
+                        key={item.id}
+                        id={`task-item-${item.id}`}
+                        className={`task-item space-y-3 ${item.role === "user" && index > 0 ? "pt-6" : ""}`}
+                        data-direction={item.role === "user" ? (item.content ?? "") : undefined}
                       >
-                        <MessageCard
-                          role={it.role}
-                          content={it.content}
-                          toolActivity={it.toolActivity}
-                          onEdit={it.role === "user" && !busy ? seedComposer : undefined}
-                          onBranch={it.role === "user" && !busy && sessionId ? () => void branchFrom(it.id) : undefined}
-                          onRegenerate={it.role === "assistant" && !busy && directionBefore(idx) ? () => seedComposer(directionBefore(idx) as string) : undefined}
-                          referencedRunIds={it.referencedRunIds}
-                          referencedEvidenceIds={it.referencedEvidenceIds}
+                        <AgentTaskResult
+                          role={item.role}
+                          content={item.content}
+                          toolActivity={item.toolActivity}
+                          onEdit={item.role === "user" && !busy ? seedComposer : undefined}
+                          onBranch={item.role === "user" && !busy && sessionId ? () => void branchFrom(item.id) : undefined}
+                          onRegenerate={item.role === "assistant" && !busy && directionBefore(index) ? () => seedComposer(directionBefore(index) as string) : undefined}
+                          referencedRunIds={item.referencedRunIds}
+                          referencedEvidenceIds={item.referencedEvidenceIds}
                         />
-                        {it.role === "assistant" ? (
+                        {item.role === "assistant" ? (
                           <div className="max-w-[min(46rem,100%)]">
                             <ExecutionSummary
-                              latest={it.id === lastResult?.id}
-                              tools={it.toolActivity}
-                              grounding={it.grounding}
-                              durationMs={metricsFor(it.id)?.duration_ms}
-                              usage={metricsFor(it.id)?.usage ?? metricsFor(it.id) ?? undefined}
-                              model={metricsFor(it.id)?.model}
-                              budgetTokens={metricsFor(it.id)?.budget_tokens}
-                              repeatCallsAvoided={metricsFor(it.id)?.repeat_calls_avoided}
+                              latest={item.id === lastResult?.id}
+                              tools={item.toolActivity}
+                              grounding={item.grounding}
+                              durationMs={metricsFor(item.id)?.duration_ms}
+                              usage={metricsFor(item.id)?.usage ?? metricsFor(item.id) ?? undefined}
+                              model={metricsFor(item.id)?.model}
+                              budgetTokens={metricsFor(item.id)?.budget_tokens}
+                              repeatCallsAvoided={metricsFor(item.id)?.repeat_calls_avoided}
                               sessionId={sessionId}
                               onReviewEvidence={() => openAgentReview("evidence")}
                             />
                           </div>
                         ) : null}
-                        {it.proposals && it.proposals.length > 0 ? (
+                        {item.nextActions && item.nextActions.length > 0 ? (
                           <div className="flex flex-wrap items-center gap-2 pt-0.5">
                             <span className="text-2xs text-gray-500">{taskCopy.suggestedNext}</span>
-                            {it.proposals.map((proposal, index) => <ProposalCard key={`${propKey(proposal)}-${index}`} proposal={proposal} onRun={runProposal} />)}
+                            {item.nextActions.map((action, actionIndex) => <AgentNextAction key={`${actionKey(action)}-${actionIndex}`} action={action} onRun={runAction} />)}
                           </div>
                         ) : null}
                       </div>
                     );
                   }
-                  if (it.kind === "run") {
+                  if (item.kind === "run") {
                     return (
                       <button
-                        key={it.data.run_id}
+                        key={item.data.run_id}
                         type="button"
                         data-testid="execution-link"
-                        onClick={() => openAgentExecution(it.data.run_id)}
+                        onClick={() => openAgentExecution(item.data.run_id)}
                         className="task-item flex w-full items-center gap-3 border-y border-edge/70 py-3 text-left text-xs transition-colors hover:bg-hover/30"
                       >
                         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-500" aria-hidden />
-                        <span className="min-w-0 flex-1 truncate text-gray-300">{it.data.title || it.data.run_type}</span>
-                        <span className="font-mono text-2xs uppercase text-gray-500">{it.data.status}</span>
+                        <span className="min-w-0 flex-1 truncate text-gray-300">{item.data.title || item.data.run_type}</span>
+                        <span className="font-mono text-2xs uppercase text-gray-500">{item.data.status}</span>
                         <span className="text-gray-500" aria-hidden>→</span>
                       </button>
                     );
                   }
-                  return <div key={it.data.id} className="task-item"><TriageCard c={it.data} onRun={runProposal} /></div>;
+                  return <div key={item.data.id} className="task-item"><TriageCard c={item.data} onRun={runAction} /></div>;
                 })}
 
-                {!pending && remoteTurn?.running ? (
+                {!pending && remoteExecution?.running ? (
                   <div data-testid="remote-execution" className="animate-fade-in flex items-center gap-2 rounded-lg border border-edge bg-panel/60 px-3 py-2 text-xs text-gray-400">
                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
-                    {taskCopy.remoteExecution(fmtDuration(remoteTurn.age_ms ?? null) ?? "—")}
+                    {taskCopy.remoteExecution(fmtDuration(remoteExecution.age_ms ?? null) ?? "—")}
                   </div>
                 ) : null}
 
                 {pending ? (
                   <>
                     <div id={PENDING_DIRECTION_ID} data-direction={pending}>
-                      <MessageCard role="user" content={pending} />
+                      <AgentTaskResult role="user" content={pending} />
                     </div>
                     {streamText !== null || streamTools.length ? (
                       <>
-                        <MessageCard role="assistant" content={streamText ?? ""} toolActivity={streamTools} streaming={!run.stopped} sessionId={sessionId} />
+                        <AgentTaskResult role="assistant" content={streamText ?? ""} toolActivity={streamTools} streaming={!run.stopped} sessionId={sessionId} />
                         {run.stopped ? <div className="flex items-center gap-1.5 text-2xs text-gray-500"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>{taskCopy.stopped}</div> : null}
                       </>
                     ) : run.stopped ? (
@@ -714,10 +720,10 @@ export function AgentTaskImplementation({
                 {showLiveGrounding ? (
                   <div className="space-y-3">
                     {run.grounding ? <GroundingCard g={run.grounding} /> : null}
-                    {proposals.length > 0 ? (
+                    {nextActions.length > 0 ? (
                       <div className="flex flex-wrap items-center gap-2 pt-0.5">
                         <span className="text-2xs text-gray-500">{taskCopy.suggestedNext}</span>
-                        {proposals.map((proposal, index) => <ProposalCard key={`${propKey(proposal)}-${index}`} proposal={proposal} onRun={runProposal} />)}
+                        {nextActions.map((action, actionIndex) => <AgentNextAction key={`${actionKey(action)}-${actionIndex}`} action={action} onRun={runAction} />)}
                       </div>
                     ) : null}
                   </div>
