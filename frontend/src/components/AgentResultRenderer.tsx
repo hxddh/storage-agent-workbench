@@ -21,7 +21,7 @@ function stripMetaBlock(text: string): string {
   return looksMeta ? text.slice(0, index).trimEnd() : text;
 }
 
-function legacyCopy(text: string): boolean {
+function fallbackCopy(text: string): boolean {
   try {
     const node = document.createElement("textarea");
     node.value = text;
@@ -43,10 +43,10 @@ async function copyText(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text);
       return true;
     } catch {
-      return legacyCopy(text);
+      return fallbackCopy(text);
     }
   }
-  return legacyCopy(text);
+  return fallbackCopy(text);
 }
 
 function CopyResult({ text }: { text: string }) {
@@ -73,11 +73,9 @@ function CopyResult({ text }: { text: string }) {
   );
 }
 
-/** Assistant-only renderer for a real Agent work result.
- *
- * It has no user-role branch and no chat abstraction. Streaming tool activity is
- * the execution itself; after completion the task-level footer owns persisted
- * execution/evidence disclosure.
+/** Assistant-only renderer for a real Agent Work Result.
+ * Streaming tool activity is live Execution. Durable evidence and execution
+ * disclosure are owned by the task-level Work Result and Execution Summary.
  */
 export const AgentResultRenderer = memo(function AgentResultRenderer({
   content,
@@ -86,8 +84,9 @@ export const AgentResultRenderer = memo(function AgentResultRenderer({
   sessionId,
   onRegenerate,
 }: AgentResultRendererProps) {
-  const { t } = useI18n();
+  const { lang, t } = useI18n();
   const shown = streaming ? stripMetaBlock(content || "") : content || "";
+  const repeat = lang === "zh" ? "用同一 Direction 再执行一次" : "Run this Direction again";
 
   return (
     <div className="group animate-fade-in-up" data-testid="agent-result-renderer">
@@ -99,8 +98,8 @@ export const AgentResultRenderer = memo(function AgentResultRenderer({
               <button
                 type="button"
                 onClick={onRegenerate}
-                title={t("msg.regenerate")}
-                aria-label={t("msg.regenerate")}
+                title={repeat}
+                aria-label={repeat}
                 data-testid="regenerate"
                 className="text-gray-500 transition-colors hover:text-gray-200"
               >
