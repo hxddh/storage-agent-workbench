@@ -100,10 +100,23 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(content).not.toContain("chat bubble");
   });
 
+  it("uses AgentTask as the only public task boundary", () => {
+    expect(existsSync(new URL("../components/Thread.tsx", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("../components/ThreadImplementation.tsx", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("../components/AgentTask.tsx", import.meta.url))).toBe(true);
+    expect(existsSync(new URL("../components/AgentTaskImplementation.tsx", import.meta.url))).toBe(true);
+    const app = source("../App.tsx");
+    const boundary = source("../components/AgentTask.tsx");
+    expect(app).toContain('import { AgentTask } from "./components/AgentTask"');
+    expect(app).toContain("<AgentTask");
+    expect(boundary).toContain('matches(event, "nextStep")');
+    expect(boundary).toContain('matches(event, "prevStep")');
+  });
+
   it("uses task-native keyboard contracts", () => {
     const shortcuts = source("../shortcuts.ts");
     const app = source("../App.tsx");
-    const boundary = source("../components/Thread.tsx");
+    const boundary = source("../components/AgentTask.tsx");
     expect(shortcuts).toContain('"newTask"');
     expect(shortcuts).toContain('"toggleTaskNavigation"');
     expect(shortcuts).toContain('"review"');
@@ -119,18 +132,18 @@ describe("v0.93 Agent-native ownership boundaries", () => {
   });
 
   it("keeps persisted session and viewport ownership out of the task renderer", () => {
-    const thread = source("../components/ThreadImplementation.tsx");
-    expect(thread).not.toContain("getSessionTurnState");
-    expect(thread).not.toContain("getSessionMessages");
-    expect(thread).not.toContain("AUTOSCROLL_FRAME_BUDGET");
-    expect(thread).not.toContain("SessionInspector");
-    expect(thread).not.toContain("getSessionReport");
-    expect(thread).not.toContain("function Overlay");
+    const task = source("../components/AgentTaskImplementation.tsx");
+    expect(task).not.toContain("getSessionTurnState");
+    expect(task).not.toContain("getSessionMessages");
+    expect(task).not.toContain("AUTOSCROLL_FRAME_BUDGET");
+    expect(task).not.toContain("SessionInspector");
+    expect(task).not.toContain("getSessionReport");
+    expect(task).not.toContain("function Overlay");
   });
 
   it("has exactly one semantic j/k owner without capture-phase suppression", () => {
-    const boundary = source("../components/Thread.tsx");
-    const implementation = source("../components/ThreadImplementation.tsx");
+    const boundary = source("../components/AgentTask.tsx");
+    const implementation = source("../components/AgentTaskImplementation.tsx");
     expect(boundary).toContain('matches(event, "nextStep")');
     expect(boundary).not.toContain("stopImmediatePropagation");
     expect(implementation).not.toContain('matches(event, "nextStep")');
