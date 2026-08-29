@@ -61,8 +61,14 @@ test("an Agent task keeps executing while the user works in another task", async
       .toContain("Execution segment 0");
 
     await expect(page.getByTestId("work-result").last()).toContainText("Execution segment 31", { timeout: 60_000 });
-    await expect(backgroundRow).toHaveAttribute("data-state", "ready", { timeout: 20_000 });
+
+    // Completion is a queue transition: the task leaves Running and settles in
+    // the normal task list as Ready. Do not keep a locator scoped to Running
+    // after asserting that Running disappears — that would turn correct queue
+    // movement into a false failure.
     await expect(navigation(page).getByTestId("task-queue-running")).toHaveCount(0, { timeout: 20_000 });
+    const settledRow = navigation(page).getByTestId("task-row").filter({ hasText: taskTitle }).first();
+    await expect(settledRow).toHaveAttribute("data-state", "ready", { timeout: 20_000 });
   } finally {
     await cleanup();
   }
