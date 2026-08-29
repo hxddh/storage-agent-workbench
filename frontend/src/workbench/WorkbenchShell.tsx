@@ -1,18 +1,15 @@
-import { useEffect, useMemo, useReducer, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { SessionSummaryRow } from "../types";
+import { useSessionRun } from "../sessionRuns";
 import { publishWorkbenchCommands } from "./commands";
-import { EvidenceWorkspace } from "./EvidenceWorkspace";
-import { ReportWorkspace } from "./ReportWorkspace";
-import { RunsWorkspace } from "./RunsWorkspace";
-import { SteeringSurface } from "./SteeringSurface";
-import { SurfaceTabs } from "./SurfaceTabs";
+import { AgentReviewPanel } from "./AgentReviewPanel";
 import { useWorkbenchCopy } from "./copy";
-import { initialWorkbenchState, workbenchReducer } from "./model";
+import type { ReviewSurface } from "./model";
 import { useWorkbenchProjection } from "./useWorkbenchProjection";
 
 function ConnectionMark({ status }: { status: string }) {
   return (
-    <span className="workbench-connection" data-status={status} title={`Sidecar: ${status}`}>
+    <span className="agent-native-connection" data-status={status} title={`Sidecar: ${status}`}>
       <span aria-hidden />
       {status}
     </span>
@@ -37,134 +34,100 @@ export function WorkbenchShell({
   onOpenSettings: () => void;
 }) {
   const copy = useWorkbenchCopy();
-  const [state, dispatch] = useReducer(workbenchReducer, sessionId, initialWorkbenchState);
-  const { detail, report, reportLoading, error: surfaceError } = useWorkbenchProjection(sessionId, state.surface);
+  const run = useSessionRun(sessionId);
+  const [review, setReview] = useState<ReviewSurface | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [focus, setFocus] = useState(false);
+  const { detail, report, reportLoading, error } = useWorkbenchProjection(sessionId, review);
 
   useEffect(() => {
-    dispatch({ type: "session.changed", sessionId });
+    if (!sessionId) {
+      setReview(null);
+      setSelectedRunId(null);
+    }
   }, [sessionId]);
 
   useEffect(() => publishWorkbenchCommands((command) => {
-    if (command.type === "run.open") dispatch({ type: "run.open", runId: command.runId });
-    else dispatch({ type: "surface.open", surface: command.surface });
+    if (command.type === "run.open") {
+      setSelectedRunId(command.runId);
+      setReview("runs");
+      return;
+    }
+    if (command.surface === "timeline") {
+      setReview(null);
+      setSelectedRunId(null);
+      return;
+    }
+    setReview(command.surface);
   }), []);
 
-  const title = session?.title || copy.newInvestigation;
-  const goal = session?.goal?.trim() || null;
-  const runCount = session?.run_count ?? 0;
-  const findingCount = session?.finding_count ?? 0;
-  const sessionReady = Boolean(sessionId);
-
-  const surfaceTitle = useMemo(() => {
-    switch (state.surface) {
-      case "evidence": return copy.findings(findingCount);
-      case "runs": return copy.runs(runCount);
-      case "report": return copy.durableOutput;
-      default: return goal || copy.agentTimeline;
-    }
-  }, [state.surface, findingCount, runCount, goal, copy]);
-
-  const focusLabel = state.mode === "focus" ? copy.exitFocus : copy.focus;
+  const title = session?.title?.trim() || copy.task.newTask;
+  const scope = session?.primary_bucket?.trim() || session?.goal?.trim() || copy.task.noScope;
+  const outputCount = (session?.finding_count ?? 0) + (session?.run_count ?? 0);
+  const state = run.uploading
+    ? { label: copy.states.uploading, tone: "uploading" }
+    : run.busy
+      ? { label: copy.states.working, tone: "working" }
+      : run.error || run.needKey
+        ? { label: copy.states.attention, tone: "attention" }
+        : sessionId
+          ? { label: copy.states.ready, tone: "ready" }
+          : { label: copy.states.delegate, tone: "idle" };
 
   return (
-    <div
-      data-testid="workbench-shell"
-      data-surface={state.surface}
-      data-mode={state.mode}
-      className="agent-os-shell"
-    >
-      <aside className="agent-os-navigation" aria-label="Investigations">
-        {navigation}
-      </aside>
+    <div data-testid="workbench-shell" data-review={review ?? "closed"} data-focus={focus ? "true" : "false"} className="agent-native-shell">
+      <aside className="agent-native-navigation" aria-label={copy.task.navigation}>{navigation}</aside>
 
-      <section className="agent-os-main">
-        <header className="agent-os-commandbar" data-testid="workbench-commandbar">
-          <div className="agent-os-context">
-            <div className="agent-os-title-row">
-              <span className="agent-os-product">Storage Agent</span>
-              <span className="agent-os-slash" aria-hidden>/</span>
+      <section className="agent-native-main">
+        <header className="agent-task-header" data-testid="workbench-commandbar">
+          <div className="agent-task-identity">
+            <div className="agent-task-breadcrumb">
+              <span>Storage Agent</span>
+              <span aria-hidden>/</span>
               <strong title={title}>{title}</strong>
             </div>
-            <span className="agent-os-context-detail" title={surfaceTitle}>{surfaceTitle}</span>
+            <div className="agent-task-meta">
+              <span className="agent-task-live-state" data-state={state.tone}>
+                <i aria-hidden />{state.label}
+              </span>
+              <span aria-hidden>·</span>
+              <span className="truncate" title={scope}>{scope}</span>
+            </div>
           </div>
 
-          <SurfaceTabs
-            active={state.surface}
-            sessionReady={sessionReady}
-            onChange={(surface) => dispatch({ type: "surface.open", surface })}
-          />
-
-          <div className="agent-os-actions">
+          <div className="agent-task-controls">
+            {sessionId ? (
+              <button type="button" className="agent-task-review-button" onClick={() => setReview((current) => current ? null : "overview")} aria-expanded={Boolean(review)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                  <path d="M4 5h16M4 12h16M4 19h10" />
+                </svg>
+                <span>{copy.review.open}</span>
+                {outputCount > 0 ? <b>{outputCount}</b> : null}
+              </button>
+            ) : null}
             <ConnectionMark status={sidecarStatus} />
-            <button type="button" className="agent-os-command" onClick={onOpenPalette} title={copy.commandPalette}>
-              <span>{copy.command}</span><kbd>⌘K</kbd>
-            </button>
-            <button type="button" className="agent-os-icon-command" onClick={onOpenSettings} aria-label={copy.settings} title={copy.settings}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-                <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21h-4v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H3v-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3h4a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9A1.7 1.7 0 0 0 21 10h.1v4H21a1.7 1.7 0 0 0-1.6 1Z" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              className="agent-os-icon-command"
-              onClick={() => dispatch({ type: state.mode === "focus" ? "surface.restore" : "surface.focus" })}
-              aria-label={focusLabel}
-              title={focusLabel}
-            >
-              {state.mode === "focus" ? "↙" : "↗"}
-            </button>
+            <button type="button" className="agent-native-command" onClick={onOpenPalette} title={copy.commandPalette}><span>{copy.command}</span><kbd>⌘K</kbd></button>
+            <button type="button" className="agent-native-icon" onClick={onOpenSettings} aria-label={copy.settings} title={copy.settings}>⚙</button>
+            <button type="button" className="agent-native-icon" onClick={() => setFocus((value) => !value)} aria-label={focus ? copy.exitFocus : copy.focus} title={focus ? copy.exitFocus : copy.focus}>{focus ? "↙" : "↗"}</button>
           </div>
         </header>
 
-        <div className="agent-os-stage">
-          <section
-            id="work-surface-timeline"
-            role="tabpanel"
-            aria-label={copy.surfaces.timeline.label}
-            className="agent-os-surface agent-os-timeline"
-            hidden={state.surface !== "timeline"}
-          >
-            {timeline}
-          </section>
-
-          {state.surface === "evidence" && (
-            <section id="work-surface-evidence" role="tabpanel" aria-label={copy.surfaces.evidence.label} className="agent-os-surface agent-os-scroll-surface agent-os-steerable-surface">
-              {surfaceError ? (
-                <p className="workbench-surface-error">{surfaceError}</p>
-              ) : sessionId ? (
-                <EvidenceWorkspace detail={detail} sessionId={sessionId} />
-              ) : (
-                <p className="workbench-empty-line">{copy.selectEvidence}</p>
-              )}
-            </section>
-          )}
-
-          {state.surface === "runs" && (
-            <section id="work-surface-runs" role="tabpanel" aria-label={copy.surfaces.runs.label} className="agent-os-surface agent-os-scroll-surface agent-os-steerable-surface">
-              {surfaceError ? (
-                <p className="workbench-surface-error">{surfaceError}</p>
-              ) : (
-                <RunsWorkspace
-                  detail={detail}
-                  selectedRunId={state.selectedRunId}
-                  onOpenRun={(runId) => dispatch({ type: "run.open", runId })}
-                  onCloseRun={() => dispatch({ type: "run.close" })}
-                />
-              )}
-            </section>
-          )}
-
-          {state.surface === "report" && (
-            <section id="work-surface-report" role="tabpanel" aria-label={copy.surfaces.report.label} className="agent-os-surface agent-os-scroll-surface agent-os-steerable-surface">
-              <ReportWorkspace report={report} loading={reportLoading} error={surfaceError} />
-            </section>
-          )}
-
-          <SteeringSurface
-            sessionId={sessionId}
-            visible={state.surface !== "timeline"}
-            offline={sidecarStatus !== "connected"}
-          />
+        <div className="agent-task-workspace">
+          <section className="agent-task-thread" aria-label={copy.task.workspace}>{timeline}</section>
+          {review && sessionId ? (
+            <AgentReviewPanel
+              view={review}
+              detail={detail}
+              report={report}
+              reportLoading={reportLoading}
+              error={error}
+              selectedRunId={selectedRunId}
+              onView={(next) => { setSelectedRunId(null); setReview(next); }}
+              onOpenRun={(runId) => { setSelectedRunId(runId); setReview("runs"); }}
+              onCloseRun={() => setSelectedRunId(null)}
+              onClose={() => { setReview(null); setSelectedRunId(null); }}
+            />
+          ) : null}
         </div>
       </section>
     </div>

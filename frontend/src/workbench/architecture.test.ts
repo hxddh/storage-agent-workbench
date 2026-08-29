@@ -3,10 +3,24 @@ import { describe, expect, it } from "vitest";
 
 const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8");
 
-describe("v0.92 Agent OS ownership boundaries", () => {
-  it("has no legacy SessionInspector implementation left to reopen as an overlay", () => {
+describe("v0.93 Agent-native ownership boundaries", () => {
+  it("keeps legacy inspector overlays deleted", () => {
     expect(existsSync(new URL("../components/SessionInspector.tsx", import.meta.url))).toBe(false);
     expect(existsSync(new URL("../components/SessionInspectorImplementation.tsx", import.meta.url))).toBe(false);
+  });
+
+  it("does not expose Evidence, Execution or Report as application-level tabs", () => {
+    const shell = source("./WorkbenchShell.tsx");
+    expect(shell).not.toContain("<SurfaceTabs");
+    expect(shell).not.toContain('role="tabpanel"');
+    expect(shell).toContain("<AgentReviewPanel");
+    expect(shell).toContain("agent-task-thread");
+  });
+
+  it("routes the stable navigation boundary to Agent tasks, not investigations", () => {
+    const boundary = source("../components/SessionRail.tsx");
+    expect(boundary).toContain("AgentTaskNavigation");
+    expect(boundary).not.toContain("InvestigationNavigation");
   });
 
   it("keeps persisted session and viewport ownership out of the Timeline implementation", () => {
@@ -35,7 +49,7 @@ describe("v0.92 Agent OS ownership boundaries", () => {
     expect(cards).not.toContain("<RunDetail");
   });
 
-  it("contains no modal-stretch compatibility CSS for deep work surfaces", () => {
+  it("contains no modal-stretch compatibility CSS for deep work", () => {
     const workspace = source("../workspace-overhaul.css");
     const run = source("../run-workspace.css");
     expect(workspace).not.toContain('data-testid="session-inspector"');

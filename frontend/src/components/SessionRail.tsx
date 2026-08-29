@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { InvestigationNavigation } from "../workbench/InvestigationNavigation";
+import { AgentTaskNavigation } from "../workbench/AgentTaskNavigation";
 import {
   MIN_RAIL_WIDTH,
   MAX_RAIL_WIDTH,
@@ -16,19 +16,17 @@ export {
   dayBucket,
 };
 export type { SessionActions } from "../workbench/navigationModel";
-export type SessionRailProps = ComponentProps<typeof InvestigationNavigation>;
+export type SessionRailProps = ComponentProps<typeof AgentTaskNavigation>;
 
-/**
- * Compatibility name for the application navigation boundary.
+/** Stable application navigation boundary.
  *
- * The product no longer renders the historical chat/session rail. Keeping this
- * export lets App and mature interaction tests depend on a stable module while
- * the implementation is now the investigation-first Agent OS navigation.
+ * v0.93 intentionally changes the product model from investigation history to
+ * Agent tasks. The export name stays stable so App owns behavior, not UI jargon.
  */
 export function SessionRail(props: SessionRailProps) {
   return (
     <div data-testid="navigation-surface" className="contents">
-      <InvestigationNavigation {...props} />
+      <AgentTaskNavigation {...props} />
     </div>
   );
 }

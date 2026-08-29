@@ -1,58 +1,47 @@
 export type WorkSurface = "timeline" | "evidence" | "runs" | "report";
-export type SurfaceMode = "workspace" | "focus";
+export type ReviewSurface = "overview" | "evidence" | "runs" | "report";
 
-export interface WorkbenchState {
-  surface: WorkSurface;
-  mode: SurfaceMode;
+export type AgentShellState = {
+  review: ReviewSurface | null;
   selectedRunId: string | null;
+  focus: boolean;
   sessionId: string | null;
-}
+};
 
-export type WorkbenchAction =
+export type AgentShellAction =
   | { type: "session.changed"; sessionId: string | null }
-  | { type: "surface.open"; surface: WorkSurface }
-  | { type: "surface.focus" }
-  | { type: "surface.restore" }
+  | { type: "review.open"; review: ReviewSurface }
+  | { type: "review.close" }
   | { type: "run.open"; runId: string }
-  | { type: "run.close" };
+  | { type: "run.close" }
+  | { type: "focus.toggle" };
 
-export function initialWorkbenchState(sessionId: string | null): WorkbenchState {
-  return {
-    surface: "timeline",
-    mode: "workspace",
-    selectedRunId: null,
-    sessionId,
-  };
+export function initialAgentShellState(sessionId: string | null): AgentShellState {
+  return { review: null, selectedRunId: null, focus: false, sessionId };
 }
 
-export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction): WorkbenchState {
+export function agentShellReducer(state: AgentShellState, action: AgentShellAction): AgentShellState {
   switch (action.type) {
     case "session.changed":
-      return {
-        ...state,
-        sessionId: action.sessionId,
-        // A new investigation is a new document. Never strand the reader in a
-        // report or run that belongs to the previous session.
-        surface: action.sessionId ? state.surface : "timeline",
-        selectedRunId: null,
-      };
-    case "surface.open":
-      if (!state.sessionId && action.surface !== "timeline") return state;
-      return {
-        ...state,
-        surface: action.surface,
-        selectedRunId: action.surface === "runs" ? state.selectedRunId : null,
-      };
-    case "surface.focus":
-      return { ...state, mode: "focus" };
-    case "surface.restore":
-      return { ...state, mode: "workspace" };
+      return action.sessionId
+        ? { ...state, sessionId: action.sessionId, selectedRunId: null }
+        : initialAgentShellState(null);
+    case "review.open":
+      if (!state.sessionId) return state;
+      return { ...state, review: action.review, selectedRunId: action.review === "runs" ? state.selectedRunId : null };
+    case "review.close":
+      return { ...state, review: null, selectedRunId: null };
     case "run.open":
       if (!state.sessionId) return state;
-      return { ...state, surface: "runs", selectedRunId: action.runId };
+      return { ...state, review: "runs", selectedRunId: action.runId };
     case "run.close":
       return { ...state, selectedRunId: null };
-    default:
-      return state;
+    case "focus.toggle":
+      return { ...state, focus: !state.focus };
   }
 }
+
+/** Compatibility aliases for callers that still import the v0.92 reducer.
+ * v0.93 no longer models Evidence/Runs/Report as application work surfaces. */
+export const initialWorkbenchState = initialAgentShellState;
+export const workbenchReducer = agentShellReducer;

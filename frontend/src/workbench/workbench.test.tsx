@@ -1,61 +1,37 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { I18nProvider } from "../i18n";
-import { SurfaceTabs } from "./SurfaceTabs";
-import { initialWorkbenchState, workbenchReducer } from "./model";
+import { describe, expect, it } from "vitest";
+import { agentShellReducer, initialAgentShellState } from "./model";
 
-afterEach(cleanup);
-
-describe("Agent OS work surfaces", () => {
-  it("starts in the timeline rather than a modal or dashboard", () => {
-    expect(initialWorkbenchState("s1")).toEqual({
-      surface: "timeline",
-      mode: "workspace",
+describe("v0.93 Agent-native task shell", () => {
+  it("starts with one Agent task workspace and no review page", () => {
+    expect(initialAgentShellState("s1")).toEqual({
+      review: null,
       selectedRunId: null,
+      focus: false,
       sessionId: "s1",
     });
   });
 
-  it("cannot open investigation surfaces before an investigation exists", () => {
-    const state = initialWorkbenchState(null);
-    expect(workbenchReducer(state, { type: "surface.open", surface: "evidence" })).toBe(state);
+  it("does not open contextual review before a task exists", () => {
+    const state = initialAgentShellState(null);
+    expect(agentShellReducer(state, { type: "review.open", review: "evidence" })).toBe(state);
   });
 
-  it("a new blank investigation always returns to the timeline", () => {
-    const evidence = workbenchReducer(initialWorkbenchState("s1"), { type: "surface.open", surface: "evidence" });
-    const blank = workbenchReducer(evidence, { type: "session.changed", sessionId: null });
-    expect(blank.surface).toBe("timeline");
-    expect(blank.selectedRunId).toBeNull();
+  it("opens evidence as contextual review instead of replacing the Agent task", () => {
+    const state = initialAgentShellState("s1");
+    const next = agentShellReducer(state, { type: "review.open", review: "evidence" });
+    expect(next.review).toBe("evidence");
+    expect(next.sessionId).toBe("s1");
   });
 
-  it("a run is a first-class Runs surface selection", () => {
-    const next = workbenchReducer(initialWorkbenchState("s1"), { type: "run.open", runId: "run-9" });
-    expect(next.surface).toBe("runs");
+  it("opens an execution inside Review without inventing a second task surface", () => {
+    const next = agentShellReducer(initialAgentShellState("s1"), { type: "run.open", runId: "run-9" });
+    expect(next.review).toBe("runs");
     expect(next.selectedRunId).toBe("run-9");
   });
 
-  it("exposes real tabs and disables session-bound surfaces on a blank investigation", () => {
-    render(
-      <I18nProvider>
-        <SurfaceTabs active="timeline" sessionReady={false} onChange={() => undefined} />
-      </I18nProvider>,
-    );
-    expect(screen.getByRole("tab", { name: "Timeline" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "Evidence" })).toBeDisabled();
-    expect(screen.getByRole("tab", { name: "Runs" })).toBeDisabled();
-    expect(screen.getByRole("tab", { name: "Report" })).toBeDisabled();
-  });
-
-  it("arrow keys move between work surfaces instead of trapping focus in chrome", () => {
-    const onChange = vi.fn();
-    render(
-      <I18nProvider>
-        <SurfaceTabs active="evidence" sessionReady onChange={onChange} />
-      </I18nProvider>,
-    );
-    const evidence = screen.getByRole("tab", { name: "Evidence" });
-    evidence.focus();
-    fireEvent.keyDown(evidence.parentElement as HTMLElement, { key: "ArrowRight" });
-    expect(onChange).toHaveBeenCalledWith("runs");
+  it("blank task reset closes review and focus", () => {
+    const focused = agentShellReducer(initialAgentShellState("s1"), { type: "focus.toggle" });
+    const reviewing = agentShellReducer(focused, { type: "review.open", review: "report" });
+    expect(agentShellReducer(reviewing, { type: "session.changed", sessionId: null })).toEqual(initialAgentShellState(null));
   });
 });

@@ -1,0 +1,296 @@
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { listSessions } from "../api";
+import { useI18n, type TFunc } from "../i18n";
+import type { SidecarStatus } from "../hooks/useSidecarHealth";
+import { useSessionRun } from "../sessionRuns";
+import type { SessionSummaryRow } from "../types";
+import { BrandMark } from "../components/ui";
+import { useNavigationCopy } from "./navigationCopy";
+import { DEFAULT_RAIL_WIDTH, clampRailWidth, type SessionActions } from "./navigationModel";
+
+const STATUS_DOT: Record<SidecarStatus, string> = {
+  starting: "bg-warn",
+  connected: "bg-success",
+  disconnected: "bg-danger",
+  error: "bg-danger",
+};
+
+function relTime(iso: string, t: TFunc): string {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return "";
+  const seconds = Math.max(0, (Date.now() - ms) / 1000);
+  if (seconds < 60) return t("time.now");
+  if (seconds < 3600) return t("time.mAgo", { n: Math.floor(seconds / 60) });
+  if (seconds < 86400) return t("time.hAgo", { n: Math.floor(seconds / 3600) });
+  if (seconds < 172800) return t("time.yesterday");
+  if (seconds < 604800) return t("time.dAgo", { n: Math.floor(seconds / 86400) });
+  return t("time.wAgo", { n: Math.floor(seconds / 604800) });
+}
+
+function MenuItem({ children, onClick, danger = false }: { children: ReactNode; onClick: (event: MouseEvent<HTMLButtonElement>) => void; danger?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} className={`block w-full px-3 py-1.5 text-left text-xs transition-colors ${danger ? "text-danger hover:bg-danger-bg" : "text-gray-300 hover:bg-hover hover:text-gray-100"}`}>
+      {children}
+    </button>
+  );
+}
+
+function TaskRow({
+  session,
+  activeId,
+  menuId,
+  renamingId,
+  confirmId,
+  onSelect,
+  setMenuId,
+  setRenamingId,
+  setConfirmId,
+  actions,
+}: {
+  session: SessionSummaryRow;
+  activeId: string | null;
+  menuId: string | null;
+  renamingId: string | null;
+  confirmId: string | null;
+  onSelect: (id: string) => void;
+  setMenuId: (id: string | null) => void;
+  setRenamingId: (id: string | null) => void;
+  setConfirmId: (id: string | null) => void;
+  actions: SessionActions;
+}) {
+  const { t } = useI18n();
+  const copy = useNavigationCopy();
+  const run = useSessionRun(session.id);
+  const selected = session.id === activeId;
+  const archived = session.status === "archived";
+  const menuOpen = menuId === session.id;
+  const renaming = renamingId === session.id;
+  const confirming = confirmId === session.id;
+  const [renameValue, setRenameValue] = useState(session.title || "");
+  const renameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (renaming) {
+      setRenameValue(session.title || "");
+      requestAnimationFrame(() => { renameRef.current?.focus(); renameRef.current?.select(); });
+    }
+  }, [renaming, session.title]);
+
+  const state = run.uploading
+    ? { label: copy.uploading, tone: "uploading" }
+    : run.busy
+      ? { label: copy.working, tone: "working" }
+      : run.error || run.needKey
+        ? { label: copy.needsAttention, tone: "attention" }
+        : { label: copy.ready, tone: "ready" };
+  const scope = session.primary_bucket?.trim() || session.goal?.trim() || copy.scopeFallback;
+  const outputs = [
+    session.finding_count > 0 ? copy.findings(session.finding_count) : null,
+    session.run_count > 0 ? copy.executions(session.run_count) : null,
+  ].filter(Boolean).join(" · ");
+  const act = (fn: () => void) => (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    setMenuId(null);
+    fn();
+  };
+
+  if (renaming) {
+    return (
+      <div className="agent-task-row agent-task-row-renaming" data-testid="task-row-rename">
+        <input
+          ref={renameRef}
+          value={renameValue}
+          onChange={(event) => setRenameValue(event.target.value)}
+          onBlur={() => {
+            setRenamingId(null);
+            const title = renameValue.trim();
+            if (title && title !== session.title) actions.onRename(session, title);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+            if (event.key === "Escape") setRenamingId(null);
+          }}
+          className="w-full rounded-md border border-accent/50 bg-elevated px-2 py-1.5 text-xs text-gray-100 outline-none"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="agent-task-row group"
+      data-testid="task-row"
+      data-selected={selected ? "true" : "false"}
+      data-state={state.tone}
+      onClick={() => onSelect(session.id)}
+      title={`${session.title || t("common.untitled")} — ${relTime(session.updated_at, t)}`}
+    >
+      <span className="agent-task-state-mark" aria-hidden />
+      <div className="agent-task-row-content">
+        <div className="agent-task-row-title">
+          <strong>{session.title || t("common.untitled")}</strong>
+          {session.pinned ? <span className="agent-task-pin" aria-label={copy.pinned}>●</span> : null}
+        </div>
+        <div className="agent-task-row-state">
+          <span>{state.label}</span>
+          <span aria-hidden>·</span>
+          <span className="truncate" title={scope}>{scope}</span>
+        </div>
+        {outputs ? <div className="agent-task-row-output">{outputs}</div> : null}
+      </div>
+      <button
+        type="button"
+        aria-label={t("menu.more")}
+        onClick={(event) => { event.stopPropagation(); setConfirmId(null); setMenuId(menuOpen ? null : session.id); }}
+        className="agent-task-more"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
+      </button>
+
+      {menuOpen ? (
+        <div className="agent-task-menu">
+          <MenuItem onClick={act(() => setRenamingId(session.id))}>{t("menu.rename")}</MenuItem>
+          {!archived ? <MenuItem onClick={act(() => actions.onTogglePin(session))}>{session.pinned ? t("menu.unpin") : t("menu.pin")}</MenuItem> : null}
+          <MenuItem onClick={act(() => actions.onFork(session))}>{t("menu.duplicate")}</MenuItem>
+          <MenuItem onClick={act(() => actions.onToggleArchive(session))}>{archived ? t("menu.unarchive") : t("menu.archive")}</MenuItem>
+          <div className="my-1 border-t border-edge" />
+          <MenuItem danger onClick={act(() => setConfirmId(session.id))}>{t("menu.delete")}</MenuItem>
+        </div>
+      ) : null}
+
+      {confirming ? (
+        <div className="agent-task-confirm" onClick={(event) => event.stopPropagation()}>
+          <div>{copy.deleteConfirm}</div>
+          <div className="mt-2 flex justify-end gap-1.5">
+            <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmId(null); }} className="rounded-md px-2.5 py-1 text-xs text-gray-300 hover:bg-hover">{copy.cancel}</button>
+            <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmId(null); actions.onDelete(session); }} className="rounded-md bg-danger px-2.5 py-1 text-xs font-medium text-white">{copy.delete}</button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export type AgentTaskNavigationProps = {
+  width: number;
+  collapsed: boolean;
+  onOpenPalette: () => void;
+  onToggleCollapse: () => void;
+  onResize: (px: number) => void;
+  sessions: SessionSummaryRow[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+  onOpenSettings: () => void;
+  status: SidecarStatus;
+  slow: boolean;
+  actions: SessionActions;
+};
+
+export function AgentTaskNavigation({ sessions, activeId, onSelect, onNew, onOpenSettings, status, slow, actions, width, collapsed, onOpenPalette, onToggleCollapse, onResize }: AgentTaskNavigationProps) {
+  const { t } = useI18n();
+  const copy = useNavigationCopy();
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SessionSummaryRow[] | null>(null);
+  const q = query.trim();
+
+  useEffect(() => {
+    if (!q) { setResults(null); return; }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void listSessions(q).then((rows) => { if (!cancelled) setResults(rows); }).catch(() => { if (!cancelled) setResults([]); });
+    }, 200);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [q]);
+
+  const base = q ? (results ?? []) : sessions;
+  const current = base.filter((session) => session.status !== "archived");
+  const archived = base.filter((session) => session.status === "archived");
+  const pinned = current.filter((session) => session.pinned);
+  const recent = current.filter((session) => !session.pinned);
+  const [showArchived, setShowArchived] = useState(false);
+
+  const startResize = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+    const move = (next: globalThis.PointerEvent) => onResize(clampRailWidth(next.clientX));
+    const stop = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", stop);
+      handle.removeEventListener("pointercancel", stop);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
+  };
+
+  const row = (session: SessionSummaryRow) => (
+    <TaskRow key={session.id} session={session} activeId={activeId} menuId={menuId} renamingId={renamingId} confirmId={confirmId} onSelect={onSelect} setMenuId={setMenuId} setRenamingId={setRenamingId} setConfirmId={setConfirmId} actions={actions} />
+  );
+
+  if (collapsed) {
+    return (
+      <aside data-testid="session-rail" data-navigation="agent-tasks" data-collapsed="true" aria-label={copy.tasks} className="agent-task-nav-collapsed">
+        <button type="button" onClick={onToggleCollapse} title={copy.expand} aria-label={copy.expand} data-testid="rail-toggle" className="agent-task-nav-brand"><BrandMark size={15} /></button>
+        <button type="button" onClick={onNew} title={copy.newTask} aria-label={copy.newTask} className="agent-task-nav-icon">+</button>
+        <button type="button" onClick={onOpenPalette} title={copy.searchExisting} aria-label={copy.searchExisting} data-testid="rail-open-palette" className="agent-task-nav-icon">⌕</button>
+        <div className="mt-auto flex flex-col items-center gap-2">
+          <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]} ${status === "starting" ? "animate-pulse" : ""}`} title={status === "starting" && slow ? t("status.slowStart") : status} />
+          <button type="button" onClick={onOpenSettings} aria-label={copy.settings} className="agent-task-nav-icon">⚙</button>
+        </div>
+      </aside>
+    );
+  }
+
+  return (
+    <aside data-testid="session-rail" data-navigation="agent-tasks" data-collapsed="false" aria-label={copy.tasks} style={{ width }} className="agent-task-nav">
+      <div onPointerDown={startResize} onDoubleClick={() => onResize(DEFAULT_RAIL_WIDTH)} role="separator" aria-orientation="vertical" aria-label={copy.resize} data-testid="rail-resize" className="agent-task-nav-resize" />
+      {(menuId || confirmId) ? <div className="fixed inset-0 z-sticky" onClick={() => { setMenuId(null); setConfirmId(null); }} /> : null}
+
+      <header className="agent-task-nav-header">
+        <div className="agent-task-nav-brand"><BrandMark size={15} /></div>
+        <div className="min-w-0 flex-1">
+          <strong>Storage Agent</strong>
+          <span>{copy.tasks}</span>
+        </div>
+        <button type="button" onClick={onToggleCollapse} aria-label={copy.collapse} title={copy.collapse} data-testid="rail-toggle" className="agent-task-nav-collapse">◧</button>
+      </header>
+
+      <div className="agent-task-nav-primary">
+        <button type="button" onClick={onNew} className="agent-task-new">
+          <span className="agent-task-new-mark">+</span>
+          <span>{copy.newTask}</span>
+          <kbd>⌘N</kbd>
+        </button>
+        <div className="agent-task-search">
+          <span aria-hidden>⌕</span>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.search} aria-label={copy.search} />
+          {query ? <button type="button" onClick={() => setQuery("")} aria-label={copy.clearSearch}>×</button> : null}
+        </div>
+      </div>
+
+      <nav className="agent-task-list" aria-label={copy.tasks}>
+        {q && results !== null && results.length === 0 ? <p className="agent-task-list-empty">{copy.noResults}</p> : null}
+        {!q && sessions.length === 0 ? <p className="agent-task-list-empty">{copy.noTasks}</p> : null}
+        {pinned.length ? <section><div className="agent-task-section-label">{copy.pinned}</div>{pinned.map(row)}</section> : null}
+        {recent.length ? <section><div className="agent-task-section-label">{copy.recent}</div>{recent.map(row)}</section> : null}
+        {archived.length ? (
+          <section>
+            <button type="button" className="agent-task-archive-toggle" onClick={() => setShowArchived((value) => !value)}>{showArchived ? "▾" : "▸"} {copy.archived} ({archived.length})</button>
+            {(showArchived || q) ? archived.map(row) : null}
+          </section>
+        ) : null}
+      </nav>
+
+      <footer className="agent-task-nav-footer">
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[status]} ${status === "starting" ? "animate-pulse" : ""}`} aria-hidden />
+        <span>{status === "starting" && slow ? t("status.slowStart") : status}</span>
+        <button type="button" onClick={onOpenSettings} aria-label={copy.settings} data-testid="rail-settings">⚙</button>
+      </footer>
+    </aside>
+  );
+}
