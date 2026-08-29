@@ -1,7 +1,10 @@
 import type { SessionSummaryRow } from "../types";
 
-/** Backend session records are projected into Agent tasks at this UI boundary. */
-export type AgentTaskSummary = SessionSummaryRow;
+/** Backend Session records projected into product-level Agent tasks. Durable
+ * decision state is supplied by /agent-tasks, not inferred from browser memory. */
+export type AgentTaskSummary = SessionSummaryRow & {
+  requires_decision: boolean;
+};
 
 /** Agent task navigation geometry belongs to the application shell. */
 export const MIN_TASK_NAV_WIDTH = 208;
