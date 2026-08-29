@@ -7,6 +7,18 @@ describe("v0.93 Agent-native ownership boundaries", () => {
   it("physically removes the v0.92 page-navigation shell", () => {
     expect(existsSync(new URL("./InvestigationNavigation.tsx", import.meta.url))).toBe(false);
     expect(existsSync(new URL("./SurfaceTabs.tsx", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("./workbench-accessibility.css", import.meta.url))).toBe(false);
+  });
+
+  it("has exactly one Agent steering input", () => {
+    expect(existsSync(new URL("./SteeringSurface.tsx", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("./SteeringSurface.test.tsx", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("./steering.css", import.meta.url))).toBe(false);
+    const composer = source("../components/Composer.tsx");
+    expect(composer).toContain('data-testid="agent-composer"');
+    expect(composer).toContain("Delegate");
+    expect(composer).toContain("Steer");
+    expect(composer).not.toContain("Ask Storage Agent");
   });
 
   it("keeps legacy inspector overlays deleted", () => {
@@ -28,7 +40,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(boundary).not.toContain("InvestigationNavigation");
   });
 
-  it("keeps persisted session and viewport ownership out of the Timeline implementation", () => {
+  it("keeps persisted session and viewport ownership out of the task renderer", () => {
     const thread = source("../components/ThreadImplementation.tsx");
     expect(thread).not.toContain("getSessionTurnState");
     expect(thread).not.toContain("getSessionMessages");

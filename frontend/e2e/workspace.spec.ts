@@ -1,17 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "./fake-model";
 
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 const SKILL = "storageops-security-iam-policy";
-const FOLLOW_UP = "Summarize the evidence again from this review surface.";
+const FOLLOW_UP = "Summarize the evidence again while I keep the review open.";
 const FOLLOW_UP_ANSWER = "The evidence still supports the same IAM-policy conclusion after review.";
 
-async function setup(page: Page) {
+async function setup(page: Page, opts: { deltaDelayMs?: number } = {}) {
   const model = await startFakeModel([
     toolTurn("read_skill", { name: SKILL }),
-    textTurn("The investigation is ready for review. The persisted skill evidence is available below."),
+    textTurn("The task is ready for review. The persisted skill evidence is available below."),
     textTurn(FOLLOW_UP_ANSWER),
-  ]);
+  ], opts);
   const providerId = await useFakeModel(model.baseUrl);
   await page.addInitScript(() => {
     localStorage.setItem("saw.lang", "en");
@@ -36,132 +36,124 @@ async function completeTurn(page: Page) {
   await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 20_000 });
 }
 
-test.describe("Agent OS workbench", () => {
-  test("Evidence is a native replaceable work surface, never a legacy Inspector overlay", async ({ page }) => {
+test.describe("Agent-native task shell", () => {
+  test("Review is contextual output and never replaces the active Agent task", async ({ page }) => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
-      await page.getByRole("tab", { name: "Evidence" }).click();
+      const thread = page.getByTestId("thread-scroll");
+      await expect(thread).toBeVisible();
 
-      const shell = page.getByTestId("workbench-shell");
-      await expect(shell).toHaveAttribute("data-surface", "evidence");
-      const evidence = page.getByTestId("evidence-workspace");
-      await expect(evidence).toBeVisible();
+      await page.getByRole("button", { name: "Review" }).click();
+      const review = page.getByTestId("agent-review-panel");
+      await expect(review).toBeVisible();
+      await expect(thread).toBeVisible();
+      await expect(page.getByRole("tab")).toHaveCount(0);
+
+      await review.getByRole("button", { name: "Evidence" }).click();
+      await expect(page.getByTestId("evidence-workspace")).toBeVisible();
+      await expect(thread).toBeVisible();
       await expect(page.getByTestId("session-inspector")).toHaveCount(0);
-
-      const geometry = await evidence.evaluate((node) => {
-        const rect = node.getBoundingClientRect();
-        const stage = node.closest(".agent-os-stage")!.getBoundingClientRect();
-        return {
-          width: rect.width,
-          leftInset: rect.left - stage.left,
-          rightInset: stage.right - rect.right,
-        };
-      });
-      expect(geometry.width).toBeLessThanOrEqual(1082);
-      expect(Math.abs(geometry.leftInset - geometry.rightInset)).toBeLessThanOrEqual(4);
     } finally {
       await cleanup();
     }
   });
 
-  test("Focus mode removes global navigation without changing the selected document identity", async ({ page }) => {
+  test("Focus mode removes global navigation while preserving task and Review", async ({ page }) => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
-      await page.getByRole("tab", { name: "Evidence" }).click();
-      await expect(page.getByTestId("evidence-workspace")).toBeVisible();
+      await page.getByRole("button", { name: "Review" }).click();
+      const review = page.getByTestId("agent-review-panel");
+      await review.getByRole("button", { name: "Evidence" }).click();
 
-      await page.getByRole("button", { name: "Focus work surface" }).click();
-      await expect(page.getByTestId("workbench-shell")).toHaveAttribute("data-mode", "focus");
+      await page.getByRole("button", { name: "Focus task" }).click();
+      await expect(page.getByTestId("workbench-shell")).toHaveAttribute("data-focus", "true");
       await expect(page.getByTestId("session-rail")).not.toBeVisible();
+      await expect(page.getByTestId("thread-scroll")).toBeVisible();
       await expect(page.getByTestId("evidence-workspace")).toBeVisible();
 
       await page.getByRole("button", { name: "Exit focus mode" }).click();
       await expect(page.getByTestId("session-rail")).toBeVisible();
-      await expect(page.getByTestId("evidence-workspace")).toBeVisible();
     } finally {
       await cleanup();
     }
   });
 
-  test("the resting Timeline prompt remains subordinate to the answer document", async ({ page }) => {
+  test("resting task control reads as delegation, not a model playground", async ({ page }) => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
-      const field = composer(page);
-      const parent = field.locator("..");
-      const box = await parent.boundingBox();
-      expect(box).not.toBeNull();
-      expect(box!.height).toBeLessThan(90);
+      const control = page.getByTestId("agent-composer");
+      await expect(control).toHaveAttribute("data-agent-state", "ready");
+      await expect(control.getByText("Delegate", { exact: true })).toBeVisible();
+      await expect(control.getByText("fake-model", { exact: true })).toHaveCount(0);
       await expect(page.getByTestId("answer-document").first()).toBeVisible();
     } finally {
       await cleanup();
     }
   });
 
-  test("Evidence keeps the real Agent steering controller reachable", async ({ page }) => {
+  test("Review stays open while the same task Composer continues the Agent task", async ({ page }) => {
     const { cleanup, model } = await setup(page);
     try {
       await completeTurn(page);
       const baselineRequests = model.requests.length;
-      await page.getByRole("tab", { name: "Evidence" }).click();
+      await page.getByRole("button", { name: "Review" }).click();
+      const review = page.getByTestId("agent-review-panel");
+      await expect(review).toBeVisible();
 
-      const steering = page.getByTestId("workbench-steering");
-      await expect(steering).toBeVisible();
-      // The footer appears before the session run necessarily publishes its
-      // final idle state. Wait for the controller to say Send rather than
-      // accidentally testing redirect-in-flight semantics.
-      await expect(steering.getByRole("button", { name: /^send$/i })).toBeVisible({ timeout: 20_000 });
-      const field = steering.getByRole("textbox");
-      await field.fill(FOLLOW_UP);
-      await field.press("Enter");
-
-      // Prove the deep-surface controller actually crossed the browser/sidecar
-      // boundary before judging persistence. If this fails, the bug is dispatch
-      // or runner gating. If it passes but the Timeline checks below fail, the
-      // bug is in settle/reload/render. This is intentionally stronger than the
-      // old footer-count-only assertion.
+      await composer(page).fill(FOLLOW_UP);
+      await composer(page).press("Enter");
       await expect.poll(() => model.requests.length, {
         timeout: 10_000,
-        message: "Evidence Steering must reach the configured model",
+        message: "the task Composer must continue through the configured model while Review stays open",
       }).toBeGreaterThan(baselineRequests);
 
-      await page.getByRole("tab", { name: "Timeline" }).click();
       await expect(page.locator("main").getByText(FOLLOW_UP, { exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(page.locator("main").getByText(FOLLOW_UP_ANSWER, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(review).toBeVisible();
 
-      // The first turn ran a tool, so it owns the one expandable activity toggle.
-      // The follow-up is intentionally text-only: TurnFooter renders a toggle only
-      // for tool/grounding disclosure, not for every assistant message. Requiring
-      // two toggles would confuse UI disclosure with persistence.
-      await expect(page.getByTestId("turn-footer-toggle")).toHaveCount(1);
-
-      // Durability is the real contract: a cross-surface turn that only existed
-      // as live stream state would disappear here. Reload and verify BOTH the
-      // user's follow-up and the assistant answer survive from the sidecar-backed
-      // investigation document.
       await page.reload();
       await expect(composer(page)).toBeVisible({ timeout: 20_000 });
       await expect(page.locator("main").getByText(FOLLOW_UP, { exact: true })).toBeVisible({ timeout: 20_000 });
       await expect(page.locator("main").getByText(FOLLOW_UP_ANSWER, { exact: true })).toBeVisible({ timeout: 20_000 });
-      await expect(page.getByTestId("turn-footer-toggle")).toHaveCount(1);
     } finally {
       await cleanup();
     }
   });
 
-  test("Report is a native durable-output surface with no centered modal path", async ({ page }) => {
+  test("a running task exposes real Agent execution and steering state", async ({ page }) => {
+    const { cleanup } = await setup(page, { deltaDelayMs: 160 });
+    try {
+      await composer(page).fill("Inspect the IAM diagnostic method and explain what you are checking.");
+      await composer(page).press("Enter");
+
+      const live = page.getByTestId("agent-live-status");
+      await expect(live).toBeVisible({ timeout: 10_000 });
+      await expect(live).toContainText("Agent working");
+      const control = page.getByTestId("agent-composer");
+      await expect(control).toHaveAttribute("data-agent-state", "working");
+      await expect(control.getByText("Steer", { exact: true })).toBeVisible();
+      await expect(control.getByText("Stop", { exact: true })).toBeVisible();
+      await expect(page.getByTestId("workbench-commandbar")).toContainText("Agent working");
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("Report opens as an Artifact review beside the durable task", async ({ page }) => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
       await composer(page).fill("/report");
       await composer(page).press("Enter");
 
-      const shell = page.getByTestId("workbench-shell");
-      await expect(shell).toHaveAttribute("data-surface", "report");
-      await expect(page.getByRole("tab", { name: "Report" })).toHaveAttribute("aria-selected", "true");
+      const review = page.getByTestId("agent-review-panel");
+      await expect(review).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId("report-workspace")).toBeVisible();
+      await expect(page.getByTestId("thread-scroll")).toBeVisible();
+      await expect(page.getByRole("tab")).toHaveCount(0);
       await expect(page.locator(".fixed.inset-0.z-floating")).toHaveCount(0);
       await expect(page.getByTestId("report-copy")).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId("report-save")).toBeVisible();

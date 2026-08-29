@@ -12,7 +12,6 @@ import "./run-workspace.css";
 import "./workbench/workbench.css";
 import "./workbench/agent-runtime.css";
 import "./workbench/answer-artifact.css";
-import "./workbench/workbench-accessibility.css";
 
 applyTheme(initialTheme());
 
