@@ -57,7 +57,7 @@ export function ReportArtifact({
         <div className="flex items-start justify-between gap-6">
           <div className="min-w-0">
             <p className="agent-eyebrow">{copy.report.eyebrow}</p>
-            <h1>{copy.report.title}</h1>
+            <h1 data-testid="report-artifact-title">{copy.report.title}</h1>
             <p>{copy.report.description}</p>
           </div>
           {report && !loading && !error ? (
