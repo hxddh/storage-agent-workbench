@@ -1,10 +1,12 @@
 import type { SessionSummaryRow } from "../types";
 
 /**
- * Investigation navigation geometry belongs to the application shell rather
- * than to the historical chat rail implementation. Below MIN the title/context
- * pair stops being useful, so the navigation should collapse instead of being
- * squeezed into an unreadable sliver.
+ * Agent task navigation geometry belongs to the application shell. Below the
+ * minimum width the title/scope/state stack stops being useful, so navigation
+ * collapses instead of being squeezed into an unreadable sliver.
+ *
+ * Constant names retain `RAIL` only as persisted-layout compatibility; the
+ * product and component model are Agent task navigation.
  */
 export const MIN_RAIL_WIDTH = 208;
 export const MAX_RAIL_WIDTH = 420;
@@ -29,10 +31,11 @@ export function dayBucket(iso: string, now: Date = new Date()): DayBucket {
   return "older";
 }
 
+/** Mutations on a persisted Agent task record. */
 export type SessionActions = {
-  onRename: (session: SessionSummaryRow, title: string) => void;
-  onTogglePin: (session: SessionSummaryRow) => void;
-  onFork: (session: SessionSummaryRow) => void;
-  onToggleArchive: (session: SessionSummaryRow) => void;
-  onDelete: (session: SessionSummaryRow) => void;
+  onRename: (task: SessionSummaryRow, title: string) => void;
+  onTogglePin: (task: SessionSummaryRow) => void;
+  onFork: (task: SessionSummaryRow) => void;
+  onToggleArchive: (task: SessionSummaryRow) => void;
+  onDelete: (task: SessionSummaryRow) => void;
 };
