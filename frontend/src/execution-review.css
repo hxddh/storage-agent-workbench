@@ -41,7 +41,7 @@
   border-left: 1px solid var(--edge) !important;
 }
 
-[data-testid="execution-detail"] section > div:has(> h2 + div .thread-prose) > div {
+[data-testid="execution-detail"] section > div:has(> h2 + div .agent-prose) > div {
   max-height: none !important;
   border-color: color-mix(in srgb, var(--edge) 72%, transparent) !important;
   background: color-mix(in srgb, var(--panel) 36%, transparent) !important;
