@@ -11,10 +11,10 @@ export function AgentReviewPanel({
   report,
   reportLoading,
   error,
-  selectedRunId,
+  selectedExecutionId,
   onView,
-  onOpenRun,
-  onCloseRun,
+  onOpenExecution,
+  onCloseExecution,
   onClose,
 }: {
   view: ReviewSurface;
@@ -22,15 +22,15 @@ export function AgentReviewPanel({
   report: string | null;
   reportLoading: boolean;
   error: string | null;
-  selectedRunId: string | null;
+  selectedExecutionId: string | null;
   onView: (view: ReviewSurface) => void;
-  onOpenRun: (runId: string) => void;
-  onCloseRun: () => void;
+  onOpenExecution: (executionId: string) => void;
+  onCloseExecution: () => void;
   onClose: () => void;
 }) {
   const copy = useAgentCopy();
   const findingCount = detail?.findings.length ?? 0;
-  const runCount = detail?.runs.filter((run) => run.origin !== "agent").length ?? 0;
+  const executionCount = detail?.runs.filter((execution) => execution.origin !== "agent").length ?? 0;
   const memoryCount = detail?.agent_memory?.length ?? 0;
 
   return (
@@ -48,7 +48,7 @@ export function AgentReviewPanel({
       </header>
 
       <nav className="agent-review-nav" aria-label={copy.review.navigate}>
-        {(["overview", "evidence", "runs", "report"] as const).map((item) => (
+        {(["overview", "evidence", "execution", "report"] as const).map((item) => (
           <button
             type="button"
             key={item}
@@ -57,7 +57,7 @@ export function AgentReviewPanel({
           >
             {copy.review.views[item]}
             {item === "evidence" && findingCount > 0 ? <span>{findingCount}</span> : null}
-            {item === "runs" && runCount > 0 ? <span>{runCount}</span> : null}
+            {item === "execution" && executionCount > 0 ? <span>{executionCount}</span> : null}
           </button>
         ))}
       </nav>
@@ -74,7 +74,7 @@ export function AgentReviewPanel({
               </p>
               <div className="agent-review-stats">
                 <span>{copy.findings(findingCount)}</span>
-                <span>{copy.runs(runCount)}</span>
+                <span>{copy.executions(executionCount)}</span>
                 <span>{copy.review.memory(memoryCount)}</span>
               </div>
             </section>
@@ -98,19 +98,19 @@ export function AgentReviewPanel({
 
             <section>
               <div className="agent-review-section-label">{copy.review.execution}</div>
-              {detail?.runs.some((run) => run.origin !== "agent") ? (
+              {detail?.runs.some((execution) => execution.origin !== "agent") ? (
                 <div className="agent-review-list">
-                  {detail.runs.filter((run) => run.origin !== "agent").slice(0, 5).map((run) => (
-                    <button type="button" key={run.run_id} onClick={() => onOpenRun(run.run_id)}>
-                      <span className="agent-review-list-dot" data-status={run.status} aria-hidden />
+                  {detail.runs.filter((execution) => execution.origin !== "agent").slice(0, 5).map((execution) => (
+                    <button type="button" key={execution.run_id} onClick={() => onOpenExecution(execution.run_id)}>
+                      <span className="agent-review-list-dot" data-status={execution.status} aria-hidden />
                       <span className="min-w-0">
-                        <strong>{run.title || run.run_type}</strong>
-                        <small>{run.status}</small>
+                        <strong>{execution.title || execution.run_type}</strong>
+                        <small>{execution.status}</small>
                       </span>
                     </button>
                   ))}
                 </div>
-              ) : <p className="agent-review-empty">{copy.run.empty}</p>}
+              ) : <p className="agent-review-empty">{copy.execution.empty}</p>}
             </section>
           </div>
         ) : null}
@@ -119,8 +119,13 @@ export function AgentReviewPanel({
           detail ? <EvidenceReview detail={detail} sessionId={detail.id} /> : <p className="agent-review-empty">{copy.review.loading}</p>
         ) : null}
 
-        {!error && view === "runs" ? (
-          <ExecutionReview detail={detail} selectedRunId={selectedRunId} onOpenRun={onOpenRun} onCloseRun={onCloseRun} />
+        {!error && view === "execution" ? (
+          <ExecutionReview
+            detail={detail}
+            selectedExecutionId={selectedExecutionId}
+            onOpenExecution={onOpenExecution}
+            onCloseExecution={onCloseExecution}
+          />
         ) : null}
 
         {!error && view === "report" ? (
