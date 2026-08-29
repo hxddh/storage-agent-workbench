@@ -139,13 +139,6 @@ export function WorkbenchShell({
 
         <div className="agent-task-workspace">
           <section className="agent-task-content" data-empty={sessionId ? "false" : "true"} aria-label={copy.task.workspace}>
-            {!sessionId ? (
-              <div className="agent-task-start-heading" aria-hidden="true">
-                <span>{copy.task.readyEyebrow}</span>
-                <h1>{copy.task.startTitle}</h1>
-                <p>{copy.task.startDescription}</p>
-              </div>
-            ) : null}
             {taskContent}
           </section>
           {review && sessionId ? (
