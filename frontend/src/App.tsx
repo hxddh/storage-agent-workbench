@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { closeTopOverlay } from "./lib/overlayStack";
-import { Thread } from "./components/Thread";
+import { AgentTask } from "./components/AgentTask";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { FirstRunWizard } from "./components/FirstRunWizard";
 import { CommandPalette } from "./components/CommandPalette";
@@ -28,9 +28,8 @@ import {
 import { WorkbenchShell } from "./workbench/WorkbenchShell";
 
 const ONBOARDED_KEY = "saw.onboarded";
-// These two strings are persisted-data migration keys from pre-v0.93 builds.
-// Keeping them preserves user layout preferences; no UI/runtime contract uses
-// the old product vocabulary.
+// Persisted-data migration keys from pre-v0.93 builds. Keeping them preserves
+// local layout/task continuity; they are not public product vocabulary.
 const NAV_WIDTH_KEY = "saw.railWidth";
 const NAV_COLLAPSED_KEY = "saw.railCollapsed";
 const ACTIVE_TASK_KEY = "saw.activeSession";
@@ -204,7 +203,7 @@ export default function App() {
   );
 
   const taskContent = (
-    <Thread
+    <AgentTask
       sessionId={activeId}
       onSessionCreated={(id) => {
         setActiveId(id);
