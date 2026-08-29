@@ -161,9 +161,10 @@ test.describe("task navigation at a small window", () => {
     await page.addInitScript(() => {
       localStorage.setItem("saw.lang", "en");
       localStorage.setItem("saw.onboarded", "1");
-      localStorage.setItem("saw.taskNavigationCollapsed", "1");
     });
-    await page.setViewportSize({ width: 1280, height: 800 });
+    // The product folds automatically below 1000px. Test that real responsive
+    // state rather than forcing a removed pre-v0.93 persistence key at 1280px.
+    await page.setViewportSize({ width: 900, height: 800 });
     await page.goto("/");
     await expect(navigation(page)).toHaveAttribute("data-collapsed", "true");
     await page.getByTestId("task-navigation-palette").click();
