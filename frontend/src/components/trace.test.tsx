@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
 import { LiveTrace, argLabel, argSummary } from "./LiveTrace";
-import { MessageCard } from "./TaskContent";
+import { AgentTaskResult } from "./AgentTaskResult";
 import { ExecutionSummary } from "./ExecutionSummary";
 import type { ToolActivity } from "../types";
 
@@ -18,7 +18,7 @@ const call = (over: Partial<ToolActivity> = {}): ToolActivity => ({
 
 describe("live Agent execution", () => {
   it("has one progress surface while the Agent is streaming", () => {
-    wrap(createElement(MessageCard, {
+    wrap(createElement(AgentTaskResult, {
       role: "assistant",
       content: "",
       streaming: true,
