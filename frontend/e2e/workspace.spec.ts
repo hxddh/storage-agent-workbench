@@ -51,7 +51,7 @@ test.describe("Agent-native task shell", () => {
       await expect(page.getByRole("tab")).toHaveCount(0);
 
       await review.getByRole("button", { name: "Evidence" }).click();
-      await expect(page.getByTestId("evidence-workspace")).toBeVisible();
+      await expect(page.getByTestId("evidence-review")).toBeVisible();
       await expect(thread).toBeVisible();
       await expect(page.getByTestId("session-inspector")).toHaveCount(0);
     } finally {
@@ -71,7 +71,7 @@ test.describe("Agent-native task shell", () => {
       await expect(page.getByTestId("workbench-shell")).toHaveAttribute("data-focus", "true");
       await expect(page.getByTestId("session-rail")).not.toBeVisible();
       await expect(page.getByTestId("thread-scroll")).toBeVisible();
-      await expect(page.getByTestId("evidence-workspace")).toBeVisible();
+      await expect(page.getByTestId("evidence-review")).toBeVisible();
 
       await page.getByRole("button", { name: "Exit focus mode" }).click();
       await expect(page.getByTestId("session-rail")).toBeVisible();
@@ -151,7 +151,7 @@ test.describe("Agent-native task shell", () => {
 
       const review = page.getByTestId("agent-review-panel");
       await expect(review).toBeVisible({ timeout: 20_000 });
-      await expect(page.getByTestId("report-workspace")).toBeVisible();
+      await expect(page.getByTestId("report-artifact")).toBeVisible();
       await expect(page.getByTestId("thread-scroll")).toBeVisible();
       await expect(page.getByRole("tab")).toHaveCount(0);
       await expect(page.locator(".fixed.inset-0.z-floating")).toHaveCount(0);
