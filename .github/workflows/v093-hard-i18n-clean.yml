@@ -1,0 +1,110 @@
+name: v0.93 hard i18n cleanup
+
+on:
+  push:
+    branches:
+      - chatgpt/v0.93-agent-native-rebuild
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/v0.93-agent-native-rebuild
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Remove Chat-era semantic copy and this workflow
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          path = Path('frontend/src/i18n.tsx')
+          source = path.read_text(encoding='utf-8')
+
+          # Shortcut and command-palette labels are owned by their Agent-native
+          # components now. Keeping duplicate historical dictionary contracts is
+          # exactly how old product language creeps back into the UI.
+          source = re.sub(r'^\s*"keys\.[^"]+"\s*:.*\n', '', source, flags=re.MULTILINE)
+          source = re.sub(r'^\s*"palette\.[^"]+"\s*:.*\n', '', source, flags=re.MULTILINE)
+
+          dead_keys = {
+              'act.continueInvestigation',
+              'run.back', 'run.loadFailed', 'run.errorLabel', 'run.fallbackTitle',
+              'run.userPrompt', 'run.metrics', 'run.findings', 'run.noFindings',
+              'run.timeline', 'run.summary', 'run.reportPreview', 'run.rootPrefix',
+          }
+          lines = source.splitlines(keepends=True)
+          kept = []
+          for line in lines:
+              match = re.match(r'^\s*"([^"]+)"\s*:', line)
+              if match and match.group(1) in dead_keys:
+                  continue
+              kept.append(line)
+          source = ''.join(kept)
+
+          replacements = {
+              '// rail': '// application',
+              '// rail shell (v0.46.0)': '// application shell',
+              '// thread': '// task',
+              '// thread interaction (v0.46.0)': '// task interaction',
+              '// thread cards': '// Agent task artifacts',
+              '// per-turn metrics + session inspector (v0.45.0)': '// execution metrics',
+              '// unified turn footer (v0.49.0)': '// execution summary',
+              '// run transcript (RunDetail / ExecutionTrace / ToolResultCard)': '// execution review',
+              '// 侧栏外壳 (v0.46.0)': '// 应用外壳',
+              '// 线程交互 (v0.46.0)': '// Task 交互',
+              '// 每轮指标与会话检查器 (v0.45.0)': '// Execution Metrics',
+              '// 统一的回合信息条 (v0.49.0)': '// Execution Summary',
+              '"findings.title": "Session findings"': '"findings.title": "Task findings"',
+              '"findings.title": "会话发现"': '"findings.title": "Task 发现"',
+              'Time from sending your message to the finished answer.': 'Time from delegation to the durable Work Result.',
+              '从发送消息到回答完成的耗时。': '从委派任务到持久化 Work Result 完成的耗时。',
+              'Welcome to Storage Agent Workbench': 'Welcome to Storage Agent',
+              '欢迎使用云存储 Agent': '欢迎使用 Storage Agent',
+              'Start investigating': 'Delegate your first task',
+              '开始排查': '委派第一个任务',
+              'messages; earlier turns are no longer in its context': 'task history; earlier steps are no longer in its active context',
+              '消息；更早的轮次已不在它的上下文中': 'Task 历史；更早的 Steps 已不在它的当前上下文中',
+              '"a11y.answerReady": "Answer ready."': '"a11y.answerReady": "Work Result ready."',
+              '"a11y.answerReady": "答案已就绪。"': '"a11y.answerReady": "Work Result 已就绪。"',
+              '"a11y.turnFailed": "The turn failed."': '"a11y.turnFailed": "Agent execution failed."',
+              '"a11y.turnFailed": "本轮失败。"': '"a11y.turnFailed": "Agent 执行失败。"',
+              '"answer.outline": "In this answer"': '"answer.outline": "In this result"',
+              '"answer.outline": "本回答目录"': '"answer.outline": "结果目录"',
+              "this turn": "this execution",
+              "This turn": "This execution",
+              "turn's": "execution's",
+              "本轮": "本次执行",
+              'per-turn': 'per-execution',
+          }
+          for old, new in replacements.items():
+              source = source.replace(old, new)
+
+          # Product copy/comments must not retain the old UI nouns, in either
+          # English or Chinese. Backend/session data names are not touched here.
+          source = re.sub(r'\bSession inspector\b', 'Task Review', source)
+          source = source.replace('会话检查器', 'Task Review')
+          source = source.replace('本次调查', '当前 Task')
+          source = source.replace('对话', 'Task')
+          source = source.replace('会话', 'Task')
+          source = source.replace('调查', '任务')
+          source = source.replace('线程', 'Task')
+
+          path.write_text(source, encoding='utf-8')
+          PY
+
+          git rm .github/workflows/v093-hard-i18n-clean.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/i18n.tsx
+          git commit -m "refactor(agent): purge remaining legacy product semantics [hard-cleaned]"
+          git push origin HEAD:chatgpt/v0.93-agent-native-rebuild
