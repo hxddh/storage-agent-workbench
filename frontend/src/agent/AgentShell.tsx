@@ -67,7 +67,7 @@ export function AgentShell({
   const scope = task?.primary_bucket?.trim() || task?.goal?.trim() || copy.task.noScope;
   const outputCount = (task?.finding_count ?? 0) + (task?.run_count ?? 0);
   const latestTool = run.streamTools.length ? run.streamTools[run.streamTools.length - 1] : null;
-  const stateKey = agentTaskState(run, Boolean(taskId));
+  const stateKey = agentTaskState(run, Boolean(taskId), task?.requires_decision ?? false);
   const stateLabel = stateKey === "idle"
     ? copy.states.delegate
     : stateKey === "ready"
