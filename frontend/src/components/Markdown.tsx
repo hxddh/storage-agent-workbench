@@ -8,7 +8,7 @@ export * from "./MarkdownImplementation";
  */
 export function Markdown({ text }: { text: string }) {
   return (
-    <div className="agent-prose" data-testid="agent-prose">
+    <div className="agent-prose min-w-0 break-words" data-testid="agent-prose">
       <MarkdownImplementation text={text} />
     </div>
   );
