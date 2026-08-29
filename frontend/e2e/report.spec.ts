@@ -7,7 +7,6 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
  */
 
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
-const task = (page: Page) => page.getByTestId("task-scroll");
 
 const SKILL = "storageops-security-iam-policy";
 const SIGNATURE = "4a7c1e9b2f0d8a6c5e3b1d9f7a5c3e1b0d8f6a4c2e0b9d7f5a3c1e9b7d5f3a1c";
@@ -61,7 +60,7 @@ async function openReport(page: Page) {
 async function reportText(page: Page): Promise<string> {
   const report = page.getByTestId("report-artifact");
   await expect(report).toBeVisible({ timeout: 30_000 });
-  await expect(report.getByRole("heading", { level: 1, name: "Report" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("report-artifact-title")).toHaveText("Report", { timeout: 30_000 });
   return await report.evaluate((el) => el.textContent ?? "");
 }
 
@@ -143,7 +142,9 @@ test.describe("durable Agent report artifact", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await openReport(page);
-      await expect(task(page).getByText(/Create an Agent task before generating a Report artifact/i)).toBeVisible({ timeout: 20_000 });
+      await expect(
+        page.getByTestId("agent-workspace").getByText(/Create an Agent task before generating a Report artifact/i),
+      ).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId("report-artifact")).toHaveCount(0);
     } finally { await cleanup(); }
   });
