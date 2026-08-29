@@ -28,8 +28,8 @@ export function outlineOf(blocks: Block[]): Array<{ id: string; text: string; le
 function Outline({ entries }: { entries: Array<{ id: string; text: string; level: number }> }) {
   const { t } = useI18n();
   return (
-    <nav aria-label={t("answer.outline")} data-testid="answer-outline" className="rounded-lg border border-edge bg-panel px-3 py-2">
-      <div className="mb-1 text-2xs font-medium uppercase tracking-wider text-gray-500">{t("answer.outline")}</div>
+    <nav aria-label={t("result.outline")} data-testid="result-outline" className="rounded-lg border border-edge bg-panel px-3 py-2">
+      <div className="mb-1 text-2xs font-medium uppercase tracking-wider text-gray-500">{t("result.outline")}</div>
       <ul className="space-y-0.5">
         {entries.map((e) => (
           <li key={e.id} className={e.level === 2 ? "pl-3" : ""}>
