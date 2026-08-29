@@ -15,16 +15,7 @@ const DecisionIcon = () => (
   </svg>
 );
 
-/**
- * A real Agent decision boundary.
- *
- * `requires_confirmation` is produced by the backend NextAction contract. We do
- * not infer or invent approval state. When it is true, the next action becomes
- * a deliberate decision card rather than looking like an ordinary suggestion.
- * The click is the user's explicit handoff into the existing validated action
- * flow; data-moving evidence imports still keep their separate plan/confirm/run
- * gate after this step.
- */
+/** A real Agent decision boundary backed by the backend confirmation contract. */
 export function ProposalCard({
   proposal,
   onRun,
@@ -32,9 +23,9 @@ export function ProposalCard({
   proposal: NextAction;
   onRun: (proposal: NextAction) => void;
 }) {
-  const { lang, t } = useI18n();
+  const { lang } = useI18n();
   const label = proposal.action_type === "continue_investigation"
-    ? t("proposal.continueTitle")
+    ? (lang === "zh" ? "继续当前 Task" : "Continue task")
     : proposal.title;
 
   if (!proposal.requires_confirmation) {
