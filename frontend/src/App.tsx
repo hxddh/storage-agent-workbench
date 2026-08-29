@@ -21,15 +21,16 @@ import { ShortcutsSheet } from "./components/ShortcutsSheet";
 import { isEditable, matches } from "./shortcuts";
 import { AgentTaskNavigation } from "./workbench/AgentTaskNavigation";
 import {
-  DEFAULT_RAIL_WIDTH,
-  clampRailWidth,
+  DEFAULT_TASK_NAV_WIDTH,
+  clampTaskNavigationWidth,
   type SessionActions,
 } from "./workbench/navigationModel";
 import { WorkbenchShell } from "./workbench/WorkbenchShell";
 
 const ONBOARDED_KEY = "saw.onboarded";
-// Keep the old persisted keys as a data migration contract: removing product
-// jargon must not reset a user's navigation width/collapse preference.
+// These two strings are persisted-data migration keys from pre-v0.93 builds.
+// Keeping them preserves user layout preferences; no UI/runtime contract uses
+// the old product vocabulary.
 const NAV_WIDTH_KEY = "saw.railWidth";
 const NAV_COLLAPSED_KEY = "saw.railCollapsed";
 const ACTIVE_TASK_KEY = "saw.activeSession";
@@ -37,7 +38,7 @@ const NAV_FOLD_PX = 1000;
 
 function storedNavigationWidth(): number {
   const raw = Number(localStorage.getItem(NAV_WIDTH_KEY));
-  return Number.isFinite(raw) && raw > 0 ? clampRailWidth(raw) : DEFAULT_RAIL_WIDTH;
+  return Number.isFinite(raw) && raw > 0 ? clampTaskNavigationWidth(raw) : DEFAULT_TASK_NAV_WIDTH;
 }
 
 export default function App() {
