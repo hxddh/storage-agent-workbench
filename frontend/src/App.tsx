@@ -12,7 +12,6 @@ import {
   listSessions,
   patchSession,
 } from "./api";
-import type { SessionSummaryRow } from "./types";
 import { dropSessionRun } from "./sessionRuns";
 import { useSidecarHealth } from "./hooks/useSidecarHealth";
 import { useI18n } from "./i18n";
@@ -23,7 +22,8 @@ import { AgentTaskNavigation } from "./agent/AgentTaskNavigation";
 import {
   DEFAULT_TASK_NAV_WIDTH,
   clampTaskNavigationWidth,
-  type SessionActions,
+  type AgentTaskSummary,
+  type TaskActions,
 } from "./agent/navigationModel";
 import { AgentShell } from "./agent/AgentShell";
 
@@ -42,8 +42,8 @@ function storedNavigationWidth(): number {
 
 export default function App() {
   const { status, slow } = useSidecarHealth();
-  const [tasks, setTasks] = useState<SessionSummaryRow[]>([]);
-  const [activeId, setActiveIdState] = useState<string | null>(
+  const [tasks, setTasks] = useState<AgentTaskSummary[]>([]);
+  const [activeTaskId, setActiveTaskIdState] = useState<string | null>(
     () => localStorage.getItem(ACTIVE_TASK_KEY),
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -62,8 +62,8 @@ export default function App() {
   const { t } = useI18n();
   const toast = useToast();
 
-  const setActiveId = useCallback((id: string | null) => {
-    setActiveIdState(id);
+  const setActiveTaskId = useCallback((id: string | null) => {
+    setActiveTaskIdState(id);
     if (id) localStorage.setItem(ACTIVE_TASK_KEY, id);
     else localStorage.removeItem(ACTIVE_TASK_KEY);
   }, []);
@@ -95,7 +95,7 @@ export default function App() {
     const stored = localStorage.getItem(ACTIVE_TASK_KEY);
     if (stored && !tasks.some((task) => task.id === stored)) {
       localStorage.removeItem(ACTIVE_TASK_KEY);
-      setActiveIdState(null);
+      setActiveTaskIdState(null);
     }
   }, [tasks]);
 
@@ -127,11 +127,11 @@ export default function App() {
   };
 
   const fail = (error: unknown) => toast.error(`${t("app.actionFailed")} ${String(error)}`);
-  const taskActions: SessionActions = {
+  const taskActions: TaskActions = {
     onRename: async (task, title) => {
       try { await patchSession(task.id, { title }); } catch (error) { fail(error); }
       refreshTasks();
-      if (task.id === activeId) setTaskReloadKey((key) => key + 1);
+      if (task.id === activeTaskId) setTaskReloadKey((key) => key + 1);
     },
     onTogglePin: async (task) => {
       try { await patchSession(task.id, { pinned: !task.pinned }); } catch (error) { fail(error); }
@@ -140,7 +140,7 @@ export default function App() {
     onFork: async (task) => {
       try {
         const fork = await forkSession(task.id);
-        if (fork) setActiveId(fork.id);
+        if (fork) setActiveTaskId(fork.id);
       } catch (error) { fail(error); }
       refreshTasks();
     },
@@ -153,7 +153,7 @@ export default function App() {
     onDelete: async (task) => {
       try {
         await deleteSession(task.id);
-        if (activeId === task.id) setActiveId(null);
+        if (activeTaskId === task.id) setActiveTaskId(null);
         dropSessionRun(task.id);
       } catch (error) { fail(error); }
       refreshTasks();
@@ -167,7 +167,7 @@ export default function App() {
         setPaletteOpen((open) => !open);
       } else if (matches(event, "newTask")) {
         event.preventDefault();
-        setActiveId(null);
+        setActiveTaskId(null);
       } else if (matches(event, "toggleTaskNavigation")) {
         event.preventDefault();
         setNavigationCollapsed((collapsed) => {
@@ -183,17 +183,17 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setActiveId]);
+  }, [setActiveTaskId]);
 
   const navigationFolded = navigationCollapsed || narrow;
-  const activeTask = tasks.find((task) => task.id === activeId) ?? null;
+  const activeTask = tasks.find((task) => task.id === activeTaskId) ?? null;
 
   const navigation = (
     <AgentTaskNavigation
-      sessions={tasks}
-      activeId={activeId}
-      onSelect={setActiveId}
-      onNew={() => setActiveId(null)}
+      tasks={tasks}
+      activeTaskId={activeTaskId}
+      onSelectTask={setActiveTaskId}
+      onNew={() => setActiveTaskId(null)}
       onOpenSettings={() => setDrawerOpen(true)}
       status={status}
       slow={slow}
@@ -214,14 +214,14 @@ export default function App() {
 
   const taskContent = (
     <AgentTask
-      sessionId={activeId}
+      sessionId={activeTaskId}
       onSessionCreated={(id) => {
-        setActiveId(id);
+        setActiveTaskId(id);
         refreshTasks();
       }}
       sidecarStatus={status}
       onSessionDiscarded={(id) => {
-        if (activeId === id) setActiveId(null);
+        if (activeTaskId === id) setActiveTaskId(null);
         refreshTasks();
       }}
       onOpenSettings={() => setDrawerOpen(true)}
@@ -237,8 +237,8 @@ export default function App() {
       <AgentShell
         navigation={navigation}
         taskContent={taskContent}
-        sessionId={activeId}
-        session={activeTask}
+        taskId={activeTaskId}
+        task={activeTask}
         sidecarStatus={status}
         onOpenPalette={() => setPaletteOpen(true)}
         onOpenSettings={() => setDrawerOpen(true)}
@@ -249,9 +249,9 @@ export default function App() {
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
-        sessions={tasks}
-        onSelectSession={setActiveId}
-        onNew={() => setActiveId(null)}
+        tasks={tasks}
+        onSelectTask={setActiveTaskId}
+        onNew={() => setActiveTaskId(null)}
         onOpenSettings={() => setDrawerOpen(true)}
       />
 
