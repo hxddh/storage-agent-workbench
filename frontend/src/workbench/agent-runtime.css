@@ -1,4 +1,4 @@
-/* Live Agent execution affordances. No legacy Thread or hidden start-surface compatibility. */
+/* Live Agent execution affordances with one task-native runtime state. */
 .agent-execution-strip {
   display: flex;
   min-height: 34px;
