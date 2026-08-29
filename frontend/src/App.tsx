@@ -214,13 +214,13 @@ export default function App() {
 
   const taskContent = (
     <AgentTask
-      sessionId={activeTaskId}
-      onSessionCreated={(id) => {
+      taskId={activeTaskId}
+      onTaskCreated={(id) => {
         setActiveTaskId(id);
         refreshTasks();
       }}
       sidecarStatus={status}
-      onSessionDiscarded={(id) => {
+      onTaskDiscarded={(id) => {
         if (activeTaskId === id) setActiveTaskId(null);
         refreshTasks();
       }}
