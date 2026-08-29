@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ComponentProps } from "react";
 import { isEditable, matches } from "../shortcuts";
 import { nextTurnIndex, stepTurnIndex, type TurnDirection } from "../lib/threadNavigation";
-import { Thread as AgentTaskImplementation } from "./AgentTaskImplementation";
+import { AgentTaskImplementation } from "./AgentTaskImplementation";
 
 /**
  * Public boundary of one active Agent task.

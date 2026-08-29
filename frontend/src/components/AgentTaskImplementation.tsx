@@ -54,7 +54,7 @@ type Item =
 const propKey = (p: NextAction) => `${p.action_type}::${p.title}`;
 const SUGGESTION_KEYS = ["diagnose", "logs", "inventory", "config", "account", "optimize"] as const;
 
-export function Thread({
+export function AgentTaskImplementation({
   sessionId,
   onSessionCreated,
   onSessionDiscarded,
