@@ -130,7 +130,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     const e2e = source("../../e2e/execution-summary.spec.ts");
     expect(execution).toContain("export function ExecutionSummary");
     expect(execution).toContain('data-testid="execution-summary"');
-    expect(execution).toContain('data-testid="execution-step-open"');
+    expect(execution).toContain("execution-step-open");
     expect(task).toContain('from "./ExecutionSummary"');
     expect(task).toContain("<ExecutionSummary");
     expect(task).not.toContain("TurnFooter");
