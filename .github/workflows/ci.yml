@@ -56,6 +56,16 @@ jobs:
       - name: Run E2E smoke
         working-directory: frontend
         run: npm run test:e2e
+      - name: Capture Agent visual review
+        working-directory: frontend
+        run: npm run shots
+      - name: Upload Agent visual review
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-visual-review
+          path: frontend/shots/
+          retention-days: 14
+          if-no-files-found: error
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@v4
