@@ -17,7 +17,7 @@ import {
   clampTaskNavigationWidth,
   MIN_TASK_NAV_WIDTH,
   MAX_TASK_NAV_WIDTH,
-} from "../workbench/navigationModel";
+} from "../agent/navigationModel";
 import { ToastProvider, useToast } from "./Toast";
 import { SHORTCUTS, MOD, matches } from "../shortcuts";
 import type { ToolActivity } from "../types";

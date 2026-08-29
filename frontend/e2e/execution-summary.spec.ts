@@ -51,7 +51,7 @@ test.describe("Execution Summary", () => {
     await open(page);
     await page.getByRole("button", { name: /review evidence/i }).last().click();
 
-    await expect(page.getByTestId("workbench-shell")).toHaveAttribute("data-review", "evidence");
+    await expect(page.getByTestId("agent-shell")).toHaveAttribute("data-review", "evidence");
     await expect(page.getByTestId("agent-review-panel")).toBeVisible();
     const evidence = page.getByTestId("evidence-review");
     await expect(evidence).toBeVisible();

@@ -8,7 +8,7 @@ const commands = vi.hoisted(() => ({
   openExecution: vi.fn(),
 }));
 
-vi.mock("../workbench/commands", () => ({
+vi.mock("../agent/commands", () => ({
   openAgentReview: commands.openReview,
   openAgentExecution: commands.openExecution,
 }));

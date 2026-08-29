@@ -2,7 +2,7 @@ import { memo, useMemo, useState } from "react";
 import type { ToolActivity } from "../types";
 import { useI18n } from "../i18n";
 import { isMostlyError, parseS3Error } from "../lib/s3error";
-import { openAgentExecution, openAgentReview } from "../workbench/commands";
+import { openAgentExecution, openAgentReview } from "../agent/commands";
 import { AgentResultRenderer } from "./AgentResultRenderer";
 import { S3ErrorArtifact } from "./S3ErrorArtifact";
 

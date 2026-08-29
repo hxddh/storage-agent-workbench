@@ -5,7 +5,7 @@ import { publishAgentCommands } from "./commands";
 import { AgentReviewPanel } from "./AgentReviewPanel";
 import { useWorkbenchCopy } from "./copy";
 import type { ReviewSurface } from "./model";
-import { useWorkbenchProjection } from "./useWorkbenchProjection";
+import { useAgentTaskProjection } from "./useAgentTaskProjection";
 
 function ConnectionMark({ status }: { status: string }) {
   return (
@@ -16,7 +16,7 @@ function ConnectionMark({ status }: { status: string }) {
   );
 }
 
-export function WorkbenchShell({
+export function AgentShell({
   navigation,
   taskContent,
   sessionId,
@@ -38,7 +38,7 @@ export function WorkbenchShell({
   const [review, setReview] = useState<ReviewSurface | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [focus, setFocus] = useState(false);
-  const { detail, report, reportLoading, error } = useWorkbenchProjection(sessionId, review);
+  const { detail, report, reportLoading, error } = useAgentTaskProjection(sessionId, review);
 
   useEffect(() => {
     if (!sessionId) {
@@ -80,11 +80,11 @@ export function WorkbenchShell({
     : copy.task.startingExecution;
 
   return (
-    <div data-testid="workbench-shell" data-review={review ?? "closed"} data-focus={focus ? "true" : "false"} className="agent-native-shell">
+    <div data-testid="agent-shell" data-review={review ?? "closed"} data-focus={focus ? "true" : "false"} className="agent-native-shell">
       <aside className="agent-native-navigation" aria-label={copy.task.navigation}>{navigation}</aside>
 
       <section className="agent-native-main">
-        <header className="agent-task-header" data-testid="workbench-commandbar">
+        <header className="agent-task-header" data-testid="agent-task-header">
           <div className="agent-task-identity">
             <div className="agent-task-breadcrumb">
               <span>Storage Agent</span>

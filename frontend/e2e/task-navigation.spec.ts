@@ -48,7 +48,7 @@ test.describe("Agent task navigation", () => {
     await field.press("Enter");
 
     await expect(navigation(page).getByText("403 on acme-logs")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId("workbench-commandbar")).toContainText("403 on acme-logs", { timeout: 15_000 });
+    await expect(page.getByTestId("agent-task-header")).toContainText("403 on acme-logs", { timeout: 15_000 });
   });
 
   test("duplicating produces a second task with the same durable history", async ({ page }) => {
@@ -71,7 +71,7 @@ test.describe("Agent task navigation", () => {
 
     await expect(navigation(page).getByText(TITLE)).toHaveCount(0, { timeout: 15_000 });
     await expect(page.getByTestId("agent-composer")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId("workbench-commandbar")).toContainText("Ready to delegate");
+    await expect(page.getByTestId("agent-task-header")).toContainText("Ready to delegate");
     await expect(task(page).getByText(/Couldn't load/i)).toHaveCount(0);
   });
 

@@ -19,13 +19,13 @@ import { useI18n } from "./i18n";
 import { useToast } from "./components/Toast";
 import { ShortcutsSheet } from "./components/ShortcutsSheet";
 import { isEditable, matches } from "./shortcuts";
-import { AgentTaskNavigation } from "./workbench/AgentTaskNavigation";
+import { AgentTaskNavigation } from "./agent/AgentTaskNavigation";
 import {
   DEFAULT_TASK_NAV_WIDTH,
   clampTaskNavigationWidth,
   type SessionActions,
-} from "./workbench/navigationModel";
-import { WorkbenchShell } from "./workbench/WorkbenchShell";
+} from "./agent/navigationModel";
+import { AgentShell } from "./agent/AgentShell";
 
 const ONBOARDED_KEY = "saw.onboarded";
 // Persisted-data migration keys from pre-v0.93 builds. Keeping them preserves
@@ -224,7 +224,7 @@ export default function App() {
 
   return (
     <div className="h-full w-full bg-canvas text-gray-200">
-      <WorkbenchShell
+      <AgentShell
         navigation={navigation}
         taskContent={taskContent}
         sessionId={activeId}

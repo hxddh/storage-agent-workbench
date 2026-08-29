@@ -4,7 +4,7 @@ import type { SessionDetail } from "../types";
 import type { ReviewSurface } from "./model";
 
 /** Load contextual review data without turning it into an application-level page. */
-export function useWorkbenchProjection(sessionId: string | null, review: ReviewSurface | null) {
+export function useAgentTaskProjection(sessionId: string | null, review: ReviewSurface | null) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [report, setReport] = useState<string | null>(null);
   const [reportLoading, setReportLoading] = useState(false);

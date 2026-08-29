@@ -68,7 +68,7 @@ test.describe("Agent-native task shell", () => {
       await review.getByRole("button", { name: "Evidence" }).click();
 
       await page.getByRole("button", { name: "Focus task" }).click();
-      await expect(page.getByTestId("workbench-shell")).toHaveAttribute("data-focus", "true");
+      await expect(page.getByTestId("agent-shell")).toHaveAttribute("data-focus", "true");
       await expect(page.getByTestId("agent-task-navigation")).not.toBeVisible();
       await expect(page.getByTestId("thread-scroll")).toBeVisible();
       await expect(page.getByTestId("evidence-review")).toBeVisible();
@@ -136,7 +136,7 @@ test.describe("Agent-native task shell", () => {
       await expect(control).toHaveAttribute("data-agent-state", "working");
       await expect(control.getByText("Steer", { exact: true })).toBeVisible();
       await expect(control.getByText("Stop", { exact: true })).toBeVisible();
-      await expect(page.getByTestId("workbench-commandbar")).toContainText("Agent working");
+      await expect(page.getByTestId("agent-task-header")).toContainText("Agent working");
     } finally {
       await cleanup();
     }

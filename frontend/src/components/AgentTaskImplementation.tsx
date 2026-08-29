@@ -18,7 +18,7 @@ import { loadDraft, saveDraft } from "../drafts";
 import { useTurnRunner, cleanError } from "../hooks/useTurnRunner";
 import { useSessionDocument } from "../hooks/useSessionDocument";
 import { useTaskViewport } from "../hooks/useTaskViewport";
-import { openAgentExecution, openAgentReview } from "../workbench/commands";
+import { openAgentExecution, openAgentReview } from "../agent/commands";
 import { Button } from "./ui";
 import { Composer } from "./Composer";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";

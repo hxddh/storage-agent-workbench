@@ -31,7 +31,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
   });
 
   it("keeps Agent Task as the primary work area while Review stays contextual", () => {
-    const shell = source("./WorkbenchShell.tsx");
+    const shell = source("./AgentShell.tsx");
     expect(shell).toContain("taskContent: ReactNode");
     expect(shell).toContain("agent-task-content");
     expect(shell).toContain("<AgentReviewPanel");
@@ -46,7 +46,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     const navigation = source("./AgentTaskNavigation.tsx");
     const model = source("./navigationModel.ts");
     const e2e = source("../../e2e/task-navigation.spec.ts");
-    expect(app).toContain('import { AgentTaskNavigation } from "./workbench/AgentTaskNavigation"');
+    expect(app).toContain('import { AgentTaskNavigation } from "./agent/AgentTaskNavigation"');
     expect(app).toContain("<AgentTaskNavigation");
     expect(app).not.toContain("SessionRail");
     expect(navigation).toContain('data-testid="agent-task-navigation"');
@@ -64,7 +64,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
   it("uses Review and Execution commands instead of v0.92 application surfaces", () => {
     const model = source("./model.ts");
     const commands = source("./commands.ts");
-    const shell = source("./WorkbenchShell.tsx");
+    const shell = source("./AgentShell.tsx");
     expect(model).not.toContain("WorkSurface");
     expect(model).not.toContain("initialWorkbenchState");
     expect(model).not.toContain("workbenchReducer");
