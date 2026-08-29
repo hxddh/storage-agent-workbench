@@ -1,0 +1,79 @@
+name: v0.93 Execution language migration
+
+on:
+  push:
+    branches:
+      - chatgpt/v0.93-agent-native-rebuild
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/v0.93-agent-native-rebuild
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Move remaining UI concepts to Agent execution language
+        shell: bash
+        run: |
+          git mv frontend/src/components/TurnMetrics.tsx frontend/src/components/ExecutionMetrics.tsx
+          git mv frontend/src/components/TurnMetrics.test.tsx frontend/src/components/ExecutionMetrics.test.tsx
+          git mv frontend/src/components/RunDetail.tsx frontend/src/components/ExecutionDetail.tsx
+          git mv frontend/src/components/RunDetailImplementation.tsx frontend/src/components/ExecutionDetailImplementation.tsx
+
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          roots = [Path('frontend/src'), Path('frontend/e2e')]
+          for root in roots:
+              for path in root.rglob('*'):
+                  if path.suffix not in {'.ts', '.tsx', '.css'}:
+                      continue
+                  text = path.read_text(encoding='utf-8')
+                  updated = text
+                  updated = updated.replace('./TurnMetrics', './ExecutionMetrics')
+                  updated = re.sub(r'\bTurnMetrics\b', 'ExecutionMetrics', updated)
+                  updated = updated.replace('answer-document', 'work-result')
+                  updated = updated.replace('turn-footer-toggle', 'execution-summary-toggle')
+                  updated = updated.replace('branch-message', 'branch-task')
+                  updated = updated.replace('edit-message', 'redirect-direction')
+                  updated = updated.replace('onRegenerate', 'onRerun')
+                  updated = updated.replace('data-testid="regenerate"', 'data-testid="rerun-direction"')
+                  if updated != text:
+                      path.write_text(updated, encoding='utf-8')
+
+          wrapper = Path('frontend/src/components/ExecutionDetail.tsx')
+          text = wrapper.read_text(encoding='utf-8')
+          text = text.replace('from "./RunDetailImplementation"', 'from "./ExecutionDetailImplementation"')
+          text = text.replace('RunDetail as RunDetailImplementation', 'ExecutionDetailImplementation')
+          text = text.replace('RunDetailProps', 'ExecutionDetailProps')
+          text = re.sub(r'\bRunDetailImplementation\b', 'ExecutionDetailImplementation', text)
+          text = re.sub(r'export function RunDetail\b', 'export function ExecutionDetail', text)
+          wrapper.write_text(text, encoding='utf-8')
+
+          impl = Path('frontend/src/components/ExecutionDetailImplementation.tsx')
+          text = impl.read_text(encoding='utf-8')
+          text = re.sub(r'export function RunDetail\b', 'export function ExecutionDetailImplementation', text)
+          impl.write_text(text, encoding='utf-8')
+
+          review = Path('frontend/src/agent/ExecutionReview.tsx')
+          text = review.read_text(encoding='utf-8')
+          text = text.replace('"../components/RunDetail"', '"../components/ExecutionDetail"')
+          text = re.sub(r'\bRunDetail\b', 'ExecutionDetail', text)
+          review.write_text(text, encoding='utf-8')
+          PY
+
+          git rm .github/workflows/v093-execution-language-migration.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend
+          git commit -m "refactor(agent): finish execution and result language migration [execution-language]"
+          git push origin HEAD:chatgpt/v0.93-agent-native-rebuild
