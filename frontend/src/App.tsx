@@ -25,20 +25,14 @@ import { useI18n } from "./i18n";
 import { useToast } from "./components/Toast";
 import { ShortcutsSheet } from "./components/ShortcutsSheet";
 import { isEditable, matches } from "./shortcuts";
+import { WorkbenchShell } from "./workbench/WorkbenchShell";
 
 const ONBOARDED_KEY = "saw.onboarded";
 const RAIL_WIDTH_KEY = "saw.railWidth";
 const RAIL_COLLAPSED_KEY = "saw.railCollapsed";
-/** Window width below which the rail folds itself. */
-const RAIL_FOLD_PX = 1000;
-// Which investigation was open. Without it, quitting the app — or any reload —
-// reopened on the empty "New chat" surface with the conversation still sitting
-// in the rail, unread. An investigation runs over days here, so "where was I"
-// is the app's most common first question, and the answer was a blank page.
 const ACTIVE_SESSION_KEY = "saw.activeSession";
+const RAIL_FOLD_PX = 1000;
 
-// Read once at mount. A rail that forgets its width every launch is worse than
-// one that was never resizable — the user re-does the same drag daily.
 function storedRailWidth(): number {
   const raw = Number(localStorage.getItem(RAIL_WIDTH_KEY));
   return Number.isFinite(raw) && raw > 0 ? clampRailWidth(raw) : DEFAULT_RAIL_WIDTH;
@@ -47,25 +41,9 @@ function storedRailWidth(): number {
 export default function App() {
   const { status, slow } = useSidecarHealth();
   const [sessions, setSessions] = useState<SessionSummaryRow[]>([]);
-  // Read at mount, not after the session list arrives: waiting made a returning
-  // user watch the empty "How can I help with your storage?" surface until the
-  // fetch came back — the app announcing it had nothing, to someone whose
-  // investigation was right there. The id is VALIDATED once the list loads.
   const [activeId, setActiveIdState] = useState<string | null>(
     () => localStorage.getItem(ACTIVE_SESSION_KEY),
   );
-  // Remember the open investigation across launches. `null` is a real choice
-  // (the user pressed "New chat"), so it is stored as a removal rather than
-  // left behind — otherwise the next launch would reopen what they just closed.
-  const setActiveId = useCallback((id: string | null) => {
-    setActiveIdState(id);
-    if (id) localStorage.setItem(ACTIVE_SESSION_KEY, id);
-    else localStorage.removeItem(ACTIVE_SESSION_KEY);
-  }, []);
-  // The restored id is checked ONCE against the real list: a stored id can point
-  // at an investigation deleted from another window, and holding it open would
-  // surface "Couldn't load this session" on launch.
-  const validated = useRef(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -74,16 +52,29 @@ export default function App() {
   const [railCollapsed, setRailCollapsed] = useState(
     () => localStorage.getItem(RAIL_COLLAPSED_KEY) === "1",
   );
-  // Below this the rail stops being furniture and starts being the window.
-  // Measured at 900px: the rail held 244px — 27% of everything — and the
-  // thread's own column was squeezed to 630px, narrower than the reading
-  // measure an answer wants. So the rail folds itself, and unfolds again when
-  // there is room. The stored preference is NOT overwritten: this is the window
-  // being small, not the user changing their mind, and widening the window has
-  // to give them back the rail they chose.
   const [narrow, setNarrow] = useState(
     () => typeof window !== "undefined" && window.innerWidth < RAIL_FOLD_PX,
   );
+  const [threadReloadKey, setThreadReloadKey] = useState(0);
+  const validated = useRef(false);
+  const { t } = useI18n();
+  const toast = useToast();
+
+  const setActiveId = useCallback((id: string | null) => {
+    setActiveIdState(id);
+    if (id) localStorage.setItem(ACTIVE_SESSION_KEY, id);
+    else localStorage.removeItem(ACTIVE_SESSION_KEY);
+  }, []);
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      setSessions(await listSessions());
+    } catch {
+      // The shell remains usable while the sidecar is starting; health owns the
+      // visible connection state rather than turning a list refresh into chrome.
+    }
+  }, []);
+
   useEffect(() => {
     const mq = window.matchMedia(`(max-width: ${RAIL_FOLD_PX - 1}px)`);
     const sync = () => setNarrow(mq.matches);
@@ -91,53 +82,31 @@ export default function App() {
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
   }, []);
-  const railFolded = railCollapsed || narrow;
-  // Bumped to force the open Thread to reload when the ACTIVE session changed in
-  // a way the thread mirrors (a rename → header title) without a session switch.
-  const [threadReloadKey, setThreadReloadKey] = useState(0);
-  const { t } = useI18n();
-  const toast = useToast();
 
-  const refreshSessions = useCallback(async () => {
-    try {
-      setSessions(await listSessions());
-    } catch {
-      /* sidecar not ready yet */
-    }
-  }, []);
-
-  // Load sessions once the sidecar is connected.
   useEffect(() => {
     if (status === "connected") refreshSessions();
   }, [status, refreshSessions]);
 
-  // ...then confirm the reopened investigation still exists.
   useEffect(() => {
     if (validated.current || sessions.length === 0) return;
     validated.current = true;
     const stored = localStorage.getItem(ACTIVE_SESSION_KEY);
-    if (stored && !sessions.some((s) => s.id === stored)) {
+    if (stored && !sessions.some((session) => session.id === stored)) {
       localStorage.removeItem(ACTIVE_SESSION_KEY);
       setActiveIdState(null);
     }
   }, [sessions]);
 
-  // First-run: show the wizard if no providers are configured and it hasn't been dismissed.
   useEffect(() => {
     if (status !== "connected") return;
     if (localStorage.getItem(ONBOARDED_KEY)) return;
     let cancelled = false;
-    (async () => {
-      try {
-        const [models, clouds] = await Promise.all([listModelProviders(), listCloudProviders()]);
+    void Promise.all([listModelProviders(), listCloudProviders()])
+      .then(([models, clouds]) => {
         if (!cancelled && models.length === 0 && clouds.length === 0) setShowWizard(true);
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
   }, [status]);
 
   const dismissWizard = () => {
@@ -145,139 +114,126 @@ export default function App() {
     setShowWizard(false);
   };
 
-  // Session management actions (rail ⋯ menu). Optimistic-ish: act, then refresh.
-  // Failures surface a dismissible banner instead of being silently swallowed.
-  const fail = (e: unknown) => toast.error(`${t("app.actionFailed")} ${String(e)}`);
+  const fail = (error: unknown) => toast.error(`${t("app.actionFailed")} ${String(error)}`);
   const sessionActions: SessionActions = {
-    onRename: async (s, title) => {
-      try { await patchSession(s.id, { title }); } catch (e) { fail(e); }
+    onRename: async (session, title) => {
+      try { await patchSession(session.id, { title }); } catch (error) { fail(error); }
       refreshSessions();
-      // The thread header mirrors the title; nudge it to reload if it's the open
-      // session (a rename doesn't change activeId, so Thread wouldn't otherwise
-      // refresh) (FE6).
-      if (s.id === activeId) setThreadReloadKey((k) => k + 1);
+      if (session.id === activeId) setThreadReloadKey((key) => key + 1);
     },
-    onTogglePin: async (s) => {
-      try { await patchSession(s.id, { pinned: !s.pinned }); } catch (e) { fail(e); }
+    onTogglePin: async (session) => {
+      try { await patchSession(session.id, { pinned: !session.pinned }); } catch (error) { fail(error); }
       refreshSessions();
     },
-    onFork: async (s) => {
+    onFork: async (session) => {
       try {
-        const d = await forkSession(s.id);
-        if (d) setActiveId(d.id);
-      } catch (e) { fail(e); }
+        const fork = await forkSession(session.id);
+        if (fork) setActiveId(fork.id);
+      } catch (error) { fail(error); }
       refreshSessions();
     },
-    onToggleArchive: async (s) => {
-      try { await patchSession(s.id, { status: s.status === "archived" ? "active" : "archived" }); }
-      catch (e) { fail(e); }
-      refreshSessions();
-    },
-    onDelete: async (s) => {
+    onToggleArchive: async (session) => {
       try {
-        await deleteSession(s.id);
-        if (activeId === s.id) setActiveId(null);
-        // Drop the deleted session's run state + listeners so the sessionRuns
-        // module maps don't accumulate entries for dead sessions.
-        dropSessionRun(s.id);
-      } catch (e) { fail(e); }
+        await patchSession(session.id, { status: session.status === "archived" ? "active" : "archived" });
+      } catch (error) { fail(error); }
+      refreshSessions();
+    },
+    onDelete: async (session) => {
+      try {
+        await deleteSession(session.id);
+        if (activeId === session.id) setActiveId(null);
+        dropSessionRun(session.id);
+      } catch (error) { fail(error); }
       refreshSessions();
     },
   };
 
-  // Global shortcuts: ⌘K command palette, ⌘N new chat, Esc closes overlays.
   useEffect(() => {
-    // Editable target: an Escape here belongs to whatever the user is typing in
-    // (a settings-drawer field, a rail rename box, etc.), not the global "close
-    // overlays" shortcut — otherwise a stray Escape while typing in the drawer
-    // would slam it shut mid-edit. Overlays with their own input (the command
-    // palette) handle Escape in their own onKeyDown.
-    // Matching goes through the shared registry (src/shortcuts.ts), so the help
-    // sheet and this handler can never document different chords.
-    const onKey = (e: KeyboardEvent) => {
-      if (matches(e, "palette")) {
-        e.preventDefault();
-        setPaletteOpen((o) => !o);
-      } else if (matches(e, "newChat")) {
-        e.preventDefault();
+    const onKey = (event: KeyboardEvent) => {
+      if (matches(event, "palette")) {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      } else if (matches(event, "newChat")) {
+        event.preventDefault();
         setActiveId(null);
-      } else if (matches(e, "toggleRail")) {
-        e.preventDefault();
-        setRailCollapsed((v) => {
-          localStorage.setItem(RAIL_COLLAPSED_KEY, v ? "0" : "1");
-          return !v;
+      } else if (matches(event, "toggleRail")) {
+        event.preventDefault();
+        setRailCollapsed((collapsed) => {
+          localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? "0" : "1");
+          return !collapsed;
         });
-      } else if (matches(e, "shortcuts") && !isEditable(e.target)) {
-        // Bare "?" only outside a text field — otherwise it would swallow the
-        // character mid-sentence in the composer.
-        e.preventDefault();
-        setShortcutsOpen((o) => !o);
-      } else if (matches(e, "close")) {
-        // One overlay, the topmost. This branch used to close the palette, the
-        // settings drawer and the shortcuts sheet together, and the inspector
-        // and the run overlay each ran a window listener of their own — so with
-        // two open, a single Escape closed both, and dismissing what you had
-        // just opened threw away what you opened it from. Measured:
-        // `{palette: 0, inspector: 0}` after one Escape. The stack knows who is
-        // on top; nothing here needs to know what is open.
-        if (closeTopOverlay()) e.preventDefault();
+      } else if (matches(event, "shortcuts") && !isEditable(event.target)) {
+        event.preventDefault();
+        setShortcutsOpen((open) => !open);
+      } else if (matches(event, "close")) {
+        if (closeTopOverlay()) event.preventDefault();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [setActiveId]);
+
+  const railFolded = railCollapsed || narrow;
+  const activeSession = sessions.find((session) => session.id === activeId) ?? null;
+
+  const navigation = (
+    <SessionRail
+      sessions={sessions}
+      activeId={activeId}
+      onSelect={setActiveId}
+      onNew={() => setActiveId(null)}
+      onOpenSettings={() => setDrawerOpen(true)}
+      status={status}
+      slow={slow}
+      actions={sessionActions}
+      width={railWidth}
+      collapsed={railFolded}
+      onOpenPalette={() => setPaletteOpen(true)}
+      onToggleCollapse={() => setRailCollapsed((collapsed) => {
+        localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? "0" : "1");
+        return !collapsed;
+      })}
+      onResize={(pixels) => {
+        setRailWidth(pixels);
+        localStorage.setItem(RAIL_WIDTH_KEY, String(pixels));
+      }}
+    />
+  );
+
+  const timeline = (
+    <Thread
+      sessionId={activeId}
+      onSessionCreated={(id) => {
+        setActiveId(id);
+        refreshSessions();
+      }}
+      sidecarStatus={status}
+      onSessionDiscarded={(id) => {
+        if (activeId === id) setActiveId(null);
+        refreshSessions();
+      }}
+      onOpenSettings={() => setDrawerOpen(true)}
+      onChanged={refreshSessions}
+      sidecarReady={status === "connected"}
+      settingsOpen={drawerOpen}
+      reloadKey={threadReloadKey}
+    />
+  );
 
   return (
-    <div className="flex h-full w-full bg-canvas text-gray-200">
-      <SessionRail
-        sessions={sessions}
-        activeId={activeId}
-        onSelect={setActiveId}
-        onNew={() => setActiveId(null)}
-        onOpenSettings={() => setDrawerOpen(true)}
-        status={status}
-        slow={slow}
-        actions={sessionActions}
-        width={railWidth}
-        collapsed={railFolded}
-        onOpenPalette={() => setPaletteOpen(true)}
-        onToggleCollapse={() => setRailCollapsed((v) => {
-          localStorage.setItem(RAIL_COLLAPSED_KEY, v ? "0" : "1");
-          return !v;
-        })}
-        onResize={(px) => {
-          setRailWidth(px);
-          localStorage.setItem(RAIL_WIDTH_KEY, String(px));
-        }}
-      />
-
-      <Thread
+    <div className="h-full w-full bg-canvas text-gray-200">
+      <WorkbenchShell
+        navigation={navigation}
+        timeline={timeline}
         sessionId={activeId}
-        onSessionCreated={(id) => {
-          setActiveId(id);
-          refreshSessions();
-        }}
+        session={activeSession}
         sidecarStatus={status}
-        onSessionDiscarded={(id) => {
-          // The empty session a failed first turn left behind has been removed;
-          // stop pointing at it before the thread tries to load a 404.
-          if (activeId === id) setActiveId(null);
-          refreshSessions();
-        }}
+        onOpenPalette={() => setPaletteOpen(true)}
         onOpenSettings={() => setDrawerOpen(true)}
-        onChanged={refreshSessions}
-        sidecarReady={status === "connected"}
-        settingsOpen={drawerOpen}
-        reloadKey={threadReloadKey}
       />
 
-      <SettingsDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-      />
-
+      <SettingsDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
       <ShortcutsSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
-
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}

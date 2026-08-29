@@ -1,33 +1,22 @@
 /*
- * v0.91 workspace architecture pass
+ * v0.92 Timeline + prompt compatibility layer.
  *
- * Two modes of attention, one coherent product:
- *   1. Conversation — read an answer, steer the agent, keep moving.
- *   2. Investigation — inspect evidence, audit a run, compare payloads/reports.
- *
- * The old product squeezed both through the same chat-first geometry. v0.91
- * makes conversation deliberately light and promotes deep inspection to a real
- * work surface. These rules sit above the token/theme layer and below component
- * semantics; they change product composition without weakening any state or
- * evidence contract.
+ * The Agent OS shell owns navigation, command bar and replaceable work surfaces.
+ * This file is intentionally limited to the remaining Timeline implementation:
+ * start state, reading geometry, prompt surface and finished activity. Deep-work
+ * surface geometry lives under workbench/, never in modal-stretch selectors.
  */
 
 /* -------------------------------------------------------------------------
- * Application shell
+ * Timeline canvas
  * ---------------------------------------------------------------------- */
-#root > .flex.h-full.w-full {
-  isolation: isolate;
-  overflow: hidden;
-}
-
 [data-testid="agent-workspace"] {
   background:
     radial-gradient(70rem 30rem at 55% -14rem, color-mix(in srgb, var(--accent) 5%, transparent), transparent 72%),
     var(--canvas);
 }
 
-/* Navigation is furniture, not a second content column. The right edge is a
- * perceptual boundary, not a decorative border asking for attention. */
+/* Investigation navigation is furniture, not a second content column. */
 [data-testid="session-rail"] {
   box-shadow: inset -1px 0 0 color-mix(in srgb, var(--edge) 58%, transparent);
 }
@@ -36,35 +25,16 @@
   scrollbar-gutter: stable;
 }
 
-/* Active/session rows already own their semantic state. The rail surface should
- * remain quieter than the canvas, so menu/search chrome does not compete with
- * the answer. */
 [data-testid="session-rail"] button,
 [data-testid="session-rail"] input {
   -webkit-tap-highlight-color: transparent;
 }
 
 /* -------------------------------------------------------------------------
- * Conversation header + start surface
+ * Start surface
  * ---------------------------------------------------------------------- */
-[data-testid="agent-workspace"] main > header {
-  min-height: 48px;
-  padding-inline: 24px !important;
-  border-bottom-color: color-mix(in srgb, var(--edge) 66%, transparent) !important;
-  background: color-mix(in srgb, var(--canvas) 94%, transparent);
-  backdrop-filter: blur(14px) saturate(1.06);
-}
-
-/* The model indicator is context, not a form control. Keep it discoverable but
- * stop drawing a miniature input around static state. */
-[data-testid="agent-workspace"] main > header > div:last-child > div:last-child {
-  border-color: transparent !important;
-  background: color-mix(in srgb, var(--panel) 42%, transparent);
-}
-
-/* New chat is an entry point to work, not a centered AI landing poster. The
- * implementation already anchors it high; align the content to the same left
- * reading edge the answer and composer use after the first turn. */
+/* New investigation is an entry point to work, not a centered AI landing
+ * poster. It shares the reading edge used by subsequent turns and the prompt. */
 [data-testid="agent-workspace"] main > div:has(h1) > div > div:has(> h1) {
   align-items: flex-start !important;
   text-align: left !important;
@@ -81,42 +51,39 @@
   text-wrap: pretty;
 }
 
-/* Start suggestions are secondary affordances. On a large display two columns
- * still scan quickly; on smaller widths they collapse naturally in the existing
- * layout. Reduce the row's visual weight so the prompt remains the first action. */
 [data-testid="agent-workspace"] main > div:has(h1) button:not([aria-label]) {
   min-height: 36px;
 }
 
 /* -------------------------------------------------------------------------
- * Thread reading surface
+ * Timeline reading surface
  * ---------------------------------------------------------------------- */
 [data-testid="thread-scroll"] {
   scrollbar-gutter: stable;
   scroll-padding-block: 24px 120px;
 }
 
-/* A turn boundary should be created by rhythm, not by cards or rails. */
+/* A turn boundary is created by rhythm, not by cards or rails. */
 [data-testid="thread-scroll"] .thread-item[data-question] {
   scroll-margin-top: 72px;
 }
 
-/* The bottom composer zone should visually belong to the conversation rather
- * than look like a footer bar stapled beneath it. */
+/* The bottom prompt zone belongs to the Timeline rather than reading like a
+ * footer bar stapled beneath the document. */
 [data-testid="agent-workspace"] main > div.relative.px-6 {
   background:
     linear-gradient(to top, var(--canvas) 70%, color-mix(in srgb, var(--canvas) 0%, transparent));
 }
 
 /* -------------------------------------------------------------------------
- * Composer: prompt bar, not form card
+ * Prompt surface
  * ---------------------------------------------------------------------- */
 [data-testid="prompt-surface"] {
   width: 100%;
 }
 
-/* `:has()` is supported by the Tauri webviews we ship. Targeting the semantic
- * textarea hook avoids coupling this layer to generated Tailwind class names. */
+/* `:has()` is supported by the Tauri webviews we ship. Target the semantic
+ * textarea hook rather than generated Tailwind class names. */
 div:has(> textarea[data-focus-ring="container"]) {
   border-radius: 14px !important;
   background: color-mix(in srgb, var(--panel) 92%, transparent) !important;
@@ -137,8 +104,8 @@ textarea[data-focus-ring="container"] {
   line-height: 1.55 !important;
 }
 
-/* The slash palette is command UI. It should feel attached to the prompt, not
- * like a separate modal floating over it. */
+/* Slash commands attach to the prompt rather than behaving like a free-floating
+ * application modal. */
 div:has(> textarea[data-focus-ring="container"]) > [role="menu"],
 div:has(> textarea[data-focus-ring="container"]) > .absolute.bottom-full {
   transform-origin: bottom left;
@@ -163,170 +130,5 @@ div:has(> textarea[data-focus-ring="container"]) > .absolute.bottom-full {
 @container (min-width: 720px) {
   [data-testid="call-detail"] {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
-}
-
-/* -------------------------------------------------------------------------
- * Full investigation workspace
- * ---------------------------------------------------------------------- */
-[data-testid="session-inspector"] {
-  /* Inline width from the old drawer is intentionally overruled. Opening
-   * Inspect now means entering the investigation workspace. */
-  width: 100vw !important;
-  max-width: none !important;
-  border-left: 0 !important;
-  box-shadow: none !important;
-  background:
-    linear-gradient(to bottom, color-mix(in srgb, var(--panel) 34%, transparent), transparent 160px),
-    var(--canvas) !important;
-  animation: workspace-enter 180ms cubic-bezier(0.21, 0.6, 0.35, 1) !important;
-}
-
-.fixed.inset-0:has(> [data-testid="session-inspector"]) > [aria-hidden="true"] {
-  background: transparent !important;
-  backdrop-filter: none !important;
-  animation: none !important;
-}
-
-[data-testid="session-inspector"] > header {
-  min-height: 56px;
-  padding-inline: clamp(20px, 4vw, 56px) !important;
-  background: color-mix(in srgb, var(--canvas) 92%, transparent);
-  backdrop-filter: blur(18px) saturate(1.08);
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-
-/* The scroll body becomes a centered review document. 1180px is wide enough
- * for two payload columns and a readable timeline without becoming a dashboard
- * billboard on an ultrawide display. */
-[data-testid="session-inspector"] > div:last-child {
-  width: min(1180px, 100%);
-  margin-inline: auto;
-  padding: 28px clamp(20px, 4vw, 48px) 64px !important;
-  scrollbar-gutter: stable;
-}
-
-/* Summary metrics become a status strip, not four unrelated BI cards. */
-[data-testid="session-inspector"] > div:last-child > .grid.grid-cols-2 {
-  gap: 0 !important;
-  overflow: hidden;
-  border: 1px solid var(--edge);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--panel) 52%, transparent);
-}
-
-[data-testid="session-inspector"] > div:last-child > .grid.grid-cols-2 > div {
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  min-height: 74px;
-  padding: 12px 16px !important;
-}
-
-[data-testid="session-inspector"] > div:last-child > .grid.grid-cols-2 > div + div {
-  border-left: 1px solid var(--edge) !important;
-}
-
-/* Timeline rows scan like an activity log. Anchored state remains explicit but
- * no longer turns every row into a left-border callout. */
-[data-testid="session-inspector"] ul.mt-3 > li {
-  border-left-width: 0 !important;
-  padding-left: 0 !important;
-  border-radius: 8px;
-  padding-inline: 8px !important;
-  transition: background-color 120ms ease;
-}
-
-[data-testid="session-inspector"] ul.mt-3 > li[data-anchored="true"] {
-  background: color-mix(in srgb, var(--accent-dim) 76%, transparent) !important;
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
-[data-testid="session-inspector"] pre {
-  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
-  font-size: 12px !important;
-  line-height: 1.65 !important;
-  scrollbar-gutter: stable;
-}
-
-/* -------------------------------------------------------------------------
- * Reports are work surfaces too
- * ---------------------------------------------------------------------- */
-/* Thread's report used to reopen as an 88vh × 900px modal even though the report
- * itself is the durable output of a storage investigation. Promote it to the
- * same full-canvas review model as Inspector. Settings/confirmation overlays are
- * intentionally not touched. */
-[data-testid="agent-workspace"] main > .fixed.inset-0.z-floating {
-  background: var(--canvas) !important;
-  backdrop-filter: none !important;
-  animation: workspace-enter 180ms cubic-bezier(0.21, 0.6, 0.35, 1) !important;
-}
-
-[data-testid="agent-workspace"] main > .fixed.inset-0.z-floating > div {
-  width: 100vw !important;
-  height: 100vh !important;
-  max-width: none !important;
-  margin: 0 !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  animation: none !important;
-}
-
-[data-testid="agent-workspace"] main > .fixed.inset-0.z-floating > div > div > header {
-  min-height: 56px;
-  padding-inline: clamp(20px, 4vw, 56px) !important;
-  background: color-mix(in srgb, var(--canvas) 92%, transparent);
-}
-
-[data-testid="agent-workspace"] main > .fixed.inset-0.z-floating > div > div > div:last-child {
-  width: min(1180px, 100%);
-  margin-inline: auto;
-  padding: 32px clamp(20px, 4vw, 48px) 64px !important;
-}
-
-/* -------------------------------------------------------------------------
- * Motion + responsive behavior
- * ---------------------------------------------------------------------- */
-@keyframes workspace-enter {
-  from {
-    opacity: 0;
-    transform: scale(0.992);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@media (max-width: 760px) {
-  [data-testid="agent-workspace"] main > header {
-    padding-inline: 14px !important;
-  }
-
-  [data-testid="session-inspector"] > header {
-    padding-inline: 14px !important;
-  }
-
-  [data-testid="session-inspector"] > div:last-child {
-    padding: 18px 14px 44px !important;
-  }
-
-  [data-testid="session-inspector"] > div:last-child > .grid.grid-cols-2 > div + div {
-    border-left: 0 !important;
-    border-top: 1px solid var(--edge) !important;
-  }
-
-  [data-testid="agent-workspace"] main > .fixed.inset-0.z-floating > div > div > div:last-child {
-    padding: 20px 14px 44px !important;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-testid="session-inspector"],
-  [data-testid="agent-workspace"] main > .fixed.inset-0.z-floating {
-    animation: none !important;
   }
 }

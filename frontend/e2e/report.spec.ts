@@ -4,19 +4,11 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
 /**
  * The report — the one artifact that LEAVES this app.
  *
- * Everything else the product produces stays on the machine: the thread, the
- * run cards, the audit trail. The report is markdown a user copies into a
+ * Everything else the product produces stays on the machine: the timeline, the
+ * run records, the audit trail. The report is markdown a user copies into a
  * ticket, mails to a vendor, or attaches to an incident review. So it is both
  * the most valuable output and the only place where a redaction miss becomes
  * someone else's problem.
- *
- * The renderer is unit-tested (`test_v048_report_covers_investigation.py`) and
- * `redact_text` is unit-tested exhaustively. Neither had ever been driven from a
- * browser: nothing checked that `/report` opens at all, that the document
- * contains the investigation the user just ran, or that a credential pasted into
- * the composer is gone by the time it reaches the artifact. That last one is the
- * whole chain — composer → persisted message → report renderer → screen — and a
- * unit test of any single link cannot see it.
  */
 
 const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
@@ -68,19 +60,20 @@ async function ask(page: Page, question: string) {
   await composer(page).press("Enter");
 }
 
-/** The slash command is the only way to a report; there is no button for it. */
 async function openReport(page: Page) {
   await composer(page).click();
   await composer(page).fill("/report");
   await composer(page).press("Enter");
 }
 
-/** The report body, once the overlay is up. */
+/** Read only the native Report Work Surface, never the hidden Timeline tree. */
 async function reportText(page: Page): Promise<string> {
-  await expect(page.getByText(/Session Report|Executive summary/).first()).toBeVisible({
+  const report = page.getByTestId("report-workspace");
+  await expect(report).toBeVisible({ timeout: 30_000 });
+  await expect(report.getByText(/Session Report|Executive summary/).first()).toBeVisible({
     timeout: 30_000,
   });
-  return await thread(page).evaluate((el) => el.textContent ?? "");
+  return await report.evaluate((el) => el.textContent ?? "");
 }
 
 test.describe("the session report", () => {
@@ -92,7 +85,6 @@ test.describe("the session report", () => {
 
       await openReport(page);
       const md = await reportText(page);
-      // The point of the document: what was asked, and what was answered.
       expect(md).toContain("this presigned link 403s");
       expect(md).toContain("X-Amz-Expires is 900 seconds");
     } finally {
@@ -122,9 +114,6 @@ test.describe("the session report", () => {
 
       await openReport(page);
       const md = await reportText(page);
-      // Rule 15, at the only place it can actually leak: the document that
-      // leaves the machine. The object key must survive — it is the useful part
-      // of the paste — while the signature and the key id must not.
       expect(md).toContain("part-0001.parquet");
       expect(md).not.toContain(SIGNATURE);
       expect(md).not.toContain("AKIAIOSFODNN7EXAMPLE");
@@ -139,9 +128,6 @@ test.describe("the session report", () => {
       await ask(page, QUESTION);
       await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 60_000 });
 
-      // Rule 1. The user's own message is the one input the app does not
-      // control, and it goes into the prompt verbatim unless something strips
-      // it. Checked against the bytes on the socket, not against the redactor.
       const sent = JSON.stringify(model.requests);
       expect(sent).not.toContain(SIGNATURE);
       expect(sent).not.toContain("AKIAIOSFODNN7EXAMPLE");
@@ -158,17 +144,9 @@ test.describe("the session report", () => {
 
       await openReport(page);
       const md = await reportText(page);
-      // How this whole round started: reading a real report and finding
-      // "(runaccountdiscovery, medium)" under Recommended next actions. The
-      // renderer treated the intraword `_` as emphasis and ate it, so the one
-      // name a reader would search for or type back did not exist.
       expect(md).toContain("run_account_discovery");
       expect(md).not.toContain("runaccountdiscovery");
-      // The tool name in the breakdown table, for the same reason.
       expect(md).toContain("read_skill");
-      // (The `***REDACTED***` marker's rendering is pinned in the renderer's own
-      // tests. It is not assertable here: inside a URL the whole span is one
-      // link token, so the marker stays literal — correctly.)
     } finally {
       await cleanup();
     }
@@ -196,9 +174,6 @@ test.describe("the session report", () => {
   }) => {
     const { cleanup } = await oneTurn(page);
     try {
-      // No question asked: there is no session at all yet. The composer's slash
-      // command still fires, and the only acceptable outcomes are a report of an
-      // empty investigation or a stated reason — never an empty overlay.
       await openReport(page);
       await expect
         .poll(async () => await thread(page).evaluate((el) => el.textContent ?? ""), {

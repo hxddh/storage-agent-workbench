@@ -1,0 +1,415 @@
+/* v0.92 Agent OS shell
+ *
+ * This deliberately does not extend the old card/modal vocabulary. The shell is
+ * a desktop workbench: persistent investigation navigation, a narrow command
+ * bar, replaceable work surfaces, and document-like evidence/report views.
+ */
+.agent-os-shell {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--canvas);
+  color: var(--gray-200);
+}
+
+.agent-os-navigation {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: none;
+  border-right: 1px solid color-mix(in srgb, var(--edge) 72%, transparent);
+  background: var(--sidebar);
+}
+
+.agent-os-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  background: var(--canvas);
+}
+
+.agent-os-commandbar {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) auto minmax(12rem, 1fr);
+  align-items: center;
+  gap: 1rem;
+  min-height: 46px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--edge) 72%, transparent);
+  background: color-mix(in srgb, var(--canvas) 94%, var(--panel));
+  user-select: none;
+}
+
+.agent-os-context {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-os-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.agent-os-title-row strong {
+  max-width: min(28vw, 24rem);
+  overflow: hidden;
+  color: var(--gray-200);
+  font-weight: 540;
+  text-overflow: ellipsis;
+}
+
+.agent-os-product,
+.agent-os-slash,
+.agent-os-context-detail {
+  color: var(--gray-500);
+}
+
+.agent-os-product {
+  font-size: 11px;
+  font-weight: 620;
+  letter-spacing: .02em;
+}
+
+.agent-os-context-detail {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-surface-tabs {
+  display: flex;
+  height: 100%;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.workbench-surface-tab {
+  position: relative;
+  min-width: 58px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--gray-500);
+  font-size: 11px;
+  font-weight: 530;
+  letter-spacing: .005em;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.workbench-surface-tab:hover:not(:disabled) {
+  color: var(--gray-200);
+  background: color-mix(in srgb, var(--hover) 48%, transparent);
+}
+
+.workbench-surface-tab[aria-selected="true"] {
+  color: var(--gray-100);
+}
+
+.workbench-surface-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  bottom: 0;
+  left: 10px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+}
+
+.workbench-surface-tab:disabled {
+  cursor: default;
+  opacity: .3;
+}
+
+.agent-os-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.workbench-connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--gray-500);
+  font-size: 10px;
+  text-transform: capitalize;
+}
+
+.workbench-connection > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--gray-500);
+}
+
+.workbench-connection[data-status="connected"] > span { background: var(--success); }
+.workbench-connection[data-status="starting"] > span { background: var(--warn); }
+.workbench-connection[data-status="error"] > span,
+.workbench-connection[data-status="disconnected"] > span { background: var(--danger); }
+
+.agent-os-command,
+.agent-os-icon-command {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--gray-500);
+  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.agent-os-command:hover,
+.agent-os-icon-command:hover {
+  border-color: var(--edge);
+  background: color-mix(in srgb, var(--hover) 50%, transparent);
+  color: var(--gray-200);
+}
+
+.agent-os-command {
+  display: inline-flex;
+  height: 27px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+  padding: 0 7px 0 8px;
+  font-size: 10px;
+}
+
+.agent-os-command kbd {
+  color: var(--gray-500);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: 9px;
+}
+
+.agent-os-icon-command {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.agent-os-stage {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.agent-os-surface {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.agent-os-surface[hidden] { display: none !important; }
+.agent-os-timeline { display: flex; }
+.agent-os-scroll-surface { overflow: auto; overscroll-behavior: contain; }
+
+/* The application command bar owns investigation identity now. Keeping the old
+ * thread-local header would create two competing titles and return the product
+ * to the stacked-chat-chrome hierarchy this shell replaces. */
+.agent-os-timeline [data-testid="agent-workspace"] > main > header {
+  display: none;
+}
+
+/* Work surfaces read as technical documents, not modal/card collections. */
+.workbench-document {
+  width: min(1080px, calc(100% - 64px));
+  margin: 0 auto;
+  padding: clamp(44px, 7vh, 82px) 0 96px;
+}
+
+.workbench-document-heading {
+  max-width: 760px;
+  margin-bottom: 52px;
+}
+
+.workbench-eyebrow {
+  margin: 0 0 12px;
+  color: var(--gray-500);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.workbench-document-heading h1 {
+  margin: 0;
+  color: var(--gray-100);
+  font-size: clamp(26px, 3vw, 38px);
+  font-weight: 570;
+  letter-spacing: -.035em;
+  line-height: 1.08;
+}
+
+.workbench-document-heading > p:last-child {
+  max-width: 680px;
+  margin: 14px 0 0;
+  color: var(--gray-500);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.workbench-doc-section {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 22px;
+  padding: 28px 0 34px;
+  border-top: 1px solid var(--edge);
+}
+
+.workbench-section-index {
+  padding-top: 3px;
+  color: var(--gray-500);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: 10px;
+}
+
+.workbench-doc-section h2 {
+  margin: 0 0 18px;
+  color: var(--gray-200);
+  font-size: 13px;
+  font-weight: 620;
+  letter-spacing: -.01em;
+}
+
+.workbench-record-list,
+.workbench-run-list {
+  border-top: 1px solid color-mix(in srgb, var(--edge) 70%, transparent);
+}
+
+.workbench-record {
+  padding: 16px 0 18px;
+  border-bottom: 1px solid color-mix(in srgb, var(--edge) 70%, transparent);
+}
+
+.workbench-record-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 7px;
+  color: var(--gray-500);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.workbench-record strong {
+  color: var(--gray-200);
+  font-size: 12px;
+  font-weight: 570;
+}
+
+.workbench-record p,
+.workbench-empty-line,
+.workbench-surface-error {
+  margin: 7px 0 0;
+  color: var(--gray-400);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.workbench-empty-line { margin-top: 0; }
+.workbench-surface-error { margin: 32px; color: var(--danger); }
+
+.workbench-file-table {
+  border-top: 1px solid var(--edge);
+}
+
+.workbench-file-row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1.5fr) 1fr .8fr .6fr;
+  gap: 14px;
+  align-items: center;
+  min-height: 40px;
+  border-bottom: 1px solid color-mix(in srgb, var(--edge) 70%, transparent);
+  color: var(--gray-500);
+  font-size: 10px;
+}
+
+.workbench-file-name {
+  overflow: hidden;
+  color: var(--gray-300);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench-run-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 8px minmax(0, 1fr) auto 18px;
+  gap: 12px;
+  align-items: center;
+  min-height: 58px;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--edge) 72%, transparent);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  transition: background-color 120ms ease;
+}
+
+.workbench-run-row:hover { background: color-mix(in srgb, var(--hover) 30%, transparent); }
+.workbench-run-status { width: 6px; height: 6px; border-radius: 999px; background: var(--gray-500); }
+.workbench-run-status[data-status="completed"] { background: var(--success); }
+.workbench-run-status[data-status="running"] { background: var(--warn); }
+.workbench-run-status[data-status="failed"] { background: var(--danger); }
+.workbench-run-main { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+.workbench-run-main strong { overflow: hidden; color: var(--gray-200); font-size: 11px; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
+.workbench-run-main small, .workbench-run-state, .workbench-run-arrow { color: var(--gray-500); font-size: 9px; }
+.workbench-run-state { font-family: "JetBrains Mono Variable", ui-monospace, monospace; text-transform: uppercase; }
+
+.workbench-report-body {
+  max-width: 860px;
+}
+
+/* Focus is not a modal: it removes global navigation and lets the selected work
+ * surface take the window without changing that surface's geometry or identity. */
+.agent-os-shell[data-mode="focus"] .agent-os-navigation { display: none; }
+.agent-os-shell[data-mode="focus"] .agent-os-commandbar { grid-template-columns: minmax(12rem, 1fr) auto minmax(12rem, 1fr); }
+
+@media (max-width: 1050px) {
+  .agent-os-commandbar { grid-template-columns: minmax(9rem, 1fr) auto; }
+  .agent-os-context-detail, .workbench-connection, .agent-os-command { display: none; }
+  .agent-os-actions { grid-column: 2; }
+  .workbench-surface-tabs { position: absolute; left: 50%; transform: translateX(-50%); }
+}
+
+@media (max-width: 760px) {
+  .agent-os-commandbar { display: flex; gap: 8px; padding-left: 10px; }
+  .agent-os-context { flex: 1; }
+  .agent-os-product, .agent-os-slash { display: none; }
+  .agent-os-title-row strong { max-width: 34vw; }
+  .workbench-surface-tabs { position: static; transform: none; }
+  .workbench-surface-tab { min-width: auto; padding: 0 7px; }
+  .agent-os-actions { gap: 2px; }
+  .workbench-document { width: min(100% - 32px, 1080px); padding-top: 32px; }
+  .workbench-doc-section { grid-template-columns: 30px minmax(0, 1fr); gap: 12px; }
+  .workbench-file-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .workbench-file-row > :nth-child(2), .workbench-file-row > :nth-child(3) { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workbench-surface-tab,
+  .agent-os-command,
+  .agent-os-icon-command,
+  .workbench-run-row { transition: none; }
+}

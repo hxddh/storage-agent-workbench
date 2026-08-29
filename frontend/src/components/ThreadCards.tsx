@@ -1,9 +1,11 @@
 /**
  * Public conversation-content boundary.
  *
- * Message, proposal, finding, triage and run-card implementations are isolated
- * from the thread state machine. The goal is not another barrel for its own sake:
- * v0.91 needs the conversation flow to be replaceable independently from the
- * 28 KB collection of renderers it currently uses.
+ * v0.92 makes the assistant answer an explicit technical-document artifact while
+ * the remaining proposal/finding/triage/run renderers continue behind the proven
+ * implementation module. An explicit export wins over the star export below, so
+ * Thread imports migrate to AnswerDocument without rewriting the legacy renderer
+ * collection in one risky step.
  */
+export { AnswerDocument as MessageCard } from "./AnswerDocument";
 export * from "./ThreadCardsImplementation";

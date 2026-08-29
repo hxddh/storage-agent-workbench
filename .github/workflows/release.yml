@@ -1,23 +1,17 @@
 name: Release
 
-# Manual, dispatch-only release publisher. Builds the desktop app for macOS
-# (arm64), Linux (x64 .deb) and Windows (x64 NSIS .exe), and uploads them to one
-# GitHub Release with stable-named assets + per-platform SHA256SUMS. Builds are
-# UNSIGNED/ad-hoc (no Apple notarization, no Windows Authenticode) — see
-# docs/signing.md. The bundle version is stamped from the release tag.
-#
-# Usage from an up-to-date main:
-#   git tag v0.19.4 && git push origin v0.19.4
-#   gh workflow run release.yml -f version=v0.19.4 -f ref=v0.19.4 \
-#     -f prerelease=false -f draft=false
+# Transactional desktop publisher. A release can be started manually or by
+# pushing a release/vX.Y.Z branch. The release stays hidden until every required
+# platform artifact and checksum has uploaded successfully. Bundles are
+# unsigned/ad-hoc; see docs/signing.md.
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version / tag name (e.g. v0.19.4)"
+        description: "Release version / tag name (e.g. v0.92.0)"
         required: true
-        default: "v0.19.4"
+        default: "v0.92.0"
       ref:
         description: "Git ref (branch, tag, or SHA) to build from"
         required: true
@@ -27,66 +21,92 @@ on:
         required: true
         default: "false"
       draft:
-        description: "Create the release as a draft (review before publishing)"
+        description: "Keep the release as a draft after all assets upload"
         required: true
         default: "false"
+  push:
+    branches:
+      - "release/v*"
 
 permissions:
   contents: write
 
 jobs:
-  # Create the (empty) GitHub Release first so the parallel platform jobs only
-  # upload to it — no create race.
   prepare:
     name: Prepare release
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      target_ref: ${{ steps.meta.outputs.target_ref }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      draft: ${{ steps.meta.outputs.draft }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.ref }}
-      - name: Create release if missing
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve immutable release metadata
+        id: meta
+        shell: bash
         run: |
           set -euo pipefail
-          VERSION="${{ github.event.inputs.version }}"
-          # Tag the built commit: every platform job checks out `inputs.ref`, so the
-          # release target must be that same ref — not the workflow's own $GITHUB_SHA
-          # (the commit the dispatch ran against), which can differ from `ref`.
-          REF="${{ github.event.inputs.ref }}"
-          VER_NO_V="${VERSION#v}"
-          # Always create HIDDEN (draft): the three platform jobs upload assets in
-          # parallel, and a release must never be visible while half-populated (or
-          # permanently partial if one platform fails). The `finalize` job flips it
-          # to published only after all three succeed. A run that explicitly asked
-          # for --draft simply never gets finalized, so it stays a draft.
-          FLAGS="--draft"
-          if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then FLAGS="$FLAGS --prerelease"; fi
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#release/}"
+            TARGET_REF="$GITHUB_SHA"
+            PRERELEASE="false"
+            DRAFT="false"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+            TARGET_REF="${{ github.event.inputs.ref }}"
+            PRERELEASE="${{ github.event.inputs.prerelease }}"
+            DRAFT="${{ github.event.inputs.draft }}"
+          fi
 
-          # Per-version "What's changed" pulled from this version's CHANGELOG section
-          # so each release has its own real notes (not boilerplate).
-          CHANGES="$(awk -v v="## [$VER_NO_V]" '
-            /^## \[/ { if (found) exit; if (index($0, v) == 1) { found=1; next } }
-            found { print }
-          ' CHANGELOG.md)"
-          # FAIL, don't paper over it. This used to fall back to "See
-          # CHANGELOG.md" — which pointed at a file that, by definition, did not
-          # document the version being released. v0.70.0 shipped that way: a real
-          # release with placeholder notes, and nothing anywhere said so. The
-          # missing section is always an authoring mistake, and it is trivially
-          # fixable BEFORE the tag exists, so the release is the right thing to
-          # stop.
-          if [ -z "$(printf "%s" "$CHANGES" | tr -d "[:space:]")" ]; then
-            echo "::error::CHANGELOG.md has no '## [$VER_NO_V]' section, so this release" \
-                 "would ship with placeholder notes. Add the section and re-dispatch." >&2
+          if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version must look like v0.92.0" >&2
             exit 1
           fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "target_ref=$TARGET_REF" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "draft=$DRAFT" >> "$GITHUB_OUTPUT"
+          echo "Resolved $VERSION at immutable ref $TARGET_REF"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.meta.outputs.target_ref }}
+
+      - name: Create hidden release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          TARGET_REF: ${{ steps.meta.outputs.target_ref }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          VER_NO_V="${VERSION#v}"
+          NOTES_FILE="docs/releases/$VER_NO_V.md"
+
+          if [ -s "$NOTES_FILE" ]; then
+            CHANGES="$(cat "$NOTES_FILE")"
+            echo "Using versioned release notes: $NOTES_FILE"
+          else
+            CHANGES="$(awk -v v="## [$VER_NO_V]" '
+              /^## \[/ { if (found) exit; if (index($0, v) == 1) { found=1; next } }
+              found { print }
+            ' CHANGELOG.md)"
+          fi
+
+          if [ -z "$(printf '%s' "$CHANGES" | tr -d '[:space:]')" ]; then
+            echo "::error::No release notes found in $NOTES_FILE or CHANGELOG.md section '## [$VER_NO_V]'." >&2
+            exit 1
+          fi
+
+          FLAGS="--draft"
+          if [ "$PRERELEASE" = "true" ]; then FLAGS="$FLAGS --prerelease"; fi
 
           INSTALL="### Install
 
           Builds are **unsigned / ad-hoc** (no Apple notarization, no Windows Authenticode). Verify downloads against the \`SHA256SUMS-*.txt\` files.
 
-          - **macOS (arm64):** open the .dmg, drag to Applications. First launch shows a Gatekeeper prompt — right-click the app → **Open**, or run \`xattr -dr com.apple.quarantine \"/Applications/Storage Agent Workbench.app\"\`. It starts in a few seconds.
+          - **macOS (arm64):** open the .dmg and drag to Applications. On first launch, right-click the app → **Open**, or run \`xattr -dr com.apple.quarantine \"/Applications/Storage Agent Workbench.app\"\`.
           - **Linux (x64):** \`sudo apt install ./storage-agent-workbench-$VERSION-linux-x64.deb\`
           - **Windows (x64):** run the \`-setup.exe\`; if SmartScreen warns, choose **More info → Run anyway**.
 
@@ -98,9 +118,11 @@ jobs:
           $INSTALL"
 
           if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "Release $VERSION already exists; reusing."
+            echo "Release $VERSION already exists; reusing hidden release."
           else
-            gh release create "$VERSION" --target "$REF" --title "$VERSION" --notes "$NOTES" $FLAGS
+            # gh creates the tag when it does not exist; TARGET_REF is the exact
+            # tested main commit for release-branch-triggered publishing.
+            gh release create "$VERSION" --target "$TARGET_REF" --title "$VERSION" --notes "$NOTES" $FLAGS
           fi
 
   release-macos-arm64:
@@ -110,7 +132,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref }}
+          ref: ${{ needs.prepare.outputs.target_ref }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -121,13 +143,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      # Stamp BEFORE `pip install`: the sidecar reports its version via
-      # importlib.metadata, which is frozen from pyproject.toml at install time.
-      # Installing first would bake in the pre-stamp version (0.23.0) and the
-      # packaged /health + OpenAPI would report it instead of the release tag.
-      - name: Stamp bundle version from tag
-        run: python3 scripts/stamp-version.py "${{ github.event.inputs.version }}"
-      - name: Install sidecar deps (dev + packaging)
+      - name: Stamp bundle version from release metadata
+        run: python3 scripts/stamp-version.py "${{ needs.prepare.outputs.version }}"
+      - name: Install sidecar deps
         run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]" -e "./sidecar[packaging]"
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
@@ -136,9 +154,9 @@ jobs:
       - name: Collect + upload assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ github.event.inputs.version }}"
           OUT="release-assets"; rm -rf "$OUT"; mkdir -p "$OUT"
           APP="$(ls -d src-tauri/target/release/bundle/macos/*.app 2>/dev/null | head -1 || true)"
           [ -n "$APP" ] || { echo "ERROR: no .app produced"; exit 1; }
@@ -155,7 +173,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref }}
+          ref: ${{ needs.prepare.outputs.target_ref }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -172,11 +190,9 @@ jobs:
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf \
             libayatana-appindicator3-dev build-essential curl wget file libssl-dev
-      # Stamp BEFORE `pip install` (importlib.metadata freezes the version at
-      # install time — see the macOS job note).
-      - name: Stamp bundle version from tag
-        run: python3 scripts/stamp-version.py "${{ github.event.inputs.version }}"
-      - name: Install sidecar deps (dev + packaging)
+      - name: Stamp bundle version from release metadata
+        run: python3 scripts/stamp-version.py "${{ needs.prepare.outputs.version }}"
+      - name: Install sidecar deps
         run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]" -e "./sidecar[packaging]"
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
@@ -184,14 +200,14 @@ jobs:
         run: cd frontend && npm ci && npm run build
       - name: Build sidecar one-dir + stage resource
         run: python3 scripts/build-sidecar-for-tauri.py
-      - name: cargo tauri build (.deb; unsigned)
+      - name: Build .deb
         run: cd src-tauri && cargo tauri build --bundles deb
       - name: Collect + upload assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ github.event.inputs.version }}"
           OUT="release-assets"; rm -rf "$OUT"; mkdir -p "$OUT"
           DEB="$(ls src-tauri/target/release/bundle/deb/*.deb 2>/dev/null | head -1 || true)"
           [ -n "$DEB" ] || { echo "ERROR: no .deb produced"; exit 1; }
@@ -206,7 +222,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref }}
+          ref: ${{ needs.prepare.outputs.target_ref }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -217,12 +233,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      # Stamp BEFORE `pip install` (importlib.metadata freezes the version at
-      # install time — see the macOS job note).
-      - name: Stamp bundle version from tag
+      - name: Stamp bundle version from release metadata
         shell: bash
-        run: python scripts/stamp-version.py "${{ github.event.inputs.version }}"
-      - name: Install sidecar deps (dev + packaging)
+        run: python scripts/stamp-version.py "${{ needs.prepare.outputs.version }}"
+      - name: Install sidecar deps
         run: pip install -c sidecar/requirements.lock -e "./sidecar[dev]" -e "./sidecar[packaging]"
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked --version "^2"
@@ -230,15 +244,15 @@ jobs:
         run: cd frontend; npm ci; npm run build
       - name: Build sidecar one-dir + stage resource
         run: python scripts/build-sidecar-for-tauri.py
-      - name: cargo tauri build (NSIS installer; unsigned)
+      - name: Build NSIS installer
         run: cd src-tauri; cargo tauri build --bundles nsis
       - name: Collect + upload assets
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ github.event.inputs.version }}"
           OUT="release-assets"; rm -rf "$OUT"; mkdir -p "$OUT"
           EXE="$(ls src-tauri/target/release/bundle/nsis/*.exe 2>/dev/null | head -1 || true)"
           [ -n "$EXE" ] || { echo "ERROR: no NSIS .exe produced"; exit 1; }
@@ -246,25 +260,17 @@ jobs:
           ( cd "$OUT" && sha256sum storage-agent-workbench-* > SHA256SUMS-windows-x64.txt && cat SHA256SUMS-windows-x64.txt )
           gh release upload "$VERSION" "$OUT"/* --clobber
 
-  # Publish (undraft) the release ONLY after all three platform jobs succeeded,
-  # so a run that fails on any platform leaves a hidden draft (reviewable /
-  # deletable) rather than a permanently half-populated public release. `needs`
-  # gates this on every platform job passing; a requested draft (draft=true) skips
-  # finalize and stays a draft on purpose.
   finalize:
     name: Publish release
-    needs: [release-macos-arm64, release-linux-x64, release-windows-x64]
-    if: ${{ github.event.inputs.draft != 'true' }}
+    needs: [prepare, release-macos-arm64, release-linux-x64, release-windows-x64]
+    if: ${{ needs.prepare.outputs.draft != 'true' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.ref }}
-      - name: Publish now that all platforms uploaded
+      - name: Publish only after every platform upload succeeded
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          VERSION="${{ github.event.inputs.version }}"
-          gh release edit "$VERSION" --draft=false
+          gh release edit "$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false
           echo "Published release $VERSION (all platform assets present)."

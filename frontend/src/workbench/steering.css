@@ -1,0 +1,23 @@
+/* Agent OS steering layer.
+ *
+ * Deep work surfaces keep the real Agent controller within reach without
+ * shrinking the document into a split chat. Reserve reading space beneath the
+ * floating steering surface so evidence/report content is never obscured by it.
+ */
+.agent-os-steerable-surface {
+  scroll-padding-bottom: 10rem;
+}
+
+.agent-os-steerable-surface > .workbench-document {
+  padding-bottom: 11rem;
+}
+
+@media (max-width: 760px) {
+  .agent-os-steerable-surface {
+    scroll-padding-bottom: 12rem;
+  }
+
+  .agent-os-steerable-surface > .workbench-document {
+    padding-bottom: 13rem;
+  }
+}

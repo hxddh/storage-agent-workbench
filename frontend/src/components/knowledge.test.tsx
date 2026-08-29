@@ -1,21 +1,21 @@
 /**
- * v0.51.0 — what the agent knows, and what survives a reload.
+ * What the Agent knows, and what survives a reload.
  *
- * Three separate silences this pins shut:
+ * These tests protect two durable product contracts that remain independent of
+ * the active Work Surface:
  *
- *  - the agent's own memory was invisible, so a wrong fact it recorded steered
- *    every later turn with no way to see or fix it;
- *  - a half-written question was destroyed by switching sessions and by
- *    reloading, because the composer was one piece of component state;
- *  - "inspect" from a turn's footer dropped the reader at the top of a whole
- *    session's timeline with no marker for which rows were that turn's.
+ *  - the Agent's memory/evidence context stays visible and correctable;
+ *  - draft steering text survives investigation switches and reloads.
+ *
+ * Turn-local Inspector anchoring was intentionally removed in v0.92: Evidence is
+ * now a global investigation surface and navigation to it is tested at the
+ * Workbench boundary instead of by timestamp-window helper functions.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
 import { AgentMemoryPanel } from "./AgentMemory";
-import { inAnchor } from "./SessionInspector";
 import { loadDraft, saveDraft, clearDraft } from "../drafts";
 import type { AgentMemoryItem } from "../types";
 
@@ -37,8 +37,6 @@ describe("what the agent knows", () => {
 
   it("shows all three kinds, not just findings", () => {
     wrap(createElement(AgentMemoryPanel, { memory: items, onCorrect: vi.fn(), onResolve: vi.fn() }));
-    // The report used to render findings alone; the premises the agent reasoned
-    // FROM, and what it left open, existed nowhere a person could look.
     expect(screen.getByText(/path-style only/)).toBeTruthy();
     expect(screen.getByText(/no lifecycle rule/)).toBeTruthy();
     expect(screen.getByText(/replication intentional/)).toBeTruthy();
@@ -87,8 +85,6 @@ describe("what the agent knows", () => {
       memory: items, contextMessages: 24, messageTotal: 90,
       onCorrect: vi.fn(), onResolve: vi.fn(),
     }));
-    // Without this the reader assumes the agent still sees the whole thread and
-    // misjudges what its later answers rest on.
     expect(screen.getByTestId("context-rolled").textContent).toMatch(/24/);
   });
 
@@ -106,8 +102,6 @@ describe("what the agent knows", () => {
       files: [{ id: "d1", dataset_type: "inventory", source_filename: "acme.csv", row_count: 41022 }],
       onCorrect: vi.fn(), onResolve: vi.fn(),
     }));
-    // After the composer chip cleared there was no way to tell what the agent
-    // had in hand.
     expect(screen.getByTestId("attached-files").textContent).toContain("acme.csv");
     expect(screen.getByTestId("attached-files").textContent).toContain("41,022");
   });
@@ -126,8 +120,6 @@ describe("composer drafts", () => {
   it("survives a session switch and a reload", () => {
     saveDraft("s1", "why is my bucket public");
     saveDraft("s2", "analyze these logs");
-    // Two investigations, two drafts — switching between them must not mix or
-    // destroy either.
     expect(loadDraft("s1")).toBe("why is my bucket public");
     expect(loadDraft("s2")).toBe("analyze these logs");
   });
@@ -143,12 +135,8 @@ describe("composer drafts", () => {
   });
 
   it("keeps a draft typed into a chat that does not exist yet", () => {
-    // The most common place a draft was lost: a fresh chat has no session id
-    // until the first message is sent, so `null` needs a key of its own rather
-    // than being silently dropped.
     saveDraft(null, "why can I not delete this object");
     expect(loadDraft(null)).toBe("why can I not delete this object");
-    // And it does not leak into a real session.
     expect(loadDraft("s1")).toBe("");
   });
 
@@ -168,26 +156,5 @@ describe("composer drafts", () => {
     for (let i = 0; i < 60; i++) saveDraft(`s${i}`, `draft ${i}`);
     expect(loadDraft("s0")).toBe("");
     expect(loadDraft("s59")).toBe("draft 59");
-  });
-});
-
-describe("inspector anchoring", () => {
-  const anchor = { from: "2026-08-05T10:00:00Z", to: "2026-08-05T10:02:00Z" };
-
-  it("matches the entries that happened inside the turn", () => {
-    // Timestamps are fixed-width ISO-8601 Z, so string order IS chronological.
-    expect(inAnchor("2026-08-05T10:01:30Z", anchor)).toBe(true);
-    expect(inAnchor("2026-08-05T10:00:00Z", anchor)).toBe(true);
-    expect(inAnchor("2026-08-05T10:02:00Z", anchor)).toBe(true);
-  });
-
-  it("excludes everything outside it", () => {
-    expect(inAnchor("2026-08-05T09:59:59Z", anchor)).toBe(false);
-    expect(inAnchor("2026-08-05T10:02:01Z", anchor)).toBe(false);
-  });
-
-  it("marks nothing when the inspector was not opened from a turn", () => {
-    expect(inAnchor("2026-08-05T10:01:00Z", null)).toBe(false);
-    expect(inAnchor("2026-08-05T10:01:00Z")).toBe(false);
   });
 });

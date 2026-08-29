@@ -3,15 +3,14 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
 
 const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
 const SKILL = "storageops-security-iam-policy";
+const FOLLOW_UP = "Summarize the evidence again from this review surface.";
+const FOLLOW_UP_ANSWER = "The evidence still supports the same IAM-policy conclusion after review.";
 
 async function setup(page: Page) {
-  // Use the same fully supported, credential-free tool path as agent.spec.
-  // `head_bucket` needs a configured storage provider; using it here meant the
-  // geometry tests timed out before an investigation ever reached its finished
-  // state, so they were not testing workspace geometry at all.
   const model = await startFakeModel([
     toolTurn("read_skill", { name: SKILL }),
     textTurn("The investigation is ready for review. The persisted skill evidence is available below."),
+    textTurn(FOLLOW_UP_ANSWER),
   ]);
   const providerId = await useFakeModel(model.baseUrl);
   await page.addInitScript(() => {
@@ -22,9 +21,12 @@ async function setup(page: Page) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   await expect(composer(page)).toBeVisible({ timeout: 20_000 });
-  return async () => {
-    await dropModelProvider(providerId);
-    await model.close();
+  return {
+    model,
+    cleanup: async () => {
+      await dropModelProvider(providerId);
+      await model.close();
+    },
   };
 }
 
@@ -34,92 +36,135 @@ async function completeTurn(page: Page) {
   await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 20_000 });
 }
 
-test.describe("workspace-first investigation UI", () => {
-  test("Inspect promotes evidence to the full work area instead of a narrow drawer", async ({ page }) => {
-    const cleanup = await setup(page);
+test.describe("Agent OS workbench", () => {
+  test("Evidence is a native replaceable work surface, never a legacy Inspector overlay", async ({ page }) => {
+    const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
-      await page.getByTestId("open-inspector").click();
+      await page.getByRole("tab", { name: "Evidence" }).click();
 
-      const inspector = page.getByTestId("session-inspector");
-      await expect(inspector).toBeVisible();
-      const box = await inspector.boundingBox();
-      expect(box).not.toBeNull();
-      expect(box!.width / 1440).toBeGreaterThanOrEqual(0.98);
-      expect(box!.height / 900).toBeGreaterThanOrEqual(0.98);
-      expect(Math.abs(box!.x)).toBeLessThanOrEqual(3);
-    } finally {
-      await cleanup();
-    }
-  });
+      const shell = page.getByTestId("workbench-shell");
+      await expect(shell).toHaveAttribute("data-surface", "evidence");
+      const evidence = page.getByTestId("evidence-workspace");
+      await expect(evidence).toBeVisible();
+      await expect(page.getByTestId("session-inspector")).toHaveCount(0);
 
-  test("the review body keeps a bounded readable measure inside the full workspace", async ({ page }) => {
-    const cleanup = await setup(page);
-    try {
-      await completeTurn(page);
-      await page.getByTestId("open-inspector").click();
-      const inspector = page.getByTestId("session-inspector");
-      await expect(inspector).toBeVisible();
-
-      const geometry = await inspector.evaluate((root) => {
-        const body = root.querySelector(":scope > div:last-child") as HTMLElement;
-        const r = body.getBoundingClientRect();
-        return { width: r.width, left: r.left, right: window.innerWidth - r.right };
+      const geometry = await evidence.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        const stage = node.closest(".agent-os-stage")!.getBoundingClientRect();
+        return {
+          width: rect.width,
+          leftInset: rect.left - stage.left,
+          rightInset: stage.right - rect.right,
+        };
       });
-      expect(geometry.width).toBeLessThanOrEqual(1182);
-      expect(Math.abs(geometry.left - geometry.right)).toBeLessThanOrEqual(4);
+      expect(geometry.width).toBeLessThanOrEqual(1082);
+      expect(Math.abs(geometry.leftInset - geometry.rightInset)).toBeLessThanOrEqual(4);
     } finally {
       await cleanup();
     }
   });
 
-  test("the prompt remains visually subordinate to the answer surface", async ({ page }) => {
-    const cleanup = await setup(page);
+  test("Focus mode removes global navigation without changing the selected document identity", async ({ page }) => {
+    const { cleanup } = await setup(page);
+    try {
+      await completeTurn(page);
+      await page.getByRole("tab", { name: "Evidence" }).click();
+      await expect(page.getByTestId("evidence-workspace")).toBeVisible();
+
+      await page.getByRole("button", { name: "Focus work surface" }).click();
+      await expect(page.getByTestId("workbench-shell")).toHaveAttribute("data-mode", "focus");
+      await expect(page.getByTestId("session-rail")).not.toBeVisible();
+      await expect(page.getByTestId("evidence-workspace")).toBeVisible();
+
+      await page.getByRole("button", { name: "Exit focus mode" }).click();
+      await expect(page.getByTestId("session-rail")).toBeVisible();
+      await expect(page.getByTestId("evidence-workspace")).toBeVisible();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("the resting Timeline prompt remains subordinate to the answer document", async ({ page }) => {
+    const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
       const field = composer(page);
       const parent = field.locator("..");
       const box = await parent.boundingBox();
       expect(box).not.toBeNull();
-      // A resting prompt bar should not reclaim the ~95px card height of the old
-      // composer. This is a geometry contract, not an implementation-class test.
       expect(box!.height).toBeLessThan(90);
+      await expect(page.getByTestId("answer-document").first()).toBeVisible();
     } finally {
       await cleanup();
     }
   });
 
-  test("a durable report opens as a full review workspace, not the old centered modal", async ({ page }) => {
-    const cleanup = await setup(page);
+  test("Evidence keeps the real Agent steering controller reachable", async ({ page }) => {
+    const { cleanup, model } = await setup(page);
+    try {
+      await completeTurn(page);
+      const baselineRequests = model.requests.length;
+      await page.getByRole("tab", { name: "Evidence" }).click();
+
+      const steering = page.getByTestId("workbench-steering");
+      await expect(steering).toBeVisible();
+      // The footer appears before the session run necessarily publishes its
+      // final idle state. Wait for the controller to say Send rather than
+      // accidentally testing redirect-in-flight semantics.
+      await expect(steering.getByRole("button", { name: /^send$/i })).toBeVisible({ timeout: 20_000 });
+      const field = steering.getByRole("textbox");
+      await field.fill(FOLLOW_UP);
+      await field.press("Enter");
+
+      // Prove the deep-surface controller actually crossed the browser/sidecar
+      // boundary before judging persistence. If this fails, the bug is dispatch
+      // or runner gating. If it passes but the Timeline checks below fail, the
+      // bug is in settle/reload/render. This is intentionally stronger than the
+      // old footer-count-only assertion.
+      await expect.poll(() => model.requests.length, {
+        timeout: 10_000,
+        message: "Evidence Steering must reach the configured model",
+      }).toBeGreaterThan(baselineRequests);
+
+      await page.getByRole("tab", { name: "Timeline" }).click();
+      await expect(page.locator("main").getByText(FOLLOW_UP, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator("main").getByText(FOLLOW_UP_ANSWER, { exact: true })).toBeVisible({ timeout: 20_000 });
+
+      // The first turn ran a tool, so it owns the one expandable activity toggle.
+      // The follow-up is intentionally text-only: TurnFooter renders a toggle only
+      // for tool/grounding disclosure, not for every assistant message. Requiring
+      // two toggles would confuse UI disclosure with persistence.
+      await expect(page.getByTestId("turn-footer-toggle")).toHaveCount(1);
+
+      // Durability is the real contract: a cross-surface turn that only existed
+      // as live stream state would disappear here. Reload and verify BOTH the
+      // user's follow-up and the assistant answer survive from the sidecar-backed
+      // investigation document.
+      await page.reload();
+      await expect(composer(page)).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator("main").getByText(FOLLOW_UP, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator("main").getByText(FOLLOW_UP_ANSWER, { exact: true })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("turn-footer-toggle")).toHaveCount(1);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("Report is a native durable-output surface with no centered modal path", async ({ page }) => {
+    const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
       await composer(page).fill("/report");
       await composer(page).press("Enter");
-      await expect(page.getByText(/Session Report|Executive summary/).first()).toBeVisible({ timeout: 30_000 });
 
-      const geometry = await page.evaluate(() => {
-        const main = document.querySelector("[data-testid='agent-workspace'] main") as HTMLElement;
-        const overlay = main.querySelector(":scope > .fixed.inset-0.z-floating") as HTMLElement;
-        const shell = overlay?.firstElementChild as HTMLElement | null;
-        if (!overlay || !shell) return null;
-        const r = shell.getBoundingClientRect();
-        return {
-          x: r.x,
-          y: r.y,
-          width: r.width,
-          height: r.height,
-          viewportWidth: window.innerWidth,
-          viewportHeight: window.innerHeight,
-        };
-      });
-      expect(geometry).not.toBeNull();
-      // Fractional device-pixel layout can report ~2.03px here on Chromium.
-      // The 3px tolerance absorbs rounding only; the 98% width/height contract
-      // below is what rejects the old centered 900px / 88vh modal.
-      expect(Math.abs(geometry!.x)).toBeLessThanOrEqual(3);
-      expect(Math.abs(geometry!.y)).toBeLessThanOrEqual(3);
-      expect(geometry!.width / geometry!.viewportWidth).toBeGreaterThanOrEqual(0.98);
-      expect(geometry!.height / geometry!.viewportHeight).toBeGreaterThanOrEqual(0.98);
+      const shell = page.getByTestId("workbench-shell");
+      await expect(shell).toHaveAttribute("data-surface", "report");
+      await expect(page.getByRole("tab", { name: "Report" })).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByTestId("report-workspace")).toBeVisible();
+      await expect(page.locator(".fixed.inset-0.z-floating")).toHaveCount(0);
+      await expect(page.getByTestId("report-copy")).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("report-save")).toBeVisible();
     } finally {
       await cleanup();
     }

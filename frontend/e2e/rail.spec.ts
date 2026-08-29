@@ -2,13 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 import { seedSession } from "./seed";
 
 /**
- * Managing investigations from the rail, on the real stack.
+ * Managing investigations from persistent navigation, on the real stack.
  *
- * Rename / pin / duplicate / archive / delete each call a live endpoint and then
- * refresh the list, and deleting the OPEN one also has to reset what the thread
- * is showing. None of it had integrated coverage: `SessionRail` was tested as a
- * component against callbacks, so every one of these paths was verified to call
- * a function, never to change anything.
+ * These are product contracts rather than component-callback tests: every
+ * mutation hits the real sidecar and the navigation must continue to expose the
+ * investigation as a durable unit of work, not merely as chat history.
  */
 
 const rail = (page: Page) => page.getByTestId("session-rail");
@@ -33,8 +31,16 @@ async function menu(page: Page, title: string) {
     .click();
 }
 
-test.describe("managing an investigation from the rail", () => {
-  test("renaming it changes the rail AND the thread header", async ({ page }) => {
+test.describe("investigation navigation", () => {
+  test("rows expose investigation scope and durable work counts instead of chat-only metadata", async ({ page }) => {
+    const TITLE = await open(page);
+    await expect(rail(page)).toHaveAttribute("data-navigation", "investigations");
+    const row = rail(page).getByTestId("investigation-row").filter({ hasText: TITLE }).first();
+    await expect(row).toContainText("General storage investigation");
+    await expect(row).toContainText("0F · 0R");
+  });
+
+  test("renaming it changes navigation AND the workbench identity", async ({ page }) => {
     const TITLE = await open(page);
     await rail(page).getByText(TITLE).first().click();
     await expect(thread(page).getByText(/ANSWER-/).first()).toBeVisible({ timeout: 20_000 });
@@ -46,9 +52,7 @@ test.describe("managing an investigation from the rail", () => {
     await field.press("Enter");
 
     await expect(rail(page).getByText("403 on acme-logs")).toBeVisible({ timeout: 15_000 });
-    // The header mirrors the title; a rename does not change activeId, so the
-    // thread only refreshes if the app nudges it.
-    await expect(thread(page).getByText("403 on acme-logs")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("workbench-commandbar").getByText("403 on acme-logs")).toBeVisible({ timeout: 15_000 });
   });
 
   test("duplicating it produces a second investigation with the same history", async ({ page }) => {
@@ -60,7 +64,7 @@ test.describe("managing an investigation from the rail", () => {
     await expect(thread(page).getByText(/ANSWER-/).first()).toBeVisible({ timeout: 15_000 });
   });
 
-  test("deleting the OPEN investigation leaves a usable app, not a dead thread", async ({ page }) => {
+  test("deleting the OPEN investigation leaves a usable workbench", async ({ page }) => {
     const TITLE = await open(page);
     await rail(page).getByText(TITLE).first().click();
     await expect(thread(page).getByText(/ANSWER-/).first()).toBeVisible({ timeout: 20_000 });
@@ -70,7 +74,6 @@ test.describe("managing an investigation from the rail", () => {
     await page.getByRole("button", { name: /^delete$/i }).last().click();
 
     await expect(rail(page).getByText(TITLE)).toHaveCount(0, { timeout: 15_000 });
-    // Back to the start surface — not an error card for a session that is gone.
     await expect(thread(page).getByText(/How can I help/i)).toBeVisible({ timeout: 15_000 });
     await expect(thread(page).getByText(/Couldn't load/i)).toHaveCount(0);
   });
@@ -90,16 +93,16 @@ test.describe("managing an investigation from the rail", () => {
     await expect(thread(page).getByText(/Couldn't load/i)).toHaveCount(0);
   });
 
-  test("archiving it takes it out of the active list", async ({ page }) => {
+  test("archiving it takes it out of the active investigation list", async ({ page }) => {
     const TITLE = await open(page);
     await menu(page, TITLE);
     await page.getByText("Archive", { exact: true }).click();
     await expect(rail(page).getByText(TITLE)).toHaveCount(0, { timeout: 15_000 });
   });
 
-  test("searching the rail narrows to what matches", async ({ page }) => {
+  test("server-backed search narrows investigations by title or message content", async ({ page }) => {
     const TITLE = await open(page);
-    const search = page.getByPlaceholder(/Search chats/i);
+    const search = page.getByPlaceholder(/Search investigations/i);
     await search.fill("seeded");
     await expect(rail(page).getByText(TITLE).first()).toBeVisible();
     await search.fill("no-such-investigation");

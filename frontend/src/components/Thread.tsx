@@ -4,18 +4,13 @@ import { nextTurnIndex, stepTurnIndex, type TurnDirection } from "../lib/threadN
 import { Thread as ThreadImplementation } from "./ThreadImplementation";
 
 /**
- * Public boundary of the conversation workspace.
+ * Public boundary of the Timeline workspace.
  *
- * The historical Thread implementation grew to ~76 KB because transport state,
- * session recovery, streaming, scroll anchoring, message rendering, start-state
- * composition, inspector orchestration and composer wiring all accumulated in
- * one public component. That made every UI change a change to the application's
- * largest state machine.
- *
- * v0.91 puts a hard boundary in front of it. The proven runtime implementation
- * stays behind ThreadImplementation while workspace-level interaction belongs
- * here. In particular, semantic conversation navigation is a property of the
- * reading workspace and its scroll geometry, not of transport/session state.
+ * Transport, persisted-session recovery and viewport following now live behind
+ * focused hooks. This boundary owns document-level interaction that must remain
+ * independent of the Agent runtime, including semantic j/k navigation between
+ * exchanges. There is exactly one keyboard owner: no capture-phase suppression
+ * or duplicate listener remains in ThreadImplementation.
  */
 export type ThreadProps = ComponentProps<typeof ThreadImplementation>;
 
@@ -25,8 +20,8 @@ export function Thread(props: ThreadProps) {
 
   // A session switch is a new document. Pointer/wheel/touch interaction hands
   // navigation back to the reader; the next j/k press then infers a fresh
-  // semantic cursor from the viewport. Programmatic smooth-scroll events do not
-  // reset it, which is exactly what makes k -> j reversible.
+  // semantic cursor from viewport geometry. Programmatic smooth scrolling does
+  // not reset it, which keeps k -> j reversible on long investigations.
   useEffect(() => {
     navigationIndexRef.current = null;
   }, [props.sessionId]);
@@ -73,18 +68,12 @@ export function Thread(props: ThreadProps) {
       if (target === null) return;
       navigationIndexRef.current = target;
 
-      // Own these bare-letter shortcuts at the workspace boundary. The legacy
-      // implementation still carries its historical listener internally; this
-      // capture listener prevents a second scroll decision from racing it while
-      // that implementation is decomposed behind the public surface.
       event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
       turns[target]?.scrollIntoView({ block: "start", behavior: "smooth" });
     };
 
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   return (

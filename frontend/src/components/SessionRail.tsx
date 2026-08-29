@@ -1,12 +1,12 @@
 import type { ComponentProps } from "react";
+import { InvestigationNavigation } from "../workbench/InvestigationNavigation";
 import {
-  SessionRail as SessionRailImplementation,
   MIN_RAIL_WIDTH,
   MAX_RAIL_WIDTH,
   DEFAULT_RAIL_WIDTH,
   clampRailWidth,
   dayBucket,
-} from "./SessionRailImplementation";
+} from "../workbench/navigationModel";
 
 export {
   MIN_RAIL_WIDTH,
@@ -15,18 +15,20 @@ export {
   clampRailWidth,
   dayBucket,
 };
-export type { SessionActions } from "./SessionRailImplementation";
-export type SessionRailProps = ComponentProps<typeof SessionRailImplementation>;
+export type { SessionActions } from "../workbench/navigationModel";
+export type SessionRailProps = ComponentProps<typeof InvestigationNavigation>;
 
 /**
- * Public navigation boundary. Session discovery/search/menu mechanics are kept
- * behind it so the workspace IA can evolve independently from the rail's data
- * fetching and mutation behavior.
+ * Compatibility name for the application navigation boundary.
+ *
+ * The product no longer renders the historical chat/session rail. Keeping this
+ * export lets App and mature interaction tests depend on a stable module while
+ * the implementation is now the investigation-first Agent OS navigation.
  */
 export function SessionRail(props: SessionRailProps) {
   return (
     <div data-testid="navigation-surface" className="contents">
-      <SessionRailImplementation {...props} />
+      <InvestigationNavigation {...props} />
     </div>
   );
 }
