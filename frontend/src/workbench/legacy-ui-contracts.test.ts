@@ -30,6 +30,7 @@ const forbidden: Array<[string, RegExp]> = [
   ["chat product language", /\bchat(?:s)?\b/i],
   ["conversation product language", /\bconversation\b/i],
   ["investigation product language", /\binvestigation\b/i],
+  ["Chinese chat-era product language", /(?:新对话|对话|会话检查器|会话发现|本次调查|调查|线程)/],
   ["Thread component contract", /\bThread(?:Implementation)?\b/],
   ["thread DOM/copy contract", /(?:thread[-.]|thread_)/i],
   ["SessionRail contract", /\bSessionRail\b/],
@@ -39,6 +40,10 @@ const forbidden: Array<[string, RegExp]> = [
   ["timeline-era execution component", /\b(?:ToolTimeline|TimelineItem)\b/],
   ["timeline DOM/copy contract", /(?:timeline[-.]|timeline_)/i],
   ["v0.92 surface contract", /\b(?:SurfaceTabs|WorkSurface|SteeringSurface)\b/],
+  ["legacy shortcut contract", /keys\.(?:inspector|prevTurn|nextTurn|toggleRail)/],
+  ["legacy continuation action", /continueInvestigation/],
+  ["legacy run timeline key", /run\.timeline/],
+  ["legacy user-facing phrases", /(?:Session inspector|Session findings|User prompt|finished answer|Start investigating|Storage Agent Workbench)/i],
 ];
 
 describe("Agent-native production UI has no v0.92 Chat-era contracts", () => {
