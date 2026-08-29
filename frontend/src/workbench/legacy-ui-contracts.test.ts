@@ -4,7 +4,12 @@ import { describe, expect, it } from "vitest";
 
 const srcRoot = join(process.cwd(), "src");
 const roots = [join(srcRoot, "components"), join(srcRoot, "workbench")];
-const standalone = [join(srcRoot, "App.tsx"), join(srcRoot, "shortcuts.ts")];
+const standalone = [
+  join(srcRoot, "App.tsx"),
+  join(srcRoot, "shortcuts.ts"),
+  join(srcRoot, "i18n.tsx"),
+  join(srcRoot, "main.tsx"),
+];
 const extensions = /\.(?:ts|tsx|css)$/;
 const skip = /(?:\.test\.|architecture\.test\.ts$|legacy-ui-contracts\.test\.ts$)/;
 
