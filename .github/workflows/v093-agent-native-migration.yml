@@ -1,0 +1,51 @@
+name: v0.93 Agent-native migration
+
+on:
+  push:
+    branches:
+      - chatgpt/v0.93-agent-native-rebuild
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/v0.93-agent-native-rebuild
+          fetch-depth: 0
+
+      - name: Remove final Thread symbol alias
+        shell: python
+        run: |
+          from pathlib import Path
+
+          implementation = Path("frontend/src/components/AgentTaskImplementation.tsx")
+          text = implementation.read_text()
+          old = "export function Thread({"
+          new = "export function AgentTaskImplementation({"
+          assert text.count(old) == 1, f"expected exactly one legacy Thread export, got {text.count(old)}"
+          implementation.write_text(text.replace(old, new, 1))
+
+          boundary = Path("frontend/src/components/AgentTask.tsx")
+          text = boundary.read_text()
+          old = 'import { Thread as AgentTaskImplementation } from "./AgentTaskImplementation";'
+          new = 'import { AgentTaskImplementation } from "./AgentTaskImplementation";'
+          assert text.count(old) == 1, f"expected exactly one Thread import alias, got {text.count(old)}"
+          boundary.write_text(text.replace(old, new, 1))
+
+          assert "export function Thread" not in implementation.read_text()
+          assert "Thread as AgentTaskImplementation" not in boundary.read_text()
+
+      - name: Commit exact migration
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/components/AgentTask.tsx frontend/src/components/AgentTaskImplementation.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "refactor(agent): remove final Thread implementation alias [v093-migrated]"
+          git push origin HEAD:chatgpt/v0.93-agent-native-rebuild
