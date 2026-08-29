@@ -7,30 +7,31 @@ async function seedFreshApp(page: Page) {
   });
 }
 
-const rail = (page: Page) => page.getByTestId("agent-task-navigation");
+const taskNavigation = (page: Page) => page.getByTestId("agent-task-navigation");
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 
-test.describe("investigation navigation shell", () => {
+test.describe("Agent task navigation shell", () => {
   test("collapses, and stays collapsed across a reload", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    await expect(rail(page)).toHaveAttribute("data-collapsed", "false");
+    await expect(taskNavigation(page)).toHaveAttribute("data-collapsed", "false");
 
-    await page.getByTestId("rail-toggle").click();
-    await expect(rail(page)).toHaveAttribute("data-collapsed", "true");
+    await page.getByTestId("task-navigation-toggle").click();
+    await expect(taskNavigation(page)).toHaveAttribute("data-collapsed", "true");
 
     await page.reload();
-    await expect(rail(page)).toHaveAttribute("data-collapsed", "true");
+    await expect(taskNavigation(page)).toHaveAttribute("data-collapsed", "true");
     await expect(page.getByRole("button", { name: /^New task$/i })).toBeVisible();
 
-    await page.getByTestId("rail-toggle").click();
-    await expect(rail(page)).toHaveAttribute("data-collapsed", "false");
+    await page.getByTestId("task-navigation-toggle").click();
+    await expect(taskNavigation(page)).toHaveAttribute("data-collapsed", "false");
   });
 
   test("drag-resizes within bounds and persists the width", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    const handle = page.getByTestId("rail-resize");
-    const before = (await rail(page).boundingBox())!.width;
+    const handle = page.getByTestId("task-navigation-resize");
+    const before = (await taskNavigation(page).boundingBox())!.width;
 
     const box = (await handle.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + 200);
@@ -38,25 +39,25 @@ test.describe("investigation navigation shell", () => {
     await page.mouse.move(360, box.y + 200, { steps: 8 });
     await page.mouse.up();
 
-    const after = (await rail(page).boundingBox())!.width;
+    const after = (await taskNavigation(page).boundingBox())!.width;
     expect(after).toBeGreaterThan(before);
     expect(after).toBeLessThanOrEqual(420);
 
     await page.reload();
-    const restored = (await rail(page).boundingBox())!.width;
+    const restored = (await taskNavigation(page).boundingBox())!.width;
     expect(Math.abs(restored - after)).toBeLessThan(3);
   });
 
-  test("refuses to shrink past the width where titles stop being readable", async ({ page }) => {
+  test("refuses to shrink past the width where task identity stops being readable", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    const handle = page.getByTestId("rail-resize");
+    const handle = page.getByTestId("task-navigation-resize");
     const box = (await handle.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + 200);
     await page.mouse.down();
     await page.mouse.move(20, box.y + 200, { steps: 8 });
     await page.mouse.up();
-    expect((await rail(page).boundingBox())!.width).toBeGreaterThanOrEqual(189);
+    expect((await taskNavigation(page).boundingBox())!.width).toBeGreaterThanOrEqual(189);
   });
 });
 
@@ -72,22 +73,22 @@ test.describe("keyboard", () => {
     await expect(sheet).toHaveCount(0);
   });
 
-  test("? typed into the composer is a character, not a shortcut", async ({ page }) => {
+  test("? typed into the task composer is a character, not a shortcut", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    const box = page.getByTestId("agent-composer").getByRole("textbox");
+    const box = composer(page);
     await box.click();
     await box.type("why?");
     await expect(page.getByTestId("shortcuts-sheet")).toHaveCount(0);
     await expect(box).toHaveValue("why?");
   });
 
-  test("the sidebar toggles from the keyboard", async ({ page }) => {
+  test("task navigation toggles from the keyboard", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    await expect(rail(page)).toHaveAttribute("data-collapsed", "false");
+    await expect(taskNavigation(page)).toHaveAttribute("data-collapsed", "false");
     await page.keyboard.press("ControlOrMeta+\\");
-    await expect(rail(page)).toHaveAttribute("data-collapsed", "true");
+    await expect(taskNavigation(page)).toHaveAttribute("data-collapsed", "true");
   });
 });
 
@@ -105,11 +106,11 @@ test.describe("overlay focus", () => {
   });
 });
 
-test.describe("thread paging", () => {
-  test("a short thread offers no 'load earlier' control", async ({ page }) => {
+test.describe("task history paging", () => {
+  test("a short task history offers no 'load earlier' control", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    const box = page.getByTestId("agent-composer").getByRole("textbox");
+    const box = composer(page);
     await box.click();
     await box.fill("<Error><Code>AccessDenied</Code></Error>");
     await box.press("Enter");
@@ -117,7 +118,7 @@ test.describe("thread paging", () => {
     await expect(page.getByTestId("load-earlier")).toHaveCount(0);
   });
 
-  test("the messages endpoint pages and reports the total", async ({ page }) => {
+  test("the persisted task-events endpoint pages and reports the total", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
     const sid = await page.evaluate(async () => {
@@ -143,8 +144,8 @@ test.describe("thread paging", () => {
   });
 });
 
-test.describe("what the agent knows", () => {
-  test("the session endpoint reports its memory, files, and context reach", async ({ page }) => {
+test.describe("durable Agent context", () => {
+  test("the task endpoint reports its memory, files, and context reach", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
     const body = await page.evaluate(async () => {
@@ -163,7 +164,7 @@ test.describe("what the agent knows", () => {
     expect(typeof body.context_messages).toBe("number");
   });
 
-  test("a session with no turn in flight says so", async ({ page }) => {
+  test("a task with no execution in flight says so", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
     const state = await page.evaluate(async () => {
@@ -181,11 +182,11 @@ test.describe("what the agent knows", () => {
   });
 });
 
-test.describe("composer drafts", () => {
-  test("an unsent question survives a reload", async ({ page }) => {
+test.describe("task direction drafts", () => {
+  test("an unsent direction survives a reload", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    const box = page.getByTestId("agent-composer").getByRole("textbox");
+    const box = composer(page);
     await box.click();
     await box.fill("why can I not delete this object");
 
@@ -194,11 +195,11 @@ test.describe("composer drafts", () => {
   });
 });
 
-test.describe("turn structure", () => {
-  test("a finished answer carries ONE metadata affordance, not three", async ({ page }) => {
+test.describe("work-result structure", () => {
+  test("a finished result carries ONE execution metadata affordance, not three", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    const box = page.getByTestId("agent-composer").getByRole("textbox");
+    const box = composer(page);
     await box.click();
     await box.fill("<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>");
     await box.press("Enter");
@@ -208,10 +209,10 @@ test.describe("turn structure", () => {
     await expect(page.getByText(/^Why this answer/)).toHaveCount(0);
   });
 
-  test("session findings are not rendered at the bottom of the timeline", async ({ page }) => {
+  test("durable findings are not rendered as a trailing task event", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    const box = page.getByTestId("agent-composer").getByRole("textbox");
+    const box = composer(page);
     await box.click();
     await box.fill("<Error><Code>AccessDenied</Code></Error>");
     await box.press("Enter");
@@ -221,22 +222,21 @@ test.describe("turn structure", () => {
 });
 
 /**
- * Escape is an overlay-stack contract. The removed Session Inspector is not an
- * overlay anymore, so exercise two overlays that still exist: Settings, then
- * the Command Palette above it.
+ * Escape is an overlay-stack contract. Review is contextual, not an overlay, so
+ * exercise two overlays that still exist: Settings, then Command Palette above it.
  */
 test.describe("Escape with two overlays open", () => {
   test("closes only the topmost one", async ({ page }) => {
     await seedFreshApp(page);
     await page.goto("/");
-    await expect(page.getByTestId("agent-composer").getByRole("textbox")).toBeVisible({ timeout: 30_000 });
+    await expect(composer(page)).toBeVisible({ timeout: 30_000 });
 
-    await page.getByTestId("rail-settings").click();
+    await page.getByTestId("task-navigation-settings").click();
     const settings = page.getByRole("dialog").filter({ hasText: /Settings & providers/i });
     await expect(settings).toBeVisible();
 
     await page.keyboard.press("ControlOrMeta+k");
-    const palette = page.getByPlaceholder(/Search chats or run a command/i);
+    const palette = page.getByRole("dialog").filter({ has: page.getByRole("textbox") });
     await expect(palette).toBeVisible();
 
     await page.keyboard.press("Escape");
@@ -256,9 +256,9 @@ test("the settings drawer is never see-through, even mid-animation", async ({ pa
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
-  await expect(page.getByTestId("agent-composer").getByRole("textbox")).toBeVisible({ timeout: 30_000 });
+  await expect(composer(page)).toBeVisible({ timeout: 30_000 });
 
-  await page.getByTestId("rail-settings").click();
+  await page.getByTestId("task-navigation-settings").click();
 
   const mid = await page.evaluate(async () => {
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
