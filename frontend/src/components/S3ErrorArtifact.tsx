@@ -2,7 +2,7 @@ import { Fragment, useState } from "react";
 import type { S3Error } from "../lib/s3error";
 import { useI18n } from "../i18n";
 
-function legacyCopy(text: string): boolean {
+function fallbackCopy(text: string): boolean {
   try {
     const node = document.createElement("textarea");
     node.value = text;
@@ -24,10 +24,10 @@ async function copyText(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text);
       return true;
     } catch {
-      return legacyCopy(text);
+      return fallbackCopy(text);
     }
   }
-  return legacyCopy(text);
+  return fallbackCopy(text);
 }
 
 /** Structured Direction artifact for pasted S3-compatible errors. */
@@ -83,12 +83,12 @@ export function S3ErrorArtifact({
         </button>
         <span className="flex-1" />
         {onRedirect ? (
-          <button type="button" onClick={() => onRedirect(raw)} data-testid="edit-message" className="text-2xs text-gray-500 transition-colors hover:text-gray-200">
+          <button type="button" onClick={() => onRedirect(raw)} data-testid="redirect-direction" className="text-2xs text-gray-500 transition-colors hover:text-gray-200">
             {lang === "zh" ? "重新定向" : "Redirect"}
           </button>
         ) : null}
         {onBranch ? (
-          <button type="button" onClick={onBranch} data-testid="branch-message" className="text-2xs text-gray-500 transition-colors hover:text-gray-200">
+          <button type="button" onClick={onBranch} data-testid="branch-task" className="text-2xs text-gray-500 transition-colors hover:text-gray-200">
             {lang === "zh" ? "分支任务" : "Branch task"}
           </button>
         ) : null}
