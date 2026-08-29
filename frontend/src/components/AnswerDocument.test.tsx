@@ -13,8 +13,8 @@ vi.mock("../workbench/commands", () => ({
   openAgentExecution: commands.openExecution,
 }));
 
-vi.mock("./TaskContentImplementation", () => ({
-  MessageCard: ({ content }: { content: string | null }) => <div data-testid="proven-turn-renderer">{content}</div>,
+vi.mock("./AgentResultRenderer", () => ({
+  AgentResultRenderer: ({ content }: { content: string | null }) => <div data-testid="agent-result-renderer">{content}</div>,
 }));
 
 afterEach(() => {
