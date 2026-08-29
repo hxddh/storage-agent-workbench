@@ -17,18 +17,18 @@ import { useSessionRun, patchSessionRun, getSessionRun } from "../sessionRuns";
 import { loadDraft, saveDraft } from "../drafts";
 import { useTurnRunner, cleanError } from "../hooks/useTurnRunner";
 import { useSessionDocument } from "../hooks/useSessionDocument";
-import { useThreadViewport } from "../hooks/useThreadViewport";
+import { useTaskViewport } from "../hooks/useTaskViewport";
 import { openAgentExecution, openAgentReview } from "../workbench/commands";
 import { Button } from "./ui";
 import { Composer } from "./Composer";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
-import { GroundingCard, MessageCard, ProposalCard, ThinkingBubble, TriageCard } from "./ThreadCards";
+import { GroundingCard, MessageCard, ProposalCard, ThinkingBubble, TriageCard } from "./TaskContent";
 import { TurnFooter } from "./TurnFooter";
 import { fmtDuration } from "./TurnMetrics";
 import { useI18n } from "../i18n";
 import { matches } from "../shortcuts";
 import { clearFind, findRanges, paintFind } from "../lib/findHighlight";
-import { stepHit } from "../threadFind";
+import { stepHit } from "../taskFind";
 import { inferDatasetType } from "../datasetType";
 import { FindBar } from "./FindBar";
 
@@ -98,7 +98,7 @@ export function AgentTaskImplementation({
   const {
     scrollRef, contentRef, pinned, onScroll, releaseToUser,
     jumpToLatest, resetPinned, followLatest,
-  } = useThreadViewport();
+  } = useTaskViewport();
   const [text, setTextState] = useState("");
   const setText = (next: string) => {
     setTextState(next);

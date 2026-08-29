@@ -2,7 +2,7 @@ import { memo, useMemo, useState, type ComponentProps } from "react";
 import { useI18n } from "../i18n";
 import { isMostlyError, parseS3Error } from "../lib/s3error";
 import { openAgentExecution, openAgentReview } from "../workbench/commands";
-import { MessageCard as ProvenTurnRenderer } from "./ThreadCardsImplementation";
+import { MessageCard as ProvenTurnRenderer } from "./TaskContentImplementation";
 
 type ProvenTurnRendererProps = ComponentProps<typeof ProvenTurnRenderer>;
 export type AnswerDocumentProps = ProvenTurnRendererProps & {

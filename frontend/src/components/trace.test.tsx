@@ -18,7 +18,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
 import { LiveTrace, argLabel, argSummary } from "./LiveTrace";
-import { MessageCard } from "./ThreadCards";
+import { MessageCard } from "./TaskContent";
 import { TurnFooter } from "./TurnFooter";
 import type { ToolActivity } from "../types";
 

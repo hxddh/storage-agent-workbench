@@ -2,24 +2,24 @@ import { describe, it, expect } from "vitest";
 import {
   MIN_QUERY,
   countOccurrences,
-  findInThread,
+  findInTask,
   highlightSegments,
   stepHit,
   totalMatches,
-  type FindableItem,
-} from "./threadFind";
+  type TaskFindableItem,
+} from "./taskFind";
 
-const msg = (id: string, content: string | null, role = "assistant"): FindableItem => ({
+const msg = (id: string, content: string | null, role = "assistant"): TaskFindableItem => ({
   kind: "message",
   id,
   role,
   content,
 });
 
-const THREAD: FindableItem[] = [
+const THREAD: TaskFindableItem[] = [
   msg("m1", "Why is acme-logs growing so fast?", "user"),
   msg("m2", "acme-logs has versioning enabled and no expiration rule. acme-logs is 4.2 TiB."),
-  { kind: "run", id: "r1" } as FindableItem,
+  { kind: "run", id: "r1" } as TaskFindableItem,
   msg("m3", "What about the lifecycle policy?", "user"),
   msg("m4", "There is no lifecycle policy on that bucket."),
 ];
@@ -46,47 +46,47 @@ describe("countOccurrences", () => {
   });
 });
 
-describe("findInThread", () => {
+describe("findInTask", () => {
   it("finds every message containing the query, in reading order", () => {
-    const hits = findInThread(THREAD, "acme-logs");
+    const hits = findInTask(THREAD, "acme-logs");
     expect(hits.map((h) => h.id)).toEqual(["m1", "m2"]);
     expect(hits.map((h) => h.index)).toEqual([0, 1]);
   });
 
   it("counts repeats within one message", () => {
-    const hits = findInThread(THREAD, "acme-logs");
+    const hits = findInTask(THREAD, "acme-logs");
     expect(hits.find((h) => h.id === "m2")?.count).toBe(2);
     expect(totalMatches(hits)).toBe(3);
   });
 
   it("is case-insensitive", () => {
-    expect(findInThread(THREAD, "ACME-LOGS").map((h) => h.id)).toEqual(["m1", "m2"]);
+    expect(findInTask(THREAD, "ACME-LOGS").map((h) => h.id)).toEqual(["m1", "m2"]);
   });
 
   it("searches user turns as well as answers", () => {
-    const hits = findInThread(THREAD, "lifecycle");
+    const hits = findInTask(THREAD, "lifecycle");
     expect(hits.map((h) => h.role)).toEqual(["user", "assistant"]);
   });
 
   it("ignores non-message cards", () => {
     // A run card renders structured data the inspector exposes properly.
     // Pretending to search it would promise more than the result delivers.
-    expect(findInThread(THREAD, "r1")).toEqual([]);
+    expect(findInTask(THREAD, "r1")).toEqual([]);
   });
 
   it("survives a message with no content", () => {
-    expect(() => findInThread([msg("m9", null)], "anything")).not.toThrow();
-    expect(findInThread([msg("m9", null)], "anything")).toEqual([]);
+    expect(() => findInTask([msg("m9", null)], "anything")).not.toThrow();
+    expect(findInTask([msg("m9", null)], "anything")).toEqual([]);
   });
 
   it("does not run below the minimum query length", () => {
-    expect(findInThread(THREAD, "a")).toEqual([]);
-    expect(findInThread(THREAD, "  ")).toEqual([]);
+    expect(findInTask(THREAD, "a")).toEqual([]);
+    expect(findInTask(THREAD, "  ")).toEqual([]);
     expect(MIN_QUERY).toBe(2);
   });
 
   it("returns nothing rather than everything for an empty query", () => {
-    expect(findInThread(THREAD, "")).toEqual([]);
+    expect(findInTask(THREAD, "")).toEqual([]);
   });
 });
 

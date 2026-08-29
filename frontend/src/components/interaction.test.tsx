@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
-import { MessageCard } from "./ThreadCards";
+import { MessageCard } from "./TaskContent";
 import { TurnFooter, linkEvidence } from "./TurnFooter";
 import {
   dayBucket,

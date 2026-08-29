@@ -1,5 +1,5 @@
 /**
- * v0.58.0 — find inside one investigation.
+ * v0.58.0 — find inside one Agent task.
  *
  * The command palette searches session TITLES. Nothing searched the messages,
  * so an operator eighty turns into a bucket investigation could not get back to
@@ -12,7 +12,7 @@
  * render.
  */
 
-export interface FindableItem {
+export interface TaskFindableItem {
   kind: string;
   id?: string;
   role?: string;
@@ -20,7 +20,7 @@ export interface FindableItem {
 }
 
 export interface FindHit {
-  /** DOM id of the thread item holding this match. */
+  /** DOM id of the task item holding this match. */
   id: string;
   /** How many times the query occurs inside that item. */
   count: number;
@@ -51,12 +51,12 @@ export function countOccurrences(haystack: string, needle: string): number {
   }
 }
 
-/** Every thread item whose text contains the query, in reading order.
+/** Every task item whose text contains the query, in reading order.
  *
  * Only message text is searched. A run card or a triage card is a rendering of
  * structured data the inspector already exposes properly; pretending to search
  * it here would promise more than the result could deliver. */
-export function findInThread(items: readonly FindableItem[], query: string): FindHit[] {
+export function findInTask(items: readonly TaskFindableItem[], query: string): FindHit[] {
   const q = query.trim();
   if (q.length < MIN_QUERY) return [];
   const hits: FindHit[] = [];
@@ -68,7 +68,7 @@ export function findInThread(items: readonly FindableItem[], query: string): Fin
   return hits;
 }
 
-/** Total matches across the thread — what the "3 / 17" counter shows. */
+/** Total matches across the task — what the "3 / 17" counter shows. */
 export function totalMatches(hits: readonly FindHit[]): number {
   return hits.reduce((sum, h) => sum + h.count, 0);
 }

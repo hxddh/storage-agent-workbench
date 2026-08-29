@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useI18n } from "../i18n";
-import { MIN_QUERY } from "../threadFind";
+import { MIN_QUERY } from "../taskFind";
 
 /**
  * Find inside the open investigation.

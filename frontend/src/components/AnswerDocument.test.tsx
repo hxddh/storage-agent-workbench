@@ -13,7 +13,7 @@ vi.mock("../workbench/commands", () => ({
   openAgentExecution: commands.openExecution,
 }));
 
-vi.mock("./ThreadCardsImplementation", () => ({
+vi.mock("./TaskContentImplementation", () => ({
   MessageCard: ({ content }: { content: string | null }) => <div data-testid="proven-turn-renderer">{content}</div>,
 }));
 

@@ -161,7 +161,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
   });
 
   it("does not embed RunDetail in task content", () => {
-    const cards = source("../components/ThreadCardsImplementation.tsx");
+    const cards = source("../components/TaskContentImplementation.tsx");
     expect(cards).not.toContain('import { RunDetail } from "./RunDetail"');
     expect(cards).not.toContain("export function RunCard");
     expect(cards).not.toContain("<RunDetail");

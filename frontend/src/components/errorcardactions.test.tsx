@@ -12,7 +12,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
-import { MessageCard } from "./ThreadCards";
+import { MessageCard } from "./TaskContent";
 import { parseS3Error, isMostlyError } from "../lib/s3error";
 
 const XML =

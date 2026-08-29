@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ComponentProps } from "react";
 import { isEditable, matches } from "../shortcuts";
-import { nextTurnIndex, stepTurnIndex, type TurnDirection } from "../lib/threadNavigation";
+import { nextTaskStepIndex, stepTaskIndex, type TaskStepDirection } from "../lib/taskNavigation";
 import { AgentTaskImplementation } from "./AgentTaskImplementation";
 
 /**
@@ -40,7 +40,7 @@ export function AgentTask(props: AgentTaskProps) {
     const onKey = (event: KeyboardEvent) => {
       if (isEditable(event.target)) return;
 
-      let direction: TurnDirection | null = null;
+      let direction: TaskStepDirection | null = null;
       if (matches(event, "nextStep")) direction = 1;
       else if (matches(event, "prevStep")) direction = -1;
       if (direction === null) return;
@@ -56,9 +56,9 @@ export function AgentTask(props: AgentTaskProps) {
         const positions = steps.map(
           (step) => step.getBoundingClientRect().top - rootRect.top + scrollRoot.scrollTop,
         );
-        target = nextTurnIndex(positions, scrollRoot.scrollTop, direction);
+        target = nextTaskStepIndex(positions, scrollRoot.scrollTop, direction);
       } else {
-        target = stepTurnIndex(navigationIndexRef.current, steps.length, direction);
+        target = stepTaskIndex(navigationIndexRef.current, steps.length, direction);
       }
       if (target === null) return;
       navigationIndexRef.current = target;
