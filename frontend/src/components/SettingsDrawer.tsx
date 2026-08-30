@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ProvidersView } from "../views/ProvidersView";
 import { useI18n, LANGS, type Lang } from "../i18n";
 import { useTheme, type Theme } from "../theme";
-import { getVaultStatus } from "../api";
+import { getPriceTable, getVaultStatus, putPriceTable, type PriceTable } from "../api";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 
@@ -97,6 +97,7 @@ export function SettingsDrawer(
           </section>
 
           <ProvidersView />
+          <PriceTableSection />
           <div className="border-t border-edge px-8 py-5 text-xs leading-relaxed text-gray-500">
             <div className="mb-1 font-medium text-gray-400">{t("settings.safetyTitle")}</div>
             {safety}
@@ -104,6 +105,89 @@ export function SettingsDrawer(
         </div>
       </div>
     </div>
+  );
+}
+
+function PriceTableSection() {
+  const { t } = useI18n();
+  const [table, setTable] = useState<PriceTable | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    getPriceTable().then(setTable).catch(() => undefined);
+  }, []);
+  if (!table) return null;
+  const rates = { ...(table.rates.storage_gb_month || {}) };
+  const classes = Object.keys(rates).sort();
+  const save = async (next: PriceTable) => {
+    setSaving(true);
+    try {
+      const stored = await putPriceTable({
+        confirmed: next.confirmed,
+        rates: next.rates,
+        note: next.note,
+      });
+      setTable(stored);
+      setSaved(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <section className="border-t border-edge px-8 py-5" data-testid="settings-price-table">
+      <div className="mb-1 text-sm font-semibold text-gray-100">{t("settings.priceTitle")}</div>
+      <p className="mb-3 text-xs leading-relaxed text-gray-500">{t("settings.priceHint")}</p>
+      {table.example || !table.confirmed ? (
+        <p className="mb-3 rounded-md border border-warn-border bg-warn-bg px-3 py-2 text-xs text-warn-fg" data-testid="price-table-example">
+          {t("settings.priceExample")}
+        </p>
+      ) : null}
+      <div className="mb-2 text-xs font-medium text-gray-400">{t("settings.priceGbMonth")}</div>
+      <div className="grid max-h-56 grid-cols-2 gap-2 overflow-auto">
+        {classes.map((name) => (
+          <label key={name} className="flex items-center justify-between gap-2 text-xs text-gray-300">
+            <span className="truncate font-mono text-2xs">{name}</span>
+            <input
+              type="number"
+              step="0.0001"
+              min="0"
+              value={rates[name]}
+              onChange={(event) => {
+                const value = Number.parseFloat(event.target.value);
+                setTable({
+                  ...table,
+                  rates: {
+                    ...table.rates,
+                    storage_gb_month: { ...rates, [name]: Number.isFinite(value) ? value : 0 },
+                  },
+                });
+                setSaved(false);
+              }}
+              className="w-24 rounded-md border border-edge bg-elevated px-2 py-1 text-right text-xs text-gray-100"
+            />
+          </label>
+        ))}
+      </div>
+      <label className="mt-3 flex items-center gap-2 text-xs text-gray-300">
+        <input
+          type="checkbox"
+          checked={table.confirmed}
+          onChange={(event) => {
+            setTable({ ...table, confirmed: event.target.checked, example: !event.target.checked });
+            setSaved(false);
+          }}
+        />
+        {t("settings.priceConfirm")}
+      </label>
+      <button
+        type="button"
+        disabled={saving}
+        onClick={() => void save(table)}
+        className="mt-3 rounded-md border border-edge px-3 py-1.5 text-xs text-gray-100 hover:bg-hover disabled:opacity-50"
+      >
+        {saved ? t("settings.priceSaved") : t("settings.priceSave")}
+      </button>
+    </section>
   );
 }
 

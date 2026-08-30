@@ -1,9 +1,9 @@
-"""Startup data maintenance — bounded reclamation for long-lived installs.
+"""Startup and periodic data maintenance — bounded reclamation.
 
 The app writes local artifacts (per-run directories) and append-only rows
 (``audit_logs``, ad-hoc ``tool_calls``, ``execution_events``) that otherwise
-grow without bound over months of daily use. This runs once at startup and is
-deliberately conservative:
+grow without bound over months of daily use. This runs at startup and again on
+a low-frequency loop while the Sidecar is up. It is deliberately conservative:
 
 - It only deletes the INTERNAL ('agent'-origin) runs of sessions that no longer
   exist — never a user-authored report run, never a run of a live session.
@@ -16,6 +16,7 @@ deliberately conservative:
   marker event — never silent. Active and waiting executions are never touched.
   Set ``STORAGE_AGENT_EXECUTION_EVENT_RETENTION_DAYS=0`` and
   ``STORAGE_AGENT_EXECUTION_EVENT_MAX_PER_EXECUTION=0`` to keep every event.
+  The prune is a SQL set delete (no per-event Python materialization).
 
 Everything here is best-effort: a failure to remove a directory or prune a row is
 logged-by-return-count, never fatal to startup.
@@ -126,69 +127,97 @@ def prune_execution_events(conn) -> int:
     deleted. Active (queued/running) and waiting executions are never touched
     — their live cursor must remain complete.
 
-    Returns the number of event rows actually deleted (the rewritten marker
-    is not counted as a deletion). ``0`` on either cap disables that cap;
-    both ``0`` disables the pass.
+    Implemented as SQL set operations so a large log cannot peak as a Python
+    list of every seq. Returns the number of event rows actually deleted (the
+    rewritten marker is not counted as a deletion). ``0`` on either cap
+    disables that cap; both ``0`` disables the pass.
     """
     days = _event_retention_days()
     max_per = _event_max_per_execution()
     if days <= 0 and max_per <= 0:
         return 0
-    cutoff = None
+    cutoff = "0000-01-01T00:00:00Z"
     if days > 0:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
             "%Y-%m-%dT%H:%M:%SZ")
-    terminal = conn.execute(
-        "SELECT id FROM task_executions WHERE status IN (?, ?, ?, ?)",
-        store.EXEC_TERMINAL_STATUSES,
-    ).fetchall()
-    deleted = 0
-    for row in terminal:
-        exec_id = row["id"]
-        events = conn.execute(
-            "SELECT seq, created_at FROM execution_events "
-            "WHERE execution_id = ? ORDER BY seq",
-            (exec_id,),
-        ).fetchall()
-        if not events:
-            continue
-        newest = {r["seq"] for r in events[-max_per:]} if max_per > 0 else None
-        drop_seqs: list[int] = []
-        for ev in events:
-            keep_age = days <= 0 or (ev["created_at"] or "") >= (cutoff or "")
-            keep_count = newest is None or ev["seq"] in newest
-            if not (keep_age and keep_count):
-                drop_seqs.append(ev["seq"])
-        if not drop_seqs:
-            continue
-        marker_seq = drop_seqs[0]
-        drop_set = set(drop_seqs)
-        kept = [ev["seq"] for ev in events if ev["seq"] not in drop_set]
-        payload = store._dumps({
-            "truncated": True,
-            "removed_count": len(drop_seqs),
-            "oldest_remaining_seq": kept[0] if kept else None,
-            "retention_days": days if days > 0 else None,
-            "max_per_execution": max_per if max_per > 0 else None,
-            "note": (f"{len(drop_seqs)} earlier event(s) were removed by startup "
-                     "retention. This marker is the explicit record of that cut "
-                     "— it is not silent."),
-        })
-        conn.execute(
-            "UPDATE execution_events SET event_type = ?, payload_json_sanitized = ? "
-            "WHERE execution_id = ? AND seq = ?",
-            (_EVENT_TRUNCATED_TYPE, payload, exec_id, marker_seq),
-        )
-        rest = [s for s in drop_seqs if s != marker_seq]
-        if rest:
-            ph = ",".join("?" * len(rest))
-            cur = conn.execute(
-                f"DELETE FROM execution_events WHERE execution_id = ? AND seq IN ({ph})",
-                (exec_id, *rest),
-            )
-            deleted += max(0, int(cur.rowcount or 0))
+    conn.execute("DROP TABLE IF EXISTS _ee_drop")
+    conn.execute("DROP TABLE IF EXISTS _ee_mark")
+    conn.execute(
+        "CREATE TEMP TABLE _ee_drop ("
+        "execution_id TEXT NOT NULL, seq INTEGER NOT NULL, "
+        "PRIMARY KEY (execution_id, seq))"
+    )
+    conn.execute(
+        "INSERT INTO _ee_drop (execution_id, seq) "
+        "SELECT execution_id, seq FROM ("
+        "  SELECT e.execution_id, e.seq, e.created_at, "
+        "         ROW_NUMBER() OVER (PARTITION BY e.execution_id ORDER BY e.seq DESC) AS recency "
+        "  FROM execution_events e "
+        "  JOIN task_executions x ON x.id = e.execution_id "
+        "  WHERE x.status IN (?, ?, ?, ?)"
+        ") ranked "
+        "WHERE ((? > 0) AND recency > ?) OR ((? > 0) AND created_at < ?)",
+        (*store.EXEC_TERMINAL_STATUSES, max_per, max_per, days, cutoff),
+    )
+    conn.execute(
+        "CREATE TEMP TABLE _ee_mark AS "
+        "SELECT execution_id, MIN(seq) AS marker_seq, COUNT(*) AS removed_count "
+        "FROM _ee_drop GROUP BY execution_id"
+    )
+    conn.execute(
+        "UPDATE execution_events SET event_type = ?, payload_json_sanitized = ("
+        "  SELECT json_object("
+        "    'truncated', 1,"
+        "    'removed_count', m.removed_count,"
+        "    'oldest_remaining_seq', ("
+        "      SELECT MIN(e2.seq) FROM execution_events e2"
+        "      WHERE e2.execution_id = m.execution_id"
+        "        AND e2.seq NOT IN ("
+        "          SELECT d.seq FROM _ee_drop d"
+        "          WHERE d.execution_id = m.execution_id AND d.seq != m.marker_seq"
+        "        )"
+        "    ),"
+        "    'retention_days', CASE WHEN ? > 0 THEN ? ELSE NULL END,"
+        "    'max_per_execution', CASE WHEN ? > 0 THEN ? ELSE NULL END,"
+        "    'note', m.removed_count || ' earlier event(s) were removed by "
+        "retention. This marker is the explicit record of that cut — it is not silent.'"
+        "  ) FROM _ee_mark m"
+        "  WHERE m.execution_id = execution_events.execution_id"
+        "    AND m.marker_seq = execution_events.seq"
+        ") WHERE rowid IN ("
+        "  SELECT e.rowid FROM execution_events e"
+        "  JOIN _ee_mark m ON m.execution_id = e.execution_id AND m.marker_seq = e.seq"
+        ")",
+        (_EVENT_TRUNCATED_TYPE, days, days, max_per, max_per),
+    )
+    cur = conn.execute(
+        "DELETE FROM execution_events WHERE rowid IN ("
+        "  SELECT e.rowid FROM execution_events e"
+        "  JOIN _ee_drop d ON d.execution_id = e.execution_id AND d.seq = e.seq"
+        "  JOIN _ee_mark m ON m.execution_id = d.execution_id"
+        "  WHERE d.seq != m.marker_seq"
+        ")"
+    )
+    deleted = max(0, int(cur.rowcount or 0))
+    conn.execute("DROP TABLE IF EXISTS _ee_drop")
+    conn.execute("DROP TABLE IF EXISTS _ee_mark")
     conn.commit()
     return deleted
+
+
+def run_periodic_maintenance() -> dict[str, int]:
+    """Same bounded passes as startup, plus due Task revisits.
+
+    Safe to call from a low-frequency loop. Never raises. Revisit submit uses
+    the existing runtime ``submit()`` path (kind=revisit) — not a second runner.
+    """
+    result = run_startup_maintenance()
+    try:
+        from .task_runtime import revisit as revisit_sched
+        result["revisits_submitted"] = revisit_sched.tick()
+    except Exception:  # noqa: BLE001
+        result["revisits_submitted"] = 0
+    return result
 
 
 def run_startup_maintenance() -> dict[str, int]:

@@ -822,6 +822,62 @@ CREATE TABLE IF NOT EXISTS task_context_versions (
 );
 """
 
+# --- Migration 027: v0.96 optimization copilot --------------------------------
+# Price table (ordinary config), versioned remediation plans, task baselines,
+# per-task revisit schedules, and optional artifact status/payload. Never edit
+# shipped 026.
+
+_M027 = """
+CREATE TABLE IF NOT EXISTS storage_price_table (
+    id          TEXT PRIMARY KEY,
+    confirmed   INTEGER NOT NULL DEFAULT 0,
+    rates_json  TEXT NOT NULL,
+    note        TEXT,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS remediation_plans (
+    id                         TEXT PRIMARY KEY,
+    task_id                    TEXT NOT NULL REFERENCES agent_tasks(id) ON DELETE CASCADE,
+    execution_id               TEXT,
+    version                    INTEGER NOT NULL,
+    status                     TEXT NOT NULL,
+    title                      TEXT,
+    plan_json_sanitized        TEXT NOT NULL,
+    simulation_json_sanitized  TEXT,
+    created_at                 TEXT NOT NULL,
+    updated_at                 TEXT NOT NULL,
+    UNIQUE (task_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_remediation_plans_task ON remediation_plans(task_id, version);
+
+CREATE TABLE IF NOT EXISTS task_baselines (
+    id                        TEXT PRIMARY KEY,
+    task_id                   TEXT NOT NULL REFERENCES agent_tasks(id) ON DELETE CASCADE,
+    execution_id              TEXT,
+    version                   INTEGER NOT NULL,
+    snapshot_json_sanitized   TEXT NOT NULL,
+    context_version           INTEGER,
+    created_at                TEXT NOT NULL,
+    UNIQUE (task_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_task_baselines_task ON task_baselines(task_id, version);
+
+CREATE TABLE IF NOT EXISTS task_revisit_schedules (
+    task_id            TEXT PRIMARY KEY REFERENCES agent_tasks(id) ON DELETE CASCADE,
+    enabled            INTEGER NOT NULL DEFAULT 1,
+    interval_days      INTEGER NOT NULL,
+    last_revisit_at    TEXT,
+    next_due_at        TEXT,
+    last_catchup_note  TEXT,
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL
+);
+
+ALTER TABLE task_artifacts ADD COLUMN status TEXT;
+ALTER TABLE task_artifacts ADD COLUMN payload_json_sanitized TEXT;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -858,6 +914,9 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     # Decision/Artifact/Work Result become first-class rows, and the Storage
     # Task Context is typed + versioned. See the _M026 comment block.
     (26, "durable_task_runtime", _M026),
+    # v0.96.0 — cost/lifecycle simulator, remediation-plan artifacts, versioned
+    # baselines + Drift, per-task revisit schedules. Append-only.
+    (27, "optimization_copilot", _M027),
 ]
 
 

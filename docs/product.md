@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v0.95.0.** This is the canonical product/UX specification. Historical release notes are not current product architecture.
+> **Applies to Storage Agent v0.96.0.** This is the canonical product/UX specification. Historical release notes are not current product architecture.
 
 ## Product definition
 
@@ -32,6 +32,9 @@ Storage Agent is not a generic chat assistant, not an admin dashboard with an AI
 5. Triage storage errors, including deterministic offline triage for supported error shapes.
 6. Preserve findings, memory, evidence references, execution provenance, and follow-up context across a durable task.
 7. Produce evidence-backed Report artifacts.
+8. Quantify lifecycle/cost impact from bounded inventory aggregates and a local, user-calibrated price table — every figure is an estimate with coverage, or an explicit gap.
+9. Draft a typed Remediation Plan the operator applies in their own console/CLI; Verify with read-only probes.
+10. Capture versioned baselines, report Drift, and optionally revisit the same Task on a schedule.
 
 ## Product objects
 
@@ -56,6 +59,7 @@ Since v0.94 an Execution is a durable object with a real lifecycle — `queued`,
 v0.95 makes that lifecycle operable in the Task:
 
 - **Resume** is a task-area action when the Task is `needs_attention` and the last Execution is `interrupted` or `failed`. It starts a new Execution with the same Direction and follows the new event stream. Cancelled, missing-key, and generic error states are not Resume.
+- **Verify** is a task-area action when a Remediation Plan Artifact exists. It submits a `kind=verify` Execution through the same runtime path, diffs live read-only configuration against the plan, and writes `proposed` / `verified` / `partially_verified` / `stale` back onto the plan. It never mutates storage.
 - A **Queued Direction** submitted while another Execution is running is visible in the Task and can be cancelled. Command-center state stays `working`.
 - Stream recovery after a drop is **sequence-only** (`after=<last seq>`). The blocking `/sessions` POST is not a recovery path.
 
@@ -85,11 +89,15 @@ A Work Result is not a transient chat bubble and should read like technical work
 
 ### Artifact
 
-Artifacts are durable, reviewable outputs attached to a Task through one first-class Artifact index: Markdown Reports, imported Evidence snapshots, and completed analyses. Persisted Execution detail is also reviewable context associated with the Task.
+Artifacts are durable, reviewable outputs attached to a Task through one first-class Artifact index: Markdown Reports, imported Evidence snapshots, completed analyses, **Remediation Plans**, **baselines**, and **Drift reports**. Persisted Execution detail is also reviewable context associated with the Task.
+
+A Remediation Plan is typed and versioned. It contains pasteable lifecycle JSON (or equivalent policy corrections), the finding/Evidence it addresses, the simulator's expected impact including coverage, and a verification checklist. The user applies it outside Storage Agent. Verify does not write to the cloud.
+
+A baseline is a versioned bounded snapshot (inventory overview, configuration facts, findings, context version) — never raw rows. Drift classifies findings as added / resolved / still present, diffs configuration, and reports a two-point inventory trend. Missing baseline is the sentence "there is no comparable baseline", never a fabricated trend.
 
 ### Review
 
-Review is subordinate to the active Task. It lets the user inspect task overview, Evidence, Execution detail, or Report without changing the primary object of the application.
+Review is subordinate to the active Task. It lets the user inspect task overview, Evidence, Execution detail, or Report without changing the primary object of the application. Overview also projects Remediation Plan status, baselines, Drift, and the optional revisit schedule. These are not new destinations.
 
 Review must not create a second Agent input or a second task lifecycle.
 
@@ -124,6 +132,10 @@ Multiple Tasks may independently have real in-flight work because execution stat
 
 This does **not** mean the product has hidden autonomous worker Agents. It means a real execution already started for Task A is not destroyed when the user opens Task B — and since v0.94 that ownership is the Sidecar's durable task runtime, so it also survives closing the stream, reloading the app, and (as an explicit `interrupted` + Resume action) a Sidecar restart. Recovering a Task reads its typed, versioned Storage Task Context — machine state is never rebuilt by replaying messages. Since v0.95 that typed context is also the Agent prompt's stable grounding.
 
+An optional per-task **revisit schedule** (every N days) submits a read-only Execution through the same `runtime.submit` path when the Sidecar is running and the due time has passed. The desktop app has no background daemon: if the app was closed past due, the next open catch-up-submits and labels the Direction as catch-up. Revisits never auto-approve a Decision. Needs-decision / needs-attention from a revisit use the existing AgentTaskNavigation states. The user can turn the schedule off at any time.
+
+Ready-to-delegate suggestions map to real capabilities: storage checkup, cost review (simulator), drift check (baseline), plus diagnose / attach inventory or access logs / account mapping. They must not promise runtime the Sidecar does not expose.
+
 ## Storage-specific capability model
 
 Current capability classes include:
@@ -136,6 +148,10 @@ Current capability classes include:
 - bounded preview/range/conditional/latency checks;
 - presigned-URL diagnosis;
 - local inventory/access-log analysis;
+- deterministic cost/lifecycle simulation (bounded aggregates + local price table);
+- typed Remediation Plan + read-only Verify;
+- versioned baselines and Drift reports;
+- optional per-task read-only revisit (catch-up labelled when the app was closed past due);
 - managed Evidence Import with explicit confirmation;
 - deterministic storage-error triage;
 - durable task findings/memory/evidence;
@@ -185,7 +201,7 @@ The primary Task viewport should answer, in order:
 
 1. **What is the Agent working on?**
 2. **What is happening now or what did it produce?**
-3. **What can I do now?** — Steer, Stop, decide, review, or delegate the next Direction.
+3. **What can I do now?** — Steer, Stop, Resume, Verify, decide, review, schedule a revisit, or delegate the next Direction.
 
 Provider/model configuration, audit internals, and low-level counters are secondary unless directly relevant to the active work.
 

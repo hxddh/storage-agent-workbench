@@ -1,6 +1,6 @@
 # Agent tools and capability contract
 
-> **Storage Agent v0.95.0.** Agent-accessible capabilities are explicit, typed, whitelisted, bounded, sanitized, and read-only unless a separately documented confirmation-gated data-movement workflow says otherwise.
+> **Storage Agent v0.96.0.** Agent-accessible capabilities are explicit, typed, whitelisted, bounded, sanitized, and read-only unless a separately documented confirmation-gated data-movement workflow says otherwise.
 
 This document describes capability classes available to the one model-driven Agent runtime plus deterministic compute it can invoke. It is not a promise that every internal S3 helper is a public Agent tool or HTTP route.
 
@@ -258,6 +258,38 @@ The workflow remains:
 It is bounded by file/byte/time/source constraints and re-validates limits during download. The Agent can propose/prepare the operation, but cannot silently confirm it.
 
 See `security.md` and `api.md`.
+
+## Deterministic optimization tools
+
+These tools never send raw inventory or access-log rows to the model. They operate on bounded aggregates already on the Task, plus ordinary local configuration. Dollar figures and trends are estimates with coverage, or explicit gaps.
+
+### `simulate_storage_cost`
+
+Projects storage-class mix and monthly cost under candidate lifecycle rules (transition / expiration / abort-MPU) using this Task's bounded inventory aggregates, current lifecycle facts, and the local price table. Missing inventory → `kind=gap`. Unconfirmed prices withhold dollars (`price_unconfirmed`). Abort-MPU savings are not invented when MPU inventory is absent.
+
+### `draft_remediation_plan`
+
+Writes a versioned `remediation_plan` Artifact: pasteable lifecycle JSON fragments, finding/Evidence refs, simulator impact with coverage, and a verification checklist. The plan is local. Applying it is the operator's job in their console/CLI.
+
+### `verify_remediation_plan`
+
+Diffs the latest plan against the latest read-only lifecycle review already on the Task. Classifies each action `applied` / `not_applied` / `partial` / `cannot_verify` and writes plan status `verified` / `partially_verified` / `proposed` / `stale`. Does not call mutating APIs.
+
+### `capture_task_baseline`
+
+Persists a versioned bounded snapshot (inventory overview, lifecycle facts, findings, context version). Not raw rows.
+
+### `compare_task_drift`
+
+Compares the current bounded snapshot to the latest baseline. Findings are classified added / resolved / still present. Missing baseline is an explicit gap, never a fabricated trend. Records a `drift_report` Artifact.
+
+### `get_price_table_status`
+
+Shows whether the local price table is still the example schedule or has been confirmed. Never contains credentials.
+
+### `set_task_revisit_days`
+
+Sets this Task's optional revisit interval (1–365 days) or disables it. Revisits are read-only Executions submitted through `runtime.submit` when the Sidecar is running.
 
 ## Task memory tools
 

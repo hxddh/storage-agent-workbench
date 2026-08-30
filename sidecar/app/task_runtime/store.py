@@ -383,12 +383,30 @@ def open_decisions_from_proposals(conn: sqlite3.Connection, task_id: str,
              if isinstance(p, dict)
              and p.get("requires_confirmation") is True
              and p.get("action_type") in DECISION_GATED_ACTION_TYPES]
+    # One pending Decision per (task, action_type): later proposal of the same
+    # type supersedes the earlier pending row. Also collapse duplicates inside
+    # this Work Result (last occurrence wins).
+    by_type: dict[str, dict[str, Any]] = {}
+    for p in gated:
+        by_type[str(p.get("action_type"))[:64]] = p
+    gated = list(by_type.values())
     now = utcnow()
-    conn.execute(
-        "UPDATE task_decisions SET status = ?, resolved_at = ?, "
-        "resolution_note = COALESCE(resolution_note, 'superseded by a newer work result') "
-        "WHERE task_id = ? AND status = ?",
-        (DECISION_SUPERSEDED, now, task_id, DECISION_PENDING))
+    if gated:
+        types = list(by_type.keys())
+        ph = ",".join("?" * len(types))
+        conn.execute(
+            f"UPDATE task_decisions SET status = ?, resolved_at = ?, "
+            f"resolution_note = COALESCE(resolution_note, 'superseded by a newer work result') "
+            f"WHERE task_id = ? AND status = ? AND action_type IN ({ph})",
+            (DECISION_SUPERSEDED, now, task_id, DECISION_PENDING, *types))
+    else:
+        # Empty proposals still retire every pending blocker — a later Work
+        # Result that no longer asks for confirmation outranks older ones.
+        conn.execute(
+            "UPDATE task_decisions SET status = ?, resolved_at = ?, "
+            "resolution_note = COALESCE(resolution_note, 'superseded by a newer work result') "
+            "WHERE task_id = ? AND status = ?",
+            (DECISION_SUPERSEDED, now, task_id, DECISION_PENDING))
     out: list[dict[str, Any]] = []
     for p in gated:
         dec_id = _new_id()
@@ -470,7 +488,8 @@ def _decision_dict(r: sqlite3.Row) -> dict[str, Any]:
 def record_artifact(conn: sqlite3.Connection, task_id: str, artifact_type: str,
                     *, execution_id: str | None = None, title: str | None = None,
                     ref_kind: str | None = None, ref_id: str | None = None,
-                    format: str | None = None, summary: str | None = None) -> str:
+                    format: str | None = None, summary: str | None = None,
+                    status: str | None = None, payload: Any = None) -> str:
     """Index one durable artifact for a task. Dedupe on (task, type, ref) so a
     re-render of the same report or a re-read of the same import doesn't stack
     duplicate rows — the artifact is the durable thing, not the click."""
@@ -480,14 +499,24 @@ def record_artifact(conn: sqlite3.Connection, task_id: str, artifact_type: str,
             "AND ref_kind IS ? AND ref_id = ? LIMIT 1",
             (task_id, artifact_type, ref_kind, ref_id)).fetchone()
         if existing:
+            if status is not None or payload is not None:
+                conn.execute(
+                    "UPDATE task_artifacts SET status = COALESCE(?, status), "
+                    "payload_json_sanitized = COALESCE(?, payload_json_sanitized), "
+                    "summary = COALESCE(?, summary) WHERE id = ?",
+                    (status, _dumps(payload) if payload is not None else None,
+                     redact_text(str(summary or ""))[:400] or None, existing["id"]),
+                )
             return existing["id"]
     art_id = _new_id()
     conn.execute(
         "INSERT INTO task_artifacts (id, task_id, execution_id, artifact_type, title, "
-        "ref_kind, ref_id, format, summary, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "ref_kind, ref_id, format, summary, created_at, status, payload_json_sanitized) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (art_id, task_id, execution_id, artifact_type,
          redact_text(str(title or ""))[:200] or None, ref_kind, ref_id, format,
-         redact_text(str(summary or ""))[:400] or None, utcnow()),
+         redact_text(str(summary or ""))[:400] or None, utcnow(),
+         status, _dumps(payload) if payload is not None else None),
     )
     return art_id
 
@@ -497,7 +526,13 @@ def list_artifacts(conn: sqlite3.Connection, task_id: str,
     rows = conn.execute(
         "SELECT * FROM task_artifacts WHERE task_id = ? ORDER BY rowid DESC LIMIT ?",
         (task_id, max(1, int(limit)))).fetchall()
-    return [dict(r) for r in rows]
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        item = dict(r)
+        if item.get("payload_json_sanitized"):
+            item["payload"] = _loads(item["payload_json_sanitized"], None)
+        out.append(item)
+    return out
 
 
 # --- task_context_versions -----------------------------------------------------------

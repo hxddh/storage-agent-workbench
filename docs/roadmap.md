@@ -1,26 +1,30 @@
 # Roadmap
 
-> **Baseline: Storage Agent v0.95.0.**
+> **Baseline: Storage Agent v0.96.0.**
 >
 > This file describes what comes **after** the current Agent Task architecture. It is not a backlog of old UI concepts and it is not proof that an aspirational capability already exists.
 
 ## Current shipped baseline
 
-v0.95.0 is the current baseline. It preserves the v0.93 Agent Task product model and the v0.94 durable runtime, and it makes that runtime user-visible:
+v0.96.0 is the current baseline. It preserves the v0.93 Agent Task product model and the v0.94/v0.95 durable runtime, and it turns that runtime into a quantified storage-optimization copilot and ongoing caretaker:
 
 - the **Agent Task** is the primary application object and work environment;
-- one Composer provides **Delegate → Steer + Stop** semantics, plus **Resume** when the last Execution is interrupted/failed;
+- one Composer provides **Delegate → Steer + Stop** semantics, plus **Resume** and **Verify** when those runtime states exist;
 - Direction, Execution, Decision, Work Result, Artifact, and contextual Review are distinct product concepts;
 - queued Directions are visible and cancellable; stream recovery is `after=<last seq>` only;
 - Decision cards project bounds/impact and Decline; Review projects Decision history;
 - typed Storage Task Context grounds the Agent prompt; deterministic cross-evidence correlation produces bounded findings;
+- a deterministic cost/lifecycle simulator projects class mix and labelled cost deltas from bounded inventory aggregates and a local price table — missing data is a gap, never a fabricated number;
+- a typed **Remediation Plan** Artifact carries pasteable lifecycle JSON, finding refs, simulator impact with coverage, and a verification checklist; **Verify** is a read-only Execution on the same submit path;
+- versioned **baselines** and **Drift** reports classify findings added / resolved / still present;
+- optional per-task **revisit** schedules submit read-only Executions through `runtime.submit`; catch-up is labelled; Decisions are never auto-crossed;
+- Ready-to-delegate suggestions map to checkup / cost review / drift check plus existing diagnose, attach, and account jobs;
 - live execution is real per-task runtime state rather than simulated Agent chrome;
-- a Task can retain real in-flight execution while another Task is selected;
 - `/agent-tasks` is the product runtime surface while `/sessions` remains the compatibility persistence/runtime API;
 - read-only S3 diagnostics, account discovery, config review, local evidence analysis, error triage, and reports work end to end;
 - managed cloud Evidence Import uses plan → explicit Decision → execution;
-- task memory, findings, evidence references, execution detail, and turn metrics are durable;
 - secrets remain in the encrypted local vault and out of model context;
+- `execution_events` retention is a periodic SQL-set prune (terminal only, dual cap, explicit truncation marker);
 - architecture, legacy-contract, documentation-contract, real-Sidecar E2E, visual-review, and desktop-build gates protect the release.
 
 This is the starting point. Future work should deepen the Agent's ability to complete real object-storage jobs inside this model rather than replacing it with another shell.
@@ -29,8 +33,8 @@ This is the starting point. Future work should deepen the Agent's ability to com
 
 1. **Capability before chrome.** Add UI only for runtime state/capability that actually exists.
 2. **Agent Task remains the organizing object.** New evidence, tools, reports, and execution detail attach to the Task.
-3. **Read-only autonomy, explicit mutation/data-movement boundaries.** More autonomy must not weaken the safety floor.
-4. **Evidence over confidence.** Improve what the Agent can prove, correlate, and explain; do not hide gaps.
+3. **Read-only autonomy, explicit mutation/data-movement boundaries.** More autonomy must not weaken the safety floor. Remediation Plans stay operator-applied.
+4. **Evidence over confidence.** Improve what the Agent can prove, correlate, and explain; do not hide gaps. Estimates always carry coverage.
 5. **Storage depth over generic-Agent breadth.** Prefer real S3/object-storage capabilities over generic terminal/browser/workflow features.
 6. **Provider realism matters.** S3-compatible behavior and capability gaps must be tested explicitly rather than assumed from AWS semantics.
 7. **Documentation is part of architecture.** Any intentional change to the product model must update code, executable contracts, and canonical docs together.
@@ -41,9 +45,9 @@ This is the starting point. Future work should deepen the Agent's ability to com
 
 #### Broader inventory/log formats
 
-- Add ORC support for inventory where the local deterministic analysis stack can preserve the same safety/scale guarantees.
 - Improve schema detection and explicit truncation/coverage reporting across large imported evidence.
 - Keep model context aggregate-only and bounded.
+- ORC inventory support is **out of scope** for current planning.
 
 #### Provider-native evidence sources
 
@@ -57,21 +61,13 @@ Each source must define discovery, bounded planning, confirmation, local persist
 
 ### P0 — Stronger storage reasoning from existing evidence
 
-Shipped in v0.95.0 as a deterministic correlation engine (errors × config × addressing; lifecycle × inventory; multipart/versions × cost; access-log mix × latency/errors). Remaining work is more evidence sources and tighter coverage reporting, not a second Agent.
+Shipped through v0.96.0 as deterministic correlation plus the cost/lifecycle simulator, Remediation Plan/Verify, baseline/Drift, and scheduled revisits. Remaining work is more evidence sources and tighter coverage reporting, not a second Agent.
 
 Still open:
 
 - object metadata/config evidence + observed behavior beyond the current bounded joins;
-- broader inventory/log formats (below) feeding the same correlation path.
-
-### P0 — Decision clarity and resumability
-
-Shipped in v0.95.0: Decision cards project why/scope/movement bounds; Decline is a first-class resolve; Review shows Decision history; interrupted/failed Executions expose Resume; queued Directions are visible.
-
-Remaining work:
-
-- distinguish expired gated work where the underlying import/report workflow actually expires;
-- richer movement estimates when an evidence-import plan is absent (keep absence a gap, never invent counts).
+- richer movement estimates when an evidence-import plan is absent (keep absence a gap, never invent counts);
+- distinguish expired gated work where the underlying import/report workflow actually expires.
 
 ### P1 — Provider-realistic integration coverage
 
@@ -91,7 +87,6 @@ Deepen contextual Review without turning it into a separate application:
 
 - stronger provenance links from a Work Result to the exact Evidence/Execution that supports it;
 - clearer audit-gap and unsupported-capability representation;
-- more useful comparison of current vs prior task/account evidence;
 - better large-task search/navigation while preserving the Task as one durable work record.
 
 ### P1 — Storage-specific tool coverage
@@ -120,9 +115,9 @@ Distribution hardening must not change runtime/product semantics.
 
 ### Evidence/source coverage
 
-- ORC inventory is not analyzed end to end.
-- provider-native event/access-log/aggregate sources are not yet first-class Evidence.
-- some S3-compatible capability differences are represented as unsupported without dedicated provider containers in required CI.
+- provider-native event/access-log/aggregate sources are not yet first-class Evidence;
+- some S3-compatible capability differences are represented as unsupported without dedicated provider containers in required CI;
+- simulator class×age independence is labelled; abort-MPU savings stay a gap without MPU inventory.
 
 ### CI realism
 
@@ -140,7 +135,8 @@ The following are **not** roadmap shortcuts and must not be added merely to make
 - generic terminal/browser/computer control;
 - a workflow canvas;
 - a plugin marketplace as a substitute for storage-specific capabilities;
-- destructive storage mutation/auto-remediation;
+- destructive storage mutation/auto-remediation (including auto-applying a Remediation Plan);
+- ORC inventory as a committed near-term deliverable;
 - a top-level application destination for every backend table;
 - multi-user SaaS/RBAC before there is an explicit product decision to stop being a local-first desktop Agent.
 
@@ -154,18 +150,9 @@ Every roadmap item must preserve:
 - no secrets in model prompts, SQLite, logs, reports, or browser-readable payloads;
 - server-side provider scope enforcement;
 - explicit Decisions for gated data movement/materially large scans;
+- Decision gates never auto-crossed by revisits;
 - bounded/sanitized Tool and model context;
 - deterministic handling of raw analytical rows;
 - explicit provider/evidence gaps;
-- no chain-of-thought persistence/exposure.
-
-See `security.md` for the authoritative safety contract.
-
-## How to evolve this roadmap
-
-When an item ships:
-
-1. update the relevant current doc (`product.md`, `architecture.md`, `api.md`, `data-model.md`, `tools.md`, or release docs);
-2. update/remove the roadmap item rather than leaving shipped behavior under “future”;
-3. add executable regression coverage for the new contract;
-4. record the historical change in release notes/CHANGELOG without turning that historical record into the next architecture spec.
+- estimates labelled as estimates, with coverage, or withheld as gaps;
+- chain-of-thought never persisted or exposed as an Artifact.

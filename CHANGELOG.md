@@ -6,6 +6,32 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.96.0] - 2026-08-30
+
+_Quantified storage-optimization copilot and ongoing caretaker: deterministic cost/lifecycle simulation, Remediation Plan + Verify, baselines/Drift, and scheduled read-only revisits — on the existing Agent Task runtime, without a second Agent or a new navigation surface._
+
+### Added
+
+- **Deterministic cost/lifecycle simulator** (`sidecar/app/analysis/cost_sim.py`) over bounded inventory aggregates, current lifecycle facts, and a local price table. Horizons 0/30/90/180/365d. Every result carries coverage (object/byte counts, snapshot time) and uncertainty. No inventory or an unconfirmed price table is an explicit gap — dollars are withheld, never invented.
+- **Factory example price table** stored as ordinary SQLite config (`storage_price_table`), editable in Settings, labelled “calibrate against your bill”. Not a secret; credentials forbidden.
+- **Remediation Plan Artifact** (`remediation_plan`): versioned, typed repair document with pasteable lifecycle JSON, finding refs, simulator impact, and a verification checklist. The operator applies it in their own console/CLI.
+- **Verify Execution** (`POST /agent-tasks/{id}/verify`, `kind=verify`) re-probes with existing read-only tools, diffs against the plan, and writes `proposed` / `verified` / `partially_verified` / `stale`.
+- **Versioned baselines** and **Drift report** Artifacts: config diff, two-point inventory trend, findings classified added / resolved / still present. Missing baseline is “no comparable baseline”.
+- **Per-task revisit schedule** (every N days). Startup, periodic maintenance, and app-open task-list catch-up submit through `runtime.submit(kind=revisit)`. Catch-up is labelled. Confirmation-gated work stays pending. No desktop daemon.
+- Agent tools: `simulate_storage_cost`, `draft_remediation_plan`, `verify_remediation_plan`, `capture_task_baseline`, `compare_task_drift`, `get_price_table_status`, `set_task_revisit_days`.
+- Migration **027** (`optimization_copilot`).
+
+### Changed
+
+- Ready-to-delegate suggestions map to real capabilities: storage checkup, cost review, drift check (plus diagnose, attach inventory/logs, account mapping).
+- Review Overview projects plan status, baselines, Drift, and revisit controls inside the existing Review surface.
+- `execution_events` retention runs on a low-frequency loop as a SQL set delete (terminal only, dual cap, `execution.events_truncated`, `0` disables). Same contract as v0.95, no Python materialization.
+- One pending Decision per `(task, action_type)`; a later proposal of the same type supersedes the earlier pending row.
+
+### Security
+
+- Unchanged floor: single Agent, read-only storage tools, no shell/SQL/browser, secrets only via `keyring_store`. Plans/Verify/revisits never mutate the cloud. Raw inventory/log rows still do not enter model context. Estimates are labelled and covered, or withheld.
+
 ## [0.95.0] - 2026-08-30
 
 _Durable runtime capability becomes user-visible reliability: Resume, queued Directions, sequence-only stream recovery, Decision bounds/history, typed context in the prompt, and deterministic cross-evidence correlation — without a second Agent or a new navigation surface._

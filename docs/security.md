@@ -1,6 +1,6 @@
 # Security
 
-> **Storage Agent v0.95.0 security contract.**
+> **Storage Agent v0.96.0 security contract.**
 >
 > Security is part of the Agent Task product model, not a secondary implementation detail. Read-only autonomy is allowed only inside explicit, bounded, sanitized capabilities. Data movement and materially large/full scans cross a real **Decision required** boundary.
 
@@ -61,6 +61,7 @@ Secrets include, at minimum:
 4. Frontend state may contain a newly entered secret only for the minimum time needed to submit it; API responses never return the plaintext value.
 5. SQLite stores opaque secret references such as `keyring://scope/name`, never the secret itself.
 6. Provider/model code resolves secret references only inside the Sidecar immediately before the configured external call.
+7. The local storage price table is ordinary configuration, not a secret — and must still never contain credentials. Example rates stay labelled until the operator confirms they calibrated against their bill.
 
 ## 3. Encrypted local vault
 
@@ -156,6 +157,8 @@ The UI presents this state as **Decision required**, but the Sidecar remains aut
 Since v0.94 the boundary is a first-class durable record: a gated proposal opens a pending `task_decisions` row, the raising execution stays `waiting` until it is resolved, and the approval/decline is persisted with an audit trail. Approval never auto-executes cloud work — it hands over to the same plan → confirm → run flow. The durable execution event log stores structured, sanitized, bounded progress only: never secrets, raw analytical rows, or chain-of-thought.
 
 A plan/prepare step is not execution and must not perform hidden downloads or mutation.
+
+Remediation Plans, Verify Executions, and scheduled revisits are also read-only toward the cloud. A plan contains pasteable JSON for the operator's console; Storage Agent never applies it. Verify re-reads configuration with existing read-only tools. A revisit that needs confirmation-gated work opens a pending Decision and waits — it never auto-resolves. At most one pending Decision exists per `(task, action_type)`.
 
 ## 9. Bounded object reads
 
@@ -254,7 +257,9 @@ The model may receive only bounded, sanitized derived context such as:
 - deterministic metrics;
 - deterministic findings;
 - bounded grouped aggregates;
-- bounded/redacted sample labels where explicitly allowed.
+- bounded/redacted sample labels where explicitly allowed;
+- cost-simulator conclusions (class mix over time, labelled estimates, coverage, gaps);
+- Remediation Plan / Drift summaries (bounded, sanitized).
 
 The model must not receive:
 
@@ -264,7 +269,8 @@ The model must not receive:
 - arbitrary SQL result dumps;
 - raw client credentials or Authorization material;
 - unmasked sensitive query parameters;
-- unrestricted filesystem paths.
+- unrestricted filesystem paths;
+- invented dollar figures or trends when inventory or a confirmed price table is missing.
 
 `aggregate_uploaded_file` accepts only whitelisted metric/group/filter shapes and uses bound values. The model does not write SQL.
 

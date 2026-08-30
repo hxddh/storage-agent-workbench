@@ -26,6 +26,7 @@ test suite — auth is left open so the local workflow keeps working.
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 import os
@@ -99,7 +100,35 @@ async def lifespan(_app: FastAPI):
     # never touch user-authored report runs.
     from . import data_maintenance
     data_maintenance.run_startup_maintenance()
-    yield
+    from .analysis import prices as price_mod
+    from .db import connect as db_connect
+    _price_conn = db_connect()
+    try:
+        price_mod.ensure_default(_price_conn)
+    finally:
+        _price_conn.close()
+    from .task_runtime import revisit as revisit_sched
+    revisit_sched.tick()
+
+    async def _periodic():
+        raw = os.environ.get("STORAGE_AGENT_MAINTENANCE_INTERVAL_SECONDS", "3600")
+        try:
+            interval = max(60, int(raw))
+        except ValueError:
+            interval = 3600
+        while True:
+            await asyncio.sleep(interval)
+            await asyncio.to_thread(data_maintenance.run_periodic_maintenance)
+
+    loop_task = asyncio.create_task(_periodic())
+    try:
+        yield
+    finally:
+        loop_task.cancel()
+        try:
+            await loop_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(

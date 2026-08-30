@@ -44,6 +44,7 @@ class AgentTaskSummary(SessionSummary):
 class ExecutionCreate(BaseModel):
     direction: str = Field(min_length=1, max_length=32000)
     turn_id: str | None = Field(default=None, max_length=64)
+    kind: str | None = Field(default=None, max_length=32)
 
 
 class SteerRequest(BaseModel):
@@ -69,6 +70,13 @@ def _task_or_404(conn: sqlite3.Connection, task_id: str) -> dict[str, Any]:
 
 @router.get("", response_model=list[AgentTaskSummary])
 def list_agent_tasks(q: str | None = None, conn: sqlite3.Connection = Depends(get_conn)):
+    # App-open catch-up: due revisits submit through the ONE runtime path.
+    # Cheap when nothing is due; AgentUnavailable skips rather than failing the list.
+    try:
+        from ..task_runtime import revisit as revisit_mod
+        revisit_mod.tick(conn=conn)
+    except Exception:
+        pass
     rows = sessions_repo.search(conn, q) if q else sessions_repo.list_all(conn)
     ids = [row["id"] for row in rows]
     decisions = store.pending_decision_tasks(conn, ids)
@@ -146,7 +154,11 @@ def create_execution(task_id: str, body: ExecutionCreate,
     if existing is not None:
         return {"execution": existing, "created": False}
     try:
-        execution = runtime.submit(conn, task_id, body.direction, body.turn_id)
+        kind = (body.kind or "direction").strip().lower()
+        if kind not in ("direction", "verify", "revisit"):
+            kind = "direction"
+        execution = runtime.submit(conn, task_id, body.direction, body.turn_id,
+                                   kind=kind)
     except AgentUnavailable as exc:
         raise HTTPException(status_code=422, detail=redact_text(str(exc)))
     return {"execution": execution, "created": True}
@@ -321,3 +333,61 @@ def get_task_context(task_id: str, conn: sqlite3.Connection = Depends(get_conn))
         if latest is None:  # pragma: no cover — refresh always writes v1
             raise HTTPException(status_code=500, detail=f"context snapshot failed (v{version})")
     return latest
+
+
+class RevisitScheduleIn(BaseModel):
+    interval_days: int = Field(ge=1, le=365)
+    enabled: bool = True
+
+
+@router.get("/{task_id}/remediation-plans")
+def list_remediation_plans(task_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+    _task_or_404(conn, task_id)
+    from ..analysis import remediation as plan_mod
+    return {"task_id": task_id, "plans": plan_mod.list_plans(conn, task_id)}
+
+
+@router.get("/{task_id}/baselines")
+def list_baselines(task_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+    _task_or_404(conn, task_id)
+    from ..analysis import baseline as baseline_mod
+    return {"task_id": task_id, "baselines": baseline_mod.list_baselines(conn, task_id)}
+
+
+@router.get("/{task_id}/revisit")
+def get_revisit(task_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+    _task_or_404(conn, task_id)
+    from ..task_runtime import revisit as revisit_mod
+    return {"task_id": task_id, "schedule": revisit_mod.get_schedule(conn, task_id)}
+
+
+@router.put("/{task_id}/revisit")
+def put_revisit(task_id: str, body: RevisitScheduleIn,
+                conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+    _task_or_404(conn, task_id)
+    from ..task_runtime import revisit as revisit_mod
+    row = revisit_mod.set_schedule(
+        conn, task_id, interval_days=body.interval_days, enabled=body.enabled)
+    return {"task_id": task_id, "schedule": row}
+
+
+@router.post("/{task_id}/verify", status_code=status.HTTP_201_CREATED)
+def verify_plan(task_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+    """Submit a Verify Execution through the ONE runtime submit path."""
+    _task_or_404(conn, task_id)
+    from ..analysis import remediation as plan_mod
+    from ..task_runtime import revisit as revisit_mod
+    if plan_mod.latest(conn, task_id) is None:
+        raise HTTPException(status_code=404, detail="no remediation plan on this task")
+    direction = (
+        "[verify] Re-probe the configuration items in the current remediation "
+        "plan with read-only tools. Diff each recommended action against live "
+        "state via verify_remediation_plan. Record applied / not_applied / "
+        "partial / cannot_verify. Do not mutate storage and do not resolve "
+        "Decisions yourself."
+    )
+    try:
+        execution = runtime.submit(conn, task_id, direction, kind=revisit_mod.VERIFY_KIND)
+    except AgentUnavailable as exc:
+        raise HTTPException(status_code=422, detail=redact_text(str(exc)))
+    return {"execution": execution, "created": True}

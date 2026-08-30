@@ -1,6 +1,6 @@
 # Sidecar API
 
-> **Storage Agent v0.95.0 API reference.**
+> **Storage Agent v0.96.0 API reference.**
 >
 > The public product model is Agent Task / Direction / Execution / Decision / Work Result / Artifact. Many HTTP paths intentionally retain historical `session`/`run` compatibility names. Do not mirror those path names into new product information architecture.
 
@@ -62,6 +62,7 @@ GET  /agent-tasks/{task_id}/executions/{execution_id}
 GET  /agent-tasks/{task_id}/executions/{execution_id}/events   (SSE)
 POST /agent-tasks/{task_id}/executions/{execution_id}/stop
 POST /agent-tasks/{task_id}/executions/{execution_id}/resume
+POST /agent-tasks/{task_id}/verify
 POST /agent-tasks/{task_id}/steer
 GET  /agent-tasks/{task_id}/events
 GET  /agent-tasks/{task_id}/decisions
@@ -69,10 +70,16 @@ POST /agent-tasks/{task_id}/decisions/{decision_id}/resolve
 GET  /agent-tasks/{task_id}/work-results
 GET  /agent-tasks/{task_id}/artifacts
 GET  /agent-tasks/{task_id}/context
+GET  /agent-tasks/{task_id}/remediation-plans
+GET  /agent-tasks/{task_id}/baselines
+GET  /agent-tasks/{task_id}/revisit
+PUT  /agent-tasks/{task_id}/revisit
 ```
 
 - `state` returns everything a client needs to (re)attach after reload, task switch, or Sidecar restart: durable status, active execution + last event sequence, `queued_executions`, `pending_decisions` (each with projected `impact`), context version.
-- `POST executions` delegates a Direction. Idempotent on `(task, turn_id)` via a unique index — a duplicate submit attaches (`created: false`) instead of re-running. A submission while another execution runs is QUEUED durably and runs after it.
+- `POST executions` delegates a Direction. Optional `kind` is `direction` (default), `verify`, or `revisit`. Idempotent on `(task, turn_id)` via a unique index — a duplicate submit attaches (`created: false`) instead of re-running. A submission while another execution runs is QUEUED durably and runs after it.
+- `POST .../verify` submits a Verify Execution through that same path when a Remediation Plan exists (`kind=verify`). 404 when the Task has no plan.
+- `GET/PUT .../revisit` reads or sets the optional per-task revisit interval. Due revisits are submitted by startup/periodic maintenance (and app-open task-list catch-up) via `runtime.submit(kind=revisit)`, never a second runner. Catch-up Directions are labelled. Confirmation-gated work stays pending.
 - The `events` SSE streams the execution's append-only structured event log; every durable frame carries `id: <seq>` and the stream resumes from `?after=<seq>`. Frame vocabulary: `execution.status`, `tool.started`, `tool.completed`, `steer.received`, `steer.applied`, `decision.opened`, `decision.resolved`, `work_result.recorded`, `artifact.recorded`, `context.updated`, `execution.events_truncated`, transient `delta`, terminal `end`. Frontend recovery is this sequence reconnect only.
 - `steer` acts ON the current execution: the text is injected into the running model loop at its next tool boundary; a steer the loop could no longer take is carried into an automatic follow-up execution. 409 when nothing is executing.
 - `stop` cancels durably; the partial Work Result persists with `stopped: true`.
@@ -315,6 +322,14 @@ Supported storage-error triage is deterministic and can operate without a config
 Prefix: `/settings`
 
 Current settings API includes secret-vault health/status endpoints as implemented by the router. It never returns vault plaintext.
+
+```text
+GET  /settings/secret-vault
+GET  /settings/price-table
+PUT  /settings/price-table
+```
+
+The price table is ordinary local configuration used by the cost simulator: per-storage-class GB-month rates plus request/retrieval rates. It ships as an example schedule labelled “calibrate against your bill”. Dollar simulation remains a gap until `confirmed` is true. The table is not a secret store and must never contain credentials.
 
 There is no product autonomy toggle: read-only Agent investigation is the default capability model, while confirmation-gated operations stop at explicit Decisions.
 
