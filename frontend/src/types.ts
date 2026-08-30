@@ -372,7 +372,7 @@ export interface TurnResult {
   /** True when the turn was cancelled and a partial answer was persisted. */
   stopped?: boolean;
   /** What the turn cost (v0.45.0). Absent on the blocking fallback path. */
-  metrics?: TurnMetrics;
+  metrics?: ExecutionMetrics;
 }
 
 export interface SessionMessage {
@@ -505,7 +505,7 @@ export interface TokenUsage {
 }
 
 /** Live per-turn metrics from the SSE `done` event. */
-export interface TurnMetrics extends TokenUsage {
+export interface ExecutionMetrics extends TokenUsage {
   duration_ms?: number | null;
   tool_calls?: number | null;
   model?: string | null;

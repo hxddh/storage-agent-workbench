@@ -32,7 +32,7 @@ const BUCKETS = {
   "acme-backups": ["db/full-2026-06-01.dump"],
 };
 
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 
 async function boot(page: Page) {
   await page.addInitScript(() => {

@@ -1,0 +1,67 @@
+/* Live Agent execution affordances with one task-native runtime state. */
+.agent-execution-strip {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--edge) 70%, transparent);
+  background: color-mix(in srgb, var(--warn-bg) 28%, var(--canvas));
+  color: var(--gray-500);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.agent-execution-pulse {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--warn);
+  animation: agent-runtime-pulse 1.5s ease-in-out infinite;
+}
+
+.agent-execution-strip strong {
+  flex: none;
+  color: var(--gray-200);
+  font-weight: 600;
+}
+
+.agent-execution-current {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--gray-400);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  text-overflow: ellipsis;
+}
+
+.agent-execution-count {
+  flex: none;
+  border-left: 1px solid var(--edge);
+  padding-left: 8px;
+  color: var(--gray-500);
+}
+
+.agent-execution-steer-hint {
+  margin-left: auto;
+  flex: none;
+  color: var(--gray-500);
+}
+
+.agent-native-composer[data-agent-state="working"] {
+  border-color: color-mix(in srgb, var(--warn) 32%, var(--edge));
+  background: color-mix(in srgb, var(--panel) 96%, var(--warn-bg));
+}
+
+@keyframes agent-runtime-pulse {
+  0%, 100% { opacity: .45; transform: scale(.82); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 860px) {
+  .agent-execution-steer-hint { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-execution-pulse { animation: none; }
+}

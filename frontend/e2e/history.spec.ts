@@ -18,7 +18,7 @@ import { seedSession } from "./seed";
  *    the per-message actions.
  */
 
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 /** The conversation itself — never the session rail, which repeats titles. */
 const thread = (page: Page) => page.locator("main");
 
@@ -139,7 +139,7 @@ test.describe("a long conversation", () => {
 
   test("the newest answer keeps its turn footer", async ({ page }) => {
     await openSeeded(page, 12);
-    await expect(page.getByTestId("turn-footer-toggle").last()).toBeVisible();
+    await expect(page.getByTestId("execution-summary-toggle").last()).toBeVisible();
   });
 
   test("a user message keeps copy / edit / branch", async ({ page }) => {
@@ -149,8 +149,8 @@ test.describe("a long conversation", () => {
     await last.scrollIntoViewIfNeeded();
     await last.hover();
 
-    await expect(page.getByTestId("edit-message").last()).toBeVisible();
-    await expect(page.getByTestId("branch-message").last()).toBeVisible();
+    await expect(page.getByTestId("redirect-direction").last()).toBeVisible();
+    await expect(page.getByTestId("branch-task").last()).toBeVisible();
     await expect(thread(page).getByRole("button", { name: /copy/i }).last()).toBeVisible();
   });
 });

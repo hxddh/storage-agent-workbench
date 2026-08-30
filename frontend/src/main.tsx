@@ -6,15 +6,14 @@ import { I18nProvider } from "./i18n";
 import { ThemeProvider, applyTheme, initialTheme } from "./theme";
 import { ToastProvider } from "./components/Toast";
 import "./index.css";
-import "./answer-document.css";
-import "./workspace-overhaul.css";
-import "./run-workspace.css";
-import "./workbench/workbench.css";
-import "./workbench/steering.css";
-import "./workbench/answer-artifact.css";
-import "./workbench/workbench-accessibility.css";
+import "./work-result.css";
+import "./agent-task.css";
+import "./execution-review.css";
+import "./agent/agent-shell.css";
+import "./agent/agent-state.css";
+import "./agent/command-center.css";
+import "./agent/agent-runtime.css";
 
-// Apply the saved theme before first paint to avoid a flash.
 applyTheme(initialTheme());
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
