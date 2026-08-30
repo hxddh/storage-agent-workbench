@@ -103,8 +103,8 @@ export function AccountProfilePanel({
           <button
             key={f.value}
             onClick={() => setFilter(f.value)}
-            className={`rounded-full border px-2 py-0.5 text-2xs ${
-              filter === f.value ? "border-violet-700 text-violet-300" : "border-edge text-gray-400 hover:text-gray-200"
+            className={`rounded-full border px-2 py-0.5 text-2xs transition-colors ${
+              filter === f.value ? "border-accent/50 bg-accent/12 text-accent-soft" : "border-edge text-gray-400 hover:text-gray-200"
             }`}
           >
             {t(f.labelKey)}

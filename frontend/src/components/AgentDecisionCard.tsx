@@ -100,25 +100,46 @@ export function AgentNextAction({
             {zh ? "Decision required · 需要你的决定" : "Decision required"}
           </div>
           <div className="mt-1 text-sm font-medium text-gray-100">{label}</div>
-          {why ? <p className="mt-1 text-xs leading-relaxed text-gray-400">{why}</p> : null}
+          {why ? <p className="mt-1.5 text-sm leading-relaxed text-gray-300">{why}</p> : null}
           {bounds ? (
-            <dl data-testid="decision-impact" className="mt-2 grid gap-1 text-2xs text-gray-400">
+            <dl data-testid="decision-impact" className="mt-3 grid gap-2 rounded-lg border border-warn-border/60 bg-canvas/30 px-3 py-2.5 text-xs text-gray-400">
               {bounds.gate === "cloud_download" ? (
-                <div>{zh ? "确认后将按计划下载对象到本机；未确认不会移动数据。" : "Confirmation opens a bounded download plan. Nothing moves until you confirm."}</div>
+                <div>
+                  <dt className="text-2xs font-semibold uppercase tracking-[0.08em] text-gray-500">{zh ? "影响" : "Impact"}</dt>
+                  <dd className="mt-0.5">{zh ? "确认后将按计划下载对象到本机；未确认不会移动数据。" : "Confirmation opens a bounded download plan. Nothing moves until you confirm."}</dd>
+                </div>
               ) : bounds.gate === "artifact_write" ? (
-                <div>{zh ? "确认后写入一份已脱敏的 Report 工件。" : "Confirmation writes a sanitized Report artifact."}</div>
+                <div>
+                  <dt className="text-2xs font-semibold uppercase tracking-[0.08em] text-gray-500">{zh ? "影响" : "Impact"}</dt>
+                  <dd className="mt-0.5">{zh ? "确认后写入一份已脱敏的报告。" : "Confirmation writes a sanitized report artifact."}</dd>
+                </div>
               ) : null}
-              {bounds.bucket ? <div>{zh ? "范围" : "Scope"}: {bounds.bucket}{bounds.prefix ? ` / ${bounds.prefix}` : ""}{bounds.source_type ? ` · ${bounds.source_type}` : ""}</div> : null}
-              {bounds.scan_scope && !bounds.bucket ? <div>{zh ? "扫描" : "Scan"}: {bounds.scan_scope}</div> : null}
-              {movement ? <div data-testid="decision-movement">{zh ? "预计移动" : "Will move"}: {movement}</div> : null}
+              {bounds.bucket ? (
+                <div>
+                  <dt className="text-2xs font-semibold uppercase tracking-[0.08em] text-gray-500">{zh ? "范围" : "Scope"}</dt>
+                  <dd className="mt-0.5 font-mono text-2xs text-gray-300">{bounds.bucket}{bounds.prefix ? ` / ${bounds.prefix}` : ""}{bounds.source_type ? ` · ${bounds.source_type}` : ""}</dd>
+                </div>
+              ) : null}
+              {bounds.scan_scope && !bounds.bucket ? (
+                <div>
+                  <dt className="text-2xs font-semibold uppercase tracking-[0.08em] text-gray-500">{zh ? "扫描" : "Scan"}</dt>
+                  <dd className="mt-0.5">{bounds.scan_scope}</dd>
+                </div>
+              ) : null}
+              {movement ? (
+                <div data-testid="decision-movement">
+                  <dt className="text-2xs font-semibold uppercase tracking-[0.08em] text-gray-500">{zh ? "预计移动" : "Will move"}</dt>
+                  <dd className="mt-0.5 tabular-nums">{movement}</dd>
+                </div>
+              ) : null}
             </dl>
           ) : null}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="mt-3.5 flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => onRun(action)}
               data-testid="agent-approve-action"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg transition-colors hover:bg-accent-soft"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg transition-[background-color,transform] duration-fast hover:bg-accent-soft active:scale-[.98]"
             >
               {zh ? "审阅并继续" : "Review & continue"}
               <ArrowIcon />
@@ -128,7 +149,7 @@ export function AgentNextAction({
                 type="button"
                 onClick={() => onDecline(action)}
                 data-testid="agent-decline-action"
-                className="inline-flex h-8 items-center rounded-lg border border-edge px-3 text-xs text-gray-300 transition-colors hover:border-edge-strong hover:text-gray-100"
+                className="inline-flex h-8 items-center rounded-lg border border-edge px-3 text-xs text-gray-300 transition-[border-color,color,transform] duration-fast hover:border-edge-strong hover:text-gray-100 active:scale-[.98]"
               >
                 {zh ? "拒绝" : "Decline"}
               </button>

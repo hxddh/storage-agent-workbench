@@ -3,6 +3,7 @@ import { useSessionRun } from "../sessionRuns";
 import { publishAgentCommands } from "./commands";
 import { AgentReviewPanel } from "./AgentReviewPanel";
 import { useAgentCopy } from "./agentCopy";
+import { MOD } from "../shortcuts";
 import type { ReviewSurface } from "./model";
 import type { AgentTaskSummary } from "./navigationModel";
 import { agentTaskState } from "./taskState";
@@ -116,7 +117,7 @@ export function AgentShell({
               </button>
             ) : null}
             <ConnectionMark status={sidecarStatus} />
-            <button type="button" className="agent-native-command" onClick={onOpenPalette} title={copy.commandPalette}><span>{copy.command}</span><kbd>⌘K</kbd></button>
+            <button type="button" className="agent-native-command" onClick={onOpenPalette} title={`${copy.commandPalette} ${MOD}K`}><span>{copy.command}</span><kbd>{MOD}K</kbd></button>
             <button type="button" className="agent-native-icon" onClick={onOpenSettings} aria-label={copy.settings} title={copy.settings}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
                 <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21h-4v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H3v-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3h4a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9A1.7 1.7 0 0 0 21 10h.1v4H21a1.7 1.7 0 0 0-1.6 1Z" />

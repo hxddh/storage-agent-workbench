@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentTaskSummary } from "../agent/navigationModel";
+import { openAgentReview } from "../agent/commands";
+import { getPaletteActions } from "../agent/paletteActions";
 import { useI18n } from "../i18n";
+import { useTheme } from "../theme";
+import { MOD } from "../shortcuts";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
+import type { ReviewSurface } from "../agent/model";
 
 type Cmd = { id: string; label: string; hint?: string; icon: React.ReactNode; run: () => void };
 
@@ -12,7 +17,7 @@ const I = (d: string) => (
   </svg>
 );
 
-/** ⌘K is the Agent command center: create a task, switch tasks, or configure runtime. */
+/** ⌘K is the Agent command overlay: switch tasks or run a real runtime action. */
 export function CommandPalette({
   open,
   onClose,
@@ -28,10 +33,47 @@ export function CommandPalette({
   onNew: () => void;
   onOpenSettings: () => void;
 }) {
-  const { lang, t } = useI18n();
+  const { lang, setLang, t } = useI18n();
+  const { theme, toggle } = useTheme();
   const copy = lang === "zh"
-    ? { placeholder: "搜索 Agent Tasks 或运行命令…", newTask: "新建 Agent Task", settings: "打开设置", task: "Task", empty: "没有匹配的 Task 或命令。" }
-    : { placeholder: "Search Agent tasks or run a command…", newTask: "New Agent task", settings: "Open settings", task: "Task", empty: "No matching tasks or commands." };
+    ? {
+        placeholder: "搜索任务或运行命令…",
+        newTask: "新建任务",
+        settings: "打开设置",
+        task: "任务",
+        empty: "没有匹配的任务或命令。",
+        stop: "停止当前执行",
+        resume: "恢复中断的执行",
+        steer: "Steer 当前执行",
+        focus: "聚焦 Composer",
+        reviewOverview: "打开 Review · 总览",
+        reviewEvidence: "打开 Review · Evidence",
+        reviewExecution: "打开 Review · Execution",
+        reviewReport: "打开 Review · Report",
+        themeLight: "切换到亮色主题",
+        themeDark: "切换到暗色主题",
+        langEn: "Switch to English",
+        langZh: "切换到中文",
+      }
+    : {
+        placeholder: "Search tasks or run a command…",
+        newTask: "New Agent task",
+        settings: "Open settings",
+        task: "Task",
+        empty: "No matching tasks or commands.",
+        stop: "Stop current execution",
+        resume: "Resume interrupted execution",
+        steer: "Steer current execution",
+        focus: "Focus composer",
+        reviewOverview: "Open Review · Overview",
+        reviewEvidence: "Open Review · Evidence",
+        reviewExecution: "Open Review · Execution",
+        reviewReport: "Open Review · Report",
+        themeLight: "Switch to light theme",
+        themeDark: "Switch to dark theme",
+        langEn: "Switch to English",
+        langZh: "切换到中文",
+      };
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -47,10 +89,62 @@ export function CommandPalette({
   }, [open]);
 
   const items = useMemo<Cmd[]>(() => {
+    const live = getPaletteActions();
+    const openReview = (surface: ReviewSurface) => {
+      if (!live.hasTask) return;
+      openAgentReview(surface);
+      onClose();
+    };
     const actions: Cmd[] = [
-      { id: "new", label: copy.newTask, hint: "⌘N", icon: I("M12 5v14|M5 12h14"), run: () => { onNew(); onClose(); } },
+      { id: "new", label: copy.newTask, hint: `${MOD}N`, icon: I("M12 5v14|M5 12h14"), run: () => { onNew(); onClose(); } },
+      { id: "focus", label: copy.focus, hint: `${MOD}L`, icon: I("M4 5h16v14H4z|M8 9h8"), run: () => { live.focusComposer?.(); onClose(); } },
       { id: "settings", label: copy.settings, icon: I("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z|M3 12h2|M19 12h2|M12 3v2|M12 19v2"), run: () => { onOpenSettings(); onClose(); } },
     ];
+    if (live.busy) {
+      actions.splice(2, 0, {
+        id: "stop",
+        label: copy.stop,
+        hint: `${MOD}.`,
+        icon: I("M6 6h12v12H6z"),
+        run: () => { live.stop?.(); onClose(); },
+      }, {
+        id: "steer",
+        label: copy.steer,
+        hint: `${MOD}L`,
+        icon: I("M5 12h14|M13 6l6 6-6 6"),
+        run: () => { live.focusComposer?.(); onClose(); },
+      });
+    }
+    if (live.canResume) {
+      actions.splice(2, 0, {
+        id: "resume",
+        label: copy.resume,
+        icon: I("M8 5v14l11-7z"),
+        run: () => { live.resume?.(); onClose(); },
+      });
+    }
+    if (live.hasTask) {
+      actions.push(
+        { id: "review-overview", label: copy.reviewOverview, hint: `${MOD}I`, icon: I("M4 5h16M4 12h16M4 19h10"), run: () => openReview("overview") },
+        { id: "review-evidence", label: copy.reviewEvidence, icon: I("M14 2H6a2 2 0 0 0-2 2v16h16V8z"), run: () => openReview("evidence") },
+        { id: "review-execution", label: copy.reviewExecution, icon: I("M4 6h16M4 12h10M4 18h7"), run: () => openReview("execution") },
+        { id: "review-report", label: copy.reviewReport, icon: I("M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"), run: () => openReview("report") },
+      );
+    }
+    actions.push(
+      {
+        id: "theme",
+        label: theme === "dark" ? copy.themeLight : copy.themeDark,
+        icon: I("M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"),
+        run: () => { toggle(); onClose(); },
+      },
+      {
+        id: "lang",
+        label: lang === "zh" ? copy.langEn : copy.langZh,
+        icon: I("M4 7h16M4 17h16M9 7c1 4 3 7 6 10"),
+        run: () => { setLang(lang === "zh" ? "en" : "zh"); onClose(); },
+      },
+    );
     const taskItems: Cmd[] = tasks.map((task) => ({
       id: `task:${task.id}`,
       label: task.title || t("common.untitled"),
@@ -61,7 +155,7 @@ export function CommandPalette({
     const all = [...actions, ...taskItems];
     const query = q.trim().toLowerCase();
     return query ? all.filter((command) => command.label.toLowerCase().includes(query)) : all;
-  }, [q, tasks, onNew, onOpenSettings, onSelectTask, onClose, t, copy.newTask, copy.settings, copy.task]);
+  }, [q, tasks, onNew, onOpenSettings, onSelectTask, onClose, t, copy, theme, toggle, lang, setLang]);
 
   useEffect(() => {
     if (sel >= items.length) setSel(Math.max(0, items.length - 1));
@@ -83,6 +177,7 @@ export function CommandPalette({
         role="dialog"
         aria-modal="true"
         aria-label={copy.placeholder}
+        data-testid="command-palette"
         className="w-[min(560px,92vw)] overflow-hidden rounded-2xl border border-edge bg-panel shadow-pop animate-scale-in"
         onClick={(event) => event.stopPropagation()}
       >
@@ -96,6 +191,7 @@ export function CommandPalette({
             placeholder={copy.placeholder}
             className="w-full bg-transparent py-3.5 text-base text-gray-100 placeholder:text-gray-500 focus:outline-none"
           />
+          <kbd className="shrink-0 rounded-md border border-edge bg-elevated px-1.5 py-0.5 text-2xs text-gray-500">{MOD}K</kbd>
         </div>
         <div className="max-h-[52vh] overflow-auto p-1.5">
           {items.length === 0 ? <div className="px-3 py-6 text-center text-sm text-gray-500">{copy.empty}</div> : null}
@@ -108,7 +204,7 @@ export function CommandPalette({
             >
               <span className={index === sel ? "text-accent-soft" : "text-gray-500"}>{command.icon}</span>
               <span className="min-w-0 flex-1 truncate text-sm text-gray-200">{command.label}</span>
-              {command.hint ? <span className="shrink-0 text-2xs text-gray-500">{command.hint}</span> : null}
+              {command.hint ? <span className="shrink-0 font-mono text-2xs text-gray-500">{command.hint}</span> : null}
             </button>
           ))}
         </div>

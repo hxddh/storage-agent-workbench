@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { SessionDetail } from "../types";
 import { Markdown } from "../components/Markdown";
+import { EmptyState } from "../components/EmptyState";
 import { EvidenceActivity } from "./EvidenceActivity";
 import { useAgentCopy } from "./agentCopy";
 
@@ -20,7 +21,7 @@ export function EvidenceReview({
   if (!detail) {
     return (
       <div className="agent-document" data-testid="evidence-review">
-        <EmptyLine>{copy.selectEvidence}</EmptyLine>
+        <EmptyState title={copy.selectEvidence} body={copy.evidence.noFindings} />
       </div>
     );
   }

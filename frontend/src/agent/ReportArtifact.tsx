@@ -84,7 +84,15 @@ export function ReportArtifact({
         </div>
       </header>
 
-      {loading ? <p className="agent-empty-line">{copy.report.preparing}</p> : null}
+      {loading ? (
+        <div className="space-y-2.5" aria-busy="true" aria-label={copy.report.preparing}>
+          <p className="sr-only">{copy.report.preparing}</p>
+          <span className="skeleton h-4 w-3/4" />
+          <span className="skeleton h-4 w-full" />
+          <span className="skeleton h-4 w-2/3" />
+          <span className="skeleton h-4 w-1/2" />
+        </div>
+      ) : null}
       {!loading && error ? <p className="agent-surface-error">{error}</p> : null}
       {!loading && !error && report ? (
         <div className="agent-report-body">

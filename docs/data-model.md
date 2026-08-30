@@ -1,6 +1,6 @@
 # Data model
 
-> **Storage Agent v0.96.0 persistence reference.**
+> **Storage Agent v0.97.0 persistence reference.** Unchanged from v0.96.0; v0.97 is presentation-only.
 >
 > Product vocabulary is Agent Task / Direction / Execution / Decision / Work Result / Artifact. SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
 

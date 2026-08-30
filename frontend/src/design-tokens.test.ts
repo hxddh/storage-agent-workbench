@@ -134,15 +134,25 @@ describe("stacking layers", () => {
 
 describe("motion", () => {
   it("never animates every property at once", () => {
-    // `transition-all` animates width, height, and every colour the element
-    // has — including properties that change for reasons unrelated to the
-    // interaction, which is how a hover ends up animating a layout shift.
-    // v0.58.0 replaced all nine uses with the properties actually animated.
     const offenders: string[] = [];
     for (const { file, text } of ALL) {
       for (const m of text.matchAll(/\btransition-all\b/g)) offenders.push(`${file}: ${m[0]}`);
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("defines motion, type, radius and shadow tokens", () => {
+    const css = readFileSync(join(__dirname, "index.css"), "utf8");
+    for (const token of [
+      "--duration-instant", "--duration-fast", "--duration-base", "--duration-slow",
+      "--ease-out", "--ease-emphasized", "--ease-in-out",
+      "--text-2xs", "--text-prose", "--text-2xl",
+      "--radius-sm", "--radius-3xl",
+      "--control-h", "--header-h",
+      "--shadow-elev", "--shadow-pop", "--shadow-glow",
+    ]) {
+      expect(css, token).toContain(`${token}:`);
+    }
   });
 });
 

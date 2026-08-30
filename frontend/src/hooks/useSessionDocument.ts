@@ -19,6 +19,26 @@ import type {
 } from "../types";
 import { cleanError } from "./useTurnRunner";
 
+/** Instant task switch: keep the last rendered document so the canvas never flashes empty. */
+const DOCUMENT_CACHE_LIMIT = 24;
+type CachedDocument = {
+  detail: SessionDetail;
+  triage: TriageCase[];
+  taskRuntime: TaskState | null;
+  earlier: SessionMessage[];
+};
+const documentCache = new Map<string, CachedDocument>();
+
+function rememberDocument(id: string, doc: CachedDocument) {
+  documentCache.delete(id);
+  documentCache.set(id, doc);
+  while (documentCache.size > DOCUMENT_CACHE_LIMIT) {
+    const oldest = documentCache.keys().next().value;
+    if (oldest) documentCache.delete(oldest);
+    else break;
+  }
+}
+
 export function useSessionDocument({
   sessionId,
   sidecarReady,
@@ -45,14 +65,19 @@ export function useSessionDocument({
 
   const localId = useRef<string | null>(sessionId);
   localId.current = sessionId;
+  // loadedIdRef is a successful getSession for this id. shownIdRef is whatever
+  // document is on screen (including a cache restore) so reload does not wipe
+  // restored earlier messages. Cache restore must not set loadedIdRef or a
+  // failed refresh after revisit would keep a stale document with no error.
   const loadedIdRef = useRef<string | null>(null);
+  const shownIdRef = useRef<string | null>(null);
   const reloadSeqRef = useRef(0);
   const remoteTurnRef = useRef<{ running: boolean; age_ms: number | null } | null>(null);
   remoteTurnRef.current = remoteTurn;
   const recheckedRef = useRef<string | null>(null);
 
   const reload = useCallback(async (id: string | null): Promise<boolean> => {
-    if (id !== loadedIdRef.current) setEarlier([]);
+    if (id !== shownIdRef.current) setEarlier([]);
     if (!id) {
       setDetail(null);
       setTriage([]);
@@ -75,6 +100,7 @@ export function useSessionDocument({
     if (id !== localId.current || seq !== reloadSeqRef.current) return false;
     if (nextDetail) {
       loadedIdRef.current = id;
+      shownIdRef.current = id;
       setDetail(nextDetail);
       setLoadError(null);
       void getSessionOverview(id)
@@ -99,14 +125,29 @@ export function useSessionDocument({
 
   // Session identity, stale-request protection and first load belong to the
   // persisted document layer, not to task composition.
+  // Restore a cached document synchronously so switching tasks never whites out.
   useEffect(() => {
-    if (sessionId !== loadedIdRef.current) {
+    const cached = sessionId ? documentCache.get(sessionId) : undefined;
+    if (cached) {
+      setDetail(cached.detail);
+      setTriage(cached.triage);
+      setTaskRuntime(cached.taskRuntime);
+      setEarlier(cached.earlier);
+      shownIdRef.current = sessionId;
+    } else if (sessionId !== shownIdRef.current) {
       setDetail(null);
       setTriage([]);
+      setEarlier([]);
+      setTaskRuntime(null);
     }
     setLoadError(null);
     void reload(sessionId);
   }, [sessionId, reload]);
+
+  useEffect(() => {
+    if (!sessionId || !detail || detail.id !== sessionId) return;
+    rememberDocument(sessionId, { detail, triage, taskRuntime, earlier });
+  }, [sessionId, detail, triage, taskRuntime, earlier]);
 
   useEffect(() => {
     if (reloadKey && sessionId) void reload(sessionId);

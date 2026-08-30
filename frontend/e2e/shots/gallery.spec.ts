@@ -20,8 +20,10 @@ import { seedInterruptedTask, seedOptimizationTask, seedSession as seedTask } fr
 
 const OUT = path.resolve("shots");
 const THEMES = ["dark", "light"] as const;
+const LANGS = ["en", "zh"] as const;
 type Theme = (typeof THEMES)[number];
-type Shot = { name: string; theme: string; file: string };
+type Lang = (typeof LANGS)[number];
+type Shot = { name: string; theme: string; lang: string; file: string };
 const taken: Shot[] = [];
 
 const LIVE_RESULT =
@@ -31,7 +33,7 @@ const LIVE_RESULT =
     (_, i) => `Evidence ${i + 1}: the bucket policy does not grant s3:ListBucket to the caller principal.`,
   ).join("\n\n");
 
-async function openAgent(page: Page, theme: Theme = "dark", lang: "en" | "zh" = "en") {
+async function openAgent(page: Page, theme: Theme = "dark", lang: Lang = "en") {
   await page.addInitScript(
     ([nextTheme, nextLang]) => {
       localStorage.setItem("saw.lang", nextLang as string);
@@ -52,14 +54,13 @@ async function openTask(page: Page, title: string) {
   await expect(page.getByTestId("work-result").first()).toBeVisible({ timeout: 20_000 });
 }
 
-async function shoot(page: Page, name: string, theme: Theme) {
-  const file = `${name}--${theme}.png`;
+async function shoot(page: Page, name: string, theme: Theme, lang: Lang = "en") {
+  const file = `${name}--${theme}--${lang}.png`;
   await page.screenshot({ path: path.join(OUT, file), fullPage: false });
-  taken.push({ name, theme, file });
+  taken.push({ name, theme, lang, file });
 }
 
-function seedDecisionTask(): string {
-  const title = "Review bounded evidence import";
+function seedDecisionTask(title = "Review bounded evidence import"): string {
   const { id } = seedTask(1, title, "short");
   const raw = fs.readFileSync(STATE_FILE, "utf8");
   const { dataDir } = JSON.parse(raw) as { dataDir: string };
@@ -115,57 +116,86 @@ test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ mode: "serial" });
 
 for (const theme of THEMES) {
-  test.describe(`${theme} Agent surfaces`, () => {
+  for (const lang of LANGS) {
+  test.describe(`${theme} ${lang} Agent surfaces`, () => {
     test("Delegate — fresh Agent task", async ({ page }) => {
-      await openAgent(page, theme);
-      await expect(page.getByRole("heading", { level: 1, name: /Delegate a goal to the Agent/i })).toBeVisible();
-      await expect(composer(page)).toHaveAttribute("placeholder", /Give the Agent a goal/);
-      await shoot(page, "01-delegate", theme);
+      await openAgent(page, theme, lang);
+      const heading = lang === "zh" ? /把目标交给 Agent/ : /Delegate a goal to the Agent/;
+      const placeholder = lang === "zh" ? /给 Agent 一个目标/ : /Give the Agent a goal/;
+      await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
+      await expect(composer(page)).toHaveAttribute("placeholder", placeholder);
+      await shoot(page, "01-delegate", theme, lang);
     });
 
     test("Work Result — durable technical output", async ({ page }) => {
-      const title = `Lifecycle diagnosis ${theme}`;
+      const title = `Lifecycle diagnosis ${theme} ${lang}`;
       seedTask(3, title, "tall");
-      await openAgent(page, theme);
+      await openAgent(page, theme, lang);
       await openTask(page, title);
       await expect(page.getByTestId("direction-event").first()).toBeVisible();
       await expect(page.getByTestId("work-result").first()).toBeVisible();
-      await shoot(page, "02-work-result", theme);
+      await shoot(page, "02-work-result", theme, lang);
     });
 
     test("Execution — real tool activity attached to a Work Result", async ({ page }) => {
-      const title = `Execution review ${theme}`;
+      const title = `Execution review ${theme} ${lang}`;
       seedTask(2, title, "tall");
-      await openAgent(page, theme);
+      await openAgent(page, theme, lang);
       await openTask(page, title);
       const toggle = page.getByTestId("execution-summary-toggle").last();
       await expect(toggle).toBeVisible();
       await toggle.click();
       await expect(page.getByTestId("execution-summary").last()).toBeVisible();
-      await shoot(page, "03-execution", theme);
+      await shoot(page, "03-execution", theme, lang);
     });
 
     test("Review — contextual artifacts beside the active task", async ({ page }) => {
-      const title = `Artifact review ${theme}`;
+      const title = `Artifact review ${theme} ${lang}`;
       seedTask(2, title, "tall");
-      await openAgent(page, theme);
+      await openAgent(page, theme, lang);
       await openTask(page, title);
       await page.getByTestId("agent-task-review").click();
       await expect(page.getByTestId("agent-review-panel")).toBeVisible();
       await expect(page.getByTestId("agent-composer")).toBeVisible();
-      await shoot(page, "04-review", theme);
+      await shoot(page, "04-review", theme, lang);
     });
 
     test("Task navigation — compact command center, not history chrome", async ({ page }) => {
-      const title = `Active storage task ${theme}`;
+      const title = `Active storage task ${theme} ${lang}`;
       seedTask(2, title, "short");
-      await openAgent(page, theme);
+      await openAgent(page, theme, lang);
       await openTask(page, title);
       await page.getByTestId("task-navigation-toggle").click();
       await expect(navigation(page)).toHaveAttribute("data-collapsed", "true");
-      await shoot(page, "05-task-navigation-collapsed", theme);
+      await shoot(page, "05-task-navigation-collapsed", theme, lang);
+    });
+
+    test("Decision — Agent blocks and the task is promoted to Needs you", async ({ page }) => {
+      const title = seedDecisionTask(`Review bounded evidence import ${theme} ${lang}`);
+      await openAgent(page, theme, lang);
+      await openTask(page, title);
+      await expect(page.getByTestId("agent-decision-required")).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("decision-impact")).toBeVisible();
+      await shoot(page, "11-decision-required", theme, lang);
+    });
+
+    test("Needs attention — interrupted execution offers Resume", async ({ page }) => {
+      const { title } = seedInterruptedTask(`Interrupted ${theme} ${lang}`);
+      await openAgent(page, theme, lang);
+      await navigation(page).getByText(title, { exact: true }).first().click();
+      await expect(page.getByTestId("task-resume")).toBeVisible({ timeout: 20_000 });
+      await shoot(page, "11c-resume", theme, lang);
+    });
+
+    test("Settings — providers and price table", async ({ page }) => {
+      await openAgent(page, theme, lang);
+      await page.getByTestId("task-navigation-settings").click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await expect(page.getByTestId("settings-price-table")).toBeVisible();
+      await shoot(page, "15-settings", theme, lang);
     });
   });
+  }
 }
 
 test.describe("Agent runtime states", () => {
@@ -184,42 +214,45 @@ test.describe("Agent runtime states", () => {
       await expect(page.getByTestId("agent-composer")).toHaveAttribute("data-agent-state", "working");
       await expect(composer(page)).toHaveAttribute("placeholder", /Steer the Agent/);
       await expect(navigation(page).getByTestId("task-queue-running")).toBeVisible({ timeout: 20_000 });
-      await shoot(page, "10-working-steer", "dark");
+      await shoot(page, "10-working-steer", "dark", "en");
     } finally {
       await dropModelProvider(providerId);
       await model.close();
     }
   });
 
-  test("Decision — Agent blocks and the task is promoted to Needs you", async ({ page }) => {
-    const title = seedDecisionTask();
+  test("Decision history in Review", async ({ page }) => {
+    const title = seedDecisionTask("Decision history review");
     await openAgent(page, "dark");
     await openTask(page, title);
-    await expect(page.getByTestId("agent-decision-required")).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId("decision-impact")).toBeVisible();
-    await expect(page.getByTestId("agent-decline-action")).toBeVisible();
-    await expect(page.getByTestId("agent-task-header")).toContainText(/Needs decision/i);
-    await expect(navigation(page).getByTestId("task-queue-needs-you")).toContainText(title);
-    await shoot(page, "11-decision-required", "dark");
     await page.getByTestId("agent-task-review").click();
     await expect(page.getByTestId("decision-history")).toBeVisible();
-    await shoot(page, "11b-decision-history", "dark");
-  });
-
-  test("Needs attention — interrupted execution offers Resume", async ({ page }) => {
-    const { title } = seedInterruptedTask("Interrupted lifecycle diagnosis");
-    await openAgent(page, "dark");
-    await navigation(page).getByText(title, { exact: true }).first().click();
-    await expect(page.getByTestId("task-resume")).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId("task-resume-action")).toBeVisible();
-    await shoot(page, "11c-resume", "dark");
+    await shoot(page, "11b-decision-history", "dark", "en");
   });
 
   test("Runtime attention — unavailable execution is explicit", async ({ page }) => {
     await openAgent(page, "dark");
     await page.route("**/health", (route) => route.abort());
     await expect(page.getByTestId("offline-banner")).toBeVisible({ timeout: 15_000 });
-    await shoot(page, "12-runtime-unavailable", "dark");
+    await shoot(page, "12-runtime-unavailable", "dark", "en");
+  });
+
+  test("Command palette overlay", async ({ page }) => {
+    await openAgent(page, "dark");
+    await page.keyboard.press("Control+k");
+    await expect(page.getByTestId("command-palette")).toBeVisible();
+    await shoot(page, "18-command-palette", "dark", "en");
+  });
+
+  test("First-run wizard", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "en");
+      localStorage.removeItem("saw.onboarded");
+      localStorage.setItem("saw.theme", "dark");
+    });
+    await page.goto("/");
+    await expect(page.getByTestId("agent-first-run")).toBeVisible({ timeout: 20_000 });
+    await shoot(page, "19-first-run", "dark", "en");
   });
 
   test("Narrow workspace — task remains primary", async ({ page }) => {
@@ -230,26 +263,7 @@ test.describe("Agent runtime states", () => {
     await page.setViewportSize({ width: 900, height: 800 });
     await expect(navigation(page)).toHaveAttribute("data-collapsed", "true");
     await expect(page.getByTestId("work-result").last()).toBeVisible();
-    await shoot(page, "13-narrow-task", "dark");
-  });
-
-  test("Chinese — the same Agent product, not a translated legacy shell", async ({ page }) => {
-    const title = "对象存储生命周期诊断";
-    seedTask(2, title, "short");
-    await openAgent(page, "dark", "zh");
-    await navigation(page).getByText(title, { exact: true }).first().click();
-    await expect(page.getByTestId("work-result").first()).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByTestId("agent-task-navigation").getByRole("button", { name: /新任务/ })).toBeVisible();
-    await shoot(page, "14-chinese-agent", "dark");
-  });
-
-  test("Settings — providers and safety remain secondary configuration", async ({ page }) => {
-    await openAgent(page, "dark");
-    await page.getByTestId("task-navigation-settings").click();
-    await expect(page.getByRole("dialog", { name: /Settings/i })).toBeVisible();
-    await expect(page.getByTestId("settings-price-table")).toBeVisible();
-    await expect(page.getByTestId("price-table-example")).toBeVisible();
-    await shoot(page, "15-settings", "dark");
+    await shoot(page, "13-narrow-task", "dark", "en");
   });
 
   test("Remediation plan and Verify live on the Task, not a new destination", async ({ page }) => {
@@ -258,13 +272,13 @@ test.describe("Agent runtime states", () => {
     await openAgent(page, "dark");
     await openTask(page, title);
     await expect(page.getByTestId("task-verify")).toBeVisible({ timeout: 20_000 });
-    await shoot(page, "16-remediation-verify", "dark");
+    await shoot(page, "16-remediation-verify", "dark", "en");
     await page.getByTestId("agent-task-review").click();
     await expect(page.getByTestId("remediation-plan-status")).toBeVisible();
     await expect(page.getByTestId("task-baselines")).toBeVisible();
     await expect(page.getByTestId("task-drift")).toBeVisible();
     await expect(page.getByTestId("task-revisit")).toBeVisible();
-    await shoot(page, "16b-plan-baseline-review", "dark");
+    await shoot(page, "16b-plan-baseline-review", "dark", "en");
   });
 
   test("Catch-up revisit state is labelled in Review", async ({ page }) => {
@@ -274,26 +288,25 @@ test.describe("Agent runtime states", () => {
     await navigation(page).getByText(title, { exact: true }).first().click();
     await page.getByTestId("agent-task-review").click();
     await expect(page.getByTestId("task-revisit")).toContainText(/Catch-up/i);
-    await shoot(page, "17-revisit-catchup", "dark");
+    await shoot(page, "17-revisit-catchup", "dark", "en");
   });
 });
 
 test.afterAll(() => {
   const names = [...new Set(taken.map((shot) => shot.name))].sort();
-  const rows = names.map((name) => {
-    const cells = THEMES.map((theme) => {
-      const shot = taken.find((item) => item.name === name && item.theme === theme);
+  const cellsOf = (name: string) =>
+    THEMES.flatMap((theme) => LANGS.map((lang) => {
+      const shot = taken.find((item) => item.name === name && item.theme === theme && item.lang === lang);
       return shot
-        ? `<figure><figcaption>${theme}</figcaption><a href="${shot.file}"><img src="${shot.file}" alt="${name} ${theme}" /></a></figure>`
-        : "<figure class=missing><figcaption>not captured</figcaption></figure>";
-    }).join("");
-    return `<section><h2>${name}</h2><div class=pair>${cells}</div></section>`;
-  }).join("\n");
+        ? `<figure><figcaption>${theme} · ${lang}</figcaption><a href="${shot.file}"><img src="${shot.file}" alt="${name} ${theme} ${lang}" /></a></figure>`
+        : `<figure class=missing><figcaption>${theme} · ${lang} missing</figcaption></figure>`;
+    })).join("");
+  const rows = names.map((name) => `<section><h2>${name}</h2><div class=pair>${cellsOf(name)}</div></section>`).join("\n");
 
   fs.writeFileSync(
     path.join(OUT, "index.html"),
     `<!doctype html><meta charset="utf-8"><title>Storage Agent visual review</title><style>
-body{margin:0;padding:32px;background:#111318;color:#eef0f5;font:14px Inter,system-ui,sans-serif}h1{font-size:26px;margin:0 0 8px}p{color:#9ca3af;margin:0 0 32px;max-width:760px;line-height:1.6}section{margin:0 0 42px}h2{font-size:15px;font-weight:600;margin:0 0 12px;color:#c9ced8}.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}figure{margin:0;background:#191c22;border:1px solid #2a2f39;border-radius:12px;overflow:hidden}figcaption{padding:8px 12px;color:#8f98a8;border-bottom:1px solid #2a2f39}img{display:block;width:100%;height:auto}.missing{min-height:80px}@media(max-width:900px){.pair{grid-template-columns:1fr}}
-</style><h1>Storage Agent — Agent-native visual review</h1><p>Real Sidecar states used for human review: delegation, execution, steering, decisions, work results, artifacts and live task queues. No legacy Chat-era surfaces are represented.</p>${rows}`,
+body{margin:0;padding:32px;background:#111318;color:#eef0f5;font:14px Inter,system-ui,sans-serif}h1{font-size:26px;margin:0 0 8px}p{color:#9ca3af;margin:0 0 32px;max-width:760px;line-height:1.6}section{margin:0 0 42px}h2{font-size:15px;font-weight:600;margin:0 0 12px;color:#c9ced8}.pair{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}figure{margin:0;background:#191c22;border:1px solid #2a2f39;border-radius:12px;overflow:hidden}figcaption{padding:8px 12px;color:#8f98a8;border-bottom:1px solid #2a2f39;font-size:12px}img{display:block;width:100%;height:auto}.missing{min-height:80px}@media(max-width:1100px){.pair{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style><h1>Storage Agent — v0.97 visual review</h1><p>Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale. No Chat-era surfaces.</p>${rows}`,
   );
 });

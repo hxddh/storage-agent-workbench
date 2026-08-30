@@ -234,6 +234,15 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(shortcuts).not.toContain('group: "chat"');
     expect(app).toContain('matches(event, "newTask")');
     expect(app).toContain('matches(event, "toggleTaskNavigation")');
+    expect(app).toContain('matches(event, "stop")');
+    expect(app).toContain('matches(event, "focusComposer")');
+    const palette = source("../components/CommandPalette.tsx");
+    expect(palette).toContain('data-testid="command-palette"');
+    expect(palette).toContain("review-overview");
+    expect(palette).toContain("review-evidence");
+    expect(palette).toContain("review-execution");
+    expect(palette).toContain("review-report");
+    expect(palette).not.toContain("New investigation");
   });
 
   it("keeps persisted session/runtime ownership out of the task renderer", () => {
@@ -292,6 +301,34 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(composer).toContain('cmd: "cost"');
     expect(composer).toContain('cmd: "drift"');
     expect(composer).not.toContain('cmd: "optimize"');
+  });
+
+  it("matches a live pending Direction only to the current turn", () => {
+    const task = source("../components/AgentTaskImplementation.tsx");
+    expect(task).toContain("isCurrentPersistedDirection");
+    expect(task).toContain("pendingMatchesPersistedDirection");
+    expect(task).toContain("if (!sessionId || !pending || busy) return");
+    expect(task).not.toContain("pendingAlreadyPersisted");
+    expect(task).toContain("{pending && !hideLiveDirection ?");
+    expect(task).toContain(": busy ? <ThinkingBubble /> : null}");
+  });
+
+  it("does not treat a cached task document as a successful server load", () => {
+    const doc = source("../hooks/useSessionDocument.ts");
+    expect(doc).toContain("shownIdRef");
+    expect(doc).toContain("if (id !== shownIdRef.current) setEarlier([])");
+    expect(doc).toContain("if (failed && loadedIdRef.current !== id)");
+    const restore = doc.slice(doc.indexOf("Restore a cached document"));
+    const restoreBlock = restore.slice(0, restore.indexOf("void reload(sessionId)"));
+    expect(restoreBlock).toContain("shownIdRef.current = sessionId");
+    expect(restoreBlock).not.toContain("loadedIdRef.current = sessionId");
+  });
+
+  it("names price-table rate inputs from the storage-class row header", () => {
+    const settings = source("../components/SettingsDrawer.tsx");
+    expect(settings).toContain('data-testid="settings-price-table"');
+    expect(settings).toContain("aria-labelledby");
+    expect(settings).toContain('scope="row"');
   });
 
   it("presents remediation plans, baselines, drift, and revisit inside existing Review", () => {

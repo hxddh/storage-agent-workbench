@@ -6,6 +6,24 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.97.0] - 2026-08-30
+
+_Presentation craft pass: one design-token system, Codex/Cursor-level desktop Agent chrome, keyboard overlay, designed empty states — no new capabilities, no runtime change, no product-semantic change._
+
+### Changed
+
+- **Design tokens** for color, type, radius, motion, and elevation in CSS variables + Tailwind. Dark and light are first-class; code palettes and shadows are theme-aware. Ad-hoc magic numbers in chrome CSS map onto the scale.
+- **Core surfaces** restyled: task navigation (state marks, selected accent, search), Work Result publication typography, live execution rows without layout jump, Composer Delegate↔Steer+Stop mode enter, Decision/Resume/queued cards, Review open animation, Settings price table.
+- **Motion language** from duration/easing tokens; `prefers-reduced-motion` respected; skeletons replace spinners; task switch restores a cached document instead of flashing empty.
+- **Keyboard:** ⌘K/Ctrl+K palette maps New task, Stop, Resume, Focus composer, Review four surfaces, theme, and language — only runtime-true actions. Shortcuts discoverable in the palette and the shortcuts sheet.
+- **Empty and waiting states** designed (empty nav, no Evidence, offline, interrupted, load-earlier). EN/ZH copy tightened; less compatibility jargon in the UI.
+- **SHOTS** gallery captures the core state matrix across light/dark and EN/ZH.
+- Fake-model E2E double is idempotent on request retry; pending Direction no longer double-renders after reload once the Direction is persisted.
+
+### Security
+
+- Unchanged. Presentation only.
+
 ## [0.96.0] - 2026-08-30
 
 _Quantified storage-optimization copilot and ongoing caretaker: deterministic cost/lifecycle simulation, Remediation Plan + Verify, baselines/Drift, and scheduled read-only revisits — on the existing Agent Task runtime, without a second Agent or a new navigation surface._

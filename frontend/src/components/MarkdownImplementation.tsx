@@ -165,7 +165,7 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
     <div className="agent-result-wide group/code overflow-hidden rounded-lg border border-edge bg-code">
       <div className="flex items-center gap-2 border-b border-edge/70 px-3 py-1.5">
         <span className="font-mono text-2xs uppercase tracking-wide text-gray-500">{lang || "code"}</span>
-        <button onClick={copy} className="ml-auto flex items-center gap-1 text-2xs text-gray-500 opacity-0 transition-[color,opacity] hover:text-gray-200 group-hover/code:opacity-100">
+        <button onClick={copy} className="ml-auto flex items-center gap-1 text-2xs text-gray-500 transition-colors hover:text-gray-200">
           {copied ? (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
           ) : (
