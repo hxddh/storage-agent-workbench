@@ -61,6 +61,11 @@ async function reportText(page: Page): Promise<string> {
   const report = page.getByTestId("report-artifact");
   await expect(report).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("report-artifact-title")).toHaveText("Report", { timeout: 30_000 });
+  // The artifact shell and title render immediately while the durable report is
+  // still being generated. `report-save` exists only once ReportArtifact has a
+  // real report and loading/error are both false, so it is the readiness signal
+  // for assertions about report content rather than the shell's visibility.
+  await expect(page.getByTestId("report-save")).toBeVisible({ timeout: 30_000 });
   return await report.evaluate((el) => el.textContent ?? "");
 }
 
