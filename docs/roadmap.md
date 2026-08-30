@@ -41,7 +41,6 @@ This is the starting point. Future work should deepen the Agent's ability to com
 
 #### Broader inventory/log formats
 
-- Add ORC support for inventory where the local deterministic analysis stack can preserve the same safety/scale guarantees.
 - Improve schema detection and explicit truncation/coverage reporting across large imported evidence.
 - Keep model context aggregate-only and bounded.
 
@@ -120,7 +119,6 @@ Distribution hardening must not change runtime/product semantics.
 
 ### Evidence/source coverage
 
-- ORC inventory is not analyzed end to end.
 - provider-native event/access-log/aggregate sources are not yet first-class Evidence.
 - some S3-compatible capability differences are represented as unsupported without dedicated provider containers in required CI.
 
