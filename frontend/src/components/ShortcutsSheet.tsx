@@ -3,10 +3,7 @@ import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 import { useI18n } from "../i18n";
 import { shortcutsIn, type Shortcut } from "../shortcuts";
 
-const GROUPS = [
-  { group: "global" as const, titleKey: "keys.groupGlobal" },
-  { group: "chat" as const, titleKey: "keys.groupChat" },
-];
+const GROUPS = ["global", "task"] as const;
 
 function Key({ children }: { children: string }) {
   return (
@@ -16,19 +13,16 @@ function Key({ children }: { children: string }) {
   );
 }
 
-/**
- * The keyboard shortcuts, in one place.
- *
- * Every shortcut in this app already existed; none of them were written down
- * anywhere in the product. A shortcut nobody can discover is a shortcut only its
- * author uses.
- */
+/** Discoverable keyboard control for the Agent command center and active task. */
 export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { t } = useI18n();
+  const { lang, t } = useI18n();
   const trapRef = useFocusTrap<HTMLDivElement>(open);
+  const title = lang === "zh" ? "Agent 快捷键" : "Agent shortcuts";
+  const groupTitle = (group: (typeof GROUPS)[number]) => group === "global"
+    ? (lang === "zh" ? "全局" : "Global")
+    : (lang === "zh" ? "当前 Task" : "Active task");
 
   useDismissOnEscape(open, onClose);
-
   if (!open) return null;
 
   return (
@@ -41,13 +35,13 @@ export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () =
         role="dialog"
         aria-modal="true"
         tabIndex={-1}
-        aria-label={t("keys.title")}
+        aria-label={title}
         data-testid="shortcuts-sheet"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
         className="w-[min(460px,94vw)] overflow-hidden rounded-2xl border border-edge bg-panel shadow-pop animate-scale-in"
       >
         <div className="flex items-center justify-between border-b border-edge px-5 py-3.5">
-          <span className="text-sm font-semibold text-gray-100">{t("keys.title")}</span>
+          <span className="text-sm font-semibold text-gray-100">{title}</span>
           <button
             onClick={onClose}
             aria-label={t("common.close")}
@@ -59,17 +53,17 @@ export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () =
           </button>
         </div>
         <div className="max-h-[70vh] space-y-4 overflow-auto px-5 py-4">
-          {GROUPS.map((g) => (
-            <div key={g.group}>
+          {GROUPS.map((group) => (
+            <div key={group}>
               <div className="mb-1.5 text-2xs font-medium uppercase tracking-wider text-gray-500">
-                {t(g.titleKey)}
+                {groupTitle(group)}
               </div>
               <ul className="space-y-1">
-                {shortcutsIn(g.group).map((r: Shortcut) => (
-                  <li key={r.id} className="flex items-center gap-3 py-0.5">
-                    <span className="min-w-0 flex-1 truncate text-xs text-gray-300">{t(r.labelKey)}</span>
+                {shortcutsIn(group).map((shortcut: Shortcut) => (
+                  <li key={shortcut.id} className="flex items-center gap-3 py-0.5">
+                    <span className="min-w-0 flex-1 truncate text-xs text-gray-300">{shortcut.label[lang]}</span>
                     <span className="flex shrink-0 items-center gap-1">
-                      {r.keys.map((k) => <Key key={k}>{k}</Key>)}
+                      {shortcut.keys.map((key) => <Key key={key}>{key}</Key>)}
                     </span>
                   </li>
                 ))}

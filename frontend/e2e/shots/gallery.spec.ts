@@ -1,76 +1,89 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "../fake-model";
-import { seedSession } from "../seed";
-
-/** A realistically-sized streamed answer, for the "working" capture. */
-const LIVE_ANSWER =
-  "## Finding\n\n" +
-  Array.from(
-    { length: 20 },
-    (_, i) => `Paragraph ${i}. The bucket policy omits s3:ListBucket for the caller principal.`,
-  ).join("\n\n");
+import { STATE_FILE } from "../global-setup";
+import { seedSession as seedTask } from "../seed";
 
 /**
- * A visual contact sheet — a development tool, NOT a CI gate.
+ * Human visual-review contact sheet for the Agent product.
  *
- * Everything under `e2e/shots/` is excluded from the default Playwright run
- * (`playwright.config.ts` → `testIgnore`) and is reached only through
- * `npm run shots`. That exclusion is deliberate, and the reason is worth
- * writing down because the obvious alternative looks better than it is.
+ * This deliberately does not use pixel baselines: CI, local Chromium and OS font
+ * stacks are not raster-identical. Every capture first reaches a real, asserted
+ * Agent state against the real Sidecar, then writes PNG evidence for human review.
  *
- * Why not `toHaveScreenshot()` as a gate? Because the pixels are not
- * reproducible across the machines that would have to agree on them. This repo
- * is developed in a sandbox that points Playwright at a PREINSTALLED browser
- * (`PW_CHROMIUM_PATH`, currently a `headless_shell` at revision 1194), while CI
- * installs Playwright's own matching Chromium in the default location and
- * leaves that variable unset. Different binary, different font stack, different
- * rasteriser — so a baseline committed from one produces a wall of diffs on the
- * other. The usual escape hatches make it worse rather than better: a generous
- * `maxDiffPixels` stops catching the small regressions that are the whole point
- * of visual testing, and `test.skip()`-ing the gate off-CI turns it into a gate
- * that silently isn't one. This project's stated position is that a check which
- * skips itself quietly has stopped being a check, so it does not get to be one.
- *
- * What this IS: a repeatable way to put every surface that the v0.87.0 design
- * work touched on screen, in BOTH themes, side by side, in one command — so a
- * human can see a regression that no assertion describes ("the separation went
- * flat", "the sticky header overlaps the first row"). It writes PNGs plus an
- * `index.html` contact sheet into `frontend/shots/`, which is gitignored: the
- * output is evidence for a review, never a committed baseline.
- *
- *   cd frontend && npm run shots && open shots/index.html
- *
- * The assertions here exist only to make a capture fail loudly instead of
- * photographing a blank page.
+ * The states are the product model: Delegate, Running + Steer, Decision,
+ * Work Result, Execution and contextual Review. There are intentionally no
+ * screenshots for deleted Chat-era navigation, transcript pages or inspector UI.
  */
 
 const OUT = path.resolve("shots");
 const THEMES = ["dark", "light"] as const;
-
+type Theme = (typeof THEMES)[number];
 type Shot = { name: string; theme: string; file: string };
 const taken: Shot[] = [];
 
-async function open(page: Page, theme: string, extra: Record<string, string> = {}) {
+const LIVE_RESULT =
+  "## Finding\n\n" +
+  Array.from(
+    { length: 16 },
+    (_, i) => `Evidence ${i + 1}: the bucket policy does not grant s3:ListBucket to the caller principal.`,
+  ).join("\n\n");
+
+async function openAgent(page: Page, theme: Theme = "dark", lang: "en" | "zh" = "en") {
   await page.addInitScript(
-    ([t, kv]) => {
-      localStorage.setItem("saw.lang", "en");
+    ([nextTheme, nextLang]) => {
+      localStorage.setItem("saw.lang", nextLang as string);
       localStorage.setItem("saw.onboarded", "1");
-      localStorage.setItem("saw.theme", t as string);
-      for (const [k, v] of Object.entries(kv as Record<string, string>)) {
-        localStorage.setItem(k, v);
-      }
+      localStorage.setItem("saw.theme", nextTheme as string);
     },
-    [theme, extra] as const,
+    [theme, lang] as const,
   );
   await page.goto("/");
+  await expect(page.getByTestId("agent-shell")).toBeVisible({ timeout: 20_000 });
 }
 
-async function shoot(page: Page, name: string, theme: string) {
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
+const navigation = (page: Page) => page.getByTestId("agent-task-navigation");
+
+async function openTask(page: Page, title: string) {
+  await navigation(page).getByText(title, { exact: true }).first().click();
+  await expect(page.getByTestId("work-result").first()).toBeVisible({ timeout: 20_000 });
+}
+
+async function shoot(page: Page, name: string, theme: Theme) {
   const file = `${name}--${theme}.png`;
-  await page.screenshot({ path: path.join(OUT, file) });
+  await page.screenshot({ path: path.join(OUT, file), fullPage: false });
   taken.push({ name, theme, file });
+}
+
+function seedDecisionTask(): string {
+  const title = "Review bounded evidence import";
+  const { id } = seedTask(1, title, "short");
+  const raw = fs.readFileSync(STATE_FILE, "utf8");
+  const { dataDir } = JSON.parse(raw) as { dataDir: string };
+  const proposal = JSON.stringify([
+    {
+      title: "Import discovered access logs",
+      reason: "This downloads bounded evidence from the discovered logging target.",
+      action_type: "run_access_log_analysis",
+      requires_confirmation: true,
+      confidence: "high",
+      source_run_ids: [],
+    },
+  ]);
+  const py = `
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.execute(
+  "UPDATE session_messages SET proposed_actions=? WHERE id=(SELECT id FROM session_messages WHERE session_id=? AND role='assistant' ORDER BY created_at DESC, rowid DESC LIMIT 1)",
+  (sys.argv[3], sys.argv[2]),
+)
+conn.commit()
+`;
+  execFileSync(process.env.E2E_PYTHON || "python3", ["-c", py, `${dataDir}/app.db`, id, proposal]);
+  return title;
 }
 
 test.beforeAll(() => {
@@ -79,286 +92,147 @@ test.beforeAll(() => {
 });
 
 test.use({ viewport: { width: 1440, height: 900 } });
+test.describe.configure({ mode: "serial" });
 
 for (const theme of THEMES) {
-  test.describe(`${theme} theme`, () => {
-    test("empty state — the first thing a fresh install shows", async ({ page }) => {
-      await open(page, theme);
-      await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
-      await shoot(page, "01-empty", theme);
+  test.describe(`${theme} Agent surfaces`, () => {
+    test("Delegate — fresh Agent task", async ({ page }) => {
+      await openAgent(page, theme);
+      await expect(page.getByRole("heading", { level: 1, name: /Delegate a goal to the Agent/i })).toBeVisible();
+      await expect(composer(page)).toHaveAttribute("placeholder", /Give the Agent a goal/);
+      await shoot(page, "01-delegate", theme);
     });
 
-    test("a real answer — headings, a wide table, a list", async ({ page }) => {
-      const { title } = seedSession(3, undefined, "tall");
-      await open(page, theme);
-      await page.getByText(title).first().click();
-      await expect(page.locator("main").getByText(/ANSWER-/).first()).toBeVisible({
-        timeout: 20_000,
-      });
-      await shoot(page, "02-answer", theme);
+    test("Work Result — durable technical output", async ({ page }) => {
+      const title = `Lifecycle diagnosis ${theme}`;
+      seedTask(3, title, "tall");
+      await openAgent(page, theme);
+      await openTask(page, title);
+      await expect(page.getByTestId("direction-event").first()).toBeVisible();
+      await expect(page.getByTestId("work-result").first()).toBeVisible();
+      await shoot(page, "02-work-result", theme);
     });
 
-    test("a tall table scrolled — the pinned table header mid-thread", async ({ page }) => {
-      const { title } = seedSession(3, undefined, "tall");
-      await open(page, theme);
-      await page.getByText(title).first().click();
-      const scroller = page.getByTestId("thread-scroll");
-      await expect(scroller).toBeVisible({ timeout: 20_000 });
-      await scroller.evaluate((el) => {
-        el.scrollTop = el.scrollHeight / 2;
-      });
-      await page.waitForTimeout(400);
-      await shoot(page, "03-scrolled", theme);
+    test("Execution — real tool activity attached to a Work Result", async ({ page }) => {
+      const title = `Execution review ${theme}`;
+      seedTask(2, title, "tall");
+      await openAgent(page, theme);
+      await openTask(page, title);
+      const toggle = page.getByTestId("execution-summary-toggle").last();
+      await expect(toggle).toBeVisible();
+      await toggle.click();
+      await expect(page.getByTestId("execution-summary").last()).toBeVisible();
+      await shoot(page, "03-execution", theme);
     });
 
-    test("offline triage — the card a fresh install produces with no provider", async ({ page }) => {
-      await open(page, theme);
-      const box = page.getByPlaceholder(/Ask Storage Agent/i);
-      await box.click();
-      await box.fill(
-        '<?xml version="1.0" encoding="UTF-8"?>\n' +
-          "<Error><Code>AccessDenied</Code><Message>Access Denied</Message>" +
-          "<RequestId>ABC123</RequestId></Error>",
-      );
-      await box.press("Enter");
-      await expect(page.getByText(/AccessDenied/).first()).toBeVisible({ timeout: 20_000 });
-      await shoot(page, "04-triage", theme);
+    test("Review — contextual artifacts beside the active task", async ({ page }) => {
+      const title = `Artifact review ${theme}`;
+      seedTask(2, title, "tall");
+      await openAgent(page, theme);
+      await openTask(page, title);
+      await page.getByTestId("agent-task-header").getByRole("button", { name: /^Review$/i }).click();
+      await expect(page.getByTestId("agent-review-panel")).toBeVisible();
+      await expect(page.getByTestId("agent-composer")).toBeVisible();
+      await shoot(page, "04-review", theme);
     });
 
-    test("first run — the wizard a fresh install opens with", async ({ page }) => {
-      await page.addInitScript(([t]) => {
-        localStorage.setItem("saw.lang", "en");
-        localStorage.removeItem("saw.onboarded");
-        localStorage.setItem("saw.theme", t as string);
-      }, [theme] as const);
-      await page.goto("/");
-      await page.waitForTimeout(1200);
-      await shoot(page, "06-firstrun", theme);
-    });
-
-    test("command palette", async ({ page }) => {
-      await open(page, theme);
-      await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
-      await page.keyboard.press("ControlOrMeta+k");
-      await page.waitForTimeout(400);
-      await shoot(page, "07-palette", theme);
-    });
-
-    test("keyboard shortcuts sheet", async ({ page }) => {
-      await open(page, theme);
-      await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
-      await page.locator("body").press("?");
-      await page.waitForTimeout(400);
-      await shoot(page, "08-shortcuts", theme);
-    });
-
-    test("find in an investigation", async ({ page }) => {
-      const { title } = seedSession(8, undefined, "tall");
-      await open(page, theme);
-      await page.getByText(title).first().click();
-      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
-      await page.keyboard.press("ControlOrMeta+f");
-      await page.waitForTimeout(300);
-      await page.keyboard.type("bucket-003");
-      await page.waitForTimeout(700);
-      await shoot(page, "09-find", theme);
-    });
-
-    test("session inspector", async ({ page }) => {
-      const { title } = seedSession(6, undefined, "tall");
-      await open(page, theme);
-      await page.getByText(title).first().click();
-      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
-      await page.getByTestId("open-inspector").click();
-      await page.waitForTimeout(700);
-      await shoot(page, "10-inspector", theme);
-    });
-
-    test("the turn trace, expanded", async ({ page }) => {
-      const { title } = seedSession(4, undefined, "tall");
-      await open(page, theme);
-      await page.getByText(title).first().click();
-      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
-      await page.getByTestId("turn-footer-toggle").last().click();
-      await page.waitForTimeout(500);
-      await shoot(page, "11-trace", theme);
-    });
-
-    test("the rail collapsed", async ({ page }) => {
-      const { title } = seedSession(4, undefined, "tall");
-      await open(page, theme);
-      await page.getByText(title).first().click();
-      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
-      await page.getByRole("button", { name: /collapse sidebar/i }).first().click();
-      await page.waitForTimeout(400);
-      await shoot(page, "12-rail-collapsed", theme);
-    });
-
-    test("a narrow window", async ({ page }) => {
-      const { title } = seedSession(4, undefined, "tall");
-      await open(page, theme);
-      // Pick the session BEFORE narrowing: below 1000px the rail folds itself,
-      // and a folded rail lists no sessions to click.
-      await page.getByText(title).first().click();
-      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
-      await page.setViewportSize({ width: 900, height: 800 });
-      await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
-      await page.waitForTimeout(500);
-      await shoot(page, "13-narrow", theme);
-    });
-
-    test("settings — the drawer over the thread", async ({ page }) => {
-      await open(page, theme);
-      await page.getByRole("button", { name: /settings/i }).first().click();
-      await expect(page.getByText(/settings & providers/i)).toBeVisible();
-      await shoot(page, "05-settings", theme);
+    test("Task navigation — compact command center, not history chrome", async ({ page }) => {
+      const title = `Active storage task ${theme}`;
+      seedTask(2, title, "short");
+      await openAgent(page, theme);
+      await openTask(page, title);
+      await page.getByTestId("task-navigation-toggle").click();
+      await expect(navigation(page)).toHaveAttribute("data-collapsed", "true");
+      await shoot(page, "05-task-navigation-collapsed", theme);
     });
   });
 }
 
-/* ── States a user hits that the theme loop above never reaches ───────────────
- *
- * The loop covers the happy path in two themes. Most of what makes an app feel
- * unfinished is NOT on the happy path: it is the first run before anything is
- * configured, the seconds while the agent is working, the moment the backend
- * goes away, and the whole product in the other language. Dark only, because
- * these are about behaviour and content rather than palette.
- */
-test.describe("states", () => {
-  test("no model configured — what a fresh install can and cannot do", async ({ page }) => {
-    await open(page, "dark");
-    const box = page.getByPlaceholder(/Ask Storage Agent/i);
-    await box.click();
-    await box.fill("why does my bucket deny list calls");
-    await box.press("Enter");
-    await page.waitForTimeout(2500);
-    await shoot(page, "20-no-model", "dark");
-  });
-
-  test("the agent working — tools running under a streamed answer", async ({ page }) => {
+test.describe("Agent runtime states", () => {
+  test("Working + Steer — execution remains controllable and promoted in the command center", async ({ page }) => {
     test.setTimeout(120_000);
     const model = await startFakeModel(
-      [toolTurn("head_bucket", { bucket: "acme-logs" }), textTurn(LIVE_ANSWER)],
-      { deltaDelayMs: 40 },
+      [toolTurn("head_bucket", { bucket: "acme-logs" }), textTurn(LIVE_RESULT)],
+      { deltaDelayMs: 55 },
     );
     const providerId = await useFakeModel(model.baseUrl);
     try {
-      await open(page, "dark");
-      const box = page.getByPlaceholder(/Ask Storage Agent/i);
-      await box.click();
-      await box.fill("why does acme-logs deny every list call");
-      await box.press("Enter");
-      await page.waitForTimeout(3500);
-      await shoot(page, "21-working", "dark");
+      await openAgent(page, "dark");
+      await composer(page).fill("Diagnose why acme-logs rejects list operations and keep the evidence auditable.");
+      await composer(page).press("Enter");
+      await expect(page.getByTestId("agent-live-status")).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("agent-composer")).toHaveAttribute("data-agent-state", "working");
+      await expect(composer(page)).toHaveAttribute("placeholder", /Steer the Agent/);
+      await expect(navigation(page).getByTestId("task-queue-running")).toBeVisible({ timeout: 20_000 });
+      await shoot(page, "10-working-steer", "dark");
     } finally {
       await dropModelProvider(providerId);
       await model.close();
     }
   });
 
-  test("the sidecar goes away mid-session", async ({ page }) => {
-    await open(page, "dark");
-    await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
-    await page.route("**/health", (r) => r.abort());
-    await page.waitForTimeout(6000);
-    await shoot(page, "22-sidecar-down", "dark");
+  test("Decision — Agent blocks and the task is promoted to Needs you", async ({ page }) => {
+    const title = seedDecisionTask();
+    await openAgent(page, "dark");
+    await openTask(page, title);
+    await expect(page.getByTestId("agent-decision-required")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("agent-task-header")).toContainText(/Needs decision/i);
+    await expect(navigation(page).getByTestId("task-queue-needs-you")).toContainText(title);
+    await shoot(page, "11-decision-required", "dark");
   });
 
-  test("the rail's own menu", async ({ page }) => {
-    const { title } = seedSession(3, undefined, "tall");
-    await open(page, "dark");
-    await page.getByText(title).first().click();
-    await page.getByText(title).first().hover();
-    await page.getByRole("button", { name: /more actions/i }).first().click();
-    await page.waitForTimeout(400);
-    await shoot(page, "23-rail-menu", "dark");
+  test("Runtime attention — unavailable execution is explicit", async ({ page }) => {
+    await openAgent(page, "dark");
+    await page.route("**/health", (route) => route.abort());
+    await expect(page.getByTestId("offline-banner")).toBeVisible({ timeout: 15_000 });
+    await shoot(page, "12-runtime-unavailable", "dark");
   });
 
-  test("a session that will not load", async ({ page }) => {
-    const { title } = seedSession(3, undefined, "tall");
-    await open(page, "dark");
-    await page.getByText(title).first().click();
-    await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
-    // The session endpoint starts failing while the app is on it.
-    await page.route("**/sessions/*", (r) => r.fulfill({ status: 500, body: "{}" }));
-    await page.reload();
-    await page.waitForTimeout(2500);
-    await shoot(page, "26-load-failed", "dark");
+  test("Narrow workspace — task remains primary", async ({ page }) => {
+    const title = "Narrow active task";
+    seedTask(2, title, "tall");
+    await openAgent(page, "dark");
+    await openTask(page, title);
+    await page.setViewportSize({ width: 900, height: 800 });
+    await expect(navigation(page)).toHaveAttribute("data-collapsed", "true");
+    await expect(page.getByTestId("work-result").last()).toBeVisible();
+    await shoot(page, "13-narrow-task", "dark");
   });
 
-  test("a turn the server rejects", async ({ page }) => {
-    await open(page, "dark");
-    await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible();
-    await page.route("**/messages**", (r) => r.fulfill({ status: 500, body: '{"detail":"boom"}' }));
-    const box = page.getByPlaceholder(/Ask Storage Agent/i);
-    await box.click();
-    await box.fill("why does acme-logs deny list");
-    await box.press("Enter");
-    await page.waitForTimeout(3000);
-    await shoot(page, "27-turn-failed", "dark");
+  test("Chinese — the same Agent product, not a translated legacy shell", async ({ page }) => {
+    const title = "对象存储生命周期诊断";
+    seedTask(2, title, "short");
+    await openAgent(page, "dark", "zh");
+    await navigation(page).getByText(title, { exact: true }).first().click();
+    await expect(page.getByTestId("work-result").first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("agent-task-navigation").getByRole("button", { name: /新任务/ })).toBeVisible();
+    await shoot(page, "14-chinese-agent", "dark");
   });
 
-  test("the whole product in Chinese", async ({ page }) => {
-    const { title } = seedSession(3, undefined, "tall");
-    await page.addInitScript(() => {
-      localStorage.setItem("saw.lang", "zh");
-      localStorage.setItem("saw.onboarded", "1");
-      localStorage.setItem("saw.theme", "dark");
-    });
-    await page.goto("/");
-    await page.getByText(title).first().click();
-    await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
-    await shoot(page, "24-chinese", "dark");
-  });
-
-  test("settings, in Chinese, where the text is longest", async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem("saw.lang", "zh");
-      localStorage.setItem("saw.onboarded", "1");
-      localStorage.setItem("saw.theme", "dark");
-    });
-    await page.goto("/");
-    await page.waitForTimeout(2000);
-    await page.getByTestId("rail-settings").click();
-    await page.waitForTimeout(900);
-    await shoot(page, "25-settings-zh", "dark");
+  test("Settings — providers and safety remain secondary configuration", async ({ page }) => {
+    await openAgent(page, "dark");
+    await page.getByTestId("task-navigation-settings").click();
+    await expect(page.getByRole("dialog", { name: /Settings/i })).toBeVisible();
+    await shoot(page, "15-settings", "dark");
   });
 });
 
 test.afterAll(() => {
-  // One page, both themes on the same row, so the pair is compared by eye
-  // rather than by flipping between two files.
-  const names = [...new Set(taken.map((s) => s.name))].sort();
-  const rows = names
-    .map((name) => {
-      const cells = THEMES.map((theme) => {
-        const shot = taken.find((s) => s.name === name && s.theme === theme);
-        return shot
-          ? `<figure><img src="${shot.file}" alt="${name} ${theme}"><figcaption>${theme}</figcaption></figure>`
-          : `<figure class="missing"><figcaption>${theme} — not captured</figcaption></figure>`;
-      }).join("");
-      return `<section><h2>${name}</h2><div class="pair">${cells}</div></section>`;
-    })
-    .join("\n");
+  const names = [...new Set(taken.map((shot) => shot.name))].sort();
+  const rows = names.map((name) => {
+    const cells = THEMES.map((theme) => {
+      const shot = taken.find((item) => item.name === name && item.theme === theme);
+      return shot
+        ? `<figure><figcaption>${theme}</figcaption><a href="${shot.file}"><img src="${shot.file}" alt="${name} ${theme}" /></a></figure>`
+        : "<figure class=missing><figcaption>not captured</figcaption></figure>";
+    }).join("");
+    return `<section><h2>${name}</h2><div class=pair>${cells}</div></section>`;
+  }).join("\n");
+
   fs.writeFileSync(
     path.join(OUT, "index.html"),
-    `<!doctype html><meta charset="utf-8"><title>Storage Agent Workbench — visual contact sheet</title>
-<style>
- body{margin:0;padding:24px;background:#111418;color:#e6e8eb;font:14px/1.5 ui-sans-serif,system-ui,sans-serif}
- h1{font-size:18px;margin:0 0 4px} p.note{color:#9aa4af;margin:0 0 24px;max-width:70ch}
- section{margin:0 0 32px} h2{font-size:14px;font-weight:600;color:#9aa4af;margin:0 0 8px}
- .pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}
- figure{margin:0} figcaption{font-size:12px;color:#9aa4af;padding:4px 2px}
- img{width:100%;display:block;border:1px solid #2a3138;border-radius:6px}
- .missing{border:1px dashed #2a3138;border-radius:6px;padding:24px;color:#7a848f}
-</style>
-<h1>Visual contact sheet</h1>
-<p class="note">Generated by <code>npm run shots</code>. This is review evidence, not a
-baseline — nothing here is asserted against, and the pixels are not reproducible
-across the sandbox browser and CI's. Look for what an assertion cannot describe:
-surface separation, sticky-header overlap, alignment, crowding.</p>
-${rows}
-`,
+    `<!doctype html><meta charset="utf-8"><title>Storage Agent visual review</title><style>
+body{margin:0;padding:32px;background:#111318;color:#eef0f5;font:14px Inter,system-ui,sans-serif}h1{font-size:26px;margin:0 0 8px}p{color:#9ca3af;margin:0 0 32px;max-width:760px;line-height:1.6}section{margin:0 0 42px}h2{font-size:15px;font-weight:600;margin:0 0 12px;color:#c9ced8}.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}figure{margin:0;background:#191c22;border:1px solid #2a2f39;border-radius:12px;overflow:hidden}figcaption{padding:8px 12px;color:#8f98a8;border-bottom:1px solid #2a2f39}img{display:block;width:100%;height:auto}.missing{min-height:80px}@media(max-width:900px){.pair{grid-template-columns:1fr}}
+</style><h1>Storage Agent — Agent-native visual review</h1><p>Real Sidecar states used for human review: delegation, execution, steering, decisions, work results, artifacts and live task queues. No legacy Chat-era surfaces are represented.</p>${rows}`,
   );
-  console.log(`\n  ${taken.length} shots → ${path.join(OUT, "index.html")}\n`);
 });

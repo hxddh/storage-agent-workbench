@@ -25,7 +25,7 @@ import {
  * chain one tool into the next at all.
  */
 
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 const thread = (page: Page) => page.locator("main");
 
 const INVENTORY_CSV =
@@ -101,7 +101,7 @@ test.describe("analyzing an attached file", () => {
     const { cleanup } = await setup(page);
     try {
       await attachAndAsk(page, "what is in this inventory?");
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 90_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 90_000 });
 
       const trace = await thread(page).evaluate((el) => el.textContent ?? "");
       expect(trace).toContain("list_uploaded_files");
@@ -118,7 +118,7 @@ test.describe("analyzing an attached file", () => {
     const { model, cleanup } = await setup(page);
     try {
       await attachAndAsk(page, "what is in this inventory?");
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 90_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 90_000 });
 
       // The DuckDB result the agent was handed. It has to carry this file's real
       // numbers — 120 rows — or the whole path is decorative.
@@ -135,7 +135,7 @@ test.describe("analyzing an attached file", () => {
     const { model, cleanup } = await setup(page);
     try {
       await attachAndAsk(page, "what is in this inventory?");
-      await expect(page.getByTestId("turn-footer-toggle")).toBeVisible({ timeout: 90_000 });
+      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 90_000 });
 
       // Rule 16: the model sees sanitized AGGREGATES with at most a sample of
       // keys — never the 120 rows. The file has 120 distinct keys; a row dump

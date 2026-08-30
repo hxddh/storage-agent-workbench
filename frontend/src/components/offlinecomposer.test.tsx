@@ -1,14 +1,12 @@
 /**
- * What the composer refuses to do while the backend is unreachable.
+ * What the Agent task Composer refuses to do while the backend is unreachable.
  *
- * The offline state disabled the send and attach BUTTONS. It did not touch the
- * keyboard, which is the path most people use: type, press Enter. So the one
- * interaction the offline banner was meant to prevent still dispatched into a
- * dead service and came back as a raw fetch error under the banner saying the
- * service was dead. Slash commands had the same hole — /report is a send.
+ * The offline state must guard the keyboard path as well as buttons. These tests
+ * intentionally locate the stable Agent control boundary instead of user-facing
+ * placeholder copy, because Delegate/Steer language is part of product UX.
  */
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { createElement, createRef } from "react";
 import { I18nProvider } from "../i18n";
 import { Composer } from "./Composer";
@@ -45,33 +43,31 @@ function mount(offline: boolean, text = "why does acme-logs 403?") {
       }),
     ),
   );
-  return { onSend, onSlashReport, onSlashPickFile };
+  const textbox = within(screen.getByTestId("agent-composer")).getByRole("textbox") as HTMLTextAreaElement;
+  return { onSend, onSlashReport, onSlashPickFile, textbox };
 }
 
-describe("the composer while the sidecar is unreachable", () => {
-  it("does not send on Enter", () => {
-    const { onSend } = mount(true);
-    fireEvent.keyDown(screen.getByPlaceholderText(/Ask Storage Agent/i), { key: "Enter" });
+describe("the Agent task Composer while the sidecar is unreachable", () => {
+  it("does not delegate on Enter", () => {
+    const { onSend, textbox } = mount(true);
+    fireEvent.keyDown(textbox, { key: "Enter" });
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("still sends on Enter when the sidecar is up", () => {
-    // The guard must be about being offline, not about Enter.
-    const { onSend } = mount(false);
-    fireEvent.keyDown(screen.getByPlaceholderText(/Ask Storage Agent/i), { key: "Enter" });
+  it("still delegates on Enter when the sidecar is up", () => {
+    const { onSend, textbox } = mount(false);
+    fireEvent.keyDown(textbox, { key: "Enter" });
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 
-  it("does not run a slash command either", () => {
-    const { onSlashReport } = mount(true, "/report");
-    fireEvent.keyDown(screen.getByPlaceholderText(/Ask Storage Agent/i), { key: "Enter" });
+  it("does not run an action slash command while offline", () => {
+    const { onSlashReport, textbox } = mount(true, "/report");
+    fireEvent.keyDown(textbox, { key: "Enter" });
     expect(onSlashReport).not.toHaveBeenCalled();
   });
 
-  it("leaves the text alone — a blinking service must not eat what you wrote", () => {
-    mount(true);
-    expect(
-      (screen.getByPlaceholderText(/Ask Storage Agent/i) as HTMLTextAreaElement).value,
-    ).toContain("acme-logs");
+  it("preserves the user's task direction while offline", () => {
+    const { textbox } = mount(true);
+    expect(textbox.value).toContain("acme-logs");
   });
 });

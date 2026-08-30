@@ -13,7 +13,7 @@ import { seedSession } from "./seed";
  * thread's own "not at the bottom" detector — unpinning the user it was
  * scrolling for, so nothing ever corrected it.
  *
- * `longthread.spec.ts` already opens a 30-turn session and passes, because its
+ * `long-task.spec.ts` already opens a 30-turn session and passes, because its
  * answers are one line each: ~36-65px, small enough that the container barely
  * grows after first layout. That is the whole reason this class of bug was
  * invisible to the suite. These seed the "tall" shape — heading, paragraphs, a
@@ -25,7 +25,7 @@ import { seedSession } from "./seed";
  * latest" ended up 1717px away — further than where it started.
  */
 
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 
 async function openSeeded(page: Page, title: string) {
   await page.addInitScript(() => {
@@ -35,7 +35,7 @@ async function openSeeded(page: Page, title: string) {
   await page.goto("/");
   await expect(composer(page)).toBeVisible({ timeout: 20_000 });
   await page.getByText(title, { exact: true }).first().click();
-  await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator(".task-item").first()).toBeVisible({ timeout: 20_000 });
 }
 
 /** Distance in px from the newest message; 0 means the thread is at the end. */

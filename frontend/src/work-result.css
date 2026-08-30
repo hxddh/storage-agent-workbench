@@ -1,0 +1,144 @@
+/* Durable Agent Work Result / Evidence / Report prose. */
+.agent-prose {
+  min-width: 0;
+  line-height: 1.7;
+  text-rendering: optimizeLegibility;
+}
+
+.agent-prose p {
+  text-wrap: pretty;
+}
+
+.agent-prose h1,
+.agent-prose h2,
+.agent-prose h3 {
+  max-width: 42rem;
+  text-wrap: balance;
+  letter-spacing: -0.012em;
+}
+
+/*
+ * One Work Result owns the full task track, but prose does not. Modern Agent
+ * output regularly mixes explanation with tables, code and diagnostic payloads;
+ * squeezing those artifacts into the reading measure makes the UI behave like a
+ * chat transcript. Prose remains a deliberate 46rem reading column while real
+ * data artifacts can use the complete 64rem task track. Both start on the same
+ * left edge so a result still reads as one document.
+ */
+.agent-result-prose {
+  width: 100%;
+  min-width: 0;
+}
+
+.agent-result-prose > :not(.agent-result-wide) {
+  width: min(46rem, 100%);
+  max-width: 46rem;
+}
+
+.agent-result-prose > .agent-result-wide {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.agent-prose nav[data-testid="answer-outline"] {
+  margin-block: 0.15rem 0.35rem;
+  padding: 0.25rem 0 0.45rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.agent-prose nav[data-testid="answer-outline"] ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 1.25rem;
+  row-gap: 0.1rem;
+}
+
+.agent-prose nav[data-testid="answer-outline"] a {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.agent-prose blockquote {
+  margin-block: 0.2rem;
+  padding: 0.7rem 0.9rem;
+  border-left: 0;
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  color: var(--gray-300);
+}
+
+.agent-prose code:not(pre code) {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--elevated) 82%, transparent);
+  padding-inline: 0.34em;
+  font-weight: 500;
+}
+
+.agent-prose pre[data-testid="code-block"] {
+  tab-size: 2;
+  line-height: 1.65;
+  scrollbar-gutter: stable;
+}
+
+.agent-prose table {
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-prose tbody tr:last-child td {
+  padding-bottom: 0.4rem;
+}
+
+.work-result-artifacts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.8rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid color-mix(in srgb, var(--edge) 62%, transparent);
+}
+
+.work-result-artifact-label {
+  margin-right: 0.2rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--gray-500);
+}
+
+.work-result-artifacts button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 26px;
+  padding-inline: 0.5rem;
+  border: 1px solid var(--edge);
+  border-radius: 0.5rem;
+  color: var(--gray-300);
+  background: color-mix(in srgb, var(--panel) 58%, transparent);
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.work-result-artifacts button:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--edge));
+  color: var(--gray-100);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+}
+
+.work-result-artifacts button span {
+  color: var(--gray-500);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 760px) {
+  .agent-prose nav[data-testid="answer-outline"] ul {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

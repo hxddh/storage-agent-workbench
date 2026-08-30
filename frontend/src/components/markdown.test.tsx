@@ -1,5 +1,5 @@
 /**
- * v0.50.0 — what an answer is allowed to look like.
+ * v0.93 — what a Work Result is allowed to look like.
  *
  * The renderer is hand-written and dependency-free (no HTML is ever injected),
  * which is the right trade for a desktop app under a strict CSP but means every
@@ -64,7 +64,6 @@ describe("markdown blocks", () => {
     const th = [...container.querySelectorAll("th")].map((e) => e.className);
     expect(th[0]).toContain("text-left");
     expect(th[1]).toContain("text-center");
-    // The whole point of `--:`: a numeric column that a reader can compare down.
     expect(th[2]).toContain("text-right");
     const td = [...container.querySelectorAll("td")].map((e) => e.className);
     expect(td[2]).toContain("text-right");
@@ -131,16 +130,12 @@ describe("syntax highlighting", () => {
   it("never loses or reorders a character", () => {
     const src = '{"a": [1, 2], "b": null}\n';
     const toks = highlight(src, "json")!;
-    // The tokenizer walks the source; a rule that matched ahead of the cursor
-    // would silently drop the text in between.
     expect(toks.map((t) => t.text).join("")).toBe(src);
   });
 
   it("finds the command in a shell line, whatever it is", () => {
     const toks = highlight("aws s3api head-bucket --bucket $B\ncurl -I https://x", "bash")!;
     const names = toks.filter((t) => t.c === "name").map((t) => t.text);
-    // `aws` and `curl` are not in any keyword list — they are found by position,
-    // which is the only honest way to do it.
     expect(names).toContain("aws");
     expect(names).toContain("curl");
     expect(toks.filter((t) => t.c === "tag").map((t) => t.text)).toContain("$B");
@@ -175,7 +170,6 @@ describe("charts derived from a table", () => {
     );
     expect(screen.getByTestId("table-chart").getAttribute("data-chart-kind")).toBe("bar");
     expect(screen.getAllByTestId("chart-bar").length).toBe(3);
-    // The table is never replaced: a bar shows ratio, not value.
     expect(container.querySelectorAll("tbody tr").length).toBe(3);
     expect(container.textContent).toContain("120");
   });
@@ -188,9 +182,7 @@ describe("charts derived from a table", () => {
   });
 
   it("switches to a column chart when the categories are a time series", () => {
-    md(
-      "| hour | errors |\n| --- | --- |\n| 00:00 | 3 |\n| 01:00 | 9 |\n| 02:00 | 4 |\n| 03:00 | 7 |",
-    );
+    md("| hour | errors |\n| --- | --- |\n| 00:00 | 3 |\n| 01:00 | 9 |\n| 02:00 | 4 |\n| 03:00 | 7 |");
     expect(screen.getByTestId("table-chart").getAttribute("data-chart-kind")).toBe("column");
   });
 
@@ -202,45 +194,31 @@ describe("charts derived from a table", () => {
   });
 
   it("does not draw itself over a table long enough to need its own scroll", () => {
-    // 24 bars stacked above the same 24 rows is the same information twice, and
-    // it is what pushes the table off the screen.
     const rows = Array.from({ length: 24 }, (_, i) => `| p${i} | ${i * 7 + 1} |`).join("\n");
     md(`| prefix | objects |\n| --- | ---: |\n${rows}`);
     expect(screen.queryByTestId("table-chart")).toBeNull();
-    // Still one click away.
     fireEvent.click(screen.getByTestId("chart-toggle"));
     expect(screen.getByTestId("table-chart")).toBeTruthy();
   });
 
   it("decides that on the rows it HAS, not the rows it mounted with", () => {
-    // A streamed table mounts with its header and grows on later deltas without
-    // remounting — the block keeps its index, so React keeps its state. A
-    // `useState` initialiser therefore decided this while the table was still
-    // two rows long, and a long live answer kept a chart it should not have had
-    // until the next reload.
     const head = "| prefix | objects |\n| --- | ---: |\n";
     const short = `${head}| a | 10 |\n| b | 20 |`;
     const { rerender } = md(short);
     expect(screen.getByTestId("table-chart")).toBeTruthy();
 
-    const grown =
-      head + Array.from({ length: 24 }, (_, i) => `| p${i} | ${i * 7 + 1} |`).join("\n");
+    const grown = head + Array.from({ length: 24 }, (_, i) => `| p${i} | ${i * 7 + 1} |`).join("\n");
     rerender(createElement(I18nProvider, null, createElement(Markdown, { text: grown })));
     expect(screen.queryByTestId("table-chart")).toBeNull();
   });
 
   it("draws nothing for a table that is not a measure", () => {
-    // A status matrix. Bars over "Enabled"/"Not set" would be meaningless.
     md("| bucket | versioning |\n| --- | --- |\n| a | Enabled |\n| b | Not set |");
     expect(screen.queryByTestId("table-chart")).toBeNull();
   });
 
   it("refuses a column with one unmeasurable cell", () => {
-    // `Provider unsupported` is a first-class result in this product; charting
-    // the rest of the column would quietly drop it.
-    expect(
-      chartSpec(["bucket", "objects"], [["a", "10"], ["b", "Provider unsupported"], ["c", "4"]]),
-    ).toBeNull();
+    expect(chartSpec(["bucket", "objects"], [["a", "10"], ["b", "Provider unsupported"], ["c", "4"]])).toBeNull();
   });
 
   it("refuses negative measures and all-zero columns", () => {
@@ -251,7 +229,6 @@ describe("charts derived from a table", () => {
   it("reads comma-grouped numbers and percentages, but not units", () => {
     expect(parseMeasure("1,204")).toBe(1204);
     expect(parseMeasure("12.5%")).toBe(12.5);
-    // "4 GB" next to "900 MB" would draw bars that lie about the ratio.
     expect(parseMeasure("4 GB")).toBeNull();
   });
 
@@ -261,14 +238,8 @@ describe("charts derived from a table", () => {
   });
 });
 
-/**
- * v0.57.0 — the answer got a document structure.
- *
- * Headings rendered as `<div>`, so a long diagnostic report — this product's
- * main output — had no heading levels for a screen reader, no anchors to link
- * to, and nothing for a browser's "jump to heading" to find.
- */
-describe("answer structure", () => {
+/** A Work Result is a navigable document, not a chat response bubble. */
+describe("Work Result structure", () => {
   it("renders real heading elements, not divs", () => {
     const { container } = md("## Why it is large\n\ntext");
     const h2 = container.querySelector("h2");
@@ -278,8 +249,6 @@ describe("answer structure", () => {
 
   it("gives each heading a stable id derived from its text", () => {
     const { container } = md("## Why it is large");
-    // Derived, not positional: editing elsewhere in the answer must not move
-    // where an existing deep link points.
     expect(container.querySelector("h2")?.id).toBe("sec-why-it-is-large");
   });
 
@@ -288,66 +257,38 @@ describe("answer structure", () => {
     expect(container.querySelector("h2")?.id).toBe("sec");
   });
 
-  it("offers an outline once an answer has enough sections to navigate", () => {
+  it("offers an outline once a Work Result has enough sections to navigate", () => {
     const text = "## Cause\n\na\n\n## Evidence\n\nb\n\n## Fix\n\nc";
     md(text);
-    const nav = screen.getByTestId("answer-outline");
+    const nav = screen.getByTestId("result-outline");
     expect(nav.textContent).toContain("Cause");
     expect(nav.querySelectorAll("a").length).toBe(3);
     expect(nav.querySelector("a")?.getAttribute("href")).toBe("#sec-cause");
   });
 
-  it("does not clutter a short answer with an outline", () => {
+  it("does not clutter a short Work Result with an outline", () => {
     md("## Only one\n\ntext");
-    // An outline above three paragraphs is noise, not navigation.
-    expect(screen.queryByTestId("answer-outline")).toBeNull();
+    expect(screen.queryByTestId("result-outline")).toBeNull();
   });
 
   it("does not list every sub-heading in the outline", () => {
     const text = "## A\n\n### a1\n\n### a2\n\n## B\n\n### b1\n\n## C";
     md(text);
-    // Listing h3s would make the outline a second copy of the answer.
-    expect(screen.getByTestId("answer-outline").querySelectorAll("a").length).toBe(3);
+    expect(screen.getByTestId("result-outline").querySelectorAll("a").length).toBe(3);
   });
 });
 
-/**
- * v0.67.0 — snake_case is this product's vocabulary, and the renderer ate it.
- *
- * CommonMark forbids `_` emphasis inside a word precisely so that identifiers
- * survive. This renderer matched `_..._` anywhere, so every answer, run summary
- * and exported report silently dropped the underscores out of the very names
- * the app exists to talk about: column names, tool names, object keys, env vars.
- *
- * Found by reading a generated report, where "Run account discovery
- * (run_account_discovery)" had rendered as "(runaccountdiscovery)" — a name the
- * reader cannot search for, copy, or type back.
- */
 describe("identifiers survive the renderer", () => {
   const survives = (src: string, needle: string) => {
     const { container } = md(src);
     expect(container.textContent).toContain(needle);
   };
 
-  it("keeps a column name whole", () => {
-    survives("Group by storage_class and total_bytes.", "storage_class");
-  });
-
-  it("keeps a name with three underscores whole", () => {
-    survives("The column is total_bytes_scanned.", "total_bytes_scanned");
-  });
-
-  it("keeps a tool name whole", () => {
-    survives("The agent called list_objects_v2 on that prefix.", "list_objects_v2");
-  });
-
-  it("keeps an object key whole", () => {
-    survives("why is logs/2026/part_0001_final.parquet missing?", "part_0001_final.parquet");
-  });
-
-  it("keeps an env-var label whole", () => {
-    survives("Set AWS_SECRET_ACCESS_KEY in the environment.", "AWS_SECRET_ACCESS_KEY");
-  });
+  it("keeps a column name whole", () => survives("Group by storage_class and total_bytes.", "storage_class"));
+  it("keeps a name with three underscores whole", () => survives("The column is total_bytes_scanned.", "total_bytes_scanned"));
+  it("keeps a tool name whole", () => survives("The agent called list_objects_v2 on that prefix.", "list_objects_v2"));
+  it("keeps an object key whole", () => survives("why is logs/2026/part_0001_final.parquet missing?", "part_0001_final.parquet"));
+  it("keeps an env-var label whole", () => survives("Set AWS_SECRET_ACCESS_KEY in the environment.", "AWS_SECRET_ACCESS_KEY"));
 
   it("still renders real emphasis around a word", () => {
     const { container } = md("this is _emphasised_ text");
@@ -355,17 +296,12 @@ describe("identifiers survive the renderer", () => {
   });
 
   it("still renders emphasis that follows an identifier on the same line", () => {
-    // The rejected span must not stop the scan: a genuine emphasis later on the
-    // line is still found.
     const { container } = md("total_bytes_scanned is _high_ today");
     expect(container.textContent).toContain("total_bytes_scanned");
     expect(container.querySelector("em")?.textContent).toBe("high");
   });
 
   it("renders the redaction marker without stray asterisks", () => {
-    // `***REDACTED***` is stamped by the redactor into messages, audit rows and
-    // the report. It matched `**REDACTED**` one character in, so the marker the
-    // reader is meant to trust rendered as `*REDACTED*`.
     const { container } = md("X-Amz-Signature=***REDACTED***&x=1");
     expect(container.textContent).toBe("X-Amz-Signature=REDACTED&x=1");
     expect(container.querySelector("strong")?.textContent).toBe("REDACTED");

@@ -29,7 +29,7 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
 
 const SIDECAR = `http://127.0.0.1:${process.env.E2E_SIDECAR_PORT || 8799}`;
 const BUCKETS = { "acme-logs": ["logs/a.parquet"], "acme-public": ["www/index.html"] };
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 
 interface Harness {
   providerId: string;
