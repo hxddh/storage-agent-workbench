@@ -285,15 +285,14 @@ export function Composer({
           {busy ? <>{copy.steerCurrent} · <kbd className="rounded-md border border-edge bg-elevated px-1">⇧⏎</kbd> {copy.newline}</> : <><kbd className="rounded-md border border-edge bg-elevated px-1">⏎</kbd> {copy.delegate} · <kbd className="rounded-md border border-edge bg-elevated px-1">⇧⏎</kbd> {copy.newline}</>}
         </span>
 
-        <div className="composer-actions" data-mode={busy ? "steer" : "delegate"}>
-          <div className="composer-actions-steer" {...(busy ? {} : { inert: true, "aria-hidden": true })}>
+        {busy ? (
+          <div className="composer-mode" key="steer">
             <button
               type="button"
               onClick={onStop}
-              tabIndex={busy ? 0 : -1}
               aria-label={copy.stop}
               title={`${copy.stop} ${MOD}.`}
-              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-elevated px-2.5 text-2xs font-medium text-gray-200 transition-colors hover:bg-hover"
+              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-elevated px-2.5 text-2xs font-medium text-gray-200 transition-colors duration-fast hover:bg-hover"
             >
               <span className="grid h-3.5 w-3.5 place-items-center" aria-hidden>
                 <span className="h-1.5 w-1.5 rounded-sm bg-gray-200" />
@@ -303,7 +302,6 @@ export function Composer({
             <button
               type="button"
               onClick={onSteer}
-              tabIndex={busy ? 0 : -1}
               disabled={!text.trim()}
               aria-label={copy.steerAction}
               title={copy.steerActionHint}
@@ -313,11 +311,11 @@ export function Composer({
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><line x1="5" y1="12" x2="19" y2="12" /><polyline points="13 6 19 12 13 18" /></svg>
             </button>
           </div>
-          <div className="composer-actions-delegate" {...(!busy ? {} : { inert: true, "aria-hidden": true })}>
+        ) : (
+          <div className="composer-mode" key="delegate">
             <button
               type="button"
               onClick={onSend}
-              tabIndex={busy ? -1 : 0}
               disabled={uploading || blocked || (!text.trim() && !attached)}
               aria-label={copy.delegateAction}
               title={`${copy.delegateAction} ⏎`}
@@ -328,7 +326,7 @@ export function Composer({
               {!uploading ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><line x1="5" y1="12" x2="19" y2="12" /><polyline points="13 6 19 12 13 18" /></svg> : null}
             </button>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -561,31 +561,16 @@ kbd {
   line-height: 1.55;
 }
 
-/* Composer action morph: Delegate and Steer+Stop occupy the same slot. */
-.composer-actions {
-  display: grid;
-  grid-template-areas: "stack";
-  justify-items: end;
-  align-items: center;
-}
-.composer-actions > * {
-  grid-area: stack;
+/* Composer mode enter: Delegate and Steer+Stop swap by remount, never stacked. */
+.composer-mode {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  transition: opacity var(--duration-fast) var(--ease-out),
-    transform var(--duration-fast) var(--ease-out);
+  animation: composer-mode-in var(--duration-fast) var(--ease-out);
 }
-.composer-actions[data-mode="delegate"] .composer-actions-steer,
-.composer-actions[data-mode="steer"] .composer-actions-delegate {
-  opacity: 0;
-  transform: scale(0.96);
-  pointer-events: none;
-}
-.composer-actions[data-mode="delegate"] .composer-actions-delegate,
-.composer-actions[data-mode="steer"] .composer-actions-steer {
-  opacity: 1;
-  transform: none;
+@keyframes composer-mode-in {
+  from { opacity: 0; transform: translateY(2px) scale(0.98); }
+  to { opacity: 1; transform: none; }
 }
 
 .agent-review-panel {
@@ -615,7 +600,7 @@ kbd {
   .agent-review-panel {
     animation: none;
   }
-  .composer-actions > * {
-    transition: none;
+  .composer-mode {
+    animation: none;
   }
 }

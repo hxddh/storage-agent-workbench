@@ -44,6 +44,7 @@ export function CommandPalette({
         empty: "没有匹配的任务或命令。",
         stop: "停止当前执行",
         resume: "恢复中断的执行",
+        steer: "Steer 当前执行",
         focus: "聚焦 Composer",
         reviewOverview: "打开 Review · 总览",
         reviewEvidence: "打开 Review · Evidence",
@@ -62,6 +63,7 @@ export function CommandPalette({
         empty: "No matching tasks or commands.",
         stop: "Stop current execution",
         resume: "Resume interrupted execution",
+        steer: "Steer current execution",
         focus: "Focus composer",
         reviewOverview: "Open Review · Overview",
         reviewEvidence: "Open Review · Evidence",
@@ -105,6 +107,12 @@ export function CommandPalette({
         hint: `${MOD}.`,
         icon: I("M6 6h12v12H6z"),
         run: () => { live.stop?.(); onClose(); },
+      }, {
+        id: "steer",
+        label: copy.steer,
+        hint: `${MOD}L`,
+        icon: I("M5 12h14|M13 6l6 6-6 6"),
+        run: () => { live.focusComposer?.(); onClose(); },
       });
     }
     if (live.canResume) {

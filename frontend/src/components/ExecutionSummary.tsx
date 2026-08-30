@@ -309,7 +309,39 @@ export function ExecutionSummary({
                   <ul className="space-y-1">
                     {evidence.map((item, index) => {
                       const tool = linkEvidence(item, done);
-                      return <li key={index} className="flex items-start gap-1.5 text-xs leading-relaxed text-gray-400"><span className="mt-[0.65em] h-1 w-1 shrink-0 rounded-full bg-gray-500" aria-hidden /><span className="min-w-0 flex-1">{item}{tool ? <button type="button" onMouseEnter={() => setHighlight(tool)} onMouseLeave={() => setHighlight(null)} onFocus={() => setHighlight(tool)} onBlur={() => setHighlight(null)} data-testid="evidence-link" className="ml-1.5 rounded-md bg-elevated px-1.5 py-0.5 font-mono text-2xs text-gray-400 transition-colors hover:text-accent-soft">{tool}</button> : null}</span></li>;
+                      const cited = tool ? done.find((activity) => activity.tool === tool) : undefined;
+                      return (
+                        <li key={index} className="flex items-start gap-1.5 text-xs leading-relaxed text-gray-400">
+                          <span className="mt-[0.65em] h-1 w-1 shrink-0 rounded-full bg-gray-500" aria-hidden />
+                          <span className="min-w-0 flex-1">
+                            {item}
+                            {tool ? (
+                              <span className="group/cite relative ml-1.5 inline-flex align-baseline">
+                                <button
+                                  type="button"
+                                  onMouseEnter={() => setHighlight(tool)}
+                                  onMouseLeave={() => setHighlight(null)}
+                                  onFocus={() => setHighlight(tool)}
+                                  onBlur={() => setHighlight(null)}
+                                  data-testid="evidence-link"
+                                  className="rounded-md bg-elevated px-1.5 py-0.5 font-mono text-2xs text-gray-400 transition-colors hover:text-accent-soft"
+                                >
+                                  {tool}
+                                </button>
+                                {cited?.result ? (
+                                  <span
+                                    aria-hidden
+                                    className="pointer-events-none absolute bottom-[calc(100%+8px)] left-0 z-floating w-64 rounded-lg border border-edge bg-panel px-2.5 py-2 text-left text-2xs leading-relaxed text-gray-300 opacity-0 shadow-pop transition-opacity duration-fast group-hover/cite:opacity-100 group-focus-within/cite:opacity-100"
+                                  >
+                                    <span className="block font-mono text-accent-soft">{tool}</span>
+                                    <span className="mt-1 block text-gray-400">{cited.result}</span>
+                                  </span>
+                                ) : null}
+                              </span>
+                            ) : null}
+                          </span>
+                        </li>
+                      );
                     })}
                   </ul>
                 </div>

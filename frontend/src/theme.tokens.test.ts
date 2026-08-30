@@ -35,7 +35,7 @@ function sourceFiles(dir: string): string[] {
 
 /** Status hues carry meaning, so they must be themeable. (Neutral `gray-*` is
  * already remapped to theme vars in tailwind.config, so it is exempt.) */
-const STATUS_STEP = /\b(?:bg|text|border|ring|fill|stroke|from|to|via)-(?:red|amber|emerald|green|yellow|orange|rose|lime|teal)-\d{2,3}\b/g;
+const STATUS_STEP = /\b(?:bg|text|border|ring|fill|stroke|from|to|via)-(?:red|amber|emerald|green|yellow|orange|rose|lime|teal|violet|indigo|purple|fuchsia|pink|sky|cyan|blue)-\d{2,3}\b/g;
 /** A literal hex or rgb() in a class or inline style is a theme assumption. */
 const LITERAL_COLOR = /(?:bg|text|border)-\[#[0-9a-fA-F]{3,8}\]|\bbg-black\/\d+|\bbg-white\/\d+/g;
 

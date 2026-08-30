@@ -112,7 +112,7 @@ export function FindingsCard({ findings }: { findings: SessionFinding[] }) {
 export function TriageCard({ c, onRun }: { c: TriageCase; onRun?: (action: NextAction) => void }) {
   const { lang } = useI18n();
   const copy = lang === "zh"
-    ? { title: "Error Triage · 错误诊断", next: "下一步", actions: "Next actions" }
+    ? { title: "Error Triage · 错误诊断", next: "下一步", actions: "接下来可以做" }
     : { title: "Error triage", next: "next", actions: "Next actions" };
   return (
     <div className="animate-fade-in-up overflow-hidden rounded-xl border border-edge bg-panel/60" data-testid="agent-triage-artifact">

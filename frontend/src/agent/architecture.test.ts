@@ -234,6 +234,15 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(shortcuts).not.toContain('group: "chat"');
     expect(app).toContain('matches(event, "newTask")');
     expect(app).toContain('matches(event, "toggleTaskNavigation")');
+    expect(app).toContain('matches(event, "stop")');
+    expect(app).toContain('matches(event, "focusComposer")');
+    const palette = source("../components/CommandPalette.tsx");
+    expect(palette).toContain('data-testid="command-palette"');
+    expect(palette).toContain("review-overview");
+    expect(palette).toContain("review-evidence");
+    expect(palette).toContain("review-execution");
+    expect(palette).toContain("review-report");
+    expect(palette).not.toContain("New investigation");
   });
 
   it("keeps persisted session/runtime ownership out of the task renderer", () => {

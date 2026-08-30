@@ -115,11 +115,12 @@ export interface FakeModel {
 function requestSignature(body: unknown): string {
   const req = (body ?? {}) as ChatRequest;
   const messages = req.messages ?? [];
-  const last = messages[messages.length - 1];
-  const lastContent = typeof last?.content === "string"
-    ? last.content
-    : JSON.stringify(last?.content ?? "");
-  return `${messages.length}:${messages.map((m) => m.role ?? "").join(",")}:${lastContent.slice(0, 240)}`;
+  return messages
+    .map((m) => {
+      const content = typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "");
+      return `${m.role ?? ""}:${content.length}:${content.slice(0, 96)}`;
+    })
+    .join("|");
 }
 
 export async function startFakeModel(

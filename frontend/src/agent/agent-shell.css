@@ -359,7 +359,14 @@
 .agent-document-heading { max-width: 760px; margin-bottom: 52px; }
 .agent-eyebrow { margin: 0 0 12px; color: var(--gray-500); font-size: var(--text-2xs); font-weight: 650; letter-spacing: .12em; text-transform: uppercase; }
 .agent-document-heading h1 { margin: 0; color: var(--gray-100); font-size: clamp(26px, 3vw, 38px); font-weight: 570; letter-spacing: -.035em; line-height: 1.08; }
-.agent-document-heading > p:last-child, .agent-record p, .agent-empty-line, .agent-surface-error { color: var(--gray-400); font-size: var(--text-sm); line-height: 1.65; }
+.agent-document-heading > p:last-child, .agent-record p, .agent-surface-error { color: var(--gray-400); font-size: var(--text-sm); line-height: 1.65; }
+.agent-empty-line {
+  margin: 0;
+  max-width: 22rem;
+  color: var(--gray-500);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
 .agent-doc-section { display: grid; grid-template-columns: 42px minmax(0,1fr); gap: 22px; padding: 28px 0 34px; border-top: 1px solid var(--edge); }
 .agent-section-index { padding-top: 3px; color: var(--gray-500); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-2xs); }
 .agent-doc-section h2 { margin: 0 0 18px; color: var(--gray-200); font-size: var(--text-sm); font-weight: 620; }

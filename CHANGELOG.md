@@ -13,7 +13,7 @@ _Presentation craft pass: one design-token system, Codex/Cursor-level desktop Ag
 ### Changed
 
 - **Design tokens** for color, type, radius, motion, and elevation in CSS variables + Tailwind. Dark and light are first-class; code palettes and shadows are theme-aware. Ad-hoc magic numbers in chrome CSS map onto the scale.
-- **Core surfaces** restyled: task navigation (state marks, selected accent, search), Work Result publication typography, live execution rows without layout jump, Composer Delegate↔Steer+Stop morph, Decision/Resume/queued cards, Review open animation, Settings price table.
+- **Core surfaces** restyled: task navigation (state marks, selected accent, search), Work Result publication typography, live execution rows without layout jump, Composer Delegate↔Steer+Stop mode enter, Decision/Resume/queued cards, Review open animation, Settings price table.
 - **Motion language** from duration/easing tokens; `prefers-reduced-motion` respected; skeletons replace spinners; task switch restores a cached document instead of flashing empty.
 - **Keyboard:** ⌘K/Ctrl+K palette maps New task, Stop, Resume, Focus composer, Review four surfaces, theme, and language — only runtime-true actions. Shortcuts discoverable in the palette and the shortcuts sheet.
 - **Empty and waiting states** designed (empty nav, no Evidence, offline, interrupted, load-earlier). EN/ZH copy tightened; less compatibility jargon in the UI.

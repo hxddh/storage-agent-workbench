@@ -76,7 +76,9 @@ Loading uses **skeletons**, not spinners. In-flight tool rows use the
 
 Visible `:focus-visible` ring follows the element's own radius. Opt out only
 with `data-focus-ring="container"` when an ancestor already draws the ring
-(Composer textarea). ⌘K / Ctrl+K is an overlay, not a destination.
+(Composer textarea). ⌘K / Ctrl+K is an overlay, not a destination. Palette
+actions: new task, Steer (focus composer while working), Stop, Resume, Review
+four surfaces, theme, language, and task switch — only runtime-true work.
 
 ## Non-goals
 
