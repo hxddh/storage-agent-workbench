@@ -14,6 +14,16 @@ const normativeDocs = [
   "docs/roadmap.md",
 ];
 
+// These documents describe the product directly. Architecture/index docs are
+// allowed to NAME a removed component when they explicitly say it must stay
+// removed; the product-facing contract must not present those concepts at all.
+const productContractDocs = [
+  "README.md",
+  "CLAUDE.md",
+  "docs/product.md",
+  "docs/roadmap.md",
+];
+
 const removedArchitecture: Array<[string, RegExp]> = [
   ["thread-first product model", /\bthread-first\b/i],
   ["SessionRail product boundary", /\bSessionRail\b/],
@@ -36,8 +46,8 @@ describe("v0.93 documentation contract", () => {
   });
 
   for (const [label, pattern] of removedArchitecture) {
-    it(`does not reintroduce ${label} in normative docs`, () => {
-      const offenders = normativeDocs.filter((path) => pattern.test(readRepo(path)));
+    it(`does not reintroduce ${label} in product-contract docs`, () => {
+      const offenders = productContractDocs.filter((path) => pattern.test(readRepo(path)));
       expect(offenders, `${label}: ${offenders.join(", ")}`).toEqual([]);
     });
   }
