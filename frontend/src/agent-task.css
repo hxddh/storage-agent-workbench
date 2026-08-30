@@ -1,0 +1,96 @@
+/*
+ * Agent Task presentation.
+ *
+ * This layer styles the primary task, its single steering composer and durable
+ * execution summaries. It deliberately has no chat/thread/timeline selectors.
+ */
+
+[data-testid="agent-workspace"] {
+  background:
+    radial-gradient(70rem 30rem at 55% -14rem, color-mix(in srgb, var(--accent) 5%, transparent), transparent 72%),
+    var(--canvas);
+}
+
+/* One task start surface: the AgentTask renderer owns the heading and composer. */
+[data-testid="agent-workspace"] main > div:has(h1) > div > div:has(> h1) {
+  align-items: flex-start !important;
+  text-align: left !important;
+  margin-bottom: 1.25rem !important;
+}
+
+[data-testid="agent-workspace"] main > div:has(h1) h1 {
+  max-width: 34rem;
+  text-wrap: balance;
+}
+
+[data-testid="agent-workspace"] main > div:has(h1) h1 + p {
+  max-width: 36rem !important;
+  text-wrap: pretty;
+}
+
+[data-testid="agent-workspace"] main > div:has(h1) button:not([aria-label]) {
+  min-height: 36px;
+}
+
+/* Direction events are the semantic navigation anchors in a long-running task. */
+[data-testid="task-scroll"] {
+  scrollbar-gutter: stable;
+  scroll-padding-block: 24px 120px;
+}
+
+[data-testid="task-scroll"] .task-item[data-direction] {
+  scroll-margin-top: 72px;
+}
+
+/* The composer belongs to the active task rather than to a footer/chat bar. */
+[data-testid="agent-workspace"] main > div.relative.px-6 {
+  background: linear-gradient(
+    to top,
+    var(--canvas) 70%,
+    color-mix(in srgb, var(--canvas) 0%, transparent)
+  );
+}
+
+.agent-native-composer {
+  width: 100%;
+}
+
+.agent-native-composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--edge-strong)) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent),
+    0 16px 44px -24px rgba(0, 0, 0, 0.72) !important;
+}
+
+textarea[data-focus-ring="container"] {
+  min-height: 28px;
+  line-height: 1.55 !important;
+}
+
+/* Completed tool work is a first-class Execution object under a Work Result. */
+[data-testid="execution-summary"] {
+  container-type: inline-size;
+}
+
+[data-testid="execution-summary-panel"] {
+  border: 1px solid color-mix(in srgb, var(--edge) 66%, transparent);
+  background: color-mix(in srgb, var(--panel) 44%, transparent) !important;
+}
+
+[data-testid="execution-summary"] [data-testid="execution-step-open"] {
+  min-height: 30px;
+}
+
+[data-testid="execution-latest-step"] {
+  border: 1px solid color-mix(in srgb, var(--edge) 46%, transparent);
+}
+
+[data-testid="call-detail"] {
+  container-type: inline-size;
+}
+
+@container (min-width: 720px) {
+  [data-testid="call-detail"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}

@@ -1,21 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
-/**
- * Attaching a file to an investigation, through the browser.
- *
- * "Analyze the file you attached in the conversation" is one of the product's
- * headline capabilities, and the browser half of it had NO coverage: the sidecar
- * suite tests the upload endpoint and the DuckDB engine directly, and no E2E ever
- * picked a file. Everything between — the hidden file input, the size pre-check,
- * type inference from the extension, the chip that asks when the type is
- * ambiguous, and the send button's dependence on an attachment — was unverified.
- *
- * No model provider is configured here (as everywhere in this suite), so what is
- * asserted is the attach → upload seam, not the agent's analysis of the file.
- */
-
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+/** Browser coverage for file evidence entering an Agent task: picker, type
+ * inference/correction, size/type UX, and the upload seam into durable task state. */
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 const attachButton = (page: Page) => page.getByRole("button", { name: /attach a dataset/i });
+const delegateButton = (page: Page) => page.getByTestId("agent-composer").getByRole("button", { name: "Delegate task", exact: true });
 
 async function fresh(page: Page) {
   await page.addInitScript(() => {
@@ -26,13 +15,8 @@ async function fresh(page: Page) {
   await expect(composer(page)).toBeVisible({ timeout: 20_000 });
 }
 
-/** Put a file into the hidden input the paperclip opens. */
 async function pick(page: Page, name: string, body: string) {
-  await page.locator('input[type="file"]').setInputFiles({
-    name,
-    mimeType: "text/plain",
-    buffer: Buffer.from(body),
-  });
+  await page.locator('input[type="file"]').setInputFiles({ name, mimeType: "text/plain", buffer: Buffer.from(body) });
 }
 
 const INVENTORY_CSV =
@@ -46,20 +30,18 @@ const ACCESS_LOG =
     `2026-06-25T10:00:${String(i).padStart(2, "0")}Z acme-logs GET /a/p${i}.parquet 200 1048576 42 ms user-agent="aws-sdk/1.0" remote_ip="192.0.2.10"`,
   ).join("\n") + "\n";
 
-test.describe("attaching a file", () => {
-  test("the paperclip is offered on a fresh install", async ({ page }) => {
+test.describe("attaching evidence to an Agent task", () => {
+  test("the attachment control is offered on a fresh task", async ({ page }) => {
     await fresh(page);
     await expect(attachButton(page)).toBeVisible();
     await expect(attachButton(page)).toBeEnabled();
   });
 
-  test("a .csv is recognized as an inventory without being asked", async ({ page }) => {
+  test("a .csv is recognized as inventory without asking", async ({ page }) => {
     await fresh(page);
     await pick(page, "inventory-2026-06.csv", INVENTORY_CSV);
-
     await expect(page.getByText("inventory-2026-06.csv")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/inventory/i).first()).toBeVisible();
-    // Inferred, so the "which kind of file is this?" prompt must not appear.
     await expect(page.getByText(/Analyze as:/i)).toHaveCount(0);
   });
 
@@ -70,10 +52,8 @@ test.describe("attaching a file", () => {
     await expect(page.getByText(/access log/i).first()).toBeVisible();
   });
 
-  test("an extension it cannot place asks which kind of file it is", async ({ page }) => {
+  test("an ambiguous extension asks which evidence type it is", async ({ page }) => {
     await fresh(page);
-    // A bare .gz says nothing about the shape inside. The product must ask
-    // rather than guess and run the wrong engine.
     await pick(page, "dump.gz", ACCESS_LOG);
     await expect(page.getByText("dump.gz")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/Analyze as:/i)).toBeVisible();
@@ -81,7 +61,7 @@ test.describe("attaching a file", () => {
     await expect(page.getByTestId("attach-type-access_log")).toHaveAttribute("aria-pressed", "false");
   });
 
-  test("picking the type answers the question", async ({ page }) => {
+  test("picking the type resolves ambiguity", async ({ page }) => {
     await fresh(page);
     await pick(page, "dump.gz", ACCESS_LOG);
     await page.getByTestId("attach-type-access_log").click();
@@ -89,11 +69,8 @@ test.describe("attaching a file", () => {
     await expect(page.getByTestId("attach-type-access_log")).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("an INFERRED type can still be corrected", async ({ page }) => {
+  test("an inferred type can still be corrected", async ({ page }) => {
     await fresh(page);
-    // The type is inferred from the filename, so it can be wrong; it used to
-    // render as a plain label with no way to say otherwise, and the file went
-    // to the wrong engine.
     await pick(page, "inventory-2026-06.csv", INVENTORY_CSV);
     await expect(page.getByTestId("attach-type-inventory")).toHaveAttribute("aria-pressed", "true");
     await page.getByTestId("attach-type-access_log").click();
@@ -101,51 +78,42 @@ test.describe("attaching a file", () => {
     await expect(page.getByTestId("attach-type-inventory")).toHaveAttribute("aria-pressed", "false");
   });
 
-  test("a name whose syllable merely contains 'log' is still an inventory", async ({ page }) => {
+  test("a filename whose syllable contains log is still inventory when its shape says so", async ({ page }) => {
     await fresh(page);
-    // "catalog" ends in "log"; this used to be routed to the access-log engine.
     await pick(page, "catalog.csv", INVENTORY_CSV);
     await expect(page.getByTestId("attach-type-inventory")).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("an attachment alone is enough to send — no typed question required", async ({ page }) => {
+  test("attached evidence alone is enough to delegate the task", async ({ page }) => {
     await fresh(page);
-    const send = page.getByRole("button", { name: /^send$/i });
-    await expect(send).toBeDisabled();
+    await expect(delegateButton(page)).toBeDisabled();
     await pick(page, "inventory-2026-06.csv", INVENTORY_CSV);
-    await expect(send).toBeEnabled({ timeout: 10_000 });
+    await expect(delegateButton(page)).toBeEnabled({ timeout: 10_000 });
   });
 
-  test("the file actually reaches the server", async ({ page }) => {
+  test("the evidence file reaches durable task state", async ({ page }) => {
     await fresh(page);
     await pick(page, "inventory-2026-06.csv", INVENTORY_CSV);
     await composer(page).fill("what is in this inventory?");
     await composer(page).press("Enter");
-
-    // No model provider, so the turn itself cannot answer — but the upload is a
-    // separate, earlier step, and the session must end up owning the file.
-    // Asked of the sidecar directly (from node), not through the page: the app
-    // origin is the vite preview server, so a relative fetch there would ask the
-    // wrong process and pass for the wrong reason.
     await expect
       .poll(async () => await attachedFileNames(), {
         timeout: 30_000,
-        message: "the session should own the uploaded file",
+        message: "the Agent task should own the uploaded evidence file",
       })
       .toContain("inventory-2026-06.csv");
   });
 });
 
-/** Every attached filename the sidecar reports, across all sessions. */
 async function attachedFileNames(): Promise<string[]> {
   const base = `http://127.0.0.1:${process.env.E2E_SIDECAR_PORT || 8799}`;
   const list = (await (await fetch(`${base}/sessions`)).json()) as Array<{ id: string }>;
   const names: string[] = [];
-  for (const s of list) {
-    const detail = (await (await fetch(`${base}/sessions/${s.id}`)).json()) as {
+  for (const session of list) {
+    const detail = (await (await fetch(`${base}/sessions/${session.id}`)).json()) as {
       attached_files?: Array<{ source_filename?: string }>;
     };
-    for (const f of detail.attached_files ?? []) if (f.source_filename) names.push(f.source_filename);
+    for (const file of detail.attached_files ?? []) if (file.source_filename) names.push(file.source_filename);
   }
   return names;
 }

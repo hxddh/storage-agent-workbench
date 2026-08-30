@@ -1,80 +1,116 @@
 # Release
 
-How desktop builds are produced and published.
+How Storage Agent desktop builds are validated and published.
 
-## TL;DR
+## Release contract
 
-Releases are cut by **manually dispatching** the `Release` workflow against a
-tag. Each run builds the desktop app for macOS (arm64), Linux (x64), and Windows
-(x64) and uploads the installers — plus per-platform `SHA256SUMS` — to one GitHub
-Release. Builds are unsigned/ad-hoc (no Apple notarization, no Windows
-Authenticode); see [signing.md](signing.md).
+A formal release is cut only from a **green `main` commit**. The immutable source
+commit is exposed through a `release/vX.Y.Z` branch; pushing that branch triggers
+`.github/workflows/release.yml` automatically.
+
+The workflow is transactional:
+
+1. Resolve `vX.Y.Z` and the exact branch SHA.
+2. Create a **hidden Draft GitHub Release** targeted at that exact SHA.
+3. Build macOS arm64, Linux x64, and Windows x64 independently.
+4. Upload every required installer plus a platform-specific `SHA256SUMS` file.
+5. Publish the Release only after all required platform jobs succeed.
+
+A failed platform build therefore cannot produce a partially public release.
+Builds are ad-hoc/unsigned (no Apple notarization and no Windows Authenticode);
+see [signing.md](signing.md).
+
+## Required pre-release gates
+
+The exact candidate head and the eventual squash/merge commit on `main` must both
+pass the repository CI matrix:
+
+- frontend typecheck, lint, unit/architecture tests and production build;
+- real-Sidecar Playwright E2E;
+- Agent visual-review screenshot capture;
+- Sidecar Ruff/import/tests;
+- packaged Sidecar smoke;
+- macOS Apple Silicon desktop build/runtime verification;
+- Linux x64 desktop build/runtime verification;
+- Windows x64 desktop build/runtime verification.
+
+No cloud credentials, model credentials, signing identities or GUI secrets are
+required by these gates.
+
+## Triggering a release
+
+After the exact `main` commit is green, create the immutable release branch at
+that commit:
 
 ```bash
-# from an up-to-date main
-git tag v0.23.0 && git push origin v0.23.0
-gh workflow run release.yml \
-  -f version=v0.23.0 -f ref=v0.23.0 -f prerelease=false -f draft=false
+git fetch origin main
+git branch release/v0.93.0 <VERIFIED_MAIN_SHA>
+git push origin release/v0.93.0
 ```
 
-The bundle version is stamped from the tag by `scripts/stamp-version.py`
-(writes `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`,
-`src-tauri/Cargo.lock`, `sidecar/pyproject.toml`, and `frontend/package.json`),
-so the app and sidecar report the release version rather than a hardcoded one.
+The branch push is the preferred release trigger because the workflow derives
+both the version and exact source SHA from GitHub itself. `workflow_dispatch`
+remains available for maintenance, but normal releases do not require a manually
+created tag or a separate dispatch step.
 
-## Local builds
+The Release workflow creates the `vX.Y.Z` tag automatically when the hidden
+Release is created and targets the immutable release-branch SHA.
 
-One command per platform (frontend → PyInstaller one-dir sidecar → staged as a
-Tauri resource → `cargo tauri build` → macOS ad-hoc seal):
+## Version stamping
 
-```bash
-scripts/build-desktop-macos.sh      # macOS arm64: .app + .dmg
-scripts/build-desktop-linux.sh      # Linux x64: .deb
-scripts/build-desktop-windows.ps1   # Windows x64: NSIS .exe
-```
+Each platform job runs `scripts/stamp-version.py` with the release version before
+building. It updates the build-time version metadata for Tauri, Cargo, Sidecar and
+frontend packages without requiring a version-only source commit before release.
 
-The sidecar is built **on each platform** (PyInstaller does not reliably
-cross-compile). It is a one-dir bundle staged at
-`src-tauri/sidecar-dist/storage-agent-sidecar/` and bundled via
-`tauri.conf.json` → `bundle.resources`. See [packaging.md](packaging.md).
+## Platform artifacts
+
+Stable public asset names use the product identity **Storage Agent**:
+
+| Platform | Required asset |
+| --- | --- |
+| macOS arm64 | `storage-agent-vX.Y.Z-macos-arm64.app.zip` |
+| macOS arm64 | `storage-agent-vX.Y.Z-macos-arm64.dmg` when DMG generation succeeds |
+| Linux x64 | `storage-agent-vX.Y.Z-linux-x64.deb` |
+| Windows x64 | `storage-agent-vX.Y.Z-windows-x64-setup.exe` |
+
+Every platform also uploads one checksum manifest:
+
+- `SHA256SUMS-macos-arm64.txt`
+- `SHA256SUMS-linux-x64.txt`
+- `SHA256SUMS-windows-x64.txt`
+
+The historical repository, Rust crate and main executable may retain
+`storage-agent-workbench` as a technical compatibility identifier. Public product
+and Release asset names must not use it.
 
 ## macOS sealing
 
-`cargo tauri build` with no signing identity leaves an invalid seal (Finder
-reports "damaged"), and Tauri's own signing applies the hardened runtime, under
-which the PyInstaller sidecar can't load its libraries. So
-`scripts/sign-macos-app-bundle.sh` deep ad-hoc signs the bundle **without** the
-hardened runtime, verifies `codesign --verify --deep --strict`, and rebuilds the
-DMG from the sealed app. See [signing.md](signing.md).
-
-## CI
-
-`.github/workflows/release.yml` has a `prepare` job plus three platform build
-jobs:
-
-| Platform | Asset |
-| --- | --- |
-| macOS arm64 | `...-macos-arm64.dmg` (+ `.app.zip`) |
-| Linux x64 | `...-linux-x64.deb` |
-| Windows x64 | `...-windows-x64-setup.exe` |
-
-Each job stamps the version from the tag, builds the platform's one-dir sidecar,
-builds the Tauri bundle, and uploads stable-named assets with a per-platform
-`SHA256SUMS`. A separate CI workflow runs the frontend build, sidecar tests, and
-a gating macOS desktop build on every push/PR (Linux/Windows desktop builds and
-sidecar packaging run informationally with `continue-on-error`).
+`cargo tauri build` with no signing identity leaves an invalid resource seal, and
+Tauri's hardened-runtime signing prevents the bundled PyInstaller Sidecar from
+loading its embedded framework. The default release therefore runs
+`scripts/sign-macos-app-bundle.sh`, which deep ad-hoc signs **Storage Agent.app**
+without hardened runtime, verifies the seal, and rebuilds the DMG from the sealed
+app. It is still not notarized.
 
 ## Runtime verification
 
 `scripts/verify-runtime-{macos.sh,linux.sh,windows.ps1}` (over
-`verify-runtime-common.py`) confirm the built app launches, spawns the bundled
-sidecar, serves `/health`, and cleans up on quit.
+`verify-runtime-common.py`) verify the built app/technical executable, bundled
+Sidecar `/health`, launch lifecycle where supported, and data-directory safety.
+Technical binary names are deliberately independent of the public product name.
 
-## Checklist
+## Release checklist
 
-1. `main` is green (frontend build + sidecar tests).
-2. Bump the version: `python scripts/stamp-version.py X.Y.Z`, commit.
-3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-4. Dispatch the Release workflow (command above).
-5. Verify the Release has all three installers + `SHA256SUMS`.
-6. Smoke-test at least the macOS build ([release-smoke-test.md](release-smoke-test.md)).
+1. Freeze the candidate head; no speculative changes after this point.
+2. Require exact-head PR CI to be fully green.
+3. Review the `agent-visual-review` artifact for real-state Agent UI coverage.
+4. Merge with an expected-head SHA guard.
+5. Require the exact `main` merge SHA CI to be fully green.
+6. Create `release/vX.Y.Z` at that exact verified SHA.
+7. Require Prepare + macOS + Linux + Windows + Publish Release jobs to succeed.
+8. Verify the final GitHub Release is `draft=false`, `prerelease=false`, and its
+   tag resolves to the verified `main` SHA.
+9. Verify all required assets are non-empty and all three `SHA256SUMS` manifests
+   are present.
+10. Smoke-test the downloaded desktop build when a local platform is available;
+    see [release-smoke-test.md](release-smoke-test.md).

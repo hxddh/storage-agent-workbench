@@ -34,7 +34,7 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
  */
 
 const SIDECAR = `http://127.0.0.1:${process.env.E2E_SIDECAR_PORT || 8799}`;
-const composer = (page: Page) => page.getByPlaceholder(/Ask Storage Agent/i);
+const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 
 async function review(page: Page, label: string, opts: FakeS3Options): Promise<{
   summary: string;

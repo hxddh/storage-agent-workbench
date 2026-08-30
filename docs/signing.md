@@ -67,7 +67,7 @@ notarized build must also ship entitlements that re-allow what the sidecar needs
    and **skip the ad-hoc re-sign** (`scripts/sign-macos-app-bundle.sh`) — Tauri
    will sign + notarize + staple itself. The ad-hoc seal is only for the
    unsigned path and would clobber a real Developer ID signature.
-6. Verify: `spctl -a -vvv "Storage Agent Workbench.app"` should report
+6. Verify: `spctl -a -vvv "Storage Agent.app"` should report
    `accepted` / `source=Notarized Developer ID`, and `xcrun stapler validate`
    should pass.
 

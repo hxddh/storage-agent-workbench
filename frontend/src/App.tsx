@@ -1,82 +1,84 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { closeTopOverlay } from "./lib/overlayStack";
-import {
-  SessionRail,
-  DEFAULT_RAIL_WIDTH,
-  clampRailWidth,
-} from "./components/SessionRail";
-import { Thread } from "./components/Thread";
+import { AgentTask } from "./components/AgentTask";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { FirstRunWizard } from "./components/FirstRunWizard";
 import { CommandPalette } from "./components/CommandPalette";
-import type { SessionActions } from "./components/SessionRail";
 import {
   deleteSession,
   forkSession,
   listCloudProviders,
   listModelProviders,
-  listSessions,
   patchSession,
 } from "./api";
-import type { SessionSummaryRow } from "./types";
 import { dropSessionRun } from "./sessionRuns";
 import { useSidecarHealth } from "./hooks/useSidecarHealth";
 import { useI18n } from "./i18n";
 import { useToast } from "./components/Toast";
 import { ShortcutsSheet } from "./components/ShortcutsSheet";
 import { isEditable, matches } from "./shortcuts";
-import { WorkbenchShell } from "./workbench/WorkbenchShell";
+import { AgentTaskNavigation } from "./agent/AgentTaskNavigation";
+import {
+  DEFAULT_TASK_NAV_WIDTH,
+  clampTaskNavigationWidth,
+  type AgentTaskSummary,
+  type TaskActions,
+} from "./agent/navigationModel";
+import { AgentShell } from "./agent/AgentShell";
+import { listAgentTasks } from "./agent/taskApi";
 
 const ONBOARDED_KEY = "saw.onboarded";
-const RAIL_WIDTH_KEY = "saw.railWidth";
-const RAIL_COLLAPSED_KEY = "saw.railCollapsed";
-const ACTIVE_SESSION_KEY = "saw.activeSession";
-const RAIL_FOLD_PX = 1000;
+// Persisted-data migration keys from pre-v0.93 builds. Keeping them preserves
+// local layout/task continuity; they are not public product vocabulary.
+const NAV_WIDTH_KEY = "saw.railWidth";
+const NAV_COLLAPSED_KEY = "saw.railCollapsed";
+const ACTIVE_TASK_KEY = "saw.activeSession";
+const NAV_FOLD_PX = 1000;
 
-function storedRailWidth(): number {
-  const raw = Number(localStorage.getItem(RAIL_WIDTH_KEY));
-  return Number.isFinite(raw) && raw > 0 ? clampRailWidth(raw) : DEFAULT_RAIL_WIDTH;
+function storedNavigationWidth(): number {
+  const raw = Number(localStorage.getItem(NAV_WIDTH_KEY));
+  return Number.isFinite(raw) && raw > 0 ? clampTaskNavigationWidth(raw) : DEFAULT_TASK_NAV_WIDTH;
 }
 
 export default function App() {
   const { status, slow } = useSidecarHealth();
-  const [sessions, setSessions] = useState<SessionSummaryRow[]>([]);
-  const [activeId, setActiveIdState] = useState<string | null>(
-    () => localStorage.getItem(ACTIVE_SESSION_KEY),
+  const [tasks, setTasks] = useState<AgentTaskSummary[]>([]);
+  const [activeTaskId, setActiveTaskIdState] = useState<string | null>(
+    () => localStorage.getItem(ACTIVE_TASK_KEY),
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [railWidth, setRailWidth] = useState(storedRailWidth);
-  const [railCollapsed, setRailCollapsed] = useState(
-    () => localStorage.getItem(RAIL_COLLAPSED_KEY) === "1",
+  const [navigationWidth, setNavigationWidth] = useState(storedNavigationWidth);
+  const [navigationCollapsed, setNavigationCollapsed] = useState(
+    () => localStorage.getItem(NAV_COLLAPSED_KEY) === "1",
   );
   const [narrow, setNarrow] = useState(
-    () => typeof window !== "undefined" && window.innerWidth < RAIL_FOLD_PX,
+    () => typeof window !== "undefined" && window.innerWidth < NAV_FOLD_PX,
   );
-  const [threadReloadKey, setThreadReloadKey] = useState(0);
+  const [taskReloadKey, setTaskReloadKey] = useState(0);
   const validated = useRef(false);
   const { t } = useI18n();
   const toast = useToast();
 
-  const setActiveId = useCallback((id: string | null) => {
-    setActiveIdState(id);
-    if (id) localStorage.setItem(ACTIVE_SESSION_KEY, id);
-    else localStorage.removeItem(ACTIVE_SESSION_KEY);
+  const setActiveTaskId = useCallback((id: string | null) => {
+    setActiveTaskIdState(id);
+    if (id) localStorage.setItem(ACTIVE_TASK_KEY, id);
+    else localStorage.removeItem(ACTIVE_TASK_KEY);
   }, []);
 
-  const refreshSessions = useCallback(async () => {
+  const refreshTasks = useCallback(async () => {
     try {
-      setSessions(await listSessions());
+      setTasks(await listAgentTasks());
     } catch {
-      // The shell remains usable while the sidecar is starting; health owns the
-      // visible connection state rather than turning a list refresh into chrome.
+      // Connection state belongs to the shell. A refresh failure must not turn
+      // task navigation into a second, contradictory health indicator.
     }
   }, []);
 
   useEffect(() => {
-    const mq = window.matchMedia(`(max-width: ${RAIL_FOLD_PX - 1}px)`);
+    const mq = window.matchMedia(`(max-width: ${NAV_FOLD_PX - 1}px)`);
     const sync = () => setNarrow(mq.matches);
     sync();
     mq.addEventListener("change", sync);
@@ -84,18 +86,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (status === "connected") refreshSessions();
-  }, [status, refreshSessions]);
+    if (status === "connected") refreshTasks();
+  }, [status, refreshTasks]);
 
   useEffect(() => {
-    if (validated.current || sessions.length === 0) return;
+    if (validated.current || tasks.length === 0) return;
     validated.current = true;
-    const stored = localStorage.getItem(ACTIVE_SESSION_KEY);
-    if (stored && !sessions.some((session) => session.id === stored)) {
-      localStorage.removeItem(ACTIVE_SESSION_KEY);
-      setActiveIdState(null);
+    const stored = localStorage.getItem(ACTIVE_TASK_KEY);
+    if (stored && !tasks.some((task) => task.id === stored)) {
+      localStorage.removeItem(ACTIVE_TASK_KEY);
+      setActiveTaskIdState(null);
     }
-  }, [sessions]);
+  }, [tasks]);
 
   useEffect(() => {
     if (status !== "connected") return;
@@ -103,7 +105,17 @@ export default function App() {
     let cancelled = false;
     void Promise.all([listModelProviders(), listCloudProviders()])
       .then(([models, clouds]) => {
-        if (!cancelled && models.length === 0 && clouds.length === 0) setShowWizard(true);
+        // Provider discovery may finish after the user has already dismissed the
+        // first-run surface. Re-check durable onboarding state at resolution time
+        // so a stale async result can never reopen a modal the user just closed.
+        if (
+          !cancelled &&
+          !localStorage.getItem(ONBOARDED_KEY) &&
+          models.length === 0 &&
+          clouds.length === 0
+        ) {
+          setShowWizard(true);
+        }
       })
       .catch(() => undefined);
     return () => { cancelled = true; };
@@ -115,36 +127,36 @@ export default function App() {
   };
 
   const fail = (error: unknown) => toast.error(`${t("app.actionFailed")} ${String(error)}`);
-  const sessionActions: SessionActions = {
-    onRename: async (session, title) => {
-      try { await patchSession(session.id, { title }); } catch (error) { fail(error); }
-      refreshSessions();
-      if (session.id === activeId) setThreadReloadKey((key) => key + 1);
+  const taskActions: TaskActions = {
+    onRename: async (task, title) => {
+      try { await patchSession(task.id, { title }); } catch (error) { fail(error); }
+      refreshTasks();
+      if (task.id === activeTaskId) setTaskReloadKey((key) => key + 1);
     },
-    onTogglePin: async (session) => {
-      try { await patchSession(session.id, { pinned: !session.pinned }); } catch (error) { fail(error); }
-      refreshSessions();
+    onTogglePin: async (task) => {
+      try { await patchSession(task.id, { pinned: !task.pinned }); } catch (error) { fail(error); }
+      refreshTasks();
     },
-    onFork: async (session) => {
+    onFork: async (task) => {
       try {
-        const fork = await forkSession(session.id);
-        if (fork) setActiveId(fork.id);
+        const fork = await forkSession(task.id);
+        if (fork) setActiveTaskId(fork.id);
       } catch (error) { fail(error); }
-      refreshSessions();
+      refreshTasks();
     },
-    onToggleArchive: async (session) => {
+    onToggleArchive: async (task) => {
       try {
-        await patchSession(session.id, { status: session.status === "archived" ? "active" : "archived" });
+        await patchSession(task.id, { status: task.status === "archived" ? "active" : "archived" });
       } catch (error) { fail(error); }
-      refreshSessions();
+      refreshTasks();
     },
-    onDelete: async (session) => {
+    onDelete: async (task) => {
       try {
-        await deleteSession(session.id);
-        if (activeId === session.id) setActiveId(null);
-        dropSessionRun(session.id);
+        await deleteSession(task.id);
+        if (activeTaskId === task.id) setActiveTaskId(null);
+        dropSessionRun(task.id);
       } catch (error) { fail(error); }
-      refreshSessions();
+      refreshTasks();
     },
   };
 
@@ -153,13 +165,13 @@ export default function App() {
       if (matches(event, "palette")) {
         event.preventDefault();
         setPaletteOpen((open) => !open);
-      } else if (matches(event, "newChat")) {
+      } else if (matches(event, "newTask")) {
         event.preventDefault();
-        setActiveId(null);
-      } else if (matches(event, "toggleRail")) {
+        setActiveTaskId(null);
+      } else if (matches(event, "toggleTaskNavigation")) {
         event.preventDefault();
-        setRailCollapsed((collapsed) => {
-          localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? "0" : "1");
+        setNavigationCollapsed((collapsed) => {
+          localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? "0" : "1");
           return !collapsed;
         });
       } else if (matches(event, "shortcuts") && !isEditable(event.target)) {
@@ -171,62 +183,62 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setActiveId]);
+  }, [setActiveTaskId]);
 
-  const railFolded = railCollapsed || narrow;
-  const activeSession = sessions.find((session) => session.id === activeId) ?? null;
+  const navigationFolded = navigationCollapsed || narrow;
+  const activeTask = tasks.find((task) => task.id === activeTaskId) ?? null;
 
   const navigation = (
-    <SessionRail
-      sessions={sessions}
-      activeId={activeId}
-      onSelect={setActiveId}
-      onNew={() => setActiveId(null)}
+    <AgentTaskNavigation
+      tasks={tasks}
+      activeTaskId={activeTaskId}
+      onSelectTask={setActiveTaskId}
+      onNew={() => setActiveTaskId(null)}
       onOpenSettings={() => setDrawerOpen(true)}
       status={status}
       slow={slow}
-      actions={sessionActions}
-      width={railWidth}
-      collapsed={railFolded}
+      actions={taskActions}
+      width={navigationWidth}
+      collapsed={navigationFolded}
       onOpenPalette={() => setPaletteOpen(true)}
-      onToggleCollapse={() => setRailCollapsed((collapsed) => {
-        localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? "0" : "1");
+      onToggleCollapse={() => setNavigationCollapsed((collapsed) => {
+        localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? "0" : "1");
         return !collapsed;
       })}
       onResize={(pixels) => {
-        setRailWidth(pixels);
-        localStorage.setItem(RAIL_WIDTH_KEY, String(pixels));
+        setNavigationWidth(pixels);
+        localStorage.setItem(NAV_WIDTH_KEY, String(pixels));
       }}
     />
   );
 
-  const timeline = (
-    <Thread
-      sessionId={activeId}
-      onSessionCreated={(id) => {
-        setActiveId(id);
-        refreshSessions();
+  const taskContent = (
+    <AgentTask
+      taskId={activeTaskId}
+      onTaskCreated={(id) => {
+        setActiveTaskId(id);
+        refreshTasks();
       }}
       sidecarStatus={status}
-      onSessionDiscarded={(id) => {
-        if (activeId === id) setActiveId(null);
-        refreshSessions();
+      onTaskDiscarded={(id) => {
+        if (activeTaskId === id) setActiveTaskId(null);
+        refreshTasks();
       }}
       onOpenSettings={() => setDrawerOpen(true)}
-      onChanged={refreshSessions}
+      onChanged={refreshTasks}
       sidecarReady={status === "connected"}
       settingsOpen={drawerOpen}
-      reloadKey={threadReloadKey}
+      reloadKey={taskReloadKey}
     />
   );
 
   return (
     <div className="h-full w-full bg-canvas text-gray-200">
-      <WorkbenchShell
+      <AgentShell
         navigation={navigation}
-        timeline={timeline}
-        sessionId={activeId}
-        session={activeSession}
+        taskContent={taskContent}
+        taskId={activeTaskId}
+        task={activeTask}
         sidecarStatus={status}
         onOpenPalette={() => setPaletteOpen(true)}
         onOpenSettings={() => setDrawerOpen(true)}
@@ -237,9 +249,9 @@ export default function App() {
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
-        sessions={sessions}
-        onSelectSession={setActiveId}
-        onNew={() => setActiveId(null)}
+        tasks={tasks}
+        onSelectTask={setActiveTaskId}
+        onNew={() => setActiveTaskId(null)}
         onOpenSettings={() => setDrawerOpen(true)}
       />
 

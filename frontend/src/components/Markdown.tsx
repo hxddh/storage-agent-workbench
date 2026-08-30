@@ -1,9 +1,15 @@
-/**
- * Public Answer Document boundary.
- *
- * Parsing, syntax safety, tables, charts and code rendering live behind this
- * module so the conversation layer depends on a document contract rather than a
- * 36 KB parser implementation. v0.91 intentionally keeps the proven renderer
- * byte-for-byte while making future renderer replacement local to this surface.
- */
+import { Markdown as MarkdownImplementation } from "./MarkdownImplementation";
 export * from "./MarkdownImplementation";
+
+/**
+ * Public prose boundary for Agent Work Results, Evidence and Report artifacts.
+ * The proven parser/safety implementation stays isolated underneath while the
+ * product consumes durable Agent prose through one width-safe rendering layer.
+ */
+export function Markdown({ text }: { text: string }) {
+  return (
+    <div className="agent-prose min-w-0 break-words" data-testid="agent-prose">
+      <MarkdownImplementation text={text} />
+    </div>
+  );
+}

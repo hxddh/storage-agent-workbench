@@ -2,97 +2,136 @@
 
 ## Where it is now
 
-The workbench is feature-complete for its core loop and ships installers for
-macOS (arm64), Linux (x64), and Windows (x64) on every tagged release.
+Storage Agent ships a local-first desktop runtime for object-storage work and
+builds installers for macOS Apple Silicon, Linux x64 and Windows x64.
 
 Working end to end:
 
-- Model + cloud (S3-compatible) provider configuration; secrets in an encrypted
-  local vault (no system prompts).
+- Model and S3-compatible Storage Provider configuration; secrets live only in
+  the encrypted local vault.
+- Durable **Agent Tasks** with rename / pin / archive / delete / duplicate /
+  branch / search.
+- One Agent Composer that delegates at rest and becomes **Steer + Stop** during
+  active Execution.
+- Per-task live state including Working, Needs decision, Needs attention and
+  Ready.
 - Read-only S3 diagnostics and account discovery.
-- Bucket configuration review (security / lifecycle / observability / cost).
-- Managed evidence import (plan → confirm → run) for inventory and access logs.
-- Local DuckDB analysis of inventory and access logs (deterministic engine; the
-  conversational agent narrates the sanitized result).
-- Error triage (deterministic).
-- Sessions: a persistent investigation workspace with rename / pin / archive /
-  delete / fork.
-- A thread-first conversational agent — the single LLM in the product — that
-  investigates live with read-only tools, keeps working memory across turns, and
-  runs read-only checks (S3 probes, account survey, config review, uploaded-file
-  analysis) itself. Data-moving actions always wait for your confirmation.
-- Markdown reports.
+- Bucket configuration review for security, lifecycle, observability, cost and
+  performance.
+- Managed Evidence Import with plan → explicit Decision → execution for bounded
+  inventory/access-log data movement.
+- Local DuckDB analysis of inventory and access logs; the model receives only the
+  bounded/sanitized analysis context allowed by the runtime.
+- Deterministic object-storage error triage.
+- Durable Directions, Work Results, findings, task memory and Execution records.
+- Contextual Review for Evidence, Execution and Report Artifacts without leaving
+  the active Task.
+- Markdown Report Artifacts.
+- Concurrent task execution: a real in-flight Task can continue while another
+  Task is selected, and returns with its runtime state intact.
 
-Verified by three test layers — a pytest suite over the sidecar (engines,
-repositories, tool semantics, the security floor, plus a per-release regression
-file for every shipped fix), Vitest over the frontend's state machine, and a
-Playwright E2E smoke suite that drives a real sidecar plus the production bundle.
-CI runs all three on every PR, alongside desktop builds for the three platforms.
+The current product is deliberately **not** presented as a conversation shell or
+an admin console with AI attached. The Agent Task is the primary work environment
+and runtime truth drives the visible execution state.
+
+## Quality floor
+
+Every pull request is checked by multiple independent layers:
+
+- Sidecar pytest coverage for engines, repositories, tool semantics, safety and
+  shipped regressions.
+- Frontend unit, architecture and legacy-contract guards.
+- Real-Sidecar Playwright E2E for Agent delegation, Execution, durable Work
+  Results, Stop/Steer, task concurrency, Decisions, Review, localization,
+  accessibility and secret sanitization.
+- A real-state visual-review contact sheet generated from the same Sidecar-backed
+  application states; it captures Delegate, Working+Steer, Decision, Work Result,
+  Execution, Review, narrow layout and localized UI for human design review.
+- Desktop build/runtime verification on macOS, Linux and Windows.
+
+The frontend architecture guards explicitly reject the removed Chat-era
+production contracts so old Session/Rail/Inspector/Timeline UI cannot quietly
+return through incremental changes.
 
 ## Known gaps
 
-- Builds are ad-hoc signed, **not** notarized (macOS) or Authenticode-signed
-  (Windows); see [signing.md](signing.md). Both need paid/managed signing
-  credentials, so they are a decision before they are an implementation.
-- No auto-update (it needs a signing key and an update manifest — same
-  precondition as above).
+### Distribution
+
+- Builds are not distributed with Apple notarization or Windows Authenticode
+  signing; see [signing.md](signing.md).
+- No auto-update because a trusted update-signing/distribution chain has not been
+  provisioned.
 - macOS x64 / universal builds are not produced.
-- Inventory import is CSV / Parquet only (no ORC).
-- CloudTrail / Storage Lens / provider-native access-log sources are not yet
-  integrated.
-- Nothing is tested against a **real** model provider, a **signature-checking**
-  S3 server, or a **live** bucket. What IS covered, precisely: 11 of the 22 E2E
-  specs drive a full model-backed turn against a scripted local
-  OpenAI-compatible endpoint (`e2e/fake-model.ts`); v0.76.0 drives every
-  read-only tool against a real socket answering the way a *hostile* endpoint
-  answers; and v0.84.0 drives them against a real *stateful* S3 server
-  (`tests/live_s3.py`, moto) for the success half — pagination that continues,
-  versions and delete markers, 206, 304, multipart parts, and keys that need URL
-  encoding.
 
-  What remains uncovered is narrower than it was, and worth naming exactly:
-  **signature verification** (moto accepts a wrong secret — verified, not
-  assumed), **provider-specific quirks** (MinIO's 501s on config sub-resources,
-  Ceph's pagination edges), and **a live provider key or bucket**. The last is
-  deliberate — credentials in CI, and a flaky gate. The first two are not
-  deliberate, just unbuilt: they need a container, not a pip install.
+### Evidence sources
 
-  (v0.78.0 is the standing example of what a double can hide: the scripted model
-  emitted one tool-call ID for every call, which no real model does, and that
-  alone was read as an SDK regression for a whole release. The v0.84.0 gate was
-  itself checked the same way — a mutation that mangles key encoding fails it
-  while all 1520 other tests pass.)
+- Inventory import is CSV / Parquet only; no ORC.
+- CloudTrail, Storage Lens and provider-native access-log sources are not yet
+  integrated as first-class Evidence sources.
+
+### Provider realism in CI
+
+CI deliberately carries no live cloud/model credentials. Model-backed E2E uses a
+scripted local OpenAI-compatible endpoint; storage-tool behavior is tested
+against both hostile socket-level doubles and a real stateful local S3 server
+where appropriate.
+
+Still not covered by required CI:
+
+- real provider signature verification with production credentials;
+- provider-specific quirks that require dedicated MinIO/Ceph/etc. containers;
+- a live public-cloud account/bucket.
+
+These gaps should be described precisely rather than hidden behind a generic
+“integration tests exist” claim.
 
 ## Direction
 
-This list is what is *actionable*, in order. It is deliberately not led by the
-biggest-sounding item.
+The next work should deepen the Agent's ability to complete real storage tasks,
+not add Agent-looking chrome unsupported by the runtime.
 
-1. **Broader evidence sources.** ORC inventory is the small one. CloudTrail and
-   Storage Lens each need their own confirmed-import flow, so each is a release
-   of its own.
-2. **Richer agent-assisted analysis** over what is already imported.
-3. **macOS x64 / universal builds**, if anyone is actually on Intel.
+1. **Broader Evidence sources.** Add ORC inventory, then provider-native logs /
+   CloudTrail / Storage Lens through bounded, confirmation-gated import flows.
+2. **Richer evidence-backed Agent analysis.** Improve what the runtime can infer
+   and correlate from already-imported Evidence while retaining deterministic
+   auditability and explicit gaps.
+3. **Stronger Decision UX and resumability.** Keep confirmation-gated operations
+   first-class and make it increasingly clear what will happen, why it blocks and
+   what resumes after approval/cancel.
+4. **More provider-realistic test infrastructure.** Add dedicated S3-compatible
+   containers for signature and provider-quirk coverage without putting cloud
+   credentials into CI.
+5. **macOS x64 / universal builds** only if real user demand justifies the extra
+   release matrix.
 
-**Signing, notarization and auto-update are not on this list, and that is a
-change.** They used to head it, which misread the situation: they are blocked on
-somebody buying an Apple Developer ID and a Windows code-signing certificate, so
-listing them as the next engineering step made a purchasing decision look like a
-backlog item and pushed the things that *can* be built down the page. They stay
-in Known gaps until that decision is made. When it is, the payoff is larger than
-just signed installers: auto-update becomes possible, and macOS could move
-secrets back to the system keychain without the update-time re-prompt that ruled
-it out (see the vault rationale in `CLAUDE.md`).
+## Things we will not fake
 
-A note on sequencing, learned the hard way. Recent releases have mostly deepened
-the safety and correctness floor rather than widening the feature surface, and
-that has been the right call more often than not — v0.78.0 fixed a concurrency
-defect that had been making CI red for several releases and was mis-diagnosed
-three times before the evidence was captured properly. Feature work on top of a
-floor that is still moving costs more than it looks like it will.
+Do not add these as UI concepts before the runtime genuinely supports them:
 
-None of these change the safety model — read-only (no write/destructive tool),
-secrets only in the encrypted local vault, no data-moving action without
-explicit confirmation, and every tool result treated as untrusted data. See
-[security.md](security.md) for the current state of that floor, and the
-CHANGELOG for what each release hardened.
+- multi-agent orchestration;
+- coding-Agent projects/worktrees;
+- generated plans/checklists that are not runtime state;
+- generic terminal/browser/computer control;
+- hidden background workers represented as autonomous Agent processes;
+- destructive storage repair/mutation;
+- a page/tab for every persistence table.
+
+A top-tier Agent product is not defined by copying another product's chrome. It
+is defined by a trustworthy loop where the user delegates work, can see real
+Execution, can Steer/Stop it, is interrupted only for real Decisions, and receives
+reviewable artifacts.
+
+## Safety remains non-negotiable
+
+Future capability work must preserve the current safety floor:
+
+- storage access is read-only;
+- no destructive/general shell tool;
+- secrets only in the encrypted local vault;
+- data-moving cloud actions require explicit Decision;
+- model/tool context is sanitized and bounded;
+- Evidence gaps stay gaps rather than being converted into guesses;
+- chain-of-thought is neither persisted nor exposed.
+
+See [security.md](security.md) for the authoritative security model and the
+CHANGELOG for release-by-release hardening history.

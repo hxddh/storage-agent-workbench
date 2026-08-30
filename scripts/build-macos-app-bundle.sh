@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the macOS .app (and DMG, if the bundler can) for Storage Agent Workbench.
+# Build the macOS .app (and DMG, if the bundler can) for Storage Agent.
 #
 # Steps: frontend build -> one-dir sidecar build + stage resource ->
 # `cargo tauri build` (bundle active). Produces an UNSIGNED bundle. No code

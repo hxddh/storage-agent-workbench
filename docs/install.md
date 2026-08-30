@@ -13,28 +13,28 @@ ready.
 
 ## macOS (Apple Silicon)
 
-1. Download `...-macos-arm64.dmg` (or `...-macos-arm64.app.zip`).
-2. From the DMG, drag **Storage Agent Workbench** to `/Applications`; from the
-   zip, unzip and move the app there.
+1. Download `storage-agent-vX.Y.Z-macos-arm64.dmg` (or `.app.zip`).
+2. From the DMG, drag **Storage Agent** to `/Applications`; from the zip, unzip
+   and move the app there.
 3. Open it one of two ways:
    - **Finder:** right-click the app → **Open** → **Open** in the dialog; or
    - **Terminal:** clear the quarantine attribute, then open:
 
      ```bash
-     xattr -dr com.apple.quarantine "/Applications/Storage Agent Workbench.app"
-     open "/Applications/Storage Agent Workbench.app"
+     xattr -dr com.apple.quarantine "/Applications/Storage Agent.app"
+     open "/Applications/Storage Agent.app"
      ```
 
 The app is ad-hoc code-signed but **not notarized**, so macOS may say either
 *"Apple cannot check it for malicious software"* or *"is damaged and can't be
-opened."* Both just mean the missing Apple signature — the **Terminal** step
+opened."* Both just mean the missing Apple notarization — the **Terminal** step
 above (clearing the quarantine flag) reliably resolves either; right-click →
 Open only handles the first. See [signing.md](signing.md).
 
 ## Linux (x64)
 
 ```bash
-sudo apt install ./storage-agent-workbench-*-linux-x64.deb
+sudo apt install ./storage-agent-*-linux-x64.deb
 ```
 
 Or download the `.deb` and install via your package manager. A WebKitGTK runtime
@@ -42,9 +42,10 @@ is required (pulled in as a dependency on most distributions).
 
 ## Windows (x64)
 
-Run `...-windows-x64-setup.exe`. SmartScreen may warn because the installer is
-not Authenticode-signed — choose **More info → Run anyway**. The WebView2 runtime
-is required (preinstalled on current Windows; the installer fetches it if absent).
+Run `storage-agent-*-windows-x64-setup.exe`. SmartScreen may warn because the
+installer is not Authenticode-signed — choose **More info → Run anyway**. The
+WebView2 runtime is required (preinstalled on current Windows; the installer
+fetches it if absent).
 
 ## Data and secrets
 

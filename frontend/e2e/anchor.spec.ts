@@ -21,15 +21,15 @@ import { seedSession } from "./seed";
  * The spacer is gone. What these assert now is the plain property it violated:
  * below the last thing the agent said there is nothing left to scroll into.
  */
-const composer = (p: Page) => p.getByPlaceholder(/Ask Storage Agent/i);
-const scroller = (p: Page) => p.getByTestId("thread-scroll");
+const composer = (p: Page) => p.getByTestId("agent-composer").getByRole("textbox");
+const scroller = (p: Page) => p.getByTestId("task-scroll");
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
 /** How much scrollable nothing is left under the last painted content. */
 const emptiness = (page: Page) =>
   page.evaluate(() => {
-    const sc = document.querySelector('[data-testid="thread-scroll"]') as HTMLElement;
+    const sc = document.querySelector('[data-testid="task-scroll"]') as HTMLElement;
     const area = sc.getBoundingClientRect();
     let lowest = area.top;
     for (const n of Array.from(sc.querySelectorAll<HTMLElement>("*"))) {
@@ -57,7 +57,7 @@ async function ask(page: Page, answer: string, question: string) {
   await page.goto("/");
   await expect(composer(page)).toBeVisible({ timeout: 30_000 });
   await page.getByText(title, { exact: true }).first().click();
-  await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".task-item").first()).toBeVisible({ timeout: 30_000 });
   await composer(page).click();
   await composer(page).fill(question);
   await composer(page).press("Enter");
@@ -104,7 +104,7 @@ test("the answer is on screen when it finishes, not scrolled past", async ({ pag
     // Removing the spacer must not reintroduce the opposite fault: the reader
     // ends the turn looking at the answer, inside the reading area.
     const seen = await page.evaluate(() => {
-      const sc = document.querySelector('[data-testid="thread-scroll"]') as HTMLElement;
+      const sc = document.querySelector('[data-testid="task-scroll"]') as HTMLElement;
       const el = Array.from(sc.querySelectorAll<HTMLElement>("p, li")).find((n) =>
         (n.textContent ?? "").includes("omits s3:ListBucket for that principal"),
       )!;
@@ -143,7 +143,7 @@ test("the sticky context bar is gone", async ({ page }) => {
   await page.goto("/");
   await expect(composer(page)).toBeVisible({ timeout: 30_000 });
   await page.getByText(title, { exact: true }).first().click();
-  await expect(page.locator(".thread-item").first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".task-item").first()).toBeVisible({ timeout: 30_000 });
   await scroller(page).evaluate((el) => { el.scrollTop = el.scrollHeight / 2; });
   await page.waitForTimeout(600);
   await expect(page.getByTestId("turn-context")).toHaveCount(0);

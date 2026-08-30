@@ -1,0 +1,17 @@
+/* Blocking Agent state is neither Ready nor Error.
+ * A real confirmation-required action waits on the user, so it gets a distinct
+ * warning tone everywhere the task state is summarized. */
+.agent-task-live-state[data-state="decision"] {
+  color: var(--warn-fg);
+}
+
+.agent-task-live-state[data-state="decision"] i,
+.agent-task-row[data-state="decision"] .agent-task-state-mark {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
+.agent-task-row[data-state="decision"] .agent-task-row-state > span:first-child {
+  color: var(--warn-fg);
+  font-weight: 600;
+}

@@ -26,7 +26,7 @@ async function openSettings(page: Page) {
     localStorage.setItem("saw.onboarded", "1");
   });
   await page.goto("/");
-  await expect(page.getByPlaceholder(/Ask Storage Agent/i)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("agent-composer").getByRole("textbox")).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: /settings/i }).first().click();
   await expect(page.getByText(/settings & providers/i)).toBeVisible();
 }

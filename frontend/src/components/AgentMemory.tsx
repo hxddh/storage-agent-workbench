@@ -3,23 +3,21 @@ import { useI18n } from "../i18n";
 import type { AgentMemoryItem, AgentMemoryKind, AttachedFile } from "../types";
 
 /**
- * What the agent knows — and the ability to correct it.
+ * Durable task memory — and the ability to correct it.
  *
- * The agent writes its own working memory as it investigates (`note_fact`,
- * `record_finding`, `note_open_question`) and that memory is replayed into the
- * context of EVERY later turn. Until v0.51.0 none of it was visible: the session
- * endpoint did not return it and the report rendered only findings, so a wrong
- * fact — "bucket acme-logs is path-style only" — steered the rest of the
- * investigation with no way for the person watching to see it, let alone fix it.
+ * The Agent records working memory while it executes (`note_fact`,
+ * `record_finding`, `note_open_question`) and replays that state into later task
+ * steps. Exposing it is essential: an incorrect premise must be visible and
+ * correctable instead of silently steering future execution.
  *
- * Two operations, both of which the agent already had for itself:
+ * Two operations preserve provenance:
  *
- *  - **correct** rewrites the text (the item keeps its id and provenance);
- *  - **resolve** closes it, so it leaves the active set and stops being replayed.
+ *  - **correct** rewrites the text while preserving identity and provenance;
+ *  - **resolve** closes the item so it leaves the active set and stops replaying.
  *
- * Resolve rather than delete: the row survives for the audit trail. Both are
- * recorded as rule-17 audit events with `by: user`, so a later reader can tell
- * which premises came from the agent and which a human overrode.
+ * Resolve rather than delete: the row survives in the audit record. Both actions
+ * are recorded as rule-17 audit events with `by: user`, so later review can
+ * distinguish Agent premises from operator corrections.
  */
 
 const KIND_ORDER: AgentMemoryKind[] = ["fact", "finding", "open_question"];
@@ -160,7 +158,7 @@ export function AgentMemoryPanel({
 }: {
   memory: AgentMemoryItem[];
   files?: AttachedFile[];
-  /** How many messages the agent replays, and how many exist. */
+  /** Number of persisted task entries replayed into model context versus total. */
   contextMessages?: number;
   messageTotal?: number;
   onCorrect: (id: string, text: string) => Promise<void>;
@@ -188,9 +186,8 @@ export function AgentMemoryPanel({
       </h3>
 
       {rolled && (
-        // Honesty about the rolling window: the agent is not re-reading the
-        // whole conversation, and a reader who assumes it is will misjudge
-        // what its later answers are based on.
+        // Make the rolling context window explicit so review never implies the
+        // Agent re-read task history that is no longer in active model context.
         <p className="mb-2.5 rounded border border-warn-border bg-warn-bg px-2 py-1.5 text-2xs text-warn-fg"
            data-testid="context-rolled">
           {t("memory.rolled", { shown: contextMessages!, total: messageTotal! })}
