@@ -26,9 +26,12 @@ from .migrations import apply_migrations
 # Changing journal_mode can return SQLITE_BUSY immediately even when connect()
 # timeout / busy_timeout are set. A handful of short retries covers TestClient
 # teardown overlapping the next lifespan, leftover worker connections, and CI
-# filesystem stalls — without waiting the full 30s busy timeout per attempt.
+# filesystem stalls. Each attempt uses a *short* busy_timeout so a persistent
+# lock cannot multiply the connection's 30s wait eight times (≈4 minutes).
 _WAL_LOCK_RETRIES = 8
 _WAL_LOCK_INITIAL_DELAY_S = 0.05
+_WAL_LOCK_BUSY_TIMEOUT_MS = 100
+_CONNECT_BUSY_TIMEOUT_MS = 30000
 
 # Serializes EVERY statement on a connection that is shared across threads.
 #
@@ -244,7 +247,12 @@ def _enable_wal(conn: sqlite3.Connection) -> None:
     (``init_db`` inside the FastAPI lifespan) then fails as a fixture ERROR
     rather than a slow wait. Retrying with backoff is the coordination
     ``busy_timeout`` does not provide for this pragma.
+
+    A short per-attempt busy_timeout is load-bearing: with the connection's
+    30s timeout still in effect, eight retries would block startup for minutes
+    on a persistent lock. ``connect()`` restores the full timeout afterwards.
     """
+    conn.execute(f"PRAGMA busy_timeout = {_WAL_LOCK_BUSY_TIMEOUT_MS}")
     delay = _WAL_LOCK_INITIAL_DELAY_S
     last_exc: sqlite3.OperationalError | None = None
     for attempt in range(_WAL_LOCK_RETRIES):
@@ -295,10 +303,8 @@ def connect() -> SerializedConnection:
         timeout=30.0,
     )
     conn.row_factory = sqlite3.Row
-    # busy_timeout first: later statements honor it. journal_mode still needs
-    # its own retry — see `_enable_wal`.
-    conn.execute("PRAGMA busy_timeout = 30000")
     _enable_wal(conn)
+    conn.execute(f"PRAGMA busy_timeout = {_CONNECT_BUSY_TIMEOUT_MS}")
     conn.execute("PRAGMA foreign_keys = ON")
     if not db_existed and os.name == "posix":
         # The DB holds object keys, derived rows and keyring:// refs — keep it
