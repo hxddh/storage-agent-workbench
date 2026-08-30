@@ -148,9 +148,10 @@ def tick(now: str | None = None, conn: sqlite3.Connection | None = None) -> int:
             except (AgentUnavailable, KeyError) as exc:
                 logger.info("revisit skipped for %s: %s", task_id, exc)
                 conn.execute(
-                    "UPDATE task_revisit_schedules SET next_due_at = ?, last_revisit_at = NULL, "
-                    "last_catchup_note = NULL, updated_at = ? WHERE task_id = ?",
-                    (row["next_due_at"], stamp, task_id),
+                    "UPDATE task_revisit_schedules SET next_due_at = ?, last_revisit_at = ?, "
+                    "last_catchup_note = ?, updated_at = ? WHERE task_id = ?",
+                    (row["next_due_at"], row["last_revisit_at"],
+                     row["last_catchup_note"], stamp, task_id),
                 )
                 conn.commit()
                 continue

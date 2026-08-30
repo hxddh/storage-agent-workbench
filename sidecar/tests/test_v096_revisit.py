@@ -129,6 +129,33 @@ def test_concurrent_ticks_submit_one_revisit(tmp_path, monkeypatch):
     assert submitted == ["revisit"]
 
 
+def test_unavailable_agent_rolls_back_claim_but_keeps_catchup_note(tmp_path, monkeypatch):
+    from app.agent_runtime.agent_service import AgentUnavailable
+    path = tmp_path / "u.db"
+    conn = _db(path)
+    revisit_mod.set_schedule(conn, "task", interval_days=7, enabled=True)
+    conn.execute(
+        "UPDATE task_revisit_schedules SET next_due_at = ?, last_catchup_note = ? "
+        "WHERE task_id = ?",
+        ("2020-01-01T00:00:00Z", "catch-up", "task"),
+    )
+    conn.commit()
+    conn.close()
+
+    def boom(conn, task_id, direction, turn_id=None, *, kind="direction", **kwargs):
+        raise AgentUnavailable("No model provider configured.")
+
+    monkeypatch.setattr("app.task_runtime.runtime.submit", boom)
+    monkeypatch.setattr("app.db.connect", lambda: _row(path))
+    assert revisit_mod.tick(now="2026-08-30T00:00:00Z") == 0
+    row = dict(_row(path).execute(
+        "SELECT next_due_at, last_catchup_note FROM task_revisit_schedules WHERE task_id = ?",
+        ("task",),
+    ).fetchone())
+    assert row["next_due_at"] == "2020-01-01T00:00:00Z"
+    assert row["last_catchup_note"] == "catch-up"
+
+
 def _row(path):
     c = sqlite3.connect(path, timeout=10)
     c.row_factory = sqlite3.Row

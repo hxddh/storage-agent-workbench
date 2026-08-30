@@ -269,7 +269,7 @@ test.describe("Agent runtime states", () => {
 
   test("Catch-up revisit state is labelled in Review", async ({ page }) => {
     const title = "Catch-up revisit caretaker";
-    seedOptimizationTask(title, "due");
+    seedOptimizationTask(title, "catchup");
     await openAgent(page, "dark");
     await navigation(page).getByText(title, { exact: true }).first().click();
     await page.getByTestId("agent-task-review").click();

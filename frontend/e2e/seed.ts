@@ -251,7 +251,7 @@ conn.execute(
     (uuid.uuid4().hex, sid, "No AbortIncompleteMultipartUpload rule",
      "Incomplete multipart uploads are not aborted automatically."),
 )
-if mode in ("review", "due"):
+if mode in ("review", "due", "catchup"):
     plan_id = uuid.uuid4().hex
     conn.execute(
         "INSERT INTO remediation_plans (id, task_id, version, status, title,"
@@ -299,7 +299,7 @@ if mode in ("review", "due"):
                      "still_present": [{"title": "No AbortIncompleteMultipartUpload rule"}]},
                      "coverage": {"object_count": 100}})),
     )
-    note = "catch-up" if mode == "due" else None
+    note = "catch-up" if mode in ("due", "catchup") else None
     due = "2020-01-01T00:00:00Z" if mode == "due" else "2099-01-01T00:00:00Z"
     conn.execute(
         "INSERT INTO task_revisit_schedules (task_id, enabled, interval_days, next_due_at,"
@@ -312,7 +312,7 @@ print(sid)
 
 export function seedOptimizationTask(
   title = `cost review ${randomUUID().slice(0, 8)}`,
-  mode: "inventory" | "review" | "due" = "inventory",
+  mode: "inventory" | "review" | "due" | "catchup" = "inventory",
 ): { id: string; title: string } {
   const { id } = seedSession(1, title, "short");
   execFileSync(
