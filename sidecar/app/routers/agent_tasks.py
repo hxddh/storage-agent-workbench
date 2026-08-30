@@ -18,7 +18,6 @@ import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 
 from ..db import get_conn
 from ..models.schemas import SessionSummary
