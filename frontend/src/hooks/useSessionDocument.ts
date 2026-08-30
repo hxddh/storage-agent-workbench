@@ -5,6 +5,7 @@ import {
   getSessionOverview,
   getSessionTriage,
   getSessionTurnState,
+  getTaskState,
   streamExecutionEvents,
 } from "../api";
 import type { TFunc } from "../i18n";
@@ -136,6 +137,10 @@ export function useSessionDocument({
     let timer = 0;
     let followCtl: AbortController | null = null;
     let following = false;
+    // True after a check found this client's own runner busy — used to reload
+    // once when the task goes idle, so durable work that finished in the gap
+    // (a fast steer follow-up execution) lands in the document.
+    let sawOwnBusy = false;
 
     const follow = async (state: SessionTurnState, executionId: string) => {
       following = true;
@@ -145,6 +150,16 @@ export function useSessionDocument({
         busy: true, error: null, stopped: false, stalled: false,
         streamText: null, streamTools: [],
       });
+      // The live view renders under the execution's Direction; the turn-state
+      // shape doesn't carry it, so read it from the durable task state (this
+      // also covers a steer follow-up, whose Direction is the steer text).
+      try {
+        const taskState = await getTaskState(sessionId);
+        const direction = taskState.active_execution?.direction;
+        if (direction) patchSessionRun(sessionId, { pending: direction });
+      } catch {
+        /* the stream below still shows tools/deltas without the bubble */
+      }
       try {
         await streamExecutionEvents(
           sessionId, executionId,
@@ -174,7 +189,13 @@ export function useSessionDocument({
       if (stopped) return;
       if (getSessionRun(sessionId).busy) {
         // This client's own runner (or an active follower) owns the live view.
+        // Re-check after it settles rather than going dormant: the runtime may
+        // hold MORE durable work for this task than the turn this client is
+        // watching — a queued delegation, or the automatic follow-up execution
+        // a late steer becomes — and nothing else would ever attach to it.
         setRemoteTurn(null);
+        sawOwnBusy = true;
+        timer = window.setTimeout(tick, 1500);
         return;
       }
       let state: SessionTurnState | null = null;
@@ -185,12 +206,14 @@ export function useSessionDocument({
       }
       if (stopped || localId.current !== sessionId) return;
       if (state.running && state.execution_id) {
+        sawOwnBusy = false;
         void follow(state, state.execution_id);
       } else if (state.running) {
         setRemoteTurn(state);
         timer = window.setTimeout(tick, 3000);
       } else {
-        if (remoteTurnRef.current) void reload(sessionId);
+        if (remoteTurnRef.current || sawOwnBusy) void reload(sessionId);
+        sawOwnBusy = false;
         setRemoteTurn(null);
       }
     };
