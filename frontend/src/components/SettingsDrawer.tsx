@@ -151,15 +151,18 @@ function PriceTableSection() {
             </tr>
           </thead>
           <tbody>
-            {classes.map((name) => (
+            {classes.map((name) => {
+              const labelId = `price-rate-${name.replace(/[^A-Za-z0-9_-]/g, "-")}`;
+              return (
               <tr key={name} className="border-b border-edge last:border-0">
-                <td className="px-3 py-1.5 font-mono text-2xs text-gray-300">{name}</td>
+                <th id={labelId} scope="row" className="px-3 py-1.5 text-left font-mono text-2xs font-normal text-gray-300">{name}</th>
                 <td className="px-3 py-1.5 text-right">
                   <input
                     type="number"
                     step="0.0001"
                     min="0"
                     value={rates[name]}
+                    aria-labelledby={labelId}
                     onChange={(event) => {
                       const value = Number.parseFloat(event.target.value);
                       setTable({
@@ -175,7 +178,8 @@ function PriceTableSection() {
                   />
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

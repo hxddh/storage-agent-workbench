@@ -39,6 +39,10 @@ import { matches } from "../shortcuts";
 import { clearFind, findRanges, paintFind } from "../lib/findHighlight";
 import { stepHit } from "../taskFind";
 import { inferDatasetType } from "../datasetType";
+import {
+  isCurrentPersistedDirection,
+  pendingMatchesPersistedDirection,
+} from "../lib/pendingDirection";
 import { FindBar } from "./FindBar";
 
 const PENDING_DIRECTION_ID = "task-pending-direction";
@@ -340,14 +344,12 @@ export function AgentTaskImplementation({
     return output.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   }, [detail, triage, earlier]);
 
-  const pendingAlreadyPersisted = Boolean(
-    pending &&
-    items.some((item) => item.kind === "message" && item.role === "user" && (item.content ?? "") === pending),
-  );
+  const hideLiveDirection = isCurrentPersistedDirection(items, pending);
   useEffect(() => {
-    if (!sessionId || !pending || !pendingAlreadyPersisted) return;
+    if (!sessionId || !pending || busy) return;
+    if (!pendingMatchesPersistedDirection(items, pending)) return;
     patchSessionRun(sessionId, { pending: null });
-  }, [sessionId, pending, pendingAlreadyPersisted]);
+  }, [sessionId, pending, busy, items]);
 
   const nextActions = liveNextActions ?? [];
 
@@ -869,11 +871,14 @@ export function AgentTaskImplementation({
                   </div>
                 ) : null}
 
-                {pending && !pendingAlreadyPersisted ? (
+                {pending && !hideLiveDirection ? (
+                  <div id={PENDING_DIRECTION_ID} data-direction={pending}>
+                    <AgentTaskResult role="user" content={pending} />
+                  </div>
+                ) : null}
+
+                {pending ? (
                   <>
-                    <div id={PENDING_DIRECTION_ID} data-direction={pending}>
-                      <AgentTaskResult role="user" content={pending} />
-                    </div>
                     {streamText !== null || streamTools.length ? (
                       <>
                         <AgentTaskResult role="assistant" content={streamText ?? ""} toolActivity={streamTools} streaming={!run.stopped} sessionId={sessionId} />
@@ -893,7 +898,7 @@ export function AgentTaskImplementation({
                           }}>{taskCopy.reload}</Button>
                         </div>
                       </div>
-                    ) : <ThinkingBubble />}
+                    ) : busy ? <ThinkingBubble /> : null}
                   </>
                 ) : null}
 
