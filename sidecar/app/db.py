@@ -17,10 +17,18 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
+import time
 from collections.abc import Iterator
 
 from . import config
 from .migrations import apply_migrations
+
+# Changing journal_mode can return SQLITE_BUSY immediately even when connect()
+# timeout / busy_timeout are set. A handful of short retries covers TestClient
+# teardown overlapping the next lifespan, leftover worker connections, and CI
+# filesystem stalls — without waiting the full 30s busy timeout per attempt.
+_WAL_LOCK_RETRIES = 8
+_WAL_LOCK_INITIAL_DELAY_S = 0.05
 
 # Serializes EVERY statement on a connection that is shared across threads.
 #
@@ -227,6 +235,34 @@ def transaction(conn) -> threading.RLock:
     return lock
 
 
+def _enable_wal(conn: sqlite3.Connection) -> None:
+    """Switch the connection into WAL, retrying ``database is locked``.
+
+    ``PRAGMA journal_mode = WAL`` needs an exclusive lock. SQLite may raise
+    ``OperationalError: database is locked`` immediately for that pragma
+    instead of waiting out ``timeout=`` / ``busy_timeout``. Startup
+    (``init_db`` inside the FastAPI lifespan) then fails as a fixture ERROR
+    rather than a slow wait. Retrying with backoff is the coordination
+    ``busy_timeout`` does not provide for this pragma.
+    """
+    delay = _WAL_LOCK_INITIAL_DELAY_S
+    last_exc: sqlite3.OperationalError | None = None
+    for attempt in range(_WAL_LOCK_RETRIES):
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+            return
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            last_exc = exc
+            if attempt == _WAL_LOCK_RETRIES - 1:
+                break
+            time.sleep(delay)
+            delay = min(delay * 2, 1.0)
+    assert last_exc is not None
+    raise last_exc
+
+
 def serialized(conn: sqlite3.Connection) -> SerializedConnection:
     """Wrap a connection so concurrent threads cannot tear each other's rows.
 
@@ -259,8 +295,10 @@ def connect() -> SerializedConnection:
         timeout=30.0,
     )
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode = WAL")
+    # busy_timeout first: later statements honor it. journal_mode still needs
+    # its own retry — see `_enable_wal`.
     conn.execute("PRAGMA busy_timeout = 30000")
+    _enable_wal(conn)
     conn.execute("PRAGMA foreign_keys = ON")
     if not db_existed and os.name == "posix":
         # The DB holds object keys, derived rows and keyring:// refs — keep it
