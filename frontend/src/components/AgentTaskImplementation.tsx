@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   forkSession,
   listModelProviders,
-  prepareSessionAction,
+  approveDecisionOrPrepare,
 } from "../api";
 import type {
   Grounding,
@@ -412,7 +412,11 @@ export function AgentTaskImplementation({
     }
     if (!localId.current) return;
     try {
-      const prepared = await prepareSessionAction(localId.current, action);
+      // A confirmation-gated action may be backed by a first-class durable
+      // Decision: approving records the resolution durably (and settles the
+      // execution waiting on it) before handing over to the confirmed flow.
+      // Actions with no pending durable decision use the legacy prepare path.
+      const prepared = await approveDecisionOrPrepare(localId.current, action);
       if (prepared.open === "evidence_import" && prepared.status === "ready") {
         setImportHandoff({
           sourceType: prepared.prefill.source_type as "inventory" | "access_log",

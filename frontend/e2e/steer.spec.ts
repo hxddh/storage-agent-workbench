@@ -2,8 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 import { dropModelProvider, startFakeModel, textTurn, useFakeModel } from "./fake-model";
 
 /** Steering is a first-class Agent lifecycle operation. Enter during active
- * Execution cancels the current trajectory, preserves partial work, and starts
- * the latest Direction without leaving a zombie execution handle. */
+ * Execution directs the CURRENT execution (v0.94): the steer is delivered into
+ * the running work — or, when the execution can no longer take it, carried
+ * into an automatic follow-up execution — so partial work is preserved, both
+ * Directions land in durable task history, and no zombie execution handle is
+ * left behind. Nothing is cancelled to make room for the steer. */
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 const task = (page: Page) => page.getByTestId("task-scroll");
 
@@ -37,6 +40,12 @@ async function direct(page: Page, direction: string) {
 }
 
 test.describe("steering active Agent Execution", () => {
+  // Steering no longer truncates the current execution (v0.94): the first
+  // execution streams to completion (~12s of paced deltas) and the steer then
+  // runs as its own execution. The honest end-to-end flow is legitimately
+  // about twice as long as the old cancel-and-resend one, so the default 30s
+  // budget is too tight when the whole file runs on a cold CI runner.
+  test.describe.configure({ timeout: 60_000 });
   test("Enter during Execution applies the new Direction immediately", async ({ page }) => {
     const { cleanup } = await open(page);
     try {

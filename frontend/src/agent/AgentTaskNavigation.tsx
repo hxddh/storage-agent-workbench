@@ -72,7 +72,7 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
     requestAnimationFrame(() => { renameRef.current?.focus(); renameRef.current?.select(); });
   }, [renaming, task.title]);
 
-  const stateKey = agentTaskState(run, true, task.requires_decision);
+  const stateKey = agentTaskState(run, true, task.requires_decision, task.task_status);
   const stateLabel = stateKey === "working"
     ? copy.working
     : stateKey === "uploading"
@@ -169,7 +169,8 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
   const base = q ? (results ?? []) : tasks;
   const current = base.filter((task) => task.status !== "archived");
   const archived = base.filter((task) => task.status === "archived");
-  const runtimeState = (task: AgentTaskSummary) => agentTaskState(getSessionRun(task.id), true, task.requires_decision);
+  const runtimeState = (task: AgentTaskSummary) =>
+    agentTaskState(getSessionRun(task.id), true, task.requires_decision, task.task_status);
   const needsYou = current.filter((task) => {
     const state = runtimeState(task);
     return state === "decision" || state === "attention";

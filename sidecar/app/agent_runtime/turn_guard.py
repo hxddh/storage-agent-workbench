@@ -1,10 +1,18 @@
 """Per-turn registry for session message turns (in-process).
 
-A session turn can be attempted twice: the streaming endpoint runs it, and if
-the SSE connection breaks the frontend falls back to the blocking endpoint with
-the SAME client ``turn_id``. Without a registry the fallback re-runs the agent
-concurrently with the still-alive streaming worker — duplicate user+assistant
-messages, duplicate inline runs, double model spend.
+COMPATIBILITY SCOPE (v0.94): turn ownership, dedup, and cancel moved to the
+durable task runtime (``app.task_runtime`` — executions are rows, idempotency
+is a unique index, and turn state survives restarts). What remains in live use
+from this module is the small ``get_run``/``set_run`` registry that dedupes
+INLINE RUNS a turn's tools create (see ``session_action_tools``). The turn
+handle machinery below is retained for that registry's plumbing and for tests
+that pin its historical semantics; no router owns turns through it anymore.
+
+Historical context: a session turn could be attempted twice — the streaming
+endpoint ran it, and if the SSE connection broke the frontend fell back to the
+blocking endpoint with the SAME client ``turn_id``. Without a registry the
+fallback re-ran the agent concurrently with the still-alive streaming worker —
+duplicate user+assistant messages, duplicate inline runs, double model spend.
 
 The registry, keyed by the client ``turn_id``, tracks each turn's lifecycle:
 

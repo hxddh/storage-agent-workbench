@@ -495,7 +495,8 @@ class SessionSummaryOut(BaseModel):
 class SessionMessageCreate(BaseModel):
     content: str = Field(min_length=1)
     # Optional client-generated turn id. Lets the streaming endpoint and its
-    # blocking fallback dedup the same turn (idempotency); see turn_guard.
+    # blocking fallback dedup the same turn — idempotency is the durable
+    # (task, turn_id) unique index on task_executions (v0.94).
     turn_id: str | None = None
 
 
@@ -704,3 +705,7 @@ class SessionTurnState(BaseModel):
     turn_id: str | None = None
     started_at: str | None = None
     age_ms: int | None = None
+    # v0.94: the durable execution behind the running turn, so a reattaching
+    # client can resume the structured event stream instead of just spinning.
+    execution_id: str | None = None
+    execution_status: str | None = None

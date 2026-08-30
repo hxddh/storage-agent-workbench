@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v0.93.0.** This is the canonical product/UX specification. Historical release notes are not current product architecture.
+> **Applies to Storage Agent v0.94.0.** This is the canonical product/UX specification. Historical release notes are not current product architecture.
 
 ## Product definition
 
@@ -51,6 +51,8 @@ Direction is durable task input. A machine-shaped storage error may render as a 
 
 Execution is what the runtime actually did: model/tool work, deterministic analysis, uploads/import preparation, and other real activity.
 
+Since v0.94 an Execution is a durable object with a real lifecycle — `queued`, `running`, `waiting` (blocked on a Decision), `completed`, `failed`, `cancelled`, `interrupted` (a Sidecar restart caught it mid-flight; it can be resumed). Its progress is an append-only log of structured events, never an inference from Agent prose. UI disconnect, Task switching, and reload never interrupt an Execution.
+
 The UI may summarize or progressively disclose Execution, but must not invent:
 
 - plans/checklists that the runtime did not emit;
@@ -61,19 +63,19 @@ The UI may summarize or progressively disclose Execution, but must not invent:
 
 ### Decision required
 
-A backend action marked `requires_confirmation=true` is a real blocking state. The user must approve/cancel before the gated operation proceeds.
+A backend action marked `requires_confirmation=true` that gates data-moving or artifact-producing work is a real blocking state, recorded as a first-class durable Decision. The user must approve/decline before the gated operation proceeds; the resolution is recorded durably, and the Execution that raised it stays `waiting` until the boundary is crossed.
 
 Read-only investigation is autonomous by default. Confirmation is reserved for meaningful safety boundaries such as managed cloud Evidence Import or materially large/full scanning/data movement.
 
 ### Work Result
 
-A Work Result is durable Agent output produced by completed work. It can contain prose, Markdown structure, tables, code/config fragments, structured errors, findings, and references to supporting Evidence/Execution.
+A Work Result is the durable output object of an Execution — recorded by the Task runtime with its grounding, proposals, and stopped/cut-short state. It can contain prose, Markdown structure, tables, code/config fragments, structured errors, findings, and references to supporting Evidence/Execution.
 
 A Work Result is not a transient chat bubble and should read like technical work output.
 
 ### Artifact
 
-Artifacts are durable, reviewable outputs attached to a Task, currently including Evidence and Markdown Reports. Persisted Execution detail is also reviewable context associated with the Task.
+Artifacts are durable, reviewable outputs attached to a Task through one first-class Artifact index: Markdown Reports, imported Evidence snapshots, and completed analyses. Persisted Execution detail is also reviewable context associated with the Task.
 
 ### Review
 
@@ -86,7 +88,7 @@ Review must not create a second Agent input or a second task lifecycle.
 There is exactly one primary Agent input.
 
 - **Delegate** when no execution is active.
-- **Steer** while the current Task is executing.
+- **Steer** while the current Task is executing — steering acts on the CURRENT Execution (the direction is delivered into the running work), never by cancelling and restarting it.
 - **Stop** while local execution is active.
 
 Opening Review, changing Task navigation state, or entering Focus mode does not create a second composer.
@@ -110,7 +112,7 @@ A previously persisted Decision does not outrank a newer live Execution. Convers
 
 Multiple Tasks may independently have real in-flight work because execution state is keyed by durable task/session identity rather than by the currently visible viewport.
 
-This does **not** mean the product has hidden autonomous worker Agents. It means a real execution already started for Task A is not destroyed when the user opens Task B.
+This does **not** mean the product has hidden autonomous worker Agents. It means a real execution already started for Task A is not destroyed when the user opens Task B — and since v0.94 that ownership is the Sidecar's durable task runtime, so it also survives closing the stream, reloading the app, and (as an explicit `interrupted` + resume state) a Sidecar restart. Recovering a Task reads its typed, versioned Storage Task Context — machine state is never rebuilt by replaying messages.
 
 ## Storage-specific capability model
 
@@ -151,14 +153,15 @@ See `security.md` for the normative security specification.
 
 Some database/API names predate v0.93 and remain for compatibility.
 
-| Product concept | Compatibility implementation |
-| --- | --- |
-| Agent Task | `sessions`, `/sessions/...`; `/agent-tasks` task-list projection |
-| Direction / Work Result | `session_messages` |
-| Execution | `runs`, `session_runs`, `tool_calls`, turn metrics |
-| Decision | proposed actions + approval/evidence-import records |
-| Task memory | summaries/findings/agent-memory records |
-| Artifact | evidence/report persistence |
+| Product concept | Durable runtime (v0.94) | Compatibility implementation |
+| --- | --- | --- |
+| Agent Task | `agent_tasks` | `sessions`, `/sessions/...`; `/agent-tasks` surface |
+| Direction | execution direction + steer events | `session_messages` (user rows) |
+| Execution | `task_executions` + structured event log | `runs`, `session_runs`, `tool_calls`, turn metrics |
+| Work Result | `work_results` | `session_messages` (assistant rows) |
+| Decision | `task_decisions` | proposed actions + approval/evidence-import records |
+| Artifact | `task_artifacts` index | evidence/report persistence |
+| Task memory | — | summaries/findings/agent-memory records |
 
 Rules:
 

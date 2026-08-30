@@ -5,9 +5,12 @@ import {
   getSessionOverview,
   getSessionTriage,
   getSessionTurnState,
+  getTaskState,
+  streamExecutionEvents,
 } from "../api";
 import type { TFunc } from "../i18n";
-import { getSessionRun } from "../sessionRuns";
+import { getSessionRun, patchSessionRun } from "../sessionRuns";
+import { mergeTool } from "./useTurnRunner";
 import type {
   SessionDetail,
   SessionMessage,
@@ -122,16 +125,77 @@ export function useSessionDocument({
     return () => window.clearTimeout(timer);
   }, [detail, triage.length, sessionId, loadError, reload]);
 
-  // Reattach to a turn this client did not start. Poll only while the server says
-  // one is running; once it ends its persisted answer becomes the document tail.
+  // Reattach to an execution this client did not start (a reload mid-run, a
+  // task switch back, a delegation from another window). The execution is a
+  // durable object with an append-only event log, so reattaching REPLAYS its
+  // structured progress from sequence 0 and then follows live — full tool
+  // trace and streaming answer tail, not just a spinner. Closing this stream
+  // (switching away again) affects nothing server-side.
   useEffect(() => {
     if (!sessionId || !sidecarReady) return;
     let stopped = false;
     let timer = 0;
+    let followCtl: AbortController | null = null;
+    let following = false;
+    // True after a check found this client's own runner busy — used to reload
+    // once when the task goes idle, so durable work that finished in the gap
+    // (a fast steer follow-up execution) lands in the document.
+    let sawOwnBusy = false;
+
+    const follow = async (state: SessionTurnState, executionId: string) => {
+      following = true;
+      followCtl = new AbortController();
+      setRemoteTurn(state);
+      patchSessionRun(sessionId, {
+        busy: true, error: null, stopped: false, stalled: false,
+        streamText: null, streamTools: [],
+      });
+      // The live view renders under the execution's Direction; the turn-state
+      // shape doesn't carry it, so read it from the durable task state (this
+      // also covers a steer follow-up, whose Direction is the steer text).
+      try {
+        const taskState = await getTaskState(sessionId);
+        const direction = taskState.active_execution?.direction;
+        if (direction) patchSessionRun(sessionId, { pending: direction });
+      } catch {
+        /* the stream below still shows tools/deltas without the bubble */
+      }
+      try {
+        await streamExecutionEvents(
+          sessionId, executionId,
+          {
+            onDelta: (chunk) =>
+              patchSessionRun(sessionId, (s) => ({ streamText: (s.streamText ?? "") + chunk })),
+            onTool: (rec) =>
+              patchSessionRun(sessionId, (s) => ({ streamTools: mergeTool(s.streamTools, rec) })),
+          },
+          { signal: followCtl.signal },
+        );
+      } catch {
+        /* failed / interrupted / disconnected — the reload below shows the
+           durable truth either way */
+      }
+      following = false;
+      if (stopped) return;
+      patchSessionRun(sessionId, {
+        busy: false, pending: null, streamText: null, streamTools: [], stopped: false,
+      });
+      setRemoteTurn(null);
+      if (localId.current === sessionId) void reload(sessionId);
+      timer = window.setTimeout(tick, 1000);
+    };
+
     const tick = async () => {
       if (stopped) return;
       if (getSessionRun(sessionId).busy) {
+        // This client's own runner (or an active follower) owns the live view.
+        // Re-check after it settles rather than going dormant: the runtime may
+        // hold MORE durable work for this task than the turn this client is
+        // watching — a queued delegation, or the automatic follow-up execution
+        // a late steer becomes — and nothing else would ever attach to it.
         setRemoteTurn(null);
+        sawOwnBusy = true;
+        timer = window.setTimeout(tick, 1500);
         return;
       }
       let state: SessionTurnState | null = null;
@@ -141,11 +205,26 @@ export function useSessionDocument({
         return;
       }
       if (stopped || localId.current !== sessionId) return;
-      if (state.running) {
+      if (getSessionRun(sessionId).busy) {
+        // The runner submitted while our fetch was in flight. It marks the run
+        // busy synchronously BEFORE the execution is created server-side, so a
+        // response that says "running" while busy is set can only be a turn
+        // this client already owns — attaching a follower to it would double
+        // every delta and hold `busy` past the runner's completion.
+        setRemoteTurn(null);
+        sawOwnBusy = true;
+        timer = window.setTimeout(tick, 1500);
+        return;
+      }
+      if (state.running && state.execution_id) {
+        sawOwnBusy = false;
+        void follow(state, state.execution_id);
+      } else if (state.running) {
         setRemoteTurn(state);
         timer = window.setTimeout(tick, 3000);
       } else {
-        if (remoteTurnRef.current) void reload(sessionId);
+        if (remoteTurnRef.current || sawOwnBusy) void reload(sessionId);
+        sawOwnBusy = false;
         setRemoteTurn(null);
       }
     };
@@ -157,6 +236,15 @@ export function useSessionDocument({
     return () => {
       stopped = true;
       window.clearTimeout(timer);
+      followCtl?.abort();
+      if (following) {
+        // We set busy for a followed execution; release OUR claim on the way
+        // out. The execution itself keeps running — the command center still
+        // shows it working from the durable task status.
+        patchSessionRun(sessionId, {
+          busy: false, streamText: null, streamTools: [], stopped: false,
+        });
+      }
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [sessionId, sidecarReady, reload]);

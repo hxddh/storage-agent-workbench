@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v0.93.0.**
+> **Implementation contract for Storage Agent v0.94.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v0.93 product invariant is:
+The v0.93.0/v0.94.0 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -18,7 +18,7 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v0.93 product model
+## 1. Never regress the v0.93+ product model
 
 New product/frontend work must preserve these boundaries:
 
@@ -91,15 +91,21 @@ Current product states include:
 - **Needs attention** — execution/provider/runtime requires user intervention.
 - upload/preparation state where applicable.
 
-Live execution is keyed per durable task so Task A can keep executing while Task B is selected. This is not a claim of autonomous background workers; it is preservation of the real in-flight turn keyed by task/session identity.
+Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned by the Sidecar's task runtime (`sidecar/app/task_runtime/`):
 
-The turn runner is the one submission lifecycle: acquire task execution ownership, submit Direction, consume SSE, publish real Tool activity and Work Result deltas, process Steer/Stop/error state, wait for durable completion, then reload persisted task state. Do not create a second submit path.
+- an Execution is a `task_executions` row with lifecycle `queued` / `running` / `waiting` / `completed` / `failed` / `cancelled` / `interrupted`, driven by a background execution supervisor keyed by durable task identity — never by an HTTP request;
+- execution progress is the append-only structured `execution_events` log (status, tool started/completed, steer received/applied, decision opened/resolved, work result recorded), replayable by sequence number; never inferred from assistant prose;
+- Steer acts ON the current execution (injected into the running model loop), never cancel-and-rerun; Stop persists the partial Work Result durably;
+- UI disconnect, task switching, and reload never interrupt an execution; a Sidecar restart stamps in-flight executions `interrupted` with an explicit resume affordance;
+- Decision (`task_decisions`), Work Result (`work_results`), Artifact (`task_artifacts`), and the typed versioned Storage Task Context (`task_context_versions`) are first-class durable rows.
+
+The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream, steer/stop the current execution, then reload persisted task state. The legacy `/sessions` message endpoints are compatibility shims over this runtime. Do not create a second submit path.
 
 ## 5. Current Sidecar API boundary
 
 The Sidecar exposes both product projection and compatibility APIs:
 
-- `/agent-tasks` is the product-level task-list projection and includes durable decision state.
+- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the v0.94 runtime API — executions (submit / steer / stop / resume / SSE event stream resumable by sequence), decisions (list / resolve), work results, artifacts, and the typed task context.
 - `/sessions/...` remains the durable task/message/runtime compatibility API.
 - `/runs/...` remains deterministic execution/report compatibility API and is not a top-level product surface.
 - `/evidence-imports/...` owns bounded plan → confirm → execute data movement.
@@ -142,20 +148,22 @@ Do not infer tool availability from a documentation example. `docs/tools.md` and
 
 ## 8. Data ownership
 
-SQLite stores application metadata and durable task/execution records. Current migrations are append-only through **025**; never edit a shipped migration, append a new one.
+SQLite stores application metadata and durable task/execution records. Current migrations are append-only through **026**; never edit a shipped migration, append a new one.
 
 DuckDB/local files store analytical data and large inputs/artifacts. User data lives under the application data directory, never the install directory.
 
 Product-to-persistence mapping:
 
-| Product | Compatibility persistence/API |
-| --- | --- |
-| Agent Task | `sessions`, `/sessions/...`, `/agent-tasks` projection |
-| Direction / Work Result | `session_messages` |
-| Execution | `runs`, `session_runs`, `tool_calls`, turn metrics |
-| Decision | persisted proposed actions + approval/evidence-import state |
-| Evidence / Artifact | evidence references/imports, reports, local artifact files |
-| Task memory | session summaries/findings/agent memory |
+| Product | Durable runtime (v0.94) | Compatibility persistence/API |
+| --- | --- | --- |
+| Agent Task | `agent_tasks` | `sessions`, `/sessions/...`, `/agent-tasks` |
+| Direction | execution direction + steer events | `session_messages` (user rows) |
+| Execution | `task_executions` + `execution_events` | `runs`, `session_runs`, `tool_calls`, turn metrics |
+| Work Result | `work_results` | `session_messages` (assistant rows) |
+| Decision | `task_decisions` | persisted proposed actions + approval/evidence-import state |
+| Evidence / Artifact | `task_artifacts` index | evidence references/imports, reports, local artifact files |
+| Storage Task Context | `task_context_versions` | — |
+| Task memory | — | session summaries/findings/agent memory |
 
 See `docs/data-model.md`.
 

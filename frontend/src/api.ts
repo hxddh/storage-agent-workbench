@@ -4,6 +4,7 @@ import type {
   EvidenceImport,
   EvidenceImportRunResult,
   ErrorInputKind,
+  ExecutionMetrics,
   NextAction,
   SessionDetail,
   SessionMessage,
@@ -446,6 +447,257 @@ export const getSessionTriage = (sessionId: string) =>
 // EventSource can't set headers, so the auth token rides as a query param
 // (?token=…). The sidecar accepts the token there for SSE endpoints.
 export const runEventsUrl = (id: string) => withToken(`${sidecarBaseUrl()}/runs/${id}/events`);
+
+// --- Durable Agent Task runtime (v0.94) ---
+// The Agent Task and its Executions are durable domain objects: submitting a
+// Direction creates an execution row, progress is an append-only structured
+// event log addressable by sequence number, and Decision / Work Result /
+// Artifact are first-class rows. The client only OBSERVES executions — closing
+// a stream, switching tasks, or reloading never interrupts one.
+
+export interface TaskExecution {
+  id: string;
+  task_id: string;
+  turn_id: string | null;
+  direction: string | null;
+  kind: string;
+  status: "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "interrupted";
+  error: string | null;
+  resumed_from: string | null;
+  steer_count: number;
+  work_result_id: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface TaskDecision {
+  id: string;
+  task_id: string;
+  execution_id: string | null;
+  work_result_id: string | null;
+  action_type: string;
+  title: string | null;
+  reason: string | null;
+  proposal: NextAction & { id?: string };
+  status: "pending" | "approved" | "declined" | "superseded";
+  resolution_note: string | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface TaskArtifact {
+  id: string;
+  task_id: string;
+  execution_id: string | null;
+  artifact_type: string;
+  title: string | null;
+  ref_kind: string | null;
+  ref_id: string | null;
+  format: string | null;
+  summary: string | null;
+  created_at: string;
+}
+
+export interface TaskState {
+  task_id: string;
+  status: "ready" | "working" | "needs_decision" | "needs_attention" | "archived";
+  active_execution: TaskExecution | null;
+  last_event_seq: number;
+  last_execution: TaskExecution | null;
+  pending_decisions: TaskDecision[];
+  context_version: number;
+}
+
+export const getTaskState = (taskId: string) =>
+  request<TaskState>(`/agent-tasks/${taskId}/state`);
+
+export const createTaskExecution = (taskId: string, direction: string, turnId?: string) =>
+  request<{ execution: TaskExecution; created: boolean }>(
+    `/agent-tasks/${taskId}/executions`,
+    { method: "POST", body: JSON.stringify({ direction, turn_id: turnId }) },
+  );
+
+/** Steer the CURRENT execution — the direction is injected into the running
+ * model loop server-side. 409 (ApiError) when nothing is executing. */
+export const steerTaskExecution = (taskId: string, text: string) =>
+  request<{ status: string; execution: TaskExecution }>(
+    `/agent-tasks/${taskId}/steer`,
+    { method: "POST", body: JSON.stringify({ text }) },
+  );
+
+export const stopTaskExecution = (taskId: string, executionId: string) =>
+  request<{ status: string; execution: TaskExecution }>(
+    `/agent-tasks/${taskId}/executions/${executionId}/stop`, { method: "POST" });
+
+export const resumeTaskExecution = (taskId: string, executionId: string) =>
+  request<{ execution: TaskExecution; resumed_from: string }>(
+    `/agent-tasks/${taskId}/executions/${executionId}/resume`, { method: "POST" });
+
+export const listTaskDecisions = (taskId: string, status?: string) =>
+  request<{ task_id: string; decisions: TaskDecision[] }>(
+    `/agent-tasks/${taskId}/decisions${status ? `?status_filter=${status}` : ""}`);
+
+/** Resolve a first-class durable Decision. Approval returns the same
+ * validate-and-prefill hand-over the action-prepare flow uses — nothing
+ * auto-executes; the client opens the purpose-built confirmed flow. */
+export const resolveTaskDecision = (
+  taskId: string, decisionId: string, resolution: "approved" | "declined", note?: string,
+) =>
+  request<{ decision: TaskDecision; prepared: ActionPrepareResult | null }>(
+    `/agent-tasks/${taskId}/decisions/${decisionId}/resolve`,
+    { method: "POST", body: JSON.stringify({ resolution, note }) },
+  );
+
+export const listTaskArtifacts = (taskId: string) =>
+  request<{ task_id: string; artifacts: TaskArtifact[] }>(`/agent-tasks/${taskId}/artifacts`);
+
+/** Resolve the matching pending durable Decision for a confirmed proposal (so
+ * the approval is recorded first-class), falling back to the legacy
+ * validate-and-prefill endpoint when no durable decision gates this action. */
+export async function approveDecisionOrPrepare(
+  taskId: string, action: NextAction,
+): Promise<ActionPrepareResult> {
+  try {
+    const { decisions } = await listTaskDecisions(taskId, "pending");
+    const match = decisions.find((d) => d.action_type === action.action_type);
+    if (match) {
+      const resolved = await resolveTaskDecision(taskId, match.id, "approved");
+      if (resolved.prepared) {
+        return { ...resolved.prepared, proposal: { ...action, id: match.id } };
+      }
+    }
+  } catch {
+    /* fall back to the legacy prepare below */
+  }
+  return prepareSessionAction(taskId, action);
+}
+
+export interface ExecutionStreamResult {
+  status: string;
+  message_id?: string;
+  work_result_id?: string;
+  stopped: boolean;
+  proposed_actions: NextAction[];
+  metrics?: ExecutionMetrics;
+  last_seq: number;
+}
+
+/** Follow one execution's durable structured event log as SSE.
+ *
+ * Every durable frame carries `id: <seq>`, so a broken connection resumes with
+ * `after=<last seq>` and replays exactly what was missed — the stream is a
+ * VIEW over durable rows, never the owner of the execution. Live answer text
+ * arrives as transient `delta` frames. Resolves when the execution settles
+ * (completed / waiting / cancelled); throws on `failed` / `interrupted`. */
+export async function streamExecutionEvents(
+  taskId: string,
+  executionId: string,
+  on: { onDelta: (text: string) => void; onTool: (a: ToolActivity) => void },
+  opts: { signal?: AbortSignal; after?: number } = {},
+): Promise<ExecutionStreamResult> {
+  const localCtl = new AbortController();
+  const { signal } = opts;
+  if (signal) {
+    if (signal.aborted) localCtl.abort();
+    else signal.addEventListener("abort", () => localCtl.abort(), { once: true });
+  }
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const kickIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => localCtl.abort(), STREAM_IDLE_TIMEOUT_MS);
+  };
+  kickIdle();
+  const after = opts.after ?? 0;
+  const res = await fetch(
+    `${sidecarBaseUrl()}/agent-tasks/${taskId}/executions/${executionId}/events?after=${after}`,
+    { headers: { ...authHeaders() }, signal: localCtl.signal },
+  );
+  if (!res.ok || !res.body) {
+    if (idleTimer) clearTimeout(idleTimer);
+    let detail = `HTTP ${res.status}`;
+    try {
+      const b = await res.json();
+      if (b?.detail) detail = typeof b.detail === "string" ? b.detail : JSON.stringify(b.detail);
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  let lastSeq = after;
+  let result: ExecutionStreamResult | null = null;
+  const toolFromEvent = (payload: any, status: "started" | "completed"): ToolActivity => ({
+    id: payload?.id,
+    tool: payload?.tool ?? "",
+    target: payload?.target ?? "",
+    result: payload?.result ?? "",
+    ok: payload?.ok,
+    status,
+  });
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      kickIdle();
+      buf += dec.decode(value, { stream: true });
+      const chunks = buf.split("\n\n");
+      buf = chunks.pop() ?? "";
+      for (const chunk of chunks) {
+        const lines = chunk.split("\n");
+        const type = lines.find((l) => l.startsWith("event:"))?.slice(6).trim();
+        const idLine = lines.find((l) => l.startsWith("id:"))?.slice(3).trim();
+        if (idLine) lastSeq = Number(idLine) || lastSeq;
+        const dataLines = lines.filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim());
+        if (!type || dataLines.length === 0) continue;
+        let data: any;
+        try {
+          data = JSON.parse(dataLines.join("\n"));
+        } catch {
+          continue;
+        }
+        const payload = data?.payload ?? {};
+        if (type === "delta") on.onDelta(data.text || "");
+        else if (type === "tool.started") on.onTool(toolFromEvent(payload, "started"));
+        else if (type === "tool.completed") on.onTool(toolFromEvent(payload, "completed"));
+        else if (type === "steer.applied")
+          on.onTool({ tool: "user_steer", target: "", result: payload.text || "", ok: true, status: "completed" });
+        else if (type === "execution.status") {
+          const st = payload.status as string;
+          if (st === "failed") throw new Error(payload.error || "the execution failed");
+          if (st === "interrupted") throw new Error("the sidecar restarted while this execution was in flight");
+          if ((st === "completed" || st === "waiting" || st === "cancelled") && payload.work_result_id) {
+            result = {
+              status: st,
+              message_id: payload.message_id,
+              work_result_id: payload.work_result_id,
+              stopped: payload.stopped === true,
+              proposed_actions: payload.proposed_actions || [],
+              metrics: payload.metrics,
+              last_seq: lastSeq,
+            };
+          } else if (st === "cancelled" && !result) {
+            // Cancelled before it ever ran: no Work Result exists.
+            result = { status: st, stopped: true, proposed_actions: [], last_seq: lastSeq };
+          }
+        }
+        // Other structured events (queued/running/decision.*/context.*/end) are
+        // progress the caller does not need individually here.
+      }
+    }
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer);
+    try {
+      await reader.cancel();
+    } catch {
+      /* already closed/aborted */
+    }
+  }
+  if (!result) throw new Error("stream ended without completion");
+  return result;
+}
 
 // --- Datasets ---
 // Datasets are attached to a SESSION (the agent analyzes them as a tool). There

@@ -63,22 +63,41 @@ function seedDecisionTask(): string {
   const { id } = seedTask(1, title, "short");
   const raw = fs.readFileSync(STATE_FILE, "utf8");
   const { dataDir } = JSON.parse(raw) as { dataDir: string };
+  // A blocking Decision is DURABLE state since v0.94: a pending task_decisions
+  // row for a confirmation-gated (data-moving) action, exactly as the runtime
+  // records it when a Work Result proposes an import. The message's
+  // proposed_actions carries the same proposal so the in-task card renders.
   const proposal = JSON.stringify([
     {
       title: "Import discovered access logs",
       reason: "This downloads bounded evidence from the discovered logging target.",
-      action_type: "run_access_log_analysis",
+      action_type: "plan_access_log_import",
       requires_confirmation: true,
       confidence: "high",
       source_run_ids: [],
     },
   ]);
   const py = `
-import sqlite3, sys
+import json, sqlite3, sys, uuid
 conn = sqlite3.connect(sys.argv[1])
+sid, proposals = sys.argv[2], sys.argv[3]
 conn.execute(
   "UPDATE session_messages SET proposed_actions=? WHERE id=(SELECT id FROM session_messages WHERE session_id=? AND role='assistant' ORDER BY created_at DESC, rowid DESC LIMIT 1)",
-  (sys.argv[3], sys.argv[2]),
+  (proposals, sid),
+)
+item = json.loads(proposals)[0]
+conn.execute(
+  "INSERT INTO agent_tasks (id, title, status, created_at, updated_at)"
+  " VALUES (?, ?, 'needs_decision', datetime('now'), datetime('now'))"
+  " ON CONFLICT(id) DO UPDATE SET status='needs_decision'",
+  (sid, "seeded"),
+)
+conn.execute(
+  "INSERT INTO task_decisions (id, task_id, action_type, title, reason,"
+  " proposal_json_sanitized, status, created_at)"
+  " VALUES (?, ?, ?, ?, ?, ?, 'pending', datetime('now'))",
+  (uuid.uuid4().hex, sid, item["action_type"], item["title"], item["reason"],
+   json.dumps(item)),
 )
 conn.commit()
 `;

@@ -1,6 +1,6 @@
 # Data model
 
-> **Storage Agent v0.93.0 persistence reference.**
+> **Storage Agent v0.94.0 persistence reference.**
 >
 > Product vocabulary is Agent Task / Direction / Execution / Decision / Work Result / Artifact. SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
 
@@ -18,7 +18,7 @@ Secrets are stored separately in the encrypted local vault. SQLite stores only o
 
 The schema is created by append-only migrations in `sidecar/app/migrations.py`.
 
-**Current migration head: 025.**
+**Current migration head: 026.**
 
 Rules:
 
@@ -56,15 +56,19 @@ Rules:
 | 023 | `turn_metrics_budget` | runtime token budget + repeated-call avoidance metrics |
 | 024 | `session_datasets_truncation` | persist task-upload truncation/ingest cap and force legacy re-import |
 | 025 | `datasets_truncation` | persist run-dataset truncation/ingest cap |
+| 026 | `durable_task_runtime` | durable Agent Task/Execution objects, structured execution events, first-class Decision/Work Result/Artifact rows, typed versioned Storage Task Context |
 
 ## Product-to-persistence mapping
 
-| Product concept | SQLite/API compatibility representation |
-| --- | --- |
-| Agent Task | `sessions`; product list projection `/agent-tasks` |
-| Direction / Work Result | `session_messages` |
-| Execution | `runs`, `session_runs`, `tool_calls`, `turn_metrics` |
-| Decision | `session_messages.proposed_actions`, `approval_events`, evidence-import state |
+| Product concept | Durable runtime representation (v0.94) | SQLite/API compatibility representation |
+| --- | --- | --- |
+| Agent Task | `agent_tasks` (id equals the compatibility session id) | `sessions`; product surface `/agent-tasks` |
+| Direction | `task_executions.direction` (+ durable steer events) | `session_messages` (user rows) |
+| Execution | `task_executions` + `execution_events` (append-only structured progress) | `runs`, `session_runs`, `tool_calls`, `turn_metrics` |
+| Work Result | `work_results` (runtime metadata; content via `message_id`) | `session_messages` (assistant rows) |
+| Decision | `task_decisions` (pending / approved / declined / superseded) | `session_messages.proposed_actions`, `approval_events`, evidence-import state |
+| Artifact | `task_artifacts` (unified index over reports/imports/analyses) | `reports`, evidence-import tables, report files |
+| Storage Task Context | `task_context_versions` (typed, versioned machine state) | — |
 | Task summary | `session_summaries` |
 | Task findings | `session_findings` |
 | Task memory | `session_agent_memory` |
@@ -106,6 +110,13 @@ Current tables include:
 - `error_triage_cases`
 - `error_triage_findings`
 - `app_settings`
+- `agent_tasks`
+- `task_executions`
+- `execution_events`
+- `work_results`
+- `task_decisions`
+- `task_artifacts`
+- `task_context_versions`
 
 ## Provider metadata
 
@@ -271,6 +282,34 @@ Migration 024 intentionally resets legacy imported rows to `uploaded` so old dat
 - timestamp.
 
 **NULL means not reported/unknown, not zero.** The UI must not convert missing provider usage into a measured `0`.
+
+## Durable Agent Task runtime (v0.94)
+
+The task runtime's own durable records. The Agent Task is a durable domain
+object (`agent_tasks.id` equals the compatibility session id, 1:1) and an
+Execution is a durable object with a real lifecycle:
+
+- `agent_tasks` — task lifecycle (`ready` / `working` / `needs_decision` /
+  `needs_attention` / `archived`), active execution pointer, context version.
+- `task_executions` — one unit of delegated work. Lifecycle: `queued` →
+  `running` → `completed` | `waiting` (a confirmation-gated Decision is
+  pending) | `failed` | `cancelled` | `interrupted` (stamped by restart
+  recovery; resumable). `turn_id` carries client idempotency durably
+  (a unique index arbitrates duplicate submits).
+- `execution_events` — append-only structured progress keyed by sequence
+  number: status transitions, tool started/completed, steer received/applied,
+  decision opened/resolved, work result recorded, context updated. Sanitized,
+  bounded payloads; answer deltas are never persisted here.
+- `work_results` — the durable output of an execution: stopped/cut-short flags,
+  grounding and proposals; the text stays on the linked `session_messages` row.
+- `task_decisions` — first-class Decision rows for confirmation-gated
+  proposals; a newer Work Result supersedes older pending decisions.
+- `task_artifacts` — the unified Artifact index (`report`, `evidence_import`,
+  `analysis`) pointing at the durable referent via `ref_kind`/`ref_id`.
+- `task_context_versions` — the typed Storage Task Context (schema-versioned
+  JSON snapshot of machine state: provider scope, buckets in focus, evidence on
+  hand, memory counts, open decisions), appended only when changed. Recovery
+  reads this; it never replays messages to rebuild machine state.
 
 ## Account/config discovery records
 

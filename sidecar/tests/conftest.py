@@ -19,12 +19,18 @@ def _secret_vault(tmp_path, monkeypatch):
     monkeypatch.setenv("SAW_DATA_DIR", str(tmp_path / "vault"))
     keyring_store._reset_for_tests()
     from app.agent_runtime import turn_guard
+    from app.task_runtime import hub as task_hub
+    from app.task_runtime import runtime as task_runtime_mod
     turn_guard._reset_for_tests()
+    task_hub._reset_for_tests()
+    task_runtime_mod._reset_for_tests()
     try:
         yield
     finally:
         keyring_store._reset_for_tests()
         turn_guard._reset_for_tests()
+        task_hub._reset_for_tests()
+        task_runtime_mod._reset_for_tests()
 
 
 @pytest.fixture()

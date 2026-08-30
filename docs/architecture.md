@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v0.93.0.**
+> **Current architecture baseline: Storage Agent v0.94.0.**
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -160,18 +160,23 @@ A predominantly machine-shaped S3/storage error can render through `S3ErrorArtif
 
 ### Execution
 
-Execution represents real work performed by the runtime.
+Execution represents real work performed by the runtime — and since v0.94 it is
+a DURABLE domain object owned by the Sidecar's task runtime (`task_executions`
+with lifecycle `queued` / `running` / `waiting` / `completed` / `failed` /
+`cancelled` / `interrupted`), not a conversational turn owned by an HTTP
+request.
 
-Live truth is derived from the per-task execution store, including:
+Durable truth is the execution row plus its append-only structured event log
+(`execution_events`): status transitions, tool started/completed, steer
+received/applied, decision opened/resolved, work result recorded. Execution
+progress is derived from these structured events — never inferred from
+assistant prose.
 
-- busy/upload/preparation state;
-- pending Direction;
-- streamed Work Result text;
-- live Tool activity;
-- stop/stall/error state;
-- proposals/next actions.
-
-Persisted truth comes from sanitized Sidecar Tool calls, runs/executions, turn metrics, audit/evidence records, and messages.
+The browser's per-task execution store carries only the LIVE VIEW of that
+durable truth: streamed Work Result text, merged tool activity, busy/upload
+presentation state. Losing it (reload, task switch, second window) loses
+nothing — the client reattaches by replaying the durable event log from any
+sequence number.
 
 `ExecutionSummary` provides progressive disclosure attached to the result that produced it. `ExecutionSteps` and Execution Review expose real sanitized detail without turning the Task into a permanent trace console.
 
@@ -214,19 +219,29 @@ Therefore:
 
 This must not be represented as a fleet of hidden autonomous Agent workers. It is per-task ownership of real execution.
 
-### 5.2 Turn runner
+### 5.2 Execution runner
 
-The turn runner is the single submission lifecycle:
+The execution runner is the single submission lifecycle, and since v0.94 the
+Sidecar's task runtime OWNS the execution — the client only submits and
+observes:
 
-1. acquire the execution latch for the target Task;
-2. submit Direction and optional local attachment context;
-3. consume Sidecar SSE;
-4. update real Tool activity and streamed Work Result;
-5. process Steer / Stop / error / stall conditions;
-6. wait for durable completion;
+1. acquire the submit latch for the target Task;
+2. submit the Direction: `POST /agent-tasks/{id}/executions` creates a durable
+   queued execution (idempotent on the client turn id);
+3. follow the execution's durable structured event stream (resumable by
+   sequence number);
+4. update real Tool activity and streamed Work Result from those events;
+5. Steer posts into the CURRENT execution (`POST /agent-tasks/{id}/steer`) —
+   never cancel-and-resend; Stop cancels the durable execution and the partial
+   Work Result persists;
+6. completion, waiting-on-Decision, failure, and interruption are durable
+   execution states, not inferences;
 7. reload the persisted task document.
 
-Do not bypass this lifecycle with another submit/steer path.
+UI disconnect, task switching, and reload never interrupt an execution; a
+Sidecar restart stamps in-flight executions `interrupted`, which Recovery
+surfaces with an explicit resume affordance. Do not bypass this lifecycle with
+another submit/steer path.
 
 ### 5.3 Durable task document
 
@@ -240,6 +255,9 @@ The Sidecar owns:
 
 - SQLite migrations/repositories;
 - the one model-driven Agent runtime;
+- the durable task runtime (`app/task_runtime/`): the execution supervisor,
+  durable event log, first-class Decisions/Work Results/Artifacts, typed task
+  context, and restart recovery;
 - whitelisted storage tools;
 - deterministic run/analysis engines;
 - account/config discovery;
@@ -256,15 +274,17 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 
 The database/API schema predates v0.93. Renaming every stored entity would add migration risk without changing the product, so Storage Agent intentionally keeps a **persistence compatibility** layer.
 
-| Product | Compatibility persistence/API |
-| --- | --- |
-| Agent Task | `sessions`, `/sessions/...`; `/agent-tasks` list projection |
-| Direction / Work Result | `session_messages` |
-| Execution | `runs`, `session_runs`, `tool_calls`, `turn_metrics` |
-| Task memory | `session_summaries`, `session_findings`, `session_agent_memory` |
-| Evidence | evidence refs/sources/import tables |
-| Report Artifact | report endpoints/files |
-| Decision | message proposals + approval/evidence-import state |
+| Product | Durable runtime (v0.94) | Compatibility persistence/API |
+| --- | --- | --- |
+| Agent Task | `agent_tasks` | `sessions`, `/sessions/...`; `/agent-tasks` surface |
+| Direction | `task_executions.direction` + steer events | `session_messages` (user rows) |
+| Execution | `task_executions` + `execution_events` | `runs`, `session_runs`, `tool_calls`, `turn_metrics` |
+| Work Result | `work_results` | `session_messages` (assistant rows) |
+| Decision | `task_decisions` | message proposals + approval/evidence-import state |
+| Artifact | `task_artifacts` index | report endpoints/files, evidence-import tables |
+| Storage Task Context | `task_context_versions` | — |
+| Task memory | — | `session_summaries`, `session_findings`, `session_agent_memory` |
+| Evidence | — | evidence refs/sources/import tables |
 
 Boundary rules:
 

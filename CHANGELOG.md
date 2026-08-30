@@ -6,6 +6,34 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.94.0] - 2026-08-30
+
+_The Agent Task runtime becomes durable and execution-native: take the UI away and the runtime + persistence alone are a real task runtime — executions with a durable lifecycle that can be steered, wait on Decisions, survive disconnects and restarts, and produce durable Work Results and Artifacts. The turn runner is gone as an ownership model._
+
+### Changed
+
+- **Agent Task is a durable domain object.** A first-class `agent_tasks` row (1:1 with the compatibility session id) carries the task lifecycle — `ready` / `working` / `needs_decision` / `needs_attention` / `archived` — derived from durable runtime state and projected into the command center even with a cold browser.
+- **Execution is a first-class durable object, not a conversational turn.** Each Direction becomes a `task_executions` row with a real lifecycle (`queued` → `running` → `completed` | `waiting` | `failed` | `cancelled` | `interrupted`), driven by a background execution supervisor keyed by durable task identity. Submissions while a task is working queue durably; duplicate submits attach idempotently via a durable `(task, turn_id)` index instead of an in-process registry.
+- **Execution progress is durable structured events.** An append-only `execution_events` log (status transitions, tool started/completed, steer received/applied, decision opened/resolved, work result recorded, context updated) is the only source of progress — replayable over SSE from any sequence number, never inferred from assistant prose. Transient answer deltas stream live and are never persisted.
+- **Steer acts on the current execution.** `POST /agent-tasks/{id}/steer` delivers the user's direction into the RUNNING model loop at its next tool boundary (recorded durably as `steer.received`/`steer.applied`); the investigation, its tool trace, and its budget continue. A steer the loop could no longer take is carried into an automatic follow-up execution. The old cancel-and-resend steer is gone.
+- **UI disconnect, task switching, and reload never interrupt an execution.** The Sidecar owns executions end to end; the client only submits and observes. Reattaching replays the durable event log, so a reload mid-execution shows the full tool trace and live answer tail instead of a bare spinner.
+- **Sidecar restart has explicit durable recovery semantics.** Startup recovery stamps orphaned queued/running executions `interrupted` (an event-logged durable state), projects `needs_attention`, and offers resume — a new execution carrying the same Direction. Executions waiting on a user Decision are untouched by restarts.
+- **Decision is a first-class durable object.** Confirmation-gated proposals (data-moving imports, saved reports) open pending `task_decisions` rows; a newer Work Result durably supersedes older pending decisions; `resolve` records approval/decline with an audit trail and settles the execution that was `waiting` on it. Task decision state is never re-derived from the latest message.
+- **Work Results and Artifacts are durable runtime outputs.** Every finished execution records a `work_results` row (grounding, proposals, stopped/cut-short); reports, executed evidence imports, and linked analyses index into one first-class `task_artifacts` model surfaced in Review.
+- **The Storage Task Context is typed, durable, and versioned.** `task_context_versions` snapshots machine state (provider scope, buckets in focus, evidence on hand, open decisions) with an explicit schema version; recovery reads the latest version and never replays messages to rebuild machine state.
+- **The `/sessions` message endpoints are compatibility shims** over the one durable submission lifecycle (same wire vocabulary, same idempotency); `GET /sessions/{id}/turn` now reads durable execution rows and stays truthful across restarts.
+
+### Added
+
+- Migration 026 (`durable_task_runtime`) with backfill: every session becomes a durable task, historical assistant messages become Work Results, and current confirmation-gated proposals become pending Decisions.
+- `/agent-tasks/{id}` runtime API: state, executions (submit / stop / resume / SSE events with `id: <seq>` resumption), steer, decisions (list / resolve), work-results, artifacts, typed context, and task-scoped event pages.
+- Frontend durable-execution transport: delegation via `POST executions` + structured event stream, durable reattach follower, steer/stop against durable execution identity, durable task status in the command center, and an Artifacts section in Review.
+
+### Security
+
+- Unchanged boundaries, now durable: read-only autonomy, explicit confirmation for data-moving work (recorded as first-class Decisions), bounded and sanitized event payloads, no secrets or chain-of-thought in the event log, no new tool surface.
+
+
 ## [0.91.0] - 2026-08-29
 
 _A workspace-first rebuild of Storage Agent Workbench: conversation remains lightweight, while investigations, evidence and durable reports become first-class full-canvas work surfaces._

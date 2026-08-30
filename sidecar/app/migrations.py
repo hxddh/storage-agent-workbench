@@ -636,6 +636,192 @@ ALTER TABLE datasets ADD COLUMN truncated INTEGER;
 ALTER TABLE datasets ADD COLUMN ingest_cap INTEGER;
 """
 
+# --- Migration 026: durable Agent Task runtime (v0.94) -----------------------
+#
+# The Agent Task becomes a DURABLE DOMAIN OBJECT and Execution becomes a
+# first-class durable object with a real lifecycle — the task runtime stops
+# being a per-HTTP-request "turn runner":
+#
+#   agent_tasks           the product task object. Its id EQUALS the
+#                         compatibility session id (1:1, FK-cascaded), so every
+#                         existing adapter/API keeps addressing the same thing
+#                         while the task carries its own durable lifecycle
+#                         (`ready` / `working` / `needs_decision` /
+#                         `needs_attention` / `archived`).
+#   task_executions       one unit of delegated work (a Direction being
+#                         executed). Lifecycle: queued → running →
+#                         completed | failed | cancelled | interrupted.
+#                         `interrupted` is what a sidecar restart stamps on
+#                         executions a dead process left behind — recovery is an
+#                         explicit durable state, never a silent "nothing
+#                         running". `turn_id` keeps client idempotency
+#                         (streaming↔fallback dedup) durable instead of
+#                         in-process.
+#   execution_events      append-only STRUCTURED progress (status transitions,
+#                         tool started/completed, steer received/applied,
+#                         decision opened, work result recorded). This is what
+#                         the UI derives live/replayed progress from — never
+#                         assistant prose. Sanitized payloads only; transient
+#                         answer deltas are NOT persisted (bounded stream, no
+#                         chain-of-thought, no unbounded growth).
+#   work_results          the durable output of an execution. Content stays on
+#                         the compatibility session_messages row (message_id
+#                         links it); the runtime metadata — grounding,
+#                         proposals, stopped/cut-short — lives here.
+#   task_decisions        first-class durable Decision objects, created from
+#                         real backend proposals that gate data-moving or
+#                         artifact-producing work. pending | approved |
+#                         declined | superseded, with an audit-friendly
+#                         resolution trail. Task decision state reads from
+#                         here, never from re-parsing the latest message.
+#   task_artifacts        unified first-class Artifact index: reports, evidence
+#                         imports, analyses — each row points at the durable
+#                         thing (ref_kind/ref_id) rather than duplicating it.
+#   task_context_versions typed, versioned Storage Task Context (machine state:
+#                         provider scope, buckets/prefixes in focus, evidence
+#                         on hand). Recovering a task never requires replaying
+#                         chat.
+#
+# Backfill: every existing session becomes an agent_task, and every historical
+# assistant message becomes a work_result so old investigations keep their Work
+# Result history. Pending decisions are seeded from each session's LATEST
+# assistant message only (historical proposals are audit history, not current
+# blockers — the same rule the old projection applied), and only for the
+# confirmation-gated types. All *_json_sanitized columns store redaction-passed
+# JSON only — never secrets, raw rows, or chain-of-thought.
+
+_M026 = """
+CREATE TABLE IF NOT EXISTS agent_tasks (
+    id                  TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+    title               TEXT NOT NULL,
+    goal                TEXT,
+    status              TEXT NOT NULL DEFAULT 'ready',
+    active_execution_id TEXT,
+    context_version     INTEGER NOT NULL DEFAULT 0,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+
+INSERT INTO agent_tasks (id, title, goal, status, created_at, updated_at)
+    SELECT id, title, goal, 'ready', created_at, updated_at FROM sessions;
+
+CREATE TABLE IF NOT EXISTS task_executions (
+    id           TEXT PRIMARY KEY,
+    task_id      TEXT NOT NULL REFERENCES agent_tasks(id) ON DELETE CASCADE,
+    turn_id      TEXT,
+    direction    TEXT,
+    kind         TEXT NOT NULL DEFAULT 'direction',
+    status       TEXT NOT NULL DEFAULT 'queued',
+    error        TEXT,
+    resumed_from TEXT,
+    steer_count  INTEGER NOT NULL DEFAULT 0,
+    work_result_id TEXT,
+    created_at   TEXT NOT NULL,
+    started_at   TEXT,
+    finished_at  TEXT,
+    updated_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_executions_task ON task_executions(task_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_task_executions_status ON task_executions(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_executions_turn
+    ON task_executions(task_id, turn_id) WHERE turn_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS execution_events (
+    seq          INTEGER PRIMARY KEY AUTOINCREMENT,
+    execution_id TEXT NOT NULL,
+    task_id      TEXT NOT NULL,
+    event_type   TEXT NOT NULL,
+    payload_json_sanitized TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_execution_events_exec ON execution_events(execution_id, seq);
+CREATE INDEX IF NOT EXISTS idx_execution_events_task ON execution_events(task_id, seq);
+
+CREATE TABLE IF NOT EXISTS work_results (
+    id           TEXT PRIMARY KEY,
+    task_id      TEXT NOT NULL REFERENCES agent_tasks(id) ON DELETE CASCADE,
+    execution_id TEXT,
+    message_id   TEXT,
+    kind         TEXT NOT NULL DEFAULT 'answer',
+    stopped      INTEGER NOT NULL DEFAULT 0,
+    cut_short    TEXT,
+    grounding_json_sanitized TEXT,
+    proposals_json_sanitized TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_work_results_task ON work_results(task_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_work_results_exec ON work_results(execution_id);
+
+INSERT INTO work_results
+    (id, task_id, execution_id, message_id, kind, stopped,
+     grounding_json_sanitized, proposals_json_sanitized, created_at)
+    SELECT lower(hex(randomblob(16))), m.session_id, NULL, m.id, 'answer', 0,
+           m.grounding, m.proposed_actions, m.created_at
+    FROM session_messages m
+    WHERE m.role = 'assistant';
+
+CREATE TABLE IF NOT EXISTS task_decisions (
+    id           TEXT PRIMARY KEY,
+    task_id      TEXT NOT NULL REFERENCES agent_tasks(id) ON DELETE CASCADE,
+    execution_id TEXT,
+    work_result_id TEXT,
+    action_type  TEXT NOT NULL,
+    title        TEXT,
+    reason       TEXT,
+    proposal_json_sanitized TEXT,
+    status       TEXT NOT NULL DEFAULT 'pending',
+    resolution_note TEXT,
+    created_at   TEXT NOT NULL,
+    resolved_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_task_decisions_task ON task_decisions(task_id, status);
+
+INSERT INTO task_decisions
+    (id, task_id, execution_id, work_result_id, action_type, title, reason,
+     proposal_json_sanitized, status, created_at)
+    SELECT lower(hex(randomblob(16))), m.session_id, NULL, NULL,
+           json_extract(je.value, '$.action_type'),
+           json_extract(je.value, '$.title'),
+           json_extract(je.value, '$.reason'),
+           je.value, 'pending', m.created_at
+    FROM session_messages m
+    JOIN (
+        SELECT session_id, MAX(rowid) AS latest_rowid
+        FROM session_messages WHERE role = 'assistant' GROUP BY session_id
+    ) latest ON latest.latest_rowid = m.rowid,
+    json_each(m.proposed_actions) je
+    WHERE json_valid(m.proposed_actions)
+      AND json_extract(je.value, '$.requires_confirmation') = 1
+      AND json_extract(je.value, '$.action_type') IN
+          ('plan_inventory_import', 'plan_access_log_import', 'generate_session_report');
+
+UPDATE agent_tasks SET status = 'needs_decision'
+    WHERE id IN (SELECT DISTINCT task_id FROM task_decisions WHERE status = 'pending');
+
+CREATE TABLE IF NOT EXISTS task_artifacts (
+    id            TEXT PRIMARY KEY,
+    task_id       TEXT NOT NULL REFERENCES agent_tasks(id) ON DELETE CASCADE,
+    execution_id  TEXT,
+    artifact_type TEXT NOT NULL,
+    title         TEXT,
+    ref_kind      TEXT,
+    ref_id        TEXT,
+    format        TEXT,
+    summary       TEXT,
+    created_at    TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_artifacts_task ON task_artifacts(task_id, created_at);
+
+CREATE TABLE IF NOT EXISTS task_context_versions (
+    task_id      TEXT NOT NULL REFERENCES agent_tasks(id) ON DELETE CASCADE,
+    version      INTEGER NOT NULL,
+    context_json_sanitized TEXT NOT NULL,
+    updated_by_execution_id TEXT,
+    created_at   TEXT NOT NULL,
+    PRIMARY KEY (task_id, version)
+);
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -667,6 +853,11 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     (23, "turn_metrics_budget", _M023),
     (24, "session_datasets_truncation", _M024),
     (25, "datasets_truncation", _M025),
+    # v0.94.0 — the durable Agent Task runtime: Agent Task and Execution become
+    # durable domain objects, progress becomes structured durable events,
+    # Decision/Artifact/Work Result become first-class rows, and the Storage
+    # Task Context is typed + versioned. See the _M026 comment block.
+    (26, "durable_task_runtime", _M026),
 ]
 
 

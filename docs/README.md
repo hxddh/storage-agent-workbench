@@ -1,6 +1,6 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v0.93.0** (`v0.93.0`, commit `7d58c3168f634bf5011be559f79d506f1be41fc6`).
+> **Current architecture baseline: Storage Agent v0.94.0** (`v0.94.0`, commit `7d58c3168f634bf5011be559f79d506f1be41fc6`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 

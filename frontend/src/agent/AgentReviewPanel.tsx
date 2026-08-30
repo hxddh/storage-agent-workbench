@@ -1,3 +1,4 @@
+import type { TaskArtifact } from "../api";
 import type { SessionDetail } from "../types";
 import { EvidenceReview } from "./EvidenceReview";
 import { ReportArtifact } from "./ReportArtifact";
@@ -8,6 +9,7 @@ import { useAgentCopy } from "./agentCopy";
 export function AgentReviewPanel({
   view,
   detail,
+  artifacts = [],
   report,
   reportLoading,
   error,
@@ -19,6 +21,8 @@ export function AgentReviewPanel({
 }: {
   view: ReviewSurface;
   detail: SessionDetail | null;
+  /** First-class durable Artifact index (reports, evidence imports, analyses). */
+  artifacts?: TaskArtifact[];
   report: string | null;
   reportLoading: boolean;
   error: string | null;
@@ -111,6 +115,31 @@ export function AgentReviewPanel({
                   ))}
                 </div>
               ) : <p className="agent-review-empty">{copy.execution.empty}</p>}
+            </section>
+
+            <section>
+              <div className="agent-review-section-label">{copy.review.artifacts}</div>
+              {artifacts.length ? (
+                <div className="agent-review-list" data-testid="task-artifacts">
+                  {artifacts.slice(0, 8).map((artifact) => (
+                    <button
+                      type="button"
+                      key={artifact.id}
+                      onClick={() => {
+                        if (artifact.artifact_type === "report" && artifact.ref_kind === "session_report") onView("report");
+                        else if (artifact.ref_kind === "run" && artifact.ref_id) onOpenExecution(artifact.ref_id);
+                        else onView("evidence");
+                      }}
+                    >
+                      <span className="agent-review-list-dot" data-artifact={artifact.artifact_type} aria-hidden />
+                      <span className="min-w-0">
+                        <strong>{artifact.title || artifact.artifact_type}</strong>
+                        {artifact.summary ? <small>{artifact.summary}</small> : null}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : <p className="agent-review-empty">{copy.review.noArtifacts}</p>}
             </section>
           </div>
         ) : null}
