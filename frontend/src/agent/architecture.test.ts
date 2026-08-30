@@ -35,6 +35,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(shell).toContain("taskContent: ReactNode");
     expect(shell).toContain("agent-task-content");
     expect(shell).toContain("<AgentReviewPanel");
+    expect(shell).toContain('data-testid="agent-task-review"');
     expect(shell).not.toContain("timeline: ReactNode");
     expect(shell).not.toContain("<SurfaceTabs");
     expect(shell).not.toContain('role="tabpanel"');

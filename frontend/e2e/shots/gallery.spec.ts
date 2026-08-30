@@ -150,7 +150,7 @@ for (const theme of THEMES) {
       seedTask(2, title, "tall");
       await openAgent(page, theme);
       await openTask(page, title);
-      await page.getByTestId("agent-task-header").getByRole("button", { name: /^Review$/i }).click();
+      await page.getByTestId("agent-task-review").click();
       await expect(page.getByTestId("agent-review-panel")).toBeVisible();
       await expect(page.getByTestId("agent-composer")).toBeVisible();
       await shoot(page, "04-review", theme);
@@ -201,7 +201,7 @@ test.describe("Agent runtime states", () => {
     await expect(page.getByTestId("agent-task-header")).toContainText(/Needs decision/i);
     await expect(navigation(page).getByTestId("task-queue-needs-you")).toContainText(title);
     await shoot(page, "11-decision-required", "dark");
-    await page.getByTestId("agent-task-header").getByRole("button", { name: /^Review$/i }).click();
+    await page.getByTestId("agent-task-review").click();
     await expect(page.getByTestId("decision-history")).toBeVisible();
     await shoot(page, "11b-decision-history", "dark");
   });
@@ -259,7 +259,7 @@ test.describe("Agent runtime states", () => {
     await openTask(page, title);
     await expect(page.getByTestId("task-verify")).toBeVisible({ timeout: 20_000 });
     await shoot(page, "16-remediation-verify", "dark");
-    await page.getByTestId("agent-task-header").getByRole("button", { name: /^Review$/i }).click();
+    await page.getByTestId("agent-task-review").click();
     await expect(page.getByTestId("remediation-plan-status")).toBeVisible();
     await expect(page.getByTestId("task-baselines")).toBeVisible();
     await expect(page.getByTestId("task-drift")).toBeVisible();
@@ -272,7 +272,7 @@ test.describe("Agent runtime states", () => {
     seedOptimizationTask(title, "due");
     await openAgent(page, "dark");
     await navigation(page).getByText(title, { exact: true }).first().click();
-    await page.getByTestId("agent-task-header").getByRole("button", { name: /^Review$/i }).click();
+    await page.getByTestId("agent-task-review").click();
     await expect(page.getByTestId("task-revisit")).toContainText(/Catch-up/i);
     await shoot(page, "17-revisit-catchup", "dark");
   });

@@ -107,7 +107,7 @@ export function AgentShell({
 
           <div className="agent-task-controls">
             {taskId ? (
-              <button type="button" className="agent-task-review-button" onClick={() => setReview((current) => current ? null : "overview")} aria-expanded={Boolean(review)}>
+              <button type="button" className="agent-task-review-button" data-testid="agent-task-review" aria-label={copy.review.open} onClick={() => setReview((current) => current ? null : "overview")} aria-expanded={Boolean(review)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
                   <path d="M4 5h16M4 12h16M4 19h10" />
                 </svg>

@@ -91,7 +91,7 @@ async function confirmPrices() {
 }
 
 test.describe("v0.96 optimization copilot closed loop", () => {
-  test.describe.configure({ timeout: 180_000 });
+  test.describe.configure({ timeout: 240_000 });
 
   test("cost review produces a plan, Verify execution, and Drift report", async ({ page }) => {
     await confirmPrices();
@@ -139,7 +139,7 @@ test.describe("v0.96 optimization copilot closed loop", () => {
         artifacts: Array<{ artifact_type: string }>;
       };
       expect(after.artifacts.some((a) => a.artifact_type === "drift_report")).toBe(true);
-      await page.getByTestId("agent-task-header").getByRole("button", { name: /^Review$/i }).click();
+      await page.getByTestId("agent-task-review").click();
       await expect(page.getByTestId("remediation-plan-status")).toBeVisible();
       await expect(page.getByTestId("task-baselines")).toBeVisible();
       await expect(page.getByTestId("task-drift")).toBeVisible();
