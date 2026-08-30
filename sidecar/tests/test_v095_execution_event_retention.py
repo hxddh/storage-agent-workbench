@@ -22,6 +22,10 @@ def _fresh_db(path) -> sqlite3.Connection:
 
 
 def _exec(conn, task_id: str, status: str, exec_id: str | None = None) -> str:
+    conn.execute(
+        "INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+        (task_id, "t", "2026-08-01T00:00:00Z", "2026-08-01T00:00:00Z"),
+    )
     store.ensure_task(conn, task_id, "t", "g")
     row = store.create_execution(conn, task_id, "direction", turn_id=exec_id or None)
     store.set_execution_status(conn, row["id"], status)
@@ -29,12 +33,12 @@ def _exec(conn, task_id: str, status: str, exec_id: str | None = None) -> str:
     return row["id"]
 
 
-def _events(conn, exec_id: str, n: int, created_at: str) -> None:
+def _events(conn, exec_id: str, n: int, created_at: str, task_id: str = "task") -> None:
     for i in range(n):
         conn.execute(
             "INSERT INTO execution_events (execution_id, task_id, event_type, "
             "payload_json_sanitized, created_at) VALUES (?, ?, ?, ?, ?)",
-            (exec_id, "task", f"tool.completed", "{}", created_at),
+            (exec_id, task_id, f"tool.completed", "{}", created_at),
         )
     conn.commit()
 
@@ -45,9 +49,9 @@ def test_does_not_prune_running_or_waiting(tmp_path, monkeypatch):
     running = _exec(conn, "t-run", store.EXEC_RUNNING)
     waiting = _exec(conn, "t-wait", store.EXEC_WAITING)
     done = _exec(conn, "t-done", store.EXEC_COMPLETED)
-    _events(conn, running, 5, "2000-01-01T00:00:00Z")
-    _events(conn, waiting, 5, "2000-01-01T00:00:00Z")
-    _events(conn, done, 5, "2000-01-01T00:00:00Z")
+    _events(conn, running, 5, "2000-01-01T00:00:00Z", "t-run")
+    _events(conn, waiting, 5, "2000-01-01T00:00:00Z", "t-wait")
+    _events(conn, done, 5, "2000-01-01T00:00:00Z", "t-done")
     monkeypatch.setenv("STORAGE_AGENT_EXECUTION_EVENT_RETENTION_DAYS", "1")
     monkeypatch.setenv("STORAGE_AGENT_EXECUTION_EVENT_MAX_PER_EXECUTION", "0")
     data_maintenance.prune_execution_events(conn)
@@ -70,7 +74,7 @@ def test_count_cap_rewrites_oldest_as_explicit_marker(tmp_path, monkeypatch):
     from app import data_maintenance
     conn = _fresh_db(tmp_path / "cap.db")
     done = _exec(conn, "t-cap", store.EXEC_COMPLETED)
-    _events(conn, done, 8, "2026-08-01T00:00:00Z")
+    _events(conn, done, 8, "2026-08-01T00:00:00Z", "t-cap")
     monkeypatch.setenv("STORAGE_AGENT_EXECUTION_EVENT_RETENTION_DAYS", "0")
     monkeypatch.setenv("STORAGE_AGENT_EXECUTION_EVENT_MAX_PER_EXECUTION", "3")
     deleted = data_maintenance.prune_execution_events(conn)
@@ -88,7 +92,7 @@ def test_disabled_caps_keep_everything(tmp_path, monkeypatch):
     from app import data_maintenance
     conn = _fresh_db(tmp_path / "keep.db")
     done = _exec(conn, "t-keep", store.EXEC_INTERRUPTED)
-    _events(conn, done, 4, "2000-01-01T00:00:00Z")
+    _events(conn, done, 4, "2000-01-01T00:00:00Z", "t-keep")
     monkeypatch.setenv("STORAGE_AGENT_EXECUTION_EVENT_RETENTION_DAYS", "0")
     monkeypatch.setenv("STORAGE_AGENT_EXECUTION_EVENT_MAX_PER_EXECUTION", "0")
     assert data_maintenance.prune_execution_events(conn) == 0
