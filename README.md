@@ -85,9 +85,9 @@ Each release includes platform-specific SHA256 manifests.
 
 | Platform | Asset |
 | --- | --- |
-| macOS (Apple Silicon) | `…-macos-arm64.dmg` / `.app.zip` |
-| Linux (x64) | `…-linux-x64.deb` |
-| Windows (x64) | `…-windows-x64-setup.exe` |
+| macOS (Apple Silicon) | `storage-agent-vX.Y.Z-macos-arm64.dmg` / `.app.zip` |
+| Linux (x64) | `storage-agent-vX.Y.Z-linux-x64.deb` |
+| Windows (x64) | `storage-agent-vX.Y.Z-windows-x64-setup.exe` |
 
 The current builds are not distributed with Apple notarization or Windows
 Authenticode signing, so the operating system may warn on first launch.
@@ -98,8 +98,8 @@ After moving the app to `/Applications`, an unsigned downloaded build may need
 its quarantine flag removed:
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/Storage Agent Workbench.app"
-open "/Applications/Storage Agent Workbench.app"
+xattr -dr com.apple.quarantine "/Applications/Storage Agent.app"
+open "/Applications/Storage Agent.app"
 ```
 
 Finder **Right-click → Open** also works for the normal unidentified-developer
@@ -109,7 +109,7 @@ quarantine command above.
 ### Linux
 
 ```bash
-sudo apt install ./storage-agent-workbench-*-linux-x64.deb
+sudo apt install ./storage-agent-*-linux-x64.deb
 ```
 
 A WebKitGTK runtime is required and is pulled in by normal package dependencies
@@ -117,7 +117,7 @@ on supported distributions.
 
 ### Windows
 
-Run `…-windows-x64-setup.exe`. SmartScreen may warn for the unsigned installer;
+Run `storage-agent-*-windows-x64-setup.exe`. SmartScreen may warn for the unsigned installer;
 choose **More info → Run anyway** when you trust the downloaded artifact and its
 checksum. WebView2 is required.
 
