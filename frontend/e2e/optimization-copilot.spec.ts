@@ -159,18 +159,24 @@ test.describe("v0.96 optimization copilot closed loop", () => {
     try {
       await boot(page);
       await page.getByText(title, { exact: true }).first().click();
-      await expect(task(page).getByText(/Catch-up revisit/i)).toBeVisible({ timeout: 90_000 });
-      const state = await (await fetch(`${sidecarOrigin()}/agent-tasks/${id}/state`)).json() as {
-        pending_decisions: Array<{ status: string; action_type: string }>;
-        last_execution: { kind?: string; direction?: string; status: string } | null;
-      };
-      expect(state.last_execution?.kind === "revisit" || /\[revisit\]/.test(state.last_execution?.direction || "")).toBe(true);
-      expect(state.pending_decisions.some((d) => d.status === "pending" && d.action_type === "plan_access_log_import")).toBe(true);
+      await expect.poll(async () => {
+        const state = await (await fetch(`${sidecarOrigin()}/agent-tasks/${id}/state`)).json() as {
+          pending_decisions: Array<{ status: string; action_type: string }>;
+          last_execution: { kind?: string; direction?: string; status: string } | null;
+        };
+        const revisit = state.last_execution?.kind === "revisit"
+          || /\[revisit\]/.test(state.last_execution?.direction || "");
+        const pending = state.pending_decisions.some(
+          (d) => d.status === "pending" && d.action_type === "plan_access_log_import",
+        );
+        return revisit && pending;
+      }, { timeout: 90_000, message: "catch-up revisit must finish as a pending Decision" }).toBe(true);
+      await expect(page.getByTestId("agent-decision-required")).toBeVisible({ timeout: 20_000 });
+      await expect(task(page).getByText(/Catch-up revisit|catch-up visit/i)).toBeVisible({ timeout: 20_000 });
       const resolved = await (await fetch(`${sidecarOrigin()}/agent-tasks/${id}/decisions`)).json() as {
         decisions: Array<{ status: string }>;
       };
       expect(resolved.decisions.some((d) => d.status === "approved")).toBe(false);
-      await expect(page.getByTestId("agent-decision-required")).toBeVisible({ timeout: 20_000 });
     } finally {
       await dropModelProvider(providerId);
       await model.close();

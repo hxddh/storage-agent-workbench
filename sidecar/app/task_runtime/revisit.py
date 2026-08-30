@@ -129,20 +129,31 @@ def tick(now: str | None = None, conn: sqlite3.Connection | None = None) -> int:
             now_dt = _parse(stamp) or datetime.now(timezone.utc)
             catchup = bool(due_at and now_dt - due_at > timedelta(hours=1))
             direction = (_CATCHUP_PREFIX + _REVISIT_DIRECTION) if catchup else _REVISIT_DIRECTION
+            days = max(_MIN_DAYS, int(row["interval_days"] or 7))
+            next_due = (now_dt + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            note = "catch-up" if catchup else None
+            # Claim the due row BEFORE submit so two app-open list requests
+            # cannot enqueue two revisits for the same schedule.
+            claimed = conn.execute(
+                "UPDATE task_revisit_schedules SET last_revisit_at = ?, next_due_at = ?, "
+                "last_catchup_note = ?, updated_at = ? WHERE task_id = ? AND enabled = 1 "
+                "AND next_due_at IS NOT NULL AND next_due_at = ?",
+                (stamp, next_due, note, stamp, task_id, row["next_due_at"]),
+            )
+            conn.commit()
+            if claimed.rowcount <= 0:
+                continue
             try:
                 runtime.submit(conn, task_id, direction, kind=REVISIT_KIND)
             except (AgentUnavailable, KeyError) as exc:
                 logger.info("revisit skipped for %s: %s", task_id, exc)
+                conn.execute(
+                    "UPDATE task_revisit_schedules SET next_due_at = ?, last_revisit_at = NULL, "
+                    "last_catchup_note = NULL, updated_at = ? WHERE task_id = ?",
+                    (row["next_due_at"], stamp, task_id),
+                )
+                conn.commit()
                 continue
-            days = max(_MIN_DAYS, int(row["interval_days"] or 7))
-            next_due = (now_dt + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-            note = "catch-up" if catchup else None
-            conn.execute(
-                "UPDATE task_revisit_schedules SET last_revisit_at = ?, next_due_at = ?, "
-                "last_catchup_note = ?, updated_at = ? WHERE task_id = ?",
-                (stamp, next_due, note, stamp, task_id),
-            )
-            conn.commit()
             submitted += 1
         return submitted
     finally:

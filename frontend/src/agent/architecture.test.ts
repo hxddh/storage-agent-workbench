@@ -212,6 +212,15 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(api).toContain("after=<last seq>");
   });
 
+  it("reloads the task document when a background Execution settles without a live follow", () => {
+    const doc = source("../hooks/useSessionDocument.ts");
+    expect(doc).toContain("loadedSettledExecId");
+    expect(doc).toContain("discoverPolls");
+    expect(doc).toContain("Catch-up");
+    expect(doc).toContain("void reload(sessionId)");
+    expect(doc).toContain("followExecutionEvents");
+  });
+
   it("uses task-native keyboard contracts", () => {
     const shortcuts = source("../shortcuts.ts");
     const app = source("../App.tsx");
