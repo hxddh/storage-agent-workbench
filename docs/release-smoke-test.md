@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v0.96.0.**
+> **Current baseline: Storage Agent v0.97.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -19,7 +19,7 @@
 
 ## B. Agent Task product smoke
 
-A user must be able to recognize and use the v0.96 product model without reading source code.
+A user must be able to recognize and use the v0.97 product model without reading source code.
 
 ### Start and task navigation
 
@@ -35,6 +35,8 @@ A user must be able to recognize and use the v0.96 product model without reading
 - [ ] At rest it represents **Delegate**.
 - [ ] During active execution it exposes real **Steer** and **Stop** behavior for the same Task.
 - [ ] Opening Review or Focus mode does not create another Agent input.
+- [ ] ⌘K / Ctrl+K opens a command overlay over the Task; it is not a new destination.
+- [ ] Dark and light themes are both first-class; switching language does not change product semantics.
 
 ### Direction → Execution → Work Result
 

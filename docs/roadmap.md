@@ -1,12 +1,12 @@
 # Roadmap
 
-> **Baseline: Storage Agent v0.96.0.**
+> **Baseline: Storage Agent v0.97.0.**
 >
 > This file describes what comes **after** the current Agent Task architecture. It is not a backlog of old UI concepts and it is not proof that an aspirational capability already exists.
 
 ## Current shipped baseline
 
-v0.96.0 is the current baseline. It preserves the v0.93 Agent Task product model and the v0.94/v0.95 durable runtime, and it turns that runtime into a quantified storage-optimization copilot and ongoing caretaker:
+v0.97.0 is the current baseline: a presentation-only craft pass on the v0.96.0 runtime. The Agent Task product model and durable runtime are unchanged. v0.96.0 turned that runtime into a quantified storage-optimization copilot and ongoing caretaker:
 
 - the **Agent Task** is the primary application object and work environment;
 - one Composer provides **Delegate → Steer + Stop** semantics, plus **Resume** and **Verify** when those runtime states exist;

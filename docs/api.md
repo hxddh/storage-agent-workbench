@@ -1,6 +1,6 @@
 # Sidecar API
 
-> **Storage Agent v0.96.0 API reference.**
+> **Storage Agent v0.97.0 API reference.** Unchanged from v0.96.0; v0.97 is presentation-only.
 >
 > The public product model is Agent Task / Direction / Execution / Decision / Work Result / Artifact. Many HTTP paths intentionally retain historical `session`/`run` compatibility names. Do not mirror those path names into new product information architecture.
 
