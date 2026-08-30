@@ -1,75 +1,131 @@
 # Install
 
-Download the installer for your platform from
-[GitHub Releases](https://github.com/hxddh/storage-agent-workbench/releases).
-Each release attaches macOS, Linux, and Windows assets plus per-platform
-`SHA256SUMS` files you can use to verify your download.
+> **Current release baseline: Storage Agent v0.93.0.**
+>
+> This guide covers the local-first desktop application. Product behavior is documented in [`product.md`](product.md); packaging internals are in [`packaging.md`](packaging.md).
 
-Builds are **ad-hoc signed and not notarized**, so every platform shows some form
-of "unidentified developer" warning on first launch. This is expected for these
-pre-1.0 builds; it is not a defect. Cold start takes a few seconds while the
-bundled sidecar comes up — the window shows **Sidecar: Connecting** until it is
-ready.
+## Download
 
-## macOS (Apple Silicon)
+Download the release asset for your platform from GitHub Releases and verify it with the matching platform-specific `SHA256SUMS` file.
 
-1. Download `storage-agent-vX.Y.Z-macos-arm64.dmg` (or `.app.zip`).
-2. From the DMG, drag **Storage Agent** to `/Applications`; from the zip, unzip
-   and move the app there.
-3. Open it one of two ways:
-   - **Finder:** right-click the app → **Open** → **Open** in the dialog; or
-   - **Terminal:** clear the quarantine attribute, then open:
+| Platform | Asset pattern |
+| --- | --- |
+| macOS Apple Silicon | `storage-agent-vX.Y.Z-macos-arm64.dmg` or `.app.zip` |
+| Linux x64 | `storage-agent-vX.Y.Z-linux-x64.deb` |
+| Windows x64 | `storage-agent-vX.Y.Z-windows-x64-setup.exe` |
 
-     ```bash
-     xattr -dr com.apple.quarantine "/Applications/Storage Agent.app"
-     open "/Applications/Storage Agent.app"
-     ```
+Current public builds are not distributed with Apple notarization or Windows Authenticode signing, so first-launch OS warnings are expected. See [`signing.md`](signing.md).
 
-The app is ad-hoc code-signed but **not notarized**, so macOS may say either
-*"Apple cannot check it for malicious software"* or *"is damaged and can't be
-opened."* Both just mean the missing Apple notarization — the **Terminal** step
-above (clearing the quarantine flag) reliably resolves either; right-click →
-Open only handles the first. See [signing.md](signing.md).
+## macOS — Apple Silicon
 
-## Linux (x64)
+1. Download the `.dmg` or `.app.zip`.
+2. Move **Storage Agent.app** to `/Applications`.
+3. Try Finder **Right-click → Open**.
+4. If Gatekeeper reports the trusted downloaded app as damaged/unopenable because of quarantine, clear the quarantine attribute and launch it:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Storage Agent.app"
+open "/Applications/Storage Agent.app"
+```
+
+The current build is ad-hoc signed but not notarized. Clearing quarantine does not verify provenance by itself: verify the downloaded artifact checksum and use only a release you trust.
+
+## Linux — x64
+
+Install the `.deb` with the system package manager, for example:
 
 ```bash
 sudo apt install ./storage-agent-*-linux-x64.deb
 ```
 
-Or download the `.deb` and install via your package manager. A WebKitGTK runtime
-is required (pulled in as a dependency on most distributions).
+The desktop shell requires the platform WebKitGTK/webview dependencies pulled by the package on supported distributions.
 
-## Windows (x64)
+## Windows — x64
 
-Run `storage-agent-*-windows-x64-setup.exe`. SmartScreen may warn because the
-installer is not Authenticode-signed — choose **More info → Run anyway**. The
-WebView2 runtime is required (preinstalled on current Windows; the installer
-fetches it if absent).
+Run:
 
-## Data and secrets
+```text
+storage-agent-vX.Y.Z-windows-x64-setup.exe
+```
 
-- **App data** (SQLite DB, DuckDB files, reports, uploads) is stored in the OS
-  app-data directory; in dev it lives under `<repo>/data`.
-- **Secrets** (cloud access/secret keys, session tokens, model API keys) are
-  stored only in an **encrypted local vault** (`secrets.enc`) in the app-data
-  directory — never in plaintext on disk, SQLite, logs, reports, or model
-  prompts. The vault's master key is protected per-OS by a non-prompting
-  mechanism (Windows DPAPI; an owner-only `0600` key file on macOS/Linux).
-- User data is **never** written into the install directory or bundled into the
-  app.
+Windows SmartScreen may warn because the installer is not Authenticode-signed. Verify the release/checksum before choosing **More info → Run anyway**.
 
-See [security.md](security.md) and [packaging.md](packaging.md) for details.
+The desktop shell uses WebView2; current Windows installations normally provide it, and the installer/runtime follows the Tauri platform dependency behavior.
 
-## Secret storage: no authorization prompts
+## First launch
 
-Secrets live in the encrypted local vault described above, so there is **no**
-system keychain/secret-service authorization prompt on macOS, Windows, or Linux.
+The Tauri desktop shell starts a bundled local Python Sidecar. A short connecting/starting state is normal while the Sidecar initializes.
 
-The vault is not migrated from the old OS-keychain storage used by builds before
-the vault landed (reading those would have triggered the very prompt we removed),
-so the first time you run a vault build, **re-enter your model API key and cloud
-credentials once** in Settings → Providers. They are never prompted for again.
-(On macOS/Linux the key file sits beside the vault with owner-only permissions —
-the standard local-first tradeoff; a future Developer-ID-signed build could
-re-enable the macOS keychain prompt-free, see [signing.md](signing.md).)
+The product then presents the current Agent Task experience:
+
+- **Delegate** work through the one Agent input;
+- configure model/cloud providers through Settings when needed;
+- read-only deterministic/offline storage-error triage remains available for supported errors even without a model provider;
+- active work becomes a durable Agent Task with real Execution, Work Results, Decisions when required, and contextual Review.
+
+If the Sidecar cannot start, treat that as a runtime/packaging fault rather than repeatedly creating new Tasks.
+
+## Local data
+
+All user data lives under the OS application-data directory selected by Tauri/Sidecar configuration, never inside the installed app directory.
+
+It can include:
+
+- SQLite application metadata and durable Agent Task records;
+- DuckDB analysis files;
+- uploaded/imported evidence;
+- report artifacts;
+- the encrypted secret vault.
+
+In source/development workflows the repository-local data directory may be used according to `packaging.md`/runtime configuration.
+
+## Secrets
+
+Cloud access/secret keys, temporary session tokens, and model API keys are stored only in the encrypted local vault (`secrets.enc` plus its protected master key). SQLite stores opaque `keyring://...` references, not plaintext credentials.
+
+Current master-key protection:
+
+- Windows: current-user DPAPI;
+- macOS/Linux: owner-only `0600` key file.
+
+The current product intentionally avoids the system keychain/secret-service flow, so there should be no OS keychain authorization prompt when adding or using provider credentials.
+
+Builds that predate the encrypted-vault storage model are not automatically treated as a source of old keychain secrets; users may need to enter provider credentials again when moving from a sufficiently old build.
+
+See [`security.md`](security.md).
+
+## Sidecar security
+
+The packaged launcher:
+
+- binds the Sidecar to localhost;
+- chooses a free local port;
+- generates a random per-launch auth token;
+- passes the token to the Sidecar;
+- gives the URL/token to the webview through Tauri commands;
+- shuts the Sidecar down with the desktop app.
+
+Normal API calls use the Sidecar token header; SSE uses the supported token query path. This local token is separate from model/cloud credentials.
+
+## Verify a release
+
+Use the matching checksum manifest from the GitHub Release. Example:
+
+```bash
+# macOS
+shasum -a 256 -c SHA256SUMS-macos-arm64.txt
+
+# Linux
+sha256sum -c SHA256SUMS-linux-x64.txt
+```
+
+Use the platform-appropriate SHA256 verification tooling on Windows.
+
+## Troubleshooting boundaries
+
+Installation/runtime issues should be kept distinct from Agent/storage findings:
+
+- **App will not open / OS warning** → distribution/signing/quarantine issue.
+- **App opens but Sidecar never connects** → packaged runtime issue.
+- **Sidecar connects but provider/model fails** → provider/runtime configuration issue surfaced as Task attention state where applicable.
+- **Storage request fails** → delegate the storage problem to the Agent; do not change installation/security settings merely to make an S3 error disappear.
