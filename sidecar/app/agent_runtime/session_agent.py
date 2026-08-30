@@ -37,7 +37,6 @@ from . import session_action_tools
 from . import model_budget
 from . import session_analysis_tools
 from . import session_memory_tools
-from . import session_optimization_tools
 from . import session_tools
 from .agent_service import AgentUnavailable
 from .guardrails import strip_chain_of_thought, strip_chain_of_thought_stream
@@ -1334,6 +1333,7 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
     # Uploaded-file analysis is always available (local, read-only, sanitized) so
     # the agent can analyze an attached log/inventory itself and answer inline.
     tools += session_analysis_tools.build(conn, function_tool, session_id, activity)
+    from . import session_optimization_tools
     tools += session_optimization_tools.build(conn, function_tool, session_id, activity)
     return tools
 
