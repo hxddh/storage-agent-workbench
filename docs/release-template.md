@@ -1,64 +1,112 @@
-# Storage Agent Workbench vX.Y.Z
+# Storage Agent vX.Y.Z
 
-> The `Release` workflow (`.github/workflows/release.yml`) **auto-generates** the
-> published notes: the "What's changed" section is pulled from this version's
-> `CHANGELOG.md` entry and a standard install block is appended. You normally
-> don't hand-write release notes — keep the CHANGELOG entry good and the workflow
-> does the rest. This template is a reference for a manual or draft release.
+> Release notes describe **what changed in this release**. They are historical snapshots after publication, not the canonical architecture specification. Current contributors should start at [`docs/README.md`](README.md), [`product.md`](product.md), and [`architecture.md`](architecture.md).
 >
-> Fill each section; delete guidance lines before publishing.
+> The Release workflow normally generates the published notes from the matching `CHANGELOG.md` release entry and appends the standard install/download block. Use this file as the content contract for a manual/draft release or when reviewing generated notes.
+
+## Summary
+
+One short paragraph describing the user-visible outcome of the release. State what became better or newly possible; do not lead with internal refactors.
 
 ## Highlights
 
-A few bullet points on what is new or notable in this release (mirrors the
-CHANGELOG entry).
+- **Agent Task / product behavior:** describe only real shipped behavior.
+- **Storage capability:** new or materially improved diagnostics, evidence, analysis, or provider support.
+- **Trust / reliability:** safety, persistence, execution truth, recovery, or quality improvements.
+
+Delete categories that do not apply.
+
+## Product architecture note
+
+If the release changes the product model or ownership boundaries, describe the new current contract precisely and ensure the canonical docs + executable architecture/documentation tests changed in the same PR.
+
+Do **not** describe aspirational multi-agent workers, plans, terminal/browser control, storage mutation, or other capability the runtime does not actually implement.
+
+For releases that preserve the v0.93 model, a concise statement is enough:
+
+> Storage Agent remains organized around durable Agent Tasks: Direction → real Execution → Decision when required → Work Result → reviewable Artifacts, with one Delegate/Steer/Stop control path.
 
 ## Download
 
-Pick the asset for your platform from the Release assets below. All three
-platforms are built and attached on every release.
+Choose the asset for your platform from the GitHub Release.
 
-## Platforms
+| Platform | Asset pattern | Distribution status |
+| --- | --- | --- |
+| macOS Apple Silicon | `storage-agent-vX.Y.Z-macos-arm64.dmg` / `.app.zip` | ad-hoc signed, not notarized |
+| Linux x64 | `storage-agent-vX.Y.Z-linux-x64.deb` | unsigned package |
+| Windows x64 | `storage-agent-vX.Y.Z-windows-x64-setup.exe` | not Authenticode-signed |
 
-- macOS arm64 — `…-macos-arm64.dmg` (+ `…-macos-arm64.app.zip`); ad-hoc signed,
-  **not notarized**.
-- Linux x64 — `…-linux-x64.deb`; unsigned.
-- Windows x64 — `…-windows-x64-setup.exe`; unsigned (not Authenticode-signed).
-
-Every OS shows a first-launch warning because the builds are unsigned / not
-notarized — this is expected. See [signing.md](signing.md).
+Every platform release also includes its platform-specific SHA256 manifest.
 
 ## Install
 
-See [docs/install.md](install.md). On macOS use right-click → Open or clear the
-quarantine attribute; on Windows choose **More info → Run anyway**; on Linux
-`sudo apt install ./…-linux-x64.deb`.
+See [`install.md`](install.md).
+
+Current distribution caveats:
+
+- macOS may require Finder **Right-click → Open** or clearing the quarantine attribute for trusted downloaded builds;
+- Windows SmartScreen may warn because the installer is not Authenticode-signed;
+- Linux installs through the normal `.deb` package flow and requires the platform webview runtime dependencies.
 
 ## Security model
 
-Local-first; secrets in an encrypted local vault (no system prompts); read-only
-diagnostics and no write/destructive S3 operations; data-moving actions always
-require confirmation; sanitized agent context. See [docs/security.md](security.md).
+Summarize only security behavior changed by the release. The baseline remains:
+
+- local-first application/data model;
+- cloud/model secrets in the encrypted local vault;
+- no secret values in model prompts or durable execution/evidence records;
+- typed, bounded, read-only storage capabilities;
+- no generic shell/arbitrary subprocess/destructive storage tool;
+- explicit Decision before confirmation-gated cloud data movement;
+- bounded/sanitized model and Tool context;
+- no chain-of-thought persistence/exposure.
+
+See [`security.md`](security.md) for the canonical contract.
 
 ## Known limitations
 
-- No code signing / notarization / auto-update.
-- macOS x64 / universal not built (arm64 only).
-- (List any release-specific gaps here.)
+List only factual current limitations, for example:
+
+- no Apple notarization / Windows Authenticode / trusted auto-update chain;
+- macOS x64/universal not produced;
+- provider/evidence formats not yet implemented;
+- release-specific known issues.
+
+Do not copy forward a limitation after it has been fixed.
 
 ## Checksums
 
-Each platform ships its own checksum file: `SHA256SUMS-macos-arm64.txt`,
-`SHA256SUMS-linux-x64.txt`, `SHA256SUMS-windows-x64.txt`, attached to the Release.
+Expected checksum manifests:
 
-## Verification
-
-```bash
-# from the directory holding the downloaded asset + its SHA256SUMS file
-shasum -a 256 -c SHA256SUMS-macos-arm64.txt      # macOS
-sha256sum -c SHA256SUMS-linux-x64.txt            # Linux
+```text
+SHA256SUMS-macos-arm64.txt
+SHA256SUMS-linux-x64.txt
+SHA256SUMS-windows-x64.txt
 ```
 
-## Development notes
+Example verification:
 
-Link to the relevant CHANGELOG.md section and any notable context for this release.
+```bash
+shasum -a 256 -c SHA256SUMS-macos-arm64.txt
+sha256sum -c SHA256SUMS-linux-x64.txt
+```
+
+Use the platform-appropriate checksum tool on Windows.
+
+## Verification performed
+
+Record what actually ran for this exact release source SHA:
+
+- CI status and source SHA;
+- frontend unit/architecture/documentation gates;
+- Sidecar tests/package smoke;
+- real-Sidecar E2E;
+- Agent visual-review artifact review;
+- desktop build/runtime checks for each required platform;
+- manual smoke platforms actually tested.
+
+Never write “all tests passed” unless that exact candidate was checked.
+
+## Full changes
+
+Link to the matching `CHANGELOG.md` section and compare range for this release.

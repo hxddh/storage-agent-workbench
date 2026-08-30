@@ -1,137 +1,171 @@
-# Status & direction
+# Roadmap
 
-## Where it is now
+> **Baseline: Storage Agent v0.93.0.**
+>
+> This file describes what comes **after** the current Agent Task architecture. It is not a backlog of old UI concepts and it is not proof that an aspirational capability already exists.
 
-Storage Agent ships a local-first desktop runtime for object-storage work and
-builds installers for macOS Apple Silicon, Linux x64 and Windows x64.
+## Current shipped baseline
 
-Working end to end:
+v0.93.0 establishes the product architecture future work must build on:
 
-- Model and S3-compatible Storage Provider configuration; secrets live only in
-  the encrypted local vault.
-- Durable **Agent Tasks** with rename / pin / archive / delete / duplicate /
-  branch / search.
-- One Agent Composer that delegates at rest and becomes **Steer + Stop** during
-  active Execution.
-- Per-task live state including Working, Needs decision, Needs attention and
-  Ready.
-- Read-only S3 diagnostics and account discovery.
-- Bucket configuration review for security, lifecycle, observability, cost and
-  performance.
-- Managed Evidence Import with plan → explicit Decision → execution for bounded
-  inventory/access-log data movement.
-- Local DuckDB analysis of inventory and access logs; the model receives only the
-  bounded/sanitized analysis context allowed by the runtime.
-- Deterministic object-storage error triage.
-- Durable Directions, Work Results, findings, task memory and Execution records.
-- Contextual Review for Evidence, Execution and Report Artifacts without leaving
-  the active Task.
-- Markdown Report Artifacts.
-- Concurrent task execution: a real in-flight Task can continue while another
-  Task is selected, and returns with its runtime state intact.
+- the **Agent Task** is the primary application object and work environment;
+- one Composer provides **Delegate → Steer + Stop** semantics;
+- Direction, Execution, Decision, Work Result, Artifact, and contextual Review are distinct product concepts;
+- live execution is real per-task runtime state rather than simulated Agent chrome;
+- a Task can retain real in-flight execution while another Task is selected;
+- `/agent-tasks` projects durable task-list state while `/sessions` remains the compatibility persistence/runtime API;
+- read-only S3 diagnostics, account discovery, config review, local evidence analysis, error triage, and reports work end to end;
+- managed cloud Evidence Import uses plan → explicit Decision → execution;
+- task memory, findings, evidence references, execution detail, and turn metrics are durable;
+- secrets remain in the encrypted local vault and out of model context;
+- architecture, legacy-contract, documentation-contract, real-Sidecar E2E, visual-review, and desktop-build gates protect the release.
 
-The current product is deliberately **not** presented as a conversation shell or
-an admin console with AI attached. The Agent Task is the primary work environment
-and runtime truth drives the visible execution state.
+This is the starting point. Future work should deepen the Agent's ability to complete real object-storage jobs inside this model rather than replacing it with another shell.
 
-## Quality floor
+## Roadmap principles
 
-Every pull request is checked by multiple independent layers:
+1. **Capability before chrome.** Add UI only for runtime state/capability that actually exists.
+2. **Agent Task remains the organizing object.** New evidence, tools, reports, and execution detail attach to the Task.
+3. **Read-only autonomy, explicit mutation/data-movement boundaries.** More autonomy must not weaken the safety floor.
+4. **Evidence over confidence.** Improve what the Agent can prove, correlate, and explain; do not hide gaps.
+5. **Storage depth over generic-Agent breadth.** Prefer real S3/object-storage capabilities over generic terminal/browser/workflow features.
+6. **Provider realism matters.** S3-compatible behavior and capability gaps must be tested explicitly rather than assumed from AWS semantics.
+7. **Documentation is part of architecture.** Any intentional change to the product model must update code, executable contracts, and canonical docs together.
 
-- Sidecar pytest coverage for engines, repositories, tool semantics, safety and
-  shipped regressions.
-- Frontend unit, architecture and legacy-contract guards.
-- Real-Sidecar Playwright E2E for Agent delegation, Execution, durable Work
-  Results, Stop/Steer, task concurrency, Decisions, Review, localization,
-  accessibility and secret sanitization.
-- A real-state visual-review contact sheet generated from the same Sidecar-backed
-  application states; it captures Delegate, Working+Steer, Decision, Work Result,
-  Execution, Review, narrow layout and localized UI for human design review.
-- Desktop build/runtime verification on macOS, Linux and Windows.
+## Near-term priorities
 
-The frontend architecture guards explicitly reject the removed Chat-era
-production contracts so old Session/Rail/Inspector/Timeline UI cannot quietly
-return through incremental changes.
+### P0 — Evidence depth and correctness
 
-## Known gaps
+#### Broader inventory/log formats
+
+- Add ORC support for inventory where the local deterministic analysis stack can preserve the same safety/scale guarantees.
+- Improve schema detection and explicit truncation/coverage reporting across large imported evidence.
+- Keep model context aggregate-only and bounded.
+
+#### Provider-native evidence sources
+
+Evaluate and add bounded adapters for sources such as:
+
+- CloudTrail-style object-storage API events;
+- Storage Lens-style aggregate data;
+- provider-native access-log/inventory equivalents.
+
+Each source must define discovery, bounded planning, confirmation, local persistence, sanitization, and analysis before it becomes a first-class Artifact.
+
+### P0 — Stronger storage reasoning from existing evidence
+
+Improve correlation across already available evidence:
+
+- request errors + bucket config + endpoint/region/addressing state;
+- lifecycle rules + inventory age/storage-class distribution;
+- multipart/version state + cost findings;
+- access-log request mix + latency/error patterns;
+- object metadata/config evidence + observed behavior.
+
+The goal is a better Work Result backed by existing Evidence/Execution, not a new navigation surface.
+
+### P0 — Decision clarity and resumability
+
+Make confirmation-gated work easier to reason about:
+
+- clearly state what will happen, what data will move, bounds, and why confirmation is required;
+- preserve enough durable state to recover safely after app/Sidecar interruption where the underlying workflow supports it;
+- distinguish cancelled, failed, expired, and completed gated work;
+- keep the Task's global Needs decision state consistent with the current durable proposal.
+
+### P1 — Provider-realistic integration coverage
+
+Add reproducible local/CI environments for S3-compatible differences that cannot be modeled reliably with simple mocks:
+
+- signature/addressing differences;
+- incomplete API support;
+- error-shape/header differences;
+- pagination/version/multipart behavior;
+- provider-specific config semantics where useful.
+
+CI must still carry no production cloud/model secrets.
+
+### P1 — Better execution/evidence review
+
+Deepen contextual Review without turning it into a separate application:
+
+- stronger provenance links from a Work Result to the exact Evidence/Execution that supports it;
+- clearer audit-gap and unsupported-capability representation;
+- more useful comparison of current vs prior task/account evidence;
+- better large-task search/navigation while preserving the Task as one durable work record.
+
+### P1 — Storage-specific tool coverage
+
+Add only tools that materially improve storage diagnosis or analysis while fitting the read-only/bounded model. Candidate areas should be justified by a real user job and a concrete safety contract, for example additional bucket/object metadata/config probes or provider capability detection.
+
+### P2 — Distribution hardening
+
+When justified by actual users/distribution needs:
+
+- Apple Developer ID signing + notarization;
+- Windows Authenticode signing;
+- a trusted auto-update chain;
+- macOS x64/universal artifacts if demand warrants the extra release matrix.
+
+Distribution hardening must not change runtime/product semantics.
+
+## Known current gaps
 
 ### Distribution
 
-- Builds are not distributed with Apple notarization or Windows Authenticode
-  signing; see [signing.md](signing.md).
-- No auto-update because a trusted update-signing/distribution chain has not been
-  provisioned.
-- macOS x64 / universal builds are not produced.
+- Apple notarization is not configured.
+- Windows Authenticode signing is not configured.
+- No trusted auto-update chain.
+- macOS release is Apple Silicon only.
 
-### Evidence sources
+### Evidence/source coverage
 
-- Inventory import is CSV / Parquet only; no ORC.
-- CloudTrail, Storage Lens and provider-native access-log sources are not yet
-  integrated as first-class Evidence sources.
+- ORC inventory is not analyzed end to end.
+- provider-native event/access-log/aggregate sources are not yet first-class Evidence.
+- some S3-compatible capability differences are represented as unsupported without dedicated provider containers in required CI.
 
-### Provider realism in CI
+### CI realism
 
-CI deliberately carries no live cloud/model credentials. Model-backed E2E uses a
-scripted local OpenAI-compatible endpoint; storage-tool behavior is tested
-against both hostile socket-level doubles and a real stateful local S3 server
-where appropriate.
+Required CI deliberately uses no production model/cloud credentials. The repository has strong deterministic/runtime/E2E coverage but does not prove every public-cloud/provider quirk.
 
-Still not covered by required CI:
+Do not rewrite these gaps as already solved until executable coverage exists.
 
-- real provider signature verification with production credentials;
-- provider-specific quirks that require dedicated MinIO/Ceph/etc. containers;
-- a live public-cloud account/bucket.
+## Explicit non-directions
 
-These gaps should be described precisely rather than hidden behind a generic
-“integration tests exist” claim.
+The following are **not** roadmap shortcuts and must not be added merely to make the product look like a broader Agent platform:
 
-## Direction
-
-The next work should deepen the Agent's ability to complete real storage tasks,
-not add Agent-looking chrome unsupported by the runtime.
-
-1. **Broader Evidence sources.** Add ORC inventory, then provider-native logs /
-   CloudTrail / Storage Lens through bounded, confirmation-gated import flows.
-2. **Richer evidence-backed Agent analysis.** Improve what the runtime can infer
-   and correlate from already-imported Evidence while retaining deterministic
-   auditability and explicit gaps.
-3. **Stronger Decision UX and resumability.** Keep confirmation-gated operations
-   first-class and make it increasingly clear what will happen, why it blocks and
-   what resumes after approval/cancel.
-4. **More provider-realistic test infrastructure.** Add dedicated S3-compatible
-   containers for signature and provider-quirk coverage without putting cloud
-   credentials into CI.
-5. **macOS x64 / universal builds** only if real user demand justifies the extra
-   release matrix.
-
-## Things we will not fake
-
-Do not add these as UI concepts before the runtime genuinely supports them:
-
-- multi-agent orchestration;
-- coding-Agent projects/worktrees;
-- generated plans/checklists that are not runtime state;
+- multi-agent orchestration without a real runtime need;
+- synthetic task plans/checklists unsupported by execution state;
+- coding projects/worktrees;
 - generic terminal/browser/computer control;
-- hidden background workers represented as autonomous Agent processes;
-- destructive storage repair/mutation;
-- a page/tab for every persistence table.
+- a workflow canvas;
+- a plugin marketplace as a substitute for storage-specific capabilities;
+- destructive storage mutation/auto-remediation;
+- a top-level application destination for every backend table;
+- multi-user SaaS/RBAC before there is an explicit product decision to stop being a local-first desktop Agent.
 
-A top-tier Agent product is not defined by copying another product's chrome. It
-is defined by a trustworthy loop where the user delegates work, can see real
-Execution, can Steer/Stop it, is interrupted only for real Decisions, and receives
-reviewable artifacts.
+## Safety floor for all future work
 
-## Safety remains non-negotiable
+Every roadmap item must preserve:
 
-Future capability work must preserve the current safety floor:
-
-- storage access is read-only;
-- no destructive/general shell tool;
+- read-only storage operations in the shipped Agent;
+- no generic shell/arbitrary subprocess capability;
 - secrets only in the encrypted local vault;
-- data-moving cloud actions require explicit Decision;
-- model/tool context is sanitized and bounded;
-- Evidence gaps stay gaps rather than being converted into guesses;
-- chain-of-thought is neither persisted nor exposed.
+- no secrets in model prompts, SQLite, logs, reports, or browser-readable payloads;
+- server-side provider scope enforcement;
+- explicit Decisions for gated data movement/materially large scans;
+- bounded/sanitized Tool and model context;
+- deterministic handling of raw analytical rows;
+- explicit provider/evidence gaps;
+- no chain-of-thought persistence/exposure.
 
-See [security.md](security.md) for the authoritative security model and the
-CHANGELOG for release-by-release hardening history.
+See `security.md` for the authoritative safety contract.
+
+## How to evolve this roadmap
+
+When an item ships:
+
+1. update the relevant current doc (`product.md`, `architecture.md`, `api.md`, `data-model.md`, `tools.md`, or release docs);
+2. update/remove the roadmap item rather than leaving shipped behavior under “future”;
+3. add executable regression coverage for the new contract;
+4. record the historical change in release notes/CHANGELOG without turning that historical record into the next architecture spec.

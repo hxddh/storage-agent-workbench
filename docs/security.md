@@ -1,500 +1,408 @@
 # Security
 
-Security is a core product requirement.
+> **Storage Agent v0.93.0 security contract.**
+>
+> Security is part of the Agent Task product model, not a secondary implementation detail. Read-only autonomy is allowed only inside explicit, bounded, sanitized capabilities. Data movement and materially large/full scans cross a real **Decision required** boundary.
 
-## Secret handling
+## 1. Security model at a glance
 
-Secrets include:
-
-- Model API keys
-- Cloud access keys
-- Cloud secret keys
-- Session tokens
-- Authorization headers
-- Presigned URL credentials
-- Cookies
-- Bearer tokens
-
-Rules:
-
-1. Secrets must never enter LLM prompts.
-2. Secrets must never be stored in SQLite.
-3. Secrets must never be stored in logs.
-4. Secrets must never be stored in traces.
-5. Secrets must never be stored in reports.
-6. Secrets must never be stored in frontend state longer than needed for submission.
-7. Secrets must be stored only through `security/keyring_store` — a single
-   AES-256-GCM encrypted local vault (`secrets.enc`), with the master key
-   protected per-OS by a non-prompting mechanism (Windows DPAPI; an owner-only
-   `0600` key file on macOS/Linux). Not the OS keychain (the ad-hoc-signed,
-   cross-platform app would re-prompt on every update / be absent on headless
-   Linux). Do not move secrets back into the keychain, SQLite, or plaintext.
-8. SQLite may store only secret references (`keyring://scope/name`).
-
-## Tool safety
-
-Rules:
-
-1. No generic shell tool.
-2. No raw subprocess tool exposed to the Agent.
-3. No raw boto3 client exposed to the Agent.
-4. Cloud operations must go through whitelist tools.
-5. Default mode is readonly.
-6. `test-write` is a **reserved** mode: it exists only as a schema enum — no
-   write tool exists anywhere in the MVP, so nothing can write even with the
-   mode set. Any future write tool must enforce the allowed test prefixes
-   (e.g. `tmp/agent-test/*`, `diagnose/*`) before performing any write.
-7. Destructive operations are forbidden.
-8. A provider's `allowed_buckets` / `allowed_prefixes` scope is enforced
-   server-side — in the agent session tools, the surviving `/tools` endpoints,
-   and the run executors.
-9. Prefix scope matches at a **path boundary**, not as a raw string prefix:
-   `allowed_prefixes=["logs"]` admits `logs` and `logs/…` but NOT
-   `logs-private/…`, which is a different top-level path. Empty-string entries
-   are dropped so a stray `""` cannot silently unrestrict the bucket.
-
-Forbidden:
-
-- DeleteBucket
-- PutBucketPolicy
-- PutBucketAcl
-- PutLifecycleConfiguration
-- DeleteObjects
-- Recursive delete
-- Mass object mutation
-- Bucket-wide destructive or mutating operation
-
-### Tool results are untrusted data
-
-Everything a tool returns — bucket and object names, previewed object bodies,
-config rules, log and inventory content — is third-party text that an attacker
-may control. Teaching the model to distrust it is not enough on its own, because
-an injected instruction looks exactly like runtime text in the transcript.
-
-Every data-deriving tool output is therefore wrapped in explicit markers
-(`<<external_untrusted_data>>` … `<<end_external_untrusted_data>>`) at a single
-choke point in `agent_runtime/session_agent.py`, and any literal marker inside a
-payload is defanged first so content cannot fake an early close and smuggle text
-into the trusted region. The system prompt anchors the data-never-instructions
-rule on those exact markers.
-
-Two categories stay **outside** the envelope, deliberately: `read_skill` output
-(first-party StorageOps teaching — skills ARE instructions by design) and the
-runtime status notes the budget wrapper emits (`budget_exhausted`, `cancelled`),
-which are the agent runtime speaking to the model, not data.
-
-## Analysis safety
-
-Rules:
-
-1. No bulk object-body downloads. The one bounded exception is `preview_object`:
-   a single, read-only, sanitized preview of one named object's head (hard cap
-   1 MiB/call), bounded per turn so it can't be looped into a bulk download, and
-   never persisted. Binary/oversized objects are reported, not decoded.
-2. Full bucket scans require explicit user approval.
-3. Large scans require max_objects or prefix limits.
-4. Reports should show at most 20 sample object keys by default.
-5. Logs should be sanitized before persistence.
-6. Presigned URLs must be redacted before storage or display.
-
-## Redaction
-
-Must redact:
-
-- Access keys
-- Secret keys
-- Session tokens
-- API keys
-- Authorization headers
-- Signatures
-- Presigned URL credentials
-- Sensitive query parameters
-- Cookies
-- Bearer tokens
-
-`security/redaction.py` is the single implementation. Beyond the AWS shapes it
-also covers the non-AWS credentials this app meets through S3-compatible
-endpoints: GCP service-account `private_key` PEM blocks **and** `private_key = …`
-assignments, Azure `AccountKey=` connection strings, Azure Blob **SAS `sig=`**
-query parameters (anchored to `?`/`&`, so the non-secret `se=`/`sp=` params
-survive), and temporary-credential **session tokens** by prefix shape
-(`FQoG`/`FwoG`/`IQoJ…`).
-
-A *bare* 40-character secret key carries no label to match on, so it is masked
-only when the text also contains an `AKIA`/`ASIA…` key-id — the pair-paste that
-is how one actually shows up. Bucket names cannot collide with that shape.
-
-### Credential query parameters beyond the presigned shapes (v0.60.0)
-
-"Sensitive query parameters" above used to mean the presigned/SigV4 set. Twelve
-credential-bearing names outside it — `password`, `passwd`, `pwd`, `secret`,
-`client_secret`, `access_token`, `refresh_token`, `credential`, `credentials`,
-`auth`, `session`, `sessionid` — were **not** redacted, so a pasted endpoint URL
-carrying one reached the model prompt verbatim (rule 1) and was persisted the
-same way. `_contains_secret()` does not recognise that shape and
-`assert_no_secrets_in_context` guards only the context block, which the user's
-message is appended after, so the redactor was the only line and it was open.
-
-Both the URL form (`?password=…`, anchored to `?`/`&`) and the config-line form
-(`MINIO_ROOT_PASSWORD=…`) are covered, each accepting a vendor prefix.
-
-Two exclusions are deliberate and should stay: **`key`** is the object key in an
-S3 URL, and **`Expires`/`se`/`sp`/`sv`** are SAS expiry and permission metadata.
-Masking either destroys the diagnostic without protecting anything — the secret
-of the SAS family, `sig`, is covered separately.
-
-`tests/test_v060_rule15_coverage.py` is table-driven against the list above, so a
-category that stops being covered fails CI rather than shipping. That is the
-actual lesson of this gap: the existing redaction tests were organised by
-pattern, and a requirement nobody enumerated is a requirement nobody checks.
-
-### Streaming is redacted separately, and more eagerly
-
-The live answer stream cannot wait for the whole text before deciding what to
-hide, and several patterns are only recognizable near their END (a JWT needs its
-second `.` plus signature). The stream sanitizer therefore:
-
-- holds back a fixed tail **plus any still-growing run of secret-alphabet
-  characters**, so an unfinished long token is never emitted no matter how far
-  it extends; and
-- masks standalone 40-char base64-ish tokens **unconditionally in the live view
-  only**. The persisted answer re-applies the precise rules, so any
-  over-redaction is corrected when the final answer replaces the stream.
-
-Chain-of-thought is stripped **before** redacting and again after: redaction can
-consume a `</think>` tag when a credential-shaped token abuts it, and a single
-strip would then persist the whole hidden-reasoning block.
-
-### Names are content too
-
-A user-chosen filename can itself be a secret (`AKIA…-backup.csv`). Redacting
-only the display column left the raw string in the adjacent `stored_path`, so
-both upload routes replace a secret-shaped filename with a generated one before
-anything reaches disk or SQLite.
-
-## Audit
-
-Record these events:
-
-- Tool calls
-- Tool inputs after sanitization
-- Tool outputs after sanitization
-- Analysis SQL
-- Data imports
-- Approval events
-- Report generation
-
-## Provider unsupported
-
-S3-compatible providers may not support every AWS S3 API.
-
-Unsupported APIs should be recorded as:
+Storage Agent is a local-first desktop Agent with four main trust boundaries:
 
 ```text
-Provider unsupported
+User
+  │
+  ▼
+Tauri + React UI
+  │ localhost HTTP / SSE + per-launch Sidecar token
+  ▼
+Python Sidecar
+  ├── encrypted local secret vault
+  ├── SQLite / DuckDB / local artifacts
+  ├── one model-driven Agent runtime
+  └── typed, read-only S3-compatible capabilities
+          │
+          ├── configured model endpoint
+          └── configured storage endpoint
 ```
 
-They should not be treated as hard failures unless the requested task requires that capability.
+Core guarantees:
 
-## Agent dataset analysis
+- secret values stay local and never enter model prompts;
+- storage operations exposed to the Agent are read-only;
+- no generic shell/raw subprocess/raw boto3/unrestricted filesystem capability is exposed;
+- provider bucket/prefix scope is enforced server-side;
+- cloud data movement is confirmation-gated;
+- model context and persisted execution/evidence are bounded and sanitized;
+- raw analytical rows remain in local deterministic analysis paths;
+- external Tool data is treated as untrusted data, not instructions;
+- missing evidence/provider capability stays explicit;
+- chain-of-thought is neither persisted nor exposed.
 
-Dataset analysis (`access_log_analysis`, `inventory_analysis`, and the agent's
-`analyze_uploaded_file` tool) is **deterministic** — there is no in-run LLM
-narrator or drill-down agent (both were removed in v0.20.0). The deterministic
-DuckDB engine is authoritative and produces the metrics + findings; the single
-conversational agent narrates the sanitized result if the user asks.
+## 2. Secret handling
 
-- The conversational agent is given **only** a bounded, sanitized, aggregated
-  context: run + dataset metadata, the deterministic metrics, and the
-  deterministic findings. Lists are capped at 20 entries and the whole context
-  is asserted to contain no secret-shaped content before it can leave the
-  process. It never reaches raw rows, full key lists, free SQL, or object bodies.
-- Forbidden in the agent context: raw log lines, raw inventory rows, full key
-  lists / >20 sample keys, Authorization headers, cookies, presigned-URL query
-  params, access/secret/session keys, model API keys, unmasked client IPs, and
-  arbitrary SQL result dumps. Client IPs are masked upstream at import.
-- The agent's output is redacted, chain-of-thought-stripped, length-bounded, and
-  coerced to a fixed field set before it is shown or saved. Hidden reasoning,
-  raw prompts, and raw model reasoning are never persisted.
-- The agent may *recommend reviewing* lifecycle-policy candidates, but must never
-  auto-create/update/delete lifecycle rules or emit bulk-delete commands — same
-  destructive-operation ban as the rest of the app.
-- A missing model provider key fails only the conversational turn cleanly (422);
-  the deterministic run is unaffected.
+Secrets include, at minimum:
 
-## Account discovery
+- model API keys;
+- cloud access keys;
+- cloud secret keys;
+- temporary/session tokens;
+- Authorization headers;
+- bearer tokens;
+- cookies;
+- signatures and presigned-URL credential material;
+- sensitive credential-bearing query parameters;
+- provider-specific private keys/connection secrets.
 
-The `account_discovery` run type enumerates an account's buckets and their
-configuration from read-only APIs only. It is deterministic; no bucket list /
-config is ever sent to an LLM (the conversational agent sees only the sanitized
-summary + counts via `survey_account`).
+### Non-negotiable rules
 
-- **AK/SK/session tokens stay in the encrypted secret vault**, resolved at call
-  time inside the boto3 client factory; they never enter SQLite, logs, reports,
-  UI state, or any LLM prompt.
-- **`list_buckets` is read-only ListBuckets.** It does not call ListObjectsV2,
-  does not scan objects, and does not download object bodies. Object-level
-  listing/`get_object` are never invoked by this run type.
-- **Bucket config snapshot** uses only read-only `get_*` / `list_*` config APIs
-  (no put/delete/create/update). No logging or inventory is auto-enabled; no
-  lifecycle / policy / ACL / encryption / replication is auto-modified or
-  auto-remediated.
-- **Evidence-source discovery only discovers** whether inventory / server access
-  logging are *configured* (plus destination metadata). It never pulls the full
-  inventory report or access log — pulling that evidence is the separate,
-  confirmation-gated managed evidence import flow (see below), never part of
-  discovery. Reserved sources (CloudTrail / Storage Lens / provider access logs)
-  are surfaced as `not_implemented`, never faked.
-- **Bounded scan:** processing is capped by `max_buckets` (default 100, hard cap
-  500) with optional include/exclude globs; truncation is reported, not silent.
-- **Capability vs permission:** S3-compatible gaps are `provider_unsupported`;
-  permission gaps are `access_denied` — distinct, and neither crashes the run
-  (per-bucket failures are isolated).
-- **Persistence is sanitized:** the four account-discovery tables store only
-  redaction-passed JSON — never AK/SK/session token/Authorization/cookies/
-  presigned-URL/model key. Bucket names, inventory destinations, and logging
-  targets pass through the redaction pipeline; reports never contain secrets,
-  signatures, raw object listings, raw inventory rows, or raw access-log content.
+1. Secret values must never enter model prompts/context.
+2. Secret values must never be stored in SQLite.
+3. Secret values must never be written to application logs, Tool traces, audit payloads, reports, screenshots, JSON/YAML state, or generated artifacts.
+4. Frontend state may contain a newly entered secret only for the minimum time needed to submit it; API responses never return the plaintext value.
+5. SQLite stores opaque secret references such as `keyring://scope/name`, never the secret itself.
+6. Provider/model code resolves secret references only inside the Sidecar immediately before the configured external call.
 
-## Managed evidence import
+## 3. Encrypted local vault
 
-Pulling inventory / access-log evidence into the analysis path is bounded and
-confirmation-gated.
+Secrets are stored only through `sidecar/app/security/keyring_store` (module path may be imported without the `sidecar/app` prefix inside Python code).
 
-- **Discovered sources only.** Imports read only the inventory *destination*
-  (bucket/prefix) or server-access-logging *target* (bucket/prefix) that
-  account_discovery already found and persisted. The caller cannot supply an
-  arbitrary bucket or object key; the business source bucket is never listed.
-- **No business object scan / body download.** The only listing is a bounded
-  `list_objects_v2` over the evidence destination prefix; the only `get_object`
-  calls are for evidence files in the confirmed plan (manifest, inventory data
-  files, log objects). No business object body is ever downloaded, no recursive
-  copy / sync, no full bucket scan.
-- **Bounded.** Selection is capped by `max_files` (default 1000, hard cap 5000)
-  and `max_bytes` (default 1 GiB, hard cap 5 GiB). Access-log import REQUIRES a
-  time range. The byte/file budget is enforced again at download (a file larger
-  than the remaining budget aborts the import as failed). Downloads stream to
-  disk (never buffered whole in memory) and gzip evidence is decompressed with
-  an explicit expansion bound — a decompression bomb aborts, it doesn't exhaust
-  the machine.
-- **Explicit confirmation.** A plan downloads nothing. Download happens only
-  after `confirm`, which is recorded in `approval_events` (decision=approved)
-  and `audit_logs`. There is no hidden auto-confirm; a zero-file or over-limit
-  plan is refused.
-- **No mutation.** No S3 put/delete/create, no auto-enable of inventory/logging,
-  no lifecycle/policy/ACL/encryption/replication change.
-- **Secrets & storage.** AK/SK/session token/model key never enter SQLite, logs,
-  reports, UI, or any LLM prompt. Evidence files download to the app data dir
-  (`data/runs/{id}/raw/`), never the install dir; raw file content never appears
-  in reports (only redacted aggregates from the existing analyzers). The two
-  evidence-import tables store redaction-passed bucket/prefix/key/warnings only.
-- **Reuse.** Downloaded files feed the existing deterministic
-  `inventory_analysis` / `access_log_analysis` importers + analyzers; the import
-  is deterministic by design (no LLM, no agent).
-- **Support gaps.** ORC inventory is `detected_but_not_supported`; full inventory
-  manifests with unusual structures degrade to a clean limitation rather than a
-  crash. CloudTrail / Storage Lens / provider access logs remain unimplemented.
+Current storage design:
 
-## Next-action handoff
+- one AES-256-GCM encrypted vault file (`secrets.enc`) in the application data directory;
+- a separate master key;
+- Windows: master key protected with current-user DPAPI;
+- macOS/Linux: owner-only `0600` master-key file created/protected by the vault implementation.
 
-Turning a proposal into action is gated and reuses existing safe flows.
+The current shipped product intentionally does **not** use the OS keychain/secret service as the primary vault. With ad-hoc signing, macOS keychain identity can re-prompt across updates; headless Linux may not have a usable secret service. A future stable signing/distribution chain may justify revisiting that choice, but do not move secrets into another store without an explicit security migration design.
 
-- **Proposals are not automation.** The single `/actions/prepare` endpoint only
-  validates and prefills; it never creates a run, downloads evidence, confirms an
-  import, mutates a bucket, calls S3, or calls an LLM. There is no hidden auto-run
-  and no hidden auto-confirm. (There is no separate "preview" endpoint — that was
-  removed; `prepare` is the only handoff step.)
-- **Bounds, not gates.** `action_type` is **free-form** — the agent proposes any
-  concrete next step in its own words; there is deliberately no fixed
-  `action_type` allowlist (`sessions/next_actions.py`). Each value is sanitized
-  to a bounded slug (lowercase alphanumeric/`_`/`-`, max 64 chars), and a slug
-  carrying a forbidden/destructive token (shell / exec / sql / delete-object /
-  put-bucket-policy / …) is dropped — a proposal must never even *suggest* a
-  mutating operation. `SPECIAL_ACTION_TYPES` only selects the purpose-built UI
-  flows (evidence import, session report, composer seeding); it is explicitly
-  **not** a cap — an unrecognized type simply routes back to the conversational
-  agent, which carries it out with its own read-only tools. Every proposal
-  carries `requires_confirmation=true`.
-- **Existing safe workflows are reused.** Most proposals just seed the composer
-  with a natural-language prompt that the conversational agent then handles inline
-  with read-only tools — there is no `NewRunForm` (it was removed). The one flow
-  that still creates a run is evidence import, which keeps its plan → confirm →
-  run gate in `EvidenceImportDialog`.
-- **No unsafe auto-fill.** Access-log evidence import does not auto-fill the time
-  range; the user enters it in the import plan.
-- **Sanitized.** Proposals, prefills, and assistant `proposed_actions` are
-  redaction-passed (no secrets, no raw logs/rows); assistant output is
-  chain-of-thought-stripped; a missing model key still fails cleanly.
-- **Not a task system.** Audit events (`next_action_prepared` / `next_action_opened`)
-  are lightweight; there is no assignee, due date, status board, ticket state, or
-  workflow state machine.
+If the vault cannot be decrypted, the product must surface that state without returning secret material.
 
-## StorageOps skill context
+## 4. Local Sidecar authorization
 
-The bundled StorageOps skill pack is professional-method *context only*; it adds
-no executable capability.
+Binding the Sidecar to `127.0.0.1` prevents remote network exposure but does not prevent another local process from connecting.
 
-- **Vendored content is data, not code.** Only `skill-registry.yaml` +
-  `skills/*/SKILL.md` are bundled. No StorageOps tools, helper scripts, CLI, Pi
-  runtime, `references/`, or `templates/` are copied. If a SKILL.md *mentions*
-  scripts / tools / `capture_http_trace` / `scan_secrets` / `recommended_tools`,
-  that is allowed prose — the Workbench never registers, exposes, imports, or
-  executes them. `recommended_tools` is dropped at load time.
-- **No wrapper execution.** `read_skill` returns a SKILL.md body frontmatter-
-  stripped and length-bounded — no tools, scripts, CLI, or external execution are
-  ever wired up. Script/tool mentions inside a SKILL.md are conceptual prose only;
-  the Workbench never registers or runs them.
-- **No raw data / secrets to the model.** The catalog + context builder feed the
-  Agent only skill docs + the already-sanitized session/triage context. The raw
-  error blob, raw logs/rows, credentials, model keys, and chain-of-thought are
-  never included. Agent output is redacted + CoT-stripped.
-- **Routing is the model's, not a rule engine.** The agent sees the catalog
-  (name + one-line description) and chooses which skill to `read_skill` on demand;
-  there is no lexical selector (it was removed) and no hard-coded error-code →
-  skill mapping. Registry `trigger_keywords` / `auto_route` are parsed but
-  currently unconsumed.
-- **Human-in-the-loop preserved.** Skill-grounded answers still produce only
-  next-action *proposals* (all require confirmation); nothing
-  auto-runs, auto-confirms, downloads, or mutates. No new tool, API, DB table,
-  subprocess, MCP, or multi-agent runtime is introduced.
-- **Public-repo hygiene.** Vendored skills + docs/tests use generic content; no
-  real customer / endpoint / bucket / credential data is added.
+Packaged Tauri therefore generates a random per-launch `STORAGE_AGENT_AUTH_TOKEN` and launches the Sidecar with it.
 
-## Error triage
+When set:
 
-The error-triage assistant adds S3 error diagnosis inside a session without any
-new dangerous capability.
+- normal requests require `X-Sidecar-Token`;
+- header-less SSE `EventSource` requests may use the `token` query parameter;
+- comparisons are constant-time;
+- `GET /health` and CORS preflight remain exempt;
+- packaged uvicorn access logging is disabled so an SSE query token is not logged.
 
-- **Redaction before anything.** Pasted error text is redacted *first* — shared
-  redactor plus triage-local patterns for SigV4 `Signature=`/`Credential=`,
-  cookies, secret/session/API keys in `key=value` form, and `sk-` model keys.
-  Only the redacted input + sanitized parsed signals/findings are persisted.
-- **Triage is deterministic — no LLM.** Error triage is pure pattern-matching +
-  playbook lookup; there is no interpretation-only triage Agent (that was
-  removed). Interpretation, when wanted, comes from the conversational session
-  agent in-thread over the already-sanitized triage context. Triage itself has no
-  tools and calls no model.
-- **Triage performs no S3 call.** Parsing + playbook matching are local and
-  read-only-by-construction. Any actual cloud check happens only later, if the
-  user explicitly starts an existing diagnostic / config-review / import flow via
-  a next-action proposal (review → prepare → confirm).
-- **No automation.** Triage never creates a run, downloads evidence, confirms an
-  import, or changes configuration. Next actions are proposals only.
-- **Not a ticketing system / FAQ / error-code dictionary.** No assignee, board,
-  status machine, or static code-table; just sanitized cases tied to a session.
-- **Public-repo hygiene.** Docs and tests use only synthetic examples
-  (`example.com`, fake buckets/ids) — no real customer/endpoint/credential data.
+When the environment variable is absent in explicit dev/test workflows, the local auth gate is open by design.
 
-## Sessions
+CORS is a browser policy, not the security boundary against local native processes. Do not treat it as a replacement for the Sidecar token.
 
-Sessions add a persistent working context over the existing runs without adding
-any new dangerous capability.
+## 5. API error sanitization
 
-- **Deterministic, sanitized summary.** The session summary is built only from
-  already-sanitized run artifacts (run_type/status/final_summary, sanitized
-  tool_call outputs, the persisted account profile). It never reads raw access
-  logs, raw inventory rows, evidence file contents, credentials, or
-  chain-of-thought, and it does not call an LLM.
-- **Read-only investigator agent.** The session agent investigates live with
-  **read-only** tools (bucket/object listing — bounded + paginated, no bodies —
-  config readers, credential/addressing/TLS/range probes, progressive-disclosure
-  skills) and bounded **working memory** (sanitized facts/findings/open-questions
-  it records itself). Credentials are resolved server-side and **never** enter
-  its context; it **cannot** bulk-download object bodies (the sole bounded
-  exception is `preview_object` / `test_range_get` — one sanitized, per-turn-
-  budgeted, text-only read, never a full or recursive download), change
-  configuration, delete or mutate anything, run a shell, run free SQL, reach any
-  destructive S3 op, or see any secret. Output is redacted + chain-of-thought-
-  stripped + bounded; a missing model key fails cleanly and never affects the
-  deterministic summary.
-- **Graded execution, never destructive.** There is no autonomy toggle: the
-  agent always EXECUTES read-only runs itself (config-review / account-survey —
-  real, audited, read-only, wall-clock-bounded) and narrates the result.
-  EXPENSIVE/data-moving work (cloud evidence import/download, large/full scans)
-  and any MUTATING op are **never** auto-run — they carry `requires_confirmation`
-  and the user acts. There is no auto-download, no auto-remediation, no write
-  tool.
-- **Safe persistence.** Session titles/goals/bucket names, messages, findings,
-  evidence refs, and summaries are all redaction-passed — never AK/SK/session
-  token/Authorization/cookies/presigned URL/model key, never raw logs/rows, never
-  chain-of-thought.
-- **Not a PM/kanban/ticketing system.** There are no boards, columns, tickets,
-  tasks, assignees, sprints, due dates, labels, notifications, or multi-user/
-  permission models — only investigation context.
+Validation errors and unhandled exceptions must not echo plaintext request bodies or arbitrary exception messages that may contain credentials.
 
-## Sidecar local authentication
+The Sidecar therefore sanitizes validation responses and emits bounded generic unhandled-error detail while logging the local traceback separately.
 
-The sidecar binds localhost only — but loopback is not process isolation: any
-*other* process on the same machine could reach the port, and CORS does nothing
-against non-browser clients. A shared-secret gate closes that gap:
+Any new provider/settings endpoint that accepts credentials must preserve this behavior.
 
-- The Tauri shell generates a random per-launch token (`src-tauri/src/lib.rs`)
-  and passes it to the sidecar as `STORAGE_AGENT_AUTH_TOKEN`; the frontend
-  fetches it via the `get_sidecar_token` command.
-- When the variable is set, every request must present the token — the
-  `X-Sidecar-Token` header, or `?token=` for the header-less SSE `EventSource`
-  — except `GET /health` and CORS `OPTIONS` preflight. Anything else gets 401.
-  Token comparison is constant-time.
-- The packaged sidecar runs uvicorn with **access logging disabled**, so the
-  `?token=` query parameter can never leak into request logs.
-- When the variable is unset (plain dev/browser runs, the test suite), auth
-  stays open so the local workflow keeps working. The token is defense in
-  depth, not the sole boundary — secrets still never transit the API in
-  plaintext.
+## 6. Agent capability boundary
 
-### The launcher proves the sidecar's identity before handing over the token
+The Agent may call only explicit typed capabilities registered by the runtime.
 
-Picking a free port and spawning a child is a TOCTOU: another local process can
-take the port in between, and the webview would then send the auth token to
-whatever answered. So the shell does not publish the URL or token until the
-process on that port proves it is the child that was just started:
+Forbidden capability classes include:
 
-- The shell generates a second per-launch value (a **non-secret** identity
-  nonce), passes it as `STORAGE_AGENT_LAUNCH_NONCE`, and polls `/health` until
-  the response echoes it back as `launch_nonce` — watching the child for early
-  exit at the same time, so a sidecar that died at startup reports why instead
-  of leaving a permanent "starting…" spinner. The nonce is an identity marker,
-  never a credential: it is deliberately distinct from the auth token, and
-  `/health` stays auth-exempt so the handshake can happen before a token is in
-  hand.
-- There is no fallback to the documented dev port `8765`. That is precisely
-  where a stale sidecar from an earlier crashed run listens — with a different
-  token and a different data dir — so a launcher that cannot find a port fails
-  loudly instead.
-- A **single-instance guard** means a second launch focuses the running window
-  rather than starting a second sidecar over the same SQLite database and secret
-  vault. That sharing was never benign: the vault rewrites the whole file on
-  every save, so the second instance's write could silently discard a credential
-  the first had just stored. The vault additionally re-reads the file before a
-  write when its (mtime, size) changed, so the loss cannot happen even if two
-  writers do share a data dir.
+- generic shell / command execution;
+- arbitrary subprocess execution;
+- raw boto3/botocore client access;
+- arbitrary AWS/S3 method dispatch;
+- unrestricted filesystem access;
+- arbitrary SQL supplied by the model;
+- generic network scanning;
+- destructive or mutating object-storage APIs.
 
-### CORS is not the boundary
+Examples of forbidden storage operations:
 
-The allowlist covers the dev origins plus the packaged webview origins Tauri v2
-actually uses — `tauri://localhost` on macOS/iOS and `http(s)://tauri.localhost`
-on Windows/Android. Every call carries `X-Sidecar-Token`, a non-simple header, so
-requests are preflighted and a missing origin breaks the packaged app entirely.
-Widening the list costs nothing security-wise: the token gate is the real
-authorization boundary, and CORS never constrained a non-browser caller.
+```text
+DeleteBucket
+PutBucketPolicy
+PutBucketAcl
+PutLifecycleConfiguration
+DeleteObjects
+Abort/recursive bulk mutation exposed as a generic Agent action
+mass object mutation
+bucket-wide destructive repair
+```
 
-## Packaging
+The schema may retain historical/reserved mode values such as `test-write`, but the shipped v0.93 Agent has no write tool. A schema enum is not a capability.
 
-- The application bundle contains code and library data only. It must never
-  include `.env`, the SQLite database, the secret vault, or `data/runs/` output.
-- Secrets live in the encrypted vault in the app data dir (never the install/app
-  bundle), alongside the rest of the user data.
-- The packaged sidecar binds localhost only, never enables reload in production,
-  and prints a sanitized startup banner (no secrets, no full paths, no env dump).
-- Tauri spawns only the internal packaged sidecar; no user-controlled shell or
-  subprocess execution is exposed.
-- The sidecar exits when its launching parent disappears, so it can never be
-  orphaned. That watchdog is **platform-specific by necessity**: on POSIX
-  `os.kill(pid, 0)` is a liveness probe, but on Windows CPython maps it to
-  `TerminateProcess` — using it there made the sidecar kill the very app it was
-  guarding. Windows waits on a `SYNCHRONIZE` process handle instead (also immune
-  to PID reuse).
-- Failing to resolve the app data dir aborts startup rather than degrading to an
-  empty value, which the sidecar would treat as unset — falling back to a path
-  *inside* the packaged bundle and writing the database and vault into the
-  signed app.
+## 7. Provider scope enforcement
+
+Configured `allowed_buckets` and `allowed_prefixes` are enforced **server-side** in every relevant path:
+
+- Agent in-process storage tools;
+- retained direct `/tools` HTTP endpoints;
+- deterministic execution engines.
+
+Prefix matching is path-boundary aware. An allowed prefix `logs` may admit `logs` and `logs/...`, but must not silently admit `logs-private/...`. Empty prefix entries must not turn into an unrestricted scope.
+
+Never rely on frontend filtering or model instruction to enforce provider scope.
+
+## 8. Read-only autonomy vs Decision required
+
+Read-only investigation can run without approval for every individual call, provided each Tool's bounds are satisfied.
+
+A real confirmation boundary is required before operations that materially move or scan cloud data, including the managed Evidence Import flow and any future operation explicitly classified as gated.
+
+The UI presents this state as **Decision required**, but the Sidecar remains authoritative. A visual button or Agent-generated recommendation cannot bypass server-side confirmation state.
+
+A plan/prepare step is not execution and must not perform hidden downloads or mutation.
+
+## 9. Bounded object reads
+
+### Object listing
+
+Object listing is page-bounded and explicitly paged. It must not silently convert a user request into an unbounded full recursive scan.
+
+### Range reads
+
+Range diagnostics have hard per-call byte caps and cumulative turn limits. They cannot be used as a loop to reconstruct unrestricted object bodies.
+
+### `preview_object`
+
+The bounded preview capability is the only intentional path for reading a small portion of a named object's content into Agent-visible context.
+
+Security properties:
+
+- single named object;
+- hard cap of **1 MiB per call**;
+- cumulative per-turn preview budget (**16 previews / 24 MiB** in the current runtime contract);
+- redaction before model context;
+- no persistence as an unrestricted body dump;
+- binary/unsupported/oversized content is reported rather than decoded;
+- gzip decompression remains bounded;
+- Parquet inspection uses bounded structure/footer access rather than full-object download.
+
+Larger model context windows must not increase these security-floor byte caps.
+
+## 10. Large/full scan rules
+
+Large/full scans must be explicitly bounded or gated.
+
+Current safety rule:
+
+- bounded read-only samples/pages may run autonomously;
+- materially large scans require explicit limits such as object count/prefix and, where classified by the workflow, an explicit user Decision;
+- a true full-bucket scan requires explicit confirmation.
+
+Bounds must be reported. Silent truncation is not acceptable evidence.
+
+## 11. Managed Evidence Import
+
+Managed Evidence Import is the primary cloud data-movement workflow and remains:
+
+> **plan → Decision required → confirmed execution**
+
+### Source restriction
+
+Import reads only evidence destinations discovered/persisted through supported account/config discovery paths. The operation is not a generic arbitrary-bucket downloader.
+
+### Bounds
+
+Current hard workflow bounds include:
+
+- `max_files`: default **1000**, hard cap **5000**;
+- `max_bytes`: default **1 GiB**, hard cap **5 GiB**;
+- access-log imports require a time range;
+- listing is restricted to the discovered evidence destination prefix;
+- selected files/bytes are visible in the plan;
+- limits are checked again during execution, not only during planning.
+
+### Download behavior
+
+- files stream to local disk rather than buffering an entire import in memory;
+- decompression has explicit expansion bounds;
+- an over-budget/oversized/decompression-bomb case fails cleanly rather than consuming unbounded resources;
+- raw evidence files remain local and are analyzed by deterministic engines;
+- no storage mutation is performed.
+
+### Confirmation/audit
+
+A plan downloads nothing. Confirmation is persisted/audited. Execution without the required confirmation is forbidden.
+
+## 12. Account discovery and configuration review
+
+Account discovery/config review uses read-only APIs only.
+
+Current account-survey bounds:
+
+- default `max_buckets`: **100**;
+- hard cap: **500**;
+- optional include/exclude filters;
+- truncation is explicit.
+
+Discovery may identify configured evidence destinations but must not automatically download inventory/access-log content. Evidence movement remains a separate confirmed workflow.
+
+Provider capability gaps are distinct from access-denied failures and from a successfully absent configuration.
+
+## 13. Deterministic raw-data analysis
+
+Inventory/access-log datasets are processed locally by deterministic DuckDB/Python analysis.
+
+The model may receive only bounded, sanitized derived context such as:
+
+- dataset/run metadata;
+- deterministic metrics;
+- deterministic findings;
+- bounded grouped aggregates;
+- bounded/redacted sample labels where explicitly allowed.
+
+The model must not receive:
+
+- raw log lines;
+- raw inventory rows;
+- unrestricted object-key lists;
+- arbitrary SQL result dumps;
+- raw client credentials or Authorization material;
+- unmasked sensitive query parameters;
+- unrestricted filesystem paths.
+
+`aggregate_uploaded_file` accepts only whitelisted metric/group/filter shapes and uses bound values. The model does not write SQL.
+
+Persist `truncated`/`ingest_cap` truth so later turns cannot mistake a capped dataset for the whole source.
+
+## 14. External Tool data is untrusted
+
+Bucket/object names, object previews, configuration values, uploaded/imported data, and remote Tool output are attacker-controlled text from the Agent's perspective. They may contain prompt-injection-like instructions.
+
+The runtime wraps external Tool-derived data at a single choke point using explicit untrusted-data markers and defangs literal marker sequences inside the payload before insertion.
+
+Security rule:
+
+> Data inside the untrusted Tool-data envelope is evidence/data, never instructions to the Agent.
+
+First-party StorageOps skill text loaded by `read_skill` is intentionally different: it is trusted instruction content by design. Runtime control/status messages such as cancellation/budget signals also have a separate trusted origin.
+
+Do not weaken this trust distinction by concatenating raw provider content directly into system/developer instruction regions.
+
+## 15. Redaction
+
+`sidecar/app/security/redaction.py` is the central text redaction implementation.
+
+It must cover, among other supported shapes:
+
+- AWS-style access/secret/session credentials;
+- Authorization/bearer/cookie values;
+- signatures and presigned credential parameters;
+- temporary session-token shapes;
+- GCP service-account private-key material;
+- Azure AccountKey-style connection secrets;
+- Azure SAS `sig`;
+- credential-bearing query/config parameter names such as password/client_secret/access_token/refresh_token/credential/auth/session variants.
+
+Do not redact ordinary storage identifiers merely because their parameter name is generic: for example object `key` and non-secret SAS metadata such as expiry/permission parameters must remain diagnostically useful when they are not secrets.
+
+Bare secret strings without identifying context are intrinsically harder to classify; streaming and boundary-specific sanitizers may intentionally be more conservative.
+
+## 16. Streaming redaction
+
+Live Work Result streaming cannot wait for the complete response before sanitizing.
+
+The streaming sanitizer therefore keeps a safety tail and handles still-growing token-like sequences conservatively so a secret that becomes recognizable only after later characters is not emitted prematurely.
+
+The final persisted Work Result is sanitized again using the complete text.
+
+Chain-of-thought stripping occurs around redaction defensively so malformed/adjacent secret-shaped content cannot cause hidden reasoning tags to leak.
+
+## 17. Filenames and paths are data
+
+User-controlled filenames may themselves contain credential-shaped text.
+
+Upload/import paths therefore sanitize/replace unsafe filenames before storage where necessary. Persisted paths should be relative to the application data directory; absolute home paths can expose local usernames and should not be copied into Tool/audit/report records unnecessarily.
+
+## 18. Presigned URLs
+
+`diagnose_presigned_url` is pure parsing and performs no network call.
+
+Before model context/persistence:
+
+- signature values are removed/redacted;
+- access-key identifiers/credential material are not echoed;
+- security tokens are removed;
+- only diagnostic properties such as expiry/scope/addressing/signed-header metadata survive as allowed by the redaction contract.
+
+A presigned URL must never be persisted verbatim merely because the user pasted it as diagnostic input.
+
+## 19. Auditability
+
+Record sanitized evidence of security-relevant execution, including as applicable:
+
+- Tool calls and measured duration/status;
+- sanitized Tool inputs/outputs;
+- deterministic analysis SQL + bound parameters where the system executes SQL internally;
+- data import planning/execution;
+- approval/Decision events;
+- report generation;
+- memory edits/resolution;
+- important safety failures/gaps.
+
+Auditability must not become a reason to persist secrets or raw chain-of-thought.
+
+If audit persistence is incomplete, surface an audit gap rather than asserting a complete trail.
+
+## 20. Next-action / Decision handoff
+
+Agent-proposed next actions are not automation by themselves.
+
+The preparation/handoff layer may validate, sanitize, and prefill a next action. It must not:
+
+- auto-confirm a gated operation;
+- create hidden cloud data movement;
+- mutate storage;
+- execute arbitrary shell/SQL;
+- turn free-form Agent text into an unrestricted method dispatcher.
+
+Destructive/mutating action identifiers are rejected/sanitized. Special recognized action types only route into purpose-built safe UI/workflows; they do not define the entire Agent capability set.
+
+## 21. Provider unsupported is a first-class outcome
+
+S3-compatible providers do not implement a uniform AWS API surface.
+
+Keep these concepts distinct:
+
+- capability unsupported;
+- access denied;
+- resource/config absent after a successful read;
+- region/addressing mismatch;
+- transient/runtime error;
+- unknown/inconclusive.
+
+A missing API must not be displayed as “configuration off” unless that fact was actually established.
+
+## 22. Chain-of-thought and hidden reasoning
+
+Never persist or expose model chain-of-thought/hidden reasoning.
+
+Execution transparency means:
+
+- real Tool activity;
+- measured execution metadata;
+- durable Work Results;
+- Evidence and provenance;
+- explicit gaps/Decisions.
+
+It does not mean storing private reasoning tokens or inventing a fake plan to make the Agent look transparent.
+
+## 23. Security changes require executable coverage
+
+A PR that changes any of the following must update tests and this document in the same change:
+
+- secret storage/resolution;
+- Sidecar authorization;
+- provider scope enforcement;
+- Tool trust/bounds;
+- object preview/range/list caps;
+- Evidence Import bounds/confirmation;
+- redaction/streaming behavior;
+- raw-data-to-model boundary;
+- Decision semantics;
+- storage mutation capability.
+
+If the change also alters the product-visible contract, update `product.md` and `architecture.md`. If persistence/API changes, update `data-model.md` / `api.md`.

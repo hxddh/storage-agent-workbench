@@ -1,38 +1,32 @@
 # Architecture
 
+> **Current architecture baseline: Storage Agent v0.93.0.**
+>
+> Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
+
 ## 1. Architectural intent
 
-Storage Agent is a local-first desktop Agent for object-storage work. The
-architecture must preserve one product invariant:
+Storage Agent is a local-first desktop Agent for object-storage work. The frontend is organized around one durable Agent Task, not around persistence tables or independent application surfaces.
 
-> **The Agent Task is the application.**
-
-The frontend is therefore not organized around a conversation shell, run pages,
-provider tabs, an inspector, or an investigation record. The user delegates and
-steers one durable Task; the runtime performs real Execution; confirmation
-boundaries become Decisions; completed work becomes Work Results; Evidence,
-Execution detail and Reports are contextual Artifacts that can be reviewed
-without leaving the Task.
-
-Canonical product flow:
+Canonical flow:
 
 ```text
 Direction
    │
    ▼
-Agent Task ─────── Steer / Stop
-   │                   ▲
-   ▼                   │
-Execution ──────────────┘
+Agent Task ─────────────── Steer / Stop
+   │                           ▲
+   ▼                           │
+Execution ─────────────────────┘
    │
-   ├── safe read-only work ───────────────┐
-   │                                      │
-   └── confirmation-gated work            │
-           │                              │
-           ▼                              │
-       Decision required                  │
-           │                              │
-           └──────── approved ────────────┘
+   ├── safe read-only work ───────────────────┐
+   │                                          │
+   └── confirmation-gated work                │
+           │                                  │
+           ▼                                  │
+      Decision required                       │
+           │                                  │
+           └──────── approved ────────────────┘
    │
    ▼
 Work Result
@@ -42,405 +36,340 @@ Work Result
    └── Report Artifact
 ```
 
-No UI may imply a capability that the runtime does not implement.
+No UI may imply a capability, worker, plan, or control path that the runtime does not implement.
 
 ## 2. Runtime topology
 
-The desktop application has three main layers:
-
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│ Tauri desktop shell                                         │
-│ window lifecycle · packaged resources · local process host  │
+│ Tauri v2 desktop shell                                      │
+│ window lifecycle · packaged resources · Sidecar lifecycle   │
 └──────────────────────────┬──────────────────────────────────┘
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
-│ React Agent UI                                              │
-│ AgentShell · AgentTask · AgentTaskNavigation · Review       │
+│ React + TypeScript Agent UI                                 │
+│ Task navigation · AgentShell · AgentTask · contextual Review│
 └──────────────────────────┬──────────────────────────────────┘
                            │ localhost HTTP / SSE
+                           │ X-Sidecar-Token / SSE token query
 ┌──────────────────────────▼──────────────────────────────────┐
-│ Python Sidecar                                              │
-│ task persistence · Agent runtime · tools · evidence · runs  │
+│ Python FastAPI Sidecar                                      │
+│ persistence · Agent runtime · tools · evidence · executions │
 │ reports · provider adapters · encrypted-vault integration   │
 └──────────────────────────┬──────────────────────────────────┘
                            │
-             configured external providers only
-             model endpoints / S3-compatible storage
+               explicitly configured endpoints only
+               model provider / S3-compatible storage
 ```
 
-The UI never receives secret values from the vault. Cloud and model credentials
-are resolved inside the Sidecar.
+The packaged Tauri launcher chooses a free localhost port, generates a per-launch auth token, launches the Sidecar, exposes URL/token to the webview, and tears the Sidecar down on exit. The UI never receives plaintext provider/model secrets.
 
 ## 3. Frontend ownership
 
-### 3.1 `App.tsx`: composition, not product semantics
+### 3.1 `App.tsx`: application composition
 
-`App.tsx` owns application composition and global overlays:
+`frontend/src/App.tsx` owns global composition rather than task-rendering semantics:
 
-- Sidecar health.
-- list/refresh of durable Agent Tasks.
-- active Task identity.
-- settings drawer.
-- command palette.
-- shortcuts sheet.
+- Sidecar health and reconnect state;
+- durable task list refresh;
+- active task identity;
+- task lifecycle actions (create/rename/pin/duplicate/archive/delete);
+- settings drawer;
+- command palette;
+- shortcuts sheet;
 - first-run configuration.
-- task CRUD actions such as rename, pin, duplicate, archive and delete.
 
-It composes three first-class product boundaries directly:
+It composes the current public product boundaries directly:
 
-- `AgentTaskNavigation`
-- `AgentShell`
-- `AgentTask`
+- `AgentTaskNavigation`;
+- `AgentShell`;
+- `AgentTask`.
 
-There is intentionally no SessionRail/Workbench/Surface adapter between App and
-those components.
+Legacy frontend adapters from earlier releases were physically removed. Do not recreate an intermediate application shell merely to mirror backend entity names.
 
-### 3.2 `AgentShell`: task environment
-
-`frontend/src/agent/AgentShell.tsx` owns the visual task environment:
-
-- task identity and scope;
-- live Agent state;
-- connection state;
-- Focus mode;
-- contextual Review open/close state;
-- selected Execution inside Review;
-- live execution strip derived from actual runtime state.
-
-It does **not** own a second Agent input. The Composer belongs to the Task and
-remains available while Review is open.
-
-`AgentShell` accepts `taskContent: ReactNode`, not a Timeline/Surface abstraction.
-This keeps the primary area semantically fixed as the Agent Task.
-
-### 3.3 `AgentTaskNavigation`: task command center
+### 3.2 `AgentTaskNavigation`: global task command center
 
 `frontend/src/agent/AgentTaskNavigation.tsx` owns global Task navigation.
-Each row projects durable Task metadata plus live runtime state into a product
-state such as:
 
-- Working
-- Needs decision
-- Needs attention
-- Ready
+Each task row combines:
 
-The row shows meaningful scope/output context instead of database-oriented
-counters. It may expose lifecycle actions (rename, pin, duplicate, archive,
-delete), but it is not a ticket/CRM navigation model.
+- durable task metadata from the Sidecar task projection;
+- current per-task runtime state from the client execution store;
+- meaningful scope/output context;
+- lifecycle controls.
+
+Visible state is product state such as Working, Needs decision, Needs attention, or Ready. Database counters are not the navigation model.
+
+The Sidecar `/agent-tasks` projection provides durable decision truth so a pending confirmation remains visible after reload/restart even when browser-local runtime state is gone.
+
+### 3.3 `AgentShell`: active task environment
+
+`frontend/src/agent/AgentShell.tsx` owns the active task environment:
+
+- task identity/scope;
+- live product state;
+- connection state;
+- Focus presentation state;
+- contextual Review open/close state;
+- selected Execution inside Review;
+- live execution status derived from real task runtime state.
+
+`AgentShell` receives `taskContent: ReactNode`. Its primary area is always the Agent Task.
+
+Review is subordinate to the Task. Opening Review does not create another task, another lifecycle, or another Agent input.
 
 ### 3.4 `AgentTask`: public task boundary
 
-`frontend/src/components/AgentTask.tsx` is the public Task component. It exposes
-Task-native props to App while adapting to historical persistence names required
-by the current Sidecar API.
+`frontend/src/components/AgentTask.tsx` is the public task component. It exposes Task-native props to `App` and owns semantic task navigation/keyboard behavior.
 
-The large implementation module owns:
+`AgentTaskImplementation.tsx` owns the large task document implementation:
 
-- durable task document loading/paging;
-- drafts;
-- task Composer;
-- runtime submission/steering/stopping;
-- attachment handoff;
-- Work Result rendering;
-- Execution summaries;
-- Next Actions and Decisions;
-- find/history viewport behavior.
+- durable task document loading and paging;
+- task draft state;
+- the one Composer;
+- submission/streaming integration;
+- steering/stopping;
+- attachments;
+- Direction and Work Result rendering;
+- Execution summaries and step details;
+- Next Actions / Decisions;
+- find and task viewport behavior.
 
-Persistence/API terms such as `sessionId` may exist **inside this adapter layer**
-while the public product boundary remains `taskId`.
+Historical `sessionId` terminology may appear inside compatibility adapters and API calls. Public product ownership remains `taskId`/Agent Task.
 
-### 3.5 one Composer
+### 3.5 One Composer
 
-`frontend/src/components/Composer.tsx` is the only Agent steering input.
-
-State semantics:
+`frontend/src/components/Composer.tsx` is the only Agent input.
 
 ```text
 no active execution  -> Delegate
 active execution     -> Steer + Stop
-upload preparation   -> working/preparing state
-runtime unavailable  -> input/actions truthfully disabled
+upload preparation   -> preparing/working state
+runtime unavailable  -> truthful disabled/actionable state
 ```
 
-There must never be a hidden second input mounted by Review or another deep
-surface. Architecture tests enforce this physically.
+Review or a deep artifact must never mount a hidden second composer.
 
-## 4. Task content primitives
+## 4. Task document primitives
 
-### 4.1 Direction
+### Direction
 
-A persisted user contribution is rendered as **Direction** by
-`AgentTaskResult`. It is not styled or described as a chat bubble.
+A durable user contribution is rendered as Direction. Direction may be copied, revised/redirected, or used to branch work according to the existing task contracts.
 
-Direction may support:
+A predominantly machine-shaped S3/storage error can render through `S3ErrorArtifact`, preserving the structured error fields and raw payload access without pretending it is ordinary prose.
 
-- copy;
-- revise/redirect;
-- branch task;
-- long-content expansion.
+### Execution
 
-A pasted storage error may instead render as a structured `S3ErrorArtifact` when
-it is predominantly a machine error payload.
+Execution represents real work performed by the runtime.
 
-### 4.2 Execution
+Live truth is derived from the per-task execution store, including:
 
-Execution represents actual work performed by the runtime.
+- busy/upload/preparation state;
+- pending Direction;
+- streamed Work Result text;
+- live Tool activity;
+- stop/stall/error state;
+- proposals/next actions.
 
-Live execution truth comes from the per-task run store:
+Persisted truth comes from sanitized Sidecar Tool calls, runs/executions, turn metrics, audit/evidence records, and messages.
 
-- `busy`
-- `uploading`
-- pending Direction
-- streaming Work Result text
-- streaming Tool activity
-- stop/stall/error state
-- Next Actions
+`ExecutionSummary` provides progressive disclosure attached to the result that produced it. `ExecutionSteps` and Execution Review expose real sanitized detail without turning the Task into a permanent trace console.
 
-Persisted execution truth comes from Sidecar records and sanitized Tool calls.
+### Decision
 
-`ExecutionSummary` is progressive disclosure attached to a Work Result. It can
-show measured duration/token/tool-call information and real call detail without
-turning the entire Task into an observability trace wall.
+A current action with `requires_confirmation=true` is promoted to a first-class Decision. It affects both local content rendering and global task state.
 
-### 4.3 Work Result
+The frontend must not downgrade a real confirmation boundary into an ordinary suggestion for visual simplicity.
 
-A completed assistant-side task event is rendered as **Work Result**.
+### Work Result
 
-`AgentTaskResult` distinguishes:
+A completed assistant-side task event is rendered as Work Result.
 
-- streaming result → Execution
-- persisted result → Work Result
+Streaming work is Execution; persisted completed output is Work Result. Work Results can contain structured Markdown, tables, code/config fragments, storage-specific artifacts, metrics, and provenance links into contextual Review.
 
-The Work Result can contain prose, Markdown structure, tables and code/config
-fragments. Provenance links open contextual Evidence or Execution Review.
+### Artifact / Review
 
-### 4.4 Next Action vs Decision
-
-A backend proposal is normalized into a Task next action.
-
-If `requires_confirmation=false`, it may render as a normal next action.
-
-If `requires_confirmation=true`, it renders through `AgentDecisionCard` and the
-Task state becomes **Needs decision**. The decision is therefore visible at both
-local content level and global Task state level.
-
-The frontend does not convert a confirmation-gated operation into a regular
-button merely to make the UI feel more autonomous.
-
-## 5. Contextual Review
-
-`frontend/src/agent/AgentReviewPanel.tsx` is subordinate to the active Task.
-Review modes are:
+`frontend/src/agent/AgentReviewPanel.tsx` owns contextual Review modes:
 
 ```ts
 "overview" | "evidence" | "execution" | "report"
 ```
 
-They are not application work surfaces or tabs.
+- **Overview** — durable task summary, findings, memory, and execution references.
+- **Evidence** — persisted evidence/finding/activity truth.
+- **Execution** — persisted analysis execution and sanitized call detail.
+- **Report** — durable Markdown Report artifact.
 
-### Overview
+These are review modes of the active Task, not independent application destinations.
 
-Shows durable task state: summary, findings, memory and Execution references.
+## 5. Runtime state and task concurrency
 
-### Evidence
+### 5.1 Per-task client execution state
 
-Shows task findings, memory/evidence references and an ordered activity/audit
-record. Evidence truth comes from persisted Sidecar data; missing evidence is not
-filled with guessed content.
+`frontend/src/sessionRuns.ts` retains a historical filename, but the store is keyed by durable task/session identity and preserves real in-flight state independently of which Task is visible.
 
-### Execution
+Therefore:
 
-Shows explicit persisted analysis executions and their sanitized details.
-Historical backend `run` records are adapted into the UI concept Execution.
+> Task A may continue a real already-started execution while the user views Task B; selecting Task A again reconnects to that same work.
 
-### Report
+This must not be represented as a fleet of hidden autonomous Agent workers. It is per-task ownership of real execution.
 
-Shows the durable Report artifact generated from the Task. It remains an
-artifact beside the Task rather than replacing the task workspace.
+### 5.2 Turn runner
 
-Review is opened through semantic Agent commands (`openAgentReview`,
-`openAgentExecution`) so Work Results and execution rows do not know how the
-Shell visually presents Review.
-
-## 6. State stores and task execution
-
-### 6.1 per-task runtime state
-
-`sessionRuns.ts` remains a historical persistence-oriented module name, but its
-store is keyed by the durable task identifier and preserves in-flight execution
-state while the user switches Tasks.
-
-This enables a critical Agent behavior:
-
-> Task A can continue executing while the user views or works in Task B, then
-> Task A is still running when selected again.
-
-The store does not invent background workers; it reflects real server execution.
-
-### 6.2 turn runner
-
-The turn runner owns the real submission lifecycle:
+The turn runner is the single submission lifecycle:
 
 1. acquire the execution latch for the target Task;
-2. send Direction / optional local dataset;
+2. submit Direction and optional local attachment context;
 3. consume Sidecar SSE;
 4. update real Tool activity and streamed Work Result;
-5. handle steer/stop/error conditions;
+5. process Steer / Stop / error / stall conditions;
 6. wait for durable completion;
 7. reload the persisted task document.
 
-The UI must not bypass this lifecycle with a second submit path.
+Do not bypass this lifecycle with another submit/steer path.
 
-### 6.3 task document
+### 5.3 Durable task document
 
-The task-document hook owns persistence paging and reload sequencing. Long Tasks
-load the recent tail first and can prepend durable earlier history without losing
-scroll ownership or current Execution state.
+Task document loading is paged. Recent durable content is loaded first and earlier content can be prepended without losing current Execution state or viewport ownership.
 
-## 7. Sidecar persistence compatibility
+Long-task scalability is therefore a persistence/paging concern, not a reason to collapse the product back into message-history navigation.
 
-The current SQLite/API schema predates the Agent-native shell. Renaming every
-persisted entity in one release would add migration risk without user value, so
-an explicit adapter boundary is maintained.
+## 6. Sidecar architecture
 
-| Agent product | Historical persistence/API |
+The Sidecar owns:
+
+- SQLite migrations/repositories;
+- the one model-driven Agent runtime;
+- whitelisted storage tools;
+- deterministic run/analysis engines;
+- account/config discovery;
+- Evidence Import plan/confirmation/execution;
+- local DuckDB analysis;
+- task memory/findings/summary;
+- reports;
+- audit/turn metrics;
+- provider adapters and secret resolution.
+
+There is exactly one model-driven Agent loop. Deterministic engines remain beneath it as security/reproducibility mechanisms; they are not a second product Agent.
+
+## 7. Persistence compatibility boundary
+
+The database/API schema predates v0.93. Renaming every stored entity would add migration risk without changing the product, so Storage Agent intentionally keeps a **persistence compatibility** layer.
+
+| Product | Compatibility persistence/API |
 | --- | --- |
-| Task | `sessions`, `/sessions/...` |
+| Agent Task | `sessions`, `/sessions/...`; `/agent-tasks` list projection |
 | Direction / Work Result | `session_messages` |
-| Execution | `runs`, `session_runs`, `tool_calls` |
-| Task summary/memory | `session_summaries`, agent-memory tables |
-| Evidence | evidence/session-evidence tables |
+| Execution | `runs`, `session_runs`, `tool_calls`, `turn_metrics` |
+| Task memory | `session_summaries`, `session_findings`, `session_agent_memory` |
+| Evidence | evidence refs/sources/import tables |
 | Report Artifact | report endpoints/files |
+| Decision | message proposals + approval/evidence-import state |
 
-Rules for this boundary:
+Boundary rules:
 
-1. Historical names are valid inside Sidecar persistence and narrowly-scoped
-   frontend adapters.
-2. New public React boundaries use Task / Execution / Review vocabulary.
-3. A persistence name may never justify rebuilding Session/Run/Conversation
-   navigation in the UI.
-4. Future backend migrations may rename storage entities, but product semantics
-   do not wait on that migration.
+1. Historical names are valid inside Sidecar persistence/API and narrowly scoped frontend adapters.
+2. New public frontend ownership uses current product vocabulary.
+3. Compatibility names never justify rebuilding a Session/Run-centered product shell.
+4. If backend entities are renamed later, product semantics remain unchanged unless an explicit product change says otherwise.
 
-## 8. Tool and evidence safety
-
-The runtime is intentionally constrained.
+## 8. Security architecture
 
 ### Secrets
 
-- provider/model secret values live only in the encrypted local vault;
-- API responses expose presence/reference metadata, not secret values;
-- secret values are excluded from model context, logs, SQLite, reports and audit
-  payloads.
+- Secret values live only in the encrypted local vault.
+- SQLite stores `keyring://...` references.
+- API responses expose presence/reference metadata, not plaintext secrets.
+- Secret values are excluded from model context, logs, reports, audit payloads, and browser state.
 
-### Cloud access
+### Storage capabilities
 
-- object-storage tools are read-only;
-- there is no destructive generic S3 action tool;
-- there is no generic shell/arbitrary subprocess capability exposed to the Agent;
-- provider allowlists/bounds are enforced before calls leave the Sidecar.
+- Agent storage operations are typed and read-only.
+- Provider bucket/prefix allowlists are enforced server-side.
+- No generic shell, arbitrary subprocess, unrestricted filesystem, or raw S3 client is exposed to the Agent.
+- No destructive/mutating S3 action is shipped.
 
-### Data movement
+### Data movement and analysis
 
-Actions that move or substantially scan cloud data use explicit confirmation
-contracts. The frontend surfaces them as Decision required and the Sidecar
-remains authoritative for preparation/confirmation.
+- Bounded safe read-only investigation may proceed autonomously.
+- Data-moving or materially large/full-scan operations require a real confirmation boundary.
+- Raw inventory/access-log rows remain in local deterministic analysis paths; model context receives bounded sanitized aggregates/findings.
 
 ### Evidence truth
 
-- Tool inputs/outputs persisted for review are sanitized.
-- Evidence references identify actual persisted sources.
-- Failed audit persistence can be surfaced as an audit gap rather than silently
-  pretending complete evidence.
-- No chain-of-thought is persisted or rendered.
+- persisted Tool input/output and Evidence are sanitized;
+- audit gaps are represented as gaps;
+- missing provider capability is explicit;
+- chain-of-thought is neither persisted nor rendered.
+
+See `security.md`.
 
 ## 9. Desktop packaging
 
-Tauri packages the production React bundle and the Python Sidecar resource.
-Release/CI build paths cover:
+The production React bundle and PyInstaller one-dir Sidecar are packaged by Tauri.
 
-- macOS Apple Silicon `.app` / release packaging;
-- Linux x64 `.deb`;
-- Windows x64 NSIS installer.
+Current release targets:
 
-Runtime-verification scripts check the packaged structure and Sidecar health.
-Signing/notarization is a distribution concern and documented separately; CI does
-not require private signing credentials.
+- macOS Apple Silicon: `.app.zip` and `.dmg`;
+- Linux x64: `.deb`;
+- Windows x64: NSIS setup executable.
 
-## 10. Quality architecture
+The Sidecar is embedded as a resource, not exposed as a shell capability. Runtime-verification scripts confirm packaged startup, Sidecar health, and cleanup.
 
-### Frontend contract tests
+Signing/notarization is a distribution concern documented in `signing.md`; CI does not require private signing credentials.
 
-`frontend/src/agent/architecture.test.ts` protects positive ownership rules:
+## 10. Executable architecture contracts
+
+### Positive ownership guard
+
+`frontend/src/agent/architecture.test.ts` asserts v0.93 ownership, including:
 
 - one Agent input;
-- Task is the primary work area;
-- Review is contextual;
-- Direction and Work Result are first-class primitives;
-- Decisions are first-class;
-- Execution summary/steps are separate from task content;
-- old adapter files remain physically deleted.
+- Agent Task as primary work area;
+- contextual Review;
+- Direction / Work Result primitives;
+- explicit Decision boundaries;
+- Execution Summary/Steps/Detail rather than legacy renderers;
+- task-native DOM/keyboard/style contracts;
+- physical deletion of retired component boundaries.
 
-`frontend/src/agent/legacy-ui-contracts.test.ts` protects negative rules by
-scanning production frontend source and rejecting deleted Chat-era concepts such
-as old conversation/inspector/rail/timeline/work-surface contracts.
+### Negative production-source guard
 
-These tests exist because semantic regressions can compile perfectly.
+`frontend/src/agent/legacy-ui-contracts.test.ts` scans production frontend source and rejects retired product vocabulary/component contracts that could compile successfully while semantically rebuilding an old shell.
+
+### Documentation guard
+
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v0.93 and prevents current product docs from drifting back toward retired information architecture.
 
 ### Real-Sidecar E2E
 
-Playwright tests run against the real Python Sidecar and cover, among other
-contracts:
+Playwright validates real Sidecar-backed behavior including:
 
-- task delegation and durable Work Results;
-- multi-step/multi-turn persistence;
-- real Tool execution disclosure;
-- Stop;
-- mid-execution Steer;
-- task concurrency;
+- delegation and durable Work Results;
+- streaming and persisted Tool execution disclosure;
+- Stop and mid-execution Steer;
+- task switching/concurrency;
 - evidence/file analysis;
-- Decision/confirmation paths;
-- task navigation and drafts;
+- Decisions and confirmation flows;
+- task navigation/drafts/paging;
 - contextual Review and Report artifacts;
-- localization, accessibility, contrast and narrow layouts;
+- localization, accessibility, contrast, narrow layouts;
 - credential sanitization.
 
 ### Visual review
 
-`npm run shots` captures asserted real Agent states and builds a contact sheet.
-The visual gallery covers:
-
-- Delegate;
-- Work Result;
-- Execution;
-- contextual Review;
-- collapsed task navigation;
-- Working + Steer;
-- Decision required;
-- runtime unavailable;
-- narrow task workspace;
-- Chinese UI;
-- settings as secondary configuration.
-
-CI uploads this artifact after the real E2E suite passes. We intentionally do not
-use tolerant screenshot pixel diffs as a substitute for design judgment; the
-states are executable gates, and the rendered artifact is reviewed by humans.
+`npm run shots` captures asserted real states for human review. It is not a tolerant pixel-diff substitute for design judgment.
 
 ## 11. Explicit non-architecture
 
-The following concepts must not appear in product UI unless a real runtime and
-safety contract is implemented first:
+The following concepts must not enter the product until a real runtime + safety contract exists:
 
 - fake multi-agent delegation;
-- worktrees/projects borrowed from coding Agents;
-- synthetic plans/checklists that the runtime never emitted;
-- generic terminal or browser control;
-- hidden background jobs represented as if they were durable Agent workers;
+- synthetic plans/checklists unsupported by runtime state;
+- coding worktrees/projects;
+- generic terminal/browser/computer control;
+- hidden worker processes represented as autonomous Agents;
 - destructive storage mutation;
-- a page/tab for every backend table.
+- page-per-persistence-table navigation.
 
-The goal is not to imitate the visual chrome of another Agent product. The goal
-is to adopt the same modern principle: **the user delegates work to a runtime
-that visibly acts, remains steerable, stops at real decisions, and returns
-reviewable artifacts.**
+The goal is a trustworthy delegated-work loop: the user sets Direction, watches real Execution, can Steer/Stop, crosses only real Decisions, and receives reviewable durable results.

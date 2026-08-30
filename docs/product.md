@@ -1,222 +1,203 @@
-# Product
+# Product model
+
+> **Applies to Storage Agent v0.93.0.** This is the canonical product/UX specification. Historical release notes are not current product architecture.
 
 ## Product definition
 
-Storage Agent is a local-first desktop Agent for object storage and
-S3-compatible systems. The user delegates an outcome or problem; the Agent uses
-real read-only capabilities to investigate, remains steerable while it works,
-stops for explicit decisions when required, and produces durable Work Results
-backed by Evidence and Execution records.
+Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. The user delegates an outcome or problem; the Agent performs real read-only work, remains steerable while it executes, stops at explicit confirmation boundaries, and returns durable technical results backed by reviewable evidence and execution.
 
-The canonical product loop is:
+The product invariant is:
 
-> **Direction → Execution → Decision (when required) → Work Result → Artifacts**
+> **The Agent Task is the application.**
 
-The application is not a generic chat assistant, not an admin dashboard with an
-AI panel, and not a case-management system. **The active Agent Task is the main
-work environment.**
+The canonical work model is:
+
+> **Direction → Execution → Decision (when required) → Work Result → Artifact**
+
+Storage Agent is not a generic chat assistant, not an admin dashboard with an AI panel, and not a case/ticket system.
 
 ## Primary users
 
-- Object-storage / SRE / operations engineers.
+- Object-storage, SRE, and operations engineers.
 - Data-infrastructure engineers.
-- Developers debugging S3-compatible systems, policies, performance and access
-  patterns.
-- Storage product and support engineers who need an auditable investigation
-  record rather than an ungrounded answer.
+- Developers debugging S3-compatible systems, policies, performance, and access behavior.
+- Storage product/support engineers who need a durable, auditable work record rather than an ungrounded answer.
 
 ## Core jobs
 
-1. Diagnose S3-compatible access and behavior issues.
-2. Discover accounts and review bucket configuration.
-3. Analyze access logs.
-4. Analyze inventory, capacity and object distribution.
-5. Triage object-storage errors.
-6. Identify cost, lifecycle, observability and performance opportunities.
-7. Produce durable, evidence-backed Report artifacts.
+1. Diagnose S3-compatible connectivity, credential, endpoint, addressing, TLS, object, and request-behavior problems.
+2. Discover accounts and inspect visible buckets with bounded read-only calls.
+3. Review bucket configuration for security, lifecycle, observability, cost, and performance concerns.
+4. Analyze inventory and access-log evidence locally.
+5. Triage storage errors, including deterministic offline triage for supported error shapes.
+6. Preserve findings, memory, evidence references, execution provenance, and follow-up context across a durable task.
+7. Produce evidence-backed Report artifacts.
 
-## Agent-native interaction contract
+## Product objects
 
-### 1. Agent Task is the primary object
+### Agent Task
 
-A Task represents a durable goal plus the work already performed toward that
-goal. Navigation is organized around active/recent Tasks and their live state,
-not around message history or backend records.
+A Task is a durable goal plus the work already performed toward it. Task navigation is organized around the state and scope of delegated work, not around persistence tables or message history.
 
-Useful task states include:
+A Task may contain multiple Directions and multiple Executions over time. Switching Tasks does not create a new lifecycle for work already in progress.
 
-- **Working** — execution is in progress.
-- **Needs decision** — the Agent cannot proceed through a confirmation boundary
-  without explicit user action.
-- **Needs attention** — execution failed, a model/provider is unavailable, or
-  another blocking problem requires user intervention.
-- **Ready** — the durable task is available for another Direction.
-- **Ready to delegate** — no task exists yet.
+### Direction
 
-### 2. One input, two modes
+Direction is what the user wants the Agent to do or change: a goal, constraint, correction, follow-up, or mid-execution steering instruction.
+
+Direction is durable task input. A machine-shaped storage error may render as a structured S3 Error Artifact when that representation preserves the useful fields better than raw text.
+
+### Execution
+
+Execution is what the runtime actually did: model/tool work, deterministic analysis, uploads/import preparation, and other real activity.
+
+The UI may summarize or progressively disclose Execution, but must not invent:
+
+- plans/checklists that the runtime did not emit;
+- sub-agents or worker processes that do not exist;
+- terminal/browser/computer control;
+- worktrees/projects borrowed from coding Agents;
+- storage mutations that are not implemented.
+
+### Decision required
+
+A backend action marked `requires_confirmation=true` is a real blocking state. The user must approve/cancel before the gated operation proceeds.
+
+Read-only investigation is autonomous by default. Confirmation is reserved for meaningful safety boundaries such as managed cloud Evidence Import or materially large/full scanning/data movement.
+
+### Work Result
+
+A Work Result is durable Agent output produced by completed work. It can contain prose, Markdown structure, tables, code/config fragments, structured errors, findings, and references to supporting Evidence/Execution.
+
+A Work Result is not a transient chat bubble and should read like technical work output.
+
+### Artifact
+
+Artifacts are durable, reviewable outputs attached to a Task, currently including Evidence and Markdown Reports. Persisted Execution detail is also reviewable context associated with the Task.
+
+### Review
+
+Review is subordinate to the active Task. It lets the user inspect task overview, Evidence, Execution detail, or Report without changing the primary object of the application.
+
+Review must not create a second Agent input or a second task lifecycle.
+
+## One Agent control path
 
 There is exactly one primary Agent input.
 
-- At rest it is **Delegate**: give the Agent a goal, problem, constraint or job.
-- During execution it becomes **Steer**: add direction or constraints to the same
-  running Task.
-- **Stop** is available while local execution is active.
+- **Delegate** when no execution is active.
+- **Steer** while the current Task is executing.
+- **Stop** while local execution is active.
 
-A second hidden/deep-page steering input is forbidden. Opening an Artifact or
-Review does not remove control of the active Task.
+Opening Review, changing Task navigation state, or entering Focus mode does not create a second composer.
 
-### 3. Direction, not user chat bubbles
+## Task states
 
-User input is represented as **Direction** in the durable task record. A follow-up
-Direction changes or extends the goal; steering during active execution redirects
-that work through the real runtime contract.
+Product state is derived from live runtime state plus durable Task truth.
 
-Large pasted storage errors may render as structured Error Artifacts because
-recognizing the input is more useful than displaying a wall of raw text.
-
-### 4. Execution is runtime truth
-
-Execution UI is derived from actual runtime state such as active Tool calls,
-busy/uploading state, persisted execution records and failures. The interface
-must not invent a plan, checklist, sub-agent, terminal/browser, worktree or
-background process that the runtime does not implement.
-
-Tool activity is progressively disclosed so normal task reading remains clean,
-but the real sanitized input/output and audit state stay reviewable.
-
-### 5. Decision required is blocking state
-
-A Next Action with the backend contract `requires_confirmation=true` is promoted
-to a first-class **Decision required** state. It is not rendered as an ordinary
-suggestion.
-
-The Agent waits before confirmation-gated data movement such as bounded Evidence
-Import. Read-only investigation does not require repetitive approval clicks.
-
-### 6. Work Result is a product artifact
-
-Completed Agent output is a **Work Result**, not a generic assistant bubble. It
-can contain technical prose, tables, code/config fragments and references to the
-Evidence and Execution that support it.
-
-The UI must clearly distinguish:
-
-- Direction — what the user asked or changed.
-- Execution — what the Agent actually did.
-- Work Result — the durable result of that work.
-- Artifact — persistent reviewable output such as Evidence or a Report.
-
-### 7. Review is contextual
-
-Evidence, Execution and Report are contextual review modes attached to the same
-Task. They open beside the task and do not become application-level tabs or
-replace the primary Agent workspace.
-
-Review may contain:
-
-- current task summary and durable memory;
-- findings and Evidence references;
-- sanitized Execution details;
-- generated Report artifacts.
-
-## Storage-specific capabilities
-
-The product can currently use or produce:
-
-- S3-compatible credential/reachability checks;
-- bounded bucket/object inspection;
-- account/bucket discovery;
-- bucket configuration review;
-- access-log analysis;
-- inventory/capacity analysis;
-- error triage;
-- Evidence Import with confirmation boundaries;
-- durable task memory/findings;
-- Markdown Report artifacts.
-
-Historical backend `run_type` values remain implementation/API vocabulary:
-
-- `diagnostic`
-- `access_log_analysis`
-- `inventory_analysis`
-- `bucket_config_review`
-- `account_discovery`
-
-They are Execution implementation details, not top-level product navigation.
-
-## Safety and trust
-
-The Agent product contract includes the following non-negotiable guarantees:
-
-- storage provider access is read-only;
-- no destructive S3 tool exists;
-- no generic shell/arbitrary subprocess tool is exposed to the Agent;
-- secrets remain in the encrypted local vault;
-- secrets/raw credentials never enter model prompts, logs, SQLite or reports;
-- cloud data movement is confirmation-gated;
-- tool/evidence records are sanitized and auditable;
-- chain-of-thought is neither persisted nor rendered;
-- missing evidence is represented as uncertainty/gaps, not guessed facts.
-
-## Persistence vocabulary vs product vocabulary
-
-Some shipped database/API names predate the Agent-native product shell and remain
-for compatibility. They are adapter-layer terms, not UX concepts.
-
-| Product concept | Current persistence/API term |
+| State | Meaning |
 | --- | --- |
-| Agent Task | session |
-| Direction / Work Result | session message |
-| Execution | run / tool call |
-| Task memory | session summary / agent memory |
-| Artifact Review | evidence/report endpoints |
+| **Ready to delegate** | No active Task exists yet. |
+| **Ready** | The Task is durable and can accept another Direction. |
+| **Working** | Real execution is active. |
+| **Needs decision** | Current live/durable work is blocked by a confirmation boundary. |
+| **Needs attention** | Runtime/provider/execution state requires user intervention. |
+| **Preparing / uploading** | Input/evidence preparation is actively occurring. |
 
-Frontend public ownership boundaries must expose Task / Execution / Review. New
-UI components must not reintroduce a Session/Run/Conversation-centered shell
-simply because those words still exist in storage schemas.
+A previously persisted Decision does not outrank a newer live Execution. Conversely, after reload or Task switching, a still-current durable Decision must not disappear merely because browser-local state was lost.
 
-## Visual hierarchy
+## Background task behavior
 
-The first viewport should answer three questions without opening another page:
+Multiple Tasks may independently have real in-flight work because execution state is keyed by durable task/session identity rather than by the currently visible viewport.
+
+This does **not** mean the product has hidden autonomous worker Agents. It means a real execution already started for Task A is not destroyed when the user opens Task B.
+
+## Storage-specific capability model
+
+Current capability classes include:
+
+- S3-compatible diagnostics and bounded probes;
+- bucket/object metadata inspection;
+- account discovery;
+- bucket configuration review;
+- versions/multipart/object-lock/ACL/tag/attribute inspection;
+- bounded preview/range/conditional/latency checks;
+- presigned-URL diagnosis;
+- local inventory/access-log analysis;
+- managed Evidence Import with explicit confirmation;
+- deterministic storage-error triage;
+- durable task findings/memory/evidence;
+- Markdown Report generation.
+
+Historical backend `run_type` values such as `diagnostic`, `access_log_analysis`, `inventory_analysis`, `bucket_config_review`, and `account_discovery` remain implementation vocabulary. They are not top-level product navigation.
+
+## Safety and trust contract
+
+The product must preserve these guarantees:
+
+- cloud/model secrets stay in the encrypted local vault and never enter model prompts, SQLite, logs, reports, or browser-readable secret payloads;
+- storage tools are read-only;
+- no generic shell/arbitrary subprocess capability is exposed to the Agent;
+- provider bucket/prefix scopes are enforced server-side;
+- data-moving or materially large/full-scan operations cross an explicit Decision boundary;
+- tool/evidence/model context is sanitized and bounded;
+- raw analytical rows are processed deterministically rather than streamed into model context;
+- Evidence gaps remain explicit gaps;
+- chain-of-thought is neither persisted nor rendered.
+
+See `security.md` for the normative security specification.
+
+## Product vocabulary vs compatibility vocabulary
+
+Some database/API names predate v0.93 and remain for compatibility.
+
+| Product concept | Compatibility implementation |
+| --- | --- |
+| Agent Task | `sessions`, `/sessions/...`; `/agent-tasks` task-list projection |
+| Direction / Work Result | `session_messages` |
+| Execution | `runs`, `session_runs`, `tool_calls`, turn metrics |
+| Decision | proposed actions + approval/evidence-import records |
+| Task memory | summaries/findings/agent-memory records |
+| Artifact | evidence/report persistence |
+
+Rules:
+
+1. Product-facing UI and new public frontend ownership use Agent Task / Direction / Execution / Decision / Work Result / Artifact / Review vocabulary.
+2. Historical names are valid in persistence, API contracts, repositories, and narrow adapters where migration compatibility requires them.
+3. A database/API name must never be used as justification for rebuilding old product information architecture.
+
+## First-viewport hierarchy
+
+The primary Task viewport should answer, in order:
 
 1. **What is the Agent working on?**
-2. **What has it done or produced?**
-3. **What can I do now — Steer, Stop, decide, review, or delegate next work?**
+2. **What is happening now or what did it produce?**
+3. **What can I do now?** — Steer, Stop, decide, review, or delegate the next Direction.
 
-Internal counters, provider/model configuration and audit metadata are secondary
-unless they are relevant to the current execution.
+Provider/model configuration, audit internals, and low-level counters are secondary unless directly relevant to the active work.
 
-## Quality gates
+## Quality contract
 
-The Agent product model is protected by automated architecture tests that reject
-old Chat-era production UI contracts, plus real-Sidecar browser tests for:
+The product model is protected by:
 
-- delegation and durable Work Results;
-- real execution/tool disclosure;
-- Stop and mid-execution steering;
-- task concurrency;
-- decisions/confirmation boundaries;
-- task navigation and persistence;
-- contextual Review and Report artifacts;
-- English/Chinese localization;
-- accessibility/contrast/layout;
-- credential sanitization.
-
-A real-state visual gallery is also generated in CI for human review; it captures
-Agent states rather than using a pixel-diff threshold as a substitute for design
-judgment.
+- frontend architecture tests that assert current ownership boundaries and physical deletion of retired UI contracts;
+- negative legacy-contract scans over production frontend source;
+- documentation-contract tests over normative docs;
+- real-Sidecar Playwright tests for delegation, durable results, execution disclosure, Stop/Steer, task switching/concurrency, decisions, evidence/file analysis, Review/Reports, localization, accessibility, contrast, narrow layouts, and credential sanitization;
+- real-state visual-review captures.
 
 ## Non-goals
 
-Until the runtime actually supports them, the product must not pretend to be:
+Until a real runtime and safety contract exists, Storage Agent is not:
 
 - a multi-agent orchestrator;
-- a worktree/project coding environment;
-- a generic computer-use Agent;
-- a terminal or browser automation shell;
+- a coding project/worktree environment;
+- a generic computer-use/terminal/browser Agent;
 - a full S3 file manager;
-- a multi-user SaaS/RBAC product;
+- a destructive repair/mutation system;
 - a workflow canvas;
-- an automatic repair/mutation system.
+- a plugin marketplace;
+- a multi-user SaaS/RBAC product;
+- a page-per-table admin console.
 
-Adding any of those requires a real capability and safety model first, then a UI.
+Runtime capability comes first; UI representation follows it.

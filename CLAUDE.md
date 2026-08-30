@@ -1,358 +1,229 @@
 # CLAUDE.md
 
-This repository implements **Storage Agent Workbench**, a local-first, Claude/Codex-like desktop application for object storage and S3-compatible systems.
-
-The app supports:
-
-- Object storage diagnostics
-- Access log analysis
-- Inventory and capacity analysis
-- Bucket configuration review (security / lifecycle / observability / cost)
-
-This is not a generic chat assistant. The **primary surface is a thread-first
-conversational agent** (a real tool-calling loop over read-only tools); structured
-**Analysis Runs** are a callable, auditable capability beneath it.
-
-## Agent architecture (how the LLM is used)
-
-There is exactly **one** LLM in the product: the conversational session agent.
-Everything else is deterministic compute it invokes. The old dual-track design
-(a second "run-planner" LLM, in-run interpretation narrators, a `planner_mode`
-switch) was eliminated in v0.20.0 — do not reintroduce it.
-
-1. **Conversational session agent** (the only agent, `agent_runtime/session_agent.py`).
-   A genuine tool-calling agent: it chooses provider/bucket, calls read-only S3
-   tools in a loop, loads StorageOps skills on demand (progressive disclosure via
-   the `read_skill` tool), and grounds answers in tool output. It is **always a
-   fully autonomous read-only investigator — there is no autonomy toggle.** It
-   diagnoses connectivity/credential/addressing problems adaptively
-   (`test_credentials` → addressing/TLS/head-bucket/list/range) and explains the
-   root cause; it analyzes a file the user **attaches in the conversation** with
-   read-only `list_uploaded_files` / `analyze_uploaded_file` /
-   `aggregate_uploaded_file` (`agent_runtime/session_analysis_tools.py`, same
-   DuckDB engine, sanitized aggregates only — `aggregate_uploaded_file` lets the
-   agent pick a metric + group-by + filters from a hard whitelist, never SQL and
-   never raw rows); it runs the heavier read-only `survey_account` /
-   `review_bucket_config` tools (`agent_runtime/session_action_tools.py`) when
-   the request is about the account/buckets, then answers account-wide posture
-   questions from the persisted survey with `query_account_profile` (a filtered
-   per-bucket config-flag matrix — no re-scan, statuses only) and "what changed"
-   with `compare_to_last_survey`; and it picks up a backgrounded run's result in a
-   later turn with `read_run_result`. Crucially, **nothing the agent
-   does in a conversation surfaces as a structured run card** — those tools
-   record runs with `origin='agent'` that the thread filters out; the agent
-   narrates the result inline.
-
-   Security tiers are enforced in code regardless: EXPENSIVE/data-moving work
-   (cloud evidence import/download, large/full scans) is never auto-run — it
-   stays a confirmed proposal — and there is no write/destructive tool in the
-   product at all. A *file the user attached* is local, so analyzing it inline is
-   not data-moving and needs no confirmation.
-
-2. **Deterministic compute layer** (`runs/`, dispatched by `run_service.py`) —
-   the agent-invoked **security/reproducibility floor**, NOT a user-facing fixed
-   pipeline and NOT a second agent. These executors are **pure deterministic
-   compute — there is no LLM planner and no in-run narrator.** The conversational
-   agent (surface 1) is the sole driver: no UI path creates a run, executors
-   publish only their real tool trace, findings, and summary (no canned step
-   "plan", no agent-written prose section), and the agent narrates the result in
-   its own words. This layer survives for one reason — it is the security floor:
-   - **deterministic engines** (rule-based, no LLM) compute heavy aggregates so
-     the model never touches raw rows — e.g. the DuckDB analysis behind the
-     agent's `analyze_uploaded_file` tool, `diagnostic`, `account_discovery`,
-     `bucket_config_review`, and error triage.
-
-   A "run" is an agent-invoked tool and/or an opt-in **auditable report
-   artifact** — never a reflex the UI fires or a canned plan the agent is marched
-   through. Reproducible runs + the deterministic floor are kept because the
-   non-negotiable security rules require them (no raw rows to the model, bounded
-   scans, confirmed data-moving); they are not a second "surface" the user
-   navigates.
-
-The session agent builds its model client through `agent_service.build_agent`
-(per-session client; never the SDK process-global).
-
-## Product shape
-
-The UI follows a **thread-first agentic workbench** (Codex-style), not a tabbed
-admin panel. As of the v0.19.0-pre.2 rebuild:
-
-- **Slim session rail** (left): "+ New investigation", the session list, and a
-  settings + sidecar-status footer. No top-level Runs/Datasets/Reports tabs.
-- **Conversation thread** (center, dominant) with a single **sticky composer**.
-  You just ask the agent; there is no mode switch. Pasting an S3 error works
-  even with no model provider/key configured — deterministic offline triage
-  (no credentials, no LLM) is the automatic fallback, not a separate composer
-  mode. Messages, analysis runs, error-triage cases, and next-action proposals
-  all render as **inline cards** in the thread; a run card expands in place to
-  the full run transcript.
-- **Settings drawer** (right slide-over) embeds model- and cloud-provider
-  management; a one-time **first-run wizard** appears on a fresh install.
-
-> Historical note: earlier phases used a three-column layout (left sidebar
-> Runs/Providers/Datasets/Reports/Settings + main analysis-run area + right
-> context panel). That shell was retired in the pre.2 rebuild — do not restore
-> it. The underlying concepts below (Analysis Runs, run types, providers) are
-> unchanged; only the presentation moved into the thread.
-
-## Supported run types
-
-The deterministic compute layer models heavy work as Analysis Runs that the
-agent invokes.
-
-Run types:
-
-- `diagnostic`
-- `access_log_analysis`
-- `inventory_analysis`
-- `bucket_config_review`
-- `account_discovery`
-
-## Fixed MVP stack
-
-Use the following stack unless explicitly instructed otherwise:
-
-- Desktop: Tauri v2
-- Frontend: React + Vite + TypeScript
-- UI: Tailwind CSS
-- Backend sidecar: Python + FastAPI + Uvicorn
-- Agent runtime: OpenAI Agents SDK Python
-- S3 SDK: boto3 / botocore
-- Local analysis engine: DuckDB + PyArrow + pandas
-- App metadata storage: SQLite
-- Secrets: AES-256-GCM encrypted local vault (`security/keyring_store`), key protected per-OS (DPAPI / `0600` key file)
-- Streaming: Server-Sent Events
-- Packaging: Python sidecar via PyInstaller, launched by Tauri sidecar
-
-## Explicitly out of scope for MVP
-
-Do not introduce these unless explicitly requested:
-
-- LangGraph
-- MCP runtime
-- LiteLLM
-- Langfuse
-- n8n
-- Postgres
-- Redis
-- Multi-agent orchestration
-- Workflow canvas
-- Plugin marketplace
-- Generic shell execution
-- Destructive S3 operations
-- GitHub Issues as the project workflow
-
-## Non-negotiable security rules
-
-1. Never pass cloud access keys, secret keys, session tokens, model API keys, or credentials into LLM prompts.
-
-2. Never store plaintext secrets in SQLite, logs, reports, traces, local JSON files, local YAML files, screenshots, or UI state.
-
-3. Store secrets only through `security/keyring_store` — a single AES-256-GCM
-   **encrypted vault** (`secrets.enc` + master key in `secrets.key`) in the app
-   data dir, behind the unchanged `make_ref/parse_ref/save_secret/get_secret/
-   delete_secret` API. The master key is protected by the strongest *non-
-   prompting* mechanism per OS: DPAPI (current-user) on Windows, an `O_EXCL`
-   `0600` key file on macOS/Linux. This is deliberately **not** the OS keychain:
-   the app is ad-hoc-signed and cross-platform, and the keychain re-prompts on
-   every update (macOS) or is absent/prompts on headless Linux. Do not move
-   secrets back into the keychain (or into SQLite/files in plaintext) — and keep
-   it prompt-free. (A stable Developer-ID signature could later re-enable the
-   keychain on macOS with no prompts.)
-
-4. SQLite may store only secret references such as `keyring://scope/name` (the
-   `keyring://` scheme is a stable opaque ref; storage is the vault, not the OS
-   keyring).
-
-5. Do not implement a generic shell execution tool.
-
-6. All cloud operations must go through explicit whitelist tools.
-
-7. Do not implement destructive S3 operations in the MVP.
-
-8. The following operations are forbidden in MVP:
-
-   - `DeleteBucket`
-   - `PutBucketPolicy`
-   - `PutBucketAcl`
-   - `PutLifecycleConfiguration`
-   - `DeleteObjects`
-   - Recursive delete
-   - Mass object mutation
-   - Any bucket-wide destructive or mutating operation
-
-9. Default cloud provider mode is `readonly`.
-
-10. `test-write` mode is **reserved**: it exists only as a provider-mode enum —
-    the MVP ships no write tool at all, so nothing can write even with the mode
-    set. Any future write tool may only write under explicitly allowed test
-    prefixes, such as:
-
-   - `tmp/agent-test/*`
-   - `diagnose/*`
-
-11. Bulk analysis must not download object bodies. The one bounded exception is
-    the `preview_object` tool: a single, read-only, sanitized preview of one named
-    object's head (hard cap 1 MiB/call), budgeted per turn (16 previews / 24 MiB)
-    so it can't be looped into a bulk download, and never persisted.
-    Binary/oversized objects are reported, not decoded. The bounds are the
-    safety — there is still no full-object download and no bulk/recursive body
-    reads.
-
-12. Large bucket scans must require one of:
-
-   - `max_objects`
-   - Prefix limit
-   - Explicit user approval
-
-13. Full bucket scan must require explicit user approval.
-
-14. All tool inputs and outputs must be sanitized before persistence.
-
-15. Logs, reports, traces, database rows, and UI output must redact:
-
-   - Access keys
-   - Secret keys
-   - Session tokens
-   - API keys
-   - Authorization headers
-   - Signatures
-   - Presigned URL credentials
-   - Sensitive query parameters
-   - Cookies
-   - Bearer tokens
-
-16. Reports should show at most 20 sample object keys by default.
-
-17. All tool calls, analysis SQL, data imports, approvals, and report generation events must be recorded in audit logs.
-
-18. Provider capability gaps must be represented as `Provider unsupported`, not as hard failures, when working with S3-compatible providers.
-
-## Tooling rules
-
-Agent-accessible tools must be explicit, typed, and whitelisted.
-
-Allowed MVP tool groups:
-
-### Diagnostic tools
-
-- `test_credentials`
-- `head_bucket`
-- `get_bucket_location` (read-only, ONE call — where the bucket actually lives,
-  vs the configured region/endpoint; answers a 301 redirect too. The cheap probe
-  for the most common S3-compatible misconfiguration)
-- `list_objects` (agent tool; internal S3 helper is `list_objects_v2`)
-- `head_object`
-- `get_object_lock_status` (read-only, one object — retention mode + retain-until + legal hold; "why can't I delete this object?")
-- `get_object_acl` (read-only, one object — grants reduced to grantee KIND, `is_public` flag; "is this object public?" — no owner/canonical id or email leaks)
-- `get_object_tagging` (read-only, one object — tag set, keys+values redacted, ≤20 tags)
-- `get_object_attributes` (read-only, one object — checksum/parts/storage-class/size, no body; `provider_unsupported` on gap)
-- `test_range_get`
-- `test_conditional_get` (read-only HeadObject + If-None-Match — 304 vs 200 ETag freshness probe; no body either way)
-- `preview_object` (bounded ≤1 MiB, read-only, sanitized, text-only, per-turn budget)
-- `measure_request_latency` (read-only, bounded head round-trips — live min/p50/p95/max latency; probe, not load test; per-turn budget)
-- `diagnose_presigned_url` (pure parse of a user-pasted presigned URL — expiry/scope/style; NO network call, signature + key id dropped, never echoed)
-- `list_object_versions` (read-only, bounded, sample keys ≤20 — version/delete-marker pileup)
-- `list_multipart_uploads` (read-only, bounded — incomplete/abandoned uploads; list only, no abort)
-- `list_upload_parts` (read-only ListParts for ONE in-progress multipart upload — parts/bytes/times; list only, no abort)
-- `test_addressing_style` (S3 layer: `test_path_style_vs_virtual_host`)
-- `inspect_endpoint_tls` (S3 layer: `inspect_tls`)
-
-### Access log analysis tools
-
-- `detect_log_format`
-- `import_access_logs`
-- `analyze_access_logs`
-
-### Inventory and capacity analysis tools
-
-- `import_inventory_file`
-- `analyze_inventory`
-
-### Bucket config review tools
-
-- `get_bucket_config_summary`
-- `get_bucket_config_detail` (read-only; sanitized RULE detail for one aspect —
-  `replication` / `notification` / `cors` / `logging` / `policy_status` (AWS's
-  IsPublic verdict for the bucket POLICY — combine with `acl` for full exposure) /
-  `ownership` (Object Ownership; ACLs-disabled) /
-  `object_lock` (bucket WORM default) / `acl` (grantee KIND + permission, no owner
-  id/email) / … — that the review tools collapse to a status; ARNs reduced, ≤20
-  rules, `provider_unsupported` on gap)
-- `review_bucket_security`
-- `review_bucket_lifecycle`
-- `review_bucket_observability`
-- `review_bucket_cost_optimization`
-- `review_bucket_performance_profile`
-
-### Report tools
-
-- `generate_markdown_report`
-
-Do not expose raw boto3 clients, raw subprocess calls, raw shell commands, or unrestricted filesystem access to the Agent.
-
-## Data ownership
-
-Use SQLite for application metadata:
-
-- Providers
-- Runs
-- Messages
-- Tool calls
-- Audit logs
-- Approval events
-- Dataset metadata
-- Report metadata
-
-Use DuckDB for analytical data:
-
-- Access logs
-- Inventory files
-- Bucket object metadata samples
-- Derived analysis tables
-
-Use local files for large raw inputs and generated reports:
-
-- `data/runs/{run_id}/raw/`
-- `data/runs/{run_id}/analysis.duckdb`
-- `data/runs/{run_id}/report.md`
-
-## Development workflow
-
-> Historical note: the project was built in phases (bootstrap → providers → S3
-> tools → runs → DuckDB → config review → Agents SDK → packaging). All of those
-> shipped; the phase plan and `phase/NN-*` branch scheme are history, not current
-> process. Work now lands as focused PRs cut from `main`.
-
-1. Keep changes simple and focused; one concern per PR.
-2. Document before implementing major modules.
-3. Do not use GitHub Issues as the project workflow; do not create
-   `.github/ISSUE_TEMPLATE`.
-4. Releases are cut by dispatching the `Release` workflow against a tag; the
-   version is stamped from the tag (see `docs/release.md`).
-
-## Verification expectations
-
-Before reporting completion, actually run the relevant checks:
-
-- `cd sidecar && pytest -q` (full suite passes).
-- `cd frontend && npm run build` and `tsc --noEmit` are clean.
-- The security invariants still hold (see the rules above): no generic shell, no
-  plaintext secrets, no destructive S3 op, secrets resolved only server-side and
-  never placed in an LLM prompt.
-
-Never claim a check passed unless it was actually run.
-
-## Review expectations
-
-When summarizing work, include:
-
-- What changed
-- How to run it
-- What checks were run
-- What passed
-- What failed or was not run
-- Known gaps
-- Recommended next phase
-
-Never claim a check passed unless it was actually run.
+> **Implementation contract for Storage Agent v0.93.0.**
+>
+> Before changing product structure, read `docs/README.md`, `docs/product.md`,
+> `docs/architecture.md`, and `docs/security.md`. Current code and executable
+> architecture tests are authoritative when historical docs or names disagree.
+
+Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
+
+The v0.93 product invariant is:
+
+> **The Agent Task is the application.**
+
+The canonical work model is:
+
+> **Direction → Execution → Decision (when required) → Work Result → Artifact**
+
+The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
+
+## 1. Never regress the v0.93 product model
+
+New product/frontend work must preserve these boundaries:
+
+- **Agent Task** is the primary application object and primary work area.
+- **AgentTaskNavigation** is global task navigation and projects durable + live task state.
+- **AgentShell** owns the active task environment and contextual Review state.
+- **AgentTask** is the public task boundary; persistence compatibility names stay behind adapters.
+- **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active.
+- **Direction** is user intent/steering input.
+- **Execution** is real runtime/tool work. Never invent plans, steps, workers, or capabilities the runtime does not expose.
+- **Decision required** is a blocking confirmation state derived from real backend proposals.
+- **Work Result** is the durable result of Agent work, not a generic assistant bubble.
+- **Review** is contextual to the active Task. Evidence, Execution detail, and Report are artifacts/review modes, not independent application destinations.
+- **Focus mode** changes presentation only. It never creates a second task lifecycle or second Agent input.
+
+Do not reconstruct earlier chat/investigation/workbench information architecture from old release notes, database names, API names, or git history. Historical `session` and `run` terminology is compatibility vocabulary, not a reason to change current product semantics.
+
+The executable frontend guards under `frontend/src/agent/` are part of this contract. If an intentional architecture replacement is needed, change the code, tests, and canonical docs together in one PR.
+
+## 2. Runtime architecture
+
+The shipped desktop stack is fixed unless explicitly changed:
+
+- Desktop shell: **Tauri v2**.
+- Frontend: **React 19 + Vite + TypeScript + Tailwind CSS**.
+- Local backend: **Python + FastAPI + Uvicorn** Sidecar.
+- Agent runtime: **OpenAI Agents SDK for Python**.
+- S3-compatible access: **boto3 / botocore**.
+- Analytical compute: **DuckDB + PyArrow + pandas**.
+- Application metadata: **SQLite** with append-only migrations.
+- Secret storage: **AES-256-GCM encrypted local vault** through `security/keyring_store`.
+- Streaming: **Server-Sent Events (SSE)**.
+- Packaging: **PyInstaller one-dir Sidecar** embedded as a Tauri resource.
+
+Topology:
+
+```text
+Tauri desktop shell
+        │
+React Agent UI
+        │ localhost HTTP / SSE + per-launch auth token
+Python Sidecar
+        │
+        ├── model endpoint configured by the user
+        └── S3-compatible storage configured by the user
+```
+
+The frontend never receives cloud/model secret values. The Sidecar resolves secret references server-side.
+
+## 3. One real Agent, deterministic compute beneath it
+
+There is one model-driven Agent runtime: the durable task/session Agent implemented under `sidecar/app/agent_runtime/`.
+
+It may invoke explicit read-only storage tools, StorageOps skills, bounded file-analysis tools, deterministic account/config analysis, and report/evidence workflows. The model drives the investigation; deterministic engines remain the security/reproducibility floor for operations that should not expose raw analytical rows to the model.
+
+Do not add a second planner/narrator Agent, hidden orchestration Agent, or simulated multi-agent UI. If the runtime does not implement a capability, the UI must not pretend it exists.
+
+Historical persistence still stores task work in `sessions`, `session_messages`, `runs`, `tool_calls`, evidence tables, and report artifacts. Product adapters project those records into Agent Task / Direction / Execution / Work Result / Review semantics.
+
+## 4. Task state and execution truth
+
+Task state must be derived from real runtime and durable state, not visual guesses.
+
+Current product states include:
+
+- **Ready to delegate** — no active Task.
+- **Ready** — durable Task available for another Direction.
+- **Working** — real execution is active.
+- **Needs decision** — current durable or live work has a confirmation-gated action.
+- **Needs attention** — execution/provider/runtime requires user intervention.
+- upload/preparation state where applicable.
+
+Live execution is keyed per durable task so Task A can keep executing while Task B is selected. This is not a claim of autonomous background workers; it is preservation of the real in-flight turn keyed by task/session identity.
+
+The turn runner is the one submission lifecycle: acquire task execution ownership, submit Direction, consume SSE, publish real Tool activity and Work Result deltas, process Steer/Stop/error state, wait for durable completion, then reload persisted task state. Do not create a second submit path.
+
+## 5. Current Sidecar API boundary
+
+The Sidecar exposes both product projection and compatibility APIs:
+
+- `/agent-tasks` is the product-level task-list projection and includes durable decision state.
+- `/sessions/...` remains the durable task/message/runtime compatibility API.
+- `/runs/...` remains deterministic execution/report compatibility API and is not a top-level product surface.
+- `/evidence-imports/...` owns bounded plan → confirm → execute data movement.
+- `/model-providers`, `/cloud-providers`, `/settings`, `/tools`, `/error-triage`, `/reports`, and dataset endpoints keep their existing responsibilities.
+
+Do not rename persistence/API contracts just for cosmetic consistency if that adds migration risk. Adapt them at explicit boundaries instead.
+
+## 6. Non-negotiable security rules
+
+1. Never place cloud access keys, secret keys, session tokens, model API keys, Authorization headers, cookies, signatures, or presigned credentials in model prompts.
+2. Never persist plaintext secrets in SQLite, logs, reports, traces, screenshots, local JSON/YAML, or frontend state.
+3. Store secrets only through `security/keyring_store`; SQLite stores opaque `keyring://...` references only.
+4. Do not introduce a generic shell, raw subprocess, raw boto3 client, unrestricted filesystem tool, terminal, browser/computer-control tool, or arbitrary SQL tool for the Agent.
+5. Storage operations are read-only in the shipped product. There is no destructive/mutating S3 tool.
+6. Provider bucket/prefix scopes are enforced server-side.
+7. Read-only investigation may run autonomously; data-moving or materially large/full-scan operations must cross an explicit confirmation boundary.
+8. Tool inputs/outputs, Evidence, audit rows, reports, and model context must be sanitized and bounded.
+9. Raw access-log/inventory rows do not enter model context. Deterministic analysis produces bounded aggregates/findings.
+10. Chain-of-thought is never persisted, exposed, or modeled as an Artifact.
+11. Capability gaps on S3-compatible providers are represented explicitly (`provider_unsupported`) rather than fabricated as success or collapsed into unrelated errors.
+12. Missing Evidence stays a gap/uncertainty. Never manufacture evidence to complete a narrative.
+
+See `docs/security.md` for the full contract.
+
+## 7. Tool contract
+
+Agent tools are explicit, typed, whitelisted, bounded, and sanitized. Current capability classes include:
+
+- credential/reachability/addressing/TLS diagnostics;
+- bucket/object metadata inspection;
+- bounded object listing, versions, multipart and object-lock/ACL/tag/attribute inspection;
+- bounded Range/conditional/preview probes and request-latency measurement;
+- pure presigned-URL diagnosis;
+- account discovery and bucket configuration review;
+- local uploaded inventory/access-log analysis;
+- managed Evidence Import through a confirmation gate;
+- task memory/evidence lookup and deterministic report generation.
+
+Do not infer tool availability from a documentation example. `docs/tools.md` and the registered runtime tool set must agree with code.
+
+## 8. Data ownership
+
+SQLite stores application metadata and durable task/execution records. Current migrations are append-only through **025**; never edit a shipped migration, append a new one.
+
+DuckDB/local files store analytical data and large inputs/artifacts. User data lives under the application data directory, never the install directory.
+
+Product-to-persistence mapping:
+
+| Product | Compatibility persistence/API |
+| --- | --- |
+| Agent Task | `sessions`, `/sessions/...`, `/agent-tasks` projection |
+| Direction / Work Result | `session_messages` |
+| Execution | `runs`, `session_runs`, `tool_calls`, turn metrics |
+| Decision | persisted proposed actions + approval/evidence-import state |
+| Evidence / Artifact | evidence references/imports, reports, local artifact files |
+| Task memory | session summaries/findings/agent memory |
+
+See `docs/data-model.md`.
+
+## 9. Product and design rules
+
+- Optimize the first viewport for: **what is the Task, what is happening/what was produced, what can the user do now**.
+- Keep settings/provider/model selection secondary to delegated work.
+- Keep technical results readable as documents: prose, tables, code/config, structured errors, Execution summary, provenance.
+- Use progressive disclosure for execution detail; do not turn the main Task into a permanent observability wall.
+- Preserve accessibility, contrast, responsive/narrow-window behavior, English/Chinese parity, and real-state visual review.
+- Do not copy another Agent client's chrome without matching runtime semantics.
+
+## 10. Explicit non-goals
+
+Do not introduce these without an explicit product/runtime/safety change:
+
+- multi-agent orchestration;
+- coding projects/worktrees;
+- synthetic plans/checklists not emitted by the runtime;
+- generic terminal/browser/computer control;
+- workflow canvas;
+- plugin marketplace;
+- MCP runtime;
+- LangGraph/LiteLLM/Langfuse/n8n as new architectural dependencies;
+- Postgres/Redis for the local desktop product;
+- destructive storage repair or mutation;
+- a top-level page for every backend table;
+- multi-user SaaS/RBAC semantics.
+
+## 11. Development workflow
+
+Work from `main` in focused PRs. GitHub Issues are not the project workflow unless explicitly requested.
+
+For architecture or behavior changes:
+
+1. Inspect current implementation and regression tests first.
+2. Update the relevant canonical docs in the same PR.
+3. Preserve compatibility adapters unless migration is part of the requested change.
+4. Add or update executable architecture/regression tests for boundaries that matter.
+5. Validate the real rendered/runtime state rather than reasoning only from component code.
+
+## 12. Verification expectations
+
+Run the checks relevant to the change and never claim checks you did not execute.
+
+Minimum repository gates represented in CI include:
+
+- frontend TypeScript typecheck/lint;
+- frontend Vitest unit + architecture/documentation contracts;
+- frontend production build;
+- Python Sidecar tests;
+- packaged Sidecar smoke;
+- real-Sidecar Playwright E2E;
+- visual-review capture from asserted real states;
+- macOS Apple Silicon, Linux x64, and Windows x64 desktop build/runtime verification.
+
+For local focused work, at minimum run the directly affected test suites; before release, use the release/smoke documentation and CI matrix.
+
+## 13. Documentation discipline
+
+`docs/README.md` defines documentation precedence. Release notes, CHANGELOG entries, and historical rebuild docs are descriptive history and may contain retired vocabulary. Never use them as the primary architecture specification for current implementation.
+
+When reporting completion include:
+
+- what changed;
+- what contract/behavior it changes or preserves;
+- what checks actually ran and their result;
+- what was not run;
+- known gaps or follow-up work.
+
+Never claim a check passed unless it actually ran.

@@ -1,15 +1,84 @@
 # Data model
 
-## SQLite
+> **Storage Agent v0.93.0 persistence reference.**
+>
+> Product vocabulary is Agent Task / Direction / Execution / Decision / Work Result / Artifact. SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
 
-SQLite stores app metadata only — no analytical (DuckDB) data and no plaintext
-secrets (only `keyring://` references). The schema is created by the append-only
-migrations in `sidecar/app/migrations.py`; the tables below reflect every
-migration through 016.
+## Storage layers
 
-Tables:
+Storage Agent uses three local storage layers:
 
-- `schema_migrations` (migration bookkeeping: version, name, applied_at)
+1. **SQLite** — application metadata, durable task/execution state, audit/provenance, references. No analytical raw tables and no plaintext secrets.
+2. **DuckDB** — local analytical data for uploaded/imported inventory and access logs plus derived metrics.
+3. **Local files** — raw uploaded/imported evidence, DuckDB files, and generated report artifacts under the application data directory.
+
+Secrets are stored separately in the encrypted local vault. SQLite stores only opaque `keyring://...` references.
+
+## Migration contract
+
+The schema is created by append-only migrations in `sidecar/app/migrations.py`.
+
+**Current migration head: 025.**
+
+Rules:
+
+- never edit a migration that has shipped;
+- append a new migration for schema changes;
+- migration recovery logic is part of the data-safety contract;
+- product renaming does not require risky storage renaming when an adapter boundary is sufficient.
+
+### Migration index
+
+| Version | Name | Purpose |
+| ---: | --- | --- |
+| 001 | `initial_schema` | provider/run/message/tool/audit/dataset/report metadata |
+| 002 | `tool_calls_nullable_run` | allow ad-hoc tool calls without a run |
+| 003 | `runs_add_prefix` | optional run prefix scope |
+| 004 | `datasets_metadata` | richer deterministic-analysis dataset metadata |
+| 005 | `runs_add_planner_mode` | historical column retained for compatibility |
+| 006 | `account_discovery` | account/bucket/config/evidence-source snapshots + run options |
+| 007 | `managed_evidence_import` | bounded planned/confirmed evidence import records |
+| 008 | `session_workspace_context` | durable session/task context, linked runs/evidence/findings/messages/summary |
+| 009 | `error_triage` | deterministic storage-error triage cases/findings |
+| 010 | `session_message_tool_activity` | persisted sanitized activity summary on assistant messages |
+| 011 | `sessions_pinned` | pinned task/session navigation state |
+| 012 | `app_settings` | non-secret local settings |
+| 013 | `session_agent_memory` | durable Agent-authored facts/findings/open questions |
+| 014 | `session_datasets` | task/session-scoped uploaded datasets |
+| 015 | `runs_add_origin` | distinguish user vs Agent-internal deterministic runs |
+| 016 | `session_message_grounding` | persisted grounding + proposed actions |
+| 017 | `model_provider_context_window` | optional operator-declared context window |
+| 018 | `retention_indexes` | created-at indexes for bounded startup retention work |
+| 019 | `model_provider_max_output` | optional operator-declared model output cap |
+| 020 | `session_scoped_observability` | attach audit/tool-call rows to durable task/session identity |
+| 021 | `turn_metrics` | per-turn duration, requests, model/tool/token usage when reported |
+| 022 | `turn_metrics_token_details` | cached-input and reasoning token detail |
+| 023 | `turn_metrics_budget` | runtime token budget + repeated-call avoidance metrics |
+| 024 | `session_datasets_truncation` | persist task-upload truncation/ingest cap and force legacy re-import |
+| 025 | `datasets_truncation` | persist run-dataset truncation/ingest cap |
+
+## Product-to-persistence mapping
+
+| Product concept | SQLite/API compatibility representation |
+| --- | --- |
+| Agent Task | `sessions`; product list projection `/agent-tasks` |
+| Direction / Work Result | `session_messages` |
+| Execution | `runs`, `session_runs`, `tool_calls`, `turn_metrics` |
+| Decision | `session_messages.proposed_actions`, `approval_events`, evidence-import state |
+| Task summary | `session_summaries` |
+| Task findings | `session_findings` |
+| Task memory | `session_agent_memory` |
+| Evidence refs/sources | `session_evidence_refs`, `evidence_sources`, evidence-import tables |
+| Artifact/report | `reports`, report paths/endpoints/files |
+| Local attached evidence | `session_datasets` |
+
+The compatibility word `session` is not a current product-navigation concept.
+
+## SQLite tables
+
+Current tables include:
+
+- `schema_migrations`
 - `model_providers`
 - `cloud_providers`
 - `runs`
@@ -38,235 +107,287 @@ Tables:
 - `error_triage_findings`
 - `app_settings`
 
-## model_providers
+## Provider metadata
 
-Fields:
+### `model_providers`
 
-- id
-- name
-- provider_type
-- base_url
-- model
-- api_key_ref
-- created_at
-- updated_at
+Important fields:
 
-## cloud_providers
+- `id`, `name`, `provider_type`, `base_url`, `model`;
+- `api_key_ref` — opaque encrypted-vault reference, never secret plaintext;
+- `context_window` — optional operator declaration (migration 017);
+- `max_output_tokens` — optional operator declaration (migration 019);
+- timestamps.
 
-Fields:
+### `cloud_providers`
 
-- id
-- name
-- provider_type
-- endpoint_url
-- region
-- addressing_style
-- signature_version
-- access_key_ref
-- secret_key_ref
-- session_token_ref
-- mode
-- allowed_buckets_json
-- allowed_prefixes_json
-- created_at
-- updated_at
+Important fields:
 
-## runs
+- provider identity/type/endpoint/region;
+- addressing/signature configuration;
+- `access_key_ref`, `secret_key_ref`, `session_token_ref` — opaque vault references;
+- `mode` (read-only is the shipped capability model; `test-write` remains reserved schema vocabulary with no shipped write tool);
+- allowed bucket/prefix JSON scopes;
+- timestamps.
 
-Fields:
+## Deterministic Execution records
 
-- id
-- run_type
-- title
-- status
-- provider_id
-- bucket
-- prefix (migration 003 — optional prefix scope)
-- user_prompt
-- final_summary
-- report_path
-- planner_mode (migration 005 — retained, defaults `'deterministic'`; no longer read or written)
-- options_json (migration 006 — bounded discovery options; never secrets)
-- session_id (migration 008 — owning session, if any)
-- origin (migration 015 — `'user'` or `'agent'`; `'agent'` runs are the conversational agent's own read-only survey/review compute and are filtered out of the thread)
-- created_at
-- updated_at
+### `runs`
 
-## messages
+A `run` is compatibility storage for deterministic/auditable execution, not a top-level product page.
 
-Fields: id, run_id, role, content, created_at.
+Important fields:
 
-## tool_calls
+- `id`, `run_type`, `title`, `status`;
+- `provider_id`, `bucket`, `prefix`;
+- `user_prompt`, `final_summary`, `report_path`;
+- historical `planner_mode` (retained, no longer a product/runtime planner switch);
+- `options_json` for bounded non-secret execution options;
+- `session_id` linking execution to its owning Agent Task when applicable;
+- `origin` (`user` or `agent`);
+- timestamps.
 
-Fields:
+Current deterministic `run_type` values include:
 
-- id
-- run_id (nullable since migration 002 — ad-hoc tool calls need no run)
-- tool_name
-- input_json_sanitized
-- output_json_sanitized
-- status
-- duration_ms
-- created_at
+- `diagnostic`
+- `access_log_analysis`
+- `inventory_analysis`
+- `bucket_config_review`
+- `account_discovery`
 
-## approval_events
+### `tool_calls`
 
-Fields: id, run_id, action, decision, detail_json_sanitized, created_at.
+Fields include:
 
-## audit_logs
+- `id`;
+- nullable `run_id`;
+- nullable `session_id` for task-scoped observability;
+- `tool_name`;
+- sanitized input/output JSON;
+- status/duration/timestamp.
 
-Fields:
+A Tool call may belong directly to an Agent Task without belonging to a deterministic run.
 
-- id
-- run_id
-- event_type
-- payload_json_sanitized
-- created_at
+### `audit_logs`
 
-## datasets
+Fields include:
 
-Rebuilt in migration 004 to carry analysis-dataset metadata. Fields:
+- `id`, nullable `run_id`, nullable `session_id`;
+- `event_type`;
+- sanitized payload JSON;
+- timestamp.
 
-- id
-- run_id
-- dataset_type
-- name
-- source_filename
-- stored_path
-- duckdb_path
-- table_name
-- row_count
-- status (defaults `'uploaded'`)
-- created_at
+### `approval_events`
 
-## reports
+Stores explicit confirmation decisions associated with gated operations/executions. Detail is sanitized.
 
-Fields: id, run_id, report_path, format (defaults `'markdown'`), created_at.
+## Agent Task compatibility records
 
-## Account discovery (migration 006)
+### `sessions`
 
-- `account_snapshots` — id, run_id, provider_id, bucket_count, visible_count,
-  processed_count, truncated, list_status, summary_json_sanitized, created_at.
-- `account_snapshot_buckets` — id, snapshot_id, run_id, provider_id,
-  bucket_name, region, access_status, created_at.
-- `bucket_config_snapshots` — id, snapshot_id, run_id, provider_id, bucket_name,
-  config_summary_json_sanitized, created_at.
-- `evidence_sources` — id, snapshot_id, run_id, provider_id, bucket_name,
-  source_type, status, detail_json_sanitized, created_at.
+Compatibility storage for the durable Agent Task:
 
-## Managed evidence import (migration 007)
+- `id`;
+- `title`, `goal`;
+- `provider_id`, `primary_bucket`;
+- `status`;
+- `pinned`;
+- timestamps.
 
-- `evidence_imports` — id, provider_id, account_run_id, snapshot_id,
-  source_type, source_bucket, source_prefix, evidence_ref, format, fmt_schema,
-  plan_source, max_files, max_bytes, time_range_start, time_range_end,
-  planned_file_count, planned_total_bytes, selected_file_count,
-  selected_total_bytes, status (defaults `'planned'`), analysis_run_id,
-  warnings_json, created_at, confirmed_at.
-- `evidence_import_files` — id, import_id, object_key, size_bytes, kind,
-  selected, status (defaults `'planned'`), created_at.
+The current UI projects this record into Agent Task semantics rather than exposing a “session” application model.
 
-## Session observability (migrations 020/021)
+### `session_messages`
 
-- `tool_calls` and `audit_logs` gained `session_id` (migration 020, indexed with
-  `created_at`). Rule 17's trail was always written; before this it could only be
-  read back by `run_id`, and a conversational turn has no run — so a turn's tool
-  calls and audit events were orphaned on write.
-- `turn_metrics` (migration 021) — id, session_id, turn_id, message_id, model,
-  requests, input_tokens, output_tokens, total_tokens, duration_ms, tool_calls,
-  created_at. One row per turn; cascades with the session. Token columns are
-  **NULL** when the provider did not report usage, which is deliberately distinct
-  from a measured `0` — the UI renders the former as "not reported". Nothing is
-  estimated. `duration_ms` and `tool_calls` are always measurable and always set.
+Durable Direction and Work Result records:
 
-## Sessions (migration 008, extended by 010/011/013/014/016)
+- `id`, `session_id`, `role`, `content`;
+- referenced run/evidence ids;
+- sanitized `tool_activity`;
+- sanitized `grounding`;
+- sanitized `proposed_actions`;
+- timestamp.
 
-- `sessions` — id, title, goal, provider_id, primary_bucket, status,
-  pinned (migration 011), created_at, updated_at.
-- `session_runs` — id, session_id, run_id, role, created_at.
-- `session_evidence_refs` — id, session_id, source_type, source_id,
-  source_run_id, summary_json, created_at.
-- `session_findings` — id, session_id, source_run_id, category, severity,
-  confidence, kind, title, evidence_json, interpretation, status, created_at.
-- `session_messages` — id, session_id, role, content, referenced_run_ids,
-  referenced_evidence_ids, tool_activity (migration 010), grounding +
-  proposed_actions (migration 016), created_at.
-- `session_summaries` — session_id, summary_md, known_facts_json,
-  open_questions_json, next_actions_json, findings_json, limitations_json,
-  updated_at.
-- `session_agent_memory` (migration 013) — id, session_id, kind, text,
-  severity, confidence, source_run_id, status, created_at. Agent-authored
-  working memory (facts / findings / open questions) fed back into later turns.
-- `session_datasets` (migration 014) — id, session_id, dataset_type,
-  source_filename, stored_path, duckdb_path, table_name, row_count,
-  detected_format, status, created_at. A file the user attaches in the
-  conversation, stored against the SESSION (not a run) so the agent analyzes it
-  inline via `analyze_uploaded_file`.
+The latest assistant-side `proposed_actions` is also used by the `/agent-tasks` projection to recover current durable Needs decision state after reload/restart.
 
-## Error triage (migration 009)
+### `session_runs`
 
-- `error_triage_cases` — id, session_id, provider_id, bucket, run_id,
-  input_kind, raw_input_redacted, parsed_json, summary, planner_mode (retained
-  but no longer written — triage stopped stamping it), status,
-  created_at, updated_at.
-- `error_triage_findings` — id, case_id, category, severity, confidence, title,
-  evidence_json, interpretation, next_checks_json, source_refs_json, created_at.
+Links deterministic/auditable executions to the owning Task/session.
 
-## App settings (migration 012)
+### `session_evidence_refs`
 
-- `app_settings` — key, value, updated_at. A small generic key/value store;
-  never stores secrets (those live only in the encrypted local vault).
+Links a Task to persisted Evidence references and sanitized summaries.
 
-Every `*_json` / `*_sanitized` / content / redacted column stores only
-redaction-passed data: never access/secret keys, session tokens, Authorization
-headers, cookies, presigned URLs, model API keys, raw logs / inventory rows, or
-chain-of-thought.
+### `session_findings`
+
+Stores durable evidence-backed findings including category/severity/confidence/kind/title/evidence/interpretation/status.
+
+### `session_summaries`
+
+One current deterministic summary per Task/session:
+
+- summary Markdown;
+- known facts;
+- open questions;
+- next actions;
+- findings;
+- limitations;
+- update timestamp.
+
+### `session_agent_memory`
+
+Agent-authored working memory replayed into later work:
+
+- `kind` (fact/finding/open question style categories);
+- redaction-passed text;
+- optional severity/confidence/source execution;
+- active/resolved status;
+- timestamp.
+
+### `session_datasets`
+
+Files attached to an Agent Task for local analysis:
+
+- dataset identity/type/source filename;
+- relative stored/DuckDB paths;
+- table name/row count/detected format;
+- status;
+- `truncated` and `ingest_cap` (migration 024);
+- timestamp.
+
+Migration 024 intentionally resets legacy imported rows to `uploaded` so old datasets are re-imported once and acquire truthful truncation metadata.
+
+## Turn metrics
+
+`turn_metrics` stores what can be measured/reported for one Agent turn:
+
+- ids for row/task/turn/message;
+- model;
+- request count;
+- `input_tokens`, `output_tokens`, `total_tokens` when the provider reports them;
+- `cached_input_tokens`, `reasoning_tokens` when reported;
+- `duration_ms` and tool-call count;
+- `budget_tokens` — Storage Agent's per-turn governor ceiling;
+- `repeat_calls_avoided` — identical calls answered from the current work context instead of re-running;
+- timestamp.
+
+**NULL means not reported/unknown, not zero.** The UI must not convert missing provider usage into a measured `0`.
+
+## Account/config discovery records
+
+### `account_snapshots`
+
+One bounded discovery result with provider/run identity, bucket/visibility/processed counts, truncation/list status, sanitized summary, and timestamp.
+
+### `account_snapshot_buckets`
+
+Per-bucket discovery rows containing bucket/region/access status.
+
+### `bucket_config_snapshots`
+
+Per-bucket sanitized configuration summary snapshots.
+
+### `evidence_sources`
+
+Discovered evidence-source metadata/status. Discovery does not itself import the evidence body.
+
+## Managed Evidence Import
+
+### `evidence_imports`
+
+Stores bounded plan/confirmation/execution state:
+
+- provider/account snapshot/source identity;
+- evidence destination bucket/prefix/ref;
+- format/schema/plan source;
+- file/byte/time bounds;
+- planned/selected counts/bytes;
+- state/status and linked analysis run;
+- warnings;
+- created/confirmed timestamps.
+
+### `evidence_import_files`
+
+Stores the bounded file set associated with an import plan and per-file selection/status metadata.
+
+A plan is not execution. Confirmation state is part of the durable safety boundary.
+
+## Error triage
+
+### `error_triage_cases`
+
+Stores redacted pasted input plus sanitized parse/summary state associated with a Task when applicable. The historical `planner_mode` column is retained but no longer represents a live planning architecture.
+
+### `error_triage_findings`
+
+Stores deterministic triage findings, evidence, interpretation, next checks, and source references.
+
+## Datasets and reports
+
+### `datasets`
+
+Deterministic-run-scoped dataset metadata:
+
+- `run_id`, dataset type/name/source filename;
+- relative stored/DuckDB paths/table;
+- row count/status;
+- `truncated` and `ingest_cap` (migration 025);
+- timestamp.
+
+### `reports`
+
+Stores run-associated report metadata/path. Task report endpoints may aggregate the durable Task record beyond a single run.
+
+## App settings
+
+`app_settings` is a small non-secret key/value store. It must never become a secret store.
+
+## Redaction/persistence rule
+
+Any column described as sanitized/redacted/content/JSON may contain only data that has passed the repository's redaction and bounded-context rules as appropriate.
+
+Do not persist:
+
+- plaintext access/secret/session/model credentials;
+- Authorization/cookie/bearer material;
+- signatures/presigned credentials;
+- raw chain-of-thought;
+- unbounded raw analytical rows in task messages/audit/tool context;
+- absolute user paths when a relative app-data path is sufficient.
 
 ## Secret references
 
-A reference is an opaque `keyring://scope/name` string; the secret itself lives
-in the encrypted local vault (`security/keyring_store`), never in SQLite.
+SQLite may store only opaque references such as:
 
-SQLite may store:
+```text
+keyring://scope/name
+```
 
-- api_key_ref
-- access_key_ref
-- secret_key_ref
-- session_token_ref
-
-SQLite must not store:
-
-- plaintext API keys
-- plaintext access keys
-- plaintext secret keys
-- plaintext session tokens
+The actual secret is in the encrypted local vault managed by `security/keyring_store`.
 
 ## DuckDB
 
-DuckDB stores analytical data:
+DuckDB is used for local analytical data such as:
 
-- Access logs
-- Inventory files
-- Sampled object metadata
-- Derived metrics
+- access-log rows;
+- inventory rows;
+- sampled/derived object metadata as implemented by analyzers;
+- derived aggregate tables/metrics.
 
-## Local files
+The model does not receive unrestricted DuckDB access or arbitrary SQL.
 
-Run artifact layout:
+## Local file layout
+
+Exact paths are rooted under the configured application data directory. Representative compatibility layout:
 
 ```text
 data/runs/{run_id}/raw/
 data/runs/{run_id}/analysis.duckdb
 data/runs/{run_id}/report.md
+
+data/sessions/{session_id}/raw/{filename}
+data/sessions/{session_id}/{dataset_id}.duckdb
 ```
 
-Session artifact layout (files a user attaches in the conversation, analyzed
-inline by the agent — stored against the session, not a run):
+`session` in the filesystem path is compatibility naming. It stores Agent Task attachments.
 
-```text
-data/sessions/{session_id}/raw/{filename}      # the uploaded file
-data/sessions/{session_id}/{dataset_id}.duckdb # per-dataset analysis engine
-```
-
-Paths recorded in SQLite (`stored_path`, `duckdb_path`, `report_path`) are stored
-relative to the data dir (see `config.rel_path`) so absolute paths — which may
-contain a username — never land in `tool_calls` / `audit_logs`.
+Paths persisted in SQLite should remain relative to the application data directory so usernames/home-directory details do not leak into logs, tool records, or reports.

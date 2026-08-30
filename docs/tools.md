@@ -1,431 +1,354 @@
-# Tools
+# Agent tools and capability contract
 
-Agent-accessible tools must be typed, explicit, and whitelisted.
+> **Storage Agent v0.93.0.** Agent-accessible capabilities are explicit, typed, whitelisted, bounded, sanitized, and read-only unless a separately documented confirmation-gated data-movement workflow says otherwise.
 
-Do not expose:
+This document describes capability classes available to the one model-driven Agent runtime plus deterministic compute it can invoke. It is not a promise that every internal S3 helper is a public Agent tool or HTTP route.
 
-- Generic shell
-- Raw subprocess
-- Raw boto3 client
-- Unrestricted filesystem access
-- Destructive S3 APIs
+## Invariants
 
-## Diagnostic tools
+Never expose to the Agent:
 
-### test_credentials
+- a generic shell or arbitrary command execution;
+- raw subprocess execution;
+- a raw boto3/botocore client;
+- unrestricted filesystem access;
+- arbitrary SQL;
+- destructive or mutating S3 APIs;
+- unbounded object-body download;
+- plaintext cloud/model credentials.
 
-Purpose:
+Every tool must enforce the relevant provider bucket/prefix scope server-side and must sanitize data before it is persisted or returned into model context.
 
-- Validate that a provider can be used.
+## Capability groups
 
-### list_buckets
+### Provider discovery
 
-Purpose:
+#### `list_providers`
 
-- Enumerate the buckets the credentials can see (read-only ListBuckets). Never
-  lists objects or touches object bodies.
+Returns configured cloud-provider identities and safe metadata so the Agent can select a provider. It never returns credential values.
 
-### head_bucket
+## S3-compatible diagnostics and object inspection
 
-Purpose:
+### `test_credentials`
 
-- Check bucket existence and access.
+Validates that a configured provider can be used through bounded read-only checks.
 
-### get_bucket_location
+### `list_buckets`
 
-Purpose:
+Read-only ListBuckets-style enumeration of visible buckets. It does not list object bodies or mutate storage.
 
-- Where the bucket actually lives, in ONE read-only call, next to the configured
-  region and endpoint so the answer is a verdict (`region_mismatch`) rather than
-  a fact to interpret.
+### `head_bucket`
 
-Notes:
+Checks bucket reachability/access.
 
-- Region/endpoint mismatch is the most common S3-compatible misconfiguration.
-  Before v0.52.0 diagnosing it meant `get_bucket_config_summary` — 15+ API calls
-  — because no cheap probe existed.
-- An empty `LocationConstraint` is `us-east-1` **on AWS**; on a custom endpoint
-  it means the provider does not partition by region and is reported as unknown
-  rather than invented.
-- `region_mismatch` is `null` when either side is unknown — an unset region on a
-  custom endpoint is normal, not a fault.
-- A 301 on the way in still answers the question: the real region comes from
-  `x-amz-bucket-region`, which is reliable where the message prose is not.
-- `provider_unsupported` on a gateway without the API (rule 18).
+### `get_bucket_location`
 
-### list_objects
+Determines the bucket's real region/location where supported and compares it with configured region/endpoint context.
 
-(The registered agent tool is `list_objects`; the internal S3 helper it calls is
-`s3.list_objects_v2`. The `list_objects_v2` name is only that S3-layer function
-and the `/tools/list-objects-v2` HTTP endpoint, not an agent tool.)
+Important semantics:
 
-Purpose:
+- AWS empty `LocationConstraint` maps to `us-east-1` only in the AWS case;
+- custom endpoints without region partitioning may legitimately produce unknown rather than a fabricated mismatch;
+- `x-amz-bucket-region` may provide the useful answer on redirects;
+- unsupported provider capability is represented as `provider_unsupported`.
 
-- List one page of object keys (read-only ListObjectsV2). Supports a
-  continuation token and recursive (delimiter-free) listing so the agent can
-  page through a large bucket; paging is always explicit, never an automatic
-  full scan.
+### `list_objects`
 
-Safety:
+The Agent-facing bounded ListObjectsV2 capability. The internal helper/HTTP compatibility route may use the name `list_objects_v2`.
 
-- `max_keys` is NOT required — the agent-tool signature defaults it to **200**
-  (`session_tools.py`; the guardrails `AGENT_DEFAULT_LIST_KEYS = 100` fallback
-  is unreachable because the signature default always supplies a value). An
-  explicit larger request is honored but clamped to `AGENT_MAX_LIST_KEYS` = 1000
-  (which matches the S3 layer's own `MAX_LIST_KEYS` hard cap), so a deliberate
-  wider sample works while a full scan can't be requested. Bounds, not gates —
-  there is no approval path.
-- Must sanitize sample keys and bound the keys surfaced to the model per call.
-  The clamp is reported (`max_keys_requested` / `max_keys_applied`) and the
-  in-context echo cap sets `keys_truncated_in_context` — never a silent cap.
-- `objects` carries per-key `{size, storage_class, last_modified}` for the first
-  100 entries, so size/storage-class distribution is samplable from one listing
-  (no N× head_object).
-- Never returns object bodies.
+Safety/behavior:
 
-### head_object
+- explicit page, never automatic unbounded recursive scan;
+- bounded `max_keys`, clamped by hard runtime limits;
+- continuation-token paging is explicit;
+- returned key/object samples are bounded and sanitized;
+- object bodies are not returned;
+- size/storage-class/mtime metadata may be included for bounded sample entries.
 
-Purpose:
+### `head_object`
 
-- Inspect one object's metadata — size/ETag/mtime/storage class plus the
-  diagnostic headers the same response already carries: `replication_status`,
-  `restore` (GLACIER restore progress/expiry), `archive_status`, `parts_count`,
-  `lifecycle_expiration`, `version_id`, `content_type`/`content_encoding`/
-  `cache_control`, `website_redirect_location`. Accepts `version_id` to HEAD a
-  specific version (compare current vs noncurrent).
+Reads one object's metadata without downloading the body. May include size, ETag, timestamps, storage class, restore/archive state, parts/version/content/cache metadata, and other safe headers supported by the provider.
 
-Safety:
+### `get_object_attributes`
 
-- Must not download object body. Restore/expiration strings are redacted.
+Reads one object's supported attribute summary such as checksum/parts/storage class/size. Provider gaps are normal `provider_unsupported` outcomes.
 
-### test_range_get
+### `get_object_lock_status`
 
-Purpose:
+Reads retention/legal-hold state for one object/version.
 
-- Test range request behavior.
+A hard lookup error must not be rendered as “no lock”; unknown/error is distinct from a successful empty lock state.
 
-Safety:
+### `get_object_acl`
 
-- Must limit requested bytes. The hard cap on a single range read is the S3
-  layer's `MAX_RANGE_BYTES` (4 MiB) in `s3/tools.py` — a request beyond that is
-  refused.
-- Budgeted per turn: at most 12 calls (`_MAX_RANGE_GETS` in `session_tools.py`),
-  after which the tool asks the agent to work with what it has.
-- Must not download a full object. There is no full-object download path.
+Reads one object's ACL with identity reduction. Public grants can be represented, but owner/canonical ids/emails are not exposed to the model.
 
-### preview_object
+### `get_object_tagging`
 
-Purpose:
+Reads one object's tag set, bounded and redaction-passed.
 
-- Read a bounded, read-only, sanitized preview of one object's content (a
-  manifest, small config, or log/data sample) so the agent can answer "what's
-  inside this object". Gzip objects (`.gz`) are decompressed within the same byte
-  bound; `.parquet` objects return a STRUCTURE preview (schema + row counts from
-  the footer via one bounded suffix-range GET — never the object body). CSV/TSV
-  and JSON/JSONL text previews additionally carry a `structure` summary (columns
-  or top-level keys) read from the SAME preview bytes — no extra fetch, the raw
-  text is still returned. Other binary/oversized objects are reported, not decoded.
+### `list_object_versions`
 
-Safety:
+Reads one bounded page of object versions/delete markers with bounded sample detail. No body reads.
 
-- Single named object; hard cap 1 MiB per call (bounded Range GET); never persisted.
-- Binary or oversized objects are reported, not decoded; output is redaction-passed.
-- Budgeted per turn (16 objects / 24 MiB) so it can't be looped into a bulk
-  download. No full-object download, no bulk/recursive body reads.
+### `list_multipart_uploads`
 
-### list_object_versions
+Reads bounded in-progress multipart-upload metadata. There is no AbortMultipartUpload mutation tool.
 
-Purpose:
+### `list_upload_parts`
 
-- Surface the actual version / delete-marker pileup on a versioned bucket (the
-  real storage/cost driver that config review can't see).
+Reads bounded part metadata for one in-progress upload. No abort/mutation.
 
-Safety:
+### `test_range_get`
 
-- Read-only ListObjectVersions; one bounded page (markers for paging). No bodies.
-- At most 20 sample keys echoed back; `sample_versions` additionally carries
-  bounded per-entry detail (`version_id`, `is_latest`, `is_delete_marker`, size,
-  storage class) so the agent can point at WHICH version to inspect.
+Performs a bounded Range GET diagnostic. A single call and cumulative turn usage are capped so this cannot become a full-object or bulk downloader.
 
-### list_multipart_uploads
+### `test_conditional_get`
 
-Purpose:
+Uses read-only conditional metadata behavior (for example ETag/If-None-Match semantics) without retrieving an object body.
 
-- Surface in-progress / abandoned multipart uploads (a silent cost leak whose
-  parts are billed but invisible in a normal object listing).
+### `preview_object`
 
-Safety:
+Reads a bounded, sanitized preview of one named object when safe and useful.
 
-- Read-only ListMultipartUploads; listing only. Aborting is a mutation and is
-  NOT available — propose a lifecycle rule instead. At most 20 sample keys.
+Current safety contract:
 
-### list_upload_parts
+- hard per-call byte cap;
+- cumulative per-turn preview budget;
+- never persisted as an unrestricted body dump;
+- binary/oversized unsupported content is reported rather than decoded;
+- gzip handling stays inside the bounded preview contract;
+- Parquet preview is structure-oriented through bounded metadata/footer access rather than full-object download;
+- CSV/TSV/JSON-style previews can expose bounded structure summaries from the same preview bytes.
 
-Purpose:
+### `measure_request_latency`
 
-- List the PARTS of one in-progress multipart upload (read-only ListParts):
-  part count, total bytes accrued, first/last part times — the concrete
-  "this abandoned upload holds N GB since <date>" cost evidence.
+Runs a small bounded set of read-only HEAD-style probes and returns measured latency statistics. It is a diagnostic probe, not a load generator.
 
-Safety:
+### `diagnose_presigned_url`
 
-- Read-only; listing only (no abort — propose an
-  AbortIncompleteMultipartUpload lifecycle rule). ≤20 sample parts.
+Purely parses a user-supplied presigned URL to diagnose expiry/scope/signature/addressing properties.
 
-### test_conditional_get
+It makes no network request and drops/redacts signature/access-key/session-token material before model context.
 
-Purpose:
+### `test_addressing_style`
 
-- Prove whether a cached ETag still matches the stored object (HeadObject with
-  If-None-Match): 304 → unchanged (stale reads are a cache/CDN problem), 200 →
-  changed + the current ETag. Doubles as a conditional-header compat probe.
+Compares path-style and virtual-hosted-style behavior through bounded read-only probes.
 
-Safety:
+### `inspect_endpoint_tls`
 
-- Read-only HeadObject; no body on either outcome.
+Inspects endpoint TLS behavior/certificate properties needed for storage diagnosis. It does not provide a generic network scanner.
 
-### diagnose_presigned_url
+## Bucket/account configuration capabilities
 
-Purpose:
+### `get_bucket_config_summary`
 
-- Diagnose a user-pasted presigned URL by PURE PARSING — signature version,
-  computed expired/valid (X-Amz-Date + X-Amz-Expires, or the V2 epoch), the
-  credential SCOPE (date/region/service), signed headers, addressing style,
-  and a `problems` list (expired / clock skew / >7d V4 expiry / legacy SigV2).
+Returns a sanitized bounded summary across supported read-only bucket configuration APIs, including capability/access status. It can surface region mismatch and configuration posture without sending raw provider responses to the model.
 
-Safety:
+### `get_bucket_config_detail`
 
-- NO network request is made. The signature, access-key id, and any security
-  token are dropped entirely — credential material never reaches the model
-  (rule 15). Host and key are redaction-passed.
+Reads sanitized detail for a single supported configuration aspect, such as:
 
-### measure_request_latency
+- replication;
+- notification;
+- CORS;
+- logging;
+- lifecycle;
+- encryption;
+- public access block;
+- policy / policy public-status;
+- ownership controls;
+- bucket object lock;
+- ACL;
+- inventory;
+- website;
+- intelligent tiering;
+- acceleration;
+- requester pays;
+- metrics;
+- analytics.
 
-Purpose:
+Rules/identities/ARN-like values are reduced/redacted/bounded. Unsupported APIs return `provider_unsupported` rather than becoming a false negative.
 
-- Measure live request latency (min/p50/p95/max/mean ms) with a bounded set of
-  head round-trips, so a "slow" complaint becomes numbers.
+### Review helpers
 
-Safety:
+Current deterministic/read-only review capability includes:
 
-- HeadBucket, or HeadObject when a key is given — never an object body.
-- Per-call sample count hard-capped (≤10); probe runs bounded per turn. A
-  diagnostic probe, not a load test.
+- `review_bucket_security`
+- `review_bucket_lifecycle`
+- `review_bucket_observability`
+- `review_bucket_cost_optimization`
+- `review_bucket_performance_profile`
 
-### get_object_lock_status
+### `survey_account`
 
-Purpose:
+Runs bounded deterministic account discovery/config snapshot work for the current Agent Task. It is real execution, not a second Agent.
 
-- Read one object's Object-Lock state — retention mode + retain-until date and
-  legal-hold status — to answer "why can't I delete/overwrite this object?".
+The result is persisted and sanitized; raw object rows/bodies are not sent to the model.
 
-Safety:
+### `review_bucket_config`
 
-- Read-only GetObjectRetention + GetObjectLegalHold; single object, no body.
-- A missing lock, or a provider that doesn't implement object-lock, is reported
-  as a normal `none` / `provider_unsupported` state, not a hard failure.
-- **`none` is only meaningful when `success` is true.** A hard error — a
-  mistyped key, wrong bucket, bad version id — sets `success: false` and reports
-  the statuses as `unknown`. The optimistic default used to survive that path,
-  so "object not found" read as "no retention, no legal hold", i.e. *cleanly
-  deletable*, which is the exact opposite of the truth for the question this
-  tool answers.
+Runs the deterministic bucket-review engine as Agent-invoked Execution and returns bounded sanitized result context.
 
-### get_object_acl
+### `query_account_profile`
 
-Purpose:
+Answers account-wide posture questions from the latest persisted sanitized survey without re-scanning S3. Supported filters are hard-whitelisted.
 
-- Read ONE object's ACL — who is granted what — to answer "is THIS object
-  public?" / "who can read it?" at the object level (an object can be public even
-  under a locked-down bucket, which bucket-level review can't see).
+It must report survey truncation/coverage so a partial account sample is not presented as complete posture.
 
-Safety:
+### `compare_to_last_survey`
 
-- Read-only GetObjectAcl; single object, no body. Grantees are reduced to a KIND
-  (`public-all-users` / `authenticated-users` / `canonical-user` /
-  `log-delivery` / `email-user`) — no owner id, canonical id, or email is ever
-  surfaced. A public grant (AllUsers/AuthenticatedUsers) sets `is_public`. A
-  provider without object-ACL support reports `provider_unsupported`.
+Computes deterministic differences between the two most recent compatible persisted account surveys. It performs no new S3 call and no model-side diff over raw data.
 
-### get_object_tagging
+### `read_run_result`
 
-Purpose:
+Reads the result of a deterministic execution already associated with the Agent's work. A bounded wait can allow a still-running compatible execution to complete in the same Agent turn.
 
-- Read ONE object's tag set (tags drive lifecycle, cost attribution, and
-  tag-scoped access policies), to explain why such a rule does or doesn't apply.
+## Local uploaded evidence analysis
 
-Safety:
+Files attached to an Agent Task are local evidence, not cloud data movement.
 
-- Read-only GetObjectTagging; single object, no body. Both tag keys and values
-  are redacted (user-controlled). Bounded to 20 tags; an untagged object is a
-  normal empty result; a provider without object tagging → `provider_unsupported`.
+### `list_uploaded_files`
 
-### get_object_attributes
+Lists safe metadata for files attached to the current Task.
 
-Purpose:
+### `analyze_uploaded_file`
 
-- Read ONE object's attributes — checksum algorithm, multipart part count,
-  storage class, size — in a single call, for "how was this large object
-  assembled?" / checksum / storage-class checks.
+Runs the deterministic local analysis path over a supported Task attachment and returns bounded sanitized metrics/findings to the Agent.
 
-Safety:
+### `aggregate_uploaded_file`
 
-- Read-only GetObjectAttributes; single object, no body. Not universally
-  implemented by S3-compatible providers → `provider_unsupported` on gap (fall
-  back to `head_object`).
+Allows one constrained aggregation when fixed metrics do not answer the question.
 
-### test_addressing_style
+Safety contract:
 
-(S3 layer: `test_path_style_vs_virtual_host`)
+- metric/group/filter choices come from hard whitelists;
+- filter values are bound parameters;
+- the Agent never supplies SQL;
+- only grouped aggregate results return to the model;
+- group count/result size is bounded;
+- SQL + parameters are audit-recorded;
+- truncation is explicit.
 
-Purpose:
+## Deterministic inventory/access-log engines
 
-- Compare path-style and virtual-hosted-style behavior.
+Underlying deterministic capability includes:
 
-### inspect_endpoint_tls
+### Access logs
 
-(S3 layer: `inspect_tls`)
+- `detect_log_format`
+- `import_access_logs`
+- `analyze_access_logs`
 
-Purpose:
+### Inventory
 
-- Inspect endpoint TLS configuration.
+- `import_inventory_file`
+- `analyze_inventory`
 
-## Access log analysis tools
+These engines may be invoked through Task attachments, deterministic executions, or managed Evidence Import. Raw rows stay in local analysis storage; the model receives only bounded sanitized output.
 
-- detect_log_format
-- import_access_logs
-- analyze_access_logs
+## Managed cloud Evidence Import
 
-## Inventory analysis tools
+Cloud evidence movement is **not** an ordinary autonomous Tool call.
 
-- import_inventory_file
-- analyze_inventory
+The workflow remains:
 
-## Bucket config review tools
+> **plan → Decision required → confirmed execution**
 
-- get_bucket_config_summary — status map over ~21 config reads, including the
-  authoritative `policy_status` (is-public), `ownership` (Object Ownership /
-  ACLs-disabled), bucket-level `object_lock`, `website`, `intelligent_tiering`,
-  `accelerate`, `request_payment`, `metrics`, and `analytics`. Also exposes the
-  bucket's REAL region (`bucket_region` from LocationConstraint) plus a
-  `region_mismatch` flag against the provider's configured region — the #1
-  SignatureDoesNotMatch root cause, now checkable. An all-reads-errored summary
-  reports `overall_status='inconclusive'`, never "reviewed".
-- get_bucket_config_detail — read-only, sanitized RULE detail for one aspect that
-  the review tools return only a status/boolean for. Aspects (19): `replication`,
-  `notification`, `cors`, `logging`, `lifecycle` (transitions/expiration/cleanup),
-  `encryption` (SSE algorithm + reduced KMS key), `public_access_block` (the four
-  booleans), `policy` (per-statement effect/actions/`is_public` — principal
-  reduced to `*`/`specific`, never the raw ARN), `policy_status` (AWS's `IsPublic`
-  verdict for the bucket POLICY — policy only, ACL grants are not evaluated;
-  combine with `acl`, or use review_bucket_security which checks both), `ownership` (Object Ownership; `BucketOwnerEnforced` = ACLs
-  disabled), `object_lock` (bucket-level WORM: enabled + default retention mode/
-  days/years), `acl` (bucket ACL grants → grantee KIND + permission, no owner id/
-  email), `inventory` (schedule/destination/format/fields), `website` (index/error
-  docs, redirect host, routing-rule count), `intelligent_tiering` (status/filter/
-  tiering days), `accelerate` (Transfer Acceleration status), `request_payment`
-  (Requester Pays), `metrics` (request-metrics configs), `analytics`
-  (storage-class-analysis + reduced export destination).
-  ARNs reduced (account id stripped), values redacted, ≤20 rules; a provider
-  lacking the API returns `status='provider_unsupported'`. Fills the config
-  skills' decision trees so the agent reads the config instead of asking for it.
-- review_bucket_security
-- review_bucket_lifecycle
-- review_bucket_observability
-- review_bucket_cost_optimization
-- review_bucket_performance_profile
-
-## Report tools
-
-- generate_markdown_report
-
-## Session agent tools
-
-The conversational session agent uses the read-only diagnostic + config-review
-tools above (choosing provider/bucket itself), plus:
-
-- **list_providers** — enumerate the configured cloud providers (ids + safe
-  metadata, no secrets) so the agent can pick one before any bucket operation.
-- **list_uploaded_files** — list the data files the user attached to this
-  session (from `session_datasets`) so the agent can discover and then
-  `analyze_uploaded_file` them. Local, read-only, always available.
-- **aggregate_uploaded_file** — one CONSTRAINED aggregation over an uploaded file
-  when the fixed `analyze_uploaded_file` metrics don't answer the question (e.g.
-  "top masked IPs by 4xx count", "total bytes per storage class"). The agent
-  chooses a metric + group-by dimension + equality/status-range filters **from a
-  hard whitelist** (`analysis/aggregate.py`); it can never supply SQL, and only
-  grouped aggregates (≤50 groups, redacted labels) come back — never raw rows.
-  All filter VALUES are bound as DuckDB parameters; the real SQL + params are
-  recorded in the audit log (rule 17). Over-limit results report `truncated`.
-- **read_skill** — load a StorageOps skill's method on demand (progressive
-  disclosure); guidance text only, no skill tools/scripts are executed.
-- **Working memory** — `note_fact` / `record_finding` / `note_open_question`
-  persist sanitized, audited items that are fed back into later turns, plus
-  update/resolve lifecycle tools so stale memory can be corrected or closed out.
-- **Inline read-only runs** — the agent executes the deterministic
-  `survey_account(provider_id, max_buckets?)` / `review_bucket_config` engines
-  itself (real, audited, read-only, wall-clock-bounded) and
-  `analyze_uploaded_file` for an attached
-  file; it picks up a backgrounded run with `read_run_result(run_id,
-  wait_seconds?)` — `wait_seconds` (up to 60) finishes it inside the SAME turn
-  instead of handing the user a "check back later". There is no
-  autonomy toggle. Nothing data-moving or mutating is auto-run — cloud evidence
-  import / large scans stay confirmation-gated proposals.
-- **compare_to_last_survey** — "what changed since last time?": a deterministic
-  diff of a provider's two most recent account surveys (buckets added/removed,
-  per-bucket config-aspect changes, evidence-source changes) computed from
-  ALREADY-PERSISTED, sanitized snapshot data — no new S3 call, no LLM, no raw
-  rows. Needs two completed surveys to compare.
-- **query_account_profile** — account-WIDE posture from the latest persisted
-  survey: "which of my N buckets are public / have no encryption / no
-  public-access-block / no lifecycle / logging off / no versioning / access
-  issues?" Returns the per-bucket config-flag matrix (region + logging/
-  encryption/lifecycle/replication/policy/public_access_block/tagging/inventory
-  status + `policy_is_public`/`object_ownership`) filtered by a whitelist
-  (`all` | `public_buckets` (publicly exposed — AWS's policy verdict and/or ACL
-  grants; the ACL read is skipped when ACLs are disabled) | `missing_public_access_block` | `missing_encryption` |
-  `missing_lifecycle` | `missing_logging` | `no_versioning` | `access_issues`).
-  Reads ALREADY-PERSISTED, sanitized snapshot flags — no new S3 call, no LLM,
-  statuses only (never object keys/bodies). The survey caps at **100 buckets by
-  default** (hard cap 500); pass `max_buckets` for a larger account and always
-  report the result's `truncated` flag rather than answering account-wide
-  posture from a silently trimmed set. Needs one completed `survey_account`
-  (pre-v0.29.0 surveys lack the public-posture flags — re-survey to fill them).
-  The survey diff (`compare_to_last_survey`) also compares these flags, so a
-  bucket that BECAME public since the last survey is reported as a change.
-
-These tools return only the deterministic engine's sanitized summary + counts
-(no raw rows, no full key lists, no object bodies) for the agent to narrate.
-
-On top of the per-tool bounds there is a **per-turn cumulative tool-output
-budget**: once a turn's tool results have consumed it, further tool calls return
-a notice asking the agent to synthesize from what it already has instead of more
-data. The budget is **model-elastic** (`agent_runtime/model_budget.py`) — derived
-from the active model's context window (≈25% of it), with the historical ~200k
-chars as a **hard floor**. A 128k/200k-context model is unchanged; a 1M-context
-model gets a proportionally deeper turn. The window comes from a built-in
-model→window table, but a model provider can carry an explicit `context_window`
-(tokens) that overrides it — so a newly-shipped large-context model isn't
-throttled to the default. The table is deliberately conservative where a
-family's real window is gated: e.g. Claude models map to 200k (the GA default)
-even though some expose a 1M window behind a beta/tier opt-in — if your account
-has the larger window enabled, declare it via `context_window` on the model
-provider rather than expecting the table to assume it. The same window also scales the thread-replay caps
-(how many prior messages / chars the agent re-sees), floored at the historical
-values and capped. The completion (`max_tokens`) budget is additionally clamped
-to each model's real provider max-output, so we never send a value the provider
-rejects. This scales only sanitized, bounded tool output and already-persisted
-context — it never relaxes any security-floor cap (preview/range byte caps, list
-caps, sample caps, ingest caps stay fixed).
-
-## Forbidden tools
-
-- generic_shell
-- run_command
-- raw_subprocess
-- delete_bucket
-- put_bucket_policy
-- put_bucket_acl
-- put_lifecycle
-- delete_objects
-- recursive_delete
+It is bounded by file/byte/time/source constraints and re-validates limits during download. The Agent can propose/prepare the operation, but cannot silently confirm it.
+
+See `security.md` and `api.md`.
+
+## Task memory tools
+
+The Agent can maintain durable sanitized working memory through tools equivalent to:
+
+- note a fact;
+- record a finding;
+- note an open question;
+- update/correct a memory item;
+- resolve/close a memory item.
+
+These records are replayed into later Task work according to runtime bounds and are auditable. They are not hidden chain-of-thought.
+
+## Skills
+
+### `read_skill`
+
+Loads first-party StorageOps guidance on demand. Skill text is trusted first-party instruction by design; the tool does not execute arbitrary scripts from the skill.
+
+## Report capability
+
+### `generate_markdown_report`
+
+Produces a durable report from sanitized task/execution/evidence state under the existing report-generation contract. Reports do not contain secret values, raw chain-of-thought, or unrestricted raw rows.
+
+## Tool-result trust boundary
+
+Storage/object/config/file content is untrusted external data, including text that may look like instructions.
+
+The Agent runtime must keep external Tool data inside the untrusted-data envelope implemented in `agent_runtime/session_agent.py` (historical module name) and defang nested marker text so untrusted data cannot escape the boundary.
+
+First-party skill guidance and runtime control/status notes have separate trust semantics.
+
+## Per-turn budgets
+
+Per-tool limits are supplemented by cumulative turn budgets.
+
+Current model budgeting uses the active model's context window, with explicit provider overrides available for context window and max output where needed. Larger model windows may permit deeper bounded sanitized context, but **security-floor limits do not scale up** merely because the model context is larger.
+
+Do not relax:
+
+- object preview/range byte caps;
+- list/sample caps;
+- ingest caps;
+- Evidence Import file/byte bounds;
+- redaction rules;
+- confirmation boundaries.
+
+Runtime governor metrics such as `budget_tokens` and `repeat_calls_avoided` can be persisted in turn metrics and shown as Execution detail when available.
+
+## Provider capability semantics
+
+S3-compatible providers may legitimately lack APIs supported by AWS S3.
+
+Use explicit outcomes such as:
+
+- success;
+- access denied;
+- region mismatch;
+- provider unsupported;
+- unknown/error.
+
+Do not convert `provider_unsupported` into “feature disabled” or “configuration absent” unless the code has actually established that fact.
+
+## Forbidden capability examples
+
+The shipped Agent must not gain equivalents of:
+
+```text
+generic_shell
+run_command
+raw_subprocess
+delete_bucket
+put_bucket_policy
+put_bucket_acl
+put_lifecycle
+delete_objects
+recursive_delete
+mass_object_mutation
+```
+
+Likewise, do not expose a generic raw AWS/S3 method dispatcher as a shortcut around the typed Tool layer.
+
+## Maintenance rule
+
+When a Tool or safety bound changes:
+
+1. update the registered runtime Tool/schema/tests;
+2. update this document;
+3. update `security.md` when the trust/boundary changes;
+4. update `api.md` only if the HTTP contract changes;
+5. update `product.md`/`architecture.md` only if the product semantics or ownership change.
+
+A documentation example does not make an unimplemented capability real.
