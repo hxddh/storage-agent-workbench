@@ -1,306 +1,320 @@
-# API
+# Sidecar API
 
-The sidecar binds localhost on a port chosen at launch. In the packaged app the
-Tauri shell starts it on a free port and exposes the URL to the frontend; in dev
-it defaults to `http://127.0.0.1:8765` (override with `VITE_SIDECAR_URL`). Paths
-below are relative to that base.
+> **Storage Agent v0.93.0 API reference.**
+>
+> The public product model is Agent Task / Direction / Execution / Decision / Work Result / Artifact. Many HTTP paths intentionally retain historical `session`/`run` compatibility names. Do not mirror those path names into new product information architecture.
 
-This lists the real routers under `sidecar/app/routers/`. Method + path + a
-one-line purpose; request/response schemas live in `sidecar/app/models/schemas.py`.
+The Python Sidecar binds to localhost on a port selected by the Tauri launcher. In development it defaults to `http://127.0.0.1:8765` unless `VITE_SIDECAR_URL` overrides the frontend target.
 
-## Authentication
+Request/response schema definitions live in `sidecar/app/models/schemas.py`; routers live under `sidecar/app/routers/`.
 
-The sidecar enforces a shared-secret gate when the launcher sets
-`STORAGE_AGENT_AUTH_TOKEN` (the Tauri shell generates a random per-launch token,
-spawns the sidecar with it, and exposes it to the frontend via the
-`get_sidecar_token` command). When set, every request must carry the token or it
-gets `401 {"detail": "unauthorized"}`:
+## Local authorization
 
-- `X-Sidecar-Token: <token>` header (normal requests), or
-- `?token=<token>` query param (for the header-less SSE `EventSource`).
+When `STORAGE_AGENT_AUTH_TOKEN` is set by the packaged Tauri launcher, every non-exempt request must present the per-launch shared secret:
 
-Exempt: `GET /health` (liveness) and `OPTIONS` (CORS preflight). Comparison is
-constant-time, and the packaged sidecar disables uvicorn access logging so the
-`?token=` param never lands in logs. When the variable is unset (dev runs, the
-test suite) auth is open.
+- normal HTTP: `X-Sidecar-Token: <token>`;
+- header-less `EventSource`: `?token=<token>`.
+
+Exempt:
+
+- `GET /health`;
+- CORS preflight `OPTIONS`.
+
+The comparison is constant-time. Packaged uvicorn access logging is disabled so an SSE query token is not written to access logs. In plain development/tests, when the environment variable is absent, this auth layer is open.
+
+Binding to `127.0.0.1` is network isolation, not local-process authorization; the token is the packaged local-process gate.
+
+## Product-level Agent Task projection
+
+### `GET /agent-tasks`
+
+Returns the global task-navigation projection.
+
+Query:
+
+- optional `q` for task search.
+
+The endpoint adapts durable `sessions` rows into product-level Task summaries and adds `requires_decision`, derived from the latest assistant Work Result's current confirmation-gated proposals.
+
+Important semantics:
+
+- the lookup is batched for the task list;
+- only the latest assistant result determines current durable Decision state;
+- historical confirmation proposals remain history, not current blockers;
+- live browser execution can outrank an older durable Decision while work is actively running.
+
+This endpoint exists specifically so global Task state remains truthful after reload/restart without making the browser reconstruct durable Decision state from every full Task document.
 
 ## Health
 
-### GET /health
-
-Liveness probe.
-
-```json
-{
-  "status": "ok",
-  "service": "storage-agent-sidecar"
-}
+```text
+GET /health
 ```
+
+Returns Sidecar liveness/service identity. It is intentionally auth-exempt.
 
 ## Model providers
 
-Router prefix `/model-providers` (`routers/model_providers.py`).
+Prefix: `/model-providers`
 
 ```text
-GET    /model-providers               # list configured model providers (each has `active`)
-POST   /model-providers               # create a model provider (api key stored as a keyring:// ref)
-PUT    /model-providers/{provider_id} # update a model provider
-DELETE /model-providers/{provider_id} # delete a model provider (clears the active selection if it pointed here)
-POST   /model-providers/{provider_id}/activate  # select the provider the agent uses (else oldest is the default)
-POST   /model-providers/{provider_id}/test      # validate the provider (a bounded model call)
+GET    /model-providers
+POST   /model-providers
+PUT    /model-providers/{provider_id}
+DELETE /model-providers/{provider_id}
+POST   /model-providers/{provider_id}/activate
+POST   /model-providers/{provider_id}/test
 ```
+
+Secret API keys are accepted on create/update and written to the encrypted local vault. Responses expose metadata/reference/presence state, not plaintext secrets.
+
+Model provider configuration can include optional operator-declared context-window and maximum-output-token limits supported by current persistence/runtime code.
 
 ## Cloud providers
 
-Router prefix `/cloud-providers` (`routers/cloud_providers.py`).
+Prefix: `/cloud-providers`
 
 ```text
-GET    /cloud-providers               # list configured cloud (S3-compatible) providers
-POST   /cloud-providers               # create a cloud provider (access/secret/token stored as keyring:// refs)
-PUT    /cloud-providers/{provider_id} # update a cloud provider
-DELETE /cloud-providers/{provider_id} # delete a cloud provider
-POST   /cloud-providers/{provider_id}/test  # read-only credential/connectivity check
+GET    /cloud-providers
+POST   /cloud-providers
+PUT    /cloud-providers/{provider_id}
+DELETE /cloud-providers/{provider_id}
+POST   /cloud-providers/{provider_id}/test
 ```
 
-## Runs
+Cloud credentials are vault-backed. Provider bucket/prefix scope is enforced server-side in Agent tools, direct tool endpoints, and deterministic executors.
 
-Router prefix `/runs` (`routers/runs.py`).
+## Durable Agent Task compatibility API
+
+Prefix: `/sessions`
+
+These paths are the durable task/message/runtime API retained for compatibility. In product code, adapt them to Agent Task semantics.
+
+### Task lifecycle
 
 ```text
-GET  /runs                        # list run summaries
-POST /runs                        # INTERNAL / testing — create a deterministic run directly (not a user surface)
-GET  /runs/{run_id}               # run detail (status, tool calls, findings, summary)
-GET  /runs/{run_id}/account-profile  # structured account-discovery result (bucket table + evidence sources)
-POST /runs/{run_id}/message       # append a message to a run
-GET  /runs/{run_id}/events        # SSE stream of the run's live events
+POST   /sessions
+GET    /sessions
+GET    /sessions/{session_id}
+PATCH  /sessions/{session_id}
+DELETE /sessions/{session_id}
+POST   /sessions/{session_id}/fork
 ```
 
-`POST /runs` creates a deterministic run directly. Per the `runs` router
-docstring it is **internal / testing only** — the frontend never calls it (the
-conversational agent drives runs via `run_service`, and evidence import creates
-its run server-side). It stays because the deterministic run layer is the
-reproducibility / security floor and the test suite creates runs through it; it
-is not wired into the UI as a "new run" form.
+Current behaviors include create/list/detail, rename/pin/archive, deletion, duplication, and branching from a specific message where supplied.
+
+A branch from `from_message_id` includes content through that point and excludes later work. An unknown branch point is an error, not a silent whole-task duplicate.
+
+### Direction / turn execution
+
+```text
+POST /sessions/{session_id}/messages
+POST /sessions/{session_id}/messages/stream
+POST /sessions/{session_id}/turns/{turn_id}/cancel
+GET  /sessions/{session_id}/turn
+```
+
+- `/messages/stream` is the primary SSE turn path.
+- The blocking `/messages` endpoint is also the streaming fallback/idempotent wait path for an already-running identical `turn_id`.
+- `cancel` backs the product Stop control.
+- `/turn` reports whether a real task/session turn is currently running in this Sidecar process, enabling reload reattachment.
+
+The process-local turn registry does not survive a Sidecar restart; reporting no running turn after restart is therefore the truthful state.
+
+### Durable task document and paging
+
+```text
+GET /sessions/{session_id}/messages
+GET /sessions/{session_id}
+```
+
+Task detail returns a recent tail rather than unbounded history. Earlier durable content is fetched through paged `/messages` using `limit` and an opaque `before` cursor.
+
+Do not remove paging merely because the UI calls the object an Agent Task instead of a session. Long-task scalability is a persistence contract.
+
+### Task summary, memory, findings context
+
+```text
+GET   /sessions/{session_id}/summary
+POST  /sessions/{session_id}/refresh-summary
+PATCH /sessions/{session_id}/memory/{id}
+POST  /sessions/{session_id}/memory/{id}/resolve
+```
+
+Task detail also exposes the durable Agent memory/attachment/context metadata needed by current UI and runtime. Memory edits/resolution are audited and redaction-passed.
+
+### Task Execution links / compatibility runs
+
+```text
+POST /sessions/{session_id}/runs/{run_id}
+GET  /sessions/{session_id}/runs
+```
+
+These link deterministic/auditable executions to a Task. The existence of these endpoints does not make Runs a top-level product destination.
+
+### Task Evidence / Report / action handoff
+
+```text
+GET  /sessions/{session_id}/report
+POST /sessions/{session_id}/actions/prepare
+POST /sessions/{session_id}/datasets/upload
+GET  /sessions/{session_id}/error-triage
+```
+
+- report generation/fetch produces a durable Markdown Artifact;
+- action preparation validates/prefills a proposed next action but does not bypass confirmation or execute hidden work;
+- dataset upload attaches local evidence to the Task for bounded local analysis;
+- error-triage cases can be associated with the Task.
+
+### Task observability / review data
+
+```text
+GET /sessions/{session_id}/activity
+GET /sessions/{session_id}/activity/{call_id}
+GET /sessions/{session_id}/audit
+GET /sessions/{session_id}/overview
+```
+
+- `activity` and `audit` are bounded/paged and return truncation metadata;
+- `activity/{call_id}` returns one sanitized Tool-call row scoped to the Task/session;
+- `overview` provides durable counts and turn-usage/metrics rollups.
+
+Missing provider token usage remains unavailable/NULL, not a fabricated zero.
+
+## Session/Task stream events
+
+`POST /sessions/{id}/messages/stream` emits the real execution stream used by the Agent Task UI.
+
+Event classes include:
+
+- `delta` — streamed Work Result text;
+- `tool` — sanitized Tool activity, including started/completed records where available;
+- `done` — durable completion metadata such as message id, proposed actions, grounding/evidence/skills and runtime metrics as implemented;
+- `error` — sanitized failure;
+- stopped/cancelled completion state where applicable.
+
+Persisted message grounding/proposed actions survive reload and are not only transient SSE state.
+
+Tool activity records may carry stable Tool-call ids, exact success state, and measured duration. Older persisted history can legitimately lack fields added by later versions; clients must treat absence as unknown rather than false/zero.
+
+## Deterministic Execution compatibility API
+
+Prefix: `/runs`
+
+```text
+GET  /runs
+POST /runs
+GET  /runs/{run_id}
+GET  /runs/{run_id}/account-profile
+POST /runs/{run_id}/message
+GET  /runs/{run_id}/events
+```
+
+`POST /runs` is internal/testing compatibility for deterministic execution, not a user-facing “new run” product flow. Agent-driven deterministic compute and Evidence Import may create/link runs server-side.
+
+### Run SSE
+
+`GET /runs/{run_id}/events` streams deterministic execution events such as:
+
+```text
+tool_call_started
+tool_call_finished
+finding
+summary
+report_ready
+error
+```
+
+The deterministic run layer does not contain a second model planner/narrator.
 
 ## Reports
 
-Router (no prefix) `routers/reports.py`.
-
 ```text
-GET /reports/{run_id}             # fetch a generated run report (markdown)
+GET /reports/{run_id}
 ```
 
-## Datasets
+Fetches a run-associated Markdown report. Task-level Report Review may aggregate broader durable Task context through the session/task report endpoint above.
 
-Router (no prefix) `routers/datasets.py`.
-
-```text
-POST /runs/{run_id}/datasets/upload   # attach a data file to a run for deterministic analysis
-GET  /datasets                        # list dataset metadata
-GET  /datasets/{dataset_id}           # dataset metadata detail
-```
-
-Uploads are streamed to disk (never buffered whole in memory) and rejected with
-`413` over an explicit max-size cap — same for the session attachment upload
-below.
-
-## Evidence imports
-
-Router prefix `/evidence-imports` (`routers/evidence_imports.py`). The
-confirmation-gated import of cloud evidence (inventory / access logs) discovered
-by account discovery: plan → confirm → run.
+## Deterministic datasets
 
 ```text
-POST /evidence-imports/plan                 # build a bounded, unconfirmed import plan
-GET  /evidence-imports/{import_id}          # import record (plan + status)
-GET  /evidence-imports/{import_id}/files    # selected/planned files for the import
-POST /evidence-imports/{import_id}/confirm  # confirm the plan (the data-moving gate)
-POST /evidence-imports/{import_id}/run      # execute a confirmed import into a local analysis run
+POST /runs/{run_id}/datasets/upload
+GET  /datasets
+GET  /datasets/{dataset_id}
 ```
 
-## Sessions
+Uploads are streamed to disk and bounded by explicit size limits. Dataset metadata includes persisted truncation/ingest-cap truth in current schema.
 
-Router prefix `/sessions` (`routers/sessions.py`). The thread-first surface.
+## Managed Evidence Import
+
+Prefix: `/evidence-imports`
 
 ```text
-POST   /sessions                            # create an investigation session
-GET    /sessions                            # list session summaries
-GET    /sessions/{session_id}               # session detail
-PATCH  /sessions/{session_id}               # rename / pin / archive
-DELETE /sessions/{session_id}               # delete a session (cascades)
-POST   /sessions/{session_id}/fork          # duplicate a session (thread, memory, datasets)
-                                           #   ?from_message_id=… BRANCHES from that point:
-                                           #   everything through that message, nothing after
-                                           #   (v0.61.0). Unknown id -> 404, never a silent
-                                           #   whole-session fork.
-POST   /sessions/{session_id}/runs/{run_id} # link an existing run to a session
-GET    /sessions/{session_id}/runs          # runs linked to the session
-GET    /sessions/{session_id}/summary       # deterministic session summary
-POST   /sessions/{session_id}/refresh-summary  # rebuild the summary from run artifacts
-GET    /sessions/{session_id}/report        # generate/fetch the session report (markdown)
-POST   /sessions/{session_id}/actions/prepare  # prepare a proposed next action for execution
-GET    /sessions/{session_id}/messages      # thread messages, PAGED (limit + before → total/has_more)
-POST   /sessions/{session_id}/datasets/upload  # attach a data file to the session for agent-native analysis (413 over the size cap)
-POST   /sessions/{session_id}/messages      # send a message (blocking agent turn / streaming fallback)
-POST   /sessions/{session_id}/messages/stream  # send a message (SSE-streamed agent turn)
-POST   /sessions/{session_id}/turns/{turn_id}/cancel  # cancel a streaming turn (Stop button)
-GET    /sessions/{session_id}/activity      # the session's tool calls (sanitized input/output + duration)
-GET    /sessions/{session_id}/audit         # the session's audit trail (rule 17)
-GET    /sessions/{session_id}/overview      # counts, token rollup, and per-turn metrics
-GET    /sessions/{session_id}/turn          # is a turn running right now? (reattach after a reload)
-PATCH  /sessions/{session_id}/memory/{id}   # correct one of the agent's memory items
-POST   /sessions/{session_id}/memory/{id}/resolve  # close a memory item (stops being replayed)
+POST /evidence-imports/plan
+GET  /evidence-imports/{import_id}
+GET  /evidence-imports/{import_id}/files
+POST /evidence-imports/{import_id}/confirm
+POST /evidence-imports/{import_id}/run
 ```
 
-Paging (v0.47.0): `GET /sessions/{id}` returns the **tail** of the thread
-(60 messages) plus `message_total`; `GET /sessions/{id}/messages` takes `limit`
-and `before` (an opaque `seq` cursor from the oldest message the client holds)
-and returns `total` + `has_more`. A long investigation used to re-send its whole
-history on every open and every turn — ~1 MiB of JSON at 300 turns, growing
-without bound. `GET /sessions/{id}/report` is the one caller that reads the
-thread unbounded, because the report covers the entire investigation; it bounds
-the document for reading and states when it truncates.
+This is the durable safety flow for cloud data movement:
 
-Token detail (v0.53.0): `/overview`'s `usage` and each `turn_metrics` row also
-carry `cached_input_tokens` and `reasoning_tokens`, taken straight from the SDK's
-`Usage` details. Both are **null when the endpoint did not report them** — not
-zero. The fixed prompt prefix (instructions + tool schemas, ~5k tokens) is
-re-sent on every step of a multi-step turn, so the cache hit rate is the single
-biggest factor in what a turn costs; a confident `0` would claim a cold cache we
-never measured. A genuine `0` IS stored, because a cold cache is the finding
-worth acting on.
+> **plan → explicit confirmation → execution**
 
-Turn budget (v0.54.0): each `turn_metrics` row also carries `budget_tokens` (the
-per-turn token ceiling that turn ran under) and `repeat_calls_avoided` (identical
-`(tool, args)` calls answered from the conversation instead of re-run). The
-`done` SSE event carries the same two under `metrics`, plus `budget_stopped_on`
-(`"tokens"` / `"chars"`) when a bound is what ended the investigation. These are
-the workbench's **own** governor, not provider measurements — they sit beside
-`usage`, never inside it, and every one of them is omitted rather than zeroed
-when there is nothing to report.
-
-Tool activity (v0.55.0): every record on the `tool` SSE event and on a persisted
-message's `tool_activity` carries `id` — the SAME id as its `tool_calls` row, so
-a thread row resolves to its real sanitized input/output instead of being matched
-by time window — plus `ok` (the sidecar's exact success verdict, not a guess at
-the result text) and `duration_ms` (measured since v0.45.0, sent since this
-release). Records replayed from older history carry none of the three; a client
-must treat them as absent rather than false/zero.
-
-One call by id (v0.56.0): `GET /sessions/{id}/activity/{call_id}` returns a
-single `tool_calls` row — the sanitized input, the output, the status and the
-measured duration — keyed by the `id` every thread activity record has carried
-since v0.55.0. This is what makes a trace row expandable in place. It is scoped
-to the session in the path: a call id belonging to another session returns 404,
-identically to an unknown id, so the response cannot be used to probe which ids
-exist. Nothing new is exposed; it is the same row `/activity` returns in bulk.
-
-Answer structure (v0.57.0): assistant answers render markdown headings as real
-`<h1>`–`<h6>` with stable, text-derived ids (`#sec-...`), so a section can be
-linked and a screen reader can navigate the document. This is a rendering
-concern only — no API field changed.
-
-Observability (v0.45.0): `/activity` and `/audit` are bounded — `limit` is capped
-at 500 (default 200) and every response carries `total` / `offset` / `limit` /
-`truncated`, so a partial timeline is never presented as a complete one. They
-read rows that were sanitized on write; nothing is re-derived. `/overview`
-returns `usage.available` — **false** means the model endpoint never reported
-token counts, which the UI must render as "not reported", not as zero. When only
-some turns reported, `usage.partial` is true and the totals are a floor.
-
-What the agent knows (v0.51.0): `GET /sessions/{id}` also returns `agent_memory`
-(the facts / findings / open questions the agent recorded itself and replays
-into EVERY later turn), `attached_files` (without their filesystem paths — the
-app data dir carries the OS username), and `context_messages` (how many of
-`message_total` the agent actually replays, so the UI can say when the earliest
-turns have rolled out of its view). `agent_memory` is the same tail-capped list
-the agent replays, so the panel shows exactly what is in its context; the report
-fetches more and states what it left out.
-
-`PATCH /memory/{id}` and `POST /memory/{id}/resolve` are the user's half of the
-`update_memory_item` / `resolve_memory_item` tools the agent already had. Text is
-redacted by the repository on write, exactly like the agent's own writes, and
-both are audited as `session.memory_edit` / `session.memory_resolve` with
-`by: user` (rule 17) — so a later reader can tell which premises the agent
-derived and which a human overrode. Resolve closes rather than deletes.
-
-Reattach (v0.51.0): `GET /sessions/{id}/turn` reports `{running, turn_id,
-started_at, age_ms}`. Client run state lives in memory, so reloading the app
-mid-turn showed an idle session while the worker kept generating and spending.
-Process-local like `turn_guard` itself: after a sidecar restart nothing is
-running, and saying so is the truth.
-
-Turn semantics: the client sends a `turn_id` with each turn. The blocking
-`POST /messages` doubles as the streaming fallback — if an identical `turn_id`
-is already in flight it **waits** for that turn instead of re-running the agent,
-and returns `409 "turn still in progress"` after ~150 s if it hasn't finished.
-`POST /turns/{turn_id}/cancel` returns `200 {"status": "cancelling"}` (or
-`"completed"` if the turn already finished) and `404` for an unknown turn; the
-partial answer is persisted with a stopped marker.
+A plan downloads nothing. Confirmation does not disappear merely because the frontend calls it a Decision. The Sidecar remains authoritative for bounds/state.
 
 ## Error triage
 
-Router (no prefix) `routers/error_triage.py`. Offline, deterministic S3 /
-object-storage error triage (no credentials required).
-
 ```text
-POST /error-triage                        # parse + triage a pasted error, returns findings + next checks
-GET  /error-triage/{case_id}              # a triage case (findings + deterministic next-check proposals)
-GET  /sessions/{session_id}/error-triage  # triage cases for a session
+POST /error-triage
+GET  /error-triage/{case_id}
+GET  /sessions/{session_id}/error-triage
 ```
+
+Supported storage-error triage is deterministic and can operate without a configured model provider.
 
 ## Settings
 
-Router prefix `/settings` (`routers/settings.py`). There is no autonomy toggle;
-secrets are never stored or served here.
+Prefix: `/settings`
 
-```text
-GET /settings/secret-vault   # whether the encrypted secret vault failed to decrypt this session
-```
+Current settings API includes secret-vault health/status endpoints as implemented by the router. It never returns vault plaintext.
 
-## Tools
+There is no product autonomy toggle: read-only Agent investigation is the default capability model, while confirmation-gated operations stop at explicit Decisions.
 
-Router prefix `/tools` (`routers/tools.py`). Direct, typed, whitelisted
-read-only S3 tool endpoints (used by tests and internal callers). Only two
-survive — the rest of the old `/tools/*` endpoints were deleted; their
-underlying S3-layer functions remain available to the agent as in-process tools,
-just not as HTTP routes.
+## Direct Tool HTTP endpoints
+
+Prefix: `/tools`
+
+Only the intentionally retained direct endpoints are exposed over HTTP:
 
 ```text
 POST /tools/head-bucket
 POST /tools/list-objects-v2
 ```
 
-Both enforce the provider's `allowed_buckets` / `allowed_prefixes` scope (as do
-the run executors and the agent session tools).
+Most Agent tools are in-process runtime tools rather than one HTTP route per capability. Do not expose the entire internal S3 layer as a raw HTTP/tool surface.
 
-## Run SSE event types
+## Secret/error-response contract
 
-`GET /runs/{run_id}/events` streams the run's live timeline. Runs are pure
-deterministic compute (no LLM planner); the executors under `sidecar/app/runs/`
-publish only these event types (verified against `bus.publish(...)` calls and
-the in-memory `events.py` bus):
+FastAPI validation and unhandled-error paths are sanitized so request bodies or exception messages cannot echo provider credentials into UI-visible responses.
 
-```json
-{"type":"tool_call_started","tool_name":"head_bucket","tool_call_id":"..."}
-{"type":"tool_call_finished","tool_name":"head_bucket","status":"success","output":{}}
-{"type":"finding","severity":"warning","title":"...","detail":"..."}
-{"type":"summary","content":"..."}
-{"type":"report_ready","run_id":"...","report_path":"..."}
-{"type":"error","message":"..."}
-```
+API code must preserve:
 
-The stream also sends `: keepalive` SSE comments during long silences. There are
-no `run_started`, `guardrail_passed`, `guardrail_blocked`, or `final_summary`
-events — those were removed and are not emitted.
+- no plaintext secrets in response payloads;
+- no credentials in model context;
+- no raw Authorization/cookie/signature leakage;
+- Sidecar token handling described above;
+- relative/non-sensitive file metadata where possible.
 
-## Session message stream
+See `security.md`.
 
-`POST /sessions/{id}/messages/stream` emits `delta` (answer text), `tool` (a
-sanitized `{tool, target, result}` trace — a tool may first appear as a
-`"status": "started"` record, the live tool-start signal, before its completed
-record), and a final `done`
-(`{message_id, proposed_actions, evidence_used, evidence_gaps, skills_used}`) —
-or `error`. A cancelled turn's `done` event may carry `"stopped": true`. The
-three grounding fields mirror the blocking `POST /sessions/{id}/messages`
-response and are also persisted on the message row (see `docs/data-model.md`).
+## API evolution rule
+
+When adding or changing an endpoint:
+
+1. decide whether it is product-level or compatibility-level;
+2. update schemas/router tests;
+3. update this document;
+4. update `data-model.md` if persistence changes;
+5. update `product.md`/`architecture.md` only when product semantics or ownership actually change;
+6. never rename product concepts merely to match historical route/table names.
