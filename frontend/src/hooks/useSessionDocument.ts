@@ -205,6 +205,17 @@ export function useSessionDocument({
         return;
       }
       if (stopped || localId.current !== sessionId) return;
+      if (getSessionRun(sessionId).busy) {
+        // The runner submitted while our fetch was in flight. It marks the run
+        // busy synchronously BEFORE the execution is created server-side, so a
+        // response that says "running" while busy is set can only be a turn
+        // this client already owns — attaching a follower to it would double
+        // every delta and hold `busy` past the runner's completion.
+        setRemoteTurn(null);
+        sawOwnBusy = true;
+        timer = window.setTimeout(tick, 1500);
+        return;
+      }
       if (state.running && state.execution_id) {
         sawOwnBusy = false;
         void follow(state, state.execution_id);
