@@ -14,14 +14,16 @@ const normativeDocs = [
   "docs/roadmap.md",
 ];
 
-// These documents describe the product directly. Architecture/index docs are
-// allowed to NAME a removed component when they explicitly say it must stay
-// removed; the product-facing contract must not present those concepts at all.
+// These documents directly define or accept/reject product behavior. Architecture
+// and history docs are allowed to NAME a removed component when explicitly
+// documenting that it is gone; product-contract docs must not present those
+// concepts as current behavior.
 const productContractDocs = [
   "README.md",
   "CLAUDE.md",
   "docs/product.md",
   "docs/roadmap.md",
+  "docs/release-smoke-test.md",
 ];
 
 const removedArchitecture: Array<[string, RegExp]> = [
@@ -52,10 +54,29 @@ describe("v0.93 documentation contract", () => {
     });
   }
 
-  it("marks the v0.92 rebuild document as historical and superseded", () => {
-    const historical = readRepo("docs/v0.92-agent-os-rebuild.md");
-    expect(historical).toMatch(/historical/i);
-    expect(historical).toMatch(/superseded by v0\.93/i);
+  it("pins high-risk current docs to shipped runtime facts", () => {
+    const api = readRepo("docs/api.md");
+    const dataModel = readRepo("docs/data-model.md");
+    const security = readRepo("docs/security.md");
+    const smoke = readRepo("docs/release-smoke-test.md");
+
+    expect(api).toContain("GET /agent-tasks");
+    expect(api).toMatch(/product-level.*Agent Task/i);
+    expect(dataModel).toMatch(/Current migration head:\s*025/i);
+    expect(dataModel).toContain("Product-to-persistence mapping");
+    expect(security).toContain("Decision required");
+    expect(security).toContain("STORAGE_AGENT_AUTH_TOKEN");
+    expect(smoke).toContain("Agent Task product smoke");
+    expect(smoke).toContain("one primary Agent composer");
+  });
+
+  it("marks historical v0.92 material as superseded rather than normative", () => {
+    const rebuild = readRepo("docs/v0.92-agent-os-rebuild.md");
+    const release = readRepo("docs/releases/0.92.0.md");
+    expect(rebuild).toMatch(/historical/i);
+    expect(rebuild).toMatch(/superseded by v0\.93/i);
+    expect(release).toMatch(/historical release snapshot/i);
+    expect(release).toMatch(/superseded.*v0\.93/i);
   });
 
   it("keeps persistence vocabulary explicitly subordinate to product vocabulary", () => {
