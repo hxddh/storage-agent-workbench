@@ -187,7 +187,7 @@ export const AgentTaskResult = memo(function AgentTaskResult({
         <nav className="work-result-artifacts" aria-label={lang === "zh" ? "工作产物" : "Work artifacts"} data-testid="work-result-artifacts">
           <span className="work-result-artifact-label">Artifacts</span>
           {evidenceCount > 0 ? (
-            <button type="button" onClick={() => openAgentReview("evidence")} data-testid="work-result-open-evidence">
+            <button type="button" onClick={() => openAgentReview("evidence")} data-testid="work-result-open-evidence" title={lang === "zh" ? `${evidenceCount} 项 Evidence` : `${evidenceCount} evidence item${evidenceCount === 1 ? "" : "s"}`}>
               Evidence <span>{evidenceCount}</span>
             </button>
           ) : null}

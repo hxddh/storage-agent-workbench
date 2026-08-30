@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "../i18n";
+import { MOD } from "../shortcuts";
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 const formatGiB = (n: number) => `${(n / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
@@ -152,12 +153,12 @@ export function Composer({
 
   return (
     <div
-      className="group/composer agent-native-composer relative rounded-xl border border-edge bg-panel px-3 pb-2.5 pt-2.5 shadow-elev transition-[border-color,box-shadow] duration-150 focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10"
+      className="group/composer agent-native-composer relative rounded-xl border border-edge bg-panel px-3 pb-2.5 pt-2.5 shadow-elev transition-[border-color,box-shadow] duration-fast focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10"
       data-testid="agent-composer"
       data-agent-state={busy ? "working" : uploading ? "uploading" : "ready"}
     >
       <div className="mb-2 flex items-center gap-2 px-1 text-2xs">
-        <span className={`h-1.5 w-1.5 rounded-full ${busy || uploading ? "bg-warn animate-pulse" : "bg-success"}`} aria-hidden />
+        <span className={`h-1.5 w-1.5 rounded-full ${busy || uploading ? "working-mark !h-1.5 !w-1.5" : "bg-success"}`} aria-hidden />
         <strong className="font-medium text-gray-300">{busy || uploading ? copy.working : copy.delegate}</strong>
         <span className="min-w-0 truncate text-gray-500">{busy || uploading ? copy.workingHint : copy.commands}</span>
       </div>
@@ -185,7 +186,7 @@ export function Composer({
           <span className="flex min-w-0 items-center gap-1.5 text-gray-300"><Paperclip /><span className="truncate">{attached.name}</span></span>
           {uploading ? (
             <span className="flex items-center gap-1.5 text-gray-400">
-              <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
+              <span className="skeleton h-3 w-12" aria-hidden />
               {copy.uploading(attached.name)}
             </span>
           ) : (
@@ -280,21 +281,21 @@ export function Composer({
           <span>{modelName ? copy.model : copy.modelSettings}</span>
         </button>
 
-        <span className="ml-auto hidden text-2xs text-gray-500 opacity-0 transition-opacity group-focus-within/composer:opacity-100 sm:inline">
-          {busy ? <>{copy.steerCurrent} · <kbd className="font-sans">⇧⏎</kbd> {copy.newline}</> : <><kbd className="font-sans">⏎</kbd> {copy.delegate} · <kbd className="font-sans">⇧⏎</kbd> {copy.newline}</>}
+        <span className="ml-auto hidden text-2xs text-gray-500 opacity-0 transition-opacity duration-fast group-focus-within/composer:opacity-100 sm:inline">
+          {busy ? <>{copy.steerCurrent} · <kbd className="rounded-md border border-edge bg-elevated px-1">⇧⏎</kbd> {copy.newline}</> : <><kbd className="rounded-md border border-edge bg-elevated px-1">⏎</kbd> {copy.delegate} · <kbd className="rounded-md border border-edge bg-elevated px-1">⇧⏎</kbd> {copy.newline}</>}
         </span>
 
-        {busy ? (
-          <>
+        <div className="composer-actions" data-mode={busy ? "steer" : "delegate"}>
+          <div className="composer-actions-steer" {...(busy ? {} : { inert: true, "aria-hidden": true })}>
             <button
               type="button"
               onClick={onStop}
+              tabIndex={busy ? 0 : -1}
               aria-label={copy.stop}
-              title={copy.stop}
+              title={`${copy.stop} ${MOD}.`}
               className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-edge bg-elevated px-2.5 text-2xs font-medium text-gray-200 transition-colors hover:bg-hover"
             >
-              <span className="relative grid h-3.5 w-3.5 place-items-center" aria-hidden>
-                <span className="absolute inset-0 animate-spin rounded-full border-[1.5px] border-gray-500 border-t-gray-200" />
+              <span className="grid h-3.5 w-3.5 place-items-center" aria-hidden>
                 <span className="h-1.5 w-1.5 rounded-sm bg-gray-200" />
               </span>
               {copy.stop}
@@ -302,28 +303,32 @@ export function Composer({
             <button
               type="button"
               onClick={onSteer}
+              tabIndex={busy ? 0 : -1}
               disabled={!text.trim()}
               aria-label={copy.steerAction}
               title={copy.steerActionHint}
-              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-2xs font-semibold text-accent-fg transition-[background-color,transform] hover:bg-accent-soft active:scale-[.98] disabled:cursor-default disabled:bg-elevated disabled:text-gray-500"
+              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-2xs font-semibold text-accent-fg transition-[background-color,transform] duration-fast hover:bg-accent-soft active:scale-[.98] disabled:cursor-default disabled:bg-elevated disabled:text-gray-500"
             >
               {copy.steer}
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><line x1="5" y1="12" x2="19" y2="12" /><polyline points="13 6 19 12 13 18" /></svg>
             </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={onSend}
-            disabled={uploading || blocked || (!text.trim() && !attached)}
-            aria-label={copy.delegateAction}
-            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-2xs font-semibold text-accent-fg transition-[background-color,transform] hover:bg-accent-soft active:scale-[.98] disabled:cursor-default disabled:bg-elevated disabled:text-gray-500"
-          >
-            {uploading ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" /> : null}
-            <span>{copy.delegate}</span>
-            {!uploading ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><line x1="5" y1="12" x2="19" y2="12" /><polyline points="13 6 19 12 13 18" /></svg> : null}
-          </button>
-        )}
+          </div>
+          <div className="composer-actions-delegate" {...(!busy ? {} : { inert: true, "aria-hidden": true })}>
+            <button
+              type="button"
+              onClick={onSend}
+              tabIndex={busy ? -1 : 0}
+              disabled={uploading || blocked || (!text.trim() && !attached)}
+              aria-label={copy.delegateAction}
+              title={`${copy.delegateAction} ⏎`}
+              className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-2xs font-semibold text-accent-fg transition-[background-color,transform] duration-fast hover:bg-accent-soft active:scale-[.98] disabled:cursor-default disabled:bg-elevated disabled:text-gray-500"
+            >
+              {uploading ? <span className="skeleton h-3.5 w-3.5 rounded-full" aria-hidden /> : null}
+              <span>{copy.delegate}</span>
+              {!uploading ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><line x1="5" y1="12" x2="19" y2="12" /><polyline points="13 6 19 12 13 18" /></svg> : null}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

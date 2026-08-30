@@ -1,12 +1,12 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v0.96.0** (`v0.96.0`).
+> **Current architecture baseline: Storage Agent v0.97.0** (`v0.97.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
 > turns that runtime into a quantified storage-optimization copilot and
-> ongoing caretaker (simulator, Remediation Plan + Verify, baseline/Drift,
-> scheduled read-only revisits) without a second Agent or a new navigation surface.
+> ongoing caretaker. v0.97.0 is a presentation-only craft pass (design tokens,
+> motion, keyboard, empty states) on that same runtime — no new capabilities.
 
 This directory documents the currently shipped Storage Agent architecture and operating contracts. It is deliberately organized so implementation agents and contributors do not reconstruct older product shells from historical terminology that still exists in persistence, APIs, release notes, or git history.
 
@@ -44,7 +44,8 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 
 ## Current documents
 
-- [`product.md`](product.md) — product model, UX semantics, states, non-goals.
+- [`product.md`](product.md) — product model, UX semantics, states, design rules, non-goals.
+- [`design-tokens.md`](design-tokens.md) — v0.97 presentation tokens (type, color, motion, elevation).
 - [`architecture.md`](architecture.md) — Tauri/React/Sidecar topology and ownership boundaries.
 - [`security.md`](security.md) — secret, tool, model-context, evidence and approval guarantees.
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.

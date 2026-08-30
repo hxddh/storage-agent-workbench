@@ -25,6 +25,7 @@ import { useTurnRunner, cleanError } from "../hooks/useTurnRunner";
 import { useSessionDocument } from "../hooks/useSessionDocument";
 import { useTaskViewport } from "../hooks/useTaskViewport";
 import { openAgentExecution, openAgentReview } from "../agent/commands";
+import { publishPaletteActions } from "../agent/paletteActions";
 import { Button } from "./ui";
 import { Composer } from "./Composer";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
@@ -99,20 +100,20 @@ export function AgentTaskImplementation({
   const taskCopy = lang === "zh"
     ? {
         startTitle: "把目标交给 Agent",
-        startDescription: "描述要完成的工作、约束和期望结果。Agent 会执行只读检查、持续展示进展，并在需要你决定时明确停下来。",
-        startingPoints: "常用任务",
-        reportNeedsTask: "先创建一个 Agent Task，再生成 Report Artifact。",
-        loadFailed: "无法加载这个 Agent Task。",
+        startDescription: "写清要完成的工作、约束和期望结果。Agent 会做只读检查，执行中你可以随时补充方向。",
+        startingPoints: "从这里开始",
+        reportNeedsTask: "先创建一个任务，再生成报告。",
+        loadFailed: "无法加载这个任务。",
         actionFailed: "Agent 无法继续当前任务。",
-        workspace: "Agent Task",
+        workspace: "当前任务",
         stopped: "已由你停止",
-        offline: "Agent Runtime 当前不可用，因此任务暂时不能继续执行。",
-        offlineHint: "正在自动重连。你的 Direction 会保留，Runtime 恢复后可以继续。",
-        needModel: "需要配置 Model Provider，Agent 才能继续执行这个任务。",
-        needModelAction: "配置 Model Provider",
-        retry: "重试任务",
-        loadingEarlier: "正在加载…",
-        loadEarlier: (n: number) => `加载更早的任务历史（${n} 条）`,
+        offline: "本地运行时暂时不可用，任务无法继续执行。",
+        offlineHint: "正在自动重连。你写下的方向会保留，恢复后可以继续。",
+        needModel: "先配置模型服务，Agent 才能执行这个任务。",
+        needModelAction: "配置模型",
+        retry: "重试",
+        loadingEarlier: "正在载入更早的记录…",
+        loadEarlier: (n: number) => `载入更早的 ${n} 条记录`,
         jumpToStart: "回到任务开始",
         suggestedNext: "Next actions",
         remoteExecution: (age: string) => `这个 Task 的一次执行仍在后台进行（${age}）。结果完成后会回到这里。`,
@@ -127,54 +128,54 @@ export function AgentTaskImplementation({
         liveReady: "Work Result 已就绪。",
         continueTask: "继续当前 Task，从尚未完成的线索继续推进并深入检查。",
         resumeTitle: "这次执行被中断了",
-        resumeBody: "Sidecar 在执行完成前重启或失败。恢复会用同一条 Direction 开始一次新的 Execution，已有结果会保留。",
+        resumeBody: "本地运行时在完成前重启或失败。恢复会用同一条方向开始一次新的执行，已有结果会保留。",
         resumeAction: "恢复执行",
         verifyTitle: "验证修复方案",
         verifyBody: "用只读工具重新探测方案涉及的配置，并与方案预期逐条对比。不会向存储写入任何内容。",
         verifyAction: "验证方案",
-        queuedTitle: "排队中的 Direction",
-        queuedHint: "当前 Execution 结束后会开始这条 Direction。",
+        queuedTitle: "排队中的方向",
+        queuedHint: "当前执行结束后会开始这条方向。",
         queuedCancel: "取消排队",
         declineMissing: "没有找到对应的待处理 Decision。",
       }
     : {
         startTitle: "Delegate a goal to the Agent",
-        startDescription: "Describe the job, constraints, and desired outcome. The Agent will run read-only checks, expose progress, and stop explicitly when it needs your decision.",
-        startingPoints: "Common tasks",
-        reportNeedsTask: "Create an Agent task before generating a Report artifact.",
-        loadFailed: "Couldn't load this Agent task.",
+        startDescription: "Describe the job, the constraints, and what done looks like. The Agent runs read-only checks; you can steer it while it works.",
+        startingPoints: "Start from here",
+        reportNeedsTask: "Create a task before generating a report.",
+        loadFailed: "Couldn't load this task.",
         actionFailed: "The Agent couldn't continue this task.",
         workspace: "Agent task",
         stopped: "Stopped by you",
-        offline: "The Agent Runtime is unavailable, so this task cannot execute right now.",
-        offlineHint: "Reconnecting automatically. Your Direction is preserved and can continue when the Runtime is back.",
-        needModel: "Configure a Model Provider before the Agent can continue this task.",
-        needModelAction: "Configure Model Provider",
-        retry: "Retry task",
-        loadingEarlier: "Loading…",
-        loadEarlier: (n: number) => `Load earlier task history (${n})`,
-        jumpToStart: "Jump to task start",
+        offline: "The local runtime is unavailable, so this task cannot run right now.",
+        offlineHint: "Reconnecting automatically. What you typed is kept and can continue when the runtime is back.",
+        needModel: "Configure a model provider before the Agent can continue this task.",
+        needModelAction: "Configure model",
+        retry: "Retry",
+        loadingEarlier: "Loading earlier history…",
+        loadEarlier: (n: number) => `Load ${n} earlier records`,
+        jumpToStart: "Jump to the start",
         suggestedNext: "Next actions",
         remoteExecution: (age: string) => `Execution for this task is still running in the background (${age}). Its result will return here.`,
         stalled: "This execution is taking longer than expected; the result may already be durable. Resync the task to check.",
         reload: "Resync task",
         jumpLatest: "Return to current work",
         jumpWorking: "Return to current work · Agent still executing",
-        liveNeedModel: "The Agent needs a Model Provider before it can continue.",
-        liveFailed: "Agent task execution failed.",
-        liveStopped: "Agent task stopped.",
-        liveWorking: "The Agent is executing this task.",
-        liveReady: "Work Result ready.",
+        liveNeedModel: "Configure a model before the Agent can continue.",
+        liveFailed: "This task failed.",
+        liveStopped: "This task was stopped.",
+        liveWorking: "The Agent is working on this task.",
+        liveReady: "Work result is ready.",
         continueTask: "Continue this task from the unfinished lines of work and go deeper where needed.",
         resumeTitle: "This execution was interrupted",
-        resumeBody: "The Sidecar restarted or the execution failed before it finished. Resume starts a new Execution with the same Direction; existing work is kept.",
+        resumeBody: "The local runtime restarted or the execution failed before it finished. Resume starts a new execution with the same direction; existing work is kept.",
         resumeAction: "Resume execution",
         verifyTitle: "Verify the remediation plan",
         verifyBody: "Re-probe the configuration items in the plan with read-only tools and diff them against the expected state. Nothing is written to storage.",
         verifyAction: "Verify plan",
-        queuedTitle: "Queued Direction",
-        queuedHint: "This Direction waits until the current Execution finishes.",
-        queuedCancel: "Cancel queued Direction",
+        queuedTitle: "Queued direction",
+        queuedHint: "This waits until the current execution finishes.",
+        queuedCancel: "Cancel queued direction",
         declineMissing: "No matching pending Decision was found.",
       };
   const {
@@ -338,6 +339,15 @@ export function AgentTaskImplementation({
     for (const record of triage) output.push({ kind: "triage", ts: record.created_at || "", data: record });
     return output.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
   }, [detail, triage, earlier]);
+
+  const pendingAlreadyPersisted = Boolean(
+    pending &&
+    items.some((item) => item.kind === "message" && item.role === "user" && (item.content ?? "") === pending),
+  );
+  useEffect(() => {
+    if (!sessionId || !pending || !pendingAlreadyPersisted) return;
+    patchSessionRun(sessionId, { pending: null });
+  }, [sessionId, pending, pendingAlreadyPersisted]);
 
   const nextActions = liveNextActions ?? [];
 
@@ -572,6 +582,14 @@ export function AgentTaskImplementation({
   const showVerify = Boolean(
     hasRemediationPlan && !needKey && !busy && !showResume && !offline,
   );
+  useEffect(() => publishPaletteActions({
+    stop: () => runner.stop(),
+    resume: showResume && lastExec ? () => { void runner.resume(lastExec.id); } : undefined,
+    focusComposer: () => taRef.current?.focus(),
+    busy,
+    canResume: showResume,
+    hasTask: Boolean(sessionId),
+  }), [busy, showResume, lastExec, sessionId, runner]);
   const queuedDirections = taskRuntime?.queued_executions ?? [];
   const renderAction = (action: NextAction, actionIndex: number, impact?: DecisionImpact | null) => (
     <AgentNextAction
@@ -713,6 +731,15 @@ export function AgentTaskImplementation({
             </div>
           </div>
         </div>
+      ) : loadingTask ? (
+        <div className="flex flex-1 flex-col px-6 py-7" data-testid="task-document-skeleton">
+          <div className="mx-auto w-full max-w-[min(64rem,100%)] space-y-4">
+            <span className="skeleton h-3 w-28" />
+            <span className="skeleton h-5 w-64" />
+            <span className="skeleton h-32 w-full max-w-[46rem]" />
+            <span className="skeleton h-8 w-full max-w-[36rem]" />
+          </div>
+        </div>
       ) : isEmpty ? (
         <div className="flex flex-1 items-start justify-center overflow-auto px-6 pb-10 pt-20">
           <div className="w-full max-w-[44rem] animate-fade-in-up">
@@ -763,7 +790,7 @@ export function AgentTaskImplementation({
                   <div className="flex justify-center">
                     <div className="flex items-center gap-1.5">
                       <button type="button" onClick={loadEarlier} disabled={loadingEarlier} data-testid="load-earlier" className="rounded-full border border-edge px-3 py-1.5 text-2xs text-gray-500 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50">
-                        {loadingEarlier ? taskCopy.loadingEarlier : taskCopy.loadEarlier(hiddenCount)}
+                        {loadingEarlier ? <span className="inline-flex items-center gap-2"><span className="skeleton h-3 w-16" aria-hidden />{taskCopy.loadingEarlier}</span> : taskCopy.loadEarlier(hiddenCount)}
                       </button>
                       <button type="button" onClick={loadAllEarlier} disabled={loadingEarlier} data-testid="jump-to-start" className="rounded-full border border-edge px-3 py-1.5 text-2xs text-gray-500 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50">
                         {taskCopy.jumpToStart}
@@ -842,7 +869,7 @@ export function AgentTaskImplementation({
                   </div>
                 ) : null}
 
-                {pending ? (
+                {pending && !pendingAlreadyPersisted ? (
                   <>
                     <div id={PENDING_DIRECTION_ID} data-direction={pending}>
                       <AgentTaskResult role="user" content={pending} />

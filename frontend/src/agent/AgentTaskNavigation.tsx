@@ -3,6 +3,8 @@ import { useI18n, type TFunc } from "../i18n";
 import type { SidecarStatus } from "../hooks/useSidecarHealth";
 import { getSessionRun, useSessionRun, useSessionRunIndexVersion } from "../sessionRuns";
 import { BrandMark } from "../components/ui";
+import { EmptyState } from "../components/EmptyState";
+import { MOD } from "../shortcuts";
 import { useNavigationCopy } from "./navigationCopy";
 import {
   DEFAULT_TASK_NAV_WIDTH,
@@ -222,13 +224,17 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
       </header>
 
       <div className="agent-task-nav-primary">
-        <button type="button" onClick={onNew} className="agent-task-new"><span className="agent-task-new-mark"><PlusIcon /></span><span>{copy.newTask}</span><kbd>⌘N</kbd></button>
+        <button type="button" onClick={onNew} className="agent-task-new"><span className="agent-task-new-mark"><PlusIcon /></span><span>{copy.newTask}</span><kbd>{MOD}N</kbd></button>
         <div className="agent-task-search"><SearchIcon /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.search} aria-label={copy.search} />{query ? <button type="button" onClick={() => setQuery("")} aria-label={copy.clearSearch}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button> : null}</div>
       </div>
 
       <nav className="agent-task-list" aria-label={copy.tasks}>
-        {q && results !== null && results.length === 0 ? <p className="agent-task-list-empty">{copy.noResults}</p> : null}
-        {!q && tasks.length === 0 ? <p className="agent-task-list-empty">{copy.noTasks}</p> : null}
+        {q && results !== null && results.length === 0 ? (
+          <EmptyState compact testId="task-nav-empty" title={copy.noResults} body={copy.noResultsHint} />
+        ) : null}
+        {!q && tasks.length === 0 ? (
+          <EmptyState compact testId="task-nav-empty" title={copy.noTasks} body={copy.noTasksHint} />
+        ) : null}
         {needsYou.length ? <section data-testid="task-queue-needs-you"><div className="agent-task-section-label">{copy.needsYou}</div>{needsYou.map(row)}</section> : null}
         {runningTasks.length ? <section data-testid="task-queue-running"><div className="agent-task-section-label">{copy.runningTasks}</div>{runningTasks.map(row)}</section> : null}
         {pinned.length ? <section><div className="agent-task-section-label">{copy.pinned}</div>{pinned.map(row)}</section> : null}

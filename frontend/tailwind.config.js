@@ -167,9 +167,20 @@ export default {
         toast: "80",     // always visible; nothing may cover a failure notice
       },
       boxShadow: {
-        elev: "0 1px 2px rgba(0,0,0,0.35), 0 8px 28px -18px rgba(0,0,0,0.7)",
-        pop: "0 10px 44px -10px rgba(0,0,0,0.7)",
-        glow: "0 0 0 1px rgba(109,139,255,0.3)",
+        elev: "var(--shadow-elev)",
+        pop: "var(--shadow-pop)",
+        glow: "var(--shadow-glow)",
+      },
+      transitionDuration: {
+        instant: "var(--duration-instant)",
+        fast: "var(--duration-fast)",
+        DEFAULT: "var(--duration-base)",
+        slow: "var(--duration-slow)",
+      },
+      transitionTimingFunction: {
+        out: "var(--ease-out)",
+        emphasized: "var(--ease-emphasized)",
+        "in-out": "var(--ease-in-out)",
       },
       keyframes: {
         "fade-in-up": {
@@ -202,11 +213,12 @@ export default {
         },
       },
       animation: {
-        "fade-in-up": "fade-in-up 0.28s cubic-bezier(0.21,0.6,0.35,1)",
-        "fade-in": "fade-in 0.2s ease-out",
-        "slide-in-right": "slide-in-right 0.22s cubic-bezier(0.21,0.6,0.35,1)",
-        "scale-in": "scale-in 0.2s cubic-bezier(0.21,0.6,0.35,1)",
-        "pulse-ring": "pulse-ring 2s ease-out infinite",
+        "fade-in-up": "fade-in-up var(--duration-slow) var(--ease-out)",
+        "fade-in": "fade-in var(--duration-base) var(--ease-out)",
+        "slide-in-right": "slide-in-right var(--duration-base) var(--ease-out)",
+        "scale-in": "scale-in var(--duration-base) var(--ease-out)",
+        "pulse-ring": "pulse-ring 2s var(--ease-out) infinite",
+        shimmer: "token-shimmer 1.35s var(--ease-in-out) infinite",
       },
     },
   },

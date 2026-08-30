@@ -112,6 +112,16 @@ export interface FakeModel {
  * the knob that makes a turn last long enough to interrupt, the way a real one
  * does.
  */
+function requestSignature(body: unknown): string {
+  const req = (body ?? {}) as ChatRequest;
+  const messages = req.messages ?? [];
+  const last = messages[messages.length - 1];
+  const lastContent = typeof last?.content === "string"
+    ? last.content
+    : JSON.stringify(last?.content ?? "");
+  return `${messages.length}:${messages.map((m) => m.role ?? "").join(",")}:${lastContent.slice(0, 240)}`;
+}
+
 export async function startFakeModel(
   turns: Turn[],
   opts: { deltaDelayMs?: number } = {},
@@ -119,22 +129,32 @@ export async function startFakeModel(
   const requests: unknown[] = [];
   const delay = opts.deltaDelayMs ?? 0;
   let i = 0;
+  // Playwright retries and SDK reconnects re-POST the same completion. Replay
+  // by request signature so a retry cannot consume the next scripted turn.
+  const replay = new Map<string, string[]>();
 
   const server = http.createServer((req, res) => {
     const body: Buffer[] = [];
     req.on("data", (c: Buffer) => body.push(c));
     req.on("end", async () => {
+      let parsed: unknown = {};
       try {
-        requests.push(JSON.parse(Buffer.concat(body).toString() || "{}"));
+        parsed = JSON.parse(Buffer.concat(body).toString() || "{}");
       } catch {
-        requests.push({});
+        parsed = {};
       }
-      const chosen = turns[Math.min(i, turns.length - 1)];
-      const take =
-        typeof chosen === "function"
-          ? chosen((requests[requests.length - 1] ?? {}) as ChatRequest)
-          : chosen;
-      i += 1;
+      requests.push(parsed);
+      const signature = requestSignature(parsed);
+      let take = replay.get(signature);
+      if (!take) {
+        const chosen = turns[Math.min(i, turns.length - 1)];
+        take =
+          typeof chosen === "function"
+            ? chosen(parsed as ChatRequest)
+            : chosen;
+        replay.set(signature, take);
+        if (i < turns.length) i += 1;
+      }
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",

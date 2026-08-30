@@ -84,6 +84,7 @@
   tab-size: 2;
   line-height: 1.65;
   scrollbar-gutter: stable;
+  max-height: 28rem;
 }
 
 .agent-prose table {
@@ -123,7 +124,7 @@
   border-radius: 0.5rem;
   color: var(--gray-300);
   background: color-mix(in srgb, var(--panel) 58%, transparent);
-  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+  transition: border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
 }
 
 .work-result-artifacts button:hover {

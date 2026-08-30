@@ -44,8 +44,8 @@ const Wrench = (
 /** The Agent is working but has not emitted the first tool call yet. */
 export function WorkingRow({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-2 text-2xs text-gray-500" data-testid="working-row">
-      <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent text-warn-fg" aria-hidden />
+    <div className="flex min-h-5 items-center gap-2 text-2xs text-gray-500" data-testid="working-row">
+      <span className="working-mark" data-testid="trace-running" aria-hidden />
       <span className="min-w-0 truncate">{label}</span>
     </div>
   );
@@ -64,7 +64,7 @@ export function LiveTrace({ items, sessionId }: { items: ToolActivity[]; session
     : items;
 
   return (
-    <div className="mb-2.5 space-y-[3px]" data-testid="live-trace">
+    <div className="mb-2.5 space-y-0.5" data-testid="live-trace">
       {folded && (
         <button
           type="button"
@@ -86,7 +86,7 @@ export function LiveTrace({ items, sessionId }: { items: ToolActivity[]; session
         return (
           <div key={a.id ?? i}>
             <div
-              className={`flex items-center gap-2 text-2xs text-gray-500 ${canOpen ? "cursor-pointer rounded transition-colors hover:bg-hover" : ""}`}
+              className={`flex min-h-5 items-center gap-2 text-2xs text-gray-500 ${canOpen ? "cursor-pointer rounded-md px-0.5 transition-colors hover:bg-hover" : ""}`}
               {...(canOpen
                 ? {
                     role: "button" as const,
@@ -104,7 +104,7 @@ export function LiveTrace({ items, sessionId }: { items: ToolActivity[]; session
                 : {})}
             >
               {running ? (
-                <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-current border-t-transparent text-warn-fg" aria-hidden />
+                <span className="working-mark" data-testid="trace-running" aria-hidden />
               ) : failed ? (
                 <span className="shrink-0 text-danger" data-testid="trace-failed" aria-hidden>✕</span>
               ) : Wrench}

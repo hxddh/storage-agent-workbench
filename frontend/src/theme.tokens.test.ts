@@ -81,6 +81,7 @@ describe("theme tokens", () => {
       "--success", "--success-bg", "--success-border",
       "--code-bg", "--scrim",
       "--syn-str", "--syn-num", "--syn-kw", "--syn-com", "--syn-name", "--syn-tag", "--syn-punct",
+      "--shadow-elev", "--shadow-pop", "--shadow-glow",
     ];
     for (const token of required) {
       // A token defined in only one theme is worse than none: it falls through

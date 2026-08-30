@@ -48,7 +48,7 @@ describe("live Agent execution", () => {
     const { container } = wrap(createElement(LiveTrace, {
       items: [call({ tool: "head_bucket" }), call({ status: "started" })],
     }));
-    expect(container.querySelectorAll(".animate-spin")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-testid='trace-running']")).toHaveLength(1);
   });
 
   it("shows a finished result and does not invent a result for a running call", () => {

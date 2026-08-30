@@ -142,31 +142,42 @@ function PriceTableSection() {
           {t("settings.priceExample")}
         </p>
       ) : null}
-      <div className="mb-2 text-xs font-medium text-gray-400">{t("settings.priceGbMonth")}</div>
-      <div className="grid max-h-56 grid-cols-2 gap-2 overflow-auto">
-        {classes.map((name) => (
-          <label key={name} className="flex items-center justify-between gap-2 text-xs text-gray-300">
-            <span className="truncate font-mono text-2xs">{name}</span>
-            <input
-              type="number"
-              step="0.0001"
-              min="0"
-              value={rates[name]}
-              onChange={(event) => {
-                const value = Number.parseFloat(event.target.value);
-                setTable({
-                  ...table,
-                  rates: {
-                    ...table.rates,
-                    storage_gb_month: { ...rates, [name]: Number.isFinite(value) ? value : 0 },
-                  },
-                });
-                setSaved(false);
-              }}
-              className="w-24 rounded-md border border-edge bg-elevated px-2 py-1 text-right text-xs text-gray-100"
-            />
-          </label>
-        ))}
+      <div className="mb-2 overflow-hidden rounded-lg border border-edge">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-edge bg-elevated text-left text-2xs uppercase tracking-wider text-gray-500">
+              <th className="px-3 py-2 font-medium">{t("settings.priceClass")}</th>
+              <th className="px-3 py-2 text-right font-medium">{t("settings.priceGbMonth")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {classes.map((name) => (
+              <tr key={name} className="border-b border-edge last:border-0">
+                <td className="px-3 py-1.5 font-mono text-2xs text-gray-300">{name}</td>
+                <td className="px-3 py-1.5 text-right">
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    value={rates[name]}
+                    onChange={(event) => {
+                      const value = Number.parseFloat(event.target.value);
+                      setTable({
+                        ...table,
+                        rates: {
+                          ...table.rates,
+                          storage_gb_month: { ...rates, [name]: Number.isFinite(value) ? value : 0 },
+                        },
+                      });
+                      setSaved(false);
+                    }}
+                    className="w-24 rounded-md border border-edge bg-canvas px-2 py-1 text-right tabular-nums text-gray-100"
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
       <label className="mt-3 flex items-center gap-2 text-xs text-gray-300">
         <input

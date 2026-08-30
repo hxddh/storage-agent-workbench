@@ -16,7 +16,9 @@ export type ShortcutId =
   | "prevStep"
   | "nextStep"
   | "delegate"
-  | "newline";
+  | "newline"
+  | "stop"
+  | "focusComposer";
 
 export interface Shortcut {
   id: ShortcutId;
@@ -40,6 +42,8 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "nextStep", keys: ["J"], label: { en: "Next task step", zh: "下一个 Task Step" }, group: "task", mod: null, key: "j", handled: true },
   { id: "delegate", keys: ["Enter"], label: { en: "Delegate / Steer", zh: "Delegate / Steer" }, group: "task", handled: false },
   { id: "newline", keys: ["Shift", "Enter"], label: { en: "New line", zh: "换行" }, group: "task", handled: false },
+  { id: "stop", keys: [MOD, "."], label: { en: "Stop execution", zh: "停止执行" }, group: "task", mod: "mod", key: ".", handled: true },
+  { id: "focusComposer", keys: [MOD, "L"], label: { en: "Focus composer", zh: "聚焦 Composer" }, group: "task", mod: "mod", key: "l", handled: true },
 ];
 
 export const shortcutsIn = (group: Shortcut["group"]) => SHORTCUTS.filter((shortcut) => shortcut.group === group);

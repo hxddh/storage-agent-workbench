@@ -19,6 +19,26 @@ import type {
 } from "../types";
 import { cleanError } from "./useTurnRunner";
 
+/** Instant task switch: keep the last rendered document so the canvas never flashes empty. */
+const DOCUMENT_CACHE_LIMIT = 24;
+type CachedDocument = {
+  detail: SessionDetail;
+  triage: TriageCase[];
+  taskRuntime: TaskState | null;
+  earlier: SessionMessage[];
+};
+const documentCache = new Map<string, CachedDocument>();
+
+function rememberDocument(id: string, doc: CachedDocument) {
+  documentCache.delete(id);
+  documentCache.set(id, doc);
+  while (documentCache.size > DOCUMENT_CACHE_LIMIT) {
+    const oldest = documentCache.keys().next().value;
+    if (oldest) documentCache.delete(oldest);
+    else break;
+  }
+}
+
 export function useSessionDocument({
   sessionId,
   sidecarReady,
@@ -99,14 +119,29 @@ export function useSessionDocument({
 
   // Session identity, stale-request protection and first load belong to the
   // persisted document layer, not to task composition.
+  // Restore a cached document synchronously so switching tasks never whites out.
   useEffect(() => {
-    if (sessionId !== loadedIdRef.current) {
+    const cached = sessionId ? documentCache.get(sessionId) : undefined;
+    if (cached) {
+      setDetail(cached.detail);
+      setTriage(cached.triage);
+      setTaskRuntime(cached.taskRuntime);
+      setEarlier(cached.earlier);
+      loadedIdRef.current = sessionId;
+    } else if (sessionId !== loadedIdRef.current) {
       setDetail(null);
       setTriage([]);
+      setEarlier([]);
+      setTaskRuntime(null);
     }
     setLoadError(null);
     void reload(sessionId);
   }, [sessionId, reload]);
+
+  useEffect(() => {
+    if (!sessionId || !detail || detail.id !== sessionId) return;
+    rememberDocument(sessionId, { detail, triage, taskRuntime, earlier });
+  }, [sessionId, detail, triage, taskRuntime, earlier]);
 
   useEffect(() => {
     if (reloadKey && sessionId) void reload(sessionId);

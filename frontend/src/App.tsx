@@ -17,6 +17,7 @@ import { useI18n } from "./i18n";
 import { useToast } from "./components/Toast";
 import { ShortcutsSheet } from "./components/ShortcutsSheet";
 import { isEditable, matches } from "./shortcuts";
+import { getPaletteActions } from "./agent/paletteActions";
 import { AgentTaskNavigation } from "./agent/AgentTaskNavigation";
 import {
   DEFAULT_TASK_NAV_WIDTH,
@@ -177,6 +178,12 @@ export default function App() {
       } else if (matches(event, "shortcuts") && !isEditable(event.target)) {
         event.preventDefault();
         setShortcutsOpen((open) => !open);
+      } else if (matches(event, "stop")) {
+        event.preventDefault();
+        getPaletteActions().stop?.();
+      } else if (matches(event, "focusComposer")) {
+        event.preventDefault();
+        getPaletteActions().focusComposer?.();
       } else if (matches(event, "close")) {
         if (closeTopOverlay()) event.preventDefault();
       }

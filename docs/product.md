@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v0.96.0.** This is the canonical product/UX specification. Historical release notes are not current product architecture.
+> **Applies to Storage Agent v0.97.0.** This is the canonical product/UX specification. v0.97 is a presentation craft pass on the v0.96 runtime; historical release notes are not current product architecture.
 
 ## Product definition
 
@@ -204,6 +204,26 @@ The primary Task viewport should answer, in order:
 3. **What can I do now?** — Steer, Stop, Resume, Verify, decide, review, schedule a revisit, or delegate the next Direction.
 
 Provider/model configuration, audit internals, and low-level counters are secondary unless directly relevant to the active work.
+
+## Design rules
+
+v0.97.0 is a presentation-only craft pass. Visual language is specified in
+[`design-tokens.md`](design-tokens.md) and enforced by frontend token tests.
+
+- Dark and light are first-class. Do not ship a surface that only works in one.
+- Type, radius, motion, and elevation come from tokens. No ad-hoc px type, no
+  raw z-index, no `transition-all`.
+- Work Result is a publication: heading hierarchy, paragraph rhythm, tables,
+  labelled code with copy, structured errors.
+- Execution rows show real tool name, argument summary, duration, and
+  success/fail. Streaming must not jump layout. No invented step/progress chrome.
+- Composer is the product card: Delegate at rest, Steer + Stop while working,
+  with discoverable shortcuts.
+- Every non-ideal state (empty list, no Evidence, offline, interrupted, load
+  earlier) is designed. Copy is restrained, specific, and bilingual.
+- Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions.
+- Perceived latency: cached task documents render instantly on switch; never
+  flash an empty canvas while the durable document is already known.
 
 ## Quality contract
 
