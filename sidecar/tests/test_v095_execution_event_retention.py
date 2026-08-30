@@ -38,7 +38,7 @@ def _events(conn, exec_id: str, n: int, created_at: str, task_id: str = "task") 
         conn.execute(
             "INSERT INTO execution_events (execution_id, task_id, event_type, "
             "payload_json_sanitized, created_at) VALUES (?, ?, ?, ?, ?)",
-            (exec_id, task_id, f"tool.completed", "{}", created_at),
+            (exec_id, task_id, "tool.completed", "{}", created_at),
         )
     conn.commit()
 
