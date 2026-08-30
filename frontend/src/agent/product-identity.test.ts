@@ -31,6 +31,21 @@ describe("v0.93 product identity", () => {
     expect(release).not.toContain("Storage Agent Workbench.app");
   });
 
+  it("keeps public install and release documentation on the Storage Agent identity", () => {
+    const publicDocs = [
+      read("../../../README.md"),
+      read("../../../docs/install.md"),
+      read("../../../docs/signing.md"),
+      read("../../../docs/release.md"),
+    ].join("\n");
+
+    expect(publicDocs).not.toContain("/Applications/Storage Agent Workbench.app");
+    expect(publicDocs).not.toContain("storage-agent-workbench-*-linux-x64.deb");
+    expect(publicDocs).not.toContain("Storage Agent Workbench.app");
+    expect(publicDocs).toContain("/Applications/Storage Agent.app");
+    expect(publicDocs).toContain("storage-agent-*-linux-x64.deb");
+  });
+
   it("titles the release as Storage Agent", () => {
     const notes = read("../../../docs/releases/0.93.0.md");
     expect(notes.startsWith("# Storage Agent v0.93.0\n")).toBe(true);
