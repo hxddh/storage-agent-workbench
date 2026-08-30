@@ -67,3 +67,33 @@ def record_analysis(conn: sqlite3.Connection, task_id: str | None, run_id: str,
     """A completed deterministic analysis run linked to the task."""
     return _record(conn, task_id, "analysis", title=title or (run_type or "Analysis"),
                    ref_kind="run", ref_id=run_id)
+
+
+def record_remediation_plan(conn: sqlite3.Connection, task_id: str | None, plan_id: str,
+                            title: str | None = None, *, execution_id: str | None = None,
+                            summary: str | None = None, status: str | None = None) -> str | None:
+    return _record(conn, task_id, "remediation_plan",
+                   title=title or "Remediation plan",
+                   ref_kind="remediation_plan", ref_id=plan_id,
+                   format="json", summary=summary, execution_id=execution_id,
+                   status=status or "proposed")
+
+
+def record_baseline(conn: sqlite3.Connection, task_id: str | None, baseline_id: str,
+                    title: str | None = None, *, execution_id: str | None = None,
+                    summary: str | None = None) -> str | None:
+    return _record(conn, task_id, "baseline",
+                   title=title or "Task baseline",
+                   ref_kind="task_baseline", ref_id=baseline_id,
+                   format="json", summary=summary, execution_id=execution_id)
+
+
+def record_drift_report(conn: sqlite3.Connection, task_id: str | None, *,
+                        title: str | None = None, execution_id: str | None = None,
+                        summary: str | None = None, payload: dict | None = None) -> str | None:
+    ref_id = (payload or {}).get("baseline_id") or task_id
+    return _record(conn, task_id, "drift_report",
+                   title=title or "Drift report",
+                   ref_kind="drift_report", ref_id=str(ref_id) if ref_id else task_id,
+                   format="json", summary=summary, execution_id=execution_id,
+                   payload=payload)

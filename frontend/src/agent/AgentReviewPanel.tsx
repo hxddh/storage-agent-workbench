@@ -1,4 +1,5 @@
-import type { TaskArtifact, TaskDecision } from "../api";
+import { useEffect, useState } from "react";
+import type { RemediationPlan, RemediationPlanStatus, RevisitSchedule, TaskArtifact, TaskBaseline, TaskDecision } from "../api";
 import type { SessionDetail } from "../types";
 import { EvidenceReview } from "./EvidenceReview";
 import { ReportArtifact } from "./ReportArtifact";
@@ -6,11 +7,17 @@ import { ExecutionReview } from "./ExecutionReview";
 import type { ReviewSurface } from "./model";
 import { useAgentCopy } from "./agentCopy";
 
+const PLAN_STATUSES: RemediationPlanStatus[] = ["proposed", "verified", "partially_verified", "stale"];
+
 export function AgentReviewPanel({
   view,
   detail,
   artifacts = [],
   decisions = [],
+  plans = [],
+  baselines = [],
+  revisit = null,
+  onSaveRevisit,
   report,
   reportLoading,
   error,
@@ -22,10 +29,12 @@ export function AgentReviewPanel({
 }: {
   view: ReviewSurface;
   detail: SessionDetail | null;
-  /** First-class durable Artifact index (reports, evidence imports, analyses). */
   artifacts?: TaskArtifact[];
-  /** Durable Decision rows for this task (pending / approved / declined / superseded). */
   decisions?: TaskDecision[];
+  plans?: RemediationPlan[];
+  baselines?: TaskBaseline[];
+  revisit?: RevisitSchedule | null;
+  onSaveRevisit?: (intervalDays: number, enabled: boolean) => Promise<void>;
   report: string | null;
   reportLoading: boolean;
   error: string | null;
@@ -39,6 +48,11 @@ export function AgentReviewPanel({
   const findingCount = detail?.findings.length ?? 0;
   const executionCount = detail?.runs.filter((execution) => execution.origin !== "agent").length ?? 0;
   const memoryCount = detail?.agent_memory?.length ?? 0;
+  const latestPlan = plans[0] ?? null;
+  const driftArtifacts = artifacts.filter((artifact) => artifact.artifact_type === "drift_report");
+  const planStatus = (latestPlan && PLAN_STATUSES.includes(latestPlan.status)
+    ? latestPlan.status
+    : "proposed") as RemediationPlanStatus;
 
   return (
     <aside className="agent-review-panel" data-testid="agent-review-panel" aria-label={copy.review.title}>
@@ -85,6 +99,68 @@ export function AgentReviewPanel({
                 <span>{copy.review.memory(memoryCount)}</span>
               </div>
             </section>
+
+            <section data-testid="remediation-plan-status">
+              <div className="agent-review-section-label">{copy.review.plan}</div>
+              {latestPlan ? (
+                <div className="agent-review-list">
+                  <div data-plan-status={latestPlan.status}>
+                    <span className="agent-review-list-dot" data-status={latestPlan.status} aria-hidden />
+                    <span className="min-w-0">
+                      <strong>{latestPlan.title || copy.review.plan}</strong>
+                      <small>
+                        {copy.review.planStatus[planStatus]}
+                        {` · v${latestPlan.version}`}
+                      </small>
+                    </span>
+                  </div>
+                </div>
+              ) : <p className="agent-review-empty">{copy.review.noPlan}</p>}
+            </section>
+
+            <section data-testid="task-baselines">
+              <div className="agent-review-section-label">{copy.review.baseline}</div>
+              {baselines.length ? (
+                <div className="agent-review-list">
+                  {baselines.slice(0, 5).map((baseline) => (
+                    <div key={baseline.id}>
+                      <span className="agent-review-list-dot" data-artifact="baseline" aria-hidden />
+                      <span className="min-w-0">
+                        <strong>{`v${baseline.version}`}</strong>
+                        <small>{baseline.created_at}</small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="agent-review-empty">{copy.review.noBaseline}</p>}
+            </section>
+
+            <section data-testid="task-drift">
+              <div className="agent-review-section-label">{copy.review.drift}</div>
+              {driftArtifacts.length ? (
+                <div className="agent-review-list">
+                  {driftArtifacts.slice(0, 4).map((artifact) => (
+                    <button type="button" key={artifact.id} onClick={() => onView("report")}>
+                      <span className="agent-review-list-dot" data-artifact="drift_report" aria-hidden />
+                      <span className="min-w-0">
+                        <strong>{artifact.title || copy.review.drift}</strong>
+                        {artifact.summary ? <small>{artifact.summary}</small> : null}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="agent-review-empty">
+                  {baselines.length ? copy.review.noArtifacts : copy.review.noBaseline}
+                </p>
+              )}
+            </section>
+
+            <RevisitSection
+              schedule={revisit}
+              onSave={onSaveRevisit}
+              copy={copy}
+            />
 
             <section>
               <div className="agent-review-section-label">{copy.review.latestFindings}</div>
@@ -138,6 +214,7 @@ export function AgentReviewPanel({
                       <span className="min-w-0">
                         <strong>{artifact.title || artifact.artifact_type}</strong>
                         {artifact.summary ? <small>{artifact.summary}</small> : null}
+                        {artifact.status ? <small> · {artifact.status}</small> : null}
                       </span>
                     </button>
                   ))}
@@ -186,5 +263,59 @@ export function AgentReviewPanel({
         ) : null}
       </div>
     </aside>
+  );
+}
+
+function RevisitSection({
+  schedule,
+  onSave,
+  copy,
+}: {
+  schedule: RevisitSchedule | null;
+  onSave?: (intervalDays: number, enabled: boolean) => Promise<void>;
+  copy: ReturnType<typeof useAgentCopy>;
+}) {
+  const enabled = Boolean(schedule && (schedule.enabled === 1 || schedule.enabled === true));
+  const [days, setDays] = useState(String(schedule?.interval_days || 7));
+  useEffect(() => {
+    if (schedule?.interval_days) setDays(String(schedule.interval_days));
+  }, [schedule?.interval_days]);
+  const interval = Math.max(1, Math.min(365, Number.parseInt(days, 10) || 7));
+  return (
+    <section data-testid="task-revisit">
+      <div className="agent-review-section-label">{copy.review.revisit}</div>
+      <p className="agent-review-empty">
+        {enabled ? copy.review.revisitOn(schedule?.interval_days || interval) : copy.review.revisitOff}
+        {schedule?.last_catchup_note ? ` · ${copy.review.revisitCatchup}` : ""}
+      </p>
+      {onSave ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            max={365}
+            value={days}
+            onChange={(event) => setDays(event.target.value)}
+            className="w-16 rounded-md border border-edge bg-elevated px-2 py-1 text-xs text-gray-100"
+            aria-label={copy.review.revisit}
+          />
+          <button
+            type="button"
+            className="rounded-md border border-edge px-2 py-1 text-xs text-gray-200 hover:bg-hover"
+            onClick={() => void onSave(interval, true)}
+          >
+            {copy.review.revisitSave}
+          </button>
+          <button
+            type="button"
+            data-testid="task-revisit-toggle"
+            className="rounded-md border border-edge px-2 py-1 text-xs text-gray-200 hover:bg-hover"
+            onClick={() => void onSave(interval, !enabled)}
+          >
+            {enabled ? copy.review.revisitDisable : copy.review.revisitEnable}
+          </button>
+        </div>
+      ) : null}
+    </section>
   );
 }

@@ -1,6 +1,6 @@
 # Data model
 
-> **Storage Agent v0.95.0 persistence reference.**
+> **Storage Agent v0.96.0 persistence reference.**
 >
 > Product vocabulary is Agent Task / Direction / Execution / Decision / Work Result / Artifact. SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
 
@@ -18,7 +18,7 @@ Secrets are stored separately in the encrypted local vault. SQLite stores only o
 
 The schema is created by append-only migrations in `sidecar/app/migrations.py`.
 
-**Current migration head: 026.**
+**Current migration head: 027.**
 
 Rules:
 
@@ -57,6 +57,7 @@ Rules:
 | 024 | `session_datasets_truncation` | persist task-upload truncation/ingest cap and force legacy re-import |
 | 025 | `datasets_truncation` | persist run-dataset truncation/ingest cap |
 | 026 | `durable_task_runtime` | durable Agent Task/Execution objects, structured execution events, first-class Decision/Work Result/Artifact rows, typed versioned Storage Task Context |
+| 027 | `optimization_copilot` | local price table, versioned remediation plans, task baselines, per-task revisit schedules, artifact status/payload |
 
 ## Product-to-persistence mapping
 
@@ -67,7 +68,11 @@ Rules:
 | Execution | `task_executions` + `execution_events` (append-only structured progress) | `runs`, `session_runs`, `tool_calls`, `turn_metrics` |
 | Work Result | `work_results` (runtime metadata; content via `message_id`) | `session_messages` (assistant rows) |
 | Decision | `task_decisions` (pending / approved / declined / superseded) | `session_messages.proposed_actions`, `approval_events`, evidence-import state |
-| Artifact | `task_artifacts` (unified index over reports/imports/analyses) | `reports`, evidence-import tables, report files |
+| Artifact | `task_artifacts` (unified index over reports/imports/analyses/remediation plans/baselines/drift) | `reports`, evidence-import tables, report files, `remediation_plans` |
+| Remediation Plan | `remediation_plans` (`proposed` / `verified` / `partially_verified` / `stale`) | indexed via `task_artifacts` |
+| Baseline | `task_baselines` (bounded snapshot JSON, not raw rows) | — |
+| Revisit schedule | `task_revisit_schedules` | executed as `task_executions.kind=revisit` |
+| Price table | `storage_price_table` (ordinary config; example rates until confirmed) | `/settings/price-table` |
 | Storage Task Context | `task_context_versions` (typed, versioned machine state) | — |
 | Task summary | `session_summaries` |
 | Task findings | `session_findings` |
@@ -117,6 +122,10 @@ Current tables include:
 - `task_decisions`
 - `task_artifacts`
 - `task_context_versions`
+- `storage_price_table`
+- `remediation_plans`
+- `task_baselines`
+- `task_revisit_schedules`
 
 ## Provider metadata
 
@@ -299,22 +308,37 @@ Execution is a durable object with a real lifecycle:
 - `execution_events` — append-only structured progress keyed by sequence
   number: status transitions, tool started/completed, steer received/applied,
   decision opened/resolved, work result recorded, context updated. Sanitized,
-  bounded payloads; answer deltas are never persisted here. Startup retention
-  may prune **terminal** Executions only (completed/failed/cancelled/interrupted),
-  dual-capped by age and per-execution count; truncation rewrites the oldest
+  bounded payloads; answer deltas are never persisted here. Periodic (and
+  startup) retention may prune **terminal** Executions only (completed/failed/cancelled/interrupted),
+  dual-capped by age and per-execution count, using a SQL set delete rather than
+  loading events into Python; truncation rewrites the oldest
   dropped row as an explicit `execution.events_truncated` marker and never
-  touches queued/running/waiting logs.
+  touches queued/running/waiting logs. `0` on either cap disables that cap.
 - `work_results` — the durable output of an execution: stopped/cut-short flags,
   grounding and proposals; the text stays on the linked `session_messages` row.
 - `task_decisions` — first-class Decision rows for confirmation-gated
-  proposals; a newer Work Result supersedes older pending decisions.
+  proposals; a newer Work Result supersedes older pending decisions. At most
+  one pending Decision exists per `(task, action_type)`; a later proposal of
+  the same type supersedes the earlier pending row.
 - `task_artifacts` — the unified Artifact index (`report`, `evidence_import`,
-  `analysis`) pointing at the durable referent via `ref_kind`/`ref_id`.
+  `analysis`, `remediation_plan`, `baseline`, `drift_report`) pointing at the
+  durable referent via `ref_kind`/`ref_id`. Optional `status` and sanitized
+  `payload` hold plan verification state and bounded Drift summaries.
 - `task_context_versions` — the typed Storage Task Context (schema-versioned
   JSON snapshot of machine state: provider scope, buckets in focus, evidence on
   hand, memory counts, open decisions), appended only when changed. Recovery
   and the Agent prompt's stable half read this; they never replay messages to
   rebuild machine state.
+- `storage_price_table` — local ordinary configuration (per-class GB-month and
+  request/retrieval rates). Ships as an example schedule labelled as such;
+  `confirmed` starts false. Not a secret store; credentials never belong here.
+- `remediation_plans` — versioned typed repair documents (`proposed` /
+  `verified` / `partially_verified` / `stale`) with sanitized plan JSON and the
+  simulator payload they were drafted from.
+- `task_baselines` — versioned bounded snapshots (inventory overview, config
+  facts, findings, context version). Not raw inventory/log rows.
+- `task_revisit_schedules` — optional per-task interval, next due time, and
+  catch-up note. Revisit Executions use `kind=revisit` on `task_executions`.
 
 ## Account/config discovery records
 

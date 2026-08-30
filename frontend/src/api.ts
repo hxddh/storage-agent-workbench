@@ -510,7 +510,60 @@ export interface TaskArtifact {
   ref_id: string | null;
   format: string | null;
   summary: string | null;
+  status?: string | null;
+  payload?: Record<string, unknown> | null;
   created_at: string;
+}
+
+export type RemediationPlanStatus = "proposed" | "verified" | "partially_verified" | "stale";
+
+export interface RemediationPlan {
+  id: string;
+  task_id: string;
+  execution_id: string | null;
+  version: number;
+  status: RemediationPlanStatus;
+  title: string | null;
+  plan: Record<string, unknown>;
+  simulation: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskBaseline {
+  id: string;
+  task_id: string;
+  execution_id: string | null;
+  version: number;
+  snapshot: Record<string, unknown>;
+  context_version: number | null;
+  created_at: string;
+}
+
+export interface RevisitSchedule {
+  task_id: string;
+  enabled: number | boolean;
+  interval_days: number;
+  next_due_at: string | null;
+  last_revisit_at: string | null;
+  last_catchup_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PriceTable {
+  id: string;
+  confirmed: boolean;
+  example: boolean;
+  note: string;
+  rates: {
+    currency?: string;
+    gb_divisor?: number;
+    storage_gb_month?: Record<string, number>;
+    request_per_1k?: Record<string, number>;
+    retrieval_gb?: Record<string, number>;
+  };
+  updated_at: string | null;
 }
 
 export interface TaskState {
@@ -527,11 +580,38 @@ export interface TaskState {
 export const getTaskState = (taskId: string) =>
   request<TaskState>(`/agent-tasks/${taskId}/state`);
 
-export const createTaskExecution = (taskId: string, direction: string, turnId?: string) =>
+export const createTaskExecution = (
+  taskId: string, direction: string, turnId?: string, kind?: "direction" | "verify" | "revisit",
+) =>
   request<{ execution: TaskExecution; created: boolean }>(
     `/agent-tasks/${taskId}/executions`,
-    { method: "POST", body: JSON.stringify({ direction, turn_id: turnId }) },
+    { method: "POST", body: JSON.stringify({ direction, turn_id: turnId, ...(kind ? { kind } : {}) }) },
   );
+
+/** Submit a Verify Execution through the one runtime submit path. */
+export const verifyTaskPlan = (taskId: string) =>
+  request<{ execution: TaskExecution; created: boolean }>(
+    `/agent-tasks/${taskId}/verify`, { method: "POST" });
+
+export const listRemediationPlans = (taskId: string) =>
+  request<{ task_id: string; plans: RemediationPlan[] }>(`/agent-tasks/${taskId}/remediation-plans`);
+
+export const listTaskBaselines = (taskId: string) =>
+  request<{ task_id: string; baselines: TaskBaseline[] }>(`/agent-tasks/${taskId}/baselines`);
+
+export const getTaskRevisit = (taskId: string) =>
+  request<{ task_id: string; schedule: RevisitSchedule | null }>(`/agent-tasks/${taskId}/revisit`);
+
+export const putTaskRevisit = (taskId: string, intervalDays: number, enabled: boolean) =>
+  request<{ task_id: string; schedule: RevisitSchedule }>(
+    `/agent-tasks/${taskId}/revisit`,
+    { method: "PUT", body: JSON.stringify({ interval_days: intervalDays, enabled }) },
+  );
+
+export const getPriceTable = () => request<PriceTable>("/settings/price-table");
+
+export const putPriceTable = (body: { confirmed?: boolean; rates?: PriceTable["rates"]; note?: string }) =>
+  request<PriceTable>("/settings/price-table", { method: "PUT", body: JSON.stringify(body) });
 
 /** Steer the CURRENT execution — the direction is injected into the running
  * model loop server-side. 409 (ApiError) when nothing is executing. */
@@ -840,6 +920,7 @@ export interface VaultStatus {
 }
 
 export const getVaultStatus = () => request<VaultStatus>("/settings/secret-vault");
+
 
 // --- session observability (v0.45.0) ----------------------------------------
 // All three read from rows that were sanitized on write; nothing new is exposed

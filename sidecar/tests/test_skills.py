@@ -259,10 +259,9 @@ def test_migrations_are_sequential_and_capped():
     # (support the startup data-maintenance prune).
     versions = [v for v, _n, _s in migrations.MIGRATIONS]
     assert versions == list(range(1, len(versions) + 1))  # 1..N, no gaps/dupes
-    # 26 is the durable Agent Task runtime: agent_tasks / task_executions /
-    # execution_events / work_results / task_decisions / task_artifacts /
-    # task_context_versions (v0.94).
-    assert max(versions) == 26
+    # 27 is the v0.96 optimization copilot: price table, remediation plans,
+    # baselines, revisit schedules, artifact status/payload.
+    assert max(versions) == 27
 
 
 def test_no_public_skills_api(client):

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v0.95.0.**
+> **Implementation contract for Storage Agent v0.96.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v0.93+/v0.94/v0.95 product invariant is:
+The v0.93+/v0.94/v0.95/v0.96 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -31,7 +31,7 @@ New product/frontend work must preserve these boundaries:
 - **Execution** is real runtime/tool work. Never invent plans, steps, workers, or capabilities the runtime does not expose.
 - **Decision required** is a blocking confirmation state derived from real backend proposals, with projected bounds/impact and a durable Decline path.
 - **Work Result** is the durable result of Agent work, not a generic assistant bubble.
-- **Review** is contextual to the active Task. Evidence, Execution detail, and Report are artifacts/review modes, not independent application destinations.
+- Review is contextual to the active Task. Evidence, Execution detail, Report, Remediation Plan, baseline, and Drift are artifacts/review modes, not independent application destinations.
 - **Focus mode** changes presentation only. It never creates a second task lifecycle or second Agent input.
 
 Do not reconstruct earlier chat/investigation/workbench information architecture from old release notes, database names, API names, or git history. Historical `session` and `run` terminology is compatibility vocabulary, not a reason to change current product semantics.
@@ -101,19 +101,23 @@ Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned b
 - dropped event streams reconnect with `after=<last seq>` only — never a blocking `/sessions` POST or assistant-id poll;
 - Decision (`task_decisions`), Work Result (`work_results`), Artifact (`task_artifacts`), and the typed versioned Storage Task Context (`task_context_versions`) are first-class durable rows;
 - the latest typed context version is injected into the Agent prompt's stable half so restart grounding matches the pre-restart snapshot;
-- deterministic cross-evidence correlation produces bounded findings through existing summary/findings/memory channels.
+- deterministic cross-evidence correlation produces bounded findings through existing summary/findings/memory channels;
+- deterministic cost/lifecycle simulation, Remediation Plans, baselines/Drift, and per-task revisits are product capabilities on this same runtime — never a second Agent or a second submit path;
+- Verify and scheduled revisits call `runtime.submit` with `kind=verify` / `kind=revisit`; revisits are read-only and never auto-resolve a Decision;
+- `execution_events` retention is a periodic SQL-set prune (terminal executions only, dual cap, explicit `execution.events_truncated` marker; `0` disables). Active and waiting logs are never touched;
+- at most one pending Decision exists per `(task, action_type)`; a later proposal of the same type supersedes the earlier pending row.
 
-The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream (reconnect by sequence), steer/stop/resume the current execution, then reload persisted task state. The legacy `/sessions` message endpoints are compatibility shims over this runtime. Do not create a second submit path.
+The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream (reconnect by sequence), steer/stop/resume/verify the current execution, then reload persisted task state. The legacy `/sessions` message endpoints are compatibility shims over this runtime. Do not create a second submit path.
 
 ## 5. Current Sidecar API boundary
 
 The Sidecar exposes both product projection and compatibility APIs:
 
-- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the runtime API — executions (submit / steer / stop / resume / SSE event stream resumable by sequence), queued visibility, decisions (list / resolve with impact projection), work results, artifacts, and the typed task context.
+- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the runtime API — executions (submit / steer / stop / resume / SSE event stream resumable by sequence), Verify (`POST .../verify`, kind=`verify`), queued visibility, decisions (list / resolve with impact projection), work results, artifacts, remediation plans, baselines, revisit schedule, and the typed task context.
 - `/sessions/...` remains the durable task/message/runtime compatibility API.
 - `/runs/...` remains deterministic execution/report compatibility API and is not a top-level product surface.
 - `/evidence-imports/...` owns bounded plan → confirm → execute data movement.
-- `/model-providers`, `/cloud-providers`, `/settings`, `/tools`, `/error-triage`, `/reports`, and dataset endpoints keep their existing responsibilities.
+- `/model-providers`, `/cloud-providers`, `/settings` (including the local price table), `/tools`, `/error-triage`, `/reports`, and dataset endpoints keep their existing responsibilities.
 
 Do not rename persistence/API contracts just for cosmetic consistency if that adds migration risk. Adapt them at explicit boundaries instead.
 
@@ -146,13 +150,17 @@ Agent tools are explicit, typed, whitelisted, bounded, and sanitized. Current ca
 - account discovery and bucket configuration review;
 - local uploaded inventory/access-log analysis;
 - managed Evidence Import through a confirmation gate;
+- deterministic cost/lifecycle simulation over bounded inventory aggregates and a local price table (estimates always carry coverage; missing inventory or an unconfirmed price table is an explicit gap);
+- typed Remediation Plan artifacts with read-only Verify executions;
+- versioned baselines and Drift reports;
+- optional per-task read-only revisit schedules submitted through the existing runtime path;
 - task memory/evidence lookup and deterministic report generation.
 
 Do not infer tool availability from a documentation example. `docs/tools.md` and the registered runtime tool set must agree with code.
 
 ## 8. Data ownership
 
-SQLite stores application metadata and durable task/execution records. Current migrations are append-only through **026**; never edit a shipped migration, append a new one.
+SQLite stores application metadata and durable task/execution records. Current migrations are append-only through **027**; never edit a shipped migration, append a new one.
 
 DuckDB/local files store analytical data and large inputs/artifacts. User data lives under the application data directory, never the install directory.
 
@@ -165,7 +173,11 @@ Product-to-persistence mapping:
 | Execution | `task_executions` + `execution_events` | `runs`, `session_runs`, `tool_calls`, turn metrics |
 | Work Result | `work_results` | `session_messages` (assistant rows) |
 | Decision | `task_decisions` | persisted proposed actions + approval/evidence-import state |
-| Evidence / Artifact | `task_artifacts` index | evidence references/imports, reports, local artifact files |
+| Evidence / Artifact | `task_artifacts` index (`report`, `evidence_import`, `analysis`, `remediation_plan`, `baseline`, `drift_report`) | evidence references/imports, reports, local artifact files |
+| Remediation Plan | `remediation_plans` | indexed via `task_artifacts` |
+| Baseline / Drift | `task_baselines` + `drift_report` artifacts | — |
+| Revisit schedule | `task_revisit_schedules` | submitted as `task_executions.kind=revisit` |
+| Price table | `storage_price_table` (ordinary config, not a secret) | `/settings/price-table` |
 | Storage Task Context | `task_context_versions` | — |
 | Task memory | — | session summaries/findings/agent memory |
 

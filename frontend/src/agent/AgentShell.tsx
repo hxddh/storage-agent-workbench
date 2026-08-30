@@ -39,7 +39,7 @@ export function AgentShell({
   const [review, setReview] = useState<ReviewSurface | null>(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [focus, setFocus] = useState(false);
-  const { detail, artifacts, decisions, report, reportLoading, error } = useAgentTaskProjection(taskId, review);
+  const { detail, artifacts, decisions, plans, baselines, revisit, saveRevisit, report, reportLoading, error } = useAgentTaskProjection(taskId, review);
 
   useEffect(() => {
     if (!taskId) {
@@ -107,7 +107,7 @@ export function AgentShell({
 
           <div className="agent-task-controls">
             {taskId ? (
-              <button type="button" className="agent-task-review-button" onClick={() => setReview((current) => current ? null : "overview")} aria-expanded={Boolean(review)}>
+              <button type="button" className="agent-task-review-button" data-testid="agent-task-review" aria-label={copy.review.open} onClick={() => setReview((current) => current ? null : "overview")} aria-expanded={Boolean(review)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
                   <path d="M4 5h16M4 12h16M4 19h10" />
                 </svg>
@@ -150,6 +150,10 @@ export function AgentShell({
             <AgentReviewPanel
               artifacts={artifacts}
               decisions={decisions}
+              plans={plans}
+              baselines={baselines}
+              revisit={revisit}
+              onSaveRevisit={saveRevisit}
               view={review}
               detail={detail}
               report={report}

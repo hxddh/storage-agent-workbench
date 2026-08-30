@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "./fake-model";
 
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
-const openReview = (page: Page) => page.getByTestId("agent-task-header").getByRole("button", { name: "Review", exact: true });
+const openReview = (page: Page) => page.getByTestId("agent-task-review");
 const SKILL = "storageops-security-iam-policy";
 const FOLLOW_UP = "Summarize the evidence again while I keep the review open.";
 const FOLLOW_UP_ANSWER = "The evidence still supports the same IAM-policy conclusion after review.";

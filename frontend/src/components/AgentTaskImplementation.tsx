@@ -4,6 +4,7 @@ import {
   listModelProviders,
   approveDecisionOrPrepare,
   listTaskDecisions,
+  listRemediationPlans,
   resolveTaskDecision,
   stopTaskExecution,
   type DecisionImpact,
@@ -58,7 +59,7 @@ type Item =
   | { kind: "triage"; ts: string; data: TriageCase };
 
 const actionKey = (action: NextAction) => `${action.action_type}::${action.title}`;
-const SUGGESTION_KEYS = ["diagnose", "logs", "inventory", "config", "account", "optimize"] as const;
+const SUGGESTION_KEYS = ["diagnose", "logs", "inventory", "checkup", "cost", "drift", "account"] as const;
 
 function nextActionFromDecision(decision: TaskDecision): NextAction {
   const proposal = decision.proposal;
@@ -128,6 +129,9 @@ export function AgentTaskImplementation({
         resumeTitle: "这次执行被中断了",
         resumeBody: "Sidecar 在执行完成前重启或失败。恢复会用同一条 Direction 开始一次新的 Execution，已有结果会保留。",
         resumeAction: "恢复执行",
+        verifyTitle: "验证修复方案",
+        verifyBody: "用只读工具重新探测方案涉及的配置，并与方案预期逐条对比。不会向存储写入任何内容。",
+        verifyAction: "验证方案",
         queuedTitle: "排队中的 Direction",
         queuedHint: "当前 Execution 结束后会开始这条 Direction。",
         queuedCancel: "取消排队",
@@ -165,6 +169,9 @@ export function AgentTaskImplementation({
         resumeTitle: "This execution was interrupted",
         resumeBody: "The Sidecar restarted or the execution failed before it finished. Resume starts a new Execution with the same Direction; existing work is kept.",
         resumeAction: "Resume execution",
+        verifyTitle: "Verify the remediation plan",
+        verifyBody: "Re-probe the configuration items in the plan with read-only tools and diff them against the expected state. Nothing is written to storage.",
+        verifyAction: "Verify plan",
         queuedTitle: "Queued Direction",
         queuedHint: "This Direction waits until the current Execution finishes.",
         queuedCancel: "Cancel queued Direction",
@@ -200,6 +207,7 @@ export function AgentTaskImplementation({
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const [attached, setAttached] = useState<File | null>(null);
   const [attachType, setAttachType] = useState<"inventory" | "access_log" | null>(null);
+  const [hasRemediationPlan, setHasRemediationPlan] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const presetTypeRef = useRef<"inventory" | "access_log" | null>(null);
   const suggestions = SUGGESTION_KEYS.map((key) => ({ key, label: t(`sugg.${key}`), prompt: t(`prompt.${key}`) }));
@@ -223,6 +231,18 @@ export function AgentTaskImplementation({
     if (!settingsOpen && sidecarReady) refreshModel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsOpen]);
+
+  useEffect(() => {
+    if (!sessionId || !sidecarReady) {
+      setHasRemediationPlan(false);
+      return;
+    }
+    let cancelled = false;
+    void listRemediationPlans(sessionId)
+      .then((next) => { if (!cancelled) setHasRemediationPlan((next.plans ?? []).length > 0); })
+      .catch(() => { if (!cancelled) setHasRemediationPlan(false); });
+    return () => { cancelled = true; };
+  }, [sessionId, sidecarReady, reloadKey, busy]);
 
   const metricsFor = (messageId: string): (TurnMetricsRow & { usage?: TokenUsage }) | null => {
     const persisted = metrics[messageId];
@@ -542,11 +562,15 @@ export function AgentTaskImplementation({
   nextActions.forEach((action) => shownActionTypes.add(action.action_type));
   const extraPending = pendingDecisions.filter((d) => d.status === "pending" && !shownActionTypes.has(d.action_type));
   const lastExec = taskRuntime?.last_execution;
+  const offline = sidecarStatus === "disconnected" || sidecarStatus === "error";
   const showResume = Boolean(
     !needKey && !busy && !run.stalled
     && taskRuntime?.status === "needs_attention"
     && lastExec
     && (lastExec.status === "interrupted" || lastExec.status === "failed"),
+  );
+  const showVerify = Boolean(
+    hasRemediationPlan && !needKey && !busy && !showResume && !offline,
   );
   const queuedDirections = taskRuntime?.queued_executions ?? [];
   const renderAction = (action: NextAction, actionIndex: number, impact?: DecisionImpact | null) => (
@@ -558,8 +582,6 @@ export function AgentTaskImplementation({
       impact={impact ?? impactByType.get(action.action_type)}
     />
   );
-
-  const offline = sidecarStatus === "disconnected" || sidecarStatus === "error";
 
   const composer = (
     <Composer
@@ -649,6 +671,17 @@ export function AgentTaskImplementation({
           </div>
         </div>
       ) : null}
+      {showVerify ? (
+        <div data-testid="task-verify" className="animate-fade-in-up rounded-xl border border-edge bg-panel/60 p-3.5 text-sm">
+          <div className="font-medium text-gray-100">{taskCopy.verifyTitle}</div>
+          <p className="mt-1 text-xs leading-relaxed text-gray-400">{taskCopy.verifyBody}</p>
+          <div className="mt-2.5">
+            <Button data-testid="task-verify-action" variant="primary" size="sm" onClick={() => void runner.verify()}>
+              {taskCopy.verifyAction}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       {queuedDirections.map((execution) => (
         <div
           key={execution.id}
@@ -694,6 +727,7 @@ export function AgentTaskImplementation({
                 {suggestions.map((suggestion) => (
                   <button
                     key={suggestion.key}
+                    data-testid={`delegate-suggestion-${suggestion.key}`}
                     onClick={() => onSuggestion(suggestion.key, suggestion.prompt)}
                     disabled={offline}
                     className="group flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-gray-300 transition-colors hover:bg-hover hover:text-gray-100 disabled:cursor-default disabled:text-gray-500 disabled:hover:bg-transparent"

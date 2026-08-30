@@ -263,6 +263,9 @@ _CORE_TOOLS = {
     # are a few bytes — gating them would only cost a round-trip.
     "note_fact", "record_finding", "note_open_question",
     "update_memory_item", "resolve_memory_item",
+    "simulate_storage_cost", "draft_remediation_plan", "verify_remediation_plan",
+    "capture_task_baseline", "compare_task_drift", "get_price_table_status",
+    "set_task_revisit_days",
 }
 
 _TOOL_GROUPS: dict[str, tuple[str, frozenset[str]]] = {
@@ -480,6 +483,16 @@ INSTRUCTIONS = (
     "(same whitelist as the uploaded-file tools, no new download). Never propose "
     "a re-import, and never ask the user to attach the file by hand, just to ask "
     "a second question of data that is already here.\n"
+    "Cost, lifecycle simulation, remediation plans, baselines, and Drift are "
+    "deterministic tools (simulate_storage_cost, draft_remediation_plan, "
+    "verify_remediation_plan, capture_task_baseline, compare_task_drift). They "
+    "return bounded documents with coverage and gaps. Never invent a dollar "
+    "figure, a trend, or a missing inventory. A remediation plan is applied by "
+    "the user in their own console — you stay read-only. Verify diffs live "
+    "config against the plan. A [revisit] or [verify] Direction must stay "
+    "read-only; confirmation-gated work becomes a pending Decision, never an "
+    "auto-approval. Price-table dollars stay gaps until get_price_table_status "
+    "shows confirmed=true.\n"
     "When preview_object truncates a large object and the answer needs its FULL "
     "content, don't guess from the head: propose the confirmed evidence import "
     "(for a bucket file) or use analyze_uploaded_file (for a file the user "
@@ -1320,6 +1333,8 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
     # Uploaded-file analysis is always available (local, read-only, sanitized) so
     # the agent can analyze an attached log/inventory itself and answer inline.
     tools += session_analysis_tools.build(conn, function_tool, session_id, activity)
+    from . import session_optimization_tools
+    tools += session_optimization_tools.build(conn, function_tool, session_id, activity)
     return tools
 
 

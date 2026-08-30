@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v0.95.0.**
+> **Current architecture baseline: Storage Agent v0.96.0.**
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -200,7 +200,7 @@ Streaming work is Execution; persisted completed output is Work Result. Work Res
 "overview" | "evidence" | "execution" | "report"
 ```
 
-- **Overview** — durable task summary, findings, memory, and execution references.
+- **Overview** — durable task summary, findings, memory, execution references, Remediation Plan status, baselines, Drift, and revisit schedule.
 - **Evidence** — persisted evidence/finding/activity truth.
 - **Execution** — persisted analysis execution and sanitized call detail.
 - **Report** — durable Markdown Report artifact.
@@ -238,9 +238,12 @@ observes:
 6. Resume (`POST .../executions/{eid}/resume`) starts a NEW execution for an
    `interrupted` / `failed` last Execution and the client follows that new
    stream; Queued Directions are projected from task state;
-7. completion, waiting-on-Decision, failure, and interruption are durable
+7. Verify (`POST .../verify`) and scheduled revisits submit through the same
+   `runtime.submit` path with `kind=verify` / `kind=revisit` — never a second
+   runner. Revisits are read-only and never auto-resolve a Decision;
+8. completion, waiting-on-Decision, failure, and interruption are durable
    execution states, not inferences;
-8. reload the persisted task document.
+9. reload the persisted task document.
 
 UI disconnect, task switching, and reload never interrupt an execution; a
 Sidecar restart stamps in-flight executions `interrupted`, which the Task
@@ -264,7 +267,10 @@ The Sidecar owns:
   durable event log, first-class Decisions/Work Results/Artifacts, typed task
   context, and restart recovery;
 - whitelisted storage tools;
-- deterministic run/analysis engines;
+- deterministic run/analysis engines, including cost/lifecycle simulation,
+  remediation-plan verify diffs, and baseline/Drift comparison
+  (`app/analysis/`);
+- optional per-task revisit scheduling (`app/task_runtime/revisit.py`);
 - account/config discovery;
 - Evidence Import plan/confirmation/execution;
 - local DuckDB analysis;
@@ -364,7 +370,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v0.95 and prevents current product docs from drifting back toward retired information architecture.
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v0.96 and prevents current product docs from drifting back toward retired information architecture.
 
 ### Real-Sidecar E2E
 

@@ -198,3 +198,129 @@ export function seedInterruptedTask(
   return { id, title, executionId };
 }
 
+const INVENTORY = JSON.stringify({
+  type: "inventory",
+  metrics: {
+    object_count: 100,
+    total_size: 100000000000,
+    unknown_age_ratio: 0,
+    unknown_size_ratio: 0,
+    as_of: "2026-08-01T00:00:00Z",
+    storage_class_distribution: [
+      { value: "STANDARD", count: 100, size: 100000000000 },
+    ],
+    object_age_distribution: [
+      { bucket: "0-7d", count: 20 },
+      { bucket: "365d+", count: 80 },
+    ],
+  },
+});
+
+const LIFECYCLE = JSON.stringify({
+  facts: { has_abort_mpu: false, has_transition: false, has_expiration: false },
+  findings: [{ title: "No AbortIncompleteMultipartUpload rule", severity: "warning" }],
+});
+
+const OPTIMIZATION_PY = `
+import json, sqlite3, sys, uuid
+conn = sqlite3.connect(sys.argv[1])
+sid = sys.argv[2]
+mode = sys.argv[3]
+inventory, lifecycle = sys.argv[4], sys.argv[5]
+conn.execute(
+    "INSERT INTO agent_tasks (id, title, status, created_at, updated_at)"
+    " VALUES (?, ?, 'ready', datetime('now'), datetime('now'))"
+    " ON CONFLICT(id) DO UPDATE SET status='ready'",
+    (sid, "seeded"),
+)
+conn.execute(
+    "INSERT INTO tool_calls (id, run_id, session_id, tool_name,"
+    " input_json_sanitized, output_json_sanitized, status, duration_ms, created_at)"
+    " VALUES (?, NULL, ?, 'analyze_inventory', '{}', ?, 'success', 12, datetime('now'))",
+    ("tc-inv-" + sid[-8:], sid, inventory),
+)
+conn.execute(
+    "INSERT INTO tool_calls (id, run_id, session_id, tool_name,"
+    " input_json_sanitized, output_json_sanitized, status, duration_ms, created_at)"
+    " VALUES (?, NULL, ?, 'review_bucket_lifecycle', '{}', ?, 'success', 8, datetime('now'))",
+    ("tc-lc-" + sid[-8:], sid, lifecycle),
+)
+conn.execute(
+    "INSERT INTO session_findings (id, session_id, category, severity, confidence, kind, title, interpretation, status, created_at)"
+    " VALUES (?, ?, 'lifecycle', 'warning', 'high', 'inference', ?, ?, 'active', datetime('now'))",
+    (uuid.uuid4().hex, sid, "No AbortIncompleteMultipartUpload rule",
+     "Incomplete multipart uploads are not aborted automatically."),
+)
+if mode in ("review", "due", "catchup"):
+    plan_id = uuid.uuid4().hex
+    conn.execute(
+        "INSERT INTO remediation_plans (id, task_id, version, status, title,"
+        " plan_json_sanitized, simulation_json_sanitized, created_at, updated_at)"
+        " VALUES (?, ?, 1, 'proposed', 'Remediation plan',"
+        " ?, ?, datetime('now'), datetime('now'))",
+        (plan_id, sid,
+         json.dumps({"actions": [{"id": "abort-mpu-7d", "kind": "abort_mpu", "after_days": 7,
+                                  "title": "Abort incomplete multipart uploads after 7 days",
+                                  "lifecycle_fragment": {"Rules": [{"ID": "abort-mpu", "Status": "Enabled",
+                                    "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7}}]}}],
+                      "checklist": ["Apply in your console"], "apply_in": "operator_console_or_cli",
+                      "mutation": False}),
+         json.dumps({"kind": "simulation", "coverage": {"object_count": 100, "bytes": 100000000000,
+                     "inventory_as_of": "2026-08-01T00:00:00Z"}, "gaps": []})),
+    )
+    conn.execute(
+        "INSERT INTO task_artifacts (id, task_id, artifact_type, title, ref_kind, ref_id,"
+        " format, summary, status, created_at)"
+        " VALUES (?, ?, 'remediation_plan', 'Remediation plan v1', 'remediation_plan', ?,"
+        " 'json', '1 recommended action(s); status proposed', 'proposed', datetime('now'))",
+        (uuid.uuid4().hex, sid, plan_id),
+    )
+    bid = uuid.uuid4().hex
+    conn.execute(
+        "INSERT INTO task_baselines (id, task_id, version, snapshot_json_sanitized, created_at)"
+        " VALUES (?, ?, 1, ?, datetime('now'))",
+        (bid, sid, json.dumps({"inventory": {"object_count": 100, "total_size": 100000000000},
+                               "findings": [{"title": "No AbortIncompleteMultipartUpload rule"}]})),
+    )
+    conn.execute(
+        "INSERT INTO task_artifacts (id, task_id, artifact_type, title, ref_kind, ref_id,"
+        " format, summary, created_at) VALUES (?, ?, 'baseline', 'Task baseline v1',"
+        " 'task_baseline', ?, 'json', '100 objects', datetime('now'))",
+        (uuid.uuid4().hex, sid, bid),
+    )
+    conn.execute(
+        "INSERT INTO task_artifacts (id, task_id, artifact_type, title, ref_kind, ref_id,"
+        " format, summary, payload_json_sanitized, created_at)"
+        " VALUES (?, ?, 'drift_report', 'Drift report', 'drift_report', ?,"
+        " 'json', 'added 0 / resolved 0 / still present 1',"
+        " ?, datetime('now'))",
+        (uuid.uuid4().hex, sid, bid,
+         json.dumps({"kind": "drift", "findings": {"added": [], "resolved": [],
+                     "still_present": [{"title": "No AbortIncompleteMultipartUpload rule"}]},
+                     "coverage": {"object_count": 100}})),
+    )
+    note = "catch-up" if mode in ("due", "catchup") else None
+    due = "2020-01-01T00:00:00Z" if mode == "due" else "2099-01-01T00:00:00Z"
+    conn.execute(
+        "INSERT INTO task_revisit_schedules (task_id, enabled, interval_days, next_due_at,"
+        " last_catchup_note, created_at, updated_at) VALUES (?, 1, 7, ?, ?, datetime('now'), datetime('now'))",
+        (sid, due, note),
+    )
+conn.commit()
+print(sid)
+`;
+
+export function seedOptimizationTask(
+  title = `cost review ${randomUUID().slice(0, 8)}`,
+  mode: "inventory" | "review" | "due" | "catchup" = "inventory",
+): { id: string; title: string } {
+  const { id } = seedSession(1, title, "short");
+  execFileSync(
+    process.env.E2E_PYTHON || "python3",
+    ["-c", OPTIMIZATION_PY, `${dataDir()}/app.db`, id, mode, INVENTORY, LIFECYCLE],
+    { encoding: "utf8" },
+  );
+  return { id, title };
+}
+
+
