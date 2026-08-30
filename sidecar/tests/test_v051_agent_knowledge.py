@@ -20,7 +20,6 @@ from __future__ import annotations
 import pytest
 
 from app import db
-from app.agent_runtime import turn_guard
 from app.repositories import sessions as repo
 
 
@@ -154,34 +153,39 @@ def test_turn_state_is_not_running_by_default(client, conn):
     assert client.get("/sessions/missing/turn").status_code == 404
 
 
-def test_turn_state_reports_a_live_turn_and_stops_when_it_ends(client, conn):
-    sid = _session(client)
-    handle, created = turn_guard.begin("turn-abc", sid)
-    assert created
-    turn_guard.register_session_turn(sid, handle)
-    try:
-        body = client.get(f"/sessions/{sid}/turn").json()
-        # This is the whole point: a client that reloaded mid-turn has no local
-        # state, and must be able to learn the turn is still running.
-        assert body["running"] is True
-        assert body["turn_id"] == "turn-abc"
-        assert body["started_at"] and body["age_ms"] is not None
+def _register_execution(conn, session_id: str, turn_id: str) -> str:
+    """A durable in-flight execution row, as runtime.submit would create."""
+    from app.task_runtime import store as task_store
+    task_store.ensure_task(conn, session_id)
+    execution = task_store.create_execution(conn, session_id, "in-flight", turn_id)
+    conn.commit()
+    return execution["id"]
 
-        turn_guard.set_result("turn-abc", {"content": "done"}, session_id=sid)
-        assert client.get(f"/sessions/{sid}/turn").json()["running"] is False
-    finally:
-        turn_guard.discard("turn-abc")
+
+def test_turn_state_reports_a_live_turn_and_stops_when_it_ends(client, conn):
+    from app.task_runtime import store as task_store
+    sid = _session(client)
+    exec_id = _register_execution(conn, sid, "turn-abc")
+    body = client.get(f"/sessions/{sid}/turn").json()
+    # This is the whole point: a client that reloaded mid-turn has no local
+    # state, and must be able to learn the turn is still running. Since v0.94
+    # the answer comes from the DURABLE execution row, so it also survives a
+    # sidecar restart (where recovery marks the execution interrupted).
+    assert body["running"] is True
+    assert body["turn_id"] == "turn-abc"
+    assert body["started_at"] and body["age_ms"] is not None
+    assert body["execution_id"] == exec_id
+
+    task_store.set_execution_status(conn, exec_id, task_store.EXEC_COMPLETED)
+    conn.commit()
+    assert client.get(f"/sessions/{sid}/turn").json()["running"] is False
 
 
 def test_a_turn_is_never_reported_for_another_session(client, conn):
     a, b = _session(client, "a"), _session(client, "b")
-    handle, _ = turn_guard.begin("turn-xyz", a)
-    turn_guard.register_session_turn(a, handle)
-    try:
-        assert client.get(f"/sessions/{a}/turn").json()["running"] is True
-        assert client.get(f"/sessions/{b}/turn").json()["running"] is False
-    finally:
-        turn_guard.discard("turn-xyz")
+    _register_execution(conn, a, "turn-xyz")
+    assert client.get(f"/sessions/{a}/turn").json()["running"] is True
+    assert client.get(f"/sessions/{b}/turn").json()["running"] is False
 
 
 def test_attached_files_are_listed_without_their_filesystem_paths(client, conn):

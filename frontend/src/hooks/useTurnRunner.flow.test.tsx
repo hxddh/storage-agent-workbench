@@ -27,6 +27,12 @@ const api = vi.hoisted(() => ({
   uploadSessionDataset: vi.fn(),
   submitErrorTriage: vi.fn(),
   deleteSession: vi.fn(),
+  // Durable task runtime transport (v0.94).
+  createTaskExecution: vi.fn(),
+  streamExecutionEvents: vi.fn(),
+  steerTaskExecution: vi.fn(),
+  stopTaskExecution: vi.fn(),
+  getSessionTurnState: vi.fn(),
 }));
 
 vi.mock("../api", async (importOriginal) => {
@@ -55,6 +61,71 @@ function useHarness(initialId: string | null, onFail?: (v: string) => void) {
 beforeEach(() => {
   vi.clearAllMocks();
   api.getSession.mockResolvedValue({ messages: [] });
+  // Default: the durable submit fails so legacy tests exercise the blocking
+  // fallback exactly as before; individual tests override for the happy path.
+  api.createTaskExecution.mockRejectedValue(new Error("stream broke"));
+  api.streamExecutionEvents.mockRejectedValue(new Error("stream broke"));
+  api.getSessionTurnState.mockResolvedValue({ running: false });
+});
+
+describe("the durable execution path", () => {
+  it("delegates via a durable execution and follows its event stream", async () => {
+    const id = "sessD";
+    api.createTaskExecution.mockResolvedValue({ execution: { id: "exec-1" }, created: true });
+    api.streamExecutionEvents.mockResolvedValue({
+      status: "completed", stopped: false, message_id: "m1",
+      proposed_actions: [], metrics: { duration_ms: 10, tool_calls: 0 }, last_seq: 5,
+    });
+
+    const { result } = renderHook(() => useHarness(id), { wrapper });
+    result.current.localId.current = id;
+    await act(async () => {
+      await result.current.runner.submit("check the bucket");
+    });
+
+    expect(api.createTaskExecution).toHaveBeenCalledWith(id, "check the bucket", expect.any(String));
+    expect(api.streamExecutionEvents).toHaveBeenCalledWith(
+      id, "exec-1", expect.anything(), expect.anything());
+    // The legacy stream endpoint is no longer part of the submit path at all.
+    expect(api.streamSessionMessage).not.toHaveBeenCalled();
+    expect(api.postSessionMessage).not.toHaveBeenCalled();
+    expect(getSessionRun(id).busy).toBe(false);
+    expect(getSessionRun(id).lastMetrics?.messageId).toBe("m1");
+  });
+
+  it("steers the CURRENT execution instead of cancelling it", async () => {
+    const id = "sessS";
+    api.steerTaskExecution.mockResolvedValue({ status: "steering", execution: { id: "exec-2" } });
+    const { result } = renderHook(() => useHarness(id), { wrapper });
+    result.current.localId.current = id;
+    // An execution is live for this task (e.g. reattached after a reload).
+    const { patchSessionRun } = await import("../sessionRuns");
+    patchSessionRun(id, { busy: true });
+    await act(async () => {
+      await result.current.runner.steer("focus on us-east-1");
+    });
+    expect(api.steerTaskExecution).toHaveBeenCalledWith(id, "focus on us-east-1");
+    expect(api.cancelSessionTurn).not.toHaveBeenCalled();
+    expect(api.stopTaskExecution).not.toHaveBeenCalled();
+    patchSessionRun(id, { busy: false });
+  });
+
+  it("stops a reattached execution through its durable identity", async () => {
+    const id = "sessR";
+    api.getSessionTurnState.mockResolvedValue({ running: true, execution_id: "exec-3" });
+    api.stopTaskExecution.mockResolvedValue({ status: "stopping", execution: { id: "exec-3" } });
+    const { result } = renderHook(() => useHarness(id), { wrapper });
+    result.current.localId.current = id;
+    const { patchSessionRun } = await import("../sessionRuns");
+    patchSessionRun(id, { busy: true });
+    await act(async () => {
+      result.current.runner.stop();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(api.stopTaskExecution).toHaveBeenCalledWith(id, "exec-3");
+    patchSessionRun(id, { busy: false });
+  });
 });
 
 describe("turn failure while viewing another session (FE2)", () => {

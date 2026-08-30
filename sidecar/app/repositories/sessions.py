@@ -119,6 +119,14 @@ def delete(conn: sqlite3.Connection, session_id: str) -> list[str]:
                 # v0.60.0 — this one does NOT cascade on session_id at all.
                 "tool_calls"):
         conn.execute(f"DELETE FROM {tbl} WHERE session_id = ?", (session_id,))
+    # v0.94.0 — durable task-runtime rows. agent_tasks (and its FK children)
+    # cascade from sessions, but the explicit deletes keep the pragma-off
+    # promise above; execution_events carries NO foreign key at all (append-only
+    # log), so its delete here is the only one it gets.
+    for tbl in ("task_executions", "execution_events", "task_decisions",
+                "work_results", "task_artifacts", "task_context_versions"):
+        conn.execute(f"DELETE FROM {tbl} WHERE task_id = ?", (session_id,))
+    conn.execute("DELETE FROM agent_tasks WHERE id = ?", (session_id,))
     conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
     conn.commit()
     return agent_run_ids

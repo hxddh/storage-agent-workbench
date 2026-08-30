@@ -39,7 +39,7 @@ export function AgentShell({
   const [review, setReview] = useState<ReviewSurface | null>(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [focus, setFocus] = useState(false);
-  const { detail, report, reportLoading, error } = useAgentTaskProjection(taskId, review);
+  const { detail, artifacts, report, reportLoading, error } = useAgentTaskProjection(taskId, review);
 
   useEffect(() => {
     if (!taskId) {
@@ -67,7 +67,8 @@ export function AgentShell({
   const scope = task?.primary_bucket?.trim() || task?.goal?.trim() || copy.task.noScope;
   const outputCount = (task?.finding_count ?? 0) + (task?.run_count ?? 0);
   const latestTool = run.streamTools.length ? run.streamTools[run.streamTools.length - 1] : null;
-  const stateKey = agentTaskState(run, Boolean(taskId), task?.requires_decision ?? false);
+  const stateKey = agentTaskState(run, Boolean(taskId), task?.requires_decision ?? false,
+    task?.task_status);
   const stateLabel = stateKey === "idle"
     ? copy.states.delegate
     : stateKey === "ready"
@@ -147,6 +148,7 @@ export function AgentShell({
           </section>
           {review && taskId ? (
             <AgentReviewPanel
+              artifacts={artifacts}
               view={review}
               detail={detail}
               report={report}

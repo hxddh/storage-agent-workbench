@@ -1,9 +1,14 @@
 import type { SessionSummaryRow } from "../types";
 
 /** Backend Session records projected into product-level Agent tasks. Durable
- * decision state is supplied by /agent-tasks, not inferred from browser memory. */
+ * decision state is supplied by /agent-tasks, not inferred from browser memory.
+ * Since v0.94 the row also carries the DURABLE task lifecycle (`task_status`)
+ * and the active execution id, so background work and pending decisions stay
+ * visible with a cold browser run store (reload, second window, restart). */
 export type AgentTaskSummary = SessionSummaryRow & {
   requires_decision: boolean;
+  task_status?: "ready" | "working" | "needs_decision" | "needs_attention" | "archived";
+  active_execution_id?: string | null;
 };
 
 /** Agent task navigation geometry belongs to the application shell. */

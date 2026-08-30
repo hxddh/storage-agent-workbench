@@ -1727,6 +1727,89 @@ def _install_tool_output_budget(tools: list[Any],
     return spent
 
 
+class SteerQueue:
+    """Thread-safe carrier for mid-execution Direction (steer) text.
+
+    The runtime pushes; the running execution drains at the next tool boundary
+    and the text is injected as a runtime note the model must follow. This is
+    what makes Steer act ON the current execution instead of cancelling the
+    turn and re-running: the investigation, its tool trace, and its budget all
+    continue. ``undelivered()`` lets the driver detect a steer that arrived too
+    late to be injected (the model was already writing its final answer) so it
+    can be carried into a follow-up execution rather than dropped."""
+
+    def __init__(self) -> None:
+        import threading
+        self._lock = threading.Lock()
+        self._pending: list[str] = []
+        self.delivered: list[str] = []
+
+    def push(self, text: str) -> None:
+        clean = redact_text(str(text or "")).strip()
+        if not clean:
+            return
+        with self._lock:
+            self._pending.append(clean[:4000])
+
+    def drain(self) -> list[str]:
+        with self._lock:
+            out = self._pending
+            self._pending = []
+            self.delivered.extend(out)
+            return out
+
+    def undelivered(self) -> list[str]:
+        with self._lock:
+            out = self._pending
+            self._pending = []
+            return out
+
+
+_STEER_NOTE = (
+    "\n\n[USER STEER — runtime notice, not tool data] The user just steered this "
+    "execution: {steers}\nAdjust the investigation NOW to follow this direction; "
+    "where it conflicts with the original question, the steer wins. Do not "
+    "restart from scratch — keep everything you have already established."
+)
+
+
+def _install_steer_injection(tools: list[Any], steer_queue: Any,
+                             activity: list[dict[str, Any]] | None) -> None:
+    """Deliver pending steer text at the next tool boundary (OUTERMOST wrapper).
+
+    Installed after the budget wrapper so the steer note rides on whatever the
+    tool returns — real payloads and runtime statuses alike — and sits OUTSIDE
+    the untrusted-data envelope: a steer is the user's own direction, exactly as
+    trusted as the original question. The activity trace records the delivery so
+    the Execution review shows when the course changed."""
+    if steer_queue is None:
+        return
+    for t in tools:
+        orig = getattr(t, "on_invoke_tool", None)
+        if orig is None:
+            continue
+
+        def _make(_orig):
+            async def wrapped(ctx: Any, args: Any) -> Any:
+                out = await _orig(ctx, args)
+                steers = steer_queue.drain()
+                if not steers:
+                    return out
+                if activity is not None:
+                    for s in steers:
+                        activity.append({"tool": "user_steer", "target": "",
+                                         "result": s[:120], "ok": True,
+                                         "status": "completed"})
+                quoted = " | ".join(f'"{s}"' for s in steers)
+                return f"{out}{_STEER_NOTE.format(steers=quoted)}"
+            return wrapped
+
+        try:
+            t.on_invoke_tool = _make(orig)
+        except Exception:  # noqa: BLE001 — frozen/foreign tool object: skip
+            pass
+
+
 def _build_prompt(
     session: dict[str, Any],
     summary: dict[str, Any],
@@ -1938,6 +2021,10 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
                                          explicit_token_budget=creds.get("turn_token_budget"),
                                          cancel_event=spec.get("cancel_event"))
     spec["budget"] = budget  # readable by the blocking driver, which owns `spec`
+    # Steer delivery is the OUTERMOST wrapper: a steer note must ride on every
+    # tool return (real payloads and budget statuses alike) and stay outside the
+    # untrusted-data envelope — it is the user's own direction.
+    _install_steer_injection(tools, spec.get("steer_queue"), activity)
     # _make_agent asks for PARALLEL tool calls unless this endpoint has already
     # proven it mishandles them (v0.54.0). Independent probes then batch into one
     # step instead of one round-trip each, and every avoided round-trip avoids
@@ -2107,6 +2194,7 @@ def build_stream(
     attachments: list[dict[str, Any]] | None = None,
     cancel_event: Any = None,
     clients: list[Any] | None = None,
+    steer_queue: Any = None,
 ):
     """Set up a streaming run.
 
@@ -2126,7 +2214,7 @@ def build_stream(
     activity: list[dict[str, Any]] = []
     spec = {"prompt": prompt, "creds": creds, "conn": conn, "activity": activity,
             "session_id": session.get("id"), "turn_id": turn_id,
-            "cancel_event": cancel_event,
+            "cancel_event": cancel_event, "steer_queue": steer_queue,
             # v0.55.0: seeds the uploaded_files tool group (seed_unlocked_groups).
             "attachments": attachments}
     result, finalize, _ = _start_streamed_run(spec, clients)
@@ -2490,6 +2578,6 @@ async def stream_events_for(result: Any, activity: list[dict[str, Any]], skill_n
         await _close_clients(clients)
 
 
-__all__ = ["SESSION_LOOP", "build_session_context", "render_context_text", "answer",
-           "build_stream", "stream_events_for", "SESSION_SAFETY_RULES", "INSTRUCTIONS",
-           "FINALIZE_INSTRUCTIONS"]
+__all__ = ["SESSION_LOOP", "SteerQueue", "build_session_context", "render_context_text",
+           "answer", "build_stream", "stream_events_for", "SESSION_SAFETY_RULES",
+           "INSTRUCTIONS", "FINALIZE_INSTRUCTIONS"]

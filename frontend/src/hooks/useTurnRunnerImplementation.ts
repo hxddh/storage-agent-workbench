@@ -12,11 +12,15 @@ import { deriveSessionTitle } from "../lib/sessionTitle";
 import {
   ApiError,
   cancelSessionTurn,
+  createTaskExecution,
   deleteSession,
   createSession,
   getSession,
+  getSessionTurnState,
   postSessionMessage,
-  streamSessionMessage,
+  steerTaskExecution,
+  stopTaskExecution,
+  streamExecutionEvents,
   submitErrorTriage,
   uploadSessionDataset,
 } from "../api";
@@ -98,6 +102,8 @@ type Outcome = "ok" | "stopped" | "failed" | "triaged" | "inprogress";
 type InFlight = {
   controller: AbortController;
   turnId: string;
+  /** The durable execution behind this turn, once the submit returned. */
+  executionId: string | null;
   cancelPromise: Promise<unknown> | null;
 };
 
@@ -316,38 +322,41 @@ export function useTurnRunner(opts: {
     // release now; further same-session submits are gated by `busy` (F1).
     onRegistered?.();
     const controller = new AbortController();
-    const flight: InFlight = { controller, turnId, cancelPromise: null };
+    const flight: InFlight = { controller, turnId, executionId: null, cancelPromise: null };
     turnsRef.current.set(id, flight);
-    // Let a session-delete abort this turn's stream (F3). Identity-checked on
-    // unregister so a newer turn's aborter isn't clobbered.
+    // Let a session-delete abort this turn's stream view (F3). Identity-checked
+    // on unregister so a newer turn's aborter isn't clobbered.
     const abort = () => controller.abort();
     registerTurnAbort(id, abort);
-    // And let it cancel the turn SERVER-SIDE too — otherwise the worker keeps
-    // generating (and spending) against a deleted session.
+    // And let it stop the durable execution SERVER-SIDE too — otherwise the
+    // runtime keeps generating (and spending) against a deleted task.
     const serverCancel = () => {
-      void cancelSessionTurn(id, turnId).catch(() => undefined);
+      if (flight.executionId) void stopTaskExecution(id, flight.executionId).catch(() => undefined);
+      else void cancelSessionTurn(id, turnId).catch(() => undefined);
     };
     registerTurnCancel(id, serverCancel);
     let outcome: Outcome = "failed";
     try {
       try {
-        const r = await streamSessionMessage(
-          id, q,
+        // Delegate: create the DURABLE execution, then follow its structured
+        // event log. The execution is owned by the sidecar's task runtime —
+        // aborting this stream (reload, task switch, Stop) never interrupts it,
+        // and a broken stream is recovered by the idempotent blocking attach
+        // below (same turn_id), not by re-running anything.
+        const submitted = await createTaskExecution(id, q, turnId);
+        flight.executionId = submitted.execution.id;
+        const r = await streamExecutionEvents(
+          id, submitted.execution.id,
           {
             onDelta: (chunk) => patchSessionRun(id, (s) => ({ streamText: (s.streamText ?? "") + chunk })),
             onTool: (rec) => patchSessionRun(id, (s) => ({ streamTools: mergeTool(s.streamTools, rec) })),
           },
-          controller.signal, turnId,
+          { signal: controller.signal },
         );
         patchSessionRun(id, {
+          // Straight off the completion event these are the bounded proposal
+          // summaries; the reload just below swaps in the persisted full list.
           proposals: r.proposed_actions || [],
-          grounding: {
-            evidence_used: r.evidence_used || [],
-            evidence_gaps: r.evidence_gaps || [],
-            skills_used: r.skills_used || [],
-          },
-          // Straight off the `done` event, so the cost footer appears with the
-          // answer instead of a beat later when the reload persists it.
           lastMetrics: r.metrics ? { messageId: r.message_id ?? null, metrics: r.metrics } : null,
         });
         outcome = r.stopped ? "stopped" : "ok";
@@ -511,23 +520,22 @@ export function useTurnRunner(opts: {
     return false;
   };
 
-  // STEER: redirect a running turn without losing its work. Cancel the in-flight
-  // turn (its partial answer + tool_activity persist), wait for it to settle,
-  // then send `text` as a NEW turn — whose context REPLAYS the cancelled turn's
-  // tool trace (v0.24.7), so the agent continues from what it already probed
-  // toward the new ask instead of restarting from scratch. If nothing is
-  // running, it degrades to a normal submit. The timing gate (waitForIdle) is
-  // load-bearing: reopening before the partial persists would lose the trace.
-  // `resend` (optional) is how the redirected message is sent once the turn
-  // settles — the caller passes it when the composer holds an ATTACHMENT, so a
-  // steer routes through the dataset-upload path instead of silently dropping
-  // the file (the two send paths must agree about attachments).
+  // STEER: direct the CURRENT execution while it runs. The text is delivered
+  // into the running model loop server-side (injected at its next tool
+  // boundary, recorded durably as steer.received/steer.applied) — the
+  // execution, its tool trace, and its budget all CONTINUE. This is not
+  // cancel-and-resend: nothing is aborted, nothing restarts. A steer the loop
+  // could no longer take (it was already writing its answer) is carried by the
+  // runtime into an automatic follow-up execution, so it is never dropped.
+  //
+  // `resend` (optional) is passed when the composer holds an ATTACHMENT: a file
+  // cannot ride a steer, so that direction goes through the dataset-upload
+  // path as a NEW delegation once the current execution settles.
   const steer = async (text: string, resend?: () => Promise<void>) => {
     const q = text.trim();
     if (!q && !resend) return;
     const id = localId.current;
-    const flight = id ? turnsRef.current.get(id) : null;
-    if (!id || !flight) {
+    if (!id || (!turnsRef.current.get(id) && !getSessionRun(id).busy)) {
       await (resend ? resend() : submit(q));
       return;
     }
@@ -536,30 +544,40 @@ export function useTurnRunner(opts: {
     // wiping an unsent draft the user typed would lose it (FE3). Mirror runTurn.
     const curDraft = getText ? getText() : null;
     if (curDraft === null || curDraft.trim() === "" || curDraft.trim() === q) setText("");
-    // LATEST WINS: a second steer while the first is still settling REPLACES the
-    // pending payload instead of racing it — previously the second submit hit
-    // the busy latch and the corrected message vanished (not sent, not restored).
-    if (steerPendingRef.current.has(id)) {
+    if (resend) {
+      // Attachment path: wait for the current execution to settle, then send
+      // the upload + direction as its own delegation. LATEST WINS while
+      // settling, exactly as before.
+      if (steerPendingRef.current.has(id)) {
+        steerPendingRef.current.set(id, { q, resend });
+        return;
+      }
       steerPendingRef.current.set(id, { q, resend });
+      const settled = await waitForIdle(id);
+      const payload = steerPendingRef.current.get(id) ?? { q, resend };
+      steerPendingRef.current.delete(id);
+      if (!settled || localId.current !== id) {
+        if (localId.current === id) setText(payload.q);
+        else patchSessionRun(id, { failedText: payload.q });
+        return;
+      }
+      await (payload.resend ? payload.resend() : submit(payload.q));
       return;
     }
-    steerPendingRef.current.set(id, { q, resend });
-    stop(id); // cancel THIS session's turn; its partial + trace persist server-side
-    const settled = await waitForIdle(id);
-    const payload = steerPendingRef.current.get(id) ?? { q, resend };
-    steerPendingRef.current.delete(id);
-    // If it didn't settle, or the user navigated to another session while it
-    // did, don't cross-send — restore the text so nothing is lost. When the
-    // visible session CHANGED, restoring means stashing it as the ORIGINAL
-    // session's failedText (shown when the user returns) — writing it into
-    // the now-visible session's composer would overwrite that session's draft
-    // and arm an Enter-to-send into the wrong thread.
-    if (!settled || localId.current !== id) {
-      if (localId.current === id) setText(payload.q);
-      else patchSessionRun(id, { failedText: payload.q });
-      return;
+    try {
+      await steerTaskExecution(id, q);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        // The execution settled between the check and the steer — the
+        // direction becomes an ordinary delegation instead of being lost.
+        await submit(q);
+        return;
+      }
+      // Restore the text so a failed steer never eats the user's direction.
+      if (localId.current === id) setText(q);
+      else patchSessionRun(id, { failedText: q });
+      patchSessionRun(id, { error: cleanError(String(e), t) });
     }
-    await (payload.resend ? payload.resend() : submit(payload.q));
   };
 
   // Composer file upload → agent-native analysis. The file is attached to the
@@ -620,9 +638,26 @@ export function useTurnRunner(opts: {
     const id = typeof sessionId === "string" ? sessionId : localId.current;
     if (!id) return;
     const flight = turnsRef.current.get(id);
-    if (!flight) return;
+    if (!flight) {
+      // No local flight — a reattached execution this client is only FOLLOWING
+      // (started before a reload, or by the blocking path in another lifetime).
+      // Stop it through its durable identity.
+      if (!getSessionRun(id).busy) return;
+      patchSessionRun(id, { stopped: true });
+      void getSessionTurnState(id)
+        .then((state) => {
+          if (state.running && state.execution_id) {
+            return stopTaskExecution(id, state.execution_id).then(() => undefined);
+          }
+          return undefined;
+        })
+        .catch(() => undefined);
+      return;
+    }
     patchSessionRun(id, { stopped: true });
-    flight.cancelPromise = cancelSessionTurn(id, flight.turnId).catch(() => undefined);
+    flight.cancelPromise = flight.executionId
+      ? stopTaskExecution(id, flight.executionId).catch(() => undefined)
+      : cancelSessionTurn(id, flight.turnId).catch(() => undefined);
     flight.controller.abort();
   };
 

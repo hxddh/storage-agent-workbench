@@ -153,6 +153,8 @@ A real confirmation boundary is required before operations that materially move 
 
 The UI presents this state as **Decision required**, but the Sidecar remains authoritative. A visual button or Agent-generated recommendation cannot bypass server-side confirmation state.
 
+Since v0.94 the boundary is a first-class durable record: a gated proposal opens a pending `task_decisions` row, the raising execution stays `waiting` until it is resolved, and the approval/decline is persisted with an audit trail. Approval never auto-executes cloud work — it hands over to the same plan → confirm → run flow. The durable execution event log stores structured, sanitized, bounded progress only: never secrets, raw analytical rows, or chain-of-thought.
+
 A plan/prepare step is not execution and must not perform hidden downloads or mutation.
 
 ## 9. Bounded object reads

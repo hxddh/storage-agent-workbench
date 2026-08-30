@@ -283,6 +283,16 @@ def run_import(import_id: str, conn: sqlite3.Connection = Depends(get_conn)):
         conn.commit()
         raise HTTPException(status_code=500, detail=f"evidence import failed: {_safe_err(exc)}")
 
+    # First-class Artifact: index the imported evidence snapshot against the
+    # task that discovered it (best-effort; never fails the import).
+    from ..repositories import sessions as sessions_repo
+    from ..task_runtime import artifacts as task_artifacts
+    task_id = sessions_repo.session_id_for_run(conn, data["account_run_id"]) \
+        if data.get("account_run_id") else None
+    task_artifacts.record_evidence_import(
+        conn, task_id, import_id, source_type=source_type,
+        summary=f"{len(files)} files, {total} bytes from {data['source_bucket']}")
+
     # Hand off to the existing deterministic analysis executor.
     run_service.start(analysis_run_id)
 

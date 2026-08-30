@@ -37,14 +37,14 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v0.93 documentation contract", () => {
+describe("v0.94 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
       expect(text, `${path} must name Agent Task`).toMatch(/Agent Task/);
     }
-    expect(readRepo("docs/README.md")).toContain("v0.93.0");
-    expect(readRepo("CLAUDE.md")).toContain("v0.93.0");
+    expect(readRepo("docs/README.md")).toContain("v0.94.0");
+    expect(readRepo("CLAUDE.md")).toContain("v0.94.0");
   });
 
   for (const [label, pattern] of removedArchitecture) {
@@ -61,8 +61,15 @@ describe("v0.93 documentation contract", () => {
     const smoke = readRepo("docs/release-smoke-test.md");
 
     expect(api).toContain("GET /agent-tasks");
+    expect(api).toContain("POST /agent-tasks/{task_id}/executions");
+    expect(api).toContain("POST /agent-tasks/{task_id}/steer");
+    expect(api).toContain("/decisions/{decision_id}/resolve");
     expect(api).toMatch(/product-level.*Agent Task/i);
-    expect(dataModel).toMatch(/Current migration head:\s*025/i);
+    expect(dataModel).toMatch(/Current migration head:\s*026/i);
+    expect(dataModel).toContain("task_executions");
+    expect(dataModel).toContain("execution_events");
+    expect(dataModel).toContain("task_decisions");
+    expect(dataModel).toContain("task_context_versions");
     expect(dataModel).toContain("Product-to-persistence mapping");
     expect(security).toContain("Decision required");
     expect(security).toContain("STORAGE_AGENT_AUTH_TOKEN");

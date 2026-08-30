@@ -5,9 +5,11 @@ import {
   getSessionOverview,
   getSessionTriage,
   getSessionTurnState,
+  streamExecutionEvents,
 } from "../api";
 import type { TFunc } from "../i18n";
-import { getSessionRun } from "../sessionRuns";
+import { getSessionRun, patchSessionRun } from "../sessionRuns";
+import { mergeTool } from "./useTurnRunner";
 import type {
   SessionDetail,
   SessionMessage,
@@ -122,15 +124,56 @@ export function useSessionDocument({
     return () => window.clearTimeout(timer);
   }, [detail, triage.length, sessionId, loadError, reload]);
 
-  // Reattach to a turn this client did not start. Poll only while the server says
-  // one is running; once it ends its persisted answer becomes the document tail.
+  // Reattach to an execution this client did not start (a reload mid-run, a
+  // task switch back, a delegation from another window). The execution is a
+  // durable object with an append-only event log, so reattaching REPLAYS its
+  // structured progress from sequence 0 and then follows live — full tool
+  // trace and streaming answer tail, not just a spinner. Closing this stream
+  // (switching away again) affects nothing server-side.
   useEffect(() => {
     if (!sessionId || !sidecarReady) return;
     let stopped = false;
     let timer = 0;
+    let followCtl: AbortController | null = null;
+    let following = false;
+
+    const follow = async (state: SessionTurnState, executionId: string) => {
+      following = true;
+      followCtl = new AbortController();
+      setRemoteTurn(state);
+      patchSessionRun(sessionId, {
+        busy: true, error: null, stopped: false, stalled: false,
+        streamText: null, streamTools: [],
+      });
+      try {
+        await streamExecutionEvents(
+          sessionId, executionId,
+          {
+            onDelta: (chunk) =>
+              patchSessionRun(sessionId, (s) => ({ streamText: (s.streamText ?? "") + chunk })),
+            onTool: (rec) =>
+              patchSessionRun(sessionId, (s) => ({ streamTools: mergeTool(s.streamTools, rec) })),
+          },
+          { signal: followCtl.signal },
+        );
+      } catch {
+        /* failed / interrupted / disconnected — the reload below shows the
+           durable truth either way */
+      }
+      following = false;
+      if (stopped) return;
+      patchSessionRun(sessionId, {
+        busy: false, pending: null, streamText: null, streamTools: [], stopped: false,
+      });
+      setRemoteTurn(null);
+      if (localId.current === sessionId) void reload(sessionId);
+      timer = window.setTimeout(tick, 1000);
+    };
+
     const tick = async () => {
       if (stopped) return;
       if (getSessionRun(sessionId).busy) {
+        // This client's own runner (or an active follower) owns the live view.
         setRemoteTurn(null);
         return;
       }
@@ -141,7 +184,9 @@ export function useSessionDocument({
         return;
       }
       if (stopped || localId.current !== sessionId) return;
-      if (state.running) {
+      if (state.running && state.execution_id) {
+        void follow(state, state.execution_id);
+      } else if (state.running) {
         setRemoteTurn(state);
         timer = window.setTimeout(tick, 3000);
       } else {
@@ -157,6 +202,15 @@ export function useSessionDocument({
     return () => {
       stopped = true;
       window.clearTimeout(timer);
+      followCtl?.abort();
+      if (following) {
+        // We set busy for a followed execution; release OUR claim on the way
+        // out. The execution itself keeps running — the command center still
+        // shows it working from the durable task status.
+        patchSessionRun(sessionId, {
+          busy: false, streamText: null, streamTools: [], stopped: false,
+        });
+      }
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [sessionId, sidecarReady, reload]);

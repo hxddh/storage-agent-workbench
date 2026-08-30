@@ -444,6 +444,10 @@ export interface SessionTurnState {
   turn_id?: string | null;
   started_at?: string | null;
   age_ms?: number | null;
+  /** The durable execution behind the running turn (v0.94) — lets a
+   * reattaching client resume the structured event stream. */
+  execution_id?: string | null;
+  execution_status?: string | null;
 }
 
 // --- Error triage (Phase 18) ---

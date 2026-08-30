@@ -1,6 +1,6 @@
 # Sidecar API
 
-> **Storage Agent v0.93.0 API reference.**
+> **Storage Agent v0.94.0 API reference.**
 >
 > The public product model is Agent Task / Direction / Execution / Decision / Work Result / Artifact. Many HTTP paths intentionally retain historical `session`/`run` compatibility names. Do not mirror those path names into new product information architecture.
 
@@ -34,16 +34,51 @@ Query:
 
 - optional `q` for task search.
 
-The endpoint adapts durable `sessions` rows into product-level Task summaries and adds `requires_decision`, derived from the latest assistant Work Result's current confirmation-gated proposals.
+The endpoint adapts durable `sessions` rows into product-level Task summaries and adds:
+
+- `requires_decision` — read from the first-class durable `task_decisions` table (v0.94), never re-derived from message text;
+- `task_status` — the durable task lifecycle (`ready` / `working` / `needs_decision` / `needs_attention` / `archived`);
+- `active_execution_id` — the durable execution currently queued or running, if any.
 
 Important semantics:
 
 - the lookup is batched for the task list;
-- only the latest assistant result determines current durable Decision state;
-- historical confirmation proposals remain history, not current blockers;
+- a newer Work Result durably supersedes older pending decisions;
 - live browser execution can outrank an older durable Decision while work is actively running.
 
 This endpoint exists specifically so global Task state remains truthful after reload/restart without making the browser reconstruct durable Decision state from every full Task document.
+
+## Agent Task runtime API (v0.94)
+
+Prefix: `/agent-tasks/{task_id}`
+
+The durable task runtime surface. An Execution is a durable object owned by the Sidecar's background execution supervisor: HTTP clients submit, steer, stop, resume, and OBSERVE — closing a stream never interrupts work.
+
+```text
+GET  /agent-tasks/{task_id}/state
+POST /agent-tasks/{task_id}/executions
+GET  /agent-tasks/{task_id}/executions
+GET  /agent-tasks/{task_id}/executions/{execution_id}
+GET  /agent-tasks/{task_id}/executions/{execution_id}/events   (SSE)
+POST /agent-tasks/{task_id}/executions/{execution_id}/stop
+POST /agent-tasks/{task_id}/executions/{execution_id}/resume
+POST /agent-tasks/{task_id}/steer
+GET  /agent-tasks/{task_id}/events
+GET  /agent-tasks/{task_id}/decisions
+POST /agent-tasks/{task_id}/decisions/{decision_id}/resolve
+GET  /agent-tasks/{task_id}/work-results
+GET  /agent-tasks/{task_id}/artifacts
+GET  /agent-tasks/{task_id}/context
+```
+
+- `state` returns everything a client needs to (re)attach after reload, task switch, or Sidecar restart: durable status, active execution + last event sequence, pending Decisions, context version.
+- `POST executions` delegates a Direction. Idempotent on `(task, turn_id)` via a unique index — a duplicate submit attaches (`created: false`) instead of re-running. A submission while another execution runs is QUEUED durably and runs after it.
+- The `events` SSE streams the execution's append-only structured event log; every durable frame carries `id: <seq>` and the stream resumes from `?after=<seq>`. Frame vocabulary: `execution.status`, `tool.started`, `tool.completed`, `steer.received`, `steer.applied`, `decision.opened`, `decision.resolved`, `work_result.recorded`, `artifact.recorded`, `context.updated`, transient `delta`, terminal `end`.
+- `steer` acts ON the current execution: the text is injected into the running model loop at its next tool boundary; a steer the loop could no longer take is carried into an automatic follow-up execution. 409 when nothing is executing.
+- `stop` cancels durably; the partial Work Result persists with `stopped: true`.
+- `resume` turns an `interrupted` / `failed` / `cancelled` execution into a NEW execution carrying the same Direction (history is never rewritten).
+- A Work Result whose proposals include confirmation-gated work leaves its execution `waiting`; `decisions/{id}/resolve` (`approved` | `declined`) records the call durably, settles the waiting execution, and — on approval — returns the same validate-and-prefill hand-over as the action-prepare flow. Nothing auto-executes.
+- `context` returns the latest TYPED, versioned Storage Task Context (machine state derived from durable rows — recovery never replays messages).
 
 ## Health
 
@@ -114,12 +149,14 @@ POST /sessions/{session_id}/turns/{turn_id}/cancel
 GET  /sessions/{session_id}/turn
 ```
 
-- `/messages/stream` is the primary SSE turn path.
-- The blocking `/messages` endpoint is also the streaming fallback/idempotent wait path for an already-running identical `turn_id`.
-- `cancel` backs the product Stop control.
-- `/turn` reports whether a real task/session turn is currently running in this Sidecar process, enabling reload reattachment.
+Since v0.94 these are compatibility SHIMS over the durable task runtime — there is exactly one submission lifecycle:
 
-The process-local turn registry does not survive a Sidecar restart; reporting no running turn after restart is therefore the truthful state.
+- `/messages/stream` submits a durable Execution and streams its event log translated into the legacy `delta`/`tool`/`done`/`error` vocabulary.
+- The blocking `/messages` endpoint submits (or attaches to) the same durable execution and waits; idempotency is the durable `(task, turn_id)` unique index.
+- `cancel` backs the product Stop control (maps to the durable execution stop).
+- `/turn` reads the DURABLE execution rows, so it stays truthful across reloads AND Sidecar restarts; it now also carries `execution_id`/`execution_status` so a client can resume the structured event stream.
+
+Executions survive the HTTP request entirely; after a Sidecar restart, recovery stamps orphaned executions `interrupted` (an explicit durable state with a resume affordance) instead of silently reporting nothing.
 
 ### Durable task document and paging
 

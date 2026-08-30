@@ -106,6 +106,13 @@ _SESSION_SCOPED_EXEMPT = {
     # recorded, so there is no session to attribute it to. Run-scoped is honest;
     # guessing would not be.
     "run.delete",
+    # Evidence imports are import-scoped: plan/confirm/run are addressed by
+    # import_id and may exist without any session (a run started outside one).
+    # The module only mentions "session_id" since v0.94 because the completed
+    # import is ALSO indexed as a task artifact when its account run belongs to
+    # a task; the import lifecycle audit rows themselves stay import-scoped.
+    "evidence_import.plan", "evidence_import.confirm",
+    "evidence_import.download", "evidence_import.failed",
 }
 
 
