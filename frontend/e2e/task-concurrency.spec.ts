@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { watchAgentTaskSurface } from "./agent-tasks-surface";
 import { dropModelProvider, startFakeModel, textTurn, useFakeModel } from "./fake-model";
 
 /** A modern Agent is task-oriented, not viewport-oriented. Switching away from
@@ -29,6 +30,7 @@ async function setup(page: Page) {
 
 test("an Agent task keeps executing while the user works in another task", async ({ page }) => {
   const cleanup = await setup(page);
+  const surface = watchAgentTaskSurface(page);
   try {
     await composer(page).fill("Inspect acme-logs deeply and report the policy and lifecycle state.");
     await composer(page).press("Enter");
@@ -61,6 +63,7 @@ test("an Agent task keeps executing while the user works in another task", async
       .toContain("Execution segment 0");
 
     await expect(page.getByTestId("work-result").last()).toContainText("Execution segment 31", { timeout: 60_000 });
+    expect(surface.saw(/GET \/agent-tasks\/.+\/events/)).toBe(true);
 
     // Completion is a queue transition: the task leaves Running and settles in
     // the normal task list as Ready. Do not keep a locator scoped to Running

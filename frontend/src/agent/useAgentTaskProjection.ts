@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getSession, getSessionReport, listTaskArtifacts, type TaskArtifact } from "../api";
+import { getSession, getSessionReport, listTaskArtifacts, listTaskDecisions, type TaskArtifact, type TaskDecision } from "../api";
 import type { SessionDetail } from "../types";
 import type { ReviewSurface } from "./model";
 
@@ -7,6 +7,7 @@ import type { ReviewSurface } from "./model";
 export function useAgentTaskProjection(sessionId: string | null, review: ReviewSurface | null) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [artifacts, setArtifacts] = useState<TaskArtifact[]>([]);
+  const [decisions, setDecisions] = useState<TaskDecision[]>([]);
   const [report, setReport] = useState<string | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -14,6 +15,7 @@ export function useAgentTaskProjection(sessionId: string | null, review: ReviewS
   useEffect(() => {
     setDetail(null);
     setArtifacts([]);
+    setDecisions([]);
     setReport(null);
     setReportLoading(false);
     setError(null);
@@ -29,6 +31,9 @@ export function useAgentTaskProjection(sessionId: string | null, review: ReviewS
     // First-class Artifact index (v0.94): reports, evidence imports, analyses.
     void listTaskArtifacts(sessionId)
       .then((next) => { if (!cancelled) setArtifacts(next.artifacts); })
+      .catch(() => undefined);
+    void listTaskDecisions(sessionId)
+      .then((next) => { if (!cancelled) setDecisions(next.decisions); })
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, [sessionId, review]);
@@ -50,5 +55,5 @@ export function useAgentTaskProjection(sessionId: string | null, review: ReviewS
     return () => { cancelled = true; };
   }, [sessionId, review]);
 
-  return { detail, artifacts, report, reportLoading, error };
+  return { detail, artifacts, decisions, report, reportLoading, error };
 }

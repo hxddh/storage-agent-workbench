@@ -6,6 +6,30 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.95.0] - 2026-08-30
+
+_Durable runtime capability becomes user-visible reliability: Resume, queued Directions, sequence-only stream recovery, Decision bounds/history, typed context in the prompt, and deterministic cross-evidence correlation — without a second Agent or a new navigation surface._
+
+### Changed
+
+- **Interrupted work is resumable from the Task.** A `needs_attention` Task whose last Execution is `interrupted` or `failed` shows a Resume card that calls the existing resume endpoint and follows the new execution's durable event stream.
+- **Queued Directions are first-class in the Task.** A Direction submitted while another Execution is running remains durable and is now visible and cancellable in the task area; Stop already cancelled queued rows.
+- **Dropped streams reconnect by sequence number only.** `followExecutionEvents` retries `GET .../events?after=<last seq>`. The frontend no longer uses blocking `/sessions` POST or assistant-id polling as recovery; those paths stay as compatibility shims.
+- **Decision cards project bounds and impact** already present on the proposal/prefill and evidence-import plan (why confirm, scope, planned file/byte movement) and add an explicit **Decline** path through the existing resolve endpoint.
+- **Review Overview shows Decision history** as a projection of durable `task_decisions` rows (`pending` / `approved` / `declined` / `superseded`).
+- **Typed Storage Task Context is prompt grounding.** The latest `task_context_versions` snapshot is injected into the stable prompt half (with skill catalog / providers) and replaces replay-derived buckets-in-focus, attached datasets, and open Decisions.
+- **Cross-evidence correlation is deterministic.** Bounded aggregates join request errors × config × addressing, lifecycle × inventory age/class, multipart/versions × cost, and access-log mix × latency/errors, then flow through existing findings/summary/memory.
+
+### Added
+
+- Startup `execution_events` retention: terminal Executions only, dual cap (days + per-execution count), explicit `execution.events_truncated` marker events; active/waiting logs are never pruned.
+- Task-state payload fields `queued_executions` and Decision `impact` so the UI can render durable queue and confirmation bounds without guessing.
+
+### Security
+
+- Unchanged floor. Event truncation is never silent. Correlation findings are sanitized bounded aggregates; raw rows still do not enter model context.
+
+
 ## [0.94.0] - 2026-08-30
 
 _The Agent Task runtime becomes durable and execution-native: take the UI away and the runtime + persistence alone are a real task runtime — executions with a durable lifecycle that can be steered, wait on Decisions, survive disconnects and restarts, and produce durable Work Results and Artifacts. The turn runner is gone as an ownership model._

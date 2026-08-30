@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { watchAgentTaskSurface } from "./agent-tasks-surface";
 import { seedSession } from "./seed";
 
 /** Long-running Agent tasks must remain navigable, durable and steerable. */
@@ -24,9 +25,14 @@ const taskText = (page: Page) => task(page).evaluate((element) => (element.textC
 
 test.describe("a paged Agent task", () => {
   test("offers to load durable history that is not currently rendered", async ({ page }) => {
+    const surface = watchAgentTaskSurface(page);
     await openLongTask(page);
     await expect(page.getByTestId("load-earlier")).toBeVisible();
     await expect(page.getByTestId("load-earlier")).toContainText("20");
+    await expect.poll(() => surface.saw(/GET \/agent-tasks\/.+\/state/), {
+      timeout: 15_000,
+      message: "opening a durable task must load GET /agent-tasks/{id}/state",
+    }).toBe(true);
   });
 
   test("opens on the newest work rather than the oldest", async ({ page }) => {

@@ -1,6 +1,6 @@
 # Release
 
-> **Current process baseline: Storage Agent v0.93.0.**
+> **Current process baseline: Storage Agent v0.95.0.**
 >
 > A release is a build of one exact verified source SHA. Release notes become historical records after publication; they do not override the current architecture contracts in `docs/README.md`, `product.md`, `architecture.md`, or `CLAUDE.md`.
 
@@ -25,7 +25,7 @@ Current distribution is ad-hoc/unsigned in the trust-store sense: macOS is ad-ho
 The exact candidate source and final `main` release source must pass the repository's required checks, including the gates applicable to that commit:
 
 - frontend TypeScript typecheck/lint;
-- Vitest unit tests, including v0.93 Agent architecture/legacy/documentation contracts;
+- Vitest unit tests, including Agent architecture/legacy/documentation contracts;
 - frontend production build;
 - Python Sidecar lint/import/tests;
 - packaged Sidecar smoke;

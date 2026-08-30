@@ -152,3 +152,49 @@ export function seedSession(
   ).trim();
   return { id, title };
 }
+
+function dataDir(): string {
+  const raw = fs.existsSync(STATE_FILE) ? fs.readFileSync(STATE_FILE, "utf8") : "";
+  if (!raw.trim()) {
+    throw new Error(
+      `the E2E sidecar state file (${STATE_FILE}) is missing or empty, so this ` +
+        `run does not know which data dir to seed.`,
+    );
+  }
+  return (JSON.parse(raw) as { dataDir: string }).dataDir;
+}
+
+const INTERRUPTED_PY = `
+import sqlite3, sys, uuid
+conn = sqlite3.connect(sys.argv[1])
+sid, direction = sys.argv[2], sys.argv[3]
+eid = "exec-" + uuid.uuid4().hex[:12]
+conn.execute(
+    "INSERT INTO agent_tasks (id, title, status, created_at, updated_at)"
+    " VALUES (?, ?, 'needs_attention', datetime('now'), datetime('now'))"
+    " ON CONFLICT(id) DO UPDATE SET status='needs_attention'",
+    (sid, "seeded"),
+)
+conn.execute(
+    "INSERT INTO task_executions (id, task_id, direction, kind, status,"
+    " created_at, updated_at, finished_at)"
+    " VALUES (?, ?, ?, 'direction', 'interrupted', datetime('now'), datetime('now'), datetime('now'))",
+    (eid, sid, direction),
+)
+conn.commit()
+print(eid)
+`;
+
+/** A durable interrupted execution the Resume card can recover. */
+export function seedInterruptedTask(
+  title = `interrupted task ${randomUUID().slice(0, 8)}`,
+): { id: string; title: string; executionId: string } {
+  const { id } = seedSession(1, title, "short");
+  const executionId = execFileSync(
+    process.env.E2E_PYTHON || "python3",
+    ["-c", INTERRUPTED_PY, `${dataDir()}/app.db`, id, "why does acme-logs return 403?"],
+    { encoding: "utf8" },
+  ).trim();
+  return { id, title, executionId };
+}
+

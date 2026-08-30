@@ -37,14 +37,14 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v0.94 documentation contract", () => {
+describe("v0.95 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
       expect(text, `${path} must name Agent Task`).toMatch(/Agent Task/);
     }
-    expect(readRepo("docs/README.md")).toContain("v0.94.0");
-    expect(readRepo("CLAUDE.md")).toContain("v0.94.0");
+    expect(readRepo("docs/README.md")).toContain("v0.95.0");
+    expect(readRepo("CLAUDE.md")).toContain("v0.95.0");
   });
 
   for (const [label, pattern] of removedArchitecture) {
@@ -64,6 +64,8 @@ describe("v0.94 documentation contract", () => {
     expect(api).toContain("POST /agent-tasks/{task_id}/executions");
     expect(api).toContain("POST /agent-tasks/{task_id}/steer");
     expect(api).toContain("/decisions/{decision_id}/resolve");
+    expect(api).toContain("queued_executions");
+    expect(api).toContain("execution.events_truncated");
     expect(api).toMatch(/product-level.*Agent Task/i);
     expect(dataModel).toMatch(/Current migration head:\s*026/i);
     expect(dataModel).toContain("task_executions");
@@ -71,10 +73,14 @@ describe("v0.94 documentation contract", () => {
     expect(dataModel).toContain("task_decisions");
     expect(dataModel).toContain("task_context_versions");
     expect(dataModel).toContain("Product-to-persistence mapping");
+    expect(dataModel).toContain("execution.events_truncated");
     expect(security).toContain("Decision required");
     expect(security).toContain("STORAGE_AGENT_AUTH_TOKEN");
     expect(smoke).toContain("Agent Task product smoke");
     expect(smoke).toContain("one primary Agent composer");
+    expect(smoke).toContain("Resume");
+    expect(readRepo("docs/product.md")).toContain("Queued Direction");
+    expect(readRepo("docs/architecture.md")).toContain("after=<last seq>");
   });
 
   it("marks historical v0.92 material as superseded rather than normative", () => {

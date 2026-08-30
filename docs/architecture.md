@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v0.94.0.**
+> **Current architecture baseline: Storage Agent v0.95.0.**
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -229,19 +229,24 @@ observes:
 2. submit the Direction: `POST /agent-tasks/{id}/executions` creates a durable
    queued execution (idempotent on the client turn id);
 3. follow the execution's durable structured event stream (resumable by
-   sequence number);
+   sequence number). A dropped stream reconnects with `after=<last seq>`
+   only — there is no blocking POST fallback and no assistant-id poll;
 4. update real Tool activity and streamed Work Result from those events;
 5. Steer posts into the CURRENT execution (`POST /agent-tasks/{id}/steer`) —
-   never cancel-and-resend; Stop cancels the durable execution and the partial
-   Work Result persists;
-6. completion, waiting-on-Decision, failure, and interruption are durable
+   never cancel-and-resend; Stop cancels the durable execution (including a
+   queued one) and the partial Work Result persists;
+6. Resume (`POST .../executions/{eid}/resume`) starts a NEW execution for an
+   `interrupted` / `failed` last Execution and the client follows that new
+   stream; Queued Directions are projected from task state;
+7. completion, waiting-on-Decision, failure, and interruption are durable
    execution states, not inferences;
-7. reload the persisted task document.
+8. reload the persisted task document.
 
 UI disconnect, task switching, and reload never interrupt an execution; a
-Sidecar restart stamps in-flight executions `interrupted`, which Recovery
-surfaces with an explicit resume affordance. Do not bypass this lifecycle with
-another submit/steer path.
+Sidecar restart stamps in-flight executions `interrupted`, which the Task
+surfaces with an explicit Resume action. Do not bypass this lifecycle with
+another submit/steer path. The `/sessions` message endpoints remain
+compatibility shims and are not the frontend recovery means.
 
 ### 5.3 Durable task document
 
@@ -359,7 +364,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v0.93 and prevents current product docs from drifting back toward retired information architecture.
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v0.95 and prevents current product docs from drifting back toward retired information architecture.
 
 ### Real-Sidecar E2E
 

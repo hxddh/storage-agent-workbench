@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { watchAgentTaskSurface } from "./agent-tasks-surface";
 import { dropModelProvider, startFakeModel, textTurn, useFakeModel } from "./fake-model";
 
 /** Real Agent controls: Stop must cancel live execution, preserve partial work,
@@ -48,10 +49,19 @@ test.describe("interrupting Agent execution", () => {
 
   test("pressing Stop ends execution and records that the user stopped it", async ({ page }) => {
     const { cleanup } = await open(page);
+    const surface = watchAgentTaskSurface(page);
     try {
       await ask(page, "why does acme-logs return 403?");
       await expect(task(page).getByText(/Paragraph 0 of a long answer/)).toBeVisible({ timeout: 30_000 });
+      await expect.poll(() => surface.saw(/GET \/agent-tasks\/.+\/events/), {
+        timeout: 20_000,
+        message: "Stop coverage must first follow the durable event stream",
+      }).toBe(true);
       await stopButton(page).click();
+      await expect.poll(() => surface.saw(/POST \/agent-tasks\/.+\/stop/), {
+        timeout: 20_000,
+        message: "Stop must hit POST /agent-tasks/{id}/executions/{eid}/stop",
+      }).toBe(true);
       await expect(task(page).getByText(/Stopped by you/i).first()).toBeVisible({ timeout: 30_000 });
       await expect(delegateButton(page)).toBeVisible({ timeout: 30_000 });
     } finally { await cleanup(); }

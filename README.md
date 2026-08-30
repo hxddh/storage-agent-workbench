@@ -1,6 +1,6 @@
 # Storage Agent
 
-**Current release: v0.93.0**
+**Current release: v0.95.0**
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. Give it a storage goal or problem; it investigates with real read-only tools, remains steerable while it works, stops at explicit confirmation boundaries, and produces durable results backed by reviewable execution and evidence.
 
@@ -105,7 +105,7 @@ Those names do not define the frontend information architecture.
 
 ## Install
 
-Download platform assets from [GitHub Releases](https://github.com/hxddh/storage-agent-workbench/releases). v0.93.0 ships:
+Download platform assets from [GitHub Releases](https://github.com/hxddh/storage-agent-workbench/releases). Current releases ship:
 
 | Platform | Asset pattern |
 | --- | --- |
@@ -117,7 +117,7 @@ Each platform has a `SHA256SUMS-*` manifest. Current builds are not distributed 
 
 ## Quality gates
 
-The repository protects the v0.93 architecture with executable tests and real-state validation:
+The repository protects the Agent Task architecture with executable tests and real-state validation:
 
 - TypeScript typecheck/lint and Vitest unit tests.
 - Agent ownership and legacy-architecture regression tests.

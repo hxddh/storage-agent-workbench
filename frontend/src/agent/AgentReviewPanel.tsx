@@ -1,4 +1,4 @@
-import type { TaskArtifact } from "../api";
+import type { TaskArtifact, TaskDecision } from "../api";
 import type { SessionDetail } from "../types";
 import { EvidenceReview } from "./EvidenceReview";
 import { ReportArtifact } from "./ReportArtifact";
@@ -10,6 +10,7 @@ export function AgentReviewPanel({
   view,
   detail,
   artifacts = [],
+  decisions = [],
   report,
   reportLoading,
   error,
@@ -23,6 +24,8 @@ export function AgentReviewPanel({
   detail: SessionDetail | null;
   /** First-class durable Artifact index (reports, evidence imports, analyses). */
   artifacts?: TaskArtifact[];
+  /** Durable Decision rows for this task (pending / approved / declined / superseded). */
+  decisions?: TaskDecision[];
   report: string | null;
   reportLoading: boolean;
   error: string | null;
@@ -140,6 +143,27 @@ export function AgentReviewPanel({
                   ))}
                 </div>
               ) : <p className="agent-review-empty">{copy.review.noArtifacts}</p>}
+            </section>
+
+            <section>
+              <div className="agent-review-section-label">{copy.review.decisionHistory}</div>
+              {decisions.length ? (
+                <div className="agent-review-list" data-testid="decision-history">
+                  {decisions.map((decision) => (
+                    <div key={decision.id} data-decision-status={decision.status}>
+                      <span className="agent-review-list-dot" data-status={decision.status} aria-hidden />
+                      <span className="min-w-0">
+                        <strong>{decision.title || decision.action_type}</strong>
+                        <small>
+                          {copy.review.decisionStatus[decision.status]}
+                          {decision.impact?.scan_scope ? ` · ${decision.impact.scan_scope}` : ""}
+                          {decision.reason ? ` · ${decision.reason}` : ""}
+                        </small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="agent-review-empty">{copy.review.noDecisions}</p>}
             </section>
           </div>
         ) : null}

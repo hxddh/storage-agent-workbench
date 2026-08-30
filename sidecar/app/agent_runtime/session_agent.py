@@ -456,8 +456,11 @@ INSTRUCTIONS = (
     "don't narrate a plan first — and answer from what you find, staying on "
     "what the user actually asked.\n"
     "Your context JSON carries the session goal, a deterministic summary, your "
-    "recorded agent_memory, recent messages, the configured_providers (use "
-    "those provider_id values directly), any attached_files the user uploaded, "
+    "recorded agent_memory, the typed storage_task_context (authoritative machine "
+    "state: buckets in focus, attached datasets, evidence imports, open "
+    "decisions — trust it over re-deriving those from recent_messages), recent "
+    "messages, the configured_providers (use those provider_id values directly), "
+    "any attached_files the user uploaded this turn, "
     "and a CATALOG of StorageOps expert skills — when one fits the problem, "
     "load its full method with read_skill(name) and apply it.\n"
     "Your visible tools are the CORE set — orientation, the two probes every "
@@ -668,12 +671,33 @@ def _dedupe_replay_tools(messages: list[dict[str, Any]]) -> None:
 # added); `recent_messages` changes on EVERY turn. Sending the stable part first
 # means a provider's prompt-cache prefix survives from one turn to the next
 # instead of being invalidated at the first byte by the newest message.
-_STABLE_CONTEXT_KEYS = ("session", "summary", "agent_memory", "active_skill")
+_STABLE_CONTEXT_KEYS = ("session", "summary", "agent_memory", "active_skill",
+                        "storage_task_context")
 
 # How many already-loaded skill methods ride along in the context. One: an
 # investigation follows a method, and carrying a second doubles the cost to cover
 # a case the agent can still reach with read_skill.
 _ACTIVE_SKILL_CAP = 1
+
+
+def _latest_task_context(conn: Any, session_id: str | None) -> dict[str, Any] | None:
+    """Latest typed Storage Task Context document.
+
+    Prefers the persisted version (identical across restart). When none exists
+    yet, derives the same snapshot the runtime would persist — no write on the
+    prompt path.
+    """
+    if conn is None or not session_id:
+        return None
+    try:
+        from ..task_runtime import context as task_context
+        from ..task_runtime import store as task_store
+        latest = task_store.latest_context(conn, session_id)
+        if latest and latest.get("context"):
+            return latest["context"]
+        return task_context.build_snapshot(conn, session_id)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def active_skill_block(conn: Any, session_id: str | None) -> dict[str, Any] | None:
@@ -766,6 +790,7 @@ def build_session_context(
     model: str | None = None,
     explicit_window: int | None = None,
     active_skill: dict[str, Any] | None = None,
+    task_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Bounded, redacted context — the ONLY thing the model sees."""
     max_messages, max_replay_msg = _elastic_replay_caps(model, explicit_window)
@@ -785,6 +810,7 @@ def build_session_context(
     replayed = [_replay_message(m, max_replay_msg)
                 for m in recent_messages[-max_messages:]]
     _dedupe_replay_tools(replayed)
+    typed = _prompt_task_context(task_context)
     context = {
         "session": {
             "title": redact_text(str(session.get("title", ""))),
@@ -812,6 +838,10 @@ def build_session_context(
         # it is not re-read every turn (v0.55.0). In the STABLE half, so a caching
         # endpoint serves it instead of re-billing it.
         **({"active_skill": active_skill} if active_skill else {}),
+        # Typed Storage Task Context (v0.95): authoritative machine state. Lives
+        # in the STABLE half with the skill catalog / providers so a prompt-cache
+        # hit survives across turns until the context version actually changes.
+        **({"storage_task_context": typed} if typed else {}),
         # Prior assistant turns carry a `tools_run` trace of the read-only probes
         # they already ran (bounded) — so this turn sees what was checked and
         # re-fetches only what it needs fuller detail on, instead of re-probing.
@@ -820,6 +850,53 @@ def build_session_context(
     }
     guardrails.assert_no_secrets_in_context(context)
     return context
+
+
+def _prompt_task_context(doc: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Compact, prompt-safe projection of a typed context snapshot.
+
+    Drops identity fields the session block already carries and bounds every
+    list. Missing/empty snapshots are omitted rather than silently truncated.
+    """
+    if not isinstance(doc, dict) or not doc:
+        return None
+    datasets = []
+    for d in (doc.get("attached_datasets") or [])[:50]:
+        if not isinstance(d, dict):
+            continue
+        datasets.append({
+            "id": str(d.get("id") or "")[:64],
+            "dataset_type": str(d.get("dataset_type") or "")[:32],
+            "status": str(d.get("status") or "")[:32],
+            "detected_format": str(d.get("detected_format") or "")[:32],
+            "row_count": d.get("row_count"),
+        })
+    imports = []
+    for i in (doc.get("evidence_imports") or [])[:50]:
+        if not isinstance(i, dict):
+            continue
+        imports.append({
+            "id": str(i.get("id") or "")[:64],
+            "source_type": str(i.get("source_type") or "")[:32],
+            "status": str(i.get("status") or "")[:32],
+        })
+    decisions = [str(x)[:64] for x in (doc.get("open_decisions") or [])[:20]]
+    buckets = [redact_text(str(b))[:200] for b in (doc.get("buckets_in_focus") or [])[:20]]
+    return {
+        "schema_version": int(doc.get("schema_version") or 1),
+        "provider_id": doc.get("provider_id"),
+        "primary_bucket": redact_text(str(doc.get("primary_bucket") or "")) or None,
+        "buckets_in_focus": buckets,
+        "attached_datasets": datasets,
+        "evidence_imports": imports,
+        "open_decisions": decisions,
+        "memory_counts": {
+            str(k)[:32]: int(v) for k, v in (doc.get("memory_counts") or {}).items()
+        } if isinstance(doc.get("memory_counts"), dict) else {},
+        "note": ("Authoritative machine state for this task. Use buckets_in_focus, "
+                 "attached_datasets, evidence_imports, and open_decisions from here "
+                 "instead of re-deriving them from recent_messages."),
+    }
 
 
 def render_context_text(context: dict[str, Any]) -> str:
@@ -1836,7 +1913,8 @@ def _build_prompt(
             agent_memory = []
     context = build_session_context(session, summary, recent_messages, agent_memory,
                                      model=model, explicit_window=explicit_window,
-                                     active_skill=active_skill_block(conn, session.get("id")))
+                                     active_skill=active_skill_block(conn, session.get("id")),
+                                     task_context=_latest_task_context(conn, session.get("id")))
     skill_names = skill_context.skill_names()
 
     # Prompt order is CACHE order, most stable first: skill catalog (identical in

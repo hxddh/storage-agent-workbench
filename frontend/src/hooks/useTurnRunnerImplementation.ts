@@ -1,11 +1,14 @@
 /**
- * The turn runner: ensureSession + submit (streaming with blocking fallback) +
- * dataset-upload submit + Stop (server-side cancel). Extracted from Thread.tsx
- * so the view component stays presentational.
+ * The turn runner: ensureSession + submit (durable execution + event stream
+ * with seq reconnect) + dataset-upload submit + Stop (server-side cancel).
+ * Extracted from the task renderer so the view stays presentational.
  *
  * All run state is written to the sessionRuns store keyed by the id the turn
  * STARTED with — not the currently-visible session — so a turn keeps streaming
  * (and keeps its content) if the user switches sessions mid-run.
+ *
+ * Stream recovery is `after=<last seq>` on the durable event log. There is no
+ * blocking POST fallback and no assistant-id poll.
  */
 import { useRef } from "react";
 import { deriveSessionTitle } from "../lib/sessionTitle";
@@ -16,11 +19,11 @@ import {
   deleteSession,
   createSession,
   getSession,
-  getSessionTurnState,
-  postSessionMessage,
+  getTaskState,
+  followExecutionEvents,
+  resumeTaskExecution,
   steerTaskExecution,
   stopTaskExecution,
-  streamExecutionEvents,
   submitErrorTriage,
   uploadSessionDataset,
 } from "../api";
@@ -33,7 +36,7 @@ import {
   unregisterTurnCancel,
 } from "../sessionRuns";
 import { useI18n, type TFunc } from "../i18n";
-import type { SessionDetail, ToolActivity } from "../types";
+import type { ToolActivity } from "../types";
 
 // Turn a raw sidecar/provider error into a short, actionable, localized line.
 // The model-provider hints (bad key / unknown model / provider unreachable)
@@ -187,270 +190,175 @@ export function useTurnRunner(opts: {
     return ensureFlight.current;
   };
 
-  // The blocking turn (also the streaming fallback). Returns how it ended; on
-  // needKey/error nothing was persisted server-side.
-  const sendBlocking = async (id: string, q: string, turnId: string): Promise<Outcome> => {
-    try {
-      const r = await postSessionMessage(id, q, turnId);
-      patchSessionRun(id, {
-        proposals: r.proposed_actions || [],
-        grounding: {
-          evidence_used: r.evidence_used || [],
-          evidence_gaps: r.evidence_gaps || [],
-          skills_used: r.skills_used || [],
-        },
-      });
-      // If the persisted turn was cancelled (user hit Stop, or the streaming
-      // attempt was steered), carry the stopped marker through so the fallback
-      // shows "Stopped by user" instead of a normal answer (FE7).
-      return r.stopped ? "stopped" : "ok";
-    } catch (e) {
-      // 409 "turn still in progress": the same turn is still streaming
-      // server-side — not a failure. The caller keeps the pending state and
-      // reloads shortly after.
-      if (e instanceof ApiError && e.status === 409) return "inprogress";
-      const msg = String(e);
-      if (/no model provider configured|no api key stored/i.test(msg)) {
-        if (looksLikeError(q)) {
-          try {
-            await submitErrorTriage({ content: q, input_kind: "mixed", session_id: id });
-            return "triaged";
-          } catch (e2) {
-            patchSessionRun(id, { error: cleanError(String(e2), t) });
-            return "failed";
-          }
+  const classifySubmitError = async (id: string, q: string, msg: string): Promise<Outcome> => {
+    if (/no model provider configured|no api key stored/i.test(msg)) {
+      if (looksLikeError(q)) {
+        try {
+          await submitErrorTriage({ content: q, input_kind: "mixed", session_id: id });
+          return "triaged";
+        } catch (e2) {
+          patchSessionRun(id, { error: cleanError(String(e2), t) });
+          return "failed";
         }
-        patchSessionRun(id, { needKey: true });
-        return "failed";
       }
-      patchSessionRun(id, { error: cleanError(msg, t) });
+      patchSessionRun(id, { needKey: true });
       return "failed";
     }
+    patchSessionRun(id, { error: cleanError(msg, t) });
+    return "failed";
   };
 
-  // The blocking fallback returned 409: the turn is still running server-side
-  // and NOTHING is persisted yet. Poll (bounded, backing off) until the
-  // assistant answer for THIS turn is actually persisted, then reload. Returns
-  // "ok" once the persisted answer is visible, or "inprogress" if it gives up —
-  // in which case the caller keeps the pending bubble rather than dropping the
-  // user's message (F4).
-  const waitForPersistedTurn = async (
+  const followDurable = async (
     id: string,
-    baselinePromise?: Promise<Set<string> | null>,
-  ): Promise<Outcome> => {
-    // The assistant answer for this turn is a NEW assistant message. Prefer the
-    // baseline captured BEFORE the turn started (baselinePromise) — it can't
-    // include this turn's answer, so it's race-free. Only if that snapshot failed
-    // do we fall back to capturing from the first successful fetch here.
-    let baseline: Set<string> | null = baselinePromise ? await baselinePromise : null;
-    const captureOrDetect = (d: SessionDetail): boolean => {
-      const asstIds = d.messages.filter((m) => m.role === "assistant").map((m) => m.id);
-      if (baseline === null) {
-        baseline = new Set(asstIds);
-        return false;
-      }
-      return asstIds.some((mid) => !baseline!.has(mid));
+    executionId: string,
+    controller: AbortController,
+    after = 0,
+  ) => {
+    const handlers = {
+      onDelta: (chunk: string) => patchSessionRun(id, (s) => ({ streamText: (s.streamText ?? "") + chunk })),
+      onTool: (rec: ToolActivity) => patchSessionRun(id, (s) => ({ streamTools: mergeTool(s.streamTools, rec) })),
     };
-    if (baseline === null) {
-      try {
-        captureOrDetect(await getSession(id));
-      } catch {
-        /* the loop retries the fetch; baseline stays null until one succeeds */
-      }
-    }
-    // Bounded backoff aligned with the server's own turn budget (its blocking
-    // wait is ~150 s), then give up polling — but never drop the message.
-    const delays = [3000, 4000, 5000, 6000, 8000, 10000, 12000, 15000, 15000, 20000, 20000, 30000];
-    for (const delay of delays) {
-      await sleep(delay);
-      let d: SessionDetail;
-      try {
-        d = await getSession(id);
-      } catch {
-        continue;
-      }
-      if (captureOrDetect(d)) {
-        // Persisted — reload the thread if this session is on screen (otherwise
-        // its answer loads when the user switches back).
-        if (localId.current === id) await reload(id);
-        return "ok";
-      }
-    }
-    return "inprogress";
+    return followExecutionEvents(id, executionId, handlers, { signal: controller.signal, after });
   };
 
-  // One full turn: stream (live tool traces + token deltas); if the stream
-  // fails (provider tool-call streaming is flaky, or no model → 422) fall back
-  // to the reliable blocking turn with the SAME turn id (the server dedups).
-  // `onRegistered` fires the instant this turn sets `busy` for its session, so
-  // the caller's double-submit latch can release without waiting out the turn.
+  // After Stop aborts the local view, drain remaining durable events at
+  // after=<last seq> until the execution is terminal, then reload. Seq-based;
+  // not an assistant-id poll.
+  const drainAfterStop = async (id: string, executionId: string | null, after: number) => {
+    if (!executionId) {
+      if (localId.current === id) await reload(id);
+      return;
+    }
+    const drainCtl = new AbortController();
+    const timer = setTimeout(() => drainCtl.abort(), 30_000);
+    try {
+      await followExecutionEvents(
+        id, executionId,
+        { onDelta: () => undefined, onTool: () => undefined },
+        { signal: drainCtl.signal, after },
+      );
+    } catch {
+      /* cancelled / already terminal / timed out */
+    } finally {
+      clearTimeout(timer);
+    }
+    if (localId.current === id) {
+      const reloaded = await reload(id);
+      if (!reloaded && localId.current === id) patchSessionRun(id, { stalled: true });
+    }
+  };
+
+  // One full turn: create a durable execution and follow its event log.
+  // A dropped stream reconnects with after=<last seq>. There is no blocking
+  // POST fallback. `onRegistered` fires the instant this turn sets `busy`.
   const runTurn = async (q: string, onRegistered?: () => void) => {
-    // Clear the composer ONLY when it still holds this turn's text (or is
-    // empty): after a steer there is a ~1s settle gap, and anything the user
-    // typed into the empty composer during it must not be wiped here.
     const cur = getText ? getText() : null;
-    // Trimmed compare: the caller submits text.trim(), so a trailing
-    // newline/space (typical for pasted text) must still count as "this
-    // turn's text" — otherwise the sent message stays in the composer and a
-    // second Enter cancels the user's own running turn as a redirect.
     if (cur === null || cur.trim() === "" || cur.trim() === q) setText("");
     let id: string;
     try {
       id = await ensureSession(q);
     } catch (e) {
-      // Surface the failure (e.g. sidecar not ready) instead of silently
-      // dropping the message, and keep the user's text so they can retry.
       setViewError(cleanError(String(e), t));
       setText(q);
       return;
     }
     const turnId = newTurnId();
-    // Snapshot the assistant-message ids BEFORE the turn runs (in parallel with
-    // the stream, so no added latency). The 409 blocking-fallback uses this as its
-    // "which assistant messages predate this turn" baseline. Capturing it here —
-    // rather than from a GET issued AFTER the 409 — closes a race where the worker
-    // persisted the answer in the gap after the 409 but before that GET, poisoning
-    // the baseline so the new answer was never detected and the UI hung (P2b).
-    const preTurnAsstIds: Promise<Set<string> | null> = getSession(id)
-      .then((d) => new Set(d.messages.filter((m) => m.role === "assistant").map((m) => m.id)))
-      .catch(() => null);
     patchSessionRun(id, {
       busy: true, error: null, needKey: false, pending: q,
       streamText: null, streamTools: [], stopped: false, stalled: false,
     });
-    // busy is set for this session → the synchronous double-submit latch can
-    // release now; further same-session submits are gated by `busy` (F1).
     onRegistered?.();
     const controller = new AbortController();
     const flight: InFlight = { controller, turnId, executionId: null, cancelPromise: null };
     turnsRef.current.set(id, flight);
-    // Let a session-delete abort this turn's stream view (F3). Identity-checked
-    // on unregister so a newer turn's aborter isn't clobbered.
     const abort = () => controller.abort();
     registerTurnAbort(id, abort);
-    // And let it stop the durable execution SERVER-SIDE too — otherwise the
-    // runtime keeps generating (and spending) against a deleted task.
     const serverCancel = () => {
       if (flight.executionId) void stopTaskExecution(id, flight.executionId).catch(() => undefined);
       else void cancelSessionTurn(id, turnId).catch(() => undefined);
     };
     registerTurnCancel(id, serverCancel);
     let outcome: Outcome = "failed";
+    let lastSeq = 0;
     try {
+      let submitted: { execution: { id: string } };
       try {
-        // Delegate: create the DURABLE execution, then follow its structured
-        // event log. The execution is owned by the sidecar's task runtime —
-        // aborting this stream (reload, task switch, Stop) never interrupts it,
-        // and a broken stream is recovered by the idempotent blocking attach
-        // below (same turn_id), not by re-running anything.
-        const submitted = await createTaskExecution(id, q, turnId);
-        flight.executionId = submitted.execution.id;
-        const r = await streamExecutionEvents(
-          id, submitted.execution.id,
-          {
-            onDelta: (chunk) => patchSessionRun(id, (s) => ({ streamText: (s.streamText ?? "") + chunk })),
-            onTool: (rec) => patchSessionRun(id, (s) => ({ streamTools: mergeTool(s.streamTools, rec) })),
-          },
-          { signal: controller.signal },
-        );
+        submitted = await createTaskExecution(id, q, turnId);
+      } catch (e) {
+        outcome = await classifySubmitError(id, q, String(e));
+        if (outcome === "triaged") {
+          if (localId.current === id) await reload(id);
+          patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
+          onChanged();
+          return;
+        }
+        if (createdForThisTurn.current) {
+          void getSession(id)
+            .then((d) => {
+              if ((d.messages?.length ?? 0) > 0) return;
+              return deleteSession(id).then(() => {
+                if (localId.current === id) localId.current = null;
+                onSessionDiscarded(id);
+              });
+            })
+            .catch(() => undefined);
+        }
+        if (localId.current === id) {
+          setText(q);
+          patchSessionRun(id, {
+            pending: null, streamText: null, streamTools: [], stopped: false,
+            stalled: false, failedText: null,
+          });
+        } else {
+          patchSessionRun(id, {
+            pending: null, streamText: null, streamTools: [], stopped: false,
+            stalled: false, failedText: q,
+          });
+        }
+        return;
+      }
+      flight.executionId = submitted.execution.id;
+      try {
+        const r = await followDurable(id, submitted.execution.id, controller, 0);
+        lastSeq = r.last_seq;
         patchSessionRun(id, {
-          // Straight off the completion event these are the bounded proposal
-          // summaries; the reload just below swaps in the persisted full list.
           proposals: r.proposed_actions || [],
           lastMetrics: r.metrics ? { messageId: r.message_id ?? null, metrics: r.metrics } : null,
         });
         outcome = r.stopped ? "stopped" : "ok";
-      } catch {
+      } catch (e) {
         if (controller.signal.aborted) {
-          // The user hit Stop: the local stream was aborted and the server-side
-          // cancel was requested. The partial answer is persisted server-side
-          // with a stopped marker — don't fall back to the blocking turn.
           outcome = "stopped";
         } else {
-          outcome = await sendBlocking(id, q, turnId);
+          outcome = await classifySubmitError(id, q, String(e));
         }
       }
 
       if (outcome === "stopped") {
-        // Keep the partially streamed text visible, marked as stopped, until the
-        // persisted partial is swapped in.
         patchSessionRun(id, { stopped: true });
         try {
           await flight.cancelPromise;
         } catch {
           /* cancel is best-effort */
         }
-        // The server persists the (stopped) partial as a NEW assistant message.
-        // WAIT until it's actually visible before clearing the streamed bubble —
-        // a fixed 800 ms sleep raced the persist, and the reload then found no new
-        // message and wiped the whole turn until a manual reload (FE1). On success
-        // waitForPersistedTurn reloads; on timeout keep the bubble + stall.
-        const persisted = await waitForPersistedTurn(id, preTurnAsstIds);
-        if (persisted === "ok") {
-          patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
-        } else {
-          patchSessionRun(id, { stalled: true });
-        }
+        await drainAfterStop(id, flight.executionId, lastSeq);
+        patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
         onChanged();
         return;
-      } else if (outcome === "inprogress") {
-        // The turn is still running server-side (nothing persisted yet). Poll
-        // until this turn's assistant answer is actually persisted, then clear
-        // the pending bubble — never on a fixed timer (F4).
-        outcome = await waitForPersistedTurn(id, preTurnAsstIds);
-        if (outcome === "inprogress") {
-          // Gave up waiting, but the turn may still be running (its answer may
-          // already be persisted server-side). Keep the pending bubble — the
-          // user's message must never silently disappear — but mark it STALLED so
-          // the thread shows a "reload" affordance instead of an eternal
-          // "thinking" spinner (the answer never surfaced otherwise). busy is
-          // released by the finally so the composer isn't locked.
-          patchSessionRun(id, { stalled: true });
-          return;
-        }
       }
 
       if (outcome === "failed") {
-        // A failure on the FIRST turn leaves nothing behind.
-        //
-        // The session is created before the turn is attempted, because the
-        // stream needs an id to attach to. When that first attempt then fails —
-        // no model key, a rejected provider, a network error — the session
-        // survives with zero messages, and the rail collects one dead
-        // conversation per attempt. On a fresh install, where "no model key" is
-        // the expected outcome until you add one, that is a rail full of
-        // identical empty rows before the product has done anything at all.
-        // Measured: sessions 0 → 1, newest `{title: "why does my bucket deny
-        // list calls", total: 0}`.
-        //
-        // Only ever the session THIS attempt created, and only while it is
-        // still empty — a failure in an established conversation must not touch
-        // it. The triage path persists the question, so it is not empty and is
-        // not swept.
         if (createdForThisTurn.current) {
           void getSession(id)
             .then((d) => {
               if ((d.messages?.length ?? 0) > 0) return;
               return deleteSession(id).then(() => {
-                // Only if it is STILL the open one. The delete is async, and a
-                // user who switched to another investigation while it was in
-                // flight would otherwise have that session's id cleared from
-                // under them — the next message would open a second, empty
-                // conversation instead of continuing theirs.
                 if (localId.current === id) localId.current = null;
                 onSessionDiscarded(id);
               });
             })
-            .catch(() => {
-              /* leaving a session behind is better than losing one */
-            });
+            .catch(() => undefined);
         }
-        // Nothing was persisted (error or missing key): drop the pending bubble
-        // and preserve the user's message. If this session is on screen, restore
-        // it straight into the composer; otherwise stash it as failedText so it's
-        // restored when the user switches back — a failure in a backgrounded
-        // session must not silently eat the message (FE2 / M3). The
-        // error/needKey banner is already set.
         if (localId.current === id) {
           setText(q);
           patchSessionRun(id, {
@@ -466,18 +374,16 @@ export function useTurnRunner(opts: {
         return;
       }
 
-      // Refresh the just-run session's thread only if it's the one on screen;
-      // otherwise its persisted answer loads when the user switches back to it.
+      if (outcome === "triaged") {
+        if (localId.current === id) await reload(id);
+        patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
+        onChanged();
+        return;
+      }
+
       if (localId.current === id) {
         const reloaded = await reload(id);
         if (!reloaded) {
-          // reload returned false. Distinguish two cases (FE5): if the user
-          // navigated AWAY during the async reload, this is a supersede — the
-          // answer IS persisted and loads on switch-back, so just clear the
-          // bubble (fall through). If we're still ON this session, it's a genuine
-          // fetch blip: `detail` still lacks the new messages, so clearing the
-          // streamed bubble would erase the answer the user just watched — keep it
-          // and offer a reload affordance instead.
           if (localId.current === id) {
             patchSessionRun(id, { stalled: true });
             onChanged();
@@ -492,6 +398,60 @@ export function useTurnRunner(opts: {
       unregisterTurnAbort(id, abort);
       unregisterTurnCancel(id, serverCancel);
       patchSessionRun(id, { busy: false });
+    }
+  };
+
+  const attachToExecution = async (executionId: string, direction?: string | null) => {
+    const id = localId.current;
+    if (!id) return;
+    const release = acquireSubmit(id);
+    if (!release) return;
+    patchSessionRun(id, {
+      busy: true, error: null, needKey: false,
+      pending: direction || getSessionRun(id).pending,
+      streamText: null, streamTools: [], stopped: false, stalled: false,
+    });
+    const turnId = newTurnId();
+    const controller = new AbortController();
+    const flight: InFlight = { controller, turnId, executionId, cancelPromise: null };
+    turnsRef.current.set(id, flight);
+    const abort = () => controller.abort();
+    registerTurnAbort(id, abort);
+    const serverCancel = () => {
+      void stopTaskExecution(id, executionId).catch(() => undefined);
+    };
+    registerTurnCancel(id, serverCancel);
+    release();
+    try {
+      const r = await followDurable(id, executionId, controller, 0);
+      patchSessionRun(id, {
+        proposals: r.proposed_actions || [],
+        lastMetrics: r.metrics ? { messageId: r.message_id ?? null, metrics: r.metrics } : null,
+      });
+      if (localId.current === id) await reload(id);
+      patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
+      onChanged();
+    } catch (e) {
+      if (!controller.signal.aborted) {
+        patchSessionRun(id, { error: cleanError(String(e), t) });
+      }
+      if (localId.current === id) await reload(id);
+    } finally {
+      turnsRef.current.delete(id);
+      unregisterTurnAbort(id, abort);
+      unregisterTurnCancel(id, serverCancel);
+      patchSessionRun(id, { busy: false });
+    }
+  };
+
+  const resume = async (executionId: string) => {
+    const id = localId.current;
+    if (!id) return;
+    try {
+      const { execution } = await resumeTaskExecution(id, executionId);
+      await attachToExecution(execution.id, execution.direction);
+    } catch (e) {
+      patchSessionRun(id, { error: cleanError(String(e), t) });
     }
   };
 
@@ -640,15 +600,16 @@ export function useTurnRunner(opts: {
     const flight = turnsRef.current.get(id);
     if (!flight) {
       // No local flight — a reattached execution this client is only FOLLOWING
-      // (started before a reload, or by the blocking path in another lifetime).
-      // Stop it through its durable identity.
+      // (started before a reload, or by another window). Stop it through its
+      // durable identity.
       if (!getSessionRun(id).busy) return;
       patchSessionRun(id, { stopped: true });
-      void getSessionTurnState(id)
+      void getTaskState(id)
         .then((state) => {
-          if (state.running && state.execution_id) {
-            return stopTaskExecution(id, state.execution_id).then(() => undefined);
-          }
+          const execId = state.active_execution?.id
+            ?? (state.last_execution && ["queued", "running"].includes(state.last_execution.status)
+              ? state.last_execution.id : null);
+          if (execId) return stopTaskExecution(id, execId).then(() => undefined);
           return undefined;
         })
         .catch(() => undefined);
@@ -661,5 +622,5 @@ export function useTurnRunner(opts: {
     flight.controller.abort();
   };
 
-  return { submit, submitWithDataset, stop, steer };
+  return { submit, submitWithDataset, stop, steer, resume, followExecution: attachToExecution };
 }

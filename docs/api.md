@@ -1,6 +1,6 @@
 # Sidecar API
 
-> **Storage Agent v0.94.0 API reference.**
+> **Storage Agent v0.95.0 API reference.**
 >
 > The public product model is Agent Task / Direction / Execution / Decision / Work Result / Artifact. Many HTTP paths intentionally retain historical `session`/`run` compatibility names. Do not mirror those path names into new product information architecture.
 
@@ -71,14 +71,14 @@ GET  /agent-tasks/{task_id}/artifacts
 GET  /agent-tasks/{task_id}/context
 ```
 
-- `state` returns everything a client needs to (re)attach after reload, task switch, or Sidecar restart: durable status, active execution + last event sequence, pending Decisions, context version.
+- `state` returns everything a client needs to (re)attach after reload, task switch, or Sidecar restart: durable status, active execution + last event sequence, `queued_executions`, `pending_decisions` (each with projected `impact`), context version.
 - `POST executions` delegates a Direction. Idempotent on `(task, turn_id)` via a unique index — a duplicate submit attaches (`created: false`) instead of re-running. A submission while another execution runs is QUEUED durably and runs after it.
-- The `events` SSE streams the execution's append-only structured event log; every durable frame carries `id: <seq>` and the stream resumes from `?after=<seq>`. Frame vocabulary: `execution.status`, `tool.started`, `tool.completed`, `steer.received`, `steer.applied`, `decision.opened`, `decision.resolved`, `work_result.recorded`, `artifact.recorded`, `context.updated`, transient `delta`, terminal `end`.
+- The `events` SSE streams the execution's append-only structured event log; every durable frame carries `id: <seq>` and the stream resumes from `?after=<seq>`. Frame vocabulary: `execution.status`, `tool.started`, `tool.completed`, `steer.received`, `steer.applied`, `decision.opened`, `decision.resolved`, `work_result.recorded`, `artifact.recorded`, `context.updated`, `execution.events_truncated`, transient `delta`, terminal `end`. Frontend recovery is this sequence reconnect only.
 - `steer` acts ON the current execution: the text is injected into the running model loop at its next tool boundary; a steer the loop could no longer take is carried into an automatic follow-up execution. 409 when nothing is executing.
 - `stop` cancels durably; the partial Work Result persists with `stopped: true`.
 - `resume` turns an `interrupted` / `failed` / `cancelled` execution into a NEW execution carrying the same Direction (history is never rewritten).
 - A Work Result whose proposals include confirmation-gated work leaves its execution `waiting`; `decisions/{id}/resolve` (`approved` | `declined`) records the call durably, settles the waiting execution, and — on approval — returns the same validate-and-prefill hand-over as the action-prepare flow. Nothing auto-executes.
-- `context` returns the latest TYPED, versioned Storage Task Context (machine state derived from durable rows — recovery never replays messages).
+- `context` returns the latest TYPED, versioned Storage Task Context (machine state derived from durable rows — recovery never replays messages). The same snapshot is injected into the Agent prompt's stable half.
 
 ## Health
 
