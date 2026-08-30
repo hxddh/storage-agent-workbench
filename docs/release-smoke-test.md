@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v0.93.0.**
+> **Current baseline: Storage Agent v0.95.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -19,7 +19,7 @@
 
 ## B. Agent Task product smoke
 
-A user must be able to recognize and use the v0.93 product model without reading source code.
+A user must be able to recognize and use the v0.95 product model without reading source code.
 
 ### Start and task navigation
 
@@ -48,8 +48,10 @@ A user must be able to recognize and use the v0.93 product model without reading
 ### Steering and stopping
 
 - [ ] While a real execution is in flight, entering a steering Direction changes the active work through the runtime steering path rather than creating a second task/input.
-- [ ] **Stop** cancels the active turn promptly.
+- [ ] **Stop** cancels the active turn promptly (including a queued Direction).
 - [ ] A stopped execution leaves a truthful durable partial/stopped result/state as implemented and the Task becomes controllable again.
+- [ ] A `needs_attention` Task whose last Execution is interrupted/failed exposes **Resume**; Resume follows the new execution event stream.
+- [ ] A Direction queued behind a running Execution is visible in the Task and can be cancelled.
 
 ### Durable task switching / concurrent state
 
@@ -61,8 +63,10 @@ A user must be able to recognize and use the v0.93 product model without reading
 ### Decision required
 
 - [ ] A confirmation-gated proposal is promoted to visible **Decision required / Needs decision** state.
+- [ ] The Decision card states why confirmation is required and the scan/movement bounds when those facts exist.
 - [ ] The gated operation does not execute before explicit approval.
-- [ ] Reject/cancel follows the real workflow and does not silently perform the action.
+- [ ] **Decline** records the durable resolution and does not perform the action.
+- [ ] Review Overview shows Decision history (pending / approved / declined / superseded).
 - [ ] Reload/reopen a Task with a still-current durable Decision: the Decision remains visible from persisted truth.
 - [ ] A newer real active execution correctly outranks an older persisted Decision where the runtime contract says work is already active.
 

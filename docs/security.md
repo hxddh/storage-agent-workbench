@@ -1,6 +1,6 @@
 # Security
 
-> **Storage Agent v0.93.0 security contract.**
+> **Storage Agent v0.95.0 security contract.**
 >
 > Security is part of the Agent Task product model, not a secondary implementation detail. Read-only autonomy is allowed only inside explicit, bounded, sanitized capabilities. Data movement and materially large/full scans cross a real **Decision required** boundary.
 

@@ -1,6 +1,6 @@
 # Data model
 
-> **Storage Agent v0.94.0 persistence reference.**
+> **Storage Agent v0.95.0 persistence reference.**
 >
 > Product vocabulary is Agent Task / Direction / Execution / Decision / Work Result / Artifact. SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
 
@@ -299,7 +299,11 @@ Execution is a durable object with a real lifecycle:
 - `execution_events` — append-only structured progress keyed by sequence
   number: status transitions, tool started/completed, steer received/applied,
   decision opened/resolved, work result recorded, context updated. Sanitized,
-  bounded payloads; answer deltas are never persisted here.
+  bounded payloads; answer deltas are never persisted here. Startup retention
+  may prune **terminal** Executions only (completed/failed/cancelled/interrupted),
+  dual-capped by age and per-execution count; truncation rewrites the oldest
+  dropped row as an explicit `execution.events_truncated` marker and never
+  touches queued/running/waiting logs.
 - `work_results` — the durable output of an execution: stopped/cut-short flags,
   grounding and proposals; the text stays on the linked `session_messages` row.
 - `task_decisions` — first-class Decision rows for confirmation-gated
@@ -309,7 +313,8 @@ Execution is a durable object with a real lifecycle:
 - `task_context_versions` — the typed Storage Task Context (schema-versioned
   JSON snapshot of machine state: provider scope, buckets in focus, evidence on
   hand, memory counts, open decisions), appended only when changed. Recovery
-  reads this; it never replays messages to rebuild machine state.
+  and the Agent prompt's stable half read this; they never replay messages to
+  rebuild machine state.
 
 ## Account/config discovery records
 

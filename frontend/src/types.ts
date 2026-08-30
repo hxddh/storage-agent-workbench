@@ -303,6 +303,7 @@ export interface NextAction {
   requires_confirmation: boolean;
   confidence: string;
   source_run_ids: string[];
+  prefill?: Record<string, unknown>;
 }
 
 // What the agent's answer is grounded in, and what it couldn't verify. Produced

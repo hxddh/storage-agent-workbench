@@ -53,8 +53,10 @@ export class ApiError extends Error {
 }
 
 // Abort a stream that has gone silent this long (no deltas/tools/heartbeat), so
-// the turn falls back to the blocking POST rather than spinning indefinitely.
+// the client reconnects the durable event log at `after=<last seq>` rather than
+// spinning indefinitely.
 const STREAM_IDLE_TIMEOUT_MS = 120_000;
+const STREAM_RECONNECT_MAX = 20;
 
 /**
  * Auth header for the local sidecar. Empty in dev/browser (no Tauri token),
@@ -471,6 +473,17 @@ export interface TaskExecution {
   finished_at: string | null;
 }
 
+export interface DecisionImpact {
+  gate: "cloud_download" | "artifact_write" | "confirmation" | string;
+  why: string | null;
+  bucket: string | null;
+  prefix: string | null;
+  source_type: string | null;
+  file_count: number | null;
+  total_bytes: number | null;
+  scan_scope: string | null;
+}
+
 export interface TaskDecision {
   id: string;
   task_id: string;
@@ -479,11 +492,12 @@ export interface TaskDecision {
   action_type: string;
   title: string | null;
   reason: string | null;
-  proposal: NextAction & { id?: string };
+  proposal: NextAction & { id?: string; prefill?: Record<string, unknown> };
   status: "pending" | "approved" | "declined" | "superseded";
   resolution_note: string | null;
   created_at: string;
   resolved_at: string | null;
+  impact?: DecisionImpact | null;
 }
 
 export interface TaskArtifact {
@@ -505,6 +519,7 @@ export interface TaskState {
   active_execution: TaskExecution | null;
   last_event_seq: number;
   last_execution: TaskExecution | null;
+  queued_executions: TaskExecution[];
   pending_decisions: TaskDecision[];
   context_version: number;
 }
@@ -533,6 +548,11 @@ export const stopTaskExecution = (taskId: string, executionId: string) =>
 export const resumeTaskExecution = (taskId: string, executionId: string) =>
   request<{ execution: TaskExecution; resumed_from: string }>(
     `/agent-tasks/${taskId}/executions/${executionId}/resume`, { method: "POST" });
+
+export const listTaskExecutions = (taskId: string, limit = 50) =>
+  request<{ task_id: string; executions: TaskExecution[] }>(
+    `/agent-tasks/${taskId}/executions?limit=${limit}`);
+
 
 export const listTaskDecisions = (taskId: string, status?: string) =>
   request<{ task_id: string; decisions: TaskDecision[] }>(
@@ -583,17 +603,32 @@ export interface ExecutionStreamResult {
   last_seq: number;
 }
 
+/** The durable event stream dropped before a terminal status. Reconnect with
+ * `after=lastSeq` — never a blocking POST and never a message-id poll. */
+export class StreamDisconnectedError extends Error {
+  lastSeq: number;
+  constructor(lastSeq: number, message = "stream disconnected") {
+    super(message);
+    this.name = "StreamDisconnectedError";
+    this.lastSeq = lastSeq;
+  }
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 /** Follow one execution's durable structured event log as SSE.
  *
  * Every durable frame carries `id: <seq>`, so a broken connection resumes with
  * `after=<last seq>` and replays exactly what was missed — the stream is a
  * VIEW over durable rows, never the owner of the execution. Live answer text
  * arrives as transient `delta` frames. Resolves when the execution settles
- * (completed / waiting / cancelled); throws on `failed` / `interrupted`. */
+ * (completed / waiting / cancelled); throws on `failed` / `interrupted`;
+ * throws `StreamDisconnectedError` (with `lastSeq`) on idle timeout or a
+ * dropped connection so the caller can reconnect. */
 export async function streamExecutionEvents(
   taskId: string,
   executionId: string,
-  on: { onDelta: (text: string) => void; onTool: (a: ToolActivity) => void },
+  on: { onDelta: (text: string) => void; onTool: (a: ToolActivity) => void; onSeq?: (seq: number) => void },
   opts: { signal?: AbortSignal; after?: number } = {},
 ): Promise<ExecutionStreamResult> {
   const localCtl = new AbortController();
@@ -609,94 +644,146 @@ export async function streamExecutionEvents(
   };
   kickIdle();
   const after = opts.after ?? 0;
-  const res = await fetch(
-    `${sidecarBaseUrl()}/agent-tasks/${taskId}/executions/${executionId}/events?after=${after}`,
-    { headers: { ...authHeaders() }, signal: localCtl.signal },
-  );
-  if (!res.ok || !res.body) {
-    if (idleTimer) clearTimeout(idleTimer);
-    let detail = `HTTP ${res.status}`;
-    try {
-      const b = await res.json();
-      if (b?.detail) detail = typeof b.detail === "string" ? b.detail : JSON.stringify(b.detail);
-    } catch {
-      /* ignore */
-    }
-    throw new Error(detail);
-  }
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
   let lastSeq = after;
-  let result: ExecutionStreamResult | null = null;
-  const toolFromEvent = (payload: any, status: "started" | "completed"): ToolActivity => ({
-    id: payload?.id,
-    tool: payload?.tool ?? "",
-    target: payload?.target ?? "",
-    result: payload?.result ?? "",
-    ok: payload?.ok,
-    status,
-  });
+  const bumpSeq = (seq: number) => {
+    lastSeq = seq;
+    on.onSeq?.(seq);
+  };
   try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      kickIdle();
-      buf += dec.decode(value, { stream: true });
-      const chunks = buf.split("\n\n");
-      buf = chunks.pop() ?? "";
-      for (const chunk of chunks) {
-        const lines = chunk.split("\n");
-        const type = lines.find((l) => l.startsWith("event:"))?.slice(6).trim();
-        const idLine = lines.find((l) => l.startsWith("id:"))?.slice(3).trim();
-        if (idLine) lastSeq = Number(idLine) || lastSeq;
-        const dataLines = lines.filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim());
-        if (!type || dataLines.length === 0) continue;
-        let data: any;
-        try {
-          data = JSON.parse(dataLines.join("\n"));
-        } catch {
-          continue;
-        }
-        const payload = data?.payload ?? {};
-        if (type === "delta") on.onDelta(data.text || "");
-        else if (type === "tool.started") on.onTool(toolFromEvent(payload, "started"));
-        else if (type === "tool.completed") on.onTool(toolFromEvent(payload, "completed"));
-        else if (type === "steer.applied")
-          on.onTool({ tool: "user_steer", target: "", result: payload.text || "", ok: true, status: "completed" });
-        else if (type === "execution.status") {
-          const st = payload.status as string;
-          if (st === "failed") throw new Error(payload.error || "the execution failed");
-          if (st === "interrupted") throw new Error("the sidecar restarted while this execution was in flight");
-          if ((st === "completed" || st === "waiting" || st === "cancelled") && payload.work_result_id) {
-            result = {
-              status: st,
-              message_id: payload.message_id,
-              work_result_id: payload.work_result_id,
-              stopped: payload.stopped === true,
-              proposed_actions: payload.proposed_actions || [],
-              metrics: payload.metrics,
-              last_seq: lastSeq,
-            };
-          } else if (st === "cancelled" && !result) {
-            // Cancelled before it ever ran: no Work Result exists.
-            result = { status: st, stopped: true, proposed_actions: [], last_seq: lastSeq };
+    const res = await fetch(
+      `${sidecarBaseUrl()}/agent-tasks/${taskId}/executions/${executionId}/events?after=${after}`,
+      { headers: { ...authHeaders() }, signal: localCtl.signal },
+    );
+    if (!res.ok || !res.body) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const b = await res.json();
+        if (b?.detail) detail = typeof b.detail === "string" ? b.detail : JSON.stringify(b.detail);
+      } catch {
+        /* ignore */
+      }
+      const err = new Error(detail) as Error & { status?: number };
+      err.status = res.status;
+      throw err;
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    let result: ExecutionStreamResult | null = null;
+    const toolFromEvent = (payload: any, status: "started" | "completed"): ToolActivity => ({
+      id: payload?.id,
+      tool: payload?.tool ?? "",
+      target: payload?.target ?? "",
+      result: payload?.result ?? "",
+      ok: payload?.ok,
+      status,
+    });
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        kickIdle();
+        buf += dec.decode(value, { stream: true });
+        const chunks = buf.split("\n\n");
+        buf = chunks.pop() ?? "";
+        for (const chunk of chunks) {
+          const lines = chunk.split("\n");
+          const type = lines.find((l) => l.startsWith("event:"))?.slice(6).trim();
+          const idLine = lines.find((l) => l.startsWith("id:"))?.slice(3).trim();
+          if (idLine) bumpSeq(Number(idLine) || lastSeq);
+          const dataLines = lines.filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim());
+          if (!type || dataLines.length === 0) continue;
+          let data: any;
+          try {
+            data = JSON.parse(dataLines.join("\n"));
+          } catch {
+            continue;
+          }
+          const payload = data?.payload ?? {};
+          if (type === "delta") on.onDelta(data.text || "");
+          else if (type === "tool.started") on.onTool(toolFromEvent(payload, "started"));
+          else if (type === "tool.completed") on.onTool(toolFromEvent(payload, "completed"));
+          else if (type === "steer.applied")
+            on.onTool({ tool: "user_steer", target: "", result: payload.text || "", ok: true, status: "completed" });
+          else if (type === "execution.status") {
+            const st = payload.status as string;
+            if (st === "failed") throw new Error(payload.error || "the execution failed");
+            if (st === "interrupted") throw new Error("the sidecar restarted while this execution was in flight");
+            if ((st === "completed" || st === "waiting" || st === "cancelled") && payload.work_result_id) {
+              result = {
+                status: st,
+                message_id: payload.message_id,
+                work_result_id: payload.work_result_id,
+                stopped: payload.stopped === true,
+                proposed_actions: payload.proposed_actions || [],
+                metrics: payload.metrics,
+                last_seq: lastSeq,
+              };
+            } else if (st === "cancelled" && !result) {
+              result = { status: st, stopped: true, proposed_actions: [], last_seq: lastSeq };
+            }
           }
         }
-        // Other structured events (queued/running/decision.*/context.*/end) are
-        // progress the caller does not need individually here.
+      }
+    } finally {
+      try {
+        await reader.cancel();
+      } catch {
+        /* already closed/aborted */
       }
     }
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    if (!result) throw new StreamDisconnectedError(lastSeq, "stream ended without completion");
+    return result;
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    if (e instanceof StreamDisconnectedError) throw e;
+    const msg = String((e as Error)?.message ?? e);
+    const status = (e as { status?: number }).status;
+    // Terminal HTTP errors (missing execution, validation) are not reconnectable.
+    if (status === 404 || status === 422 || status === 409) throw e;
+    if (/the execution failed|sidecar restarted/i.test(msg)) throw e;
+    throw new StreamDisconnectedError(lastSeq, msg);
   } finally {
     if (idleTimer) clearTimeout(idleTimer);
+  }
+}
+
+/** Reconnect a dropped durable event stream at `after=<last seq>` until the
+ * execution settles or the caller aborts. This is the only recovery path —
+ * there is no blocking POST fallback. */
+export async function followExecutionEvents(
+  taskId: string,
+  executionId: string,
+  on: { onDelta: (text: string) => void; onTool: (a: ToolActivity) => void; onSeq?: (seq: number) => void },
+  opts: { signal?: AbortSignal; after?: number } = {},
+): Promise<ExecutionStreamResult> {
+  let after = opts.after ?? 0;
+  let attempt = 0;
+  while (!opts.signal?.aborted) {
     try {
-      await reader.cancel();
-    } catch {
-      /* already closed/aborted */
+      return await streamExecutionEvents(
+        taskId, executionId,
+        {
+          onDelta: on.onDelta,
+          onTool: on.onTool,
+          onSeq: (seq) => {
+            after = seq;
+            on.onSeq?.(seq);
+          },
+        },
+        { signal: opts.signal, after },
+      );
+    } catch (e) {
+      if (opts.signal?.aborted) throw e;
+      if (!(e instanceof StreamDisconnectedError)) throw e;
+      after = e.lastSeq;
+      attempt += 1;
+      if (attempt > STREAM_RECONNECT_MAX) throw e;
+      await sleep(Math.min(8000, 250 * 2 ** Math.min(attempt, 5)));
     }
   }
-  if (!result) throw new Error("stream ended without completion");
-  return result;
+  throw new DOMException("Aborted", "AbortError");
 }
 
 // --- Datasets ---

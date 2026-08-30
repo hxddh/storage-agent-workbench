@@ -222,6 +222,15 @@ def build(conn: sqlite3.Connection, session_id: str) -> dict[str, Any]:
             facts.extend(af)
             evidence_refs.extend(ar)
 
+    # Cross-evidence correlation (v0.95): join already-sanitized aggregates
+    # across inventory, access logs, config, diagnostics. Bounded findings
+    # only; raw rows never enter this path.
+    from ..analysis import correlation as evidence_correlation
+    try:
+        findings.extend(evidence_correlation.correlate(conn, session_id))
+    except Exception:  # noqa: BLE001 — summary rebuild must not fail closed
+        pass
+
     # Fold in recent error-triage cases — sanitized, bounded.
     from ..repositories import error_triage as triage_repo
     for c in triage_repo.list_for_session(conn, session_id, limit=10):

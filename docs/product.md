@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v0.94.0.** This is the canonical product/UX specification. Historical release notes are not current product architecture.
+> **Applies to Storage Agent v0.95.0.** This is the canonical product/UX specification. Historical release notes are not current product architecture.
 
 ## Product definition
 
@@ -53,6 +53,12 @@ Execution is what the runtime actually did: model/tool work, deterministic analy
 
 Since v0.94 an Execution is a durable object with a real lifecycle — `queued`, `running`, `waiting` (blocked on a Decision), `completed`, `failed`, `cancelled`, `interrupted` (a Sidecar restart caught it mid-flight; it can be resumed). Its progress is an append-only log of structured events, never an inference from Agent prose. UI disconnect, Task switching, and reload never interrupt an Execution.
 
+v0.95 makes that lifecycle operable in the Task:
+
+- **Resume** is a task-area action when the Task is `needs_attention` and the last Execution is `interrupted` or `failed`. It starts a new Execution with the same Direction and follows the new event stream. Cancelled, missing-key, and generic error states are not Resume.
+- A **Queued Direction** submitted while another Execution is running is visible in the Task and can be cancelled. Command-center state stays `working`.
+- Stream recovery after a drop is **sequence-only** (`after=<last seq>`). The blocking `/sessions` POST is not a recovery path.
+
 The UI may summarize or progressively disclose Execution, but must not invent:
 
 - plans/checklists that the runtime did not emit;
@@ -63,7 +69,11 @@ The UI may summarize or progressively disclose Execution, but must not invent:
 
 ### Decision required
 
-A backend action marked `requires_confirmation=true` that gates data-moving or artifact-producing work is a real blocking state, recorded as a first-class durable Decision. The user must approve/decline before the gated operation proceeds; the resolution is recorded durably, and the Execution that raised it stays `waiting` until the boundary is crossed.
+A backend action marked `requires_confirmation=true` that gates data-moving or artifact-producing work is a real blocking state, recorded as a first-class durable Decision. The user must approve or **Decline** before the gated operation proceeds; the resolution is recorded durably, and the Execution that raised it stays `waiting` until the boundary is crossed.
+
+The Decision card must project **bounds and impact** already present on the proposal/prefill and evidence-import plan: why confirmation is required, scan scope, and how many files/bytes would move. Absence of a count is a gap, not an invented number.
+
+Review Overview projects durable **Decision history** (`pending` / `approved` / `declined` / `superseded`) from `task_decisions`. This is a projection, not a new table and not a separate application destination.
 
 Read-only investigation is autonomous by default. Confirmation is reserved for meaningful safety boundaries such as managed cloud Evidence Import or materially large/full scanning/data movement.
 
@@ -112,7 +122,7 @@ A previously persisted Decision does not outrank a newer live Execution. Convers
 
 Multiple Tasks may independently have real in-flight work because execution state is keyed by durable task/session identity rather than by the currently visible viewport.
 
-This does **not** mean the product has hidden autonomous worker Agents. It means a real execution already started for Task A is not destroyed when the user opens Task B — and since v0.94 that ownership is the Sidecar's durable task runtime, so it also survives closing the stream, reloading the app, and (as an explicit `interrupted` + resume state) a Sidecar restart. Recovering a Task reads its typed, versioned Storage Task Context — machine state is never rebuilt by replaying messages.
+This does **not** mean the product has hidden autonomous worker Agents. It means a real execution already started for Task A is not destroyed when the user opens Task B — and since v0.94 that ownership is the Sidecar's durable task runtime, so it also survives closing the stream, reloading the app, and (as an explicit `interrupted` + Resume action) a Sidecar restart. Recovering a Task reads its typed, versioned Storage Task Context — machine state is never rebuilt by replaying messages. Since v0.95 that typed context is also the Agent prompt's stable grounding.
 
 ## Storage-specific capability model
 

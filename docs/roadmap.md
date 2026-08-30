@@ -1,19 +1,22 @@
 # Roadmap
 
-> **Baseline: Storage Agent v0.93.0.**
+> **Baseline: Storage Agent v0.95.0.**
 >
 > This file describes what comes **after** the current Agent Task architecture. It is not a backlog of old UI concepts and it is not proof that an aspirational capability already exists.
 
 ## Current shipped baseline
 
-v0.93.0 establishes the product architecture future work must build on:
+v0.95.0 is the current baseline. It preserves the v0.93 Agent Task product model and the v0.94 durable runtime, and it makes that runtime user-visible:
 
 - the **Agent Task** is the primary application object and work environment;
-- one Composer provides **Delegate → Steer + Stop** semantics;
+- one Composer provides **Delegate → Steer + Stop** semantics, plus **Resume** when the last Execution is interrupted/failed;
 - Direction, Execution, Decision, Work Result, Artifact, and contextual Review are distinct product concepts;
+- queued Directions are visible and cancellable; stream recovery is `after=<last seq>` only;
+- Decision cards project bounds/impact and Decline; Review projects Decision history;
+- typed Storage Task Context grounds the Agent prompt; deterministic cross-evidence correlation produces bounded findings;
 - live execution is real per-task runtime state rather than simulated Agent chrome;
 - a Task can retain real in-flight execution while another Task is selected;
-- `/agent-tasks` projects durable task-list state while `/sessions` remains the compatibility persistence/runtime API;
+- `/agent-tasks` is the product runtime surface while `/sessions` remains the compatibility persistence/runtime API;
 - read-only S3 diagnostics, account discovery, config review, local evidence analysis, error triage, and reports work end to end;
 - managed cloud Evidence Import uses plan → explicit Decision → execution;
 - task memory, findings, evidence references, execution detail, and turn metrics are durable;
@@ -54,24 +57,21 @@ Each source must define discovery, bounded planning, confirmation, local persist
 
 ### P0 — Stronger storage reasoning from existing evidence
 
-Improve correlation across already available evidence:
+Shipped in v0.95.0 as a deterministic correlation engine (errors × config × addressing; lifecycle × inventory; multipart/versions × cost; access-log mix × latency/errors). Remaining work is more evidence sources and tighter coverage reporting, not a second Agent.
 
-- request errors + bucket config + endpoint/region/addressing state;
-- lifecycle rules + inventory age/storage-class distribution;
-- multipart/version state + cost findings;
-- access-log request mix + latency/error patterns;
-- object metadata/config evidence + observed behavior.
+Still open:
 
-The goal is a better Work Result backed by existing Evidence/Execution, not a new navigation surface.
+- object metadata/config evidence + observed behavior beyond the current bounded joins;
+- broader inventory/log formats (below) feeding the same correlation path.
 
 ### P0 — Decision clarity and resumability
 
-Make confirmation-gated work easier to reason about:
+Shipped in v0.95.0: Decision cards project why/scope/movement bounds; Decline is a first-class resolve; Review shows Decision history; interrupted/failed Executions expose Resume; queued Directions are visible.
 
-- clearly state what will happen, what data will move, bounds, and why confirmation is required;
-- preserve enough durable state to recover safely after app/Sidecar interruption where the underlying workflow supports it;
-- distinguish cancelled, failed, expired, and completed gated work;
-- keep the Task's global Needs decision state consistent with the current durable proposal.
+Remaining work:
+
+- distinguish expired gated work where the underlying import/report workflow actually expires;
+- richer movement estimates when an evidence-import plan is absent (keep absence a gap, never invent counts).
 
 ### P1 — Provider-realistic integration coverage
 

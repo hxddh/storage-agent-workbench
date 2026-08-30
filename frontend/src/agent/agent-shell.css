@@ -270,9 +270,13 @@
 .agent-review-list { border-top: 1px solid color-mix(in srgb, var(--edge) 72%, transparent); }
 .agent-review-list button { display: grid; width: 100%; grid-template-columns: 7px minmax(0,1fr); gap: 10px; align-items: start; border: 0; border-bottom: 1px solid color-mix(in srgb, var(--edge) 72%, transparent); padding: 11px 4px; background: transparent; text-align: left; }
 .agent-review-list button:hover { background: color-mix(in srgb, var(--hover) 32%, transparent); }
+.agent-review-list [data-decision-status] { display: grid; width: 100%; grid-template-columns: 7px minmax(0,1fr); gap: 10px; align-items: start; border-bottom: 1px solid color-mix(in srgb, var(--edge) 72%, transparent); padding: 11px 4px; }
 .agent-review-list-dot { margin-top: 5px; }
 .agent-review-list-dot[data-status="completed"] { background: var(--success); }
 .agent-review-list-dot[data-status="running"] { background: var(--warn); }
+.agent-review-list-dot[data-status="pending"] { background: var(--warn); }
+.agent-review-list-dot[data-status="approved"] { background: var(--success); }
+.agent-review-list-dot[data-status="declined"], .agent-review-list-dot[data-status="superseded"] { background: var(--gray-500); }
 .agent-review-list-dot[data-status="failed"], .agent-review-list-dot[data-severity="high"], .agent-review-list-dot[data-severity="critical"] { background: var(--danger); }
 .agent-review-list strong { display: block; overflow: hidden; color: var(--gray-200); font-size: 11px; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
 .agent-review-list small { display: -webkit-box; margin-top: 3px; overflow: hidden; color: var(--gray-500); font-size: 10px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

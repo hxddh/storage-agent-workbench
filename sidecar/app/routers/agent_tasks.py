@@ -104,9 +104,13 @@ def get_task_state(task_id: str, conn: sqlite3.Connection = Depends(get_conn)) -
             (active["id"],)).fetchone()
         last_seq = int(row[0] or 0)
     last_execution = None
-    executions = store.list_executions(conn, task_id, limit=1)
+    executions = store.list_executions(conn, task_id, limit=50)
     if executions:
         last_execution = executions[-1]
+    active_id = active["id"] if active else None
+    queued = [e for e in executions
+              if e.get("status") == store.EXEC_QUEUED and e.get("id") != active_id]
+    pending = store.list_decisions(conn, task_id, status=store.DECISION_PENDING)
     return {
         "task_id": task_id,
         "status": store.derive_task_status(conn, task_id)
@@ -114,10 +118,17 @@ def get_task_state(task_id: str, conn: sqlite3.Connection = Depends(get_conn)) -
         "active_execution": active,
         "last_event_seq": last_seq,
         "last_execution": last_execution,
-        "pending_decisions": store.list_decisions(conn, task_id,
-                                                  status=store.DECISION_PENDING),
+        "queued_executions": queued,
+        "pending_decisions": [_with_impact(conn, task_id, d) for d in pending],
         "context_version": int(task.get("context_version") or 0),
     }
+
+
+def _with_impact(conn: sqlite3.Connection, task_id: str,
+                 decision: dict[str, Any]) -> dict[str, Any]:
+    out = dict(decision)
+    out["impact"] = next_actions.project_impact(conn, task_id, decision)
+    return out
 
 
 # --- executions -----------------------------------------------------------------
@@ -238,8 +249,9 @@ def resume_execution(task_id: str, execution_id: str,
 def list_decisions(task_id: str, status_filter: str | None = None,
                    conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
     _task_or_404(conn, task_id)
+    rows = store.list_decisions(conn, task_id, status=status_filter)
     return {"task_id": task_id,
-            "decisions": store.list_decisions(conn, task_id, status=status_filter)}
+            "decisions": [_with_impact(conn, task_id, d) for d in rows]}
 
 
 @router.post("/{task_id}/decisions/{decision_id}/resolve")

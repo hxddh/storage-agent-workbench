@@ -99,7 +99,7 @@ def normalize_proposal(raw: dict[str, Any]) -> dict[str, Any] | None:
     prefill_in = raw.get("prefill") if isinstance(raw.get("prefill"), dict) else {}
     prefill = {k: (redact_text(str(v)) if isinstance(v, str) else v)
                for k, v in prefill_in.items()
-               if k in ("bucket", "prefix", "question", "source_type")}
+               if k in ("bucket", "prefix", "question", "source_type", "bucket_name")}
     source_run_ids = [str(x)[:64] for x in (raw.get("source_run_ids") or []) if x][:20]
     return {
         "id": str(raw.get("id") or f"proposal_{uuid.uuid4().hex[:12]}"),
@@ -116,6 +116,114 @@ def normalize_proposal(raw: dict[str, Any]) -> dict[str, Any] | None:
         "safety_notes": [],
         "status": "proposed",
     }
+
+
+def project_impact(conn: sqlite3.Connection | None, task_id: str | None,
+                   decision: dict[str, Any]) -> dict[str, Any]:
+    """Project confirmation bounds for a Decision card.
+
+    Pure presentation: bucket/prefix/source from the stored proposal/prefill,
+    file/byte counts from a matching evidence-import plan when one exists,
+    and an explicit why-this-needs-confirmation line. Never invents counts.
+    """
+    proposal = decision.get("proposal") if isinstance(decision.get("proposal"), dict) else {}
+    prefill = proposal.get("prefill") if isinstance(proposal.get("prefill"), dict) else {}
+    action = str(decision.get("action_type") or proposal.get("action_type") or "")
+    bucket = (prefill.get("bucket") or prefill.get("bucket_name")
+              or None)
+    if isinstance(bucket, str):
+        bucket = redact_text(bucket)[:200] or None
+    else:
+        bucket = None
+    prefix = prefill.get("prefix")
+    prefix = redact_text(str(prefix))[:200] or None if prefix else None
+    source_type = prefill.get("source_type")
+    source_type = str(source_type) if source_type else None
+
+    if action in ("plan_inventory_import", "plan_access_log_import"):
+        gate = "cloud_download"
+        why = (decision.get("reason") or proposal.get("reason")
+               or "Moves object bytes from the configured bucket onto this machine. "
+                  "Nothing downloads until you confirm the bounded plan.")
+        if not source_type:
+            source_type = "inventory" if action == "plan_inventory_import" else "access_log"
+    elif action == "generate_session_report":
+        gate = "artifact_write"
+        why = (decision.get("reason") or proposal.get("reason")
+               or "Writes a durable sanitized report artifact for this task.")
+    else:
+        gate = "confirmation"
+        why = decision.get("reason") or proposal.get("reason") or "Requires an explicit decision before the Agent continues."
+
+    file_count = None
+    total_bytes = None
+    scan_scope = None
+    if conn is not None and task_id and action in ("plan_inventory_import", "plan_access_log_import"):
+        plan = _matching_import_plan(conn, task_id, source_type, bucket)
+        if plan is not None:
+            file_count = int(plan.get("selected_file_count") or 0) or int(plan.get("planned_file_count") or 0) or None
+            total_bytes = int(plan.get("selected_total_bytes") or 0) or int(plan.get("planned_total_bytes") or 0) or None
+            scan_scope = _scan_scope_line(plan.get("source_prefix") or prefix,
+                                          plan.get("max_files"), plan.get("max_bytes"),
+                                          plan.get("time_range_start"), plan.get("time_range_end"))
+            if not bucket:
+                bucket = redact_text(str(plan.get("source_bucket") or ""))[:200] or None
+            if not prefix and plan.get("source_prefix"):
+                prefix = redact_text(str(plan.get("source_prefix")))[:200] or None
+    if scan_scope is None:
+        scan_scope = _scan_scope_line(prefix, None, None, None, None)
+
+    return {
+        "gate": gate,
+        "why": redact_text(str(why))[:400] if why else None,
+        "bucket": bucket,
+        "prefix": prefix,
+        "source_type": source_type,
+        "file_count": file_count,
+        "total_bytes": total_bytes,
+        "scan_scope": scan_scope,
+    }
+
+
+def _scan_scope_line(prefix: str | None, max_files: Any, max_bytes: Any,
+                     time_start: Any, time_end: Any) -> str | None:
+    parts: list[str] = []
+    if prefix:
+        parts.append(f"prefix {prefix}")
+    if max_files:
+        parts.append(f"max {int(max_files)} files")
+    if max_bytes:
+        parts.append(f"max {int(max_bytes)} bytes")
+    if time_start or time_end:
+        parts.append(f"range {time_start or '…'} → {time_end or '…'}")
+    return "; ".join(parts) if parts else None
+
+
+def _matching_import_plan(conn: sqlite3.Connection, task_id: str,
+                          source_type: str | None, bucket: str | None) -> dict[str, Any] | None:
+    """Latest evidence-import plan linked to this task, optionally matching
+    source type / bucket. Absence is a gap, not a fabricated count."""
+    sql = (
+        "SELECT ei.planned_file_count, ei.planned_total_bytes, ei.selected_file_count, "
+        "ei.selected_total_bytes, ei.max_files, ei.max_bytes, ei.source_prefix, "
+        "ei.source_bucket, ei.source_type, ei.time_range_start, ei.time_range_end, ei.status "
+        "FROM evidence_imports ei "
+        "JOIN session_runs sr ON sr.run_id = ei.account_run_id "
+        "WHERE sr.session_id = ?"
+    )
+    params: list[Any] = [task_id]
+    if source_type:
+        sql += " AND ei.source_type = ?"
+        params.append(source_type)
+    if bucket:
+        sql += " AND ei.source_bucket = ?"
+        params.append(bucket)
+    sql += " ORDER BY ei.rowid DESC LIMIT 1"
+    try:
+        row = conn.execute(sql, params).fetchone()
+    except Exception:  # noqa: BLE001 — table may be absent in a narrow test DB
+        return None
+    return dict(row) if row else None
 
 
 def _evidence_candidates(conn: sqlite3.Connection, session_id: str, source_type: str) -> list[dict[str, Any]]:

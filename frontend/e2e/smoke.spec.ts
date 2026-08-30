@@ -156,7 +156,12 @@ test("an unrecognised execution failure is framed as task failure, not dumped", 
   await seedFreshApp(page);
   await page.goto("/");
   await expect(composer(page)).toBeVisible({ timeout: 30_000 });
-  await page.route("**/messages**", (route) => route.fulfill({ status: 500, body: '{"detail":"boom"}' }));
+  await page.route("**/agent-tasks/**/executions", (route) => {
+    if (route.request().method() === "POST") {
+      return route.fulfill({ status: 500, body: '{"detail":"boom"}' });
+    }
+    return route.continue();
+  });
 
   await composer(page).fill("why does acme-logs deny list");
   await composer(page).press("Enter");

@@ -86,6 +86,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(review).toContain("<EvidenceReview");
     expect(review).toContain("<ExecutionReview");
     expect(review).toContain("<ReportArtifact");
+    expect(review).toContain('data-testid="decision-history"');
     expect(review).not.toContain("Workspace");
   });
 
@@ -115,8 +116,13 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     const artifacts = source("../components/AgentRuntimeArtifacts.tsx");
     expect(action).toContain("export function AgentNextAction");
     expect(action).toContain('data-testid="agent-decision-required"');
+    expect(action).toContain('data-testid="agent-decline-action"');
+    expect(action).toContain('data-testid="decision-impact"');
     expect(task).toContain('import { AgentNextAction } from "./AgentDecisionCard"');
     expect(task).toContain("<AgentNextAction");
+    expect(task).toContain("runner.resume");
+    expect(task).toContain('data-testid="task-resume"');
+    expect(task).toContain('data-testid="queued-direction"');
     expect(task).not.toContain("ProposalCard");
     expect(artifacts).toContain("<AgentNextAction");
     expect(artifacts).not.toContain("ProposalCard");
@@ -188,6 +194,18 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(boundary).toContain('from "./AgentTaskImplementation"');
     expect(implementation).toContain("export function AgentTaskImplementation");
     expect(implementation).not.toContain("export function Thread");
+  });
+
+  it("recovers a dropped event stream only by sequence number", () => {
+    const impl = source("../hooks/useTurnRunnerImplementation.ts");
+    const api = source("../api.ts");
+    expect(impl).toContain("followExecutionEvents");
+    expect(impl).toContain("resumeTaskExecution");
+    expect(impl).not.toContain("waitForPersistedTurn");
+    expect(impl).not.toContain("postSessionMessage");
+    expect(impl).not.toContain("getSessionTurnState");
+    expect(api).toContain("StreamDisconnectedError");
+    expect(api).toContain("after=<last seq>");
   });
 
   it("uses task-native keyboard contracts", () => {

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v0.94.0.**
+> **Implementation contract for Storage Agent v0.95.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v0.93.0/v0.94.0 product invariant is:
+The v0.93+/v0.94/v0.95 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -29,7 +29,7 @@ New product/frontend work must preserve these boundaries:
 - **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active.
 - **Direction** is user intent/steering input.
 - **Execution** is real runtime/tool work. Never invent plans, steps, workers, or capabilities the runtime does not expose.
-- **Decision required** is a blocking confirmation state derived from real backend proposals.
+- **Decision required** is a blocking confirmation state derived from real backend proposals, with projected bounds/impact and a durable Decline path.
 - **Work Result** is the durable result of Agent work, not a generic assistant bubble.
 - **Review** is contextual to the active Task. Evidence, Execution detail, and Report are artifacts/review modes, not independent application destinations.
 - **Focus mode** changes presentation only. It never creates a second task lifecycle or second Agent input.
@@ -96,16 +96,20 @@ Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned b
 - an Execution is a `task_executions` row with lifecycle `queued` / `running` / `waiting` / `completed` / `failed` / `cancelled` / `interrupted`, driven by a background execution supervisor keyed by durable task identity — never by an HTTP request;
 - execution progress is the append-only structured `execution_events` log (status, tool started/completed, steer received/applied, decision opened/resolved, work result recorded), replayable by sequence number; never inferred from assistant prose;
 - Steer acts ON the current execution (injected into the running model loop), never cancel-and-rerun; Stop persists the partial Work Result durably;
-- UI disconnect, task switching, and reload never interrupt an execution; a Sidecar restart stamps in-flight executions `interrupted` with an explicit resume affordance;
-- Decision (`task_decisions`), Work Result (`work_results`), Artifact (`task_artifacts`), and the typed versioned Storage Task Context (`task_context_versions`) are first-class durable rows.
+- UI disconnect, task switching, and reload never interrupt an execution; a Sidecar restart stamps in-flight executions `interrupted` and the Task presents an explicit **Resume** action that starts a new Execution and follows its event stream;
+- a Direction submitted while another Execution is running is **queued durably** and must be visible/cancellable in the Task;
+- dropped event streams reconnect with `after=<last seq>` only — never a blocking `/sessions` POST or assistant-id poll;
+- Decision (`task_decisions`), Work Result (`work_results`), Artifact (`task_artifacts`), and the typed versioned Storage Task Context (`task_context_versions`) are first-class durable rows;
+- the latest typed context version is injected into the Agent prompt's stable half so restart grounding matches the pre-restart snapshot;
+- deterministic cross-evidence correlation produces bounded findings through existing summary/findings/memory channels.
 
-The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream, steer/stop the current execution, then reload persisted task state. The legacy `/sessions` message endpoints are compatibility shims over this runtime. Do not create a second submit path.
+The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream (reconnect by sequence), steer/stop/resume the current execution, then reload persisted task state. The legacy `/sessions` message endpoints are compatibility shims over this runtime. Do not create a second submit path.
 
 ## 5. Current Sidecar API boundary
 
 The Sidecar exposes both product projection and compatibility APIs:
 
-- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the v0.94 runtime API — executions (submit / steer / stop / resume / SSE event stream resumable by sequence), decisions (list / resolve), work results, artifacts, and the typed task context.
+- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the runtime API — executions (submit / steer / stop / resume / SSE event stream resumable by sequence), queued visibility, decisions (list / resolve with impact projection), work results, artifacts, and the typed task context.
 - `/sessions/...` remains the durable task/message/runtime compatibility API.
 - `/runs/...` remains deterministic execution/report compatibility API and is not a top-level product surface.
 - `/evidence-imports/...` owns bounded plan → confirm → execute data movement.

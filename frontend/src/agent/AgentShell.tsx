@@ -39,7 +39,7 @@ export function AgentShell({
   const [review, setReview] = useState<ReviewSurface | null>(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [focus, setFocus] = useState(false);
-  const { detail, artifacts, report, reportLoading, error } = useAgentTaskProjection(taskId, review);
+  const { detail, artifacts, decisions, report, reportLoading, error } = useAgentTaskProjection(taskId, review);
 
   useEffect(() => {
     if (!taskId) {
@@ -149,6 +149,7 @@ export function AgentShell({
           {review && taskId ? (
             <AgentReviewPanel
               artifacts={artifacts}
+              decisions={decisions}
               view={review}
               detail={detail}
               report={report}

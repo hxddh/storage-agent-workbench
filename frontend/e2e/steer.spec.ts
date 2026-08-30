@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { sidecarOrigin, watchAgentTaskSurface } from "./agent-tasks-surface";
 import { dropModelProvider, startFakeModel, textTurn, useFakeModel } from "./fake-model";
 
 /** Steering is a first-class Agent lifecycle operation. Enter during active
@@ -48,11 +49,24 @@ test.describe("steering active Agent Execution", () => {
   test.describe.configure({ timeout: 60_000 });
   test("Enter during Execution applies the new Direction immediately", async ({ page }) => {
     const { cleanup } = await open(page);
+    const surface = watchAgentTaskSurface(page);
     try {
       await direct(page, "why does acme-logs return 403?");
       await expect(task(page).getByText(/Paragraph 0 about the bucket POLICY/)).toBeVisible({ timeout: 30_000 });
+      await expect.poll(() => surface.saw(/POST \/agent-tasks\/.+\/executions/), {
+        timeout: 20_000,
+        message: "delegation must hit POST /agent-tasks/{id}/executions",
+      }).toBe(true);
+      await expect.poll(() => surface.saw(/GET \/agent-tasks\/.+\/events/), {
+        timeout: 20_000,
+        message: "live work must follow the durable event stream",
+      }).toBe(true);
       await direct(page, "actually, what expires those objects?");
       await expect(task(page).getByText(/LIFECYCLE rule is what expires/)).toBeVisible({ timeout: 60_000 });
+      await expect.poll(() => surface.saw(/POST \/agent-tasks\/.+\/steer/), {
+        timeout: 20_000,
+        message: "steering must hit POST /agent-tasks/{id}/steer",
+      }).toBe(true);
     } finally { await cleanup(); }
   });
 
@@ -107,12 +121,16 @@ test.describe("steering active Agent Execution", () => {
       await expect(task(page).getByText(/Paragraph 0 about the bucket POLICY/)).toBeVisible({ timeout: 30_000 });
       await direct(page, "actually, what expires those objects?");
       await expect(task(page).getByText(/LIFECYCLE rule is what expires/)).toBeVisible({ timeout: 60_000 });
-      const base = `http://127.0.0.1:${process.env.E2E_SIDECAR_PORT || 8799}`;
-      const sessions = (await (await fetch(`${base}/sessions`)).json()) as Array<{ id: string }>;
+      const tasks = (await (await fetch(`${sidecarOrigin()}/agent-tasks`)).json()) as Array<{ id: string }>;
       const states = await Promise.all(
-        sessions.map(async (session) => (await (await fetch(`${base}/sessions/${session.id}/turn`)).json()) as { running: boolean }),
+        tasks.map(async (item) => (await (await fetch(`${sidecarOrigin()}/agent-tasks/${item.id}/state`)).json()) as {
+          active_execution: { status: string } | null;
+        }),
       );
-      expect(states.every((state) => state.running === false)).toBe(true);
+      expect(states.every((state) => {
+        const status = state.active_execution?.status;
+        return !status || status === "waiting";
+      })).toBe(true);
     } finally { await cleanup(); }
   });
 });

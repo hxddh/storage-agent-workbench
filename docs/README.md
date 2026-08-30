@@ -1,8 +1,11 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v0.94.0** (`v0.94.0`, commit `7d58c3168f634bf5011be559f79d506f1be41fc6`).
+> **Current architecture baseline: Storage Agent v0.95.0** (`v0.95.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
+> v0.94.0 shipped the durable runtime; v0.95.0 makes that runtime user-visible
+> (Resume, queued Directions, sequence-only reconnect, Decision bounds/history,
+> typed context in the prompt, deterministic cross-evidence correlation).
 
 This directory documents the currently shipped Storage Agent architecture and operating contracts. It is deliberately organized so implementation agents and contributors do not reconstruct older product shells from historical terminology that still exists in persistence, APIs, release notes, or git history.
 
@@ -44,9 +47,9 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 - [`architecture.md`](architecture.md) — Tauri/React/Sidecar topology and ownership boundaries.
 - [`security.md`](security.md) — secret, tool, model-context, evidence and approval guarantees.
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
-- [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 025, and product-to-persistence mapping.
+- [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 026, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — post-0.93 priorities and explicit non-directions.
+- [`roadmap.md`](roadmap.md) — post-0.95 priorities and explicit non-directions.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.

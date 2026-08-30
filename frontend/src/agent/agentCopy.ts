@@ -43,6 +43,14 @@ const COPY = {
       untitledFinding: "Untitled finding",
       loading: "Loading task context…",
       memory: (n: number) => `${n} memory item${n === 1 ? "" : "s"}`,
+      decisionHistory: "Decision history",
+      noDecisions: "No Decisions have been recorded for this task.",
+      decisionStatus: {
+        pending: "Pending",
+        approved: "Approved",
+        declined: "Declined",
+        superseded: "Superseded",
+      },
       views: {
         overview: "Overview",
         evidence: "Evidence",
@@ -125,6 +133,14 @@ const COPY = {
       untitledFinding: "未命名发现",
       loading: "正在加载任务上下文…",
       memory: (n: number) => `${n} 条 Memory`,
+      decisionHistory: "Decision 历史",
+      noDecisions: "这个任务还没有记录 Decision。",
+      decisionStatus: {
+        pending: "待决定",
+        approved: "已批准",
+        declined: "已拒绝",
+        superseded: "已被替代",
+      },
       views: {
         overview: "Overview",
         evidence: "Evidence",

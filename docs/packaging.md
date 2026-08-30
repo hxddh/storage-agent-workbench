@@ -1,6 +1,6 @@
 # Packaging
 
-> **Storage Agent v0.93.0 packaging contract.**
+> **Storage Agent v0.95.0 packaging contract.**
 >
 > The desktop product is a Tauri v2 shell containing the production React bundle and a PyInstaller **one-dir** Python Sidecar resource. Packaging must preserve the same Agent Task runtime/safety behavior as development; it must not introduce a second execution path.
 
@@ -185,7 +185,7 @@ For a release candidate:
 - build from the exact verified source SHA;
 - ensure the current frontend architecture/documentation contracts are in that source;
 - run real-Sidecar E2E/visual-review gates;
-- verify the final downloaded artifact using the v0.93 Agent Task smoke checklist.
+- verify the final downloaded artifact using the Agent Task smoke checklist.
 
 ## Limitations
 

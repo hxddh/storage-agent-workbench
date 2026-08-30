@@ -3,6 +3,11 @@ import {
   forkSession,
   listModelProviders,
   approveDecisionOrPrepare,
+  listTaskDecisions,
+  resolveTaskDecision,
+  stopTaskExecution,
+  type DecisionImpact,
+  type TaskDecision,
 } from "../api";
 import type {
   Grounding,
@@ -54,6 +59,19 @@ type Item =
 
 const actionKey = (action: NextAction) => `${action.action_type}::${action.title}`;
 const SUGGESTION_KEYS = ["diagnose", "logs", "inventory", "config", "account", "optimize"] as const;
+
+function nextActionFromDecision(decision: TaskDecision): NextAction {
+  const proposal = decision.proposal;
+  return {
+    title: proposal?.title || decision.title || decision.action_type,
+    reason: proposal?.reason ?? decision.reason,
+    action_type: decision.action_type,
+    requires_confirmation: true,
+    confidence: proposal?.confidence || "high",
+    source_run_ids: proposal?.source_run_ids ?? [],
+    prefill: proposal?.prefill,
+  };
+}
 
 export function AgentTaskImplementation({
   sessionId,
@@ -107,6 +125,13 @@ export function AgentTaskImplementation({
         liveWorking: "Agent 正在执行 Task。",
         liveReady: "Work Result 已就绪。",
         continueTask: "继续当前 Task，从尚未完成的线索继续推进并深入检查。",
+        resumeTitle: "这次执行被中断了",
+        resumeBody: "Sidecar 在执行完成前重启或失败。恢复会用同一条 Direction 开始一次新的 Execution，已有结果会保留。",
+        resumeAction: "恢复执行",
+        queuedTitle: "排队中的 Direction",
+        queuedHint: "当前 Execution 结束后会开始这条 Direction。",
+        queuedCancel: "取消排队",
+        declineMissing: "没有找到对应的待处理 Decision。",
       }
     : {
         startTitle: "Delegate a goal to the Agent",
@@ -137,6 +162,13 @@ export function AgentTaskImplementation({
         liveWorking: "The Agent is executing this task.",
         liveReady: "Work Result ready.",
         continueTask: "Continue this task from the unfinished lines of work and go deeper where needed.",
+        resumeTitle: "This execution was interrupted",
+        resumeBody: "The Sidecar restarted or the execution failed before it finished. Resume starts a new Execution with the same Direction; existing work is kept.",
+        resumeAction: "Resume execution",
+        queuedTitle: "Queued Direction",
+        queuedHint: "This Direction waits until the current Execution finishes.",
+        queuedCancel: "Cancel queued Direction",
+        declineMissing: "No matching pending Decision was found.",
       };
   const {
     scrollRef, contentRef, pinned, onScroll, releaseToUser,
@@ -161,7 +193,7 @@ export function AgentTaskImplementation({
   const error = run.error ?? viewError;
   const {
     detail, triage, earlier, loadingEarlier, metrics, remoteTurn: remoteExecution, loadError,
-    localId, reload, loadEarlier, loadAllEarlier, hiddenCount,
+    localId, reload, loadEarlier, loadAllEarlier, hiddenCount, taskRuntime,
   } = useSessionDocument({
     sessionId, sidecarReady, reloadKey, t, scrollRef, setViewError,
   });
@@ -417,6 +449,7 @@ export function AgentTaskImplementation({
       // execution waiting on it) before handing over to the confirmed flow.
       // Actions with no pending durable decision use the legacy prepare path.
       const prepared = await approveDecisionOrPrepare(localId.current, action);
+      await reload(localId.current);
       if (prepared.open === "evidence_import" && prepared.status === "ready") {
         setImportHandoff({
           sourceType: prepared.prefill.source_type as "inventory" | "access_log",
@@ -431,6 +464,39 @@ export function AgentTaskImplementation({
       } else {
         void runner.submit(action.title);
       }
+    } catch (caught) {
+      setViewError(cleanError(String(caught), t));
+    }
+  };
+
+  const declineAction = async (action: NextAction) => {
+    const id = localId.current;
+    if (!id) return;
+    try {
+      let match = (taskRuntime?.pending_decisions ?? []).find((d) => d.action_type === action.action_type);
+      if (!match) {
+        const listed = await listTaskDecisions(id, "pending");
+        match = listed.decisions.find((d) => d.action_type === action.action_type);
+      }
+      if (!match) {
+        setViewError(taskCopy.declineMissing);
+        return;
+      }
+      await resolveTaskDecision(id, match.id, "declined");
+      await reload(id);
+      onChanged();
+    } catch (caught) {
+      setViewError(cleanError(String(caught), t));
+    }
+  };
+
+  const cancelQueued = async (executionId: string) => {
+    const id = localId.current;
+    if (!id) return;
+    try {
+      await stopTaskExecution(id, executionId);
+      await reload(id);
+      onChanged();
     } catch (caught) {
       setViewError(cleanError(String(caught), t));
     }
@@ -466,6 +532,32 @@ export function AgentTaskImplementation({
     (lastResult.grounding || (lastResult.nextActions && lastResult.nextActions.length > 0))
   );
   const showLiveGrounding = !pending && !lastPersisted && (!!run.grounding || nextActions.length > 0);
+
+  const pendingDecisions = taskRuntime?.pending_decisions ?? [];
+  const impactByType = new Map(pendingDecisions.map((d) => [d.action_type, d.impact ?? null]));
+  const shownActionTypes = new Set<string>();
+  for (const item of items) {
+    if (item.kind === "message") item.nextActions?.forEach((action) => shownActionTypes.add(action.action_type));
+  }
+  nextActions.forEach((action) => shownActionTypes.add(action.action_type));
+  const extraPending = pendingDecisions.filter((d) => d.status === "pending" && !shownActionTypes.has(d.action_type));
+  const lastExec = taskRuntime?.last_execution;
+  const showResume = Boolean(
+    !needKey && !busy && !run.stalled
+    && taskRuntime?.status === "needs_attention"
+    && lastExec
+    && (lastExec.status === "interrupted" || lastExec.status === "failed"),
+  );
+  const queuedDirections = taskRuntime?.queued_executions ?? [];
+  const renderAction = (action: NextAction, actionIndex: number, impact?: DecisionImpact | null) => (
+    <AgentNextAction
+      key={`${actionKey(action)}-${actionIndex}`}
+      action={action}
+      onRun={runAction}
+      onDecline={action.requires_confirmation ? declineAction : undefined}
+      impact={impact ?? impactByType.get(action.action_type)}
+    />
+  );
 
   const offline = sidecarStatus === "disconnected" || sidecarStatus === "error";
 
@@ -546,6 +638,33 @@ export function AgentTaskImplementation({
           </div>
         </div>
       ) : null}
+      {showResume && lastExec ? (
+        <div data-testid="task-resume" className="animate-fade-in-up rounded-xl border border-warn-border bg-warn-bg p-3.5 text-sm text-warn-fg">
+          <div className="font-medium text-gray-100">{taskCopy.resumeTitle}</div>
+          <p className="mt-1 text-xs leading-relaxed text-gray-400">{taskCopy.resumeBody}</p>
+          <div className="mt-2.5">
+            <Button data-testid="task-resume-action" variant="primary" size="sm" onClick={() => void runner.resume(lastExec.id)}>
+              {taskCopy.resumeAction}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {queuedDirections.map((execution) => (
+        <div
+          key={execution.id}
+          data-testid="queued-direction"
+          className="animate-fade-in-up rounded-xl border border-edge bg-panel/60 p-3.5 text-sm"
+        >
+          <div className="text-2xs font-semibold uppercase tracking-[0.08em] text-gray-500">{taskCopy.queuedTitle}</div>
+          <p className="mt-1 text-sm text-gray-200">{execution.direction}</p>
+          <p className="mt-1 text-2xs text-gray-500">{taskCopy.queuedHint}</p>
+          <div className="mt-2.5">
+            <Button data-testid="queued-direction-cancel" variant="default" size="sm" onClick={() => void cancelQueued(execution.id)}>
+              {taskCopy.queuedCancel}
+            </Button>
+          </div>
+        </div>
+      ))}
     </>
   );
 
@@ -657,7 +776,7 @@ export function AgentTaskImplementation({
                         {item.nextActions && item.nextActions.length > 0 ? (
                           <div className="flex flex-wrap items-center gap-2 pt-0.5">
                             <span className="text-2xs text-gray-500">{taskCopy.suggestedNext}</span>
-                            {item.nextActions.map((action, actionIndex) => <AgentNextAction key={`${actionKey(action)}-${actionIndex}`} action={action} onRun={runAction} />)}
+                            {item.nextActions.map((action, actionIndex) => renderAction(action, actionIndex))}
                           </div>
                         ) : null}
                       </div>
@@ -721,13 +840,20 @@ export function AgentTaskImplementation({
 
                 {banners}
 
+                {extraPending.length > 0 ? (
+                  <div className="space-y-3" data-testid="durable-pending-decisions">
+                    {extraPending.map((decision, actionIndex) =>
+                      renderAction(nextActionFromDecision(decision), actionIndex, decision.impact))}
+                  </div>
+                ) : null}
+
                 {showLiveGrounding ? (
                   <div className="space-y-3">
                     {run.grounding ? <GroundingCard g={run.grounding} /> : null}
                     {nextActions.length > 0 ? (
                       <div className="flex flex-wrap items-center gap-2 pt-0.5">
                         <span className="text-2xs text-gray-500">{taskCopy.suggestedNext}</span>
-                        {nextActions.map((action, actionIndex) => <AgentNextAction key={`${actionKey(action)}-${actionIndex}`} action={action} onRun={runAction} />)}
+                        {nextActions.map((action, actionIndex) => renderAction(action, actionIndex))}
                       </div>
                     ) : null}
                   </div>

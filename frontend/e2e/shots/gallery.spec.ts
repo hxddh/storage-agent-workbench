@@ -4,7 +4,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "../fake-model";
 import { STATE_FILE } from "../global-setup";
-import { seedSession as seedTask } from "../seed";
+import { seedInterruptedTask, seedSession as seedTask } from "../seed";
 
 /**
  * Human visual-review contact sheet for the Agent product.
@@ -75,6 +75,7 @@ function seedDecisionTask(): string {
       requires_confirmation: true,
       confidence: "high",
       source_run_ids: [],
+      prefill: { bucket_name: "acme-logs", prefix: "logs/2026/", source_type: "access_log" },
     },
   ]);
   const py = `
@@ -195,9 +196,23 @@ test.describe("Agent runtime states", () => {
     await openAgent(page, "dark");
     await openTask(page, title);
     await expect(page.getByTestId("agent-decision-required")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("decision-impact")).toBeVisible();
+    await expect(page.getByTestId("agent-decline-action")).toBeVisible();
     await expect(page.getByTestId("agent-task-header")).toContainText(/Needs decision/i);
     await expect(navigation(page).getByTestId("task-queue-needs-you")).toContainText(title);
     await shoot(page, "11-decision-required", "dark");
+    await page.getByTestId("agent-task-header").getByRole("button", { name: /^Review$/i }).click();
+    await expect(page.getByTestId("decision-history")).toBeVisible();
+    await shoot(page, "11b-decision-history", "dark");
+  });
+
+  test("Needs attention — interrupted execution offers Resume", async ({ page }) => {
+    const { title } = seedInterruptedTask("Interrupted lifecycle diagnosis");
+    await openAgent(page, "dark");
+    await navigation(page).getByText(title, { exact: true }).first().click();
+    await expect(page.getByTestId("task-resume")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("task-resume-action")).toBeVisible();
+    await shoot(page, "11c-resume", "dark");
   });
 
   test("Runtime attention — unavailable execution is explicit", async ({ page }) => {
