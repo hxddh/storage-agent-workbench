@@ -30,10 +30,10 @@ def test_stream_finalizes_on_max_turns_instead_of_erroring():
 
         async def stream_events(self):
             raise Exception("Max turns (16) exceeded")
-            yield  # noqa: unreachable — makes this an async generator
+            yield  # makes this an async generator
 
     async def finalize():
-        return "Based on the investigation so far, the bucket looks reachable."
+        return "Based on the work completed so far, the bucket looks reachable."
 
     async def collect():
         out = []
@@ -46,9 +46,9 @@ def test_stream_finalizes_on_max_turns_instead_of_erroring():
     # No exception propagated, and the run ends with a normal 'final'.
     assert "final" in kinds
     # The finalize answer is streamed as a delta AND carried into the contract.
-    assert any(k == "delta" and "investigation so far" in d for k, d in events)
+    assert any(k == "delta" and "work completed so far" in d for k, d in events)
     final = next(d for k, d in events if k == "final")
-    assert "investigation so far" in (final.get("answer") or "")
+    assert "work completed so far" in (final.get("answer") or "")
 
 
 def test_stream_reraises_non_maxturns_errors():
@@ -99,7 +99,7 @@ def test_stream_finalizes_on_transient_error_with_continue_proposal():
 
         async def stream_events(self):
             raise type("RateLimitError", (Exception,), {"status_code": 429})("rate limited")
-            yield  # noqa: unreachable
+            yield  # makes this an async generator
 
     async def finalize():
         return "The bucket is reachable based on the checks completed so far."
@@ -178,7 +178,7 @@ def test_budget_exhausted_turn_is_cut_short_with_continue_proposal():
 
         async def stream_events(self):
             return
-            yield  # noqa: unreachable — empty async generator
+            yield  # empty async generator
 
     budget = {"chars": 999_999, "exhausted": True}
 
