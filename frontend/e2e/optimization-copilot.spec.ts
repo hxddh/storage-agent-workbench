@@ -172,7 +172,7 @@ test.describe("v0.96 optimization copilot closed loop", () => {
         return revisit && pending;
       }, { timeout: 90_000, message: "catch-up revisit must finish as a pending Decision" }).toBe(true);
       await expect(page.getByTestId("agent-decision-required")).toBeVisible({ timeout: 20_000 });
-      await expect(task(page).getByText(/Catch-up revisit|catch-up visit/i)).toBeVisible({ timeout: 20_000 });
+      await expect(task(page).getByRole("heading", { name: /Catch-up revisit/i })).toBeVisible();
       const resolved = await (await fetch(`${sidecarOrigin()}/agent-tasks/${id}/decisions`)).json() as {
         decisions: Array<{ status: string }>;
       };
