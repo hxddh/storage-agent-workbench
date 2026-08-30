@@ -140,6 +140,12 @@ export function useSessionDocument({
     let followCtl: AbortController | null = null;
     let following = false;
     let sawOwnBusy = false;
+    // Execution id whose settled Work Result we already reloaded. Catch-up
+    // revisits often finish before this client follows the stream; without a
+    // reload the Decision card can appear from task state while the Work Result
+    // never lands in the document.
+    let loadedSettledExecId: string | null = null;
+    let discoverPolls = 0;
 
     const follow = async (executionId: string, direction: string | null, startedAt: string | null) => {
       following = true;
@@ -172,6 +178,7 @@ export function useSessionDocument({
       });
       setRemoteTurn(null);
       if (localId.current === sessionId) void reload(sessionId);
+      loadedSettledExecId = executionId;
       timer = window.setTimeout(tick, 1000);
     };
 
@@ -199,9 +206,28 @@ export function useSessionDocument({
         sawOwnBusy = false;
         void follow(active.id, active.direction, active.started_at);
       } else {
-        if (remoteTurnRef.current || sawOwnBusy) void reload(sessionId);
+        const settledId = state.last_execution?.id ?? null;
+        const settled = Boolean(
+          settledId
+          && state.last_execution
+          && state.last_execution.status !== "running"
+          && state.last_execution.status !== "queued",
+        );
+        if (remoteTurnRef.current || sawOwnBusy) {
+          if (settledId) loadedSettledExecId = settledId;
+          void reload(sessionId);
+        } else if (settled && loadedSettledExecId !== settledId) {
+          loadedSettledExecId = settledId;
+          void reload(sessionId);
+        }
         sawOwnBusy = false;
         setRemoteTurn(null);
+        // A catch-up revisit may still be queued when this Task is first
+        // selected. Keep a bounded poll until an Execution settles.
+        if (!settled && discoverPolls < 40) {
+          discoverPolls += 1;
+          timer = window.setTimeout(tick, 1500);
+        }
       }
     };
     void tick();

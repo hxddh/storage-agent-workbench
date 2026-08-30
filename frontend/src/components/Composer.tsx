@@ -9,9 +9,10 @@ const SLASH: Slash[] = [
   { cmd: "diagnose", labelKey: "sugg.diagnose", promptKey: "prompt.diagnose" },
   { cmd: "logs", labelKey: "sugg.logs", action: "pickFile" },
   { cmd: "inventory", labelKey: "sugg.inventory", action: "pickFile" },
-  { cmd: "config", labelKey: "sugg.config", promptKey: "prompt.config" },
+  { cmd: "checkup", labelKey: "sugg.checkup", promptKey: "prompt.checkup" },
+  { cmd: "cost", labelKey: "sugg.cost", promptKey: "prompt.cost" },
+  { cmd: "drift", labelKey: "sugg.drift", promptKey: "prompt.drift" },
   { cmd: "account", labelKey: "sugg.account", promptKey: "prompt.account" },
-  { cmd: "optimize", labelKey: "sugg.optimize", promptKey: "prompt.optimize" },
   { cmd: "report", labelKey: "slash.report", action: "report" },
 ];
 

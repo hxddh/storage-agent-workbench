@@ -24,6 +24,7 @@ import {
   resumeTaskExecution,
   steerTaskExecution,
   stopTaskExecution,
+  verifyTaskPlan,
   submitErrorTriage,
   uploadSessionDataset,
 } from "../api";
@@ -455,6 +456,17 @@ export function useTurnRunner(opts: {
     }
   };
 
+  const verify = async () => {
+    const id = localId.current;
+    if (!id) return;
+    try {
+      const { execution } = await verifyTaskPlan(id);
+      await attachToExecution(execution.id, execution.direction);
+    } catch (e) {
+      patchSessionRun(id, { error: cleanError(String(e), t) });
+    }
+  };
+
   // Send one turn (from the composer or programmatically).
   const submit = async (q: string) => {
     if (!q) return;
@@ -622,5 +634,5 @@ export function useTurnRunner(opts: {
     flight.controller.abort();
   };
 
-  return { submit, submitWithDataset, stop, steer, resume, followExecution: attachToExecution };
+  return { submit, submitWithDataset, stop, steer, resume, verify, followExecution: attachToExecution };
 }

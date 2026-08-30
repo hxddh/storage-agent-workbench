@@ -30,7 +30,7 @@ export function ProvidersView() {
   const { t } = useI18n();
   const [tab, setTab] = useState<Tab>("model");
   return (
-    <div className="flex flex-1 flex-col overflow-auto bg-canvas">
+    <div className="flex flex-col bg-canvas">
       <header className="border-b border-edge px-8 py-5">
         <div className="mb-1 text-sm font-semibold text-gray-100">{t("prov.title")}</div>
         <p className="mb-4 text-xs leading-relaxed text-gray-500">{t("prov.subtitle")}</p>
@@ -55,7 +55,7 @@ export function ProvidersView() {
           </Button>
         </div>
       </header>
-      <div className="flex-1 px-8 py-5">
+      <div className="px-8 py-5">
         {tab === "model" ? <ModelProvidersPanel /> : <CloudProvidersPanel />}
       </div>
     </div>

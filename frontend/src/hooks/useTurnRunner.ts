@@ -67,6 +67,7 @@ export function useTurnRunner(opts: TurnRunnerOptions): TurnController {
     stop: (sessionId) => latest.current.stop(sessionId),
     steer: (text, resend) => latest.current.steer(text, resend),
     resume: (executionId) => latest.current.resume(executionId),
+    verify: () => latest.current.verify(),
     followExecution: (executionId, direction) => latest.current.followExecution(executionId, direction),
   }), []);
 

@@ -375,9 +375,10 @@ def analyze_inventory(duckdb_path: str | Path) -> dict[str, Any]:
             ).fetchall()
         ]
         age_dist = [
-            {"bucket": b, "count": int(c)}
-            for b, c in con.execute(
-                f"SELECT {_AGE_CASE} AS b, count(*) c FROM {TABLE_NAME} GROUP BY b"
+            {"bucket": b, "count": int(c), "size": int(s or 0)}
+            for b, c, s in con.execute(
+                f"SELECT {_AGE_CASE} AS b, count(*) c, COALESCE(sum(size), 0) s "
+                f"FROM {TABLE_NAME} GROUP BY b"
             ).fetchall()
         ]
         prefix_dist = [
@@ -388,9 +389,10 @@ def analyze_inventory(duckdb_path: str | Path) -> dict[str, Any]:
             ).fetchall()
         ]
         storage_dist = [
-            {"value": _clip(sc), "count": int(c)}
-            for sc, c in con.execute(
-                f"SELECT storage_class, count(*) c FROM {TABLE_NAME} GROUP BY storage_class ORDER BY c DESC"
+            {"value": _clip(sc), "count": int(c), "size": int(s or 0)}
+            for sc, c, s in con.execute(
+                f"SELECT storage_class, count(*) c, COALESCE(sum(size), 0) s "
+                f"FROM {TABLE_NAME} GROUP BY storage_class ORDER BY c DESC"
             ).fetchall()
         ]
         top_large = [

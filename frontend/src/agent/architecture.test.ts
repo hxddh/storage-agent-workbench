@@ -35,6 +35,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(shell).toContain("taskContent: ReactNode");
     expect(shell).toContain("agent-task-content");
     expect(shell).toContain("<AgentReviewPanel");
+    expect(shell).toContain('data-testid="agent-task-review"');
     expect(shell).not.toContain("timeline: ReactNode");
     expect(shell).not.toContain("<SurfaceTabs");
     expect(shell).not.toContain('role="tabpanel"');
@@ -122,6 +123,9 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(task).toContain("<AgentNextAction");
     expect(task).toContain("runner.resume");
     expect(task).toContain('data-testid="task-resume"');
+    expect(task).toContain("runner.verify");
+    expect(task).toContain('data-testid="task-verify"');
+    expect(task).toContain('data-testid="task-verify-action"');
     expect(task).toContain('data-testid="queued-direction"');
     expect(task).not.toContain("ProposalCard");
     expect(artifacts).toContain("<AgentNextAction");
@@ -208,6 +212,15 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(api).toContain("after=<last seq>");
   });
 
+  it("reloads the task document when a background Execution settles without a live follow", () => {
+    const doc = source("../hooks/useSessionDocument.ts");
+    expect(doc).toContain("loadedSettledExecId");
+    expect(doc).toContain("discoverPolls");
+    expect(doc).toContain("Catch-up");
+    expect(doc).toContain("void reload(sessionId)");
+    expect(doc).toContain("followExecutionEvents");
+  });
+
   it("uses task-native keyboard contracts", () => {
     const shortcuts = source("../shortcuts.ts");
     const app = source("../App.tsx");
@@ -266,5 +279,31 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(executionCss).toContain('[data-testid="execution-detail"]');
     expect(executionCss).not.toContain("run-workspace-root");
     expect(executionCss).not.toContain("position: fixed");
+  });
+
+  it("maps Ready-to-delegate suggestions to real checkup / cost / drift capabilities", () => {
+    const task = source("../components/AgentTaskImplementation.tsx");
+    const composer = source("../components/Composer.tsx");
+    expect(task).toContain('data-testid={`delegate-suggestion-${suggestion.key}`}');
+    expect(task).toContain('"checkup"');
+    expect(task).toContain('"cost"');
+    expect(task).toContain('"drift"');
+    expect(composer).toContain('cmd: "checkup"');
+    expect(composer).toContain('cmd: "cost"');
+    expect(composer).toContain('cmd: "drift"');
+    expect(composer).not.toContain('cmd: "optimize"');
+  });
+
+  it("presents remediation plans, baselines, drift, and revisit inside existing Review", () => {
+    const review = source("./AgentReviewPanel.tsx");
+    const model = source("./model.ts");
+    expect(review).toContain('data-testid="remediation-plan-status"');
+    expect(review).toContain('data-testid="task-baselines"');
+    expect(review).toContain('data-testid="task-drift"');
+    expect(review).toContain('data-testid="task-revisit"');
+    expect(review).toContain('(["overview", "evidence", "execution", "report"] as const)');
+    expect(model).toContain('export type ReviewSurface = "overview" | "evidence" | "execution" | "report"');
+    expect(review).not.toContain("Workspace");
+    expect(review).not.toContain("remediation-plan-page");
   });
 });

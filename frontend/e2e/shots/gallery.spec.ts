@@ -4,7 +4,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "../fake-model";
 import { STATE_FILE } from "../global-setup";
-import { seedInterruptedTask, seedSession as seedTask } from "../seed";
+import { seedInterruptedTask, seedOptimizationTask, seedSession as seedTask } from "../seed";
 
 /**
  * Human visual-review contact sheet for the Agent product.
@@ -150,7 +150,7 @@ for (const theme of THEMES) {
       seedTask(2, title, "tall");
       await openAgent(page, theme);
       await openTask(page, title);
-      await page.getByTestId("agent-task-header").getByRole("button", { name: /^Review$/i }).click();
+      await page.getByTestId("agent-task-review").click();
       await expect(page.getByTestId("agent-review-panel")).toBeVisible();
       await expect(page.getByTestId("agent-composer")).toBeVisible();
       await shoot(page, "04-review", theme);
@@ -201,7 +201,7 @@ test.describe("Agent runtime states", () => {
     await expect(page.getByTestId("agent-task-header")).toContainText(/Needs decision/i);
     await expect(navigation(page).getByTestId("task-queue-needs-you")).toContainText(title);
     await shoot(page, "11-decision-required", "dark");
-    await page.getByTestId("agent-task-header").getByRole("button", { name: /^Review$/i }).click();
+    await page.getByTestId("agent-task-review").click();
     await expect(page.getByTestId("decision-history")).toBeVisible();
     await shoot(page, "11b-decision-history", "dark");
   });
@@ -247,7 +247,34 @@ test.describe("Agent runtime states", () => {
     await openAgent(page, "dark");
     await page.getByTestId("task-navigation-settings").click();
     await expect(page.getByRole("dialog", { name: /Settings/i })).toBeVisible();
+    await expect(page.getByTestId("settings-price-table")).toBeVisible();
+    await expect(page.getByTestId("price-table-example")).toBeVisible();
     await shoot(page, "15-settings", "dark");
+  });
+
+  test("Remediation plan and Verify live on the Task, not a new destination", async ({ page }) => {
+    const title = "Remediation plan review";
+    seedOptimizationTask(title, "review");
+    await openAgent(page, "dark");
+    await openTask(page, title);
+    await expect(page.getByTestId("task-verify")).toBeVisible({ timeout: 20_000 });
+    await shoot(page, "16-remediation-verify", "dark");
+    await page.getByTestId("agent-task-review").click();
+    await expect(page.getByTestId("remediation-plan-status")).toBeVisible();
+    await expect(page.getByTestId("task-baselines")).toBeVisible();
+    await expect(page.getByTestId("task-drift")).toBeVisible();
+    await expect(page.getByTestId("task-revisit")).toBeVisible();
+    await shoot(page, "16b-plan-baseline-review", "dark");
+  });
+
+  test("Catch-up revisit state is labelled in Review", async ({ page }) => {
+    const title = "Catch-up revisit caretaker";
+    seedOptimizationTask(title, "catchup");
+    await openAgent(page, "dark");
+    await navigation(page).getByText(title, { exact: true }).first().click();
+    await page.getByTestId("agent-task-review").click();
+    await expect(page.getByTestId("task-revisit")).toContainText(/Catch-up/i);
+    await shoot(page, "17-revisit-catchup", "dark");
   });
 });
 

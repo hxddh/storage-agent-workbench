@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v0.95.0.**
+> **Current baseline: Storage Agent v0.96.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -19,7 +19,7 @@
 
 ## B. Agent Task product smoke
 
-A user must be able to recognize and use the v0.95 product model without reading source code.
+A user must be able to recognize and use the v0.96 product model without reading source code.
 
 ### Start and task navigation
 
@@ -51,6 +51,9 @@ A user must be able to recognize and use the v0.95 product model without reading
 - [ ] **Stop** cancels the active turn promptly (including a queued Direction).
 - [ ] A stopped execution leaves a truthful durable partial/stopped result/state as implemented and the Task becomes controllable again.
 - [ ] A `needs_attention` Task whose last Execution is interrupted/failed exposes **Resume**; Resume follows the new execution event stream.
+- [ ] A Task with a Remediation Plan exposes **Verify**; Verify follows a new read-only execution event stream and does not mutate storage.
+- [ ] Review Overview shows plan status, baselines/Drift, and the optional revisit schedule without adding a navigation destination.
+- [ ] Cost-review numbers are labelled estimates with coverage, or explicit gaps when inventory/price table is missing.
 - [ ] A Direction queued behind a running Execution is visible in the Task and can be cancelled.
 
 ### Durable task switching / concurrent state
