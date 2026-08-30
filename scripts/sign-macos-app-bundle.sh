@@ -58,7 +58,7 @@ echo "==> Seal OK"
 # /Applications drop target is sufficient for an unsigned pre-release.
 if command -v hdiutil >/dev/null 2>&1; then
   OLD_DMG="$(ls "$DMG_DIR"/*.dmg 2>/dev/null | head -1 || true)"
-  DMG_NAME="$(basename "${OLD_DMG:-Storage Agent Workbench.dmg}")"
+  DMG_NAME="$(basename "${OLD_DMG:-Storage Agent.dmg}")"
   VOL_NAME="$(basename "$APP" .app)"
   mkdir -p "$DMG_DIR"
   STAGING="$(mktemp -d)"
