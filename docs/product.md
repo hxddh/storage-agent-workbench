@@ -101,7 +101,7 @@ A baseline is a versioned bounded snapshot (inventory overview, configuration fa
 
 ### Review
 
-Review is subordinate to the active Task. It stays **closed by default**. A Review button appears only when the Task has Evidence, Execution, or other reviewable output. Open Review from the document (a finding, a number, an Evidence link) or the header button. Empty Overview sections are not rendered. Overview still projects Remediation Plan status, baselines, Drift, and the optional revisit schedule **when those records exist**. These are not new destinations.
+Review is subordinate to the active Task. It stays **closed by default**. A Review button appears once a durable Task exists (empty start has no Task and no Review). Open Review from the document (a finding, a number, an Evidence link) or the header button. Empty Overview sections are not rendered. Overview still projects Remediation Plan status, baselines, Drift, and the optional revisit schedule **when those records exist**. These are not new destinations.
 
 Review must not create a second Agent input or a second task lifecycle.
 

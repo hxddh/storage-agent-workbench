@@ -16,7 +16,7 @@ _Agent-native surface: the Task is a document. One column, Composer-native first
 - Empty start is the Composer. First-run is a state of that same box; skip is a one-line resume. Suggestion cards are deleted (`/` slash commands remain).
 - Header is the task title. Working state lives on the live execution strip. Painted ⌘K, Connected, and duplicate settings are gone from the header.
 - Task navigation is one list (Needs-you / Recent titles not painted). Direction / Work Result visible labels are gone; testids remain.
-- Review stays closed until the Task has something. Empty Overview sections are not rendered.
+- Review stays closed by default. The header button appears once a durable Task exists. Empty Overview sections are not rendered.
 
 ### Security
 

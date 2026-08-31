@@ -108,7 +108,7 @@ The Sidecar `/agent-tasks` projection provides durable decision truth so a pendi
 
 - task title;
 - Focus presentation state;
-- contextual Review open/close state (button only when the Task has reviewable output);
+- contextual Review open/close state (header button once a durable Task exists);
 - selected Execution inside Review;
 - live execution status derived from real task runtime state (the working strip, not a header sentence).
 
