@@ -31,6 +31,8 @@ const forbidden: Array<[string, RegExp]> = [
   ["command-center queue selector", /task-queue-(needs-you|running)/],
   ["Focus mode selector", /agent-focus-toggle|data-focus=/],
   ["execution summary toggle", /execution-summary-toggle/],
+  ["Direction rerun selector", /rerun-direction/],
+  ["painted palette button in navigation", /task-navigation-palette/],
 ];
 
 describe("real-browser tests target the Agent-native UI only", () => {
