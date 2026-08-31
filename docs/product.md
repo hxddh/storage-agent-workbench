@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v0.97.0.** This is the canonical product/UX specification. v0.97 is a presentation craft pass on the v0.96 runtime; historical release notes are not current product architecture.
+> **Applies to Storage Agent v0.98.0.** This is the canonical product/UX specification. v0.98 is a content-presentation pass on the v0.96 runtime (figures, provenance, first-run, subtraction). Historical release notes are not current product architecture.
 
 ## Product definition
 
@@ -83,7 +83,11 @@ Read-only investigation is autonomous by default. Confirmation is reserved for m
 
 ### Work Result
 
-A Work Result is the durable output object of an Execution — recorded by the Task runtime with its grounding, proposals, and stopped/cut-short state. It can contain prose, Markdown structure, tables, code/config fragments, structured errors, findings, and references to supporting Evidence/Execution.
+A Work Result is the durable output object of an Execution — recorded by the Task runtime with its grounding, proposals, and stopped/cut-short state. It can contain prose, Markdown structure, tables, **deterministic SVG figures** of runtime analysis (cost horizons, inventory distributions, Drift classes, access-log mix), code/config fragments, structured errors, findings, and references to supporting Evidence/Execution.
+
+Figures plot only values the runtime emitted. Gaps render as gap states. Unconfirmed prices withhold the cost axis. Age and storage class are independent series — there is no observed joint. Charts are not a new destination: they sit in the Work Result and in Review Overview.
+
+Findings and key figures are clickable when a provenance chain exists (`GET /agent-tasks/{id}/provenance`). Hover shows tool, time, and coverage; click opens Review and anchors to that Evidence. A missing chain reads **No direct evidence chain** — never a fabricated source.
 
 A Work Result is not a transient chat bubble and should read like technical work output.
 
@@ -135,6 +139,8 @@ This does **not** mean the product has hidden autonomous worker Agents. It means
 An optional per-task **revisit schedule** (every N days) submits a read-only Execution through the same `runtime.submit` path when the Sidecar is running and the due time has passed. The desktop app has no background daemon: if the app was closed past due, the next open catch-up-submits and labels the Direction as catch-up. Revisits never auto-approve a Decision. Needs-decision / needs-attention from a revisit use the existing AgentTaskNavigation states. The user can turn the schedule off at any time.
 
 Ready-to-delegate suggestions map to real capabilities: storage checkup, cost review (simulator), drift check (baseline), plus diagnose / attach inventory or access logs / account mapping. They must not promise runtime the Sidecar does not expose.
+
+A fresh install follows an inline **60-second path** on the start surface: welcome → connect a model (live `POST /model-providers/{id}/test`) → optionally connect storage (skippable; skip is an explicit gap, not a fake connection) → delegate the first storage checkup. No demo data, no fake progress. Every step can exit; the empty start then offers a resume entry back to that step.
 
 ## Storage-specific capability model
 
@@ -207,23 +213,30 @@ Provider/model configuration, audit internals, and low-level counters are second
 
 ## Design rules
 
-v0.97.0 is a presentation-only craft pass. Visual language is specified in
+v0.98.0 is a content-presentation pass on the v0.97 token system. Visual language is specified in
 [`design-tokens.md`](design-tokens.md) and enforced by frontend token tests.
 
 - Dark and light are first-class. Do not ship a surface that only works in one.
 - Type, radius, motion, and elevation come from tokens. No ad-hoc px type, no
   raw z-index, no `transition-all`.
 - Work Result is a publication: heading hierarchy, paragraph rhythm, tables,
-  labelled code with copy, structured errors.
+  labelled code with copy, structured errors, and **deterministic figures** of
+  runtime analysis. Wide windows keep a 46rem reading measure and put figures
+  in the remaining column — the right half is not empty space.
+- Figures use `--viz-*` tokens and SVG/CSS only. No chart library. Never
+  interpolate, extrapolate, or invent a horizon the runtime did not emit.
+- Findings carry provenance. Missing chain is labelled, never implied.
 - Execution rows show real tool name, argument summary, duration, and
   success/fail. Streaming must not jump layout. No invented step/progress chrome.
 - Composer is the product card: Delegate at rest, Steer + Stop while working,
   with discoverable shortcuts.
 - Every non-ideal state (empty list, no Evidence, offline, interrupted, load
-  earlier) is designed. Copy is restrained, specific, and bilingual.
-- Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions.
+  earlier, first-run skip) is designed. Copy is restrained, specific, and bilingual.
+- Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped
+  as Actions vs Tasks.
 - Perceived latency: cached task documents render instantly on switch; never
   flash an empty canvas while the durable document is already known.
+- First Work Result on a new install is a real checkup, not a demo.
 
 ## Quality contract
 

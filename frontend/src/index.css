@@ -125,6 +125,12 @@
    * saturated colour the dark theme has, so the fill keeps its brightness and
    * carries dark ink instead, the way a light button on a dark UI always has. */
   --accent-fg: #0b0d10;
+  --viz-1: var(--accent);
+  --viz-2: color-mix(in srgb, var(--accent) 55%, var(--success));
+  --viz-3: var(--success);
+  --viz-4: var(--warn);
+  --viz-5: color-mix(in srgb, var(--accent) 40%, var(--gray-400));
+  --viz-6: var(--gray-400);
   /* Neutral INK ramp: 100 = strongest, 500 = faintest text this app may draw.
    *
    * Every step is solved to clear WCAG AA body contrast (4.5:1) against the
@@ -255,6 +261,12 @@
   --accent-dim: #eef1fe;
   /* On a light ground the accent is deep enough to carry white (5.01:1). */
   --accent-fg: #ffffff;
+  --viz-1: var(--accent);
+  --viz-2: color-mix(in srgb, var(--accent) 55%, var(--success));
+  --viz-3: var(--success);
+  --viz-4: var(--warn);
+  --viz-5: color-mix(in srgb, var(--accent) 40%, var(--gray-400));
+  --viz-6: var(--gray-400);
   /* The same ink ramp, solved against light's worst ground (`--hover`). */
   --gray-100: #24262a;
   --gray-200: #34363a;

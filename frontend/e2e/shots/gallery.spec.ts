@@ -194,6 +194,16 @@ for (const theme of THEMES) {
       await expect(page.getByTestId("settings-price-table")).toBeVisible();
       await shoot(page, "15-settings", theme, lang);
     });
+
+    test("Analysis figures — cost and drift from real artifacts", async ({ page }) => {
+      const title = `Cost and drift ${theme} ${lang}`;
+      seedOptimizationTask(title, "review");
+      await openAgent(page, theme, lang);
+      await openTask(page, title);
+      await expect(page.getByTestId("viz-cost")).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("viz-drift")).toBeVisible();
+      await shoot(page, "20-analysis-figures", theme, lang);
+    });
   });
   }
 }
@@ -244,15 +254,61 @@ test.describe("Agent runtime states", () => {
     await shoot(page, "18-command-palette", "dark", "en");
   });
 
-  test("First-run wizard", async ({ page }) => {
+  test("First-run welcome", async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem("saw.lang", "en");
       localStorage.removeItem("saw.onboarded");
+      localStorage.removeItem("saw.firstRunStep");
       localStorage.setItem("saw.theme", "dark");
     });
     await page.goto("/");
     await expect(page.getByTestId("agent-first-run")).toBeVisible({ timeout: 20_000 });
     await shoot(page, "19-first-run", "dark", "en");
+    await page.getByTestId("agent-first-run").getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByTestId("agent-first-run")).toHaveAttribute("data-step", "model");
+    await shoot(page, "19b-first-run-model", "dark", "en");
+    await page.getByTestId("agent-first-run").getByRole("button", { name: "Skip for now" }).click();
+    await expect(page.getByTestId("first-run-resume")).toBeVisible();
+    await shoot(page, "19e-first-run-resume", "dark", "en");
+  });
+
+  test("First-run storage and checkup steps", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "en");
+      localStorage.removeItem("saw.onboarded");
+      localStorage.setItem("saw.firstRunStep", "storage");
+      localStorage.setItem("saw.theme", "dark");
+    });
+    await page.goto("/");
+    await expect(page.getByTestId("agent-first-run")).toHaveAttribute("data-step", "storage", { timeout: 20_000 });
+    await shoot(page, "19c-first-run-storage", "dark", "en");
+    await page.getByTestId("first-run-skip-storage").click();
+    await expect(page.getByTestId("agent-first-run")).toHaveAttribute("data-step", "checkup");
+    await expect(page.getByTestId("first-run-storage-skipped")).toBeVisible();
+    await shoot(page, "19d-first-run-checkup", "dark", "en");
+  });
+
+  test("First-run welcome in light Chinese", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "zh");
+      localStorage.removeItem("saw.onboarded");
+      localStorage.removeItem("saw.firstRunStep");
+      localStorage.setItem("saw.theme", "light");
+    });
+    await page.goto("/");
+    await expect(page.getByTestId("agent-first-run")).toBeVisible({ timeout: 20_000 });
+    await shoot(page, "19-first-run", "light", "zh");
+  });
+
+  test("Provenance preview on a finding", async ({ page }) => {
+    const { title, id } = seedOptimizationTask("Provenance preview", "review");
+    await openAgent(page, "dark");
+    await openTask(page, title);
+    const mark = page.getByTestId(`finding-provenance-fnd-${id.slice(-8)}`).first();
+    await expect(mark).toBeVisible({ timeout: 20_000 });
+    await mark.hover();
+    await expect(page.getByTestId("provenance-preview").first()).toBeVisible();
+    await shoot(page, "21-provenance-preview", "dark", "en");
   });
 
   test("Narrow workspace — task remains primary", async ({ page }) => {
@@ -307,6 +363,6 @@ test.afterAll(() => {
     path.join(OUT, "index.html"),
     `<!doctype html><meta charset="utf-8"><title>Storage Agent visual review</title><style>
 body{margin:0;padding:32px;background:#111318;color:#eef0f5;font:14px Inter,system-ui,sans-serif}h1{font-size:26px;margin:0 0 8px}p{color:#9ca3af;margin:0 0 32px;max-width:760px;line-height:1.6}section{margin:0 0 42px}h2{font-size:15px;font-weight:600;margin:0 0 12px;color:#c9ced8}.pair{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}figure{margin:0;background:#191c22;border:1px solid #2a2f39;border-radius:12px;overflow:hidden}figcaption{padding:8px 12px;color:#8f98a8;border-bottom:1px solid #2a2f39;font-size:12px}img{display:block;width:100%;height:auto}.missing{min-height:80px}@media(max-width:1100px){.pair{grid-template-columns:repeat(2,minmax(0,1fr))}}
-</style><h1>Storage Agent — v0.97 visual review</h1><p>Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale. No Chat-era surfaces.</p>${rows}`,
+</style><h1>Storage Agent — v0.98 visual review</h1><p>Content presentation: deterministic figures, provenance, first-run, and subtraction. Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale.</p>${rows}`,
   );
 });

@@ -2,13 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { closeTopOverlay } from "./lib/overlayStack";
 import { AgentTask } from "./components/AgentTask";
 import { SettingsDrawer } from "./components/SettingsDrawer";
-import { FirstRunWizard } from "./components/FirstRunWizard";
 import { CommandPalette } from "./components/CommandPalette";
 import {
   deleteSession,
   forkSession,
-  listCloudProviders,
-  listModelProviders,
   patchSession,
 } from "./api";
 import { dropSessionRun } from "./sessionRuns";
@@ -28,7 +25,6 @@ import {
 import { AgentShell } from "./agent/AgentShell";
 import { listAgentTasks } from "./agent/taskApi";
 
-const ONBOARDED_KEY = "saw.onboarded";
 // Persisted-data migration keys from pre-v0.93 builds. Keeping them preserves
 // local layout/task continuity; they are not public product vocabulary.
 const NAV_WIDTH_KEY = "saw.railWidth";
@@ -48,7 +44,6 @@ export default function App() {
     () => localStorage.getItem(ACTIVE_TASK_KEY),
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [showWizard, setShowWizard] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [navigationWidth, setNavigationWidth] = useState(storedNavigationWidth);
@@ -99,33 +94,6 @@ export default function App() {
       setActiveTaskIdState(null);
     }
   }, [tasks]);
-
-  useEffect(() => {
-    if (status !== "connected") return;
-    if (localStorage.getItem(ONBOARDED_KEY)) return;
-    let cancelled = false;
-    void Promise.all([listModelProviders(), listCloudProviders()])
-      .then(([models, clouds]) => {
-        // Provider discovery may finish after the user has already dismissed the
-        // first-run surface. Re-check durable onboarding state at resolution time
-        // so a stale async result can never reopen a modal the user just closed.
-        if (
-          !cancelled &&
-          !localStorage.getItem(ONBOARDED_KEY) &&
-          models.length === 0 &&
-          clouds.length === 0
-        ) {
-          setShowWizard(true);
-        }
-      })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [status]);
-
-  const dismissWizard = () => {
-    localStorage.setItem(ONBOARDED_KEY, "1");
-    setShowWizard(false);
-  };
 
   const fail = (error: unknown) => toast.error(`${t("app.actionFailed")} ${String(error)}`);
   const taskActions: TaskActions = {
@@ -261,16 +229,6 @@ export default function App() {
         onNew={() => setActiveTaskId(null)}
         onOpenSettings={() => setDrawerOpen(true)}
       />
-
-      {showWizard && (
-        <FirstRunWizard
-          onConfigure={() => {
-            dismissWizard();
-            setDrawerOpen(true);
-          }}
-          onDismiss={dismissWizard}
-        />
-      )}
     </div>
   );
 }

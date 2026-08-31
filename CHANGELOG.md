@@ -6,6 +6,27 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.98.0] - 2026-08-31
+
+_Content presentation: deterministic figures, finding provenance, Codex-style subtraction, and a 60-second first-run path — no new Agent capabilities, no storage tools, no migration._
+
+### Added
+
+- **Deterministic SVG figures** (no chart library) for cost horizons, class mix, inventory age/class (independent series), Drift finding classes, and access-log latency/mix. Theme-aware `--viz-*` tokens; gaps explicit; unconfirmed prices withhold the cost axis; never interpolate.
+- **`GET /agent-tasks/{task_id}/provenance`** — read-only projection of finding/figure evidence chains from existing rows. Missing chain is `no_direct_evidence`.
+- Hover preview + click-through from a finding to Review Evidence, anchored to that row.
+- Inline **first-run** path on the start surface: welcome → model (live test) → storage (skippable) → first checkup. Resume entry after skip.
+
+### Changed
+
+- Wide task documents split a 46rem reading column and a figures rail.
+- Start suggestions are cards with icons; Review Overview breathes and embeds mini figures; Needs-you rows use a state badge; command palette groups Actions vs Tasks.
+- Copy pass: start description, resume body, steer hint, empty Review lines, evidence activity blurb.
+
+### Security
+
+- Unchanged. Charts and previews render only runtime-true artifacts. No new tools, no migration past **027**.
+
 ## [0.97.0] - 2026-08-30
 
 _Presentation craft pass: one design-token system, Codex/Cursor-level desktop Agent chrome, keyboard overlay, designed empty states — no new capabilities, no runtime change, no product-semantic change._

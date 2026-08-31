@@ -1,6 +1,8 @@
 # Sidecar API
 
-> **Storage Agent v0.97.0 API reference.** Unchanged from v0.96.0; v0.97 is presentation-only.
+> **Storage Agent v0.98.0 API reference.** Adds the read-only provenance
+> projection. No migration. Runtime, tools, and other `/agent-tasks` contracts
+> are unchanged from v0.96.0.
 >
 > The public product model is Agent Task / Direction / Execution / Decision / Work Result / Artifact. Many HTTP paths intentionally retain historical `session`/`run` compatibility names. Do not mirror those path names into new product information architecture.
 
@@ -69,6 +71,7 @@ GET  /agent-tasks/{task_id}/decisions
 POST /agent-tasks/{task_id}/decisions/{decision_id}/resolve
 GET  /agent-tasks/{task_id}/work-results
 GET  /agent-tasks/{task_id}/artifacts
+GET  /agent-tasks/{task_id}/provenance
 GET  /agent-tasks/{task_id}/context
 GET  /agent-tasks/{task_id}/remediation-plans
 GET  /agent-tasks/{task_id}/baselines
@@ -86,6 +89,7 @@ PUT  /agent-tasks/{task_id}/revisit
 - `resume` turns an `interrupted` / `failed` / `cancelled` execution into a NEW execution carrying the same Direction (history is never rewritten).
 - A Work Result whose proposals include confirmation-gated work leaves its execution `waiting`; `decisions/{id}/resolve` (`approved` | `declined`) records the call durably, settles the waiting execution, and — on approval — returns the same validate-and-prefill hand-over as the action-prepare flow. Nothing auto-executes.
 - `context` returns the latest TYPED, versioned Storage Task Context (machine state derived from durable rows — recovery never replays messages). The same snapshot is injected into the Agent prompt's stable half.
+- `GET .../provenance` is a **read-only projection** of existing `session_findings`, `tool_calls`, `task_artifacts`, and `runs`. It returns the latest cost / inventory / access-log / drift analysis documents plus per-finding evidence chains (tool, time, coverage, Review target). A missing link is `gap: "no_direct_evidence"` — never a fabricated source. No new tables.
 
 ## Health
 

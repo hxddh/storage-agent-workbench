@@ -150,6 +150,7 @@ describe("motion", () => {
       "--radius-sm", "--radius-3xl",
       "--control-h", "--header-h",
       "--shadow-elev", "--shadow-pop", "--shadow-glow",
+      "--viz-1", "--viz-6",
     ]) {
       expect(css, token).toContain(`${token}:`);
     }

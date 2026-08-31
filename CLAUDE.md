@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v0.97.0.**
+> **Implementation contract for Storage Agent v0.98.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -113,7 +113,7 @@ The execution runner is the one submission lifecycle: submit a Direction as a du
 
 The Sidecar exposes both product projection and compatibility APIs:
 
-- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the runtime API — executions (submit / steer / stop / resume / SSE event stream resumable by sequence), Verify (`POST .../verify`, kind=`verify`), queued visibility, decisions (list / resolve with impact projection), work results, artifacts, remediation plans, baselines, revisit schedule, and the typed task context.
+- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the runtime API — executions (submit / steer / stop / resume / SSE event stream resumable by sequence), Verify (`POST .../verify`, kind=`verify`), queued visibility, decisions (list / resolve with impact projection), work results, artifacts, **read-only provenance** (`GET .../provenance`), remediation plans, baselines, revisit schedule, and the typed task context.
 - `/sessions/...` remains the durable task/message/runtime compatibility API.
 - `/runs/...` remains deterministic execution/report compatibility API and is not a top-level product surface.
 - `/evidence-imports/...` owns bounded plan → confirm → execute data movement.

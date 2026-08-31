@@ -9,7 +9,7 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 import type { ReviewSurface } from "../agent/model";
 
-type Cmd = { id: string; label: string; hint?: string; icon: React.ReactNode; run: () => void };
+type Cmd = { id: string; label: string; hint?: string; icon: React.ReactNode; run: () => void; group: "action" | "task" };
 
 const I = (d: string) => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -40,7 +40,8 @@ export function CommandPalette({
         placeholder: "搜索任务或运行命令…",
         newTask: "新建任务",
         settings: "打开设置",
-        task: "任务",
+        actions: "操作",
+        tasks: "任务",
         empty: "没有匹配的任务或命令。",
         stop: "停止当前执行",
         resume: "恢复中断的执行",
@@ -59,7 +60,8 @@ export function CommandPalette({
         placeholder: "Search tasks or run a command…",
         newTask: "New Agent task",
         settings: "Open settings",
-        task: "Task",
+        actions: "Actions",
+        tasks: "Tasks",
         empty: "No matching tasks or commands.",
         stop: "Stop current execution",
         resume: "Resume interrupted execution",
@@ -96,9 +98,9 @@ export function CommandPalette({
       onClose();
     };
     const actions: Cmd[] = [
-      { id: "new", label: copy.newTask, hint: `${MOD}N`, icon: I("M12 5v14|M5 12h14"), run: () => { onNew(); onClose(); } },
-      { id: "focus", label: copy.focus, hint: `${MOD}L`, icon: I("M4 5h16v14H4z|M8 9h8"), run: () => { live.focusComposer?.(); onClose(); } },
-      { id: "settings", label: copy.settings, icon: I("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z|M3 12h2|M19 12h2|M12 3v2|M12 19v2"), run: () => { onOpenSettings(); onClose(); } },
+      { id: "new", label: copy.newTask, hint: `${MOD}N`, icon: I("M12 5v14|M5 12h14"), run: () => { onNew(); onClose(); }, group: "action" },
+      { id: "focus", label: copy.focus, hint: `${MOD}L`, icon: I("M4 5h16v14H4z|M8 9h8"), run: () => { live.focusComposer?.(); onClose(); }, group: "action" },
+      { id: "settings", label: copy.settings, icon: I("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z|M3 12h2|M19 12h2|M12 3v2|M12 19v2"), run: () => { onOpenSettings(); onClose(); }, group: "action" },
     ];
     if (live.busy) {
       actions.splice(2, 0, {
@@ -107,12 +109,14 @@ export function CommandPalette({
         hint: `${MOD}.`,
         icon: I("M6 6h12v12H6z"),
         run: () => { live.stop?.(); onClose(); },
+        group: "action",
       }, {
         id: "steer",
         label: copy.steer,
         hint: `${MOD}L`,
         icon: I("M5 12h14|M13 6l6 6-6 6"),
         run: () => { live.focusComposer?.(); onClose(); },
+        group: "action",
       });
     }
     if (live.canResume) {
@@ -121,14 +125,15 @@ export function CommandPalette({
         label: copy.resume,
         icon: I("M8 5v14l11-7z"),
         run: () => { live.resume?.(); onClose(); },
+        group: "action",
       });
     }
     if (live.hasTask) {
       actions.push(
-        { id: "review-overview", label: copy.reviewOverview, hint: `${MOD}I`, icon: I("M4 5h16M4 12h16M4 19h10"), run: () => openReview("overview") },
-        { id: "review-evidence", label: copy.reviewEvidence, icon: I("M14 2H6a2 2 0 0 0-2 2v16h16V8z"), run: () => openReview("evidence") },
-        { id: "review-execution", label: copy.reviewExecution, icon: I("M4 6h16M4 12h10M4 18h7"), run: () => openReview("execution") },
-        { id: "review-report", label: copy.reviewReport, icon: I("M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"), run: () => openReview("report") },
+        { id: "review-overview", label: copy.reviewOverview, hint: `${MOD}I`, icon: I("M4 5h16M4 12h16M4 19h10"), run: () => openReview("overview"), group: "action" },
+        { id: "review-evidence", label: copy.reviewEvidence, icon: I("M14 2H6a2 2 0 0 0-2 2v16h16V8z"), run: () => openReview("evidence"), group: "action" },
+        { id: "review-execution", label: copy.reviewExecution, icon: I("M4 6h16M4 12h10M4 18h7"), run: () => openReview("execution"), group: "action" },
+        { id: "review-report", label: copy.reviewReport, icon: I("M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"), run: () => openReview("report"), group: "action" },
       );
     }
     actions.push(
@@ -137,20 +142,23 @@ export function CommandPalette({
         label: theme === "dark" ? copy.themeLight : copy.themeDark,
         icon: I("M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"),
         run: () => { toggle(); onClose(); },
+        group: "action",
       },
       {
         id: "lang",
         label: lang === "zh" ? copy.langEn : copy.langZh,
         icon: I("M4 7h16M4 17h16M9 7c1 4 3 7 6 10"),
         run: () => { setLang(lang === "zh" ? "en" : "zh"); onClose(); },
+        group: "action",
       },
     );
     const taskItems: Cmd[] = tasks.map((task) => ({
       id: `task:${task.id}`,
       label: task.title || t("common.untitled"),
-      hint: copy.task,
+      hint: copy.tasks,
       icon: I("M4 5h16v14H4z|M8 9h8|M8 13h5"),
       run: () => { onSelectTask(task.id); onClose(); },
+      group: "task",
     }));
     const all = [...actions, ...taskItems];
     const query = q.trim().toLowerCase();
@@ -196,16 +204,22 @@ export function CommandPalette({
         <div className="max-h-[52vh] overflow-auto p-1.5">
           {items.length === 0 ? <div className="px-3 py-6 text-center text-sm text-gray-500">{copy.empty}</div> : null}
           {items.map((command, index) => (
-            <button
-              key={command.id}
-              onMouseEnter={() => setSel(index)}
-              onClick={() => command.run()}
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors ${index === sel ? "bg-hover" : ""}`}
-            >
-              <span className={index === sel ? "text-accent-soft" : "text-gray-500"}>{command.icon}</span>
-              <span className="min-w-0 flex-1 truncate text-sm text-gray-200">{command.label}</span>
-              {command.hint ? <span className="shrink-0 font-mono text-2xs text-gray-500">{command.hint}</span> : null}
-            </button>
+            <div key={command.id}>
+              {command.group !== items[index - 1]?.group ? (
+                <div className="px-3 pb-1 pt-2 text-2xs font-medium uppercase tracking-[0.08em] text-gray-500" data-testid={`command-palette-${command.group}s`}>
+                  {command.group === "task" ? copy.tasks : copy.actions}
+                </div>
+              ) : null}
+              <button
+                onMouseEnter={() => setSel(index)}
+                onClick={() => command.run()}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors ${index === sel ? "bg-hover" : ""}`}
+              >
+                <span className={index === sel ? "text-accent-soft" : "text-gray-500"}>{command.icon}</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-gray-200">{command.label}</span>
+                {command.hint ? <span className="shrink-0 font-mono text-2xs text-gray-500">{command.hint}</span> : null}
+              </button>
+            </div>
           ))}
         </div>
       </div>

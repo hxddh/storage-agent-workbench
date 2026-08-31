@@ -343,4 +343,43 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(review).not.toContain("Workspace");
     expect(review).not.toContain("remediation-plan-page");
   });
+
+  it("renders deterministic SVG figures from provenance, never a chart library", () => {
+    const pkg = source("../../package.json");
+    const figures = source("../viz/AnalysisFigures.tsx");
+    const extract = source("../viz/extract.ts");
+    expect(pkg).not.toMatch(/recharts|chart\.js|d3|plotly|nivo|visx|highcharts/i);
+    expect(figures).toContain('data-testid="analysis-figures"');
+    expect(figures).toContain("Cost axis withheld");
+    expect(extract).toContain("Never invent a day the runtime did not emit");
+    expect(source("../components/AgentTaskImplementation.tsx")).toContain("task-analysis-figures");
+    expect(source("./AgentReviewPanel.tsx")).toContain("review-overview-figures");
+  });
+
+  it("projects finding provenance into Review Evidence without a new surface", () => {
+    const evidence = source("./EvidenceReview.tsx");
+    const mark = source("../viz/ProvenanceMark.tsx");
+    const api = source("../api.ts");
+    expect(api).toContain("/agent-tasks/${taskId}/provenance");
+    expect(mark).toContain("No direct evidence chain");
+    expect(mark).toContain("openAgentReview(\"evidence\"");
+    expect(evidence).toContain("finding-${finding.id}");
+    expect(evidence).toContain("No direct evidence chain");
+    expect(source("./model.ts")).toContain('export type ReviewSurface = "overview" | "evidence" | "execution" | "report"');
+  });
+
+  it("keeps first-run inline on the start surface, not a second destination", () => {
+    const app = source("../App.tsx");
+    const flow = source("../components/FirstRunFlow.tsx");
+    const task = source("../components/AgentTaskImplementation.tsx");
+    expect(app).not.toContain("FirstRunWizard");
+    expect(flow).toContain('data-testid="agent-first-run"');
+    expect(flow).toContain("createModelProvider");
+    expect(flow).toContain("testModelProvider");
+    expect(flow).toContain("createCloudProvider");
+    expect(flow).toContain("testCloudProvider");
+    expect(flow).toContain("Skip storage");
+    expect(flow).toContain("first-run-resume");
+    expect(task).toContain("FirstRunFlow");
+  });
 });

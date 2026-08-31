@@ -103,6 +103,9 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
         <div className="agent-task-row-title">
           <strong>{task.title || t("common.untitled")}</strong>
           {task.pinned ? <svg className="agent-task-pin" width="8" height="8" viewBox="0 0 8 8" fill="currentColor" aria-label={copy.pinned}><circle cx="4" cy="4" r="2.5" /></svg> : null}
+          {stateKey === "decision" || stateKey === "attention" ? (
+            <span className="agent-task-needs-badge" data-state={stateKey}>{stateLabel}</span>
+          ) : null}
         </div>
         <div className="agent-task-row-state"><span>{stateLabel}</span><span aria-hidden>·</span><span className="truncate" title={scope}>{scope}</span></div>
         {outputs ? <div className="agent-task-row-output">{outputs}</div> : null}
