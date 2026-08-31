@@ -18,7 +18,7 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v0.93+ product model
+## 1. Never regress the v1.01 native Agent
 
 New product/frontend work must preserve these boundaries:
 
@@ -189,7 +189,7 @@ See `docs/data-model.md`.
 - Composer is the only start surface. An empty window is the Composer. Missing model is a banner plus Settings. The model discovers tools; there is no slash SKU catalog and no first-run wizard.
 - Settings is **model + storage credentials + language/theme**. There is no price-table spreadsheet.
 - Keep settings/provider/model selection secondary to delegated work.
-- Keep technical results readable as documents: prose, tables, code/config, structured errors, Execution summary, provenance.
+- Keep technical results readable as documents: prose, tables, code/config, structured errors, tool rows, provenance.
 - Use progressive disclosure for execution detail; do not turn the main Task into a permanent observability wall.
 - Preserve accessibility, contrast, responsive/narrow-window behavior, English/Chinese parity, and real-state visual review.
 - Do not copy another Agent client's chrome without matching runtime semantics.

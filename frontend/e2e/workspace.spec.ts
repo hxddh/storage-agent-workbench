@@ -24,7 +24,6 @@ async function setup(page: Page, opts: { deltaDelayMs?: number } = {}) {
   await page.addInitScript(() => {
     localStorage.setItem("saw.lang", "en");
     localStorage.setItem("saw.onboarded", "1");
-    localStorage.setItem("saw.activityDensity", "balanced");
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");

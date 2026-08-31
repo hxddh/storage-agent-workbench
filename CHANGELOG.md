@@ -18,6 +18,8 @@ _Native Agent reconstruction. Replaces the v1.00 workbench shell. No new Agent c
 - ThinkingBubble invented stages, in-document Execution Summary wall, Direction Branch / Redirect / Rerun.
 - Attach-type chips. Type is inferred from the filename.
 - Review document hero, side-column application chrome, and unconditional Report button on every result.
+- Unused AgentMemory panel, BrandMark, activity-density preference, and calendar day-bucket navigation.
+- Leftover wizard / slash-SKU / price-table / pin-archive copy that no product surface used.
 
 ### Changed
 

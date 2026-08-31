@@ -3,7 +3,7 @@ import { watchAgentTaskSurface } from "./agent-tasks-surface";
 import { dropModelProvider, startFakeModel, textTurn, useFakeModel } from "./fake-model";
 
 /** A modern Agent is task-oriented, not viewport-oriented. Switching away from
- * active work must not cancel it; the command center must promote the task into
+ * active work must not cancel it; the task list must show that task as working.
  * Running, and reopening it must reconnect to the same live/durable execution. */
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 const navigation = (page: Page) => page.getByTestId("agent-task-navigation");

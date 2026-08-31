@@ -26,7 +26,7 @@ export type DurableTaskStatus =
  * `durableStatus` even when this browser has no live run state at all (a
  * reload, a fresh window, another client's delegation). A
  * confirmation-required Decision — live or durable — outranks Ready. This
- * keeps Header and command center truthful across reloads, task switches,
+ * keeps the task list truthful across reloads, task switches,
  * app restarts, and Sidecar restarts (where recovery reports needs_attention).
  */
 export function agentTaskState(

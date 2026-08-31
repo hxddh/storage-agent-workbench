@@ -27,6 +27,10 @@ const forbidden: Array<[string, RegExp]> = [
   ["Inspector selector", /session-inspector/i],
   ["v0.92 surface selector", /surface-tabs/i],
   ["old surface navigation language", /(?:Timeline\s*\/\s*Evidence\s*\/\s*Runs\s*\/\s*Report|openWorkbenchSurface|openWorkbenchRun)/],
+  ["live execution strip selector", /agent-live-status/],
+  ["command-center queue selector", /task-queue-(needs-you|running)/],
+  ["Focus mode selector", /agent-focus-toggle|data-focus=/],
+  ["execution summary toggle", /execution-summary-toggle/],
 ];
 
 describe("real-browser tests target the Agent-native UI only", () => {

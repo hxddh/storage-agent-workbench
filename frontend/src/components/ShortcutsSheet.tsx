@@ -13,7 +13,7 @@ function Key({ children }: { children: string }) {
   );
 }
 
-/** Discoverable keyboard control for the Agent command center and active task. */
+/** Discoverable keyboard control for the Agent window and active task. */
 export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { lang, t } = useI18n();
   const trapRef = useFocusTrap<HTMLDivElement>(open);

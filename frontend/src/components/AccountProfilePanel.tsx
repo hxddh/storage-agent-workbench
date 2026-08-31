@@ -41,7 +41,7 @@ function Cell({ status }: { status: PostureStatus }) {
   return (
     <span
       className={`${statusClass(status)} decoration-dotted underline underline-offset-2 opacity-80`}
-      title={t("status.undeterminedHint")}
+      title={t("posture.undeterminedHint")}
     >
       {label}
     </span>

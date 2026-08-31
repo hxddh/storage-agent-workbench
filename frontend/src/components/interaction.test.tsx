@@ -11,7 +11,6 @@ import { createElement } from "react";
 import { I18nProvider } from "../i18n";
 import { AgentTaskResult } from "./AgentTaskResult";
 import {
-  dayBucket,
   clampTaskNavigationWidth,
   MIN_TASK_NAV_WIDTH,
   MAX_TASK_NAV_WIDTH,
@@ -59,27 +58,6 @@ describe("Direction events", () => {
     expect(screen.queryByTestId("redirect-direction")).toBeNull();
     expect(screen.queryByTestId("branch-task")).toBeNull();
     expect(screen.getByLabelText(/copy/i)).toBeTruthy();
-  });
-});
-
-describe("task navigation day buckets", () => {
-  const now = new Date(2026, 7, 6, 9, 0, 0);
-  const at = (y: number, m: number, d: number, h = 12) => new Date(y, m, d, h).toISOString();
-
-  it("uses calendar midnights, not elapsed hours", () => {
-    expect(dayBucket(at(2026, 7, 5, 10), now)).toBe("yesterday");
-    expect(dayBucket(at(2026, 7, 6, 0), now)).toBe("today");
-  });
-
-  it("buckets the rest by calendar distance", () => {
-    expect(dayBucket(at(2026, 7, 2), now)).toBe("week");
-    expect(dayBucket(at(2026, 6, 20), now)).toBe("month");
-    expect(dayBucket(at(2026, 3, 1), now)).toBe("older");
-  });
-
-  it("treats a future or unparseable timestamp sanely", () => {
-    expect(dayBucket(at(2026, 7, 9), now)).toBe("today");
-    expect(dayBucket("not-a-date", now)).toBe("older");
   });
 });
 

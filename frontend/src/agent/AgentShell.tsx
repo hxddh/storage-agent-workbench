@@ -14,10 +14,6 @@ export function AgentShell({
   navigation: ReactNode;
   taskContent: ReactNode;
   taskId: string | null;
-  task?: unknown;
-  sidecarStatus?: string;
-  onOpenPalette?: () => void;
-  onOpenSettings?: () => void;
 }) {
   const copy = useAgentCopy();
   const [review, setReview] = useState<ReviewSurface | null>(null);

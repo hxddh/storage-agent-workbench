@@ -9,7 +9,6 @@ test.describe("empty Agent start", () => {
     await page.addInitScript(() => {
       localStorage.setItem("saw.lang", "en");
       localStorage.removeItem("saw.onboarded");
-      localStorage.removeItem("saw.firstRunStep");
     });
     await page.goto("/");
     await expect(page.getByTestId("agent-composer")).toBeVisible({ timeout: 20_000 });

@@ -1,17 +1,11 @@
 /**
- * Per-session composer drafts, persisted.
+ * Per-task composer drafts, persisted.
  *
- * The composer was a single piece of Thread state, wiped on every session
- * switch and gone entirely on reload. Typing a long question in one
- * investigation, switching to another to check something, and coming back lost
- * it — as did quitting the app mid-sentence. Neither is a failure the user can
- * see coming, and neither leaves a trace to recover from.
- *
- * Kept in localStorage rather than SQLite deliberately: a draft is UI state, it
- * is never sent anywhere, and persisting it server-side would put unsent user
- * text into the audit surface. It is redaction-exempt for the same reason —
- * nothing here reaches a prompt, a log, or a report until the user presses
- * Enter, at which point the normal sanitized path takes over.
+ * Draft text is UI state: switching Tasks or reloading must not wipe unsent
+ * Direction. It is kept in localStorage rather than SQLite so unsent text does
+ * not enter the audit surface. Nothing here reaches a prompt, a log, or a
+ * report until the user delegates, at which point the normal sanitized path
+ * takes over.
  */
 
 const KEY = "saw.drafts";

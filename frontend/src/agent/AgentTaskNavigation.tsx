@@ -169,7 +169,7 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
         {visible.length === 0 ? (
           <EmptyState compact testId="task-nav-empty" title={copy.noTasks} body={copy.noTasksHint} />
         ) : (
-          <section className="agent-task-queue">{visible.map(row)}</section>
+          visible.map(row)
         )}
       </nav>
 

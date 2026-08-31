@@ -14,7 +14,7 @@ async function bootZh(page: Page) {
 }
 
 const ENGLISH_LEAK =
-  /\b(Settings|Providers|Cancel|Close|Copy|Delete|Rename|Archive|Retry|Reload|Send|Search|Loading|Failed|Error|Untitled|Yesterday|Today|Older|New task|Show more|Show less)\b/;
+  /\b(Settings|Providers|Cancel|Close|Copy|Delete|Rename|Retry|Reload|Send|Loading|Failed|Error|Untitled|New task|Show more|Show less)\b/;
 
 test.describe("Agent product in Chinese", () => {
   test("the task start surface is Chinese, not a half-translated legacy screen", async ({ page }) => {

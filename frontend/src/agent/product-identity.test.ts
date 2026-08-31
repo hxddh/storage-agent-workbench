@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const read = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8");
 
-describe("v0.93 product identity", () => {
+describe("Storage Agent product identity", () => {
   it("ships the browser and desktop surface as Storage Agent", () => {
     const html = read("../../index.html");
     const tauri = JSON.parse(read("../../../src-tauri/tauri.conf.json")) as {

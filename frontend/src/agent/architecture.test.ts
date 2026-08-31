@@ -66,7 +66,8 @@ describe("v1.01 native Agent ownership boundaries", () => {
     expect(app).not.toContain("onToggleArchive");
     expect(navigation).toContain('data-testid="agent-task-navigation"');
     expect(navigation).toContain('data-testid="task-navigation-toggle"');
-    expect(navigation).toContain("agent-task-queue");
+    expect(navigation).toContain("agent-task-list");
+    expect(navigation).not.toContain("agent-task-queue");
     expect(navigation).not.toContain("{copy.needsYou}");
     expect(navigation).not.toContain("{copy.recent}");
     expect(navigation).not.toContain("task-queue-needs-you");
@@ -443,5 +444,31 @@ describe("v1.01 native Agent ownership boundaries", () => {
     expect(shell).not.toContain("ConnectionMark");
     expect(shell).not.toContain("agent-native-command");
     expect(shell).not.toContain("Ready to delegate");
+    expect(shell).not.toContain("onOpenPalette");
+    expect(shell).not.toContain("sidecarStatus");
+  });
+
+  it("physically removes leftover workbench product objects", () => {
+    absent("../components/AgentMemory.tsx");
+    absent("../lib/activityDensity.ts");
+    absent("../components/ExecutionSummary.tsx");
+    absent("./command-center.css");
+    const ui = source("../components/ui.tsx");
+    const i18n = source("../i18n.tsx");
+    const copy = source("./agentCopy.ts");
+    const model = source("./navigationModel.ts");
+    expect(ui).not.toContain("BrandMark");
+    expect(i18n).not.toContain("menu.pin");
+    expect(i18n).not.toContain("menu.duplicate");
+    expect(i18n).not.toContain("menu.archive");
+    expect(i18n).not.toContain("wizard.welcomeTitle");
+    expect(i18n).not.toContain("sugg.checkup");
+    expect(i18n).not.toContain("settings.priceTitle");
+    expect(i18n).not.toContain("attach.pickType");
+    expect(i18n).not.toContain("grounding.title");
+    expect(copy).not.toContain("noScope");
+    expect(copy).not.toContain("commandPalette");
+    expect(model).not.toContain("dayBucket");
+    expect(model).not.toContain("DAY_BUCKETS");
   });
 });

@@ -143,7 +143,6 @@ export default function App() {
   }, [setActiveTaskId]);
 
   const navigationFolded = navigationCollapsed || narrow;
-  const activeTask = tasks.find((task) => task.id === activeTaskId) ?? null;
 
   const navigation = (
     <AgentTaskNavigation
@@ -192,10 +191,6 @@ export default function App() {
         navigation={navigation}
         taskContent={taskContent}
         taskId={activeTaskId}
-        task={activeTask}
-        sidecarStatus={status}
-        onOpenPalette={() => setPaletteOpen(true)}
-        onOpenSettings={() => setDrawerOpen(true)}
       />
 
       <SettingsDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />

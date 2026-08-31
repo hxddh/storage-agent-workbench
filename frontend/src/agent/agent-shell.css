@@ -159,7 +159,6 @@
 .agent-task-new-mark { color: var(--accent-soft); font-size: 16px; font-weight: 400; line-height: 1; }
 .agent-task-new kbd { margin-left: auto; color: var(--gray-500); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-2xs); }
 .agent-task-list { min-height: 0; flex: 1; overflow: auto; padding: 0 6px 12px; }
-.agent-task-queue { display: contents; }
 .agent-task-list-empty { margin: 0; padding: 28px 12px; color: var(--gray-500); font-size: var(--text-xs); line-height: 1.6; text-align: center; }
 .agent-task-row { position: relative; display: grid; grid-template-columns: 7px minmax(0,1fr) 24px; gap: 8px; align-items: center; margin-bottom: 2px; border-radius: var(--radius-lg); padding: 8px 6px 8px 8px; cursor: pointer; transition: background-color var(--duration-fast) var(--ease-out); }
 .agent-task-row:hover { background: color-mix(in srgb, var(--hover) 58%, transparent); }

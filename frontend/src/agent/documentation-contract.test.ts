@@ -101,7 +101,10 @@ describe("v1.01 documentation contract", () => {
     expect(readRepo("docs/product.md")).not.toContain("Focus mode");
     expect(readRepo("docs/product.md")).not.toContain("live execution strip");
     expect(readRepo("docs/product.md")).not.toContain("Needs-you");
+    expect(readRepo("docs/product.md")).not.toContain("command center");
+    expect(readRepo("docs/product.md")).not.toContain("command-center");
     expect(readRepo("CLAUDE.md")).not.toContain("Focus mode");
+    expect(readRepo("CLAUDE.md")).not.toContain("command center");
     expect(readRepo("docs/architecture.md")).toContain("after=<last seq>");
     expect(readRepo("docs/architecture.md")).toContain("agent-review-overlay");
     expect(readRepo("docs/tools.md")).toContain("simulate_storage_cost");

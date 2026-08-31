@@ -18,7 +18,7 @@ Storage Agent is not a chatbot wrapped around a storage console, and it is not a
 
 ### Agent Task
 
-A durable Task is the primary unit of work. Task navigation shows active/recent work and projects both durable state and real in-flight runtime state.
+A durable Task is the primary unit of work. Task navigation is one chronological title list with a state mark, not a queue of workbench sections.
 
 ### Delegate, Steer, Stop
 
