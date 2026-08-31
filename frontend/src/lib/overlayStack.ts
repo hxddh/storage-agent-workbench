@@ -2,13 +2,13 @@
  * Which overlay does Escape close? The one on top, and only that one.
  *
  * Five window-level Escape handlers had grown up independently — the shortcuts
- * sheet, the session inspector, the run overlay, the import dialog, and a
+ * sheet, Review, the import dialog, and a
  * catch-all in `App` that closed the palette, the settings drawer and the sheet
- * together. Each one is correct alone. Stacked, they are not: with the session
- * inspector open, opening the command palette and pressing Escape once closed
+ * together. Each one is correct alone. Stacked, they are not: with Review
+ * open, opening the command palette and pressing Escape once closed
  * BOTH, so dismissing the thing you had just opened also threw away the thing
  * you opened it from. Measured, not assumed — a probe reported
- * `{palette: 0, inspector: 0}` after a single Escape.
+ * `{palette: 0, review: 0}` after a single Escape.
  *
  * A stack fixes it without a component knowing about any other: whoever mounted
  * last is on top, Escape asks only them, and unmounting removes them wherever

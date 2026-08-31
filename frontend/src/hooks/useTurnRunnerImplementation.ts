@@ -115,7 +115,7 @@ export function useTurnRunner(opts: {
   /** Current composer text (via ref) — lets runTurn avoid wiping characters the
    * user typed during a steer's settle window (it only clears its OWN text). */
   getText?: () => string;
-  /** Ref tracking the visible session id (owned by Thread). */
+  /** Ref tracking the visible session id (owned by AgentTask). */
   localId: React.MutableRefObject<string | null>;
   onSessionCreated: (id: string) => void;
   /** The session this turn created turned out to be empty and was removed. */

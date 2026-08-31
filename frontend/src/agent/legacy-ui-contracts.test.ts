@@ -50,7 +50,7 @@ const forbidden: Array<[string, RegExp]> = [
 describe("Agent-native production UI has no v0.92 Chat-era contracts", () => {
   it("has no Workbench module directory", () => {
     expect(existsSync(join(srcRoot, "workbench"))).toBe(false);
-    expect(existsSync(agentRoot)).toBe(true);
+    expect(existsSync(join(srcRoot, "agent"))).toBe(true);
   });
 
   for (const [label, pattern] of forbidden) {

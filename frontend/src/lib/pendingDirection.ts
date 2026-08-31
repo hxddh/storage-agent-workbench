@@ -1,5 +1,5 @@
-/** Timeline rows that can sit between Directions without being the current turn. */
-type TimelineItem = {
+/** Task document rows that can sit between Directions without being the current turn. */
+type TaskDocumentItem = {
   kind: string;
   role?: string;
   content?: string | null;
@@ -13,7 +13,7 @@ type TimelineItem = {
  * trailing Execution link cannot mask the current user message.
  */
 export function isCurrentPersistedDirection(
-  items: TimelineItem[],
+  items: TaskDocumentItem[],
   pending: string | null | undefined,
 ): boolean {
   if (!pending) return false;
@@ -27,7 +27,7 @@ export function isCurrentPersistedDirection(
 
 /** Settled-race cleanup: any persisted user message already holds this Direction. */
 export function pendingMatchesPersistedDirection(
-  items: TimelineItem[],
+  items: TaskDocumentItem[],
   pending: string | null | undefined,
 ): boolean {
   if (!pending) return false;
