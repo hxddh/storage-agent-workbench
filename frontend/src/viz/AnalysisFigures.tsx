@@ -135,8 +135,8 @@ export function AnalysisFigures({
           )}
           {access.methods.length || access.statuses.length ? (
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <RankedBars points={access.methods} ariaLabel="Requests by method" />
-              <RankedBars points={access.statuses} ariaLabel="Requests by status" />
+              <RankedBars points={access.methods.map((r) => ({ label: r.label, value: r.count }))} ariaLabel="Requests by method" />
+              <RankedBars points={access.statuses.map((r) => ({ label: r.label, value: r.count }))} ariaLabel="Requests by status" />
             </div>
           ) : null}
         </ChartFrame>

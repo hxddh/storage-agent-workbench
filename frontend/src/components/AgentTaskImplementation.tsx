@@ -577,6 +577,13 @@ export function AgentTaskImplementation({
     seed(prompt);
   };
 
+  /** First-run checkup: same submit path as Delegate, not a composer prefill. */
+  const startFirstRunCheckup = () => {
+    const prompt = t("prompt.checkup");
+    setText(prompt);
+    void runner.submit(prompt);
+  };
+
   const loadingTask = Boolean(sessionId) && detail?.id !== sessionId && !loadError;
   const isEmpty = items.length === 0 && !pending && !loadError && !loadingTask;
 
@@ -778,7 +785,7 @@ export function AgentTaskImplementation({
               <FirstRunFlow
                 sidecarReady={sidecarReady}
                 initialStep={firstRun.step ?? "welcome"}
-                onCheckup={() => onSuggestion("checkup", t("prompt.checkup"))}
+                onCheckup={startFirstRunCheckup}
                 onExit={() => setResumeOpen(false)}
               />
             ) : null}
@@ -786,7 +793,7 @@ export function AgentTaskImplementation({
               <FirstRunFlow
                 resumeOnly
                 sidecarReady={sidecarReady}
-                onCheckup={() => onSuggestion("checkup", t("prompt.checkup"))}
+                onCheckup={startFirstRunCheckup}
                 onResume={() => setResumeOpen(true)}
               />
             ) : null}

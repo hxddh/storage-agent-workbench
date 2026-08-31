@@ -8,6 +8,9 @@ import { expect, test, type Page } from "@playwright/test";
 async function seedFreshApp(page: Page, opts: { onboarded?: boolean } = {}) {
   await page.addInitScript(
     ([onboarded]) => {
+      // Seed once per tab so a reload keeps skip/onboarded flags the product wrote.
+      if (sessionStorage.getItem("saw.e2e.seeded") === "1") return;
+      sessionStorage.setItem("saw.e2e.seeded", "1");
       localStorage.setItem("saw.lang", "en");
       if (onboarded) localStorage.setItem("saw.onboarded", "1");
       else localStorage.removeItem("saw.onboarded");
@@ -69,9 +72,12 @@ test.describe("Agent task smoke", () => {
     await expect(wizard).toBeVisible({ timeout: 15_000 });
     await expect(wizard).toContainText("Configure Storage Agent");
     await wizard.getByRole("button", { name: "Configure later" }).click();
+    await expect(page.getByTestId("agent-first-run")).toHaveCount(0);
+    await expect(page.getByTestId("first-run-resume")).toBeVisible();
     await expect(composer(page)).toBeVisible();
     await page.reload();
     await expect(page.getByTestId("agent-first-run")).toHaveCount(0);
+    await expect(page.getByTestId("first-run-resume")).toBeVisible();
     await expect(composer(page)).toBeVisible();
   });
 });

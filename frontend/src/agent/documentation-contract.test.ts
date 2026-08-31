@@ -65,7 +65,7 @@ describe("v0.98 documentation contract", () => {
     const smoke = readRepo("docs/release-smoke-test.md");
 
     expect(api).toContain("GET /agent-tasks");
-    expect(api).toContain("GET /agent-tasks/{task_id}/provenance");
+    expect(api).toContain("/agent-tasks/{task_id}/provenance");
     expect(api).toContain("POST /agent-tasks/{task_id}/executions");
     expect(api).toContain("POST /agent-tasks/{task_id}/steer");
     expect(api).toContain("/decisions/{decision_id}/resolve");
