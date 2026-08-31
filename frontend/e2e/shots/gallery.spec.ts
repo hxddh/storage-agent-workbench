@@ -115,6 +115,56 @@ test.beforeAll(() => {
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ mode: "serial" });
 
+// First-run shots run against an empty task list — before later tests seed
+// Decision / Resume / cost-drift rows that would pollute a "fresh install".
+test.describe("First-run 60s path", () => {
+  test("First-run welcome", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "en");
+      localStorage.removeItem("saw.onboarded");
+      localStorage.removeItem("saw.firstRunStep");
+      localStorage.setItem("saw.theme", "dark");
+    });
+    await page.goto("/");
+    await expect(page.getByTestId("agent-first-run")).toBeVisible({ timeout: 20_000 });
+    await shoot(page, "19-first-run", "dark", "en");
+    await page.getByTestId("agent-first-run").getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByTestId("agent-first-run")).toHaveAttribute("data-step", "model");
+    await shoot(page, "19b-first-run-model", "dark", "en");
+    await page.getByTestId("agent-first-run").getByRole("button", { name: "Skip for now" }).click();
+    await expect(page.getByTestId("first-run-resume")).toBeVisible();
+    await shoot(page, "19e-first-run-resume", "dark", "en");
+  });
+
+  test("First-run storage and checkup steps", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "en");
+      localStorage.removeItem("saw.onboarded");
+      localStorage.setItem("saw.firstRunStep", "storage");
+      localStorage.setItem("saw.theme", "dark");
+    });
+    await page.goto("/");
+    await expect(page.getByTestId("agent-first-run")).toHaveAttribute("data-step", "storage", { timeout: 20_000 });
+    await shoot(page, "19c-first-run-storage", "dark", "en");
+    await page.getByTestId("first-run-skip-storage").click();
+    await expect(page.getByTestId("agent-first-run")).toHaveAttribute("data-step", "checkup");
+    await expect(page.getByTestId("first-run-storage-skipped")).toBeVisible();
+    await shoot(page, "19d-first-run-checkup", "dark", "en");
+  });
+
+  test("First-run welcome in light Chinese", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "zh");
+      localStorage.removeItem("saw.onboarded");
+      localStorage.removeItem("saw.firstRunStep");
+      localStorage.setItem("saw.theme", "light");
+    });
+    await page.goto("/");
+    await expect(page.getByTestId("agent-first-run")).toBeVisible({ timeout: 20_000 });
+    await shoot(page, "19-first-run", "light", "zh");
+  });
+});
+
 for (const theme of THEMES) {
   for (const lang of LANGS) {
   test.describe(`${theme} ${lang} Agent surfaces`, () => {
@@ -252,52 +302,6 @@ test.describe("Agent runtime states", () => {
     await page.keyboard.press("Control+k");
     await expect(page.getByTestId("command-palette")).toBeVisible();
     await shoot(page, "18-command-palette", "dark", "en");
-  });
-
-  test("First-run welcome", async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem("saw.lang", "en");
-      localStorage.removeItem("saw.onboarded");
-      localStorage.removeItem("saw.firstRunStep");
-      localStorage.setItem("saw.theme", "dark");
-    });
-    await page.goto("/");
-    await expect(page.getByTestId("agent-first-run")).toBeVisible({ timeout: 20_000 });
-    await shoot(page, "19-first-run", "dark", "en");
-    await page.getByTestId("agent-first-run").getByRole("button", { name: "Continue" }).click();
-    await expect(page.getByTestId("agent-first-run")).toHaveAttribute("data-step", "model");
-    await shoot(page, "19b-first-run-model", "dark", "en");
-    await page.getByTestId("agent-first-run").getByRole("button", { name: "Skip for now" }).click();
-    await expect(page.getByTestId("first-run-resume")).toBeVisible();
-    await shoot(page, "19e-first-run-resume", "dark", "en");
-  });
-
-  test("First-run storage and checkup steps", async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem("saw.lang", "en");
-      localStorage.removeItem("saw.onboarded");
-      localStorage.setItem("saw.firstRunStep", "storage");
-      localStorage.setItem("saw.theme", "dark");
-    });
-    await page.goto("/");
-    await expect(page.getByTestId("agent-first-run")).toHaveAttribute("data-step", "storage", { timeout: 20_000 });
-    await shoot(page, "19c-first-run-storage", "dark", "en");
-    await page.getByTestId("first-run-skip-storage").click();
-    await expect(page.getByTestId("agent-first-run")).toHaveAttribute("data-step", "checkup");
-    await expect(page.getByTestId("first-run-storage-skipped")).toBeVisible();
-    await shoot(page, "19d-first-run-checkup", "dark", "en");
-  });
-
-  test("First-run welcome in light Chinese", async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem("saw.lang", "zh");
-      localStorage.removeItem("saw.onboarded");
-      localStorage.removeItem("saw.firstRunStep");
-      localStorage.setItem("saw.theme", "light");
-    });
-    await page.goto("/");
-    await expect(page.getByTestId("agent-first-run")).toBeVisible({ timeout: 20_000 });
-    await shoot(page, "19-first-run", "light", "zh");
   });
 
   test("Provenance preview on a finding", async ({ page }) => {
