@@ -88,10 +88,15 @@ test.describe("steering active Agent Execution", () => {
       await expect(task(page).getByText(/Paragraph 0 about the bucket POLICY/)).toBeVisible({ timeout: 30_000 });
       await direct(page, "actually, what expires those objects?");
       await expect(task(page).getByText(/LIFECYCLE rule is what expires/)).toBeVisible({ timeout: 60_000 });
+      await expect
+        .poll(async () => await task(page).evaluate((el) => el.textContent ?? ""), {
+          timeout: 20_000,
+          message: "partial first Execution and both Directions must remain in the task",
+        })
+        .toContain("Paragraph 0 about the bucket POLICY");
       const text = await task(page).evaluate((el) => el.textContent ?? "");
       expect(text).toContain("why does acme-logs return 403?");
       expect(text).toContain("actually, what expires those objects?");
-      expect(text).toContain("Paragraph 0 about the bucket POLICY");
     } finally { await cleanup(); }
   });
 

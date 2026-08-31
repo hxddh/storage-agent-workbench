@@ -116,6 +116,9 @@ test.describe("v0.96 optimization copilot closed loop", () => {
       );
       await composer(page).press("Enter");
       await expect(task(page).getByText(/estimate from the local simulator/i)).toBeVisible({ timeout: 90_000 });
+      await expect(page.getByTestId("agent-composer")).not.toHaveAttribute("data-agent-state", "working", {
+        timeout: 30_000,
+      });
       const plans = await (await fetch(`${sidecarOrigin()}/agent-tasks/${id}/remediation-plans`)).json() as {
         plans: Array<{ status: string }>;
       };
@@ -127,9 +130,15 @@ test.describe("v0.96 optimization copilot closed loop", () => {
       await composer(page).fill("Verify the remediation plan with read-only probes.");
       await composer(page).press("Enter");
       await expect(task(page).getByText(/Read-only re-probe complete/i)).toBeVisible({ timeout: 90_000 });
+      await expect(page.getByTestId("agent-composer")).not.toHaveAttribute("data-agent-state", "working", {
+        timeout: 30_000,
+      });
       await composer(page).fill("Produce a Drift report against the stored baseline.");
       await composer(page).press("Enter");
       await expect(task(page).getByText(/Compared against baseline/i)).toBeVisible({ timeout: 90_000 });
+      await expect(page.getByTestId("agent-composer")).not.toHaveAttribute("data-agent-state", "working", {
+        timeout: 30_000,
+      });
       const after = await (await fetch(`${sidecarOrigin()}/agent-tasks/${id}/artifacts`)).json() as {
         artifacts: Array<{ artifact_type: string }>;
       };

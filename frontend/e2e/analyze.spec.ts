@@ -84,14 +84,22 @@ async function attachAndAsk(page: Page, question: string) {
   await composer(page).press("Enter");
 }
 
+/** live-trace appears on the first tool; the chained analysis and answer come later. */
+async function waitForInventoryAnswer(page: Page) {
+  await expect(thread(page).getByText(/one in five is already in GLACIER/)).toBeVisible({
+    timeout: 90_000,
+  });
+  await expect(page.getByTestId("agent-composer")).not.toHaveAttribute("data-agent-state", "working", {
+    timeout: 30_000,
+  });
+}
+
 test.describe("analyzing an attached file", () => {
   test("the agent finds the upload, analyzes it, and answers", async ({ page }) => {
     const { cleanup } = await setup(page);
     try {
       await attachAndAsk(page, "what is in this inventory?");
-      await expect(thread(page).getByText(/one in five is already in GLACIER/)).toBeVisible({
-        timeout: 90_000,
-      });
+      await waitForInventoryAnswer(page);
     } finally {
       await cleanup();
     }
@@ -101,7 +109,8 @@ test.describe("analyzing an attached file", () => {
     const { cleanup } = await setup(page);
     try {
       await attachAndAsk(page, "what is in this inventory?");
-      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 90_000 });
+      await waitForInventoryAnswer(page);
+      await expect(page.getByTestId("live-trace")).toBeVisible();
 
       const trace = await thread(page).evaluate((el) => el.textContent ?? "");
       expect(trace).toContain("list_uploaded_files");
@@ -118,7 +127,7 @@ test.describe("analyzing an attached file", () => {
     const { model, cleanup } = await setup(page);
     try {
       await attachAndAsk(page, "what is in this inventory?");
-      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 90_000 });
+      await waitForInventoryAnswer(page);
 
       // The DuckDB result the agent was handed. It has to carry this file's real
       // numbers — 120 rows — or the whole path is decorative.
@@ -135,7 +144,7 @@ test.describe("analyzing an attached file", () => {
     const { model, cleanup } = await setup(page);
     try {
       await attachAndAsk(page, "what is in this inventory?");
-      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 90_000 });
+      await waitForInventoryAnswer(page);
 
       // Rule 16: the model sees sanitized AGGREGATES with at most a sample of
       // keys — never the 120 rows. The file has 120 distinct keys; a row dump
@@ -152,9 +161,7 @@ test.describe("analyzing an attached file", () => {
     const { cleanup } = await setup(page);
     try {
       await attachAndAsk(page, "what is in this inventory?");
-      await expect(thread(page).getByText(/one in five is already in GLACIER/)).toBeVisible({
-        timeout: 90_000,
-      });
+      await waitForInventoryAnswer(page);
       await page.reload();
       await expect(composer(page)).toBeVisible({ timeout: 20_000 });
       await expect
