@@ -124,7 +124,8 @@ test.describe("a real agent turn", () => {
     try {
       await ask(page, "why does acme-logs return 403?");
       await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 60_000 });
-      await expect(page.getByTestId("agent-decision-required")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /Continue task/i })).toHaveCount(0);
+      await expect(page.getByTestId("agent-next-action")).toHaveCount(0);
     } finally {
       await cleanup();
     }

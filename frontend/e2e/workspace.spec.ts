@@ -107,16 +107,16 @@ test.describe("Agent-native task shell", () => {
   });
 
   test("a running task exposes real Agent execution and steering state", async ({ page }) => {
-    const { cleanup } = await setup(page, { deltaDelayMs: 160 });
+    const { cleanup } = await setup(page, { deltaDelayMs: 800 });
     try {
       await composer(page).fill("Inspect the IAM diagnostic method and explain what you are checking.");
       await composer(page).press("Enter");
 
       const control = page.getByTestId("agent-composer");
       await expect(control).toHaveAttribute("data-agent-state", "working", { timeout: 10_000 });
+      await expect(page.getByTestId("task-status")).toContainText(/working/i);
       await expect(control.getByRole("button", { name: "Steer Agent", exact: true })).toBeVisible();
       await expect(control.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
-      await expect(page.getByTestId("task-status")).toContainText("Agent working");
     } finally {
       await cleanup();
     }
