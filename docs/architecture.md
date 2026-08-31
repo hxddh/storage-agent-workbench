@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v0.98.0.** Content presentation on the v0.96.0 runtime. Product invariant unchanged.
+> **Current architecture baseline: Storage Agent v0.99.0.** Agent-native document surface on the v0.96.0 runtime. Product invariant unchanged.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -95,10 +95,10 @@ Each task row combines:
 
 - durable task metadata from the Sidecar task projection;
 - current per-task runtime state from the client execution store;
-- meaningful scope/output context;
+- a state mark and, when needed, a Needs-decision / Needs-attention badge;
 - lifecycle controls.
 
-Visible state is product state such as Working, Needs decision, Needs attention, or Ready. Database counters are not the navigation model.
+The list is one sequence (needs-you and running rows stay first, then pinned, then the rest). Section titles are not painted. Database counters and "General storage task" subtitles are not the navigation model.
 
 The Sidecar `/agent-tasks` projection provides durable decision truth so a pending confirmation remains visible after reload/restart even when browser-local runtime state is gone.
 
@@ -106,13 +106,11 @@ The Sidecar `/agent-tasks` projection provides durable decision truth so a pendi
 
 `frontend/src/agent/AgentShell.tsx` owns the active task environment:
 
-- task identity/scope;
-- live product state;
-- connection state;
+- task title;
 - Focus presentation state;
-- contextual Review open/close state;
+- contextual Review open/close state (button only when the Task has reviewable output);
 - selected Execution inside Review;
-- live execution status derived from real task runtime state.
+- live execution status derived from real task runtime state (the working strip, not a header sentence).
 
 `AgentShell` receives `taskContent: ReactNode`. Its primary area is always the Agent Task.
 

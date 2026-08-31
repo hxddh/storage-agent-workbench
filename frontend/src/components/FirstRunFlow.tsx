@@ -185,118 +185,110 @@ export function FirstRunFlow({
         type="button"
         data-testid="first-run-resume"
         onClick={onResume}
-        className="mb-5 flex w-full items-center gap-3 rounded-xl border border-edge bg-panel/70 px-4 py-3 text-left transition-colors hover:border-edge-strong hover:bg-hover"
+        className="mb-3 text-left text-xs leading-relaxed text-gray-500 transition-colors hover:text-gray-200"
       >
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-accent/30 bg-accent/10 text-accent-soft" aria-hidden>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 2 2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /></svg>
-        </span>
-        <span className="min-w-0">
-          <span className="block text-sm font-medium text-gray-100">{copy.resume}</span>
-          <span className="mt-0.5 block text-2xs text-gray-500">{copy.resumeHint}</span>
-        </span>
+        {copy.resume} — {copy.resumeHint}
       </button>
     );
   }
 
   return (
-    <section className="mb-6" data-testid="agent-first-run" data-step={step}>
-      <div className="rounded-2xl border border-edge bg-panel/80 p-5 shadow-elev">
-        {step === "welcome" ? (
-          <>
-            <h2 className="text-lg font-semibold tracking-[-0.02em] text-gray-100">{copy.welcomeTitle}</h2>
-            <p className="mt-1.5 text-sm leading-relaxed text-gray-400">{copy.welcomeBody}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button variant="primary" onClick={() => go("model")}>{copy.continue}</Button>
-              <Button variant="ghost" onClick={() => exit("welcome")}>{copy.later}</Button>
-            </div>
-          </>
-        ) : null}
+    <section className="agent-native-composer first-run-composer px-4 pb-3 pt-3" data-testid="agent-first-run" data-step={step}>
+      {step === "welcome" ? (
+        <>
+          <h2 className="text-sm font-semibold tracking-[-0.01em] text-gray-100">{copy.welcomeTitle}</h2>
+          <p className="mt-1.5 text-xs leading-relaxed text-gray-400">{copy.welcomeBody}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button variant="primary" onClick={() => go("model")}>{copy.continue}</Button>
+            <Button variant="ghost" onClick={() => exit("welcome")}>{copy.later}</Button>
+          </div>
+        </>
+      ) : null}
 
-        {step === "model" ? (
-          <>
-            <h2 className="text-lg font-semibold tracking-[-0.02em] text-gray-100">{copy.modelTitle}</h2>
-            <p className="mt-1.5 mb-4 text-sm leading-relaxed text-gray-400">{copy.modelBody}</p>
-            <Field label={t("prov.fName")}>
-              <TextInput data-testid="first-run-model-name" value={model.name} onChange={(e) => setModel({ ...model, name: e.target.value })} />
-            </Field>
-            <Field label={t("prov.fProviderType")}>
-              <TextInput data-testid="first-run-model-type" value={model.provider_type} onChange={(e) => setModel({ ...model, provider_type: e.target.value })} />
-            </Field>
-            <Field label={t("prov.fBaseUrl")}>
-              <TextInput data-testid="first-run-model-url" value={model.base_url} onChange={(e) => setModel({ ...model, base_url: e.target.value })} placeholder="https://api.openai.com/v1" />
-            </Field>
-            <Field label={t("prov.fModel")}>
-              <TextInput data-testid="first-run-model-id" value={model.model} onChange={(e) => setModel({ ...model, model: e.target.value })} placeholder="gpt-4.1" />
-            </Field>
-            <Field label={t("prov.fApiKey")} hint={t("prov.hintNew")}>
-              <TextInput data-testid="first-run-model-key" type="password" autoComplete="off" value={model.api_key} onChange={(e) => setModel({ ...model, api_key: e.target.value })} />
-            </Field>
-            {error ? <p className="mb-3 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger" data-testid="first-run-model-fail">{error}</p> : null}
-            {ok ? <p className="mb-3 rounded-lg border border-edge bg-panel px-3 py-2 text-xs text-success" data-testid="first-run-model-ok">{ok}</p> : null}
-            <div className="flex flex-wrap gap-2">
-              <Button variant="primary" disabled={busy} onClick={() => void saveModel()}>{copy.modelSave}</Button>
-              <Button variant="ghost" disabled={busy} onClick={() => exit("model")}>{copy.skipModel}</Button>
-            </div>
-          </>
-        ) : null}
+      {step === "model" ? (
+        <>
+          <h2 className="text-sm font-semibold tracking-[-0.01em] text-gray-100">{copy.modelTitle}</h2>
+          <p className="mt-1.5 mb-3 text-xs leading-relaxed text-gray-400">{copy.modelBody}</p>
+          <Field label={t("prov.fName")}>
+            <TextInput data-testid="first-run-model-name" value={model.name} onChange={(e) => setModel({ ...model, name: e.target.value })} />
+          </Field>
+          <Field label={t("prov.fProviderType")}>
+            <TextInput data-testid="first-run-model-type" value={model.provider_type} onChange={(e) => setModel({ ...model, provider_type: e.target.value })} />
+          </Field>
+          <Field label={t("prov.fBaseUrl")}>
+            <TextInput data-testid="first-run-model-url" value={model.base_url} onChange={(e) => setModel({ ...model, base_url: e.target.value })} placeholder="https://api.openai.com/v1" />
+          </Field>
+          <Field label={t("prov.fModel")}>
+            <TextInput data-testid="first-run-model-id" value={model.model} onChange={(e) => setModel({ ...model, model: e.target.value })} placeholder="gpt-4.1" />
+          </Field>
+          <Field label={t("prov.fApiKey")} hint={t("prov.hintNew")}>
+            <TextInput data-testid="first-run-model-key" type="password" autoComplete="off" value={model.api_key} onChange={(e) => setModel({ ...model, api_key: e.target.value })} />
+          </Field>
+          {error ? <p className="mb-3 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger" data-testid="first-run-model-fail">{error}</p> : null}
+          {ok ? <p className="mb-3 rounded-lg border border-edge bg-panel px-3 py-2 text-xs text-success" data-testid="first-run-model-ok">{ok}</p> : null}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" disabled={busy} onClick={() => void saveModel()}>{copy.modelSave}</Button>
+            <Button variant="ghost" disabled={busy} onClick={() => exit("model")}>{copy.skipModel}</Button>
+          </div>
+        </>
+      ) : null}
 
-        {step === "storage" ? (
-          <>
-            <h2 className="text-lg font-semibold tracking-[-0.02em] text-gray-100">{copy.storageTitle}</h2>
-            <p className="mt-1.5 mb-4 text-sm leading-relaxed text-gray-400">{copy.storageBody}</p>
-            <Field label={t("prov.fName")}>
-              <TextInput data-testid="first-run-cloud-name" value={cloud.name} onChange={(e) => setCloud({ ...cloud, name: e.target.value })} />
-            </Field>
-            <Field label={t("prov.fEndpoint")}>
-              <TextInput data-testid="first-run-cloud-endpoint" value={cloud.endpoint_url} onChange={(e) => setCloud({ ...cloud, endpoint_url: e.target.value })} />
-            </Field>
-            <Field label={t("prov.fRegion")}>
-              <TextInput data-testid="first-run-cloud-region" value={cloud.region} onChange={(e) => setCloud({ ...cloud, region: e.target.value })} />
-            </Field>
-            <Field label={t("prov.fAccessKey")} hint={t("prov.hintNew")}>
-              <TextInput data-testid="first-run-cloud-key" autoComplete="off" value={cloud.access_key} onChange={(e) => setCloud({ ...cloud, access_key: e.target.value })} />
-            </Field>
-            <Field label={t("prov.fSecretKey")} hint={t("prov.hintNew")}>
-              <TextInput data-testid="first-run-cloud-secret" type="password" autoComplete="off" value={cloud.secret_key} onChange={(e) => setCloud({ ...cloud, secret_key: e.target.value })} />
-            </Field>
-            {error ? <p className="mb-3 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger" data-testid="first-run-storage-fail">{error}</p> : null}
-            {ok ? <p className="mb-3 rounded-lg border border-edge bg-panel px-3 py-2 text-xs text-success">{ok}</p> : null}
-            <div className="flex flex-wrap gap-2">
-              <Button variant="primary" disabled={busy} onClick={() => void saveCloud()}>{copy.storageSave}</Button>
-              <Button
-                variant="ghost"
-                disabled={busy}
-                data-testid="first-run-skip-storage"
-                onClick={() => { setStorageSkipped(true); go("checkup"); }}
-              >
-                {copy.skipStorage}
-              </Button>
-            </div>
-          </>
-        ) : null}
+      {step === "storage" ? (
+        <>
+          <h2 className="text-sm font-semibold tracking-[-0.01em] text-gray-100">{copy.storageTitle}</h2>
+          <p className="mt-1.5 mb-3 text-xs leading-relaxed text-gray-400">{copy.storageBody}</p>
+          <Field label={t("prov.fName")}>
+            <TextInput data-testid="first-run-cloud-name" value={cloud.name} onChange={(e) => setCloud({ ...cloud, name: e.target.value })} />
+          </Field>
+          <Field label={t("prov.fEndpoint")}>
+            <TextInput data-testid="first-run-cloud-endpoint" value={cloud.endpoint_url} onChange={(e) => setCloud({ ...cloud, endpoint_url: e.target.value })} />
+          </Field>
+          <Field label={t("prov.fRegion")}>
+            <TextInput data-testid="first-run-cloud-region" value={cloud.region} onChange={(e) => setCloud({ ...cloud, region: e.target.value })} />
+          </Field>
+          <Field label={t("prov.fAccessKey")} hint={t("prov.hintNew")}>
+            <TextInput data-testid="first-run-cloud-key" autoComplete="off" value={cloud.access_key} onChange={(e) => setCloud({ ...cloud, access_key: e.target.value })} />
+          </Field>
+          <Field label={t("prov.fSecretKey")} hint={t("prov.hintNew")}>
+            <TextInput data-testid="first-run-cloud-secret" type="password" autoComplete="off" value={cloud.secret_key} onChange={(e) => setCloud({ ...cloud, secret_key: e.target.value })} />
+          </Field>
+          {error ? <p className="mb-3 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger" data-testid="first-run-storage-fail">{error}</p> : null}
+          {ok ? <p className="mb-3 rounded-lg border border-edge bg-panel px-3 py-2 text-xs text-success">{ok}</p> : null}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" disabled={busy} onClick={() => void saveCloud()}>{copy.storageSave}</Button>
+            <Button
+              variant="ghost"
+              disabled={busy}
+              data-testid="first-run-skip-storage"
+              onClick={() => { setStorageSkipped(true); go("checkup"); }}
+            >
+              {copy.skipStorage}
+            </Button>
+          </div>
+        </>
+      ) : null}
 
-        {step === "checkup" ? (
-          <>
-            <h2 className="text-lg font-semibold tracking-[-0.02em] text-gray-100">{copy.checkupTitle}</h2>
-            <p className="mt-1.5 text-sm leading-relaxed text-gray-400">{copy.checkupBody}</p>
-            {storageSkipped ? (
-              <p className="mt-3 rounded-lg border border-dashed border-edge px-3 py-2 text-xs leading-relaxed text-gray-400" data-testid="first-run-storage-skipped">
-                {copy.skipped}
-              </p>
-            ) : null}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button
-                variant="primary"
-                data-testid="first-run-checkup"
-                onClick={() => { completeFirstRun(); onExit?.(); onCheckup(); }}
-              >
-                {copy.checkupAction}
-              </Button>
-              <Button variant="ghost" onClick={() => exit("checkup")}>{copy.skipCheckup}</Button>
-            </div>
-          </>
-        ) : null}
-      </div>
+      {step === "checkup" ? (
+        <>
+          <h2 className="text-sm font-semibold tracking-[-0.01em] text-gray-100">{copy.checkupTitle}</h2>
+          <p className="mt-1.5 text-xs leading-relaxed text-gray-400">{copy.checkupBody}</p>
+          {storageSkipped ? (
+            <p className="mt-3 rounded-lg border border-dashed border-edge px-3 py-2 text-xs leading-relaxed text-gray-400" data-testid="first-run-storage-skipped">
+              {copy.skipped}
+            </p>
+          ) : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              variant="primary"
+              data-testid="first-run-checkup"
+              onClick={() => { completeFirstRun(); onExit?.(); onCheckup(); }}
+            >
+              {copy.checkupAction}
+            </Button>
+            <Button variant="ghost" onClick={() => exit("checkup")}>{copy.skipCheckup}</Button>
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }

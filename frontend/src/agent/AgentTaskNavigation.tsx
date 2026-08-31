@@ -75,17 +75,11 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
   }, [renaming, task.title]);
 
   const stateKey = agentTaskState(run, true, task.requires_decision, task.task_status);
-  const stateLabel = stateKey === "working"
-    ? copy.working
-    : stateKey === "uploading"
-      ? copy.uploading
-      : stateKey === "decision"
-        ? copy.needsDecision
-        : stateKey === "attention"
-          ? copy.needsAttention
-          : copy.ready;
-  const scope = task.primary_bucket?.trim() || task.goal?.trim() || copy.scopeFallback;
-  const outputs = [task.finding_count > 0 ? copy.findings(task.finding_count) : null, task.run_count > 0 ? copy.executions(task.run_count) : null].filter(Boolean).join(" · ");
+  const needsLabel = stateKey === "decision"
+    ? copy.needsDecision
+    : stateKey === "attention"
+      ? copy.needsAttention
+      : null;
   const act = (fn: () => void) => (event: MouseEvent<HTMLButtonElement>) => { event.stopPropagation(); setMenuId(null); fn(); };
 
   if (renaming) {
@@ -103,12 +97,10 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
         <div className="agent-task-row-title">
           <strong>{task.title || t("common.untitled")}</strong>
           {task.pinned ? <svg className="agent-task-pin" width="8" height="8" viewBox="0 0 8 8" fill="currentColor" aria-label={copy.pinned}><circle cx="4" cy="4" r="2.5" /></svg> : null}
-          {stateKey === "decision" || stateKey === "attention" ? (
-            <span className="agent-task-needs-badge" data-state={stateKey}>{stateLabel}</span>
+          {needsLabel ? (
+            <span className="agent-task-needs-badge" data-state={stateKey}>{needsLabel}</span>
           ) : null}
         </div>
-        <div className="agent-task-row-state"><span>{stateLabel}</span><span aria-hidden>·</span><span className="truncate" title={scope}>{scope}</span></div>
-        {outputs ? <div className="agent-task-row-output">{outputs}</div> : null}
       </div>
       <button type="button" aria-label={t("menu.more")} onClick={(event) => { event.stopPropagation(); setConfirmId(null); setMenuId(menuOpen ? null : task.id); }} className="agent-task-more"><MoreIcon /></button>
 
@@ -238,10 +230,10 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
         {!q && tasks.length === 0 ? (
           <EmptyState compact testId="task-nav-empty" title={copy.noTasks} body={copy.noTasksHint} />
         ) : null}
-        {needsYou.length ? <section data-testid="task-queue-needs-you"><div className="agent-task-section-label">{copy.needsYou}</div>{needsYou.map(row)}</section> : null}
-        {runningTasks.length ? <section data-testid="task-queue-running"><div className="agent-task-section-label">{copy.runningTasks}</div>{runningTasks.map(row)}</section> : null}
-        {pinned.length ? <section><div className="agent-task-section-label">{copy.pinned}</div>{pinned.map(row)}</section> : null}
-        {recent.length ? <section><div className="agent-task-section-label">{copy.recent}</div>{recent.map(row)}</section> : null}
+        {needsYou.length ? <section data-testid="task-queue-needs-you" className="agent-task-queue">{needsYou.map(row)}</section> : null}
+        {runningTasks.length ? <section data-testid="task-queue-running" className="agent-task-queue">{runningTasks.map(row)}</section> : null}
+        {pinned.length ? <section className="agent-task-queue">{pinned.map(row)}</section> : null}
+        {recent.length ? <section className="agent-task-queue">{recent.map(row)}</section> : null}
         {archived.length ? <section><button type="button" className="agent-task-archive-toggle" onClick={() => setShowArchived((value) => !value)}><ChevronIcon open={showArchived} /> {copy.archived} ({archived.length})</button>{(showArchived || q) ? archived.map(row) : null}</section> : null}
       </nav>
 

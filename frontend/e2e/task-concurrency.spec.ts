@@ -46,7 +46,7 @@ test("an Agent task keeps executing while the user works in another task", async
 
     await navigation(page).getByRole("button", { name: /^New task/i }).click();
     await expect(composer(page)).toHaveValue("");
-    await expect(page.getByTestId("agent-task-header")).toContainText("Ready to delegate");
+    await expect(page.getByTestId("agent-task-header")).toContainText("New task");
 
     // Execution belongs to Task A, not to the viewport that happened to show it.
     // The command center must keep it in the live Running queue while Task B is open.
@@ -54,7 +54,8 @@ test("an Agent task keeps executing while the user works in another task", async
     await expect(backgroundRow).toHaveAttribute("data-state", "working", { timeout: 20_000 });
 
     await backgroundRow.click();
-    await expect(page.getByTestId("agent-task-header")).toContainText(/Agent working|Ready for direction/, { timeout: 20_000 });
+    await expect(page.getByTestId("agent-live-status")).toBeVisible({ timeout: 20_000 });
+    await expect(backgroundRow).toHaveAttribute("data-state", "working");
     await expect
       .poll(async () => await page.getByTestId("task-scroll").textContent(), {
         timeout: 60_000,

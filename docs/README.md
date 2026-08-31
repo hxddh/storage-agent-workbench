@@ -1,14 +1,15 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v0.98.0** (`v0.98.0`).
+> **Current architecture baseline: Storage Agent v0.99.0** (`v0.99.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
 > turns that runtime into a quantified storage-optimization copilot and
 > ongoing caretaker. v0.97.0 is a presentation-only craft pass (design tokens,
-> motion, keyboard, empty states). v0.98.0 is the content-presentation pass:
-> deterministic figures, finding provenance, Codex-style subtraction, and a
-> 60-second first-run path — no new Agent capabilities, no migration.
+> motion, keyboard, empty states). v0.98.0 added deterministic figures,
+> provenance, and a 60-second first-run path. v0.99.0 is the Agent-native
+> surface pass: the Task is a document — one column, Composer-native first-run,
+> Review closed by default, no suggestion grid, no third-column figures rail.
 
 This directory documents the currently shipped Storage Agent architecture and operating contracts. It is deliberately organized so implementation agents and contributors do not reconstruct older product shells from historical terminology that still exists in persistence, APIs, release notes, or git history.
 

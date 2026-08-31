@@ -1,15 +1,17 @@
 # Roadmap
 
-> **Baseline: Storage Agent v0.98.0.**
+> **Baseline: Storage Agent v0.99.0.**
 >
 > This file describes what comes **after** the current Agent Task architecture. It is not a backlog of old UI concepts and it is not proof that an aspirational capability already exists.
 
 ## Current shipped baseline
 
-v0.98.0 is the current baseline: a content-presentation pass on the v0.96 runtime
-(figures, provenance, first-run, subtraction) after v0.97's token/motion/keyboard
-craft. The Agent Task product model, tools, and migrations are unchanged. v0.96.0
-turned that runtime into a quantified storage-optimization copilot and ongoing caretaker:
+v0.99.0 is the current baseline: an Agent-native surface pass on the v0.96
+runtime. The Task is a document — one column, Composer-native first-run, Review
+closed by default, capabilities on `/` slash commands. No new tools, no
+migration (head remains **027**). v0.98.0 added deterministic figures, finding
+provenance, and the 60-second first-run path. v0.97.0 was the token/motion/keyboard
+craft pass. v0.96.0 turned that runtime into a quantified storage-optimization copilot and ongoing caretaker:
 
 - the **Agent Task** is the primary application object and work environment;
 - one Composer provides **Delegate → Steer + Stop** semantics, plus **Resume** and **Verify** when those runtime states exist;
@@ -21,7 +23,7 @@ turned that runtime into a quantified storage-optimization copilot and ongoing c
 - a typed **Remediation Plan** Artifact carries pasteable lifecycle JSON, finding refs, simulator impact with coverage, and a verification checklist; **Verify** is a read-only Execution on the same submit path;
 - versioned **baselines** and **Drift** reports classify findings added / resolved / still present;
 - optional per-task **revisit** schedules submit read-only Executions through `runtime.submit`; catch-up is labelled; Decisions are never auto-crossed;
-- Ready-to-delegate suggestions map to checkup / cost review / drift check plus existing diagnose, attach, and account jobs;
+- Ready-to-delegate capabilities map to Composer `/` slash commands (checkup / cost / drift plus diagnose, attach, and account jobs);
 - live execution is real per-task runtime state rather than simulated Agent chrome;
 - `/agent-tasks` is the product runtime surface while `/sessions` remains the compatibility persistence/runtime API;
 - read-only S3 diagnostics, account discovery, config review, local evidence analysis, error triage, and reports work end to end;
@@ -88,7 +90,7 @@ CI must still carry no production cloud/model secrets.
 
 Deepen contextual Review without turning it into a separate application:
 
-- stronger provenance links from a Work Result to the exact Evidence/Execution that supports it — **v0.98.0 ships the presentation layer**: `GET /agent-tasks/{id}/provenance` (no migration) plus clickable findings and hover previews. Remaining: richer audit-gap representation and large-task search.
+- stronger provenance links from a Work Result to the exact Evidence/Execution that supports it — **v0.98.0 shipped the presentation layer**; **v0.99.0 keeps those links in the document** (inline figures + ProvenanceMark, Review Evidence on click). Remaining: richer audit-gap representation and large-task search.
 - clearer audit-gap and unsupported-capability representation;
 - better large-task search/navigation while preserving the Task as one durable work record.
 

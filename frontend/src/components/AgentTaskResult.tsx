@@ -88,11 +88,6 @@ function DirectionEvent({
 
   return (
     <section className="group max-w-[min(46rem,100%)] animate-fade-in-up" data-testid="direction-event" aria-label={copy.label}>
-      <div className="mb-1.5 flex items-center gap-2 text-2xs font-medium uppercase tracking-wider text-gray-500">
-        <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
-        {copy.label}
-      </div>
-
       {structuredError && parsed ? (
         <S3ErrorArtifact error={parsed} raw={text} onRedirect={onEdit} onBranch={onBranch} />
       ) : (
@@ -170,11 +165,6 @@ export const AgentTaskResult = memo(function AgentTaskResult({
       data-result-shape={resultShape(props.content)}
       aria-label={label}
     >
-      <header className="mb-1.5 flex items-center gap-2 text-2xs font-medium uppercase tracking-wider text-gray-500">
-        <span className={`h-1.5 w-1.5 rounded-full ${props.streaming ? "animate-pulse bg-warn" : "bg-success"}`} aria-hidden />
-        {label}
-      </header>
-
       <AgentResultRenderer
         content={props.content}
         toolActivity={props.toolActivity}
@@ -185,7 +175,6 @@ export const AgentTaskResult = memo(function AgentTaskResult({
 
       {showArtifacts ? (
         <nav className="work-result-artifacts" aria-label={lang === "zh" ? "工作产物" : "Work artifacts"} data-testid="work-result-artifacts">
-          <span className="work-result-artifact-label">Artifacts</span>
           {evidenceCount > 0 ? (
             <button type="button" onClick={() => openAgentReview("evidence")} data-testid="work-result-open-evidence" title={lang === "zh" ? `${evidenceCount} 项 Evidence` : `${evidenceCount} evidence item${evidenceCount === 1 ? "" : "s"}`}>
               Evidence <span>{evidenceCount}</span>

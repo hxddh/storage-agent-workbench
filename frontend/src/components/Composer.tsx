@@ -157,12 +157,6 @@ export function Composer({
       data-testid="agent-composer"
       data-agent-state={busy ? "working" : uploading ? "uploading" : "ready"}
     >
-      <div className="mb-2 flex items-center gap-2 px-1 text-2xs">
-        <span className={`h-1.5 w-1.5 rounded-full ${busy || uploading ? "working-mark !h-1.5 !w-1.5" : "bg-success"}`} aria-hidden />
-        <strong className="font-medium text-gray-300">{busy || uploading ? copy.working : copy.delegate}</strong>
-        <span className="min-w-0 truncate text-gray-500">{busy || uploading ? copy.workingHint : copy.commands}</span>
-      </div>
-
       {slashOpen ? (
         <div className="absolute bottom-full left-1 right-1 z-floating mb-2 overflow-hidden rounded-xl border border-edge bg-panel shadow-pop animate-fade-in">
           <div className="px-3 py-1.5 text-2xs font-medium uppercase tracking-wider text-gray-500">{copy.commandMenu}</div>
@@ -275,10 +269,10 @@ export function Composer({
           onClick={onOpenSettings}
           title={modelName ?? copy.modelSettings}
           aria-label={modelName ? `${copy.model}: ${modelName}` : copy.modelSettings}
-          className={`flex h-7 items-center gap-1.5 rounded-lg border px-2 text-2xs transition-colors ${modelName ? "border-transparent text-gray-500 hover:border-edge hover:bg-elevated hover:text-gray-300" : "border-warn-border text-warn-fg"}`}
+          className={`h-7 shrink-0 items-center gap-1.5 rounded-lg border text-2xs transition-colors ${modelName ? "grid w-7 place-items-center border-transparent px-0 text-gray-500 hover:border-edge hover:bg-elevated hover:text-gray-300" : "flex border-warn-border px-2 text-warn-fg"}`}
         >
           <Spark size={10} />
-          <span>{modelName ? copy.model : copy.modelSettings}</span>
+          {modelName ? null : <span>{copy.modelSettings}</span>}
         </button>
 
         <span className="ml-auto hidden text-2xs text-gray-500 opacity-0 transition-opacity duration-fast group-focus-within/composer:opacity-100 sm:inline">

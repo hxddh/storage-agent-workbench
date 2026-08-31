@@ -1,11 +1,12 @@
 # Design tokens
 
-> **Storage Agent v0.98.0.** Presentation contract. Tokens do not invent
+> **Storage Agent v0.99.0.** Presentation contract. Tokens do not invent
 > runtime state, progress, or capabilities.
 
-v0.98 adds `--viz-*` series colors on the v0.97 token system so deterministic
-figures share dark/light with the rest of the product. Components must not
-introduce ad-hoc px font sizes, corner radii, z-index numbers, or `transition-all`.
+v0.98 added `--viz-*` series colors on the v0.97 token system so deterministic
+figures share dark/light with the rest of the product. v0.99 does not add
+tokens; it subtracts chrome. Components must not introduce ad-hoc px font
+sizes, corner radii, z-index numbers, or `transition-all`.
 
 ## Source of truth
 
@@ -38,8 +39,8 @@ keys, payloads, and code (optically size-adjusted). CJK falls through to the
 platform face. Rank comes from size, weight, and space — not from fading text.
 
 Work Result prose stays on a 46rem reading measure. Tables, charts, and code
-fences may use the full task track and share the same left edge. On a wide
-window the task document may split: reading column plus a figures rail.
+fences may use the full task track and share the same left edge. Figures sit
+inline in that document — there is no sticky figures rail and no third column.
 
 ## Color
 

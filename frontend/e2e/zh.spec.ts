@@ -19,8 +19,8 @@ const ENGLISH_LEAK =
 test.describe("Agent product in Chinese", () => {
   test("the task start surface is Chinese, not a half-translated legacy screen", async ({ page }) => {
     await bootZh(page);
+    await expect(composerZh(page)).toHaveAttribute("placeholder", /给 Agent 一个目标/);
     const shell = await page.locator("body").evaluate((el) => el.textContent ?? "");
-    expect(shell).toContain("把目标交给 Agent");
     expect(shell).toContain("新任务");
     expect(shell).not.toContain("新对话");
     expect(shell).not.toContain("新调查");
@@ -66,7 +66,7 @@ test.describe("Agent product in Chinese", () => {
       await page.getByTestId("execution-summary-toggle").click();
 
       const task = await page.getByTestId("task-scroll").evaluate((el) => el.textContent ?? "");
-      expect(task).toMatch(/工作结果|项检查|执行/);
+      expect(task).toMatch(/项检查|执行|已停止|已由你停止/);
       expect(task).not.toMatch(ENGLISH_LEAK);
     } finally {
       await dropModelProvider(modelId);

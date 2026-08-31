@@ -31,7 +31,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   forbidOnly: !!process.env.CI,
-  retries: 0, // v0.98: never mask interaction regressions; fake-model replays by signature
+  retries: 0, // v0.99: never mask interaction regressions; fake-model replays by signature
   timeout: 30_000,
   expect: { timeout: 10_000 },
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : [["list"]],

@@ -11,27 +11,6 @@
     var(--canvas);
 }
 
-/* One task start surface: the AgentTask renderer owns the heading and composer. */
-[data-testid="agent-workspace"] main > div:has(h1) > div > div:has(> h1) {
-  align-items: flex-start !important;
-  text-align: left !important;
-  margin-bottom: 1.25rem !important;
-}
-
-[data-testid="agent-workspace"] main > div:has(h1) h1 {
-  max-width: 34rem;
-  text-wrap: balance;
-}
-
-[data-testid="agent-workspace"] main > div:has(h1) h1 + p {
-  max-width: 36rem !important;
-  text-wrap: pretty;
-}
-
-[data-testid="agent-workspace"] main > div:has(h1) button:not([aria-label]) {
-  min-height: 36px;
-}
-
 /* Direction events are the semantic navigation anchors in a long-running task. */
 [data-testid="task-scroll"] {
   scrollbar-gutter: stable;
@@ -95,88 +74,16 @@ textarea[data-focus-ring="container"] {
   }
 }
 
-/* Wide windows: 46rem reading column plus a figures rail so the right half is work, not empty. */
+/* One-column document. Prose and figures share a 46rem measure; data artifacts may use the 64rem track. */
 .task-document {
   width: 100%;
   max-width: min(64rem, 100%);
   margin-inline: auto;
 }
-.task-document[data-split="true"] {
-  max-width: min(86rem, 100%);
-  display: grid;
-  grid-template-columns: minmax(0, 64rem) minmax(16rem, 22rem);
-  justify-content: center;
-  column-gap: 2rem;
-  align-items: start;
-}
-.task-document-figures {
-  min-width: 0;
-}
-@media (min-width: 1180px) {
-  .task-document-figures {
-    position: sticky;
-    top: 1.25rem;
-  }
-}
-@media (max-width: 1179px) {
-  .task-document[data-split="true"] {
-    display: block;
-    max-width: min(64rem, 100%);
-  }
-  .task-document-figures {
-    margin-top: 1.75rem;
-  }
-}
 
-.delegate-suggestion-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-@media (max-width: 640px) {
-  .delegate-suggestion-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.delegate-suggestion-card {
-  display: flex;
+.task-analysis-figures {
   min-width: 0;
-  align-items: flex-start;
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--edge) 80%, transparent);
-  border-radius: var(--radius-xl);
-  padding: 11px 12px;
-  background: color-mix(in srgb, var(--panel) 55%, transparent);
-  color: var(--gray-200);
-  text-align: left;
-  transition:
-    border-color var(--duration-fast) var(--ease-out),
-    background-color var(--duration-fast) var(--ease-out),
-    color var(--duration-fast) var(--ease-out);
-}
-.delegate-suggestion-card:hover {
-  border-color: color-mix(in srgb, var(--accent) 38%, var(--edge));
-  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
-  color: var(--gray-100);
-}
-.delegate-suggestion-card:disabled {
-  cursor: default;
-  opacity: .55;
-}
-.delegate-suggestion-card:disabled:hover {
-  border-color: color-mix(in srgb, var(--edge) 80%, transparent);
-  background: color-mix(in srgb, var(--panel) 55%, transparent);
-  color: var(--gray-200);
-}
-.delegate-suggestion-icon {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: none;
-  place-items: center;
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--elevated) 80%, transparent);
-  color: var(--accent-soft);
+  max-width: min(46rem, 100%);
 }
 
 .agent-record[data-selected="true"] {

@@ -183,13 +183,15 @@ test.describe("v0.96 optimization copilot closed loop", () => {
     }
   });
 
-  test("Ready-to-delegate suggestions map to checkup, cost review, and drift check", async ({ page }) => {
+  test("Ready-to-delegate slash commands map to checkup, cost review, and drift check", async ({ page }) => {
     await boot(page);
-    await expect(page.getByTestId("delegate-suggestion-checkup")).toBeVisible();
-    await expect(page.getByTestId("delegate-suggestion-cost")).toBeVisible();
-    await expect(page.getByTestId("delegate-suggestion-drift")).toBeVisible();
-    await expect(page.getByTestId("delegate-suggestion-checkup")).toContainText(/Storage checkup/i);
-    await expect(page.getByTestId("delegate-suggestion-cost")).toContainText(/Cost review/i);
-    await expect(page.getByTestId("delegate-suggestion-drift")).toContainText(/Drift check/i);
+    const box = page.getByTestId("agent-composer").getByRole("textbox");
+    await box.fill("/");
+    await expect(page.getByText("/checkup")).toBeVisible();
+    await expect(page.getByText("/cost")).toBeVisible();
+    await expect(page.getByText("/drift")).toBeVisible();
+    await expect(page.getByText(/Storage checkup/i)).toBeVisible();
+    await expect(page.getByText(/Cost review/i)).toBeVisible();
+    await expect(page.getByText(/Drift check/i)).toBeVisible();
   });
 });
