@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v0.99.0.**
+> **Current baseline: Storage Agent v1.00.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -19,12 +19,12 @@
 
 ## B. Agent Task product smoke
 
-A user must be able to recognize and use the v0.99 product model without reading source code.
+A user must be able to recognize and use the v1.00 product model without reading source code.
 
 ### Start and task navigation
 
-- [ ] The product identity is **Storage Agent** in the window/first-run/release-facing UI.
-- [ ] A fresh install exposes a **Composer** to type into — not a heading plus suggestion cards. First-run is that same box, not a second card.
+- [ ] The product identity is **Storage Agent** in the window/release-facing UI.
+- [ ] A fresh install exposes a **Composer** to type into — not a wizard, heading, or suggestion cards.
 - [ ] Global navigation is a single Agent Task list; Needs-you / Recent are not painted taxonomies.
 - [ ] Task rows can expose the supported lifecycle actions (for example rename/pin/duplicate/archive/delete) without turning navigation into a backend-record browser.
 - [ ] Creating/delegating initial work creates a durable Task that remains available after reload/restart.
@@ -53,12 +53,12 @@ A user must be able to recognize and use the v0.99 product model without reading
 - [ ] **Stop** cancels the active turn promptly (including a queued Direction).
 - [ ] A stopped execution leaves a truthful durable partial/stopped result/state as implemented and the Task becomes controllable again.
 - [ ] A `needs_attention` Task whose last Execution is interrupted/failed exposes **Resume**; Resume follows the new execution event stream.
-- [ ] A Task with a Remediation Plan exposes **Verify**; Verify follows a new read-only execution event stream and does not mutate storage.
-- [ ] Review Overview shows plan status, baselines/Drift, and the optional revisit schedule without adding a navigation destination.
-- [ ] Cost-review numbers are labelled estimates with coverage, or explicit gaps when inventory/price table is missing.
+- [ ] Settings contains model, storage credentials, language, and theme — not a storage price table.
+- [ ] Composer has no `/checkup` `/cost` `/drift` SKU menu. Typing `/` is ordinary text.
+- [ ] There is no header Review destination and no Overview / revisit / Verify painted chrome.
+- [ ] Cost-review numbers in a Work Result are labelled estimates with coverage, or explicit gaps when inventory/price table is missing.
 - [ ] Cost / inventory / Drift / access-log figures render from runtime artifacts with coverage and Estimate; unconfirmed prices withhold the cost axis; missing series are gap states, never interpolated.
-- [ ] A finding with a provenance chain opens Review Evidence anchored to that finding; a missing chain is labelled, not implied.
-- [ ] A fresh install walks welcome → model (live test) → optional storage → first checkup inline on the start surface; checkup submits a real Direction.
+- [ ] A finding with a provenance chain opens Evidence anchored to that finding; a missing chain is labelled, not implied.
 - [ ] A Direction queued behind a running Execution is visible in the Task and can be cancelled.
 
 ### Durable task switching / concurrent state
@@ -74,7 +74,6 @@ A user must be able to recognize and use the v0.99 product model without reading
 - [ ] The Decision card states why confirmation is required and the scan/movement bounds when those facts exist.
 - [ ] The gated operation does not execute before explicit approval.
 - [ ] **Decline** records the durable resolution and does not perform the action.
-- [ ] Review Overview shows Decision history (pending / approved / declined / superseded).
 - [ ] Reload/reopen a Task with a still-current durable Decision: the Decision remains visible from persisted truth.
 - [ ] A newer real active execution correctly outranks an older persisted Decision where the runtime contract says work is already active.
 

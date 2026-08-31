@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v0.99.0.** Agent-native document surface on the v0.96.0 runtime. Product invariant unchanged.
+> **Current architecture baseline: Storage Agent v1.00.0.** Modern Agent shell. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -76,8 +76,7 @@ The packaged Tauri launcher chooses a free localhost port, generates a per-launc
 - task lifecycle actions (create/rename/pin/duplicate/archive/delete);
 - settings drawer;
 - command palette;
-- shortcuts sheet;
-- first-run configuration.
+- shortcuts sheet.
 
 It composes the current public product boundaries directly:
 
@@ -87,7 +86,7 @@ It composes the current public product boundaries directly:
 
 Legacy frontend adapters from earlier releases were physically removed. Do not recreate an intermediate application shell merely to mirror backend entity names.
 
-### 3.2 `AgentTaskNavigation`: global task command center
+### 3.2 `AgentTaskNavigation`: global task list
 
 `frontend/src/agent/AgentTaskNavigation.tsx` owns global Task navigation.
 
@@ -108,8 +107,8 @@ The Sidecar `/agent-tasks` projection provides durable decision truth so a pendi
 
 - task title;
 - Focus presentation state;
-- contextual Review open/close state (header button once a durable Task exists);
-- selected Execution inside Review;
+- contextual artifact viewer open/close state (opened from the document, never a header destination);
+- selected Execution inside that viewer;
 - live execution status derived from real task runtime state (the working strip, not a header sentence).
 
 `AgentShell` receives `taskContent: ReactNode`. Its primary area is always the Agent Task.
@@ -192,18 +191,17 @@ Streaming work is Execution; persisted completed output is Work Result. Work Res
 
 ### Artifact / Review
 
-`frontend/src/agent/AgentReviewPanel.tsx` owns contextual Review modes:
+`frontend/src/agent/AgentReviewPanel.tsx` is a thin artifact viewer:
 
 ```ts
-"overview" | "evidence" | "execution" | "report"
+"evidence" | "execution" | "report"
 ```
 
-- **Overview** — durable task summary, findings, memory, execution references, Remediation Plan status, baselines, Drift, and revisit schedule.
 - **Evidence** — persisted evidence/finding/activity truth.
 - **Execution** — persisted analysis execution and sanitized call detail.
 - **Report** — durable Markdown Report artifact.
 
-These are review modes of the active Task, not independent application destinations.
+There is no Overview surface, no 4-tab Review application, and no revisit/plan/baseline/drift walls. These are review modes of the active Task, opened from the document, not independent application destinations.
 
 ## 5. Runtime state and task concurrency
 
@@ -236,9 +234,8 @@ observes:
 6. Resume (`POST .../executions/{eid}/resume`) starts a NEW execution for an
    `interrupted` / `failed` last Execution and the client follows that new
    stream; Queued Directions are projected from task state;
-7. Verify (`POST .../verify`) and scheduled revisits submit through the same
-   `runtime.submit` path with `kind=verify` / `kind=revisit` — never a second
-   runner. Revisits are read-only and never auto-resolve a Decision;
+7. Verify and scheduled revisits remain Sidecar `runtime.submit` kinds with
+   no painted UI controls; the user asks in Composer;
 8. completion, waiting-on-Decision, failure, and interruption are durable
    execution states, not inferences;
 9. reload the persisted task document.
@@ -368,7 +365,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v0.96 and prevents current product docs from drifting back toward retired information architecture.
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.00 and prevents current product docs from drifting back toward retired information architecture.
 
 ### Real-Sidecar E2E
 

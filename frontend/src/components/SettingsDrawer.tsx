@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ProvidersView } from "../views/ProvidersView";
 import { useI18n, LANGS, type Lang } from "../i18n";
 import { useTheme, type Theme } from "../theme";
-import { getPriceTable, getVaultStatus, putPriceTable, type PriceTable } from "../api";
+import { getVaultStatus } from "../api";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 
@@ -97,7 +97,6 @@ export function SettingsDrawer(
           </section>
 
           <ProvidersView />
-          <PriceTableSection />
           <div className="border-t border-edge px-8 py-5 text-xs leading-relaxed text-gray-500">
             <div className="mb-1 font-medium text-gray-400">{t("settings.safetyTitle")}</div>
             {safety}
@@ -105,104 +104,6 @@ export function SettingsDrawer(
         </div>
       </div>
     </div>
-  );
-}
-
-function PriceTableSection() {
-  const { t } = useI18n();
-  const [table, setTable] = useState<PriceTable | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  useEffect(() => {
-    getPriceTable().then(setTable).catch(() => undefined);
-  }, []);
-  if (!table) return null;
-  const rates = { ...(table.rates.storage_gb_month || {}) };
-  const classes = Object.keys(rates).sort();
-  const save = async (next: PriceTable) => {
-    setSaving(true);
-    try {
-      const stored = await putPriceTable({
-        confirmed: next.confirmed,
-        rates: next.rates,
-        note: next.note,
-      });
-      setTable(stored);
-      setSaved(true);
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <section className="border-t border-edge px-8 py-5" data-testid="settings-price-table">
-      <div className="mb-1 text-sm font-semibold text-gray-100">{t("settings.priceTitle")}</div>
-      <p className="mb-3 text-xs leading-relaxed text-gray-500">{t("settings.priceHint")}</p>
-      {table.example || !table.confirmed ? (
-        <p className="mb-3 rounded-md border border-warn-border bg-warn-bg px-3 py-2 text-xs text-warn-fg" data-testid="price-table-example">
-          {t("settings.priceExample")}
-        </p>
-      ) : null}
-      <div className="mb-2 overflow-hidden rounded-lg border border-edge">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b border-edge bg-elevated text-left text-2xs uppercase tracking-wider text-gray-500">
-              <th className="px-3 py-2 font-medium">{t("settings.priceClass")}</th>
-              <th className="px-3 py-2 text-right font-medium">{t("settings.priceGbMonth")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {classes.map((name) => {
-              const labelId = `price-rate-${name.replace(/[^A-Za-z0-9_-]/g, "-")}`;
-              return (
-              <tr key={name} className="border-b border-edge last:border-0">
-                <th id={labelId} scope="row" className="px-3 py-1.5 text-left font-mono text-2xs font-normal text-gray-300">{name}</th>
-                <td className="px-3 py-1.5 text-right">
-                  <input
-                    type="number"
-                    step="0.0001"
-                    min="0"
-                    value={rates[name]}
-                    aria-labelledby={labelId}
-                    onChange={(event) => {
-                      const value = Number.parseFloat(event.target.value);
-                      setTable({
-                        ...table,
-                        rates: {
-                          ...table.rates,
-                          storage_gb_month: { ...rates, [name]: Number.isFinite(value) ? value : 0 },
-                        },
-                      });
-                      setSaved(false);
-                    }}
-                    className="w-24 rounded-md border border-edge bg-canvas px-2 py-1 text-right tabular-nums text-gray-100"
-                  />
-                </td>
-              </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <label className="mt-3 flex items-center gap-2 text-xs text-gray-300">
-        <input
-          type="checkbox"
-          checked={table.confirmed}
-          onChange={(event) => {
-            setTable({ ...table, confirmed: event.target.checked, example: !event.target.checked });
-            setSaved(false);
-          }}
-        />
-        {t("settings.priceConfirm")}
-      </label>
-      <button
-        type="button"
-        disabled={saving}
-        onClick={() => void save(table)}
-        className="mt-3 rounded-md border border-edge px-3 py-1.5 text-xs text-gray-100 hover:bg-hover disabled:opacity-50"
-      >
-        {saved ? t("settings.priceSaved") : t("settings.priceSave")}
-      </button>
-    </section>
   );
 }
 

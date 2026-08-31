@@ -13,8 +13,6 @@ import { Composer } from "./Composer";
 
 function mount(offline: boolean, text = "why does acme-logs 403?") {
   const onSend = vi.fn();
-  const onSlashReport = vi.fn();
-  const onSlashPickFile = vi.fn();
   render(
     createElement(
       I18nProvider,
@@ -38,13 +36,11 @@ function mount(offline: boolean, text = "why does acme-logs 403?") {
         onSteer: () => {},
         modelName: "gpt-x",
         onOpenSettings: () => {},
-        onSlashReport,
-        onSlashPickFile,
       }),
     ),
   );
   const textbox = within(screen.getByTestId("agent-composer")).getByRole("textbox") as HTMLTextAreaElement;
-  return { onSend, onSlashReport, onSlashPickFile, textbox };
+  return { onSend, textbox };
 }
 
 describe("the Agent task Composer while the sidecar is unreachable", () => {
@@ -60,10 +56,11 @@ describe("the Agent task Composer while the sidecar is unreachable", () => {
     expect(onSend).toHaveBeenCalledTimes(1);
   });
 
-  it("does not run an action slash command while offline", () => {
-    const { onSlashReport, textbox } = mount(true, "/report");
+  it("treats a leading slash as ordinary Direction text", () => {
+    const { onSend, textbox } = mount(true, "/report");
     fireEvent.keyDown(textbox, { key: "Enter" });
-    expect(onSlashReport).not.toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+    expect(textbox.value).toBe("/report");
   });
 
   it("preserves the user's task direction while offline", () => {

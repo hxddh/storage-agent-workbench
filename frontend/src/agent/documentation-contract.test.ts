@@ -37,14 +37,14 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v0.99 documentation contract", () => {
+describe("v1.00 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
       expect(text, `${path} must name Agent Task`).toMatch(/Agent Task/);
     }
-    expect(readRepo("docs/README.md")).toContain("v0.99.0");
-    expect(readRepo("CLAUDE.md")).toContain("v0.99.0");
+    expect(readRepo("docs/README.md")).toContain("v1.00.0");
+    expect(readRepo("CLAUDE.md")).toContain("v1.00.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
     expect(readRepo("docs/design-tokens.md")).toContain("--duration-fast");
     expect(readRepo("docs/design-tokens.md")).toContain("prefers-reduced-motion");
@@ -92,9 +92,12 @@ describe("v0.99 documentation contract", () => {
     expect(smoke).toContain("Agent Task product smoke");
     expect(smoke).toContain("one primary Agent composer");
     expect(smoke).toContain("Resume");
-    expect(smoke).toContain("Verify");
+    expect(smoke).not.toMatch(/A Task with a Remediation Plan exposes \*\*Verify\*\*/);
+    expect(smoke).toContain("Settings contains model");
     expect(readRepo("docs/product.md")).toContain("Queued Direction");
     expect(readRepo("docs/product.md")).toContain("Remediation Plan");
+    expect(readRepo("docs/product.md")).not.toContain("Composer `/` slash commands");
+    expect(readRepo("docs/product.md")).not.toContain("Composer-native 60-second");
     expect(readRepo("docs/architecture.md")).toContain("after=<last seq>");
     expect(readRepo("docs/tools.md")).toContain("simulate_storage_cost");
     expect(readRepo("docs/roadmap.md")).not.toMatch(/Add ORC support/);

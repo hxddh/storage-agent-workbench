@@ -1,11 +1,11 @@
 # Design tokens
 
-> **Storage Agent v0.99.0.** Presentation contract. Tokens do not invent
+> **Storage Agent v1.00.0.** Presentation contract. Tokens do not invent
 > runtime state, progress, or capabilities.
 
 v0.98 added `--viz-*` series colors on the v0.97 token system so deterministic
-figures share dark/light with the rest of the product. v0.99 does not add
-tokens; it subtracts chrome. Components must not introduce ad-hoc px font
+figures share dark/light with the rest of the product. v1.00 does not add
+tokens; it deletes copilot product objects. Components must not introduce ad-hoc px font
 sizes, corner radii, z-index numbers, or `transition-all`.
 
 ## Source of truth

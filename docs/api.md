@@ -1,8 +1,9 @@
 # Sidecar API
 
-> **Storage Agent v0.99.0 API reference.** Provenance projection unchanged from
+> **Storage Agent v1.00.0 API reference.** Provenance projection unchanged from
 > v0.98.0. No migration. Runtime, tools, and other `/agent-tasks` contracts
-> are unchanged from v0.96.0.
+> are unchanged from v0.96.0. Engine endpoints such as `/settings/price-table`
+> remain; they are not product destinations.
 >
 > The public product model is Agent Task / Direction / Execution / Decision / Work Result / Artifact. Many HTTP paths intentionally retain historical `session`/`run` compatibility names. Do not mirror those path names into new product information architecture.
 
@@ -333,7 +334,7 @@ GET  /settings/price-table
 PUT  /settings/price-table
 ```
 
-The price table is ordinary local configuration used by the cost simulator: per-storage-class GB-month rates plus request/retrieval rates. It ships as an example schedule labelled “calibrate against your bill”. Dollar simulation remains a gap until `confirmed` is true. The table is not a secret store and must never contain credentials.
+The price table is ordinary local configuration used by the cost simulator: per-storage-class GB-month rates plus request/retrieval rates. It ships as an example schedule. Dollar simulation remains a gap until `confirmed` is true. The table is not a secret store and must never contain credentials. **Settings UI does not edit it** — if the Agent needs prices it asks in the Task or reports a gap.
 
 There is no product autonomy toggle: read-only Agent investigation is the default capability model, while confirmation-gated operations stop at explicit Decisions.
 

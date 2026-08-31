@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v0.99.0.**
+> **Implementation contract for Storage Agent v1.00.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v0.93+/v0.94/v0.95/v0.96 product invariant is:
+The v1.00 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -31,7 +31,7 @@ New product/frontend work must preserve these boundaries:
 - **Execution** is real runtime/tool work. Never invent plans, steps, workers, or capabilities the runtime does not expose.
 - **Decision required** is a blocking confirmation state derived from real backend proposals, with projected bounds/impact and a durable Decline path.
 - **Work Result** is the durable result of Agent work, not a generic assistant bubble.
-- Review is contextual to the active Task. Evidence, Execution detail, Report, Remediation Plan, baseline, and Drift are artifacts/review modes, not independent application destinations.
+- Review is a thin artifact viewer opened from the document (Evidence, Execution detail, Report). It is not a 4-tab application destination. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules may exist as Sidecar engines; they have no product UI entry.
 - **Focus mode** changes presentation only. It never creates a second task lifecycle or second Agent input.
 
 Do not reconstruct earlier chat/investigation/workbench information architecture from old release notes, database names, API names, or git history. Historical `session` and `run` terminology is compatibility vocabulary, not a reason to change current product semantics.
@@ -102,8 +102,8 @@ Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned b
 - Decision (`task_decisions`), Work Result (`work_results`), Artifact (`task_artifacts`), and the typed versioned Storage Task Context (`task_context_versions`) are first-class durable rows;
 - the latest typed context version is injected into the Agent prompt's stable half so restart grounding matches the pre-restart snapshot;
 - deterministic cross-evidence correlation produces bounded findings through existing summary/findings/memory channels;
-- deterministic cost/lifecycle simulation, Remediation Plans, baselines/Drift, and per-task revisits are product capabilities on this same runtime — never a second Agent or a second submit path;
-- Verify and scheduled revisits call `runtime.submit` with `kind=verify` / `kind=revisit`; revisits are read-only and never auto-resolve a Decision;
+- deterministic cost/lifecycle simulation, Remediation Plans, baselines/Drift, and per-task revisits remain Sidecar engines on this same runtime — never a second Agent, a second submit path, or a Settings/Review destination;
+- Verify (`kind=verify`) and scheduled revisits (`kind=revisit`) remain runtime paths; the UI does not paint a Verify control or a revisit scheduler. The user asks in Composer. Revisits are read-only and never auto-resolve a Decision;
 - `execution_events` retention is a periodic SQL-set prune (terminal executions only, dual cap, explicit `execution.events_truncated` marker; `0` disables). Active and waiting logs are never touched;
 - at most one pending Decision exists per `(task, action_type)`; a later proposal of the same type supersedes the earlier pending row.
 
@@ -113,11 +113,11 @@ The execution runner is the one submission lifecycle: submit a Direction as a du
 
 The Sidecar exposes both product projection and compatibility APIs:
 
-- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the runtime API — executions (submit / steer / stop / resume / SSE event stream resumable by sequence), Verify (`POST .../verify`, kind=`verify`), queued visibility, decisions (list / resolve with impact projection), work results, artifacts, **read-only provenance** (`GET .../provenance`), remediation plans, baselines, revisit schedule, and the typed task context.
+- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the runtime API — executions (submit / steer / stop / resume / SSE event stream resumable by sequence), Verify (`POST .../verify`, kind=`verify`), queued visibility, decisions (list / resolve with impact projection), work results, artifacts, **read-only provenance** (`GET .../provenance`), remediation plans, baselines, revisit schedule, and the typed task context. Engine endpoints are not product destinations.
 - `/sessions/...` remains the durable task/message/runtime compatibility API.
 - `/runs/...` remains deterministic execution/report compatibility API and is not a top-level product surface.
 - `/evidence-imports/...` owns bounded plan → confirm → execute data movement.
-- `/model-providers`, `/cloud-providers`, `/settings` (including the local price table), `/tools`, `/error-triage`, `/reports`, and dataset endpoints keep their existing responsibilities.
+- `/model-providers`, `/cloud-providers`, `/settings` (including the local price-table **engine** API; Settings UI does not edit it), `/tools`, `/error-triage`, `/reports`, and dataset endpoints keep their existing responsibilities.
 
 Do not rename persistence/API contracts just for cosmetic consistency if that adds migration risk. Adapt them at explicit boundaries instead.
 
@@ -186,8 +186,9 @@ See `docs/data-model.md`.
 ## 9. Product and design rules
 
 - Optimize the first viewport for: **what is the Task, what is happening/what was produced, what can the user do now**.
-- The Task is a **document**: one reading column, figures inline in the Work Result, Review closed until it has something.
-- Composer is the only start surface. First-run is a state of that same box, not a second card. Capabilities live on `/` slash commands, not a suggestion grid.
+- The Task is a **document**: one reading column, figures inline in the Work Result. Artifacts open from the document.
+- Composer is the only start surface. An empty window is the Composer. Missing model is a banner plus Settings. The model discovers tools; there is no slash SKU catalog and no first-run wizard.
+- Settings is **model + storage credentials + language/theme**. There is no price-table spreadsheet.
 - Keep settings/provider/model selection secondary to delegated work.
 - Keep technical results readable as documents: prose, tables, code/config, structured errors, Execution summary, provenance.
 - Use progressive disclosure for execution detail; do not turn the main Task into a permanent observability wall.

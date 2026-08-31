@@ -1,35 +1,35 @@
 # Roadmap
 
-> **Baseline: Storage Agent v0.99.0.**
+> **Baseline: Storage Agent v1.00.0.**
 >
 > This file describes what comes **after** the current Agent Task architecture. It is not a backlog of old UI concepts and it is not proof that an aspirational capability already exists.
 
 ## Current shipped baseline
 
-v0.99.0 is the current baseline: an Agent-native surface pass on the v0.96
-runtime. The Task is a document — one column, Composer-native first-run, Review
-closed by default, capabilities on `/` slash commands. No new tools, no
-migration (head remains **027**). v0.98.0 added deterministic figures, finding
-provenance, and the 60-second first-run path. v0.97.0 was the token/motion/keyboard
-craft pass. v0.96.0 turned that runtime into a quantified storage-optimization copilot and ongoing caretaker:
+v1.00.0 is the current baseline: a modern Agent. Empty window is the Composer.
+Settings is model, storage credentials, language, and theme. The model
+discovers tools. Evidence, Execution, and Report open from the document. No
+price-table spreadsheet, slash SKU catalog, first-run wizard, 4-tab Review, or
+painted Verify/revisit chrome. No new tools, no migration (head remains **027**).
+Sidecar engines from v0.96 (cost sim, Remediation Plan, baseline/Drift, revisit)
+remain callable by the Agent and have no product UI entry.
+
+v0.99.0 was a chrome-subtraction pass that left those copilot objects in place.
+v0.98.0 added deterministic figures and finding provenance. v0.97.0 was the
+token/motion/keyboard craft pass. v0.96.0 added the engines. The Agent Task
+runtime from v0.94/v0.95 remains:
 
 - the **Agent Task** is the primary application object and work environment;
-- one Composer provides **Delegate → Steer + Stop** semantics, plus **Resume** and **Verify** when those runtime states exist;
-- Direction, Execution, Decision, Work Result, Artifact, and contextual Review are distinct product concepts;
+- one Composer provides **Delegate → Steer + Stop** semantics, plus **Resume** when that runtime state exists;
+- Direction, Execution, Decision, Work Result, Artifact, and contextual artifact review are distinct product concepts;
 - queued Directions are visible and cancellable; stream recovery is `after=<last seq>` only;
-- Decision cards project bounds/impact and Decline; Review projects Decision history;
+- Decision cards project bounds/impact and Decline;
 - typed Storage Task Context grounds the Agent prompt; deterministic cross-evidence correlation produces bounded findings;
-- a deterministic cost/lifecycle simulator projects class mix and labelled cost deltas from bounded inventory aggregates and a local price table — missing data is a gap, never a fabricated number;
-- a typed **Remediation Plan** Artifact carries pasteable lifecycle JSON, finding refs, simulator impact with coverage, and a verification checklist; **Verify** is a read-only Execution on the same submit path;
-- versioned **baselines** and **Drift** reports classify findings added / resolved / still present;
-- optional per-task **revisit** schedules submit read-only Executions through `runtime.submit`; catch-up is labelled; Decisions are never auto-crossed;
-- Ready-to-delegate capabilities map to Composer `/` slash commands (checkup / cost / drift plus diagnose, attach, and account jobs);
 - live execution is real per-task runtime state rather than simulated Agent chrome;
 - `/agent-tasks` is the product runtime surface while `/sessions` remains the compatibility persistence/runtime API;
 - read-only S3 diagnostics, account discovery, config review, local evidence analysis, error triage, and reports work end to end;
 - managed cloud Evidence Import uses plan → explicit Decision → execution;
 - secrets remain in the encrypted local vault and out of model context;
-- `execution_events` retention is a periodic SQL-set prune (terminal only, dual cap, explicit truncation marker);
 - architecture, legacy-contract, documentation-contract, real-Sidecar E2E, visual-review, and desktop-build gates protect the release.
 
 This is the starting point. Future work should deepen the Agent's ability to complete real object-storage jobs inside this model rather than replacing it with another shell.
@@ -90,7 +90,7 @@ CI must still carry no production cloud/model secrets.
 
 Deepen contextual Review without turning it into a separate application:
 
-- stronger provenance links from a Work Result to the exact Evidence/Execution that supports it — **v0.98.0 shipped the presentation layer**; **v0.99.0 keeps those links in the document** (inline figures + ProvenanceMark, Review Evidence on click). Remaining: richer audit-gap representation and large-task search.
+- stronger provenance links from a Work Result to the exact Evidence/Execution that supports it — **v0.98.0 shipped the presentation layer**; **v1.00.0 opens Evidence from the document** (inline figures + ProvenanceMark). Remaining: richer audit-gap representation and large-task search.
 - clearer audit-gap and unsupported-capability representation;
 - better large-task search/navigation while preserving the Task as one durable work record.
 

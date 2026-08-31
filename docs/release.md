@@ -1,6 +1,6 @@
 # Release
 
-> **Current process baseline: Storage Agent v0.99.0.**
+> **Current process baseline: Storage Agent v1.00.0.**
 >
 > A release is a build of one exact verified source SHA. Release notes become historical records after publication; they do not override the current architecture contracts in `docs/README.md`, `product.md`, `architecture.md`, or `CLAUDE.md`.
 

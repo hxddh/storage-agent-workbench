@@ -5,18 +5,6 @@ import { MOD } from "../shortcuts";
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 const formatGiB = (n: number) => `${(n / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
 
-export type Slash = { cmd: string; labelKey: string; promptKey?: string; action?: "report" | "pickFile" };
-const SLASH: Slash[] = [
-  { cmd: "diagnose", labelKey: "sugg.diagnose", promptKey: "prompt.diagnose" },
-  { cmd: "logs", labelKey: "sugg.logs", action: "pickFile" },
-  { cmd: "inventory", labelKey: "sugg.inventory", action: "pickFile" },
-  { cmd: "checkup", labelKey: "sugg.checkup", promptKey: "prompt.checkup" },
-  { cmd: "cost", labelKey: "sugg.cost", promptKey: "prompt.cost" },
-  { cmd: "drift", labelKey: "sugg.drift", promptKey: "prompt.drift" },
-  { cmd: "account", labelKey: "sugg.account", promptKey: "prompt.account" },
-  { cmd: "report", labelKey: "slash.report", action: "report" },
-];
-
 const Spark = ({ size = 12 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2z" />
@@ -48,8 +36,6 @@ export function Composer({
   onSteer,
   modelName,
   onOpenSettings,
-  onSlashReport,
-  onSlashPickFile,
 }: {
   text: string;
   setText: (v: string) => void;
@@ -69,8 +55,6 @@ export function Composer({
   onSteer: () => void;
   modelName: string | null;
   onOpenSettings: () => void;
-  onSlashReport: () => void;
-  onSlashPickFile: (type: "inventory" | "access_log") => void;
 }) {
   const { t, lang } = useI18n();
   const copy = lang === "zh"
@@ -82,8 +66,6 @@ export function Composer({
         steer: "Steer",
         steerHint: "Steer Agent：补充方向、约束或下一步…",
         model: "Model",
-        commands: "输入 / 使用任务命令",
-        commandMenu: "任务命令",
         uploading: (name: string) => `正在准备 ${name}…`,
         modelSettings: "模型设置",
         steerCurrent: "Steer 当前执行",
@@ -101,8 +83,6 @@ export function Composer({
         steer: "Steer",
         steerHint: "Steer the Agent with new direction, constraints, or a next step…",
         model: "Model",
-        commands: "Type / for task commands",
-        commandMenu: "Task commands",
         uploading: (name: string) => `Preparing ${name}…`,
         modelSettings: "Model settings",
         steerCurrent: "Steer current execution",
@@ -112,11 +92,8 @@ export function Composer({
         steerActionHint: "Add direction or constraints to the current execution while preserving completed work",
         delegateAction: "Delegate task",
       };
-  const [slashSel, setSlashSel] = useState(0);
   const [sizeError, setSizeError] = useState<string | null>(null);
-  const [slashSuppressed, setSlashSuppressed] = useState(false);
 
-  useEffect(() => { setSlashSuppressed(false); }, [text]);
   useEffect(() => { setSizeError(null); }, [attached]);
   useEffect(() => {
     const ta = taRef.current;
@@ -129,27 +106,8 @@ export function Composer({
     ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
   }, [text, taRef]);
 
-  const slashQ = /^\/(\w*)$/.exec(text)?.[1];
-  const slashItems = slashQ !== undefined ? SLASH.filter((item) => item.cmd.startsWith(slashQ.toLowerCase())) : [];
-  const slashOpen = slashItems.length > 0 && !slashSuppressed;
-  const slashIdx = Math.min(slashSel, slashItems.length - 1);
   const running = busy || uploading;
   const blocked = offline;
-
-  const selectSlash = (item: Slash) => {
-    if (blocked && item.action) return;
-    if (item.action === "report") {
-      setText("");
-      onSlashReport();
-    } else if (item.action === "pickFile") {
-      setText("");
-      onSlashPickFile(item.cmd === "logs" ? "access_log" : "inventory");
-    } else if (item.promptKey) {
-      setText(t(item.promptKey));
-      requestAnimationFrame(() => taRef.current?.focus());
-    }
-    setSlashSel(0);
-  };
 
   return (
     <div
@@ -157,24 +115,6 @@ export function Composer({
       data-testid="agent-composer"
       data-agent-state={busy ? "working" : uploading ? "uploading" : "ready"}
     >
-      {slashOpen ? (
-        <div className="absolute bottom-full left-1 right-1 z-floating mb-2 overflow-hidden rounded-xl border border-edge bg-panel shadow-pop animate-fade-in">
-          <div className="px-3 py-1.5 text-2xs font-medium uppercase tracking-wider text-gray-500">{copy.commandMenu}</div>
-          {slashItems.map((item, index) => (
-            <button
-              key={item.cmd}
-              type="button"
-              onMouseEnter={() => setSlashSel(index)}
-              onClick={() => selectSlash(item)}
-              className={`flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors ${index === slashIdx ? "bg-hover" : "hover:bg-hover/50"}`}
-            >
-              <span className="font-mono text-xs text-accent-soft">/{item.cmd}</span>
-              <span className="text-sm text-gray-300">{t(item.labelKey)}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-
       {attached ? (
         <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-edge bg-elevated px-2.5 py-1.5 text-xs">
           <span className="flex min-w-0 items-center gap-1.5 text-gray-300"><Paperclip /><span className="truncate">{attached.name}</span></span>
@@ -236,12 +176,6 @@ export function Composer({
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
-          if (slashOpen) {
-            if (event.key === "ArrowDown") { event.preventDefault(); setSlashSel((value) => Math.min(slashItems.length - 1, value + 1)); return; }
-            if (event.key === "ArrowUp") { event.preventDefault(); setSlashSel((value) => Math.max(0, value - 1)); return; }
-            if (event.key === "Enter") { event.preventDefault(); selectSlash(slashItems[slashIdx]); return; }
-            if (event.key === "Escape") { event.preventDefault(); setSlashSuppressed(true); return; }
-          }
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
             if (blocked) return;

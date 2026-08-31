@@ -1,6 +1,6 @@
 # Storage Agent
 
-**Current release: v0.99.0**
+**Current release: v1.00.0**
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. Give it a storage goal or problem; it investigates with real read-only tools, remains steerable while it works, stops at explicit confirmation boundaries, and produces durable results backed by reviewable execution and evidence.
 
@@ -56,10 +56,7 @@ Storage Agent can currently:
 - review bucket security, lifecycle, observability, cost, and performance configuration;
 - inspect versions, multipart state, object lock, ACLs, tags, attributes, conditional/range behavior, and bounded content previews where safe;
 - analyze uploaded access logs and inventory locally with DuckDB;
-- project lifecycle/cost impact from bounded inventory aggregates and a local price table (estimates carry coverage, or stay explicit gaps);
-- draft a typed Remediation Plan and Verify it with read-only probes;
-- capture versioned baselines and report Drift;
-- optionally revisit a Task on a schedule (read-only; catch-up labelled; Decisions never auto-approved);
+- run deterministic cost/lifecycle simulation, draft a Remediation Plan, capture baselines, and report Drift **when the Agent invokes those engines** — they are not Settings or Review destinations;
 - plan and confirm bounded cloud Evidence Import;
 - triage supported storage errors deterministically, including without a configured model provider;
 - preserve task memory, findings, execution history, evidence references, and turn metrics;

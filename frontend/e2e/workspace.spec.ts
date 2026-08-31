@@ -2,7 +2,14 @@ import { expect, test, type Page } from "@playwright/test";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "./fake-model";
 
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
-const openReview = (page: Page) => page.getByTestId("agent-task-review");
+
+async function openEvidence(page: Page) {
+  await page.keyboard.press("Control+i");
+  const review = page.getByTestId("agent-review-panel");
+  await expect(review).toBeVisible();
+  await expect(page.getByTestId("evidence-review")).toBeVisible();
+  return review;
+}
 const SKILL = "storageops-security-iam-policy";
 const FOLLOW_UP = "Summarize the evidence again while I keep the review open.";
 const FOLLOW_UP_ANSWER = "The evidence still supports the same IAM-policy conclusion after review.";
@@ -45,13 +52,11 @@ test.describe("Agent-native task shell", () => {
       const task = page.getByTestId("task-scroll");
       await expect(task).toBeVisible();
 
-      await openReview(page).click();
+      await openEvidence(page);
       const review = page.getByTestId("agent-review-panel");
       await expect(review).toBeVisible();
       await expect(task).toBeVisible();
       await expect(page.getByRole("tab")).toHaveCount(0);
-
-      await review.getByRole("button", { name: "Evidence", exact: true }).click();
       await expect(page.getByTestId("evidence-review")).toBeVisible();
       await expect(task).toBeVisible();
     } finally {
@@ -63,9 +68,8 @@ test.describe("Agent-native task shell", () => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
-      await openReview(page).click();
-      const review = page.getByTestId("agent-review-panel");
-      await review.getByRole("button", { name: "Evidence", exact: true }).click();
+      await openEvidence(page);
+      await expect(page.getByTestId("agent-review-panel")).toBeVisible();
 
       await page.getByRole("button", { name: "Focus task" }).click();
       await expect(page.getByTestId("agent-shell")).toHaveAttribute("data-focus", "true");
@@ -99,7 +103,7 @@ test.describe("Agent-native task shell", () => {
     try {
       await completeTurn(page);
       const baselineRequests = model.requests.length;
-      await openReview(page).click();
+      await openEvidence(page);
       const review = page.getByTestId("agent-review-panel");
       await expect(review).toBeVisible();
 
@@ -146,8 +150,7 @@ test.describe("Agent-native task shell", () => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
-      await composer(page).fill("/report");
-      await composer(page).press("Enter");
+      await page.getByTestId("work-result-open-report").click();
 
       const review = page.getByTestId("agent-review-panel");
       await expect(review).toBeVisible({ timeout: 20_000 });

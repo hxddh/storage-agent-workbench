@@ -6,6 +6,27 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.00.0] - 2026-08-31
+
+_Modern Agent reconstruction. Deletes the v0.96 copilot OS product objects that v0.99 only reskinned. No new Agent capabilities, no storage tools, no migration._
+
+### Removed
+
+- Settings storage price table. Settings is model + storage credentials + language/theme.
+- Composer slash SKU catalog (`/checkup` `/cost` `/drift` and the rest). `/` is ordinary text.
+- First-run wizard. Empty window is the Composer.
+- 4-tab Review destination, Overview walls, header Review button, painted Verify control, and revisit schedule UI.
+
+### Changed
+
+- Evidence, Execution, and Report open from the document as a thin artifact viewer.
+- Command palette is task/runtime actions only — not Review destinations.
+- Architecture and documentation contracts forbid the deleted product objects.
+
+### Security
+
+- Unchanged. Engine APIs (`/settings/price-table`, Verify, revisit) remain. No new tools, no migration past **027**.
+
 ## [0.99.0] - 2026-08-31
 
 _Agent-native surface: the Task is a document. One column, Composer-native first-run, Review closed by default — no new Agent capabilities, no storage tools, no migration._

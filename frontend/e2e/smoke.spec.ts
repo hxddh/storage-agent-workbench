@@ -5,18 +5,10 @@ import { expect, test, type Page } from "@playwright/test";
  * paths intentionally need no cloud or model credentials: start surface,
  * deterministic storage-error triage, durable task creation and local settings.
  */
-async function seedFreshApp(page: Page, opts: { onboarded?: boolean } = {}) {
-  await page.addInitScript(
-    ([onboarded]) => {
-      // Seed once per tab so a reload keeps skip/onboarded flags the product wrote.
-      if (sessionStorage.getItem("saw.e2e.seeded") === "1") return;
-      sessionStorage.setItem("saw.e2e.seeded", "1");
-      localStorage.setItem("saw.lang", "en");
-      if (onboarded) localStorage.setItem("saw.onboarded", "1");
-      else localStorage.removeItem("saw.onboarded");
-    },
-    [opts.onboarded ?? true],
-  );
+async function seedFreshApp(page: Page) {
+  await page.addInitScript(() => {
+    localStorage.setItem("saw.lang", "en");
+  });
 }
 
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
@@ -65,20 +57,12 @@ test.describe("Agent task smoke", () => {
     await expect(page.getByText(/settings & providers/i)).toBeVisible();
   });
 
-  test("first-run Agent configuration appears on a truly fresh install and dismisses", async ({ page }) => {
-    await seedFreshApp(page, { onboarded: false });
+  test("empty start is the Composer, not a first-run wizard", async ({ page }) => {
+    await seedFreshApp(page);
     await page.goto("/");
-    const wizard = page.getByTestId("agent-first-run");
-    await expect(wizard).toBeVisible({ timeout: 15_000 });
-    await expect(wizard).toContainText("Configure Storage Agent");
-    await wizard.getByRole("button", { name: "Configure later" }).click();
+    await expect(composer(page)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("agent-first-run")).toHaveCount(0);
-    await expect(page.getByTestId("first-run-resume")).toBeVisible();
-    await expect(composer(page)).toBeVisible();
-    await page.reload();
-    await expect(page.getByTestId("agent-first-run")).toHaveCount(0);
-    await expect(page.getByTestId("first-run-resume")).toBeVisible();
-    await expect(composer(page)).toBeVisible();
+    await expect(page.getByTestId("first-run-resume")).toHaveCount(0);
   });
 });
 

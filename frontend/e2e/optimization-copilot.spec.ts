@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { sidecarOrigin, watchAgentTaskSurface } from "./agent-tasks-surface";
+import { sidecarOrigin } from "./agent-tasks-surface";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "./fake-model";
 import { seedOptimizationTask } from "./seed";
 
@@ -107,7 +107,6 @@ test.describe("v0.96 optimization copilot closed loop", () => {
       textTurn(DRIFT_ANSWER),
     ]);
     const providerId = await useFakeModel(model.baseUrl);
-    const surface = watchAgentTaskSurface(page);
     try {
       await boot(page);
       await page.getByText(title, { exact: true }).first().click();
@@ -125,12 +124,8 @@ test.describe("v0.96 optimization copilot closed loop", () => {
         artifacts: Array<{ artifact_type: string }>;
       };
       expect(artifacts.artifacts.some((a) => a.artifact_type === "remediation_plan")).toBe(true);
-      await expect(page.getByTestId("task-verify-action")).toBeVisible({ timeout: 20_000 });
-      await page.getByTestId("task-verify-action").click();
-      await expect.poll(() => surface.saw(/POST \/agent-tasks\/.+\/verify/), {
-        timeout: 20_000,
-        message: "Verify must call POST /agent-tasks/{id}/verify",
-      }).toBe(true);
+      await composer(page).fill("Verify the remediation plan with read-only probes.");
+      await composer(page).press("Enter");
       await expect(task(page).getByText(/Read-only re-probe complete/i)).toBeVisible({ timeout: 90_000 });
       await composer(page).fill("Produce a Drift report against the stored baseline.");
       await composer(page).press("Enter");
@@ -139,10 +134,9 @@ test.describe("v0.96 optimization copilot closed loop", () => {
         artifacts: Array<{ artifact_type: string }>;
       };
       expect(after.artifacts.some((a) => a.artifact_type === "drift_report")).toBe(true);
-      await page.getByTestId("agent-task-review").click();
-      await expect(page.getByTestId("remediation-plan-status")).toBeVisible();
-      await expect(page.getByTestId("task-baselines")).toBeVisible();
-      await expect(page.getByTestId("task-drift")).toBeVisible();
+      await expect(page.getByTestId("task-verify")).toHaveCount(0);
+      await expect(page.getByTestId("agent-task-review")).toHaveCount(0);
+      await expect(page.getByTestId("remediation-plan-status")).toHaveCount(0);
     } finally {
       await dropModelProvider(providerId);
       await model.close();
@@ -183,12 +177,12 @@ test.describe("v0.96 optimization copilot closed loop", () => {
     }
   });
 
-  test("Ready-to-delegate slash commands map to checkup, cost review, and drift check", async ({ page }) => {
+  test("Composer has no slash SKU catalog", async ({ page }) => {
     await boot(page);
     const box = page.getByTestId("agent-composer").getByRole("textbox");
     await box.fill("/");
-    await expect(page.getByRole("button", { name: "/checkup Storage checkup" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "/cost Cost review" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "/drift Drift check" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /\/checkup/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /\/cost/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /\/drift/ })).toHaveCount(0);
   });
 });

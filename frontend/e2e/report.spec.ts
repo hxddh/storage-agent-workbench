@@ -52,9 +52,7 @@ async function ask(page: Page, question: string) {
 }
 
 async function openReport(page: Page) {
-  await composer(page).click();
-  await composer(page).fill("/report");
-  await composer(page).press("Enter");
+  await page.getByTestId("work-result-open-report").click();
 }
 
 async function reportText(page: Page): Promise<string> {
@@ -70,7 +68,7 @@ async function reportText(page: Page): Promise<string> {
 }
 
 test.describe("durable Agent report artifact", () => {
-  test("/report renders the task that just ran", async ({ page }) => {
+  test("the Work Result opens the Report artifact for the task that just ran", async ({ page }) => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, QUESTION);
@@ -140,17 +138,6 @@ test.describe("durable Agent report artifact", () => {
       await page.getByTestId("report-save").click();
       const file = await download;
       expect(file.suggestedFilename()).toBe("report.md");
-    } finally { await cleanup(); }
-  });
-
-  test("/report before a task exists explains the prerequisite instead of opening a blank artifact", async ({ page }) => {
-    const { cleanup } = await oneTurn(page);
-    try {
-      await openReport(page);
-      await expect(
-        page.getByTestId("agent-workspace").getByText(/Create an Agent task before generating a Report artifact/i),
-      ).toBeVisible({ timeout: 20_000 });
-      await expect(page.getByTestId("report-artifact")).toHaveCount(0);
     } finally { await cleanup(); }
   });
 });

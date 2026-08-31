@@ -35,8 +35,8 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(shell).toContain("taskContent: ReactNode");
     expect(shell).toContain("agent-task-content");
     expect(shell).toContain("<AgentReviewPanel");
-    expect(shell).toContain('data-testid="agent-task-review"');
-    expect(shell).toContain("const showReview = Boolean(taskId);");
+    expect(shell).not.toContain('data-testid="agent-task-review"');
+    expect(shell).not.toContain("showReview");
     expect(shell).toContain("agent-task-title");
     expect(shell).not.toContain("agent-task-breadcrumb");
     expect(shell).not.toContain("timeline: ReactNode");
@@ -93,7 +93,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(review).toContain("<EvidenceReview");
     expect(review).toContain("<ExecutionReview");
     expect(review).toContain("<ReportArtifact");
-    expect(review).toContain('data-testid="decision-history"');
+    expect(review).not.toContain('data-testid="decision-history"');
     expect(review).not.toContain("Workspace");
   });
 
@@ -128,9 +128,8 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(task).toContain("<AgentNextAction");
     expect(task).toContain("runner.resume");
     expect(task).toContain('data-testid="task-resume"');
-    expect(task).toContain("runner.verify");
-    expect(task).toContain('data-testid="task-verify"');
-    expect(task).toContain('data-testid="task-verify-action"');
+    expect(task).not.toContain('data-testid="task-verify"');
+    expect(task).not.toContain('data-testid="task-verify-action"');
     expect(task).toContain('data-testid="queued-direction"');
     expect(task).not.toContain("ProposalCard");
     expect(artifacts).toContain("<AgentNextAction");
@@ -243,10 +242,10 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(app).toContain('matches(event, "focusComposer")');
     const palette = source("../components/CommandPalette.tsx");
     expect(palette).toContain('data-testid="command-palette"');
-    expect(palette).toContain("review-overview");
-    expect(palette).toContain("review-evidence");
-    expect(palette).toContain("review-execution");
-    expect(palette).toContain("review-report");
+    expect(palette).not.toContain("review-overview");
+    expect(palette).not.toContain("review-evidence");
+    expect(palette).not.toContain("review-execution");
+    expect(palette).not.toContain("review-report");
     expect(palette).not.toContain("New investigation");
   });
 
@@ -295,15 +294,16 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(executionCss).not.toContain("position: fixed");
   });
 
-  it("maps Ready-to-delegate slash commands to real checkup / cost / drift capabilities", () => {
+  it("does not ship a slash SKU catalog; tools are discovered by the model", () => {
     const task = source("../components/AgentTaskImplementation.tsx");
     const composer = source("../components/Composer.tsx");
     expect(task).not.toContain("delegate-suggestion");
     expect(task).not.toContain("SuggestionIcon");
-    expect(composer).toContain('cmd: "checkup"');
-    expect(composer).toContain('cmd: "cost"');
-    expect(composer).toContain('cmd: "drift"');
-    expect(composer).not.toContain('cmd: "optimize"');
+    expect(composer).not.toContain('cmd: "checkup"');
+    expect(composer).not.toContain('cmd: "cost"');
+    expect(composer).not.toContain('cmd: "drift"');
+    expect(composer).not.toContain("const SLASH");
+    expect(composer).not.toContain("onSlashReport");
   });
 
   it("matches a live pending Direction only to the current turn", () => {
@@ -327,22 +327,23 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(restoreBlock).not.toContain("loadedIdRef.current = sessionId");
   });
 
-  it("names price-table rate inputs from the storage-class row header", () => {
+  it("keeps Settings free of a storage price spreadsheet", () => {
     const settings = source("../components/SettingsDrawer.tsx");
-    expect(settings).toContain('data-testid="settings-price-table"');
-    expect(settings).toContain("aria-labelledby");
-    expect(settings).toContain('scope="row"');
+    expect(settings).not.toContain('data-testid="settings-price-table"');
+    expect(settings).not.toContain("PriceTableSection");
+    expect(settings).not.toContain("getPriceTable");
   });
 
-  it("presents remediation plans, baselines, drift, and revisit inside existing Review", () => {
+  it("does not present plans, baselines, drift, or revisit as Review destinations", () => {
     const review = source("./AgentReviewPanel.tsx");
     const model = source("./model.ts");
-    expect(review).toContain('data-testid="remediation-plan-status"');
-    expect(review).toContain('data-testid="task-baselines"');
-    expect(review).toContain('data-testid="task-drift"');
-    expect(review).toContain('data-testid="task-revisit"');
-    expect(review).toContain('(["overview", "evidence", "execution", "report"] as const)');
-    expect(model).toContain('export type ReviewSurface = "overview" | "evidence" | "execution" | "report"');
+    expect(review).not.toContain('data-testid="remediation-plan-status"');
+    expect(review).not.toContain('data-testid="task-baselines"');
+    expect(review).not.toContain('data-testid="task-drift"');
+    expect(review).not.toContain('data-testid="task-revisit"');
+    expect(review).not.toContain('(["overview", "evidence", "execution", "report"] as const)');
+    expect(model).toContain('export type ReviewSurface = "evidence" | "execution" | "report"');
+    expect(model).not.toContain('"overview"');
     expect(review).not.toContain("Workspace");
     expect(review).not.toContain("remediation-plan-page");
   });
@@ -359,7 +360,8 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(source("../components/AgentTaskImplementation.tsx")).toContain("<section className=\"task-analysis-figures\"");
     expect(source("../components/AgentTaskImplementation.tsx")).not.toContain("task-document-figures");
     expect(source("../agent-task.css")).not.toContain("data-split");
-    expect(source("./AgentReviewPanel.tsx")).toContain("review-overview-figures");
+    expect(source("./AgentReviewPanel.tsx")).not.toContain("review-overview-figures");
+    expect(source("./AgentReviewPanel.tsx")).not.toContain("AnalysisFigures");
   });
 
   it("projects finding provenance into Review Evidence without a new surface", () => {
@@ -371,26 +373,23 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(mark).toContain("openAgentReview(\"evidence\"");
     expect(evidence).toContain("finding-${finding.id}");
     expect(evidence).toContain("No direct evidence chain");
-    expect(source("./model.ts")).toContain('export type ReviewSurface = "overview" | "evidence" | "execution" | "report"');
+    expect(source("./model.ts")).toContain('export type ReviewSurface = "evidence" | "execution" | "report"');
   });
 
-  it("keeps first-run as the Composer, not a second destination or stacked card", () => {
+  it("makes the empty start the Composer, with no first-run wizard", () => {
     const app = source("../App.tsx");
-    const flow = source("../components/FirstRunFlow.tsx");
     const task = source("../components/AgentTaskImplementation.tsx");
     const shell = source("./AgentShell.tsx");
     expect(app).not.toContain("FirstRunWizard");
-    expect(flow).toContain('data-testid="agent-first-run"');
-    expect(flow).toContain("createModelProvider");
-    expect(flow).toContain("testModelProvider");
-    expect(flow).toContain("createCloudProvider");
-    expect(flow).toContain("testCloudProvider");
-    expect(flow).toContain("Skip storage");
-    expect(flow).toContain("first-run-resume");
-    expect(flow).toContain("agent-native-composer");
-    expect(task).toContain("FirstRunFlow");
-    expect(task).toContain("void runner.submit(prompt)");
-    expect(task).toContain("{!showFirstRun ? composer : null}");
+    expect(app).not.toContain("FirstRunFlow");
+    absent("../components/FirstRunFlow.tsx");
+    absent("../hooks/useFirstRun.ts");
+    absent("../lib/firstRun.ts");
+    expect(task).not.toContain("FirstRunFlow");
+    expect(task).not.toContain("showFirstRun");
+    expect(task).not.toContain("agent-first-run");
+    expect(task).toContain("void runner.submit");
+    expect(task).toContain("{composer}");
     expect(task).not.toContain("delegate-suggestion");
     expect(shell).not.toContain("ConnectionMark");
     expect(shell).not.toContain("agent-native-command");

@@ -1,15 +1,15 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v0.99.0** (`v0.99.0`).
+> **Current architecture baseline: Storage Agent v1.00.0** (`v1.00.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
-> turns that runtime into a quantified storage-optimization copilot and
-> ongoing caretaker. v0.97.0 is a presentation-only craft pass (design tokens,
-> motion, keyboard, empty states). v0.98.0 added deterministic figures,
-> provenance, and a 60-second first-run path. v0.99.0 is the Agent-native
-> surface pass: the Task is a document — one column, Composer-native first-run,
-> Review closed by default, no suggestion grid, no third-column figures rail.
+> added quantified storage engines under that runtime. v0.97–v0.99 were
+> presentation passes that still stacked copilot OS chrome (price table, slash
+> SKUs, first-run wizard, 4-tab Review) on a modern Agent shell. **v1.00.0
+> deletes those product objects.** Empty window = Composer. Settings = model +
+> storage + language/theme. Tools are discovered by the model. Artifacts open
+> from the document. Engines remain in the Sidecar with no product UI entry.
 
 This directory documents the currently shipped Storage Agent architecture and operating contracts. It is deliberately organized so implementation agents and contributors do not reconstruct older product shells from historical terminology that still exists in persistence, APIs, release notes, or git history.
 
@@ -26,7 +26,7 @@ When documents disagree, use this order:
 7. **`docs/roadmap.md`** — future direction, never evidence that a capability already exists.
 8. **Release notes / CHANGELOG / historical rebuild documents** — historical record only; never an implementation specification for current work.
 
-If a historical document describes `Investigation`, `SessionRail`, `Workbench`, application-level Runs/Evidence/Report surfaces, a separate Steering surface, or a thread/chat-first shell, that description is historical. Do not restore it.
+If a historical document describes `Investigation`, `SessionRail`, `Workbench`, application-level Runs/Evidence/Report surfaces, a separate Steering surface, a thread/chat-first shell, a Settings price table, Composer slash SKUs, a first-run wizard, or Review Overview, that description is historical. Do not restore it.
 
 ## Current product vocabulary
 
@@ -40,7 +40,7 @@ Use these terms in product-facing and new frontend architecture work:
 | **Decision required** | A real confirmation boundary that blocks gated work. |
 | **Work Result** | Durable result produced by the Agent. |
 | **Artifact** | Reviewable durable output such as Evidence or Report. |
-| **Review** | Contextual inspection of the active Task; not a top-level application surface. |
+| **Review** | Thin artifact viewer opened from the document; not a top-level application surface. |
 | **Delegate / Steer / Stop** | The one Agent control path. |
 
 Historical compatibility vocabulary such as `session`, `run`, `session_message`, and `tool_call` remains valid inside Sidecar persistence/API code and narrowly scoped frontend adapters. It does **not** define the product information architecture.
@@ -54,7 +54,7 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
 - [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 027, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — post-0.96 priorities and explicit non-directions.
+- [`roadmap.md`](roadmap.md) — post-1.00 priorities and explicit non-directions.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.
@@ -78,9 +78,5 @@ For architecture changes, update at minimum:
 
 - `CLAUDE.md`;
 - `docs/product.md` when user-visible semantics change;
-- `docs/architecture.md` when ownership/components/runtime flow change;
-- `docs/api.md` or `docs/data-model.md` when compatibility contracts change;
-- `docs/roadmap.md` if the change completes or invalidates a roadmap item;
-- architecture/documentation contract tests when a boundary is intentionally replaced.
-
-Do not document aspirational UI as shipped behavior. Runtime truth, tests, and current code must exist first.
+- `docs/architecture.md` when ownership or runtime topology changes;
+- the executable architecture and documentation-contract tests that lock those documents.
