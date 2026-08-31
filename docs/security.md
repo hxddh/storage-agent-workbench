@@ -1,6 +1,6 @@
 # Security
 
-> **Storage Agent v1.01.0 security contract.** Unchanged from v0.96.0; v1.01 reconstructs the Agent window, not the engine safety rules.
+> **Storage Agent v1.02.0 security contract.** Unchanged from v0.96.0; v1.02 finishes the native Agent window, not the engine safety rules.
 >
 > Security is part of the Agent Task product model, not a secondary implementation detail. Read-only autonomy is allowed only inside explicit, bounded, sanitized capabilities. Data movement and materially large/full scans cross a real **Decision required** boundary.
 

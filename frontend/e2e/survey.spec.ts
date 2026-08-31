@@ -163,18 +163,18 @@ test.describe("surveying an account", () => {
     }
   });
 
-  test("the survey does not surface as a run card in the thread", async ({ page }) => {
-    // CLAUDE.md is explicit: nothing the agent does in a conversation surfaces
+  test("the survey does not surface as a run card in the Task", async ({ page }) => {
+    // CLAUDE.md is explicit: nothing the agent does in a Task surfaces
     // as a structured run card — those runs are recorded with `origin='agent'`
-    // and the thread filters them out; the agent narrates inline. That rule had
+    // and the Task filters them out; the agent narrates inline. That rule had
     // never been verified in a browser, and `survey_account` is the tool most
     // likely to break it since it creates a real run.
     const h = await survey(page, "nocard", { subresources: "full" });
     try {
-      const thread = await page.locator("main").evaluate((el) => el.textContent ?? "");
-      expect(thread).toContain("I have surveyed the account");
-      expect(thread).not.toMatch(/account_discovery/);
-      expect(thread).not.toMatch(/Run\s+(completed|failed)/i);
+      const taskText = await page.locator("main").evaluate((el) => el.textContent ?? "");
+      expect(taskText).toContain("I have surveyed the account");
+      expect(taskText).not.toMatch(/account_discovery/);
+      expect(taskText).not.toMatch(/Run\s+(completed|failed)/i);
     } finally {
       await h.cleanup();
     }

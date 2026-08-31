@@ -1,18 +1,18 @@
 /**
- * What to call a conversation, given how it started.
+ * What to call a Task, given how it started.
  *
- * The title was `text.slice(0, 80)`. For a typed question that is fine. For
+ * The title was `text.slice(0, 80)`. For a typed Direction that is fine. For
  * this product's single most common opening move — paste the S3 error you are
- * staring at — it named the investigation
+ * staring at — it named the Task
  *
  *   <?xml version="1.0" encoding="UTF-8"?> <Error><Code>AccessDenied</Code><Me
  *
- * in the rail, in the window header, and in every list the session ever appears
- * in. The information a person needs to recognise it later (the error code, and
- * which bucket) was in the string all along, just buried behind the preamble.
+ * in the task list, and in every list the Task ever appears in. The information
+ * a person needs to recognise it later (the error code, and which bucket) was
+ * in the string all along, just buried behind the preamble.
  *
  * Deliberately a pure function over the raw text, with no model call: it runs on
- * the first keystroke of a new session, offline, before any provider exists.
+ * the first keystroke of a new Task, offline, before any provider exists.
  */
 
 import { parseS3Error } from "./s3error";

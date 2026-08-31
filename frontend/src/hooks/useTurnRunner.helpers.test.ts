@@ -19,26 +19,26 @@ describe("cleanError", () => {
   });
 
   it("maps auth errors to the key hint (turn kind)", () => {
-    expect(cleanError("401 Unauthorized", t)).toBe("thread.errKey");
-    expect(cleanError("invalid api key", t)).toBe("thread.errKey");
+    expect(cleanError("401 Unauthorized", t)).toBe("task.errKey");
+    expect(cleanError("invalid api key", t)).toBe("task.errKey");
   });
 
   it("maps a PROVIDER-shaped 404 to the model hint", () => {
-    expect(cleanError("model gpt-x does not exist (404)", t)).toBe("thread.err404");
-    expect(cleanError("the provider returned 404 not found", t)).toBe("thread.err404");
+    expect(cleanError("model gpt-x does not exist (404)", t)).toBe("task.err404");
+    expect(cleanError("the provider returned 404 not found", t)).toBe("task.err404");
   });
 
   it("does NOT map a bare 'not found' / '404' with no provider context (FE9 regression)", () => {
     // "session not found" is a turn error when a session was deleted mid-turn —
     // it must NOT send the user to fix a model name/base URL.
     const out = cleanError("session not found", t);
-    expect(out).not.toBe("thread.err404");
+    expect(out).not.toBe("task.err404");
     expect(out).toBe("session not found");
   });
 
   it("maps network/timeout errors", () => {
-    expect(cleanError("connection reset", t)).toBe("thread.errNetwork");
-    expect(cleanError("request timed out", t)).toBe("thread.errNetwork");
+    expect(cleanError("connection reset", t)).toBe("task.errNetwork");
+    expect(cleanError("request timed out", t)).toBe("task.errNetwork");
   });
 
   it("does NOT apply model hints for kind='load' (neutral message)", () => {

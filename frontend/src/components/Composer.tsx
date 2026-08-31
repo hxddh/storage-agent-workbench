@@ -50,7 +50,6 @@ export function Composer({
         steer: "Steer",
         steerHint: "补充方向或约束…",
         uploading: (name: string) => `正在准备 ${name}…`,
-        newline: "换行",
         stop: "Stop",
         steerAction: "Steer Agent",
         delegateAction: "Delegate task",
@@ -61,7 +60,6 @@ export function Composer({
         steer: "Steer",
         steerHint: "Add direction or constraints…",
         uploading: (name: string) => `Preparing ${name}…`,
-        newline: "new line",
         stop: "Stop",
         steerAction: "Steer Agent",
         delegateAction: "Delegate task",
@@ -85,7 +83,7 @@ export function Composer({
 
   return (
     <div
-      className="group/composer agent-native-composer relative rounded-xl border border-edge bg-panel px-3 pb-2.5 pt-2.5 shadow-elev transition-[border-color,box-shadow] duration-fast focus-within:border-edge-strong focus-within:shadow-pop focus-within:ring-4 focus-within:ring-accent/10"
+      className="agent-native-composer relative rounded-xl border border-edge bg-panel px-3 pb-2.5 pt-2.5 transition-[border-color,box-shadow] duration-fast"
       data-testid="agent-composer"
       data-agent-state={busy ? "working" : uploading ? "uploading" : "ready"}
     >
@@ -156,12 +154,8 @@ export function Composer({
           <Paperclip />
         </button>
 
-        <span className="ml-auto hidden text-2xs text-gray-500 opacity-0 transition-opacity duration-fast group-focus-within/composer:opacity-100 sm:inline">
-          {busy ? <><kbd className="rounded-md border border-edge bg-elevated px-1">⇧⏎</kbd> {copy.newline}</> : <><kbd className="rounded-md border border-edge bg-elevated px-1">⏎</kbd> {copy.delegate}</>}
-        </span>
-
         {busy ? (
-          <div className="composer-mode" key="steer">
+          <div className="composer-mode ml-auto" key="steer">
             <button
               type="button"
               onClick={onStop}
@@ -185,7 +179,7 @@ export function Composer({
             </button>
           </div>
         ) : (
-          <div className="composer-mode" key="delegate">
+          <div className="composer-mode ml-auto" key="delegate">
             <button
               type="button"
               onClick={onSend}

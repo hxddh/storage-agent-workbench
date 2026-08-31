@@ -705,7 +705,7 @@ export function AgentTaskImplementation({
                           }}>{taskCopy.reload}</Button>
                         </div>
                       </div>
-                    ) : busy ? <WorkingRow label={t("think.working")} /> : null}
+                    ) : busy ? <WorkingRow label={taskCopy.liveWorking} /> : null}
                   </>
                 ) : null}
 

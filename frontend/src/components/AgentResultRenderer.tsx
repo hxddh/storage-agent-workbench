@@ -100,7 +100,7 @@ export const AgentResultRenderer = memo(function AgentResultRenderer({
         shown.trim() ? (
           <span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[2px] animate-pulse bg-accent-soft align-middle" />
         ) : (
-          <WorkingRow label={t("think.working")} />
+          <WorkingRow label={t("task.working")} />
         )
       ) : null}
     </div>

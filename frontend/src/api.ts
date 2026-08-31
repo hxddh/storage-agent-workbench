@@ -873,7 +873,7 @@ export async function followExecutionEvents(
 // Datasets are attached to a SESSION (the agent analyzes them as a tool). There
 // is no run-scoped upload or dataset-list surface in the agent-native UI.
 
-// Attach a data file to a SESSION (agent-native analysis). The in-chat agent
+// Attach a data file to a SESSION (agent-native analysis). The Agent
 // then analyzes it as a tool and answers inline — no deterministic analysis run.
 export async function uploadSessionDataset(
   sessionId: string,
@@ -952,7 +952,7 @@ export const getSessionOverview = (id: string) =>
   request<SessionOverview>(`/sessions/${id}/overview`);
 
 /** Correct one of the agent's memory items. It replays its memory into every
- * later turn, so a wrong fact steers the rest of the investigation until fixed. */
+ * later turn, so a wrong fact steers the rest of the Task until fixed. */
 export const correctSessionMemory = (id: string, memId: string, text: string) =>
   request<SessionDetail>(`/sessions/${id}/memory/${memId}`, {
     method: "PATCH",
@@ -971,9 +971,9 @@ export const resolveSessionMemory = (id: string, memId: string, reason?: string)
 export const getSessionTurnState = (id: string) =>
   request<SessionTurnState>(`/sessions/${id}/turn`);
 
-/** One page of thread messages, oldest-first, ending just before `before`.
+/** One page of Task messages, oldest-first, ending just before `before`.
  * Omit `before` for the newest page. `has_more` reports whether older messages
- * exist above the page — the thread never silently hides history. */
+ * exist above the page — the Task never silently hides history. */
 export const getSessionMessages = (id: string, opts: { limit?: number; before?: number } = {}) => {
   const q = new URLSearchParams();
   if (opts.limit) q.set("limit", String(opts.limit));

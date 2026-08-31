@@ -1,6 +1,6 @@
 # Data model
 
-> **Storage Agent v1.01.0 persistence reference.** Schema unchanged from v0.96.0 (migration head **027**). `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. v1.01 deletes product UI for engines that still persist here.
+> **Storage Agent v1.02.0 persistence reference.** Schema unchanged from v0.96.0 (migration head **027**). `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI.
 >
 > Product vocabulary is Agent Task / Direction / Execution / Decision / Work Result / Artifact. SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
 

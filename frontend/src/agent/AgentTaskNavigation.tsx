@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type R
 import { useI18n, type TFunc } from "../i18n";
 import { useSessionRun, useSessionRunIndexVersion } from "../sessionRuns";
 import { EmptyState } from "../components/EmptyState";
-import { MOD } from "../shortcuts";
 import { useNavigationCopy } from "./navigationCopy";
 import {
   DEFAULT_TASK_NAV_WIDTH,
@@ -160,7 +159,6 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
         <button type="button" onClick={onNew} className="agent-task-new" data-testid="task-navigation-new">
           <span className="agent-task-new-mark"><PlusIcon /></span>
           <span>{copy.newTask}</span>
-          <kbd>{MOD}N</kbd>
         </button>
         <button type="button" onClick={onToggleCollapse} aria-label={copy.collapse} title={copy.collapse} data-testid="task-navigation-toggle" className="agent-task-nav-collapse"><SidebarIcon /></button>
       </header>

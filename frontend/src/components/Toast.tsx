@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
  * One notification surface for the whole app.
  *
  * Before this there were two: a hand-rolled fixed bar in App.tsx for action
- * failures and inline banners in the thread — different shapes, different
+ * failures and inline banners in the Task — different shapes, different
  * placement, neither dismissible on its own. Two presentations of "something
  * went wrong" teach the user nothing consistent.
  *

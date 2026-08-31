@@ -8,9 +8,9 @@ import { STATE_FILE } from "./global-setup";
  *
  * Everything else in this suite drives the app through the composer, which
  * without a model provider can only produce offline triage cards. That path
- * never creates an assistant MESSAGE, so it exercises none of the thread's
- * message rendering: collapsing, the turn footer, per-message actions, ordering
- * across many turns. A multi-turn thread is the product's main surface and had
+ * never creates an assistant MESSAGE, so it exercises none of the Task's
+ * Work Result rendering: collapsing, ordering
+ * across many turns. A multi-turn Task is the product's main surface and had
  * no coverage at all.
  *
  * Seeding writes the same rows a real turn writes, through the sidecar's own
@@ -24,7 +24,7 @@ import json, sqlite3, sys, uuid
 db, n, title = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 # "tall": answers the SIZE a real agent writes — headings, paragraphs, a wide
 # table, a list. The default one-line answer is ~36-65px tall, which is roughly
-# what the thread's layout assumptions were tuned against; a real answer with a
+# what the Task document's layout assumptions were tuned against; a real answer with a
 # table measured 1616px. Anything about scrolling, height or landing position is
 # untestable against the short shape, because the short shape never makes the
 # container grow after first layout.
@@ -118,7 +118,7 @@ print(sid)
  * product failure that is really a fixture collision.
  *
  * Random, not a counter. A counter is per-MODULE, and Playwright runs each spec
- * file in its own process — so three files each produced "seeded investigation
+ * file in its own process — so three files each produced "seeded task
  * 1" and a rail assertion found four rows where it expected one. That surfaced
  * as a flaky product failure on CI and passed locally, which is the worst way
  * for a fixture to be wrong.

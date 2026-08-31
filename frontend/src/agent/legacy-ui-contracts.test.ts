@@ -3,19 +3,11 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const srcRoot = join(process.cwd(), "src");
-const agentRoot = join(srcRoot, "agent");
-const roots = [join(srcRoot, "components"), agentRoot];
-const standalone = [
-  join(srcRoot, "App.tsx"),
-  join(srcRoot, "shortcuts.ts"),
-  join(srcRoot, "i18n.tsx"),
-  join(srcRoot, "main.tsx"),
-];
 const extensions = /\.(?:ts|tsx|css)$/;
-const skip = /(?:\.test\.|architecture\.test\.ts$|legacy-ui-contracts\.test\.ts$)/;
+const skip = /(?:\.test\.|architecture\.test\.ts$|legacy-ui-contracts\.test\.ts$|e2e-contracts\.test\.ts$|documentation-contract\.test\.ts$)/;
 
 function productionFiles(): string[] {
-  const files = [...standalone];
+  const files: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
       const path = join(dir, name);
@@ -23,7 +15,7 @@ function productionFiles(): string[] {
       else if (extensions.test(path) && !skip.test(path)) files.push(path);
     }
   };
-  roots.forEach(walk);
+  walk(srcRoot);
   return files;
 }
 

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.01.0.**
+> **Implementation contract for Storage Agent v1.02.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.01 product invariant is:
+The v1.02 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -18,20 +18,21 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v1.01 native Agent
+## 1. Never regress the v1.02 native Agent
 
 New product/frontend work must preserve these boundaries:
 
 - **Agent Task** is the primary application object and primary work area.
-- **AgentTaskNavigation** is a quiet chronological title list. Rename and Delete only. State is a row mark.
+- **AgentTaskNavigation** is a quiet chronological title list. Rename and Delete only. State is a row mark. New task is a button, not a painted shortcut chip.
 - **AgentShell** owns the active task environment and overlay Review state. There is no task header, no live execution strip, and no second presentation mode.
 - **AgentTask** is the public task boundary; persistence compatibility names stay behind adapters.
-- **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active.
+- **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active. Attach + textarea + those actions. No persistent keyboard legend.
 - **Direction** is user intent/steering input. Copy is the only Direction chrome.
 - **Execution** is real runtime/tool work, shown as tool rows in the Task document. Never invent plans, steps, workers, or capabilities the runtime does not expose.
 - **Decision required** is a blocking confirmation state derived from real backend proposals, with projected bounds/impact and a durable Decline path.
-- **Work Result** is the durable result of Agent work, not a generic assistant bubble. Figures and provenance sit inside the latest Work Result.
+- **Work Result** is the durable result of Agent work, not a generic assistant bubble. Figures and provenance sit inside the latest Work Result. Working copy is Agent-native, not chat-era "still running" language.
 - Review is a light overlay over the Task (Evidence, Execution detail, Report), opened from the document or ⌘I. It is not a 4-tab application destination, not a side-column application, and not a document hero. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules may exist as Sidecar engines; they have no product UI entry.
+- Production UI must not teach a chat transcript: no `New chat` titles, no `thread.*` copy keys, no leftover `.thread-prose` layout layer.
 
 Do not reconstruct earlier chat/investigation/workbench information architecture from old release notes, database names, API names, or git history. Historical `session` and `run` terminology is compatibility vocabulary, not a reason to change current product semantics.
 
@@ -128,7 +129,7 @@ Do not rename persistence/API contracts just for cosmetic consistency if that ad
 4. Do not introduce a generic shell, raw subprocess, raw boto3 client, unrestricted filesystem tool, terminal, browser/computer-control tool, or arbitrary SQL tool for the Agent.
 5. Storage operations are read-only in the shipped product. There is no destructive/mutating S3 tool.
 6. Provider bucket/prefix scopes are enforced server-side.
-7. Read-only investigation may run autonomously; data-moving or materially large/full-scan operations must cross an explicit confirmation boundary.
+7. Read-only diagnostic work may run autonomously; data-moving or materially large/full-scan operations must cross an explicit confirmation boundary.
 8. Tool inputs/outputs, Evidence, audit rows, reports, and model context must be sanitized and bounded.
 9. Raw access-log/inventory rows do not enter model context. Deterministic analysis produces bounded aggregates/findings.
 10. Chain-of-thought is never persisted, exposed, or modeled as an Artifact.

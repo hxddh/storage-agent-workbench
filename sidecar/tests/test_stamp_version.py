@@ -20,6 +20,7 @@ def test_canonical_semver_strips_leading_zeros():
     stamp = _load_stamp_version()
     assert stamp.canonical_semver("v1.00.0") == "1.0.0"
     assert stamp.canonical_semver("1.00.0") == "1.0.0"
+    assert stamp.canonical_semver("v1.02.0") == "1.2.0"
     assert stamp.canonical_semver("v0.99.0") == "0.99.0"
     assert stamp.canonical_semver("v1.0.0") == "1.0.0"
     assert stamp.canonical_semver("v1.00.0-rc.1") == "1.0.0"

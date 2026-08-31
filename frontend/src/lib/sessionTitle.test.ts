@@ -1,10 +1,10 @@
 /**
- * A conversation is named after what it is about.
+ * A Task is named after what it is about.
  *
  * The title was the first 80 characters of whatever you typed. Paste the S3
  * error you are staring at — this product's most common opening move — and the
- * investigation was called `<?xml version="1.0" encoding="UTF-8"?> <Error>…`
- * in the rail, the window header and every list it ever appeared in.
+ * Task was called `<?xml version="1.0" encoding="UTF-8"?> <Error>…`
+ * in the task list and every list it ever appeared in.
  */
 import { describe, it, expect } from "vitest";
 import { deriveSessionTitle } from "./sessionTitle";

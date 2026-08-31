@@ -26,7 +26,7 @@ import {
  */
 
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
-const thread = (page: Page) => page.locator("main");
+const task = (page: Page) => page.locator("main");
 
 const INVENTORY_CSV =
   "bucket,key,size,storage_class,last_modified\n" +
@@ -86,7 +86,7 @@ async function attachAndAsk(page: Page, question: string) {
 
 /** live-trace appears on the first tool; the chained analysis and answer come later. */
 async function waitForInventoryAnswer(page: Page) {
-  await expect(thread(page).getByText(/one in five is already in GLACIER/)).toBeVisible({
+  await expect(task(page).getByText(/one in five is already in GLACIER/)).toBeVisible({
     timeout: 90_000,
   });
   await expect(page.getByTestId("agent-composer")).not.toHaveAttribute("data-agent-state", "working", {
@@ -112,7 +112,7 @@ test.describe("analyzing an attached file", () => {
       await waitForInventoryAnswer(page);
       await expect(page.getByTestId("live-trace")).toBeVisible();
 
-      const trace = await thread(page).evaluate((el) => el.textContent ?? "");
+      const trace = await task(page).evaluate((el) => el.textContent ?? "");
       expect(trace).toContain("list_uploaded_files");
       expect(trace).toContain("analyze_uploaded_file");
       expect(trace.indexOf("list_uploaded_files")).toBeLessThan(
@@ -157,7 +157,7 @@ test.describe("analyzing an attached file", () => {
     }
   });
 
-  test("the attachment is listed as part of the investigation afterwards", async ({ page }) => {
+  test("the attachment is listed as part of the Task afterwards", async ({ page }) => {
     const { cleanup } = await setup(page);
     try {
       await attachAndAsk(page, "what is in this inventory?");
@@ -165,7 +165,7 @@ test.describe("analyzing an attached file", () => {
       await page.reload();
       await expect(composer(page)).toBeVisible({ timeout: 20_000 });
       await expect
-        .poll(async () => await thread(page).evaluate((el) => el.textContent ?? ""), {
+        .poll(async () => await task(page).evaluate((el) => el.textContent ?? ""), {
           timeout: 20_000,
         })
         .toContain("one in five is already in GLACIER");
