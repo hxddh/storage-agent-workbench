@@ -148,12 +148,13 @@ test("the Agent start surface stops inviting execution it cannot perform", async
   await page.goto("/");
   await expect(composer(page)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("offline-banner")).toHaveCount(0);
-  const start = page.getByRole("button", { name: /diagnose an error/i });
-  await expect(start).toBeEnabled();
+  await composer(page).fill("/");
+  await expect(page.getByRole("button", { name: "/diagnose Diagnose an error" })).toBeVisible();
+  await composer(page).fill("");
 
   await page.route("**/health", (route) => route.abort());
   await expect(page.getByTestId("offline-banner")).toBeVisible({ timeout: 20_000 });
-  await expect(start).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Delegate task" })).toBeDisabled();
   await composer(page).fill("this must not be thrown away");
   await expect(composer(page)).toHaveValue("this must not be thrown away");
 });

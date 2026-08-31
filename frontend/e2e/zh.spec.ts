@@ -66,7 +66,8 @@ test.describe("Agent product in Chinese", () => {
       await page.getByTestId("execution-summary-toggle").click();
 
       const task = await page.getByTestId("task-scroll").evaluate((el) => el.textContent ?? "");
-      expect(task).toMatch(/项检查|执行|已停止|已由你停止/);
+      expect(task).toMatch(/桶策略|s3:ListBucket|403/);
+      await expect(page.getByTestId("execution-summary").last()).toBeVisible();
       expect(task).not.toMatch(ENGLISH_LEAK);
     } finally {
       await dropModelProvider(modelId);

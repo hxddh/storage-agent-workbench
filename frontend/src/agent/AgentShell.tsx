@@ -59,14 +59,13 @@ export function AgentShell({
   }), []);
 
   const title = task?.title?.trim() || copy.task.newTask;
-  const outputCount = (task?.finding_count ?? 0) + (task?.run_count ?? 0);
   const latestTool = run.streamTools.length ? run.streamTools[run.streamTools.length - 1] : null;
   const stateKey = agentTaskState(run, Boolean(taskId), task?.requires_decision ?? false,
     task?.task_status);
   const liveExecution = latestTool
     ? `${latestTool.tool}${latestTool.target ? ` · ${latestTool.target}` : ""}`
     : copy.task.startingExecution;
-  const showReview = Boolean(taskId) && (outputCount > 0 || Boolean(review));
+  const showReview = Boolean(taskId);
 
   return (
     <div data-testid="agent-shell" data-review={review ?? "closed"} data-focus={focus ? "true" : "false"} className="agent-native-shell">

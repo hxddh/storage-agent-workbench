@@ -187,11 +187,8 @@ test.describe("v0.96 optimization copilot closed loop", () => {
     await boot(page);
     const box = page.getByTestId("agent-composer").getByRole("textbox");
     await box.fill("/");
-    await expect(page.getByText("/checkup")).toBeVisible();
-    await expect(page.getByText("/cost")).toBeVisible();
-    await expect(page.getByText("/drift")).toBeVisible();
-    await expect(page.getByText(/Storage checkup/i)).toBeVisible();
-    await expect(page.getByText(/Cost review/i)).toBeVisible();
-    await expect(page.getByText(/Drift check/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "/checkup Storage checkup" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "/cost Cost review" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "/drift Drift check" })).toBeVisible();
   });
 });
