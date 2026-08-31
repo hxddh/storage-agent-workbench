@@ -89,7 +89,9 @@ describe("AnalysisFigures", () => {
       />,
     );
     expect(screen.getByTestId("viz-cost")).toHaveTextContent("0d");
-    expect(screen.getByTestId("viz-cost")).not.toHaveTextContent("365d");
+    const dayLabels = [...screen.getByTestId("viz-cost").querySelectorAll("svg text")].map((n) => n.textContent);
+    expect(dayLabels.every((label) => label === "0d")).toBe(true);
+    expect(dayLabels.length).toBeGreaterThan(0);
     expect(screen.getByTestId("viz-cost-delta")).toHaveTextContent("estimate");
     expect(screen.getByTestId("viz-coverage")).toHaveTextContent(/Estimate/i);
   });

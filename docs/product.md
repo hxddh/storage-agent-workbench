@@ -140,7 +140,7 @@ An optional per-task **revisit schedule** (every N days) submits a read-only Exe
 
 Ready-to-delegate suggestions map to real capabilities: storage checkup, cost review (simulator), drift check (baseline), plus diagnose / attach inventory or access logs / account mapping. They must not promise runtime the Sidecar does not expose.
 
-A fresh install follows an inline **60-second path** on the start surface: welcome → connect a model (live `POST /model-providers/{id}/test`) → optionally connect storage (skippable; skip is an explicit gap, not a fake connection) → delegate the first storage checkup. No demo data, no fake progress. Every step can exit; the empty start then offers a resume entry back to that step.
+A fresh install follows an inline **60-second path** on the start surface: welcome → connect a model (live `POST /model-providers/{id}/test`) → optionally connect storage (skippable; skip is an explicit gap, not a fake connection) → delegate the first storage checkup. The checkup CTA submits the Direction through the same turn runner as Delegate — it does not only prefill the composer. No demo data, no fake progress. Every step can exit; the empty start then offers a resume entry back to that step.
 
 ## Storage-specific capability model
 

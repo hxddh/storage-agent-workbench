@@ -381,5 +381,6 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(flow).toContain("Skip storage");
     expect(flow).toContain("first-run-resume");
     expect(task).toContain("FirstRunFlow");
+    expect(task).toContain("void runner.submit(prompt)");
   });
 });

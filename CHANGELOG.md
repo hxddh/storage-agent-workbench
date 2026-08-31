@@ -15,7 +15,7 @@ _Content presentation: deterministic figures, finding provenance, Codex-style su
 - **Deterministic SVG figures** (no chart library) for cost horizons, class mix, inventory age/class (independent series), Drift finding classes, and access-log latency/mix. Theme-aware `--viz-*` tokens; gaps explicit; unconfirmed prices withhold the cost axis; never interpolate.
 - **`GET /agent-tasks/{task_id}/provenance`** — read-only projection of finding/figure evidence chains from existing rows. Missing chain is `no_direct_evidence`.
 - Hover preview + click-through from a finding to Review Evidence, anchored to that row.
-- Inline **first-run** path on the start surface: welcome → model (live test) → storage (skippable) → first checkup. Resume entry after skip.
+- Inline **first-run** path on the start surface: welcome → model (live test) → storage (skippable) → first checkup. The checkup CTA submits through the existing turn runner. Resume entry after skip.
 
 ### Changed
 
