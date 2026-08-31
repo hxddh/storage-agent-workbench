@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  forkSession,
-  listModelProviders,
   approveDecisionOrPrepare,
   listTaskDecisions,
   resolveTaskDecision,
@@ -11,27 +9,25 @@ import {
 } from "../api";
 import type {
   Grounding,
-  TokenUsage,
   NextAction,
   SessionDetail,
   ToolActivity,
   TriageCase,
-  TurnMetricsRow,
 } from "../types";
 import { useSessionRun, patchSessionRun, getSessionRun } from "../sessionRuns";
 import { loadDraft, saveDraft } from "../drafts";
 import { useTurnRunner, cleanError } from "../hooks/useTurnRunner";
 import { useSessionDocument } from "../hooks/useSessionDocument";
 import { useTaskViewport } from "../hooks/useTaskViewport";
-import { openAgentExecution, openAgentReview } from "../agent/commands";
+import { openAgentReview } from "../agent/commands";
 import { publishPaletteActions } from "../agent/paletteActions";
 import { Button } from "./ui";
 import { Composer } from "./Composer";
 import { EvidenceImportDialog } from "./EvidenceImportDialog";
 import { AgentTaskResult } from "./AgentTaskResult";
 import { AgentNextAction } from "./AgentDecisionCard";
-import { GroundingCard, ThinkingBubble, TriageCard } from "./AgentRuntimeArtifacts";
-import { ExecutionSummary } from "./ExecutionSummary";
+import { TriageCard } from "./AgentRuntimeArtifacts";
+import { WorkingRow } from "./LiveTrace";
 import { fmtDuration } from "./ExecutionMetrics";
 import { useI18n } from "../i18n";
 import { matches } from "../shortcuts";
@@ -48,6 +44,10 @@ import { AnalysisFigures } from "../viz/AnalysisFigures";
 import { ProvenanceMark } from "../viz/ProvenanceMark";
 
 const PENDING_DIRECTION_ID = "task-pending-direction";
+
+function attachKind(name: string): "inventory" | "access_log" {
+  return inferDatasetType(name) ?? (/\.(log|txt|json|jsonl|gz)$/i.test(name) ? "access_log" : "inventory");
+}
 
 type Item =
   | {
@@ -116,7 +116,6 @@ export function AgentTaskImplementation({
         loadingEarlier: "正在载入更早的记录…",
         loadEarlier: (n: number) => `载入更早的 ${n} 条记录`,
         jumpToStart: "回到任务开始",
-        suggestedNext: "接下来可以做",
         remoteExecution: (age: string) => `这个 Task 的一次执行仍在后台进行（${age}）。结果完成后会回到这里。`,
         stalled: "这次执行比预期更久；结果可能已经持久化，可以重新同步任务。",
         reload: "重新同步",
@@ -149,7 +148,6 @@ export function AgentTaskImplementation({
         loadingEarlier: "Loading earlier history…",
         loadEarlier: (n: number) => `Load ${n} earlier records`,
         jumpToStart: "Jump to the start",
-        suggestedNext: "Next actions",
         remoteExecution: (age: string) => `Execution for this task is still running in the background (${age}). Its result will return here.`,
         stalled: "This execution is taking longer than expected; the result may already be durable. Resync the task to check.",
         reload: "Resync task",
@@ -181,7 +179,6 @@ export function AgentTaskImplementation({
   const [importHandoff, setImportHandoff] = useState<
     { sourceType: "inventory" | "access_log"; accountRunId: string; bucketName: string } | null
   >(null);
-  const [modelName, setModelName] = useState<string | null>(null);
   const run = useSessionRun(sessionId);
   const { busy, uploading, pending, streamText, streamTools, needKey } = run;
   const liveNextActions = run.proposals;
@@ -191,7 +188,7 @@ export function AgentTaskImplementation({
   }, [run.busy]);
   const error = run.error ?? viewError;
   const {
-    detail, triage, earlier, loadingEarlier, metrics, remoteTurn: remoteExecution, loadError,
+    detail, triage, earlier, loadingEarlier, remoteTurn: remoteExecution, loadError,
     localId, reload, loadEarlier, loadAllEarlier, hiddenCount, taskRuntime,
   } = useSessionDocument({
     sessionId, sidecarReady, reloadKey, t, scrollRef, setViewError,
@@ -205,61 +202,6 @@ export function AgentTaskImplementation({
   const hasFigures = Boolean(
     provenance?.analysis.cost || provenance?.analysis.inventory || provenance?.analysis.drift || provenance?.analysis.access_log,
   );
-
-  const refreshModel = (attempt = 0) =>
-    listModelProviders()
-      .then((providers) => {
-        const activeProvider = providers.find((provider) => provider.active) ?? providers[0];
-        setModelName(activeProvider ? activeProvider.model || activeProvider.name : null);
-      })
-      .catch(() => {
-        if (attempt < 3) setTimeout(() => refreshModel(attempt + 1), 2000);
-      });
-
-  useEffect(() => {
-    if (sidecarReady) refreshModel();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sidecarReady]);
-
-  useEffect(() => {
-    if (!settingsOpen && sidecarReady) refreshModel();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settingsOpen]);
-
-  const metricsFor = (messageId: string): (TurnMetricsRow & { usage?: TokenUsage }) | null => {
-    const persisted = metrics[messageId];
-    if (persisted) return persisted;
-    const live = run.lastMetrics;
-    if (live && live.messageId === messageId) {
-      const metric = live.metrics;
-      return {
-        turn_id: null, message_id: messageId, model: metric.model ?? null,
-        duration_ms: metric.duration_ms ?? null, tool_calls: metric.tool_calls ?? null,
-        budget_tokens: metric.budget_tokens ?? null,
-        repeat_calls_avoided: metric.repeat_calls_avoided ?? null,
-        created_at: "", usage: metric.usage,
-        ...(metric.usage ?? {}),
-      };
-    }
-    return null;
-  };
-
-  const seedComposer = (next: string) => {
-    setText(next);
-    requestAnimationFrame(() => {
-      const textarea = taRef.current;
-      if (!textarea) return;
-      textarea.focus();
-      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-    });
-  };
-  const directionBefore = (index: number): string | null => {
-    for (let i = index - 1; i >= 0; i--) {
-      const item = items[i];
-      if (item.kind === "message" && item.role === "user") return item.content ?? null;
-    }
-    return null;
-  };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -299,7 +241,6 @@ export function AgentTaskImplementation({
     setImportHandoff(null);
     setViewError(null);
     resetPinned();
-    refreshModel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
@@ -329,20 +270,6 @@ export function AgentTaskImplementation({
   }, [sessionId, pending, busy, items]);
 
   const nextActions = liveNextActions ?? [];
-
-  const branchFrom = useCallback(
-    async (messageId: string) => {
-      if (!sessionId) return;
-      try {
-        const forked = await forkSession(sessionId, messageId);
-        onSessionCreated(forked.id);
-        onChanged();
-      } catch (caught) {
-        setViewError(cleanError(String(caught), t));
-      }
-    },
-    [sessionId, onSessionCreated, onChanged, t],
-  );
 
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -401,11 +328,7 @@ export function AgentTaskImplementation({
   const send = () => {
     if (busy || uploading) return;
     if (attached) {
-      const type = attachType ?? inferDatasetType(attached.name);
-      if (!type) {
-        setViewError(t("attach.pickTypeHint"));
-        return;
-      }
+      const type = attachType ?? attachKind(attached.name);
       void runner.submitWithDataset(text.trim(), attached, type);
       return;
     }
@@ -417,7 +340,7 @@ export function AgentTaskImplementation({
     const preset = presetTypeRef.current;
     presetTypeRef.current = null;
     setAttached(file);
-    setAttachType(preset ?? inferDatasetType(file.name));
+    setAttachType(preset ?? attachKind(file.name));
   };
 
   const INLINE_ACTION_PROMPT: Record<string, string> = {
@@ -521,7 +444,6 @@ export function AgentTaskImplementation({
     lastResult &&
     (lastResult.grounding || (lastResult.nextActions && lastResult.nextActions.length > 0))
   );
-  const showLiveGrounding = !pending && !lastPersisted && (!!run.grounding || nextActions.length > 0);
 
   const pendingDecisions = taskRuntime?.pending_decisions ?? [];
   const impactByType = new Map(pendingDecisions.map((d) => [d.action_type, d.impact ?? null]));
@@ -563,8 +485,6 @@ export function AgentTaskImplementation({
       text={text}
       setText={setText}
       attached={attached}
-      attachType={attachType}
-      setAttachType={setAttachType}
       onClearAttachment={() => { setAttached(null); setAttachType(null); }}
       onPickFile={onPickFile}
       onOpenFilePicker={() => { presetTypeRef.current = null; fileRef.current?.click(); }}
@@ -577,18 +497,12 @@ export function AgentTaskImplementation({
       onStop={() => runner.stop()}
       onSteer={() => {
         if (attached) {
-          const type = attachType ?? inferDatasetType(attached.name);
-          if (!type) {
-            setViewError(t("attach.pickTypeHint"));
-            return;
-          }
+          const type = attachType ?? attachKind(attached.name);
           void runner.steer(text.trim(), () => runner.submitWithDataset(text.trim(), attached, type));
           return;
         }
         if (text.trim()) void runner.steer(text.trim());
       }}
-      modelName={modelName}
-      onOpenSettings={onOpenSettings}
     />
   );
 
@@ -645,16 +559,12 @@ export function AgentTaskImplementation({
         <div
           key={execution.id}
           data-testid="queued-direction"
-          className="animate-fade-in-up rounded-xl border border-edge bg-panel/60 p-3.5 text-sm"
+          className="flex items-center gap-3 text-sm text-gray-400"
         >
-          <div className="text-2xs font-semibold uppercase tracking-[0.08em] text-gray-500">{taskCopy.queuedTitle}</div>
-          <p className="mt-1 text-sm text-gray-200">{execution.direction}</p>
-          <p className="mt-1 text-2xs text-gray-500">{taskCopy.queuedHint}</p>
-          <div className="mt-2.5">
-            <Button data-testid="queued-direction-cancel" variant="default" size="sm" onClick={() => void cancelQueued(execution.id)}>
-              {taskCopy.queuedCancel}
-            </Button>
-          </div>
+          <span className="min-w-0 flex-1 truncate">{execution.direction}</span>
+          <button type="button" data-testid="queued-direction-cancel" className="shrink-0 text-2xs text-gray-500 hover:text-gray-200" onClick={() => void cancelQueued(execution.id)}>
+            {taskCopy.queuedCancel}
+          </button>
         </div>
       ))}
     </>
@@ -719,6 +629,8 @@ export function AgentTaskImplementation({
 
                 {items.map((item, index) => {
                   if (item.kind === "message") {
+                    const latest = item.id === lastResult?.id;
+                    const decisions = (item.nextActions ?? []).filter((action) => action.requires_confirmation);
                     return (
                       <div
                         key={item.id}
@@ -730,71 +642,37 @@ export function AgentTaskImplementation({
                           role={item.role}
                           content={item.content}
                           toolActivity={item.toolActivity}
-                          onEdit={item.role === "user" && !busy ? seedComposer : undefined}
-                          onBranch={item.role === "user" && !busy && sessionId ? () => void branchFrom(item.id) : undefined}
-                          onRerun={item.role === "assistant" && !busy && directionBefore(index) ? () => seedComposer(directionBefore(index) as string) : undefined}
                           referencedRunIds={item.referencedRunIds}
                           referencedEvidenceIds={item.referencedEvidenceIds}
+                          hasReport={latest}
+                          sessionId={sessionId}
+                          figures={latest && item.role === "assistant" && (hasFigures || provenance?.findings.length) ? (
+                            <section className="task-analysis-figures mt-4" data-testid="task-analysis-figures">
+                              {hasFigures ? <AnalysisFigures provenance={provenance} /> : null}
+                              {provenance?.findings.length ? (
+                                <div className={hasFigures ? "mt-4 space-y-1" : "space-y-1"}>
+                                  {provenance.findings.slice(0, 8).map((finding) => (
+                                    <ProvenanceMark key={finding.id} finding={finding} />
+                                  ))}
+                                </div>
+                              ) : null}
+                            </section>
+                          ) : undefined}
                         />
-                        {item.role === "assistant" ? (
-                          <div className="max-w-[min(46rem,100%)]">
-                            <ExecutionSummary
-                              latest={item.id === lastResult?.id}
-                              tools={item.toolActivity}
-                              grounding={item.grounding}
-                              durationMs={metricsFor(item.id)?.duration_ms}
-                              usage={metricsFor(item.id)?.usage ?? metricsFor(item.id) ?? undefined}
-                              model={metricsFor(item.id)?.model}
-                              budgetTokens={metricsFor(item.id)?.budget_tokens}
-                              repeatCallsAvoided={metricsFor(item.id)?.repeat_calls_avoided}
-                              sessionId={sessionId}
-                              onReviewEvidence={() => openAgentReview("evidence")}
-                            />
-                          </div>
-                        ) : null}
-                        {item.nextActions && item.nextActions.length > 0 ? (
-                          <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                            <span className="text-2xs text-gray-500">{taskCopy.suggestedNext}</span>
-                            {item.nextActions.map((action, actionIndex) => renderAction(action, actionIndex))}
+                        {decisions.length > 0 ? (
+                          <div className="space-y-3">
+                            {decisions.map((action, actionIndex) => renderAction(action, actionIndex))}
                           </div>
                         ) : null}
                       </div>
                     );
                   }
-                  if (item.kind === "run") {
-                    return (
-                      <button
-                        key={item.data.run_id}
-                        type="button"
-                        data-testid="execution-link"
-                        onClick={() => openAgentExecution(item.data.run_id)}
-                        className="task-item flex w-full items-center gap-3 border-y border-edge/70 py-3 text-left text-xs transition-colors hover:bg-hover/30"
-                      >
-                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-gray-500" aria-hidden />
-                        <span className="min-w-0 flex-1 truncate text-gray-300">{item.data.title || item.data.run_type}</span>
-                        <span className="font-mono text-2xs uppercase text-gray-500">{item.data.status}</span>
-                        <span className="text-gray-500" aria-hidden>→</span>
-                      </button>
-                    );
-                  }
+                  if (item.kind === "run") return null;
                   return <div key={item.data.id} className="task-item"><TriageCard c={item.data} onRun={runAction} /></div>;
                 })}
 
-                {(hasFigures || provenance?.findings.length) ? (
-                  <section className="task-analysis-figures" data-testid="task-analysis-figures">
-                    {hasFigures ? <AnalysisFigures provenance={provenance} /> : null}
-                    {provenance?.findings.length ? (
-                      <div className={hasFigures ? "mt-4 space-y-1" : "space-y-1"}>
-                        {provenance.findings.slice(0, 8).map((finding) => (
-                          <ProvenanceMark key={finding.id} finding={finding} />
-                        ))}
-                      </div>
-                    ) : null}
-                  </section>
-                ) : null}
-
                 {!pending && remoteExecution?.running ? (
-                  <div data-testid="remote-execution" className="animate-fade-in flex items-center gap-2 rounded-lg border border-edge bg-panel/60 px-3 py-2 text-xs text-gray-400">
+                  <div data-testid="remote-execution" className="animate-fade-in flex items-center gap-2 text-xs text-gray-400">
                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
                     {taskCopy.remoteExecution(fmtDuration(remoteExecution.age_ms ?? null) ?? "—")}
                   </div>
@@ -811,12 +689,12 @@ export function AgentTaskImplementation({
                     {streamText !== null || streamTools.length ? (
                       <>
                         <AgentTaskResult role="assistant" content={streamText ?? ""} toolActivity={streamTools} streaming={!run.stopped} sessionId={sessionId} />
-                        {run.stopped ? <div className="flex items-center gap-1.5 text-2xs text-gray-500"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>{taskCopy.stopped}</div> : null}
+                        {run.stopped ? <div className="flex items-center gap-1.5 text-2xs text-gray-500">{taskCopy.stopped}</div> : null}
                       </>
                     ) : run.stopped ? (
-                      <div className="flex items-center gap-1.5 text-2xs text-gray-500"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>{taskCopy.stopped}</div>
+                      <div className="flex items-center gap-1.5 text-2xs text-gray-500">{taskCopy.stopped}</div>
                     ) : run.stalled ? (
-                      <div className="animate-fade-in rounded-lg border border-edge bg-panel/60 p-3 text-xs text-gray-400">
+                      <div className="animate-fade-in text-xs text-gray-400">
                         {taskCopy.stalled}
                         <div className="mt-2">
                           <Button variant="default" size="sm" onClick={() => {
@@ -827,7 +705,7 @@ export function AgentTaskImplementation({
                           }}>{taskCopy.reload}</Button>
                         </div>
                       </div>
-                    ) : busy ? <ThinkingBubble /> : null}
+                    ) : busy ? <WorkingRow label={t("think.working")} /> : null}
                   </>
                 ) : null}
 
@@ -842,15 +720,9 @@ export function AgentTaskImplementation({
                   </div>
                 ) : null}
 
-                {showLiveGrounding ? (
+                {!pending && nextActions.some((action) => action.requires_confirmation) && !lastPersisted ? (
                   <div className="space-y-3">
-                    {run.grounding ? <GroundingCard g={run.grounding} /> : null}
-                    {nextActions.length > 0 ? (
-                      <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                        <span className="text-2xs text-gray-500">{taskCopy.suggestedNext}</span>
-                        {nextActions.map((action, actionIndex) => renderAction(action, actionIndex))}
-                      </div>
-                    ) : null}
+                    {nextActions.filter((action) => action.requires_confirmation).map((action, actionIndex) => renderAction(action, actionIndex))}
                   </div>
                 ) : null}
               </div>

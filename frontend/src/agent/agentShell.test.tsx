@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { agentShellReducer, initialAgentShellState } from "./model";
 
-describe("v0.93 Agent-native task shell", () => {
+describe("v1.01 native Agent task shell", () => {
   it("starts with one Agent task workspace and no review page", () => {
     expect(initialAgentShellState("task-1")).toEqual({
       review: null,
       selectedExecutionId: null,
-      focus: false,
       taskId: "task-1",
     });
   });
@@ -32,9 +31,8 @@ describe("v0.93 Agent-native task shell", () => {
     expect(next.selectedExecutionId).toBe("execution-9");
   });
 
-  it("blank task reset closes review and focus", () => {
-    const focused = agentShellReducer(initialAgentShellState("task-1"), { type: "focus.toggle" });
-    const reviewing = agentShellReducer(focused, { type: "review.open", review: "report" });
+  it("blank task reset closes review", () => {
+    const reviewing = agentShellReducer(initialAgentShellState("task-1"), { type: "review.open", review: "report" });
     expect(agentShellReducer(reviewing, { type: "task.changed", taskId: null })).toEqual(initialAgentShellState(null));
   });
 });

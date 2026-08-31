@@ -6,6 +6,31 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.01.0] - 2026-08-31
+
+_Native Agent reconstruction. Replaces the v1.00 workbench shell. No new Agent capabilities, no storage tools, no migration._
+
+### Removed
+
+- Task header, Focus presentation, and live execution strip.
+- Command-center navigation queues, sidebar search, pin / duplicate / archive.
+- Persistent sidecar-health footer.
+- ThinkingBubble invented stages, in-document Execution Summary wall, Direction Branch / Redirect / Rerun.
+- Attach-type chips. Type is inferred from the filename.
+- Review document hero, side-column application chrome, and unconditional Report button on every result.
+
+### Changed
+
+- Empty window is the Composer. The center is one readable work record. Tools appear in that record.
+- Task navigation is one chronological title list (Rename + Delete).
+- Review is a light overlay over the Task.
+- Figures and provenance sit inside the latest Work Result.
+- Architecture and documentation contracts lock the native window, not the workbench.
+
+### Security
+
+- Unchanged. Engine APIs remain. No new tools, no migration past **027**.
+
 ## [1.00.0] - 2026-08-31
 
 _Modern Agent reconstruction. Deletes the v0.96 copilot OS product objects that v0.99 only reskinned. No new Agent capabilities, no storage tools, no migration._

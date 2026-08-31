@@ -1,10 +1,10 @@
 /**
  * A pasted S3 error is a structured Direction artifact, not a chat message.
- * It must retain the same task controls as any other Direction: redirect the
- * current objective or branch a new task, without falling back to message-era UI.
+ * It keeps the useful fields and a copy/raw path. Branch and Redirect are not
+ * product actions on Direction.
  */
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
+import { render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
 import { AgentTaskResult } from "./AgentTaskResult";
@@ -16,15 +16,13 @@ const XML =
   "<RequestId>ABC123</RequestId></Error>";
 
 function mount(content: string) {
-  const onBranch = vi.fn();
   render(
     createElement(
       I18nProvider,
       null,
-      createElement(AgentTaskResult, { role: "user", content, onEdit: () => {}, onBranch }),
+      createElement(AgentTaskResult, { role: "user", content }),
     ),
   );
-  return { onBranch };
 }
 
 describe("the S3 Direction artifact", () => {
@@ -36,20 +34,14 @@ describe("the S3 Direction artifact", () => {
     expect(screen.getByTestId("s3-error-card")).toBeTruthy();
   });
 
-  it("keeps task branching", () => {
-    const { onBranch } = mount(XML);
-    fireEvent.click(screen.getByTestId("branch-task"));
-    expect(onBranch).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps task redirect", () => {
+  it("does not offer branch or redirect chrome", () => {
     mount(XML);
-    expect(screen.getByTestId("redirect-direction")).toBeTruthy();
+    expect(screen.queryByTestId("branch-task")).toBeNull();
+    expect(screen.queryByTestId("redirect-direction")).toBeNull();
   });
 
-  it("keeps the same task controls for prose Directions", () => {
-    mount("why does acme-logs deny every list call?");
-    expect(screen.getByTestId("branch-task")).toBeTruthy();
-    expect(screen.getByTestId("redirect-direction")).toBeTruthy();
+  it("keeps copy and raw payload access", () => {
+    mount(XML);
+    expect(screen.getByTestId("s3-error-raw-toggle")).toBeTruthy();
   });
 });

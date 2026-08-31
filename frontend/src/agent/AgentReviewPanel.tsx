@@ -39,39 +39,43 @@ export function AgentReviewPanel({
       : copy.report.title;
 
   return (
-    <aside className="agent-review-panel" data-testid="agent-review-panel" aria-label={title}>
-      <header className="agent-review-header">
-        <div className="min-w-0">
-          <div className="agent-review-eyebrow">{copy.review.eyebrow}</div>
+    <div className="agent-review-overlay" data-testid="agent-review-overlay" onClick={onClose}>
+      <aside
+        className="agent-review-panel"
+        data-testid="agent-review-panel"
+        aria-label={title}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="agent-review-header">
           <strong>{title}</strong>
+          <button type="button" className="agent-review-close" onClick={onClose} aria-label={copy.review.close} title={copy.review.close}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </header>
+
+        <div className="agent-review-body">
+          {error ? <p className="agent-review-error">{error}</p> : null}
+
+          {!error && view === "evidence" ? (
+            detail ? <EvidenceReview detail={detail} sessionId={detail.id} selectedFindingId={selectedFindingId ?? null} provenance={provenance} /> : <p className="agent-review-empty">{copy.review.loading}</p>
+          ) : null}
+
+          {!error && view === "execution" ? (
+            <ExecutionReview
+              detail={detail}
+              selectedExecutionId={selectedExecutionId}
+              onOpenExecution={onOpenExecution}
+              onCloseExecution={onCloseExecution}
+            />
+          ) : null}
+
+          {!error && view === "report" ? (
+            <ReportArtifact report={report} loading={reportLoading} error={null} />
+          ) : null}
         </div>
-        <button type="button" className="agent-review-close" onClick={onClose} aria-label={copy.review.close} title={copy.review.close}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
-      </header>
-
-      <div className="agent-review-body">
-        {error ? <p className="agent-review-error">{error}</p> : null}
-
-        {!error && view === "evidence" ? (
-          detail ? <EvidenceReview detail={detail} sessionId={detail.id} selectedFindingId={selectedFindingId ?? null} provenance={provenance} /> : <p className="agent-review-empty">{copy.review.loading}</p>
-        ) : null}
-
-        {!error && view === "execution" ? (
-          <ExecutionReview
-            detail={detail}
-            selectedExecutionId={selectedExecutionId}
-            onOpenExecution={onOpenExecution}
-            onCloseExecution={onCloseExecution}
-          />
-        ) : null}
-
-        {!error && view === "report" ? (
-          <ReportArtifact report={report} loading={reportLoading} error={null} />
-        ) : null}
-      </div>
-    </aside>
+      </aside>
+    </div>
   );
 }

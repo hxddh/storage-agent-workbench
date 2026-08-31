@@ -51,16 +51,7 @@ test.describe("Agent task navigation", () => {
     await field.press("Enter");
 
     await expect(navigation(page).getByText("403 on acme-logs")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId("agent-task-header")).toContainText("403 on acme-logs", { timeout: 15_000 });
-  });
-
-  test("duplicating produces a second task with the same durable history", async ({ page }) => {
-    const TITLE = await open(page);
-    await menu(page, TITLE);
-    await page.getByText("Duplicate", { exact: true }).click();
-
-    await expect(navigation(page).getByText(TITLE)).toHaveCount(2, { timeout: 15_000 });
-    await expect(task(page).getByText(/ANSWER-/).first()).toBeVisible({ timeout: 15_000 });
+    await expect((await row(page, "403 on acme-logs"))).toHaveAttribute("data-selected", "true");
   });
 
   test("deleting the open task returns to a usable delegation surface", async ({ page }) => {
@@ -74,7 +65,7 @@ test.describe("Agent task navigation", () => {
 
     await expect(navigation(page).getByText(TITLE)).toHaveCount(0, { timeout: 15_000 });
     await expect(page.getByTestId("agent-composer")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId("agent-task-header")).toContainText("New task");
+    await expect(page.getByTestId("agent-task-content")).toHaveAttribute("data-empty", "true");
     await expect(task(page).getByText(/Couldn't load/i)).toHaveCount(0);
   });
 
@@ -91,21 +82,5 @@ test.describe("Agent task navigation", () => {
     await page.reload();
     await expect(page.getByTestId("agent-composer")).toBeVisible({ timeout: 20_000 });
     await expect(navigation(page).getByText(TITLE)).toHaveCount(0);
-  });
-
-  test("archiving removes a task from the active task list", async ({ page }) => {
-    const TITLE = await open(page);
-    await menu(page, TITLE);
-    await page.getByText("Archive", { exact: true }).click();
-    await expect(navigation(page).getByText(TITLE)).toHaveCount(0, { timeout: 15_000 });
-  });
-
-  test("server-backed search narrows tasks by title or direction content", async ({ page }) => {
-    const TITLE = await open(page);
-    const search = page.getByPlaceholder(/Search tasks/i);
-    await search.fill("seeded");
-    await expect(navigation(page).getByText(TITLE).first()).toBeVisible();
-    await search.fill("no-such-task");
-    await expect(navigation(page).getByText(TITLE)).toHaveCount(0, { timeout: 10_000 });
   });
 });

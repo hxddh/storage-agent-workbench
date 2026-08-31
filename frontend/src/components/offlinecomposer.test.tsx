@@ -21,8 +21,6 @@ function mount(offline: boolean, text = "why does acme-logs 403?") {
         text,
         setText: () => {},
         attached: null,
-        attachType: null,
-        setAttachType: () => {},
         onClearAttachment: () => {},
         onPickFile: () => {},
         onOpenFilePicker: () => {},
@@ -34,8 +32,6 @@ function mount(offline: boolean, text = "why does acme-logs 403?") {
         onSend,
         onStop: () => {},
         onSteer: () => {},
-        modelName: "gpt-x",
-        onOpenSettings: () => {},
       }),
     ),
   );

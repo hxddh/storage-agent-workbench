@@ -4,7 +4,6 @@ import { createElement } from "react";
 import { I18nProvider } from "../i18n";
 import { LiveTrace, argLabel, argSummary } from "./LiveTrace";
 import { AgentTaskResult } from "./AgentTaskResult";
-import { ExecutionSummary } from "./ExecutionSummary";
 import type { ToolActivity } from "../types";
 
 const wrap = (node: React.ReactNode) => render(createElement(I18nProvider, null, node));
@@ -148,97 +147,6 @@ describe("tool argument formatting", () => {
   it("summarizes an empty or absent argument set as nothing", () => {
     expect(argSummary(undefined)).toBe("");
     expect(argSummary({})).toBe("");
-  });
-});
-
-describe("Execution Summary cost and budget truth", () => {
-  const tools = [call()];
-
-  it("shows the cache hit rate beside input tokens", () => {
-    wrap(createElement(ExecutionSummary, {
-      tools,
-      usage: { input_tokens: 12000, output_tokens: 800, cached_input_tokens: 9600 },
-    }));
-    expect(screen.getByTestId("cached-tokens").textContent).toContain("80%");
-  });
-
-  it("separates reasoning tokens from readable output", () => {
-    wrap(createElement(ExecutionSummary, {
-      tools,
-      usage: { input_tokens: 900, output_tokens: 1400, reasoning_tokens: 1100 },
-    }));
-    expect(screen.getByTestId("reasoning-tokens").textContent).toContain("1.1k");
-  });
-
-  it("does not invent cache or reasoning detail when the endpoint omitted it", () => {
-    wrap(createElement(ExecutionSummary, {
-      tools,
-      usage: { input_tokens: 12000, output_tokens: 800 },
-    }));
-    expect(screen.queryByTestId("cached-tokens")).toBeNull();
-    expect(screen.queryByTestId("reasoning-tokens")).toBeNull();
-  });
-
-  it("reports a genuine cold cache", () => {
-    wrap(createElement(ExecutionSummary, {
-      tools,
-      usage: { input_tokens: 12000, output_tokens: 800, cached_input_tokens: 0 },
-    }));
-    expect(screen.getByTestId("cached-tokens").textContent).toContain("0%");
-  });
-
-  it("does not clutter the result with zero reasoning tokens", () => {
-    wrap(createElement(ExecutionSummary, {
-      tools,
-      usage: { input_tokens: 900, output_tokens: 400, reasoning_tokens: 0 },
-    }));
-    expect(screen.queryByTestId("reasoning-tokens")).toBeNull();
-  });
-
-  it("shows how much of the Agent execution budget was used", () => {
-    wrap(createElement(ExecutionSummary, {
-      tools,
-      usage: { input_tokens: 90000, output_tokens: 6000, total_tokens: 96000 },
-      budgetTokens: 640000,
-    }));
-    expect(screen.getByTestId("budget-share").textContent).toContain("15%");
-  });
-
-  it("does not compute budget share from an unknown total", () => {
-    wrap(createElement(ExecutionSummary, {
-      tools,
-      usage: { input_tokens: 900 },
-      budgetTokens: 640000,
-    }));
-    expect(screen.queryByTestId("budget-share")).toBeNull();
-  });
-
-  it("reports repeated calls answered without re-running", () => {
-    wrap(createElement(ExecutionSummary, {
-      tools,
-      usage: { input_tokens: 900, output_tokens: 100 },
-      repeatCallsAvoided: 3,
-    }));
-    expect(screen.getByTestId("repeat-calls-avoided").textContent).toContain("3");
-  });
-
-  it("does not advertise zero avoided repeats", () => {
-    wrap(createElement(ExecutionSummary, {
-      tools,
-      usage: { input_tokens: 900, output_tokens: 100 },
-      repeatCallsAvoided: 0,
-    }));
-    expect(screen.queryByTestId("repeat-calls-avoided")).toBeNull();
-  });
-
-  it("expands into the persisted execution trace", () => {
-    wrap(createElement(ExecutionSummary, {
-      tools,
-      durationMs: 4200,
-      usage: { input_tokens: 12000, output_tokens: 800, cached_input_tokens: 9600 },
-    }));
-    fireEvent.click(screen.getByTestId("execution-summary-toggle"));
-    expect(screen.getByText("list_objects")).toBeTruthy();
   });
 });
 

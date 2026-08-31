@@ -137,20 +137,20 @@ test.describe("a long conversation", () => {
     expect(txt).toContain("Paragraph 3 of the finding for bucket-000");
   });
 
-  test("the newest answer keeps its turn footer", async ({ page }) => {
+  test("the newest answer keeps the tools that produced it", async ({ page }) => {
     await openSeeded(page, 12);
-    await expect(page.getByTestId("execution-summary-toggle").last()).toBeVisible();
+    await expect(page.getByTestId("live-trace").last()).toBeVisible();
   });
 
-  test("a user message keeps copy / edit / branch", async ({ page }) => {
+  test("a user Direction keeps copy and does not offer branch chrome", async ({ page }) => {
     await openSeeded(page, 12);
 
     const last = thread(page).getByText("QUESTION-11").last();
     await last.scrollIntoViewIfNeeded();
     await last.hover();
 
-    await expect(page.getByTestId("redirect-direction").last()).toBeVisible();
-    await expect(page.getByTestId("branch-task").last()).toBeVisible();
+    await expect(page.getByTestId("redirect-direction")).toHaveCount(0);
+    await expect(page.getByTestId("branch-task")).toHaveCount(0);
     await expect(thread(page).getByRole("button", { name: /copy/i }).last()).toBeVisible();
   });
 });

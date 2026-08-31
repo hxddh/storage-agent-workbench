@@ -1,6 +1,6 @@
 # Sidecar API
 
-> **Storage Agent v1.00.0 API reference.** Provenance projection unchanged from
+> **Storage Agent v1.01.0 API reference.** Provenance projection unchanged from
 > v0.98.0. No migration. Runtime, tools, and other `/agent-tasks` contracts
 > are unchanged from v0.96.0. Engine endpoints such as `/settings/price-table`
 > remain; they are not product destinations.

@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.00.0.** This is the canonical product/UX specification. v1.00 is a product-model replacement: a modern Agent shell. Historical release notes (including v0.96 copilot OS and v0.99 chrome subtraction) are not current product architecture.
+> **Applies to Storage Agent v1.01.0.** This is the canonical product/UX specification. v1.01 replaces the v1.00 workbench shell with a native Agent window. Historical release notes (including v1.00 header/strip/queues and v0.96 copilot OS) are not current product architecture.
 
 ## Product definition
 
@@ -99,9 +99,9 @@ A Remediation Plan, if drafted, is typed and versioned. The operator applies it 
 
 ### Review
 
-Review is a **thin artifact viewer** opened from the document — a finding, a Work Result Evidence/Execution/Report link, or ⌘I / Ctrl+I for Evidence. There is no header Review destination and no 4-tab Overview / Evidence / Execution / Report application.
+Review is a **light overlay** over the active Task — title, close, and the requested artifact. It opens from a finding, a Work Result Evidence/Execution/Report link, or ⌘I / Ctrl+I for Evidence. The overlay is not a side-column application, not a document hero, and not a 4-tab Overview / Evidence / Execution / Report destination.
 
-The panel is title + close + the requested artifact. It must not create a second Agent input or a second task lifecycle.
+It must not create a second Agent input or a second task lifecycle.
 
 ## One Agent control path
 
@@ -111,7 +111,7 @@ There is exactly one primary Agent input.
 - **Steer** while the current Task is executing — steering acts on the CURRENT Execution (the direction is delivered into the running work), never by cancelling and restarting it.
 - **Stop** while local execution is active.
 
-Opening Review, changing Task navigation state, or entering Focus mode does not create a second composer.
+Opening Review or changing Task navigation state does not create a second composer.
 
 ## Task states
 
@@ -201,15 +201,17 @@ Rules:
 
 The primary Task viewport should answer, in order:
 
-1. **What is the Agent working on?**
-2. **What is happening now or what did it produce?**
+1. **What is the Agent working on?** — the document, not a header title bar.
+2. **What is happening now or what did it produce?** — tool rows and Work Result in that same document.
 3. **What can I do now?** — Steer, Stop, Resume, decide, open an artifact from the document, or delegate the next Direction.
+
+The empty window is the Composer. The sidebar is quiet task titles. Settings is hidden behind an icon.
 
 Provider/model configuration, audit internals, and low-level counters are secondary unless directly relevant to the active work.
 
 ## Design rules
 
-v1.00.0 is a modern Agent reconstruction on the v0.97 token system. Visual language is specified in
+v1.01.0 is a native Agent reconstruction on the v0.97 token system. Visual language is specified in
 [`design-tokens.md`](design-tokens.md) and enforced by frontend token tests.
 
 - Dark and light are first-class. Do not ship a surface that only works in one.
@@ -224,10 +226,10 @@ v1.00.0 is a modern Agent reconstruction on the v0.97 token system. Visual langu
   interpolate, extrapolate, or invent a horizon the runtime did not emit.
 - Findings carry provenance. Missing chain is labelled, never implied.
 - Execution rows show real tool name, argument summary, duration, and
-  success/fail. Streaming must not jump layout. No invented step/progress chrome.
-- Composer is the product card and the empty-start surface: Delegate at rest, Steer + Stop while working. No wizard, no `/` SKU menu.
-- Header is the task title and Focus. Artifacts open from the document. Working state lives on the live execution strip. ⌘K works; it is not painted.
-- Task navigation is one list. State is a row mark, not Needs-you / Recent taxonomies.
+  success/fail **in the Work Result**. Streaming must not jump layout. No invented step/progress chrome. No token/budget wall under every result.
+- Composer is the product card and the empty-start surface: Delegate at rest, Steer + Stop while working. No wizard, no `/` SKU menu, no attach-type chips.
+- There is no task header and no live status strip. Artifacts open from the document as an overlay. Working state lives on Composer and in the document. ⌘K works; it is not painted.
+- Task navigation is one chronological title list. State is a row mark. Rename and Delete only.
 - Every non-ideal state (empty list, no Evidence, offline, interrupted, load earlier) is designed. Copy is restrained, specific, and bilingual.
 - Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped as Actions vs Tasks. It is not a Review destination menu.
 - Perceived latency: cached task documents render instantly on switch; never

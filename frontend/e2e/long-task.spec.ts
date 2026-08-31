@@ -78,17 +78,6 @@ test("find reaches a Work Result outside the initially rendered history", async 
   await expect(task(page).getByText(/ANSWER-25/)).toBeVisible({ timeout: 10_000 });
 });
 
-test("branching from a Direction creates a second task and leaves the source intact", async ({ page }) => {
-  await openLongTask(page);
-  const before = (await navigation(page).textContent()) ?? "";
-  const direction = task(page).getByText(`QUESTION-${TASK_CYCLES - 1} `).last();
-  await direction.scrollIntoViewIfNeeded();
-  await direction.hover();
-  await page.getByTestId("branch-task").last().click();
-  await expect.poll(async () => ((await navigation(page).textContent()) ?? "").length, { timeout: 15_000 }).toBeGreaterThan(before.length);
-  await expect(task(page).getByText(/ANSWER-/).first()).toBeVisible({ timeout: 15_000 });
-});
-
 test("a draft Direction survives switching to a new task and back", async ({ page }) => {
   const title = await openLongTask(page);
   await composer(page).fill("does bucket-7 have a lifecycle rule");

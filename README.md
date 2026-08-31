@@ -1,6 +1,6 @@
 # Storage Agent
 
-**Current release: v1.00.0**
+**Current release: v1.01.0**
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. Give it a storage goal or problem; it investigates with real read-only tools, remains steerable while it works, stops at explicit confirmation boundaries, and produces durable results backed by reviewable execution and evidence.
 
@@ -44,7 +44,7 @@ Read-only investigation can proceed autonomously. Operations that move cloud dat
 
 ### Work Result and Review
 
-Completed work becomes a durable **Work Result**. Evidence, Execution detail, and Markdown Reports are contextual artifacts that can be reviewed beside the same Task rather than becoming separate top-level applications.
+Completed work becomes a durable **Work Result**. Tool rows live in that document. Evidence, Execution detail, and Markdown Reports open as a light overlay over the same Task.
 
 ## Storage capabilities
 

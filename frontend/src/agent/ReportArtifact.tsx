@@ -52,37 +52,20 @@ export function ReportArtifact({
   };
 
   return (
-    <article className="agent-document agent-report" data-testid="report-artifact">
-      <header className="agent-document-heading">
-        <div className="flex items-start justify-between gap-6">
-          <div className="min-w-0">
-            <p className="agent-eyebrow">{copy.report.eyebrow}</p>
-            <h1 data-testid="report-artifact-title">{copy.report.title}</h1>
-            <p>{copy.report.description}</p>
-          </div>
-          {report && !loading && !error ? (
-            <div className="flex shrink-0 items-center gap-1.5 pt-0.5" aria-label={copy.report.actions}>
-              <button
-                type="button"
-                className="agent-os-command"
-                onClick={() => void copyReport()}
-                data-testid="report-copy"
-              >
-                {copied ? copy.report.copied : t("common.copy")}
-              </button>
-              <button
-                type="button"
-                className="agent-os-command"
-                onClick={() => void save()}
-                data-testid="report-save"
-                title={savedPath ?? undefined}
-              >
-                {savedPath ? copy.report.savedTo(savedPath) : copy.report.download}
-              </button>
-            </div>
-          ) : null}
+    <article className="agent-review-artifact" data-testid="report-artifact">
+      {report && !loading && !error ? (
+        <div className="mb-4 flex items-center gap-2" aria-label={copy.report.actions}>
+          <strong className="sr-only" data-testid="report-artifact-title">{copy.report.title}</strong>
+          <button type="button" className="text-2xs text-gray-400 hover:text-gray-100" onClick={() => void copyReport()} data-testid="report-copy">
+            {copied ? copy.report.copied : t("common.copy")}
+          </button>
+          <button type="button" className="text-2xs text-gray-400 hover:text-gray-100" onClick={() => void save()} data-testid="report-save" title={savedPath ?? undefined}>
+            {savedPath ? copy.report.savedTo(savedPath) : copy.report.download}
+          </button>
         </div>
-      </header>
+      ) : (
+        <strong className="sr-only" data-testid="report-artifact-title">{copy.report.title}</strong>
+      )}
 
       {loading ? (
         <div className="space-y-2.5" aria-busy="true" aria-label={copy.report.preparing}>
@@ -93,7 +76,7 @@ export function ReportArtifact({
           <span className="skeleton h-4 w-1/2" />
         </div>
       ) : null}
-      {!loading && error ? <p className="agent-surface-error">{error}</p> : null}
+      {!loading && error ? <p className="agent-review-error">{error}</p> : null}
       {!loading && !error && report ? (
         <div className="agent-report-body">
           <Markdown text={report} />

@@ -5,7 +5,6 @@ import { SettingsDrawer } from "./components/SettingsDrawer";
 import { CommandPalette } from "./components/CommandPalette";
 import {
   deleteSession,
-  forkSession,
   patchSession,
 } from "./api";
 import { dropSessionRun } from "./sessionRuns";
@@ -38,7 +37,7 @@ function storedNavigationWidth(): number {
 }
 
 export default function App() {
-  const { status, slow } = useSidecarHealth();
+  const { status } = useSidecarHealth();
   const [tasks, setTasks] = useState<AgentTaskSummary[]>([]);
   const [activeTaskId, setActiveTaskIdState] = useState<string | null>(
     () => localStorage.getItem(ACTIVE_TASK_KEY),
@@ -102,23 +101,6 @@ export default function App() {
       refreshTasks();
       if (task.id === activeTaskId) setTaskReloadKey((key) => key + 1);
     },
-    onTogglePin: async (task) => {
-      try { await patchSession(task.id, { pinned: !task.pinned }); } catch (error) { fail(error); }
-      refreshTasks();
-    },
-    onFork: async (task) => {
-      try {
-        const fork = await forkSession(task.id);
-        if (fork) setActiveTaskId(fork.id);
-      } catch (error) { fail(error); }
-      refreshTasks();
-    },
-    onToggleArchive: async (task) => {
-      try {
-        await patchSession(task.id, { status: task.status === "archived" ? "active" : "archived" });
-      } catch (error) { fail(error); }
-      refreshTasks();
-    },
     onDelete: async (task) => {
       try {
         await deleteSession(task.id);
@@ -170,12 +152,9 @@ export default function App() {
       onSelectTask={setActiveTaskId}
       onNew={() => setActiveTaskId(null)}
       onOpenSettings={() => setDrawerOpen(true)}
-      status={status}
-      slow={slow}
       actions={taskActions}
       width={navigationWidth}
       collapsed={navigationFolded}
-      onOpenPalette={() => setPaletteOpen(true)}
       onToggleCollapse={() => setNavigationCollapsed((collapsed) => {
         localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? "0" : "1");
         return !collapsed;

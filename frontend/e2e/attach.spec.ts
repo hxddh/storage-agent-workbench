@@ -37,51 +37,35 @@ test.describe("attaching evidence to an Agent task", () => {
     await expect(attachButton(page)).toBeEnabled();
   });
 
-  test("a .csv is recognized as inventory without asking", async ({ page }) => {
+  test("a .csv is attached without asking the operator to classify it", async ({ page }) => {
     await fresh(page);
     await pick(page, "inventory-2026-06.csv", INVENTORY_CSV);
     await expect(page.getByText("inventory-2026-06.csv")).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/inventory/i).first()).toBeVisible();
     await expect(page.getByText(/Analyze as:/i)).toHaveCount(0);
+    await expect(page.getByTestId("attach-type-inventory")).toHaveCount(0);
   });
 
-  test("a .log is recognized as access logs", async ({ page }) => {
+  test("a .log is attached by filename", async ({ page }) => {
     await fresh(page);
     await pick(page, "s3-access-2026-06-25.log", ACCESS_LOG);
     await expect(page.getByText("s3-access-2026-06-25.log")).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/access log/i).first()).toBeVisible();
+    await expect(page.getByTestId("attach-type-access_log")).toHaveCount(0);
   });
 
-  test("an ambiguous extension asks which evidence type it is", async ({ page }) => {
+  test("an ambiguous extension is inferred silently", async ({ page }) => {
     await fresh(page);
     await pick(page, "dump.gz", ACCESS_LOG);
     await expect(page.getByText("dump.gz")).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/Analyze as:/i)).toBeVisible();
-    await expect(page.getByTestId("attach-type-inventory")).toHaveAttribute("aria-pressed", "false");
-    await expect(page.getByTestId("attach-type-access_log")).toHaveAttribute("aria-pressed", "false");
-  });
-
-  test("picking the type resolves ambiguity", async ({ page }) => {
-    await fresh(page);
-    await pick(page, "dump.gz", ACCESS_LOG);
-    await page.getByTestId("attach-type-access_log").click();
     await expect(page.getByText(/Analyze as:/i)).toHaveCount(0);
-    await expect(page.getByTestId("attach-type-access_log")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("attach-type-inventory")).toHaveCount(0);
+    await expect(page.getByTestId("attach-type-access_log")).toHaveCount(0);
   });
 
-  test("an inferred type can still be corrected", async ({ page }) => {
-    await fresh(page);
-    await pick(page, "inventory-2026-06.csv", INVENTORY_CSV);
-    await expect(page.getByTestId("attach-type-inventory")).toHaveAttribute("aria-pressed", "true");
-    await page.getByTestId("attach-type-access_log").click();
-    await expect(page.getByTestId("attach-type-access_log")).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("attach-type-inventory")).toHaveAttribute("aria-pressed", "false");
-  });
-
-  test("a filename whose syllable contains log is still inventory when its shape says so", async ({ page }) => {
+  test("a filename whose syllable contains log is still attached as a file", async ({ page }) => {
     await fresh(page);
     await pick(page, "catalog.csv", INVENTORY_CSV);
-    await expect(page.getByTestId("attach-type-inventory")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("catalog.csv")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("attach-type-inventory")).toHaveCount(0);
   });
 
   test("attached evidence alone is enough to delegate the task", async ({ page }) => {

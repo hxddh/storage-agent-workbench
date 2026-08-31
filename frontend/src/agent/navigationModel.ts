@@ -38,8 +38,5 @@ export function dayBucket(iso: string, now: Date = new Date()): DayBucket {
 /** Mutations on a durable Agent task. Backend record naming stays behind this boundary. */
 export type TaskActions = {
   onRename: (task: AgentTaskSummary, title: string) => void;
-  onTogglePin: (task: AgentTaskSummary) => void;
-  onFork: (task: AgentTaskSummary) => void;
-  onToggleArchive: (task: AgentTaskSummary) => void;
   onDelete: (task: AgentTaskSummary) => void;
 };

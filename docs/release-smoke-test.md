@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v1.00.0.**
+> **Current baseline: Storage Agent v1.01.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -19,14 +19,14 @@
 
 ## B. Agent Task product smoke
 
-A user must be able to recognize and use the v1.00 product model without reading source code.
+A user must be able to recognize and use the v1.01 product model without reading source code.
 
 ### Start and task navigation
 
 - [ ] The product identity is **Storage Agent** in the window/release-facing UI.
 - [ ] A fresh install exposes a **Composer** to type into — not a wizard, heading, or suggestion cards.
-- [ ] Global navigation is a single Agent Task list; Needs-you / Recent are not painted taxonomies.
-- [ ] Task rows can expose the supported lifecycle actions (for example rename/pin/duplicate/archive/delete) without turning navigation into a backend-record browser.
+- [ ] Global navigation is a single chronological Agent Task title list.
+- [ ] Task rows support Rename and Delete without turning navigation into a backend-record browser.
 - [ ] Creating/delegating initial work creates a durable Task that remains available after reload/restart.
 
 ### One control path
@@ -34,7 +34,7 @@ A user must be able to recognize and use the v1.00 product model without reading
 - [ ] There is exactly one primary Agent composer/control.
 - [ ] At rest it represents **Delegate**.
 - [ ] During active execution it exposes real **Steer** and **Stop** behavior for the same Task.
-- [ ] Opening Review or Focus mode does not create another Agent input.
+- [ ] Opening Review does not create another Agent input.
 - [ ] ⌘K / Ctrl+K opens a command overlay over the Task; it is not a new destination.
 - [ ] Dark and light themes are both first-class; switching language does not change product semantics.
 
@@ -42,9 +42,9 @@ A user must be able to recognize and use the v1.00 product model without reading
 
 - [ ] User input is presented as **Direction** / task intent, not as an old chat-product shell.
 - [ ] Active work enters **Working** based on real runtime state.
-- [ ] Real Tool activity becomes visible progressively as Execution; no synthetic plan/worker/sub-agent UI is invented.
+- [ ] Real Tool activity becomes visible in the Work Result as Execution; no synthetic plan/worker/sub-agent UI is invented.
 - [ ] A completed turn produces a durable **Work Result** that survives reload.
-- [ ] Execution summary/detail remains linked to the Work Result that produced it.
+- [ ] Tool rows remain linked to the Work Result that produced them.
 - [ ] Structured storage errors render as storage/error artifacts where applicable rather than losing useful fields in generic prose.
 
 ### Steering and stopping
@@ -55,7 +55,7 @@ A user must be able to recognize and use the v1.00 product model without reading
 - [ ] A `needs_attention` Task whose last Execution is interrupted/failed exposes **Resume**; Resume follows the new execution event stream.
 - [ ] Settings contains model, storage credentials, language, and theme — not a storage price table.
 - [ ] Composer has no `/checkup` `/cost` `/drift` SKU menu. Typing `/` is ordinary text.
-- [ ] There is no header Review destination and no Overview / revisit / Verify painted chrome.
+- [ ] There is no task header Review destination and no Overview / revisit / Verify painted chrome.
 - [ ] Cost-review numbers in a Work Result are labelled estimates with coverage, or explicit gaps when inventory/price table is missing.
 - [ ] Cost / inventory / Drift / access-log figures render from runtime artifacts with coverage and Estimate; unconfirmed prices withhold the cost axis; missing series are gap states, never interpolated.
 - [ ] A finding with a provenance chain opens Evidence anchored to that finding; a missing chain is labelled, not implied.

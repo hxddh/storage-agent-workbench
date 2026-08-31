@@ -1,15 +1,16 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.00.0** (`v1.00.0`).
+> **Current architecture baseline: Storage Agent v1.01.0** (`v1.01.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
 > added quantified storage engines under that runtime. v0.97–v0.99 were
-> presentation passes that still stacked copilot OS chrome (price table, slash
-> SKUs, first-run wizard, 4-tab Review) on a modern Agent shell. **v1.00.0
-> deletes those product objects.** Empty window = Composer. Settings = model +
-> storage + language/theme. Tools are discovered by the model. Artifacts open
-> from the document. Engines remain in the Sidecar with no product UI entry.
+> presentation passes that still stacked copilot OS chrome. **v1.00.0
+> deleted those copilot objects** but kept a workbench shell. **v1.01.0
+> replaces that shell with a native Agent window.** Empty window = Composer.
+> Center = one readable work record. Tools appear in that record. Sidebar =
+> quiet titles. Settings is hidden. Overlay Review. Engines remain in the
+> Sidecar with no product UI entry.
 
 This directory documents the currently shipped Storage Agent architecture and operating contracts. It is deliberately organized so implementation agents and contributors do not reconstruct older product shells from historical terminology that still exists in persistence, APIs, release notes, or git history.
 
@@ -36,11 +37,11 @@ Use these terms in product-facing and new frontend architecture work:
 | --- | --- |
 | **Agent Task** | The durable unit of delegated work and the primary application object. |
 | **Direction** | User objective, constraint, correction, or steering input. |
-| **Execution** | Real runtime/tool work; never a synthetic plan. |
+| **Execution** | Real runtime/tool work; never a synthetic plan. Shown as tool rows in the document. |
 | **Decision required** | A real confirmation boundary that blocks gated work. |
-| **Work Result** | Durable result produced by the Agent. |
-| **Artifact** | Reviewable durable output such as Evidence or Report. |
-| **Review** | Thin artifact viewer opened from the document; not a top-level application surface. |
+| **Work Result** | Durable Agent output for a Task, including inline figures. |
+| **Artifact** | Reviewable Evidence, Execution detail, or Report, opened as an overlay. |
+| **Review** | Light overlay over the active Task. Not an application destination. |
 | **Delegate / Steer / Stop** | The one Agent control path. |
 
 Historical compatibility vocabulary such as `session`, `run`, `session_message`, and `tool_call` remains valid inside Sidecar persistence/API code and narrowly scoped frontend adapters. It does **not** define the product information architecture.
@@ -54,7 +55,7 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
 - [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 027, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — post-1.00 priorities and explicit non-directions.
+- [`roadmap.md`](roadmap.md) — post-1.01 priorities and explicit non-directions.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.
@@ -78,5 +79,5 @@ For architecture changes, update at minimum:
 
 - `CLAUDE.md`;
 - `docs/product.md` when user-visible semantics change;
-- `docs/architecture.md` when ownership or runtime topology changes;
-- the executable architecture and documentation-contract tests that lock those documents.
+- `docs/architecture.md` when ownership or runtime topology change;
+- the executable architecture and documentation-contract tests that lock those files.

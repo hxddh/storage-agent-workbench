@@ -61,7 +61,7 @@ test.describe("durable Agent Task runtime surface", () => {
       await boot(page);
       await composer(page).fill("Inspect acme-logs deeply.");
       await composer(page).press("Enter");
-      await expect(page.getByTestId("agent-live-status")).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("agent-composer")).toHaveAttribute("data-agent-state", "working", { timeout: 20_000 });
       await expect.poll(() => surface.taskId(), { timeout: 20_000 }).toBeTruthy();
       const taskId = surface.taskId()!;
       // Live status is painted as soon as Composer submits. Wait until that

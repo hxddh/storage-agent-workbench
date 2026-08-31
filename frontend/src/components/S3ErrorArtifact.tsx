@@ -34,15 +34,11 @@ async function copyText(text: string): Promise<boolean> {
 export function S3ErrorArtifact({
   error,
   raw,
-  onRedirect,
-  onBranch,
 }: {
   error: S3Error;
   raw: string;
-  onRedirect?: (text: string) => void;
-  onBranch?: () => void;
 }) {
-  const { lang, t } = useI18n();
+  const { t } = useI18n();
   const [showRaw, setShowRaw] = useState(false);
   const [copied, setCopied] = useState(false);
   const facts: { label: string; value: string; mono?: boolean }[] = [];
@@ -81,17 +77,6 @@ export function S3ErrorArtifact({
         >
           {copied ? t("common.copied") : t("common.copy")}
         </button>
-        <span className="flex-1" />
-        {onRedirect ? (
-          <button type="button" onClick={() => onRedirect(raw)} data-testid="redirect-direction" className="text-2xs text-gray-500 transition-colors hover:text-gray-200">
-            {lang === "zh" ? "重新定向" : "Redirect"}
-          </button>
-        ) : null}
-        {onBranch ? (
-          <button type="button" onClick={onBranch} data-testid="branch-task" className="text-2xs text-gray-500 transition-colors hover:text-gray-200">
-            {lang === "zh" ? "分支任务" : "Branch task"}
-          </button>
-        ) : null}
       </div>
       {showRaw ? <pre className="max-h-64 overflow-auto border-t border-danger-border/60 bg-code px-3.5 py-2.5 text-2xs leading-relaxed text-gray-400">{raw}</pre> : null}
     </div>
