@@ -133,8 +133,7 @@ test("the Agent start surface stops inviting execution it cannot perform", async
   await expect(composer(page)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("offline-banner")).toHaveCount(0);
   await composer(page).fill("/");
-  await expect(page.getByRole("button", { name: "/diagnose Diagnose an error" })).toBeVisible();
-  await composer(page).fill("");
+  await expect(page.getByRole("button", { name: /\/diagnose/ })).toHaveCount(0);
 
   await page.route("**/health", (route) => route.abort());
   await expect(page.getByTestId("offline-banner")).toBeVisible({ timeout: 20_000 });
