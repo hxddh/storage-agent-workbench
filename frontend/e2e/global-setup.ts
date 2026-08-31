@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
  *
  * Isolation matters more than speed here: the sidecar gets a throwaway
  * `STORAGE_AGENT_DATA_DIR` (fresh SQLite, fresh vault, no providers), so a
- * developer's real workbench data is never touched and every run starts from
+ * developer's real local data is never touched and every run starts from
  * the same first-install state the tests assert against. No auth token is set,
  * which puts the sidecar in its documented dev/test mode (see the
  * `_require_sidecar_token` middleware) — the token path belongs to the packaged

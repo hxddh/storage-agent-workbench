@@ -5,6 +5,7 @@ import { ExecutionReview } from "./ExecutionReview";
 import type { ReviewSurface } from "./model";
 import { useAgentCopy } from "./agentCopy";
 import type { TaskProvenance } from "../viz/types";
+import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 
 export function AgentReviewPanel({
   view,
@@ -37,6 +38,8 @@ export function AgentReviewPanel({
     : view === "execution"
       ? copy.execution.title
       : copy.report.title;
+
+  useDismissOnEscape(true, onClose);
 
   return (
     <div className="agent-review-overlay" data-testid="agent-review-overlay" onClick={onClose}>

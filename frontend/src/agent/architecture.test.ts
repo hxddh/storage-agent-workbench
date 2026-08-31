@@ -125,6 +125,7 @@ describe("v1.01 native Agent ownership boundaries", () => {
     expect(review).toContain("<ExecutionReview");
     expect(review).toContain("<ReportArtifact");
     expect(review).toContain("agent-review-overlay");
+    expect(review).toContain("useDismissOnEscape");
     expect(review).not.toContain('data-testid="decision-history"');
     expect(review).not.toContain("Workspace");
     expect(review).not.toContain("agent-review-eyebrow");

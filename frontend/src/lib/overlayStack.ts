@@ -16,7 +16,7 @@
  * be reachable from one window listener, and a provider would only add a tree
  * the overlays do not otherwise need.
  *
- * NOT for Escape handlers bound to a focused input (the find bar, the rail's
+ * NOT for Escape handlers bound to a focused input (the find bar, the task
  * rename box). Those already only fire when that
  * element has focus, which is its own, correct, scoping.
  */

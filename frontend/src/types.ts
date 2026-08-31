@@ -516,7 +516,7 @@ export interface ExecutionMetrics extends TokenUsage {
   model?: string | null;
   usage?: TokenUsage;
   /** The per-turn TOKEN ceiling this turn ran under (v0.54.0). Not a provider
-   * measurement — the workbench's own governor, reported beside usage. */
+   * measurement — this Agent's per-execution governor, reported beside usage. */
   budget_tokens?: number | null;
   /** Which bound ended the investigation, when one did: "tokens" | "chars". */
   budget_stopped_on?: string | null;

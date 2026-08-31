@@ -200,7 +200,7 @@ Streaming work is Execution; persisted completed output is Work Result. Work Res
 - **Execution** — persisted analysis execution and sanitized call detail.
 - **Report** — durable Markdown Report artifact.
 
-There is no Overview surface, no 4-tab Review application, and no revisit/plan/baseline/drift walls. These are review modes of the active Task, opened from the document, not independent application destinations.
+There is no Overview surface, no 4-tab Review application, and no revisit/plan/baseline/drift walls. These are review modes of the active Task, opened from the document, not independent application destinations. Escape closes the overlay through the same overlay stack as Settings and the command palette.
 
 ## 5. Runtime state and task concurrency
 

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { seedSession } from "./seed";
 
 async function seedFreshApp(page: Page) {
   await page.addInitScript(() => {
@@ -222,8 +223,8 @@ test.describe("work-result structure", () => {
 });
 
 /**
- * Escape is an overlay-stack contract. Review is contextual, not an overlay, so
- * exercise two overlays that still exist: Settings, then Command Palette above it.
+ * Escape is an overlay-stack contract. Review, Settings, and the command palette
+ * are overlays: the topmost one closes, the one under it stays.
  */
 test.describe("Escape with two overlays open", () => {
   test("closes only the topmost one", async ({ page }) => {
@@ -245,6 +246,44 @@ test.describe("Escape with two overlays open", () => {
 
     await page.keyboard.press("Escape");
     await expect(settings).toHaveCount(0);
+  });
+
+  test("closes Review overlay without replacing the Task", async ({ page }) => {
+    const { title } = seedSession(2);
+    await seedFreshApp(page);
+    await page.goto("/");
+    await page.getByText(title, { exact: true }).first().click();
+    await expect(page.getByTestId("work-result").first()).toBeVisible({ timeout: 20_000 });
+
+    await page.keyboard.press("Control+i");
+    await expect(page.getByTestId("agent-review-overlay")).toBeVisible();
+    await expect(page.getByTestId("agent-composer")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("agent-review-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("agent-composer")).toBeVisible();
+  });
+
+  test("a palette opened over Review closes first", async ({ page }) => {
+    const { title } = seedSession(2);
+    await seedFreshApp(page);
+    await page.goto("/");
+    await page.getByText(title, { exact: true }).first().click();
+    await expect(page.getByTestId("work-result").first()).toBeVisible({ timeout: 20_000 });
+
+    await page.keyboard.press("Control+i");
+    await expect(page.getByTestId("agent-review-overlay")).toBeVisible();
+
+    await page.keyboard.press("ControlOrMeta+k");
+    const palette = page.getByTestId("command-palette");
+    await expect(palette).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(palette).toHaveCount(0);
+    await expect(page.getByTestId("agent-review-overlay")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("agent-review-overlay")).toHaveCount(0);
   });
 });
 

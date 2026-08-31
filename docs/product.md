@@ -99,7 +99,7 @@ A Remediation Plan, if drafted, is typed and versioned. The operator applies it 
 
 ### Review
 
-Review is a **light overlay** over the active Task — title, close, and the requested artifact. It opens from a finding, a Work Result Evidence/Execution/Report link, or ⌘I / Ctrl+I for Evidence. The overlay is not a side-column application, not a document hero, and not a 4-tab Overview / Evidence / Execution / Report destination.
+Review is a **light overlay** over the active Task — title, close, and the requested artifact. It opens from a finding, a Work Result Evidence/Execution/Report link, or ⌘I / Ctrl+I for Evidence. Escape closes it through the same overlay stack as Settings and the command palette. The overlay is not a side-column application, not a document hero, and not a 4-tab Overview / Evidence / Execution / Report destination.
 
 It must not create a second Agent input or a second task lifecycle.
 
