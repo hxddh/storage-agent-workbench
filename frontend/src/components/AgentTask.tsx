@@ -1,6 +1,12 @@
 import { useEffect, useRef, type ComponentProps } from "react";
 import { isEditable, matches } from "../shortcuts";
-import { nextTaskStepIndex, stepTaskIndex, type TaskStepDirection } from "../lib/taskNavigation";
+import {
+  nextTaskStepIndex,
+  RELEASE_TASK_FOLLOW_EVENT,
+  stepTaskIndex,
+  taskStepScrollTop,
+  type TaskStepDirection,
+} from "../lib/taskNavigation";
 import { AgentTaskImplementation } from "./AgentTaskImplementation";
 
 /**
@@ -72,7 +78,15 @@ export function AgentTask({ taskId, onTaskCreated, onTaskDiscarded, ...props }: 
       navigationIndexRef.current = target;
 
       event.preventDefault();
-      directions[target]?.scrollIntoView({ block: "start", behavior: "smooth" });
+      // Follow-latest converges by writing scrollTop every frame. Smooth
+      // scrollIntoView is also a no-op in Chromium when the target Direction
+      // is already on screen. Instant scrollTop is the reading move j/k own.
+      scrollRoot.dispatchEvent(new Event(RELEASE_TASK_FOLLOW_EVENT, { bubbles: true }));
+      const step = directions[target];
+      if (!step) return;
+      const offset =
+        step.getBoundingClientRect().top - scrollRoot.getBoundingClientRect().top + scrollRoot.scrollTop;
+      scrollRoot.scrollTo({ top: taskStepScrollTop(offset), behavior: "auto" });
     };
 
     window.addEventListener("keydown", onKey);

@@ -120,21 +120,23 @@ test("find steps through repeated matches and paints one active match", async ({
 
 test("j/k navigate task history but remain ordinary text in the Agent input", async ({ page }) => {
   await openLongTask(page);
-  const position = () => taskScroll(page).evaluate((element) => Math.round(element.scrollTop));
+  const scroll = taskScroll(page);
+  const position = () => scroll.evaluate((element) => Math.round(element.scrollTop));
+  await expect.poll(position, { timeout: 10_000 }).toBeGreaterThan(100);
+  // Bare j/k are task-step keys only when the Agent input is not focused.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
   const start = await position();
-  await page.locator("body").press("k");
-  await page.waitForTimeout(700);
+  await page.keyboard.press("k");
+  await expect.poll(position).toBeLessThan(start);
   const up = await position();
-  expect(up).toBeLessThan(start);
-  await page.locator("body").press("j");
-  await page.waitForTimeout(700);
-  expect(await position()).toBeGreaterThan(up);
+  await page.keyboard.press("j");
+  await expect.poll(position).toBeGreaterThan(up);
 
   const input = composer(page);
   await input.click();
   const beforeTyping = await position();
-  await input.type("jkjk");
-  await page.waitForTimeout(500);
+  await input.pressSequentially("jkjk");
   await expect(input).toHaveValue("jkjk");
   expect(await position()).toBe(beforeTyping);
 });

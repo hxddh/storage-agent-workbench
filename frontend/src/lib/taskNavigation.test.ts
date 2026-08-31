@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { currentTaskStepIndex, nextTaskStepIndex, stepTaskIndex } from "./taskNavigation";
+import {
+  currentTaskStepIndex,
+  nextTaskStepIndex,
+  stepTaskIndex,
+  taskStepScrollTop,
+  TASK_STEP_SCROLL_MARGIN,
+} from "./taskNavigation";
 
 describe("thread navigation", () => {
   const turns = [0, 900, 1800, 2700, 3600, 4500, 5400];
@@ -27,5 +33,10 @@ describe("thread navigation", () => {
     expect(currentTaskStepIndex([], 0)).toBeNull();
     expect(nextTaskStepIndex([], 0, 1)).toBeNull();
     expect(stepTaskIndex(0, 0, 1)).toBeNull();
+  });
+
+  it("aligns a Direction to the reading start, including at the document origin", () => {
+    expect(taskStepScrollTop(900)).toBe(900 - TASK_STEP_SCROLL_MARGIN);
+    expect(taskStepScrollTop(40)).toBe(0);
   });
 });

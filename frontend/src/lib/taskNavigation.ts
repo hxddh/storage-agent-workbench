@@ -1,5 +1,22 @@
 export type TaskStepDirection = -1 | 1;
 
+/**
+ * CSS `scroll-margin-top` on Direction anchors. Keep in lockstep with
+ * `frontend/src/agent-task.css`.
+ */
+export const TASK_STEP_SCROLL_MARGIN = 72;
+
+/** Ask the task viewport to stop converging on latest before keyboard navigation moves. */
+export const RELEASE_TASK_FOLLOW_EVENT = "saw:release-follow";
+
+/** Reading-start scrollTop for a Direction whose offset is measured inside the scroller. */
+export function taskStepScrollTop(
+  stepOffset: number,
+  marginTop = TASK_STEP_SCROLL_MARGIN,
+): number {
+  return Math.max(0, stepOffset - marginTop);
+}
+
 /** Infer the semantic task step currently under the reader's eye. */
 export function currentTaskStepIndex(
   stepPositions: readonly number[],

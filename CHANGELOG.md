@@ -26,6 +26,7 @@ _Native Agent reconstruction. Replaces the v1.00 workbench shell. No new Agent c
 - Empty window is the Composer. The center is one readable work record. Tools appear in that record.
 - Task navigation is one chronological title list (Rename + Delete).
 - Review is a light overlay over the Task. Escape closes it through the overlay stack.
+- j/k move one Direction by writing the task scroller directly, so a step already on screen still becomes the reading start.
 - Figures and provenance sit inside the latest Work Result.
 - Architecture and documentation contracts lock the native window, not the workbench.
 

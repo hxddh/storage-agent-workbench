@@ -303,8 +303,17 @@ describe("v1.01 native Agent ownership boundaries", () => {
   it("has exactly one semantic j/k owner without capture-phase suppression", () => {
     const boundary = source("../components/AgentTask.tsx");
     const implementation = source("../components/AgentTaskImplementation.tsx");
+    const viewport = source("../hooks/useTaskViewport.ts");
+    const nav = source("../lib/taskNavigation.ts");
+    const taskCss = source("../agent-task.css");
     expect(boundary).toContain('matches(event, "nextStep")');
     expect(boundary).not.toContain("stopImmediatePropagation");
+    expect(boundary).toContain("scrollTo");
+    expect(boundary).not.toContain("scrollIntoView");
+    expect(boundary).toContain("RELEASE_TASK_FOLLOW_EVENT");
+    expect(viewport).toContain("RELEASE_TASK_FOLLOW_EVENT");
+    expect(nav).toContain("TASK_STEP_SCROLL_MARGIN = 72");
+    expect(taskCss).toContain("scroll-margin-top: 72px");
     expect(implementation).not.toContain('matches(event, "nextStep")');
     expect(implementation).not.toContain("stepTurn");
   });
