@@ -78,9 +78,10 @@ export function AgentTask({ taskId, onTaskCreated, onTaskDiscarded, ...props }: 
       navigationIndexRef.current = target;
 
       event.preventDefault();
-      // Follow-latest converges by writing scrollTop every frame. Smooth
-      // scrollIntoView is also a no-op in Chromium when the target Direction
-      // is already on screen. Instant scrollTop is the reading move j/k own.
+      // Follow-latest converges by writing scrollTop every frame. A smooth
+      // in-view alignment is also a no-op in Chromium when the target
+      // Direction is already on screen. Instant scrollTop is the reading
+      // move j/k own.
       scrollRoot.dispatchEvent(new Event(RELEASE_TASK_FOLLOW_EVENT, { bubbles: true }));
       const step = directions[target];
       if (!step) return;

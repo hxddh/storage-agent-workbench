@@ -116,7 +116,7 @@ Review is subordinate to the Task. Opening Review does not create another task, 
 
 ### 3.4 `AgentTask`: public task boundary
 
-`frontend/src/components/AgentTask.tsx` is the public task component. It exposes Task-native props to `App` and owns semantic task navigation/keyboard behavior. Bare **j** / **k** move one Direction to the reading start by writing the task scroller; they do not use `scrollIntoView`, which Chromium skips when the target is already on screen.
+`frontend/src/components/AgentTask.tsx` is the public task component. It exposes Task-native props to `App` and owns semantic task navigation/keyboard behavior. Bare **j** / **k** move one Direction to the reading start by writing the task scroller; they do not animate to an already-visible target.
 
 `AgentTaskImplementation.tsx` owns the large task document implementation:
 
