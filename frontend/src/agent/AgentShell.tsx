@@ -29,7 +29,7 @@ export function AgentShell({
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [focus, setFocus] = useState(false);
-  const { detail, artifacts, decisions, plans, baselines, revisit, saveRevisit, report, reportLoading, error } = useAgentTaskProjection(taskId, review);
+  const { detail, report, reportLoading, error } = useAgentTaskProjection(taskId, review);
   const provenance = useTaskProvenance(taskId, Boolean(review) || Boolean(taskId));
 
   useEffect(() => {
@@ -65,7 +65,6 @@ export function AgentShell({
   const liveExecution = latestTool
     ? `${latestTool.tool}${latestTool.target ? ` · ${latestTool.target}` : ""}`
     : copy.task.startingExecution;
-  const showReview = Boolean(taskId);
 
   return (
     <div data-testid="agent-shell" data-review={review ?? "closed"} data-focus={focus ? "true" : "false"} className="agent-native-shell">
@@ -78,14 +77,6 @@ export function AgentShell({
           </div>
 
           <div className="agent-task-controls">
-            {showReview ? (
-              <button type="button" className="agent-task-review-button" data-testid="agent-task-review" aria-label={copy.review.open} onClick={() => setReview((current) => current ? null : "overview")} aria-expanded={Boolean(review)}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-                  <path d="M4 5h16M4 12h16M4 19h10" />
-                </svg>
-                <span>{copy.review.open}</span>
-              </button>
-            ) : null}
             <button type="button" className="agent-native-icon" onClick={() => setFocus((value) => !value)} aria-label={focus ? copy.exitFocus : copy.focus} title={focus ? copy.exitFocus : copy.focus}>
               {focus ? (
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="10" y1="14" x2="3" y2="21" /><line x1="14" y1="10" x2="21" y2="3" /></svg>
@@ -112,12 +103,6 @@ export function AgentShell({
           </section>
           {review && taskId ? (
             <AgentReviewPanel
-              artifacts={artifacts}
-              decisions={decisions}
-              plans={plans}
-              baselines={baselines}
-              revisit={revisit}
-              onSaveRevisit={saveRevisit}
               view={review}
               detail={detail}
               report={report}
@@ -126,7 +111,6 @@ export function AgentShell({
               selectedExecutionId={selectedExecutionId}
               selectedFindingId={selectedFindingId}
               provenance={provenance}
-              onView={(next) => { setSelectedExecutionId(null); setSelectedFindingId(null); setReview(next); }}
               onOpenExecution={(executionId) => { setSelectedExecutionId(executionId); setSelectedFindingId(null); setReview("execution"); }}
               onCloseExecution={() => setSelectedExecutionId(null)}
               onClose={() => { setReview(null); setSelectedExecutionId(null); setSelectedFindingId(null); }}

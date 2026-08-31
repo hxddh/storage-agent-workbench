@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v0.99.0.** This is the canonical product/UX specification. v0.99 is an Agent-native surface pass on the v0.96 runtime (the Task is a document). Historical release notes are not current product architecture.
+> **Applies to Storage Agent v1.00.0.** This is the canonical product/UX specification. v1.00 is a product-model replacement: a modern Agent shell. Historical release notes (including v0.96 copilot OS and v0.99 chrome subtraction) are not current product architecture.
 
 ## Product definition
 
@@ -32,9 +32,8 @@ Storage Agent is not a generic chat assistant, not an admin dashboard with an AI
 5. Triage storage errors, including deterministic offline triage for supported error shapes.
 6. Preserve findings, memory, evidence references, execution provenance, and follow-up context across a durable task.
 7. Produce evidence-backed Report artifacts.
-8. Quantify lifecycle/cost impact from bounded inventory aggregates and a local, user-calibrated price table — every figure is an estimate with coverage, or an explicit gap.
-9. Draft a typed Remediation Plan the operator applies in their own console/CLI; Verify with read-only probes.
-10. Capture versioned baselines, report Drift, and optionally revisit the same Task on a schedule.
+
+Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules remain **Sidecar engines** the Agent may invoke. They are not Settings spreadsheets, slash SKUs, Review destinations, or painted Task controls. If prices are missing, the Agent reports a gap or asks in the Task.
 
 ## Product objects
 
@@ -59,9 +58,10 @@ Since v0.94 an Execution is a durable object with a real lifecycle — `queued`,
 v0.95 makes that lifecycle operable in the Task:
 
 - **Resume** is a task-area action when the Task is `needs_attention` and the last Execution is `interrupted` or `failed`. It starts a new Execution with the same Direction and follows the new event stream. Cancelled, missing-key, and generic error states are not Resume.
-- **Verify** is a task-area action when a Remediation Plan Artifact exists. It submits a `kind=verify` Execution through the same runtime path, diffs live read-only configuration against the plan, and writes `proposed` / `verified` / `partially_verified` / `stale` back onto the plan. It never mutates storage.
-- A **Queued Direction** submitted while another Execution is running is visible in the Task and can be cancelled. Command-center state stays `working`.
+- A **Queued Direction** submitted while another Execution is running is visible in the Task and can be cancelled.
 - Stream recovery after a drop is **sequence-only** (`after=<last seq>`). The blocking `/sessions` POST is not a recovery path.
+
+Verify, cost simulation, and revisit remain runtime/engine paths. The user asks in Composer. There is no painted Verify control and no revisit schedule UI.
 
 The UI may summarize or progressively disclose Execution, but must not invent:
 
@@ -75,9 +75,9 @@ The UI may summarize or progressively disclose Execution, but must not invent:
 
 A backend action marked `requires_confirmation=true` that gates data-moving or artifact-producing work is a real blocking state, recorded as a first-class durable Decision. The user must approve or **Decline** before the gated operation proceeds; the resolution is recorded durably, and the Execution that raised it stays `waiting` until the boundary is crossed.
 
-The Decision card must project **bounds and impact** already present on the proposal/prefill and evidence-import plan: why confirmation is required, scan scope, and how many files/bytes would move. Absence of a count is a gap, not an invented number.
+Decision cards in the Task project **bounds and impact** already present on the proposal/prefill and evidence-import plan: why confirmation is required, scan scope, and how many files/bytes would move. Absence of a count is a gap, not an invented number.
 
-Review Overview projects durable **Decision history** (`pending` / `approved` / `declined` / `superseded`) from `task_decisions`. This is a projection, not a new table and not a separate application destination.
+Durable Decision history lives in `task_decisions`. It is not a Review Overview wall.
 
 Read-only investigation is autonomous by default. Confirmation is reserved for meaningful safety boundaries such as managed cloud Evidence Import or materially large/full scanning/data movement.
 
@@ -93,17 +93,15 @@ A Work Result is not a transient chat bubble and should read like technical work
 
 ### Artifact
 
-Artifacts are durable, reviewable outputs attached to a Task through one first-class Artifact index: Markdown Reports, imported Evidence snapshots, completed analyses, **Remediation Plans**, **baselines**, and **Drift reports**. Persisted Execution detail is also reviewable context associated with the Task.
+Artifacts are durable, reviewable outputs attached to a Task: Markdown Reports, imported Evidence snapshots, completed analyses, and engine outputs such as Remediation Plans, baselines, and Drift reports when the Agent produced them. Persisted Execution detail is also reviewable context associated with the Task.
 
-A Remediation Plan is typed and versioned. It contains pasteable lifecycle JSON (or equivalent policy corrections), the finding/Evidence it addresses, the simulator's expected impact including coverage, and a verification checklist. The user applies it outside Storage Agent. Verify does not write to the cloud.
-
-A baseline is a versioned bounded snapshot (inventory overview, configuration facts, findings, context version) — never raw rows. Drift classifies findings as added / resolved / still present, diffs configuration, and reports a two-point inventory trend. Missing baseline is the sentence "there is no comparable baseline", never a fabricated trend.
+A Remediation Plan, if drafted, is typed and versioned. The operator applies it outside Storage Agent. There is no Verify button. The user can ask the Agent to re-probe.
 
 ### Review
 
-Review is subordinate to the active Task. It stays **closed by default**. A Review button appears once a durable Task exists (empty start has no Task and no Review). Open Review from the document (a finding, a number, an Evidence link) or the header button. Empty Overview sections are not rendered. Overview still projects Remediation Plan status, baselines, Drift, and the optional revisit schedule **when those records exist**. These are not new destinations.
+Review is a **thin artifact viewer** opened from the document — a finding, a Work Result Evidence/Execution/Report link, or ⌘I / Ctrl+I for Evidence. There is no header Review destination and no 4-tab Overview / Evidence / Execution / Report application.
 
-Review must not create a second Agent input or a second task lifecycle.
+The panel is title + close + the requested artifact. It must not create a second Agent input or a second task lifecycle.
 
 ## One Agent control path
 
@@ -136,11 +134,9 @@ Multiple Tasks may independently have real in-flight work because execution stat
 
 This does **not** mean the product has hidden autonomous worker Agents. It means a real execution already started for Task A is not destroyed when the user opens Task B — and since v0.94 that ownership is the Sidecar's durable task runtime, so it also survives closing the stream, reloading the app, and (as an explicit `interrupted` + Resume action) a Sidecar restart. Recovering a Task reads its typed, versioned Storage Task Context — machine state is never rebuilt by replaying messages. Since v0.95 that typed context is also the Agent prompt's stable grounding.
 
-An optional per-task **revisit schedule** (every N days) submits a read-only Execution through the same `runtime.submit` path when the Sidecar is running and the due time has passed. The desktop app has no background daemon: if the app was closed past due, the next open catch-up-submits and labels the Direction as catch-up. Revisits never auto-approve a Decision. Needs-decision / needs-attention from a revisit use the existing AgentTaskNavigation states. The user can turn the schedule off at any time.
+An optional per-task revisit schedule may exist as a Sidecar engine. It has no product UI. The desktop app has no background daemon.
 
-Ready-to-delegate capabilities map to Composer `/` slash commands: storage checkup, cost review (simulator), drift check (baseline), plus diagnose / attach inventory or access logs / account mapping. They must not promise runtime the Sidecar does not expose. There is no suggestion-card grid on the empty start.
-
-A fresh install follows a **Composer-native 60-second path**: welcome → connect a model (live `POST /model-providers/{id}/test`) → optionally connect storage (skippable; skip is an explicit gap, not a fake connection) → delegate the first storage checkup. First-run is a state of the same Composer box, not a second card stacked on it. The checkup CTA submits the Direction through the same turn runner as Delegate. No demo data, no fake progress. Every step can exit; the empty start then offers a one-line resume entry back to that step.
+The empty start is the Composer. There is no first-run wizard, no slash SKU catalog (`/checkup` `/cost` `/drift`), and no suggestion-card grid. Missing model is a banner plus Open Settings. Typing `/` is ordinary Direction text. The model discovers tools.
 
 ## Storage-specific capability model
 
@@ -154,10 +150,10 @@ Current capability classes include:
 - bounded preview/range/conditional/latency checks;
 - presigned-URL diagnosis;
 - local inventory/access-log analysis;
-- deterministic cost/lifecycle simulation (bounded aggregates + local price table);
-- typed Remediation Plan + read-only Verify;
-- versioned baselines and Drift reports;
-- optional per-task read-only revisit (catch-up labelled when the app was closed past due);
+- deterministic cost/lifecycle simulation (bounded aggregates + local price table **engine** — not a Settings UI);
+- typed Remediation Plan + read-only Verify **as Agent tools**;
+- versioned baselines and Drift reports **as Agent tools**;
+- optional per-task read-only revisit **as a Sidecar engine**;
 - managed Evidence Import with explicit confirmation;
 - deterministic storage-error triage;
 - durable task findings/memory/evidence;
@@ -207,13 +203,13 @@ The primary Task viewport should answer, in order:
 
 1. **What is the Agent working on?**
 2. **What is happening now or what did it produce?**
-3. **What can I do now?** — Steer, Stop, Resume, Verify, decide, review, schedule a revisit, or delegate the next Direction.
+3. **What can I do now?** — Steer, Stop, Resume, decide, open an artifact from the document, or delegate the next Direction.
 
 Provider/model configuration, audit internals, and low-level counters are secondary unless directly relevant to the active work.
 
 ## Design rules
 
-v0.99.0 is an Agent-native surface pass on the v0.97 token system. Visual language is specified in
+v1.00.0 is a modern Agent reconstruction on the v0.97 token system. Visual language is specified in
 [`design-tokens.md`](design-tokens.md) and enforced by frontend token tests.
 
 - Dark and light are first-class. Do not ship a surface that only works in one.
@@ -229,19 +225,14 @@ v0.99.0 is an Agent-native surface pass on the v0.97 token system. Visual langua
 - Findings carry provenance. Missing chain is labelled, never implied.
 - Execution rows show real tool name, argument summary, duration, and
   success/fail. Streaming must not jump layout. No invented step/progress chrome.
-- Composer is the product card and the empty-start surface: Delegate at rest,
-  Steer + Stop while working, first-run when the install is unfinished, with
-  discoverable `/` commands and shortcuts.
-- Header is the task title (and Focus; Review only when the Task has something).
-  Working state lives on the live execution strip. ⌘K works; it is not painted.
+- Composer is the product card and the empty-start surface: Delegate at rest, Steer + Stop while working. No wizard, no `/` SKU menu.
+- Header is the task title and Focus. Artifacts open from the document. Working state lives on the live execution strip. ⌘K works; it is not painted.
 - Task navigation is one list. State is a row mark, not Needs-you / Recent taxonomies.
-- Every non-ideal state (empty list, no Evidence, offline, interrupted, load
-  earlier, first-run skip) is designed. Copy is restrained, specific, and bilingual.
-- Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped
-  as Actions vs Tasks.
+- Every non-ideal state (empty list, no Evidence, offline, interrupted, load earlier) is designed. Copy is restrained, specific, and bilingual.
+- Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped as Actions vs Tasks. It is not a Review destination menu.
 - Perceived latency: cached task documents render instantly on switch; never
   flash an empty canvas while the durable document is already known.
-- First Work Result on a new install is a real checkup, not a demo.
+- First Work Result on a new install is real delegated work, not a demo or a wizard checkup.
 
 ## Quality contract
 

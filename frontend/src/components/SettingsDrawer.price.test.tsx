@@ -1,6 +1,6 @@
 /**
- * Price-table rate inputs must keep an accessible name after the wrapping
- * <label> was replaced with table cells.
+ * Settings is model + storage credentials + language/theme. The cost simulator
+ * may still read a Sidecar price table; that table is not a Settings spreadsheet.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -10,8 +10,6 @@ import { ThemeProvider } from "../theme";
 import { SettingsDrawer } from "./SettingsDrawer";
 
 const api = vi.hoisted(() => ({
-  getPriceTable: vi.fn(),
-  putPriceTable: vi.fn(),
   getVaultStatus: vi.fn(),
 }));
 
@@ -30,23 +28,14 @@ function wrap(node: ReactNode) {
   );
 }
 
-describe("settings price table", () => {
+describe("settings drawer", () => {
   beforeEach(() => {
     api.getVaultStatus.mockResolvedValue({ unreadable: false });
-    api.getPriceTable.mockResolvedValue({
-      id: "prices",
-      confirmed: true,
-      example: false,
-      note: "",
-      rates: { storage_gb_month: { STANDARD: 0.023, GLACIER: 0.004 } },
-      updated_at: null,
-    });
   });
 
-  it("names each rate input from its storage-class row header", async () => {
+  it("does not render a storage price table", async () => {
     wrap(createElement(SettingsDrawer, { open: true, onClose: () => undefined }));
-    await waitFor(() => expect(screen.getByTestId("settings-price-table")).toBeTruthy());
-    expect(screen.getByLabelText("STANDARD")).toBeTruthy();
-    expect(screen.getByLabelText("GLACIER")).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+    expect(screen.queryByTestId("settings-price-table")).toBeNull();
   });
 });

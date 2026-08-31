@@ -1,6 +1,6 @@
 # Security
 
-> **Storage Agent v0.99.0 security contract.** Unchanged from v0.96.0; v0.99 is an Agent-native UI pass.
+> **Storage Agent v1.00.0 security contract.** Unchanged from v0.96.0; v1.00 deletes copilot product UI, not the engine safety rules.
 >
 > Security is part of the Agent Task product model, not a secondary implementation detail. Read-only autonomy is allowed only inside explicit, bounded, sanitized capabilities. Data movement and materially large/full scans cross a real **Decision required** boundary.
 

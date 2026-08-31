@@ -17,7 +17,7 @@
  * the overlays do not otherwise need.
  *
  * NOT for Escape handlers bound to a focused input (the find bar, the rail's
- * rename box, the composer's slash menu). Those already only fire when that
+ * rename box). Those already only fire when that
  * element has focus, which is its own, correct, scoping.
  */
 type Close = () => void;

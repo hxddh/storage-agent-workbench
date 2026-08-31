@@ -52,6 +52,12 @@ describe("Agent Work Result provenance", () => {
     expect(commands.openExecution).not.toHaveBeenCalled();
   });
 
+  it("opens the task Report artifact from the Work Result", () => {
+    renderResult();
+    fireEvent.click(screen.getByTestId("work-result-open-report"));
+    expect(commands.openReview).toHaveBeenCalledWith("report");
+  });
+
   it("does not add artifact review chrome while execution is streaming", () => {
     renderResult({ streaming: true, referencedEvidenceIds: ["ev-1"], referencedRunIds: ["run-7"] });
     expect(screen.queryByTestId("work-result-artifacts")).toBeNull();

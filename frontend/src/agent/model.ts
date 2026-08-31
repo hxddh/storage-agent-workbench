@@ -1,4 +1,4 @@
-export type ReviewSurface = "overview" | "evidence" | "execution" | "report";
+export type ReviewSurface = "evidence" | "execution" | "report";
 
 export type AgentShellState = {
   review: ReviewSurface | null;

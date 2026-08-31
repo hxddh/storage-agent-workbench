@@ -151,7 +151,7 @@ export const AgentTaskResult = memo(function AgentTaskResult({
 
   const evidenceCount = referencedEvidenceIds.length;
   const executionCount = referencedRunIds.length;
-  const showArtifacts = !props.streaming && (evidenceCount > 0 || executionCount > 0);
+  const showArtifacts = !props.streaming;
   const label = props.streaming
     ? (lang === "zh" ? "Execution · 执行中" : "Execution")
     : (lang === "zh" ? "Work Result · 工作结果" : "Work Result");
@@ -185,6 +185,9 @@ export const AgentTaskResult = memo(function AgentTaskResult({
               Execution <span>{executionCount}</span>
             </button>
           ) : null}
+          <button type="button" onClick={() => openAgentReview("report")} data-testid="work-result-open-report">
+            Report
+          </button>
         </nav>
       ) : null}
     </article>

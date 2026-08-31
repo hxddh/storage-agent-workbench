@@ -4,7 +4,6 @@ import {
   listModelProviders,
   approveDecisionOrPrepare,
   listTaskDecisions,
-  listRemediationPlans,
   resolveTaskDecision,
   stopTaskExecution,
   type DecisionImpact,
@@ -44,8 +43,6 @@ import {
   pendingMatchesPersistedDirection,
 } from "../lib/pendingDirection";
 import { FindBar } from "./FindBar";
-import { FirstRunFlow } from "./FirstRunFlow";
-import { useFirstRun } from "../hooks/useFirstRun";
 import { useTaskProvenance } from "../hooks/useTaskProvenance";
 import { AnalysisFigures } from "../viz/AnalysisFigures";
 import { ProvenanceMark } from "../viz/ProvenanceMark";
@@ -107,7 +104,6 @@ export function AgentTaskImplementation({
   const { t, lang } = useI18n();
   const taskCopy = lang === "zh"
     ? {
-        reportNeedsTask: "先创建一个 Agent 任务，再生成报告。",
         loadFailed: "无法加载这个任务。",
         actionFailed: "Agent 无法继续当前任务。",
         workspace: "当前任务",
@@ -135,16 +131,12 @@ export function AgentTaskImplementation({
         resumeTitle: "这次执行被中断了",
         resumeBody: "恢复会用同一条方向开始新的执行。",
         resumeAction: "恢复执行",
-        verifyTitle: "验证修复方案",
-        verifyBody: "用只读工具重新探测方案涉及的配置，并与方案预期逐条对比。不会向存储写入任何内容。",
-        verifyAction: "验证方案",
         queuedTitle: "排队中的方向",
         queuedHint: "当前执行结束后会开始这条方向。",
         queuedCancel: "取消排队",
         declineMissing: "没有找到对应的待处理 Decision。",
       }
     : {
-        reportNeedsTask: "Create an Agent task before generating a Report artifact.",
         loadFailed: "Couldn't load this task.",
         actionFailed: "The Agent couldn't continue this task.",
         workspace: "Agent task",
@@ -172,9 +164,6 @@ export function AgentTaskImplementation({
         resumeTitle: "This execution was interrupted",
         resumeBody: "Resume starts a new execution with the same Direction.",
         resumeAction: "Resume execution",
-        verifyTitle: "Verify the remediation plan",
-        verifyBody: "Re-probe the configuration items in the plan with read-only tools and diff them against the expected state. Nothing is written to storage.",
-        verifyAction: "Verify plan",
         queuedTitle: "Queued direction",
         queuedHint: "This waits until the current execution finishes.",
         queuedCancel: "Cancel queued direction",
@@ -210,14 +199,9 @@ export function AgentTaskImplementation({
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const [attached, setAttached] = useState<File | null>(null);
   const [attachType, setAttachType] = useState<"inventory" | "access_log" | null>(null);
-  const [hasRemediationPlan, setHasRemediationPlan] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const presetTypeRef = useRef<"inventory" | "access_log" | null>(null);
   const provenance = useTaskProvenance(sessionId);
-  const firstRun = useFirstRun();
-  const [resumeOpen, setResumeOpen] = useState(false);
-  const showFirstRun = !firstRun.onboarded || resumeOpen;
-  const showFirstRunResume = firstRun.onboarded && Boolean(firstRun.step) && !resumeOpen;
   const hasFigures = Boolean(
     provenance?.analysis.cost || provenance?.analysis.inventory || provenance?.analysis.drift || provenance?.analysis.access_log,
   );
@@ -241,18 +225,6 @@ export function AgentTaskImplementation({
     if (!settingsOpen && sidecarReady) refreshModel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsOpen]);
-
-  useEffect(() => {
-    if (!sessionId || !sidecarReady) {
-      setHasRemediationPlan(false);
-      return;
-    }
-    let cancelled = false;
-    void listRemediationPlans(sessionId)
-      .then((next) => { if (!cancelled) setHasRemediationPlan((next.plans ?? []).length > 0); })
-      .catch(() => { if (!cancelled) setHasRemediationPlan(false); });
-    return () => { cancelled = true; };
-  }, [sessionId, sidecarReady, reloadKey, busy]);
 
   const metricsFor = (messageId: string): (TurnMetricsRow & { usage?: TokenUsage }) | null => {
     const persisted = metrics[messageId];
@@ -448,11 +420,6 @@ export function AgentTaskImplementation({
     setAttachType(preset ?? inferDatasetType(file.name));
   };
 
-  const openReport = () => {
-    if (localId.current) openAgentReview("report");
-    else setViewError(taskCopy.reportNeedsTask);
-  };
-
   const INLINE_ACTION_PROMPT: Record<string, string> = {
     run_account_discovery: "act.run_account_discovery",
     run_bucket_config_review: "act.run_bucket_config_review",
@@ -539,13 +506,6 @@ export function AgentTaskImplementation({
     }
   };
 
-  /** First-run checkup: same submit path as Delegate, not a composer prefill. */
-  const startFirstRunCheckup = () => {
-    const prompt = t("prompt.checkup");
-    setText(prompt);
-    void runner.submit(prompt);
-  };
-
   const loadingTask = Boolean(sessionId) && detail?.id !== sessionId && !loadError;
   const isEmpty = items.length === 0 && !pending && !loadError && !loadingTask;
 
@@ -578,9 +538,6 @@ export function AgentTaskImplementation({
     && taskRuntime?.status === "needs_attention"
     && lastExec
     && (lastExec.status === "interrupted" || lastExec.status === "failed"),
-  );
-  const showVerify = Boolean(
-    hasRemediationPlan && !needKey && !busy && !showResume && !offline,
   );
   useEffect(() => publishPaletteActions({
     stop: () => runner.stop(),
@@ -632,11 +589,6 @@ export function AgentTaskImplementation({
       }}
       modelName={modelName}
       onOpenSettings={onOpenSettings}
-      onSlashReport={openReport}
-      onSlashPickFile={(type) => {
-        presetTypeRef.current = type;
-        fileRef.current?.click();
-      }}
     />
   );
 
@@ -689,17 +641,6 @@ export function AgentTaskImplementation({
           </div>
         </div>
       ) : null}
-      {showVerify ? (
-        <div data-testid="task-verify" className="animate-fade-in-up rounded-xl border border-edge bg-panel/60 p-3.5 text-sm">
-          <div className="font-medium text-gray-100">{taskCopy.verifyTitle}</div>
-          <p className="mt-1 text-xs leading-relaxed text-gray-400">{taskCopy.verifyBody}</p>
-          <div className="mt-2.5">
-            <Button data-testid="task-verify-action" variant="primary" size="sm" onClick={() => void runner.verify()}>
-              {taskCopy.verifyAction}
-            </Button>
-          </div>
-        </div>
-      ) : null}
       {queuedDirections.map((execution) => (
         <div
           key={execution.id}
@@ -743,23 +684,7 @@ export function AgentTaskImplementation({
       ) : isEmpty ? (
         <div className="flex flex-1 items-start justify-center overflow-auto px-6 pb-10 pt-16">
           <div className="w-full max-w-[44rem] animate-fade-in-up">
-            {showFirstRun ? (
-              <FirstRunFlow
-                sidecarReady={sidecarReady}
-                initialStep={firstRun.step ?? "welcome"}
-                onCheckup={startFirstRunCheckup}
-                onExit={() => setResumeOpen(false)}
-              />
-            ) : null}
-            {showFirstRunResume ? (
-              <FirstRunFlow
-                resumeOnly
-                sidecarReady={sidecarReady}
-                onCheckup={startFirstRunCheckup}
-                onResume={() => setResumeOpen(true)}
-              />
-            ) : null}
-            {!showFirstRun ? composer : null}
+            {composer}
             <div className="mt-4 space-y-2">{banners}</div>
           </div>
         </div>

@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentTaskSummary } from "../agent/navigationModel";
-import { openAgentReview } from "../agent/commands";
 import { getPaletteActions } from "../agent/paletteActions";
 import { useI18n } from "../i18n";
 import { useTheme } from "../theme";
 import { MOD } from "../shortcuts";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
-import type { ReviewSurface } from "../agent/model";
 
 type Cmd = { id: string; label: string; hint?: string; icon: React.ReactNode; run: () => void; group: "action" | "task" };
 
@@ -47,10 +45,6 @@ export function CommandPalette({
         resume: "恢复中断的执行",
         steer: "Steer 当前执行",
         focus: "聚焦 Composer",
-        reviewOverview: "打开 Review · 总览",
-        reviewEvidence: "打开 Review · Evidence",
-        reviewExecution: "打开 Review · Execution",
-        reviewReport: "打开 Review · Report",
         themeLight: "切换到亮色主题",
         themeDark: "切换到暗色主题",
         langEn: "Switch to English",
@@ -67,10 +61,6 @@ export function CommandPalette({
         resume: "Resume interrupted execution",
         steer: "Steer current execution",
         focus: "Focus composer",
-        reviewOverview: "Open Review · Overview",
-        reviewEvidence: "Open Review · Evidence",
-        reviewExecution: "Open Review · Execution",
-        reviewReport: "Open Review · Report",
         themeLight: "Switch to light theme",
         themeDark: "Switch to dark theme",
         langEn: "Switch to English",
@@ -92,11 +82,6 @@ export function CommandPalette({
 
   const items = useMemo<Cmd[]>(() => {
     const live = getPaletteActions();
-    const openReview = (surface: ReviewSurface) => {
-      if (!live.hasTask) return;
-      openAgentReview(surface);
-      onClose();
-    };
     const actions: Cmd[] = [
       { id: "new", label: copy.newTask, hint: `${MOD}N`, icon: I("M12 5v14|M5 12h14"), run: () => { onNew(); onClose(); }, group: "action" },
       { id: "focus", label: copy.focus, hint: `${MOD}L`, icon: I("M4 5h16v14H4z|M8 9h8"), run: () => { live.focusComposer?.(); onClose(); }, group: "action" },
@@ -127,14 +112,6 @@ export function CommandPalette({
         run: () => { live.resume?.(); onClose(); },
         group: "action",
       });
-    }
-    if (live.hasTask) {
-      actions.push(
-        { id: "review-overview", label: copy.reviewOverview, hint: `${MOD}I`, icon: I("M4 5h16M4 12h16M4 19h10"), run: () => openReview("overview"), group: "action" },
-        { id: "review-evidence", label: copy.reviewEvidence, icon: I("M14 2H6a2 2 0 0 0-2 2v16h16V8z"), run: () => openReview("evidence"), group: "action" },
-        { id: "review-execution", label: copy.reviewExecution, icon: I("M4 6h16M4 12h10M4 18h7"), run: () => openReview("execution"), group: "action" },
-        { id: "review-report", label: copy.reviewReport, icon: I("M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"), run: () => openReview("report"), group: "action" },
-      );
     }
     actions.push(
       {

@@ -115,56 +115,6 @@ test.beforeAll(() => {
 test.use({ viewport: { width: 1440, height: 900 } });
 test.describe.configure({ mode: "serial" });
 
-// First-run shots run against an empty task list — before later tests seed
-// Decision / Resume / cost-drift rows that would pollute a "fresh install".
-test.describe("First-run 60s path", () => {
-  test("First-run welcome", async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem("saw.lang", "en");
-      localStorage.removeItem("saw.onboarded");
-      localStorage.removeItem("saw.firstRunStep");
-      localStorage.setItem("saw.theme", "dark");
-    });
-    await page.goto("/");
-    await expect(page.getByTestId("agent-first-run")).toBeVisible({ timeout: 20_000 });
-    await shoot(page, "19-first-run", "dark", "en");
-    await page.getByTestId("agent-first-run").getByRole("button", { name: "Continue" }).click();
-    await expect(page.getByTestId("agent-first-run")).toHaveAttribute("data-step", "model");
-    await shoot(page, "19b-first-run-model", "dark", "en");
-    await page.getByTestId("agent-first-run").getByRole("button", { name: "Skip for now" }).click();
-    await expect(page.getByTestId("first-run-resume")).toBeVisible();
-    await shoot(page, "19e-first-run-resume", "dark", "en");
-  });
-
-  test("First-run storage and checkup steps", async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem("saw.lang", "en");
-      localStorage.removeItem("saw.onboarded");
-      localStorage.setItem("saw.firstRunStep", "storage");
-      localStorage.setItem("saw.theme", "dark");
-    });
-    await page.goto("/");
-    await expect(page.getByTestId("agent-first-run")).toHaveAttribute("data-step", "storage", { timeout: 20_000 });
-    await shoot(page, "19c-first-run-storage", "dark", "en");
-    await page.getByTestId("first-run-skip-storage").click();
-    await expect(page.getByTestId("agent-first-run")).toHaveAttribute("data-step", "checkup");
-    await expect(page.getByTestId("first-run-storage-skipped")).toBeVisible();
-    await shoot(page, "19d-first-run-checkup", "dark", "en");
-  });
-
-  test("First-run welcome in light Chinese", async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem("saw.lang", "zh");
-      localStorage.removeItem("saw.onboarded");
-      localStorage.removeItem("saw.firstRunStep");
-      localStorage.setItem("saw.theme", "light");
-    });
-    await page.goto("/");
-    await expect(page.getByTestId("agent-first-run")).toBeVisible({ timeout: 20_000 });
-    await shoot(page, "19-first-run", "light", "zh");
-  });
-});
-
 for (const theme of THEMES) {
   for (const lang of LANGS) {
   test.describe(`${theme} ${lang} Agent surfaces`, () => {
@@ -199,18 +149,19 @@ for (const theme of THEMES) {
       await shoot(page, "03-execution", theme, lang);
     });
 
-    test("Review — contextual artifacts beside the active task", async ({ page }) => {
+    test("Evidence artifact opens from the document", async ({ page }) => {
       const title = `Artifact review ${theme} ${lang}`;
       seedTask(2, title, "tall");
       await openAgent(page, theme, lang);
       await openTask(page, title);
-      await page.getByTestId("agent-task-review").click();
+      await page.keyboard.press("Control+i");
       await expect(page.getByTestId("agent-review-panel")).toBeVisible();
+      await expect(page.getByTestId("evidence-review")).toBeVisible();
       await expect(page.getByTestId("agent-composer")).toBeVisible();
       await shoot(page, "04-review", theme, lang);
     });
 
-    test("Task navigation — compact command center, not history chrome", async ({ page }) => {
+    test("Task navigation — task list, not a console", async ({ page }) => {
       const title = `Active storage task ${theme} ${lang}`;
       seedTask(2, title, "short");
       await openAgent(page, theme, lang);
@@ -237,11 +188,11 @@ for (const theme of THEMES) {
       await shoot(page, "11c-resume", theme, lang);
     });
 
-    test("Settings — providers and price table", async ({ page }) => {
+    test("Settings — model, storage, language, theme", async ({ page }) => {
       await openAgent(page, theme, lang);
       await page.getByTestId("task-navigation-settings").click();
       await expect(page.getByRole("dialog")).toBeVisible();
-      await expect(page.getByTestId("settings-price-table")).toBeVisible();
+      await expect(page.getByTestId("settings-price-table")).toHaveCount(0);
       await shoot(page, "15-settings", theme, lang);
     });
 
@@ -260,7 +211,7 @@ for (const theme of THEMES) {
 }
 
 test.describe("Agent runtime states", () => {
-  test("Working + Steer — execution remains controllable and promoted in the command center", async ({ page }) => {
+  test("Working + Steer — execution remains controllable", async ({ page }) => {
     test.setTimeout(120_000);
     const model = await startFakeModel(
       [toolTurn("head_bucket", { bucket: "acme-logs" }), textTurn(LIVE_RESULT)],
@@ -280,15 +231,6 @@ test.describe("Agent runtime states", () => {
       await dropModelProvider(providerId);
       await model.close();
     }
-  });
-
-  test("Decision history in Review", async ({ page }) => {
-    const title = seedDecisionTask("Decision history review");
-    await openAgent(page, "dark");
-    await openTask(page, title);
-    await page.getByTestId("agent-task-review").click();
-    await expect(page.getByTestId("decision-history")).toBeVisible();
-    await shoot(page, "11b-decision-history", "dark", "en");
   });
 
   test("Runtime attention — unavailable execution is explicit", async ({ page }) => {
@@ -326,31 +268,6 @@ test.describe("Agent runtime states", () => {
     await expect(page.getByTestId("work-result").last()).toBeVisible();
     await shoot(page, "13-narrow-task", "dark", "en");
   });
-
-  test("Remediation plan and Verify live on the Task, not a new destination", async ({ page }) => {
-    const title = "Remediation plan review";
-    seedOptimizationTask(title, "review");
-    await openAgent(page, "dark");
-    await openTask(page, title);
-    await expect(page.getByTestId("task-verify")).toBeVisible({ timeout: 20_000 });
-    await shoot(page, "16-remediation-verify", "dark", "en");
-    await page.getByTestId("agent-task-review").click();
-    await expect(page.getByTestId("remediation-plan-status")).toBeVisible();
-    await expect(page.getByTestId("task-baselines")).toBeVisible();
-    await expect(page.getByTestId("task-drift")).toBeVisible();
-    await expect(page.getByTestId("task-revisit")).toBeVisible();
-    await shoot(page, "16b-plan-baseline-review", "dark", "en");
-  });
-
-  test("Catch-up revisit state is labelled in Review", async ({ page }) => {
-    const title = "Catch-up revisit caretaker";
-    seedOptimizationTask(title, "catchup");
-    await openAgent(page, "dark");
-    await navigation(page).getByText(title, { exact: true }).first().click();
-    await page.getByTestId("agent-task-review").click();
-    await expect(page.getByTestId("task-revisit")).toContainText(/Catch-up/i);
-    await shoot(page, "17-revisit-catchup", "dark", "en");
-  });
 });
 
 test.afterAll(() => {
@@ -368,6 +285,6 @@ test.afterAll(() => {
     path.join(OUT, "index.html"),
     `<!doctype html><meta charset="utf-8"><title>Storage Agent visual review</title><style>
 body{margin:0;padding:32px;background:#111318;color:#eef0f5;font:14px Inter,system-ui,sans-serif}h1{font-size:26px;margin:0 0 8px}p{color:#9ca3af;margin:0 0 32px;max-width:760px;line-height:1.6}section{margin:0 0 42px}h2{font-size:15px;font-weight:600;margin:0 0 12px;color:#c9ced8}.pair{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}figure{margin:0;background:#191c22;border:1px solid #2a2f39;border-radius:12px;overflow:hidden}figcaption{padding:8px 12px;color:#8f98a8;border-bottom:1px solid #2a2f39;font-size:12px}img{display:block;width:100%;height:auto}.missing{min-height:80px}@media(max-width:1100px){.pair{grid-template-columns:repeat(2,minmax(0,1fr))}}
-</style><h1>Storage Agent — v0.99 visual review</h1><p>Agent-native document: one-column Task, Composer-native first-run, Review closed by default. Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale.</p>${rows}`,
+</style><h1>Storage Agent — v1.00 visual review</h1><p>Modern Agent: empty start is the Composer, Settings is model and storage only, artifacts open from the document. Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale.</p>${rows}`,
   );
 });
