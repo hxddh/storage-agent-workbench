@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v0.98.0.** This is the canonical product/UX specification. v0.98 is a content-presentation pass on the v0.96 runtime (figures, provenance, first-run, subtraction). Historical release notes are not current product architecture.
+> **Applies to Storage Agent v0.99.0.** This is the canonical product/UX specification. v0.99 is an Agent-native surface pass on the v0.96 runtime (the Task is a document). Historical release notes are not current product architecture.
 
 ## Product definition
 
@@ -85,7 +85,7 @@ Read-only investigation is autonomous by default. Confirmation is reserved for m
 
 A Work Result is the durable output object of an Execution — recorded by the Task runtime with its grounding, proposals, and stopped/cut-short state. It can contain prose, Markdown structure, tables, **deterministic SVG figures** of runtime analysis (cost horizons, inventory distributions, Drift classes, access-log mix), code/config fragments, structured errors, findings, and references to supporting Evidence/Execution.
 
-Figures plot only values the runtime emitted. Gaps render as gap states. Unconfirmed prices withhold the cost axis. Age and storage class are independent series — there is no observed joint. Charts are not a new destination: they sit in the Work Result and in Review Overview.
+Figures plot only values the runtime emitted. Gaps render as gap states. Unconfirmed prices withhold the cost axis. Age and storage class are independent series — there is no observed joint. Charts are not a new destination: they sit **inline in the Work Result** like a code block. Wide windows keep a 46rem reading measure; the right half stays quiet.
 
 Findings and key figures are clickable when a provenance chain exists (`GET /agent-tasks/{id}/provenance`). Hover shows tool, time, and coverage; click opens Review and anchors to that Evidence. A missing chain reads **No direct evidence chain** — never a fabricated source.
 
@@ -101,7 +101,7 @@ A baseline is a versioned bounded snapshot (inventory overview, configuration fa
 
 ### Review
 
-Review is subordinate to the active Task. It lets the user inspect task overview, Evidence, Execution detail, or Report without changing the primary object of the application. Overview also projects Remediation Plan status, baselines, Drift, and the optional revisit schedule. These are not new destinations.
+Review is subordinate to the active Task. It stays **closed by default**. A Review button appears once a durable Task exists (empty start has no Task and no Review). Open Review from the document (a finding, a number, an Evidence link) or the header button. Empty Overview sections are not rendered. Overview still projects Remediation Plan status, baselines, Drift, and the optional revisit schedule **when those records exist**. These are not new destinations.
 
 Review must not create a second Agent input or a second task lifecycle.
 
@@ -138,9 +138,9 @@ This does **not** mean the product has hidden autonomous worker Agents. It means
 
 An optional per-task **revisit schedule** (every N days) submits a read-only Execution through the same `runtime.submit` path when the Sidecar is running and the due time has passed. The desktop app has no background daemon: if the app was closed past due, the next open catch-up-submits and labels the Direction as catch-up. Revisits never auto-approve a Decision. Needs-decision / needs-attention from a revisit use the existing AgentTaskNavigation states. The user can turn the schedule off at any time.
 
-Ready-to-delegate suggestions map to real capabilities: storage checkup, cost review (simulator), drift check (baseline), plus diagnose / attach inventory or access logs / account mapping. They must not promise runtime the Sidecar does not expose.
+Ready-to-delegate capabilities map to Composer `/` slash commands: storage checkup, cost review (simulator), drift check (baseline), plus diagnose / attach inventory or access logs / account mapping. They must not promise runtime the Sidecar does not expose. There is no suggestion-card grid on the empty start.
 
-A fresh install follows an inline **60-second path** on the start surface: welcome → connect a model (live `POST /model-providers/{id}/test`) → optionally connect storage (skippable; skip is an explicit gap, not a fake connection) → delegate the first storage checkup. The checkup CTA submits the Direction through the same turn runner as Delegate — it does not only prefill the composer. No demo data, no fake progress. Every step can exit; the empty start then offers a resume entry back to that step.
+A fresh install follows a **Composer-native 60-second path**: welcome → connect a model (live `POST /model-providers/{id}/test`) → optionally connect storage (skippable; skip is an explicit gap, not a fake connection) → delegate the first storage checkup. First-run is a state of the same Composer box, not a second card stacked on it. The checkup CTA submits the Direction through the same turn runner as Delegate. No demo data, no fake progress. Every step can exit; the empty start then offers a one-line resume entry back to that step.
 
 ## Storage-specific capability model
 
@@ -213,23 +213,28 @@ Provider/model configuration, audit internals, and low-level counters are second
 
 ## Design rules
 
-v0.98.0 is a content-presentation pass on the v0.97 token system. Visual language is specified in
+v0.99.0 is an Agent-native surface pass on the v0.97 token system. Visual language is specified in
 [`design-tokens.md`](design-tokens.md) and enforced by frontend token tests.
 
 - Dark and light are first-class. Do not ship a surface that only works in one.
 - Type, radius, motion, and elevation come from tokens. No ad-hoc px type, no
   raw z-index, no `transition-all`.
-- Work Result is a publication: heading hierarchy, paragraph rhythm, tables,
-  labelled code with copy, structured errors, and **deterministic figures** of
-  runtime analysis. Wide windows keep a 46rem reading measure and put figures
-  in the remaining column — the right half is not empty space.
+- The Task is a document. Direction and Work Result are distinguished by
+  typography, not painted labels. Work Result is a publication: heading
+  hierarchy, paragraph rhythm, tables, labelled code with copy, structured
+  errors, and **deterministic figures** of runtime analysis inline in the prose.
+  Wide windows keep a 46rem reading measure; there is no third-column figures rail.
 - Figures use `--viz-*` tokens and SVG/CSS only. No chart library. Never
   interpolate, extrapolate, or invent a horizon the runtime did not emit.
 - Findings carry provenance. Missing chain is labelled, never implied.
 - Execution rows show real tool name, argument summary, duration, and
   success/fail. Streaming must not jump layout. No invented step/progress chrome.
-- Composer is the product card: Delegate at rest, Steer + Stop while working,
-  with discoverable shortcuts.
+- Composer is the product card and the empty-start surface: Delegate at rest,
+  Steer + Stop while working, first-run when the install is unfinished, with
+  discoverable `/` commands and shortcuts.
+- Header is the task title (and Focus; Review only when the Task has something).
+  Working state lives on the live execution strip. ⌘K works; it is not painted.
+- Task navigation is one list. State is a row mark, not Needs-you / Recent taxonomies.
 - Every non-ideal state (empty list, no Evidence, offline, interrupted, load
   earlier, first-run skip) is designed. Copy is restrained, specific, and bilingual.
 - Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped

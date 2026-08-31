@@ -6,6 +6,22 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [0.99.0] - 2026-08-31
+
+_Agent-native surface: the Task is a document. One column, Composer-native first-run, Review closed by default — no new Agent capabilities, no storage tools, no migration._
+
+### Changed
+
+- Task document is one reading column. Analysis figures render inline in the Work Result; the sticky figures rail is gone.
+- Empty start is the Composer. First-run is a state of that same box; skip is a one-line resume. Suggestion cards are deleted (`/` slash commands remain).
+- Header is the task title. Working state lives on the live execution strip. Painted ⌘K, Connected, and duplicate settings are gone from the header.
+- Task navigation is one list (Needs-you / Recent titles not painted). Direction / Work Result visible labels are gone; testids remain.
+- Review stays closed by default. The header button appears once a durable Task exists. Empty Overview sections are not rendered.
+
+### Security
+
+- Unchanged. No new tools, no migration past **027**.
+
 ## [0.98.0] - 2026-08-31
 
 _Content presentation: deterministic figures, finding provenance, Codex-style subtraction, and a 60-second first-run path — no new Agent capabilities, no storage tools, no migration._

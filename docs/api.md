@@ -1,7 +1,7 @@
 # Sidecar API
 
-> **Storage Agent v0.98.0 API reference.** Adds the read-only provenance
-> projection. No migration. Runtime, tools, and other `/agent-tasks` contracts
+> **Storage Agent v0.99.0 API reference.** Provenance projection unchanged from
+> v0.98.0. No migration. Runtime, tools, and other `/agent-tasks` contracts
 > are unchanged from v0.96.0.
 >
 > The public product model is Agent Task / Direction / Execution / Decision / Work Result / Artifact. Many HTTP paths intentionally retain historical `session`/`run` compatibility names. Do not mirror those path names into new product information architecture.

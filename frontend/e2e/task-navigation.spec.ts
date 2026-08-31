@@ -31,8 +31,7 @@ test.describe("Agent task navigation", () => {
     await expect(navigation(page)).toHaveAttribute("data-navigation", "agent-tasks");
     const taskRow = await row(page, TITLE);
     await expect(taskRow).toHaveAttribute("data-state", "ready");
-    await expect(taskRow).toContainText("Ready");
-    await expect(taskRow).toContainText("General storage task");
+    await expect(taskRow).not.toContainText("General storage task");
     // Legacy F/R counters were product-internal abbreviations such as `0F` and
     // `2R`. Match complete counter tokens instead of raw substrings: a random
     // task title ending in `0` immediately followed by the word `Ready` can
@@ -75,7 +74,7 @@ test.describe("Agent task navigation", () => {
 
     await expect(navigation(page).getByText(TITLE)).toHaveCount(0, { timeout: 15_000 });
     await expect(page.getByTestId("agent-composer")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId("agent-task-header")).toContainText("Ready to delegate");
+    await expect(page.getByTestId("agent-task-header")).toContainText("New task");
     await expect(task(page).getByText(/Couldn't load/i)).toHaveCount(0);
   });
 

@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v0.98.0.**
+> **Current baseline: Storage Agent v0.99.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -19,13 +19,13 @@
 
 ## B. Agent Task product smoke
 
-A user must be able to recognize and use the v0.98 product model without reading source code.
+A user must be able to recognize and use the v0.99 product model without reading source code.
 
 ### Start and task navigation
 
 - [ ] The product identity is **Storage Agent** in the window/first-run/release-facing UI.
-- [ ] A fresh install exposes a clear **Delegate** state for starting work.
-- [ ] Global navigation is organized around **Agent Tasks** and their meaningful live/durable state.
+- [ ] A fresh install exposes a **Composer** to type into — not a heading plus suggestion cards. First-run is that same box, not a second card.
+- [ ] Global navigation is a single Agent Task list; Needs-you / Recent are not painted taxonomies.
 - [ ] Task rows can expose the supported lifecycle actions (for example rename/pin/duplicate/archive/delete) without turning navigation into a backend-record browser.
 - [ ] Creating/delegating initial work creates a durable Task that remains available after reload/restart.
 

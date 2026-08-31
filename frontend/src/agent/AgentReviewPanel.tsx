@@ -94,12 +94,14 @@ export function AgentReviewPanel({
 
         {!error && view === "overview" ? (
           <div className="agent-review-overview">
-            <section>
-              <div className="agent-review-section-label">{copy.review.currentState}</div>
-              <p className="agent-review-summary">
-                {detail?.summary?.summary_md?.trim() || detail?.goal?.trim() || copy.review.noSummary}
-              </p>
-            </section>
+            {detail?.summary?.summary_md?.trim() || detail?.goal?.trim() ? (
+              <section>
+                <div className="agent-review-section-label">{copy.review.currentState}</div>
+                <p className="agent-review-summary">
+                  {detail?.summary?.summary_md?.trim() || detail?.goal?.trim()}
+                </p>
+              </section>
+            ) : null}
 
             {provenance?.analysis.cost || provenance?.analysis.drift || provenance?.analysis.inventory ? (
               <section data-testid="review-overview-figures">
@@ -107,9 +109,9 @@ export function AgentReviewPanel({
               </section>
             ) : null}
 
-            <section data-testid="remediation-plan-status">
-              <div className="agent-review-section-label">{copy.review.plan}</div>
-              {latestPlan ? (
+            {latestPlan ? (
+              <section data-testid="remediation-plan-status">
+                <div className="agent-review-section-label">{copy.review.plan}</div>
                 <div className="agent-review-list">
                   <div data-plan-status={latestPlan.status}>
                     <span className="agent-review-list-dot" data-status={latestPlan.status} aria-hidden />
@@ -122,12 +124,12 @@ export function AgentReviewPanel({
                     </span>
                   </div>
                 </div>
-              ) : <p className="agent-review-empty">{copy.review.noPlan}</p>}
-            </section>
+              </section>
+            ) : null}
 
-            <section data-testid="task-baselines">
-              <div className="agent-review-section-label">{copy.review.baseline}</div>
-              {baselines.length ? (
+            {baselines.length ? (
+              <section data-testid="task-baselines">
+                <div className="agent-review-section-label">{copy.review.baseline}</div>
                 <div className="agent-review-list">
                   {baselines.slice(0, 5).map((baseline) => (
                     <div key={baseline.id}>
@@ -139,12 +141,12 @@ export function AgentReviewPanel({
                     </div>
                   ))}
                 </div>
-              ) : <p className="agent-review-empty">{copy.review.noBaseline}</p>}
-            </section>
+              </section>
+            ) : null}
 
-            <section data-testid="task-drift">
-              <div className="agent-review-section-label">{copy.review.drift}</div>
-              {driftArtifacts.length ? (
+            {driftArtifacts.length ? (
+              <section data-testid="task-drift">
+                <div className="agent-review-section-label">{copy.review.drift}</div>
                 <div className="agent-review-list">
                   {driftArtifacts.slice(0, 4).map((artifact) => (
                     <button type="button" key={artifact.id} onClick={() => onView("report")}>
@@ -156,22 +158,20 @@ export function AgentReviewPanel({
                     </button>
                   ))}
                 </div>
-              ) : (
-                <p className="agent-review-empty">
-                  {baselines.length ? copy.review.noArtifacts : copy.review.noBaseline}
-                </p>
-              )}
-            </section>
+              </section>
+            ) : null}
 
-            <RevisitSection
-              schedule={revisit}
-              onSave={onSaveRevisit}
-              copy={copy}
-            />
+            {revisit && (revisit.enabled === 1 || revisit.enabled === true || revisit.last_catchup_note) ? (
+              <RevisitSection
+                schedule={revisit}
+                onSave={onSaveRevisit}
+                copy={copy}
+              />
+            ) : null}
 
-            <section>
-              <div className="agent-review-section-label">{copy.review.latestFindings}</div>
-              {provenance?.findings.length || detail?.findings.length ? (
+            {provenance?.findings.length || detail?.findings.length ? (
+              <section>
+                <div className="agent-review-section-label">{copy.review.latestFindings}</div>
                 <div className="agent-review-list">
                   {(provenance?.findings ?? detail?.findings ?? []).slice(0, 5).map((finding) => (
                     "chain" in finding ? (
@@ -187,12 +187,12 @@ export function AgentReviewPanel({
                     )
                   ))}
                 </div>
-              ) : <p className="agent-review-empty">{copy.evidence.noFindings}</p>}
-            </section>
+              </section>
+            ) : null}
 
-            <section>
-              <div className="agent-review-section-label">{copy.review.execution}</div>
-              {detail?.runs.some((execution) => execution.origin !== "agent") ? (
+            {detail?.runs.some((execution) => execution.origin !== "agent") ? (
+              <section>
+                <div className="agent-review-section-label">{copy.review.execution}</div>
                 <div className="agent-review-list">
                   {detail.runs.filter((execution) => execution.origin !== "agent").slice(0, 5).map((execution) => (
                     <button type="button" key={execution.run_id} onClick={() => onOpenExecution(execution.run_id)}>
@@ -204,12 +204,12 @@ export function AgentReviewPanel({
                     </button>
                   ))}
                 </div>
-              ) : <p className="agent-review-empty">{copy.execution.empty}</p>}
-            </section>
+              </section>
+            ) : null}
 
-            <section>
-              <div className="agent-review-section-label">{copy.review.artifacts}</div>
-              {artifacts.length ? (
+            {artifacts.length ? (
+              <section>
+                <div className="agent-review-section-label">{copy.review.artifacts}</div>
                 <div className="agent-review-list" data-testid="task-artifacts">
                   {artifacts.slice(0, 8).map((artifact) => (
                     <button
@@ -230,12 +230,12 @@ export function AgentReviewPanel({
                     </button>
                   ))}
                 </div>
-              ) : <p className="agent-review-empty">{copy.review.noArtifacts}</p>}
-            </section>
+              </section>
+            ) : null}
 
-            <section>
-              <div className="agent-review-section-label">{copy.review.decisionHistory}</div>
-              {decisions.length ? (
+            {decisions.length ? (
+              <section>
+                <div className="agent-review-section-label">{copy.review.decisionHistory}</div>
                 <div className="agent-review-list" data-testid="decision-history">
                   {decisions.map((decision) => (
                     <div key={decision.id} data-decision-status={decision.status}>
@@ -251,8 +251,8 @@ export function AgentReviewPanel({
                     </div>
                   ))}
                 </div>
-              ) : <p className="agent-review-empty">{copy.review.noDecisions}</p>}
-            </section>
+              </section>
+            ) : null}
           </div>
         ) : null}
 

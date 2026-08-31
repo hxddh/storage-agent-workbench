@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v0.98.0.**
+> **Implementation contract for Storage Agent v0.99.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -186,6 +186,8 @@ See `docs/data-model.md`.
 ## 9. Product and design rules
 
 - Optimize the first viewport for: **what is the Task, what is happening/what was produced, what can the user do now**.
+- The Task is a **document**: one reading column, figures inline in the Work Result, Review closed until it has something.
+- Composer is the only start surface. First-run is a state of that same box, not a second card. Capabilities live on `/` slash commands, not a suggestion grid.
 - Keep settings/provider/model selection secondary to delegated work.
 - Keep technical results readable as documents: prose, tables, code/config, structured errors, Execution summary, provenance.
 - Use progressive disclosure for execution detail; do not turn the main Task into a permanent observability wall.

@@ -136,7 +136,7 @@ test.describe("Agent-native task shell", () => {
       await expect(control).toHaveAttribute("data-agent-state", "working");
       await expect(control.getByRole("button", { name: "Steer Agent", exact: true })).toBeVisible();
       await expect(control.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
-      await expect(page.getByTestId("agent-task-header")).toContainText("Agent working");
+      await expect(live).toBeVisible();
     } finally {
       await cleanup();
     }

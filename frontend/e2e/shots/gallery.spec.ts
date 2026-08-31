@@ -170,10 +170,10 @@ for (const theme of THEMES) {
   test.describe(`${theme} ${lang} Agent surfaces`, () => {
     test("Delegate — fresh Agent task", async ({ page }) => {
       await openAgent(page, theme, lang);
-      const heading = lang === "zh" ? /把目标交给 Agent/ : /Delegate a goal to the Agent/;
       const placeholder = lang === "zh" ? /给 Agent 一个目标/ : /Give the Agent a goal/;
-      await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
       await expect(composer(page)).toHaveAttribute("placeholder", placeholder);
+      await expect(page.getByTestId("agent-composer")).toBeVisible();
+      await expect(page.getByTestId("delegate-suggestion-checkup")).toHaveCount(0);
       await shoot(page, "01-delegate", theme, lang);
     });
 
@@ -252,6 +252,7 @@ for (const theme of THEMES) {
       await openTask(page, title);
       await expect(page.getByTestId("viz-cost")).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId("viz-drift")).toBeVisible();
+      await expect(page.getByTestId("task-analysis-figures")).toBeVisible();
       await shoot(page, "20-analysis-figures", theme, lang);
     });
   });
@@ -367,6 +368,6 @@ test.afterAll(() => {
     path.join(OUT, "index.html"),
     `<!doctype html><meta charset="utf-8"><title>Storage Agent visual review</title><style>
 body{margin:0;padding:32px;background:#111318;color:#eef0f5;font:14px Inter,system-ui,sans-serif}h1{font-size:26px;margin:0 0 8px}p{color:#9ca3af;margin:0 0 32px;max-width:760px;line-height:1.6}section{margin:0 0 42px}h2{font-size:15px;font-weight:600;margin:0 0 12px;color:#c9ced8}.pair{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}figure{margin:0;background:#191c22;border:1px solid #2a2f39;border-radius:12px;overflow:hidden}figcaption{padding:8px 12px;color:#8f98a8;border-bottom:1px solid #2a2f39;font-size:12px}img{display:block;width:100%;height:auto}.missing{min-height:80px}@media(max-width:1100px){.pair{grid-template-columns:repeat(2,minmax(0,1fr))}}
-</style><h1>Storage Agent — v0.98 visual review</h1><p>Content presentation: deterministic figures, provenance, first-run, and subtraction. Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale.</p>${rows}`,
+</style><h1>Storage Agent — v0.99 visual review</h1><p>Agent-native document: one-column Task, Composer-native first-run, Review closed by default. Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale.</p>${rows}`,
   );
 });

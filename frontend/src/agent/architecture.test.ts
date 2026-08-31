@@ -36,6 +36,9 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(shell).toContain("agent-task-content");
     expect(shell).toContain("<AgentReviewPanel");
     expect(shell).toContain('data-testid="agent-task-review"');
+    expect(shell).toContain("const showReview = Boolean(taskId);");
+    expect(shell).toContain("agent-task-title");
+    expect(shell).not.toContain("agent-task-breadcrumb");
     expect(shell).not.toContain("timeline: ReactNode");
     expect(shell).not.toContain("<SurfaceTabs");
     expect(shell).not.toContain('role="tabpanel"');
@@ -52,6 +55,9 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(app).not.toContain("SessionRail");
     expect(navigation).toContain('data-testid="agent-task-navigation"');
     expect(navigation).toContain('data-testid="task-navigation-toggle"');
+    expect(navigation).toContain("agent-task-queue");
+    expect(navigation).not.toContain("{copy.needsYou}");
+    expect(navigation).not.toContain("{copy.recent}");
     expect(navigation).not.toContain('data-testid="session-rail"');
     expect(navigation).not.toContain('data-testid="rail-');
     expect(model).toContain("DEFAULT_TASK_NAV_WIDTH");
@@ -101,7 +107,6 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(result).toContain('data-testid="direction-event"');
     expect(result).toContain('data-testid="work-result"');
     expect(result).toContain('data-work-result="true"');
-    expect(result).toContain("Work Result");
     expect(result).toContain("openAgentReview");
     expect(result).toContain("openAgentExecution");
     expect(result).not.toContain("AnswerDocument");
@@ -290,13 +295,11 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(executionCss).not.toContain("position: fixed");
   });
 
-  it("maps Ready-to-delegate suggestions to real checkup / cost / drift capabilities", () => {
+  it("maps Ready-to-delegate slash commands to real checkup / cost / drift capabilities", () => {
     const task = source("../components/AgentTaskImplementation.tsx");
     const composer = source("../components/Composer.tsx");
-    expect(task).toContain('data-testid={`delegate-suggestion-${suggestion.key}`}');
-    expect(task).toContain('"checkup"');
-    expect(task).toContain('"cost"');
-    expect(task).toContain('"drift"');
+    expect(task).not.toContain("delegate-suggestion");
+    expect(task).not.toContain("SuggestionIcon");
     expect(composer).toContain('cmd: "checkup"');
     expect(composer).toContain('cmd: "cost"');
     expect(composer).toContain('cmd: "drift"');
@@ -353,6 +356,9 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(figures).toContain("Cost axis withheld");
     expect(extract).toContain("Never invent a day the runtime did not emit");
     expect(source("../components/AgentTaskImplementation.tsx")).toContain("task-analysis-figures");
+    expect(source("../components/AgentTaskImplementation.tsx")).toContain("<section className=\"task-analysis-figures\"");
+    expect(source("../components/AgentTaskImplementation.tsx")).not.toContain("task-document-figures");
+    expect(source("../agent-task.css")).not.toContain("data-split");
     expect(source("./AgentReviewPanel.tsx")).toContain("review-overview-figures");
   });
 
@@ -368,10 +374,11 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(source("./model.ts")).toContain('export type ReviewSurface = "overview" | "evidence" | "execution" | "report"');
   });
 
-  it("keeps first-run inline on the start surface, not a second destination", () => {
+  it("keeps first-run as the Composer, not a second destination or stacked card", () => {
     const app = source("../App.tsx");
     const flow = source("../components/FirstRunFlow.tsx");
     const task = source("../components/AgentTaskImplementation.tsx");
+    const shell = source("./AgentShell.tsx");
     expect(app).not.toContain("FirstRunWizard");
     expect(flow).toContain('data-testid="agent-first-run"');
     expect(flow).toContain("createModelProvider");
@@ -380,7 +387,13 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(flow).toContain("testCloudProvider");
     expect(flow).toContain("Skip storage");
     expect(flow).toContain("first-run-resume");
+    expect(flow).toContain("agent-native-composer");
     expect(task).toContain("FirstRunFlow");
     expect(task).toContain("void runner.submit(prompt)");
+    expect(task).toContain("{!showFirstRun ? composer : null}");
+    expect(task).not.toContain("delegate-suggestion");
+    expect(shell).not.toContain("ConnectionMark");
+    expect(shell).not.toContain("agent-native-command");
+    expect(shell).not.toContain("Ready to delegate");
   });
 });
