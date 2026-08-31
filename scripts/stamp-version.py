@@ -19,6 +19,10 @@ Derives a numeric X.Y.Z from the tag (strips a leading 'v' and any -pre/-rc
 suffix); if the tag has no X.Y.Z, leaves every file untouched. Fails loudly if
 any expected version pattern is missing, and asserts all files agree afterward.
 
+Numeric components are canonicalized to semver (``v1.00.0`` → ``1.0.0``).
+Tauri/Cargo reject leading zeros; the GitHub tag and asset names keep the
+release-branch spelling.
+
 Usage: python scripts/stamp-version.py v0.21.1
 """
 from __future__ import annotations
@@ -28,13 +32,16 @@ import pathlib
 import re
 import sys
 
-raw = sys.argv[1] if len(sys.argv) > 1 else ""
-ver = raw.lstrip("v").split("-")[0]
-if not re.match(r"^\d+\.\d+\.\d+$", ver):
-    print(f"tag '{raw}' has no X.Y.Z version; keeping every file untouched")
-    sys.exit(0)
+_VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
-root = pathlib.Path(__file__).resolve().parent.parent
+
+def canonical_semver(raw: str) -> str | None:
+    """Return X.Y.Z with leading zeros stripped, or None if *raw* is not a version tag."""
+    ver = raw.lstrip("v").split("-")[0]
+    match = _VERSION_RE.fullmatch(ver)
+    if not match:
+        return None
+    return f"{int(match.group(1))}.{int(match.group(2))}.{int(match.group(3))}"
 
 
 def _die(msg: str) -> None:
@@ -42,7 +49,7 @@ def _die(msg: str) -> None:
     sys.exit(1)
 
 
-def stamp_json_version(path: pathlib.Path) -> str:
+def stamp_json_version(path: pathlib.Path, ver: str) -> str:
     if not path.exists():
         _die(f"{path} not found")
     data = json.loads(path.read_text())
@@ -53,7 +60,7 @@ def stamp_json_version(path: pathlib.Path) -> str:
     return ver
 
 
-def stamp_toml_version(path: pathlib.Path) -> str:
+def stamp_toml_version(path: pathlib.Path, ver: str) -> str:
     """Replace the first ``version = "..."`` line (the package/crate version).
 
     Package version lines are pinned literals; dependency constraints use
@@ -76,7 +83,7 @@ def stamp_toml_version(path: pathlib.Path) -> str:
     return m.group(1) if m else ""
 
 
-def stamp_cargo_lock_version(path: pathlib.Path, crate: str) -> str:
+def stamp_cargo_lock_version(path: pathlib.Path, crate: str, ver: str) -> str:
     """Update the locked version of OUR crate's ``[[package]]`` block.
 
     Only the block whose ``name = "<crate>"`` is touched; dependency blocks keep
@@ -96,18 +103,38 @@ def stamp_cargo_lock_version(path: pathlib.Path, crate: str) -> str:
     return ver
 
 
-targets = {
-    "src-tauri/tauri.conf.json": stamp_json_version(root / "src-tauri" / "tauri.conf.json"),
-    "src-tauri/Cargo.toml": stamp_toml_version(root / "src-tauri" / "Cargo.toml"),
-    "src-tauri/Cargo.lock": stamp_cargo_lock_version(
-        root / "src-tauri" / "Cargo.lock", "storage-agent-workbench"),
-    "sidecar/pyproject.toml": stamp_toml_version(root / "sidecar" / "pyproject.toml"),
-    "frontend/package.json": stamp_json_version(root / "frontend" / "package.json"),
-}
+def stamp(root: pathlib.Path, raw: str) -> str | None:
+    """Stamp version-bearing files under *root*. Return the canonical version or None."""
+    ver = canonical_semver(raw)
+    if ver is None:
+        print(f"tag '{raw}' has no X.Y.Z version; keeping every file untouched")
+        return None
 
-# Consistency assertion: every stamped file must now agree on the version.
-disagree = {name: got for name, got in targets.items() if got != ver}
-if disagree:
-    _die(f"stamped versions disagree with {ver}: {disagree}")
+    targets = {
+        "src-tauri/tauri.conf.json": stamp_json_version(root / "src-tauri" / "tauri.conf.json", ver),
+        "src-tauri/Cargo.toml": stamp_toml_version(root / "src-tauri" / "Cargo.toml", ver),
+        "src-tauri/Cargo.lock": stamp_cargo_lock_version(
+            root / "src-tauri" / "Cargo.lock", "storage-agent-workbench", ver),
+        "sidecar/pyproject.toml": stamp_toml_version(root / "sidecar" / "pyproject.toml", ver),
+        "frontend/package.json": stamp_json_version(root / "frontend" / "package.json", ver),
+    }
 
-print(f"stamped version {ver} (from tag {raw}) across: {', '.join(targets)}")
+    # Consistency assertion: every stamped file must now agree on the version.
+    disagree = {name: got for name, got in targets.items() if got != ver}
+    if disagree:
+        _die(f"stamped versions disagree with {ver}: {disagree}")
+
+    print(f"stamped version {ver} (from tag {raw}) across: {', '.join(targets)}")
+    return ver
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    raw = args[0] if args else ""
+    root = pathlib.Path(__file__).resolve().parent.parent
+    stamp(root, raw)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

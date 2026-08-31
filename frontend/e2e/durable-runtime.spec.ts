@@ -64,6 +64,10 @@ test.describe("durable Agent Task runtime surface", () => {
       await expect(page.getByTestId("agent-live-status")).toBeVisible({ timeout: 20_000 });
       await expect.poll(() => surface.taskId(), { timeout: 20_000 }).toBeTruthy();
       const taskId = surface.taskId()!;
+      // Live status is painted as soon as Composer submits. Wait until that
+      // first Direction is the active execution so the queued card is the
+      // second POST, not the still-queued first turn.
+      await expect(page.getByTestId("queued-direction")).toHaveCount(0, { timeout: 20_000 });
       const queued = await fetch(`${sidecarOrigin()}/agent-tasks/${taskId}/executions`, {
         method: "POST",
         headers: { "content-type": "application/json" },
