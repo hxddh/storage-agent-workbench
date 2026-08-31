@@ -1,11 +1,11 @@
 # Design tokens
 
-> **Storage Agent v1.00.0.** Presentation contract. Tokens do not invent
+> **Storage Agent v1.01.0.** Presentation contract. Tokens do not invent
 > runtime state, progress, or capabilities.
 
 v0.98 added `--viz-*` series colors on the v0.97 token system so deterministic
-figures share dark/light with the rest of the product. v1.00 does not add
-tokens; it deletes copilot product objects. Components must not introduce ad-hoc px font
+figures share dark/light with the rest of the product. v1.01 does not add
+tokens; it reconstructs the Agent window. Components must not introduce ad-hoc px font
 sizes, corner radii, z-index numbers, or `transition-all`.
 
 ## Source of truth
@@ -82,10 +82,9 @@ Loading uses **skeletons**, not spinners. In-flight tool rows use the
 Visible `:focus-visible` ring follows the element's own radius. Opt out only
 with `data-focus-ring="container"` when an ancestor already draws the ring
 (Composer textarea). ⌘K / Ctrl+K is an overlay, not a destination. Palette
-actions: new task, Steer (focus composer while working), Stop, Resume, Review
-four surfaces, theme, language, and task switch — only runtime-true work.
+actions: new task, Steer (focus composer while working), Stop, Resume, theme, language, and task switch — only runtime-true work.
 
 ## Non-goals
 
 Tokens must not be used to imply a second Agent, a synthetic plan/stepper, or
-Focus-mode lifecycle. Focus mode still only changes presentation.
+a second presentation lifecycle. Overlay Review is title + close + artifact.

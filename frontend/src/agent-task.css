@@ -2,7 +2,7 @@
  * Agent Task presentation.
  *
  * This layer styles the primary task, its single steering composer and durable
- * execution summaries. It deliberately has no chat/thread/timeline selectors.
+ * Work Result. It deliberately has no chat/thread/timeline selectors.
  */
 
 [data-testid="agent-workspace"] {
@@ -44,24 +44,6 @@
 textarea[data-focus-ring="container"] {
   min-height: 28px;
   line-height: 1.55 !important;
-}
-
-/* Completed tool work is a first-class Execution object under a Work Result. */
-[data-testid="execution-summary"] {
-  container-type: inline-size;
-}
-
-[data-testid="execution-summary-panel"] {
-  border: 1px solid color-mix(in srgb, var(--edge) 66%, transparent);
-  background: color-mix(in srgb, var(--panel) 44%, transparent) !important;
-}
-
-[data-testid="execution-summary"] [data-testid="execution-step-open"] {
-  min-height: 30px;
-}
-
-[data-testid="execution-latest-step"] {
-  border: 1px solid color-mix(in srgb, var(--edge) 46%, transparent);
 }
 
 [data-testid="call-detail"] {

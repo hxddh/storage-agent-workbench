@@ -9,7 +9,6 @@ export type AgentResultRendererProps = {
   toolActivity?: ToolActivity[];
   streaming?: boolean;
   sessionId?: string | null;
-  onRerun?: () => void;
 };
 
 function stripMetaBlock(text: string): string {
@@ -74,19 +73,16 @@ function CopyResult({ text }: { text: string }) {
 }
 
 /** Assistant-only renderer for a real Agent Work Result.
- * Streaming tool activity is live Execution. Durable evidence and execution
- * disclosure are owned by the task-level Work Result and Execution Summary.
+ * Tool rows are live Execution in the document — while streaming and after it lands.
  */
 export const AgentResultRenderer = memo(function AgentResultRenderer({
   content,
   toolActivity,
   streaming,
   sessionId,
-  onRerun,
 }: AgentResultRendererProps) {
-  const { lang, t } = useI18n();
+  const { t } = useI18n();
   const shown = streaming ? stripMetaBlock(content || "") : content || "";
-  const repeat = lang === "zh" ? "用同一 Direction 再执行一次" : "Run this Direction again";
 
   return (
     <div className="group animate-fade-in-up" data-testid="agent-result-renderer">
@@ -94,26 +90,11 @@ export const AgentResultRenderer = memo(function AgentResultRenderer({
         {!streaming ? (
           <span className="flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
             <CopyResult text={content || ""} />
-            {onRerun ? (
-              <button
-                type="button"
-                onClick={onRerun}
-                title={repeat}
-                aria-label={repeat}
-                data-testid="rerun-direction"
-                className="text-gray-500 transition-colors hover:text-gray-200"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <polyline points="23 4 23 10 17 10" />
-                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-                </svg>
-              </button>
-            ) : null}
           </span>
         ) : null}
       </div>
 
-      {streaming && toolActivity?.length ? <LiveTrace items={toolActivity} sessionId={sessionId} /> : null}
+      {toolActivity?.length ? <LiveTrace items={toolActivity} sessionId={sessionId} /> : null}
       <Markdown text={shown} />
       {streaming ? (
         shown.trim() ? (

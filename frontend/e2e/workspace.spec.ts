@@ -24,7 +24,6 @@ async function setup(page: Page, opts: { deltaDelayMs?: number } = {}) {
   await page.addInitScript(() => {
     localStorage.setItem("saw.lang", "en");
     localStorage.setItem("saw.onboarded", "1");
-    localStorage.setItem("saw.activityDensity", "balanced");
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
@@ -41,7 +40,7 @@ async function setup(page: Page, opts: { deltaDelayMs?: number } = {}) {
 async function completeTurn(page: Page) {
   await composer(page).fill("Review the IAM-policy diagnostic method and keep the evidence available for inspection.");
   await composer(page).press("Enter");
-  await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("work-result").last()).toBeVisible({ timeout: 20_000 });
 }
 
 test.describe("Agent-native task shell", () => {
@@ -59,26 +58,6 @@ test.describe("Agent-native task shell", () => {
       await expect(page.getByRole("tab")).toHaveCount(0);
       await expect(page.getByTestId("evidence-review")).toBeVisible();
       await expect(task).toBeVisible();
-    } finally {
-      await cleanup();
-    }
-  });
-
-  test("Focus mode removes global navigation while preserving task and Review", async ({ page }) => {
-    const { cleanup } = await setup(page);
-    try {
-      await completeTurn(page);
-      await openEvidence(page);
-      await expect(page.getByTestId("agent-review-panel")).toBeVisible();
-
-      await page.getByRole("button", { name: "Focus task" }).click();
-      await expect(page.getByTestId("agent-shell")).toHaveAttribute("data-focus", "true");
-      await expect(page.getByTestId("agent-task-navigation")).not.toBeVisible();
-      await expect(page.getByTestId("task-scroll")).toBeVisible();
-      await expect(page.getByTestId("evidence-review")).toBeVisible();
-
-      await page.getByRole("button", { name: "Exit focus mode" }).click();
-      await expect(page.getByTestId("agent-task-navigation")).toBeVisible();
     } finally {
       await cleanup();
     }
@@ -128,19 +107,16 @@ test.describe("Agent-native task shell", () => {
   });
 
   test("a running task exposes real Agent execution and steering state", async ({ page }) => {
-    const { cleanup } = await setup(page, { deltaDelayMs: 160 });
+    const { cleanup } = await setup(page, { deltaDelayMs: 800 });
     try {
       await composer(page).fill("Inspect the IAM diagnostic method and explain what you are checking.");
       await composer(page).press("Enter");
 
-      const live = page.getByTestId("agent-live-status");
-      await expect(live).toBeVisible({ timeout: 10_000 });
-      await expect(live).toContainText("Agent working");
       const control = page.getByTestId("agent-composer");
-      await expect(control).toHaveAttribute("data-agent-state", "working");
+      await expect(control).toHaveAttribute("data-agent-state", "working", { timeout: 10_000 });
+      await expect(page.getByTestId("task-status")).toContainText(/working/i);
       await expect(control.getByRole("button", { name: "Steer Agent", exact: true })).toBeVisible();
       await expect(control.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
-      await expect(live).toBeVisible();
     } finally {
       await cleanup();
     }

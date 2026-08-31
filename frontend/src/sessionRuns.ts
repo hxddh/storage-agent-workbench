@@ -4,7 +4,7 @@
  * The application keeps one visible task renderer while multiple tasks may be
  * executing. Runtime state therefore lives here, keyed by the durable backend
  * session id, so work keeps streaming when the operator switches tasks and the
- * command center can reflect that state without inventing background workers.
+ * task list can reflect that state without inventing background workers.
  */
 import { useCallback, useSyncExternalStore } from "react";
 import type { Grounding, NextAction, ToolActivity, ExecutionMetrics } from "./types";
@@ -125,8 +125,8 @@ export function useSessionRun(id: string | null): SessionRun {
 /**
  * Subscribe to the runtime index rather than one task.
  *
- * AgentTaskNavigation uses this to prioritize real Running / Needs-you tasks.
- * The monotonically increasing number is intentionally opaque: callers read
+ * AgentTaskNavigation uses this so a working row can update while another Task
+ * is selected. The monotonically increasing number is intentionally opaque: callers read
  * individual task truth with getSessionRun after React schedules the render.
  */
 export function useSessionRunIndexVersion(): number {

@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.00.0.** Modern Agent shell. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged.
+> **Current architecture baseline: Storage Agent v1.01.0.** Native Agent window. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -73,7 +73,7 @@ The packaged Tauri launcher chooses a free localhost port, generates a per-launc
 - Sidecar health and reconnect state;
 - durable task list refresh;
 - active task identity;
-- task lifecycle actions (create/rename/pin/duplicate/archive/delete);
+- task lifecycle actions (create/rename/delete);
 - settings drawer;
 - command palette;
 - shortcuts sheet.
@@ -94,10 +94,10 @@ Each task row combines:
 
 - durable task metadata from the Sidecar task projection;
 - current per-task runtime state from the client execution store;
-- a state mark and, when needed, a Needs-decision / Needs-attention badge;
-- lifecycle controls.
+- a state mark;
+- Rename and Delete.
 
-The list is one sequence (needs-you and running rows stay first, then pinned, then the rest). Section titles are not painted. Database counters and "General storage task" subtitles are not the navigation model.
+The list is one chronological sequence by `updated_at`. Section titles, search, pin, duplicate, and archive are not painted. Database counters and "General storage task" subtitles are not the navigation model. There is no sidecar-health footer.
 
 The Sidecar `/agent-tasks` projection provides durable decision truth so a pending confirmation remains visible after reload/restart even when browser-local runtime state is gone.
 
@@ -105,11 +105,10 @@ The Sidecar `/agent-tasks` projection provides durable decision truth so a pendi
 
 `frontend/src/agent/AgentShell.tsx` owns the active task environment:
 
-- task title;
-- Focus presentation state;
-- contextual artifact viewer open/close state (opened from the document, never a header destination);
-- selected Execution inside that viewer;
-- live execution status derived from real task runtime state (the working strip, not a header sentence).
+- overlay Review open/close state (`agent-review-overlay`), opened from the document;
+- selected Execution inside that overlay.
+
+There is no task header, no live execution strip, and no second presentation mode.
 
 `AgentShell` receives `taskContent: ReactNode`. Its primary area is always the Agent Task.
 
@@ -117,7 +116,7 @@ Review is subordinate to the Task. Opening Review does not create another task, 
 
 ### 3.4 `AgentTask`: public task boundary
 
-`frontend/src/components/AgentTask.tsx` is the public task component. It exposes Task-native props to `App` and owns semantic task navigation/keyboard behavior.
+`frontend/src/components/AgentTask.tsx` is the public task component. It exposes Task-native props to `App` and owns semantic task navigation/keyboard behavior. Bare **j** / **k** move one Direction to the reading start by writing the task scroller; they do not animate to an already-visible target.
 
 `AgentTaskImplementation.tsx` owns the large task document implementation:
 
@@ -126,10 +125,10 @@ Review is subordinate to the Task. Opening Review does not create another task, 
 - the one Composer;
 - submission/streaming integration;
 - steering/stopping;
-- attachments;
+- attachments (type inferred from filename);
 - Direction and Work Result rendering;
-- Execution summaries and step details;
-- Next Actions / Decisions;
+- real tool rows in the document (`LiveTrace`);
+- Next Actions / Decisions that require confirmation;
 - find and task viewport behavior.
 
 Historical `sessionId` terminology may appear inside compatibility adapters and API calls. Public product ownership remains `taskId`/Agent Task.
@@ -151,7 +150,7 @@ Review or a deep artifact must never mount a hidden second composer.
 
 ### Direction
 
-A durable user contribution is rendered as Direction. Direction may be copied, revised/redirected, or used to branch work according to the existing task contracts.
+A durable user contribution is rendered as Direction. Direction may be copied. There is no Redirect or Branch chrome on Direction.
 
 A predominantly machine-shaped S3/storage error can render through `S3ErrorArtifact`, preserving the structured error fields and raw payload access without pretending it is ordinary prose.
 
@@ -175,7 +174,7 @@ presentation state. Losing it (reload, task switch, second window) loses
 nothing — the client reattaches by replaying the durable event log from any
 sequence number.
 
-`ExecutionSummary` provides progressive disclosure attached to the result that produced it. `ExecutionSteps` and Execution Review expose real sanitized detail without turning the Task into a permanent trace console.
+Tool rows in the Work Result (`LiveTrace`) are the live and durable Execution disclosure. `ExecutionSteps` and Execution Review expose sanitized detail in the overlay without turning the Task into a permanent trace console.
 
 ### Decision
 
@@ -191,7 +190,7 @@ Streaming work is Execution; persisted completed output is Work Result. Work Res
 
 ### Artifact / Review
 
-`frontend/src/agent/AgentReviewPanel.tsx` is a thin artifact viewer:
+`frontend/src/agent/AgentReviewPanel.tsx` is a light overlay (`agent-review-overlay`) over the Task:
 
 ```ts
 "evidence" | "execution" | "report"
@@ -201,7 +200,7 @@ Streaming work is Execution; persisted completed output is Work Result. Work Res
 - **Execution** — persisted analysis execution and sanitized call detail.
 - **Report** — durable Markdown Report artifact.
 
-There is no Overview surface, no 4-tab Review application, and no revisit/plan/baseline/drift walls. These are review modes of the active Task, opened from the document, not independent application destinations.
+There is no Overview surface, no 4-tab Review application, and no revisit/plan/baseline/drift walls. These are review modes of the active Task, opened from the document, not independent application destinations. Escape closes the overlay through the same overlay stack as Settings and the command palette.
 
 ## 5. Runtime state and task concurrency
 
@@ -348,16 +347,16 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Positive ownership guard
 
-`frontend/src/agent/architecture.test.ts` asserts v0.93 ownership, including:
+`frontend/src/agent/architecture.test.ts` asserts v1.01 ownership, including:
 
 - one Agent input;
 - Agent Task as primary work area;
-- contextual Review;
+- overlay Review;
 - Direction / Work Result primitives;
 - explicit Decision boundaries;
-- Execution Summary/Steps/Detail rather than legacy renderers;
+- LiveTrace in the document rather than an Execution Summary wall;
 - task-native DOM/keyboard/style contracts;
-- physical deletion of retired component boundaries.
+- physical deletion of retired component boundaries (header, strip, command-center, Focus).
 
 ### Negative production-source guard
 
@@ -365,7 +364,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.00 and prevents current product docs from drifting back toward retired information architecture.
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.01 and prevents current product docs from drifting back toward retired information architecture.
 
 ### Real-Sidecar E2E
 

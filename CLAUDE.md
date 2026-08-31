@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.00.0.**
+> **Implementation contract for Storage Agent v1.01.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.00 product invariant is:
+The v1.01 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -18,21 +18,20 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v0.93+ product model
+## 1. Never regress the v1.01 native Agent
 
 New product/frontend work must preserve these boundaries:
 
 - **Agent Task** is the primary application object and primary work area.
-- **AgentTaskNavigation** is global task navigation and projects durable + live task state.
-- **AgentShell** owns the active task environment and contextual Review state.
+- **AgentTaskNavigation** is a quiet chronological title list. Rename and Delete only. State is a row mark.
+- **AgentShell** owns the active task environment and overlay Review state. There is no task header, no live execution strip, and no second presentation mode.
 - **AgentTask** is the public task boundary; persistence compatibility names stay behind adapters.
 - **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active.
-- **Direction** is user intent/steering input.
-- **Execution** is real runtime/tool work. Never invent plans, steps, workers, or capabilities the runtime does not expose.
+- **Direction** is user intent/steering input. Copy is the only Direction chrome.
+- **Execution** is real runtime/tool work, shown as tool rows in the Task document. Never invent plans, steps, workers, or capabilities the runtime does not expose.
 - **Decision required** is a blocking confirmation state derived from real backend proposals, with projected bounds/impact and a durable Decline path.
-- **Work Result** is the durable result of Agent work, not a generic assistant bubble.
-- Review is a thin artifact viewer opened from the document (Evidence, Execution detail, Report). It is not a 4-tab application destination. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules may exist as Sidecar engines; they have no product UI entry.
-- **Focus mode** changes presentation only. It never creates a second task lifecycle or second Agent input.
+- **Work Result** is the durable result of Agent work, not a generic assistant bubble. Figures and provenance sit inside the latest Work Result.
+- Review is a light overlay over the Task (Evidence, Execution detail, Report), opened from the document or ⌘I. It is not a 4-tab application destination, not a side-column application, and not a document hero. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules may exist as Sidecar engines; they have no product UI entry.
 
 Do not reconstruct earlier chat/investigation/workbench information architecture from old release notes, database names, API names, or git history. Historical `session` and `run` terminology is compatibility vocabulary, not a reason to change current product semantics.
 
@@ -190,7 +189,7 @@ See `docs/data-model.md`.
 - Composer is the only start surface. An empty window is the Composer. Missing model is a banner plus Settings. The model discovers tools; there is no slash SKU catalog and no first-run wizard.
 - Settings is **model + storage credentials + language/theme**. There is no price-table spreadsheet.
 - Keep settings/provider/model selection secondary to delegated work.
-- Keep technical results readable as documents: prose, tables, code/config, structured errors, Execution summary, provenance.
+- Keep technical results readable as documents: prose, tables, code/config, structured errors, tool rows, provenance.
 - Use progressive disclosure for execution detail; do not turn the main Task into a permanent observability wall.
 - Preserve accessibility, contrast, responsive/narrow-window behavior, English/Chinese parity, and real-state visual review.
 - Do not copy another Agent client's chrome without matching runtime semantics.

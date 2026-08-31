@@ -5,12 +5,6 @@ import { MOD } from "../shortcuts";
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 const formatGiB = (n: number) => `${(n / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
 
-const Spark = ({ size = 12 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2z" />
-  </svg>
-);
-
 const Paperclip = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
@@ -21,8 +15,6 @@ export function Composer({
   text,
   setText,
   attached,
-  attachType,
-  setAttachType,
   onClearAttachment,
   onPickFile,
   onOpenFilePicker,
@@ -34,14 +26,10 @@ export function Composer({
   onSend,
   onStop,
   onSteer,
-  modelName,
-  onOpenSettings,
 }: {
   text: string;
   setText: (v: string) => void;
   attached: File | null;
-  attachType: "inventory" | "access_log" | null;
-  setAttachType: (t: "inventory" | "access_log") => void;
   onClearAttachment: () => void;
   onPickFile: (f: File | null) => void;
   onOpenFilePicker: () => void;
@@ -53,43 +41,29 @@ export function Composer({
   onSend: () => void;
   onStop: () => void;
   onSteer: () => void;
-  modelName: string | null;
-  onOpenSettings: () => void;
 }) {
   const { t, lang } = useI18n();
   const copy = lang === "zh"
     ? {
-        delegate: "委派任务",
-        delegateHint: "给 Agent 一个目标、问题或需要完成的工作…",
-        working: "Agent 工作中",
-        workingHint: "Agent 正在执行；你可以继续补充方向或约束",
+        delegate: "委派",
+        delegateHint: "给 Agent 一个目标或问题…",
         steer: "Steer",
-        steerHint: "Steer Agent：补充方向、约束或下一步…",
-        model: "Model",
+        steerHint: "补充方向或约束…",
         uploading: (name: string) => `正在准备 ${name}…`,
-        modelSettings: "模型设置",
-        steerCurrent: "Steer 当前执行",
         newline: "换行",
         stop: "Stop",
         steerAction: "Steer Agent",
-        steerActionHint: "把新的方向或约束加入当前执行，同时保留已经完成的工作",
         delegateAction: "Delegate task",
       }
     : {
         delegate: "Delegate",
-        delegateHint: "Give the Agent a goal, problem, or job to complete…",
-        working: "Agent working",
-        workingHint: "The Agent is executing; add direction or constraints at any time",
+        delegateHint: "Give the Agent a goal or problem…",
         steer: "Steer",
-        steerHint: "Steer the Agent with new direction, constraints, or a next step…",
-        model: "Model",
+        steerHint: "Add direction or constraints…",
         uploading: (name: string) => `Preparing ${name}…`,
-        modelSettings: "Model settings",
-        steerCurrent: "Steer current execution",
         newline: "new line",
         stop: "Stop",
         steerAction: "Steer Agent",
-        steerActionHint: "Add direction or constraints to the current execution while preserving completed work",
         delegateAction: "Delegate task",
       };
   const [sizeError, setSizeError] = useState<string | null>(null);
@@ -123,23 +97,7 @@ export function Composer({
               <span className="skeleton h-3 w-12" aria-hidden />
               {copy.uploading(attached.name)}
             </span>
-          ) : (
-            <span className="flex items-center gap-1">
-              {!attachType ? <span className="text-gray-500">{t("attach.pickType")}</span> : null}
-              {(["inventory", "access_log"] as const).map((kind) => (
-                <button
-                  key={kind}
-                  type="button"
-                  aria-pressed={attachType === kind}
-                  data-testid={`attach-type-${kind}`}
-                  onClick={() => setAttachType(kind)}
-                  className={`rounded-full border px-2 py-0.5 text-2xs transition-colors ${attachType === kind ? "border-accent/50 bg-accent/12 text-accent-soft" : "border-edge text-gray-400 hover:bg-hover hover:text-gray-200"}`}
-                >
-                  {kind === "inventory" ? t("attach.inventory") : t("attach.accessLog")}
-                </button>
-              ))}
-            </span>
-          )}
+          ) : null}
           {!uploading ? (
             <button type="button" className="ml-auto grid h-6 w-6 place-items-center rounded-md text-gray-500 hover:bg-hover hover:text-gray-300" onClick={onClearAttachment} aria-label={t("common.cancel")}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -198,19 +156,8 @@ export function Composer({
           <Paperclip />
         </button>
 
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          title={modelName ?? copy.modelSettings}
-          aria-label={modelName ? `${copy.model}: ${modelName}` : copy.modelSettings}
-          className={`h-7 shrink-0 items-center gap-1.5 rounded-lg border text-2xs transition-colors ${modelName ? "grid w-7 place-items-center border-transparent px-0 text-gray-500 hover:border-edge hover:bg-elevated hover:text-gray-300" : "flex border-warn-border px-2 text-warn-fg"}`}
-        >
-          <Spark size={10} />
-          {modelName ? null : <span>{copy.modelSettings}</span>}
-        </button>
-
         <span className="ml-auto hidden text-2xs text-gray-500 opacity-0 transition-opacity duration-fast group-focus-within/composer:opacity-100 sm:inline">
-          {busy ? <>{copy.steerCurrent} · <kbd className="rounded-md border border-edge bg-elevated px-1">⇧⏎</kbd> {copy.newline}</> : <><kbd className="rounded-md border border-edge bg-elevated px-1">⏎</kbd> {copy.delegate} · <kbd className="rounded-md border border-edge bg-elevated px-1">⇧⏎</kbd> {copy.newline}</>}
+          {busy ? <><kbd className="rounded-md border border-edge bg-elevated px-1">⇧⏎</kbd> {copy.newline}</> : <><kbd className="rounded-md border border-edge bg-elevated px-1">⏎</kbd> {copy.delegate}</>}
         </span>
 
         {busy ? (
@@ -232,11 +179,9 @@ export function Composer({
               onClick={onSteer}
               disabled={!text.trim()}
               aria-label={copy.steerAction}
-              title={copy.steerActionHint}
               className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-3 text-2xs font-semibold text-accent-fg transition-[background-color,transform] duration-fast hover:bg-accent-soft active:scale-[.98] disabled:cursor-default disabled:bg-elevated disabled:text-gray-500"
             >
               {copy.steer}
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><line x1="5" y1="12" x2="19" y2="12" /><polyline points="13 6 19 12 13 18" /></svg>
             </button>
           </div>
         ) : (
@@ -251,7 +196,6 @@ export function Composer({
             >
               {uploading ? <span className="skeleton h-3.5 w-3.5 rounded-full" aria-hidden /> : null}
               <span>{copy.delegate}</span>
-              {!uploading ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><line x1="5" y1="12" x2="19" y2="12" /><polyline points="13 6 19 12 13 18" /></svg> : null}
             </button>
           </div>
         )}

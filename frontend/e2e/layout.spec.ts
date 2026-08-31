@@ -167,8 +167,8 @@ test.describe("task navigation at a small window", () => {
     await page.setViewportSize({ width: 900, height: 800 });
     await page.goto("/");
     await expect(navigation(page)).toHaveAttribute("data-collapsed", "true");
-    await page.getByTestId("task-navigation-palette").click();
-    const palette = page.getByRole("dialog");
+    await page.keyboard.press("ControlOrMeta+k");
+    const palette = page.getByTestId("command-palette");
     const box = palette.getByRole("textbox");
     await expect(box).toBeVisible();
     await box.fill(title.slice(0, 18));

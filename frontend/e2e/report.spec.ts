@@ -72,7 +72,7 @@ test.describe("durable Agent report artifact", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, QUESTION);
-      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 60_000 });
       await openReport(page);
       const md = await reportText(page);
       expect(md).toContain("this presigned link 403s");
@@ -84,7 +84,7 @@ test.describe("durable Agent report artifact", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, QUESTION);
-      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 60_000 });
       await openReport(page);
       expect(await reportText(page)).toContain("read_skill");
     } finally { await cleanup(); }
@@ -94,7 +94,7 @@ test.describe("durable Agent report artifact", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, QUESTION);
-      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 60_000 });
       await openReport(page);
       const md = await reportText(page);
       expect(md).toContain("part-0001.parquet");
@@ -107,7 +107,7 @@ test.describe("durable Agent report artifact", () => {
     const { model, cleanup } = await oneTurn(page);
     try {
       await ask(page, QUESTION);
-      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 60_000 });
       const sent = JSON.stringify(model.requests);
       expect(sent).not.toContain(SIGNATURE);
       expect(sent).not.toContain("AKIAIOSFODNN7EXAMPLE");
@@ -118,7 +118,7 @@ test.describe("durable Agent report artifact", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, QUESTION);
-      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 60_000 });
       await openReport(page);
       const md = await reportText(page);
       expect(md).toContain("run_account_discovery");
@@ -131,7 +131,7 @@ test.describe("durable Agent report artifact", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, QUESTION);
-      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 60_000 });
       await openReport(page);
       await reportText(page);
       const download = page.waitForEvent("download", { timeout: 20_000 });

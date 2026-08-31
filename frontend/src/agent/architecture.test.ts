@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8");
 const absent = (relative: string) => expect(existsSync(new URL(relative, import.meta.url))).toBe(false);
 
-describe("v0.93 Agent-native ownership boundaries", () => {
+describe("v1.01 native Agent ownership boundaries", () => {
   it("physically removes the v0.92 navigation and deep-surface shell", () => {
     absent("./InvestigationNavigation.tsx");
     absent("./SurfaceTabs.tsx");
@@ -28,16 +28,24 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(composer).toContain("onStop");
     expect(composer).not.toContain("Ask Storage Agent");
     expect(composer).not.toContain('t("thread.');
+    expect(composer).not.toContain("attach-type-inventory");
+    expect(composer).not.toContain("attach-type-access_log");
+    expect(composer).not.toContain("Analyze as:");
   });
 
-  it("keeps Agent Task as the primary work area while Review stays contextual", () => {
+  it("keeps Agent Task as the primary work area while Review is a light overlay", () => {
     const shell = source("./AgentShell.tsx");
     expect(shell).toContain("taskContent: ReactNode");
     expect(shell).toContain("agent-task-content");
     expect(shell).toContain("<AgentReviewPanel");
+    expect(source("./AgentReviewPanel.tsx")).toContain("agent-review-overlay");
     expect(shell).not.toContain('data-testid="agent-task-review"');
     expect(shell).not.toContain("showReview");
-    expect(shell).toContain("agent-task-title");
+    expect(shell).not.toContain("agent-task-header");
+    expect(shell).not.toContain("agent-task-title");
+    expect(shell).not.toContain("data-focus");
+    expect(shell).not.toContain("focus.toggle");
+    expect(shell).not.toContain("agent-live-status");
     expect(shell).not.toContain("agent-task-breadcrumb");
     expect(shell).not.toContain("timeline: ReactNode");
     expect(shell).not.toContain("<SurfaceTabs");
@@ -45,7 +53,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(shell).not.toContain("agent-task-start-heading");
   });
 
-  it("makes AgentTaskNavigation the application boundary", () => {
+  it("makes AgentTaskNavigation a quiet chronological title list", () => {
     const app = source("../App.tsx");
     const navigation = source("./AgentTaskNavigation.tsx");
     const model = source("./navigationModel.ts");
@@ -53,19 +61,36 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(app).toContain('import { AgentTaskNavigation } from "./agent/AgentTaskNavigation"');
     expect(app).toContain("<AgentTaskNavigation");
     expect(app).not.toContain("SessionRail");
+    expect(app).not.toContain("onTogglePin");
+    expect(app).not.toContain("onFork");
+    expect(app).not.toContain("onToggleArchive");
     expect(navigation).toContain('data-testid="agent-task-navigation"');
     expect(navigation).toContain('data-testid="task-navigation-toggle"');
-    expect(navigation).toContain("agent-task-queue");
+    expect(navigation).toContain("agent-task-list");
+    expect(navigation).not.toContain("agent-task-queue");
     expect(navigation).not.toContain("{copy.needsYou}");
     expect(navigation).not.toContain("{copy.recent}");
+    expect(navigation).not.toContain("task-queue-needs-you");
+    expect(navigation).not.toContain("task-queue-running");
     expect(navigation).not.toContain('data-testid="session-rail"');
     expect(navigation).not.toContain('data-testid="rail-');
+    expect(navigation).not.toContain("Search tasks");
+    expect(navigation).not.toContain("menu.pin");
+    expect(navigation).not.toContain("menu.duplicate");
+    expect(navigation).not.toContain("menu.archive");
     expect(model).toContain("DEFAULT_TASK_NAV_WIDTH");
     expect(model).toContain("clampTaskNavigationWidth");
+    expect(model).toContain("onRename");
+    expect(model).toContain("onDelete");
+    expect(model).not.toContain("onTogglePin");
+    expect(model).not.toContain("onFork");
     expect(model).not.toContain("DEFAULT_RAIL_WIDTH");
     expect(model).not.toContain("clampRailWidth");
     absent("../../e2e/rail.spec.ts");
     expect(e2e).toContain('test.describe("Agent task navigation"');
+    expect(e2e).not.toContain("Duplicate");
+    expect(e2e).not.toContain("Archive");
+    expect(e2e).not.toContain("Search tasks");
   });
 
   it("uses Review and Execution commands instead of v0.92 application surfaces", () => {
@@ -75,6 +100,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(model).not.toContain("WorkSurface");
     expect(model).not.toContain("initialWorkbenchState");
     expect(model).not.toContain("workbenchReducer");
+    expect(model).not.toContain("focus.toggle");
     expect(commands).toContain("openAgentReview");
     expect(commands).toContain("openAgentExecution");
     expect(shell).toContain("publishAgentCommands");
@@ -88,13 +114,21 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     const review = source("./AgentReviewPanel.tsx");
     expect(evidence).toContain("export function EvidenceReview");
     expect(evidence).toContain('data-testid="evidence-review"');
+    expect(evidence).not.toContain("agent-document-heading");
+    expect(evidence).not.toContain("agent-section-index");
     expect(execution).toContain("export function ExecutionReview");
+    expect(execution).not.toContain("agent-document-heading");
     expect(report).toContain("export function ReportArtifact");
+    expect(report).not.toContain("agent-document-heading");
+    expect(report).not.toContain("agent-os-command");
     expect(review).toContain("<EvidenceReview");
     expect(review).toContain("<ExecutionReview");
     expect(review).toContain("<ReportArtifact");
+    expect(review).toContain("agent-review-overlay");
+    expect(review).toContain("useDismissOnEscape");
     expect(review).not.toContain('data-testid="decision-history"');
     expect(review).not.toContain("Workspace");
+    expect(review).not.toContain("agent-review-eyebrow");
   });
 
   it("uses Direction and Work Result directly with no message adapter", () => {
@@ -110,6 +144,9 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(result).toContain("openAgentReview");
     expect(result).toContain("openAgentExecution");
     expect(result).not.toContain("AnswerDocument");
+    expect(result).not.toContain("onBranch");
+    expect(result).not.toContain("onRerun");
+    expect(result).not.toContain("redirect-direction");
     expect(task).toContain('import { AgentTaskResult } from "./AgentTaskResult"');
     expect(task).toContain("<AgentTaskResult");
     expect(task).not.toContain("MessageCard");
@@ -134,21 +171,25 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(task).not.toContain("ProposalCard");
     expect(artifacts).toContain("<AgentNextAction");
     expect(artifacts).not.toContain("ProposalCard");
+    expect(artifacts).not.toContain("ThinkingBubble");
+    expect(artifacts).not.toContain("GroundingCard");
   });
 
-  it("promotes completed tool work to Execution Summary with no footer shim", () => {
+  it("shows real tool work in the document, not an Execution Summary wall", () => {
     absent("../components/TurnFooter.tsx");
     absent("../../e2e/turnfooter.spec.ts");
-    const execution = source("../components/ExecutionSummary.tsx");
+    absent("../components/ExecutionSummary.tsx");
+    const result = source("../components/AgentResultRenderer.tsx");
     const task = source("../components/AgentTaskImplementation.tsx");
     const e2e = source("../../e2e/execution-summary.spec.ts");
-    expect(execution).toContain("export function ExecutionSummary");
-    expect(execution).toContain('data-testid="execution-summary"');
-    expect(execution).toContain("execution-step-open");
-    expect(task).toContain('from "./ExecutionSummary"');
-    expect(task).toContain("<ExecutionSummary");
+    expect(result).toContain("LiveTrace");
+    expect(result).toContain("toolActivity?.length");
+    expect(task).not.toContain('from "./ExecutionSummary"');
+    expect(task).not.toContain("<ExecutionSummary");
     expect(task).not.toContain("TurnFooter");
-    expect(e2e).toContain('test.describe("Execution Summary"');
+    expect(task).not.toContain("ThinkingBubble");
+    expect(e2e).toContain('getByTestId("live-trace")');
+    expect(e2e).not.toContain("execution-summary-toggle");
   });
 
   it("uses Execution Steps and Execution Detail rather than timeline/run-detail renderers", () => {
@@ -174,7 +215,7 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(task).toContain('data-testid="task-scroll"');
     expect(task).toContain("task-item-");
     expect(task).toContain('data-direction=');
-    expect(task).toContain('data-testid="execution-link"');
+    expect(task).not.toContain('data-testid="execution-link"');
     expect(task).toContain('data-testid="remote-execution"');
     expect(task).toContain('data-testid="task-status"');
     expect(task).not.toContain('data-testid="thread-scroll"');
@@ -262,8 +303,17 @@ describe("v0.93 Agent-native ownership boundaries", () => {
   it("has exactly one semantic j/k owner without capture-phase suppression", () => {
     const boundary = source("../components/AgentTask.tsx");
     const implementation = source("../components/AgentTaskImplementation.tsx");
+    const viewport = source("../hooks/useTaskViewport.ts");
+    const nav = source("../lib/taskNavigation.ts");
+    const taskCss = source("../agent-task.css");
     expect(boundary).toContain('matches(event, "nextStep")');
     expect(boundary).not.toContain("stopImmediatePropagation");
+    expect(boundary).toContain("scrollTo");
+    expect(boundary).not.toContain("scrollIntoView");
+    expect(boundary).toContain("RELEASE_TASK_FOLLOW_EVENT");
+    expect(viewport).toContain("RELEASE_TASK_FOLLOW_EVENT");
+    expect(nav).toContain("TASK_STEP_SCROLL_MARGIN = 72");
+    expect(taskCss).toContain("scroll-margin-top: 72px");
     expect(implementation).not.toContain('matches(event, "nextStep")');
     expect(implementation).not.toContain("stepTurn");
   });
@@ -273,22 +323,30 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(result).toContain("AgentResultRenderer");
     expect(result).toContain("S3ErrorArtifact");
     expect(result).not.toContain("ProvenTurnRenderer");
+    expect(source("../components/S3ErrorArtifact.tsx")).not.toContain("branch-task");
+    expect(source("../components/S3ErrorArtifact.tsx")).not.toContain("redirect-direction");
   });
 
-  it("uses task-native styling with no v0.92 compatibility stylesheets", () => {
+  it("uses task-native styling with no workbench command-center layer", () => {
     absent("../workspace-overhaul.css");
     absent("../run-workspace.css");
+    absent("./command-center.css");
     const main = source("../main.tsx");
     const taskCss = source("../agent-task.css");
     const executionCss = source("../execution-review.css");
+    const shellCss = source("./agent-shell.css");
     expect(main).toContain('import "./agent-task.css"');
     expect(main).toContain('import "./execution-review.css"');
     expect(main).not.toContain("workspace-overhaul.css");
     expect(main).not.toContain("run-workspace.css");
+    expect(main).not.toContain("command-center.css");
     expect(taskCss).toContain('[data-testid="task-scroll"]');
-    expect(taskCss).toContain('[data-testid="execution-summary"]');
+    expect(taskCss).not.toContain('[data-testid="execution-summary"]');
     expect(taskCss).not.toContain("thread-scroll");
     expect(taskCss).not.toContain("turn-activity");
+    expect(shellCss).toContain("agent-review-overlay");
+    expect(shellCss).not.toContain(".agent-task-header");
+    expect(shellCss).not.toContain('data-focus="true"');
     expect(executionCss).toContain('[data-testid="execution-detail"]');
     expect(executionCss).not.toContain("run-workspace-root");
     expect(executionCss).not.toContain("position: fixed");
@@ -313,7 +371,8 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(task).toContain("if (!sessionId || !pending || busy) return");
     expect(task).not.toContain("pendingAlreadyPersisted");
     expect(task).toContain("{pending && !hideLiveDirection ?");
-    expect(task).toContain(": busy ? <ThinkingBubble /> : null}");
+    expect(task).toContain("<WorkingRow");
+    expect(task).not.toContain("ThinkingBubble");
   });
 
   it("does not treat a cached task document as a successful server load", () => {
@@ -348,17 +407,18 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(review).not.toContain("remediation-plan-page");
   });
 
-  it("renders deterministic SVG figures from provenance, never a chart library", () => {
+  it("renders deterministic SVG figures from provenance inside the latest Work Result", () => {
     const pkg = source("../../package.json");
     const figures = source("../viz/AnalysisFigures.tsx");
     const extract = source("../viz/extract.ts");
+    const task = source("../components/AgentTaskImplementation.tsx");
     expect(pkg).not.toMatch(/recharts|chart\.js|d3|plotly|nivo|visx|highcharts/i);
     expect(figures).toContain('data-testid="analysis-figures"');
     expect(figures).toContain("Cost axis withheld");
     expect(extract).toContain("Never invent a day the runtime did not emit");
-    expect(source("../components/AgentTaskImplementation.tsx")).toContain("task-analysis-figures");
-    expect(source("../components/AgentTaskImplementation.tsx")).toContain("<section className=\"task-analysis-figures\"");
-    expect(source("../components/AgentTaskImplementation.tsx")).not.toContain("task-document-figures");
+    expect(task).toContain("task-analysis-figures");
+    expect(task).toContain("figures={latest");
+    expect(task).not.toContain("task-document-figures");
     expect(source("../agent-task.css")).not.toContain("data-split");
     expect(source("./AgentReviewPanel.tsx")).not.toContain("review-overview-figures");
     expect(source("./AgentReviewPanel.tsx")).not.toContain("AnalysisFigures");
@@ -394,5 +454,31 @@ describe("v0.93 Agent-native ownership boundaries", () => {
     expect(shell).not.toContain("ConnectionMark");
     expect(shell).not.toContain("agent-native-command");
     expect(shell).not.toContain("Ready to delegate");
+    expect(shell).not.toContain("onOpenPalette");
+    expect(shell).not.toContain("sidecarStatus");
+  });
+
+  it("physically removes leftover workbench product objects", () => {
+    absent("../components/AgentMemory.tsx");
+    absent("../lib/activityDensity.ts");
+    absent("../components/ExecutionSummary.tsx");
+    absent("./command-center.css");
+    const ui = source("../components/ui.tsx");
+    const i18n = source("../i18n.tsx");
+    const copy = source("./agentCopy.ts");
+    const model = source("./navigationModel.ts");
+    expect(ui).not.toContain("BrandMark");
+    expect(i18n).not.toContain("menu.pin");
+    expect(i18n).not.toContain("menu.duplicate");
+    expect(i18n).not.toContain("menu.archive");
+    expect(i18n).not.toContain("wizard.welcomeTitle");
+    expect(i18n).not.toContain("sugg.checkup");
+    expect(i18n).not.toContain("settings.priceTitle");
+    expect(i18n).not.toContain("attach.pickType");
+    expect(i18n).not.toContain("grounding.title");
+    expect(copy).not.toContain("noScope");
+    expect(copy).not.toContain("commandPalette");
+    expect(model).not.toContain("dayBucket");
+    expect(model).not.toContain("DAY_BUCKETS");
   });
 });

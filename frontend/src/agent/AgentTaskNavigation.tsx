@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { useI18n, type TFunc } from "../i18n";
-import type { SidecarStatus } from "../hooks/useSidecarHealth";
-import { getSessionRun, useSessionRun, useSessionRunIndexVersion } from "../sessionRuns";
-import { BrandMark } from "../components/ui";
+import { useSessionRun, useSessionRunIndexVersion } from "../sessionRuns";
 import { EmptyState } from "../components/EmptyState";
 import { MOD } from "../shortcuts";
 import { useNavigationCopy } from "./navigationCopy";
@@ -12,22 +10,12 @@ import {
   type AgentTaskSummary,
   type TaskActions,
 } from "./navigationModel";
-import { listAgentTasks } from "./taskApi";
 import { agentTaskState } from "./taskState";
 
-const STATUS_DOT: Record<SidecarStatus, string> = {
-  starting: "bg-warn",
-  connected: "bg-success",
-  disconnected: "bg-danger",
-  error: "bg-danger",
-};
-
 const PlusIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>;
-const SearchIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" /></svg>;
 const SettingsIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21h-4v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H3v-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3h4a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9A1.7 1.7 0 0 0 21 10h.1v4H21a1.7 1.7 0 0 0-1.6 1Z" /></svg>;
 const SidebarIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="9" y1="4" x2="9" y2="20" /></svg>;
 const MoreIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>;
-const ChevronIcon = ({ open }: { open: boolean }) => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>{open ? <polyline points="6 9 12 15 18 9" /> : <polyline points="9 18 15 12 9 6" />}</svg>;
 
 function relTime(iso: string, t: TFunc): string {
   const ms = Date.parse(iso);
@@ -61,7 +49,6 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
   const copy = useNavigationCopy();
   const run = useSessionRun(task.id);
   const selected = task.id === activeTaskId;
-  const archived = task.status === "archived";
   const menuOpen = menuId === task.id;
   const renaming = renamingId === task.id;
   const confirming = confirmId === task.id;
@@ -75,11 +62,6 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
   }, [renaming, task.title]);
 
   const stateKey = agentTaskState(run, true, task.requires_decision, task.task_status);
-  const needsLabel = stateKey === "decision"
-    ? copy.needsDecision
-    : stateKey === "attention"
-      ? copy.needsAttention
-      : null;
   const act = (fn: () => void) => (event: MouseEvent<HTMLButtonElement>) => { event.stopPropagation(); setMenuId(null); fn(); };
 
   if (renaming) {
@@ -96,10 +78,6 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
       <div className="agent-task-row-content">
         <div className="agent-task-row-title">
           <strong>{task.title || t("common.untitled")}</strong>
-          {task.pinned ? <svg className="agent-task-pin" width="8" height="8" viewBox="0 0 8 8" fill="currentColor" aria-label={copy.pinned}><circle cx="4" cy="4" r="2.5" /></svg> : null}
-          {needsLabel ? (
-            <span className="agent-task-needs-badge" data-state={stateKey}>{needsLabel}</span>
-          ) : null}
         </div>
       </div>
       <button type="button" aria-label={t("menu.more")} onClick={(event) => { event.stopPropagation(); setConfirmId(null); setMenuId(menuOpen ? null : task.id); }} className="agent-task-more"><MoreIcon /></button>
@@ -107,9 +85,6 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
       {menuOpen ? (
         <div className="agent-task-menu">
           <MenuItem onClick={act(() => setRenamingId(task.id))}>{t("menu.rename")}</MenuItem>
-          {!archived ? <MenuItem onClick={act(() => actions.onTogglePin(task))}>{task.pinned ? t("menu.unpin") : t("menu.pin")}</MenuItem> : null}
-          <MenuItem onClick={act(() => actions.onFork(task))}>{t("menu.duplicate")}</MenuItem>
-          <MenuItem onClick={act(() => actions.onToggleArchive(task))}>{archived ? t("menu.unarchive") : t("menu.archive")}</MenuItem>
           <div className="my-1 border-t border-edge" />
           <MenuItem danger onClick={act(() => setConfirmId(task.id))}>{t("menu.delete")}</MenuItem>
         </div>
@@ -131,7 +106,6 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
 export type AgentTaskNavigationProps = {
   width: number;
   collapsed: boolean;
-  onOpenPalette: () => void;
   onToggleCollapse: () => void;
   onResize: (px: number) => void;
   tasks: AgentTaskSummary[];
@@ -139,46 +113,18 @@ export type AgentTaskNavigationProps = {
   onSelectTask: (id: string) => void;
   onNew: () => void;
   onOpenSettings: () => void;
-  status: SidecarStatus;
-  slow: boolean;
   actions: TaskActions;
 };
 
-export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, onOpenSettings, status, slow, actions, width, collapsed, onOpenPalette, onToggleCollapse, onResize }: AgentTaskNavigationProps) {
-  const { t } = useI18n();
+export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, onOpenSettings, actions, width, collapsed, onToggleCollapse, onResize }: AgentTaskNavigationProps) {
   const copy = useNavigationCopy();
   useSessionRunIndexVersion();
   const [menuId, setMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<AgentTaskSummary[] | null>(null);
-  const [showArchived, setShowArchived] = useState(false);
-  const q = query.trim();
 
-  useEffect(() => {
-    if (!q) { setResults(null); return; }
-    let cancelled = false;
-    const timer = window.setTimeout(() => { void listAgentTasks(q).then((rows) => { if (!cancelled) setResults(rows); }).catch(() => { if (!cancelled) setResults([]); }); }, 200);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [q]);
-
-  const base = q ? (results ?? []) : tasks;
-  const current = base.filter((task) => task.status !== "archived");
-  const archived = base.filter((task) => task.status === "archived");
-  const runtimeState = (task: AgentTaskSummary) =>
-    agentTaskState(getSessionRun(task.id), true, task.requires_decision, task.task_status);
-  const needsYou = current.filter((task) => {
-    const state = runtimeState(task);
-    return state === "decision" || state === "attention";
-  });
-  const runningTasks = current.filter((task) => {
-    const state = runtimeState(task);
-    return state === "working" || state === "uploading";
-  });
-  const liveTaskIds = new Set([...needsYou, ...runningTasks].map((task) => task.id));
-  const pinned = current.filter((task) => task.pinned && !liveTaskIds.has(task.id));
-  const recent = current.filter((task) => !task.pinned && !liveTaskIds.has(task.id));
+  const visible = tasks.filter((task) => task.status !== "archived");
+  visible.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
 
   const startResize = (event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -196,11 +142,9 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
   if (collapsed) {
     return (
       <aside data-testid="agent-task-navigation" data-navigation="agent-tasks" data-collapsed="true" aria-label={copy.tasks} className="agent-task-nav-collapsed">
-        <button type="button" onClick={onToggleCollapse} title={copy.expand} aria-label={copy.expand} data-testid="task-navigation-toggle" className="agent-task-nav-brand"><BrandMark size={15} /></button>
+        <button type="button" onClick={onToggleCollapse} title={copy.expand} aria-label={copy.expand} data-testid="task-navigation-toggle" className="agent-task-nav-icon"><SidebarIcon /></button>
         <button type="button" onClick={onNew} title={copy.newTask} aria-label={copy.newTask} className="agent-task-nav-icon"><PlusIcon /></button>
-        <button type="button" onClick={onOpenPalette} title={copy.searchExisting} aria-label={copy.searchExisting} data-testid="task-navigation-palette" className="agent-task-nav-icon"><SearchIcon /></button>
         <div className="mt-auto flex flex-col items-center gap-2">
-          <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[status]} ${status === "starting" ? "animate-pulse" : ""}`} title={status === "starting" && slow ? t("status.slowStart") : status} />
           <button type="button" onClick={onOpenSettings} aria-label={copy.settings} className="agent-task-nav-icon"><SettingsIcon /></button>
         </div>
       </aside>
@@ -213,33 +157,23 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
       {(menuId || confirmId) ? <div className="fixed inset-0 z-sticky" onClick={() => { setMenuId(null); setConfirmId(null); }} /> : null}
 
       <header className="agent-task-nav-header">
-        <div className="agent-task-nav-brand"><BrandMark size={15} /></div>
-        <div className="min-w-0 flex-1"><strong>Storage Agent</strong><span>{copy.tasks}</span></div>
+        <button type="button" onClick={onNew} className="agent-task-new" data-testid="task-navigation-new">
+          <span className="agent-task-new-mark"><PlusIcon /></span>
+          <span>{copy.newTask}</span>
+          <kbd>{MOD}N</kbd>
+        </button>
         <button type="button" onClick={onToggleCollapse} aria-label={copy.collapse} title={copy.collapse} data-testid="task-navigation-toggle" className="agent-task-nav-collapse"><SidebarIcon /></button>
       </header>
 
-      <div className="agent-task-nav-primary">
-        <button type="button" onClick={onNew} className="agent-task-new"><span className="agent-task-new-mark"><PlusIcon /></span><span>{copy.newTask}</span><kbd>{MOD}N</kbd></button>
-        <div className="agent-task-search"><SearchIcon /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.search} aria-label={copy.search} />{query ? <button type="button" onClick={() => setQuery("")} aria-label={copy.clearSearch}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button> : null}</div>
-      </div>
-
       <nav className="agent-task-list" aria-label={copy.tasks}>
-        {q && results !== null && results.length === 0 ? (
-          <EmptyState compact testId="task-nav-empty" title={copy.noResults} body={copy.noResultsHint} />
-        ) : null}
-        {!q && tasks.length === 0 ? (
+        {visible.length === 0 ? (
           <EmptyState compact testId="task-nav-empty" title={copy.noTasks} body={copy.noTasksHint} />
-        ) : null}
-        {needsYou.length ? <section data-testid="task-queue-needs-you" className="agent-task-queue">{needsYou.map(row)}</section> : null}
-        {runningTasks.length ? <section data-testid="task-queue-running" className="agent-task-queue">{runningTasks.map(row)}</section> : null}
-        {pinned.length ? <section className="agent-task-queue">{pinned.map(row)}</section> : null}
-        {recent.length ? <section className="agent-task-queue">{recent.map(row)}</section> : null}
-        {archived.length ? <section><button type="button" className="agent-task-archive-toggle" onClick={() => setShowArchived((value) => !value)}><ChevronIcon open={showArchived} /> {copy.archived} ({archived.length})</button>{(showArchived || q) ? archived.map(row) : null}</section> : null}
+        ) : (
+          visible.map(row)
+        )}
       </nav>
 
       <footer className="agent-task-nav-footer">
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[status]} ${status === "starting" ? "animate-pulse" : ""}`} aria-hidden />
-        <span>{status === "starting" && slow ? t("status.slowStart") : status}</span>
         <button type="button" onClick={onOpenSettings} aria-label={copy.settings} data-testid="task-navigation-settings"><SettingsIcon /></button>
       </footer>
     </aside>

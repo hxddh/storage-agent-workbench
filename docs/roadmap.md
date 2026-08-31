@@ -1,20 +1,23 @@
 # Roadmap
 
-> **Baseline: Storage Agent v1.00.0.**
+> **Baseline: Storage Agent v1.01.0.**
 >
 > This file describes what comes **after** the current Agent Task architecture. It is not a backlog of old UI concepts and it is not proof that an aspirational capability already exists.
 
 ## Current shipped baseline
 
-v1.00.0 is the current baseline: a modern Agent. Empty window is the Composer.
-Settings is model, storage credentials, language, and theme. The model
-discovers tools. Evidence, Execution, and Report open from the document. No
-price-table spreadsheet, slash SKU catalog, first-run wizard, 4-tab Review, or
-painted Verify/revisit chrome. No new tools, no migration (head remains **027**).
+v1.01.0 is the current baseline: a native Agent window. Empty window is the Composer.
+The center is one readable work record. Tools appear in that record. The sidebar is
+quiet titles. Settings is model, storage credentials, language, and theme. The model
+discovers tools. Evidence, Execution, and Report open as a light overlay. No
+price-table spreadsheet, slash SKU catalog, first-run wizard, 4-tab Review,
+painted Verify/revisit chrome, task header, live status strip, or command-center
+queues. No new tools, no migration (head remains **027**).
 Sidecar engines from v0.96 (cost sim, Remediation Plan, baseline/Drift, revisit)
 remain callable by the Agent and have no product UI entry.
 
-v0.99.0 was a chrome-subtraction pass that left those copilot objects in place.
+v1.00.0 deleted copilot product objects but kept a workbench shell. v0.99.0 was a
+chrome-subtraction pass that left those copilot objects in place.
 v0.98.0 added deterministic figures and finding provenance. v0.97.0 was the
 token/motion/keyboard craft pass. v0.96.0 added the engines. The Agent Task
 runtime from v0.94/v0.95 remains:

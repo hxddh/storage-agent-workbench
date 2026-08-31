@@ -3,7 +3,6 @@ export type ReviewSurface = "evidence" | "execution" | "report";
 export type AgentShellState = {
   review: ReviewSurface | null;
   selectedExecutionId: string | null;
-  focus: boolean;
   taskId: string | null;
 };
 
@@ -12,11 +11,10 @@ export type AgentShellAction =
   | { type: "review.open"; review: ReviewSurface }
   | { type: "review.close" }
   | { type: "execution.open"; executionId: string }
-  | { type: "execution.close" }
-  | { type: "focus.toggle" };
+  | { type: "execution.close" };
 
 export function initialAgentShellState(taskId: string | null): AgentShellState {
-  return { review: null, selectedExecutionId: null, focus: false, taskId };
+  return { review: null, selectedExecutionId: null, taskId };
 }
 
 export function agentShellReducer(state: AgentShellState, action: AgentShellAction): AgentShellState {
@@ -39,7 +37,5 @@ export function agentShellReducer(state: AgentShellState, action: AgentShellActi
       return { ...state, review: "execution", selectedExecutionId: action.executionId };
     case "execution.close":
       return { ...state, selectedExecutionId: null };
-    case "focus.toggle":
-      return { ...state, focus: !state.focus };
   }
 }

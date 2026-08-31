@@ -14,7 +14,7 @@ async function bootZh(page: Page) {
 }
 
 const ENGLISH_LEAK =
-  /\b(Settings|Providers|Cancel|Close|Copy|Delete|Rename|Archive|Retry|Reload|Send|Search|Loading|Failed|Error|Untitled|Yesterday|Today|Older|New task|Show more|Show less)\b/;
+  /\b(Settings|Providers|Cancel|Close|Copy|Delete|Rename|Retry|Reload|Send|Loading|Failed|Error|Untitled|New task|Show more|Show less)\b/;
 
 test.describe("Agent product in Chinese", () => {
   test("the task start surface is Chinese, not a half-translated legacy screen", async ({ page }) => {
@@ -62,12 +62,11 @@ test.describe("Agent product in Chinese", () => {
       await bootZh(page);
       await composerZh(page).fill("为什么 acme-logs 每次 list 都 403？");
       await composerZh(page).press("Enter");
-      await expect(page.getByTestId("execution-summary-toggle")).toBeVisible({ timeout: 60_000 });
-      await page.getByTestId("execution-summary-toggle").click();
+      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 60_000 });
 
       const task = await page.getByTestId("task-scroll").evaluate((el) => el.textContent ?? "");
       expect(task).toMatch(/桶策略|s3:ListBucket|403/);
-      await expect(page.getByTestId("execution-summary").last()).toBeVisible();
+      await expect(page.getByTestId("live-trace").last()).toBeVisible();
       expect(task).not.toMatch(ENGLISH_LEAK);
     } finally {
       await dropModelProvider(modelId);

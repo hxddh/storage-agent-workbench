@@ -30,15 +30,17 @@ async function ask(page: Page, turns: string[][], question: string) {
   };
 }
 
-/** A rerun affordance exists only on a durable Work Result; live Execution does
- * not expose it. Waiting for it therefore proves the persisted result replaced
- * the stream before we inspect text. */
+/** Composer leaving Working means the persisted Work Result replaced the stream. */
 async function settledText(page: Page): Promise<string> {
-  await expect(page.getByTestId("rerun-direction").last()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("work-result").last()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("agent-composer")).not.toHaveAttribute("data-agent-state", "working", {
+    timeout: 60_000,
+  });
   return await task(page).evaluate((el) => el.textContent ?? "");
 }
 
 test.describe("the Work Result that streamed is the Work Result that stays", () => {
+  test.describe.configure({ timeout: 90_000 });
   test("a reasoning model's result survives execution settling", async ({ page }) => {
     const { cleanup } = await ask(
       page,

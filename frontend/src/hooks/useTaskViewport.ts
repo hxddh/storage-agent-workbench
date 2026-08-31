@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { RELEASE_TASK_FOLLOW_EVENT } from "../lib/taskNavigation";
 
 const AUTOSCROLL_FRAME_BUDGET = 90;
 const AUTOSCROLL_SETTLED_FRAMES = 3;
@@ -77,6 +78,12 @@ export function useTaskViewport() {
   }, [scrollToBottom]);
 
   useEffect(() => stopAutoScroll, [stopAutoScroll]);
+
+  useEffect(() => {
+    const onRelease = () => releaseToUser();
+    document.addEventListener(RELEASE_TASK_FOLLOW_EVENT, onRelease);
+    return () => document.removeEventListener(RELEASE_TASK_FOLLOW_EVENT, onRelease);
+  }, [releaseToUser]);
 
   return {
     scrollRef,

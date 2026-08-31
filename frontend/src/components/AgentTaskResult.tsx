@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useState, type ReactNode } from "react";
 import type { ToolActivity } from "../types";
 import { useI18n } from "../i18n";
 import { isMostlyError, parseS3Error } from "../lib/s3error";
@@ -12,11 +12,10 @@ export type AgentTaskResultProps = {
   toolActivity?: ToolActivity[];
   streaming?: boolean;
   sessionId?: string | null;
-  onEdit?: (text: string) => void;
-  onRerun?: () => void;
-  onBranch?: () => void;
   referencedEvidenceIds?: string[];
   referencedRunIds?: string[];
+  hasReport?: boolean;
+  figures?: ReactNode;
 };
 
 function resultShape(content: string | null): "plain" | "structured" | "data-rich" {
@@ -54,11 +53,7 @@ async function copyText(text: string): Promise<boolean> {
   return fallbackCopy(text);
 }
 
-function DirectionEvent({
-  content,
-  onEdit,
-  onBranch,
-}: Pick<AgentTaskResultProps, "content" | "onEdit" | "onBranch">) {
+function DirectionEvent({ content }: Pick<AgentTaskResultProps, "content">) {
   const { lang, t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -66,37 +61,19 @@ function DirectionEvent({
   const long = text.length > 600 || text.split("\n").length > 12;
   const parsed = useMemo(() => parseS3Error(text), [text]);
   const structuredError = parsed !== null && isMostlyError(text, parsed);
-  const copy = lang === "zh"
-    ? {
-        label: "Direction · 任务方向",
-        redirect: "重新定向",
-        redirectAria: "重新定向这个任务",
-        branch: "分支任务",
-        branchAria: "从这个 Direction 分支新的 Agent Task",
-        more: "展开 Direction",
-        less: "收起 Direction",
-      }
-    : {
-        label: "Direction",
-        redirect: "Redirect",
-        redirectAria: "Redirect this task",
-        branch: "Branch task",
-        branchAria: "Branch a new Agent task from this Direction",
-        more: "Show full Direction",
-        less: "Collapse Direction",
-      };
+  const label = lang === "zh" ? "Direction" : "Direction";
 
   return (
-    <section className="group max-w-[min(46rem,100%)] animate-fade-in-up" data-testid="direction-event" aria-label={copy.label}>
+    <section className="group max-w-[min(46rem,100%)] animate-fade-in-up" data-testid="direction-event" aria-label={label}>
       {structuredError && parsed ? (
-        <S3ErrorArtifact error={parsed} raw={text} onRedirect={onEdit} onBranch={onBranch} />
+        <S3ErrorArtifact error={parsed} raw={text} />
       ) : (
         <div className="border-l-2 border-edge-strong pl-3">
           <div className="whitespace-pre-wrap break-words text-prose text-gray-200">
             <div className={long && !expanded ? "max-h-44 overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" : ""}>{text}</div>
             {long ? (
               <button type="button" onClick={() => setExpanded((value) => !value)} className="mt-1 text-2xs text-gray-500 transition-colors hover:text-accent-soft">
-                {expanded ? copy.less : copy.more}
+                {expanded ? (lang === "zh" ? "收起" : "Collapse") : (lang === "zh" ? "展开" : "Show more")}
               </button>
             ) : null}
           </div>
@@ -117,16 +94,6 @@ function DirectionEvent({
           >
             {copied ? t("common.copied") : t("common.copy")}
           </button>
-          {onEdit ? (
-            <button type="button" onClick={() => onEdit(text)} title={copy.redirectAria} aria-label={copy.redirectAria} data-testid="redirect-direction" className="text-2xs text-gray-500 transition-colors hover:text-gray-200">
-              {copy.redirect}
-            </button>
-          ) : null}
-          {onBranch ? (
-            <button type="button" onClick={onBranch} title={copy.branchAria} aria-label={copy.branchAria} data-testid="branch-task" className="text-2xs text-gray-500 transition-colors hover:text-gray-200">
-              {copy.branch}
-            </button>
-          ) : null}
         </div>
       ) : null}
     </section>
@@ -142,19 +109,21 @@ function DirectionEvent({
 export const AgentTaskResult = memo(function AgentTaskResult({
   referencedEvidenceIds = [],
   referencedRunIds = [],
+  hasReport = false,
+  figures,
   ...props
 }: AgentTaskResultProps) {
   const { lang } = useI18n();
   if (props.role === "user") {
-    return <DirectionEvent content={props.content} onEdit={props.onEdit} onBranch={props.onBranch} />;
+    return <DirectionEvent content={props.content} />;
   }
 
   const evidenceCount = referencedEvidenceIds.length;
   const executionCount = referencedRunIds.length;
-  const showArtifacts = !props.streaming;
+  const showArtifacts = !props.streaming && (evidenceCount > 0 || executionCount > 0 || hasReport);
   const label = props.streaming
-    ? (lang === "zh" ? "Execution · 执行中" : "Execution")
-    : (lang === "zh" ? "Work Result · 工作结果" : "Work Result");
+    ? (lang === "zh" ? "Execution" : "Execution")
+    : (lang === "zh" ? "Work Result" : "Work Result");
 
   return (
     <article
@@ -170,8 +139,8 @@ export const AgentTaskResult = memo(function AgentTaskResult({
         toolActivity={props.toolActivity}
         streaming={props.streaming}
         sessionId={props.sessionId}
-        onRerun={props.onRerun}
       />
+      {figures}
 
       {showArtifacts ? (
         <nav className="work-result-artifacts" aria-label={lang === "zh" ? "工作产物" : "Work artifacts"} data-testid="work-result-artifacts">
@@ -185,9 +154,11 @@ export const AgentTaskResult = memo(function AgentTaskResult({
               Execution <span>{executionCount}</span>
             </button>
           ) : null}
-          <button type="button" onClick={() => openAgentReview("report")} data-testid="work-result-open-report">
-            Report
-          </button>
+          {hasReport ? (
+            <button type="button" onClick={() => openAgentReview("report")} data-testid="work-result-open-report">
+              Report
+            </button>
+          ) : null}
         </nav>
       ) : null}
     </article>

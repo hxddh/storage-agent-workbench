@@ -142,10 +142,8 @@ for (const theme of THEMES) {
       seedTask(2, title, "tall");
       await openAgent(page, theme, lang);
       await openTask(page, title);
-      const toggle = page.getByTestId("execution-summary-toggle").last();
-      await expect(toggle).toBeVisible();
-      await toggle.click();
-      await expect(page.getByTestId("execution-summary").last()).toBeVisible();
+      await expect(page.getByTestId("live-trace").last()).toBeVisible();
+      await expect(page.getByText("head_bucket").last()).toBeVisible();
       await shoot(page, "03-execution", theme, lang);
     });
 
@@ -222,10 +220,9 @@ test.describe("Agent runtime states", () => {
       await openAgent(page, "dark");
       await composer(page).fill("Diagnose why acme-logs rejects list operations and keep the evidence auditable.");
       await composer(page).press("Enter");
-      await expect(page.getByTestId("agent-live-status")).toBeVisible({ timeout: 20_000 });
-      await expect(page.getByTestId("agent-composer")).toHaveAttribute("data-agent-state", "working");
-      await expect(composer(page)).toHaveAttribute("placeholder", /Steer the Agent/);
-      await expect(navigation(page).getByTestId("task-queue-running")).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("agent-composer")).toHaveAttribute("data-agent-state", "working", { timeout: 20_000 });
+      await expect(composer(page)).toHaveAttribute("placeholder", /Add direction or constraints|补充方向/);
+      await expect(navigation(page).locator('[data-testid="task-row"][data-state="working"]').first()).toBeVisible({ timeout: 20_000 });
       await shoot(page, "10-working-steer", "dark", "en");
     } finally {
       await dropModelProvider(providerId);
@@ -285,6 +282,6 @@ test.afterAll(() => {
     path.join(OUT, "index.html"),
     `<!doctype html><meta charset="utf-8"><title>Storage Agent visual review</title><style>
 body{margin:0;padding:32px;background:#111318;color:#eef0f5;font:14px Inter,system-ui,sans-serif}h1{font-size:26px;margin:0 0 8px}p{color:#9ca3af;margin:0 0 32px;max-width:760px;line-height:1.6}section{margin:0 0 42px}h2{font-size:15px;font-weight:600;margin:0 0 12px;color:#c9ced8}.pair{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}figure{margin:0;background:#191c22;border:1px solid #2a2f39;border-radius:12px;overflow:hidden}figcaption{padding:8px 12px;color:#8f98a8;border-bottom:1px solid #2a2f39;font-size:12px}img{display:block;width:100%;height:auto}.missing{min-height:80px}@media(max-width:1100px){.pair{grid-template-columns:repeat(2,minmax(0,1fr))}}
-</style><h1>Storage Agent — v1.00 visual review</h1><p>Modern Agent: empty start is the Composer, Settings is model and storage only, artifacts open from the document. Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale.</p>${rows}`,
+</style><h1>Storage Agent — v1.01 visual review</h1><p>Native Agent: empty start is the Composer, the center is one work record, tools appear in that record, the sidebar is quiet titles. Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale.</p>${rows}`,
   );
 });

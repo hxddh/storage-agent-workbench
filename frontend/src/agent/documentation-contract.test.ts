@@ -37,14 +37,14 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v1.00 documentation contract", () => {
+describe("v1.01 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
       expect(text, `${path} must name Agent Task`).toMatch(/Agent Task/);
     }
-    expect(readRepo("docs/README.md")).toContain("v1.00.0");
-    expect(readRepo("CLAUDE.md")).toContain("v1.00.0");
+    expect(readRepo("docs/README.md")).toContain("v1.01.0");
+    expect(readRepo("CLAUDE.md")).toContain("v1.01.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
     expect(readRepo("docs/design-tokens.md")).toContain("--duration-fast");
     expect(readRepo("docs/design-tokens.md")).toContain("prefers-reduced-motion");
@@ -98,7 +98,15 @@ describe("v1.00 documentation contract", () => {
     expect(readRepo("docs/product.md")).toContain("Remediation Plan");
     expect(readRepo("docs/product.md")).not.toContain("Composer `/` slash commands");
     expect(readRepo("docs/product.md")).not.toContain("Composer-native 60-second");
+    expect(readRepo("docs/product.md")).not.toContain("Focus mode");
+    expect(readRepo("docs/product.md")).not.toContain("live execution strip");
+    expect(readRepo("docs/product.md")).not.toContain("Needs-you");
+    expect(readRepo("docs/product.md")).not.toContain("command center");
+    expect(readRepo("docs/product.md")).not.toContain("command-center");
+    expect(readRepo("CLAUDE.md")).not.toContain("Focus mode");
+    expect(readRepo("CLAUDE.md")).not.toContain("command center");
     expect(readRepo("docs/architecture.md")).toContain("after=<last seq>");
+    expect(readRepo("docs/architecture.md")).toContain("agent-review-overlay");
     expect(readRepo("docs/tools.md")).toContain("simulate_storage_cost");
     expect(readRepo("docs/roadmap.md")).not.toMatch(/Add ORC support/);
   });

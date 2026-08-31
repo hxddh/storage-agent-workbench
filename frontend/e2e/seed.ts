@@ -125,7 +125,7 @@ print(sid)
  */
 export function seedSession(
   exchanges: number,
-  title = `seeded investigation ${randomUUID().slice(0, 8)}`,
+  title = `seeded task ${randomUUID().slice(0, 8)}`,
   shape: "short" | "tall" = "short",
 ): {
   id: string;

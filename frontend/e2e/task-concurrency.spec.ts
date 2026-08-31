@@ -3,7 +3,7 @@ import { watchAgentTaskSurface } from "./agent-tasks-surface";
 import { dropModelProvider, startFakeModel, textTurn, useFakeModel } from "./fake-model";
 
 /** A modern Agent is task-oriented, not viewport-oriented. Switching away from
- * active work must not cancel it; the command center must promote the task into
+ * active work must not cancel it; the task list must show that task as working.
  * Running, and reopening it must reconnect to the same live/durable execution. */
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 const navigation = (page: Page) => page.getByTestId("agent-task-navigation");
@@ -34,27 +34,23 @@ test("an Agent task keeps executing while the user works in another task", async
   try {
     await composer(page).fill("Inspect acme-logs deeply and report the policy and lifecycle state.");
     await composer(page).press("Enter");
-    await expect(page.getByTestId("agent-live-status")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("agent-composer")).toHaveAttribute("data-agent-state", "working", { timeout: 20_000 });
 
-    const runningQueue = navigation(page).getByTestId("task-queue-running");
-    await expect(runningQueue).toBeVisible({ timeout: 20_000 });
-    const workingRow = runningQueue.locator('[data-testid="task-row"][data-state="working"]').first();
+    const workingRow = navigation(page).locator('[data-testid="task-row"][data-state="working"]').first();
     await expect(workingRow).toBeVisible({ timeout: 20_000 });
     const taskTitle = ((await workingRow.locator("strong").first().textContent()) ?? "").trim();
     expect(taskTitle.length).toBeGreaterThan(0);
-    await expect(runningQueue).toContainText(taskTitle);
 
     await navigation(page).getByRole("button", { name: /^New task/i }).click();
     await expect(composer(page)).toHaveValue("");
-    await expect(page.getByTestId("agent-task-header")).toContainText("New task");
+    await expect(page.getByTestId("agent-task-content")).toHaveAttribute("data-empty", "true");
 
     // Execution belongs to Task A, not to the viewport that happened to show it.
-    // The command center must keep it in the live Running queue while Task B is open.
-    const backgroundRow = navigation(page).getByTestId("task-queue-running").getByTestId("task-row").filter({ hasText: taskTitle }).first();
+    const backgroundRow = navigation(page).getByTestId("task-row").filter({ hasText: taskTitle }).first();
     await expect(backgroundRow).toHaveAttribute("data-state", "working", { timeout: 20_000 });
 
     await backgroundRow.click();
-    await expect(page.getByTestId("agent-live-status")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("agent-composer")).toHaveAttribute("data-agent-state", "working", { timeout: 20_000 });
     await expect(backgroundRow).toHaveAttribute("data-state", "working");
     await expect
       .poll(async () => await page.getByTestId("task-scroll").textContent(), {
@@ -70,9 +66,7 @@ test("an Agent task keeps executing while the user works in another task", async
     // the normal task list as Ready. Do not keep a locator scoped to Running
     // after asserting that Running disappears — that would turn correct queue
     // movement into a false failure.
-    await expect(navigation(page).getByTestId("task-queue-running")).toHaveCount(0, { timeout: 20_000 });
-    const settledRow = navigation(page).getByTestId("task-row").filter({ hasText: taskTitle }).first();
-    await expect(settledRow).toHaveAttribute("data-state", "ready", { timeout: 20_000 });
+    await expect(navigation(page).getByTestId("task-row").filter({ hasText: taskTitle }).first()).toHaveAttribute("data-state", "ready", { timeout: 20_000 });
   } finally {
     await cleanup();
   }

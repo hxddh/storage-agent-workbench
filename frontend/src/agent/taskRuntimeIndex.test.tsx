@@ -12,7 +12,7 @@ function RuntimeIndexProbe() {
 }
 
 describe("Agent task runtime index", () => {
-  it("notifies the command center when a background task changes state", () => {
+  it("notifies task navigation when a background task changes state", () => {
     const taskId = "runtime-index-test-task";
     render(<RuntimeIndexProbe />);
     const before = Number(screen.getByTestId("runtime-index-version").textContent);
