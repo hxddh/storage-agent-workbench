@@ -211,7 +211,7 @@ for (const theme of THEMES) {
 }
 
 test.describe("Agent runtime states", () => {
-  test("Working + Steer — execution remains controllable and promoted in the command center", async ({ page }) => {
+  test("Working + Steer — execution remains controllable", async ({ page }) => {
     test.setTimeout(120_000);
     const model = await startFakeModel(
       [toolTurn("head_bucket", { bucket: "acme-logs" }), textTurn(LIVE_RESULT)],
@@ -233,7 +233,7 @@ test.describe("Agent runtime states", () => {
     }
   });
 
-  test("Command palette overlay", async ({ page }) => {
+  test("Runtime attention — unavailable execution is explicit", async ({ page }) => {
     await openAgent(page, "dark");
     await page.route("**/health", (route) => route.abort());
     await expect(page.getByTestId("offline-banner")).toBeVisible({ timeout: 15_000 });
