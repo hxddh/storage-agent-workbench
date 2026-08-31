@@ -1,7 +1,7 @@
 import type { ReviewSurface } from "./model";
 
 export type AgentCommand =
-  | { type: "review.open"; review: ReviewSurface }
+  | { type: "review.open"; review: ReviewSurface; findingId?: string }
   | { type: "review.close" }
   | { type: "execution.open"; executionId: string };
 
@@ -17,8 +17,8 @@ export function publishAgentCommands(next: CommandHandler): () => void {
 }
 
 /** Open contextual review without replacing the active Agent task. */
-export function openAgentReview(review: ReviewSurface): void {
-  handler?.({ type: "review.open", review });
+export function openAgentReview(review: ReviewSurface, findingId?: string): void {
+  handler?.({ type: "review.open", review, findingId });
 }
 
 export function closeAgentReview(): void {

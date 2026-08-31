@@ -1,9 +1,10 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import type { SessionDetail } from "../types";
 import { Markdown } from "../components/Markdown";
 import { EmptyState } from "../components/EmptyState";
 import { EvidenceActivity } from "./EvidenceActivity";
 import { useAgentCopy } from "./agentCopy";
+import type { TaskProvenance } from "../viz/types";
 
 function EmptyLine({ children }: { children: ReactNode }) {
   return <p className="agent-empty-line">{children}</p>;
@@ -13,11 +14,22 @@ function EmptyLine({ children }: { children: ReactNode }) {
 export function EvidenceReview({
   detail,
   sessionId,
+  selectedFindingId = null,
+  provenance = null,
 }: {
   detail: SessionDetail | null;
   sessionId: string;
+  selectedFindingId?: string | null;
+  provenance?: TaskProvenance | null;
 }) {
   const copy = useAgentCopy();
+  const findings = detail?.findings ?? [];
+  useEffect(() => {
+    if (!selectedFindingId) return;
+    const node = document.getElementById(`finding-${selectedFindingId}`);
+    node?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [selectedFindingId, findings.length]);
+
   if (!detail) {
     return (
       <div className="agent-document" data-testid="evidence-review">
@@ -26,13 +38,19 @@ export function EvidenceReview({
     );
   }
 
-  const findings = detail.findings ?? [];
   const memory = detail.agent_memory ?? [];
   const files = detail.attached_files ?? [];
   const summary = detail.summary?.summary_md?.trim();
   const context = typeof detail.context_messages === "number" && typeof detail.message_total === "number"
     ? ` · ${copy.evidence.context(detail.context_messages, detail.message_total)}`
     : "";
+  const chainById = new Map((provenance?.findings ?? []).map((item) => [item.id, item]));
+
+  useEffect(() => {
+    if (!selectedFindingId) return;
+    const node = document.getElementById(`finding-${selectedFindingId}`);
+    node?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [selectedFindingId, findings.length]);
 
   return (
     <article className="agent-document" data-testid="evidence-review">
@@ -60,17 +78,29 @@ export function EvidenceReview({
             <EmptyLine>{copy.evidence.noFindings}</EmptyLine>
           ) : (
             <div className="agent-record-list">
-              {findings.map((finding) => (
-                <div className="agent-record" key={finding.id}>
+              {findings.map((finding) => {
+                const linked = chainById.get(finding.id);
+                const selected = selectedFindingId === finding.id;
+                return (
+                <div
+                  className="agent-record"
+                  key={finding.id}
+                  id={`finding-${finding.id}`}
+                  data-finding-id={finding.id}
+                  data-selected={selected ? "true" : "false"}
+                >
                   <div className="agent-record-meta">
                     <span>{finding.severity || "info"}</span>
                     {finding.confidence ? <span>{finding.confidence}</span> : null}
                     {finding.category ? <span>{finding.category}</span> : null}
+                    {linked?.source_tool ? <span>{linked.source_tool}</span> : null}
+                    {linked?.gap === "no_direct_evidence" ? <span data-testid={`finding-gap-${finding.id}`}>No direct evidence chain</span> : null}
                   </div>
                   <strong>{finding.title || copy.evidence.findings}</strong>
                   {finding.interpretation ? <p>{finding.interpretation}</p> : null}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

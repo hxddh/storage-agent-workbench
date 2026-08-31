@@ -37,17 +37,18 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v0.97 documentation contract", () => {
+describe("v0.98 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
       expect(text, `${path} must name Agent Task`).toMatch(/Agent Task/);
     }
-    expect(readRepo("docs/README.md")).toContain("v0.97.0");
-    expect(readRepo("CLAUDE.md")).toContain("v0.97.0");
+    expect(readRepo("docs/README.md")).toContain("v0.98.0");
+    expect(readRepo("CLAUDE.md")).toContain("v0.98.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
     expect(readRepo("docs/design-tokens.md")).toContain("--duration-fast");
     expect(readRepo("docs/design-tokens.md")).toContain("prefers-reduced-motion");
+    expect(readRepo("docs/design-tokens.md")).toContain("--viz-1");
   });
 
   for (const [label, pattern] of removedArchitecture) {
@@ -64,6 +65,7 @@ describe("v0.97 documentation contract", () => {
     const smoke = readRepo("docs/release-smoke-test.md");
 
     expect(api).toContain("GET /agent-tasks");
+    expect(api).toContain("GET /agent-tasks/{task_id}/provenance");
     expect(api).toContain("POST /agent-tasks/{task_id}/executions");
     expect(api).toContain("POST /agent-tasks/{task_id}/steer");
     expect(api).toContain("/decisions/{decision_id}/resolve");

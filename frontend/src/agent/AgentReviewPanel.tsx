@@ -6,6 +6,9 @@ import { ReportArtifact } from "./ReportArtifact";
 import { ExecutionReview } from "./ExecutionReview";
 import type { ReviewSurface } from "./model";
 import { useAgentCopy } from "./agentCopy";
+import { AnalysisFigures } from "../viz/AnalysisFigures";
+import { ProvenanceMark } from "../viz/ProvenanceMark";
+import type { TaskProvenance } from "../viz/types";
 
 const PLAN_STATUSES: RemediationPlanStatus[] = ["proposed", "verified", "partially_verified", "stale"];
 
@@ -22,6 +25,8 @@ export function AgentReviewPanel({
   reportLoading,
   error,
   selectedExecutionId,
+  selectedFindingId,
+  provenance = null,
   onView,
   onOpenExecution,
   onCloseExecution,
@@ -39,6 +44,8 @@ export function AgentReviewPanel({
   reportLoading: boolean;
   error: string | null;
   selectedExecutionId: string | null;
+  selectedFindingId?: string | null;
+  provenance?: TaskProvenance | null;
   onView: (view: ReviewSurface) => void;
   onOpenExecution: (executionId: string) => void;
   onCloseExecution: () => void;
@@ -47,7 +54,6 @@ export function AgentReviewPanel({
   const copy = useAgentCopy();
   const findingCount = detail?.findings.length ?? 0;
   const executionCount = detail?.runs.filter((execution) => execution.origin !== "agent").length ?? 0;
-  const memoryCount = detail?.agent_memory?.length ?? 0;
   const latestPlan = plans[0] ?? null;
   const driftArtifacts = artifacts.filter((artifact) => artifact.artifact_type === "drift_report");
   const planStatus = (latestPlan && PLAN_STATUSES.includes(latestPlan.status)
@@ -93,12 +99,13 @@ export function AgentReviewPanel({
               <p className="agent-review-summary">
                 {detail?.summary?.summary_md?.trim() || detail?.goal?.trim() || copy.review.noSummary}
               </p>
-              <div className="agent-review-stats">
-                <span>{copy.findings(findingCount)}</span>
-                <span>{copy.executions(executionCount)}</span>
-                <span>{copy.review.memory(memoryCount)}</span>
-              </div>
             </section>
+
+            {provenance?.analysis.cost || provenance?.analysis.drift || provenance?.analysis.inventory ? (
+              <section data-testid="review-overview-figures">
+                <AnalysisFigures provenance={provenance} compact />
+              </section>
+            ) : null}
 
             <section data-testid="remediation-plan-status">
               <div className="agent-review-section-label">{copy.review.plan}</div>
@@ -164,16 +171,20 @@ export function AgentReviewPanel({
 
             <section>
               <div className="agent-review-section-label">{copy.review.latestFindings}</div>
-              {detail?.findings.length ? (
+              {provenance?.findings.length || detail?.findings.length ? (
                 <div className="agent-review-list">
-                  {detail.findings.slice(0, 5).map((finding) => (
-                    <button type="button" key={finding.id} onClick={() => onView("evidence")}>
-                      <span className="agent-review-list-dot" data-severity={finding.severity ?? "info"} aria-hidden />
-                      <span className="min-w-0">
-                        <strong>{finding.title || copy.review.untitledFinding}</strong>
-                        {finding.interpretation ? <small>{finding.interpretation}</small> : null}
-                      </span>
-                    </button>
+                  {(provenance?.findings ?? detail?.findings ?? []).slice(0, 5).map((finding) => (
+                    "chain" in finding ? (
+                      <ProvenanceMark key={finding.id} finding={finding} />
+                    ) : (
+                      <button type="button" key={finding.id} onClick={() => onView("evidence")}>
+                        <span className="agent-review-list-dot" data-severity={finding.severity ?? "info"} aria-hidden />
+                        <span className="min-w-0">
+                          <strong>{finding.title || copy.review.untitledFinding}</strong>
+                          {finding.interpretation ? <small>{finding.interpretation}</small> : null}
+                        </span>
+                      </button>
+                    )
                   ))}
                 </div>
               ) : <p className="agent-review-empty">{copy.evidence.noFindings}</p>}
@@ -246,7 +257,7 @@ export function AgentReviewPanel({
         ) : null}
 
         {!error && view === "evidence" ? (
-          detail ? <EvidenceReview detail={detail} sessionId={detail.id} /> : <p className="agent-review-empty">{copy.review.loading}</p>
+          detail ? <EvidenceReview detail={detail} sessionId={detail.id} selectedFindingId={selectedFindingId ?? null} provenance={provenance} /> : <p className="agent-review-empty">{copy.review.loading}</p>
         ) : null}
 
         {!error && view === "execution" ? (

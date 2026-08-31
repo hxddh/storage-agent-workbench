@@ -44,6 +44,11 @@ import {
   pendingMatchesPersistedDirection,
 } from "../lib/pendingDirection";
 import { FindBar } from "./FindBar";
+import { FirstRunFlow } from "./FirstRunFlow";
+import { useFirstRun } from "../hooks/useFirstRun";
+import { useTaskProvenance } from "../hooks/useTaskProvenance";
+import { AnalysisFigures } from "../viz/AnalysisFigures";
+import { ProvenanceMark } from "../viz/ProvenanceMark";
 
 const PENDING_DIRECTION_ID = "task-pending-direction";
 
@@ -64,7 +69,23 @@ type Item =
   | { kind: "triage"; ts: string; data: TriageCase };
 
 const actionKey = (action: NextAction) => `${action.action_type}::${action.title}`;
-const SUGGESTION_KEYS = ["diagnose", "logs", "inventory", "checkup", "cost", "drift", "account"] as const;
+const SUGGESTION_KEYS = ["checkup", "cost", "drift", "diagnose", "inventory", "logs", "account"] as const;
+
+function SuggestionIcon({ name }: { name: (typeof SUGGESTION_KEYS)[number] }) {
+  return (
+    <span className="delegate-suggestion-icon" aria-hidden>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        {name === "checkup" ? <><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M8 9h8M8 13h5" /></> : null}
+        {name === "cost" ? <path d="M12 3v18M9 8h4.5a2.5 2.5 0 0 1 0 5H9h5a2.5 2.5 0 0 1 0 5H9" /> : null}
+        {name === "drift" ? <path d="M4 18l5-6 4 3 7-9" /> : null}
+        {name === "diagnose" ? <><path d="M10 10h4v10h-4z" /><circle cx="12" cy="6" r="2" /></> : null}
+        {name === "inventory" ? <path d="M4 8h16l-1.5 11H5.5L4 8zM9 8V6h6v2" /> : null}
+        {name === "logs" ? <><rect x="5" y="4" width="14" height="16" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></> : null}
+        {name === "account" ? <path d="M4 6h16M4 12h10M4 18h7" /> : null}
+      </svg>
+    </span>
+  );
+}
 
 function nextActionFromDecision(decision: TaskDecision): NextAction {
   const proposal = decision.proposal;
@@ -104,7 +125,7 @@ export function AgentTaskImplementation({
   const taskCopy = lang === "zh"
     ? {
         startTitle: "把目标交给 Agent",
-        startDescription: "写清要完成的工作、约束和期望结果。Agent 会做只读检查，执行中你可以随时补充方向。",
+        startDescription: "写清目标和完成标准。",
         startingPoints: "从这里开始",
         reportNeedsTask: "先创建一个 Agent 任务，再生成报告。",
         loadFailed: "无法加载这个任务。",
@@ -132,7 +153,7 @@ export function AgentTaskImplementation({
         liveReady: "Work Result 已就绪。",
         continueTask: "继续当前 Task，从尚未完成的线索继续推进并深入检查。",
         resumeTitle: "这次执行被中断了",
-        resumeBody: "本地运行时在完成前重启或失败。恢复会用同一条方向开始一次新的执行，已有结果会保留。",
+        resumeBody: "恢复会用同一条方向开始新的执行。",
         resumeAction: "恢复执行",
         verifyTitle: "验证修复方案",
         verifyBody: "用只读工具重新探测方案涉及的配置，并与方案预期逐条对比。不会向存储写入任何内容。",
@@ -144,7 +165,7 @@ export function AgentTaskImplementation({
       }
     : {
         startTitle: "Delegate a goal to the Agent",
-        startDescription: "Describe the job, the constraints, and what done looks like. The Agent runs read-only checks; you can steer it while it works.",
+        startDescription: "Name the job and what done looks like.",
         startingPoints: "Start from here",
         reportNeedsTask: "Create an Agent task before generating a Report artifact.",
         loadFailed: "Couldn't load this task.",
@@ -172,7 +193,7 @@ export function AgentTaskImplementation({
         liveReady: "Work result is ready.",
         continueTask: "Continue this task from the unfinished lines of work and go deeper where needed.",
         resumeTitle: "This execution was interrupted",
-        resumeBody: "The local runtime restarted or the execution failed before it finished. Resume starts a new execution with the same direction; existing work is kept.",
+        resumeBody: "Resume starts a new execution with the same Direction.",
         resumeAction: "Resume execution",
         verifyTitle: "Verify the remediation plan",
         verifyBody: "Re-probe the configuration items in the plan with read-only tools and diff them against the expected state. Nothing is written to storage.",
@@ -216,6 +237,14 @@ export function AgentTaskImplementation({
   const fileRef = useRef<HTMLInputElement | null>(null);
   const presetTypeRef = useRef<"inventory" | "access_log" | null>(null);
   const suggestions = SUGGESTION_KEYS.map((key) => ({ key, label: t(`sugg.${key}`), prompt: t(`prompt.${key}`) }));
+  const provenance = useTaskProvenance(sessionId);
+  const firstRun = useFirstRun();
+  const [resumeOpen, setResumeOpen] = useState(false);
+  const showFirstRun = !firstRun.onboarded || resumeOpen;
+  const showFirstRunResume = firstRun.onboarded && Boolean(firstRun.step) && !resumeOpen;
+  const hasFigures = Boolean(
+    provenance?.analysis.cost || provenance?.analysis.inventory || provenance?.analysis.drift || provenance?.analysis.access_log,
+  );
 
   const refreshModel = (attempt = 0) =>
     listModelProviders()
@@ -745,30 +774,49 @@ export function AgentTaskImplementation({
       ) : isEmpty ? (
         <div className="flex flex-1 items-start justify-center overflow-auto px-6 pb-10 pt-20">
           <div className="w-full max-w-[44rem] animate-fade-in-up">
-            <div className="mb-7 flex flex-col items-center text-center">
-              <h1 className="text-2xl font-semibold tracking-[-0.02em] text-gray-100">{taskCopy.startTitle}</h1>
-              <p className="mt-2.5 max-w-md text-sm leading-relaxed text-gray-500">{taskCopy.startDescription}</p>
-            </div>
-            {composer}
-            <div className="mt-5">
-              <div className="mb-1.5 px-1 text-2xs font-medium uppercase tracking-[0.08em] text-gray-500">{taskCopy.startingPoints}</div>
-              <div className="grid sm:grid-cols-2">
-                {suggestions.map((suggestion) => (
-                  <button
-                    key={suggestion.key}
-                    data-testid={`delegate-suggestion-${suggestion.key}`}
-                    onClick={() => onSuggestion(suggestion.key, suggestion.prompt)}
-                    disabled={offline}
-                    className="group flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-gray-300 transition-colors hover:bg-hover hover:text-gray-100 disabled:cursor-default disabled:text-gray-500 disabled:hover:bg-transparent"
-                  >
-                    <span className="min-w-0 truncate">{suggestion.label}</span>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0 text-gray-400 opacity-0 transition-opacity group-hover:opacity-100">
-                      <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
-                    </svg>
-                  </button>
-                ))}
+            {showFirstRun ? (
+              <FirstRunFlow
+                sidecarReady={sidecarReady}
+                initialStep={firstRun.step ?? "welcome"}
+                onCheckup={() => onSuggestion("checkup", t("prompt.checkup"))}
+                onExit={() => setResumeOpen(false)}
+              />
+            ) : null}
+            {showFirstRunResume ? (
+              <FirstRunFlow
+                resumeOnly
+                sidecarReady={sidecarReady}
+                onCheckup={() => onSuggestion("checkup", t("prompt.checkup"))}
+                onResume={() => setResumeOpen(true)}
+              />
+            ) : null}
+            {!showFirstRun ? (
+              <div className="mb-7 flex flex-col items-center text-center">
+                <h1 className="text-2xl font-semibold tracking-[-0.02em] text-gray-100">{taskCopy.startTitle}</h1>
+                <p className="mt-2.5 max-w-md text-sm leading-relaxed text-gray-500">{taskCopy.startDescription}</p>
               </div>
-            </div>
+            ) : null}
+            {composer}
+            {!showFirstRun ? (
+              <div className="mt-5">
+                <div className="mb-2 px-1 text-2xs font-medium uppercase tracking-[0.08em] text-gray-500">{taskCopy.startingPoints}</div>
+                <div className="delegate-suggestion-grid">
+                  {suggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.key}
+                      type="button"
+                      data-testid={`delegate-suggestion-${suggestion.key}`}
+                      onClick={() => onSuggestion(suggestion.key, suggestion.prompt)}
+                      disabled={offline}
+                      className="delegate-suggestion-card"
+                    >
+                      <SuggestionIcon name={suggestion.key} />
+                      <span className="min-w-0 pt-0.5 text-sm">{suggestion.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="mt-4 space-y-2">{banners}</div>
           </div>
         </div>
@@ -787,7 +835,8 @@ export function AgentTaskImplementation({
               {findOpen ? (
                 <FindBar query={findQuery} onQuery={setFindQuery} total={matchTotal} index={findIdx} onStep={stepFind} onClose={closeFind} />
               ) : null}
-              <div ref={contentRef} className="mx-auto max-w-[min(64rem,100%)] space-y-6">
+              <div ref={contentRef} className="task-document space-y-6" data-split={hasFigures ? "true" : "false"}>
+                <div className="task-document-main space-y-6">
                 {hiddenCount > 0 ? (
                   <div className="flex justify-center">
                     <div className="flex items-center gap-1.5">
@@ -924,6 +973,19 @@ export function AgentTaskImplementation({
                     ) : null}
                   </div>
                 ) : null}
+                </div>
+                {hasFigures ? (
+                  <aside className="task-document-figures" data-testid="task-analysis-figures">
+                    <AnalysisFigures provenance={provenance} />
+                    {provenance?.findings.length ? (
+                      <div className="mt-4 space-y-1">
+                        {provenance.findings.slice(0, 8).map((finding) => (
+                          <ProvenanceMark key={finding.id} finding={finding} />
+                        ))}
+                      </div>
+                    ) : null}
+                  </aside>
+                ) : null}
               </div>
             </div>
           </div>
@@ -937,7 +999,9 @@ export function AgentTaskImplementation({
                 </button>
               </div>
             ) : null}
-            <div className="mx-auto max-w-[min(64rem,100%)]"><div className="max-w-[min(46rem,100%)]">{composer}</div></div>
+            <div className="task-document" data-split={hasFigures ? "true" : "false"}>
+              <div className="max-w-[min(46rem,100%)]">{composer}</div>
+            </div>
           </div>
         </>
       )}

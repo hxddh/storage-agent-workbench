@@ -1,12 +1,15 @@
 # Roadmap
 
-> **Baseline: Storage Agent v0.97.0.**
+> **Baseline: Storage Agent v0.98.0.**
 >
 > This file describes what comes **after** the current Agent Task architecture. It is not a backlog of old UI concepts and it is not proof that an aspirational capability already exists.
 
 ## Current shipped baseline
 
-v0.97.0 is the current baseline: a presentation-only craft pass on the v0.96.0 runtime. The Agent Task product model and durable runtime are unchanged. v0.96.0 turned that runtime into a quantified storage-optimization copilot and ongoing caretaker:
+v0.98.0 is the current baseline: a content-presentation pass on the v0.96 runtime
+(figures, provenance, first-run, subtraction) after v0.97's token/motion/keyboard
+craft. The Agent Task product model, tools, and migrations are unchanged. v0.96.0
+turned that runtime into a quantified storage-optimization copilot and ongoing caretaker:
 
 - the **Agent Task** is the primary application object and work environment;
 - one Composer provides **Delegate → Steer + Stop** semantics, plus **Resume** and **Verify** when those runtime states exist;
@@ -85,7 +88,7 @@ CI must still carry no production cloud/model secrets.
 
 Deepen contextual Review without turning it into a separate application:
 
-- stronger provenance links from a Work Result to the exact Evidence/Execution that supports it;
+- stronger provenance links from a Work Result to the exact Evidence/Execution that supports it — **v0.98.0 ships the presentation layer**: `GET /agent-tasks/{id}/provenance` (no migration) plus clickable findings and hover previews. Remaining: richer audit-gap representation and large-task search.
 - clearer audit-gap and unsupported-capability representation;
 - better large-task search/navigation while preserving the Task as one durable work record.
 

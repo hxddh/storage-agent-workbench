@@ -6,6 +6,10 @@
 
 [data-testid="task-queue-needs-you"] > .agent-task-section-label {
   color: var(--warn-fg);
+  letter-spacing: .14em;
+}
+[data-testid="task-queue-needs-you"] .agent-task-row {
+  background: color-mix(in srgb, var(--warn-bg) 28%, transparent);
 }
 
 [data-testid="task-queue-running"] > .agent-task-section-label {
@@ -16,7 +20,11 @@
  * is the useful secondary line; live/blocked states reintroduce a status label
  * when there is something the operator should actually notice. */
 .agent-task-row[data-state="ready"] .agent-task-row-state > :first-child,
-.agent-task-row[data-state="ready"] .agent-task-row-state > :nth-child(2) {
+.agent-task-row[data-state="ready"] .agent-task-row-state > :nth-child(2),
+.agent-task-row[data-state="decision"] .agent-task-row-state > :first-child,
+.agent-task-row[data-state="decision"] .agent-task-row-state > :nth-child(2),
+.agent-task-row[data-state="attention"] .agent-task-row-state > :first-child,
+.agent-task-row[data-state="attention"] .agent-task-row-state > :nth-child(2) {
   display: none;
 }
 

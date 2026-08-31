@@ -1,11 +1,11 @@
 # Design tokens
 
-> **Storage Agent v0.97.0.** Presentation contract only. Tokens do not invent
+> **Storage Agent v0.98.0.** Presentation contract. Tokens do not invent
 > runtime state, progress, or capabilities.
 
-v0.97 is a craft pass: every surface reads from one token system so dark and
-light, English and Chinese, render as one product. Components must not introduce
-ad-hoc px font sizes, corner radii, z-index numbers, or `transition-all`.
+v0.98 adds `--viz-*` series colors on the v0.97 token system so deterministic
+figures share dark/light with the rest of the product. Components must not
+introduce ad-hoc px font sizes, corner radii, z-index numbers, or `transition-all`.
 
 ## Source of truth
 
@@ -38,7 +38,8 @@ keys, payloads, and code (optically size-adjusted). CJK falls through to the
 platform face. Rank comes from size, weight, and space — not from fading text.
 
 Work Result prose stays on a 46rem reading measure. Tables, charts, and code
-fences may use the full task track and share the same left edge.
+fences may use the full task track and share the same left edge. On a wide
+window the task document may split: reading column plus a figures rail.
 
 ## Color
 
@@ -46,6 +47,9 @@ Surfaces: `--canvas` < `--sidebar` / `--panel` < `--elevated` < `--hover`.
 Accent: `--accent`, `--accent-soft`, `--accent-dim`, `--accent-fg`.
 Status: `--danger` / `--warn` / `--success` with matching `-bg` and `-border`.
 Code: `--code-bg` plus `--syn-*` slots, AA against the slab in both themes.
+Figures: `--viz-1`…`--viz-6` for discrete series (class mix, cost columns).
+They track accent/success/warn/gray so charts follow the theme. Never interpolate
+a missing series with a made-up color or a made-up value.
 
 Never use a raw `red-950` (or similar) palette step. Status meaning is a token.
 

@@ -28,7 +28,7 @@ from ..repositories import sessions as sessions_repo
 from ..security.redaction import redact_text
 from ..sessions import next_actions
 from ..task_runtime import context as task_context
-from ..task_runtime import event_stream, runtime, store
+from ..task_runtime import event_stream, provenance, runtime, store
 
 router = APIRouter(prefix="/agent-tasks", tags=["agent-tasks"])
 
@@ -317,6 +317,14 @@ def list_work_results(task_id: str, limit: int = 100,
 def list_artifacts(task_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
     _task_or_404(conn, task_id)
     return {"task_id": task_id, "artifacts": store.list_artifacts(conn, task_id)}
+
+
+@router.get("/{task_id}/provenance")
+def get_task_provenance(task_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+    """Finding/figure evidence chains plus the latest deterministic analysis
+    documents those chains cite. Read-only projection of existing rows."""
+    _task_or_404(conn, task_id)
+    return provenance.project(conn, task_id)
 
 
 @router.get("/{task_id}/context")

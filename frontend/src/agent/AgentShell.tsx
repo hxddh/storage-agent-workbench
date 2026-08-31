@@ -8,6 +8,7 @@ import type { ReviewSurface } from "./model";
 import type { AgentTaskSummary } from "./navigationModel";
 import { agentTaskState } from "./taskState";
 import { useAgentTaskProjection } from "./useAgentTaskProjection";
+import { useTaskProvenance } from "../hooks/useTaskProvenance";
 
 function ConnectionMark({ status }: { status: string }) {
   return (
@@ -39,28 +40,34 @@ export function AgentShell({
   const run = useSessionRun(taskId);
   const [review, setReview] = useState<ReviewSurface | null>(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
+  const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [focus, setFocus] = useState(false);
   const { detail, artifacts, decisions, plans, baselines, revisit, saveRevisit, report, reportLoading, error } = useAgentTaskProjection(taskId, review);
+  const provenance = useTaskProvenance(taskId, Boolean(review) || Boolean(taskId));
 
   useEffect(() => {
     if (!taskId) {
       setReview(null);
       setSelectedExecutionId(null);
+      setSelectedFindingId(null);
     }
   }, [taskId]);
 
   useEffect(() => publishAgentCommands((command) => {
     if (command.type === "execution.open") {
       setSelectedExecutionId(command.executionId);
+      setSelectedFindingId(null);
       setReview("execution");
       return;
     }
     if (command.type === "review.close") {
       setReview(null);
       setSelectedExecutionId(null);
+      setSelectedFindingId(null);
       return;
     }
     setSelectedExecutionId(null);
+    setSelectedFindingId(command.findingId ?? null);
     setReview(command.review);
   }), []);
 
@@ -161,10 +168,12 @@ export function AgentShell({
               reportLoading={reportLoading}
               error={error}
               selectedExecutionId={selectedExecutionId}
-              onView={(next) => { setSelectedExecutionId(null); setReview(next); }}
-              onOpenExecution={(executionId) => { setSelectedExecutionId(executionId); setReview("execution"); }}
+              selectedFindingId={selectedFindingId}
+              provenance={provenance}
+              onView={(next) => { setSelectedExecutionId(null); setSelectedFindingId(null); setReview(next); }}
+              onOpenExecution={(executionId) => { setSelectedExecutionId(executionId); setSelectedFindingId(null); setReview("execution"); }}
               onCloseExecution={() => setSelectedExecutionId(null)}
-              onClose={() => { setReview(null); setSelectedExecutionId(null); }}
+              onClose={() => { setReview(null); setSelectedExecutionId(null); setSelectedFindingId(null); }}
             />
           ) : null}
         </div>

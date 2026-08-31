@@ -652,6 +652,9 @@ export const resolveTaskDecision = (
 export const listTaskArtifacts = (taskId: string) =>
   request<{ task_id: string; artifacts: TaskArtifact[] }>(`/agent-tasks/${taskId}/artifacts`);
 
+export const getTaskProvenance = (taskId: string) =>
+  request<import("./viz/types").TaskProvenance>(`/agent-tasks/${taskId}/provenance`);
+
 /** Resolve the matching pending durable Decision for a confirmed proposal (so
  * the approval is recorded first-class), falling back to the legacy
  * validate-and-prefill endpoint when no durable decision gates this action. */

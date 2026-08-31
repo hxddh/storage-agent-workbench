@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v0.97.0.** Presentation craft on the v0.96.0 runtime. Product invariant unchanged.
+> **Current architecture baseline: Storage Agent v0.98.0.** Content presentation on the v0.96.0 runtime. Product invariant unchanged.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 

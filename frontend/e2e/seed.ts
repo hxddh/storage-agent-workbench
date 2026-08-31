@@ -216,6 +216,36 @@ const INVENTORY = JSON.stringify({
   },
 });
 
+const COST_SIM = JSON.stringify({
+  kind: "simulation",
+  estimate: true,
+  gaps: [],
+  coverage: {
+    object_count: 100,
+    bytes: 100000000000,
+    inventory_as_of: "2026-08-01T00:00:00Z",
+    unknown_age_ratio: 0,
+    note: "Estimate, not a bill.",
+  },
+  timeline: [
+    {
+      day: 0,
+      candidate_class_bytes: { STANDARD: 100000000000 },
+      baseline_class_bytes: { STANDARD: 100000000000 },
+      baseline_monthly_cost: { usd_per_month: 2.3, estimate: true },
+      candidate_monthly_cost: { usd_per_month: 2.3, estimate: true },
+    },
+    {
+      day: 365,
+      candidate_class_bytes: { STANDARD: 20000000000, STANDARD_IA: 80000000000 },
+      baseline_class_bytes: { STANDARD: 100000000000 },
+      baseline_monthly_cost: { usd_per_month: 2.3, estimate: true },
+      candidate_monthly_cost: { usd_per_month: 1.2, estimate: true },
+    },
+  ],
+  monthly_cost_delta: { usd_per_month_at_365d: -1.1, estimate: true, horizon_days: 365 },
+});
+
 const LIFECYCLE = JSON.stringify({
   facts: { has_abort_mpu: false, has_transition: false, has_expiration: false },
   findings: [{ title: "No AbortIncompleteMultipartUpload rule", severity: "warning" }],
@@ -226,7 +256,7 @@ import json, sqlite3, sys, uuid
 conn = sqlite3.connect(sys.argv[1])
 sid = sys.argv[2]
 mode = sys.argv[3]
-inventory, lifecycle = sys.argv[4], sys.argv[5]
+inventory, lifecycle, cost_sim = sys.argv[4], sys.argv[5], sys.argv[6]
 conn.execute(
     "INSERT INTO agent_tasks (id, title, status, created_at, updated_at)"
     " VALUES (?, ?, 'ready', datetime('now'), datetime('now'))"
@@ -246,10 +276,17 @@ conn.execute(
     ("tc-lc-" + sid[-8:], sid, lifecycle),
 )
 conn.execute(
-    "INSERT INTO session_findings (id, session_id, category, severity, confidence, kind, title, interpretation, status, created_at)"
-    " VALUES (?, ?, 'lifecycle', 'warning', 'high', 'inference', ?, ?, 'active', datetime('now'))",
-    (uuid.uuid4().hex, sid, "No AbortIncompleteMultipartUpload rule",
-     "Incomplete multipart uploads are not aborted automatically."),
+    "INSERT INTO tool_calls (id, run_id, session_id, tool_name,"
+    " input_json_sanitized, output_json_sanitized, status, duration_ms, created_at)"
+    " VALUES (?, NULL, ?, 'simulate_storage_cost', '{}', ?, 'success', 9, datetime('now'))",
+    ("tc-cost-" + sid[-8:], sid, cost_sim),
+)
+conn.execute(
+    "INSERT INTO session_findings (id, session_id, source_run_id, category, severity, confidence, kind, title, interpretation, evidence_json, status, created_at)"
+    " VALUES (?, ?, NULL, 'lifecycle', 'warning', 'high', 'inference', ?, ?, ?, 'active', datetime('now'))",
+    ("fnd-" + sid[-8:], sid, "No AbortIncompleteMultipartUpload rule",
+     "Incomplete multipart uploads are not aborted automatically.",
+     json.dumps({"tool": "review_bucket_lifecycle"})),
 )
 if mode in ("review", "due", "catchup"):
     plan_id = uuid.uuid4().hex
@@ -295,8 +332,10 @@ if mode in ("review", "due", "catchup"):
         " 'json', 'added 0 / resolved 0 / still present 1',"
         " ?, datetime('now'))",
         (uuid.uuid4().hex, sid, bid,
-         json.dumps({"kind": "drift", "findings": {"added": [], "resolved": [],
+         json.dumps({"kind": "drift", "estimate": True, "findings": {"added": [], "resolved": [],
                      "still_present": [{"title": "No AbortIncompleteMultipartUpload rule"}]},
+                     "inventory_trend": {"object_count_delta": 0, "total_size_delta": 0,
+                       "points": 2, "estimate": True, "note": "Two snapshots only."},
                      "coverage": {"object_count": 100}})),
     )
     note = "catch-up" if mode in ("due", "catchup") else None
@@ -317,7 +356,7 @@ export function seedOptimizationTask(
   const { id } = seedSession(1, title, "short");
   execFileSync(
     process.env.E2E_PYTHON || "python3",
-    ["-c", OPTIMIZATION_PY, `${dataDir()}/app.db`, id, mode, INVENTORY, LIFECYCLE],
+    ["-c", OPTIMIZATION_PY, `${dataDir()}/app.db`, id, mode, INVENTORY, LIFECYCLE, COST_SIM],
     { encoding: "utf8" },
   );
   return { id, title };
