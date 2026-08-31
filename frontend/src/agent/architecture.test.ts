@@ -176,6 +176,7 @@ describe("v1.01 native Agent ownership boundaries", () => {
   it("shows real tool work in the document, not an Execution Summary wall", () => {
     absent("../components/TurnFooter.tsx");
     absent("../../e2e/turnfooter.spec.ts");
+    absent("../components/ExecutionSummary.tsx");
     const result = source("../components/AgentResultRenderer.tsx");
     const task = source("../components/AgentTaskImplementation.tsx");
     const e2e = source("../../e2e/execution-summary.spec.ts");
