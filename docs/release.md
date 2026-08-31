@@ -70,6 +70,8 @@ The workflow creates/targets the matching `vX.Y.Z` release/tag according to `.gi
 
 Platform jobs run the repository's version-stamping script before build so Tauri/Cargo/Sidecar/frontend package metadata reflects the release version without requiring a version-only source commit.
 
+The GitHub tag and public asset names keep the release-branch spelling (`v1.00.0`). Bundle metadata is canonical semver (`1.0.0`): leading zeros in numeric components are stripped because Tauri and Cargo reject `1.00.0`.
+
 Do not treat the frontend development package version as the authoritative public release version when the release workflow stamps it from the release branch/tag.
 
 ## Public product identity and artifacts
