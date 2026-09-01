@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8");
 const absent = (relative: string) => expect(existsSync(new URL(relative, import.meta.url))).toBe(false);
 
-describe("v1.04.1 native Agent ownership boundaries", () => {
+describe("v1.05.0 native Agent ownership boundaries", () => {
   it("physically removes the v0.92 navigation and deep-surface shell", () => {
     absent("./InvestigationNavigation.tsx");
     absent("./SurfaceTabs.tsx");

@@ -1,6 +1,6 @@
 # Agent tools and capability contract
 
-> **Storage Agent v1.04.1.** Tool surface unchanged from v1.02.0 except for gated `GET /skills`, `GET /.*export/otel` and `GET /mcp.*` projections and local-model provider types. Agent-accessible capabilities are explicit, typed, whitelisted, bounded, sanitized, and read-only unless a separately documented confirmation-gated data-movement workflow says otherwise.
+> **Storage Agent v1.05.0.** Tool surface unchanged from v1.02.0 except for gated `GET /skills`, `GET /.*export/otel` and `GET /mcp.*` projections and local-model provider types. Agent-accessible capabilities are explicit, typed, whitelisted, bounded, sanitized, and read-only unless a separately documented confirmation-gated data-movement workflow says otherwise.
 
 This document describes capability classes available to the one model-driven Agent runtime plus deterministic compute it can invoke. It is not a promise that every internal S3 helper is a public Agent tool or HTTP route.
 

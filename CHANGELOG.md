@@ -6,6 +6,18 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.05.0] - 2026-09-01
+
+_Full teardown — all UI/UE/text rebuilt. Codex/Cursor native. Warm editorial + icon bar + Cursor-like Composer + magazine empty + wide track. No migration (head remains **027**)._
+
+### Changed
+
+- **Shell** `44px` activity bar + `260px` tree + `46rem` doc + `280px` inspector + `28px`/`22px` bars, all hairline.
+- **Tokens** warm `h=32`, single orange, `400/-0.02em`, `1.8`, iOS spring.
+- **Composer** `contenteditable` `44→240px` with history and file ref.
+- **Work Result** editorial `46rem` + `64rem` wide, sticky outline.
+- **Text** `Ask anything…` + magazine empty.
+
 ## [1.04.1] - 2026-09-01
 
 _Patch for the v1.04 Codex/Cursor rebuild — fixes 6 E2E failures from the new three-pane shell. No new storage tools, no migration (head remains **027**)._

@@ -1,6 +1,6 @@
 # Sidecar API
 
-> **Storage Agent v1.04.1 API reference.** Provenance projection unchanged from v1.02.0; v1.03 adds Skills, Observability export and MCP bridge, v1.04 keeps the window and adds warm editorial + Codex/Cursor layout. Unchanged from
+> **Storage Agent v1.05.0 API reference.** Provenance projection unchanged from v1.02.0; v1.03 adds Skills, Observability export and MCP bridge, v1.04 keeps the window and adds warm editorial + Codex/Cursor layout. Unchanged from
 > v0.98.0. No migration. Runtime, tools, and other `/agent-tasks` contracts
 > are unchanged from v0.96.0. Engine endpoints such as `/settings/price-table`
 > remain; they are not product destinations.
