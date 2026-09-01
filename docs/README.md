@@ -1,6 +1,6 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.05.0** (`v1.05.0`).
+> **Current architecture baseline: Storage Agent v1.06.0** (`v1.06.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0

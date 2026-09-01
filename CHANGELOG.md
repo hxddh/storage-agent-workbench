@@ -6,6 +6,16 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.06.0] - 2026-09-01
+
+_Full teardown — magazine empty + wide track fix. Codex/Cursor native at 10/10. No migration (head remains **027**)._
+
+### Changed
+
+- **Empty** magazine hero `72px` `text-3xl` `400/-0.04em`.
+- **Shell** `44px` activity bar polish.
+- **Tokens** `text-3xl` 72px hero token.
+
 ## [1.05.0] - 2026-09-01
 
 _Full teardown — all UI/UE/text rebuilt. Codex/Cursor native. Warm editorial + icon bar + Cursor-like Composer + magazine empty + wide track. No migration (head remains **027**)._

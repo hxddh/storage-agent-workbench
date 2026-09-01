@@ -98,6 +98,7 @@ export default {
         lg: ["1rem", { lineHeight: "1.5rem", letterSpacing: "-0.008em" }],        // 16px — section titles
         xl: ["1.1875rem", { lineHeight: "1.625rem", letterSpacing: "-0.014em" }], // 19px
         "2xl": ["1.4375rem", { lineHeight: "1.875rem", letterSpacing: "-0.019em" }], // 23px — display
+        "3xl": ["4.5rem", { lineHeight: "1", letterSpacing: "-0.04em" }], // 72px — magazine hero
       },
       // Vendored faces first, then the platform's own — including its CJK face,
       // which Inter cannot supply. See the @font-face block in index.css.
