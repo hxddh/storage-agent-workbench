@@ -165,7 +165,7 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
 
       <nav className="agent-task-list" aria-label={copy.tasks}>
         {visible.length === 0 ? (
-          <EmptyState compact testId="task-nav-empty" title={copy.noTasks} body={copy.noTasksHint} />
+          <EmptyState testId="task-nav-empty" title={copy.noTasks} body={copy.noTasksHint} action={<button onClick={onNew} className="inline-flex h-7 items-center rounded-lg bg-accent px-3 text-xs font-semibold text-accent-fg hover:bg-accent-soft">New task</button>} />
         ) : (
           visible.map(row)
         )}

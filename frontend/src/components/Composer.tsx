@@ -46,9 +46,9 @@ export function Composer({
   const copy = lang === "zh"
     ? {
         delegate: "委派",
-        delegateHint: "给 Agent 一个目标或问题…",
+        delegateHint: "Ask anything — describe a storage problem, paste an error, or drop a file…",
         steer: "Steer",
-        steerHint: "补充方向或约束…",
+        steerHint: "Add follow-up — a constraint, a correction, or a new direction…",
         uploading: (name: string) => `正在准备 ${name}…`,
         stop: "Stop",
         steerAction: "Steer Agent",
@@ -56,9 +56,9 @@ export function Composer({
       }
     : {
         delegate: "Delegate",
-        delegateHint: "Give the Agent a goal or problem…",
+        delegateHint: "Ask anything — describe a storage problem, paste an error, or drop a file…",
         steer: "Steer",
-        steerHint: "Add direction or constraints…",
+        steerHint: "Add follow-up — a constraint, a correction, or a new direction…",
         uploading: (name: string) => `Preparing ${name}…`,
         stop: "Stop",
         steerAction: "Steer Agent",
