@@ -212,11 +212,15 @@ export default function App() {
           detailsOpen={showDetails}
         />
 
-        {navOpen && (
-          <div className="shrink-0 border-r border-edge bg-sidebar" style={{ width: navigationWidth }}>
+        <div
+          className="shrink-0 border-r border-edge bg-sidebar overflow-hidden"
+          style={{ width: navOpen ? navigationWidth : 0, minWidth: navOpen ? navigationWidth : 0 }}
+          aria-hidden={navOpen ? undefined : true}
+        >
+          <div style={{ width: navigationWidth, minWidth: navigationWidth }}>
             {navigation}
           </div>
-        )}
+        </div>
 
         <div className="flex min-w-0 flex-1 bg-canvas">
           <AgentShell navigation={null} taskContent={taskContent} taskId={activeTaskId} />

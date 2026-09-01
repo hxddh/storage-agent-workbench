@@ -121,7 +121,7 @@ export const AgentTaskResult = memo(function AgentTaskResult({
 
   return (
     <article
-      className="max-w-[46rem] rounded-xl border border-edge bg-panel px-5 py-5 shadow-elev"
+      className="w-full max-w-[64rem] rounded-xl border border-edge bg-panel px-5 py-5 shadow-elev"
       data-testid="work-result"
       data-work-result="true"
       data-streaming={props.streaming ? "true" : "false"}
