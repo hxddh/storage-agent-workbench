@@ -88,6 +88,9 @@ async function attachAndAsk(page: Page, question: string) {
 /** live-trace appears on the first tool; the chained analysis and answer come later. */
 async function waitForInventoryAnswer(page: Page) {
   await waitForDurableAnswer(page, /one in five is already in GLACIER/, 90_000);
+  await expect(page.getByTestId("agent-composer")).not.toHaveAttribute("data-agent-state", "working", {
+    timeout: 30_000,
+  });
 }
 
 test.describe("analyzing an attached file", () => {

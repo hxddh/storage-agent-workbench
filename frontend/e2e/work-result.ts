@@ -17,9 +17,4 @@ export async function waitForDurableAnswer(
   await expect(durableWorkResult(page).filter({ hasText: pattern }).last()).toBeVisible({
     timeout,
   });
-  await expect(page.getByTestId("agent-composer")).not.toHaveAttribute(
-    "data-agent-state",
-    "working",
-    { timeout: 30_000 },
-  );
 }
