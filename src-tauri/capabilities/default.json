@@ -16,7 +16,7 @@
     "opener:default",
     "opener:allow-open-url",
     "deep-link:default",
-    "deep-link:allow-open",
+    "deep-link:allow-get-current",
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister"

@@ -217,7 +217,6 @@ def export_global(
         from ..repositories import model_providers as mp_repo
 
         active = mp_repo.effective_active_id(conn)
-        providers = conn.execute("SELECT id, provider_type, model, has_api_key FROM model_providers").fetchall() if False else []
         # Use repo list (sanitized) rather than raw row that might expose ref.
         prov_list = [
             {
