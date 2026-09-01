@@ -23,6 +23,7 @@ import {
 } from "./agent/navigationModel";
 import { AgentShell } from "./agent/AgentShell";
 import { listAgentTasks } from "./agent/taskApi";
+import { useDeepLink } from "./hooks/useNativeAgent";
 
 // Persisted-data migration keys from pre-v0.93 builds. Keeping them preserves
 // local layout/task continuity; they are not public product vocabulary.
@@ -93,6 +94,13 @@ export default function App() {
       setActiveTaskIdState(null);
     }
   }, [tasks]);
+
+  // Native-agent deep links: storage-agent://task/<id> opens the Task.
+  useDeepLink(useCallback((id: string) => {
+    // Validate id shape loosely (hex); ignore garbage.
+    if (!id || id.length < 8) return;
+    setActiveTaskId(id);
+  }, [setActiveTaskId]));
 
   const fail = (error: unknown) => toast.error(`${t("app.actionFailed")} ${String(error)}`);
   const taskActions: TaskActions = {

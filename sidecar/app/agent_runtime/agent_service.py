@@ -141,6 +141,33 @@ def build_agent(
 # --- model credentials (secret stays local to the LLM client) ----------------
 
 
+# Provider types that run locally and do not require an API key.
+# For these, an absent key is replaced with a dummy "not-needed" token
+# so the OpenAI-compatible client can still be constructed (Ollama,
+# LM Studio, vLLM, llama.cpp all accept any non-empty Bearer value or
+# ignore it entirely). The secret still never enters model context.
+LOCAL_PROVIDER_TYPES = frozenset({
+    "ollama", "lmstudio", "lm_studio", "local", "openai-compatible",
+    "openai_compatible", "vllm", "llamacpp", "llama_cpp", "localai", "local_ai",
+})
+
+# Default base URLs for local providers when none is configured.
+LOCAL_DEFAULT_BASE_URLS: dict[str, str] = {
+    "ollama": "http://127.0.0.1:11434/v1",
+    "lmstudio": "http://127.0.0.1:1234/v1",
+    "lm_studio": "http://127.0.0.1:1234/v1",
+    "local": "http://127.0.0.1:11434/v1",
+    "openai-compatible": "http://127.0.0.1:11434/v1",
+    "openai_compatible": "http://127.0.0.1:11434/v1",
+    "vllm": "http://127.0.0.1:8000/v1",
+    "llamacpp": "http://127.0.0.1:8080/v1",
+    "llama_cpp": "http://127.0.0.1:8080/v1",
+}
+
+def _is_local_provider(provider_type: str | None) -> bool:
+    return (provider_type or "").strip().lower() in LOCAL_PROVIDER_TYPES
+
+
 def get_model_credentials(conn: sqlite3.Connection) -> dict[str, Any]:
     """Resolve the ACTIVE model provider + its API key from the vault.
 
@@ -151,6 +178,9 @@ def get_model_credentials(conn: sqlite3.Connection) -> dict[str, Any]:
 
     The API key is a SECRET: it is used only to configure the LLM client and is
     never placed in the context, SSE events, reports, or logs.
+
+    Local providers (ollama, lmstudio, etc.) do not require a stored key:
+    an absent key is replaced with a dummy value so the client can be built.
     """
     from ..repositories import model_providers as mp_repo
 
@@ -168,13 +198,23 @@ def get_model_credentials(conn: sqlite3.Connection) -> dict[str, Any]:
     if row["api_key_ref"]:
         scope, name = keyring_store.parse_ref(row["api_key_ref"])
         api_key = keyring_store.get_secret(scope, name)
+    provider_type = row["provider_type"]
+    is_local = _is_local_provider(provider_type)
+    # Local providers may run without a key (Ollama etc. ignore Bearer).
     if not api_key:
-        raise AgentUnavailable("The model provider has no API key stored in the system keyring.")
+        if is_local:
+            api_key = "not-needed"
+        else:
+            raise AgentUnavailable("The model provider has no API key stored in the system keyring.")
+    # Resolve base_url: explicit wins, else local default, else None (→ OpenAI default).
+    base_url = row["base_url"]
+    if not base_url and is_local:
+        base_url = LOCAL_DEFAULT_BASE_URLS.get((provider_type or "").strip().lower())
     return {
         "api_key": api_key,
-        "model": row["model"] or "gpt-4o-mini",
-        "base_url": row["base_url"],
-        "provider_type": row["provider_type"],
+        "model": row["model"] or ("llama3" if is_local else "gpt-4o-mini"),
+        "base_url": base_url,
+        "provider_type": provider_type,
         # Optional operator-declared context window (tokens); None → inferred from
         # the model name by model_budget. NOT a secret.
         "context_window": row["context_window"],

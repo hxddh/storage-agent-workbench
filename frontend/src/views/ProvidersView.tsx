@@ -18,6 +18,21 @@ import { Button, Field, Select, TextInput } from "../components/ui";
 import { CloudProviderTester } from "../components/CloudProviderTester";
 import { useI18n } from "../i18n";
 
+const LOCAL_PROVIDER_TYPES = new Set([
+  "ollama", "lmstudio", "lm_studio", "local", "openai-compatible",
+  "openai_compatible", "vllm", "llamacpp", "llama_cpp", "localai", "local_ai",
+]);
+const isLocalProvider = (t: string) => LOCAL_PROVIDER_TYPES.has((t || "").trim().toLowerCase());
+const LOCAL_BASE_PLACEHOLDERS: Record<string, string> = {
+  ollama: "http://127.0.0.1:11434/v1",
+  lmstudio: "http://127.0.0.1:1234/v1",
+  lm_studio: "http://127.0.0.1:1234/v1",
+  local: "http://127.0.0.1:11434/v1",
+  "openai-compatible": "http://127.0.0.1:11434/v1",
+  openai_compatible: "http://127.0.0.1:11434/v1",
+  vllm: "http://127.0.0.1:8000/v1",
+  llamacpp: "http://127.0.0.1:8080/v1",
+};
 const parseList = (s: string) =>
   s
     .split(/[\n,]/)
@@ -214,14 +229,20 @@ function ModelProvidersPanel() {
           <Field label={t("prov.fName")}>
             <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="OpenAI prod" />
           </Field>
-          <Field label={t("prov.fProviderType")}>
-            <TextInput value={form.provider_type} onChange={(e) => setForm({ ...form, provider_type: e.target.value })} placeholder="openai" />
+          <Field label={t("prov.fProviderType")} hint="openai / anthropic / ollama / lmstudio / vllm / openai-compatible">
+            <TextInput value={form.provider_type} onChange={(e) => setForm({ ...form, provider_type: e.target.value })} placeholder="openai" list="provider-type-list" />
+            <datalist id="provider-type-list">
+              <option value="openai" /><option value="anthropic" /><option value="ollama" /><option value="lmstudio" /><option value="vllm" /><option value="openai-compatible" />
+            </datalist>
           </Field>
-          <Field label={t("prov.fBaseUrl")}>
-            <TextInput value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} placeholder="https://api.openai.com/v1" />
+          {isLocalProvider(form.provider_type) && (
+            <p className="-mt-2 mb-2 text-xs leading-relaxed text-warn">{t("prov.localHint")}</p>
+          )}
+          <Field label={t("prov.fBaseUrl")} hint={isLocalProvider(form.provider_type) ? t("prov.localHint") : undefined}>
+            <TextInput value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} placeholder={LOCAL_BASE_PLACEHOLDERS[form.provider_type.trim().toLowerCase()] || "https://api.openai.com/v1"} />
           </Field>
           <Field label={t("prov.fModel")}>
-            <TextInput value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="gpt-4o" />
+            <TextInput value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder={isLocalProvider(form.provider_type) ? "llama3 / qwen2.5 / gemma" : "gpt-4o"} />
           </Field>
           <Field label={t("prov.fContextWindow")} hint={t("prov.hintContextWindow")}>
             <TextInput
@@ -245,13 +266,21 @@ function ModelProvidersPanel() {
               placeholder="4096"
             />
           </Field>
-          <Field label={t("prov.fApiKey")} hint={editing && editing.has_api_key ? t("prov.hintKeep") : t("prov.hintNew")}>
+          <Field label={t("prov.fApiKey")} hint={
+            isLocalProvider(form.provider_type)
+              ? `${t("prov.localActive")} — ${editing && editing.has_api_key ? t("prov.hintKeep") : t("prov.hintNew")}`
+              : editing && editing.has_api_key ? t("prov.hintKeep") : t("prov.hintNew")
+          }>
             <TextInput
               type="password"
               autoComplete="off"
               value={form.api_key}
               onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-              placeholder={editing && editing.has_api_key ? t("prov.savedPlaceholder") : ""}
+              placeholder={
+                isLocalProvider(form.provider_type)
+                  ? "(not required for local)"
+                  : editing && editing.has_api_key ? t("prov.savedPlaceholder") : ""
+              }
             />
           </Field>
           <div className="flex gap-2">
@@ -276,7 +305,9 @@ function ModelProvidersPanel() {
                 </div>
                 <div className="text-xs text-gray-500">{p.provider_type} · {p.model || "—"} · {p.base_url || "—"}</div>
                 <div className="mt-1 text-xs text-gray-500">
-                  {t("prov.apiKeyLabel")}: {p.has_api_key ? <span className="text-success">{t("prov.savedKeychain")}</span> : <span className="text-gray-500">{t("prov.notSet")}</span>}
+                  {isLocalProvider(p.provider_type) && !p.has_api_key
+                    ? <span className="text-success">{t("prov.localActive")}</span>
+                    : <>{t("prov.apiKeyLabel")}: {p.has_api_key ? <span className="text-success">{t("prov.savedKeychain")}</span> : <span className="text-gray-500">{t("prov.notSet")}</span>}</>}
                 </div>
               </div>
               <div className="flex gap-2">

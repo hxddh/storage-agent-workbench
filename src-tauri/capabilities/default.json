@@ -1,9 +1,24 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability set: core only. The bundled sidecar (a one-dir resource) is launched directly from Rust via std::process, not the shell plugin, so no shell capability is needed.",
+  "description": "Default capability set: core + native-agent OS integrations (dialog, notification, updater, opener, deep-link, global-shortcut). Sidecar is launched directly via std::process.",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "notification:default",
+    "notification:allow-notify",
+    "updater:default",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
+    "opener:default",
+    "opener:allow-open-url",
+    "deep-link:default",
+    "deep-link:allow-open",
+    "global-shortcut:allow-is-registered",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister"
   ]
 }

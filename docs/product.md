@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.02.0.** This is the canonical product/UX specification. v1.02 finishes the native Agent window: v1.01 removed the workbench shell; v1.02 removes the leftover chat transcript. Historical release notes (including v1.00 header/strip/queues and v0.96 copilot OS) are not current product architecture.
+> **Applies to Storage Agent v1.03.0.** This is the canonical product/UX specification. v1.03 keeps the v1.02 native Agent window and adds gated extensions (local models, user skills, MCP, observability, OS shell). v1.02 finished the native Agent window: v1.01 removed the workbench shell; v1.02 removes the leftover chat transcript. Historical release notes (including v1.00 header/strip/queues and v0.96 copilot OS) are not current product architecture.
 
 ## Product definition
 
@@ -247,6 +247,49 @@ The product model is protected by:
 - documentation-contract tests over normative docs;
 - real-Sidecar Playwright tests for delegation, durable results, execution disclosure, Stop/Steer, task switching/concurrency, decisions, evidence/file analysis, Review/Reports, localization, accessibility, contrast, narrow layouts, and credential sanitization;
 - real-state visual-review captures.
+
+## Modern native-agent extensions (opt-in, additive)
+
+v1.02 is a thorough native Agent window. The following are **additive, bounded
+and opt-in** extensions that deepen the same window without replacing it. Each
+reuses the durable runtime, the read-only tool floor, and the same redaction
+and Decision gates; none introduces a second Agent or a new top-level
+navigation surface.
+
+- **Local model providers** — `ollama`, `lmstudio`, `vllm`, `llama.cpp` and other
+  OpenAI-compatible local endpoints. They run without a stored API key (the
+  client sends `not-needed`), carry a localhost default `base_url`, and are tested
+  through the same `testModelProvider` probe as cloud models. Model budgeting
+  (`model_budget.py`) already scales to their windows, and `agent_service` keeps
+  secrets out of context. Settings shows them as *Local model — key not
+  required*.
+- **User skills** — operators may drop a `SKILL.md` into
+  `STORAGE_AGENT_DATA_DIR/skills/<name>/SKILL.md` (or
+  `STORAGE_AGENT_SKILLS_DIR`) and it appears in the catalog next to the 20
+  bundled StorageOps skills. A user skill shadows a bundled one by name. No
+  code is executed; only guidance text is loaded via `read_skill` and bounded
+  to `MAX_CHARS_PER_SKILL`. `GET /skills` lists bundled + user skills; the
+  Agent still self-routes via the catalog.
+- **Read-only MCP bridge** — `GET /mcp/status`, `GET /mcp/tools`,
+  `POST /mcp/tools/call` expose the whitelisted read-only storage tools to a
+  *local* MCP client. Disabled by default; `STORAGE_AGENT_ENABLE_MCP=1` enables
+  it. The bridge reuses the same tool allowlist, scope enforcement, and
+  redaction as the Agent; it never adds shell, raw boto3, or filesystem tools.
+- **Observability export** — `GET /agent-tasks/{id}/export/otel` and
+  `GET /observability/export` project the durable execution log, tool calls,
+  turn metrics, and artifact index as OTel-inspired JSON (bounded,
+  sanitized). Settings surfaces it under *Observability*; the Task can copy it
+  via the same path the agent uses. No new tables.
+- **OS-native shell** — Tauri `dialog`, `notification`, `opener`, `deep-link`,
+  `global-shortcut`, and `updater` plugins. Tray, global hotkey, deep links
+  (`storage-agent://task/<id>`), and signed auto-updates are inert until the
+  distribution chain provides a pubkey/endpoints, but the capability gate is in
+  place.
+
+All extensions preserve: read-only storage tools, no generic shell/subprocess,
+secrets only in the encrypted vault, server-side provider scope, explicit
+Decisions for data movement, bounded/sanitized context, and no chain-of-thought
+persistence.
 
 ## Non-goals
 

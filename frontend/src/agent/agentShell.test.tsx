@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { agentShellReducer, initialAgentShellState } from "./model";
 
-describe("v1.02 native Agent task shell", () => {
+describe("v1.03 native Agent task shell", () => {
   it("starts with one Agent task workspace and no review page", () => {
     expect(initialAgentShellState("task-1")).toEqual({
       review: null,

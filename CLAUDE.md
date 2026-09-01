@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.02.0.**
+> **Implementation contract for Storage Agent v1.03.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.02 product invariant is:
+The v1.03 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -18,7 +18,7 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v1.02 native Agent
+## 1. Never regress the v1.03 native Agent
 
 New product/frontend work must preserve these boundaries:
 
@@ -195,22 +195,40 @@ See `docs/data-model.md`.
 - Preserve accessibility, contrast, responsive/narrow-window behavior, English/Chinese parity, and real-state visual review.
 - Do not copy another Agent client's chrome without matching runtime semantics.
 
-## 10. Explicit non-goals
+## 10. Explicit non-goals (with conditional native-agent extensions)
 
-Do not introduce these without an explicit product/runtime/safety change:
+The following remain non-goals until a real runtime and safety contract
+exists. **Additive, gated extensions** that reuse the durable runtime and
+the same security floor are permitted as opt-in and do not require a full
+product/runtime rewrite:
 
-- multi-agent orchestration;
-- coding projects/worktrees;
-- synthetic plans/checklists not emitted by the runtime;
-- generic terminal/browser/computer control;
-- workflow canvas;
-- plugin marketplace;
-- MCP runtime;
-- LangGraph/LiteLLM/Langfuse/n8n as new architectural dependencies;
-- Postgres/Redis for the local desktop product;
-- destructive storage repair or mutation;
-- a top-level page for every backend table;
-- multi-user SaaS/RBAC semantics.
+- **Still non-goals:** multi-agent orchestration (single-agent fanout via
+  `_MAX_PARALLEL_TOOLS=6` is the bounded alternative), coding
+  projects/worktrees, synthetic plans/checklists not emitted by the runtime,
+  generic terminal/browser/computer control, workflow canvas,
+  LangGraph/LiteLLM/Langfuse/n8n as new architectural dependencies,
+  Postgres/Redis for the local desktop product, destructive storage repair or
+  mutation, a top-level page for every backend table, multi-user SaaS/RBAC
+  semantics.
+- **Gated extensions (since post-1.02 modern native-agent work):**
+  - `STORAGE_AGENT_DATA_DIR/skills/*/SKILL.md` + `STORAGE_AGENT_SKILLS_DIR`
+    user skills (markdown guidance only, shadows bundled by name, bounded,
+    never executed) — `GET /skills`;
+  - local model providers (`ollama`, `lmstudio`, `vllm`, `llama.cpp` and
+    `openai-compatible` without a stored key, localhost defaults, dummy
+    `not-needed` bearer) — same probe and budgeting as cloud models;
+  - read-only MCP bridge (`STORAGE_AGENT_ENABLE_MCP=1`,
+    `GET /mcp/tools` + `POST /mcp/tools/call` over the whitelisted read-only
+    tool set, same scope/redaction/bounds);
+  - observability export (`GET /agent-tasks/{id}/export/otel` +
+    `GET /observability/export`, bounded, sanitized, no new tables);
+  - Tauri OS shell (`dialog`, `notification`, `opener`, `deep-link`,
+    `global-shortcut`, `updater` — inert until signing/pubkey is configured).
+
+Every extension preserves: read-only storage tools, no generic shell/
+arbitrary subprocess, secrets only in the encrypted vault, server-side
+provider scope, explicit Decisions for data movement, bounded/sanitized
+context, and no chain-of-thought persistence.
 
 ## 11. Development workflow
 

@@ -1,8 +1,38 @@
 # Roadmap
 
-> **Baseline: Storage Agent v1.02.0.**
+> **Baseline: Storage Agent v1.02.0 + modern native-agent extensions (post-1.02).**
+> v1.02 remains the shipped window; the additive extensions below (local models,
+> user skills, read-only MCP bridge, observability export, OS-native shell)
+> are implemented since post-1.02 as gated, bounded, same-floor features
+> (head stays **027**, no new tables). This file now describes what comes
+> **after** that window.
 >
 > This file describes what comes **after** the current Agent Task architecture. It is not a backlog of old UI concepts and it is not proof that an aspirational capability already exists.
+
+## Shipped since v1.02 — modern native-agent extensions
+
+The P1 native-agent work is **done as gated additive features** (no new
+migration, no new top-level navigation):
+
+- **Local model providers** — `ollama` / `lmstudio` / `vllm` / `llama.cpp` /
+  `openai-compatible` without a stored key, localhost defaults, same probe
+  and window-aware budgeting (`agent_service.LOCAL_PROVIDER_TYPES`,
+  `model_budget` local windows).
+- **User skills** — `STORAGE_AGENT_DATA_DIR/skills/*/SKILL.md` and
+  `STORAGE_AGENT_SKILLS_DIR` are merged into the catalog (`GET /skills`,
+  shadows bundled by name, bounded, never executed).
+- **Read-only MCP bridge** — `GET /mcp/status`, `GET /mcp/tools`,
+  `POST /mcp/tools/call` over the whitelisted read-only tool set; disabled
+  by default (`STORAGE_AGENT_ENABLE_MCP=1`).
+- **Observability export** — `GET /agent-tasks/{id}/export/otel` +
+  `GET /observability/export` (bounded, sanitized, OTel-inspired).
+- **OS-native shell** — Tauri `dialog` / `notification` / `opener` /
+  `deep-link` / `global-shortcut` / `updater` plugins (gated, inert until
+  signing is configured). Settings now surfaces Skills, Observability, and MCP
+  via `NativeAgentPanel`; deep links `storage-agent://task/<id>` open the
+  Task.
+
+Remaining roadmap items are distribution hardening and deeper evidence depth.
 
 ## Current shipped baseline
 

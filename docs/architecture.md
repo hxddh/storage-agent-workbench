@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.02.0.** Thorough native Agent window. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged.
+> **Current architecture baseline: Storage Agent v1.03.0.** Thorough native Agent window. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -329,7 +329,45 @@ Boundary rules:
 
 See `security.md`.
 
-## 9. Desktop packaging
+## 9. Modern native-agent extensions
+
+Additive, bounded, and gated. They sit on the same durable runtime and the
+same security floor; none adds a second Agent, a second submit path, or a
+new top-level navigation surface.
+
+- **User skills** — `sidecar/app/skills/loader.py` now merges the 20 bundled
+  `StorageOps` skills with `STORAGE_AGENT_DATA_DIR/skills/*/SKILL.md` and
+  `STORAGE_AGENT_SKILLS_DIR`. User skills shadow bundled ones by name, are
+  read via `read_skill` only, never executed, and bounded to
+  `MAX_CHARS_PER_SKILL`. `GET /skills` lists the merged catalog; the prompt
+  still carries only the catalog, not bodies.
+- **Local model providers** — `agent_service.LOCAL_PROVIDER_TYPES`
+  (`ollama`, `lmstudio`, `vllm`, …) may omit an API key; the client sends
+  `not-needed` and falls back to a localhost default `base_url`
+  (`11434/v1`, `1234/v1`, `8000/v1`). `POST /model-providers/{id}/test`
+  probes `GET {base}/models` with a dummy bearer for locals, so a local
+  model tests green without a key. `model_budget` adds conservative windows
+  for local families so budgeting scales rather than throttles.
+- **Observability export** — `GET /agent-tasks/{id}/export/otel` (bounded
+  `execution_events` + `tool_calls` + `turn_metrics` + `task_artifacts`) and
+  `GET /observability/export` (global task/execution counts + sanitized provider
+  presence) project already-sanitized rows as OTel-inspired JSON. No new
+  tables. Frontend `NativeAgentPanel` and future Task affordances call the
+  same endpoint the agent could.
+- **Read-only MCP bridge** — `sidecar/app/routers/mcp.py` (`/mcp/status`,
+  `/mcp/tools`, `POST /mcp/tools/call`) re-exports the whitelisted read-only
+  storage tools. Disabled by default; `STORAGE_AGENT_ENABLE_MCP=1` enables it.
+  The allowlist is the source of truth — no shell, no raw boto3, no
+  filesystem escape. The bridge reuses the same scope/redaction/bounds as
+  `tool_runner`.
+- **OS-native desktop** — `src-tauri` now depends on
+  `tauri-plugin-dialog/notification/opener/deep-link/global-shortcut/updater`.
+  Capabilities include file dialogs, system notifications, global hotkey,
+  deep links (`storage-agent://task/<id>`), opener, and a signed updater
+  endpoint (inert until a pubkey is configured). `singleInstance` remains
+  the first plugin.
+
+## 10. Desktop packaging
 
 The production React bundle and PyInstaller one-dir Sidecar are packaged by Tauri.
 
@@ -343,11 +381,11 @@ The Sidecar is embedded as a resource, not exposed as a shell capability. Runtim
 
 Signing/notarization is a distribution concern documented in `signing.md`; CI does not require private signing credentials.
 
-## 10. Executable architecture contracts
+## 11. Executable architecture contracts
 
 ### Positive ownership guard
 
-`frontend/src/agent/architecture.test.ts` asserts v1.02 ownership, including:
+`frontend/src/agent/architecture.test.ts` asserts v1.03 ownership, including:
 
 - one Agent input without a painted keyboard legend;
 - Agent Task as primary work area;
@@ -365,7 +403,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.02 and prevents current product docs from drifting back toward retired information architecture.
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.03 and prevents current product docs from drifting back toward retired information architecture.
 
 ### Real-Sidecar E2E
 
@@ -386,7 +424,7 @@ Playwright validates real Sidecar-backed behavior including:
 
 `npm run shots` captures asserted real states for human review. It is not a tolerant pixel-diff substitute for design judgment.
 
-## 11. Explicit non-architecture
+## 12. Explicit non-architecture
 
 The following concepts must not enter the product until a real runtime + safety contract exists:
 

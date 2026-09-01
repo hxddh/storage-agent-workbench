@@ -6,6 +6,30 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.03.0] - 2026-09-01
+
+_Modern native Agent. Keeps the v1.02 window and adds additive, gated extensions — no migration (head remains **027**)._ 
+
+### Added
+
+- **Local model providers** — `ollama`, `lmstudio`, `vllm`, `llama.cpp`, `openai-compatible` run without a stored API key (`not-needed` bearer, localhost defaults `11434/v1`, `1234/v1`, `8000/v1`), probed like cloud models, and budgeted with conservative local windows.
+- **User skills** — `STORAGE_AGENT_DATA_DIR/skills/*/SKILL.md` and `STORAGE_AGENT_SKILLS_DIR` are merged into the catalog (`GET /skills`); user skills shadow bundled ones by name, bounded to `MAX_CHARS_PER_SKILL`, never executed.
+- **Read-only MCP bridge** — `GET /mcp/status`, `GET /mcp/tools`, `POST /mcp/tools/call` expose the whitelisted read-only storage tools to a local MCP client. Disabled by default; `STORAGE_AGENT_ENABLE_MCP=1` enables it.
+- **Observability export** — `GET /agent-tasks/{id}/export/otel` + `GET /observability/export` project durable execution events, tool calls, turn metrics, and artifacts as bounded OTel-inspired JSON.
+- **OS-native shell** — Tauri `dialog`, `notification`, `opener`, `deep-link`, `global-shortcut`, `updater` plugins (gated, inert until signing configured); `useDeepLink` handles `storage-agent://task/<id>`.
+- **Example user skill** — `examples/skills/my-local-runbook/SKILL.md`.
+
+### Changed
+
+- `ProvidersView` understands local provider types and shows key-optional copy and local-specific placeholders/hints.
+- `SettingsDrawer` now includes `NativeAgentPanel` (skills, observability, MCP status).
+- Tauri capabilities and `tauri.conf.json` updated for OS plugins; `singleInstance` remains first.
+- Docs (`product.md`, `architecture.md`, `api.md`, `roadmap.md`, `CLAUDE.md`) document gated extensions as additive.
+
+### Security
+
+- Same floor: local models use `not-needed` dummy key never entering context; MCP is allowlist-only reusing `tool_runner` bounds; skills are guidance text; observability only projects already-sanitized rows.
+
 ## [1.02.0] - 2026-08-31
 
 _Thorough native Agent. Finishes the v1.01 window by removing leftover chat transcript. No new Agent capabilities, no storage tools, no migration._

@@ -7,8 +7,10 @@ bucket_config_review, account_discovery) with SSE streaming, DuckDB-backed local
 analysis, read-only bucket configuration review, local Markdown reports, and the
 single conversational session agent (the only LLM in the product). The agent can
 only call the existing whitelisted, read-only tools; it never sees credentials.
-There is no auto-remediation, no generic shell execution, no MCP runtime, no
-multi-agent orchestration, and no destructive/mutating S3 operation.
+There is no auto-remediation, no generic shell execution, no destructive/mutating
+S3 operation. An opt-in read-only MCP bridge and user skills are available
+as modern native-agent extensions (gated, bounded, same redaction/scope floor);
+multi-agent orchestration remains disabled.
 
 Security note: this service binds to localhost only (``127.0.0.1``). Secrets
 submitted to provider endpoints are written to the encrypted local vault; SQLite
@@ -47,11 +49,14 @@ from .routers import (
     error_triage,
     evidence_imports,
     health,
+    mcp,
     model_providers,
+    observability,
     reports,
     runs,
     sessions,
     settings,
+    skills,
     tools,
 )
 
@@ -240,3 +245,7 @@ app.include_router(sessions.router)
 app.include_router(agent_tasks.router)
 app.include_router(error_triage.router)
 app.include_router(settings.router)
+# Modern native-agent extensions (read-only, bounded, opt-in where gated)
+app.include_router(skills.router)
+app.include_router(observability.router)
+app.include_router(mcp.router)

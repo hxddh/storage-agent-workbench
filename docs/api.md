@@ -1,6 +1,6 @@
 # Sidecar API
 
-> **Storage Agent v1.02.0 API reference.** Provenance projection unchanged from
+> **Storage Agent v1.03.0 API reference.** Provenance projection unchanged from v1.02.0; v1.03 adds Skills, Observability export, and MCP bridge. Unchanged from
 > v0.98.0. No migration. Runtime, tools, and other `/agent-tasks` contracts
 > are unchanged from v0.96.0. Engine endpoints such as `/settings/price-table`
 > remain; they are not product destinations.
@@ -337,6 +337,50 @@ PUT  /settings/price-table
 The price table is ordinary local configuration used by the cost simulator: per-storage-class GB-month rates plus request/retrieval rates. It ships as an example schedule. Dollar simulation remains a gap until `confirmed` is true. The table is not a secret store and must never contain credentials. **Settings UI does not edit it** — if the Agent needs prices it asks in the Task or reports a gap.
 
 There is no product autonomy toggle: read-only Agent investigation is the default capability model, while confirmation-gated operations stop at explicit Decisions.
+
+## Skills
+
+Prefix: `/skills` — additive, same auth, same redaction. Lists bundled + user
+skills discovered from `STORAGE_AGENT_DATA_DIR/skills/*/SKILL.md` and
+`STORAGE_AGENT_SKILLS_DIR`.
+
+```text
+GET  /skills                 — merged catalog (name, description, maturity, path)
+GET  /skills/{name}          — frontmatter-stripped SKILL.md body (bounded)
+GET  /skills/_dirs/info      — where user skills are discovered (for UI help)
+```
+
+User skills shadow bundled ones by name; no code is executed, only guidance
+text is returned via `read_skill`.
+
+## Observability export
+
+Bounded, sanitized projection of already-persisted rows — no new tables.
+
+```text
+GET  /agent-tasks/{task_id}/export/otel?include_audit=&limit_events=
+GET  /observability/export
+```
+
+Per-task export includes the durable `execution_events` log (with
+`events_truncated`), `tool_calls`, `turn_metrics`, and `task_artifacts`. The
+global export lists recent tasks/executions and sanitized provider presence.
+All are auth-gated and capped (`MAX_EVENTS=500`, `MAX_TOOL_CALLS=200`).
+
+## MCP bridge (opt-in, read-only)
+
+Disabled by default; set `STORAGE_AGENT_ENABLE_MCP=1` on the Sidecar to
+enable. Re-exports the whitelisted read-only storage tools with the same
+scope enforcement, bounds, and redaction as the agent. No shell, no raw
+boto3, no filesystem escape.
+
+```text
+GET  /mcp/status             — enabled flag + allowlist
+GET  /mcp/tools              — MCP-style tool definitions for the allowlist
+POST /mcp/tools/call         — validated call (allowlist only)
+```
+
+When disabled every `/mcp/*` route is 404.
 
 ## Direct Tool HTTP endpoints
 

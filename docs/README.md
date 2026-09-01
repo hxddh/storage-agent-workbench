@@ -1,6 +1,6 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.02.0** (`v1.02.0`).
+> **Current architecture baseline: Storage Agent v1.03.0** (`v1.03.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
@@ -11,7 +11,7 @@
 > window:** no leftover chat transcript, no painted Composer/New-task keyboard
 > chrome. Empty window = Composer. Center = one readable work record. Tools
 > appear in that record. Sidebar = quiet titles. Settings is hidden. Overlay
-> Review. Engines remain in the Sidecar with no product UI entry.
+> Review. Engines remain in the Sidecar with no product UI entry. **v1.03.0 keeps that window and adds modern native-agent extensions — local models, user skills, read-only MCP bridge, observability export, OS shell — as gated additive features.**
 
 This directory documents the currently shipped Storage Agent architecture and operating contracts. It is deliberately organized so implementation agents and contributors do not reconstruct older product shells from historical terminology that still exists in persistence, APIs, release notes, or git history.
 

@@ -1,6 +1,6 @@
 [package]
 name = "storage-agent-workbench"
-version = "0.23.0"
+version = "1.3.0"
 description = "Local-first agent for object storage operations, analytics, and management on S3-compatible systems"
 edition = "2021"
 rust-version = "1.77.2"
@@ -30,6 +30,19 @@ getrandom = "0.4"
 # (and SQLite/DuckDB contend on one app.db). The plugin hands the argv to the
 # already-running instance instead, which focuses its window.
 tauri-plugin-single-instance = "2"
+# Modern native-agent OS integrations (all Tauri v2, all local-only):
+# - dialog: reliable file pick / save (replaces ad-hoc anchor download)
+# - notification: task-completion / needs-decision toasts when window is backgrounded
+# - global-shortcut: ⌘⇧S / Ctrl+Shift+S to summon the Agent
+# - updater: signed auto-update (requires signing; inert until pubkey+endpoints set)
+# - deep-link: storage-agent://task/<id> to open a Task from an external link
+# - opener: system browser / mail client for https:/mailto: links (replaces hand-rolled open)
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-opener = "2"
 
 # NOTE: The Python FastAPI sidecar is packaged with PyInstaller as a ONE-DIR
 # bundle, shipped as a Tauri resource, and launched directly from src/lib.rs via

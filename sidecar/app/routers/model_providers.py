@@ -90,17 +90,24 @@ def test_model_provider(
         scope, name = keyring_store.parse_ref(provider.api_key_ref)
         secret = keyring_store.get_secret(scope, name)
 
-    # base_url is OPTIONAL: an empty base_url makes the real agent client
-    # (agent_service.build_agent) use the OpenAI default endpoint, so it's a VALID
-    # config — flagging it "incomplete" was a false negative. Only model + key are
-    # actually required; base_url is informational and the probe falls back to the
-    # OpenAI default.
+    # Local providers (ollama/lmstudio/vllm/llama.cpp) do not require an API key
+    # and have a sensible localhost default base_url. Cloud providers still
+    # require a key; base_url is optional for them (→ OpenAI default).
+    from ..agent_runtime.agent_service import LOCAL_DEFAULT_BASE_URLS, _is_local_provider
+    is_local = _is_local_provider(provider.provider_type)
+    effective_base = provider.base_url or LOCAL_DEFAULT_BASE_URLS.get((provider.provider_type or "").strip().lower(), "")
     checks = {
-        "has_base_url": bool(provider.base_url),
+        "has_base_url": bool(effective_base or provider.base_url),
         "has_model": bool(provider.model),
         "api_key_present": secret is not None,
+        "is_local": is_local,
     }
-    required = ("has_model", "api_key_present")
+    # Local: only model is required (key is "not-needed", base_url has default).
+    # Cloud: model + key are required, base_url optional.
+    if is_local:
+        required = ("has_model",)
+    else:
+        required = ("has_model", "api_key_present")
     if not all(checks[k] for k in required):
         return ModelProviderTestResult(
             ok=False, checks=checks, api_key_verified=None,
@@ -117,11 +124,17 @@ def test_model_provider(
     # with a 500. It is declared in `[project].dependencies` rather than taken
     # transitively from `openai`, and test_v085_runtime_imports.py holds the line.
     import httpx2
-    base = (provider.base_url or "https://api.openai.com/v1").rstrip("/")
+    # Resolve probe base: explicit → local default → OpenAI default.
+    from ..agent_runtime.agent_service import LOCAL_DEFAULT_BASE_URLS as _LOCAL_URLS
+    probe_base = provider.base_url or _LOCAL_URLS.get((provider.provider_type or "").strip().lower()) or "https://api.openai.com/v1"
+    base = probe_base.rstrip("/")
+    # Local providers often ignore Bearer, but some (vLLM with auth) still check —
+    # send a dummy token when none is stored so the probe actually exercises the endpoint.
+    probe_secret = secret or ("not-needed" if is_local else "")
     api_key_verified: bool | None = None
     live_detail = ""
     try:
-        resp = httpx2.get(base + "/models", headers={"Authorization": f"Bearer {secret}"}, timeout=5.0)
+        resp = httpx2.get(base + "/models", headers={"Authorization": f"Bearer {probe_secret}"}, timeout=5.0)
         checks["endpoint_reachable"] = True
         if resp.status_code in (401, 403):
             api_key_verified = False

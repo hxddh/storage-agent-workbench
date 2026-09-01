@@ -33,6 +33,13 @@ _CONTEXT_WINDOWS: tuple[tuple[str, int], ...] = (
     ("qwen2.5", 128_000), ("qwen-max", 32_768), ("qwen", 32_768),
     ("llama-3", 128_000), ("llama", 128_000),
     ("mixtral", 32_768), ("mistral", 32_768),
+    # Local / open models (Ollama, LM Studio, vLLM, llama.cpp) — conservative defaults.
+    ("qwen3", 32_768), ("gemma-3", 128_000), ("gemma", 8_192),
+    ("phi-3", 128_000), ("phi", 4_096),
+    ("mistral-nemo", 128_000),
+    ("codellama", 16_384),
+    ("ollama", 32_768), ("lmstudio", 32_768), ("vllm", 32_768),
+    ("llama", 32_768),
 )
 _DEFAULT_CONTEXT = 128_000  # unknown model → yields exactly the current floor
 

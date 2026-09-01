@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ProvidersView } from "../views/ProvidersView";
+import { NativeAgentPanel } from "./NativeAgentPanel";
 import { useI18n, LANGS, type Lang } from "../i18n";
 import { useTheme, type Theme } from "../theme";
 import { getVaultStatus } from "../api";
@@ -97,6 +98,7 @@ export function SettingsDrawer(
           </section>
 
           <ProvidersView />
+          <NativeAgentPanel />
           <div className="border-t border-edge px-8 py-5 text-xs leading-relaxed text-gray-500">
             <div className="mb-1 font-medium text-gray-400">{t("settings.safetyTitle")}</div>
             {safety}
