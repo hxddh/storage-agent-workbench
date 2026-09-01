@@ -12,12 +12,12 @@ import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } f
  * That last step is precisely where the v0.63.0 bug was felt. The stream
  * succeeded, the answer was watched arriving, and the reload that turns the live
  * bubble into a persisted message hit a 500 — so the answer stayed a bubble with
- * no turn footer and no actions, and the thread never grew. Every assertion here
+ * no turn footer and no actions, and the Task never grew. Every assertion here
  * is about what is on screen AFTER the turn ends.
  */
 
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
-const thread = (page: Page) => page.locator("main");
+const task = (page: Page) => page.locator("main");
 
 const SKILL = "storageops-security-iam-policy";
 
@@ -76,9 +76,9 @@ test.describe("a real agent turn", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, "why does acme-logs return 403 on every list call?");
-      await expect(thread(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
+      await expect(task(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
       // The bookkeeping block is held back — a reader must never watch it scroll past.
-      await expect(thread(page).getByText(/next_action_proposals/)).toHaveCount(0);
+      await expect(task(page).getByText(/next_action_proposals/)).toHaveCount(0);
     } finally {
       await cleanup();
     }
@@ -88,7 +88,7 @@ test.describe("a real agent turn", () => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, "why does acme-logs return 403?");
-      await expect(thread(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
+      await expect(task(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
       // The footer hangs off the PERSISTED message, so its presence is the proof
       // that the post-turn reload actually landed. This is the exact affordance
       // that disappeared in the released build.
@@ -97,7 +97,7 @@ test.describe("a real agent turn", () => {
       // live trace is removed the moment the answer arrives, so if what replaced
       // it were also folded, the one turn you just watched work would hide that
       // work behind a click.
-      await expect(thread(page).getByText("read_skill").first()).toBeVisible();
+      await expect(task(page).getByText("read_skill").first()).toBeVisible();
     } finally {
       await cleanup();
     }
@@ -109,11 +109,11 @@ test.describe("a real agent turn", () => {
       await ask(page, "why does acme-logs return 403?");
       await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 60_000 });
 
-      const q = thread(page).getByText("why does acme-logs return 403?").last();
+      const q = task(page).getByText("why does acme-logs return 403?").last();
       await q.hover();
       await expect(page.getByTestId("redirect-direction")).toHaveCount(0);
       await expect(page.getByTestId("branch-task")).toHaveCount(0);
-      await expect(thread(page).getByRole("button", { name: /copy/i }).last()).toBeVisible();
+      await expect(task(page).getByRole("button", { name: /copy/i }).last()).toBeVisible();
     } finally {
       await cleanup();
     }
@@ -135,14 +135,14 @@ test.describe("a real agent turn", () => {
     const { cleanup } = await twoTurns(page);
     try {
       await ask(page, "first question about acme-logs");
-      await expect(thread(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
+      await expect(task(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
       await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 30_000 });
 
       await ask(page, "second question about acme-logs");
-      await expect(thread(page).getByText(/BucketOwnerEnforced/)).toBeVisible({ timeout: 60_000 });
+      await expect(task(page).getByText(/BucketOwnerEnforced/)).toBeVisible({ timeout: 60_000 });
 
       // The reported symptom, asserted directly.
-      const txt = await thread(page).evaluate((el) => el.textContent ?? "");
+      const txt = await task(page).evaluate((el) => el.textContent ?? "");
       expect(txt).toContain("first question about acme-logs");
       expect(txt).toContain("omits s3:ListBucket");
       expect(txt).toContain("second question about acme-logs");
@@ -158,28 +158,28 @@ test.describe("a real agent turn", () => {
       await ask(page, "first question about acme-logs");
       await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 60_000 });
       await ask(page, "second question about acme-logs");
-      await expect(thread(page).getByText(/BucketOwnerEnforced/)).toBeVisible({ timeout: 60_000 });
+      await expect(task(page).getByText(/BucketOwnerEnforced/)).toBeVisible({ timeout: 60_000 });
 
       await page.reload();
       await expect(composer(page)).toBeVisible({ timeout: 20_000 });
-      // The open investigation is restored at mount rather than after the
+      // The open Task is restored at mount rather than after the
       // session list returns, and a session whose content is still loading now
-      // renders the thread shell instead of the "nothing here" start surface.
+      // renders the task document instead of the empty-start Composer.
       //
       // HONEST LIMIT: this assertion does not discriminate. It was written after
       // a 1-in-6 flake in which this very check found the start surface on
       // screen, but neither reverting the change nor delaying /sessions
       // reproduces that here — so it guards the behaviour, it does not prove the
       // flake's cause.
-      await expect(thread(page).getByText(/How can I help/i)).toHaveCount(0);
+      await expect(task(page).getByText(/How can I help/i)).toHaveCount(0);
 
       await expect
-        .poll(async () => await thread(page).evaluate((el) => el.textContent ?? ""), {
+        .poll(async () => await task(page).evaluate((el) => el.textContent ?? ""), {
           timeout: 20_000,
-          message: "the app must reopen the investigation it was on",
+          message: "the app must reopen the Task it was on",
         })
         .toContain("first question about acme-logs");
-      const txt = await thread(page).evaluate((el) => el.textContent ?? "");
+      const txt = await task(page).evaluate((el) => el.textContent ?? "");
       expect(txt).toContain("second question about acme-logs");
       expect(txt).toContain("BucketOwnerEnforced");
     } finally {
@@ -191,7 +191,7 @@ test.describe("a real agent turn", () => {
     const { model, cleanup } = await oneTurn(page);
     try {
       await ask(page, "why does acme-logs return 403?");
-      await expect(thread(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
+      await expect(task(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
       // Rule 1, checked against the bytes that actually went over the socket.
       expect(JSON.stringify(model.requests)).not.toContain("not-a-real-key");
     } finally {

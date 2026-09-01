@@ -1,16 +1,17 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.01.0** (`v1.01.0`).
+> **Current architecture baseline: Storage Agent v1.02.0** (`v1.02.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
 > added quantified storage engines under that runtime. v0.97–v0.99 were
 > presentation passes that still stacked copilot OS chrome. **v1.00.0
 > deleted those copilot objects** but kept a workbench shell. **v1.01.0
-> replaces that shell with a native Agent window.** Empty window = Composer.
-> Center = one readable work record. Tools appear in that record. Sidebar =
-> quiet titles. Settings is hidden. Overlay Review. Engines remain in the
-> Sidecar with no product UI entry.
+> replaced that shell with a native Agent window.** **v1.02.0 finishes that
+> window:** no leftover chat transcript, no painted Composer/New-task keyboard
+> chrome. Empty window = Composer. Center = one readable work record. Tools
+> appear in that record. Sidebar = quiet titles. Settings is hidden. Overlay
+> Review. Engines remain in the Sidecar with no product UI entry.
 
 This directory documents the currently shipped Storage Agent architecture and operating contracts. It is deliberately organized so implementation agents and contributors do not reconstruct older product shells from historical terminology that still exists in persistence, APIs, release notes, or git history.
 
@@ -55,7 +56,7 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
 - [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 027, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — post-1.01 priorities and explicit non-directions.
+- [`roadmap.md`](roadmap.md) — post-1.02 priorities and explicit non-directions.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.
@@ -78,6 +79,6 @@ A change that modifies product architecture, task state, public frontend ownersh
 For architecture changes, update at minimum:
 
 - `CLAUDE.md`;
-- `docs/product.md` when user-visible semantics change;
-- `docs/architecture.md` when ownership or runtime topology change;
-- the executable architecture and documentation-contract tests that lock those files.
+- `docs/product.md`;
+- `docs/architecture.md`;
+- the executable architecture/documentation contracts under `frontend/src/agent/`.

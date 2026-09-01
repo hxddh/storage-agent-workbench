@@ -48,3 +48,17 @@ describe("real-browser tests target the Agent-native UI only", () => {
     });
   }
 });
+
+describe("real-browser tests wait for one durable Work Result", () => {
+  it("does not match any copy of the answer in main", () => {
+    const review = readFileSync(join(e2eRoot, "review.spec.ts"), "utf8");
+    const survey = readFileSync(join(e2eRoot, "survey.spec.ts"), "utf8");
+    const connect = readFileSync(join(e2eRoot, "connect.spec.ts"), "utf8");
+    expect(review).toContain("waitForDurableAnswer");
+    expect(survey).toContain("waitForDurableAnswer");
+    expect(connect).toContain("waitForDurableAnswer");
+    expect(review).not.toContain('locator("main").getByText');
+    expect(survey).not.toContain('locator("main").getByText');
+    expect(connect).not.toContain('locator("main").getByText');
+  });
+});

@@ -6,6 +6,30 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.02.0] - 2026-08-31
+
+_Thorough native Agent. Finishes the v1.01 window by removing leftover chat transcript. No new Agent capabilities, no storage tools, no migration._
+
+### Removed
+
+- `"New chat"` as the default Task title. Untitled Tasks use **Untitled**.
+- `thread.*` error copy keys. Failures use `task.*` Agent copy.
+- Dead `.thread-prose` / `.thread-bleed` chat-layout CSS and Thread comments.
+- Persistent Composer keyboard legend (`⏎ Delegate` / `⇧⏎`).
+- Painted `⌘N` on the New task button. The shortcut still works.
+- Decorative empty-state illustration in the task list.
+
+### Changed
+
+- Working rows use Agent-native copy (`The Agent is working on this task.`).
+- Composer is attach + textarea + Delegate / Steer / Stop, without chat-card keyboard chrome.
+- Live Execution is not kept on screen after the current Work Result persists.
+- Architecture, legacy, and documentation contracts lock the thorough native window.
+
+### Security
+
+- Unchanged. Engine APIs remain. No new tools, no migration past **027**.
+
 ## [1.01.0] - 2026-08-31
 
 _Native Agent reconstruction. Replaces the v1.00 workbench shell. No new Agent capabilities, no storage tools, no migration._

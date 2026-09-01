@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.01.0.** This is the canonical product/UX specification. v1.01 replaces the v1.00 workbench shell with a native Agent window. Historical release notes (including v1.00 header/strip/queues and v0.96 copilot OS) are not current product architecture.
+> **Applies to Storage Agent v1.02.0.** This is the canonical product/UX specification. v1.02 finishes the native Agent window: v1.01 removed the workbench shell; v1.02 removes the leftover chat transcript. Historical release notes (including v1.00 header/strip/queues and v0.96 copilot OS) are not current product architecture.
 
 ## Product definition
 
@@ -89,7 +89,7 @@ Figures plot only values the runtime emitted. Gaps render as gap states. Unconfi
 
 Findings and key figures are clickable when a provenance chain exists (`GET /agent-tasks/{id}/provenance`). Hover shows tool, time, and coverage; click opens Review and anchors to that Evidence. A missing chain reads **No direct evidence chain** — never a fabricated source.
 
-A Work Result is not a transient chat bubble and should read like technical work output.
+A Work Result is not a transient chat bubble and should read like technical work output. Streaming work is live Execution in that same record. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered.
 
 ### Artifact
 
@@ -211,7 +211,7 @@ Provider/model configuration, audit internals, and low-level counters are second
 
 ## Design rules
 
-v1.01.0 is a native Agent reconstruction on the v0.97 token system. Visual language is specified in
+v1.02.0 is a thorough native Agent reconstruction on the v0.97 token system. Visual language is specified in
 [`design-tokens.md`](design-tokens.md) and enforced by frontend token tests.
 
 - Dark and light are first-class. Do not ship a surface that only works in one.
@@ -226,9 +226,11 @@ v1.01.0 is a native Agent reconstruction on the v0.97 token system. Visual langu
   interpolate, extrapolate, or invent a horizon the runtime did not emit.
 - Findings carry provenance. Missing chain is labelled, never implied.
 - Execution rows show real tool name, argument summary, duration, and
-  success/fail **in the Work Result**. Streaming must not jump layout. No invented step/progress chrome. No token/budget wall under every result.
-- Composer is the product card and the empty-start surface: Delegate at rest, Steer + Stop while working. No wizard, no `/` SKU menu, no attach-type chips.
-- There is no task header and no live status strip. Artifacts open from the document as an overlay. Working state lives on Composer and in the document. ⌘K works; it is not painted.
+  success/fail **in the Work Result**. Streaming must not jump layout. Once the
+  current turn is persisted, do not keep a live duplicate of that Work Result on
+  screen. No invented step/progress chrome. No token/budget wall under every result.
+- Composer is the Agent input and the empty-start surface: Delegate at rest, Steer + Stop while working. Attach, textarea, and those actions. No wizard, no `/` SKU menu, no attach-type chips, no persistent keyboard legend.
+- There is no task header and no live status strip. Artifacts open from the document as an overlay. Working state lives on Composer and in the document. ⌘K works; it is not painted. New task is a button; the shortcut is not painted on it.
 - Task navigation is one chronological title list. State is a row mark. Rename and Delete only.
 - Every non-ideal state (empty list, no Evidence, offline, interrupted, load earlier) is designed. Copy is restrained, specific, and bilingual.
 - Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped as Actions vs Tasks. It is not a Review destination menu.

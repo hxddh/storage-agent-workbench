@@ -15,8 +15,8 @@ const MAX_DRAFT = 20_000;
 /** Drafts for at most this many sessions, newest-first; the rest are dropped. */
 const MAX_SESSIONS = 50;
 
-/** The not-yet-created session. Typing into a fresh chat is the MOST common
- * place a draft is lost — the session id does not exist until the first message
+/** The not-yet-created task. Typing into a fresh Composer is the MOST common
+ * place a draft is lost — the task id does not exist until the first Direction
  * is sent — so it gets a stable key of its own rather than being dropped. */
 const NEW_SESSION_KEY = "__new__";
 

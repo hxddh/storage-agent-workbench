@@ -1,14 +1,14 @@
 /**
  * v0.58.0 — find inside one Agent task.
  *
- * The command palette searches session TITLES. Nothing searched the messages,
- * so an operator eighty turns into a bucket investigation could not get back to
- * the line where the retention rule was named — the one thing a long thread is
+ * The command palette searches task TITLES. Nothing searched the document,
+ * so an operator eighty turns into a bucket diagnosis could not get back to
+ * the line where the retention rule was named — the one thing a long Task is
  * for. This is the search that was missing.
  *
  * The matching lives here, apart from React, for two reasons: it is the part
  * with rules worth testing (case folding, collapsed turns, ordering), and a
- * thread of several hundred messages should not re-derive matches inside a
+ * Task of several hundred Directions should not re-derive matches inside a
  * render.
  */
 
@@ -24,7 +24,7 @@ export interface FindHit {
   id: string;
   /** How many times the query occurs inside that item. */
   count: number;
-  /** Position of the item in the thread, so hits stay in reading order. */
+  /** Position of the item in the Task, so hits stay in reading order. */
   index: number;
   role?: string;
 }
@@ -75,7 +75,7 @@ export function totalMatches(hits: readonly FindHit[]): number {
 
 /** Move the cursor through the hit list, wrapping at both ends.
  *
- * Wrapping matters more here than in a document find: an investigation's
+ * Wrapping matters more here than in a document find: a Task's
  * earliest mention is usually the one being looked for, and forcing the user to
  * page down through eighty turns to reach it would defeat the feature. Returns
  * 0 for an empty list so callers never index into nothing. */
@@ -87,7 +87,7 @@ export function stepHit(current: number, total: number, delta: number): number {
 /**
  * Split a string on the query so a renderer can mark the matches.
  *
- * Returns alternating segments with a `hit` flag rather than HTML: the thread
+ * Returns alternating segments with a `hit` flag rather than HTML: the Task
  * renders untrusted model and tool text, and building a highlighted string
  * would mean injecting markup into content this product deliberately never
  * treats as markup.

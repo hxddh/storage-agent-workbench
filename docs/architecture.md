@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.01.0.** Native Agent window. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged.
+> **Current architecture baseline: Storage Agent v1.02.0.** Thorough native Agent window. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -97,7 +97,7 @@ Each task row combines:
 - a state mark;
 - Rename and Delete.
 
-The list is one chronological sequence by `updated_at`. Section titles, search, pin, duplicate, and archive are not painted. Database counters and "General storage task" subtitles are not the navigation model. There is no sidecar-health footer.
+The list is one chronological sequence by `updated_at`. Section titles, search, pin, duplicate, and archive are not painted. The New task control is a button; it does not paint ⌘N. Database counters and "General storage task" subtitles are not the navigation model. There is no sidecar-health footer.
 
 The Sidecar `/agent-tasks` projection provides durable decision truth so a pending confirmation remains visible after reload/restart even when browser-local runtime state is gone.
 
@@ -135,7 +135,7 @@ Historical `sessionId` terminology may appear inside compatibility adapters and 
 
 ### 3.5 One Composer
 
-`frontend/src/components/Composer.tsx` is the only Agent input.
+`frontend/src/components/Composer.tsx` is the only Agent input. It is attach + textarea + Delegate / Steer / Stop. Shortcuts exist; they are not painted as a persistent legend on the input.
 
 ```text
 no active execution  -> Delegate
@@ -186,7 +186,7 @@ The frontend must not downgrade a real confirmation boundary into an ordinary su
 
 A completed assistant-side task event is rendered as Work Result.
 
-Streaming work is Execution; persisted completed output is Work Result. Work Results can contain structured Markdown, tables, code/config fragments, storage-specific artifacts, metrics, and provenance links into contextual Review.
+Streaming work is Execution; persisted completed output is Work Result. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered — the Task shows one readable record. Work Results can contain structured Markdown, tables, code/config fragments, storage-specific artifacts, metrics, and provenance links into contextual Review.
 
 ### Artifact / Review
 
@@ -347,16 +347,17 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Positive ownership guard
 
-`frontend/src/agent/architecture.test.ts` asserts v1.01 ownership, including:
+`frontend/src/agent/architecture.test.ts` asserts v1.02 ownership, including:
 
-- one Agent input;
+- one Agent input without a painted keyboard legend;
 - Agent Task as primary work area;
 - overlay Review;
 - Direction / Work Result primitives;
 - explicit Decision boundaries;
 - LiveTrace in the document rather than an Execution Summary wall;
 - task-native DOM/keyboard/style contracts;
-- physical deletion of retired component boundaries (header, strip, command-center, Focus).
+- untitled-task default instead of chat creation language;
+- physical deletion of retired component boundaries (header, strip, command-center, Focus, thread-prose layout).
 
 ### Negative production-source guard
 
@@ -364,7 +365,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.01 and prevents current product docs from drifting back toward retired information architecture.
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.02 and prevents current product docs from drifting back toward retired information architecture.
 
 ### Real-Sidecar E2E
 

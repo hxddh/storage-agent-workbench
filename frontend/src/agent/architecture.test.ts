@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8");
 const absent = (relative: string) => expect(existsSync(new URL(relative, import.meta.url))).toBe(false);
 
-describe("v1.01 native Agent ownership boundaries", () => {
+describe("v1.02 native Agent ownership boundaries", () => {
   it("physically removes the v0.92 navigation and deep-surface shell", () => {
     absent("./InvestigationNavigation.tsx");
     absent("./SurfaceTabs.tsx");
@@ -28,6 +28,8 @@ describe("v1.01 native Agent ownership boundaries", () => {
     expect(composer).toContain("onStop");
     expect(composer).not.toContain("Ask Storage Agent");
     expect(composer).not.toContain('t("thread.');
+    expect(composer).not.toContain("<kbd");
+    expect(composer).not.toContain("group-focus-within/composer");
     expect(composer).not.toContain("attach-type-inventory");
     expect(composer).not.toContain("attach-type-access_log");
     expect(composer).not.toContain("Analyze as:");
@@ -78,6 +80,7 @@ describe("v1.01 native Agent ownership boundaries", () => {
     expect(navigation).not.toContain("menu.pin");
     expect(navigation).not.toContain("menu.duplicate");
     expect(navigation).not.toContain("menu.archive");
+    expect(navigation).not.toContain("<kbd");
     expect(model).toContain("DEFAULT_TASK_NAV_WIDTH");
     expect(model).toContain("clampTaskNavigationWidth");
     expect(model).toContain("onRename");
@@ -371,6 +374,8 @@ describe("v1.01 native Agent ownership boundaries", () => {
     expect(task).toContain("if (!sessionId || !pending || busy) return");
     expect(task).not.toContain("pendingAlreadyPersisted");
     expect(task).toContain("{pending && !hideLiveDirection ?");
+    expect(task).toContain("isCurrentPersistedWorkResult");
+    expect(task).toContain("{pending && !hideLiveWorkResult ?");
     expect(task).toContain("<WorkingRow");
     expect(task).not.toContain("ThinkingBubble");
   });
@@ -476,9 +481,31 @@ describe("v1.01 native Agent ownership boundaries", () => {
     expect(i18n).not.toContain("settings.priceTitle");
     expect(i18n).not.toContain("attach.pickType");
     expect(i18n).not.toContain("grounding.title");
+    expect(i18n).not.toContain("think.working");
+    expect(i18n).not.toContain('"thread.');
     expect(copy).not.toContain("noScope");
     expect(copy).not.toContain("commandPalette");
     expect(model).not.toContain("dayBucket");
     expect(model).not.toContain("DAY_BUCKETS");
+  });
+
+  it("removes leftover chat-transcript contracts from the native Agent window", () => {
+    const runner = source("../hooks/useTurnRunnerImplementation.ts");
+    const css = source("../index.css");
+    const result = source("../components/AgentResultRenderer.tsx");
+    const task = source("../components/AgentTaskImplementation.tsx");
+    const empty = source("../components/EmptyState.tsx");
+    expect(runner).not.toContain("New chat");
+    expect(runner).not.toContain('t("thread.');
+    expect(runner).toContain('t("common.untitled")');
+    expect(css).not.toContain("thread-prose");
+    expect(css).not.toContain("thread-bleed");
+    expect(css).not.toContain("empty-state-art");
+    expect(result).toContain('t("task.working")');
+    expect(result).not.toContain("think.working");
+    expect(task).toContain("<WorkingRow label={taskCopy.liveWorking}");
+    expect(task).not.toContain("think.working");
+    expect(empty).not.toContain("empty-state-art");
+    expect(empty).not.toContain("<svg");
   });
 });

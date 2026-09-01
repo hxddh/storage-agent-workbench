@@ -404,13 +404,13 @@ export interface SessionDetail {
   runs: SessionRunLink[];
   findings: SessionFinding[];
   summary: SessionSummaryData | null;
-  /** The TAIL of the thread (v0.47.0), not the whole history. */
+  /** The TAIL of the Task document (v0.47.0), not the whole history. */
   messages: SessionMessage[];
   /** How many messages exist in total, so the client can offer "load earlier". */
   message_total?: number;
   /** What the agent itself recorded and replays into every later turn (v0.51.0). */
   agent_memory?: AgentMemoryItem[];
-  /** Files the user attached in this conversation. */
+  /** Files the user attached in this Task. */
   attached_files?: AttachedFile[];
   /** How many of `message_total` the agent actually replays into its context.
    * Below the total means the earliest turns have rolled out of its view. */
@@ -518,9 +518,9 @@ export interface ExecutionMetrics extends TokenUsage {
   /** The per-turn TOKEN ceiling this turn ran under (v0.54.0). Not a provider
    * measurement — this Agent's per-execution governor, reported beside usage. */
   budget_tokens?: number | null;
-  /** Which bound ended the investigation, when one did: "tokens" | "chars". */
+  /** Which bound ended the Task, when one did: "tokens" | "chars". */
   budget_stopped_on?: string | null;
-  /** Identical (tool, args) calls answered from the conversation instead of
+  /** Identical (tool, args) calls answered from Task memory instead of
    * being re-run. Absent when the turn repeated nothing. */
   repeat_calls_avoided?: number | null;
 }

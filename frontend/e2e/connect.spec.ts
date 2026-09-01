@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { dropCloudProvider, listCloudProviders, startFakeS3, type FakeS3 } from "./fake-s3";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "./fake-model";
+import { waitForDurableAnswer } from "./work-result";
 
 /**
  * Connecting to storage, and then asking about it — the app's other main path.
@@ -203,9 +204,7 @@ test.describe("connecting to storage", () => {
       await composer(page).fill("what is in acme-logs?");
       await composer(page).press("Enter");
 
-      await expect(page.locator("main").getByText(/three access-log objects/)).toBeVisible({
-        timeout: 90_000,
-      });
+      await waitForDurableAnswer(page, /three access-log objects/, 90_000);
 
       // Grounded, not invented: the listing the agent was handed has to carry
       // the real keys from the real socket.

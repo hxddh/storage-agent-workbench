@@ -6,6 +6,7 @@ import {
   type FakeS3Options,
 } from "./fake-s3";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "./fake-model";
+import { waitForDurableAnswer } from "./work-result";
 
 /**
  * The agent's HEAVY path: unlock a tool group, survey a whole account, read the
@@ -44,59 +45,68 @@ async function survey(
   opts: FakeS3Options,
   extraTurns: (pid: string) => Array<string[] | ((req: never) => string[])> = () => [],
 ): Promise<Harness> {
-  const fake = await startFakeS3(BUCKETS, opts);
   const name = `e2e-survey-${label}`;
-  const created = await fetch(`${SIDECAR}/cloud-providers`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      name,
-      provider_type: "s3-compatible",
-      endpoint_url: fake.endpointUrl,
-      region: "us-east-1",
-      addressing_style: "path",
-      access_key: "AKIAE2ESURVEY0000000",
-      secret_key: "e2e-survey-secret-not-real",
-    }),
-  });
-  const providerId = ((await created.json()) as { id: string }).id;
-
-  const model = await startFakeModel([
-    // The group must be unlocked first — `survey_account` is not in the core
-    // set. This is the app's progressive-disclosure contract, and it had never
-    // been exercised from a browser either.
-    toolTurn("load_tools", { group: "account_wide" }),
-    toolTurn("survey_account", { provider_id: providerId }),
-    ...extraTurns(providerId),
-    textTurn("I have surveyed the account; the details are above."),
-  ] as never[]);
-  const modelId = await useFakeModel(model.baseUrl);
-
-  await page.addInitScript(() => {
-    localStorage.setItem("saw.lang", "en");
-    localStorage.setItem("saw.onboarded", "1");
-  });
-  await page.goto("/");
-  await expect(composer(page)).toBeVisible({ timeout: 20_000 });
-  await composer(page).click();
-  await composer(page).fill("survey my account and tell me if anything is public");
-  await composer(page).press("Enter");
-  await expect(page.locator("main").getByText(/I have surveyed the account/)).toBeVisible({
-    timeout: 120_000,
-  });
-
-  return {
-    providerId,
-    requests: model.requests,
-    cleanup: async () => {
-      await dropModelProvider(modelId);
-      await model.close();
-      for (const p of await listCloudProviders()) {
-        if (p.name === name) await dropCloudProvider(p.id);
-      }
-      await fake.close();
-    },
+  let fake: Awaited<ReturnType<typeof startFakeS3>> | undefined;
+  let model: Awaited<ReturnType<typeof startFakeModel>> | undefined;
+  let modelId: string | undefined;
+  let providerId = "";
+  const cleanup = async () => {
+    if (modelId) await dropModelProvider(modelId);
+    if (model) await model.close();
+    for (const p of await listCloudProviders()) {
+      if (p.name === name) await dropCloudProvider(p.id);
+    }
+    if (fake) await fake.close();
   };
+
+  try {
+    fake = await startFakeS3(BUCKETS, opts);
+    const created = await fetch(`${SIDECAR}/cloud-providers`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name,
+        provider_type: "s3-compatible",
+        endpoint_url: fake.endpointUrl,
+        region: "us-east-1",
+        addressing_style: "path",
+        access_key: "AKIAE2ESURVEY0000000",
+        secret_key: "e2e-survey-secret-not-real",
+      }),
+    });
+    providerId = ((await created.json()) as { id: string }).id;
+
+    model = await startFakeModel([
+      // The group must be unlocked first — `survey_account` is not in the core
+      // set. This is the app's progressive-disclosure contract, and it had never
+      // been exercised from a browser either.
+      toolTurn("load_tools", { group: "account_wide" }),
+      toolTurn("survey_account", { provider_id: providerId }),
+      ...extraTurns(providerId),
+      textTurn("I have surveyed the account; the details are above."),
+    ] as never[]);
+    modelId = await useFakeModel(model.baseUrl);
+
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "en");
+      localStorage.setItem("saw.onboarded", "1");
+    });
+    await page.goto("/");
+    await expect(composer(page)).toBeVisible({ timeout: 20_000 });
+    await composer(page).click();
+    await composer(page).fill("survey my account and tell me if anything is public");
+    await composer(page).press("Enter");
+    await waitForDurableAnswer(page, /I have surveyed the account/);
+
+    return {
+      providerId,
+      requests: model.requests,
+      cleanup,
+    };
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
 }
 
 /** The survey summary the agent was actually handed. */
@@ -163,18 +173,18 @@ test.describe("surveying an account", () => {
     }
   });
 
-  test("the survey does not surface as a run card in the thread", async ({ page }) => {
-    // CLAUDE.md is explicit: nothing the agent does in a conversation surfaces
+  test("the survey does not surface as a run card in the Task", async ({ page }) => {
+    // CLAUDE.md is explicit: nothing the agent does in a Task surfaces
     // as a structured run card — those runs are recorded with `origin='agent'`
-    // and the thread filters them out; the agent narrates inline. That rule had
+    // and the Task filters them out; the agent narrates inline. That rule had
     // never been verified in a browser, and `survey_account` is the tool most
     // likely to break it since it creates a real run.
     const h = await survey(page, "nocard", { subresources: "full" });
     try {
-      const thread = await page.locator("main").evaluate((el) => el.textContent ?? "");
-      expect(thread).toContain("I have surveyed the account");
-      expect(thread).not.toMatch(/account_discovery/);
-      expect(thread).not.toMatch(/Run\s+(completed|failed)/i);
+      const taskText = await page.locator("main").evaluate((el) => el.textContent ?? "");
+      expect(taskText).toContain("I have surveyed the account");
+      expect(taskText).not.toMatch(/account_discovery/);
+      expect(taskText).not.toMatch(/Run\s+(completed|failed)/i);
     } finally {
       await h.cleanup();
     }

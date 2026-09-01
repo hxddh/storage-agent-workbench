@@ -405,66 +405,13 @@ body {
   box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--focus-ring);
 }
 
-/* `.thread-item` deliberately carries NO `content-visibility` (removed in
- * v0.73.0). It was added to skip layout/paint for off-screen items in a long
- * history (UX1), with `contain-intrinsic-size: auto 96px` standing in for the
- * unrendered ones. Measurement retired it on both counts:
- *
- *  - 96px does not fit the content. Real items are bimodal — a collapsed old
- *    turn is 36–65px, an expanded answer with a table was 1616px, a 45x spread
- *    no single constant covers. On a thread of realistic answers the container
- *    reported 6310px and grew to 9927px as items were actually measured, so the
- *    scrollbar under-reported the conversation by 52% until you had scrolled
- *    through all of it — and the "bottom" receded as you chased it.
- *  - It bought nothing. Scripted scroll over 400 items / 34622px — the very
- *    case it was written for — measured p50 16.6ms both ways, with the tail
- *    WORSE with it on (p90 19.6 vs 17.9ms, p99 29.8 vs 27.4ms, max 31.7 vs
- *    27.9ms). At 60 items likewise. The thread already bounds its own DOM by
- *    paging ("load earlier"), which is the optimization that does work.
- *
- * The under-reported height is also what broke scroll-to-bottom (see
- * `Thread.tsx`), so this is not only a paint concern. */
-
-/* An answer's reading measure, and the escape hatch out of it.
- *
- * Prose and data want different widths. A paragraph is easiest to read at
- * 60-75 characters; a twelve-column bucket table wants every pixel it can get.
- * The app gave both the same 768px column, so on a 1440px window a table was
- * cramped while 428px sat empty beside it.
- *
- * The grid names two tracks. Everything lands in `content` — capped at a
- * reading measure — and a block that is data rather than prose (a table, a
- * chart, a code fence) opts into `full` instead. Nothing has to know the
- * window width, and the two rules cannot drift apart because there is only
- * one grid.
- */
-.thread-prose {
-  display: grid;
-  /* Content is LEFT-aligned in the column, not centred in it. A centred
-   * reading measure inside a wider column gives prose and tables different
-   * left edges — the paragraph starts 150px to the right of the table above
-   * it, and the answer stops reading as one thing. */
-  grid-template-columns:
-    [full-start content-start] min(46rem, 100%) [content-end]
-    minmax(0, 1fr) [full-end];
-  row-gap: 0.75rem;
-}
-.thread-prose > * {
-  grid-column: content;
-  min-width: 0;
-}
-.thread-prose > .thread-bleed {
-  grid-column: full;
-}
-
 /* The bullet is drawn, not written.
  *
- * A `\u2022` in the markup lands in the text layer, so copying a list out of an
- * answer yields a column of dots interleaved with the words, and every test
- * that reads an item's textContent sees the marker too. Rendering it from CSS
- * keeps the list copyable as a list. It is also, unlike the 3px `<span>` it
- * replaces, a real glyph on the first line's baseline rather than a dot pushed
- * two lines down by a margin. */
+ * A `\u2022` in the markup lands in the text layer, so copying a list out of a
+ * Work Result yields a column of dots interleaved with the words, and every
+ * test that reads an item's textContent sees the marker too. Rendering it from
+ * CSS keeps the list copyable as a list.
+ */
 .marker-dot::before {
   content: "\2022";
 }
@@ -472,10 +419,10 @@ body {
 /* What find marks.
  *
  * The CSS Custom Highlight API paints over ranges without touching the DOM, so
- * searching a streaming answer cannot disturb the thread's layout or its scroll
- * maths. Both entries are needed: one for every match, one for the one you are
- * standing on, or stepping through twenty-nine identical marks tells you
- * nothing about where you are.
+ * searching a streaming Work Result cannot disturb the task document layout or
+ * its scroll maths. Both entries are needed: one for every match, one for the
+ * one you are standing on, or stepping through twenty-nine identical marks
+ * tells you nothing about where you are.
  */
 ::highlight(saw-find) {
   background-color: rgba(109, 139, 255, 0.28);
@@ -493,7 +440,7 @@ body {
   color: #ffffff;
 }
 
-/* Keyboard keycaps. One shape, used in the composer, palette, and shortcuts. */
+/* Keyboard keycaps. One shape, used in the palette and shortcuts sheet. */
 kbd {
   font-family: "JetBrains Mono Variable", ui-monospace, monospace;
   font-size: var(--text-2xs);
@@ -538,39 +485,30 @@ kbd {
 .empty-state {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: var(--space-3);
-  padding: var(--space-8) var(--space-4);
-  color: var(--gray-400);
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-3);
+  color: var(--gray-500);
+  text-align: left;
 }
 
-.empty-state-art {
-  display: grid;
-  width: 3.25rem;
-  height: 3.25rem;
-  place-items: center;
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-xl);
-  background: color-mix(in srgb, var(--elevated) 70%, transparent);
-  color: var(--accent-soft);
+.empty-state-compact {
+  padding: var(--space-4) var(--space-2);
 }
 
 .empty-state h2,
 .empty-state .empty-state-title {
   margin: 0;
-  color: var(--gray-100);
-  font-size: var(--text-base);
-  font-weight: 590;
-  letter-spacing: -0.014em;
+  color: var(--gray-300);
+  font-size: var(--text-xs);
+  font-weight: 500;
 }
 
 .empty-state p {
   margin: 0;
   max-width: 22rem;
   color: var(--gray-500);
-  font-size: var(--text-sm);
-  line-height: 1.55;
+  font-size: var(--text-xs);
+  line-height: 1.5;
 }
 
 /* Composer mode enter: Delegate and Steer+Stop swap by remount, never stacked. */

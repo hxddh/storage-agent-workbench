@@ -48,16 +48,16 @@ export const cleanError = (raw: string, t: TFunc, kind: "turn" | "load" = "turn"
     .replace(/^(?:ApiError|Error):\s*/, "")
     .replace(/^Session assistant failed:\s*/, "");
   if (kind === "turn") {
-    if (/agents sdk is not available|agent runtime/i.test(s)) return t("thread.agentRuntimeUnavailable");
-    if (/401|authentication|api key.*invalid|invalid.*api key/i.test(s)) return t("thread.errKey");
+    if (/agents sdk is not available|agent runtime/i.test(s)) return t("task.agentRuntimeUnavailable");
+    if (/401|authentication|api key.*invalid|invalid.*api key/i.test(s)) return t("task.errKey");
     // The model-404 hint must be provider-shaped: a bare "not found" / "404"
     // (e.g. "session not found" when a session is deleted mid-turn) would
     // otherwise send the user to fix a model name/base-URL that isn't the
     // problem. Require model/provider/endpoint context alongside the 404.
     if (/\b(model|provider|endpoint|base ?url)\b/i.test(s) &&
         /404|not found|does not exist|no such model|unknown model/i.test(s))
-      return t("thread.err404");
-    if (/timeout|timed out|connection|network/i.test(s)) return t("thread.errNetwork");
+      return t("task.err404");
+    if (/timeout|timed out|connection|network/i.test(s)) return t("task.errNetwork");
   }
   return s.length > 280 ? `${s.slice(0, 280)}…` : s;
 };
@@ -115,7 +115,7 @@ export function useTurnRunner(opts: {
   /** Current composer text (via ref) — lets runTurn avoid wiping characters the
    * user typed during a steer's settle window (it only clears its OWN text). */
   getText?: () => string;
-  /** Ref tracking the visible session id (owned by Thread). */
+  /** Ref tracking the visible session id (owned by AgentTask). */
   localId: React.MutableRefObject<string | null>;
   onSessionCreated: (id: string) => void;
   /** The session this turn created turned out to be empty and was removed. */
@@ -177,7 +177,7 @@ export function useTurnRunner(opts: {
   const ensureSession = (seed: string): Promise<string> => {
     if (localId.current) return Promise.resolve(localId.current);
     if (!ensureFlight.current) {
-      ensureFlight.current = createSession({ title: deriveSessionTitle(seed) ?? "New chat" })
+      ensureFlight.current = createSession({ title: deriveSessionTitle(seed) ?? t("common.untitled") })
         .then((s) => {
           localId.current = s.id;
           createdForThisTurn.current = true;

@@ -20,8 +20,8 @@
 /*
  * One Work Result owns the full task track, but prose does not. Modern Agent
  * output regularly mixes explanation with tables, code and diagnostic payloads;
- * squeezing those artifacts into the reading measure makes the UI behave like a
- * chat transcript. Prose remains a deliberate 46rem reading column while real
+ * squeezing those artifacts into the reading measure makes tables unreadable.
+ * Prose remains a deliberate 46rem reading column while real
  * data artifacts can use the complete 64rem task track. Both start on the same
  * left edge so a result still reads as one document.
  */

@@ -2,7 +2,7 @@
  * Agent Task presentation.
  *
  * This layer styles the primary task, its single steering composer and durable
- * Work Result. It deliberately has no chat/thread/timeline selectors.
+ * Work Result. It deliberately has no retired transcript or timeline selectors.
  */
 
 [data-testid="agent-workspace"] {
@@ -21,7 +21,7 @@
   scroll-margin-top: 72px;
 }
 
-/* The composer belongs to the active task rather than to a footer/chat bar. */
+/* The composer belongs to the active task rather than to a footer bar. */
 [data-testid="agent-workspace"] main > div.relative.px-6 {
   background: linear-gradient(
     to top,

@@ -36,6 +36,7 @@ import { stepHit } from "../taskFind";
 import { inferDatasetType } from "../datasetType";
 import {
   isCurrentPersistedDirection,
+  isCurrentPersistedWorkResult,
   pendingMatchesPersistedDirection,
 } from "../lib/pendingDirection";
 import { FindBar } from "./FindBar";
@@ -263,6 +264,7 @@ export function AgentTaskImplementation({
   }, [detail, triage, earlier]);
 
   const hideLiveDirection = isCurrentPersistedDirection(items, pending);
+  const hideLiveWorkResult = isCurrentPersistedWorkResult(items, pending);
   useEffect(() => {
     if (!sessionId || !pending || busy) return;
     if (!pendingMatchesPersistedDirection(items, pending)) return;
@@ -684,7 +686,7 @@ export function AgentTaskImplementation({
                   </div>
                 ) : null}
 
-                {pending ? (
+                {pending && !hideLiveWorkResult ? (
                   <>
                     {streamText !== null || streamTools.length ? (
                       <>
@@ -705,7 +707,7 @@ export function AgentTaskImplementation({
                           }}>{taskCopy.reload}</Button>
                         </div>
                       </div>
-                    ) : busy ? <WorkingRow label={t("think.working")} /> : null}
+                    ) : busy ? <WorkingRow label={taskCopy.liveWorking} /> : null}
                   </>
                 ) : null}
 
