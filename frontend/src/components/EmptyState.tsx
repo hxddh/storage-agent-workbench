@@ -23,10 +23,10 @@ export function EmptyState({
     );
   }
   return (
-    <div className="flex flex-col gap-3 px-6 py-8" data-testid={testId}>
-      <div className="text-2xl font-normal tracking-tight text-gray-100" style={{ letterSpacing: "-0.02em", lineHeight: "1.1" }}>{title}</div>
-      <p className="max-w-[28rem] text-sm leading-6 text-gray-500">{body}</p>
-      {action ? <div className="pt-1">{action}</div> : null}
+    <div className="flex flex-col gap-4 px-8 py-12" data-testid={testId}>
+      <div className="text-3xl font-normal tracking-tight text-gray-100">{title}</div>
+      <p className="max-w-[28rem] text-base leading-7 text-gray-500">{body}</p>
+      {action ? <div className="pt-2">{action}</div> : null}
     </div>
   );
 }
