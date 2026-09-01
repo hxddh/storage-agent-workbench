@@ -265,8 +265,10 @@ def test_migrations_are_sequential_and_capped():
 
 
 def test_no_public_skills_api(client):
-    assert client.get("/skills").status_code == 404
-    assert client.get("/skills/storageops-triage").status_code == 404
+    # v1.03: /skills is now public (bundled + user catalog, GET /skills + GET /skills/{name})
+    assert client.get("/skills").status_code == 200
+    body = client.get("/skills/storageops-triage").json()
+    assert body["name"] == "storageops-triage" and "body" in body
     assert client.post("/sessions/x/skill-context", json={}).status_code in (404, 405)
 
 
