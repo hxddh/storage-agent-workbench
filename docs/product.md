@@ -89,7 +89,7 @@ Figures plot only values the runtime emitted. Gaps render as gap states. Unconfi
 
 Findings and key figures are clickable when a provenance chain exists (`GET /agent-tasks/{id}/provenance`). Hover shows tool, time, and coverage; click opens Review and anchors to that Evidence. A missing chain reads **No direct evidence chain** — never a fabricated source.
 
-A Work Result is not a transient chat bubble and should read like technical work output.
+A Work Result is not a transient chat bubble and should read like technical work output. Streaming work is live Execution in that same record. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered.
 
 ### Artifact
 
@@ -226,7 +226,9 @@ v1.02.0 is a thorough native Agent reconstruction on the v0.97 token system. Vis
   interpolate, extrapolate, or invent a horizon the runtime did not emit.
 - Findings carry provenance. Missing chain is labelled, never implied.
 - Execution rows show real tool name, argument summary, duration, and
-  success/fail **in the Work Result**. Streaming must not jump layout. No invented step/progress chrome. No token/budget wall under every result.
+  success/fail **in the Work Result**. Streaming must not jump layout. Once the
+  current turn is persisted, do not keep a live duplicate of that Work Result on
+  screen. No invented step/progress chrome. No token/budget wall under every result.
 - Composer is the Agent input and the empty-start surface: Delegate at rest, Steer + Stop while working. Attach, textarea, and those actions. No wizard, no `/` SKU menu, no attach-type chips, no persistent keyboard legend.
 - There is no task header and no live status strip. Artifacts open from the document as an overlay. Working state lives on Composer and in the document. ⌘K works; it is not painted. New task is a button; the shortcut is not painted on it.
 - Task navigation is one chronological title list. State is a row mark. Rename and Delete only.

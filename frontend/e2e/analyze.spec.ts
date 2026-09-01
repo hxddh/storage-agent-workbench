@@ -7,6 +7,7 @@ import {
   toolTurn,
   useFakeModel,
 } from "./fake-model";
+import { waitForDurableAnswer } from "./work-result";
 
 /**
  * Attach a file, ask about it, get an answer — the whole capability, in a
@@ -86,12 +87,7 @@ async function attachAndAsk(page: Page, question: string) {
 
 /** live-trace appears on the first tool; the chained analysis and answer come later. */
 async function waitForInventoryAnswer(page: Page) {
-  await expect(task(page).getByText(/one in five is already in GLACIER/)).toBeVisible({
-    timeout: 90_000,
-  });
-  await expect(page.getByTestId("agent-composer")).not.toHaveAttribute("data-agent-state", "working", {
-    timeout: 30_000,
-  });
+  await waitForDurableAnswer(page, /one in five is already in GLACIER/, 90_000);
 }
 
 test.describe("analyzing an attached file", () => {

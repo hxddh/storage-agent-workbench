@@ -374,6 +374,8 @@ describe("v1.02 native Agent ownership boundaries", () => {
     expect(task).toContain("if (!sessionId || !pending || busy) return");
     expect(task).not.toContain("pendingAlreadyPersisted");
     expect(task).toContain("{pending && !hideLiveDirection ?");
+    expect(task).toContain("isCurrentPersistedWorkResult");
+    expect(task).toContain("{pending && !hideLiveWorkResult ?");
     expect(task).toContain("<WorkingRow");
     expect(task).not.toContain("ThinkingBubble");
   });

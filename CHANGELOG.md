@@ -23,6 +23,7 @@ _Thorough native Agent. Finishes the v1.01 window by removing leftover chat tran
 
 - Working rows use Agent-native copy (`The Agent is working on this task.`).
 - Composer is attach + textarea + Delegate / Steer / Stop, without chat-card keyboard chrome.
+- Live Execution is not kept on screen after the current Work Result persists.
 - Architecture, legacy, and documentation contracts lock the thorough native window.
 
 ### Security

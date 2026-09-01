@@ -186,7 +186,7 @@ The frontend must not downgrade a real confirmation boundary into an ordinary su
 
 A completed assistant-side task event is rendered as Work Result.
 
-Streaming work is Execution; persisted completed output is Work Result. Work Results can contain structured Markdown, tables, code/config fragments, storage-specific artifacts, metrics, and provenance links into contextual Review.
+Streaming work is Execution; persisted completed output is Work Result. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered — the Task shows one readable record. Work Results can contain structured Markdown, tables, code/config fragments, storage-specific artifacts, metrics, and provenance links into contextual Review.
 
 ### Artifact / Review
 

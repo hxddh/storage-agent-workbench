@@ -6,6 +6,7 @@ import {
   type FakeS3Options,
 } from "./fake-s3";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "./fake-model";
+import { waitForDurableAnswer } from "./work-result";
 
 /**
  * The four review lenses, against endpoints that cannot answer.
@@ -40,50 +41,58 @@ async function review(page: Page, label: string, opts: FakeS3Options): Promise<{
   summary: string;
   cleanup: () => Promise<void>;
 }> {
-  const fake = await startFakeS3({ "acme-logs": ["logs/a.parquet"] }, opts);
   const name = `e2e-review-${label}`;
-  const pid = ((await (await fetch(`${SIDECAR}/cloud-providers`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      name, provider_type: "s3-compatible", endpoint_url: fake.endpointUrl,
-      region: "us-east-1", addressing_style: "path",
-      access_key: "AKIAE2EREVIEW0000000", secret_key: "e2e-review-secret-not-real",
-    }),
-  })).json()) as { id: string }).id;
-
-  const model = await startFakeModel([
-    toolTurn("load_tools", { group: "bucket_config" }),
-    toolTurn("review_bucket_config", { provider_id: pid, bucket: "acme-logs" }),
-    textTurn("I have reviewed the bucket; the details are above."),
-  ]);
-  const modelId = await useFakeModel(model.baseUrl);
-
-  await page.addInitScript(() => {
-    localStorage.setItem("saw.lang", "en");
-    localStorage.setItem("saw.onboarded", "1");
-  });
-  await page.goto("/");
-  await expect(composer(page)).toBeVisible({ timeout: 20_000 });
-  await composer(page).click();
-  await composer(page).fill("review the configuration of acme-logs");
-  await composer(page).press("Enter");
-  await expect(page.locator("main").getByText(/I have reviewed the bucket/)).toBeVisible({
-    timeout: 120_000,
-  });
-
-  const m = JSON.stringify(model.requests).match(/Read-only configuration review[^"]{0,900}/);
-  return {
-    summary: m ? m[0] : "",
-    cleanup: async () => {
-      await dropModelProvider(modelId);
-      await model.close();
-      for (const p of await listCloudProviders()) {
-        if (p.name === name) await dropCloudProvider(p.id);
-      }
-      await fake.close();
-    },
+  let fake: Awaited<ReturnType<typeof startFakeS3>> | undefined;
+  let model: Awaited<ReturnType<typeof startFakeModel>> | undefined;
+  let modelId: string | undefined;
+  const cleanup = async () => {
+    if (modelId) await dropModelProvider(modelId);
+    if (model) await model.close();
+    for (const p of await listCloudProviders()) {
+      if (p.name === name) await dropCloudProvider(p.id);
+    }
+    if (fake) await fake.close();
   };
+
+  try {
+    fake = await startFakeS3({ "acme-logs": ["logs/a.parquet"] }, opts);
+    const pid = ((await (await fetch(`${SIDECAR}/cloud-providers`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name, provider_type: "s3-compatible", endpoint_url: fake.endpointUrl,
+        region: "us-east-1", addressing_style: "path",
+        access_key: "AKIAE2EREVIEW0000000", secret_key: "e2e-review-secret-not-real",
+      }),
+    })).json()) as { id: string }).id;
+
+    model = await startFakeModel([
+      toolTurn("load_tools", { group: "bucket_config" }),
+      toolTurn("review_bucket_config", { provider_id: pid, bucket: "acme-logs" }),
+      textTurn("I have reviewed the bucket; the details are above."),
+    ]);
+    modelId = await useFakeModel(model.baseUrl);
+
+    await page.addInitScript(() => {
+      localStorage.setItem("saw.lang", "en");
+      localStorage.setItem("saw.onboarded", "1");
+    });
+    await page.goto("/");
+    await expect(composer(page)).toBeVisible({ timeout: 20_000 });
+    await composer(page).click();
+    await composer(page).fill("review the configuration of acme-logs");
+    await composer(page).press("Enter");
+    await waitForDurableAnswer(page, /I have reviewed the bucket/);
+
+    const m = JSON.stringify(model.requests).match(/Read-only configuration review[^"]{0,900}/);
+    return {
+      summary: m ? m[0] : "",
+      cleanup,
+    };
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
 }
 
 test.describe("reviewing a bucket the endpoint cannot fully describe", () => {
