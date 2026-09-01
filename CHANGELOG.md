@@ -6,6 +6,21 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.04.0] - 2026-09-01
+
+_Codex/Cursor native rebuild — warm editorial + icon bar + Cursor-like Composer. No new storage tools, no migration (head remains **027**)._
+
+### Changed
+
+- **Warm editorial tokens** — warm charcoal dark `h=32` (`#141210` ladder, 12.3 L* span) and warm cream light (`#fff9f0` ladder) with single-voltage orange (`#ff6b35` dark / `#c73a00` light, 4.97:1), hairline-only depth (`0 0 0 1px var(--edge)`), display at weight 400 with `-0.02em` tracking and `1.8` leading, iOS spring (`120/180/240`).
+- **Codex/Cursor layout** — 56px icon bar (New/Explorer/Palette/Details/Settings) always visible, collapsible 260px Explorer, 240px Details inspector (not overlay), native 28px title bar (`data-tauri-drag-region`, `⌘K`/`⌘N` hints) and 22px status bar.
+- **Cursor-like Composer** — 44px min, `rounded-2xl`, `px-4/py-3.5`, `text-base leading-6`, `240px` max, unified `Delegate` (orange pill + send) vs `Steer+Stop`, focus hairline glow.
+- **Editorial Work Result** — 46rem card (`rounded-xl border-edge shadow-elev`), `7×7` orange star header, `prose max-w-none`, artifact pills with accent badges; Direction as `rounded-xl` card with `2xs uppercase` label.
+
+### Security
+
+- Same floor. No new tools, no migration past **027**.
+
 ## [1.03.0] - 2026-09-01
 
 _Modern native Agent. Keeps the v1.02 window and adds additive, gated extensions — no migration (head remains **027**)._ 

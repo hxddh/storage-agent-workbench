@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.03.0.** Thorough native Agent window. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged.
+> **Current architecture baseline: Storage Agent v1.04.0.** Thorough native Agent window. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
