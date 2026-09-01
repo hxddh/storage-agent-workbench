@@ -64,16 +64,20 @@ function DirectionEvent({ content }: Pick<AgentTaskResultProps, "content">) {
   const label = lang === "zh" ? "Direction" : "Direction";
 
   return (
-    <section className="group max-w-[min(46rem,100%)] animate-fade-in-up" data-testid="direction-event" aria-label={label}>
+    <section className="group max-w-[46rem] animate-fade-in-up" data-testid="direction-event" aria-label={label}>
       {structuredError && parsed ? (
         <S3ErrorArtifact error={parsed} raw={text} />
       ) : (
-        <div className="border-l-2 border-edge-strong pl-3">
-          <div className="whitespace-pre-wrap break-words text-prose text-gray-200">
+        <div className="rounded-xl border border-edge bg-panel/50 px-4 py-3">
+          <div className="mb-1 flex items-center gap-2 text-2xs font-medium uppercase tracking-widest text-gray-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
+            {label}
+          </div>
+          <div className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-200">
             <div className={long && !expanded ? "max-h-44 overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" : ""}>{text}</div>
             {long ? (
-              <button type="button" onClick={() => setExpanded((value) => !value)} className="mt-1 text-2xs text-gray-500 transition-colors hover:text-accent-soft">
-                {expanded ? (lang === "zh" ? "收起" : "Collapse") : (lang === "zh" ? "展开" : "Show more")}
+              <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-2 text-xs font-medium text-gray-500 hover:text-accent">
+                {expanded ? (lang === "zh" ? "收起" : "Show less") : (lang === "zh" ? "展开" : "Show more")}
               </button>
             ) : null}
           </div>
@@ -81,15 +85,11 @@ function DirectionEvent({ content }: Pick<AgentTaskResultProps, "content">) {
       )}
 
       {!structuredError ? (
-        <div className="mt-1.5 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <div className="mt-2 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
           <button
             type="button"
-            onClick={() => void copyText(text).then((ok) => {
-              if (!ok) return;
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 1200);
-            })}
-            className="text-2xs text-gray-500 transition-colors hover:text-gray-200"
+            onClick={() => void copyText(text).then((ok) => { if (!ok) return; setCopied(true); window.setTimeout(() => setCopied(false), 1200); })}
+            className="rounded-md border border-transparent px-2 py-1 text-xs text-gray-500 hover:border-edge hover:bg-hover hover:text-gray-200"
             aria-label={t("common.copy")}
           >
             {copied ? t("common.copied") : t("common.copy")}
@@ -100,12 +100,6 @@ function DirectionEvent({ content }: Pick<AgentTaskResultProps, "content">) {
   );
 }
 
-/**
- * The durable content primitive of an Agent task.
- * A user contribution is Direction. Agent output is a Work Result backed by
- * real Execution and Evidence artifacts. Streaming output is live Execution
- * that later resolves into the durable Work Result for the same task.
- */
 export const AgentTaskResult = memo(function AgentTaskResult({
   referencedEvidenceIds = [],
   referencedRunIds = [],
@@ -127,35 +121,48 @@ export const AgentTaskResult = memo(function AgentTaskResult({
 
   return (
     <article
-      className="agent-work-result"
+      className="max-w-[46rem] rounded-xl border border-edge bg-panel px-5 py-5 shadow-elev"
       data-testid="work-result"
       data-work-result="true"
       data-streaming={props.streaming ? "true" : "false"}
       data-result-shape={resultShape(props.content)}
       aria-label={label}
     >
-      <AgentResultRenderer
-        content={props.content}
-        toolActivity={props.toolActivity}
-        streaming={props.streaming}
-        sessionId={props.sessionId}
-      />
+      <div className="mb-3 flex items-center gap-2 border-b border-edge pb-3">
+        <span className="grid h-7 w-7 place-items-center rounded-lg bg-accent text-accent-fg">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+        </span>
+        <span className="text-sm font-semibold tracking-tight text-gray-100">{label}</span>
+        {props.streaming ? <span className="ml-auto flex items-center gap-1.5 text-xs text-gray-500"><span className="working-mark" /> Working</span> : null}
+      </div>
+
+      <div className="prose max-w-none">
+        <AgentResultRenderer
+          content={props.content}
+          toolActivity={props.toolActivity}
+          streaming={props.streaming}
+          sessionId={props.sessionId}
+        />
+      </div>
       {figures}
 
       {showArtifacts ? (
-        <nav className="work-result-artifacts" aria-label={lang === "zh" ? "工作产物" : "Work artifacts"} data-testid="work-result-artifacts">
+        <nav className="mt-4 flex flex-wrap gap-2 border-t border-edge pt-4" aria-label={lang === "zh" ? "工作产物" : "Work artifacts"} data-testid="work-result-artifacts">
           {evidenceCount > 0 ? (
-            <button type="button" onClick={() => openAgentReview("evidence")} data-testid="work-result-open-evidence" title={lang === "zh" ? `${evidenceCount} 项 Evidence` : `${evidenceCount} evidence item${evidenceCount === 1 ? "" : "s"}`}>
-              Evidence <span>{evidenceCount}</span>
+            <button type="button" onClick={() => openAgentReview("evidence")} data-testid="work-result-open-evidence" className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-canvas px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-hover hover:text-gray-100">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+              Evidence <span className="rounded-full bg-accent px-1.5 py-0.5 text-2xs font-semibold text-accent-fg">{evidenceCount}</span>
             </button>
           ) : null}
           {executionCount > 0 ? (
-            <button type="button" onClick={() => { if (executionCount === 1) openAgentExecution(referencedRunIds[0]); else openAgentReview("execution"); }} data-testid="work-result-open-execution">
-              Execution <span>{executionCount}</span>
+            <button type="button" onClick={() => { if (executionCount === 1) openAgentExecution(referencedRunIds[0]); else openAgentReview("execution"); }} data-testid="work-result-open-execution" className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-canvas px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-hover hover:text-gray-100">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><polyline points="22 12 18 12 14 8 8 8 4 12 22 12" /><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg>
+              Execution <span className="rounded-full bg-accent px-1.5 py-0.5 text-2xs font-semibold text-accent-fg">{executionCount}</span>
             </button>
           ) : null}
           {hasReport ? (
-            <button type="button" onClick={() => openAgentReview("report")} data-testid="work-result-open-report">
+            <button type="button" onClick={() => openAgentReview("report")} data-testid="work-result-open-report" className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-canvas px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-hover hover:text-gray-100">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
               Report
             </button>
           ) : null}
