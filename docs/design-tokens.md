@@ -1,6 +1,6 @@
 # Design tokens
 
-> **Storage Agent v1.04.0.** Presentation contract. Tokens do not invent
+> **Storage Agent v1.04.1.** Presentation contract. Tokens do not invent
 > runtime state, progress, or capabilities.
 
 v0.98 added `--viz-*` series colors on the v0.97 token system so deterministic

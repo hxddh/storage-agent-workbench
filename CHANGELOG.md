@@ -6,6 +6,15 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.04.1] - 2026-09-01
+
+_Patch for the v1.04 Codex/Cursor rebuild — fixes 6 E2E failures from the new three-pane shell. No new storage tools, no migration (head remains **027**)._
+
+### Fixed
+
+- **E2E: keep nav in DOM for narrow** — `App` now always renders `AgentTaskNavigation` in the DOM (width 0 when collapsed) so `getByTestId` is found at `900px` and `data-collapsed` toggles correctly. Fixes 4 layout/shell E2E.
+- **E2E: allow wide Work Result track** — outer `Work Result` card is now `w-full max-w-[64rem]` (was `max-w-[46rem]`) so `.agent-result-wide` can be `> prose +100` while sharing the left edge. Fixes `data-rich Work Results use a wider track` and `both exchanges survive a reload`.
+
 ## [1.04.0] - 2026-09-01
 
 _Codex/Cursor native rebuild — warm editorial + icon bar + Cursor-like Composer. No new storage tools, no migration (head remains **027**)._

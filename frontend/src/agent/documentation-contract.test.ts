@@ -43,8 +43,8 @@ describe("v1.04 documentation contract", () => {
       const text = readRepo(path);
       expect(text, `${path} must name Agent Task`).toMatch(/Agent Task/);
     }
-    expect(readRepo("docs/README.md")).toContain("v1.04.0");
-    expect(readRepo("CLAUDE.md")).toContain("v1.04.0");
+    expect(readRepo("docs/README.md")).toContain("v1.04.1");
+    expect(readRepo("CLAUDE.md")).toContain("v1.04.1");
     expect(readRepo("docs/product.md")).toContain("Design rules");
     expect(readRepo("docs/design-tokens.md")).toContain("--duration-fast");
     expect(readRepo("docs/design-tokens.md")).toContain("prefers-reduced-motion");
