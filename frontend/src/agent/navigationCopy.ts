@@ -18,7 +18,7 @@ const COPY = {
     tasks: "任务",
     newTask: "新任务",
     noTasks: "还没有任务",
-    noTasksHint: "在 Composer 提问，任务会出现在这里 — 你的持久化只读调查。",
+    noTasksHint: "在 Composer 提问，任务会出现在这里 — 你的持久化只读记录。",
     settings: "设置",
     resize: "调整任务列表宽度",
     collapse: "收起任务列表",

@@ -6,6 +6,15 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.07.0] - 2026-09-01
+
+_Codex 10/10 replica — full teardown. Magazine empty + Ask copy. No migration (head remains **027**)._
+
+### Changed
+
+- **Navigation** magazine empty with CTA.
+- **Copy** `Ask anything — describe…`.
+
 ## [1.06.0] - 2026-09-01
 
 _Full teardown — magazine empty + wide track fix. Codex/Cursor native at 10/10. No migration (head remains **027**)._
