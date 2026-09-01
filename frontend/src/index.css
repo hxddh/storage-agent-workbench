@@ -1,44 +1,17 @@
-/* Tailwind 4: one import replaces the three @tailwind directives. The JS config
- * is loaded explicitly with @config — v4 defaults to CSS-first configuration,
- * and this keeps the product type scale, the gray→CSS-variable remap and the
- * keyframes in the file that already owns them rather than porting them mid
- * upgrade. */
+/* Storage Agent — Codex/Cursor Native Rebuild (v1.04)
+   Warm, editorial, native. One accent voltage, hairline depth,
+   display at weight 400, iOS spring. */
+
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
-/* ---------------------------------------------------------------------------
- * The typeface. Vendored, not linked.
- *
- * Until v0.90.0 this app shipped no font at all: the stack was
- * `-apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, "Segoe UI",
- * Roboto, sans-serif`, so it rendered in San Francisco on a Mac, Segoe UI on
- * Windows and whatever DejaVu-ish face a Linux box happened to have. Three
- * different products wearing one layout: every measurement a designer makes —
- * the reading measure, the row heights, the alignment of a number column —
- * was true on exactly one of them. That is the difference between a program
- * with a UI and an app with a voice, and it is not a thing a palette can fix.
- *
- * Inter for the interface, JetBrains Mono for keys, payloads and code. Both are
- * SIL OFL (licences alongside the files). Variable weight axes, so one file per
- * face covers 100-900 and the app can use real weight for hierarchy instead of
- * fading text out — which is what it was doing.
- *
- * Vendored under src/fonts and referenced by relative URL rather than imported
- * from node_modules: this is a Tauri desktop app that must render identically
- * with no network, and the four latin subsets are 228 KB total. CJK is NOT
- * bundled — Inter has no Han glyphs, and shipping one would add megabytes — so
- * the stack falls through to the platform's own CJK face, which is the right
- * one on each OS.
- * ------------------------------------------------------------------------- */
 @font-face {
   font-family: "Inter Variable";
   font-style: normal;
   font-display: swap;
   font-weight: 100 900;
   src: url("./fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
-    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-    U+2212, U+2215, U+FEFF, U+FFFD;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
   font-family: "Inter Variable";
@@ -46,9 +19,7 @@
   font-display: swap;
   font-weight: 100 900;
   src: url("./fonts/inter-latin-ext-wght-normal.woff2") format("woff2-variations");
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
-    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
-    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
   font-family: "Inter Variable";
@@ -56,107 +27,50 @@
   font-display: swap;
   font-weight: 100 900;
   src: url("./fonts/inter-latin-wght-italic.woff2") format("woff2-variations");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
-    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-    U+2212, U+2215, U+FEFF, U+FFFD;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
   font-family: "JetBrains Mono Variable";
   font-style: normal;
   font-display: swap;
   font-weight: 100 800;
-  /* Optically matched to Inter rather than nominally matched.
-   *
-   * JetBrains Mono has a noticeably larger x-height than Inter, so `bucket-002`
-   * set inline at the same px reads a size larger than the sentence around it —
-   * which is why inline code used to carry a hand-written `0.9em`. Correcting
-   * the FACE instead of every use site means mono and sans agree everywhere,
-   * including in code blocks, and the type scale keeps its rule that there are
-   * no arbitrary font sizes in this codebase. */
   size-adjust: 93%;
   src: url("./fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations");
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
-    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
-    U+2212, U+2215, U+FEFF, U+FFFD;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
-
-/* ---------------------------------------------------------------------------
- * Theming. All surface/accent/neutral colors are CSS variables so the app can
- * switch between dark (default) and light without touching component classes.
- * Tailwind's `gray` ramp is remapped to these vars too (see tailwind.config),
- * so existing text-gray-100..700 usages invert correctly per theme.
- * ------------------------------------------------------------------------- */
 
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  /* Layer separation is measured, not eyeballed: theme.tokens.test.ts holds each
-   * neighbouring pair to dL* >= 2.5 (CIELAB lightness, which is perceptually
-   * uniform — a relative-luminance delta compresses to nothing at the dark end
-   * and would have called this stack fine when it was not).
-   *
-   * The rail used to sit 1.26 dL* from the canvas, which reads as a rendering
-   * artefact rather than a boundary. */
-  /* One hue axis, and enough of a ladder to see.
-   *
-   * Measured on what this replaces: the four surfaces spanned 9.2 L* in total
-   * (canvas 3.1 → elevated 12.3), all four crushed into the darkest eighth of
-   * the range, so "layered" was a claim the pixels did not support. Worse, the
-   * surfaces sat at hue 281-290 while the text ramp sat at 269-271 — two
-   * different greys, pulling opposite ways, which is the un-nameable "cheap"
-   * quality of a screen where nothing is technically wrong.
-   *
-   * Everything neutral is now generated on h=268 with a deliberate L* and a
-   * little chroma, so the greys are a colour rather than an absence of one, and
-   * the ladder spans 12.5 L*. `theme.tokens.test.ts` holds both invariants. */
-  --canvas: #111317;
-  --sidebar: #191c20;
-  --panel: #202327;
-  --elevated: #2a2d33;
-  --hover: #33373e;
-  --edge: #31353b;
-  --edge-strong: #444951;
-  --accent: #6d8bff;
-  --accent-soft: #84acff;
-  --accent-dim: #161a2b;
-  /* The ink that goes ON the accent fill — NOT white here. White on this blue
-   * measures 3.09:1: the app's primary action was the least readable label on
-   * the screen. Darkening the accent until white worked would have cost the one
-   * saturated colour the dark theme has, so the fill keeps its brightness and
-   * carries dark ink instead, the way a light button on a dark UI always has. */
-  --accent-fg: #0b0d10;
-  --viz-1: var(--accent);
-  --viz-2: color-mix(in srgb, var(--accent) 55%, var(--success));
+  /* Warm charcoal — h=32, not 268. The ladder still clears dL* >=2.5 per step
+     (same test, same floor) but it now reads as warm native chrome, not cold
+     technical grey. The accent is now single-voltage orange, not blue. */
+  --canvas: #141210;
+  --sidebar: #1c1a18;
+  --panel: #23211e;
+  --elevated: #2c2a27;
+  --hover: #363330;
+  --edge: #3a3734;
+  --edge-strong: #4a4744;
+  --accent: #ff6b35;
+  --accent-soft: #ff8c5a;
+  --accent-dim: #2a1a12;
+  --accent-fg: #0f0a08;
+  --viz-1: #6d8bff;
+  --viz-2: color-mix(in srgb, var(--accent) 45%, var(--success));
   --viz-3: var(--success);
   --viz-4: var(--warn);
-  --viz-5: color-mix(in srgb, var(--accent) 40%, var(--gray-400));
+  --viz-5: color-mix(in srgb, var(--accent) 35%, var(--gray-400));
   --viz-6: var(--gray-400);
-  /* Neutral INK ramp: 100 = strongest, 500 = faintest text this app may draw.
-   *
-   * Every step is solved to clear WCAG AA body contrast (4.5:1) against the
-   * LIGHTEST surface it can land on (`--hover`), not against the canvas. The
-   * previous ramp was checked against the canvas only, and only to the 3.0 UI
-   * floor — so gray-600 on a hovered rail row measured 2.29:1 and gray-700 in
-   * the tool trace measured 2.22:1, while the token test was green.
-   *
-   * 600 and 700 are GONE rather than repaired. They existed to make text
-   * disappear, and a ramp whose bottom two rungs are unreadable is not a
-   * hierarchy — it is a hierarchy of one readable step and two decorative ones.
-   * Rank now comes from size, weight and space; colour only separates the top
-   * of the ramp from the bottom. */
-  --gray-100: #ebedf2;
-  --gray-200: #d3d6db;
-  --gray-300: #bdc1c6;
-  --gray-400: #abafb4;
-  --gray-500: #9ea1a5;
-  --scrollbar-thumb: #262a33;
-  --scrollbar-thumb-hover: #3a3f4b;
-  --selection: rgba(109, 139, 255, 0.3);
-  --focus-ring: rgba(109, 139, 255, 0.55);
-  /* Semantic status colors. These are TOKENS, not raw palette steps, because a
-   * hardcoded `bg-red-950` is a dark-theme assumption: on a light ground it
-   * renders a near-black slab with pale text on it. Each status owns a surface,
-   * a border and a foreground so both themes can be tuned independently. */
+  --gray-100: #f0ede8;
+  --gray-200: #d6d0c8;
+  --gray-300: #b8b0a6;
+  --gray-400: #b0aaa2;
+  --gray-500: #a8a29a;
+  --scrollbar-thumb: #2e2c2a;
+  --scrollbar-thumb-hover: #3e3c3a;
+  --selection: rgba(255, 107, 53, 0.22);
+  --focus-ring: rgba(255, 107, 53, 0.45);
   --danger: #f87171;
   --danger-bg: rgba(127, 29, 29, 0.22);
   --danger-bg-strong: rgba(69, 10, 10, 0.92);
@@ -168,14 +82,8 @@
   --success: #34d399;
   --success-bg: rgba(6, 78, 59, 0.45);
   --success-border: rgba(6, 95, 70, 0.55);
-  /* Code blocks sit a step BELOW the canvas in dark and above it in light —
-   * a fixed near-black would invert the depth cue on a white page. */
-  --code-bg: #0a0a0c;
-  --scrim: rgba(0, 0, 0, 0.6);
-
-  /* Syntax slots for the built-in highlighter (src/lib/highlight.ts). These are
-   * palette slots, not grammar categories, and every one is measured against
-   * --code-bg for AA body contrast in theme.tokens.test.ts. */
+  --code-bg: #0e0c0a;
+  --scrim: rgba(0, 0, 0, 0.55);
   --syn-str: #7ec699;
   --syn-num: #e0a878;
   --syn-kw: #c39ce8;
@@ -183,19 +91,13 @@
   --syn-name: #86b8ff;
   --syn-tag: #6fc3d6;
   --syn-punct: #9aa2b1;
-
-  /* v0.97 motion language. Duration and easing are tokens so every surface
-   * speaks the same tempo — enter, state change, and streaming append. */
-  --duration-instant: 80ms;
-  --duration-fast: 140ms;
-  --duration-base: 200ms;
-  --duration-slow: 280ms;
-  --ease-out: cubic-bezier(0.21, 0.6, 0.35, 1);
-  --ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-instant: 70ms;
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 240ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
-
-  /* Type scale as CSS variables so hand-written CSS cannot invent a ninth size.
-   * Matches tailwind.config.js. Optical tracking lives on the Tailwind steps. */
   --text-2xs: 0.6875rem;
   --leading-2xs: 1rem;
   --text-xs: 0.75rem;
@@ -203,7 +105,7 @@
   --text-sm: 0.8125rem;
   --leading-sm: 1.375rem;
   --text-prose: 0.9375rem;
-  --leading-prose: 1.75;
+  --leading-prose: 1.8;
   --text-base: 0.875rem;
   --leading-base: 1.5rem;
   --text-lg: 1rem;
@@ -212,7 +114,6 @@
   --leading-xl: 1.625rem;
   --text-2xl: 1.4375rem;
   --leading-2xl: 1.875rem;
-
   --radius-sm: 0.1875rem;
   --radius: 0.25rem;
   --radius-md: 0.375rem;
@@ -220,9 +121,8 @@
   --radius-xl: 0.75rem;
   --radius-2xl: 1rem;
   --radius-3xl: 1.375rem;
-
-  --control-h: 2rem;
-  --header-h: 3.25rem;
+  --control-h: 2.75rem;
+  --header-h: 2.75rem;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -230,56 +130,40 @@
   --space-5: 1.25rem;
   --space-6: 1.5rem;
   --space-8: 2rem;
-
-  --shadow-elev: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 28px -18px rgba(0, 0, 0, 0.7);
-  --shadow-pop: 0 10px 44px -10px rgba(0, 0, 0, 0.7);
-  --shadow-glow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
-  --skeleton-shine: color-mix(in srgb, var(--hover) 80%, var(--gray-100) 8%);
+  --shadow-elev: 0 0 0 1px var(--edge);
+  --shadow-pop: 0 0 0 1px var(--edge-strong), 0 12px 32px -12px rgba(0, 0, 0, 0.45);
+  --shadow-glow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+  --skeleton-shine: color-mix(in srgb, var(--hover) 75%, var(--gray-100) 6%);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  /* The light theme arrived by inverting the FOREGROUNDS and leaving the grounds
-   * near-white, so `--panel` and `--canvas` were both #ffffff: a card had zero
-   * surface distinction from the page behind it and existed only by its 1px
-   * border. The rail was #f7f7f8 on #ffffff — under 3 dL*.
-   *
-   * The reading surface stays the brightest (it is a thread; text wants the
-   * cleanest ground), and everything that is NOT the reading surface steps down
-   * from it. Same dL* >= 2.5 floor as dark, same test. */
-  /* The same h=268 axis as dark, so the two themes are one design rather than
-   * two. Canvas stays the brightest surface and everything steps down from it. */
-  --canvas: #fbfcfe;
-  --sidebar: #ebeef2;
-  --panel: #f2f4f7;
-  --elevated: #e5e8ee;
-  --hover: #d1d5db;
-  --edge: #cbcfd6;
-  --edge-strong: #aeb4bc;
-  --accent: #4f63e0;
-  --accent-soft: #3f52d4;
-  --accent-dim: #eef1fe;
-  /* On a light ground the accent is deep enough to carry white (5.01:1). */
+  --canvas: #fff9f0;
+  --sidebar: #fef0e0;
+  --panel: #fde8d0;
+  --elevated: #fbdcc0;
+  --hover: #f5d0b0;
+  --edge: #e8d5c0;
+  --edge-strong: #d6c2a8;
+  --accent: #c73a00;
+  --accent-soft: #e04500;
+  --accent-dim: #fff1e8;
   --accent-fg: #ffffff;
   --viz-1: var(--accent);
-  --viz-2: color-mix(in srgb, var(--accent) 55%, var(--success));
+  --viz-2: color-mix(in srgb, var(--accent) 45%, var(--success));
   --viz-3: var(--success);
   --viz-4: var(--warn);
-  --viz-5: color-mix(in srgb, var(--accent) 40%, var(--gray-400));
+  --viz-5: color-mix(in srgb, var(--accent) 35%, var(--gray-400));
   --viz-6: var(--gray-400);
-  /* The same ink ramp, solved against light's worst ground (`--hover`). */
-  --gray-100: #24262a;
-  --gray-200: #34363a;
-  --gray-300: #424449;
-  --gray-400: #4e5156;
-  --gray-500: #595b60;
-  --scrollbar-thumb: #d4d4d8;
-  --scrollbar-thumb-hover: #b8b9c0;
-  --selection: rgba(79, 99, 224, 0.22);
-  --focus-ring: rgba(79, 99, 224, 0.55);
-  /* Light-theme status colors: tinted surfaces with DARK foregrounds. Not the
-   * dark values inverted — a wash that reads as "attention" on white needs far
-   * less saturation than one that reads on near-black. */
+  --gray-100: #1a1714;
+  --gray-200: #2e2b28;
+  --gray-300: #3a3632;
+  --gray-400: #4a4744;
+  --gray-500: #5a5754;
+  --scrollbar-thumb: #e0d9cc;
+  --scrollbar-thumb-hover: #c8c0b0;
+  --selection: rgba(245, 78, 0, 0.18);
+  --focus-ring: rgba(245, 78, 0, 0.35);
   --danger: #b91c1c;
   --danger-bg: rgba(254, 226, 226, 0.85);
   --danger-bg-strong: #fee2e2;
@@ -291,11 +175,8 @@
   --success: #047857;
   --success-bg: rgba(209, 250, 229, 0.9);
   --success-border: rgba(52, 211, 153, 0.6);
-  --code-bg: #f6f7f9;
-  --scrim: rgba(24, 24, 27, 0.42);
-
-  /* Darkened, not inverted: the same slot ordering, re-picked against a light
-   * code slab so hue meaning survives the theme switch. */
+  --code-bg: #fdfbf7;
+  --scrim: rgba(26, 23, 20, 0.32);
   --syn-str: #0f7a4d;
   --syn-num: #9a5b00;
   --syn-kw: #7c3aed;
@@ -303,11 +184,10 @@
   --syn-name: #1d4ed8;
   --syn-tag: #0e7490;
   --syn-punct: #52586a;
-
-  --shadow-elev: 0 1px 2px rgba(24, 24, 27, 0.06), 0 8px 24px -16px rgba(24, 24, 27, 0.16);
-  --shadow-pop: 0 12px 40px -14px rgba(24, 24, 27, 0.22);
-  --shadow-glow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
-  --skeleton-shine: color-mix(in srgb, var(--hover) 55%, white);
+  --shadow-elev: 0 0 0 1px var(--edge);
+  --shadow-pop: 0 0 0 1px var(--edge-strong), 0 12px 32px -12px rgba(26, 23, 20, 0.14);
+  --shadow-glow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  --skeleton-shine: color-mix(in srgb, var(--hover) 60%, white);
 }
 
 html,
@@ -318,34 +198,21 @@ body,
 }
 
 body {
-  font-family: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
-    sans-serif;
-  /* Inter's defaults are drawn for display sizes. `cv05` gives the lowercase l
-   * a tail so it stops reading as a capital I in a bucket name, `ss03` fixes the
-   * ampersand, and `cv11` opens the single-storey a — all three matter more here
-   * than in prose, because half the words on this screen are identifiers.
-   * `tnum` is NOT global: proportional figures are correct in a sentence; the
-   * data surfaces opt into tabular ones themselves. */
+  font-family: "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
   font-feature-settings: "cv05" 1, "cv11" 1, "ss03" 1;
   font-optical-sizing: auto;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-  letter-spacing: -0.006em;
+  letter-spacing: -0.011em;
   background-color: var(--canvas);
   color: var(--gray-100);
 }
 
-/* Selection */
 ::selection {
   background: var(--selection);
 }
 
-/* Thin, unobtrusive scrollbars (the polished-app tell). */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
@@ -368,79 +235,31 @@ body {
   background-clip: content-box;
 }
 
-/* Visible keyboard focus only (not on mouse click).
- *
- * The ring FOLLOWS the element's own corner radius (v0.61.0). It used to force
- * `border-radius: 0.5rem` on everything it touched, which is right for exactly
- * one shape: a `rounded-lg` control. Measured across the focusable elements,
- * 24 of them are a different shape — 10 `rounded-full` pills and dot buttons,
- * 8 `rounded-md`, 6 `rounded` — so a keyboard user tabbing through the rail or
- * the composer saw an 8px-cornered box drawn around a fully round button, on
- * every stop.
- *
- * The fix is to declare NO radius here at all. `box-shadow` is already drawn
- * following the element's own `border-radius`, so removing the override is
- * exactly what makes the ring follow the shape — a round button gets a round
- * ring, a square one gets square corners.
- *
- * `border-radius: inherit` would NOT work and was tried first: `inherit` takes
- * the PARENT's radius, not the element's, and this rule's specificity (0,1,0)
- * ties Tailwind's `.rounded-*` utilities while coming later in source order, so
- * it would have overridden each element's real radius with its container's. */
-/* The opt-out is an ATTRIBUTE, not a utility class, because a utility cannot win
- * here. This rule is unlayered and Tailwind v4 emits its utilities inside
- * `@layer utilities` — unlayered CSS beats layered CSS regardless of
- * specificity, so `focus-visible:shadow-none` on an element is silently inert.
- * (Measured: the composer's textarea carried exactly that class and still
- * computed `box-shadow: … 0 0 0 2px, … 0 0 0 4px` while its own border-radius
- * was 0, which is why a square ring appeared inside a 22px pill.)
- *
- * Moving this rule into `@layer base` would restore the normal precedence for
- * the whole app, and would also let any element with a `shadow-*` utility
- * silently delete its own focus ring — trading a visual nit for an
- * accessibility hole. An explicit, greppable opt-out is the smaller change:
- * only an element whose focus is already shown by an ancestor may take it. */
 :focus-visible:not([data-focus-ring="container"]) {
   outline: none;
-  box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--focus-ring);
+  box-shadow: 0 0 0 1.5px var(--canvas), 0 0 0 3.5px var(--focus-ring);
 }
 
-/* The bullet is drawn, not written.
- *
- * A `\u2022` in the markup lands in the text layer, so copying a list out of a
- * Work Result yields a column of dots interleaved with the words, and every
- * test that reads an item's textContent sees the marker too. Rendering it from
- * CSS keeps the list copyable as a list.
- */
 .marker-dot::before {
   content: "\2022";
 }
 
-/* What find marks.
- *
- * The CSS Custom Highlight API paints over ranges without touching the DOM, so
- * searching a streaming Work Result cannot disturb the task document layout or
- * its scroll maths. Both entries are needed: one for every match, one for the
- * one you are standing on, or stepping through twenty-nine identical marks
- * tells you nothing about where you are.
- */
 ::highlight(saw-find) {
-  background-color: rgba(109, 139, 255, 0.28);
+  background-color: rgba(245, 78, 0, 0.18);
   color: inherit;
 }
 ::highlight(saw-find-active) {
-  background-color: rgba(109, 139, 255, 0.75);
-  color: #0b0d10;
+  background-color: rgba(245, 78, 0, 0.85);
+  color: #fffdf9;
 }
 :root[data-theme="light"] ::highlight(saw-find) {
-  background-color: rgba(109, 139, 255, 0.3);
+  background-color: rgba(245, 78, 0, 0.14);
 }
 :root[data-theme="light"] ::highlight(saw-find-active) {
-  background-color: rgba(76, 108, 240, 0.85);
+  background-color: rgba(245, 78, 0, 0.85);
   color: #ffffff;
 }
 
-/* Keyboard keycaps. One shape, used in the palette and shortcuts sheet. */
 kbd {
   font-family: "JetBrains Mono Variable", ui-monospace, monospace;
   font-size: var(--text-2xs);
@@ -449,11 +268,10 @@ kbd {
 }
 
 @keyframes agent-native-pulse {
-  0%, 100% { opacity: .45; transform: scale(.82); }
+  0%, 100% { opacity: .45; transform: scale(.85); }
   50% { opacity: 1; transform: scale(1); }
 }
 
-/* Loading is a skeleton, never a spinner. Streaming work uses the pulse mark. */
 @keyframes token-shimmer {
   0% { background-position: 100% 0; }
   100% { background-position: -100% 0; }
@@ -462,12 +280,7 @@ kbd {
 .skeleton {
   display: block;
   border-radius: var(--radius-md);
-  background: linear-gradient(
-    90deg,
-    var(--elevated) 0%,
-    var(--skeleton-shine) 46%,
-    var(--elevated) 100%
-  );
+  background: linear-gradient(90deg, var(--elevated) 0%, var(--skeleton-shine) 46%, var(--elevated) 100%);
   background-size: 220% 100%;
   animation: token-shimmer 1.35s var(--ease-in-out) infinite;
 }
@@ -478,7 +291,7 @@ kbd {
   height: 0.5rem;
   flex: none;
   border-radius: 999px;
-  background: var(--warn);
+  background: var(--accent);
   animation: agent-native-pulse 1.6s var(--ease-in-out) infinite;
 }
 
@@ -501,6 +314,7 @@ kbd {
   color: var(--gray-300);
   font-size: var(--text-xs);
   font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 .empty-state p {
@@ -508,10 +322,9 @@ kbd {
   max-width: 22rem;
   color: var(--gray-500);
   font-size: var(--text-xs);
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
-/* Composer mode enter: Delegate and Steer+Stop swap by remount, never stacked. */
 .composer-mode {
   display: flex;
   align-items: center;
@@ -519,19 +332,18 @@ kbd {
   animation: composer-mode-in var(--duration-fast) var(--ease-out);
 }
 @keyframes composer-mode-in {
-  from { opacity: 0; transform: translateY(2px) scale(0.98); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .agent-review-panel {
-  animation: agent-review-in var(--duration-slow) var(--ease-out);
+  animation: agent-review-in var(--duration-base) var(--ease-out);
 }
 @keyframes agent-review-in {
-  from { opacity: 0; transform: translateX(10px); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
 }
 
-/* Respect reduced-motion. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
