@@ -11,7 +11,7 @@
 
 ## 1. Verdict on v1.11.0 — what still is not native
 
-v1.11.0 made the *transcript* read like Codex. What remains is underneath it:
+v1.11.0 made the *transcript* of an Agent Task read like Codex. What remains is underneath it:
 the runtime still has two protocols, the live path polls, the model cannot
 say what it intends to do, the confirmation boundary is a single tool with
 no policy behind it, and a full context window ends a turn instead of
