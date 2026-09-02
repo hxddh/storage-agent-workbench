@@ -1,154 +1,177 @@
 # Roadmap
 
-> **Status: delivered in v1.11.0** (R1–R6 below; see `releases/1.11.0.md` and the
-> CHANGELOG). Kept as the record of what was found on v1.10.0 and why each
-> piece was rebuilt. The next plan starts from v1.11.0.
+> **Baseline: Storage Agent v1.11.0.** This file is the plan for
+> **v1.12.0 — Native all the way through**: one runtime protocol, a push
+> transport, a plan the model owns, an approval policy the runtime enforces,
+> context that compacts instead of cutting off, and an Execution detail that
+> reads from the same durable log as everything else. Every finding below was
+> checked against the code on `main` at v1.11.0 (merge `9d73c16`) and carries
+> a verdict: **keep**, **rebuild**, **new**, or **non-goal**. The v1.11.0
+> plan this file replaces is recorded in `releases/1.11.0.md`.
 
-> **Baseline: Storage Agent v1.10.0.** This file is the plan for
-> **v1.11.0 — Codex parity all the way down**: the turn model, approvals, the
-> Task document, the Composer, the sidebar, the artifacts panel and the runtime
-> core are rebuilt to Codex's shape. It is not a backlog of old UI concepts and
-> it is not proof that an aspirational capability already exists. Every finding
-> below was checked against the code and the visual-review captures on `main`
-> at v1.10.0; every item carries a verdict: **keep**, **rebuild**, **new**, or
-> **non-goal**.
+## 1. Verdict on v1.11.0 — what still is not native
 
-## 1. Verdict on v1.10.0 — why it still does not read as an agent
+v1.11.0 made the *transcript* read like Codex. What remains is underneath it:
+the runtime still has two protocols, the live path polls, the model cannot
+say what it intends to do, the confirmation boundary is a single tool with
+no policy behind it, and a full context window ends a turn instead of
+compacting it.
 
-v1.09 rebuilt the window and v1.10 made the shell native, but the **turn**
-— what the user actually reads — is still the v0.2x chat contract wearing new
-CSS. The audit found seven structural defects, not cosmetic ones.
-
-| # | Finding (verified on `main`) | Consequence the user sees | Verdict |
+| # | Finding (verified in code) | Where | Verdict |
 | --- | --- | --- | --- |
-| 1 | The runtime streams **one text buffer** per turn. Everything the model says between tool calls ("I'll check the bucket policy next…") is concatenated into the same buffer as the final answer (`session_agent.stream_events_for`, `raw_acc`). There is no notion of an assistant *message* between two actions. | The Work Result is one long blob: commentary, half-sentences written before a probe, and the conclusion all run together. Live, the document shows a spinner row (*The Agent is working on this task*) until the whole buffer starts, then dumps text. | **rebuild** |
-| 2 | The model must end every answer with a **```json contract block** (`skills_used`, `evidence_used`, `evidence_gaps`, `next_action_proposals`) which a sanitizer holds back from the stream. | Truncated fences leak on stop; the model spends output on bookkeeping; a mis-parsed block silently blanks the persisted answer (`finalize_answer_text`). Nothing Codex-like exists here: Codex records actions, it does not ask the model to summarise them. | **remove** |
-| 3 | **Decision required is raised from *suggestions*.** Any `next_action_proposal` whose type is in `DECISION_GATED_ACTION_TYPES` becomes a blocking pending Decision with Approve / Decline (`store.open_decisions_from_proposals`), the task flips to *Needs decision* and the sidebar paints a yellow mark — even though the Agent only *mentioned* that importing logs would help. | The "莫名其妙的 Decision required": a card demanding a decision about work nobody asked for, after the answer is already complete. Codex asks for permission only when the agent is *about to run* a gated action, inline, and continues the same run after Allow. | **rebuild** |
-| 4 | Approval is **two-step**: Approve opens `EvidenceImportDialog` (plan → confirm → execute) as a second modal. | Two confirmations for one action; the run that raised it is long finished. | **rebuild** |
-| 5 | The document is Direction-as-grey-block, then a page. User text is a full-width panel bubble with copy chrome; the answer is markdown with a *Report* chip row, a 64rem data track, tables that **fade out** with a *Show chart* toggle, and an Execution footer. | Nothing reads as a transcript of work. Wide tables are cut with a gradient; the reader cannot tell what was an action, what was a thought, and what is the conclusion. | **rebuild** |
-| 6 | Review is a **sheet with three surfaces** (Evidence · Execution · Report) opened from chips. Execution detail is reachable only through a referenced run. | Artifacts are hidden behind chips; the equivalent of Codex's always-available Changes panel does not exist. | **rebuild** |
-| 7 | `session_agent.py` is still a **2,677-line monolith** (prompt, loop, stream sanitizer, contract parser, steer queue, usage, guards, finalize). Deferred in v1.10. | Every one of the changes above touches it; it cannot be reviewed as a whole. | **rebuild (split, mandatory)** |
+| F1 | **Two runtime protocols.** The pre-v0.94 message API still ships beside the durable runtime: `POST /sessions/{id}/messages` blocks up to 150 s on `wait_for_completion`, `POST …/messages/stream` re-speaks the durable log in the legacy `delta / tool / done / error` vocabulary (`event_stream.legacy_frames`), `POST …/turns/{id}/cancel` and `GET …/turn` are a second cancel/status path, `POST …/actions/prepare` + `sessions/next_actions.py` (320 lines) prepare proposals that no longer exist, and `proposed_actions` is projected as an always-empty list. The frontend still carries `cancelSessionTurn`, `getSessionTurn` and four `/evidence-imports` clients with no UI behind them. | `routers/sessions.py`, `task_runtime/event_stream.py`, `sessions/next_actions.py`, `frontend/src/api.ts`, `useTurnRunnerImplementation.ts` | **rebuild** — one protocol |
+| F2 | **The live path polls.** `execution_frames` sleeps 120 ms and re-queries SQLite per subscriber; the hub's `Condition` is notified on every event and awaited by no one. The client re-polls `/agent-tasks/{id}/state` every 1–1.5 s for the whole run to notice queued Directions and approvals it already receives as events. | `event_stream.py` (`_POLL_S`), `hub.py`, `useSessionDocument.ts` (`tick`) | **rebuild** — push |
+| F3 | **The model cannot state a plan.** Codex's `update_plan` gives a multi-step investigation a live checklist the runtime owns. Our Agent has no plan tool, so a ten-tool turn is commentary sentences and one folded group. CLAUDE.md forbids *synthetic* plans; a plan the runtime records from a tool call is real runtime state. | `agent_runtime/session_tools.py` (no plan tool), transcript | **new** |
+| F4 | **"Worked for" is not wall-clock.** The group label sums `duration_ms` of its rows; parallel calls under-count, a seeded group reads "Worked for 0ms". Codex shows elapsed time of the work. | `WorkedGroup.tsx` (`sum += item.duration_ms`) | **rebuild** |
+| F5 | **One gate, no policy.** `import_evidence` is the only tool that asks; "Allow for this task" is the only scope; Settings → Safety is a paragraph. `survey_account(max_buckets≤500)` is a materially large live scan with no boundary, which security §7 says must cross one. Codex has an approval policy the runtime enforces. | `gated_tools.py`, `runtime.request_approval`, `session_action_tools.py`, `SettingsDialog.tsx` | **new** + **rebuild** |
+| F6 | **A full window cuts the turn.** Tool outputs are compacted step by step, but the conversation never is: on overflow the turn ends with `_CONTEXT_CUT_MARKER` and asks the user to continue. The context meter reports the fill; nothing acts on it. Codex auto-compacts and continues. | `finalize.py`, `guards._compact_consumed_outputs`, `stream.py`, `ContextMeter.tsx` | **new** |
+| F7 | **Execution detail is the v0.5x run page under a new header.** `ExecutionDetailImplementation` (325 lines) opens its own `EventSource` on `/runs/{id}/events` — a third stream vocabulary — and reads `tool_calls` through the run API rather than the execution's durable event log. | `components/ExecutionDetailImplementation.tsx`, `/runs` router | **rebuild** |
+| F8 | **The document still carries everything.** `AgentTaskImplementation.tsx` (673 lines) owns composer state, find, banners, approvals, paging and palette publication; the runner (651 lines) keeps the legacy cancel branch; `api.ts` (942 lines) mixes the runtime client with retired clients. | `frontend/src/components`, `hooks`, `api.ts` | **rebuild** — split |
+| F9 | **No project instructions.** Codex reads `AGENTS.md`; the Agent has user skills (`STORAGE_AGENT_DATA_DIR/skills`) but no standing instructions file a user can keep next to their data (naming conventions, buckets in scope, reporting language). | `prompt.py`, `skills/` | **new** |
+| F10 | **Reasoning summaries.** Codex shows the provider's reasoning *summary* above the work. Security rule 10 keeps chain-of-thought out of persistence and out of the UI; a provider-authored summary is still model reasoning text. | `security.md` §10 | **non-goal** (stays) |
 
-Smaller findings folded into the workstreams: the sidebar has no day grouping;
-the empty start greeting is static; there is no elapsed timer while working;
-Chinese copy still carries English tokens (`Decision required`, `Steer`);
-the Report chip and Evidence chip count durable rows nobody asked to count;
-`ExecutionMetrics` (tokens, duration) is a footer nobody reads; the window
-does not remember its size; the updater is inert.
+Everything else from v1.11.0 — the transcript turn, inline approvals, the
+Artifacts panel, day groups, titles, reasoning effort, the OS shell — is
+**keep**.
 
-**Keep:** tokens, window composition, the OS shell bridge (v1.10), runtime
-task titles, reasoning effort, provider panes, durable execution runtime
-(`task_executions` / `execution_events` / Steer / Stop / Resume / queue),
-read-only tool floor, vault, redaction, CI gates.
+## 2. Codex parity checklist — what v1.12.0 must close
 
-## 2. Codex detail checklist
+| Codex | Storage Agent v1.11.0 | v1.12.0 |
+| --- | --- | --- |
+| One protocol between app and runtime | durable runtime + three legacy shims | durable runtime only |
+| Server pushes events | 120 ms SQLite poll per subscriber + 1.5 s client poll | hub-driven SSE, no client poll while following |
+| `update_plan` → live checklist | none | `update_plan` tool, `plan.updated` event, checklist in the turn |
+| Elapsed "Worked for 1m 12s" | sum of call durations | wall-clock from first row to last |
+| Approval policy (ask / on-request / never), enforced by the runtime | per-task grant only | Safety → approval policy, server-side, applies to every gated tool |
+| Large operations ask | `survey_account` up to 500 buckets unasked | over-cap survey is a gated call |
+| Auto-compaction when the window fills | turn cut short | summarise-and-continue, `context.compacted` marker |
+| `/compact`, `/status` | context meter only | palette: Compact context; meter shows compaction |
+| Detail of a tool call from the same log | second stream on `/runs` | execution detail from `execution_events` + `tool_calls` |
+| AGENTS.md | user skills only | `AGENTS.md` in the data directory, bounded, in the stable prompt half |
+| Reasoning summary | not shown | not shown (rule 10) |
 
-Every row is a visible detail. "Codex" is the shape of the Codex desktop app;
-"target" is what v1.11.0 ships. Rows marked non-goal stay out because they
-would weaken the read-only floor or need a capability the runtime does not have.
+## 3. Workstreams (all mandatory for v1.12.0)
 
-| Element | Codex | v1.10.0 now | v1.11.0 target |
-| --- | --- | --- | --- |
-| Sidebar list | Threads grouped by recency (Today · Yesterday · Previous 7 days · Older), quiet rows, ⋯ on hover | One flat list, relative time on hover | Day groups; ⋯ on hover; state mark; runtime titles |
-| New thread | Top of sidebar + ⌘N | Same | keep |
-| Search | ⌘K palette | Same | keep |
-| Archive | Archive from ⋯ | Delete only | non-goal (Delete stays) |
-| Empty start | Greeting + composer centred | Same | Greeting rotates (3 lines); composer identical to in-task composer |
-| Composer frame | Rounded panel, textarea, bottom row: `+`, model · effort, mode, send | Same minus mode | keep; add a fixed **Read-only** label where Codex shows the mode (never a switch) |
-| Send / newline / stop | Enter · Shift+Enter · Esc | Enter · Shift+Enter · ⌘. | Esc stops when the Composer is empty; ⌘. stays |
-| User turn | Compact bubble, right-aligned, ~70% max width, no chrome | Full-width grey block with copy button | Right-aligned bubble; copy on hover only |
-| Agent turn | Plain markdown in the reading column, no bubble, no card | Same but polluted (finding 1) | Segments: commentary · worked group · approval · answer |
-| Commentary between actions | Short assistant text before each action group | Merged into the answer | Own segment, muted ink, streamed as it arrives |
-| Working indicator | Shimmer + elapsed timer ("Working · 12s") | Static sentence | Shimmer + live elapsed timer; first token replaces it |
-| Worked for group | "Worked for 1m 12s" chevron row; collapsed after completion; rows are actions with a one-line result | Same but always expanded; no live elapsed | Collapsed when done, expanded live; live elapsed; row = glyph · tool · target · result |
-| Action row detail | Click a row → the call's input/output inline | Same (`CallDetail`) | keep |
-| Thinking summaries | Rendered | Never (security §6.10) | non-goal |
-| Approval prompt | Inline card in the turn: "Codex wants to run …" · Allow / Deny (+ Allow for session); the run waits, then continues | Post-hoc Decision card from a suggestion; second dialog | Inline **Approval** raised by a gated tool call; Allow / Allow for this task / Deny; run continues in place; plan preview inside the card |
-| Plan mode | Toggle; plan card with steps | None | non-goal (runtime emits no plan) |
-| Changes panel | Right split panel: file list + diff, stays open | Sheet with three surfaces | **Artifacts** panel: right split, stays open, lists Evidence · Reports · Plans · Baselines with a viewer; ⌘I toggles |
-| Review button | Per turn | Chips per Work Result | One **Open artifacts** affordance per turn only when the turn wrote one |
-| Diff viewer | Yes | — | Report/plan viewer (markdown); Drift = before/after table |
-| Thread title | Generated after first turn | Same (v1.10) | keep |
-| Model picker | model · effort popover | Same (v1.10) | keep |
-| Context meter | Small % under the composer | Footer metrics per result | One quiet meter under the Composer (tokens used of window); result footer removed |
-| Notifications | On settle when unfocused | Same (v1.10) | keep; clicking opens the task (deep link from the notification) |
-| Menu bar, deep links, summon | Yes | Same (v1.10) | keep; window size/position remembered |
-| Automations | Scheduled runs UI | Engine only | non-goal (UI) |
-| Skills / MCP | Settings actions | Same (v1.10) | keep |
-| Chinese | — | Partial (`Decision required`, `Steer` in zh chrome) | Full parity, one copy table per surface |
+### W1 — One protocol (F1)
 
-## 3. v1.11.0 workstreams (all mandatory)
+- Remove `POST /sessions/{id}/messages`, `POST …/messages/stream`,
+  `POST …/turns/{id}/cancel`, `GET …/turn`, `POST …/actions/prepare`,
+  `event_stream.legacy_frames`, `_turn_result_envelope`, `sessions/next_actions.py`,
+  `turn_guard`'s HTTP-turn registry where only the shims used it, and the
+  `proposed_actions` field from `SessionMessage` / `work_results.proposals`
+  (column stays; migration 030 is not needed — nothing is written).
+- `/sessions` keeps CRUD, read, fork, memory, runs linkage, activity/audit/overview,
+  report, datasets. Every write that starts work goes through `/agent-tasks`.
+- Frontend: delete `cancelSessionTurn`, `getSessionTurn`, the `/evidence-imports`
+  clients, `SessionTurnState`; the runner has one cancel path (`stopTaskExecution`).
+- Tests: the ~40 Sidecar tests that drive turns through `/sessions/{id}/messages`
+  move to `POST /agent-tasks/{id}/executions` + `wait`; `test_streamed_loop_regression`,
+  `test_v063_*`, `test_session_streaming` follow the durable stream.
 
-Each lands as one PR from `main` with code, tests, and docs together
-(CLAUDE.md §11). Order is dependency order: the runtime turn model first,
-everything visible after it. **Migration 029** (turn items) is expected; head
-moves from 028 to 029.
+### W2 — Push transport (F2)
 
-### R1 — Runtime turn model and the `session_agent.py` split
+- `hub`: one `asyncio.Condition` per execution (bridged from the worker thread
+  with `loop.call_soon_threadsafe`); `execution_frames` awaits it with a
+  bounded timeout (heartbeat) instead of `sleep(0.12)`; a wake drains the
+  ordered snapshot exactly as today.
+- New durable event `task.status` `{status, active_execution_id, queued: [...],
+  pending_decisions: [...]}` appended whenever `refresh_task_status` changes
+  something, so the client following an execution learns about queued
+  Directions and approvals from the stream and stops polling `/state`.
+- `useSessionDocument`: `tick` only on attach, on visibility change, and on
+  `end`; never on an interval while a follower is open.
+- Contract test: a 20 s follow of an idle execution issues zero SQLite reads
+  after the first drain (count via a connection trace hook).
 
-- Split `session_agent.py` into `agent_runtime/{prompt,loop,stream,steer,usage,guards,finalize}.py`. `session_agent` keeps only the public seams the tests patch (`SESSION_LOOP`, `_streamed_session_loop`, `answer`, `build_stream`, `stream_events_for`) as re-exports. Tests unchanged.
-- Replace the single text buffer with **turn items**: `message` (assistant text segment, closed when the model emits a tool call or finishes), `tool` (started/completed), `approval` (opened/resolved), `answer` (the final segment). Each item is appended to `execution_events` (`message.delta`, `message.completed`, `approval.opened`, …) and persisted as rows in `turn_items` (migration 029) so a reload reproduces the segments exactly.
-- Delete the ```json contract block. `skills_used`, `evidence_used` and `evidence_gaps` are derived from the tool log (`read_skill`, evidence tools, `note_open_question`); `next_action_proposals` is removed. The contract parser, the hold-back sanitizer and `finalize_answer_text` go with it; the stream sanitizer keeps only CoT stripping and redaction.
-- The prompt loses every line about proposals and the JSON block; it gains one line: write short commentary before an action when it helps the reader, and a complete answer at the end.
+### W3 — Plan the model owns (F3)
 
-### R2 — Approvals replace Decisions
+- Tool `update_plan(steps: [{text, status}])` in CORE, bounded (≤ 12 steps,
+  ≤ 160 chars each, sanitized, statuses `pending | in_progress | completed`);
+  the whole list is replaced on each call (Codex semantics).
+- Runtime: `plan.updated` durable event with the full list; the latest plan is
+  persisted as a `{"kind": "plan"}` turn item so a reload reproduces it.
+- Transcript: a quiet checklist card at the position of the first
+  `update_plan` in the turn, updated in place (no new card per call), collapsed
+  once every step is completed; live it shows the in-progress step's caret.
+- Prompt: one sentence — use `update_plan` for work that needs three or more
+  distinct steps; keep it current; never plan trivial work.
+- Non-goal stays: the UI never invents steps; a plan exists only when the tool
+  was called.
 
-- A gated tool (`plan_evidence_import`, `generate_session_report`, a full-scan listing over the bound) does not return a proposal; it **raises an approval**: the execution goes `waiting`, `approval.opened {tool, args, impact}` is logged, and the model loop is parked on the tool call.
-- The Task shows the approval **inline in the turn** where it happened: "Storage Agent wants to download access logs from `acme-logs/logs/2026/` (312 files · 1.8 GiB)" with **Allow**, **Allow for this task**, **Deny**. Allow resumes the same execution with the tool's real result (the import runs under the existing bounded planner); Deny returns a structured refusal to the model, which finishes its answer. The second dialog is deleted (`EvidenceImportDialog` becomes the plan preview inside the card).
-- `task_decisions` stays as the durable record (column `kind = 'approval'`); `DECISION_GATED_ACTION_TYPES`, `sessions/next_actions.py`, `nextActionFromDecision` and the *Needs decision* sidebar state are removed. A waiting approval is *Working · waiting for you* in the title bar, not a task state of its own.
-- Revisits and Verify still never auto-approve: a gated call inside them opens the same inline approval and the execution waits.
+### W4 — Approval policy and the scan boundary (F5)
 
-### R3 — The Task document as a turn transcript
+- Setting `approval_policy` in `app_settings` (`ask` default · `allow_session`
+  · `allow_always`), exposed on `/settings`, enforced only in
+  `runtime.request_approval`: `allow_session` records an already-approved
+  Decision for the process lifetime, `allow_always` for the data directory;
+  `ask` is today's behaviour. Settings → Safety becomes a native pane: the
+  policy control, the read-only floor statement, and the list of gated tools.
+- `survey_account`: the default cap stays autonomous; a call with
+  `max_buckets` above the default (or a truncated prior survey asking for the
+  rest) goes through `request_approval` with impact `{buckets, provider,
+  estimated_calls}` — the same card, `action_type = survey_account_large`.
+- Approval card shows which policy is in force when it was auto-approved
+  (`approval.granted` gains `policy`).
+- Security §7/§8 rewritten around the policy; the floor is unchanged (no
+  policy can approve a tool that does not exist).
 
-- One `Turn` renderer replaces `AgentTaskResult`, `AgentResultRenderer`, `AgentDecisionCard`, `AgentRuntimeArtifacts` and the live branch of `AgentTaskImplementation`: user bubble → segments (commentary · worked group · approval · answer) → artifact rows. Live and durable turns are the same component fed by the same items.
-- User turn: right-aligned bubble, ≤ 70% width, copy on hover. Agent turn: reading column, 15px/1.6, markdown with headings, code blocks with copy, full-width tables that **scroll** (no fade, no chart toggle). Deterministic figures (cost, drift) render only as artifacts a tool wrote.
-- Worked group: collapsed after completion, expanded live, live elapsed time, rows `✓ head_bucket acme-logs → 200 · 40ms`; a failed row never folds. Artifact rows inside the group: `Wrote report …`, `Imported 312 files …`.
-- Working: shimmer + elapsed timer; the first commentary token replaces it. Queued Directions show as pending bubbles with a *Queued* tag and a cancel. Stop leaves a *Stopped* tag on the last segment.
-- Remove `resultShape`, the 64rem data track, `ExecutionMetrics` footer, the Report / Evidence / Execution chip row, `native-decision*` CSS.
+### W5 — Context compaction (F6)
 
-### R4 — Artifacts panel replaces the Review sheet
+- When the reported usage of the last model call crosses 80 % of
+  `model_budget.context_window`, the runtime runs one tool-less **compaction
+  step** (`agent_runtime/compaction.py`): summarise the replayed messages and
+  tool trace into a bounded, redacted `context_summary` (≤ 2 000 chars), store
+  it on the task (`task_context_versions` gains `summary`), append
+  `context.compacted {before_tokens, after_tokens}`, and continue the same
+  execution with the summary in place of the older replay. Never a second
+  Agent, never persisted raw rows, never chain-of-thought.
+- The overflow fallback (`_CONTEXT_CUT_MARKER`) stays as the last resort only.
+- Transcript: a one-line marker "Context compacted · 48k → 9k tokens" between
+  segments; the context meter drops accordingly. Palette: **Compact context**
+  (⌘K) runs the same step on demand for a task with no live execution.
 
-- A right split panel (resizable, remembered), toggled by ⌘I or the turn's *Open artifacts* affordance, that **stays open** while the user keeps working: Evidence (imports, uploads), Reports, Remediation Plans, Baselines / Drift, Execution log. Selecting an item opens a viewer in the panel (markdown for reports and plans, a table for drift, `CallDetail` for a tool call).
-- `AgentReviewPanel`, `EvidenceReview`, `ExecutionReview`, `ReportArtifact`, `ExecutionDetailImplementation`, the `agent-review-overlay` CSS and the `review.open/close` commands are replaced by `ArtifactsPanel` + `artifacts.open(kind, id)`.
+### W6 — Execution detail and frontend split (F4, F7, F8)
 
-### R5 — Composer, sidebar and chrome details
+- `ExecutionDetailImplementation` rewritten on the durable runtime: header
+  from `task_executions`, rows from `execution_events` (`tool.*`, `plan.updated`,
+  `approval.*`, `context.compacted`) joined to `tool_calls` for input/output,
+  findings and result from the Work Result — no `EventSource`, no `/runs` API
+  in the product UI. `/runs` stays as the deterministic engine API.
+- "Worked for" = wall-clock of the group (first `tool.started` → last
+  `tool.completed`, live from `started_at`), durable rows carry the same.
+- Split: `AgentTaskImplementation` → `TaskDocument` (transcript + paging + find),
+  `TaskBanners`, `TaskComposerHost` (composer state, attach, steer/stop wiring),
+  `useApprovals`; the runner loses its legacy branch; `api.ts` → `api/runtime.ts`,
+  `api/tasks.ts`, `api/settings.ts`, `api/providers.ts`. Orphan and architecture
+  contracts updated.
 
-- Sidebar day groups (Today · Yesterday · Previous 7 days · Older), ⋯ on hover, no yellow *Needs decision* mark (an approval is a Working task).
-- Composer: fixed **Read-only** label beside the model chip (never a switch), Esc stops when empty, context meter under the Composer replaces the result footer.
-- Empty start greeting rotates; still no cards, no wizard.
-- Window size/position remembered; About dialog from the menu; notification click deep-links to the task; updater wired the day a signing key exists (documented, still inert).
-- Chinese: one copy table per surface, no English tokens in zh chrome, E2E `zh.spec` extended to the turn transcript and the approval card.
+### W7 — Instructions file, contracts, release (F9)
 
-### R6 — Contracts, docs, release
+- `STORAGE_AGENT_DATA_DIR/AGENTS.md` (and `STORAGE_AGENT_INSTRUCTIONS` override):
+  Markdown only, ≤ 8 000 chars, redacted, never executed, injected in the
+  stable prompt half after the skills catalog; `GET /settings/instructions`
+  reports whether one is loaded; Settings → Skills & bridges gains **Open
+  instructions file**.
+- Contracts: Sidecar `test_v112_native_protocol.py` (no shim routes, push
+  transport, plan tool + event, policy enforcement, over-cap survey gate,
+  compaction step, execution detail projection); frontend architecture v1.12
+  block; E2E: plan checklist, policy pane, compaction marker, execution detail
+  from the durable log; gallery captures for each.
+- Docs: `api.md` (removed routes, new events), `security.md` (§7/§8 policy),
+  `tools.md` (`update_plan`, gated survey), `data-model.md` (`app_settings`
+  key, `task_context_versions.summary`), `product.md`, CLAUDE.md, CHANGELOG,
+  `releases/1.12.0.md`.
 
-- `architecture.test.ts` rewritten for the v1.11 file set (turn renderer, artifacts panel, no proposals, no review sheet, no contract parser, runtime modules); `legacy-ui-contracts.test.ts` rejects `Decision required`, `next_action`, `agent-review-overlay`, `resultShape`; `orphan-modules.test.ts` stays.
-- E2E: every spec that drives the document (17 today) moves to the turn transcript; new `approval.spec.ts` (gated tool → inline approval → Allow continues → Deny finishes), `transcript.spec.ts` (commentary segments, worked group folding, elapsed timer), `artifacts.spec.ts`; gallery captures for each state.
-- Sidecar: `test_v111_turn_model.py` (segments, migration 029, approval raise/resume/deny through the real streamed runtime), `test_no_contract_block.py`.
-- Docs: `docs/product.md` Product objects rewritten (Decision → Approval; Turn; Artifacts panel), CLAUDE.md §1/§3/§4/§8, architecture §3–§5, data-model (029), api (approvals endpoints replace decisions resolve), security (approval floor), release notes.
+## 4. Non-goals for v1.12.0
 
-## 4. Non-goals (unchanged)
-
-Multi-agent orchestration, coding projects/worktrees, terminal/browser/computer
-control, workflow canvas, plan mode or checklists the runtime did not emit,
-destructive storage mutation, a scheduler UI, approval-mode switches that
-weaken the read-only floor, chain-of-thought rendering, a page per backend
-table, multi-user semantics, archive.
+- Reasoning summaries in the transcript (rule 10).
+- An MCP *client* (consuming third-party tool servers) — a new trust boundary.
+- Multi-agent orchestration, sub-agents, worktrees, code diffs, terminal or
+  browser control, storage mutation.
+- Signed/notarised builds (operations, not code — see `signing.md`).
 
 ## 5. Release plan
 
-- v1.11.0 ships R1–R6 as one release; R1 and R2 first (they change what every
-  later PR renders), then R3–R5 in one or two PRs, then R6 with the release.
-- Acceptance for the release: a real Task with two turns, one gated import and
-  one report reads top to bottom as a transcript (bubble · commentary · worked
-  group · approval · answer · artifact rows), with no chip row, no Decision
-  card, no fade, in both languages and both themes; visual-review captures for
-  every state; all gates green on the three desktop builds.
-
-## 6. Roadmap principles
-
-1. **Capability before chrome.** Add UI only for runtime state/capability that actually exists. A listener for an event nothing sends is chrome.
-2. **Agent Task remains the organizing object.** New evidence, tools, reports, and execution detail attach to the Task.
-3. **Read-only autonomy, explicit mutation/data-movement boundaries.** More autonomy must not weaken the safety floor. Remediation Plans stay operator-applied.
-4. **Evidence over confidence.** Improve what the Agent can prove, correlate, and explain; do not hide gaps. Estimates always carry coverage.
-5. **Storage depth over generic-Agent breadth.** Prefer real S3/object-storage capabilities over generic terminal/browser/workflow features.
-6. **Provider realism matters.** S3-compatible behavior and capability gaps must be tested explicitly rather than assumed from AWS semantics.
+Branch from `main`; one PR carrying W1–W7 with the gates in CLAUDE.md §12;
+migration 030 only if `task_context_versions.summary` needs a column (it does;
+append-only); version stamp 1.12.0; merge; `release/v1.12.0`.
