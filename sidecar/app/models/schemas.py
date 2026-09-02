@@ -612,6 +612,7 @@ class SessionMessageOut(BaseModel):
     # to preserve.
     grounding: dict | None = None
     proposed_actions: list[dict] = Field(default_factory=list)
+    turn_items: list[dict] = Field(default_factory=list)
     created_at: str
     seq: int | None = None
 

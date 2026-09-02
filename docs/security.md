@@ -1,8 +1,8 @@
 # Security
 
-> **Storage Agent v1.10.0 security contract.** Unchanged from v0.96.0; v1.10 adds a bounded runtime title step (Direction + Work Result text only, redacted, never tool payloads) and a per-provider reasoning effort (ordinary config, not a secret) on the same floor; v1.03 keeps the v1.02 window and adds gated extensions — local models, user skills, MCP, observability, OS shell — same safety floor.
+> **Storage Agent v1.11.0 security contract.** v1.11 moves the confirmation boundary INSIDE the turn: the gated `import_evidence` tool plans, opens a durable Decision, and blocks until the user allows or denies — the same plan → confirm → run path, the same bounds, the same audit rows; no model prose can raise or satisfy it. Otherwise unchanged from v0.96.0; v1.10 adds a bounded runtime title step (Direction + Work Result text only, redacted, never tool payloads) and a per-provider reasoning effort (ordinary config, not a secret) on the same floor; v1.03 keeps the v1.02 window and adds gated extensions — local models, user skills, MCP, observability, OS shell — same safety floor.
 >
-> Security is part of the Agent Task product model, not a secondary implementation detail. Read-only autonomy is allowed only inside explicit, bounded, sanitized capabilities. Data movement and materially large/full scans cross a real **Decision required** boundary.
+> Security is part of the Agent Task product model, not a secondary implementation detail. Read-only autonomy is allowed only inside explicit, bounded, sanitized capabilities. Data movement and materially large/full scans cross a real **approval** boundary inside the Execution.
 
 ## 1. Security model at a glance
 
@@ -146,15 +146,15 @@ Prefix matching is path-boundary aware. An allowed prefix `logs` may admit `logs
 
 Never rely on frontend filtering or model instruction to enforce provider scope.
 
-## 8. Read-only autonomy vs Decision required
+## 8. Read-only autonomy vs approval
 
 Read-only investigation can run without approval for every individual call, provided each Tool's bounds are satisfied.
 
 A real confirmation boundary is required before operations that materially move or scan cloud data, including the managed Evidence Import flow and any future operation explicitly classified as gated.
 
-The UI presents this state as **Decision required**, but the Sidecar remains authoritative. A visual button or Agent-generated recommendation cannot bypass server-side confirmation state.
+The UI presents this state as **Waiting for approval** with an inline approval card, but the Sidecar remains authoritative. A visual button or Agent-generated recommendation cannot bypass server-side confirmation state.
 
-Since v0.94 the boundary is a first-class durable record: a gated proposal opens a pending `task_decisions` row, the raising execution stays `waiting` until it is resolved, and the approval/decline is persisted with an audit trail. Approval never auto-executes cloud work — it hands over to the same plan → confirm → run flow. The durable execution event log stores structured, sanitized, bounded progress only: never secrets, raw analytical rows, or chain-of-thought.
+Since v1.11 the boundary is raised by the gated tool itself: `import_evidence` plans the bounded download (a read-only listing), opens a pending `task_decisions` row (`kind=approval`) carrying the projected impact, and the raising execution is `waiting` while the tool thread blocks. Resolution is persisted with an audit trail before anything moves: `approved` runs the same confirm → run path (the `approval_events` row and `evidence_import.*` audit rows are written by that path), `declined` returns a structured refusal to the model, and a Stop while waiting withdraws the request as `declined`. `scope=task` records an explicit user grant; later calls of the same `action_type` in that Task are recorded as already-approved Decisions rather than silently skipped. The durable execution event log stores structured, sanitized, bounded progress only: never secrets, raw analytical rows, or chain-of-thought.
 
 A plan/prepare step is not execution and must not perform hidden downloads or mutation.
 
@@ -203,7 +203,7 @@ Bounds must be reported. Silent truncation is not acceptable evidence.
 
 Managed Evidence Import is the primary cloud data-movement workflow and remains:
 
-> **plan → Decision required → confirmed execution**
+> **plan → approval (inline Decision) → confirmed execution**
 
 ### Source restriction
 
@@ -355,11 +355,9 @@ Auditability must not become a reason to persist secrets or raw chain-of-thought
 
 If audit persistence is incomplete, surface an audit gap rather than asserting a complete trail.
 
-## 20. Next-action / Decision handoff
+## 20. Next steps and the legacy action-prepare handoff
 
-Agent-proposed next actions are not automation by themselves.
-
-The preparation/handoff layer may validate, sanitize, and prefill a next action. It must not:
+The Agent no longer emits structured next-action proposals (v1.11): next steps are asked for in prose, and the only gated action is a tool call the user approves inline. The compatibility `/sessions/{id}/actions/prepare` endpoint remains for older clients; it may validate, sanitize, and prefill an action. It must not:
 
 - auto-confirm a gated operation;
 - create hidden cloud data movement;

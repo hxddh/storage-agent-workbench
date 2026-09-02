@@ -69,7 +69,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(app).not.toContain("FirstRunWizard");
     expect(shell).toContain("taskContent: ReactNode");
     expect(shell).toContain("agent-task-content");
-    expect(shell).toContain("<AgentReviewPanel");
+    expect(shell).toContain("<ArtifactsPanel");
     expect(shell).toContain("publishAgentCommands");
     expect(shell).not.toContain("navigation: ReactNode");
     expect(shell).not.toContain("agent-task-header");
@@ -97,7 +97,6 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(navigation).not.toContain("menu.pin");
     expect(navigation).not.toContain("menu.duplicate");
     expect(navigation).not.toContain("menu.archive");
-    expect(navigation).not.toContain("dayBucket");
     expect(navigation).not.toContain("<kbd");
     expect(navigation).not.toContain("EmptyState");
     expect(model).toContain("DEFAULT_TASK_NAV_WIDTH");
@@ -106,7 +105,6 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(model).toContain("onDelete");
     expect(model).not.toContain("onTogglePin");
     expect(model).not.toContain("onFork");
-    expect(model).not.toContain("dayBucket");
     expect(e2e).toContain('test.describe("Agent task navigation"');
     expect(e2e).not.toContain("Duplicate");
     expect(e2e).not.toContain("Archive");
@@ -121,8 +119,9 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(composer).toContain("steerAction");
     expect(composer).toContain("onStop");
     expect(composer).toContain("<ModelChip");
-    expect(composer).toContain("Give the Agent a goal");
-    expect(composer).toContain("给 Agent 一个目标");
+    expect(composer).toContain("Ask about your storage…");
+    expect(composer).toContain("问问你的存储…");
+    expect(composer).not.toContain("Give the Agent a goal");
     expect(composer).not.toContain("Ask Storage Agent");
     expect(composer).not.toContain("Ask anything");
     expect(composer).not.toContain('t("thread.');
@@ -137,31 +136,33 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(chip).not.toContain("gpt-");
   });
 
-  it("renders Direction, Execution and Work Result as one document with no chat chrome", () => {
-    const result = source("../components/AgentTaskResult.tsx");
-    const renderer = source("../components/AgentResultRenderer.tsx");
-    const trace = source("../components/LiveTrace.tsx");
+  it("renders the Task as one turn transcript with no chat chrome", () => {
+    const turn = source("../components/TranscriptTurn.tsx");
+    const items = source("../components/TranscriptItems.tsx");
+    const group = source("../components/WorkedGroup.tsx");
     const task = source("../components/AgentTaskImplementation.tsx");
-    expect(result).toContain('data-testid="direction-event"');
-    expect(result).toContain('data-testid="work-result"');
-    expect(result).toContain('data-work-result="true"');
-    expect(result).toContain("native-direction");
-    expect(result).toContain("native-result");
-    expect(result).toContain("openAgentReview");
-    expect(result).toContain("openAgentExecution");
-    expect(result).not.toContain("AnswerDocument");
-    expect(result).not.toContain("onBranch");
-    expect(result).not.toContain("onRerun");
-    expect(result).not.toContain("redirect-direction");
-    expect(result).not.toContain("rounded-lg border border-edge bg-panel px-5");
-    expect(renderer).toContain("LiveTrace");
-    expect(renderer).toContain("toolActivity?.length");
-    expect(trace).toContain('data-testid="live-trace"');
-    expect(trace).toContain("native-execution-head");
-    expect(trace).toContain("Worked for");
-    expect(trace).toContain('"data-testid": "trace-row-open"');
-    expect(task).toContain('import { AgentTaskResult } from "./AgentTaskResult"');
-    expect(task).toContain("<AgentTaskResult");
+    expect(turn).toContain('data-testid="turn-user"');
+    expect(turn).toContain('data-testid="work-result"');
+    expect(turn).toContain('data-testid="turn-answer"');
+    expect(turn).toContain("turn-user-bubble");
+    expect(turn).not.toContain("AnswerDocument");
+    expect(turn).not.toContain("onBranch");
+    expect(turn).not.toContain("onRerun");
+    expect(turn).not.toContain("redirect-direction");
+    expect(turn).not.toContain("native-direction");
+    expect(turn).not.toContain("native-result");
+    expect(turn).not.toContain("resultShape");
+    expect(items).toContain('data-testid="turn-commentary"');
+    expect(items).toContain("<WorkedGroup");
+    expect(items).toContain("<ApprovalCard");
+    expect(group).toContain('data-testid="worked-group"');
+    expect(group).toContain('data-testid="worked-row"');
+    expect(group).toContain("native-execution-head");
+    expect(group).toContain('"data-testid": "trace-row-open"');
+    expect(task).toContain('import { AgentTurn, UserTurn } from "./TranscriptTurn"');
+    expect(task).toContain("<AgentTurn");
+    expect(task).toContain("<UserTurn");
+    expect(task).toContain("turnItemsOf(");
     expect(task).toContain('data-testid="task-scroll"');
     expect(task).toContain("task-item-");
     expect(task).toContain("data-direction=");
@@ -170,7 +171,6 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(task).toContain('data-testid="queued-direction"');
     expect(task).toContain('data-testid="task-resume"');
     expect(task).toContain("runner.resume");
-    expect(task).toContain("<WorkingRow label={taskCopy.liveWorking}");
     expect(task).not.toContain("MessageCard");
     expect(task).not.toContain("TaskContent");
     expect(task).not.toContain("ThinkingBubble");
@@ -196,48 +196,74 @@ describe("v1.09.0 native Agent window boundaries", () => {
     absent("../lib/firstRun.ts");
   });
 
-  it("uses explicit Decision boundaries with projected impact and a Decline path", () => {
-    const action = source("../components/AgentDecisionCard.tsx");
+  it("raises approvals inline from gated tool calls, with Allow / Allow for this task / Deny", () => {
+    const card = source("../components/ApprovalCard.tsx");
     const task = source("../components/AgentTaskImplementation.tsx");
-    const artifacts = source("../components/AgentRuntimeArtifacts.tsx");
-    expect(action).toContain("export function AgentNextAction");
-    expect(action).toContain('data-testid="agent-decision-required"');
-    expect(action).toContain('data-testid="agent-approve-action"');
-    expect(action).toContain('data-testid="agent-decline-action"');
-    expect(action).toContain('data-testid="decision-impact"');
-    expect(action).toContain("native-decision");
-    expect(task).toContain('import { AgentNextAction } from "./AgentDecisionCard"');
-    expect(task).toContain("<AgentNextAction");
-    expect(task).toContain("resolveTaskDecision");
-    expect(artifacts).toContain("<AgentNextAction");
-    expect(artifacts).not.toContain("ProposalCard");
+    const model = source("../lib/turnItems.ts");
+    const api = source("../api.ts");
+    expect(card).toContain('data-testid="approval-card"');
+    expect(card).toContain('data-testid="approval-allow"');
+    expect(card).toContain('data-testid="approval-allow-task"');
+    expect(card).toContain('data-testid="approval-deny"');
+    expect(card).toContain('data-testid="approval-impact"');
+    expect(card).not.toContain("Decision required");
+    expect(task).toContain("resolveTaskDecision(");
+    expect(task).toContain("<ApprovalCard");
+    expect(task).not.toContain("durable-pending-decisions");
+    expect(task).not.toContain("EvidenceImportDialog");
+    expect(task).not.toContain("AgentNextAction");
+    expect(model).toContain("export function openApproval(");
+    expect(api).toContain('"approval.opened"');
+    expect(api).toContain('"message.completed"');
+    expect(api).toContain('"decision.resolved"');
+    expect(api).toContain("scope ? { scope }");
+    expect(api).not.toContain("approveDecisionOrPrepare");
+    expect(api).not.toContain("prepareSessionAction");
+    // The proposal-era modules are physically gone.
+    absent("../components/AgentDecisionCard.tsx");
+    absent("../components/EvidenceImportDialog.tsx");
+    absent("../components/AgentTaskResult.tsx");
+    absent("../components/AgentResultRenderer.tsx");
+    absent("../components/ExecutionMetrics.tsx");
+    absent("../components/Chart.tsx");
   });
 
-  it("keeps Review a sheet over the Task with Evidence, Execution and Report only", () => {
-    const review = source("./AgentReviewPanel.tsx");
+  it("keeps Artifacts a right split beside the Task: Evidence, Reports, Plans, Baselines & Drift, Execution", () => {
+    const panel = source("./ArtifactsPanel.tsx");
+    const shell = source("./AgentShell.tsx");
     const model = source("./model.ts");
     const commands = source("./commands.ts");
     const css = source("./native-shell.css");
-    expect(review).toContain("agent-review-overlay");
-    expect(review).toContain("<EvidenceReview");
-    expect(review).toContain("<ExecutionReview");
-    expect(review).toContain("<ReportArtifact");
-    expect(review).toContain("useDismissOnEscape");
-    expect(review).not.toContain("Workspace");
-    expect(review).not.toContain('data-testid="decision-history"');
-    expect(review).not.toContain('data-testid="task-baselines"');
-    expect(review).not.toContain('data-testid="task-drift"');
-    expect(review).not.toContain('data-testid="task-revisit"');
-    expect(review).not.toContain("remediation-plan-page");
-    expect(model).toContain('export type ReviewSurface = "evidence" | "execution" | "report"');
+    absent("./AgentReviewPanel.tsx");
+    absent("./ExecutionReview.tsx");
+    expect(panel).toContain('data-testid="agent-artifacts-panel"');
+    expect(panel).toContain("data-testid={`artifacts-section-${id}`}");
+    for (const section of ["evidence", "reports", "plans", "baselines", "execution"]) {
+      expect(panel).toContain(`"${section}"`);
+    }
+    expect(panel).toContain('data-testid="artifacts-back"');
+    expect(panel).toContain("<EvidenceReview");
+    expect(panel).toContain("<ReportArtifact");
+    expect(panel).toContain("<ExecutionDetail");
+    expect(panel).not.toContain("Workspace");
+    expect(panel).not.toContain('role="tablist"');
+    expect(panel).not.toContain("remediation-plan-page");
+    expect(model).toContain('export type ArtifactKind = "evidence" | "report" | "plan" | "baseline" | "execution"');
+    expect(model).not.toContain("ReviewSurface");
     expect(model).not.toContain('"overview"');
+    expect(commands).toContain("toggleAgentArtifacts");
+    expect(commands).toContain("openAgentArtifacts");
     expect(commands).toContain("openAgentReview");
     expect(commands).toContain("openAgentExecution");
-    expect(css).toContain(".agent-review-overlay");
-    expect(css).toContain("position: absolute");
+    // A split, not a sheet: the panel is a flex sibling of the document; only
+    // the narrow-window fallback paints a scrim.
+    expect(css).toContain(".agent-artifacts-panel");
+    expect(css).not.toContain(".agent-review-overlay");
+    expect(shell).toContain('data-artifacts={open ? "open" : "closed"}');
+    expect(shell).toContain("overlay={narrow}");
     expect(source("./EvidenceReview.tsx")).toContain('data-testid="evidence-review"');
-    expect(source("./ExecutionReview.tsx")).toContain("export function ExecutionReview");
     expect(source("./ReportArtifact.tsx")).toContain("export function ReportArtifact");
+    expect(source("../App.tsx")).toContain('case "review": toggleAgentArtifacts(); break;');
   });
 
   it("keeps Settings to model + storage + general + safety, as a dialog", () => {
@@ -256,6 +282,9 @@ describe("v1.09.0 native Agent window boundaries", () => {
     const impl = source("../hooks/useTurnRunnerImplementation.ts");
     const api = source("../api.ts");
     expect(impl).toContain("followExecutionEvents");
+    expect(impl).toContain("liveHandlers(");
+    expect(impl).not.toContain("streamText");
+    expect(impl).not.toContain("proposals");
     expect(impl).toContain("resumeTaskExecution");
     expect(impl).not.toContain("waitForPersistedTurn");
     expect(impl).not.toContain("postSessionMessage");
@@ -271,6 +300,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(doc).toContain("Catch-up");
     expect(doc).toContain("void reload(sessionId)");
     expect(doc).toContain("followExecutionEvents");
+    expect(doc).toContain('active.status === "waiting"');
     expect(doc).toContain("shownIdRef");
     expect(doc).toContain("if (id !== shownIdRef.current) setEarlier([])");
   });
@@ -319,10 +349,10 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(figures).toContain("Cost axis withheld");
     expect(extract).toContain("Never invent a day the runtime did not emit");
     expect(task).toContain("task-analysis-figures");
-    expect(task).toContain("figures={latest");
+    expect(task).toContain("figures={figuresFor(item)}");
     expect(mark).toContain("No direct evidence chain");
     expect(source("../api.ts")).toContain("/agent-tasks/${taskId}/provenance");
-    expect(source("./AgentReviewPanel.tsx")).not.toContain("AnalysisFigures");
+    expect(source("./ArtifactsPanel.tsx")).not.toContain("AnalysisFigures");
   });
 
   it("keeps the presentation on tokens: one neutral ladder, an ink primary, hairline depth", () => {
@@ -336,7 +366,10 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(css).toContain("--doc-measure: 46rem");
     expect(css).toContain("--doc-track: 64rem");
     expect(shell).not.toContain("box-shadow: 0 8px");
-    expect(document).toContain(".agent-result-prose > :not(.agent-result-wide)");
+    expect(document).toContain(".agent-table-scroll");
+    expect(document).toContain(".turn-user-bubble");
+    expect(document).not.toContain(".agent-result-wide");
+    expect(document).not.toContain(".native-decision");
     expect(document).toContain(".native-composer");
     expect(document).toContain(".native-start-greeting");
     expect(source("../../tailwind.config.js")).not.toContain("magazine");
@@ -460,5 +493,143 @@ describe("v1.10.0 native shell, runtime and pane boundaries", () => {
     expect(navigation).toContain('role="listbox"');
     expect(navigation).toContain("onListKeyDown");
     expect(navigation).toContain("editRequest");
+  });
+});
+
+/**
+ * v1.11.0 — Codex parity for the shell (R5).
+ *
+ * The sidebar groups by day and states the read-only floor; the Composer
+ * stops on an empty Esc and carries a context meter fed only by runtime
+ * metrics; the start greeting rotates; an approval is a Working task in the
+ * title bar; the OS window remembers its geometry through the Rust plugin.
+ */
+describe("v1.11.0 shell details", () => {
+  it("groups the sidebar by day and carries the Read-only fact beside Settings", () => {
+    const navigation = source("./AgentTaskNavigation.tsx");
+    const copy = source("./navigationCopy.ts");
+    const css = source("./native-shell.css");
+    expect(navigation).toContain("export function dayGroups(");
+    expect(navigation).toContain('data-testid="task-group"');
+    expect(navigation).toContain("Intl.DateTimeFormat");
+    expect(navigation).toContain('data-testid="sidebar-read-only"');
+    expect(navigation).toContain("copy.readOnlyHint");
+    expect(navigation).not.toContain('role="switch"');
+    expect(navigation).not.toContain("Previous 7 days");
+    expect(copy).toContain('readOnly: "Read-only"');
+    expect(copy).toContain('readOnly: "只读"');
+    expect(copy).toContain("imports pause for your approval");
+    expect(css).toContain(".native-sidebar-readonly");
+    expect(css).toContain(".native-task-group + .native-task-group");
+    // No yellow: an approval waiting on the user is a Working task.
+    expect(css).not.toMatch(/\[data-state="decision"\] \.native-task-mark \{[^}]*--warn/);
+  });
+
+  it("stops on an empty Esc and meters context only from runtime metrics", () => {
+    const composer = source("../components/Composer.tsx");
+    const meter = source("../components/ContextMeter.tsx");
+    const app = source("../App.tsx");
+    const shortcuts = source("../shortcuts.ts");
+    expect(composer).toContain('event.key === "Escape"');
+    expect(composer).toContain("if (busy && !text.trim()) { event.preventDefault(); onStop(); }");
+    expect(composer).toContain("<ContextMeter />");
+    // The Esc branch returns before any history / clear handling runs.
+    expect(composer).toMatch(/if \(event\.key === "Escape"\) \{\s*if \(busy && !text\.trim\(\)\) \{ event\.preventDefault\(\); onStop\(\); \}\s*return;\s*\}/);
+    expect(meter).toContain("context_window");
+    expect(meter).toContain("run.lastMetrics?.metrics");
+    expect(meter).toContain('data-testid="context-meter"');
+    expect(meter).toContain("if (!usage) return null");
+    expect(meter).not.toContain("128000");
+    expect(app).toContain("<ActiveTaskContext.Provider value={activeTaskId}>");
+    expect(shortcuts).toContain('id: "stopEmpty"');
+  });
+
+  it("rotates the start greeting and names a waiting approval in the title bar", () => {
+    const greeting = source("./startGreeting.ts");
+    const copy = source("./navigationCopy.ts");
+    expect(greeting).toContain("export const START_GREETINGS");
+    expect(greeting).toContain("export function pickStartGreeting(");
+    expect(greeting).toContain('"What should the Agent work on?"');
+    expect(greeting).toContain('"让 Agent 处理什么？"');
+    expect(copy).toContain('decision: "Waiting for approval"');
+    expect(copy).toContain('decision: "等待批准"');
+    expect(copy).not.toContain("Needs decision");
+    expect(copy).toContain('working: "Working"');
+    expect(copy).toContain('attention: "Needs attention"');
+  });
+
+  it("remembers the window's geometry through the Rust window-state plugin alone", () => {
+    const cargo = source("../../../src-tauri/Cargo.toml");
+    const lock = source("../../../src-tauri/Cargo.lock");
+    const rust = source("../../../src-tauri/src/lib.rs");
+    const capability = source("../../../src-tauri/capabilities/default.json");
+    const pkg = source("../../package.json");
+    expect(cargo).toContain('tauri-plugin-window-state = "2"');
+    expect(lock).toContain('name = "tauri-plugin-window-state"');
+    expect(rust).toContain(".plugin(tauri_plugin_window_state::Builder::new().build())");
+    expect(rust.indexOf("tauri_plugin_single_instance::init")).toBeLessThan(rust.indexOf("tauri_plugin_window_state::Builder"));
+    expect(capability).toContain('"window-state:default"');
+    expect(pkg).not.toContain("@tauri-apps/plugin-window-state");
+  });
+
+  it("carries no English tokens in the Chinese shell copy", () => {
+    const shortcuts = source("../shortcuts.ts");
+    const zhLabels = [...shortcuts.matchAll(/zh: "([^"]+)"/g)].map((m) => m[1]);
+    expect(zhLabels.length).toBeGreaterThan(10);
+    for (const label of zhLabels) expect(label, label).not.toMatch(/\b(Task|Step|Composer|Review|Evidence|Delegate|Steer|Agent)\b/);
+    for (const file of ["../components/Composer.tsx", "./navigationCopy.ts", "../components/ModelChip.tsx", "../components/CommandPalette.tsx"]) {
+      const text = source(file);
+      expect(text, file).not.toMatch(/"[^"]*[\u4e00-\u9fff][^"]*\b(Task|Step|Composer|Delegate|Steer)\b[^"]*"/);
+    }
+  });
+});
+
+/**
+ * v1.11.0 — Codex parity for the transcript.
+ *
+ * A turn is user bubble → commentary · worked group · approval → answer, fed
+ * by ONE item list live and durable. Tables scroll in place; the metadata
+ * block, the Decision card, the artifact chip row and the metrics footer are gone.
+ */
+describe("v1.11.0 turn transcript boundaries", () => {
+  it("feeds live and durable turns through the same item model", () => {
+    const model = source("../lib/turnItems.ts");
+    const runs = source("../sessionRuns.ts");
+    const runner = source("../hooks/useTurnRunnerImplementation.ts");
+    const doc = source("../hooks/useSessionDocument.ts");
+    expect(model).toContain("export function turnItemsOf(");
+    expect(model).toContain("export function completeMessage(");
+    expect(model).toContain("export function segmentsOf(");
+    expect(runs).toContain("items: TurnItem[]");
+    expect(runs).toContain("answer: string | null");
+    expect(runs).toContain("waiting: boolean");
+    expect(runs).not.toContain("streamText");
+    expect(runs).not.toContain("proposals");
+    expect(runner).toContain("onMessageCompleted");
+    expect(runner).toContain("onApprovalOpened");
+    expect(runner).toContain("onDecisionResolved");
+    expect(doc).toContain("liveHandlers(sessionId)");
+  });
+
+  it("keeps the answer a Markdown page: tables scroll, no chart toggle, no chip row, no footer", () => {
+    const md = source("../components/MarkdownImplementation.tsx");
+    const turn = source("../components/TranscriptTurn.tsx");
+    const task = source("../components/AgentTaskImplementation.tsx");
+    expect(md).toContain("agent-table-scroll");
+    expect(md).not.toContain("chart-toggle");
+    expect(md).not.toContain("mask-image");
+    expect(md).not.toContain("agent-result-wide");
+    expect(turn).not.toContain("work-result-open-report");
+    expect(turn).not.toContain("TurnMetricsBar");
+    expect(task).not.toContain("TurnMetricsBar");
+    expect(task).not.toContain("nextActions");
+    expect(task).not.toContain("proposed_actions");
+  });
+
+  it("renders the persisted answer without a metadata block", () => {
+    const e2e = source("../../e2e/agent.spec.ts");
+    expect(e2e).not.toContain("next_action_proposals: [");
+    expect(e2e).toContain('"turn-commentary"');
+    expect(e2e).toContain('"worked-group"');
   });
 });

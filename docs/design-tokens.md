@@ -13,8 +13,8 @@ corner radii, z-index numbers, or `transition-all`.
 | --- | --- |
 | CSS variables (color, type, radius, motion, shadow, measure) | `frontend/src/index.css` |
 | Tailwind mapping | `frontend/tailwind.config.js` |
-| Window, sidebar, title bar, Review sheet | `frontend/src/agent/native-shell.css` |
-| Task document, Composer, Decision, banners | `frontend/src/agent/native-document.css` |
+| Window, sidebar, title bar, Artifacts panel | `frontend/src/agent/native-shell.css` |
+| Transcript turn, Composer, approval card, banners | `frontend/src/agent/native-document.css` |
 | Enforcement | `frontend/src/design-tokens.test.ts`, `frontend/src/theme.tokens.test.ts`, `frontend/src/agent/architecture.test.ts` |
 
 Both themes are first-class. Dark is the default; light is not an inversion of
@@ -89,7 +89,7 @@ Radius: `--radius-sm` (3px) through `--radius-2xl` (16px, dialogs) and
 | `--duration-instant` | 70ms | hover color |
 | `--duration-fast` | 120ms | chrome, controls |
 | `--duration-base` | 180ms | dialogs, palette, scrim |
-| `--duration-slow` | 240ms | Review sheet, sidebar collapse |
+| `--duration-slow` | 240ms | Artifacts panel, sidebar collapse |
 
 Easing is one spring-like curve, `cubic-bezier(0.16, 1, 0.3, 1)` (`--ease-out`
 / `--ease-emphasized`); `--ease-in-out` for cycles. Only `background`,
@@ -113,4 +113,4 @@ language, and task switch — only runtime-true work.
 
 Tokens must not be used to imply a second Agent, a synthetic plan/stepper, a
 status bar, an inspector column, or a second presentation lifecycle. The
-Review sheet is title + close + artifact.
+Artifacts panel is a quiet list of durable referents and one document at a time.

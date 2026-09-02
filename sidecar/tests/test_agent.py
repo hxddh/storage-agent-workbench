@@ -62,12 +62,12 @@ def test_strip_chain_of_thought_preserves_long_enumerations():
 
 
 def test_parse_contract_keeps_full_table(client):
-    """The full pipeline (contract parse → answer) must not truncate a big table."""
-    from app.skills import contract as skill_contract
+    """The full pipeline (sanitize → Work Result) must not truncate a big table."""
+    from app.agent_runtime.finalize import _finalize_contract
 
     rows = "\n".join(f"| {i} | bucket-{i:03d} | 2026-01-01 |" for i in range(96))
     raw = "你共有 96 个 bucket：\n| # | 名称 | 创建时间 |\n|---|---|---|\n" + rows
-    out = skill_contract.parse_agent_contract(raw, allowed_skill_names=[])
+    out = _finalize_contract(raw, [], [])
     assert out["answer"].count("bucket-") == 96
 
 

@@ -115,8 +115,13 @@ def _tools(conn):
 def test_every_tool_gets_a_wall_clock_bound(conn):
     tools = _tools(conn)
     bounded = sa._install_tool_timeouts(tools)
-    assert bounded == len(tools)
+    # Every tool except the one that waits on a HUMAN (the inline approval):
+    # the user's Stop is its bound.
+    from app.agent_runtime.limits import _NO_TIMEOUT_TOOLS
+    assert bounded == len([t for t in tools if t.name not in _NO_TIMEOUT_TOOLS])
     for t in tools:
+        if t.name in _NO_TIMEOUT_TOOLS:
+            continue
         assert t.timeout_seconds and t.timeout_seconds > 0, t.name
 
 

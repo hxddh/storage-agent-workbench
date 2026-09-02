@@ -18,6 +18,7 @@ export type ShortcutId =
   | "delegate"
   | "newline"
   | "stop"
+  | "stopEmpty"
   | "focusComposer";
 
 export interface Shortcut {
@@ -32,18 +33,19 @@ export interface Shortcut {
 
 export const SHORTCUTS: Shortcut[] = [
   { id: "palette", keys: [MOD, "K"], label: { en: "Command palette", zh: "命令面板" }, group: "global", mod: "mod", key: "k", handled: true },
-  { id: "newTask", keys: [MOD, "N"], label: { en: "New Agent task", zh: "新建 Agent Task" }, group: "global", mod: "mod", key: "n", handled: true },
-  { id: "toggleTaskNavigation", keys: [MOD, "\\"], label: { en: "Show / hide task navigation", zh: "显示 / 隐藏 Task 导航" }, group: "global", mod: "mod", key: "\\", handled: true },
+  { id: "newTask", keys: [MOD, "N"], label: { en: "New Agent task", zh: "新建任务" }, group: "global", mod: "mod", key: "n", handled: true },
+  { id: "toggleTaskNavigation", keys: [MOD, "\\"], label: { en: "Show / hide task navigation", zh: "显示 / 隐藏侧栏" }, group: "global", mod: "mod", key: "\\", handled: true },
   { id: "shortcuts", keys: ["?"], label: { en: "Keyboard shortcuts", zh: "键盘快捷键" }, group: "global", mod: null, key: "?", handled: true },
   { id: "close", keys: ["Esc"], label: { en: "Close the active panel", zh: "关闭当前面板" }, group: "global", mod: null, key: "Escape", handled: true },
-  { id: "review", keys: [MOD, "I"], label: { en: "Review task evidence", zh: "Review 任务 Evidence" }, group: "task", mod: "mod", key: "i", handled: true },
-  { id: "find", keys: [MOD, "F"], label: { en: "Find in this task", zh: "在当前 Task 中查找" }, group: "task", mod: "mod", key: "f", handled: true },
-  { id: "prevStep", keys: ["K"], label: { en: "Previous task step", zh: "上一个 Task Step" }, group: "task", mod: null, key: "k", handled: true },
-  { id: "nextStep", keys: ["J"], label: { en: "Next task step", zh: "下一个 Task Step" }, group: "task", mod: null, key: "j", handled: true },
-  { id: "delegate", keys: ["Enter"], label: { en: "Delegate / Steer", zh: "Delegate / Steer" }, group: "task", handled: false },
+  { id: "review", keys: [MOD, "I"], label: { en: "Show or hide Artifacts", zh: "显示或隐藏产物" }, group: "task", mod: "mod", key: "i", handled: true },
+  { id: "find", keys: [MOD, "F"], label: { en: "Find in this task", zh: "在当前任务中查找" }, group: "task", mod: "mod", key: "f", handled: true },
+  { id: "prevStep", keys: ["K"], label: { en: "Previous task step", zh: "上一步" }, group: "task", mod: null, key: "k", handled: true },
+  { id: "nextStep", keys: ["J"], label: { en: "Next task step", zh: "下一步" }, group: "task", mod: null, key: "j", handled: true },
+  { id: "delegate", keys: ["Enter"], label: { en: "Delegate / Steer", zh: "委派 / 调整方向" }, group: "task", handled: false },
   { id: "newline", keys: ["Shift", "Enter"], label: { en: "New line", zh: "换行" }, group: "task", handled: false },
   { id: "stop", keys: [MOD, "."], label: { en: "Stop execution", zh: "停止执行" }, group: "task", mod: "mod", key: ".", handled: true },
-  { id: "focusComposer", keys: [MOD, "L"], label: { en: "Focus composer", zh: "聚焦 Composer" }, group: "task", mod: "mod", key: "l", handled: true },
+  { id: "stopEmpty", keys: ["Esc"], label: { en: "Stop execution (empty Composer)", zh: "停止执行（输入框为空时）" }, group: "task", handled: false },
+  { id: "focusComposer", keys: [MOD, "L"], label: { en: "Focus composer", zh: "聚焦输入框" }, group: "task", mod: "mod", key: "l", handled: true },
 ];
 
 export const shortcutsIn = (group: Shortcut["group"]) => SHORTCUTS.filter((shortcut) => shortcut.group === group);

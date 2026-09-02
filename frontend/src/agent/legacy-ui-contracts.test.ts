@@ -50,6 +50,13 @@ const forbidden: Array<[string, RegExp]> = [
   ["v1.0x activity bar", /\bActivityBar\b/],
   ["v1.0x details inspector state", /\bdetailsOpen\b/],
   ["v1.0x marketing chrome copy", /(?:warm editorial|Codex native|magazine)/i],
+  // v1.10 proposal-era Decision: a card raised from a suggestion after the
+  // answer, a second import dialog, a metadata block the model had to write.
+  ["proposal-era Decision copy", /Decision required|需要决定/],
+  ["proposal-era Decision selectors", /agent-decision-required|agent-next-action|durable-pending-decisions/],
+  ["proposal-era next-action contract", /next_action_proposals|nextActionFromDecision|AgentNextAction|EvidenceImportDialog/],
+  ["Work Result shape switch", /resultShape|agent-result-wide|data-result-shape/],
+  ["metrics footer", /TurnMetricsBar|ExecutionMetrics\.tsx/],
 ];
 
 describe("Agent-native production UI has no v0.92 Chat-era contracts", () => {

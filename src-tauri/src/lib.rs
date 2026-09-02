@@ -508,6 +508,10 @@ pub fn run() {
             // the URL in argv (Windows/Linux); hand it to the running window.
             emit_deep_links(app, deep_links_in_argv(&argv));
         }))
+        // Size / position / maximised state come back on the next launch.
+        // The plugin saves on close and restores on window creation by itself;
+        // the frontend never touches it.
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())

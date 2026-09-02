@@ -52,7 +52,10 @@ async function ask(page: Page, question: string) {
 }
 
 async function openReport(page: Page) {
-  await page.getByTestId("work-result-open-report").click();
+  // Artifacts is a split: open it if it is closed, then open the Report document.
+  if (await page.getByTestId("agent-artifacts-panel").count() === 0) await page.keyboard.press("Control+i");
+  if (await page.getByTestId("artifacts-back").count() > 0) await page.getByTestId("artifacts-back").click();
+  await page.getByTestId("artifact-report-row").click();
 }
 
 async function reportText(page: Page): Promise<string> {

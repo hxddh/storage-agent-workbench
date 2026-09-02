@@ -44,8 +44,8 @@ def _wait_settled(client, task_id, exec_id, timeout=15.0):
 # --- migration 028 ---------------------------------------------------------------
 
 
-def test_migration_head_is_028_with_the_two_columns(client):
-    assert MIGRATIONS[-1][0] == 28
+def test_migration_028_adds_the_two_columns(client):
+    assert MIGRATIONS[27][0] == 28
     conn = sqlite3.connect(str(config.db_path()))
     try:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}

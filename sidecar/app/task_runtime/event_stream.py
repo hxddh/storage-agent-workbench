@@ -44,57 +44,72 @@ def _sse(event: str, data: dict[str, Any], seq: int | None = None) -> str:
     return f"{head}event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def _frame(ev: dict[str, Any]) -> str:
+    return _sse(ev["event_type"],
+                {"seq": ev["seq"], "execution_id": ev["execution_id"],
+                 "event_type": ev["event_type"], "payload": ev["payload"],
+                 "created_at": ev["created_at"]}, seq=ev["seq"])
+
+
 async def execution_frames(execution_id: str, after_seq: int = 0,
                            include_deltas: bool = True) -> AsyncIterator[str]:
     """Yield SSE frames for one execution: durable replay from ``after_seq``,
-    then live follow until the execution settles."""
+    then live follow until the execution settles.
+
+    Live, transient deltas and durable events are interleaved in the order
+    the worker produced them (the hub records where in the delta stream each
+    durable event landed), so a tool row never arrives after text the model
+    wrote once the tool had returned, and a segment's held-back tail never
+    arrives after the ``message.completed`` that closed it."""
     conn = connect()
     try:
         cursor = int(after_seq)
         delta_cursor = -1  # -1 → start from the beginning of the live buffer
         idle = 0.0
         started = time.monotonic()
-        while True:
-            # Deltas BEFORE durable events: the worker pushes the answer tail
-            # into the hub before it appends the completion events, so this
-            # order guarantees the terminal status frame is the last thing a
-            # subscriber sees (never a delta after `done`).
+
+        def _durable(up_to: int | None = None) -> list[dict[str, Any]]:
+            nonlocal cursor
+            events = store.list_events(conn, execution_id, after_seq=cursor, up_to_seq=up_to)
+            for ev in events:
+                cursor = ev["seq"]
+            return events
+
+        def _drain() -> list[str]:
+            """One ordered pass: hub parts (text / markers) then whatever
+            durable events have no marker (replay, or a marker that fell off)."""
+            nonlocal delta_cursor
+            out: list[str] = []
             if include_deltas:
                 if delta_cursor < 0:
                     # First read: skip what streamed before we attached — the
-                    # durable Work Result carries the full text; deltas are only
-                    # the live tail.
+                    # durable Work Result carries the full text; deltas are
+                    # only the live tail.
                     _, delta_cursor, _ = hub.delta_snapshot(execution_id, 0)
-                text, delta_cursor, _dropped = hub.delta_snapshot(execution_id, delta_cursor)
-                if text:
-                    idle = 0.0
-                    yield _sse("delta", {"text": text})
-            events = store.list_events(conn, execution_id, after_seq=cursor)
-            for ev in events:
-                cursor = ev["seq"]
-                yield _sse(ev["event_type"],
-                           {"seq": ev["seq"], "execution_id": ev["execution_id"],
-                            "event_type": ev["event_type"], "payload": ev["payload"],
-                            "created_at": ev["created_at"]}, seq=ev["seq"])
-            if events:
+                parts, delta_cursor, _dropped = hub.ordered_snapshot(execution_id, delta_cursor)
+                for kind, value in parts:
+                    if kind == "text":
+                        if value:
+                            out.append(_sse("delta", {"text": str(value)}))
+                    else:
+                        out.extend(_frame(ev) for ev in _durable(int(value)))  # type: ignore[arg-type]
+            out.extend(_frame(ev) for ev in _durable())
+            return out
+
+        while True:
+            frames = _drain()
+            for frame in frames:
+                yield frame
+            if frames:
                 idle = 0.0
                 continue
             row = store.get_execution(conn, execution_id)
             settled = row is None or row["status"] in _SETTLED
             if settled and hub.is_done(execution_id):
                 # One last drain so a final delta/event racing the status read
-                # is not lost, then close explicitly. Same order as the loop:
-                # deltas first, durable events last.
-                if include_deltas and delta_cursor >= 0:
-                    text, delta_cursor, _d = hub.delta_snapshot(execution_id, delta_cursor)
-                    if text:
-                        yield _sse("delta", {"text": text})
-                for ev in store.list_events(conn, execution_id, after_seq=cursor):
-                    cursor = ev["seq"]
-                    yield _sse(ev["event_type"],
-                               {"seq": ev["seq"], "execution_id": ev["execution_id"],
-                                "event_type": ev["event_type"], "payload": ev["payload"],
-                                "created_at": ev["created_at"]}, seq=ev["seq"])
+                # is not lost, then close explicitly.
+                for frame in _drain():
+                    yield frame
                 yield _sse("end", {"status": row["status"] if row else "unknown"})
                 return
             if time.monotonic() - started >= _STREAM_MAX_S:
@@ -118,7 +133,7 @@ def _legacy_done_payload(conn: Any, payload: dict[str, Any]) -> dict[str, Any]:
     grounding = wr.get("grounding") or {}
     return {
         "message_id": payload.get("message_id"),
-        "proposed_actions": wr.get("proposals") or [],
+        "proposed_actions": [],
         "evidence_used": grounding.get("evidence_used", []),
         "evidence_gaps": grounding.get("evidence_gaps", []),
         "skills_used": grounding.get("skills_used", []),
@@ -142,6 +157,10 @@ async def legacy_frames(execution_id: str) -> AsyncIterator[str]:
             event, data = _parse_frame(frame)
             if event == "delta":
                 yield _sse("delta", {"text": data.get("text", "")})
+            elif event == "message.completed":
+                # No legacy equivalent: the legacy client rebuilds the answer
+                # from the Work Result on `done`.
+                continue
             elif event in ("tool.started", "tool.completed"):
                 payload = dict(data.get("payload") or {})
                 payload["status"] = "started" if event == "tool.started" else "completed"

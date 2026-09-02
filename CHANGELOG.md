@@ -6,6 +6,34 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-09-02
+
+_Codex parity all the way down — a transcript turn, approvals raised inline by the gated tool, an Artifacts panel, the runtime split by responsibility. Migration **029** (`session_messages.turn_items`; `task_decisions.kind` / `scope`)._
+
+### Added
+
+- **Transcript turn** — one `Turn` renderer for durable and live turns: right-aligned user bubble, the model's commentary segments in order, one collapsed *Worked for …* group of tool rows (live elapsed while running), the approval card inline where the gated tool raised it, then the answer as plain Markdown with tables scrolling in their own container.
+- **Per-segment streaming** — `message.completed` frames close a commentary segment (`final: false`) or the answer (`final: true`); the Work Result carries ordered `turn_items` persisted on the assistant message. Grounding (`skills_used`, `evidence_used`, `evidence_gaps`) is derived from the tool trace.
+- **Inline approvals** — the gated `import_evidence` tool plans the bounded download through `evidence/import_service`, opens a durable Decision (`kind=approval`) with projected impact, appends `approval.opened`, sets the Execution `waiting`, and blocks until **Allow · Allow for this task · Deny** (or Stop, which withdraws it as declined). `decisions/{id}/resolve` takes `scope: once | task`; a task-wide grant records later calls as already-approved Decisions (`approval.granted`). Title bar: *Waiting for approval*.
+- **Artifacts panel** — a right split (⌘I) with Evidence, Reports, Remediation Plans, Baselines/Drift, and Execution detail as a document; replaces the Review sheet.
+- **Shell** — sidebar day groups (Today · Yesterday · dated), a quiet Read-only label, Esc stops the execution when the Composer is empty, a context meter next to the model chip (`metrics.context_window`), a rotating greeting, `tauri-plugin-window-state` restores window position/size, EN/ZH parity.
+- Contracts: Sidecar `tests/test_v111_native_turns.py`; frontend `architecture.test.ts` v1.11 block, transcript/approval unit tests, `documentation-contract.test.ts` at v1.11.0 / head 029.
+
+### Changed
+
+- `session_agent.py` split into `limits`, `prompt`, `guards`, `steer`, `usage`, `finalize`, `stream`, `gated_tools` (+ the entry module with the `SESSION_LOOP` seam and re-exports).
+- The prompt asks for one short commentary sentence before each tool call and the complete answer at the end — no metadata block; a cut-short turn is marked `cut_short` and says so in its text.
+- `/evidence-imports` is a thin router over `evidence/import_service` (the same code path the tool uses).
+- E2E fake model answers in plain Markdown.
+
+### Removed
+
+- `skills/contract.py`, the ```json contract sentinel/holdback, `next_action_proposals`, `_with_continue_proposal`, `DECISION_GATED_ACTION_TYPES`, `open_decisions_from_proposals`, the resolve-time prepare hand-over; frontend `AgentDecisionCard`, `AgentNextAction`, `EvidenceImportDialog`, `ExecutionMetrics`, the 64rem data track, artifact chip rows, the table fade and chart toggle, the Review sheet components.
+
+### Security
+
+- Same floor. The confirmation boundary moved inside the Execution: nothing downloads before the durable `approved` row; the model cannot resolve it; Stop never approves; `scope=task` is an explicit, recorded user grant. Commentary segments pass the same CoT strip and redaction as the answer.
+
 ## [1.10.0] - 2026-09-02
 
 _Native Agent, Codex parity — a real OS shell, runtime task titles, reasoning effort, native Execution detail and provider panes. Migration **028** (two nullable columns)._

@@ -5,7 +5,6 @@ import type {
   EvidenceImportRunResult,
   ErrorInputKind,
   ExecutionMetrics,
-  NextAction,
   SessionDetail,
   SessionMessage,
   SessionSummaryRow,
@@ -293,25 +292,6 @@ export const cancelSessionTurn = (sessionId: string, turnId: string) =>
 export const attachRunToSession = (sessionId: string, runId: string) =>
   request<SessionDetail>(`/sessions/${sessionId}/runs/${runId}`, { method: "POST" });
 
-// Next-action handoff (Phase 17): validate + prefill only; never executes.
-export interface ActionPrepareResult {
-  proposal: NextAction & { id: string };
-  action_type: string;
-  status: string;
-  open: string | null;
-  missing_inputs: string[];
-  candidates: Record<string, Array<{ account_run_id: string; bucket_name: string }>>;
-  prefill: Record<string, string>;
-  safety_notes: string[];
-}
-
-
-export const prepareSessionAction = (id: string, proposal: NextAction) =>
-  request<ActionPrepareResult>(`/sessions/${id}/actions/prepare`, {
-    method: "POST",
-    body: JSON.stringify({ proposal }),
-  });
-
 // Error triage (Phase 18): deterministic parse + playbooks (+ optional agent).
 export interface ErrorTriageInput {
   content: string;
@@ -363,6 +343,7 @@ export interface DecisionImpact {
   file_count: number | null;
   total_bytes: number | null;
   scan_scope: string | null;
+  warnings?: string[];
 }
 
 export interface TaskDecision {
@@ -373,7 +354,11 @@ export interface TaskDecision {
   action_type: string;
   title: string | null;
   reason: string | null;
-  proposal: NextAction & { id?: string; prefill?: Record<string, unknown> };
+  /** `approval` (raised inline by a gated tool, v1.11) or a legacy `proposal`. */
+  kind?: "approval" | "proposal";
+  /** How the approval was granted: once, or for every later call in this task. */
+  scope?: "once" | "task" | null;
+  proposal?: Record<string, unknown> | null;
   status: "pending" | "approved" | "declined" | "superseded";
   resolution_note: string | null;
   created_at: string;
@@ -519,15 +504,16 @@ export const listTaskDecisions = (taskId: string, status?: string) =>
   request<{ task_id: string; decisions: TaskDecision[] }>(
     `/agent-tasks/${taskId}/decisions${status ? `?status_filter=${status}` : ""}`);
 
-/** Resolve a first-class durable Decision. Approval returns the same
- * validate-and-prefill hand-over the action-prepare flow uses — nothing
- * auto-executes; the client opens the purpose-built confirmed flow. */
+/** Resolve an inline approval (or a legacy durable Decision). Approving wakes
+ * the gated tool server-side and the SAME execution continues; `scope=task`
+ * also allows later calls of the same action type in this task. */
 export const resolveTaskDecision = (
-  taskId: string, decisionId: string, resolution: "approved" | "declined", note?: string,
+  taskId: string, decisionId: string, resolution: "approved" | "declined",
+  scope?: "once" | "task", note?: string,
 ) =>
-  request<{ decision: TaskDecision; prepared: ActionPrepareResult | null }>(
+  request<{ decision: TaskDecision; prepared: null }>(
     `/agent-tasks/${taskId}/decisions/${decisionId}/resolve`,
-    { method: "POST", body: JSON.stringify({ resolution, note }) },
+    { method: "POST", body: JSON.stringify({ resolution, note, ...(scope ? { scope } : {}) }) },
   );
 
 export const listTaskArtifacts = (taskId: string) =>
@@ -536,35 +522,56 @@ export const listTaskArtifacts = (taskId: string) =>
 export const getTaskProvenance = (taskId: string) =>
   request<import("./viz/types").TaskProvenance>(`/agent-tasks/${taskId}/provenance`);
 
-/** Resolve the matching pending durable Decision for a confirmed proposal (so
- * the approval is recorded first-class), falling back to the legacy
- * validate-and-prefill endpoint when no durable decision gates this action. */
-export async function approveDecisionOrPrepare(
-  taskId: string, action: NextAction,
-): Promise<ActionPrepareResult> {
-  try {
-    const { decisions } = await listTaskDecisions(taskId, "pending");
-    const match = decisions.find((d) => d.action_type === action.action_type);
-    if (match) {
-      const resolved = await resolveTaskDecision(taskId, match.id, "approved");
-      if (resolved.prepared) {
-        return { ...resolved.prepared, proposal: { ...action, id: match.id } };
-      }
-    }
-  } catch {
-    /* fall back to the legacy prepare below */
-  }
-  return prepareSessionAction(taskId, action);
-}
-
 export interface ExecutionStreamResult {
   status: string;
   message_id?: string;
   work_result_id?: string;
   stopped: boolean;
-  proposed_actions: NextAction[];
   metrics?: ExecutionMetrics;
   last_seq: number;
+}
+
+/** A closed assistant text segment (v1.11): commentary before an action
+ * (`final=false`) or the answer (`final=true`). */
+export interface MessageCompletedPayload {
+  text: string;
+  final: boolean;
+  truncated?: boolean;
+}
+
+/** A gated tool paused the execution for the user's approval (v1.11). */
+export interface ApprovalOpenedPayload {
+  decision_id: string;
+  action_type: string;
+  title: string | null;
+  reason: string | null;
+  impact: DecisionImpact | null;
+}
+
+export interface DecisionResolvedPayload {
+  decision_id: string;
+  resolution: "approved" | "declined" | "superseded";
+  action_type?: string;
+  scope?: "once" | "task" | null;
+}
+
+export interface ExecutionStatusPayload {
+  status: string;
+  reason?: string;
+  decision_id?: string;
+  error?: string;
+}
+
+/** What a live follower can listen for on the durable event stream. */
+export interface LiveEventHandlers {
+  onDelta: (text: string) => void;
+  onTool: (a: ToolActivity) => void;
+  onSeq?: (seq: number) => void;
+  onMessageCompleted?: (payload: MessageCompletedPayload) => void;
+  onApprovalOpened?: (payload: ApprovalOpenedPayload) => void;
+  onApprovalGranted?: (payload: { decision_id: string; action_type: string; title: string | null }) => void;
+  onDecisionResolved?: (payload: DecisionResolvedPayload) => void;
+  onStatus?: (payload: ExecutionStatusPayload) => void;
 }
 
 /** The durable event stream dropped before a terminal status. Reconnect with
@@ -592,7 +599,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 export async function streamExecutionEvents(
   taskId: string,
   executionId: string,
-  on: { onDelta: (text: string) => void; onTool: (a: ToolActivity) => void; onSeq?: (seq: number) => void },
+  on: LiveEventHandlers,
   opts: { signal?: AbortSignal; after?: number } = {},
 ): Promise<ExecutionStreamResult> {
   const localCtl = new AbortController();
@@ -669,8 +676,23 @@ export async function streamExecutionEvents(
           else if (type === "tool.completed") on.onTool(toolFromEvent(payload, "completed"));
           else if (type === "steer.applied")
             on.onTool({ tool: "user_steer", target: "", result: payload.text || "", ok: true, status: "completed" });
+          else if (type === "message.completed")
+            on.onMessageCompleted?.({ text: payload.text ?? "", final: payload.final === true, truncated: payload.truncated === true });
+          else if (type === "approval.opened")
+            on.onApprovalOpened?.({
+              decision_id: payload.decision_id, action_type: payload.action_type ?? "",
+              title: payload.title ?? null, reason: payload.reason ?? null, impact: payload.impact ?? null,
+            });
+          else if (type === "approval.granted")
+            on.onApprovalGranted?.({ decision_id: payload.decision_id, action_type: payload.action_type ?? "", title: payload.title ?? null });
+          else if (type === "decision.resolved")
+            on.onDecisionResolved?.({
+              decision_id: payload.decision_id, resolution: payload.resolution,
+              action_type: payload.action_type, scope: payload.scope ?? null,
+            });
           else if (type === "execution.status") {
             const st = payload.status as string;
+            on.onStatus?.({ status: st, reason: payload.reason, decision_id: payload.decision_id, error: payload.error });
             if (st === "failed") throw new Error(payload.error || "the execution failed");
             if (st === "interrupted") throw new Error("the sidecar restarted while this execution was in flight");
             if ((st === "completed" || st === "waiting" || st === "cancelled") && payload.work_result_id) {
@@ -679,12 +701,11 @@ export async function streamExecutionEvents(
                 message_id: payload.message_id,
                 work_result_id: payload.work_result_id,
                 stopped: payload.stopped === true,
-                proposed_actions: payload.proposed_actions || [],
                 metrics: payload.metrics,
                 last_seq: lastSeq,
               };
             } else if (st === "cancelled" && !result) {
-              result = { status: st, stopped: true, proposed_actions: [], last_seq: lastSeq };
+              result = { status: st, stopped: true, last_seq: lastSeq };
             }
           }
         }
@@ -719,7 +740,7 @@ export async function streamExecutionEvents(
 export async function followExecutionEvents(
   taskId: string,
   executionId: string,
-  on: { onDelta: (text: string) => void; onTool: (a: ToolActivity) => void; onSeq?: (seq: number) => void },
+  on: LiveEventHandlers,
   opts: { signal?: AbortSignal; after?: number } = {},
 ): Promise<ExecutionStreamResult> {
   let after = opts.after ?? 0;
@@ -729,8 +750,7 @@ export async function followExecutionEvents(
       return await streamExecutionEvents(
         taskId, executionId,
         {
-          onDelta: on.onDelta,
-          onTool: on.onTool,
+          ...on,
           onSeq: (seq) => {
             after = seq;
             on.onSeq?.(seq);

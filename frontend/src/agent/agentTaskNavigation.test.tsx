@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { I18nProvider } from "../i18n";
-import { AgentTaskNavigation } from "./AgentTaskNavigation";
+import { AgentTaskNavigation, dayGroups } from "./AgentTaskNavigation";
 import type { AgentTaskSummary } from "./navigationModel";
 
-const task = (id: string, title: string): AgentTaskSummary => ({
+const task = (id: string, title: string, updated_at = new Date().toISOString()): AgentTaskSummary => ({
   id,
   title,
   created_at: "2026-09-01T00:00:00Z",
-  updated_at: "2026-09-01T00:00:00Z",
+  updated_at,
   status: "active",
   requires_decision: false,
   task_status: "ready",
@@ -16,12 +16,12 @@ const task = (id: string, title: string): AgentTaskSummary => ({
 
 afterEach(cleanup);
 
-function renderNav(collapsed = false) {
+function renderNav(collapsed = false, tasks = [task("a", "acme-logs 403"), task("b", "inventory review")]) {
   const actions = { onRename: vi.fn(), onDelete: vi.fn() };
   render(
     <I18nProvider>
       <AgentTaskNavigation
-        tasks={[task("a", "acme-logs 403"), task("b", "inventory review")]}
+        tasks={tasks}
         activeTaskId="a"
         onSelectTask={() => undefined}
         onNew={() => undefined}
@@ -56,5 +56,51 @@ describe("the sidebar", () => {
     renderNav(true);
     expect(screen.queryByTestId("task-navigation-toggle")).toBeNull();
     expect(screen.getByTestId("agent-task-navigation").getAttribute("data-collapsed")).toBe("true");
+  });
+
+  it("groups the list by day: Today, Yesterday, then a dated header", () => {
+    const now = new Date();
+    const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000).toISOString();
+    renderNav(false, [
+      task("a", "acme-logs 403", now.toISOString()),
+      task("b", "inventory review", daysAgo(1)),
+      task("c", "lifecycle audit", daysAgo(9)),
+    ]);
+    const groups = screen.getAllByTestId("task-group");
+    expect(groups.map((group) => group.getAttribute("data-group"))).toEqual(["today", "yesterday", expect.stringMatching(/^\d+$/)]);
+    expect(groups[0].textContent).toContain("Today");
+    expect(groups[1].textContent).toContain("Yesterday");
+    // The dated header is locale-formatted, never a raw ISO string.
+    expect(groups[2].textContent).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+    expect(groups[2].querySelector(".native-sidebar-section")?.textContent).toMatch(/^[A-Z][a-z]+ \d{1,2}$/);
+    // Rows still flatten in order for ↑ / ↓.
+    expect(screen.getAllByTestId("task-row").map((row) => row.textContent)).toEqual([
+      expect.stringContaining("acme-logs 403"),
+      expect.stringContaining("inventory review"),
+      expect.stringContaining("lifecycle audit"),
+    ]);
+    expect(screen.queryByText("Tasks")).toBeNull();
+  });
+
+  it("formats day headers for Chinese and keeps the ordering", () => {
+    const now = new Date(2026, 8, 2, 12);
+    const groups = dayGroups([
+      task("a", "a", new Date(2026, 8, 2, 8).toISOString()),
+      task("b", "b", new Date(2026, 8, 1, 23).toISOString()),
+      task("c", "c", new Date(2026, 7, 20, 9).toISOString()),
+      task("d", "d", new Date(2025, 11, 31, 9).toISOString()),
+    ], "zh", now);
+    expect(groups.map((group) => group.label)).toEqual(["今天", "昨天", "8月20日", "2025年12月31日"]);
+    expect(dayGroups([task("d", "d", new Date(2025, 11, 31, 9).toISOString())], "en", now)[0].label).toBe("December 31, 2025");
+  });
+
+  it("carries a quiet Read-only fact in the footer, beside Settings, never as a switch", () => {
+    renderNav();
+    const label = screen.getByTestId("sidebar-read-only");
+    expect(label.tagName).toBe("SPAN");
+    expect(label.textContent).toContain("Read-only");
+    expect(label.getAttribute("title")).toBe("Storage tools are read-only; imports pause for your approval");
+    expect(label.closest("footer")?.querySelector('[data-testid="task-navigation-settings"]')).toBeTruthy();
+    expect(screen.queryByRole("switch")).toBeNull();
   });
 });

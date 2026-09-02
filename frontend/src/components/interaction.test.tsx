@@ -1,7 +1,7 @@
 /**
  * Agent-task interaction rules.
  *
- * Live execution stays visible in the Work Result. Directions can be copied.
+ * Live execution stays visible in the Agent turn. User messages can be copied.
  * Task navigation geometry stays usable. Failures never disappear before the
  * operator can act on them.
  */
@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
-import { AgentTaskResult } from "./AgentTaskResult";
+import { AgentTurn, UserTurn } from "./TranscriptTurn";
 import {
   clampTaskNavigationWidth,
   MIN_TASK_NAV_WIDTH,
@@ -17,6 +17,7 @@ import {
 } from "../agent/navigationModel";
 import { ToastProvider, useToast } from "./Toast";
 import { SHORTCUTS, MOD, matches } from "../shortcuts";
+import { START_GREETINGS, pickStartGreeting, startGreetingIndex } from "../agent/startGreeting";
 import type { ToolActivity } from "../types";
 
 const wrap = (node: React.ReactNode) => render(createElement(I18nProvider, null, node));
@@ -24,37 +25,35 @@ const call = (tool: string, result = "ok"): ToolActivity => ({ tool, target: "bu
 
 describe("execution details", () => {
   const tools = [call("list_objects"), call("head_bucket"), call("test_credentials")];
+  const items = tools.map((record) => ({ kind: "tool" as const, record }));
 
   it("keeps live execution visible while the Agent is working", () => {
-    wrap(createElement(AgentTaskResult, { role: "assistant", content: "", toolActivity: tools, streaming: true }));
+    wrap(createElement(AgentTurn, { answer: null, items, live: true }));
     expect(screen.getByText("list_objects")).toBeTruthy();
-    expect(screen.getByTestId("live-trace")).toBeTruthy();
+    expect(screen.getByTestId("worked-group")).toBeTruthy();
   });
 
-  it("keeps the same tool rows after the Work Result has landed", () => {
-    wrap(createElement(AgentTaskResult, { role: "assistant", content: "done", toolActivity: tools }));
-    expect(screen.getByText("list_objects")).toBeTruthy();
+  it("keeps the same tool rows once the answer has landed, folded behind the group", () => {
+    wrap(createElement(AgentTurn, { answer: "done", items }));
     expect(screen.getByTestId("work-result")).toBeTruthy();
-    expect(screen.getByTestId("live-trace")).toBeTruthy();
+    expect(screen.getByTestId("worked-group").getAttribute("data-expanded")).toBe("false");
+    fireEvent.click(screen.getByTestId("execution-head"));
+    expect(screen.getByText("list_objects")).toBeTruthy();
     expect(screen.queryByTestId("execution-summary")).toBeNull();
   });
 });
 
-describe("Direction events", () => {
-  it("clamps a long Direction but truncates nothing", () => {
+describe("user turns", () => {
+  it("shows a long message whole, as a bubble", () => {
     const long = "x".repeat(1200);
-    wrap(createElement(AgentTaskResult, { role: "user", content: long }));
+    wrap(createElement(UserTurn, { content: long }));
     expect(screen.getByText(long)).toBeTruthy();
-    expect(screen.getByText("Show more")).toBeTruthy();
-  });
-
-  it("leaves a short Direction alone", () => {
-    wrap(createElement(AgentTaskResult, { role: "user", content: "why is my bucket public?" }));
+    expect(screen.getByTestId("turn-user")).toBeTruthy();
     expect(screen.queryByText("Show more")).toBeNull();
   });
 
-  it("copies Direction text and does not offer branch or redirect chrome", () => {
-    wrap(createElement(AgentTaskResult, { role: "user", content: "hello there" }));
+  it("copies the message and does not offer branch or redirect chrome", () => {
+    wrap(createElement(UserTurn, { content: "hello there" }));
     expect(screen.queryByTestId("redirect-direction")).toBeNull();
     expect(screen.queryByTestId("branch-task")).toBeNull();
     expect(screen.getByLabelText(/copy/i)).toBeTruthy();
@@ -136,5 +135,26 @@ describe("shortcut registry", () => {
   it("has no duplicate ids", () => {
     const ids = SHORTCUTS.map((shortcut) => shortcut.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("the start greeting", () => {
+  it("rotates by hour of day through a small set, in both languages", () => {
+    expect(START_GREETINGS.en.length).toBe(4);
+    expect(START_GREETINGS.zh.length).toBe(START_GREETINGS.en.length);
+    const at = (hour: number) => new Date(2026, 8, 2, hour);
+    expect(pickStartGreeting("en", at(8))).toMatch(/Good morning/);
+    expect(pickStartGreeting("en", at(14))).toBe("What should the Agent work on?");
+    expect(pickStartGreeting("en", at(20))).toMatch(/evening/);
+    expect(pickStartGreeting("zh", at(2))).toBe(START_GREETINGS.zh[3]);
+    expect(new Set([0, 8, 12, 19].map(startGreetingIndex)).size).toBe(4);
+  });
+
+  it("is one line with no marketing copy", () => {
+    for (const line of [...START_GREETINGS.en, ...START_GREETINGS.zh]) {
+      expect(line).not.toContain("\n");
+      expect(line.length).toBeLessThan(60);
+      expect(line).not.toMatch(/welcome|powerful|seamless/i);
+    }
   });
 });

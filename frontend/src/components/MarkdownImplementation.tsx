@@ -1,8 +1,7 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useMemo, useState, type ReactNode } from "react";
 import { openExternal, tauriInvoke } from "../config";
 import { useI18n } from "../i18n";
 import { highlight, TOK_CLASS } from "../lib/highlight";
-import { Chart, chartSpec } from "./Chart";
 
 /** Dependency-free, safe markdown renderer for Agent Work Results and artifacts. */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
@@ -162,7 +161,7 @@ function CodeBlock({ lang, content }: { lang: string; content: string }) {
     else fallback();
   };
   return (
-    <div className="agent-result-wide group/code overflow-hidden rounded-lg border border-edge bg-code">
+    <div className="group/code overflow-hidden rounded-lg border border-edge bg-code">
       <div className="flex items-center gap-2 border-b border-edge/70 px-3 py-1.5">
         <span className="font-mono text-2xs uppercase tracking-wide text-gray-500">{lang || "code"}</span>
         <button onClick={copy} className="ml-auto flex items-center gap-1 text-2xs text-gray-500 transition-colors hover:text-gray-200">
@@ -192,9 +191,6 @@ const ALIGN_CLASS: Record<Align, string> = {
 export const TALL_TABLE_ROWS = 12;
 
 function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Align | null)[]; rows: string[][] }) {
-  const { t } = useI18n();
-  const spec = useMemo(() => chartSpec(headers, rows), [headers, rows]);
-  const [chartOverride, setChartOverride] = useState<boolean | null>(null);
   const columns = useMemo(() => {
     return headers.map((_, i) => {
       const declared = aligns[i] ?? null;
@@ -204,23 +200,12 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
     });
   }, [headers, aligns, rows]);
   const tall = rows.length > TALL_TABLE_ROWS;
-  const showChart = chartOverride ?? !tall;
-  const boxRef = useRef<HTMLDivElement | null>(null);
-  const [more, setMore] = useState(false);
-  const measure = useCallback(() => {
-    const el = boxRef.current;
-    setMore(!!el && el.scrollHeight - el.scrollTop - el.clientHeight > 1);
-  }, []);
-  useEffect(measure, [measure, rows.length, tall, showChart]);
 
+  // A wide table scrolls sideways inside its own container: the reading
+  // column never grows and nothing is faded out.
   return (
-    <div className="agent-result-wide my-1 overflow-hidden">
-      {spec && showChart && <Chart spec={spec} />}
-      <div
-        ref={boxRef}
-        onScroll={measure}
-        className={`overflow-auto ${tall ? "max-h-[22rem]" : ""} ${tall && more ? "[mask-image:linear-gradient(to_bottom,black_calc(100%-2.5rem),transparent)]" : ""}`}
-      >
+    <div className="agent-table my-1">
+      <div className={`agent-table-scroll ${tall ? "max-h-[22rem]" : ""}`} data-testid="table-scroll">
         <table className="w-max border-collapse text-xs">
           <thead>
             <tr className={`bg-canvas ${tall ? "sticky top-0 z-sticky" : ""}`}>
@@ -244,11 +229,6 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
           </tbody>
         </table>
       </div>
-      {spec && (
-        <button type="button" onClick={() => setChartOverride(!showChart)} data-testid="chart-toggle" className="mt-1 rounded px-1 py-0.5 text-left text-2xs text-gray-500 transition-colors hover:text-gray-300">
-          {showChart ? t("chart.hide") : t("chart.show")}
-        </button>
-      )}
     </div>
   );
 }

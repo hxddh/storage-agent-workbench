@@ -16,10 +16,12 @@ test("the task start surface sits in the middle band with the Composer", async (
   const main = page.getByRole("main", { name: /^Agent task$/i });
   const composer = main.getByTestId("agent-composer");
   await expect(composer).toBeVisible({ timeout: 30_000 });
-  await expect(composer.getByRole("textbox")).toHaveAttribute("placeholder", /Give the Agent a goal/);
+  await expect(composer.getByRole("textbox")).toHaveAttribute("placeholder", /Ask about your storage/);
   await expect(main.getByRole("heading", { level: 1 })).toHaveCount(0);
   await expect(main.getByTestId("task-start")).toBeVisible();
-  await expect(main.getByText(/What should the Agent work on\?/)).toBeVisible();
+  // The greeting rotates by hour of day; every variant is one question line.
+  await expect(main.locator(".native-start-greeting")).toBeVisible();
+  await expect(main.locator(".native-start-greeting")).toHaveText(/Agent/);
   await expect(page.getByTestId("delegate-suggestion-checkup")).toHaveCount(0);
   await expect(page.getByTestId("model-chip")).toBeVisible();
 

@@ -108,20 +108,14 @@ def test_a_model_cannot_invent_a_skill_name(client):
     "recursive_delete", "purge_all_objects",
 ])
 def test_a_destructive_proposal_never_reaches_the_thread(client, action_type):
-    """Rule 7/8. The model proposes; this product must not carry the proposal."""
+    """Rule 7/8. Whatever the model writes, this product carries no proposal
+    and raises no Decision from prose (v1.11: only a gated tool can)."""
     answer = ('Here is what I would do next.\n\n```json\n{"next_action_proposals":'
               '[{"action_type": "%s", "title": "Clean up"}]}\n```' % action_type)
     _, sid = _ask(client, [text_turn(answer)])
     msg = client.get(f"/sessions/{sid}").json()["messages"][-1]
     assert msg["proposed_actions"] == [], msg["proposed_actions"]
-
-
-def test_a_surviving_proposal_still_requires_confirmation(client):
-    answer = ('Next.\n\n```json\n{"next_action_proposals":[{"action_type":'
-              '"review_bucket_security","title":"Review","requires_confirmation":false}]}\n```')
-    _, sid = _ask(client, [text_turn(answer)])
-    props = client.get(f"/sessions/{sid}").json()["messages"][-1]["proposed_actions"]
-    assert props and all(p["requires_confirmation"] for p in props)
+    assert client.get(f"/agent-tasks/{sid}/decisions").json()["decisions"] == []
 
 
 def test_a_secret_the_model_echoes_back_is_redacted_before_it_is_stored(client):
@@ -154,26 +148,27 @@ def test_the_same_turn_id_twice_does_not_duplicate_the_exchange(client):
         assert client.get(f"/sessions/{sid}").json()["message_total"] == 2
 
 
-def test_a_model_that_answers_only_with_the_metadata_block(client):
-    """No prose at all: the JSON `answer` field is the documented fallback."""
+def test_grounding_is_derived_from_the_trace_not_claimed(client):
+    """v1.11: a model that CLAIMS evidence in a JSON block gets nothing — the
+    grounding comes from the tools the turn actually ran."""
     _, sid = _ask(client, [text_turn(
-        '```json\n{"answer": "The policy is the cause.", "evidence_used": ["head_bucket 200"]}\n```')])
+        'The policy is the cause.\n\n```json\n{"evidence_used": ["head_bucket 200"]}\n```')])
     msg = client.get(f"/sessions/{sid}").json()["messages"][-1]
-    assert msg["content"] == "The policy is the cause."
-    assert msg["grounding"]["evidence_used"] == ["head_bucket 200"]
+    assert "The policy is the cause." in msg["content"]
+    assert msg["grounding"]["evidence_used"] == []
 
 
-def test_a_json_example_inside_the_answer_is_not_eaten_as_the_contract(client):
-    """This product's answers quote bucket policies. The contract is the LAST
-    block carrying a contract key — a policy example must survive in the prose."""
+def test_a_json_example_inside_the_answer_survives(client):
+    """This product's answers quote bucket policies. A policy example is
+    ordinary Markdown and must survive in the prose."""
     answer = (
         'Your policy is:\n\n```json\n{"Effect": "Deny", "Action": "s3:ListBucket"}\n```\n\n'
-        'That is the cause.\n\n```json\n{"evidence_used": ["get_bucket_policy"]}\n```'
+        'That is the cause.'
     )
     _, sid = _ask(client, [text_turn(answer)])
     msg = client.get(f"/sessions/{sid}").json()["messages"][-1]
     assert '"Effect": "Deny"' in (msg["content"] or "")
-    assert msg["grounding"]["evidence_used"] == ["get_bucket_policy"]
+    assert msg["content"].rstrip().endswith("That is the cause.")
 
 
 def test_a_model_that_never_stops_calling_tools_is_bounded(client):

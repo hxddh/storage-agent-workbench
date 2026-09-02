@@ -29,14 +29,8 @@ SKILL = "storageops-security-iam-policy"
 
 ANSWER = """The bucket policy omits s3:ListBucket for that principal.
 
-```json
-{"skills_used": ["%s"],
- "evidence_used": ["read_skill returned the IAM policy method"],
- "evidence_gaps": ["no live bucket was reachable"],
- "next_action_proposals": [{"action_type": "review_bucket_security",
-                            "title": "Review the bucket's security posture"}]}
-```
-""" % SKILL
+Next I would review the bucket's security posture.
+"""
 
 @pytest.fixture
 def turned(client):
@@ -69,12 +63,12 @@ def test_the_turn_persisted_both_halves_of_the_exchange(turned):
     assert "s3:ListBucket" in (msgs[1]["content"] or "")
 
 
-def test_the_contract_block_is_not_left_in_the_answer(turned):
-    """The metadata block is machine-readable bookkeeping; a reader must never
-    see it in the prose."""
+def test_the_answer_is_plain_markdown(turned):
+    """v1.11: no metadata block, no proposal list — the prose is the answer."""
     client, sid, _, _ = turned
     answer = client.get(f"/sessions/{sid}").json()["messages"][-1]["content"] or ""
-    assert "next_action_proposals" not in answer
+    assert "next_action_proposals" not in answer and "```json" not in answer
+    assert "security posture" in answer
 
 
 def test_the_tool_call_reaches_the_thread_with_its_real_types(turned):
@@ -98,15 +92,15 @@ def test_the_same_call_is_readable_on_its_own(turned):
     assert detail.json()["tool_name"] == "read_skill"
 
 
-def test_grounding_and_proposals_survive_the_reload(turned):
-    """Persisted per-message so a reopened thread re-renders them (migration 016)."""
+def test_grounding_and_turn_items_survive_the_reload(turned):
+    """Persisted per-message so a reopened task re-renders them. Grounding is
+    derived from the trace (read_skill ran), and the tool row is a turn item."""
     client, sid, _, _ = turned
     msg = client.get(f"/sessions/{sid}").json()["messages"][-1]
     assert msg["grounding"]["skills_used"] == [SKILL]
-    assert msg["grounding"]["evidence_gaps"] == ["no live bucket was reachable"]
-    assert [p["action_type"] for p in msg["proposed_actions"]] == ["review_bucket_security"]
-    # Never auto-executed, whatever the model asked for.
-    assert all(p["requires_confirmation"] for p in msg["proposed_actions"])
+    assert msg["proposed_actions"] == []
+    assert [i["kind"] for i in msg["turn_items"]] == ["tool"]
+    assert msg["turn_items"][0]["id"] == msg["tool_activity"][0]["id"]
 
 
 def test_the_turn_is_measured_and_the_measurement_is_readable(turned):

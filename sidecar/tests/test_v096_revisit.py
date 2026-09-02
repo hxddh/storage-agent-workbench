@@ -64,11 +64,8 @@ def test_disabled_schedule_is_not_due(tmp_path):
 
 def test_tick_does_not_resolve_pending_decisions(tmp_path, monkeypatch):
     conn = _db(tmp_path / "p.db")
-    store.open_decisions_from_proposals(conn, "task", None, None, [{
-        "action_type": "plan_inventory_import",
-        "title": "Import inventory",
-        "requires_confirmation": True,
-    }])
+    store.open_approval(conn, "task", None, "import_inventory", "Import inventory", None,
+                        {"tool": "import_evidence"})
     revisit_mod.set_schedule(conn, "task", interval_days=1, enabled=True)
     conn.execute(
         "UPDATE task_revisit_schedules SET next_due_at = ? WHERE task_id = ?",

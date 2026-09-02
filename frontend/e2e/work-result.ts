@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
 /**
- * Durable Work Result only. Live streaming uses the same test id with
+ * Durable Agent turn only. The live turn uses the same test id with
  * data-streaming="true" and a different aria-label; waiting on any copy of
  * the answer in `main` fails strict-mode when both are still on screen.
  */

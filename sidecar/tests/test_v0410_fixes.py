@@ -127,7 +127,7 @@ def test_stream_normal_prose_unaffected():
 # --- mining round: CoT persist order (S-F4) ----------------------------------
 
 def test_cot_never_persists_when_redaction_eats_close_tag():
-    from app.skills.contract import _sanitize_text
+    from app.agent_runtime.finalize import sanitize_answer_text as _sanitize_text
 
     raw = ("<think>hidden plan: probe the bucket. "
            "Authorization: abc123tokenXYZsecretvalue</think>The answer.")

@@ -3,6 +3,7 @@ import { useI18n } from "../i18n";
 import { MOD } from "../shortcuts";
 import { Icon } from "./icons";
 import { ModelChip } from "./ModelChip";
+import { ContextMeter } from "./ContextMeter";
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 const formatGiB = (n: number) => `${(n / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
@@ -29,8 +30,8 @@ export function useComposerCopy() {
   const { lang } = useI18n();
   return lang === "zh"
     ? {
-        delegateHint: "给 Agent 一个目标、一个存储问题，或粘贴一段错误…",
-        steerHint: "补充方向或约束，Agent 会在当前执行中采纳…",
+        delegateHint: "问问你的存储…",
+        steerHint: "给 Agent 补充方向…",
         uploading: (name: string) => `正在准备 ${name}…`,
         stop: "停止",
         steerAction: "调整方向",
@@ -44,8 +45,8 @@ export function useComposerCopy() {
         readOnly: "只读工具",
       }
     : {
-        delegateHint: "Give the Agent a goal, a storage problem, or an error to triage…",
-        steerHint: "Add direction or constraints — the Agent applies it to the current execution…",
+        delegateHint: "Ask about your storage…",
+        steerHint: "Steer the Agent…",
         uploading: (name: string) => `Preparing ${name}…`,
         stop: "Stop",
         steerAction: "Steer Agent",
@@ -204,6 +205,13 @@ export function Composer({
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
+          // Esc in an EMPTY Composer stops the running execution — the same
+          // Stop as the button and ⌘. — and does nothing at all otherwise:
+          // typed text is never cleared by a key the hand reaches for reflexively.
+          if (event.key === "Escape") {
+            if (busy && !text.trim()) { event.preventDefault(); onStop(); }
+            return;
+          }
           if (event.key === "ArrowUp" && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey) {
             const ta = event.currentTarget;
             const atStart = ta.selectionStart === 0 && ta.selectionEnd === 0;
@@ -252,6 +260,7 @@ export function Composer({
         </button>
 
         <ModelChip onOpenSettings={onOpenSettings} refreshKey={modelRefreshKey} disabled={busy} />
+        <ContextMeter />
 
         <div className="ml-auto flex items-center gap-1.5">
           {busy ? (
@@ -267,7 +276,7 @@ export function Composer({
               >
                 <Icon name="arrowUp" size={16} stroke={2} />
               </button>
-              <button type="button" onClick={onStop} aria-label={copy.stop} title={`${copy.stop} ${MOD}.`} className="native-round" data-primary={text.trim() ? "false" : "true"}>
+              <button type="button" onClick={onStop} aria-label={copy.stop} title={`${copy.stop} ${MOD}. · Esc`} className="native-round" data-primary={text.trim() ? "false" : "true"}>
                 <Icon name="stop" size={14} stroke={0} className="fill-current" />
               </button>
             </>

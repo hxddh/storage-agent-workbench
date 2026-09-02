@@ -214,32 +214,22 @@ def test_invalid_proposal_rejected_cleanly(client):
 # --- assistant proposed_actions ---------------------------------------------
 
 
-def test_assistant_proposed_actions_sanitized_and_coerced(client, monkeypatch):
+def test_assistant_answer_has_no_proposals_and_no_cot(client, monkeypatch):
+    """v1.11: the model writes plain Markdown; nothing it says becomes a
+    proposal, and hidden reasoning never persists."""
     s = _session(client)
     _add_model_provider(client)
 
     def fake_loop(spec):
-        # Phase 19: unified contract uses "next_action_proposals".
-        return (
-            "Looks storage-side. <thinking>secret</thinking>\n"
-            "```json\n"
-            '{"answer": "Looks storage-side.", "next_action_proposals": ['
-            f'{{"title": "Import logs {ACCESS}", "action_type": "plan_access_log_import", "confidence": "high"}},'
-            '{"title": "wipe", "action_type": "exec_shell_wipe"}]}'
-            "\n```"
-        )
+        return ("Looks storage-side. <thinking>secret</thinking>\n"
+                f"Next I would import the logs ({ACCESS}).")
 
     monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
     out = client.post(f"/sessions/{s['id']}/messages", json={"content": "client or storage?"}).json()
-    actions = out["proposed_actions"]
-    assert len(actions) == 1  # forbidden-token action_type ("exec"/"shell") dropped
-    a = actions[0]
-    assert a["action_type"] == "plan_access_log_import"
-    assert a["requires_confirmation"] is True
-    assert ACCESS not in a["title"]  # secret redacted
-    # the stored assistant prose has no CoT and no json block
+    assert out["proposed_actions"] == []
     assistant = [m for m in out["messages"] if m["role"] == "assistant"][-1]
-    assert "secret" not in assistant["content"] and "next_action_proposals" not in assistant["content"]
+    assert "secret" not in assistant["content"]
+    assert ACCESS not in assistant["content"]  # secret redacted
 
 
 # --- audit + schema ---------------------------------------------------------

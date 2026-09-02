@@ -1,5 +1,9 @@
 # Roadmap
 
+> **Status: delivered in v1.11.0** (R1–R6 below; see `releases/1.11.0.md` and the
+> CHANGELOG). Kept as the record of what was found on v1.10.0 and why each
+> piece was rebuilt. The next plan starts from v1.11.0.
+
 > **Baseline: Storage Agent v1.10.0.** This file is the plan for
 > **v1.11.0 — Codex parity all the way down**: the turn model, approvals, the
 > Task document, the Composer, the sidebar, the artifacts panel and the runtime

@@ -3,10 +3,17 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
 import { LiveTrace, argLabel, argSummary } from "./LiveTrace";
-import { AgentTaskResult } from "./AgentTaskResult";
+import { AgentTurn } from "./TranscriptTurn";
 import type { ToolActivity } from "../types";
 
-const wrap = (node: React.ReactNode) => render(createElement(I18nProvider, null, node));
+const wrap = (node: React.ReactNode) => {
+  const out = render(createElement(I18nProvider, null, node));
+  // A finished group is collapsed until the reader opens it (Codex parity);
+  // these tests read the rows, so open it first.
+  const head = screen.queryByTestId("execution-head");
+  if (head && screen.getByTestId("worked-group").getAttribute("data-expanded") === "false") fireEvent.click(head);
+  return out;
+};
 
 const call = (over: Partial<ToolActivity> = {}): ToolActivity => ({
   tool: "list_objects",
@@ -17,13 +24,16 @@ const call = (over: Partial<ToolActivity> = {}): ToolActivity => ({
 
 describe("live Agent execution", () => {
   it("has one progress surface while the Agent is streaming", () => {
-    wrap(createElement(AgentTaskResult, {
-      role: "assistant",
-      content: "",
-      streaming: true,
-      toolActivity: [call({ status: "started" }), call({ tool: "head_bucket" })],
+    wrap(createElement(AgentTurn, {
+      answer: null,
+      live: true,
+      items: [
+        { kind: "tool", record: call({ status: "started" }) },
+        { kind: "tool", record: call({ tool: "head_bucket" }) },
+      ],
     }));
     expect(screen.getAllByTestId("live-trace")).toHaveLength(1);
+    expect(screen.getAllByTestId("worked-group")).toHaveLength(1);
     expect(screen.queryByText(/checks run/i)).toBeNull();
   });
 
@@ -101,29 +111,39 @@ describe("execution truth", () => {
 describe("deep execution", () => {
   const many = (n: number) => Array.from({ length: n }, (_, i) => call({ tool: `probe_${i}`, id: `c${i}` }));
 
-  it("folds early steps so live execution does not bury the Work Result", () => {
-    wrap(createElement(LiveTrace, { items: many(30) }));
+  it("folds early steps so live execution does not bury the answer", () => {
+    wrap(createElement(LiveTrace, { items: many(30), streaming: true }));
     expect(screen.queryByText("probe_0")).toBeNull();
     expect(screen.getByText("probe_29")).toBeTruthy();
     expect(screen.getByTestId("trace-fold").textContent).toContain("24");
   });
 
-  it("never folds a failure away", () => {
+  it("never folds a failure away, and a failed row keeps the group open", () => {
     const items = many(30);
     items[1] = call({ tool: "head_bucket", id: "boom", result: "NoSuchBucket", ok: false });
     wrap(createElement(LiveTrace, { items }));
+    expect(screen.getByTestId("worked-group").getAttribute("data-expanded")).toBe("true");
     expect(screen.getByText("head_bucket")).toBeTruthy();
   });
 
+  it("collapses a finished group until the reader opens it", () => {
+    render(createElement(I18nProvider, null, createElement(LiveTrace, { items: many(3) })));
+    expect(screen.getByTestId("worked-group").getAttribute("data-expanded")).toBe("false");
+    expect(screen.queryByText("probe_0")).toBeNull();
+    expect(screen.getByTestId("execution-head").textContent).toMatch(/Worked/);
+    fireEvent.click(screen.getByTestId("execution-head"));
+    expect(screen.getByText("probe_0")).toBeTruthy();
+  });
+
   it("shows all steps once the operator asks", () => {
-    wrap(createElement(LiveTrace, { items: many(30) }));
+    wrap(createElement(LiveTrace, { items: many(30), streaming: true }));
     fireEvent.click(screen.getByTestId("trace-fold"));
     expect(screen.getByText("probe_0")).toBeTruthy();
     expect(screen.queryByTestId("trace-fold")).toBeNull();
   });
 
   it("leaves a short execution alone", () => {
-    wrap(createElement(LiveTrace, { items: many(5) }));
+    wrap(createElement(LiveTrace, { items: many(5), streaming: true }));
     expect(screen.queryByTestId("trace-fold")).toBeNull();
     expect(screen.getByText("probe_0")).toBeTruthy();
   });

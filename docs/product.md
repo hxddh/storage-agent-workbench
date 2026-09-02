@@ -71,11 +71,11 @@ The UI may summarize or progressively disclose Execution, but must not invent:
 - worktrees/projects borrowed from coding Agents;
 - storage mutations that are not implemented.
 
-### Decision required
+### Waiting for approval (inline Decision)
 
-A backend action marked `requires_confirmation=true` that gates data-moving or artifact-producing work is a real blocking state, recorded as a first-class durable Decision. The user must approve or **Decline** before the gated operation proceeds; the resolution is recorded durably, and the Execution that raised it stays `waiting` until the boundary is crossed.
+The only confirmation boundary in the shipped product is the gated `import_evidence` tool. When the model calls it, the Sidecar plans the bounded download, records a first-class durable Decision, and the Execution waits — the transcript shows an **approval card inline** at that point (title, bucket, prefix, files, bytes, scope, why) with **Allow**, **Allow for this task**, and **Deny**. Allow runs the audited import server-side and the same Execution continues with the result; Deny hands the model a structured refusal and it answers from what it has. The title bar reads *Waiting for approval*. Nothing the model writes in prose raises a Decision, and no second dialog exists.
 
-Decision cards in the Task project **bounds and impact** already present on the proposal/prefill and evidence-import plan: why confirmation is required, scan scope, and how many files/bytes would move. Absence of a count is a gap, not an invented number.
+Approval cards project **bounds and impact** from the real plan: why confirmation is required, scan scope, and how many files/bytes would move. Absence of a count is a gap, not an invented number.
 
 Durable Decision history lives in `task_decisions`. It is not a Review Overview wall.
 
@@ -83,7 +83,7 @@ Read-only investigation is autonomous by default. Confirmation is reserved for m
 
 ### Work Result
 
-A Work Result is the durable output object of an Execution — recorded by the Task runtime with its grounding, proposals, and stopped/cut-short state. It can contain prose, Markdown structure, tables, **deterministic SVG figures** of runtime analysis (cost horizons, inventory distributions, Drift classes, access-log mix), code/config fragments, structured errors, findings, and references to supporting Evidence/Execution.
+A Work Result is the durable output object of an Execution — recorded by the Task runtime with its derived grounding (skills opened, evidence read, open questions recorded) and stopped/cut-short state. The model writes plain Markdown; there is no metadata block and no next-step proposal list. It can contain prose, Markdown structure, tables, **deterministic SVG figures** of runtime analysis (cost horizons, inventory distributions, Drift classes, access-log mix), code/config fragments, structured errors, findings, and references to supporting Evidence/Execution.
 
 Figures plot only values the runtime emitted. Gaps render as gap states. Unconfirmed prices withhold the cost axis. Age and storage class are independent series — there is no observed joint. Charts are not a new destination: they sit **inline in the Work Result** like a code block. Wide windows keep a 46rem reading measure; the right half stays quiet.
 
@@ -187,7 +187,7 @@ Some database/API names predate v0.93 and remain for compatibility.
 | Direction | execution direction + steer events | `session_messages` (user rows) |
 | Execution | `task_executions` + structured event log | `runs`, `session_runs`, `tool_calls`, turn metrics |
 | Work Result | `work_results` | `session_messages` (assistant rows) |
-| Decision | `task_decisions` | proposed actions + approval/evidence-import records |
+| Decision | `task_decisions` (`kind=approval`, `scope`) | `approval_events` + evidence-import records |
 | Artifact | `task_artifacts` index | evidence/report persistence |
 | Task memory | — | summaries/findings/agent-memory records |
 
@@ -221,7 +221,7 @@ v1.10.0 is the native Agent window on a native shell. Visual language is specifi
 - Figures use `--viz-*` tokens and SVG/CSS only. No chart library. Never interpolate, extrapolate, or invent a horizon the runtime did not emit.
 - Findings carry provenance. Missing chain is labelled, never implied.
 - Composer is the Agent input and the empty-start surface: `+` attach, textarea, model chip, and a round send (↑) at rest; Steer (↑) + Stop (■) while working. No wizard, no `/` SKU menu, no attach-type chips, no persistent keyboard legend, no approval-mode chip.
-- The title bar carries the task name and its real state. Artifacts open from the document as a Review sheet. ⌘K works; it is not painted. New task is a button; the shortcut is not painted on it.
+- The title bar carries the task name and its real state. Artifacts open from the document in the Artifacts panel beside it (⌘I). ⌘K works; it is not painted. New task is a button; the shortcut is not painted on it.
 - Task navigation is one chronological title list. State is a row mark; Ready paints nothing. Rename and Delete only.
 - Settings is a centered dialog: General · Model Providers · Cloud Providers · Skills & bridges · Safety.
 - Every non-ideal state (empty list, no Evidence, offline, interrupted, load earlier) is designed. Copy is restrained, specific, and bilingual.

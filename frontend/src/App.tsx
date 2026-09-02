@@ -16,6 +16,8 @@ import { AgentTaskNavigation } from "./agent/AgentTaskNavigation";
 import { useNavigationCopy } from "./agent/navigationCopy";
 import { DEFAULT_TASK_NAV_WIDTH, clampTaskNavigationWidth, type AgentTaskSummary, type TaskActions, type TaskEditRequest } from "./agent/navigationModel";
 import { AgentShell } from "./agent/AgentShell";
+import { toggleAgentArtifacts } from "./agent/commands";
+import { ActiveTaskContext } from "./agent/activeTask";
 import { listAgentTasks } from "./agent/taskApi";
 import { agentTaskState } from "./agent/taskState";
 import { notifyNative, setNativeWindowTitle, useNativeShell, type MenuCommand } from "./hooks/useNativeAgent";
@@ -188,7 +190,7 @@ export default function App() {
       case "resume": live.resume?.(); break;
       case "toggle-sidebar": toggleNavigation(); break;
       case "find": live.find?.(); break;
-      case "review": live.review?.(); break;
+      case "review": toggleAgentArtifacts(); break;
       case "palette": setPaletteOpen((open) => !open); break;
       case "focus-composer": live.focusComposer?.(); break;
       case "theme": toggleTheme(); break;
@@ -240,6 +242,7 @@ export default function App() {
 
       <div className="native-main">
         <TitleBar task={activeTask} sidebarOpen={sidebarOpen} trafficLights={trafficLights} onToggleSidebar={toggleNavigation} onNew={() => setActiveTaskId(null)} />
+        <ActiveTaskContext.Provider value={activeTaskId}>
         <AgentShell
           taskId={activeTaskId}
           taskContent={
@@ -256,6 +259,7 @@ export default function App() {
             />
           }
         />
+        </ActiveTaskContext.Provider>
       </div>
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />

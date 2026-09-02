@@ -21,12 +21,13 @@ Execution ─────────────────────┘
    │
    ├── safe read-only work ───────────────────┐
    │                                          │
-   └── confirmation-gated work                │
+   └── gated tool (import_evidence)           │
            │                                  │
            ▼                                  │
-      Decision required                       │
+      Waiting for approval (inline card)      │
            │                                  │
-           └──────── approved ────────────────┘
+           └──── Allow / Allow for task ──────┘
+                 Deny → structured refusal
    │
    ▼
 Work Result
@@ -48,7 +49,7 @@ No UI may imply a capability, worker, plan, or control path that the runtime doe
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
 │ React + TypeScript Agent UI                                 │
-│ Sidebar · Title bar · AgentShell · AgentTask · Review sheet │
+│ Sidebar · Title bar · AgentShell · AgentTask · Artifacts   │
 └──────────────────────────┬──────────────────────────────────┘
                            │ localhost HTTP / SSE
                            │ X-Sidecar-Token / SSE token query
@@ -102,7 +103,7 @@ The Sidecar `/agent-tasks` projection provides durable decision truth so a pendi
 
 `frontend/src/agent/AgentShell.tsx` owns the active task environment:
 
-- Review sheet open/close state (`agent-review-overlay`), opened from the document;
+- Artifacts panel open/close state and selection (`agent-artifacts-panel`, a right split; an overlay only under a narrow window), opened from the document or ⌘I;
 - selected Execution inside that sheet.
 
 There is no task header inside the document, no live execution strip, and no second presentation mode.
@@ -145,7 +146,7 @@ Review or a deep artifact must never mount a hidden second composer.
 
 ### 3.6 Presentation layers
 
-`frontend/src/index.css` holds the tokens (achromatic ladder, ink primary, status colours, type/radius/motion). `frontend/src/agent/native-shell.css` styles the window, sidebar, title bar, and Review sheet. `frontend/src/agent/native-document.css` styles the Task document: Direction, execution rows, Work Result prose measure/track, Decision card, banners, Composer, empty start. There are no other presentation layers.
+`frontend/src/index.css` holds the tokens (achromatic ladder, ink primary, status colours, type/radius/motion). `frontend/src/agent/native-shell.css` styles the window, sidebar, title bar, and Artifacts panel. `frontend/src/agent/native-document.css` styles the Task document: transcript turns (user bubble, commentary, *Worked for …* group, approval card, answer), banners, Composer, empty start. There are no other presentation layers.
 
 ## 4. Task document primitives
 
@@ -175,13 +176,13 @@ presentation state. Losing it (reload, task switch, second window) loses
 nothing — the client reattaches by replaying the durable event log from any
 sequence number.
 
-Tool rows in the Work Result (`LiveTrace`, one *Worked for …* group) are the live and durable Execution disclosure. `ExecutionSteps` and Execution Review expose sanitized detail in the overlay without turning the Task into a permanent trace console.
+Tool rows are one collapsed *Worked for …* group between the model's commentary segments (v1.11 transcript turn). The Artifacts panel exposes sanitized Execution detail without turning the Task into a permanent trace console.
 
-### Decision
+### Decision (inline approval)
 
-A current action with `requires_confirmation=true` is promoted to a first-class Decision. It affects both local content rendering and global task state.
+Since v1.11 a Decision is raised by a **gated tool inside the running Execution** (`import_evidence`): the Sidecar plans the bounded download, opens a `task_decisions` row (`kind=approval`) with the projected impact, appends `approval.opened`, and the Execution goes `waiting` while its worker blocks. The transcript shows the approval card inline at that point with **Allow · Allow for this task · Deny**. Allow runs the audited import server-side and returns its bounded result to the model; Deny returns a structured refusal; "Allow for this task" (`scope=task`) lets later calls of the same `action_type` in that Task proceed as recorded, already-approved Decisions. Model prose never raises a Decision, and there is no separate confirmation dialog.
 
-The frontend must not downgrade a real confirmation boundary into an ordinary suggestion for visual simplicity.
+The frontend must not downgrade a real confirmation boundary into an ordinary suggestion for visual simplicity, and must not paint one the runtime did not raise.
 
 ### Work Result
 
@@ -189,19 +190,21 @@ A completed assistant-side task event is rendered as Work Result.
 
 Streaming work is Execution; persisted completed output is Work Result. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered — the Task shows one readable record. Work Results can contain structured Markdown, tables, code/config fragments, storage-specific artifacts, metrics, and provenance links into contextual Review.
 
-### Artifact / Review
+### Artifacts
 
-`frontend/src/agent/AgentReviewPanel.tsx` is a sheet (`agent-review-overlay`) over the Task:
+`frontend/src/agent/ArtifactsPanel.tsx` is a right split (`agent-artifacts-panel`) beside the Task document (an overlay only under a narrow window), toggled by ⌘I and opened from the document:
 
 ```ts
-"evidence" | "execution" | "report"
+"evidence" | "report" | "plan" | "baseline" | "execution"
 ```
 
-- **Evidence** — persisted evidence/finding/activity truth.
-- **Execution** — persisted analysis execution and sanitized call detail.
-- **Report** — durable Markdown Report artifact.
+- **Evidence** — persisted evidence/finding/activity truth, with provenance marks.
+- **Reports** — the durable Markdown Report artifact.
+- **Plans** — read-only Remediation Plan documents.
+- **Baselines & Drift** — versioned baselines and Drift reports.
+- **Execution** — persisted executions; one opens as a document (header · *Worked for …* rows · findings · result).
 
-There is no Overview surface, no 4-tab Review application, and no revisit/plan/baseline/drift walls. These are review modes of the active Task, opened from the document, not independent application destinations. Escape closes the overlay through the same overlay stack as Settings and the command palette.
+There is no Overview surface, no tabbed Review application, and no engine walls: the panel lists durable referents and shows one document at a time, with a back control. It is not an independent application destination.
 
 ## 5. Runtime state and task concurrency
 
@@ -308,7 +311,7 @@ The database/API schema predates v0.93. Renaming every stored entity would add m
 | Direction | `task_executions.direction` + steer events | `session_messages` (user rows) |
 | Execution | `task_executions` + `execution_events` | `runs`, `session_runs`, `tool_calls`, `turn_metrics` |
 | Work Result | `work_results` | `session_messages` (assistant rows) |
-| Decision | `task_decisions` | message proposals + approval/evidence-import state |
+| Decision | `task_decisions` (`kind=approval`, `scope`) | `approval_events` + evidence-import state |
 | Artifact | `task_artifacts` index | report endpoints/files, evidence-import tables |
 | Storage Task Context | `task_context_versions` | — |
 | Task memory | — | `session_summaries`, `session_findings`, `session_agent_memory` |
@@ -425,7 +428,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 - Direction / Execution (*Worked for …* group) / Work Result as one document without chat chrome;
 - the empty start as greeting + Composer, no wizard or SKU catalog;
 - explicit Decision boundaries with impact and Decline;
-- the Review sheet limited to Evidence / Execution / Report;
+- the Artifacts panel limited to Evidence / Reports / Plans / Baselines & Drift / Execution detail;
 - Settings as a dialog of model + storage + general + safety;
 - sequence-only stream recovery and settled-execution catch-up;
 - task-native keyboard contracts;

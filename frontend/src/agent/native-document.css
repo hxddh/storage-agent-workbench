@@ -1,5 +1,5 @@
-/* The Task document: Direction, Execution rows, Work Result, Decision, Composer.
- * One reading column; data may use the wide track but shares the left edge. */
+/* The Task document as a turn transcript: user bubble, commentary, worked
+ * group, approval card, answer, Composer. One 46rem reading column. */
 
 [data-testid="task-scroll"] {
   scrollbar-gutter: stable;
@@ -11,29 +11,90 @@
   scroll-margin-top: 72px;
 }
 
+/* One reading column: user bubbles right, Agent content left. */
 .native-document {
   width: 100%;
-  max-width: min(var(--doc-track), 100%);
+  max-width: min(var(--doc-measure), 100%);
   margin-inline: auto;
 }
 
-/* Direction: a quiet tinted block, left-aligned, full reading measure. */
-.native-direction {
-  max-width: min(var(--doc-measure), 100%);
+/* User turn: a right-aligned bubble, at most 70% of the measure, no label. */
+.turn-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.turn-user-bubble {
+  max-width: min(70%, var(--doc-measure));
   border-radius: var(--radius-xl);
-  padding: 12px 16px;
+  padding: 10px 14px;
   background: var(--panel);
   color: var(--gray-100);
   font-size: var(--text-base);
-  line-height: 1.6;
+  line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.native-direction[data-long="true"][data-expanded="false"] {
-  max-height: 11rem;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent);
-  mask-image: linear-gradient(to bottom, black 70%, transparent);
+.turn-user-bubble[data-queued="true"] {
+  color: var(--gray-400);
+}
+.turn-user-artifact {
+  width: 100%;
+  max-width: min(var(--doc-measure), 100%);
+}
+.turn-user-actions {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.turn-user:hover > .turn-user-actions,
+.turn-user-actions:focus-within,
+.turn-user-actions[data-always="true"] {
+  opacity: 1;
+}
+
+/* Agent turn: plain reading column, no bubble, no card. */
+.turn-agent {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+.turn-agent > * + * {
+  margin-top: 10px;
+}
+.turn-commentary {
+  color: var(--gray-400);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.turn-commentary .agent-result-prose {
+  color: inherit;
+  font-size: inherit;
+}
+.turn-answer {
+  min-width: 0;
+}
+.turn-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: middle;
+  background: var(--gray-100);
+}
+.turn-tag {
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 0 8px;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
 }
 
 .native-row-actions {
@@ -158,18 +219,6 @@
 .native-tool-glyph[data-status="ok"] { color: var(--success); }
 .native-tool-glyph[data-status="failed"] { color: var(--danger); }
 
-/* Work Result: a page, not a card. */
-.native-result {
-  position: relative;
-  width: 100%;
-}
-.native-result-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 12px;
-}
 .native-chip {
   display: inline-flex;
   height: 26px;
@@ -207,60 +256,72 @@
   color: var(--warn-fg);
 }
 
-/* Decision: an approval card the Agent waits on. */
-.native-decision {
+/* Approval: an inline card a gated tool call parks the execution on. */
+.approval-card {
   max-width: min(var(--doc-measure), 100%);
   border: 1px solid var(--edge-strong);
   border-radius: var(--radius-xl);
-  padding: 14px 16px 12px;
+  padding: 12px 14px 10px;
   background: var(--panel);
 }
-.native-decision-eyebrow {
+.approval-card-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--warn-fg);
+  color: var(--gray-500);
   font-size: var(--text-2xs);
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.native-decision-title {
+.approval-card-title {
   margin: 6px 0 0;
   color: var(--gray-100);
   font-size: var(--text-base);
   font-weight: 500;
+  line-height: 1.4;
 }
-.native-decision-why {
+.approval-card-why {
   margin: 4px 0 0;
   color: var(--gray-300);
   font-size: var(--text-sm);
   line-height: 1.55;
 }
-.native-decision-impact {
+.approval-card-impact {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 4px 14px;
-  margin: 12px 0 0;
+  margin: 10px 0 0;
   border-top: 1px solid var(--edge);
   padding-top: 10px;
   font-size: var(--text-xs);
 }
-.native-decision-impact dt { color: var(--gray-500); }
-.native-decision-impact dd { margin: 0; color: var(--gray-200); overflow-wrap: anywhere; }
-.native-decision-impact dd[data-mono="true"] { font-family: "JetBrains Mono Variable", ui-monospace, monospace; }
-.native-decision-actions {
+.approval-card-impact dt { color: var(--gray-500); }
+.approval-card-impact dd { margin: 0; color: var(--gray-200); overflow-wrap: anywhere; }
+.approval-card-impact dd[data-mono="true"] { font-family: "JetBrains Mono Variable", ui-monospace, monospace; }
+.approval-card-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 12px;
 }
-.native-decision-actions small {
+.approval-card-actions small {
   margin-left: auto;
   color: var(--gray-500);
   font-size: var(--text-2xs);
 }
+.approval-card-resolved {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  color: var(--gray-400);
+  font-size: var(--text-xs);
+}
+.approval-card[data-status="declined"] .approval-card-resolved { color: var(--danger); }
+.approval-card[data-status="approved"] .approval-card-resolved,
+.approval-card[data-status="granted"] .approval-card-resolved { color: var(--success); }
 
 /* Banners: offline / model missing / failed / resume. */
 .native-banner {
@@ -278,18 +339,7 @@
 .native-banner p { margin: 4px 0 0; color: var(--gray-400); font-size: var(--text-xs); line-height: 1.55; }
 .native-banner-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 
-.native-queued {
-  display: flex;
-  max-width: min(var(--doc-measure), 100%);
-  align-items: center;
-  gap: 10px;
-  border-radius: var(--radius-lg);
-  padding: 6px 10px;
-  background: var(--panel);
-  color: var(--gray-400);
-  font-size: var(--text-xs);
-}
-.native-queued span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.native-queued { opacity: 0.85; }
 
 /* Composer */
 .native-composer {
@@ -532,9 +582,10 @@
   font-weight: 500;
 }
 .agent-result-prose { width: 100%; min-width: 0; }
-.agent-result-prose > :not(.agent-result-wide) { width: min(var(--doc-measure), 100%); max-width: var(--doc-measure); }
-.agent-result-prose > .agent-result-wide { width: 100%; max-width: 100%; min-width: 0; }
 .agent-result-prose > * + * { margin-top: 0.7rem; }
+/* Tables scroll sideways inside their own container; the column never grows. */
+.agent-table { width: 100%; min-width: 0; }
+.agent-table-scroll { max-width: 100%; overflow: auto; scrollbar-gutter: stable; }
 .agent-prose nav[data-testid="result-outline"] { margin: 0.2rem 0 0.6rem; border: 0; padding: 0 0 0.6rem; background: transparent; border-bottom: 1px solid var(--edge); border-radius: 0; }
 .agent-prose nav[data-testid="result-outline"] ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.25rem; row-gap: 0.1rem; }
 .agent-prose nav[data-testid="result-outline"] a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }

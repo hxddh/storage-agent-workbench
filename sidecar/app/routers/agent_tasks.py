@@ -54,6 +54,9 @@ class SteerRequest(BaseModel):
 class DecisionResolve(BaseModel):
     resolution: str = Field(pattern="^(approved|declined)$")
     note: str | None = Field(default=None, max_length=1000)
+    # once (default) | task — "allow for this task" auto-approves later calls of
+    # the same action_type in this task.
+    scope: str | None = Field(default=None, pattern="^(once|task)$")
 
 
 def _task_or_404(conn: sqlite3.Connection, task_id: str) -> dict[str, Any]:
@@ -135,7 +138,13 @@ def get_task_state(task_id: str, conn: sqlite3.Connection = Depends(get_conn)) -
 def _with_impact(conn: sqlite3.Connection, task_id: str,
                  decision: dict[str, Any]) -> dict[str, Any]:
     out = dict(decision)
-    out["impact"] = next_actions.project_impact(conn, task_id, decision)
+    proposal = decision.get("proposal") if isinstance(decision.get("proposal"), dict) else {}
+    if decision.get("kind") == store.DECISION_KIND_APPROVAL and isinstance(proposal.get("impact"), dict):
+        # An inline approval projected its impact when the tool raised it
+        # (bounded plan counts, bucket, prefix) — that projection is the truth.
+        out["impact"] = proposal["impact"]
+    else:
+        out["impact"] = next_actions.project_impact(conn, task_id, decision)
     return out
 
 
@@ -271,33 +280,27 @@ def resolve_decision(task_id: str, decision_id: str, body: DecisionResolve,
                      conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
     """Cross (or decline) a confirmation boundary — durably.
 
-    Approval never auto-executes cloud work: for an approved decision the
-    response carries the same validate-and-prefill hand-over the action-prepare
-    flow used, so the client opens the purpose-built confirmed flow (the import
-    planner still plans → confirms → runs; the report still renders on request).
-    The resolution itself is recorded first-class either way."""
+    Since v1.11 a Decision is raised by a gated tool inside the running
+    execution: approving here wakes that tool (the bounded, audited import runs
+    server-side and its result goes back to the model), declining returns a
+    structured refusal to the model. ``scope=task`` also allows later calls of
+    the same action_type in this task without pausing."""
     _task_or_404(conn, task_id)
     decision = store.get_decision(conn, decision_id)
     if decision is None or decision["task_id"] != task_id:
         raise HTTPException(status_code=404, detail="decision not found")
-    resolved = store.resolve_decision(conn, decision_id, body.resolution, body.note)
+    resolved = store.resolve_decision(conn, decision_id, body.resolution, body.note,
+                                      scope=body.scope)
     if resolved is None:
         raise HTTPException(status_code=409,
                             detail=f"decision is already {decision['status']}")
     audit.record(conn, "task.decision.resolved",
                  {"task_id": task_id, "decision_id": decision_id,
-                  "action_type": resolved["action_type"], "resolution": body.resolution},
+                  "action_type": resolved["action_type"], "resolution": body.resolution,
+                  "scope": resolved.get("scope")},
                  run_id=None, session_id=task_id)
     runtime.on_decision_resolved(conn, resolved)
     prepared = None
-    if body.resolution == store.DECISION_APPROVED:
-        proposal = next_actions.normalize_proposal(resolved.get("proposal") or {})
-        if proposal is not None:
-            session = sessions_repo.get_row(conn, task_id)
-            prepared = next_actions.prepare(conn, dict(session), proposal)
-            audit.record(conn, "next_action_prepared",
-                         {"session_id": task_id, "action_type": proposal["action_type"],
-                          "status": prepared["status"]}, run_id=None, session_id=task_id)
     conn.commit()
     return {"decision": resolved, "prepared": prepared}
 

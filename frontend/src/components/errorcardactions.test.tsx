@@ -1,5 +1,5 @@
 /**
- * A pasted S3 error is a structured Direction artifact, not a chat message.
+ * A pasted S3 error is a structured user-turn artifact, not a plain bubble.
  * It keeps the useful fields and a copy/raw path. Branch and Redirect are not
  * product actions on Direction.
  */
@@ -7,7 +7,7 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
-import { AgentTaskResult } from "./AgentTaskResult";
+import { UserTurn } from "./TranscriptTurn";
 import { parseS3Error, isMostlyError } from "../lib/s3error";
 
 const XML =
@@ -20,7 +20,7 @@ function mount(content: string) {
     createElement(
       I18nProvider,
       null,
-      createElement(AgentTaskResult, { role: "user", content }),
+      createElement(UserTurn, { content }),
     ),
   );
 }

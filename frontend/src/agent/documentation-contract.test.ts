@@ -37,14 +37,14 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v1.10 documentation contract", () => {
+describe("v1.11 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
       expect(text, `${path} must name Agent Task`).toMatch(/Agent Task/);
     }
-    expect(readRepo("docs/README.md")).toContain("v1.10.0");
-    expect(readRepo("CLAUDE.md")).toContain("v1.10.0");
+    expect(readRepo("docs/README.md")).toContain("v1.11.0");
+    expect(readRepo("CLAUDE.md")).toContain("v1.11.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
     expect(readRepo("docs/design-tokens.md")).toContain("--duration-fast");
     expect(readRepo("docs/design-tokens.md")).toContain("prefers-reduced-motion");
@@ -75,8 +75,14 @@ describe("v1.10 documentation contract", () => {
     expect(api).toContain("/remediation-plans");
     expect(api).toContain("/settings/price-table");
     expect(api).toMatch(/product-level.*Agent Task/i);
-    expect(dataModel).toMatch(/Current migration head:\s*028/i);
+    expect(dataModel).toMatch(/Current migration head:\s*029/i);
     expect(dataModel).toContain("native_agent_titles_effort");
+    expect(dataModel).toContain("native_agent_turn_items_approvals");
+    expect(dataModel).toContain("turn_items");
+    expect(api).toContain("message.completed");
+    expect(api).toContain("approval.opened");
+    expect(readRepo("docs/tools.md")).toContain("import_evidence");
+    expect(readRepo("docs/product.md")).toContain("Waiting for approval");
     expect(api).toContain("reasoning_effort");
     expect(api).toContain("title_source");
     expect(readRepo("docs/architecture.md")).toContain("menu-command");
@@ -91,7 +97,8 @@ describe("v1.10 documentation contract", () => {
     expect(dataModel).toContain("storage_price_table");
     expect(dataModel).toContain("Product-to-persistence mapping");
     expect(dataModel).toContain("execution.events_truncated");
-    expect(security).toContain("Decision required");
+    expect(security).toContain("approval");
+    expect(security).not.toContain("Decision required");
     expect(security).toContain("STORAGE_AGENT_AUTH_TOKEN");
     expect(security).toContain("price table");
     expect(smoke).toContain("Agent Task product smoke");
@@ -113,7 +120,7 @@ describe("v1.10 documentation contract", () => {
     expect(readRepo("CLAUDE.md")).not.toContain("Focus mode");
     expect(readRepo("CLAUDE.md")).not.toContain("command center");
     expect(readRepo("docs/architecture.md")).toContain("after=<last seq>");
-    expect(readRepo("docs/architecture.md")).toContain("agent-review-overlay");
+    expect(readRepo("docs/architecture.md")).toContain("agent-artifacts-panel");
     expect(readRepo("docs/tools.md")).toContain("simulate_storage_cost");
     expect(readRepo("docs/roadmap.md")).not.toMatch(/Add ORC support/);
   });

@@ -249,13 +249,22 @@ These engines may be invoked through Task attachments, deterministic executions,
 
 ## Managed cloud Evidence Import
 
-Cloud evidence movement is **not** an ordinary autonomous Tool call.
+Cloud evidence movement is **not** an ordinary autonomous Tool call. It is the ONE gated tool.
+
+### `import_evidence`
+
+Group `evidence_import`. Args: `source_type` (`inventory` | `access_log`), `bucket_name`, optional `account_run_id` (defaults to the Task's latest completed account survey), `time_range_start` / `time_range_end` (required for access logs), optional `max_files` / `max_bytes` (clamped server-side). The tool:
+
+1. validates the target against a DISCOVERED evidence source and plans the bounded download (read-only listing) through `app.evidence.import_service`;
+2. opens a durable Decision (`kind=approval`) carrying the projected impact (bucket, prefix, files, bytes, scope, why), appends `approval.opened`, and the Execution goes `waiting` — the transcript shows the approval card inline;
+3. blocks (no wall-clock timeout; Stop withdraws it) until the user chooses **Allow**, **Allow for this task**, or **Deny**;
+4. on Allow runs the same confirm → run path (approval_events + audit rows), starts the deterministic analysis, links the run and indexes the `evidence_import` Artifact, and returns a bounded status line to the model; on Deny returns a structured refusal the model must respect.
 
 The workflow remains:
 
-> **plan → Decision required → confirmed execution**
+> **plan → approval (inline Decision) → confirmed execution**
 
-It is bounded by file/byte/time/source constraints and re-validates limits during download. The Agent can propose/prepare the operation, but cannot silently confirm it.
+It is bounded by file/byte/time/source constraints and re-validates limits during download. The model cannot confirm it, and no prose proposal can raise it.
 
 See `security.md` and `api.md`.
 
