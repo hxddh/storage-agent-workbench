@@ -1,21 +1,21 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { publishAgentCommands } from "./commands";
 import { AgentReviewPanel } from "./AgentReviewPanel";
-import { useAgentCopy } from "./agentCopy";
 import type { ReviewSurface } from "./model";
 import { useAgentTaskProjection } from "./useAgentTaskProjection";
 import { useTaskProvenance } from "../hooks/useTaskProvenance";
 
+/**
+ * The active task environment: the Task document plus the Review sheet that
+ * opens over it. No header, no strip, no second presentation mode.
+ */
 export function AgentShell({
-  navigation,
   taskContent,
   taskId,
 }: {
-  navigation: ReactNode;
   taskContent: ReactNode;
   taskId: string | null;
 }) {
-  const copy = useAgentCopy();
   const [review, setReview] = useState<ReviewSurface | null>(null);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
@@ -49,31 +49,25 @@ export function AgentShell({
   }), []);
 
   return (
-    <div data-testid="agent-shell" data-review={review ?? "closed"} className="agent-native-shell">
-      <aside className="agent-native-navigation" aria-label={copy.task.navigation}>{navigation}</aside>
-
-      <section className="agent-native-main">
-        <div className="agent-task-workspace">
-          <section className="agent-task-content" data-testid="agent-task-content" data-empty={taskId ? "false" : "true"} aria-label={copy.task.workspace}>
-            {taskContent}
-          </section>
-          {review && taskId ? (
-            <AgentReviewPanel
-              view={review}
-              detail={detail}
-              report={report}
-              reportLoading={reportLoading}
-              error={error}
-              selectedExecutionId={selectedExecutionId}
-              selectedFindingId={selectedFindingId}
-              provenance={provenance}
-              onOpenExecution={(executionId) => { setSelectedExecutionId(executionId); setSelectedFindingId(null); setReview("execution"); }}
-              onCloseExecution={() => setSelectedExecutionId(null)}
-              onClose={() => { setReview(null); setSelectedExecutionId(null); setSelectedFindingId(null); }}
-            />
-          ) : null}
-        </div>
+    <div data-testid="agent-shell" data-review={review ?? "closed"} className="native-task-area">
+      <section className="agent-task-content" data-testid="agent-task-content" data-empty={taskId ? "false" : "true"}>
+        {taskContent}
       </section>
+      {review && taskId ? (
+        <AgentReviewPanel
+          view={review}
+          detail={detail}
+          report={report}
+          reportLoading={reportLoading}
+          error={error}
+          selectedExecutionId={selectedExecutionId}
+          selectedFindingId={selectedFindingId}
+          provenance={provenance}
+          onOpenExecution={(executionId) => { setSelectedExecutionId(executionId); setSelectedFindingId(null); setReview("execution"); }}
+          onCloseExecution={() => setSelectedExecutionId(null)}
+          onClose={() => { setReview(null); setSelectedExecutionId(null); setSelectedFindingId(null); }}
+        />
+      ) : null}
     </div>
   );
 }

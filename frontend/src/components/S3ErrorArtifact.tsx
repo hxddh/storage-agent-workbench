@@ -49,7 +49,7 @@ export function S3ErrorArtifact({
   if (error.hostId) facts.push({ label: t("s3err.hostId"), value: error.hostId, mono: true });
 
   return (
-    <div data-testid="s3-error-card" className="w-full overflow-hidden rounded-xl border border-danger-border bg-danger-bg/40">
+    <div data-testid="s3-error-card" className="w-full max-w-[46rem] overflow-hidden rounded-xl border border-danger-border bg-panel">
       <div className="flex items-baseline gap-2 px-3.5 pt-3">
         <span className="font-mono text-sm font-semibold text-danger" data-testid="s3-error-code">{error.code}</span>
         <span className="text-2xs uppercase tracking-wider text-gray-500">{t("s3err.label")}</span>

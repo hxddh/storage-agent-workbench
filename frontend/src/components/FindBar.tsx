@@ -22,7 +22,7 @@ export function FindBar({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const copy = lang === "zh"
     ? {
-        placeholder: "在当前 Agent Task 中查找…",
+        placeholder: "在当前任务中查找…",
         tooShort: (n: number) => `至少输入 ${n} 个字符`,
         counter: (i: number, n: number) => `${i} / ${n}`,
         none: "没有匹配项",
@@ -30,7 +30,7 @@ export function FindBar({
         next: "下一个匹配",
       }
     : {
-        placeholder: "Find in the active Agent task…",
+        placeholder: "Find in this task…",
         tooShort: (n: number) => `Type at least ${n} characters`,
         counter: (i: number, n: number) => `${i} / ${n}`,
         none: "No matches",
@@ -54,7 +54,7 @@ export function FindBar({
 
   return (
     <div
-      className="sticky top-0 z-sticky mx-auto flex w-full max-w-3xl items-center gap-2 rounded-b-lg border border-t-0 border-edge bg-elevated/95 px-3 py-2 shadow-pop backdrop-blur-sm animate-fade-in"
+      className="sticky top-0 z-sticky mx-auto mb-3 flex w-full max-w-[46rem] items-center gap-2 rounded-xl border border-edge bg-panel px-3 py-1.5 shadow-pop animate-scale-in"
       role="search"
       data-find-skip
       data-testid="find-bar"
@@ -88,7 +88,7 @@ export function FindBar({
           onClick={onClose}
           aria-label={t("common.close")}
           data-testid="find-close"
-          className="grid h-7 w-7 place-items-center rounded-md text-gray-500 transition-colors hover:bg-hover hover:text-gray-200"
+          className="native-icon-button"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -118,7 +118,7 @@ function FindStep({
       disabled={disabled}
       aria-label={label}
       data-testid={dir === 1 ? "find-next" : "find-prev"}
-      className="rounded-md px-1.5 py-1 text-gray-500 transition-colors hover:bg-hover hover:text-gray-200 disabled:opacity-40 disabled:hover:bg-transparent"
+      className="native-icon-button disabled:opacity-40"
     >
       {dir === 1 ? "↓" : "↑"}
     </button>

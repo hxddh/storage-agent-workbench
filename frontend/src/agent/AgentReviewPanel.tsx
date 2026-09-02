@@ -6,7 +6,9 @@ import type { ReviewSurface } from "./model";
 import { useAgentCopy } from "./agentCopy";
 import type { TaskProvenance } from "../viz/types";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
+import { Icon } from "../components/icons";
 
+/** Review is a sheet over the Task: title, close, the requested artifact. */
 export function AgentReviewPanel({
   view,
   detail,
@@ -46,15 +48,15 @@ export function AgentReviewPanel({
       <aside
         className="agent-review-panel"
         data-testid="agent-review-panel"
+        role="dialog"
+        aria-modal="false"
         aria-label={title}
         onClick={(event) => event.stopPropagation()}
       >
         <header className="agent-review-header">
           <strong>{title}</strong>
           <button type="button" className="agent-review-close" onClick={onClose} aria-label={copy.review.close} title={copy.review.close}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+            <Icon name="close" size={15} />
           </button>
         </header>
 

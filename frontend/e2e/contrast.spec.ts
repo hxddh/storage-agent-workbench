@@ -153,7 +153,7 @@ for (const theme of ["dark", "light"] as const) {
     test("the settings drawer", async ({ page }) => {
       await boot(page, theme, false);
       await page.getByTestId("task-navigation-settings").click();
-      await expect(page.getByText(/settings & providers/i)).toBeVisible();
+      await expect(page.getByTestId("settings-dialog")).toBeVisible();
       await page.waitForTimeout(500);
       const v = await audit(page);
       expect(v, report(`settings (${theme})`, v)).toEqual([]);

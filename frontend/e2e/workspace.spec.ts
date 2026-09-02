@@ -70,7 +70,11 @@ test.describe("Agent-native task shell", () => {
       const control = page.getByTestId("agent-composer");
       await expect(control).toHaveAttribute("data-agent-state", "ready");
       await expect(control.getByRole("button", { name: "Delegate task", exact: true })).toBeVisible();
-      await expect(control.getByText("fake-model", { exact: true })).toHaveCount(0);
+      // The active model is one quiet chip backed by the real provider list —
+      // not a playground: no second text field, no sampling controls.
+      await expect(control.getByTestId("model-chip")).toContainText("fake-model");
+      await expect(control.getByRole("textbox")).toHaveCount(1);
+      await expect(control.getByRole("slider")).toHaveCount(0);
       await expect(page.getByTestId("work-result").first()).toBeVisible();
     } finally {
       await cleanup();

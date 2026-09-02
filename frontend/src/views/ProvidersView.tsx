@@ -39,44 +39,6 @@ const parseList = (s: string) =>
     .map((x) => x.trim())
     .filter(Boolean);
 
-type Tab = "model" | "cloud";
-
-export function ProvidersView() {
-  const { t } = useI18n();
-  const [tab, setTab] = useState<Tab>("model");
-  return (
-    <div className="flex flex-col bg-canvas">
-      <header className="border-b border-edge px-8 py-5">
-        <div className="mb-1 text-sm font-semibold text-gray-100">{t("prov.title")}</div>
-        <p className="mb-4 text-xs leading-relaxed text-gray-500">{t("prov.subtitle")}</p>
-        {/* Which tab is open was carried by the button VARIANT and nothing
-            else, so the state existed only as a colour. `aria-pressed` is what
-            the rest of the app uses for exactly this (composer attach-type,
-            inspector filter chips). */}
-        <div className="flex gap-2" role="group" aria-label={t("prov.title")}>
-          <Button
-            aria-pressed={tab === "model"}
-            variant={tab === "model" ? "selected" : "ghost"}
-            onClick={() => setTab("model")}
-          >
-            {t("prov.tabModel")}
-          </Button>
-          <Button
-            aria-pressed={tab === "cloud"}
-            variant={tab === "cloud" ? "selected" : "ghost"}
-            onClick={() => setTab("cloud")}
-          >
-            {t("prov.tabCloud")}
-          </Button>
-        </div>
-      </header>
-      <div className="px-8 py-5">
-        {tab === "model" ? <ModelProvidersPanel /> : <CloudProvidersPanel />}
-      </div>
-    </div>
-  );
-}
-
 // --- Model providers --------------------------------------------------------
 
 const emptyModelForm: ModelProviderInput = {
@@ -89,7 +51,7 @@ const emptyModelForm: ModelProviderInput = {
   max_output_tokens: null,
 };
 
-function ModelProvidersPanel() {
+export function ModelProvidersPanel() {
   const { t } = useI18n();
   const [items, setItems] = useState<ModelProvider[]>([]);
   const [editing, setEditing] = useState<ModelProvider | null>(null);
@@ -214,8 +176,11 @@ function ModelProvidersPanel() {
 
   return (
     <div className="max-w-3xl">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-200">{t("prov.tabModel")}</h2>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-medium text-gray-100">{t("prov.tabModel")}</h2>
+          <p className="mt-1 text-xs leading-relaxed text-gray-500">{t("prov.modelHint")}</p>
+        </div>
         {!showForm && <Button variant="primary" onClick={openCreate}>{t("prov.addModel")}</Button>}
       </div>
       {error && <p className="mb-3 text-xs text-danger">{error}</p>}
@@ -397,7 +362,7 @@ const CLOUD_PRESETS: Preset[] = [
   { id: "custom", label: "Custom (S3-compatible)", providerType: "s3-compatible", endpointTemplate: "", variable: "endpoint", regionDefault: "", addressing: "virtual", signature: "s3v4" },
 ];
 
-function CloudProvidersPanel() {
+export function CloudProvidersPanel() {
   const { t } = useI18n();
   const [items, setItems] = useState<CloudProvider[]>([]);
   const [editing, setEditing] = useState<CloudProvider | null>(null);
@@ -535,8 +500,11 @@ function CloudProvidersPanel() {
 
   return (
     <div className="max-w-3xl">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-200">{t("prov.tabCloud")}</h2>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-medium text-gray-100">{t("prov.tabCloud")}</h2>
+          <p className="mt-1 text-xs leading-relaxed text-gray-500">{t("prov.cloudHint")}</p>
+        </div>
         {!showForm && <Button variant="primary" onClick={openCreate}>{t("prov.addCloud")}</Button>}
       </div>
       {error && <p className="mb-3 text-xs text-danger">{error}</p>}

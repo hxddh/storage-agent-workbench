@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.08.0.** This is the canonical product/UX specification. v1.04 keeps the v1.03 native Agent window and adds the Codex/Cursor rebuild (warm editorial, icon bar, Cursor-like Composer). v1.03 kept the v1.02 window and added gated extensions. v1.02 finished the native Agent window: v1.01 removed the workbench shell; v1.02 removes the leftover chat transcript. Historical release notes (including v1.00 header/strip/queues and v0.96 copilot OS) are not current product architecture.
+> **Applies to Storage Agent v1.09.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis (activity bar, status bar, Details inspector, warm-editorial chrome) and ships the native Agent window: sidebar · title bar · one Task document · one Composer. Earlier release notes are not current product architecture.
 
 ## Product definition
 
@@ -99,7 +99,7 @@ A Remediation Plan, if drafted, is typed and versioned. The operator applies it 
 
 ### Review
 
-Review is a **light overlay** over the active Task — title, close, and the requested artifact. It opens from a finding, a Work Result Evidence/Execution/Report link, or ⌘I / Ctrl+I for Evidence. Escape closes it through the same overlay stack as Settings and the command palette. The overlay is not a side-column application, not a document hero, and not a 4-tab Overview / Evidence / Execution / Report destination.
+Review is a **sheet** over the active Task — title, close, and the requested artifact. It opens from a finding, a Work Result Evidence/Execution/Report link, or ⌘I / Ctrl+I for Evidence. Escape closes it through the same overlay stack as Settings and the command palette. The overlay is not a side-column application, not a document hero, and not a 4-tab Overview / Evidence / Execution / Report destination.
 
 It must not create a second Agent input or a second task lifecycle.
 
@@ -201,41 +201,32 @@ Rules:
 
 The primary Task viewport should answer, in order:
 
-1. **What is the Agent working on?** — the document, not a header title bar.
-2. **What is happening now or what did it produce?** — tool rows and Work Result in that same document.
-3. **What can I do now?** — Steer, Stop, Resume, decide, open an artifact from the document, or delegate the next Direction.
+1. **What is the Agent working on?** — the task name in the window title bar and the document itself.
+2. **What is happening now or what did it produce?** — the Worked group and the Work Result in that same document.
+3. **What can I do now?** — Steer, Stop, Resume, Approve/Decline, open an artifact chip, or delegate the next Direction.
 
-The empty window is the Composer. The sidebar is quiet task titles. Settings is hidden behind an icon.
+The empty window is one greeting line and the Composer in the middle band. The sidebar is New task, quiet task titles, Settings. Nothing else is painted.
 
-Provider/model configuration, audit internals, and low-level counters are secondary unless directly relevant to the active work.
+Provider/model configuration, audit internals, and low-level counters are secondary unless directly relevant to the active work. The model chip on the Composer is the one place the active model shows; it is backed by the real provider list.
 
 ## Design rules
 
-v1.02.0 is a thorough native Agent reconstruction on the v0.97 token system. Visual language is specified in
+v1.09.0 is the native Agent window. Visual language is specified in
 [`design-tokens.md`](design-tokens.md) and enforced by frontend token tests.
 
-- Dark and light are first-class. Do not ship a surface that only works in one.
-- Type, radius, motion, and elevation come from tokens. No ad-hoc px type, no
-  raw z-index, no `transition-all`.
-- The Task is a document. Direction and Work Result are distinguished by
-  typography, not painted labels. Work Result is a publication: heading
-  hierarchy, paragraph rhythm, tables, labelled code with copy, structured
-  errors, and **deterministic figures** of runtime analysis inline in the prose.
-  Wide windows keep a 46rem reading measure; there is no third-column figures rail.
-- Figures use `--viz-*` tokens and SVG/CSS only. No chart library. Never
-  interpolate, extrapolate, or invent a horizon the runtime did not emit.
+- The window is **sidebar · title bar · one document**. No activity bar, no status bar, no inspector column, no marketing copy anywhere in chrome.
+- One achromatic surface ladder (`--canvas` … `--hover`), an ink primary (near-white on dark, near-black on light), hairline depth. Status (`danger` / `warn` / `success`) is the only colour. Dark and light are first-class.
+- Type, radius, motion, and elevation come from tokens. No ad-hoc px type, no raw z-index, no `transition-all`.
+- The Task is a document. **Direction** is a quiet tinted block on the reading measure. **Execution** is one *Worked for …* group of real tool rows (rows visible; failures never fold away). **Work Result** is a page: prose on the 46rem measure, data on the 64rem track sharing the left edge, artifact chips (Evidence / Execution / Report) below. **Decision** is an approval card: eyebrow, title, why, impact, Approve / Decline.
+- Figures use `--viz-*` tokens and SVG/CSS only. No chart library. Never interpolate, extrapolate, or invent a horizon the runtime did not emit.
 - Findings carry provenance. Missing chain is labelled, never implied.
-- Execution rows show real tool name, argument summary, duration, and
-  success/fail **in the Work Result**. Streaming must not jump layout. Once the
-  current turn is persisted, do not keep a live duplicate of that Work Result on
-  screen. No invented step/progress chrome. No token/budget wall under every result.
-- Composer is the Agent input and the empty-start surface: Delegate at rest, Steer + Stop while working. Attach, textarea, and those actions. No wizard, no `/` SKU menu, no attach-type chips, no persistent keyboard legend.
-- There is no task header and no live status strip. Artifacts open from the document as an overlay. Working state lives on Composer and in the document. ⌘K works; it is not painted. New task is a button; the shortcut is not painted on it.
-- Task navigation is one chronological title list. State is a row mark. Rename and Delete only.
+- Composer is the Agent input and the empty-start surface: `+` attach, textarea, model chip, and a round send (↑) at rest; Steer (↑) + Stop (■) while working. No wizard, no `/` SKU menu, no attach-type chips, no persistent keyboard legend, no approval-mode chip.
+- The title bar carries the task name and its real state. Artifacts open from the document as a Review sheet. ⌘K works; it is not painted. New task is a button; the shortcut is not painted on it.
+- Task navigation is one chronological title list. State is a row mark; Ready paints nothing. Rename and Delete only.
+- Settings is a centered dialog: General · Model Providers · Cloud Providers · Skills & bridges · Safety.
 - Every non-ideal state (empty list, no Evidence, offline, interrupted, load earlier) is designed. Copy is restrained, specific, and bilingual.
 - Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped as Actions vs Tasks. It is not a Review destination menu.
-- Perceived latency: cached task documents render instantly on switch; never
-  flash an empty canvas while the durable document is already known.
+- Perceived latency: cached task documents render instantly on switch; never flash an empty canvas while the durable document is already known.
 - First Work Result on a new install is real delegated work, not a demo or a wizard checkup.
 
 ## Quality contract
@@ -250,7 +241,7 @@ The product model is protected by:
 
 ## Modern native-agent extensions (opt-in, additive)
 
-v1.02 is a thorough native Agent window. The following are **additive, bounded
+v1.09 is the native Agent window. The following are **additive, bounded
 and opt-in** extensions that deepen the same window without replacing it. Each
 reuses the durable runtime, the read-only tool floor, and the same redaction
 and Decision gates; none introduces a second Agent or a new top-level

@@ -116,7 +116,7 @@ const TONE: Record<ToastKind, { border: string; icon: ReactNode; text: string }>
   },
   info: {
     border: "border-edge-strong",
-    text: "text-accent-soft",
+    text: "text-gray-200",
     icon: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
         <circle cx="12" cy="12" r="9" /><line x1="12" y1="11" x2="12" y2="16" /><line x1="12" y1="7.5" x2="12" y2="7.5" />
@@ -141,14 +141,14 @@ function ToastViewport({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id:
         return (
           <div
             key={t.id}
-            className={`pointer-events-auto flex items-start gap-2.5 rounded-xl border ${tone.border} bg-panel px-3.5 py-2.5 shadow-pop animate-fade-in-up`}
+            className={`pointer-events-auto flex items-start gap-2.5 rounded-xl border ${tone.border} bg-panel px-3.5 py-2.5 shadow-pop animate-scale-in`}
           >
             <span className={`mt-px shrink-0 ${tone.text}`}>{tone.icon}</span>
             <span className="min-w-0 flex-1 break-words text-xs leading-relaxed text-gray-200">{t.message}</span>
             {t.action && (
               <button
                 onClick={() => { t.action?.run(); onDismiss(t.id); }}
-                className="shrink-0 text-xs font-medium text-accent-soft transition-colors hover:text-accent"
+                className="shrink-0 text-xs font-medium text-gray-100 underline underline-offset-2 transition-[color] duration-fast hover:text-gray-300"
               >
                 {t.action.label}
               </button>
@@ -156,7 +156,7 @@ function ToastViewport({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id:
             <button
               onClick={() => onDismiss(t.id)}
               aria-label="Dismiss"
-              className="-mr-1 shrink-0 rounded p-0.5 text-gray-500 transition-colors hover:text-gray-300"
+              className="-mr-1 shrink-0 rounded p-0.5 text-gray-500 transition-[color] duration-fast hover:text-gray-200"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />

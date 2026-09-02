@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.08.0.**
+> **Implementation contract for Storage Agent v1.09.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.08.0 product invariant is:
+The v1.09.0 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -18,20 +18,20 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v1.07.0 native Agent
+## 1. Never regress the v1.09.0 native Agent window
 
-New product/frontend work must preserve these boundaries:
+The window is **sidebar · title bar · one Task document · one Composer**. There is no activity bar, no status bar, no Details/inspector column, and no marketing copy in chrome. New product/frontend work must preserve these boundaries:
 
 - **Agent Task** is the primary application object and primary work area.
-- **AgentTaskNavigation** is a quiet chronological title list. Rename and Delete only. State is a row mark. New task is a button, not a painted shortcut chip.
-- **AgentShell** owns the active task environment and overlay Review state. There is no task header, no live execution strip, and no second presentation mode.
+- **AgentTaskNavigation** is the sidebar: window chrome row, **New task**, one quiet chronological title list, **Settings**. Rename and Delete only. State is a row mark (Ready paints nothing). Collapsed, its toggle and New task move into the title bar.
+- **AgentShell** owns the active task environment and the Review sheet state. The title bar above it carries only the task name and its real state. There is no task header inside the document, no live execution strip, and no second presentation mode.
 - **AgentTask** is the public task boundary; persistence compatibility names stay behind adapters.
-- **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active. Attach + textarea + those actions. No persistent keyboard legend.
+- **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active. Attach + textarea + the **model chip** (backed by the real provider list; switching activates a provider server-side) + those actions. No persistent keyboard legend, no painted mode/approval chips.
 - **Direction** is user intent/steering input. Copy is the only Direction chrome.
-- **Execution** is real runtime/tool work, shown as tool rows in the Task document. Never invent plans, steps, workers, or capabilities the runtime does not expose.
-- **Decision required** is a blocking confirmation state derived from real backend proposals, with projected bounds/impact and a durable Decline path.
-- **Work Result** is the durable result of Agent work, not a generic assistant bubble. Figures and provenance sit inside the latest Work Result. Working copy is Agent-native, not chat-era "still running" language.
-- Review is a light overlay over the Task (Evidence, Execution detail, Report), opened from the document or ⌘I. It is not a 4-tab application destination, not a side-column application, and not a document hero. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules may exist as Sidecar engines; they have no product UI entry.
+- **Execution** is real runtime/tool work, shown as one **Worked for …** group of tool rows in the Task document (rows stay visible; the header folds only a long, finished trace). Never invent plans, steps, workers, or capabilities the runtime does not expose.
+- **Decision required** is a blocking confirmation state derived from real backend proposals, rendered as an approval card with projected bounds/impact, **Approve**, and a durable **Decline** path.
+- **Work Result** is a page, not a card and not a bubble: prose on the 46rem measure, data on the 64rem track sharing the left edge, artifact chips (Evidence / Execution / Report) below. Figures and provenance sit inside the latest Work Result. Working copy is Agent-native, not chat-era "still running" language.
+- Review is a sheet over the Task (Evidence, Execution detail, Report), opened from the document or ⌘I. It is not a 4-tab application destination, not a side-column application, and not a document hero. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules may exist as Sidecar engines; they have no product UI entry.
 - Production UI must not teach a chat transcript: no `New chat` titles, no `thread.*` copy keys, no leftover `.thread-prose` layout layer.
 
 Do not reconstruct earlier chat/investigation/workbench information architecture from old release notes, database names, API names, or git history. Historical `session` and `run` terminology is compatibility vocabulary, not a reason to change current product semantics.
@@ -187,10 +187,11 @@ See `docs/data-model.md`.
 
 - Optimize the first viewport for: **what is the Task, what is happening/what was produced, what can the user do now**.
 - The Task is a **document**: one reading column, figures inline in the Work Result. Artifacts open from the document.
-- Composer is the only start surface. An empty window is the Composer. Missing model is a banner plus Settings. The model discovers tools; there is no slash SKU catalog and no first-run wizard.
-- Settings is **model + storage credentials + language/theme**. There is no price-table spreadsheet.
+- Composer is the only start surface. An empty window is one greeting line and the Composer in the middle band. Missing model is a banner plus Settings. The model discovers tools; there is no slash SKU catalog and no first-run wizard.
+- Settings is a centered dialog with sections **General (theme/language) · Model Providers · Cloud Providers · Skills & bridges · Safety**. There is no price-table spreadsheet.
 - Keep settings/provider/model selection secondary to delegated work.
 - Keep technical results readable as documents: prose, tables, code/config, structured errors, tool rows, provenance.
+- Presentation is one achromatic surface ladder, an ink primary (near-white on dark, near-black on light), hairline depth, and status as the only colour. Tokens live in `frontend/src/index.css`; see `docs/design-tokens.md`.
 - Use progressive disclosure for execution detail; do not turn the main Task into a permanent observability wall.
 - Preserve accessibility, contrast, responsive/narrow-window behavior, English/Chinese parity, and real-state visual review.
 - Do not copy another Agent client's chrome without matching runtime semantics.

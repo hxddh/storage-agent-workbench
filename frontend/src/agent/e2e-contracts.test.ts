@@ -33,6 +33,9 @@ const forbidden: Array<[string, RegExp]> = [
   ["execution summary toggle", /execution-summary-toggle/],
   ["Direction rerun selector", /rerun-direction/],
   ["painted palette button in navigation", /task-navigation-palette/],
+  ["v1.0x details inspector selector", /details-inspector|toggle details/i],
+  ["v1.0x status-bar copy", /warm editorial|Codex native/i],
+  ["v1.0x settings drawer title", /settings & providers/i],
 ];
 
 describe("real-browser tests target the Agent-native UI only", () => {

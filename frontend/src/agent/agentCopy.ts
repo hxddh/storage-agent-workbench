@@ -3,11 +3,11 @@ import { useI18n } from "../i18n";
 const COPY = {
   en: {
     task: {
-      navigation: "Agent tasks",
-      workspace: "Active Agent task",
+      navigation: "Tasks",
+      workspace: "Active task",
     },
     review: {
-      close: "Close review",
+      close: "Close",
       loading: "Loading task context…",
     },
     evidence: {
@@ -34,30 +34,30 @@ const COPY = {
   },
   zh: {
     task: {
-      navigation: "Agent Tasks",
-      workspace: "当前 Agent Task",
+      navigation: "任务",
+      workspace: "当前任务",
     },
     review: {
-      close: "关闭 Review",
+      close: "关闭",
       loading: "正在加载任务上下文…",
     },
     evidence: {
-      eyebrow: "Evidence",
+      eyebrow: "证据",
       understanding: "当前判断",
       findings: "发现",
       noFindings: "这个任务还没有记录发现。",
-      attached: "已附文件",
+      attached: "已附加的证据",
       noFiles: "这个任务还没有附加文件。",
     },
     execution: {
-      title: "Execution",
+      title: "执行",
       empty: "这个任务还没有执行记录。",
     },
     report: {
-      title: "Report",
-      preparing: "正在准备 Report…",
+      title: "报告",
+      preparing: "正在准备报告…",
       empty: "这个任务还没有生成报告。",
-      actions: "Report 操作",
+      actions: "报告操作",
       copied: "已复制",
       download: "下载 .md",
       savedTo: (path: string) => `已保存：${path}`,

@@ -54,7 +54,7 @@ test.describe("Agent task smoke", () => {
     await page.goto("/");
     await expect(composer(page)).toBeVisible();
     await page.getByTestId("task-navigation-settings").click();
-    await expect(page.getByText(/settings & providers/i)).toBeVisible();
+    await expect(page.getByTestId("settings-dialog")).toBeVisible();
   });
 
   test("empty start is the Composer, not a first-run wizard", async ({ page }) => {

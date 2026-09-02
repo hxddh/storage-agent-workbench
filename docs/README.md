@@ -1,17 +1,17 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.08.0** (`v1.08.0`).
+> **Current architecture baseline: Storage Agent v1.09.0** (`v1.09.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
-> added quantified storage engines under that runtime. v0.97–v0.99 were
-> presentation passes that still stacked copilot OS chrome. **v1.00.0
-> deleted those copilot objects** but kept a workbench shell. **v1.01.0
-> replaced that shell with a native Agent window.** **v1.02.0 finishes that
-> window:** no leftover chat transcript, no painted Composer/New-task keyboard
-> chrome. Empty window = Composer. Center = one readable work record. Tools
-> appear in that record. Sidebar = quiet titles. Settings is hidden. Overlay
-> Review. Engines remain in the Sidecar with no product UI entry. **v1.03.0 keeps that window and adds modern native-agent extensions — local models, user skills, read-only MCP bridge, observability export, OS shell — as gated additive features.**
+> added quantified storage engines under that runtime. v1.00–v1.03 removed the
+> copilot/workbench shells and added gated native-agent extensions. v1.04–v1.08
+> painted a web-app chassis (activity bar, status bar, Details inspector) on top.
+> **v1.09.0 tears that chassis down.** The window is sidebar · title bar · one
+> Task document · one Composer. Empty start is a greeting and the Composer.
+> Execution is one *Worked for …* group in the Work Result. Decision is an
+> approval card. Settings is a centered dialog. Engines remain in the Sidecar
+> with no product UI entry.
 
 This directory documents the currently shipped Storage Agent architecture and operating contracts. It is deliberately organized so implementation agents and contributors do not reconstruct older product shells from historical terminology that still exists in persistence, APIs, release notes, or git history.
 

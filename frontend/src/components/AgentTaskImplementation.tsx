@@ -43,6 +43,7 @@ import { FindBar } from "./FindBar";
 import { useTaskProvenance } from "../hooks/useTaskProvenance";
 import { AnalysisFigures } from "../viz/AnalysisFigures";
 import { ProvenanceMark } from "../viz/ProvenanceMark";
+import { Icon } from "./icons";
 
 const PENDING_DIRECTION_ID = "task-pending-direction";
 
@@ -81,6 +82,75 @@ function nextActionFromDecision(decision: TaskDecision): NextAction {
   };
 }
 
+function useTaskCopy() {
+  const { lang } = useI18n();
+  return lang === "zh"
+    ? {
+        loadFailed: "无法加载这个任务。",
+        actionFailed: "Agent 无法继续这个任务。",
+        workspace: "Agent 任务",
+        stopped: "已由你停止",
+        offline: "本地运行时暂时不可用，任务现在无法执行。",
+        offlineHint: "正在自动重连。你写下的方向会保留，恢复后可以继续。",
+        needModel: "先配置一个模型提供商，Agent 才能继续这个任务。",
+        needModelAction: "配置模型提供商",
+        retry: "重试任务",
+        loadingEarlier: "正在载入更早的记录…",
+        loadEarlier: (n: number) => `载入更早的 ${n} 条记录`,
+        jumpToStart: "回到任务开始",
+        remoteExecution: (age: string) => `这个任务的一次执行仍在后台进行（${age}）。结果完成后会回到这里。`,
+        stalled: "这次执行比预期更久；结果可能已经持久化，可以重新同步任务。",
+        reload: "重新同步",
+        jumpLatest: "回到最新",
+        jumpWorking: "回到最新 · Agent 仍在执行",
+        liveNeedModel: "Agent 需要先配置模型提供商才能继续。",
+        liveFailed: "这个任务执行失败。",
+        liveStopped: "这个任务已停止。",
+        liveWorking: "Agent 正在执行这个任务。",
+        liveReady: "工作结果已就绪。",
+        continueTask: "继续当前任务，从尚未完成的线索继续推进并深入检查。",
+        resumeTitle: "这次执行被中断了",
+        resumeBody: "恢复会用同一条方向开始新的执行。",
+        resumeAction: "恢复执行",
+        queuedHint: "排队中 · 当前执行结束后开始",
+        queuedCancel: "取消",
+        declineMissing: "没有找到对应的待处理决定。",
+        greeting: "让 Agent 处理什么？",
+      }
+    : {
+        loadFailed: "Couldn't load this task.",
+        actionFailed: "The Agent couldn't continue this task.",
+        workspace: "Agent task",
+        stopped: "Stopped by you",
+        offline: "The local runtime is unavailable, so this task cannot run right now.",
+        offlineHint: "Reconnecting automatically. What you typed is kept and can continue when the runtime is back.",
+        needModel: "Configure a Model Provider before the Agent can continue this task.",
+        needModelAction: "Configure Model Provider",
+        retry: "Retry task",
+        loadingEarlier: "Loading earlier history…",
+        loadEarlier: (n: number) => `Load ${n} earlier records`,
+        jumpToStart: "Jump to the start",
+        remoteExecution: (age: string) => `Execution for this task is still running in the background (${age}). Its result will return here.`,
+        stalled: "This execution is taking longer than expected; the result may already be durable. Resync the task to check.",
+        reload: "Resync task",
+        jumpLatest: "Jump to latest",
+        jumpWorking: "Jump to latest · Agent still working",
+        liveNeedModel: "The Agent needs a Model Provider before it can continue.",
+        liveFailed: "This task failed.",
+        liveStopped: "This task was stopped.",
+        liveWorking: "The Agent is working on this task.",
+        liveReady: "Work result is ready.",
+        continueTask: "Continue this task from the unfinished lines of work and go deeper where needed.",
+        resumeTitle: "This execution was interrupted",
+        resumeBody: "Resume starts a new execution with the same Direction.",
+        resumeAction: "Resume execution",
+        queuedHint: "Queued · starts when the current execution finishes",
+        queuedCancel: "Cancel",
+        declineMissing: "No matching pending Decision was found.",
+        greeting: "What should the Agent work on?",
+      };
+}
+
 export function AgentTaskImplementation({
   sessionId,
   onSessionCreated,
@@ -102,72 +172,8 @@ export function AgentTaskImplementation({
   settingsOpen: boolean;
   reloadKey?: number;
 }) {
-  const { t, lang } = useI18n();
-  const taskCopy = lang === "zh"
-    ? {
-        loadFailed: "无法加载这个任务。",
-        actionFailed: "Agent 无法继续当前任务。",
-        workspace: "当前任务",
-        stopped: "已由你停止",
-        offline: "本地运行时暂时不可用，任务无法继续执行。",
-        offlineHint: "正在自动重连。你写下的方向会保留，恢复后可以继续。",
-        needModel: "先配置模型提供商，Agent 才能继续这个任务。",
-        needModelAction: "配置模型提供商",
-        retry: "重试任务",
-        loadingEarlier: "正在载入更早的记录…",
-        loadEarlier: (n: number) => `载入更早的 ${n} 条记录`,
-        jumpToStart: "回到任务开始",
-        remoteExecution: (age: string) => `这个 Task 的一次执行仍在后台进行（${age}）。结果完成后会回到这里。`,
-        stalled: "这次执行比预期更久；结果可能已经持久化，可以重新同步任务。",
-        reload: "重新同步",
-        jumpLatest: "回到当前工作",
-        jumpWorking: "回到当前工作 · Agent 仍在执行",
-        liveNeedModel: "Agent 需要先配置模型提供商才能继续。",
-        liveFailed: "Agent Task 执行失败。",
-        liveStopped: "Agent Task 已停止。",
-        liveWorking: "Agent 正在执行 Task。",
-        liveReady: "Work Result 已就绪。",
-        continueTask: "继续当前 Task，从尚未完成的线索继续推进并深入检查。",
-        resumeTitle: "这次执行被中断了",
-        resumeBody: "恢复会用同一条方向开始新的执行。",
-        resumeAction: "恢复执行",
-        queuedTitle: "排队中的方向",
-        queuedHint: "当前执行结束后会开始这条方向。",
-        queuedCancel: "取消排队",
-        declineMissing: "没有找到对应的待处理 Decision。",
-      }
-    : {
-        loadFailed: "Couldn't load this task.",
-        actionFailed: "The Agent couldn't continue this task.",
-        workspace: "Agent task",
-        stopped: "Stopped by you",
-        offline: "The local runtime is unavailable, so this task cannot run right now.",
-        offlineHint: "Reconnecting automatically. What you typed is kept and can continue when the runtime is back.",
-        needModel: "Configure a Model Provider before the Agent can continue this task.",
-        needModelAction: "Configure Model Provider",
-        retry: "Retry task",
-        loadingEarlier: "Loading earlier history…",
-        loadEarlier: (n: number) => `Load ${n} earlier records`,
-        jumpToStart: "Jump to the start",
-        remoteExecution: (age: string) => `Execution for this task is still running in the background (${age}). Its result will return here.`,
-        stalled: "This execution is taking longer than expected; the result may already be durable. Resync the task to check.",
-        reload: "Resync task",
-        jumpLatest: "Return to current work",
-        jumpWorking: "Return to current work · Agent still executing",
-        liveNeedModel: "The Agent needs a Model Provider before it can continue.",
-        liveFailed: "This task failed.",
-        liveStopped: "This task was stopped.",
-        liveWorking: "The Agent is working on this task.",
-        liveReady: "Work result is ready.",
-        continueTask: "Continue this task from the unfinished lines of work and go deeper where needed.",
-        resumeTitle: "This execution was interrupted",
-        resumeBody: "Resume starts a new execution with the same Direction.",
-        resumeAction: "Resume execution",
-        queuedTitle: "Queued direction",
-        queuedHint: "This waits until the current execution finishes.",
-        queuedCancel: "Cancel queued direction",
-        declineMissing: "No matching pending Decision was found.",
-      };
+  const { t } = useI18n();
+  const taskCopy = useTaskCopy();
   const {
     scrollRef, contentRef, pinned, onScroll, releaseToUser,
     jumpToLatest, resetPinned, followLatest,
@@ -203,6 +209,9 @@ export function AgentTaskImplementation({
   const hasFigures = Boolean(
     provenance?.analysis.cost || provenance?.analysis.inventory || provenance?.analysis.drift || provenance?.analysis.access_log,
   );
+  // Settings edits providers; when it closes, the model chip re-reads the list.
+  const [modelRefreshKey, setModelRefreshKey] = useState(0);
+  useEffect(() => { if (!settingsOpen) setModelRefreshKey((key) => key + 1); }, [settingsOpen]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -505,6 +514,8 @@ export function AgentTaskImplementation({
         }
         if (text.trim()) void runner.steer(text.trim());
       }}
+      onOpenSettings={onOpenSettings}
+      modelRefreshKey={modelRefreshKey}
     />
   );
 
@@ -523,48 +534,46 @@ export function AgentTaskImplementation({
   const banners = (
     <>
       {offline ? (
-        <div data-testid="offline-banner" className="animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-3.5 text-sm text-danger">
+        <div data-testid="offline-banner" className="native-banner" data-tone="danger">
           {taskCopy.offline}
-          <div className="mt-1 text-xs text-gray-400">{taskCopy.offlineHint}</div>
+          <p>{taskCopy.offlineHint}</p>
         </div>
       ) : null}
       {needKey ? (
-        <div className="animate-fade-in-up rounded-xl border border-warn-border bg-warn-bg p-3.5 text-sm text-warn-fg">
+        <div className="native-banner" data-tone="warn">
           {taskCopy.needModel}
-          <div className="mt-2.5">
+          <div className="native-banner-actions">
             <Button variant="primary" size="sm" onClick={onOpenSettings}>{taskCopy.needModelAction}</Button>
           </div>
         </div>
       ) : null}
       {error ? (
-        <div className="animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-3.5 text-sm">
-          <div className="font-medium text-danger">{taskCopy.actionFailed}</div>
-          <div className="mt-1 break-words text-xs text-gray-300">{error}</div>
-          <div className="mt-2.5 flex flex-wrap gap-2">
+        <div className="native-banner" data-tone="danger">
+          {taskCopy.actionFailed}
+          <p className="break-words">{error}</p>
+          <div className="native-banner-actions">
             {text.trim() ? <Button variant="primary" size="sm" onClick={send}>{taskCopy.retry}</Button> : null}
             <Button variant="default" size="sm" onClick={onOpenSettings}>{t("common.openSettings")}</Button>
           </div>
         </div>
       ) : null}
       {showResume && lastExec ? (
-        <div data-testid="task-resume" className="animate-fade-in-up rounded-xl border border-warn-border bg-warn-bg p-3.5 text-sm text-warn-fg">
-          <div className="font-medium text-gray-100">{taskCopy.resumeTitle}</div>
-          <p className="mt-1 text-xs leading-relaxed text-gray-400">{taskCopy.resumeBody}</p>
-          <div className="mt-2.5">
+        <div data-testid="task-resume" className="native-banner" data-tone="warn">
+          <span className="font-medium text-gray-100">{taskCopy.resumeTitle}</span>
+          <p>{taskCopy.resumeBody}</p>
+          <div className="native-banner-actions">
             <Button data-testid="task-resume-action" variant="primary" size="sm" onClick={() => void runner.resume(lastExec.id)}>
+              <Icon name="play" size={12} />
               {taskCopy.resumeAction}
             </Button>
           </div>
         </div>
       ) : null}
       {queuedDirections.map((execution) => (
-        <div
-          key={execution.id}
-          data-testid="queued-direction"
-          className="flex items-center gap-3 text-sm text-gray-400"
-        >
-          <span className="min-w-0 flex-1 truncate">{execution.direction}</span>
-          <button type="button" data-testid="queued-direction-cancel" className="shrink-0 text-2xs text-gray-500 hover:text-gray-200" onClick={() => void cancelQueued(execution.id)}>
+        <div key={execution.id} data-testid="queued-direction" className="native-queued" title={taskCopy.queuedHint}>
+          <span className="working-mark" style={{ width: 6, height: 6, animation: "none", opacity: 0.5 }} aria-hidden />
+          <span>{execution.direction}</span>
+          <button type="button" data-testid="queued-direction-cancel" className="native-ghost-action" onClick={() => void cancelQueued(execution.id)}>
             {taskCopy.queuedCancel}
           </button>
         </div>
@@ -576,26 +585,27 @@ export function AgentTaskImplementation({
     <main aria-label={taskCopy.workspace} className="flex h-full flex-1 flex-col bg-canvas">
       {loadError ? (
         <div className="flex flex-1 items-center justify-center px-6 py-10">
-          <div className="w-full max-w-md animate-fade-in-up rounded-xl border border-danger-border bg-danger-bg p-5 text-center">
-            <div className="text-base font-medium text-danger">{taskCopy.loadFailed}</div>
-            <div className="mt-1.5 text-xs text-danger/80">{loadError}</div>
-            <div className="mt-3.5 flex justify-center">
+          <div className="native-banner w-full max-w-md" data-tone="danger">
+            <span className="font-medium">{taskCopy.loadFailed}</span>
+            <p>{loadError}</p>
+            <div className="native-banner-actions">
               <Button variant="primary" size="sm" onClick={() => reload(localId.current)}>{taskCopy.retry}</Button>
             </div>
           </div>
         </div>
       ) : loadingTask ? (
         <div className="flex flex-1 flex-col px-6 py-7" data-testid="task-document-skeleton">
-          <div className="mx-auto w-full max-w-[min(64rem,100%)] space-y-4">
-            <span className="skeleton h-3 w-28" />
-            <span className="skeleton h-5 w-64" />
+          <div className="native-document space-y-4">
+            <span className="skeleton h-10 w-2/3 max-w-[30rem] rounded-xl" />
+            <span className="skeleton h-4 w-40" />
             <span className="skeleton h-32 w-full max-w-[46rem]" />
             <span className="skeleton h-8 w-full max-w-[36rem]" />
           </div>
         </div>
       ) : isEmpty ? (
-        <div className="flex flex-1 items-start justify-center overflow-auto px-6 pb-10 pt-16">
-          <div className="w-full max-w-[44rem] animate-fade-in-up">
+        <div className="native-start" data-testid="task-start">
+          <div className="native-start-inner">
+            <p className="native-start-greeting">{taskCopy.greeting}</p>
             {composer}
             <div className="mt-4 space-y-2">{banners}</div>
           </div>
@@ -610,26 +620,24 @@ export function AgentTaskImplementation({
               onWheel={releaseToUser}
               onTouchMove={releaseToUser}
               onKeyDown={releaseToUser}
-              className="flex-1 overflow-auto px-6 py-7"
+              className="flex-1 overflow-auto px-6 pb-6 pt-5"
             >
               {findOpen ? (
                 <FindBar query={findQuery} onQuery={setFindQuery} total={matchTotal} index={findIdx} onStep={stepFind} onClose={closeFind} />
               ) : null}
-              <div ref={contentRef} className="task-document space-y-6">
+              <div ref={contentRef} className="native-document space-y-7">
                 {hiddenCount > 0 ? (
-                  <div className="flex justify-center">
-                    <div className="flex items-center gap-1.5">
-                      <button type="button" onClick={loadEarlier} disabled={loadingEarlier} data-testid="load-earlier" className="rounded-full border border-edge px-3 py-1.5 text-2xs text-gray-500 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50">
-                        {loadingEarlier ? <span className="inline-flex items-center gap-2"><span className="skeleton h-3 w-16" aria-hidden />{taskCopy.loadingEarlier}</span> : taskCopy.loadEarlier(hiddenCount)}
-                      </button>
-                      <button type="button" onClick={loadAllEarlier} disabled={loadingEarlier} data-testid="jump-to-start" className="rounded-full border border-edge px-3 py-1.5 text-2xs text-gray-500 transition-colors hover:border-edge-strong hover:text-gray-200 disabled:opacity-50">
-                        {taskCopy.jumpToStart}
-                      </button>
-                    </div>
+                  <div className="flex justify-center gap-1.5">
+                    <button type="button" onClick={loadEarlier} disabled={loadingEarlier} data-testid="load-earlier" className="native-chip disabled:opacity-50">
+                      {loadingEarlier ? <span className="inline-flex items-center gap-2"><span className="skeleton h-3 w-16" aria-hidden />{taskCopy.loadingEarlier}</span> : taskCopy.loadEarlier(hiddenCount)}
+                    </button>
+                    <button type="button" onClick={loadAllEarlier} disabled={loadingEarlier} data-testid="jump-to-start" className="native-chip disabled:opacity-50">
+                      {taskCopy.jumpToStart}
+                    </button>
                   </div>
                 ) : null}
 
-                {items.map((item, index) => {
+                {items.map((item) => {
                   if (item.kind === "message") {
                     const latest = item.id === lastResult?.id;
                     const decisions = (item.nextActions ?? []).filter((action) => action.requires_confirmation);
@@ -637,7 +645,7 @@ export function AgentTaskImplementation({
                       <div
                         key={item.id}
                         id={`task-item-${item.id}`}
-                        className={`task-item space-y-3 ${item.role === "user" && index > 0 ? "pt-6" : ""}`}
+                        className="task-item space-y-4"
                         data-direction={item.role === "user" ? (item.content ?? "") : undefined}
                       >
                         <AgentTaskResult
@@ -674,14 +682,14 @@ export function AgentTaskImplementation({
                 })}
 
                 {!pending && remoteExecution?.running ? (
-                  <div data-testid="remote-execution" className="animate-fade-in flex items-center gap-2 text-xs text-gray-400">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
+                  <div data-testid="remote-execution" className="flex items-center gap-2 text-xs text-gray-400">
+                    <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
                     {taskCopy.remoteExecution(fmtDuration(remoteExecution.age_ms ?? null) ?? "—")}
                   </div>
                 ) : null}
 
                 {pending && !hideLiveDirection ? (
-                  <div id={PENDING_DIRECTION_ID} data-direction={pending}>
+                  <div id={PENDING_DIRECTION_ID} className="task-item" data-direction={pending}>
                     <AgentTaskResult role="user" content={pending} />
                   </div>
                 ) : null}
@@ -691,14 +699,14 @@ export function AgentTaskImplementation({
                     {streamText !== null || streamTools.length ? (
                       <>
                         <AgentTaskResult role="assistant" content={streamText ?? ""} toolActivity={streamTools} streaming={!run.stopped} sessionId={sessionId} />
-                        {run.stopped ? <div className="flex items-center gap-1.5 text-2xs text-gray-500">{taskCopy.stopped}</div> : null}
+                        {run.stopped ? <div className="text-2xs text-gray-500">{taskCopy.stopped}</div> : null}
                       </>
                     ) : run.stopped ? (
-                      <div className="flex items-center gap-1.5 text-2xs text-gray-500">{taskCopy.stopped}</div>
+                      <div className="text-2xs text-gray-500">{taskCopy.stopped}</div>
                     ) : run.stalled ? (
-                      <div className="animate-fade-in text-xs text-gray-400">
+                      <div className="native-banner">
                         {taskCopy.stalled}
-                        <div className="mt-2">
+                        <div className="native-banner-actions">
                           <Button variant="default" size="sm" onClick={() => {
                             const id = localId.current;
                             if (!id) return;
@@ -713,7 +721,7 @@ export function AgentTaskImplementation({
 
                 <p className="sr-only" role="status" aria-live="polite" data-testid="task-status">{liveStatus}</p>
 
-                {banners}
+                <div className="space-y-2 empty:hidden">{banners}</div>
 
                 {extraPending.length > 0 ? (
                   <div className="space-y-3" data-testid="durable-pending-decisions">
@@ -731,16 +739,18 @@ export function AgentTaskImplementation({
             </div>
           </div>
 
-          <div className="relative px-6 pb-5 pt-1">
+          <div className="relative px-6 pb-4 pt-1">
             {!pinned ? (
-              <div className="pointer-events-none absolute -top-11 left-0 right-0 flex justify-center">
-                <button type="button" onClick={jumpToLatest} data-testid="jump-to-latest" className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-edge bg-elevated/95 px-3 py-1.5 text-2xs text-gray-300 shadow-elev backdrop-blur transition-colors hover:border-edge-strong hover:text-gray-100 animate-fade-in-up">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden><line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" /></svg>
+              <div className="pointer-events-none absolute -top-10 left-0 right-0 flex justify-center">
+                <button type="button" onClick={jumpToLatest} data-testid="jump-to-latest" className="native-chip pointer-events-auto bg-panel shadow-pop">
+                  <Icon name="arrowDown" size={12} stroke={2} />
                   {busy ? taskCopy.jumpWorking : taskCopy.jumpLatest}
                 </button>
               </div>
             ) : null}
-            <div className="max-w-[min(46rem,100%)]">{composer}</div>
+            <div className="native-document">
+              <div className="max-w-[min(46rem,100%)]">{composer}</div>
+            </div>
           </div>
         </>
       )}
