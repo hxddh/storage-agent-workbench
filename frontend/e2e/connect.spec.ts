@@ -46,7 +46,7 @@ async function boot(page: Page) {
 
 async function openCloudProviders(page: Page) {
   await page.getByRole("button", { name: /settings/i }).first().click();
-  await expect(page.getByText(/settings & providers/i)).toBeVisible();
+  await expect(page.getByTestId("settings-dialog")).toBeVisible();
   await page.getByRole("button", { name: /^Cloud Providers$/ }).first().click();
 }
 

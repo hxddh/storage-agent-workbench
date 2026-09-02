@@ -46,7 +46,7 @@ export default {
           tag: "var(--syn-tag)",
           punct: "var(--syn-punct)",
         },
-        // Single restrained accent (Cursor/Codex-style indigo-blue).
+        // The primary is ink, not a hue (Codex-style monochrome control).
         accent: {
           DEFAULT: "var(--accent)",
           soft: "var(--accent-soft)",
@@ -97,8 +97,7 @@ export default {
         base: ["0.875rem", { lineHeight: "1.5rem", letterSpacing: "0em" }],       // 14px — emphasis
         lg: ["1rem", { lineHeight: "1.5rem", letterSpacing: "-0.008em" }],        // 16px — section titles
         xl: ["1.1875rem", { lineHeight: "1.625rem", letterSpacing: "-0.014em" }], // 19px
-        "2xl": ["1.4375rem", { lineHeight: "1.875rem", letterSpacing: "-0.019em" }], // 23px — display
-        "3xl": ["4.5rem", { lineHeight: "1", letterSpacing: "-0.04em" }], // 72px — magazine hero
+        "2xl": ["1.5rem", { lineHeight: "2rem", letterSpacing: "-0.02em" }],      // 24px — display / empty-start greeting
       },
       // Vendored faces first, then the platform's own — including its CJK face,
       // which Inter cannot supply. See the @font-face block in index.css.
@@ -145,7 +144,7 @@ export default {
         lg: "0.5rem",       // 8px  — cards and rows
         xl: "0.75rem",      // 12px — panels
         "2xl": "1rem",      // 16px — overlays
-        "3xl": "1.375rem",  // 22px — the composer pill
+        "3xl": "1.5rem",    // 24px — the composer
         full: "9999px",     // pills and dots
       },
       // Named stacking layers (v0.58.0).
@@ -162,8 +161,8 @@ export default {
         sticky: "30",    // in-flow chrome that pins: find bar, rail headers
         floating: "40",  // in-page affordances: jump-to-latest, rail scrim
         drawer: "50",    // settings, inspector, import dialog
-        wizard: "60",    // first-run — above the drawers it explains
-        palette: "70",   // ⌘K — reachable from anywhere, so above the wizard
+        sheet: "60",     // review overlay sheet — above the task, below the palette
+        palette: "70",   // ⌘K — reachable from anywhere, so above every sheet
         shortcuts: "75", // the help sheet, openable from the palette
         toast: "80",     // always visible; nothing may cover a failure notice
       },
@@ -207,10 +206,10 @@ export default {
           "0%": { opacity: "0", transform: "scale(0.97)" },
           "100%": { opacity: "1", transform: "scale(1)" },
         },
-        "pulse-ring": {
-          "0%": { boxShadow: "0 0 0 0 rgba(84,176,138,0.5)" },
-          "70%": { boxShadow: "0 0 0 5px rgba(84,176,138,0)" },
-          "100%": { boxShadow: "0 0 0 0 rgba(84,176,138,0)" },
+        // Transform only, for opaque dialogs (see slide-in-right).
+        "rise-in": {
+          "0%": { transform: "translateY(8px)" },
+          "100%": { transform: "translateY(0)" },
         },
       },
       animation: {
@@ -218,7 +217,7 @@ export default {
         "fade-in": "fade-in var(--duration-base) var(--ease-out)",
         "slide-in-right": "slide-in-right var(--duration-base) var(--ease-out)",
         "scale-in": "scale-in var(--duration-base) var(--ease-out)",
-        "pulse-ring": "pulse-ring 2s var(--ease-out) infinite",
+        "rise-in": "rise-in var(--duration-base) var(--ease-out)",
         shimmer: "token-shimmer 1.35s var(--ease-in-out) infinite",
       },
     },

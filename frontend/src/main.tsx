@@ -6,12 +6,8 @@ import { I18nProvider } from "./i18n";
 import { ThemeProvider, applyTheme, initialTheme } from "./theme";
 import { ToastProvider } from "./components/Toast";
 import "./index.css";
-import "./work-result.css";
-import "./agent-task.css";
-import "./execution-review.css";
-import "./agent/agent-shell.css";
-import "./agent/agent-state.css";
-import "./agent/agent-runtime.css";
+import "./agent/native-shell.css";
+import "./agent/native-document.css";
 
 applyTheme(initialTheme());
 

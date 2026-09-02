@@ -6,6 +6,31 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.09.0] - 2026-09-02
+
+_Native Agent window — full teardown of the v1.04–v1.08 chassis. No migration (head remains **027**)._
+
+### Removed
+
+- **Activity bar, status bar, Details inspector** and the painted keyboard legend; the `warm editorial · Codex native` status copy; the 72px magazine hero; the warm/orange token system; six overlapping CSS layers (`agent-shell`, `agent-state`, `agent-runtime`, `agent-task`, `work-result`, `execution-review`); dead `EvidenceActivity.tsx`; `EmptyState.tsx`; the right-side `SettingsDrawer`.
+
+### Changed
+
+- **Window** — `sidebar · title bar · one document`. The title bar carries the task name and its real state, plus the sidebar toggle and New task when the sidebar is collapsed. macOS traffic-light inset on the packaged shell.
+- **Sidebar** — window chrome row, New task, one chronological title list (state as a row mark, Ready paints nothing, relative time on hover), Settings. Rename / Delete only. Collapses to zero width.
+- **Tokens** — achromatic surface ladder, ink primary (`#ececec` dark / `#0d0d0d` light), hairline depth; status is the only colour. `--doc-measure` 46rem / `--doc-track` 64rem.
+- **Empty start** — one greeting line + the Composer in the middle band.
+- **Composer** — `+` attach, textarea, **model chip** backed by the real provider list (switch activates server-side; *No model* opens Settings), round ↑ send; ↑ Steer + ■ Stop while working. Placeholders `Give the Agent a goal…` / `给 Agent 一个目标…` restored to the E2E contract.
+- **Execution** — one *Worked for … · n tool calls* group per Work Result with ✓/✕ tool rows and a *Working* shimmer while live.
+- **Work Result** — a page not a card; Evidence / Execution / Report chips below.
+- **Decision** — approval card with impact table and Approve / Decline.
+- **Review** — sheet from the right; **Settings** — centered dialog with General · Model Providers · Cloud Providers · Skills & bridges · Safety.
+- **Copy** — all chrome strings through i18n; Chinese parity restored.
+
+### Security
+
+- Same floor. No new tools, no destructive S3, no generic shell.
+
 ## [1.08.0] - 2026-09-02
 
 _Codex full replica — native teardown. No migration (head remains **027**)._ 

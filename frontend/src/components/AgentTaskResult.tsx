@@ -5,6 +5,7 @@ import { isMostlyError, parseS3Error } from "../lib/s3error";
 import { openAgentExecution, openAgentReview } from "../agent/commands";
 import { AgentResultRenderer } from "./AgentResultRenderer";
 import { S3ErrorArtifact } from "./S3ErrorArtifact";
+import { Icon } from "./icons";
 
 export type AgentTaskResultProps = {
   role: string;
@@ -53,53 +54,58 @@ async function copyText(text: string): Promise<boolean> {
   return fallbackCopy(text);
 }
 
-function DirectionEvent({ content }: Pick<AgentTaskResultProps, "content">) {
-  const { lang, t } = useI18n();
-  const [expanded, setExpanded] = useState(false);
+function useResultCopy() {
+  const { lang } = useI18n();
+  return lang === "zh"
+    ? { direction: "方向", result: "工作结果", execution: "执行", artifacts: "工作产物", evidence: "证据", executionOpen: "执行记录", report: "报告", more: "展开", less: "收起" }
+    : { direction: "Direction", result: "Work Result", execution: "Execution", artifacts: "Work artifacts", evidence: "Evidence", executionOpen: "Execution", report: "Report", more: "Show more", less: "Show less" };
+}
+
+function CopyAction({ text }: { text: string }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="native-ghost-action"
+      onClick={() => void copyText(text).then((ok) => { if (!ok) return; setCopied(true); window.setTimeout(() => setCopied(false), 1200); })}
+      aria-label={t("common.copy")}
+      data-testid="copy-work-result"
+    >
+      <Icon name={copied ? "check" : "copy"} size={12} />
+      {copied ? t("common.copied") : t("common.copy")}
+    </button>
+  );
+}
+
+function DirectionEvent({ content }: Pick<AgentTaskResultProps, "content">) {
+  const copy = useResultCopy();
+  const [expanded, setExpanded] = useState(false);
   const text = content ?? "";
   const long = text.length > 600 || text.split("\n").length > 12;
   const parsed = useMemo(() => parseS3Error(text), [text]);
   const structuredError = parsed !== null && isMostlyError(text, parsed);
-  const label = lang === "zh" ? "Direction" : "Direction";
 
   return (
-    <section className="group max-w-[46rem] animate-fade-in-up" data-testid="direction-event" aria-label={label}>
+    <section className="group" data-testid="direction-event" aria-label={copy.direction}>
       {structuredError && parsed ? (
         <S3ErrorArtifact error={parsed} raw={text} />
       ) : (
-        <div className="rounded-lg border border-edge bg-panel/40 px-4 py-3">
-          <div className="mb-1 flex items-center gap-2 text-2xs font-medium uppercase tracking-widest text-gray-500">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden />
-            {label}
-          </div>
-          <div className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-200">
-            <div className={long && !expanded ? "max-h-44 overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" : ""}>{text}</div>
-            {long ? (
-              <button type="button" onClick={() => setExpanded((v) => !v)} className="mt-2 text-xs font-medium text-gray-500 hover:text-accent">
-                {expanded ? (lang === "zh" ? "收起" : "Show less") : (lang === "zh" ? "展开" : "Show more")}
-              </button>
-            ) : null}
-          </div>
-        </div>
+        <div className="native-direction" data-long={long ? "true" : "false"} data-expanded={expanded ? "true" : "false"}>{text}</div>
       )}
-
-      {!structuredError ? (
-        <div className="mt-2 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-          <button
-            type="button"
-            onClick={() => void copyText(text).then((ok) => { if (!ok) return; setCopied(true); window.setTimeout(() => setCopied(false), 1200); })}
-            className="rounded-md border border-transparent px-2 py-1 text-xs text-gray-500 hover:border-edge hover:bg-hover hover:text-gray-200"
-            aria-label={t("common.copy")}
-          >
-            {copied ? t("common.copied") : t("common.copy")}
+      <div className="native-row-actions">
+        {!structuredError ? <CopyAction text={text} /> : null}
+        {long ? (
+          <button type="button" onClick={() => setExpanded((value) => !value)} className="native-ghost-action">
+            {expanded ? copy.less : copy.more}
           </button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </section>
   );
 }
 
+/** Direction and Work Result are the two things a Task document is made of. */
 export const AgentTaskResult = memo(function AgentTaskResult({
   referencedEvidenceIds = [],
   referencedRunIds = [],
@@ -107,7 +113,7 @@ export const AgentTaskResult = memo(function AgentTaskResult({
   figures,
   ...props
 }: AgentTaskResultProps) {
-  const { lang } = useI18n();
+  const copy = useResultCopy();
   if (props.role === "user") {
     return <DirectionEvent content={props.content} />;
   }
@@ -115,58 +121,52 @@ export const AgentTaskResult = memo(function AgentTaskResult({
   const evidenceCount = referencedEvidenceIds.length;
   const executionCount = referencedRunIds.length;
   const showArtifacts = !props.streaming && (evidenceCount > 0 || executionCount > 0 || hasReport);
-  const label = props.streaming
-    ? (lang === "zh" ? "Execution" : "Execution")
-    : (lang === "zh" ? "Work Result" : "Work Result");
 
   return (
     <article
-      className="w-full max-w-[64rem] rounded-lg border border-edge bg-panel px-5 py-5"
+      className="native-result group"
       data-testid="work-result"
       data-work-result="true"
       data-streaming={props.streaming ? "true" : "false"}
       data-result-shape={resultShape(props.content)}
-      aria-label={label}
+      aria-label={props.streaming ? copy.execution : copy.result}
     >
-      <div className="mb-3 flex items-center gap-2 border-b border-edge pb-3">
-        <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-accent-fg">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
-        </span>
-        <span className="text-sm font-normal tracking-tight text-gray-100" style={{ letterSpacing: '-0.02em', fontWeight: 400 }}>{label}</span>
-        {props.streaming ? <span className="ml-auto flex items-center gap-1.5 text-xs text-gray-500"><span className="working-mark" /> Working</span> : null}
-      </div>
-
-      <div className="prose max-w-none">
-        <AgentResultRenderer
-          content={props.content}
-          toolActivity={props.toolActivity}
-          streaming={props.streaming}
-          sessionId={props.sessionId}
-        />
-      </div>
+      <AgentResultRenderer
+        content={props.content}
+        toolActivity={props.toolActivity}
+        streaming={props.streaming}
+        sessionId={props.sessionId}
+      />
       {figures}
 
-      {showArtifacts ? (
-        <nav className="mt-4 flex flex-wrap gap-2 border-t border-edge pt-4" aria-label={lang === "zh" ? "工作产物" : "Work artifacts"} data-testid="work-result-artifacts">
-          {evidenceCount > 0 ? (
-            <button type="button" onClick={() => openAgentReview("evidence")} data-testid="work-result-open-evidence" className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-canvas px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-hover hover:text-gray-100">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
-              Evidence <span className="rounded-full bg-accent px-1.5 py-0.5 text-2xs font-semibold text-accent-fg">{evidenceCount}</span>
-            </button>
+      {!props.streaming ? (
+        <div className="native-result-foot">
+          {showArtifacts ? (
+            <nav className="flex flex-wrap items-center gap-1.5" aria-label={copy.artifacts} data-testid="work-result-artifacts">
+              {evidenceCount > 0 ? (
+                <button type="button" onClick={() => openAgentReview("evidence")} data-testid="work-result-open-evidence" className="native-chip">
+                  <Icon name="file" size={13} />
+                  {copy.evidence} <b>{evidenceCount}</b>
+                </button>
+              ) : null}
+              {executionCount > 0 ? (
+                <button type="button" onClick={() => { if (executionCount === 1) openAgentExecution(referencedRunIds[0]); else openAgentReview("execution"); }} data-testid="work-result-open-execution" className="native-chip">
+                  <Icon name="tool" size={13} />
+                  {copy.executionOpen} <b>{executionCount}</b>
+                </button>
+              ) : null}
+              {hasReport ? (
+                <button type="button" onClick={() => openAgentReview("report")} data-testid="work-result-open-report" className="native-chip">
+                  <Icon name="table" size={13} />
+                  {copy.report}
+                </button>
+              ) : null}
+            </nav>
           ) : null}
-          {executionCount > 0 ? (
-            <button type="button" onClick={() => { if (executionCount === 1) openAgentExecution(referencedRunIds[0]); else openAgentReview("execution"); }} data-testid="work-result-open-execution" className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-canvas px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-hover hover:text-gray-100">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><polyline points="22 12 18 12 14 8 8 8 4 12 22 12" /><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></svg>
-              Execution <span className="rounded-full bg-accent px-1.5 py-0.5 text-2xs font-semibold text-accent-fg">{executionCount}</span>
-            </button>
-          ) : null}
-          {hasReport ? (
-            <button type="button" onClick={() => openAgentReview("report")} data-testid="work-result-open-report" className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-canvas px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-hover hover:text-gray-100">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-              Report
-            </button>
-          ) : null}
-        </nav>
+          <div className="native-row-actions" style={{ marginTop: 0 }}>
+            <CopyAction text={props.content || ""} />
+          </div>
+        </div>
       ) : null}
     </article>
   );

@@ -28,7 +28,7 @@ async function openSettings(page: Page) {
   await page.goto("/");
   await expect(page.getByTestId("agent-composer").getByRole("textbox")).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: /settings/i }).first().click();
-  await expect(page.getByText(/settings & providers/i)).toBeVisible();
+  await expect(page.getByTestId("settings-dialog")).toBeVisible();
 }
 
 /** How assistive tech sees it: exactly one pressed button per group. */
@@ -73,17 +73,26 @@ test.describe("settings drawer selection state", () => {
     await page.getByRole("button", { name: /^English$/ }).first().click();
   });
 
-  test("the provider tabs say which tab is open", async ({ page }) => {
+  test("the settings sections say which section is open", async ({ page }) => {
     await openSettings(page);
-    expect(await pressedIn(page, ["Model Providers", "Cloud Providers"])).toEqual({
-      "Model Providers": "true",
+    // The dialog opens on General; the provider sections are not pressed yet.
+    expect(await pressedIn(page, ["General", "Model Providers", "Cloud Providers"])).toEqual({
+      General: "true",
+      "Model Providers": "false",
       "Cloud Providers": "false",
     });
 
     await page.getByRole("button", { name: /^Cloud Providers$/ }).first().click();
-    expect(await pressedIn(page, ["Model Providers", "Cloud Providers"])).toEqual({
+    expect(await pressedIn(page, ["General", "Model Providers", "Cloud Providers"])).toEqual({
+      General: "false",
       "Model Providers": "false",
       "Cloud Providers": "true",
+    });
+
+    await page.getByRole("button", { name: /^Model Providers$/ }).first().click();
+    expect(await pressedIn(page, ["Model Providers", "Cloud Providers"])).toEqual({
+      "Model Providers": "true",
+      "Cloud Providers": "false",
     });
   });
 

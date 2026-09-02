@@ -279,7 +279,7 @@ export function ExecutionDetailImplementation({
   return (
     <div className="flex flex-1 flex-col overflow-auto bg-canvas" data-testid="execution-detail-body">
       <header className="border-b border-edge px-8 py-4">
-        <button className="mb-2 text-xs text-gray-500 hover:text-gray-300" onClick={onBack}>
+        <button className="native-ghost-action mb-2 -ml-1.5" onClick={onBack}>
           ← {copy.back}
         </button>
         {loadError ? (
@@ -288,7 +288,7 @@ export function ExecutionDetailImplementation({
           </p>
         ) : null}
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-gray-100">
+          <h1 className="text-base font-medium text-gray-100">
             {detail?.title || detail?.run_type || copy.fallbackTitle}
           </h1>
           <span className={`text-sm ${STATUS_COLOR[status] ?? "text-gray-400"}`} data-testid="execution-status">
@@ -308,14 +308,14 @@ export function ExecutionDetailImplementation({
 
       <div className="grid flex-1 grid-cols-2 gap-6 p-8">
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-gray-200">{copy.direction}</h2>
+          <h2 className="mb-2 text-sm font-medium text-gray-100">{copy.direction}</h2>
           <p className="mb-6 rounded-md border border-edge bg-panel p-3 text-xs text-gray-300">
             {detail?.user_prompt || "—"}
           </p>
 
           {metricsCards.length > 0 ? (
             <>
-              <h2 className="mb-2 text-sm font-semibold text-gray-200">{copy.metrics}</h2>
+              <h2 className="mb-2 text-sm font-medium text-gray-100">{copy.metrics}</h2>
               <div className="mb-6 grid grid-cols-2 gap-2" data-testid="metrics-cards">
                 {metricsCards.map((card) => (
                   <div key={card.label} className="rounded-md border border-edge bg-panel p-3">
@@ -333,7 +333,7 @@ export function ExecutionDetailImplementation({
             </div>
           ) : null}
 
-          <h2 className="mb-2 text-sm font-semibold text-gray-200">{copy.findings}</h2>
+          <h2 className="mb-2 text-sm font-medium text-gray-100">{copy.findings}</h2>
           <ul className="space-y-1">
             {findings.map((finding, index) => (
               <li key={index} className="text-xs">
@@ -349,19 +349,19 @@ export function ExecutionDetailImplementation({
         </section>
 
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-gray-200">{copy.steps}</h2>
+          <h2 className="mb-2 text-sm font-medium text-gray-100">{copy.steps}</h2>
           <ExecutionSteps steps={executionSteps} />
 
           {agentMessage ? (
             <div className="mt-6">
-              <h2 className="mb-2 text-sm font-semibold text-gray-200">{copy.result}</h2>
+              <h2 className="mb-2 text-sm font-medium text-gray-100">{copy.result}</h2>
               <p className="rounded-md border border-edge bg-panel p-3 text-xs text-gray-300">{agentMessage}</p>
             </div>
           ) : null}
 
           {report ? (
             <div className="mt-6">
-              <h2 className="mb-2 text-sm font-semibold text-gray-200">{copy.report}</h2>
+              <h2 className="mb-2 text-sm font-medium text-gray-100">{copy.report}</h2>
               <div className="max-h-96 overflow-auto rounded-md border border-edge bg-sidebar p-3">
                 <Markdown text={report.content} />
               </div>

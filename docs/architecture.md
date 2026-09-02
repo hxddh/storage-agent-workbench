@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.08.0.** Thorough native Agent window. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged.
+> **Current architecture baseline: Storage Agent v1.09.0.** Thorough native Agent window. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -48,7 +48,7 @@ No UI may imply a capability, worker, plan, or control path that the runtime doe
                            │
 ┌──────────────────────────▼──────────────────────────────────┐
 │ React + TypeScript Agent UI                                 │
-│ Task navigation · AgentShell · AgentTask · contextual Review│
+│ Sidebar · Title bar · AgentShell · AgentTask · Review sheet │
 └──────────────────────────┬──────────────────────────────────┘
                            │ localhost HTTP / SSE
                            │ X-Sidecar-Token / SSE token query
@@ -74,30 +74,25 @@ The packaged Tauri launcher chooses a free localhost port, generates a per-launc
 - durable task list refresh;
 - active task identity;
 - task lifecycle actions (create/rename/delete);
-- settings drawer;
-- command palette;
-- shortcuts sheet.
+- the window title bar (task name + real task state; the sidebar toggle and New task when the sidebar is collapsed);
+- the Settings dialog, command palette, and shortcuts sheet.
 
-It composes the current public product boundaries directly:
-
-- `AgentTaskNavigation`;
-- `AgentShell`;
-- `AgentTask`.
+The window it composes is exactly: `AgentTaskNavigation` (sidebar) · title bar · `AgentShell` → `AgentTask`. There is no activity bar, no status bar, no Details/inspector column. On the packaged macOS shell the overlay title bar leaves room for the native traffic lights (`hasNativeTrafficLights`).
 
 Legacy frontend adapters from earlier releases were physically removed. Do not recreate an intermediate application shell merely to mirror backend entity names.
 
-### 3.2 `AgentTaskNavigation`: global task list
+### 3.2 `AgentTaskNavigation`: the sidebar
 
-`frontend/src/agent/AgentTaskNavigation.tsx` owns global Task navigation.
+`frontend/src/agent/AgentTaskNavigation.tsx` owns the sidebar: a window chrome row (drag region + collapse toggle), **New task**, one chronological task list, and **Settings**.
 
 Each task row combines:
 
 - durable task metadata from the Sidecar task projection;
 - current per-task runtime state from the client execution store;
-- a state mark;
-- Rename and Delete.
+- a state mark (Ready paints nothing; Working pulses; Needs decision / Needs attention are status colours);
+- relative time on hover, and Rename / Delete behind one More control.
 
-The list is one chronological sequence by `updated_at`. Section titles, search, pin, duplicate, and archive are not painted. The New task control is a button; it does not paint ⌘N. Database counters and "General storage task" subtitles are not the navigation model. There is no sidecar-health footer.
+The list is one chronological sequence by `updated_at`. Section titles, search, pin, duplicate, archive, day buckets and database counters are not painted. The New task control is a button; it does not paint ⌘N. Collapsed, the sidebar has zero width and its toggle + New task move into the title bar.
 
 The Sidecar `/agent-tasks` projection provides durable decision truth so a pending confirmation remains visible after reload/restart even when browser-local runtime state is gone.
 
@@ -105,10 +100,10 @@ The Sidecar `/agent-tasks` projection provides durable decision truth so a pendi
 
 `frontend/src/agent/AgentShell.tsx` owns the active task environment:
 
-- overlay Review open/close state (`agent-review-overlay`), opened from the document;
-- selected Execution inside that overlay.
+- Review sheet open/close state (`agent-review-overlay`), opened from the document;
+- selected Execution inside that sheet.
 
-There is no task header, no live execution strip, and no second presentation mode.
+There is no task header inside the document, no live execution strip, and no second presentation mode.
 
 `AgentShell` receives `taskContent: ReactNode`. Its primary area is always the Agent Task.
 
@@ -122,12 +117,12 @@ Review is subordinate to the Task. Opening Review does not create another task, 
 
 - durable task document loading and paging;
 - task draft state;
-- the one Composer;
+- the one Composer, and the empty start (greeting + Composer in the middle band);
 - submission/streaming integration;
-- steering/stopping;
+- steering/stopping/resuming;
 - attachments (type inferred from filename);
 - Direction and Work Result rendering;
-- real tool rows in the document (`LiveTrace`);
+- real tool rows in the document (`LiveTrace`, one *Worked for …* group);
 - Next Actions / Decisions that require confirmation;
 - find and task viewport behavior.
 
@@ -135,16 +130,20 @@ Historical `sessionId` terminology may appear inside compatibility adapters and 
 
 ### 3.5 One Composer
 
-`frontend/src/components/Composer.tsx` is the only Agent input. It is attach + textarea + Delegate / Steer / Stop. Shortcuts exist; they are not painted as a persistent legend on the input.
+`frontend/src/components/Composer.tsx` is the only Agent input. It is `+` attach + textarea + model chip (`ModelChip`, backed by `/model-providers`; switching activates a provider server-side) + Delegate / Steer / Stop. Shortcuts exist; they are not painted as a persistent legend on the input.
 
 ```text
-no active execution  -> Delegate
-active execution     -> Steer + Stop
+no active execution  -> Delegate (round ↑)
+active execution     -> Steer (round ↑ when text is present) + Stop (■)
 upload preparation   -> preparing/working state
 runtime unavailable  -> truthful disabled/actionable state
 ```
 
 Review or a deep artifact must never mount a hidden second composer.
+
+### 3.6 Presentation layers
+
+`frontend/src/index.css` holds the tokens (achromatic ladder, ink primary, status colours, type/radius/motion). `frontend/src/agent/native-shell.css` styles the window, sidebar, title bar, and Review sheet. `frontend/src/agent/native-document.css` styles the Task document: Direction, execution rows, Work Result prose measure/track, Decision card, banners, Composer, empty start. There are no other presentation layers.
 
 ## 4. Task document primitives
 
@@ -174,7 +173,7 @@ presentation state. Losing it (reload, task switch, second window) loses
 nothing — the client reattaches by replaying the durable event log from any
 sequence number.
 
-Tool rows in the Work Result (`LiveTrace`) are the live and durable Execution disclosure. `ExecutionSteps` and Execution Review expose sanitized detail in the overlay without turning the Task into a permanent trace console.
+Tool rows in the Work Result (`LiveTrace`, one *Worked for …* group) are the live and durable Execution disclosure. `ExecutionSteps` and Execution Review expose sanitized detail in the overlay without turning the Task into a permanent trace console.
 
 ### Decision
 
@@ -190,7 +189,7 @@ Streaming work is Execution; persisted completed output is Work Result. Once the
 
 ### Artifact / Review
 
-`frontend/src/agent/AgentReviewPanel.tsx` is a light overlay (`agent-review-overlay`) over the Task:
+`frontend/src/agent/AgentReviewPanel.tsx` is a sheet (`agent-review-overlay`) over the Task:
 
 ```ts
 "evidence" | "execution" | "report"
@@ -385,17 +384,21 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Positive ownership guard
 
-`frontend/src/agent/architecture.test.ts` asserts v1.03 ownership, including:
+`frontend/src/agent/architecture.test.ts` asserts v1.09 ownership, including:
 
-- one Agent input without a painted keyboard legend;
-- Agent Task as primary work area;
-- overlay Review;
-- Direction / Work Result primitives;
-- explicit Decision boundaries;
-- LiveTrace in the document rather than an Execution Summary wall;
-- task-native DOM/keyboard/style contracts;
-- untitled-task default instead of chat creation language;
-- physical deletion of retired component boundaries (header, strip, command-center, Focus, thread-prose layout).
+- physical removal of every earlier shell and CSS layer (v0.92 surfaces, v1.0x activity bar / inspector / drawer, six retired stylesheets);
+- window composition: sidebar · title bar · task document, nothing else;
+- the sidebar as one chronological title list with Rename / Delete only;
+- one Agent input: attach + text + model chip + Delegate / Steer / Stop, with the contract placeholders;
+- Direction / Execution (*Worked for …* group) / Work Result as one document without chat chrome;
+- the empty start as greeting + Composer, no wizard or SKU catalog;
+- explicit Decision boundaries with impact and Decline;
+- the Review sheet limited to Evidence / Execution / Report;
+- Settings as a dialog of model + storage + general + safety;
+- sequence-only stream recovery and settled-execution catch-up;
+- task-native keyboard contracts;
+- deterministic figures from provenance;
+- tokens: achromatic ladder, ink primary, hairline depth, measure/track.
 
 ### Negative production-source guard
 
@@ -403,7 +406,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.03 and prevents current product docs from drifting back toward retired information architecture.
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.09 and prevents current product docs from drifting back toward retired information architecture.
 
 ### Real-Sidecar E2E
 

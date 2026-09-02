@@ -45,6 +45,11 @@ const forbidden: Array<[string, RegExp]> = [
   ["Workbench copy identifier", /\buseWorkbenchCopy\b/],
   ["Workbench module import", /(?:\.\.\/|\.\/)workbench\//],
   ["Workbench DOM/CSS contract", /(?:workbench[-_]|workbench\.css)/i],
+  // v1.04–v1.08 web-app chassis: a painted activity bar, a status bar with
+  // marketing copy, and a static Details inspector beside the Task.
+  ["v1.0x activity bar", /\bActivityBar\b/],
+  ["v1.0x details inspector state", /\bdetailsOpen\b/],
+  ["v1.0x marketing chrome copy", /(?:warm editorial|Codex native|magazine)/i],
 ];
 
 describe("Agent-native production UI has no v0.92 Chat-era contracts", () => {

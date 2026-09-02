@@ -16,7 +16,7 @@ async function boot(page: Page) {
 
 async function openCloudProviders(page: Page) {
   await page.getByTestId("task-navigation-settings").click();
-  await expect(page.getByText(/settings & providers/i)).toBeVisible();
+  await expect(page.getByTestId("settings-dialog")).toBeVisible();
   await page.getByRole("button", { name: /^Cloud Providers$/ }).first().click();
 }
 
@@ -92,16 +92,16 @@ test.describe("Escape inside the settings drawer", () => {
     const field = page.getByLabel("Access key ID").first();
     await field.fill("AKIAE2EHALFTYPED0000");
     await field.press("Escape");
-    await expect(page.getByText(/settings & providers/i)).toBeVisible();
+    await expect(page.getByTestId("settings-dialog")).toBeVisible();
     await expect(field).toHaveValue("AKIAE2EHALFTYPED0000");
   });
 
   test("still closes it from outside a field", async ({ page }) => {
     await boot(page);
     await page.getByTestId("task-navigation-settings").click();
-    await expect(page.getByText(/settings & providers/i)).toBeVisible();
+    await expect(page.getByTestId("settings-dialog")).toBeVisible();
     await page.getByRole("dialog").click({ position: { x: 300, y: 12 } });
     await page.keyboard.press("Escape");
-    await expect(page.getByText(/settings & providers/i)).toHaveCount(0);
+    await expect(page.getByTestId("settings-dialog")).toHaveCount(0);
   });
 });

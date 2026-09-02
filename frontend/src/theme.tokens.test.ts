@@ -242,15 +242,10 @@ describe("contrast", () => {
     });
 
     it(`${theme}: every neutral sits on ONE hue axis`, () => {
-      // The un-nameable "cheap" quality of a screen where nothing is technically
-      // wrong. Measured on what this replaced: the surfaces sat at hue 281-290
-      // and the text ramp at 269-271 — two different greys pulling opposite
-      // ways, so text never quite belonged to the surface under it. A neutral
-      // is allowed to be a colour; it is not allowed to be a DIFFERENT colour
-      // from the neutral next to it.
-      //
-      // Hue is meaningless below a chroma floor (pure white and pure black have
-      // no hue at all), so only tokens with real chroma are judged.
+      // A neutral is allowed to be a colour; it is not allowed to be a
+      // DIFFERENT colour from the neutral next to it. v1.09 chose an
+      // achromatic ladder (chroma ~0 everywhere): that trivially sits on one
+      // axis, so the clustering check only runs on tokens that carry a hue.
       const lch = (hex: string) => {
         const [r, g, b] = parse(hex).map((c: number) => {
           const s = c / 255;
@@ -271,15 +266,17 @@ describe("contrast", () => {
         "--canvas", "--sidebar", "--panel", "--elevated", "--hover", "--edge", "--edge-strong",
         "--gray-100", "--gray-200", "--gray-300", "--gray-400", "--gray-500",
       ];
-      const hues = names
-        .map((n) => ({ n, ...lch(v[n]) }))
-        .filter((x) => x.c >= 1.5);
-      expect(hues.length, `${theme}: too few tinted neutrals to judge`).toBeGreaterThan(6);
+      const all = names.map((n) => ({ n, ...lch(v[n]) }));
+      const hues = all.filter((x) => x.c >= 1.5);
+      // Either the whole ladder is achromatic, or every tinted step clusters.
+      if (hues.length === 0) {
+        for (const x of all) expect(x.c, `${theme} ${x.n} chroma`).toBeLessThan(1.5);
+        return;
+      }
       const spread = (a: number, b: number) => {
         const d = Math.abs(a - b) % 360;
         return d > 180 ? 360 - d : d;
       };
-      // Warm palette (v1.04): hues cluster around 30-60, not 268. Check clustering, not absolute.
       const avg = hues.reduce((s, x) => s + x.h, 0) / hues.length;
       for (const x of hues) {
         expect(spread(x.h, avg), `${theme} ${x.n} hue ${x.h.toFixed(1)} vs avg ${avg.toFixed(1)}`).toBeLessThanOrEqual(18);

@@ -125,3 +125,13 @@ export async function initSidecarToken(): Promise<string> {
   }
   return _token;
 }
+
+/**
+ * True when the window is the packaged macOS desktop shell, whose overlay
+ * title bar keeps the native traffic lights over the top-left of our chrome.
+ */
+export function hasNativeTrafficLights(): boolean {
+  if (!tauriInvoke()) return false;
+  const platform = typeof navigator !== "undefined" ? navigator.platform || "" : "";
+  return /Mac/i.test(platform);
+}

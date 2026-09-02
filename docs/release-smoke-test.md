@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v1.08.0.**
+> **Current baseline: Storage Agent v1.09.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -19,14 +19,16 @@
 
 ## B. Agent Task product smoke
 
-A user must be able to recognize and use the v1.03 product model without reading source code.
+A user must be able to recognize and use the v1.09 product model without reading source code.
 
 ### Start and task navigation
 
 - [ ] The product identity is **Storage Agent** in the window/release-facing UI.
-- [ ] A fresh install exposes a **Composer** to type into — not a wizard, heading, or suggestion cards.
+- [ ] A fresh install exposes one greeting line and a **Composer** in the middle band — not a wizard, hero heading, or suggestion cards.
+- [ ] The window is sidebar · title bar · document. There is no activity bar, status bar, or Details/inspector column.
+- [ ] The Composer shows the active model as a chip backed by the real provider list; switching it activates that provider.
 - [ ] The Composer does not paint a persistent keyboard legend (`⏎ Delegate` / `⇧⏎`).
-- [ ] Global navigation is a single chronological Agent Task title list.
+- [ ] Global navigation is a single chronological Agent Task title list in the sidebar; collapsing it moves the toggle and New task into the title bar.
 - [ ] The New task button is labelled **New task**; ⌘N / Ctrl+N still works and is not painted on the button.
 - [ ] Task rows support Rename and Delete without turning navigation into a backend-record browser.
 - [ ] Creating/delegating initial work creates a durable Task that remains available after reload/restart.
@@ -44,7 +46,7 @@ A user must be able to recognize and use the v1.03 product model without reading
 
 - [ ] User input is presented as **Direction** / task intent, not as an old chat-product shell.
 - [ ] Active work enters **Working** based on real runtime state.
-- [ ] Real Tool activity becomes visible in the Work Result as Execution; no synthetic plan/worker/sub-agent UI is invented.
+- [ ] Real Tool activity becomes visible in the Work Result as one **Worked for …** group of tool rows; no synthetic plan/worker/sub-agent UI is invented.
 - [ ] A completed turn produces a durable **Work Result** that survives reload.
 - [ ] Tool rows remain linked to the Work Result that produced them.
 - [ ] Structured storage errors render as storage/error artifacts where applicable rather than losing useful fields in generic prose.
@@ -55,7 +57,7 @@ A user must be able to recognize and use the v1.03 product model without reading
 - [ ] **Stop** cancels the active turn promptly (including a queued Direction).
 - [ ] A stopped execution leaves a truthful durable partial/stopped result/state as implemented and the Task becomes controllable again.
 - [ ] A `needs_attention` Task whose last Execution is interrupted/failed exposes **Resume**; Resume follows the new execution event stream.
-- [ ] Settings contains model, storage credentials, language, and theme — not a storage price table.
+- [ ] Settings contains model, storage credentials, language, and theme as a centered dialog — not a storage price table.
 - [ ] Composer has no `/checkup` `/cost` `/drift` SKU menu. Typing `/` is ordinary text.
 - [ ] There is no task header Review destination and no Overview / revisit / Verify painted chrome.
 - [ ] Cost-review numbers in a Work Result are labelled estimates with coverage, or explicit gaps when inventory/price table is missing.

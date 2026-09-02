@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { closeTopOverlay } from "./lib/overlayStack";
 import { AgentTask } from "./components/AgentTask";
-import { SettingsDrawer } from "./components/SettingsDrawer";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { CommandPalette } from "./components/CommandPalette";
 import { deleteSession, patchSession } from "./api";
-import { dropSessionRun } from "./sessionRuns";
+import { dropSessionRun, useSessionRun } from "./sessionRuns";
 import { useSidecarHealth } from "./hooks/useSidecarHealth";
 import { useI18n } from "./i18n";
 import { useToast } from "./components/Toast";
@@ -12,15 +12,18 @@ import { ShortcutsSheet } from "./components/ShortcutsSheet";
 import { isEditable, matches } from "./shortcuts";
 import { getPaletteActions } from "./agent/paletteActions";
 import { AgentTaskNavigation } from "./agent/AgentTaskNavigation";
+import { useNavigationCopy } from "./agent/navigationCopy";
 import { DEFAULT_TASK_NAV_WIDTH, clampTaskNavigationWidth, type AgentTaskSummary, type TaskActions } from "./agent/navigationModel";
 import { AgentShell } from "./agent/AgentShell";
 import { listAgentTasks } from "./agent/taskApi";
+import { agentTaskState } from "./agent/taskState";
 import { useDeepLink } from "./hooks/useNativeAgent";
+import { hasNativeTrafficLights } from "./config";
+import { Icon } from "./components/icons";
 
 const NAV_WIDTH_KEY = "saw.railWidth";
 const NAV_COLLAPSED_KEY = "saw.railCollapsed";
 const ACTIVE_TASK_KEY = "saw.activeSession";
-const DETAILS_KEY = "saw.detailsOpen";
 const NAV_FOLD_PX = 1080;
 
 function storedNavigationWidth(): number {
@@ -28,59 +31,41 @@ function storedNavigationWidth(): number {
   return Number.isFinite(raw) && raw > 0 ? clampTaskNavigationWidth(raw) : DEFAULT_TASK_NAV_WIDTH;
 }
 
-// Cursor-like Activity Bar: 44px, 32px hit targets, 1.5px selected indicator, filled icons
-function ActivityBar({
-  onNew,
-  onToggleNav,
-  navOpen,
-  onOpenPalette,
-  onOpenSettings,
-  onToggleDetails,
-  detailsOpen,
-}: {
+/** Window title row over the document: the task name, and its real state. */
+function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: {
+  task: AgentTaskSummary | null;
+  sidebarOpen: boolean;
+  trafficLights: boolean;
+  onToggleSidebar: () => void;
   onNew: () => void;
-  onToggleNav: () => void;
-  navOpen: boolean;
-  onOpenPalette: () => void;
-  onOpenSettings: () => void;
-  onToggleDetails: () => void;
-  detailsOpen: boolean;
 }) {
-  const Item = ({ active, label, onClick, children }: { active?: boolean; label: string; onClick: () => void; children: React.ReactNode }) => (
-    <button
-      onClick={onClick}
-      aria-label={label}
-      title={label}
-      aria-pressed={active}
-      className={`relative grid h-8 w-8 place-items-center rounded-md text-gray-500 transition-[background-color,color] duration-fast hover:bg-hover hover:text-gray-100 ${active ? "bg-elevated text-gray-100" : ""}`}
-    >
-      {active ? <span className="absolute left-0 h-5 w-[1.5px] rounded-full bg-accent" aria-hidden /> : null}
-      {children}
-    </button>
-  );
+  const copy = useNavigationCopy();
+  const { t } = useI18n();
+  const run = useSessionRun(task?.id ?? null);
+  const state = task ? agentTaskState(run, true, task.requires_decision, task.task_status) : "idle";
+  const stateLabel = state in copy.state ? copy.state[state as keyof typeof copy.state] : "";
+  const title = task ? (task.title || t("common.untitled")) : copy.appTitle;
 
   return (
-    <div className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-edge bg-sidebar py-1.5">
-      <Item label="New task" onClick={onNew}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
-      </Item>
-      <Item active={navOpen} label={navOpen ? "Hide explorer" : "Show explorer"} onClick={onToggleNav}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.6" /><path d="M9 3v18" stroke="currentColor" strokeWidth="1.6" /></svg>
-      </Item>
-      <div className="my-1 h-px w-6 bg-edge" />
-      <Item label="Command palette" onClick={onOpenPalette}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" /><path d="M8 10h8M8 14h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-      </Item>
-      <Item active={detailsOpen} label="Toggle details" onClick={onToggleDetails}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.6" /><path d="M15 3v18" stroke="currentColor" strokeWidth="1.6" /></svg>
-      </Item>
-      <div className="mt-auto flex flex-col items-center gap-0.5">
-        <Item label="Settings" onClick={onOpenSettings}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 9 15a1.65 1.65 0 0 0 1-1.51V12a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 0 1 4.3 8.05l.06-.06A1.65 1.65 0 0 0 5.18 6.17a1.65 1.65 0 0 0 1-1.51V4a2 2 0 0 1 4 0v.07a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06A2 2 0 0 1 15.9 7.95l-.06.06A1.65 1.65 0 0 0 15.5 9.83a1.65 1.65 0 0 0-1 1.51V13a1.65 1.65 0 0 0 1 1.51Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>
-        </Item>
-        <div className="h-2" />
-      </div>
-    </div>
+    <header className="native-titlebar" data-traffic-lights={trafficLights && !sidebarOpen ? "true" : "false"} data-tauri-drag-region>
+      {!sidebarOpen ? (
+        <>
+          <button type="button" onClick={onToggleSidebar} aria-label={copy.expand} title={copy.expand} data-testid="task-navigation-toggle" className="native-icon-button">
+            <Icon name="sidebar" />
+          </button>
+          <button type="button" onClick={onNew} aria-label={copy.newTask} title={copy.newTask} className="native-icon-button">
+            <Icon name="compose" />
+          </button>
+        </>
+      ) : null}
+      <span className="native-titlebar-title" data-task={task ? "true" : "false"} data-tauri-drag-region>{title}</span>
+      {stateLabel ? (
+        <span className="native-titlebar-state" data-state={state} data-testid="titlebar-state">
+          {state === "working" || state === "uploading" ? <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden /> : null}
+          {stateLabel}
+        </span>
+      ) : null}
+    </header>
   );
 }
 
@@ -88,17 +73,17 @@ export default function App() {
   const { status } = useSidecarHealth();
   const [tasks, setTasks] = useState<AgentTaskSummary[]>([]);
   const [activeTaskId, setActiveTaskIdState] = useState<string | null>(() => localStorage.getItem(ACTIVE_TASK_KEY));
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [navigationWidth, setNavigationWidth] = useState(storedNavigationWidth);
   const [navigationCollapsed, setNavigationCollapsed] = useState(() => localStorage.getItem(NAV_COLLAPSED_KEY) === "1");
-  const [detailsOpen, setDetailsOpen] = useState(() => localStorage.getItem(DETAILS_KEY) !== "0");
   const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < NAV_FOLD_PX);
   const [taskReloadKey, setTaskReloadKey] = useState(0);
   const validated = useRef(false);
   const { t } = useI18n();
   const toast = useToast();
+  const trafficLights = hasNativeTrafficLights();
 
   const setActiveTaskId = useCallback((id: string | null) => {
     setActiveTaskIdState(id);
@@ -145,140 +130,66 @@ export default function App() {
     },
   };
 
+  const toggleNavigation = useCallback(() => {
+    setNavigationCollapsed((collapsed) => { localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? "0" : "1"); return !collapsed; });
+  }, []);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (matches(event, "palette")) { event.preventDefault(); setPaletteOpen((o) => !o); }
+      if (matches(event, "palette")) { event.preventDefault(); setPaletteOpen((open) => !open); }
       else if (matches(event, "newTask")) { event.preventDefault(); setActiveTaskId(null); }
-      else if (matches(event, "toggleTaskNavigation")) {
-        event.preventDefault();
-        setNavigationCollapsed((c) => { localStorage.setItem(NAV_COLLAPSED_KEY, c ? "0" : "1"); return !c; });
-      } else if (matches(event, "shortcuts") && !isEditable(event.target)) { event.preventDefault(); setShortcutsOpen((o) => !o); }
+      else if (matches(event, "toggleTaskNavigation")) { event.preventDefault(); toggleNavigation(); }
+      else if (matches(event, "shortcuts") && !isEditable(event.target)) { event.preventDefault(); setShortcutsOpen((open) => !open); }
       else if (matches(event, "stop")) { event.preventDefault(); getPaletteActions().stop?.(); }
       else if (matches(event, "focusComposer")) { event.preventDefault(); getPaletteActions().focusComposer?.(); }
       else if (matches(event, "close")) { if (closeTopOverlay()) event.preventDefault(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setActiveTaskId]);
+  }, [setActiveTaskId, toggleNavigation]);
 
-  const navOpen = !navigationCollapsed && !narrow;
-  const showDetails = detailsOpen && !narrow;
-
-  const navigation = (
-    <AgentTaskNavigation
-      tasks={tasks}
-      activeTaskId={activeTaskId}
-      onSelectTask={setActiveTaskId}
-      onNew={() => setActiveTaskId(null)}
-      onOpenSettings={() => setDrawerOpen(true)}
-      actions={taskActions}
-      width={navigationWidth}
-      collapsed={!navOpen}
-      onToggleCollapse={() => setNavigationCollapsed((c) => { localStorage.setItem(NAV_COLLAPSED_KEY, c ? "0" : "1"); return !c; })}
-      onResize={(pixels) => { setNavigationWidth(pixels); localStorage.setItem(NAV_WIDTH_KEY, String(pixels)); }}
-    />
-  );
-
-  const taskContent = (
-    <AgentTask
-      taskId={activeTaskId}
-      onTaskCreated={(id) => { setActiveTaskId(id); refreshTasks(); }}
-      sidecarStatus={status}
-      onTaskDiscarded={(id) => { if (activeTaskId === id) setActiveTaskId(null); refreshTasks(); }}
-      onOpenSettings={() => setDrawerOpen(true)}
-      onChanged={refreshTasks}
-      sidecarReady={status === "connected"}
-      settingsOpen={drawerOpen}
-      reloadKey={taskReloadKey}
-    />
-  );
+  const sidebarOpen = !navigationCollapsed && !narrow;
+  const activeTask = tasks.find((task) => task.id === activeTaskId) ?? null;
 
   return (
-    <div className="flex h-full w-full flex-col bg-canvas text-gray-100">
-      <div className="flex h-7 shrink-0 items-center gap-2 border-b border-edge bg-sidebar/80 px-3 text-xs text-gray-500 backdrop-blur supports-[backdrop-filter]:bg-sidebar/70" data-tauri-drag-region style={{ WebkitAppRegion: 'drag' } as any}>
-        <span className="text-sm font-semibold tracking-tight text-gray-200" style={{ letterSpacing: '-0.01em' }}>Storage Agent</span>
-        <span className="hidden sm:inline text-gray-500" style={{ letterSpacing: '-0.01em' }}>· {status === "connected" ? "Ready" : status === "starting" ? "Starting…" : "Offline"}</span>
-      </div>
+    <div className="native-window">
+      <AgentTaskNavigation
+        tasks={tasks}
+        activeTaskId={activeTaskId}
+        onSelectTask={setActiveTaskId}
+        onNew={() => setActiveTaskId(null)}
+        onOpenSettings={() => setSettingsOpen(true)}
+        actions={taskActions}
+        width={navigationWidth}
+        collapsed={!sidebarOpen}
+        trafficLights={trafficLights}
+        onToggleCollapse={toggleNavigation}
+        onResize={(pixels) => { setNavigationWidth(pixels); localStorage.setItem(NAV_WIDTH_KEY, String(pixels)); }}
+      />
 
-      <div className="flex min-h-0 flex-1">
-        <ActivityBar
-          onNew={() => setActiveTaskId(null)}
-          onToggleNav={() => setNavigationCollapsed((c) => { localStorage.setItem(NAV_COLLAPSED_KEY, c ? "0" : "1"); return !c; })}
-          navOpen={navOpen}
-          onOpenPalette={() => setPaletteOpen(true)}
-          onOpenSettings={() => setDrawerOpen(true)}
-          onToggleDetails={() => setDetailsOpen((v) => { localStorage.setItem(DETAILS_KEY, v ? "0" : "1"); return !v; })}
-          detailsOpen={showDetails}
+      <div className="native-main">
+        <TitleBar task={activeTask} sidebarOpen={sidebarOpen} trafficLights={trafficLights} onToggleSidebar={toggleNavigation} onNew={() => setActiveTaskId(null)} />
+        <AgentShell
+          taskId={activeTaskId}
+          taskContent={
+            <AgentTask
+              taskId={activeTaskId}
+              onTaskCreated={(id) => { setActiveTaskId(id); refreshTasks(); }}
+              sidecarStatus={status}
+              onTaskDiscarded={(id) => { if (activeTaskId === id) setActiveTaskId(null); refreshTasks(); }}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onChanged={refreshTasks}
+              sidecarReady={status === "connected"}
+              settingsOpen={settingsOpen}
+              reloadKey={taskReloadKey}
+            />
+          }
         />
-
-        <div
-          className="shrink-0 border-r border-edge bg-sidebar overflow-hidden"
-          style={{ width: navOpen ? navigationWidth : 0, minWidth: navOpen ? navigationWidth : 0 }}
-          aria-hidden={navOpen ? undefined : true}
-        >
-          <div style={{ width: navigationWidth, minWidth: navigationWidth }}>{navigation}</div>
-        </div>
-
-        <div className="flex min-w-0 flex-1 flex-col bg-canvas">
-          <AgentShell navigation={null} taskContent={taskContent} taskId={activeTaskId} />
-        </div>
-
-        {showDetails && (
-          <div className="hidden w-[280px] shrink-0 border-l border-edge bg-panel lg:flex flex-col">
-            <div className="flex h-8 items-center justify-between border-b border-edge px-3">
-              <span className="text-xs font-medium tracking-tight text-gray-200" style={{ letterSpacing: '-0.01em' }}>Details</span>
-              <button onClick={() => { setDetailsOpen(false); localStorage.setItem(DETAILS_KEY, "0"); }} className="grid h-7 w-7 place-items-center rounded-md text-gray-400 transition-[background-color,color] duration-fast hover:bg-hover hover:text-gray-200">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto p-3 text-xs leading-relaxed text-gray-500">
-              <div className="space-y-4">
-                <div>
-                  <div className="mb-1.5 text-xs font-medium tracking-tight text-gray-200" style={{ letterSpacing: '-0.01em' }}>Task</div>
-                  <div className="rounded-lg border border-edge bg-canvas px-3 py-2.5 text-sm font-normal text-gray-200" style={{ letterSpacing: '-0.011em' }}>{activeTaskId ? tasks.find((t) => t.id === activeTaskId)?.title || "Untitled" : "No task selected"}</div>
-                  <div className="mt-1 text-2xs leading-relaxed text-gray-500">{activeTaskId ? "Local-first · read-only · durable" : "Select a task or delegate a new goal."}</div>
-                </div>
-                <div className="h-px bg-edge" />
-                <div>
-                  <div className="mb-1.5 text-xs font-medium tracking-tight text-gray-200" style={{ letterSpacing: '-0.01em' }}>Navigate</div>
-                  <div className="space-y-1">
-                    {[
-                      ["Palette", "⌘K"],
-                      ["New task", "⌘N"],
-                      ["Toggle nav", "⌘B"],
-                      ["Focus composer", "⌘."],
-                      ["Stop", "Esc"],
-                      ["Next / Prev task", "J / K"],
-                    ].map(([k, v]) => (
-                      <div key={k} className="flex items-center justify-between rounded-md px-2 py-1 hover:bg-hover">
-                        <span>{k}</span>
-                        <kbd className="rounded border border-edge bg-elevated px-1.5 py-0.5 text-2xs">{v}</kbd>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="h-px bg-edge" />
-                <div>
-                  <div className="mb-1 text-xs font-semibold tracking-tight text-gray-200">Model</div>
-                  <div className="rounded-lg border border-edge bg-canvas px-3 py-2 text-xs">{status === "connected" ? "Sidecar ready — local vault, read-only tools" : `Sidecar ${status}`}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
-      <div className="flex h-[22px] shrink-0 items-center gap-2 border-t border-edge bg-panel px-3 text-2xs text-gray-500">
-        <span className="hidden sm:inline">{tasks.length} tasks</span>
-        <span className="sm:hidden">{tasks.length}</span>
-        <span>·</span>
-        <span>{activeTaskId ? "Task open" : "No task"}</span>
-        <span className="ml-auto hidden sm:inline" style={{ letterSpacing: '-0.01em' }}>Storage Agent · warm editorial · Codex native</span>
-      </div>
-
-      <SettingsDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <ShortcutsSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} tasks={tasks} onSelectTask={setActiveTaskId} onNew={() => setActiveTaskId(null)} onOpenSettings={() => setDrawerOpen(true)} />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} tasks={tasks} onSelectTask={setActiveTaskId} onNew={() => setActiveTaskId(null)} onOpenSettings={() => setSettingsOpen(true)} />
     </div>
   );
 }

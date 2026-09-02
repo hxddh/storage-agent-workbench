@@ -233,7 +233,7 @@ test.describe("Escape with two overlays open", () => {
     await expect(composer(page)).toBeVisible({ timeout: 30_000 });
 
     await page.getByTestId("task-navigation-settings").click();
-    const settings = page.getByRole("dialog").filter({ hasText: /Settings & providers/i });
+    const settings = page.getByTestId("settings-dialog");
     await expect(settings).toBeVisible();
 
     await page.keyboard.press("ControlOrMeta+k");

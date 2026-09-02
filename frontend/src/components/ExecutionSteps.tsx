@@ -33,7 +33,7 @@ function ExecutionStepRow({ step }: { step: ExecutionStep }) {
     : { running: "running…", success: "complete", failed: "failed", show: "show output", hide: "hide output" };
 
   return (
-    <li className="rounded-md border border-edge bg-canvas p-3 text-xs" data-testid="execution-step">
+    <li className="rounded-lg border border-edge p-3 text-xs" data-testid="execution-step">
       <div className="flex items-center gap-2">
         <span className={`h-2 w-2 rounded-full ${!finished ? "bg-warn animate-pulse" : ok ? "bg-success" : "bg-danger"}`} aria-hidden />
         <span className="font-mono text-gray-200">{step.tool_name}</span>
