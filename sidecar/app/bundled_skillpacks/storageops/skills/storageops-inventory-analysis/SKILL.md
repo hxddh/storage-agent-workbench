@@ -64,7 +64,7 @@ throughput effects to `storageops-performance-diagnosis`.
 ## Ask the user (only what tools can't reveal)
 
 - The inventory format/source (S3 Inventory CSV/Parquet, a manifest, or an ad-hoc
-  listing) — ORC isn't supported, CSV/Parquet are.
+  listing) — only CSV and Parquet exports are supported.
 - Whether this is a single snapshot or a series — growth/forecasting needs more
   than one point in time; a single inventory describes *now*, not a trend.
 - Which prefixes or workloads matter, if the bucket mixes several.

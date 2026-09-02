@@ -88,7 +88,6 @@ This is the starting point. Future work should deepen the Agent's ability to com
 
 - Improve schema detection and explicit truncation/coverage reporting across large imported evidence.
 - Keep model context aggregate-only and bounded.
-- ORC inventory support is **out of scope** for current planning.
 
 #### Provider-native evidence sources
 
@@ -177,7 +176,6 @@ The following are **not** roadmap shortcuts and must not be added merely to make
 - a workflow canvas;
 - a plugin marketplace as a substitute for storage-specific capabilities;
 - destructive storage mutation/auto-remediation (including auto-applying a Remediation Plan);
-- ORC inventory as a committed near-term deliverable;
 - a top-level application destination for every backend table;
 - multi-user SaaS/RBAC before there is an explicit product decision to stop being a local-first desktop Agent.
 
