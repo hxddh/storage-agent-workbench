@@ -102,7 +102,20 @@ export function Composer({
   const { t } = useI18n();
   const copy = useComposerCopy();
   const [sizeError, setSizeError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const histIndex = useRef<number | null>(null);
+
+  // A file dropped anywhere on the Composer takes the same attach path as the
+  // `+` button: one file, the same size ceiling, the same accept list.
+  const acceptFile = (file: File | null) => {
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setSizeError(t("attach.tooLarge", { size: formatGiB(file.size) }));
+      return;
+    }
+    setSizeError(null);
+    onPickFile(file);
+  };
 
   useEffect(() => { setSizeError(null); }, [attached]);
   useEffect(() => {
@@ -132,6 +145,24 @@ export function Composer({
       className="native-composer"
       data-testid="agent-composer"
       data-agent-state={busy ? "working" : uploading ? "uploading" : "ready"}
+      data-dragging={dragging ? "true" : "false"}
+      onDragOver={(event) => {
+        if (running || blocked || !event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        if (!dragging) setDragging(true);
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+      }}
+      onDrop={(event) => {
+        setDragging(false);
+        if (running || blocked) return;
+        const file = event.dataTransfer.files?.[0] ?? null;
+        if (!file) return;
+        event.preventDefault();
+        acceptFile(file);
+      }}
     >
       {attached ? (
         <div className="native-composer-attachment">
@@ -160,12 +191,8 @@ export function Composer({
         onChange={(event) => {
           const file = event.target.files?.[0] ?? null;
           event.target.value = "";
-          if (file && file.size > MAX_UPLOAD_BYTES) {
-            setSizeError(t("attach.tooLarge", { size: formatGiB(file.size) }));
-            return;
-          }
-          setSizeError(null);
-          onPickFile(file);
+          if (!file) { setSizeError(null); onPickFile(null); return; }
+          acceptFile(file);
         }}
       />
 

@@ -72,6 +72,10 @@ const twoTurns = withModel([
 ]);
 
 test.describe("a real agent turn", () => {
+  // Two scripted turns through the real Sidecar (model round-trips, durable
+  // persistence, the title step, a reload) take longer than the 30 s default
+  // on a loaded CI runner; every inner wait stays bounded on its own.
+  test.describe.configure({ timeout: 120_000 });
   test("the answer arrives and stays on screen", async ({ page }) => {
     const { cleanup } = await oneTurn(page);
     try {
@@ -153,6 +157,9 @@ test.describe("a real agent turn", () => {
   });
 
   test("both exchanges survive a reload", async ({ page }) => {
+    // Two real turns plus a reload on a shared CI runner can exceed the
+    // default 30 s test budget while every single wait inside is still
+    // comfortably within its own timeout; give the whole test the room.
     const { cleanup } = await twoTurns(page);
     try {
       await ask(page, "first question about acme-logs");

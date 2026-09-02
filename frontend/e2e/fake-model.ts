@@ -101,6 +101,8 @@ export function toolResults(req: ChatRequest): string {
 export interface FakeModel {
   baseUrl: string;
   requests: unknown[];
+  /** The title-step requests (see TITLE_MARKER), kept apart from `requests`. */
+  titleRequests: unknown[];
   close: () => Promise<void>;
 }
 
@@ -123,11 +125,19 @@ function requestSignature(body: unknown): string {
     .join("|");
 }
 
+/** The runtime's title step marks its one bounded request with this token
+ * (sidecar `task_runtime/titling.py`). The fake answers it out of band —
+ * never consuming a scripted turn, never appearing in `requests` — so every
+ * existing script keeps its turn order. `opts.title` is what it answers; an
+ * empty answer keeps the deterministic seed title. */
+const TITLE_MARKER = "[[storage-agent:title]]";
+
 export async function startFakeModel(
   turns: Turn[],
-  opts: { deltaDelayMs?: number } = {},
+  opts: { deltaDelayMs?: number; title?: string } = {},
 ): Promise<FakeModel> {
   const requests: unknown[] = [];
+  const titleRequests: unknown[] = [];
   const delay = opts.deltaDelayMs ?? 0;
   let i = 0;
   // Playwright retries and SDK reconnects re-POST the same completion. Replay
@@ -143,6 +153,14 @@ export async function startFakeModel(
         parsed = JSON.parse(Buffer.concat(body).toString() || "{}");
       } catch {
         parsed = {};
+      }
+      if (JSON.stringify(parsed).includes(TITLE_MARKER)) {
+        titleRequests.push(parsed);
+        res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+        for (const c of textTurn(opts.title ?? "")) res.write(c);
+        res.write("data: [DONE]\n\n");
+        res.end();
+        return;
       }
       requests.push(parsed);
       const signature = requestSignature(parsed);
@@ -176,6 +194,7 @@ export async function startFakeModel(
   return {
     baseUrl: `http://127.0.0.1:${port}/v1`,
     requests,
+    titleRequests,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }

@@ -229,4 +229,4 @@ def test_all_migrations_apply(tmp_path):
     idx = {r[0] for r in conn.execute(
         "SELECT name FROM sqlite_master WHERE type='index'")}
     assert "idx_audit_logs_created" in idx
-    assert len(MIGRATIONS) == 27
+    assert len(MIGRATIONS) == 28  # v1.10.0: title_source + reasoning_effort

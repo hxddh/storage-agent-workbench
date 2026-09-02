@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.09.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis (activity bar, status bar, Details inspector, warm-editorial chrome) and ships the native Agent window: sidebar · title bar · one Task document · one Composer. Earlier release notes are not current product architecture.
+> **Applies to Storage Agent v1.10.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native: menu bar, deep links, notifications, summon shortcut, runtime task titles, a reasoning-effort control, and native Execution-detail / provider panes. Earlier release notes are not current product architecture.
 
 ## Product definition
 
@@ -211,7 +211,7 @@ Provider/model configuration, audit internals, and low-level counters are second
 
 ## Design rules
 
-v1.09.0 is the native Agent window. Visual language is specified in
+v1.10.0 is the native Agent window on a native shell. Visual language is specified in
 [`design-tokens.md`](design-tokens.md) and enforced by frontend token tests.
 
 - The window is **sidebar · title bar · one document**. No activity bar, no status bar, no inspector column, no marketing copy anywhere in chrome.
@@ -241,7 +241,7 @@ The product model is protected by:
 
 ## Modern native-agent extensions (opt-in, additive)
 
-v1.09 is the native Agent window. The following are **additive, bounded
+v1.10 is the native Agent window on a native shell. The following are **additive, bounded
 and opt-in** extensions that deepen the same window without replacing it. Each
 reuses the durable runtime, the read-only tool floor, and the same redaction
 and Decision gates; none introduces a second Agent or a new top-level
@@ -271,11 +271,25 @@ navigation surface.
   turn metrics, and artifact index as OTel-inspired JSON (bounded,
   sanitized). Settings surfaces it under *Observability*; the Task can copy it
   via the same path the agent uses. No new tables.
-- **OS-native shell** — Tauri `dialog`, `notification`, `opener`, `deep-link`,
-  `global-shortcut`, and `updater` plugins. Tray, global hotkey, deep links
-  (`storage-agent://task/<id>`), and signed auto-updates are inert until the
-  distribution chain provides a pubkey/endpoints, but the capability gate is in
-  place.
+- **OS-native shell** (real since v1.10.0) — a native menu bar (App ·
+  Edit · Task · View · Window · Help with ⌘, Settings, ⌘N New task, ⌘. Stop,
+  ⌘\ sidebar, ⌘F Find, ⌘I Review, ⌘K palette, ⌘L Composer), deep links
+  (`storage-agent://task/<id>` opens the Task, on cold start and from a
+  second launch), one OS notification when an Execution settles while its
+  Task is not on screen, a global summon shortcut (⌘⇧S / Ctrl+Shift+S) that
+  focuses the Composer, and the OS window title `<task> — Storage Agent`.
+  Every menu item dispatches the same command the keyboard and the palette
+  use; in a browser the bridge is a no-op. Signed auto-updates stay inert
+  until the distribution chain provides a pubkey/endpoints.
+- **Runtime task titles** — after the first Work Result the runtime names the
+  task from the Direction and the bounded Work Result text (never tool
+  payloads or evidence rows); the sidebar and window title follow. A user
+  rename wins forever. When the model is unavailable the seed title stays.
+- **Reasoning effort** — a provider whose model is known-reasoning shows
+  `model · effort` in the Composer chip with Default / Low / Medium / High;
+  other models paint nothing and receive nothing.
+- **Drag-and-drop attach** — a file dropped on the Composer takes the same
+  bounded attach path as the `+` button.
 
 All extensions preserve: read-only storage tools, no generic shell/subprocess,
 secrets only in the encrypted vault, server-side provider scope, explicit

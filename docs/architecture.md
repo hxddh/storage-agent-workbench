@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.09.0.** Thorough native Agent window. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged.
+> **Current architecture baseline: Storage Agent v1.10.0.** Native Agent window on a native OS shell. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **028**.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -74,8 +74,10 @@ The packaged Tauri launcher chooses a free localhost port, generates a per-launc
 - durable task list refresh;
 - active task identity;
 - task lifecycle actions (create/rename/delete);
-- the window title bar (task name + real task state; the sidebar toggle and New task when the sidebar is collapsed);
-- the Settings dialog, command palette, and shortcuts sheet.
+- the window title bar (task name + real task state; the sidebar toggle and New task when the sidebar is collapsed) and the OS window title;
+- the Settings dialog, command palette, and shortcuts sheet;
+- **one command handler** (`runCommand`) that the keyboard, the palette and the native menu all dispatch through, with a short de-duplication window so a menu accelerator and a keydown for one keypress are one command;
+- the shell bridge (`hooks/useNativeAgent.ts` → `useNativeShell`): menu commands, deep links, the summon shortcut, notifications on background settle (`useSettleNotifications`, driven by the per-task run store), and the window title. A plain browser is a no-op.
 
 The window it composes is exactly: `AgentTaskNavigation` (sidebar) · title bar · `AgentShell` → `AgentTask`. There is no activity bar, no status bar, no Details/inspector column. On the packaged macOS shell the overlay title bar leaves room for the native traffic lights (`hasNativeTrafficLights`).
 
@@ -274,6 +276,28 @@ The Sidecar owns:
 
 There is exactly one model-driven Agent loop. Deterministic engines remain beneath it as security/reproducibility mechanisms; they are not a second product Agent.
 
+### 6.x Title step and reasoning effort (v1.10.0)
+
+`task_runtime/titling.py` runs once per task, after the first Work Result
+persists and before the execution's terminal status event: one tool-less,
+streamed model call on the same per-run client as the session Agent
+(`build_agent`), prompt = redacted Direction (≤ 600 chars) + redacted Work
+Result text (≤ 1200 chars) + a marker test doubles recognise, ≤ 32 output
+tokens, hard 15 s ceiling. The answer is sanitized (one line, ≤ 8 words,
+≤ 64 chars, redacted, no URLs) and stored on `sessions.title` with
+`title_source = 'agent'`; `agent_tasks.title` is synced; the event log gets
+`task.titled`. A `PATCH /sessions/{id}` rename sets `title_source = 'user'`
+and the step never runs again for that task. Failures keep the seed title
+and never fail the turn. The legacy blocking seam (`SESSION_LOOP` fakes)
+does not run the step.
+
+`model_providers.reasoning_effort` is forwarded as `ModelSettings.reasoning`
+(Chat Completions `reasoning_effort`) only when
+`model_budget.is_reasoning_model(model)` is true; `get_model_credentials`
+drops it otherwise, so an endpoint that would reject the parameter never
+sees it. `ModelProviderOut.reasoning_capable` is the projection the Composer
+chip paints against.
+
 ## 7. Persistence compatibility boundary
 
 The database/API schema predates v0.93. Renaming every stored entity would add migration risk without changing the product, so Storage Agent intentionally keeps a **persistence compatibility** layer.
@@ -359,12 +383,20 @@ new top-level navigation surface.
   The allowlist is the source of truth — no shell, no raw boto3, no
   filesystem escape. The bridge reuses the same scope/redaction/bounds as
   `tool_runner`.
-- **OS-native desktop** — `src-tauri` now depends on
-  `tauri-plugin-dialog/notification/opener/deep-link/global-shortcut/updater`.
-  Capabilities include file dialogs, system notifications, global hotkey,
-  deep links (`storage-agent://task/<id>`), opener, and a signed updater
-  endpoint (inert until a pubkey is configured). `singleInstance` remains
-  the first plugin.
+- **OS-native desktop** — `src-tauri/src/lib.rs` builds the menu bar
+  (`build_menu`: App · Edit · Task · View · Window · Help; every custom item
+  is one of `MENU_COMMANDS` and is emitted as `menu-command {id}`), handles
+  deep links through the plugin's `on_open_url` plus argv on a second launch
+  (`single-instance`) and cold start, emitting `deep-link-request {urls}`
+  after validating `storage-agent://task/<id>`, registers the global summon
+  shortcut (`shortcut-event`), and exposes three commands: `notify`
+  (title + body), `set_window_title`, and `open_app_folder` (named
+  subfolders of the app data dir only — today `skills`; not a filesystem
+  tool). `tauri.conf.json` registers the `storage-agent` scheme. The
+  frontend mirrors `MENU_COMMANDS` in `useNativeAgent.ts`; an architecture
+  test keeps both lists and every event name in step. `updater` stays
+  inert until a pubkey is configured. `singleInstance` remains the first
+  plugin.
 
 ## 10. Desktop packaging
 

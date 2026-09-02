@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { useI18n, type TFunc } from "../i18n";
 import { useSessionRun, useSessionRunIndexVersion } from "../sessionRuns";
 import { useNavigationCopy } from "./navigationCopy";
@@ -7,6 +7,7 @@ import {
   clampTaskNavigationWidth,
   type AgentTaskSummary,
   type TaskActions,
+  type TaskEditRequest,
 } from "./navigationModel";
 import { agentTaskState } from "./taskState";
 import { Icon } from "../components/icons";
@@ -78,6 +79,10 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
       data-state={stateKey}
       data-menu-open={menuOpen || confirming ? "true" : "false"}
       onClick={() => onSelectTask(task.id)}
+      role="option"
+      aria-selected={selected}
+      tabIndex={selected ? 0 : -1}
+      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectTask(task.id); } }}
       title={stateLabel ? `${title} — ${stateLabel}` : title}
     >
       <div className="native-task-title">
@@ -126,18 +131,48 @@ export type AgentTaskNavigationProps = {
   onNew: () => void;
   onOpenSettings: () => void;
   actions: TaskActions;
+  /** Rename / Delete requested from outside the sidebar (native menu). */
+  editRequest?: TaskEditRequest | null;
 };
 
 /** The sidebar: window chrome row, New task, one chronological task list, Settings. */
-export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, onOpenSettings, actions, width, collapsed, trafficLights, onToggleCollapse, onResize }: AgentTaskNavigationProps) {
+export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, onOpenSettings, actions, editRequest = null, width, collapsed, trafficLights, onToggleCollapse, onResize }: AgentTaskNavigationProps) {
   const copy = useNavigationCopy();
   useSessionRunIndexVersion();
   const [menuId, setMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const listRef = useRef<HTMLElement>(null);
 
   const visible = tasks.filter((task) => task.status !== "archived");
   visible.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+
+  // The native menu's Task → Rename / Delete land here, on the same inline
+  // controls the More menu opens; there is no second edit path.
+  useEffect(() => {
+    if (!editRequest) return;
+    setMenuId(null);
+    if (editRequest.kind === "rename") { setConfirmId(null); setRenamingId(editRequest.id); }
+    else { setRenamingId(null); setConfirmId(editRequest.id); }
+  }, [editRequest]);
+
+  // ↑ / ↓ move between tasks while the list has focus; Enter / Space open one.
+  const onListKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    if (renamingId || visible.length === 0) return;
+    event.preventDefault();
+    const index = visible.findIndex((task) => task.id === activeTaskId);
+    const next = event.key === "ArrowDown"
+      ? Math.min(visible.length - 1, index + 1)
+      : Math.max(0, index <= 0 ? 0 : index - 1);
+    const target = visible[next];
+    if (!target || target.id === activeTaskId) return;
+    onSelectTask(target.id);
+    requestAnimationFrame(() => {
+      const rows = listRef.current?.querySelectorAll<HTMLElement>('[data-testid="task-row"]');
+      rows?.[next]?.focus();
+    });
+  };
 
   const startResize = (event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -181,7 +216,7 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
         </button>
 
         <div className="native-sidebar-section">{copy.tasks}</div>
-        <nav className="native-task-list" aria-label={copy.tasks}>
+        <nav ref={listRef} className="native-task-list" aria-label={copy.tasks} role="listbox" onKeyDown={onListKeyDown}>
           {visible.length === 0 ? (
             <p className="native-empty-list" data-testid="task-nav-empty">{copy.noTasks} {copy.noTasksHint}</p>
           ) : (

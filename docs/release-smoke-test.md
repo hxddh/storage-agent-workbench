@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v1.09.0.**
+> **Current baseline: Storage Agent v1.10.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -191,3 +191,14 @@ Before publication record:
 - known release-specific gaps.
 
 Never mark an unchecked item as passed merely because another automated gate was green.
+
+## v1.10.0 native shell smoke (desktop builds)
+
+- The menu bar shows **Storage Agent · Edit · Task · View · Window · Help**; **Task → New Task** clears to the empty start; **Storage Agent → Settings…** (⌘,) opens the Settings dialog; **View → Toggle Sidebar** collapses the sidebar once (no double toggle from the accelerator).
+- Opening `storage-agent://task/<id>` from a terminal (`open` / `xdg-open` / `start`) focuses the window and opens that Task; a second launch with the link does not start a second Sidecar.
+- With a Task working in the background (switch to another Task), one OS notification arrives when it settles; clicking it returns to the app.
+- ⌘⇧S / Ctrl+Shift+S from another app brings the window forward with the Composer focused.
+- The OS window title reads `<task> — Storage Agent`.
+- After the first Work Result of a new Task the sidebar title changes from the truncated Direction to a short runtime title; renaming the Task and delegating again keeps the user's name.
+- With a reasoning model active (for example `o3-mini`), the Composer chip reads `model · Default` and offers Low / Medium / High; with `gpt-4.1` it offers nothing.
+- Settings → Model Providers `+` shows presets; Cloud Providers presets include MinIO and Custom (S3-compatible); Skills & bridges **Open skills folder** reveals the folder and **Export trace…** writes a JSON file.

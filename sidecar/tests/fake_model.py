@@ -23,6 +23,8 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from app.task_runtime.titling import TITLE_MARKER
+
 
 def _chunk(delta: dict, finish: str | None = None) -> bytes:
     payload = {
@@ -71,9 +73,17 @@ class FakeModel:
     window to cancel in, so cancellation could not be tested at all.
     """
 
-    def __init__(self, turns: list[list[bytes]], delay_s: float = 0.0):
+    def __init__(self, turns: list[list[bytes]], delay_s: float = 0.0,
+                 title: str | None = None):
         self.turns = turns
         self.delay_s = delay_s
+        # v1.10.0 — the runtime's title step is a separate bounded request
+        # marked with TITLE_MARKER. It is answered here without consuming a
+        # scripted turn (and without appearing in ``requests``), so every
+        # existing script keeps its turn order. ``title`` is what it answers;
+        # None answers nothing, which keeps the deterministic seed title.
+        self.title = title
+        self.title_requests: list[dict] = []
         self.requests: list[dict] = []
         self._i = 0
         self._lock = threading.Lock()
@@ -88,13 +98,18 @@ class FakeModel:
             def do_POST(self):  # noqa: N802 - BaseHTTPRequestHandler's contract
                 body = self.rfile.read(int(self.headers.get("content-length") or 0))
                 try:
-                    fake.requests.append(json.loads(body or b"{}"))
+                    parsed = json.loads(body or b"{}")
                 except ValueError:
-                    fake.requests.append({})
-                with fake._lock:
-                    i = min(fake._i, len(fake.turns) - 1)
-                    fake._i += 1
-                chunks = fake.turns[i]
+                    parsed = {}
+                if TITLE_MARKER in (body or b"").decode("utf-8", "replace"):
+                    fake.title_requests.append(parsed)
+                    chunks = text_turn(fake.title or "")
+                else:
+                    fake.requests.append(parsed)
+                    with fake._lock:
+                        i = min(fake._i, len(fake.turns) - 1)
+                        fake._i += 1
+                    chunks = fake.turns[i]
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Cache-Control", "no-cache")

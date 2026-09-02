@@ -1,3 +1,5 @@
+> **Historical.** This is a v1.04-era review note kept for the record. It is superseded by the v1.09.0 native Agent window and the v1.10.0 native shell; see `docs/README.md` for the current documents.
+
 # Modern Native Agent — Deep Review 2026-09-01
 
 > **Verdict on v1.04.1**: The *runtime* is modern (durable `task_executions` + `execution_events` at `after=<seq>`, typed `task_context_versions`, single orange voltage). The *shell* is not. The rebuild so far was warm paint on a web-app chassis. Codex and Cursor do not look like that.

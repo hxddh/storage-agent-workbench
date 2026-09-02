@@ -508,39 +508,52 @@
 .agent-run-main small { color: var(--gray-500); font-size: var(--text-2xs); }
 .agent-report-body { max-width: 52rem; }
 
-/* Execution detail inside the Review sheet. */
-[data-testid="execution-detail"] {
-  position: relative;
-  min-height: 100%;
-  background: var(--canvas);
-}
-[data-testid="execution-detail"] > div > header {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  padding: 14px 20px !important;
-  background: color-mix(in srgb, var(--canvas) 94%, transparent);
-  backdrop-filter: blur(14px);
-}
-[data-testid="execution-detail"] > div > .grid {
-  grid-template-columns: minmax(0, 1fr) !important;
-  gap: 24px !important;
-  padding: 16px 20px 56px !important;
-}
-[data-testid="execution-detail"] [data-testid="metrics-cards"] {
-  gap: 0 !important;
-  overflow: hidden;
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-lg);
-}
-[data-testid="execution-detail"] [data-testid="metrics-cards"] > div {
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: var(--panel) !important;
-}
-[data-testid="execution-detail"] [data-testid="metrics-cards"] > div:nth-child(even) {
-  border-left: 1px solid var(--edge) !important;
-}
+/* Execution detail inside the Review sheet: a document, not a run page. */
+[data-testid="execution-detail"] { min-height: 100%; background: var(--canvas); }
+.native-execution-doc { padding: 12px 20px 56px; }
+.native-execution-doc-head { padding-bottom: 14px; border-bottom: 1px solid var(--edge); }
+.native-execution-doc-head h1 { margin: 10px 0 4px; color: var(--gray-100); font-size: var(--text-base); font-weight: 500; line-height: 1.35; }
+.native-execution-doc-meta { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; color: var(--gray-500); font-size: var(--text-xs); }
+.native-execution-doc-status { display: inline-flex; align-items: center; gap: 6px; color: var(--gray-300); }
+.native-execution-doc-status[data-status="completed"] { color: var(--success); }
+.native-execution-doc-status[data-status="failed"] { color: var(--danger); }
+.native-execution-doc-status[data-status="running"] { color: var(--warn); }
+.native-execution-doc-block { padding: 16px 0 4px; }
+.native-execution-doc-block + .native-execution-doc-block { border-top: 1px solid var(--edge); margin-top: 12px; }
+.native-execution-doc-block h2 { margin: 0 0 10px; color: var(--gray-100); font-size: var(--text-sm); font-weight: 500; }
+.native-execution-doc-block .native-direction { margin: 0; }
+.native-execution-doc-findings { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.native-execution-doc-findings li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: baseline; font-size: var(--text-xs); line-height: 1.55; color: var(--gray-300); }
+.native-execution-doc-findings strong { color: var(--gray-100); font-weight: 500; }
+.native-execution-doc-severity { display: inline-block; min-width: 4.5rem; color: var(--gray-500); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-2xs); text-transform: uppercase; letter-spacing: 0.04em; }
+.native-execution-doc-findings li[data-severity="critical"] .native-execution-doc-severity,
+.native-execution-doc-findings li[data-severity="error"] .native-execution-doc-severity { color: var(--danger); }
+.native-execution-doc-findings li[data-severity="warning"] .native-execution-doc-severity { color: var(--warn); }
+.native-execution-doc-findings li[data-severity="good"] .native-execution-doc-severity { color: var(--success); }
+.native-execution-doc-report { max-height: 32rem; overflow: auto; border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 10px 14px; background: var(--sidebar); }
+
+/* Settings panes: one list, one editor, presets menu. */
+.native-settings-list { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--edge); }
+.native-settings-list > li { display: flex; align-items: flex-start; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--edge); }
+.native-settings-list > li[data-active="true"] { background: color-mix(in srgb, var(--panel) 60%, transparent); }
+.native-settings-empty { color: var(--gray-500); font-size: var(--text-sm); }
+.native-settings-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 4px; }
+.native-settings-dot { display: inline-block; width: 6px; height: 6px; flex-shrink: 0; border-radius: 999px; background: var(--gray-500); }
+.native-settings-dot[data-on="true"] { background: var(--success); }
+.native-settings-card[data-enabled="true"] .native-settings-dot { background: var(--success); }
+.native-settings-tag { display: inline-flex; align-items: center; border: 1px solid var(--edge); border-radius: 999px; padding: 1px 7px; color: var(--gray-300); font-size: var(--text-2xs); }
+.native-settings-tag[data-tone="ok"] { color: var(--success); border-color: var(--success-border); }
+.native-settings-tag[data-tone="warn"] { color: var(--warn); border-color: var(--warn-border); }
+.native-settings-editor { margin-bottom: 20px; border: 1px solid var(--edge); border-radius: var(--radius-xl); padding: 14px 16px 12px; background: var(--panel); }
+.native-settings-editor-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; font-size: var(--text-sm); }
+.native-settings-editor-head strong { color: var(--gray-100); font-weight: 500; }
+.native-settings-advanced { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 10px; border: 0; background: none; padding: 0; color: var(--gray-500); font-size: var(--text-xs); cursor: pointer; }
+.native-settings-advanced:hover { color: var(--gray-300); }
+.native-settings-advanced-body { margin-bottom: 4px; border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 12px 12px 0; background: var(--canvas); }
+.native-settings-presets { top: calc(100% + 6px); right: 0; left: auto; width: 17rem; }
+.native-settings-presets small { margin-left: 10px; color: var(--gray-500); font-size: var(--text-2xs); }
+.native-settings-card { border: 1px solid var(--edge); border-radius: var(--radius-xl); padding: 12px 14px; }
+.native-settings-code { border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 3px 8px; background: var(--elevated); color: var(--gray-100); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-xs); }
 
 @media (max-width: 720px) {
   .agent-review-panel { width: 100%; min-width: 0; }

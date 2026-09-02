@@ -11,6 +11,7 @@ from ..models.schemas import (
     ModelProviderOut,
     ModelProviderUpdate,
 )
+from ..agent_runtime.model_budget import is_reasoning_model
 from ..security import keyring_store
 from . import has_value, utcnow
 from . import settings as settings_repo
@@ -75,6 +76,8 @@ def _row_to_out(row: sqlite3.Row, active_id: str | None = None) -> ModelProvider
         has_api_key=keyring_store.secret_exists(row["api_key_ref"]),
         context_window=row["context_window"],
         max_output_tokens=row["max_output_tokens"],
+        reasoning_effort=row["reasoning_effort"] or None,
+        reasoning_capable=is_reasoning_model(row["model"]),
         active=(row["id"] == active_id),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
@@ -109,8 +112,8 @@ def create(conn: sqlite3.Connection, data: ModelProviderCreate) -> ModelProvider
     conn.execute(
         "INSERT INTO model_providers "
         "(id, name, provider_type, base_url, model, api_key_ref, context_window, "
-        " max_output_tokens, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " max_output_tokens, reasoning_effort, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             provider_id,
             data.name,
@@ -120,6 +123,7 @@ def create(conn: sqlite3.Connection, data: ModelProviderCreate) -> ModelProvider
             api_key_ref,
             data.context_window,
             data.max_output_tokens,
+            data.reasoning_effort,
             now,
             now,
         ),
@@ -169,6 +173,14 @@ def update(
     else:
         max_output_tokens = data.max_output_tokens
 
+    # None = keep; "" = clear to NULL (the model's own default); else set.
+    if data.reasoning_effort is None:
+        reasoning_effort = existing["reasoning_effort"]
+    elif data.reasoning_effort == "":
+        reasoning_effort = None
+    else:
+        reasoning_effort = data.reasoning_effort
+
     api_key_ref = existing["api_key_ref"]
     if has_value(data.api_key):
         api_key_ref = keyring_store.save_secret(
@@ -177,9 +189,10 @@ def update(
 
     conn.execute(
         "UPDATE model_providers SET name=?, provider_type=?, base_url=?, model=?, "
-        "api_key_ref=?, context_window=?, max_output_tokens=?, updated_at=? WHERE id=?",
+        "api_key_ref=?, context_window=?, max_output_tokens=?, reasoning_effort=?, "
+        "updated_at=? WHERE id=?",
         (name, provider_type, base_url, model, api_key_ref, context_window,
-         max_output_tokens, utcnow(), provider_id),
+         max_output_tokens, reasoning_effort, utcnow(), provider_id),
     )
     audit.record(
         conn,

@@ -1148,7 +1148,8 @@ def _make_agent(creds: dict[str, Any], tools: list[Any], instructions: str,
                        # An operator may override per provider; None keeps the
                        # investigator default (AGENT_TEMPERATURE).
                        temperature=creds.get("temperature", AGENT_TEMPERATURE),
-                       model_timeout=_MODEL_TIMEOUT_S)
+                       model_timeout=_MODEL_TIMEOUT_S,
+                       reasoning_effort=creds.get("reasoning_effort"))
 
 
 # --- graceful step-budget finalize -----------------------------------------

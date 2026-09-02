@@ -89,6 +89,26 @@ _SMALL_WINDOW_MIN_CHARS = 8_192
 _COMPLETION_TOKENS_MIN = 1_024
 
 
+# Models known to accept a reasoning-effort knob on Chat Completions
+# (``reasoning_effort``). Substring match on the lowercased model name, like the
+# window table above. Unknown → False: the Composer paints no effort control and
+# the runtime sends nothing, which is the only safe default against an endpoint
+# that would 400 on an unknown parameter.
+_REASONING_MODELS: tuple[str, ...] = (
+    "o1", "o3", "o4", "gpt-5", "gpt-oss", "deepseek-reasoner", "deepseek-r1",
+    "-r1", "qwq", "qwen3", "thinking", "grok-3-mini", "grok-4", "glm-4.5", "glm-4.6",
+    "kimi-k2", "magistral",
+)
+
+
+def is_reasoning_model(model: str | None) -> bool:
+    """Whether ``model`` is known to accept ``reasoning_effort`` (v1.10.0)."""
+    m = (model or "").strip().lower()
+    if not m:
+        return False
+    return any(sub in m for sub in _REASONING_MODELS)
+
+
 def context_window(model: str | None, explicit: int | None = None) -> int:
     """The active model's approximate input context window in tokens.
 

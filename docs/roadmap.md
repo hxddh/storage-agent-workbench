@@ -1,199 +1,99 @@
 # Roadmap
 
-> **Baseline: Storage Agent v1.02.0 + modern native-agent extensions (post-1.02).**
-> v1.02 remains the shipped window; the additive extensions below (local models,
-> user skills, read-only MCP bridge, observability export, OS-native shell)
-> are implemented since post-1.02 as gated, bounded, same-floor features
-> (head stays **027**, no new tables). This file now describes what comes
-> **after** that window.
+> **Baseline: Storage Agent v1.10.0** — the native Agent window (sidebar ·
+> title bar · one Task document · one Composer) on a native OS shell and the
+> durable task runtime.
 >
-> This file describes what comes **after** the current Agent Task architecture. It is not a backlog of old UI concepts and it is not proof that an aspirational capability already exists.
+> This file describes what comes **after** the current architecture. It is not
+> a backlog of old UI concepts and it is not proof that an aspirational
+> capability already exists. Every item was checked against the code on
+> `main`; each carries a verdict: **keep**, **rebuild**, **new**, or
+> **non-goal**.
 
-## Shipped since v1.02 — modern native-agent extensions
+## 1. Verdict on v1.10.0
 
-The P1 native-agent work is **done as gated additive features** (no new
-migration, no new top-level navigation):
+v1.09 replaced the presentation; v1.10 made the shell and the runtime native.
+What is genuinely native now:
 
-- **Local model providers** — `ollama` / `lmstudio` / `vllm` / `llama.cpp` /
-  `openai-compatible` without a stored key, localhost defaults, same probe
-  and window-aware budgeting (`agent_service.LOCAL_PROVIDER_TYPES`,
-  `model_budget` local windows).
-- **User skills** — `STORAGE_AGENT_DATA_DIR/skills/*/SKILL.md` and
-  `STORAGE_AGENT_SKILLS_DIR` are merged into the catalog (`GET /skills`,
-  shadows bundled by name, bounded, never executed).
-- **Read-only MCP bridge** — `GET /mcp/status`, `GET /mcp/tools`,
-  `POST /mcp/tools/call` over the whitelisted read-only tool set; disabled
-  by default (`STORAGE_AGENT_ENABLE_MCP=1`).
-- **Observability export** — `GET /agent-tasks/{id}/export/otel` +
-  `GET /observability/export` (bounded, sanitized, OTel-inspired).
-- **OS-native shell** — Tauri `dialog` / `notification` / `opener` /
-  `deep-link` / `global-shortcut` / `updater` plugins (gated, inert until
-  signing is configured). Settings now surfaces Skills, Observability, and MCP
-  via `NativeAgentPanel`; deep links `storage-agent://task/<id>` open the
-  Task.
+| Area | State on `main` | Verdict |
+| --- | --- | --- |
+| Window, tokens, sidebar, Composer, document renderers, Review sheet, Settings dialog | v1.09 native window, unchanged | keep |
+| Tauri OS shell | `lib.rs` builds the menu bar, emits `menu-command` / `deep-link-request` / `shortcut-event`, exposes `notify` / `set_window_title` / `open_app_folder`; `tauri.conf.json` registers `storage-agent://`; one frontend bridge (`useNativeAgent.ts`) with a browser no-op; an architecture test keeps both sides in step | keep |
+| Task titles | Runtime title step after the first Work Result (`task_runtime/titling.py`, `sessions.title_source`); user rename wins | keep |
+| Reasoning effort | `model_providers.reasoning_effort`, forwarded only for known-reasoning models; Composer chip `model · effort` | keep |
+| Execution detail | A document in the Review sheet on `LiveTrace` | keep |
+| Provider settings, Skills & bridges | Native panes with presets and actions | keep |
+| Frontend API layer | One submit path (execution runner); the pre-v0.94 message client is gone; orphan-module contract | keep |
+| Runtime core | `session_agent.py` is still one ~2,700-line module (prompt, loop, steer queue, usage, guards). Correct and covered, but every runtime change touches it. | **rebuild (split)** |
+| Window state | Size/position are not remembered across launches. | **new** |
+| Updater | `tauri-plugin-updater` is registered but inert: no pubkey, no endpoints. | **new (blocked on signing)** |
 
-Remaining roadmap items are distribution hardening and deeper evidence depth.
+## 2. Codex → Storage Agent map
 
-## Current shipped baseline
+| Codex | Storage Agent | Verdict |
+| --- | --- | --- |
+| Threads sidebar, New thread, generated thread titles | Sidebar, New task, runtime task titles | keep |
+| Thread search (⌘K) | Command palette (⌘K) | keep |
+| Archive thread | Delete only; archive stays out of the product. | non-goal |
+| Composer: `+` attach, model picker, reasoning effort, approval mode | `+` / drag-and-drop attach, model chip, reasoning effort chip. No approval-mode chip: storage tools are read-only by contract and Decisions gate data movement. | keep / non-goal |
+| Image attachments | Not applicable to object-storage work. | non-goal |
+| Streaming "Thinking" summaries | Chain-of-thought is never persisted or rendered (security §6.10). *Working* shimmer only. | non-goal |
+| *Worked for Ns* tool group | *Worked for …* group | keep |
+| Diff / Changes panel | Review sheet: Evidence · Execution · Report | keep |
+| Approval prompt for commands | Decision card (Approve / Decline) | keep |
+| Automations (scheduled runs) | Revisit schedules are a runtime engine; no scheduler UI. | non-goal (UI) |
+| Skills, MCP | User skills, read-only MCP bridge; Settings offers actions | keep |
+| Local models | Local providers with presets | keep |
+| Native app menu, ⌘, Settings, notifications, deep links | Shipped in v1.10.0 | keep |
+| Multiple windows, worktrees, terminal, browser | — | non-goal |
 
-v1.02.0 is the current baseline: a thorough native Agent window. Empty window is the Composer.
-The center is one readable work record. Tools appear in that record. The sidebar is
-quiet titles. Composer is attach + textarea + Delegate / Steer / Stop — no painted
-keyboard legend. New task is a button, not a shortcut chip. Settings is model, storage
-credentials, language, and theme. The model discovers tools. Evidence, Execution, and
-Report open as a light overlay. No chat transcript layer, price-table spreadsheet,
-slash SKU catalog, first-run wizard, 4-tab Review, painted Verify/revisit chrome, task
-header, live status strip, or command-center queues. No new tools, no migration (head
-remains **027**).
-Sidecar engines from v0.96 (cost sim, Remediation Plan, baseline/Drift, revisit)
-remain callable by the Agent and have no product UI entry.
+## 3. Next workstreams
 
-v1.01.0 replaced the v1.00 workbench shell and left chat-era copy, thread CSS, and
-painted input chrome. v1.00.0 deleted copilot product objects but kept a workbench
-shell. v0.99.0 was a chrome-subtraction pass that left those copilot objects in place.
-v0.98.0 added deterministic figures and finding provenance. v0.97.0 was the
-token/motion/keyboard craft pass. v0.96.0 added the engines. The Agent Task
-runtime from v0.94/v0.95 remains:
+Ordered by value. Each lands as one PR with code, tests, and docs together
+(CLAUDE.md §11). No migration is expected; head stays **028** unless a
+workstream names one.
 
-- the **Agent Task** is the primary application object and work environment;
-- one Composer provides **Delegate → Steer + Stop** semantics, plus **Resume** when that runtime state exists;
-- Direction, Execution, Decision, Work Result, Artifact, and contextual artifact review are distinct product concepts;
-- queued Directions are visible and cancellable; stream recovery is `after=<last seq>` only;
-- Decision cards project bounds/impact and Decline;
-- typed Storage Task Context grounds the Agent prompt; deterministic cross-evidence correlation produces bounded findings;
-- live execution is real per-task runtime state rather than simulated Agent chrome;
-- `/agent-tasks` is the product runtime surface while `/sessions` remains the compatibility persistence/runtime API;
-- read-only S3 diagnostics, account discovery, config review, local evidence analysis, error triage, and reports work end to end;
-- managed cloud Evidence Import uses plan → explicit Decision → execution;
-- secrets remain in the encrypted local vault and out of model context;
-- architecture, legacy-contract, documentation-contract, real-Sidecar E2E, visual-review, and desktop-build gates protect the release.
+### N1 — Split `session_agent.py`
 
-This is the starting point. Future work should deepen the Agent's ability to complete real object-storage jobs inside this model rather than replacing it with another shell.
+Prompt assembly, tool loop, steer queue, usage accounting, and guards become
+separate modules with the existing tests unchanged (they patch
+`session_agent.SESSION_LOOP` and read `_streamed_session_loop`; the seam and
+the names stay re-exported from `session_agent`). A pure refactor: no
+user-visible change, no new capability, its own PR.
 
-## Roadmap principles
+### N2 — Window state
 
-1. **Capability before chrome.** Add UI only for runtime state/capability that actually exists.
+Remember window size and position across launches (a Tauri window-state
+plugin or a small app-data JSON). Keep the macOS traffic-light inset and the
+minimum size.
+
+### N3 — Signed updates
+
+Wire `tauri-plugin-updater` once a signing key and an endpoint exist
+(`docs/signing.md`). Until then the plugin stays inert and no UI mentions
+updates.
+
+### N4 — Product polish inside the contract
+
+- Empty-start greeting rotates between two or three short lines; still no
+  cards, no wizard.
+- `⌘⇧[` / `⌘⇧]` previous / next task.
+- `Esc` clears a Composer draft only when the draft is empty.
+- Per-task *Export trace…* from the Review sheet (same OTel path as Settings).
+
+## 4. Non-goals (unchanged)
+
+Multi-agent orchestration, coding projects/worktrees, terminal/browser/computer
+control, workflow canvas, synthetic plans or checklists the runtime did not
+emit, destructive storage mutation, a scheduler UI, approval-mode switches that
+weaken the read-only floor, chain-of-thought rendering, a page per backend
+table, multi-user semantics.
+
+## 5. Roadmap principles
+
+1. **Capability before chrome.** Add UI only for runtime state/capability that actually exists. A listener for an event nothing sends is chrome.
 2. **Agent Task remains the organizing object.** New evidence, tools, reports, and execution detail attach to the Task.
 3. **Read-only autonomy, explicit mutation/data-movement boundaries.** More autonomy must not weaken the safety floor. Remediation Plans stay operator-applied.
 4. **Evidence over confidence.** Improve what the Agent can prove, correlate, and explain; do not hide gaps. Estimates always carry coverage.
 5. **Storage depth over generic-Agent breadth.** Prefer real S3/object-storage capabilities over generic terminal/browser/workflow features.
 6. **Provider realism matters.** S3-compatible behavior and capability gaps must be tested explicitly rather than assumed from AWS semantics.
-7. **Documentation is part of architecture.** Any intentional change to the product model must update code, executable contracts, and canonical docs together.
-
-## Near-term priorities
-
-### P0 — Evidence depth and correctness
-
-#### Broader inventory/log formats
-
-- Improve schema detection and explicit truncation/coverage reporting across large imported evidence.
-- Keep model context aggregate-only and bounded.
-- ORC inventory support is **out of scope** for current planning.
-
-#### Provider-native evidence sources
-
-Evaluate and add bounded adapters for sources such as:
-
-- CloudTrail-style object-storage API events;
-- Storage Lens-style aggregate data;
-- provider-native access-log/inventory equivalents.
-
-Each source must define discovery, bounded planning, confirmation, local persistence, sanitization, and analysis before it becomes a first-class Artifact.
-
-### P0 — Stronger storage reasoning from existing evidence
-
-Shipped through v0.96.0 as deterministic correlation plus the cost/lifecycle simulator, Remediation Plan/Verify, baseline/Drift, and scheduled revisits. Remaining work is more evidence sources and tighter coverage reporting, not a second Agent.
-
-Still open:
-
-- object metadata/config evidence + observed behavior beyond the current bounded joins;
-- richer movement estimates when an evidence-import plan is absent (keep absence a gap, never invent counts);
-- distinguish expired gated work where the underlying import/report workflow actually expires.
-
-### P1 — Provider-realistic integration coverage
-
-Add reproducible local/CI environments for S3-compatible differences that cannot be modeled reliably with simple mocks:
-
-- signature/addressing differences;
-- incomplete API support;
-- error-shape/header differences;
-- pagination/version/multipart behavior;
-- provider-specific config semantics where useful.
-
-CI must still carry no production cloud/model secrets.
-
-### P1 — Better execution/evidence review
-
-Deepen contextual Review without turning it into a separate application:
-
-- stronger provenance links from a Work Result to the exact Evidence/Execution that supports it — **v0.98.0 shipped the presentation layer**; **v1.00.0 opens Evidence from the document** (inline figures + ProvenanceMark). Remaining: richer audit-gap representation and large-task search.
-- clearer audit-gap and unsupported-capability representation;
-- better large-task search/navigation while preserving the Task as one durable work record.
-
-### P1 — Storage-specific tool coverage
-
-Add only tools that materially improve storage diagnosis or analysis while fitting the read-only/bounded model. Candidate areas should be justified by a real user job and a concrete safety contract, for example additional bucket/object metadata/config probes or provider capability detection.
-
-### P2 — Distribution hardening
-
-When justified by actual users/distribution needs:
-
-- Apple Developer ID signing + notarization;
-- Windows Authenticode signing;
-- a trusted auto-update chain;
-- macOS x64/universal artifacts if demand warrants the extra release matrix.
-
-Distribution hardening must not change runtime/product semantics.
-
-## Known current gaps
-
-### Distribution
-
-- Apple notarization is not configured.
-- Windows Authenticode signing is not configured.
-- No trusted auto-update chain.
-- macOS release is Apple Silicon only.
-
-### Evidence/source coverage
-
-- provider-native event/access-log/aggregate sources are not yet first-class Evidence;
-- some S3-compatible capability differences are represented as unsupported without dedicated provider containers in required CI;
-- simulator class×age independence is labelled; abort-MPU savings stay a gap without MPU inventory.
-
-### CI realism
-
-Required CI deliberately uses no production model/cloud credentials. The repository has strong deterministic/runtime/E2E coverage but does not prove every public-cloud/provider quirk.
-
-Do not rewrite these gaps as already solved until executable coverage exists.
-
-## Explicit non-directions
-
-The following are **not** roadmap shortcuts and must not be added merely to make the product look like a broader Agent platform:
-
-- multi-agent orchestration without a real runtime need;
-- synthetic task plans/checklists unsupported by execution state;
-- coding projects/worktrees;
-- generic terminal/browser/computer control;
-- a workflow canvas;
-- a plugin marketplace as a substitute for storage-specific capabilities;
-- destructive storage mutation/auto-remediation (including auto-applying a Remediation Plan);
-- ORC inventory as a committed near-term deliverable;
-- a top-level application destination for every backend table;
-- multi-user SaaS/RBAC before there is an explicit product decision to stop being a local-first desktop Agent.
-
-## Safety floor for all future work
-
-Every roadmap item must preserve:
-
-- read-only storage operations in the shipped Agent;
-- no generic shell/arbitrary subprocess capability;
-- secrets only in the encrypted local vault;
-- no secrets in model prompts, SQLite, logs, reports, or browser-readable payloads;
-- server-side provider scope enforcement;
-- explicit Decisions for gated data movement/materially large scans;
-- Decision gates never auto-crossed by revisits;
-- bounded/sanitized Tool and model context;
-- deterministic handling of raw analytical rows;
-- explicit provider/evidence gaps;
-- estimates labelled as estimates, with coverage, or withheld as gaps;
-- chain-of-thought never persisted or exposed as an Artifact.

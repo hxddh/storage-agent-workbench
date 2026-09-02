@@ -20,7 +20,38 @@ use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::{Manager, RunEvent, State};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, Runtime, State};
+use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
+use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_opener::OpenerExt;
+
+/// The deep-link scheme registered in tauri.conf.json (`plugins.deep-link`).
+const DEEP_LINK_SCHEME: &str = "storage-agent";
+/// One global shortcut: summon the window and focus the Composer.
+const SUMMON_SHORTCUT: &str = "CmdOrCtrl+Shift+S";
+/// Menu commands the native menu bar dispatches to the webview as the
+/// `menu-command` event `{ id }`. The frontend (`hooks/useNativeAgent.ts`,
+/// `MENU_COMMANDS`) routes each id through the SAME handler the keyboard and
+/// the command palette use — the menu is not a second command path.
+/// (id, label, accelerator)
+const MENU_COMMANDS: &[(&str, &str, Option<&str>)] = &[
+    ("settings", "Settings…", Some("CmdOrCtrl+,")),
+    ("new-task", "New Task", Some("CmdOrCtrl+N")),
+    ("rename-task", "Rename Task", None),
+    ("delete-task", "Delete Task…", None),
+    ("stop", "Stop Execution", Some("CmdOrCtrl+.")),
+    ("resume", "Resume Interrupted Execution", None),
+    ("toggle-sidebar", "Toggle Sidebar", Some("CmdOrCtrl+\\")),
+    ("find", "Find in Task", Some("CmdOrCtrl+F")),
+    ("review", "Review Evidence", Some("CmdOrCtrl+I")),
+    ("palette", "Command Palette", Some("CmdOrCtrl+K")),
+    ("focus-composer", "Focus Composer", Some("CmdOrCtrl+L")),
+    ("theme", "Toggle Theme", None),
+    ("shortcuts", "Keyboard Shortcuts", None),
+    ("release-notes", "Release Notes", None),
+];
 
 /// Holds the resolved sidecar URL, auth token, and the child process handle.
 struct SidecarState {
@@ -233,6 +264,206 @@ fn open_external(url: String) -> Result<(), String> {
     result.map(|_| ()).map_err(|e| format!("open failed: {e}"))
 }
 
+/// `storage-agent://task/<id>` or `storage-agent://open?task=<id>` → the task
+/// id, or None for anything else. Ids are opaque hex/uuid-ish tokens; anything
+/// with other characters is rejected here before it reaches the webview.
+fn deep_link_task_id(url: &str) -> Option<String> {
+    let rest = url.strip_prefix(&format!("{DEEP_LINK_SCHEME}://"))?;
+    let (path, query) = match rest.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (rest, None),
+    };
+    let path = path.trim_matches('/');
+    let id = if let Some(id) = path.strip_prefix("task/") {
+        id.trim_matches('/').to_string()
+    } else if path == "open" || path.is_empty() {
+        query?
+            .split('&')
+            .find_map(|kv| kv.strip_prefix("task=").map(|v| v.to_string()))?
+    } else {
+        return None;
+    };
+    let ok = id.len() >= 8
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    ok.then_some(id)
+}
+
+/// Deep-link URLs among a process's argv (Windows/Linux hand them over as an
+/// argument; macOS uses the open-url event instead).
+fn deep_links_in_argv(argv: &[String]) -> Vec<String> {
+    argv.iter()
+        .filter(|a| a.starts_with(&format!("{DEEP_LINK_SCHEME}://")))
+        .cloned()
+        .collect()
+}
+
+/// Surface the window and hand the URLs to the webview as ONE event; the
+/// frontend extracts the task id with the same rules as `deep_link_task_id`.
+fn emit_deep_links<R: Runtime>(app: &AppHandle<R>, urls: Vec<String>) {
+    let urls: Vec<String> = urls
+        .into_iter()
+        .filter(|u| deep_link_task_id(u).is_some())
+        .collect();
+    if urls.is_empty() {
+        return;
+    }
+    focus_main_window(app);
+    let _ = app.emit("deep-link-request", serde_json::json!({ "urls": urls }));
+}
+
+fn focus_main_window<R: Runtime>(app: &AppHandle<R>) {
+    let win = app
+        .get_webview_window("main")
+        .or_else(|| app.webview_windows().into_values().next());
+    if let Some(win) = win {
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
+/// App · Task · View · Help. Every custom item carries one of MENU_COMMANDS;
+/// the predefined Edit/Window items are what keep copy/paste and window
+/// management native inside the webview.
+fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let item = |id: &str| -> tauri::Result<MenuItem<R>> {
+        let (_, label, accel) = MENU_COMMANDS
+            .iter()
+            .find(|(cid, _, _)| *cid == id)
+            .copied()
+            .expect("menu id is declared in MENU_COMMANDS");
+        MenuItem::with_id(app, id, label, true, accel)
+    };
+    let app_menu = Submenu::with_items(
+        app,
+        "Storage Agent",
+        true,
+        &[
+            &PredefinedMenuItem::about(app, Some("About Storage Agent"), None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &item("settings")?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::show_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None)?,
+        ],
+    )?;
+    let edit_menu = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &item("find")?,
+        ],
+    )?;
+    let task_menu = Submenu::with_items(
+        app,
+        "Task",
+        true,
+        &[
+            &item("new-task")?,
+            &item("rename-task")?,
+            &item("delete-task")?,
+            &PredefinedMenuItem::separator(app)?,
+            &item("stop")?,
+            &item("resume")?,
+            &PredefinedMenuItem::separator(app)?,
+            &item("review")?,
+            &item("focus-composer")?,
+        ],
+    )?;
+    let view_menu = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[
+            &item("toggle-sidebar")?,
+            &item("palette")?,
+            &item("theme")?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::fullscreen(app, None)?,
+        ],
+    )?;
+    let window_menu = Submenu::with_items(
+        app,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+    let help_menu = Submenu::with_items(
+        app,
+        "Help",
+        true,
+        &[&item("shortcuts")?, &item("release-notes")?],
+    )?;
+    Menu::with_items(
+        app,
+        &[&app_menu, &edit_menu, &task_menu, &view_menu, &window_menu, &help_menu],
+    )
+}
+
+/// One OS notification (title + body). Text only; the webview decides when a
+/// settled background Execution deserves one.
+#[tauri::command]
+fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
+    let clip = |s: String, n: usize| -> String { s.chars().take(n).collect() };
+    app.notification()
+        .builder()
+        .title(clip(title, 120))
+        .body(clip(body, 400))
+        .show()
+        .map_err(|e| format!("notification failed: {e}"))
+}
+
+/// The OS window title (`<task> — Storage Agent`).
+#[tauri::command]
+fn set_window_title(window: tauri::Window, title: String) -> Result<(), String> {
+    let title: String = title.chars().take(200).collect();
+    window
+        .set_title(&title)
+        .map_err(|e| format!("set title failed: {e}"))
+}
+
+/// Reveal one folder under the app data directory in the OS file manager.
+/// Only named subfolders are allowed (today: `skills`); the folder is created
+/// if missing so the user can drop a SKILL.md straight in. Not a filesystem
+/// tool: no arbitrary path, no read, no write beyond `create_dir_all`.
+#[tauri::command]
+fn open_app_folder(app: tauri::AppHandle, sub: String) -> Result<String, String> {
+    let sub = match sub.as_str() {
+        "skills" => "skills",
+        _ => return Err("unknown app folder".to_string()),
+    };
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("no app data dir: {e}"))?
+        .join(sub);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("could not create folder: {e}"))?;
+    let shown = dir.to_string_lossy().to_string();
+    app.opener()
+        .open_path(shown.clone(), None::<&str>)
+        .map_err(|e| format!("open failed: {e}"))?;
+    Ok(shown)
+}
+
 /// Executable name inside the one-dir bundle (`.exe` on Windows).
 fn sidecar_exe_name() -> &'static str {
     if cfg!(windows) {
@@ -267,19 +498,15 @@ pub fn run() {
         // every save, so the second instance's write silently discarded a
         // credential the first had just stored, and both would contend on one
         // app.db. Here we simply surface the existing window.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // The window config sets no explicit label, so Tauri's implicit
             // "main" applies — but don't depend on that: fall back to whichever
             // window exists so a future label rename can't silently turn the
             // second launch into a no-op the user reads as "the app is dead".
-            let win = app
-                .get_webview_window("main")
-                .or_else(|| app.webview_windows().into_values().next());
-            if let Some(win) = win {
-                let _ = win.unminimize();
-                let _ = win.show();
-                let _ = win.set_focus();
-            }
+            focus_main_window(app);
+            // A second launch triggered by a `storage-agent://` link carries
+            // the URL in argv (Windows/Linux); hand it to the running window.
+            emit_deep_links(app, deep_links_in_argv(&argv));
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -287,7 +514,53 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .menu(|app| build_menu(app))
+        .on_menu_event(|app, event| {
+            let id = event.id().as_ref().to_string();
+            if MENU_COMMANDS.iter().any(|(cid, _, _)| *cid == id) {
+                let _ = app.emit("menu-command", serde_json::json!({ "id": id }));
+            }
+        })
         .setup(|app| {
+            // Deep links: the OS open-url event (macOS, and Linux/Windows once
+            // the scheme is registered) → one `deep-link-request` event. On
+            // Linux/Windows dev builds the scheme is registered at runtime so
+            // the link works before an installer ever ran.
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                let _ = app.deep_link().register_all();
+            }
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                let urls: Vec<String> = event.urls().iter().map(|u| u.to_string()).collect();
+                emit_deep_links(&handle, urls);
+            });
+            // Cold start with a link in argv (Windows/Linux).
+            let argv: Vec<String> = std::env::args().collect();
+            let startup_links = deep_links_in_argv(&argv);
+            if !startup_links.is_empty() {
+                let handle = app.handle().clone();
+                // The webview is not listening yet; it asks `get_current` on
+                // mount, and we also re-emit shortly after for good measure.
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(1500));
+                    emit_deep_links(&handle, startup_links);
+                });
+            }
+            // Global summon shortcut. Best-effort: another app may own it.
+            let summon = app.handle().clone();
+            let _ = app
+                .global_shortcut()
+                .on_shortcut(SUMMON_SHORTCUT, move |_app, _shortcut, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        focus_main_window(&summon);
+                        let _ = summon.emit(
+                            "shortcut-event",
+                            serde_json::json!({ "shortcut": SUMMON_SHORTCUT }),
+                        );
+                    }
+                });
+
             let port = free_port().ok_or_else(|| {
                 eprintln!("fatal: no free loopback port for the sidecar");
                 "no free loopback port for the sidecar".to_string()
@@ -373,7 +646,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![get_sidecar_url, get_sidecar_token,
-                                                 save_report, open_external])
+                                                 save_report, open_external, notify,
+                                                 set_window_title, open_app_folder])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
@@ -400,4 +674,46 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deep_link_task_paths_resolve() {
+        assert_eq!(
+            deep_link_task_id("storage-agent://task/0123456789abcdef"),
+            Some("0123456789abcdef".to_string())
+        );
+        assert_eq!(
+            deep_link_task_id("storage-agent://open?task=abcdef01&x=1"),
+            Some("abcdef01".to_string())
+        );
+        assert_eq!(deep_link_task_id("storage-agent://task/short"), None);
+        assert_eq!(deep_link_task_id("storage-agent://task/../etc"), None);
+        assert_eq!(deep_link_task_id("https://example.com/task/0123456789"), None);
+        assert_eq!(deep_link_task_id("storage-agent://settings"), None);
+    }
+
+    #[test]
+    fn argv_deep_links_are_picked_out() {
+        let argv = vec![
+            "app".to_string(),
+            "--flag".to_string(),
+            "storage-agent://task/0123456789abcdef".to_string(),
+        ];
+        assert_eq!(deep_links_in_argv(&argv).len(), 1);
+        assert!(deep_links_in_argv(&["app".to_string()]).is_empty());
+    }
+
+    #[test]
+    fn menu_command_ids_are_unique_and_kebab_case() {
+        let mut seen = std::collections::HashSet::new();
+        for (id, label, _) in MENU_COMMANDS {
+            assert!(seen.insert(*id), "duplicate menu id {id}");
+            assert!(id.chars().all(|c| c.is_ascii_lowercase() || c == '-'));
+            assert!(!label.is_empty());
+        }
+    }
 }

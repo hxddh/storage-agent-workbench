@@ -878,6 +878,24 @@ ALTER TABLE task_artifacts ADD COLUMN status TEXT;
 ALTER TABLE task_artifacts ADD COLUMN payload_json_sanitized TEXT;
 """
 
+
+# --- Migration 028: v1.10 native agent — task titles + reasoning effort -------
+# Two nullable columns, no rewrites, no backfill:
+#   sessions.title_source           'agent' when the runtime titled the task
+#                                   after its first Work Result, 'user' after a
+#                                   rename. NULL = the deterministic seed title.
+#                                   A user rename wins forever (the runtime
+#                                   never titles a 'user' row again).
+#   model_providers.reasoning_effort 'low' | 'medium' | 'high' | NULL. Passed
+#                                   to the model call only for providers whose
+#                                   model is known-reasoning (model_budget).
+# Never edit shipped 027.
+
+_M028 = """
+ALTER TABLE sessions ADD COLUMN title_source TEXT;
+ALTER TABLE model_providers ADD COLUMN reasoning_effort TEXT;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -917,6 +935,9 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     # v0.96.0 — cost/lifecycle simulator, remediation-plan artifacts, versioned
     # baselines + Drift, per-task revisit schedules. Append-only.
     (27, "optimization_copilot", _M027),
+    # v1.10.0 — runtime-generated task titles (user rename wins) and per-provider
+    # reasoning effort for known-reasoning models. Append-only.
+    (28, "native_agent_titles_effort", _M028),
 ]
 
 

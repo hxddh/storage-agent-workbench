@@ -1,17 +1,41 @@
 import { useEffect } from "react";
-import { sidecarBaseUrl } from "../config";
+import { tauriInvoke } from "../config";
 
-// Minimal native-agent OS helpers. All are best-effort and no-ops when
-// running in a plain browser (no Tauri). Keeping this tiny means the
-// core Agent Task contract (one Composer, one task document) is untouched.
+/**
+ * The one bridge between the Agent window and the OS shell (Tauri v2).
+ *
+ * Every entry point here is a real Rust-side capability in `src-tauri/src/lib.rs`
+ * — a menu bar that emits `menu-command`, deep links that emit
+ * `deep-link-request`, a global shortcut that emits `shortcut-event`, and the
+ * `notify` / `set_window_title` / `open_app_folder` commands. In a plain
+ * browser every call is a no-op that resolves false, so the product contract
+ * (one Composer, one Task document) never depends on the shell being there.
+ */
 
-type TauriInvoke = (cmd: string, args?: Record<string, unknown>) => Promise<unknown>;
+/** Commands the native menu bar dispatches. Mirrors `MENU_COMMANDS` in lib.rs. */
+export const MENU_COMMANDS = [
+  "settings",
+  "new-task",
+  "rename-task",
+  "delete-task",
+  "stop",
+  "resume",
+  "toggle-sidebar",
+  "find",
+  "review",
+  "palette",
+  "focus-composer",
+  "theme",
+  "shortcuts",
+  "release-notes",
+] as const;
+export type MenuCommand = (typeof MENU_COMMANDS)[number];
 
-function tauriInvoke(): TauriInvoke | null {
-  const g = globalThis as unknown as {
-    __TAURI__?: { core?: { invoke?: TauriInvoke } };
-  };
-  return g.__TAURI__?.core?.invoke?.bind(g.__TAURI__.core) ?? null;
+export const DEEP_LINK_SCHEME = "storage-agent";
+export const SUMMON_SHORTCUT = "CmdOrCtrl+Shift+S";
+
+export function isNativeShell(): boolean {
+  return tauriInvoke() !== null;
 }
 
 function tauriListen(event: string, handler: (payload: unknown) => void): (() => void) | null {
@@ -21,62 +45,97 @@ function tauriListen(event: string, handler: (payload: unknown) => void): (() =>
   const listen = g.__TAURI__?.event?.listen;
   if (typeof listen !== "function") return null;
   let unlisten: (() => void) | null = null;
-  listen(event, (e) => handler(e.payload)).then((fn) => { unlisten = fn; }).catch(() => {});
-  return () => { if (unlisten) unlisten(); };
+  let disposed = false;
+  listen(event, (e) => handler(e.payload))
+    .then((fn) => { if (disposed) fn(); else unlisten = fn; })
+    .catch(() => {});
+  return () => { disposed = true; if (unlisten) unlisten(); };
 }
 
-/** Handle `storage-agent://task/<id>` deep links by notifying the app. */
-export function useDeepLink(onOpenTask: (taskId: string) => void) {
+/** `storage-agent://task/<id>` or `storage-agent://open?task=<id>` → the task id. */
+export function taskIdFromDeepLink(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== `${DEEP_LINK_SCHEME}:`) return null;
+  const path = `${parsed.host}${parsed.pathname}`.replace(/^\/+|\/+$/g, "");
+  let id: string | null = null;
+  if (path.startsWith("task/")) id = path.slice("task/".length);
+  else if (path === "open" || path === "") id = parsed.searchParams.get("task");
+  if (!id) return null;
+  try { id = decodeURIComponent(id); } catch { return null; }
+  return /^[A-Za-z0-9_-]{8,}$/.test(id) ? id : null;
+}
+
+function isMenuCommand(value: unknown): value is MenuCommand {
+  return typeof value === "string" && (MENU_COMMANDS as readonly string[]).includes(value);
+}
+
+/**
+ * Subscribe the window to the shell: menu commands, deep links (including the
+ * URL the app was launched with, and argv forwarded by single-instance), and
+ * the global summon shortcut. No-op in a browser.
+ */
+export function useNativeShell({ onOpenTask, onMenuCommand, onSummon }: {
+  onOpenTask: (taskId: string) => void;
+  onMenuCommand: (command: MenuCommand) => void;
+  onSummon: () => void;
+}) {
   useEffect(() => {
-    const off = tauriListen("deep-link-request", (payload) => {
-      // Payload shape from tauri-plugin-deep-link: { urls: string[] }
-      const urls = (payload as { urls?: string[] })?.urls ?? [];
-      for (const url of urls) {
-        try {
-          const u = new URL(url);
-          // storage-agent://task/<id>  or  storage-agent://open?task=<id>
-          const id = u.pathname.replace(/^\//, "") || u.searchParams.get("task");
-          if (id) onOpenTask(decodeURIComponent(id));
-        } catch {
-          /* ignore malformed */
-        }
+    const openUrls = (payload: unknown) => {
+      const urls = Array.isArray(payload)
+        ? payload
+        : ((payload as { urls?: unknown })?.urls ?? []);
+      for (const url of Array.isArray(urls) ? urls : []) {
+        const id = typeof url === "string" ? taskIdFromDeepLink(url) : null;
+        if (id) onOpenTask(id);
       }
-    });
-    // Also handle argv deep links on Windows (single-instance forwards argv)
+    };
+    const offs = [
+      tauriListen("deep-link-request", openUrls),
+      tauriListen("menu-command", (payload) => {
+        const id = (payload as { id?: unknown })?.id ?? payload;
+        if (isMenuCommand(id)) onMenuCommand(id);
+      }),
+      tauriListen("shortcut-event", () => onSummon()),
+    ];
+    // The URL the app was cold-started with (macOS hands it over after launch).
     const invoke = tauriInvoke();
-    if (invoke) {
-      invoke("plugin:deep_link|get_current").catch(() => {});
-    }
-    return () => { if (off) off(); };
-  }, [onOpenTask]);
+    if (invoke) invoke("plugin:deep_link|get_current").then(openUrls).catch(() => {});
+    return () => { for (const off of offs) off?.(); };
+  }, [onOpenTask, onMenuCommand, onSummon]);
 }
 
-/** Notify when an execution that was backgrounded settles. No-op in browser. */
-export function useTaskNotifications(activeTaskId: string | null) {
-  useEffect(() => {
-    if (!activeTaskId) return;
-    const invoke = tauriInvoke();
-    if (!invoke) return;
-    // Example: ask the backend if notification permission is granted, no-op otherwise.
-    // Tauri notification is fire-and-forget; errors are swallowed.
-    void invoke;
-    void sidecarBaseUrl;
-  }, [activeTaskId]);
+/** One OS notification. Resolves false in a browser or when the shell refuses. */
+export async function notifyNative(title: string, body: string): Promise<boolean> {
+  const invoke = tauriInvoke();
+  if (!invoke) return false;
+  try {
+    await invoke("notify", { title, body });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-/** Register a global shortcut (⌘⇧S / Ctrl+Shift+S) to focus the Composer. Best-effort. */
-export function useGlobalShortcut(focusComposer: () => void) {
-  useEffect(() => {
-    const invoke = tauriInvoke();
-    if (!invoke) return;
-    // tauri-plugin-global-shortcut registers shortcuts from Rust; here we just
-    // ensure the frontend can be summoned. The actual registration lives in
-    // src-tauri; this hook merely listens for the event the plugin forwards.
-    const off = tauriListen("shortcut-event", (payload) => {
-      if ((payload as { shortcut?: string })?.shortcut === "CmdOrCtrl+Shift+S") {
-        focusComposer();
-      }
-    });
-    return () => { if (off) off(); };
-  }, [focusComposer]);
+/** The OS window title (`<task> — Storage Agent`). No-op in a browser. */
+export async function setNativeWindowTitle(title: string): Promise<void> {
+  const invoke = tauriInvoke();
+  if (!invoke) return;
+  try { await invoke("set_window_title", { title }); } catch { /* cosmetic */ }
+}
+
+/** Reveal a folder under the app data directory (only `skills` today). */
+export async function openNativeFolder(sub: "skills"): Promise<string | null> {
+  const invoke = tauriInvoke();
+  if (!invoke) return null;
+  try {
+    const path = await invoke("open_app_folder", { sub });
+    return typeof path === "string" ? path : null;
+  } catch {
+    return null;
+  }
 }

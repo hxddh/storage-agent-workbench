@@ -11,7 +11,6 @@ import type {
   SessionSummaryRow,
   ToolActivity,
   TriageCase,
-  TurnResult,
   CloudProvider,
   CredentialsTestResult,
   HeadBucketResult,
@@ -31,11 +30,6 @@ import type {
 // a sidecar that accepted the connection but never responds.
 const REQUEST_TIMEOUT_MS = 120_000;
 
-// The blocking message fallback needs its own, more generous cap: the server
-// WAITS up to 150 s for a still-streaming turn to finish before returning the
-// persisted result (or a 409 "turn still in progress"). Give the client margin
-// above that wait so it sees the server's answer, not its own timeout.
-const TURN_FALLBACK_TIMEOUT_MS = 170_000;
 
 // Dataset uploads can be large local files; give them a long cap of their own
 // (same AbortController chaining as request()).
@@ -122,6 +116,8 @@ export interface ModelProviderInput {
   /** Optional explicit max output tokens. Clamps the completion budget so a
    * third-party/unknown model whose real cap is lower doesn't 400. */
   max_output_tokens?: number | null;
+  /** Reasoning effort (v1.10.0). "" clears back to the model default on update. */
+  reasoning_effort?: "low" | "medium" | "high" | "" | null;
 }
 
 export const listModelProviders = () =>
@@ -288,126 +284,11 @@ export const deleteSession = (id: string) =>
 export const getSessionReport = (id: string) =>
   request<{ session_id: string; format: string; content: string }>(`/sessions/${id}/report`);
 
-// Blocking turn (also the streaming fallback). The server waits for a
-// same-turn_id stream still running server-side and returns the persisted
-// result when it completes; on its 150 s wait timeout it returns HTTP 409
-// "turn still in progress" — surfaced to callers as ApiError(status=409).
-export const postSessionMessage = (id: string, content: string, turnId?: string) =>
-  request<{ session_id: string; messages: SessionMessage[] } & TurnResult>(
-    `/sessions/${id}/messages`,
-    { method: "POST", body: JSON.stringify({ content, turn_id: turnId }) },
-    TURN_FALLBACK_TIMEOUT_MS,
-  );
-
 /** Ask the server to cancel a running turn. Returns {status:"cancelling"}
  * while running or {status:"completed"} if the turn already finished; the
  * partial answer is persisted server-side with a stopped marker. */
 export const cancelSessionTurn = (sessionId: string, turnId: string) =>
   request<{ status: string }>(`/sessions/${sessionId}/turns/${turnId}/cancel`, { method: "POST" });
-
-// Streaming variant (SSE): invokes onDelta/onTool as the agent works and
-// resolves on the `done` event. Throws on a non-OK response (e.g. 422 no model)
-// or a stream `error` event — the caller should then fall back to
-// postSessionMessage with the SAME turnId. The server dedups by turn_id, so the
-// fallback never duplicates the turn or any inline run, even if the stream had
-// already done work server-side before the connection broke.
-export async function streamSessionMessage(
-  id: string,
-  content: string,
-  on: { onDelta: (text: string) => void; onTool: (a: ToolActivity) => void },
-  signal?: AbortSignal,
-  turnId?: string,
-): Promise<TurnResult> {
-  // Idle watchdog: if no bytes arrive for STREAM_IDLE_TIMEOUT_MS, abort so the
-  // caller falls back to the blocking POST instead of hanging forever. Chained
-  // onto the caller's signal (the Stop button) so either can abort the stream.
-  const localCtl = new AbortController();
-  if (signal) {
-    if (signal.aborted) localCtl.abort();
-    else signal.addEventListener("abort", () => localCtl.abort(), { once: true });
-  }
-  let idleTimer: ReturnType<typeof setTimeout> | undefined;
-  const kickIdle = () => {
-    if (idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => localCtl.abort(), STREAM_IDLE_TIMEOUT_MS);
-  };
-  kickIdle();
-  const res = await fetch(`${sidecarBaseUrl()}/sessions/${id}/messages/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ content, turn_id: turnId }),
-    signal: localCtl.signal,
-  });
-  if (!res.ok || !res.body) {
-    if (idleTimer) clearTimeout(idleTimer);
-    let detail = `HTTP ${res.status}`;
-    try {
-      const b = await res.json();
-      if (b?.detail) detail = typeof b.detail === "string" ? b.detail : JSON.stringify(b.detail);
-    } catch {
-      /* ignore */
-    }
-    throw new Error(detail);
-  }
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-  let result: TurnResult | null = null;
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      kickIdle(); // reset the idle watchdog on every chunk received
-      buf += dec.decode(value, { stream: true });
-      const chunks = buf.split("\n\n");
-      buf = chunks.pop() ?? "";
-      for (const chunk of chunks) {
-        const lines = chunk.split("\n");
-        const type = lines.find((l) => l.startsWith("event:"))?.slice(6).trim();
-        // Per the SSE spec an event's payload is ALL its data: lines joined
-        // with newlines — not just the first one.
-        const dataLines = lines.filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim());
-        if (!type || dataLines.length === 0) continue;
-        let data: any;
-        try {
-          data = JSON.parse(dataLines.join("\n"));
-        } catch {
-          continue; // skip a malformed frame instead of killing the stream
-        }
-        if (type === "delta") on.onDelta(data.text || "");
-        else if (type === "tool") on.onTool(data as ToolActivity);
-        else if (type === "done") {
-          result = {
-            proposed_actions: data.proposed_actions || [],
-            evidence_used: data.evidence_used || [],
-            evidence_gaps: data.evidence_gaps || [],
-            skills_used: data.skills_used || [],
-            skills_offered: data.skills_offered || [],
-            message_id: data.message_id,
-            stopped: data.stopped === true,
-            metrics: data.metrics,
-          };
-        } else if (type === "error") throw new Error(data.detail || "stream error");
-      }
-    }
-  } finally {
-    if (idleTimer) clearTimeout(idleTimer);
-    // Release the connection on EVERY exit path (normal end, thrown error
-    // event, malformed response, caller abort).
-    try {
-      await reader.cancel();
-    } catch {
-      /* already closed/aborted */
-    }
-  }
-  // The stream closed without an explicit 'done'. The server may still have
-  // persisted the turn — but we can't trust the partial result here. Throw so
-  // the caller falls back to the blocking POST (idempotent via turn_id): it
-  // returns the persisted result (incl. proposals) instead of leaving the user
-  // with an empty next-steps list until they refresh.
-  if (!result) throw new Error("stream ended without completion");
-  return result;
-}
 
 export const attachRunToSession = (sessionId: string, runId: string) =>
   request<SessionDetail>(`/sessions/${sessionId}/runs/${runId}`, { method: "POST" });

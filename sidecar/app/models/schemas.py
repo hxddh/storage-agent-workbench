@@ -13,6 +13,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 CloudMode = Literal["readonly", "test-write"]
+# Reasoning effort a known-reasoning model is asked to spend (v1.10.0). The
+# runtime only forwards it for providers whose model is reasoning-capable.
+ReasoningEffort = Literal["low", "medium", "high"]
 
 
 # --- Model providers --------------------------------------------------------
@@ -32,6 +35,9 @@ class ModelProviderCreate(BaseModel):
     # third-party/unknown model whose real cap is below the default doesn't get a
     # max_tokens the endpoint 400s on. Omit to infer from the model name.
     max_output_tokens: int | None = Field(default=None, gt=0)
+    # Optional reasoning effort for reasoning-capable models (v1.10.0). Ignored
+    # by the runtime for models that do not expose an effort knob.
+    reasoning_effort: ReasoningEffort | None = None
 
 
 class ModelProviderUpdate(BaseModel):
@@ -45,6 +51,8 @@ class ModelProviderUpdate(BaseModel):
     # positive = set. (None can't mean "clear" here — it's the "unchanged" sentinel.)
     context_window: int | None = Field(default=None, ge=0)
     max_output_tokens: int | None = Field(default=None, ge=0)  # None keep / 0 clear / +set
+    # None = keep as-is; "" = CLEAR back to NULL (model default); else set.
+    reasoning_effort: ReasoningEffort | Literal[""] | None = None
 
 
 class ModelProviderOut(BaseModel):
@@ -57,6 +65,11 @@ class ModelProviderOut(BaseModel):
     has_api_key: bool
     context_window: int | None = None
     max_output_tokens: int | None = None
+    # v1.10.0 — the stored effort (NULL = the model's default) and whether the
+    # configured model is known to accept one at all. The Composer paints an
+    # effort control only when ``reasoning_capable`` is true.
+    reasoning_effort: ReasoningEffort | None = None
+    reasoning_capable: bool = False
     # True for the provider the agent actually uses. Selected explicitly via
     # POST /model-providers/{id}/activate; when none is selected the oldest
     # configured provider is the implicit default (matching the agent runtime).
@@ -614,6 +627,8 @@ class SessionSummary(BaseModel):
     pinned: bool = False
     run_count: int = 0
     finding_count: int = 0
+    # v1.10.0 — NULL: deterministic seed; 'agent': runtime title step; 'user': rename.
+    title_source: str | None = None
     created_at: str
     updated_at: str
 
