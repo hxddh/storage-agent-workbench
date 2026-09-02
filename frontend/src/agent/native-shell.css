@@ -195,18 +195,18 @@
   background: var(--danger);
 }
 
-/* Hover must not move anything: meta fades out, the More control fades in
- * over the same reserved 24px, so a click lands on what the eye saw. */
+/* Hover must not move anything: meta hides, the More control fades in over
+ * the same reserved 24px, so a click lands on what the eye saw. The meta
+ * uses visibility, not a fade — half-faded text is unreadable text. */
 .native-task-meta {
   flex: none;
   color: var(--gray-500);
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
-  transition: opacity var(--duration-fast) var(--ease-out);
 }
 .native-task-row:hover .native-task-meta,
 .native-task-row[data-menu-open="true"] .native-task-meta {
-  opacity: 0;
+  visibility: hidden;
 }
 
 .native-task-more {
