@@ -551,7 +551,7 @@
 .native-settings-advanced:hover { color: var(--gray-300); }
 .native-settings-advanced-body { margin-bottom: 4px; border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 12px 12px 0; background: var(--canvas); }
 .native-settings-presets { top: calc(100% + 6px); right: 0; left: auto; width: 17rem; }
-.native-settings-presets small { color: var(--gray-500); font-size: var(--text-2xs); }
+.native-settings-presets small { margin-left: 10px; color: var(--gray-500); font-size: var(--text-2xs); }
 .native-settings-card { border: 1px solid var(--edge); border-radius: var(--radius-xl); padding: 12px 14px; }
 .native-settings-code { border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 3px 8px; background: var(--elevated); color: var(--gray-100); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-xs); }
 

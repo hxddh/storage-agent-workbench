@@ -107,6 +107,41 @@ conn.commit()
   return title;
 }
 
+/** Attach one completed deterministic run (bucket_config_review) to a seeded
+ * task and reference it from the last Work Result, so the Execution chip and
+ * the Execution-detail document render from durable rows. */
+function seedExecutionRun(taskId: string): string {
+  const { dataDir } = JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) as { dataDir: string };
+  const runId = `run${Date.now().toString(16)}`;
+  const py = `
+import json, sqlite3, sys, uuid
+db, sid, rid = sys.argv[1:4]
+conn = sqlite3.connect(db)
+now = "2026-09-01T00:00:00Z"
+conn.execute("INSERT INTO runs (id, run_type, title, status, provider_id, bucket, user_prompt, final_summary, report_path, created_at, updated_at)"
+             " VALUES (?, 'bucket_config_review', 'Bucket configuration review · acme-logs', 'completed', NULL, 'acme-logs',"
+             " 'Review acme-logs for security, lifecycle and logging gaps.',"
+             " 'acme-logs has no lifecycle rule and server access logging is off; public access is blocked.', NULL, ?, ?)",
+             (rid, now, now))
+conn.execute("INSERT INTO session_runs (id, session_id, run_id, role, created_at) VALUES (?, ?, ?, 'evidence', ?)",
+             (uuid.uuid4().hex, sid, rid, now))
+for i, (tool, out) in enumerate([
+    ("get_bucket_config_detail", {"aspect": "lifecycle", "rules": [], "status_code": 200}),
+    ("get_bucket_config_detail", {"aspect": "logging", "enabled": False, "status_code": 200}),
+    ("get_bucket_public_access", {"blocked": True, "status_code": 200}),
+]):
+    conn.execute("INSERT INTO tool_calls (id, run_id, session_id, tool_name, input_json_sanitized, output_json_sanitized, status, duration_ms, created_at)"
+                 " VALUES (?, ?, ?, ?, ?, ?, 'success', ?, ?)",
+                 (uuid.uuid4().hex, rid, sid, tool, json.dumps({"bucket": "acme-logs"}), json.dumps(out), 60 + 30 * i, now))
+row = conn.execute("SELECT id FROM session_messages WHERE session_id = ? AND role = 'assistant' ORDER BY rowid DESC LIMIT 1", (sid,)).fetchone()
+if row:
+    conn.execute("UPDATE session_messages SET referenced_run_ids = ? WHERE id = ?", (json.dumps([rid]), row[0]))
+conn.commit()
+`;
+  execFileSync(process.env.E2E_PYTHON || "python3", ["-c", py, `${dataDir}/app.db`, taskId, runId]);
+  return runId;
+}
+
 test.beforeAll(() => {
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(OUT, { recursive: true });
@@ -192,6 +227,35 @@ for (const theme of THEMES) {
       await expect(page.getByRole("dialog")).toBeVisible();
       await expect(page.getByTestId("settings-price-table")).toHaveCount(0);
       await shoot(page, "15-settings", theme, lang);
+    });
+
+    test("Settings — model providers as a native pane with presets", async ({ page }) => {
+      await openAgent(page, theme, lang);
+      await page.getByTestId("task-navigation-settings").click();
+      await page.getByRole("button", { name: lang === "zh" ? /^模型提供商$/ : /^Model Providers$/ }).first().click();
+      await expect(page.getByTestId("settings-model-providers")).toBeVisible();
+      await page.getByTestId("model-add").click();
+      await expect(page.getByTestId("model-presets")).toBeVisible();
+      await shoot(page, "16-settings-model-presets", theme, lang);
+      await page.getByRole("menuitem", { name: "Ollama" }).click();
+      await expect(page.getByTestId("model-editor")).toBeVisible();
+      await shoot(page, "17-settings-model-editor", theme, lang);
+    });
+
+    test("Execution detail — one durable Execution read as a document", async ({ page }) => {
+      const title = `Execution detail ${theme} ${lang}`;
+      const { id } = seedTask(2, title, "tall");
+      seedExecutionRun(id);
+      await openAgent(page, theme, lang);
+      await openTask(page, title);
+      await page.getByTestId("work-result-open-execution").first().click();
+      await expect(page.getByTestId("agent-review-panel")).toBeVisible();
+      // One referenced run opens directly; several open the list first.
+      const row = page.locator(".agent-run-row").first();
+      if (await row.isVisible().catch(() => false)) await row.click();
+      await expect(page.getByTestId("execution-detail")).toBeVisible();
+      await expect(page.getByTestId("execution-status")).toBeVisible();
+      await shoot(page, "18-execution-detail", theme, lang);
     });
 
     test("Analysis figures — cost and drift from real artifacts", async ({ page }) => {
