@@ -43,6 +43,7 @@ from ..repositories import sessions as sessions_repo
 from ..security.redaction import redact_text
 from ..sessions import summary_builder
 from . import context as task_context
+from . import titling
 from . import hub, store
 
 _CONTEXT_MESSAGES = session_agent._MAX_MESSAGES_CEIL
@@ -340,8 +341,10 @@ def _run_execution(execution: dict[str, Any]) -> None:
                 cancel_event=handle.cancel_event)
             for rec in contract.get("tool_activity") or []:
                 _persist_tool_event(conn, exec_id, task_id, rec)
+            # The legacy blocking seam is a test double; the title step belongs
+            # to the streamed runtime only.
             _finish(conn, execution, handle, contract, creds,
-                    int((time.monotonic() - t0) * 1000))
+                    int((time.monotonic() - t0) * 1000), title_step=False)
             return
 
         final: dict[str, Any] = {}
@@ -441,7 +444,8 @@ def _fail(conn: sqlite3.Connection, exec_id: str, task_id: str, error: str) -> N
 
 
 def _finish(conn: sqlite3.Connection, execution: dict[str, Any], handle: LiveExecution,
-            data: dict[str, Any], creds: dict[str, Any], elapsed_ms: int) -> None:
+            data: dict[str, Any], creds: dict[str, Any], elapsed_ms: int,
+            title_step: bool = True) -> None:
     """Persist everything a finished execution produced, durably and in order:
     Direction (+ delivered steers) → Work Result → Decisions → context version
     → execution status. Then carry any undelivered steer into a follow-up."""
@@ -490,6 +494,15 @@ def _finish(conn: sqlite3.Connection, execution: dict[str, Any], handle: LiveExe
                                {"version": version}, commit=False)
     except Exception:  # noqa: BLE001 — context bookkeeping must never fail a turn
         pass
+    # v1.10.0 — name the task after its first Work Result (bounded, sanitized,
+    # user rename wins). Lands in the event log before the terminal status so
+    # the client's settle refresh sees the new title.
+    if title_step and not stopped:
+        titled = titling.run_title_step(conn, task_id, execution["direction"] or "",
+                                        data.get("answer") or "", creds)
+        if titled:
+            store.append_event(conn, exec_id, task_id, "task.titled",
+                               {"title": titled}, commit=False)
     if decisions and not stopped:
         final_status = store.EXEC_WAITING
     elif stopped:

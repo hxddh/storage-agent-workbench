@@ -37,14 +37,14 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v1.09 documentation contract", () => {
+describe("v1.10 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
       expect(text, `${path} must name Agent Task`).toMatch(/Agent Task/);
     }
-    expect(readRepo("docs/README.md")).toContain("v1.09.0");
-    expect(readRepo("CLAUDE.md")).toContain("v1.09.0");
+    expect(readRepo("docs/README.md")).toContain("v1.10.0");
+    expect(readRepo("CLAUDE.md")).toContain("v1.10.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
     expect(readRepo("docs/design-tokens.md")).toContain("--duration-fast");
     expect(readRepo("docs/design-tokens.md")).toContain("prefers-reduced-motion");
@@ -75,7 +75,12 @@ describe("v1.09 documentation contract", () => {
     expect(api).toContain("/remediation-plans");
     expect(api).toContain("/settings/price-table");
     expect(api).toMatch(/product-level.*Agent Task/i);
-    expect(dataModel).toMatch(/Current migration head:\s*027/i);
+    expect(dataModel).toMatch(/Current migration head:\s*028/i);
+    expect(dataModel).toContain("native_agent_titles_effort");
+    expect(api).toContain("reasoning_effort");
+    expect(api).toContain("title_source");
+    expect(readRepo("docs/architecture.md")).toContain("menu-command");
+    expect(readRepo("docs/product.md")).toContain("Runtime task titles");
     expect(dataModel).toContain("task_executions");
     expect(dataModel).toContain("execution_events");
     expect(dataModel).toContain("task_decisions");
@@ -114,7 +119,7 @@ describe("v1.09 documentation contract", () => {
   });
 
   it("marks historical v0.92 material as superseded rather than normative", () => {
-    const rebuild = readRepo("docs/v0.92-agent-os-rebuild.md");
+    const rebuild = readRepo("docs/history/v0.92-agent-os-rebuild.md");
     const release = readRepo("docs/releases/0.92.0.md");
     expect(rebuild).toMatch(/historical/i);
     expect(rebuild).toMatch(/superseded by v0\.93/i);

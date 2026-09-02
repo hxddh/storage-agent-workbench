@@ -21,8 +21,6 @@ const wrapper = ({ children }: { children: ReactNode }) =>
 const api = vi.hoisted(() => ({
   createSession: vi.fn(),
   getSession: vi.fn(),
-  postSessionMessage: vi.fn(),
-  streamSessionMessage: vi.fn(),
   cancelSessionTurn: vi.fn(),
   uploadSessionDataset: vi.fn(),
   submitErrorTriage: vi.fn(),
@@ -87,8 +85,6 @@ describe("the durable execution path", () => {
     expect(api.createTaskExecution).toHaveBeenCalledWith(id, "check the bucket", expect.any(String));
     expect(api.followExecutionEvents).toHaveBeenCalledWith(
       id, "exec-1", expect.anything(), expect.anything());
-    expect(api.streamSessionMessage).not.toHaveBeenCalled();
-    expect(api.postSessionMessage).not.toHaveBeenCalled();
     expect(api.getSessionTurnState).not.toHaveBeenCalled();
     expect(getSessionRun(id).busy).toBe(false);
     expect(getSessionRun(id).lastMetrics?.messageId).toBe("m1");
@@ -151,7 +147,6 @@ describe("the durable execution path", () => {
     expect(api.resumeTaskExecution).toHaveBeenCalledWith(id, "exec-old");
     expect(api.followExecutionEvents).toHaveBeenCalledWith(
       id, "exec-new", expect.anything(), expect.anything());
-    expect(api.postSessionMessage).not.toHaveBeenCalled();
   });
 });
 
@@ -173,7 +168,6 @@ describe("turn failure while viewing another session (FE2)", () => {
     expect(getSessionRun(id).failedText).toBe("my important question");
     expect(getSessionRun(id).pending).toBeNull();
     expect(getSessionRun(id).busy).toBe(false);
-    expect(api.postSessionMessage).not.toHaveBeenCalled();
   });
 });
 
@@ -190,7 +184,6 @@ describe("turn failure while viewing THIS session", () => {
     expect(result.current.setText).toHaveBeenCalledWith("keep me");
     expect(getSessionRun(id).failedText).toBeNull();
     expect(getSessionRun(id).needKey).toBe(true);
-    expect(api.postSessionMessage).not.toHaveBeenCalled();
   });
 });
 

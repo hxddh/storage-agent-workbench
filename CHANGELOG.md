@@ -6,6 +6,44 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-09-02
+
+_Native Agent, Codex parity — a real OS shell, runtime task titles, reasoning effort, native Execution detail and provider panes. Migration **028** (two nullable columns)._
+
+### Added
+
+- **Native menu bar** (Storage Agent · Edit · Task · View · Window · Help) with ⌘, Settings, ⌘N New task, ⌘. Stop, Resume, Rename / Delete task, ⌘\ sidebar, ⌘F Find, ⌘I Review, ⌘K palette, ⌘L Composer, theme, shortcuts, release notes. Every item dispatches the same command as the keyboard and the palette (`App.runCommand`), de-duplicated against the accelerator.
+- **Deep links** — `storage-agent://task/<id>` opens the Task on cold start, from the OS open-url event, and from a second launch (single-instance argv). The scheme is registered in `tauri.conf.json`.
+- **Notifications** — one OS notification when an Execution settles while its Task is not on screen or the window is hidden, driven by the run store the app already follows.
+- **Global summon shortcut** ⌘⇧S / Ctrl+Shift+S focuses the Composer; **OS window title** `<task> — Storage Agent`.
+- **Runtime task titles** — after the first Work Result the Sidecar asks the active model for a ≤ 8-word title from the Direction and the bounded Work Result text only, sanitizes it, stores it with `title_source = 'agent'`, and logs `task.titled`. A user rename (`title_source = 'user'`) wins forever; an unavailable model keeps the seed title.
+- **Reasoning effort** — `model_providers.reasoning_effort` on the provider API, `reasoning_capable` projected from a bounded model-name table, forwarded to the model call only for known-reasoning models. The Composer chip reads `model · effort` and offers Default / Low / Medium / High only then.
+- **Provider presets** — Model: OpenAI, Anthropic (OpenAI-compatible), DeepSeek, OpenRouter, Ollama, LM Studio, vLLM, llama.cpp, OpenAI-compatible. Cloud: adds MinIO next to AWS S3, Cloudflare R2, OSS, COS, BOS, TOS, B2, GCS, Custom.
+- **Skills & bridges actions** — Open skills folder (desktop), Export trace… (OTel JSON via the Downloads path), MCP status with the exact env var and a copy button.
+- **Composer drag-and-drop** attach; **sidebar ↑/↓** keyboard navigation; Rename / Delete reachable from the native Task menu.
+- Contracts: `architecture.test.ts` v1.10 block (bridge ↔ `lib.rs` event/command/menu-id parity, title step, reasoning chip, Execution-detail document, provider panes, one submit path, DnD + sidebar keys), `orphan-modules.test.ts`, `useNativeAgent.test.ts`, `modelchip.test.tsx`; Sidecar `test_v110_native_agent.py`; E2E `title.spec.ts`; Rust unit tests for deep-link parsing and menu ids.
+
+### Changed
+
+- **Execution detail** (Review → Execution) is a document in the sheet: header · *Worked for …* tool rows (`LiveTrace`) · findings · Work Result · report. The v0.5x two-column run page, metrics cards and the `!important` override block are gone.
+- **Model / Cloud provider panes** rewritten as native preference panes (`frontend/src/settings/`): one list, a preset menu, one editor with masked keys and inline Test.
+- `useNativeAgent.ts` is the one shell bridge (`useNativeShell`, `notifyNative`, `setNativeWindowTitle`, `openNativeFolder`); the stub hooks that waited for events nothing emitted are removed.
+- `docs/design-rebuild-2026.md`, `docs/review-modern-2026.md`, `docs/v0.92-agent-os-rebuild.md` moved under `docs/history/`.
+- `Cargo.lock` brought in step with `Cargo.toml` (it had been stale since the plugin additions; CI regenerated it silently on every build).
+- E2E: the fake model answers the title step out of band (never consuming a scripted turn); `agent.spec` "both exchanges survive a reload" runs under a 120 s budget.
+
+### Removed
+
+- `postSessionMessage` / `streamSessionMessage` and the `/sessions/…/messages/stream` client path; `ExecutionSteps.tsx`, `AccountProfilePanel.tsx`, `views/ProvidersView.tsx`.
+
+### Security
+
+- The title step sends the model only the redacted Direction and Work Result text (bounded), never tool payloads or evidence rows; the title is redacted and bounded again on write. `reasoning_effort` is ordinary config. `open_app_folder` opens named subfolders of the app data dir only. No new tools, no destructive S3, no shell.
+
+### Not in this release
+
+- The `session_agent.py` split into prompt / loop / steer / usage / guards modules (roadmap W2) is deferred: it is a pure refactor of a 2,676-line module whose tests reach into its internals, and it carries no user-visible change.
+
 ## [1.09.0] - 2026-09-02
 
 _Native Agent window — full teardown of the v1.04–v1.08 chassis. No migration (head remains **027**)._

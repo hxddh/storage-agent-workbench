@@ -249,7 +249,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(settings).not.toContain('data-testid="settings-price-table"');
     expect(settings).not.toContain("PriceTableSection");
     expect(settings).not.toContain("getPriceTable");
-    expect(source("../views/ProvidersView.tsx")).not.toContain("export function ProvidersView");
+    absent("../views/ProvidersView.tsx");
   });
 
   it("recovers a dropped event stream only by sequence number", () => {
@@ -340,5 +340,125 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(document).toContain(".native-composer");
     expect(document).toContain(".native-start-greeting");
     expect(source("../../tailwind.config.js")).not.toContain("magazine");
+  });
+});
+
+/**
+ * v1.10.0 — Native Agent, Codex parity.
+ *
+ * The OS shell is real (menu bar, deep links, notifications, summon shortcut,
+ * window title) and reaches the window through ONE bridge; the runtime names
+ * tasks and takes a reasoning effort; Execution detail and the provider panes
+ * are native documents; the pre-v0.94 message paths are gone.
+ */
+describe("v1.10.0 native shell, runtime and pane boundaries", () => {
+  it("has one shell bridge, and every event it listens for is emitted by lib.rs", () => {
+    const bridge = source("../hooks/useNativeAgent.ts");
+    const rust = source("../../../src-tauri/src/lib.rs");
+    const conf = source("../../../src-tauri/tauri.conf.json");
+    const app = source("../App.tsx");
+    for (const event of ["deep-link-request", "menu-command", "shortcut-event"]) {
+      expect(bridge).toContain(`"${event}"`);
+      expect(rust).toContain(`"${event}"`);
+    }
+    for (const command of ["notify", "set_window_title", "open_app_folder"]) {
+      expect(bridge).toContain(`"${command}"`);
+      expect(rust).toContain(`fn ${command}(`);
+    }
+    // Menu ids are one list, declared on both sides.
+    const ids = [...bridge.matchAll(/^\s+"([a-z-]+)",$/gm)].map((m) => m[1]);
+    expect(ids.length).toBeGreaterThanOrEqual(12);
+    for (const id of ids) expect(rust).toContain(`("${id}",`);
+    expect(rust).toContain("fn build_menu");
+    expect(rust).toContain(".on_menu_event(");
+    expect(rust).toContain("on_open_url");
+    expect(rust).toContain("on_shortcut(");
+    expect(conf).toContain('"schemes"');
+    expect(conf).toContain('"storage-agent"');
+    // The old stubs that waited for events nobody sent are gone.
+    expect(bridge).not.toContain("useTaskNotifications");
+    expect(bridge).not.toContain("useGlobalShortcut");
+    expect(bridge).not.toContain("useDeepLink");
+    // The menu dispatches through the same handler as the keyboard and palette.
+    expect(app).toContain("useNativeShell(");
+    expect(app).toContain("onMenuCommand: runCommand");
+    expect(app).toContain('runCommand("palette")');
+    expect(app).toContain("useSettleNotifications");
+    expect(app).toContain("setNativeWindowTitle");
+  });
+
+  it("titles tasks from the runtime and takes a reasoning effort only where the model can", () => {
+    const chip = source("../components/ModelChip.tsx");
+    const types = source("../types.ts");
+    const runtime = source("../../../sidecar/app/task_runtime/runtime.py");
+    const titling = source("../../../sidecar/app/task_runtime/titling.py");
+    const migrations = source("../../../sidecar/app/migrations.py");
+    expect(chip).toContain("reasoning_capable");
+    expect(chip).toContain('data-testid="model-chip-effort-menu"');
+    expect(chip).toContain("updateModelProvider");
+    expect(chip).not.toContain("gpt-");
+    expect(types).toContain("reasoning_effort: ReasoningEffort | null");
+    expect(runtime).toContain("titling.run_title_step(");
+    expect(runtime).toContain('"task.titled"');
+    expect(titling).toContain("title_source = 'user'");
+    expect(titling).toContain("TITLE_MARKER");
+    expect(migrations).toContain('(28, "native_agent_titles_effort", _M028)');
+    expect(migrations).toContain("ALTER TABLE sessions ADD COLUMN title_source TEXT;");
+  });
+
+  it("reads Execution detail as a document in the sheet and the providers as native panes", () => {
+    const detail = source("../components/ExecutionDetailImplementation.tsx");
+    const css = source("./native-shell.css");
+    expect(detail).toContain("native-execution-doc");
+    expect(detail).toContain("<LiveTrace");
+    expect(detail).toContain('data-testid="execution-status"');
+    expect(detail).toContain('data-testid="execution-error"');
+    expect(detail).not.toContain("metrics-cards");
+    expect(detail).not.toContain("AccountProfilePanel");
+    expect(detail).not.toContain("ExecutionSteps");
+    expect(detail).not.toContain("grid-cols-2");
+    // No override block forcing the old run page into the sheet.
+    expect(css).not.toContain('[data-testid="execution-detail"] > div > header');
+    expect(css).not.toContain('[data-testid="metrics-cards"]');
+    expect(css.split("\n").filter((line) => line.includes("execution-detail") && line.includes("!important"))).toEqual([]);
+    absent("../components/ExecutionSteps.tsx");
+    absent("../components/AccountProfilePanel.tsx");
+    absent("../views/ProvidersView.tsx");
+    const model = source("../settings/ModelProvidersPane.tsx");
+    const cloud = source("../settings/CloudProvidersPane.tsx");
+    const presets = source("../settings/presets.ts");
+    expect(model).toContain("MODEL_PRESETS");
+    expect(model).toContain('data-testid="model-presets"');
+    expect(model).toContain('data-testid="model-test-status"');
+    expect(cloud).toContain("CLOUD_PRESETS");
+    expect(cloud).toContain("<CloudProviderTester");
+    expect(presets).toContain('label: "Custom (S3-compatible)"');
+    expect(presets).toContain('label: "Ollama"');
+    expect(presets).toContain('label: "MinIO"');
+    const agent = source("../components/NativeAgentPanel.tsx");
+    expect(agent).toContain("openNativeFolder");
+    expect(agent).toContain("getGlobalOtelExport");
+    expect(agent).toContain("STORAGE_AGENT_ENABLE_MCP=1");
+    expect(agent).not.toContain("GET /agent-tasks");
+  });
+
+  it("has one submit path: the execution runner, with no session-message client", () => {
+    const api = source("../api.ts");
+    expect(api).not.toContain("postSessionMessage");
+    expect(api).not.toContain("streamSessionMessage");
+    expect(api).not.toContain("/messages/stream");
+    expect(api).toContain("createTaskExecution");
+    expect(api).toContain("followExecutionEvents");
+  });
+
+  it("keeps the Composer the one attach path, dropped files included, and the sidebar keyboard-navigable", () => {
+    const composer = source("../components/Composer.tsx");
+    const navigation = source("./AgentTaskNavigation.tsx");
+    expect(composer).toContain("onDrop=");
+    expect(composer).toContain("acceptFile(file)");
+    expect(composer).toContain('data-dragging=');
+    expect(navigation).toContain('role="listbox"');
+    expect(navigation).toContain("onListKeyDown");
+    expect(navigation).toContain("editRequest");
   });
 });

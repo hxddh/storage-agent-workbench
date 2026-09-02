@@ -476,6 +476,8 @@ export function AgentTaskImplementation({
     stop: () => runner.stop(),
     resume: showResume && lastExec ? () => { void runner.resume(lastExec.id); } : undefined,
     focusComposer: () => taRef.current?.focus(),
+    find: () => setFindOpen(true),
+    review: sessionId ? () => openAgentReview("evidence") : undefined,
     busy,
     canResume: showResume,
     hasTask: Boolean(sessionId),

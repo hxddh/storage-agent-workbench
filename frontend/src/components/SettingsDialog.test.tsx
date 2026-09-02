@@ -18,8 +18,10 @@ vi.mock("../api", async (importOriginal) => {
   return { ...actual, ...api };
 });
 
-vi.mock("../views/ProvidersView", () => ({
+vi.mock("../settings/ModelProvidersPane", () => ({
   ModelProvidersPanel: () => <div data-testid="model-panel" />,
+}));
+vi.mock("../settings/CloudProvidersPane", () => ({
   CloudProvidersPanel: () => <div data-testid="cloud-panel" />,
 }));
 vi.mock("./NativeAgentPanel", () => ({ NativeAgentPanel: () => null }));

@@ -13,6 +13,7 @@ import sqlite3
 from typing import Any
 
 from ..security import keyring_store
+from .model_budget import is_reasoning_model
 
 # Default completion budget for a single agent turn (generous so long
 # enumerations aren't truncated; the provider still bounds the actual length).
@@ -43,6 +44,7 @@ def build_agent(
     prompt_cache_retention: str | None = None,
     temperature: float | None = None,
     model_timeout: float | None = None,
+    reasoning_effort: str | None = None,
 ) -> Any:
     """Build an Agents-SDK Agent with a PER-RUN model client.
 
@@ -134,6 +136,16 @@ def build_agent(
     # It does not replace the client's retries: the ceiling is per attempt.
     if model_timeout:
         settings_kwargs["timeout"] = model_timeout
+    # Reasoning effort (v1.10.0): forwarded as Chat Completions
+    # ``reasoning_effort`` by the SDK. Only ever set for a provider whose model
+    # is known-reasoning (``get_model_credentials`` drops it otherwise), so a
+    # plain endpoint never sees an unknown parameter.
+    if reasoning_effort:
+        try:
+            from openai.types.shared import Reasoning
+            settings_kwargs["reasoning"] = Reasoning(effort=reasoning_effort)
+        except Exception:  # noqa: BLE001 — an SDK without the type just skips it
+            pass
     return Agent(name=name, instructions=instructions, tools=tools or [], model=model,
                  model_settings=ModelSettings(**settings_kwargs))
 
@@ -220,5 +232,9 @@ def get_model_credentials(conn: sqlite3.Connection) -> dict[str, Any]:
         "context_window": row["context_window"],
         # Optional operator-declared max output tokens; None → inferred. NOT a secret.
         "max_output_tokens": row["max_output_tokens"],
+        # Reasoning effort (v1.10.0) — only for a known-reasoning model, so an
+        # endpoint that does not accept the parameter never receives it.
+        "reasoning_effort": (row["reasoning_effort"]
+                             if is_reasoning_model(row["model"]) else None),
     }
 

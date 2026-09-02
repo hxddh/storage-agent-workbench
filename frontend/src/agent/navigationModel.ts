@@ -19,6 +19,10 @@ export const DEFAULT_TASK_NAV_WIDTH = 268;
 export const clampTaskNavigationWidth = (px: number) =>
   Math.min(MAX_TASK_NAV_WIDTH, Math.max(MIN_TASK_NAV_WIDTH, Math.round(px)));
 
+/** A request from outside the sidebar (native menu) to start a Rename or a
+ * Delete confirmation on one task. `key` makes repeated requests distinct. */
+export type TaskEditRequest = { id: string; kind: "rename" | "delete"; key: number };
+
 /** Mutations on a durable Agent task. Backend record naming stays behind this boundary. */
 export type TaskActions = {
   onRename: (task: AgentTaskSummary, title: string) => void;

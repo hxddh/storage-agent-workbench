@@ -1,3 +1,5 @@
+> **Historical.** This is a v1.04-era review note kept for the record. It is superseded by the v1.09.0 native Agent window and the v1.10.0 native shell; see `docs/README.md` for the current documents.
+
 # Design Rebuild 2026 — Codex / Cursor Native
 
 > **Goal**: From a functional but generic web-app shell to a calm, editorial, native agent. Warm, not cold. Magazine voice, not SaaS bombast. One accent voltage, hairline depth, and a document that reads like a well-set technical paper.

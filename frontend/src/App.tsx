@@ -4,27 +4,33 @@ import { AgentTask } from "./components/AgentTask";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { CommandPalette } from "./components/CommandPalette";
 import { deleteSession, patchSession } from "./api";
-import { dropSessionRun, useSessionRun } from "./sessionRuns";
+import { dropSessionRun, getSessionRun, useSessionRun, useSessionRunIndexVersion } from "./sessionRuns";
 import { useSidecarHealth } from "./hooks/useSidecarHealth";
 import { useI18n } from "./i18n";
+import { useTheme } from "./theme";
 import { useToast } from "./components/Toast";
 import { ShortcutsSheet } from "./components/ShortcutsSheet";
 import { isEditable, matches } from "./shortcuts";
 import { getPaletteActions } from "./agent/paletteActions";
 import { AgentTaskNavigation } from "./agent/AgentTaskNavigation";
 import { useNavigationCopy } from "./agent/navigationCopy";
-import { DEFAULT_TASK_NAV_WIDTH, clampTaskNavigationWidth, type AgentTaskSummary, type TaskActions } from "./agent/navigationModel";
+import { DEFAULT_TASK_NAV_WIDTH, clampTaskNavigationWidth, type AgentTaskSummary, type TaskActions, type TaskEditRequest } from "./agent/navigationModel";
 import { AgentShell } from "./agent/AgentShell";
 import { listAgentTasks } from "./agent/taskApi";
 import { agentTaskState } from "./agent/taskState";
-import { useDeepLink } from "./hooks/useNativeAgent";
-import { hasNativeTrafficLights } from "./config";
+import { notifyNative, setNativeWindowTitle, useNativeShell, type MenuCommand } from "./hooks/useNativeAgent";
+import { hasNativeTrafficLights, openExternal } from "./config";
 import { Icon } from "./components/icons";
 
 const NAV_WIDTH_KEY = "saw.railWidth";
 const NAV_COLLAPSED_KEY = "saw.railCollapsed";
 const ACTIVE_TASK_KEY = "saw.activeSession";
 const NAV_FOLD_PX = 1080;
+const RELEASE_NOTES_URL = "https://github.com/hxddh/storage-agent-workbench/releases";
+// A menu accelerator and the window's own keydown handler can both fire for
+// one keypress on some platforms; the second arrival inside this window is
+// the same intent, not a second command.
+const COMMAND_DEDUP_MS = 250;
 
 function storedNavigationWidth(): number {
   const raw = Number(localStorage.getItem(NAV_WIDTH_KEY));
@@ -45,6 +51,10 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: 
   const state = task ? agentTaskState(run, true, task.requires_decision, task.task_status) : "idle";
   const stateLabel = state in copy.state ? copy.state[state as keyof typeof copy.state] : "";
   const title = task ? (task.title || t("common.untitled")) : copy.appTitle;
+
+  useEffect(() => {
+    void setNativeWindowTitle(task ? `${title} — ${copy.appTitle}` : copy.appTitle);
+  }, [task, title, copy.appTitle]);
 
   return (
     <header className="native-titlebar" data-traffic-lights={trafficLights && !sidebarOpen ? "true" : "false"} data-tauri-drag-region>
@@ -69,6 +79,30 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: 
   );
 }
 
+/**
+ * One OS notification when a background Execution settles: the task is not
+ * the one on screen, or the window is hidden. Driven by the run store the app
+ * already follows — no polling, no second event path.
+ */
+function useSettleNotifications(tasks: AgentTaskSummary[], activeTaskId: string | null) {
+  const version = useSessionRunIndexVersion();
+  const copy = useNavigationCopy();
+  const { t } = useI18n();
+  const busyRef = useRef(new Map<string, boolean>());
+  useEffect(() => {
+    const seen = busyRef.current;
+    for (const task of tasks) {
+      const busy = getSessionRun(task.id).busy;
+      const was = seen.get(task.id) ?? false;
+      seen.set(task.id, busy);
+      if (!was || busy) continue;
+      const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+      if (task.id === activeTaskId && !hidden) continue;
+      void notifyNative(task.title || t("common.untitled"), copy.notifySettled);
+    }
+  }, [version, tasks, activeTaskId, copy.notifySettled, t]);
+}
+
 export default function App() {
   const { status } = useSidecarHealth();
   const [tasks, setTasks] = useState<AgentTaskSummary[]>([]);
@@ -80,8 +114,11 @@ export default function App() {
   const [navigationCollapsed, setNavigationCollapsed] = useState(() => localStorage.getItem(NAV_COLLAPSED_KEY) === "1");
   const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < NAV_FOLD_PX);
   const [taskReloadKey, setTaskReloadKey] = useState(0);
+  const [editRequest, setEditRequest] = useState<TaskEditRequest | null>(null);
   const validated = useRef(false);
+  const lastCommand = useRef<{ id: string; at: number }>({ id: "", at: 0 });
   const { t } = useI18n();
+  const { toggle: toggleTheme } = useTheme();
   const toast = useToast();
   const trafficLights = hasNativeTrafficLights();
 
@@ -115,8 +152,6 @@ export default function App() {
     }
   }, [tasks]);
 
-  useDeepLink(useCallback((id: string) => { if (!id || id.length < 8) return; setActiveTaskId(id); }, [setActiveTaskId]));
-
   const fail = (error: unknown) => toast.error(`${t("app.actionFailed")} ${String(error)}`);
   const taskActions: TaskActions = {
     onRename: async (task, title) => {
@@ -134,19 +169,54 @@ export default function App() {
     setNavigationCollapsed((collapsed) => { localStorage.setItem(NAV_COLLAPSED_KEY, collapsed ? "0" : "1"); return !collapsed; });
   }, []);
 
+  /** Every window-level command, whether it came from a key, the palette or the native menu. */
+  const runCommand = useCallback((command: MenuCommand) => {
+    const now = Date.now();
+    if (lastCommand.current.id === command && now - lastCommand.current.at < COMMAND_DEDUP_MS) return;
+    lastCommand.current = { id: command, at: now };
+    const live = getPaletteActions();
+    switch (command) {
+      case "settings": setSettingsOpen(true); break;
+      case "new-task": setActiveTaskId(null); break;
+      case "rename-task":
+        if (activeTaskId) { setNavigationCollapsed(false); setEditRequest({ id: activeTaskId, kind: "rename", key: now }); }
+        break;
+      case "delete-task":
+        if (activeTaskId) { setNavigationCollapsed(false); setEditRequest({ id: activeTaskId, kind: "delete", key: now }); }
+        break;
+      case "stop": live.stop?.(); break;
+      case "resume": live.resume?.(); break;
+      case "toggle-sidebar": toggleNavigation(); break;
+      case "find": live.find?.(); break;
+      case "review": live.review?.(); break;
+      case "palette": setPaletteOpen((open) => !open); break;
+      case "focus-composer": live.focusComposer?.(); break;
+      case "theme": toggleTheme(); break;
+      case "shortcuts": setShortcutsOpen((open) => !open); break;
+      case "release-notes": void openExternal(RELEASE_NOTES_URL); break;
+    }
+  }, [activeTaskId, setActiveTaskId, toggleNavigation, toggleTheme]);
+
+  useNativeShell({
+    onOpenTask: useCallback((id: string) => { if (!id || id.length < 8) return; setActiveTaskId(id); }, [setActiveTaskId]),
+    onMenuCommand: runCommand,
+    onSummon: useCallback(() => { getPaletteActions().focusComposer?.(); }, []),
+  });
+  useSettleNotifications(tasks, activeTaskId);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (matches(event, "palette")) { event.preventDefault(); setPaletteOpen((open) => !open); }
-      else if (matches(event, "newTask")) { event.preventDefault(); setActiveTaskId(null); }
-      else if (matches(event, "toggleTaskNavigation")) { event.preventDefault(); toggleNavigation(); }
-      else if (matches(event, "shortcuts") && !isEditable(event.target)) { event.preventDefault(); setShortcutsOpen((open) => !open); }
-      else if (matches(event, "stop")) { event.preventDefault(); getPaletteActions().stop?.(); }
-      else if (matches(event, "focusComposer")) { event.preventDefault(); getPaletteActions().focusComposer?.(); }
+      if (matches(event, "palette")) { event.preventDefault(); runCommand("palette"); }
+      else if (matches(event, "newTask")) { event.preventDefault(); runCommand("new-task"); }
+      else if (matches(event, "toggleTaskNavigation")) { event.preventDefault(); runCommand("toggle-sidebar"); }
+      else if (matches(event, "shortcuts") && !isEditable(event.target)) { event.preventDefault(); runCommand("shortcuts"); }
+      else if (matches(event, "stop")) { event.preventDefault(); runCommand("stop"); }
+      else if (matches(event, "focusComposer")) { event.preventDefault(); runCommand("focus-composer"); }
       else if (matches(event, "close")) { if (closeTopOverlay()) event.preventDefault(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setActiveTaskId, toggleNavigation]);
+  }, [runCommand]);
 
   const sidebarOpen = !navigationCollapsed && !narrow;
   const activeTask = tasks.find((task) => task.id === activeTaskId) ?? null;
@@ -160,6 +230,7 @@ export default function App() {
         onNew={() => setActiveTaskId(null)}
         onOpenSettings={() => setSettingsOpen(true)}
         actions={taskActions}
+        editRequest={editRequest}
         width={navigationWidth}
         collapsed={!sidebarOpen}
         trafficLights={trafficLights}

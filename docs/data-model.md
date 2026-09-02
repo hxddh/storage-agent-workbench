@@ -1,6 +1,6 @@
 # Data model
 
-> **Storage Agent v1.09.0 persistence reference.** Schema unchanged from v1.02.0 (migration head **027**). `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI.
+> **Storage Agent v1.10.0 persistence reference.** Migration head **028** (two nullable columns: `sessions.title_source`, `model_providers.reasoning_effort`). `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI.
 >
 > Product vocabulary is Agent Task / Direction / Execution / Decision / Work Result / Artifact. SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
 
@@ -18,7 +18,7 @@ Secrets are stored separately in the encrypted local vault. SQLite stores only o
 
 The schema is created by append-only migrations in `sidecar/app/migrations.py`.
 
-**Current migration head: 027.**
+**Current migration head: 028.**
 
 Rules:
 
@@ -58,6 +58,7 @@ Rules:
 | 025 | `datasets_truncation` | persist run-dataset truncation/ingest cap |
 | 026 | `durable_task_runtime` | durable Agent Task/Execution objects, structured execution events, first-class Decision/Work Result/Artifact rows, typed versioned Storage Task Context |
 | 027 | `optimization_copilot` | local price table, versioned remediation plans, task baselines, per-task revisit schedules, artifact status/payload |
+| 028 | `native_agent_titles_effort` | `sessions.title_source` (`NULL` seed / `agent` / `user`) for runtime task titles; `model_providers.reasoning_effort` (`low`/`medium`/`high`/`NULL`) |
 
 ## Product-to-persistence mapping
 

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CloudProvidersPanel, ModelProvidersPanel } from "../views/ProvidersView";
+import { ModelProvidersPanel } from "../settings/ModelProvidersPane";
+import { CloudProvidersPanel } from "../settings/CloudProvidersPane";
 import { NativeAgentPanel } from "./NativeAgentPanel";
 import { useI18n, LANGS, type Lang } from "../i18n";
 import { useTheme, type Theme } from "../theme";

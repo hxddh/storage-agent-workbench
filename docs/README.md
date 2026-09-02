@@ -1,6 +1,6 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.09.0** (`v1.09.0`).
+> **Current architecture baseline: Storage Agent v1.10.0** (`v1.10.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
@@ -12,6 +12,12 @@
 > Execution is one *Worked for …* group in the Work Result. Decision is an
 > approval card. Settings is a centered dialog. Engines remain in the Sidecar
 > with no product UI entry.
+> **v1.10.0 makes the shell and the runtime native.** A real menu bar, deep
+> links, notifications and a summon shortcut reach the window through one
+> bridge; the runtime names tasks after the first Work Result and takes a
+> reasoning effort for models that accept one; Execution detail and the
+> provider panes are native documents; the pre-v0.94 message client is gone.
+> Migration head is **028**.
 
 This directory documents the currently shipped Storage Agent architecture and operating contracts. It is deliberately organized so implementation agents and contributors do not reconstruct older product shells from historical terminology that still exists in persistence, APIs, release notes, or git history.
 
@@ -67,7 +73,8 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 ## Historical documents
 
 - [`releases/`](releases/) records what each release changed at the time.
-- [`v0.92-agent-os-rebuild.md`](v0.92-agent-os-rebuild.md) is a historical design/rebuild record superseded by v0.93.
+- [`history/v0.92-agent-os-rebuild.md`](history/v0.92-agent-os-rebuild.md) is a historical design/rebuild record superseded by v0.93.
+- [`history/design-rebuild-2026.md`](history/design-rebuild-2026.md) and [`history/review-modern-2026.md`](history/review-modern-2026.md) are v1.04-era review notes, superseded by v1.09.0 and v1.10.0.
 - [`../CHANGELOG.md`](../CHANGELOG.md) is chronological history and may intentionally contain terminology that is no longer current.
 
 Historical documents must not be mechanically “modernized” in ways that falsify history. Instead, current normative docs and automated documentation contracts prevent historical vocabulary from becoming current architecture again.

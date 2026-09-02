@@ -58,7 +58,9 @@ def create(conn: sqlite3.Connection, data: SessionCreate) -> str:
 def update(conn: sqlite3.Connection, session_id: str, data: SessionUpdate) -> None:
     sets, params = [], []
     if data.title is not None:
+        # A user rename wins forever over the runtime's title step (v1.10.0).
         sets.append("title = ?"); params.append(redact_text(data.title))
+        sets.append("title_source = 'user'")
     if data.goal is not None:
         sets.append("goal = ?"); params.append(redact_text(data.goal))
     if data.provider_id is not None:

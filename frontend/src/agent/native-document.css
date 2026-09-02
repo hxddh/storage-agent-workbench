@@ -308,6 +308,10 @@
 .native-composer[data-agent-state="working"] {
   border-color: var(--edge-strong);
 }
+.native-composer[data-dragging="true"] {
+  border-color: var(--gray-300);
+  border-style: dashed;
+}
 .native-composer textarea {
   display: block;
   width: 100%;
@@ -413,6 +417,25 @@
 }
 .native-model-chip[data-missing="true"] {
   color: var(--warn-fg);
+}
+.native-model-effort { color: var(--gray-500); }
+.native-model-effort-row {
+  display: flex;
+  gap: 4px;
+  padding: 2px 4px 6px;
+}
+.native-model-effort-row button {
+  width: auto;
+  flex: 1;
+  justify-content: center;
+  border: 1px solid var(--edge);
+  padding: 4px 6px;
+  font-size: var(--text-2xs);
+}
+.native-model-effort-row button[aria-pressed="true"] {
+  border-color: var(--edge-strong);
+  background: var(--elevated);
+  color: var(--gray-100);
 }
 .native-model-menu {
   position: absolute;

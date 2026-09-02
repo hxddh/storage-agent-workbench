@@ -1,161 +1,95 @@
 # Roadmap
 
-> **Baseline: Storage Agent v1.09.0** — the native Agent window (sidebar ·
-> title bar · one Task document · one Composer) on the durable task runtime.
+> **Baseline: Storage Agent v1.10.0** — the native Agent window (sidebar ·
+> title bar · one Task document · one Composer) on a native OS shell and the
+> durable task runtime.
 >
-> This file describes what comes **after** the current Agent Task architecture
-> and is the plan for **v1.10.0 — Native Agent, Codex parity**. It is not a
-> backlog of old UI concepts and it is not proof that an aspirational
-> capability already exists. Every item below was checked against the code on
-> `main` at v1.09.0; each carries a verdict: **keep**, **rebuild**, **new**, or
+> This file describes what comes **after** the current architecture. It is not
+> a backlog of old UI concepts and it is not proof that an aspirational
+> capability already exists. Every item was checked against the code on
+> `main`; each carries a verdict: **keep**, **rebuild**, **new**, or
 > **non-goal**.
 
-## 1. Verdict on v1.09.0
+## 1. Verdict on v1.10.0
 
-v1.09 replaced the presentation. It did not audit everything underneath it.
-What is genuinely native now: the window composition, tokens, sidebar,
-Composer with a real model chip, Direction / *Worked for …* / Work Result /
-Decision as one document, the Review sheet, the Settings dialog, the durable
-runtime with Steer / Stop / Resume / queued Directions and sequence-only
-stream recovery.
+v1.09 replaced the presentation; v1.10 made the shell and the runtime native.
+What is genuinely native now:
 
-What still is not, and why it fails the "native agent" bar:
-
-| Area | Finding (verified on `main`) | Verdict |
+| Area | State on `main` | Verdict |
 | --- | --- | --- |
-| Tauri OS shell | `dialog`/`notification`/`opener`/`deep-link`/`global-shortcut`/`updater` plugins are registered, but `lib.rs` **emits nothing**. `useDeepLink` listens for a `deep-link-request` event the plugin never sends (it exposes `onOpenUrl`); `useTaskNotifications` and `useGlobalShortcut` are stubs that no component mounts. The "OS-native shell" documented in v1.03 is paint. | **rebuild** |
-| Native menus | No application menu bar, no window menu, no tray. A desktop agent without `File / Task / View / Help` and a native Settings item (⌘,) is a web page in a frame. | **new** |
-| Composer | Model chip only. Codex pairs model with **reasoning effort**; the runtime already reads reasoning-token usage but never sets effort. | **new** |
-| Task titles | Titles are the raw first Direction, truncated. Codex names threads. The runtime has no title step. | **new** |
-| Execution detail (Review → Execution) | `ExecutionDetailImplementation` is the v0.5x two-column run page (metrics cards, `AccountProfilePanel`, `Chart.tsx`, `ExecutionSteps`) forced into the sheet with `!important` overrides. | **rebuild** |
-| Settings → providers | `ProvidersView` (680 lines) is the original form: free-text `provider_type` with a datalist, one long card per provider, raw hint strings. Not a native preferences pane. | **rebuild** |
-| Settings → Skills & bridges | `NativeAgentPanel` prints raw endpoint paths (`GET /agent-tasks/:id/export/otel`) into product UI instead of offering the action. | **rebuild** |
-| Frontend API layer | `api.ts` still carries `postSessionMessage` / `streamSessionMessage` (the pre-v0.94 `/sessions/…/messages/stream` path) that no runner uses. | **remove** |
-| Docs | `docs/design-rebuild-2026.md` and `docs/review-modern-2026.md` are v1.04-era review notes presented next to canonical docs. | **archive** |
-| Runtime core | `session_agent.py` is one 2,676-line module (prompt, loop, steer queue, usage, guards). Correct, but unreviewable; every runtime change touches it. | **rebuild (split)** |
-
-Everything not listed is **keep**: tokens, window composition, sidebar,
-document renderers, Review sheet shape, Decision card, i18n, the tool floor,
-persistence (head 027), CI gates.
+| Window, tokens, sidebar, Composer, document renderers, Review sheet, Settings dialog | v1.09 native window, unchanged | keep |
+| Tauri OS shell | `lib.rs` builds the menu bar, emits `menu-command` / `deep-link-request` / `shortcut-event`, exposes `notify` / `set_window_title` / `open_app_folder`; `tauri.conf.json` registers `storage-agent://`; one frontend bridge (`useNativeAgent.ts`) with a browser no-op; an architecture test keeps both sides in step | keep |
+| Task titles | Runtime title step after the first Work Result (`task_runtime/titling.py`, `sessions.title_source`); user rename wins | keep |
+| Reasoning effort | `model_providers.reasoning_effort`, forwarded only for known-reasoning models; Composer chip `model · effort` | keep |
+| Execution detail | A document in the Review sheet on `LiveTrace` | keep |
+| Provider settings, Skills & bridges | Native panes with presets and actions | keep |
+| Frontend API layer | One submit path (execution runner); the pre-v0.94 message client is gone; orphan-module contract | keep |
+| Runtime core | `session_agent.py` is still one ~2,700-line module (prompt, loop, steer queue, usage, guards). Correct and covered, but every runtime change touches it. | **rebuild (split)** |
+| Window state | Size/position are not remembered across launches. | **new** |
+| Updater | `tauri-plugin-updater` is registered but inert: no pubkey, no endpoints. | **new (blocked on signing)** |
 
 ## 2. Codex → Storage Agent map
 
-The target is the shape of a modern coding agent applied to object storage.
-Each Codex element maps to one of ours, or is an explicit non-goal.
-
-| Codex | Storage Agent v1.10 | Verdict |
+| Codex | Storage Agent | Verdict |
 | --- | --- | --- |
-| Threads sidebar, New thread | Sidebar, New task | keep |
-| Thread title generated after the first turn | Task title generated by the runtime after the first Work Result (bounded, sanitized, never from raw evidence) | new |
+| Threads sidebar, New thread, generated thread titles | Sidebar, New task, runtime task titles | keep |
 | Thread search (⌘K) | Command palette (⌘K) | keep |
-| Archive thread | Delete only. Archive exists in the API but not in the product; it stays out. | non-goal |
-| Composer: `+` attach, model picker, reasoning effort, approval mode | `+` attach, model chip, **reasoning effort chip** (only when the active provider reports a reasoning model). No approval-mode chip: storage tools are read-only by contract and Decisions gate data movement. | new / non-goal |
+| Archive thread | Delete only; archive stays out of the product. | non-goal |
+| Composer: `+` attach, model picker, reasoning effort, approval mode | `+` / drag-and-drop attach, model chip, reasoning effort chip. No approval-mode chip: storage tools are read-only by contract and Decisions gate data movement. | keep / non-goal |
 | Image attachments | Not applicable to object-storage work. | non-goal |
 | Streaming "Thinking" summaries | Chain-of-thought is never persisted or rendered (security §6.10). *Working* shimmer only. | non-goal |
 | *Worked for Ns* tool group | *Worked for …* group | keep |
-| Diff / Changes panel | Review sheet: Evidence · Execution · Report | keep (rebuild Execution detail) |
+| Diff / Changes panel | Review sheet: Evidence · Execution · Report | keep |
 | Approval prompt for commands | Decision card (Approve / Decline) | keep |
-| Automations (scheduled runs) | Revisit schedules exist as a runtime engine; no scheduler UI (product §Execution). | non-goal (UI) |
-| Skills, MCP | User skills, read-only MCP bridge; Settings shows them as real actions | rebuild (Settings) |
-| Local models | Local providers | keep |
-| Native app menu, ⌘, Settings, notifications when a background thread finishes, deep links | Native menu bar, ⌘, Settings, notification on background Execution settle, working `storage-agent://task/<id>` | new / rebuild |
+| Automations (scheduled runs) | Revisit schedules are a runtime engine; no scheduler UI. | non-goal (UI) |
+| Skills, MCP | User skills, read-only MCP bridge; Settings offers actions | keep |
+| Local models | Local providers with presets | keep |
+| Native app menu, ⌘, Settings, notifications, deep links | Shipped in v1.10.0 | keep |
 | Multiple windows, worktrees, terminal, browser | — | non-goal |
 
-## 3. v1.10.0 workstreams
+## 3. Next workstreams
 
-Ordered by user-visible value. Each lands as one PR with code, tests, and
-docs together (CLAUDE.md §11). No migration is expected; head stays **027**
-unless the title step needs a column (see W2).
+Ordered by value. Each lands as one PR with code, tests, and docs together
+(CLAUDE.md §11). No migration is expected; head stays **028** unless a
+workstream names one.
 
-### W1 — Real OS shell (Tauri)
+### N1 — Split `session_agent.py`
 
-- **Menu bar** (`tauri::menu`): App (About, Settings ⌘,, Quit) · Task (New ⌘N,
-  Rename, Delete, Stop ⌘., Resume) · View (Toggle sidebar ⌘\, Find ⌘F, Review
-  ⌘I, Theme) · Help (Shortcuts ?, Release notes). Menu items dispatch the same
-  commands the palette uses (`agent/commands.ts`, `paletteActions.ts`); no
-  second command path.
-- **Deep links**: replace the dead `deep-link-request` listener with the
-  plugin's `onOpenUrl` and handle argv on Windows/Linux via `single-instance`.
-  E2E-able through a Tauri command that simulates an open-URL.
-- **Notifications**: when an Execution settles while its Task is not the active
-  one (or the window is unfocused), post one OS notification with the task
-  title; clicking it activates the Task. Driven by the execution event stream
-  the app already follows — no polling.
-- **Global shortcut**: register ⌘⇧S / Ctrl+Shift+S in Rust, emit one event, focus
-  the Composer. Remove the frontend stub that waits for an event nobody sends.
-- **Window**: remember size/position; keep the macOS traffic-light inset; add a
-  native window title (`Storage Agent — <task>`).
-- Remove `useTaskNotifications`/`useGlobalShortcut` stubs; `useNativeAgent.ts`
-  becomes the one bridge to the shell, with a browser no-op.
+Prompt assembly, tool loop, steer queue, usage accounting, and guards become
+separate modules with the existing tests unchanged (they patch
+`session_agent.SESSION_LOOP` and read `_streamed_session_loop`; the seam and
+the names stay re-exported from `session_agent`). A pure refactor: no
+user-visible change, no new capability, its own PR.
 
-Acceptance: Playwright cannot drive Tauri; the Rust side gets unit tests for
-menu/command wiring and the frontend bridge gets Vitest contracts; the desktop
-runtime verification scripts (`scripts/verify-runtime-*`) assert the menu and
-a simulated deep link.
+### N2 — Window state
 
-### W2 — Task titles and the reasoning chip (runtime)
+Remember window size and position across launches (a Tauri window-state
+plugin or a small app-data JSON). Keep the macOS traffic-light inset and the
+minimum size.
 
-- **Title step**: after the first Work Result persists, the runtime asks the
-  active model for a ≤ 8-word title from the Direction and the bounded Work
-  Result text only (never tool payloads), sanitizes it, and stores it in
-  `sessions.title` / `agent_tasks.title` with `title_source = "agent"`. The
-  sidebar updates from the existing task-list refresh. A user rename wins
-  forever. If the model is unavailable the deterministic truncation stays.
-  If a column is needed for `title_source`, migration **028**.
-- **Reasoning effort**: `model_providers.reasoning_effort` (`low | medium |
-  high | null`) exposed on the provider API; the Composer chip shows
-  `model · effort` and switches effort only for providers whose model is
-  known-reasoning (`model_budget` table). The runtime passes it to the model
-  call. Not painted for non-reasoning models.
-- **Split `session_agent.py`** into prompt assembly, tool loop, steer queue,
-  usage accounting, and guards, with the existing tests unchanged.
+### N3 — Signed updates
 
-### W3 — Execution detail and provider settings rebuilt as native panes
+Wire `tauri-plugin-updater` once a signing key and an endpoint exist
+(`docs/signing.md`). Until then the plugin stays inert and no UI mentions
+updates.
 
-- **Execution detail** (Review → Execution → one run): rebuild as a document
-  in the sheet — header (title, status, direction), a *Worked for …* group of
-  its tool calls (same `LiveTrace`), findings list, result prose, report link.
-  Delete `ExecutionDetailImplementation` two-column layout, `metrics-cards`,
-  `Chart.tsx` table-chart toggle and the `!important` CSS block. Keep
-  `CallDetail`.
-- **Providers**: rewrite `ProvidersView` as two native preference panes:
-  a provider list (name, model/endpoint, status, Active) with a `+` menu of
-  presets (OpenAI · Anthropic · Ollama · LM Studio · vLLM · OpenAI-compatible;
-  AWS S3 · Cloudflare R2 · MinIO · Alibaba OSS · Tencent COS · Custom) that
-  pre-fills type, base URL/endpoint and addressing; a sheet-style editor with
-  masked key, inline Test, and scope fields. Same API, same vault rules.
-- **Skills & bridges**: replace endpoint text with actions — *Open skills
-  folder* (dialog/opener), *Export trace…* (save dialog → OTel JSON), MCP
-  status with the exact env var and a copy button.
+### N4 — Product polish inside the contract
 
-### W4 — Frontend cleanup
-
-- Delete `postSessionMessage`, `streamSessionMessage`, and every `/sessions/…/messages/stream` client path; the execution runner is the one submit path.
-- Delete `AccountProfilePanel`, `Chart.tsx`, `ExecutionSteps`, `ToolResultCard`, `CloudProviderTester` if W3 leaves them unreferenced (the unreferenced-module check from v1.09 becomes a Vitest contract).
-- Move `docs/design-rebuild-2026.md` and `docs/review-modern-2026.md` under `docs/history/` and mark them superseded.
-
-### W5 — Product polish that stays inside the contract
-
-- Drag-and-drop a file onto the Composer (same attach path).
-- Sidebar: keyboard ↑/↓ between tasks when the list has focus; `⌘⇧[` / `⌘⇧]` previous/next task.
-- Composer: `Esc` clears a draft only when empty; `⌘↵` never needed (Enter delegates).
-- Empty-start greeting rotates between two or three short lines; still no cards, no wizard.
+- Empty-start greeting rotates between two or three short lines; still no
+  cards, no wizard.
+- `⌘⇧[` / `⌘⇧]` previous / next task.
+- `Esc` clears a Composer draft only when the draft is empty.
+- Per-task *Export trace…* from the Review sheet (same OTel path as Settings).
 
 ## 4. Non-goals (unchanged)
 
-Multi-agent orchestration, coding projects/worktrees, terminal/browser/computer control, workflow canvas, synthetic plans or checklists the runtime did not emit, destructive storage mutation, a scheduler UI, approval-mode switches that weaken the read-only floor, chain-of-thought rendering, a page per backend table, multi-user semantics.
+Multi-agent orchestration, coding projects/worktrees, terminal/browser/computer
+control, workflow canvas, synthetic plans or checklists the runtime did not
+emit, destructive storage mutation, a scheduler UI, approval-mode switches that
+weaken the read-only floor, chain-of-thought rendering, a page per backend
+table, multi-user semantics.
 
-## 5. Release plan
-
-- v1.10.0 ships W1–W4; W5 lands as it fits. Each workstream is its own PR from
-  `main`; CI (frontend gates, real-Sidecar E2E, visual review, three desktop
-  builds) must be green before merge; the release branch is cut from the
-  green merge commit per `docs/release.md`.
-- Contracts to add in the same PRs: architecture test rows for the shell
-  bridge, the title step, the reasoning chip, the rebuilt Execution detail and
-  provider panes; documentation-contract anchors move to v1.10.0.
-
-## 6. Roadmap principles
+## 5. Roadmap principles
 
 1. **Capability before chrome.** Add UI only for runtime state/capability that actually exists. A listener for an event nothing sends is chrome.
 2. **Agent Task remains the organizing object.** New evidence, tools, reports, and execution detail attach to the Task.

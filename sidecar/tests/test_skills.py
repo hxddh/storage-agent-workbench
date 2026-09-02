@@ -260,8 +260,9 @@ def test_migrations_are_sequential_and_capped():
     versions = [v for v, _n, _s in migrations.MIGRATIONS]
     assert versions == list(range(1, len(versions) + 1))  # 1..N, no gaps/dupes
     # 27 is the v0.96 optimization copilot: price table, remediation plans,
-    # baselines, revisit schedules, artifact status/payload.
-    assert max(versions) == 27
+    # baselines, revisit schedules, artifact status/payload. 28 (v1.10.0) adds
+    # sessions.title_source and model_providers.reasoning_effort.
+    assert max(versions) == 28
 
 
 def test_no_public_skills_api(client):

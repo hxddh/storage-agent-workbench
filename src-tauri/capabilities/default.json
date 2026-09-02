@@ -1,8 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability set: core + native-agent OS integrations (dialog, notification, updater, opener, deep-link, global-shortcut). Sidecar is launched directly via std::process.",
-  "windows": ["main"],
+  "description": "Default capability set: core + the native-agent OS shell (menu bar, notifications, deep links, global summon shortcut, opener, updater). Sidecar is launched directly via std::process.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "dialog:default",
@@ -19,6 +21,10 @@
     "deep-link:allow-get-current",
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister"
+    "global-shortcut:allow-unregister",
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-set-title"
   ]
 }

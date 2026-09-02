@@ -1,9 +1,11 @@
-/** Live actions the command palette may invoke. Only runtime-true work. */
+/** Live actions the command palette and the native menu may invoke. Only runtime-true work. */
 
 export type PaletteActions = {
   stop?: () => void;
   resume?: () => void;
   focusComposer?: () => void;
+  find?: () => void;
+  review?: () => void;
   busy?: boolean;
   canResume?: boolean;
   hasTask?: boolean;

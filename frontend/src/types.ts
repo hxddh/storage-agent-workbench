@@ -10,11 +10,17 @@ export interface ModelProvider {
   context_window: number | null;
   /** Optional explicit max output tokens; clamps the completion budget so a lower-cap endpoint doesn't 400. */
   max_output_tokens: number | null;
+  /** Reasoning effort for reasoning-capable models (v1.10.0); null = the model's default. */
+  reasoning_effort: ReasoningEffort | null;
+  /** True when the configured model is known to accept an effort; the Composer paints the control only then. */
+  reasoning_capable: boolean;
   /** True for the provider the agent uses (explicitly activated; otherwise the oldest is the implicit default). */
   active: boolean;
   created_at: string;
   updated_at: string;
 }
+
+export type ReasoningEffort = "low" | "medium" | "high";
 
 export type CloudMode = "readonly" | "test-write";
 

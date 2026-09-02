@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.09.0.**
+> **Implementation contract for Storage Agent v1.10.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.09.0 product invariant is:
+The v1.10.0 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -18,20 +18,20 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v1.09.0 native Agent window
+## 1. Never regress the v1.10.0 native Agent window
 
 The window is **sidebar · title bar · one Task document · one Composer**. There is no activity bar, no status bar, no Details/inspector column, and no marketing copy in chrome. New product/frontend work must preserve these boundaries:
 
 - **Agent Task** is the primary application object and primary work area.
-- **AgentTaskNavigation** is the sidebar: window chrome row, **New task**, one quiet chronological title list, **Settings**. Rename and Delete only. State is a row mark (Ready paints nothing). Collapsed, its toggle and New task move into the title bar.
+- **AgentTaskNavigation** is the sidebar: window chrome row, **New task**, one quiet chronological title list, **Settings**. Rename and Delete only (from the row's More control or the native Task menu). State is a row mark (Ready paints nothing). ↑/↓ move between tasks. Collapsed, its toggle and New task move into the title bar. Titles are seeded from the first Direction and replaced by the runtime after the first Work Result unless the user renamed the task (`title_source`).
 - **AgentShell** owns the active task environment and the Review sheet state. The title bar above it carries only the task name and its real state. There is no task header inside the document, no live execution strip, and no second presentation mode.
 - **AgentTask** is the public task boundary; persistence compatibility names stay behind adapters.
-- **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active. Attach + textarea + the **model chip** (backed by the real provider list; switching activates a provider server-side) + those actions. No persistent keyboard legend, no painted mode/approval chips.
+- **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active. Attach (button or a dropped file) + textarea + the **model chip** (backed by the real provider list; switching activates a provider server-side; shows `model · effort` and a reasoning-effort control only when the active model is known-reasoning) + those actions. No persistent keyboard legend, no painted mode/approval chips.
 - **Direction** is user intent/steering input. Copy is the only Direction chrome.
 - **Execution** is real runtime/tool work, shown as one **Worked for …** group of tool rows in the Task document (rows stay visible; the header folds only a long, finished trace). Never invent plans, steps, workers, or capabilities the runtime does not expose.
 - **Decision required** is a blocking confirmation state derived from real backend proposals, rendered as an approval card with projected bounds/impact, **Approve**, and a durable **Decline** path.
 - **Work Result** is a page, not a card and not a bubble: prose on the 46rem measure, data on the 64rem track sharing the left edge, artifact chips (Evidence / Execution / Report) below. Figures and provenance sit inside the latest Work Result. Working copy is Agent-native, not chat-era "still running" language.
-- Review is a sheet over the Task (Evidence, Execution detail, Report), opened from the document or ⌘I. It is not a 4-tab application destination, not a side-column application, and not a document hero. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules may exist as Sidecar engines; they have no product UI entry.
+- Review is a sheet over the Task (Evidence, Execution detail, Report), opened from the document or ⌘I. Execution detail is a document in the sheet (header · *Worked for …* tool rows · findings · result · report), not a two-column run page. It is not a 4-tab application destination, not a side-column application, and not a document hero. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules may exist as Sidecar engines; they have no product UI entry.
 - Production UI must not teach a chat transcript: no `New chat` titles, no `thread.*` copy keys, no leftover `.thread-prose` layout layer.
 
 Do not reconstruct earlier chat/investigation/workbench information architecture from old release notes, database names, API names, or git history. Historical `session` and `run` terminology is compatibility vocabulary, not a reason to change current product semantics.
@@ -105,7 +105,9 @@ Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned b
 - deterministic cost/lifecycle simulation, Remediation Plans, baselines/Drift, and per-task revisits remain Sidecar engines on this same runtime — never a second Agent, a second submit path, or a Settings/Review destination;
 - Verify (`kind=verify`) and scheduled revisits (`kind=revisit`) remain runtime paths; the UI does not paint a Verify control or a revisit scheduler. The user asks in Composer. Revisits are read-only and never auto-resolve a Decision;
 - `execution_events` retention is a periodic SQL-set prune (terminal executions only, dual cap, explicit `execution.events_truncated` marker; `0` disables). Active and waiting logs are never touched;
-- at most one pending Decision exists per `(task, action_type)`; a later proposal of the same type supersedes the earlier pending row.
+- at most one pending Decision exists per `(task, action_type)`; a later proposal of the same type supersedes the earlier pending row;
+- after a task's **first** Work Result the runtime runs one bounded, tool-less **title step** (`task_runtime/titling.py`): Direction + Work Result text only, redacted, ≤ 8 words, stored with `sessions.title_source = 'agent'` and logged as `task.titled`; a user rename sets `'user'` and wins forever; an unavailable or empty answer keeps the seed title; the step never fails a turn and is not a second Agent;
+- a provider's `reasoning_effort` (`low | medium | high | NULL`) is forwarded to the model call only when `model_budget.is_reasoning_model` recognises the model; endpoints that cannot take it never receive it.
 
 The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream (reconnect by sequence), steer/stop/resume/verify the current execution, then reload persisted task state. The legacy `/sessions` message endpoints are compatibility shims over this runtime. Do not create a second submit path.
 
@@ -160,7 +162,7 @@ Do not infer tool availability from a documentation example. `docs/tools.md` and
 
 ## 8. Data ownership
 
-SQLite stores application metadata and durable task/execution records. Current migrations are append-only through **027**; never edit a shipped migration, append a new one.
+SQLite stores application metadata and durable task/execution records. Current migrations are append-only through **028**; never edit a shipped migration, append a new one.
 
 DuckDB/local files store analytical data and large inputs/artifacts. User data lives under the application data directory, never the install directory.
 
@@ -168,7 +170,7 @@ Product-to-persistence mapping:
 
 | Product | Durable runtime (v0.94) | Compatibility persistence/API |
 | --- | --- | --- |
-| Agent Task | `agent_tasks` | `sessions`, `/sessions/...`, `/agent-tasks` |
+| Agent Task | `agent_tasks` | `sessions` (+ `title_source`), `/sessions/...`, `/agent-tasks` |
 | Direction | execution direction + steer events | `session_messages` (user rows) |
 | Execution | `task_executions` + `execution_events` | `runs`, `session_runs`, `tool_calls`, turn metrics |
 | Work Result | `work_results` | `session_messages` (assistant rows) |
@@ -188,7 +190,7 @@ See `docs/data-model.md`.
 - Optimize the first viewport for: **what is the Task, what is happening/what was produced, what can the user do now**.
 - The Task is a **document**: one reading column, figures inline in the Work Result. Artifacts open from the document.
 - Composer is the only start surface. An empty window is one greeting line and the Composer in the middle band. Missing model is a banner plus Settings. The model discovers tools; there is no slash SKU catalog and no first-run wizard.
-- Settings is a centered dialog with sections **General (theme/language) · Model Providers · Cloud Providers · Skills & bridges · Safety**. There is no price-table spreadsheet.
+- Settings is a centered dialog with sections **General (theme/language) · Model Providers · Cloud Providers · Skills & bridges · Safety**. Provider sections are native preference panes: one list, a preset menu (OpenAI · Anthropic · DeepSeek · OpenRouter · Ollama · LM Studio · vLLM · llama.cpp · OpenAI-compatible; AWS S3 · Cloudflare R2 · MinIO · OSS · COS · BOS · TOS · B2 · GCS · Custom), one editor with masked keys and inline Test. Skills & bridges offers actions (open skills folder, export trace, copy the MCP env var), never raw endpoint paths. There is no price-table spreadsheet.
 - Keep settings/provider/model selection secondary to delegated work.
 - Keep technical results readable as documents: prose, tables, code/config, structured errors, tool rows, provenance.
 - Presentation is one achromatic surface ladder, an ink primary (near-white on dark, near-black on light), hairline depth, and status as the only colour. Tokens live in `frontend/src/index.css`; see `docs/design-tokens.md`.
@@ -223,8 +225,15 @@ product/runtime rewrite:
     tool set, same scope/redaction/bounds);
   - observability export (`GET /agent-tasks/{id}/export/otel` +
     `GET /observability/export`, bounded, sanitized, no new tables);
-  - Tauri OS shell (`dialog`, `notification`, `opener`, `deep-link`,
-    `global-shortcut`, `updater` — inert until signing/pubkey is configured).
+  - Tauri OS shell (since v1.10.0 a real one): a native menu bar
+    (App · Edit · Task · View · Window · Help) that emits `menu-command`,
+    `storage-agent://task/<id>` deep links (`deep-link-request`), OS
+    notifications when a background Execution settles, a global summon
+    shortcut (`shortcut-event`), and the OS window title. All of it reaches
+    the window through the one bridge `frontend/src/hooks/useNativeAgent.ts`
+    and dispatches through the same command handler as the keyboard and the
+    palette; a plain browser is a no-op. `updater` stays inert until a
+    signing pubkey is configured.
 
 Every extension preserves: read-only storage tools, no generic shell/
 arbitrary subprocess, secrets only in the encrypted vault, server-side

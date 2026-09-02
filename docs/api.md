@@ -1,6 +1,6 @@
 # Sidecar API
 
-> **Storage Agent v1.09.0 API reference.** Provenance projection unchanged from v1.02.0; v1.03 adds Skills, Observability export and MCP bridge, v1.04 keeps the window and adds warm editorial + Codex/Cursor layout. Unchanged from
+> **Storage Agent v1.10.0 API reference.** Provenance projection unchanged from v1.02.0; v1.03 adds Skills, Observability export and MCP bridge, v1.04 keeps the window and adds warm editorial + Codex/Cursor layout. Unchanged from
 > v0.98.0. No migration. Runtime, tools, and other `/agent-tasks` contracts
 > are unchanged from v0.96.0. Engine endpoints such as `/settings/price-table`
 > remain; they are not product destinations.
@@ -117,6 +117,8 @@ Secret API keys are accepted on create/update and written to the encrypted local
 
 Model provider configuration can include optional operator-declared context-window and maximum-output-token limits supported by current persistence/runtime code.
 
+Since v1.10.0 a provider also carries `reasoning_effort` (`low` | `medium` | `high` | `null`; send `""` on update to clear) and the response projects `reasoning_capable` — whether the configured model is known to accept an effort. The runtime forwards the effort only for reasoning-capable models.
+
 ## Cloud providers
 
 Prefix: `/cloud-providers`
@@ -136,6 +138,8 @@ Cloud credentials are vault-backed. Provider bucket/prefix scope is enforced ser
 Prefix: `/sessions`
 
 These paths are the durable task/message/runtime API retained for compatibility. In product code, adapt them to Agent Task semantics.
+
+Session summaries (and the `/agent-tasks` list) carry `title_source` since v1.10.0: `null` for the deterministic seed title, `agent` once the runtime titled the task after its first Work Result, `user` after a `PATCH` rename (which wins forever). The execution event stream emits `task.titled {title}` before the terminal `execution.status`.
 
 ### Task lifecycle
 

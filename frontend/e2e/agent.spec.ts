@@ -153,6 +153,10 @@ test.describe("a real agent turn", () => {
   });
 
   test("both exchanges survive a reload", async ({ page }) => {
+    // Two real turns plus a reload on a shared CI runner can exceed the
+    // default 30 s test budget while every single wait inside is still
+    // comfortably within its own timeout; give the whole test the room.
+    test.setTimeout(120_000);
     const { cleanup } = await twoTurns(page);
     try {
       await ask(page, "first question about acme-logs");

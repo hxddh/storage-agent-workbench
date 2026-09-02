@@ -14,6 +14,7 @@ const COPY = {
     cancel: "Cancel",
     delete: "Delete",
     appTitle: "Storage Agent",
+    notifySettled: "The Agent finished working on this task.",
     state: {
       working: "Working",
       uploading: "Preparing",
@@ -34,6 +35,7 @@ const COPY = {
     cancel: "取消",
     delete: "删除",
     appTitle: "Storage Agent",
+    notifySettled: "Agent 已完成这个任务的工作。",
     state: {
       working: "执行中",
       uploading: "准备中",
