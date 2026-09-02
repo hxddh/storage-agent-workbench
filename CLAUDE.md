@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.07.0.**
+> **Implementation contract for Storage Agent v1.08.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.07.0 product invariant is:
+The v1.08.0 product invariant is:
 
 > **The Agent Task is the application.**
 

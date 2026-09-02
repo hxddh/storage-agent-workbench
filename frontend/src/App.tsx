@@ -52,15 +52,15 @@ function ActivityBar({
       aria-label={label}
       title={label}
       aria-pressed={active}
-      className={`relative grid h-8 w-8 place-items-center rounded-md text-gray-500 transition-colors hover:bg-hover hover:text-gray-100 ${active ? "bg-elevated text-gray-100" : ""}`}
+      className={`relative grid h-8 w-8 place-items-center rounded-md text-gray-500 transition-[background-color,color] duration-fast hover:bg-hover hover:text-gray-100 ${active ? "bg-elevated text-gray-100" : ""}`}
     >
-      {active ? <span className="absolute left-0 h-5 w-0.5 rounded-full bg-accent" aria-hidden /> : null}
+      {active ? <span className="absolute left-0 h-5 w-[1.5px] rounded-full bg-accent" aria-hidden /> : null}
       {children}
     </button>
   );
 
   return (
-    <div className="flex w-11 shrink-0 flex-col items-center gap-0.5 border-r border-edge bg-sidebar py-2">
+    <div className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-edge bg-sidebar py-1.5">
       <Item label="New task" onClick={onNew}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden><path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
       </Item>
@@ -195,16 +195,9 @@ export default function App() {
 
   return (
     <div className="flex h-full w-full flex-col bg-canvas text-gray-100">
-      <div className="flex h-7 shrink-0 items-center gap-2 border-b border-edge bg-panel px-3 text-xs text-gray-500" data-tauri-drag-region>
-        <span className="text-sm font-semibold tracking-tight text-gray-200">Storage Agent</span>
-        <span className="hidden sm:inline text-gray-500">· {status === "connected" ? "Ready" : status === "starting" ? "Starting…" : "Offline"}</span>
-        <span className="ml-auto hidden items-center gap-1.5 text-gray-400 sm:flex">
-          <kbd className="rounded border border-edge bg-elevated px-1 py-0.5 text-2xs">⌘K</kbd> palette
-          <span className="mx-1 text-gray-400">·</span>
-          <kbd className="rounded border border-edge bg-elevated px-1 py-0.5 text-2xs">⌘N</kbd> new
-          <span className="mx-1 text-gray-400">·</span>
-          <kbd className="rounded border border-edge bg-elevated px-1 py-0.5 text-2xs">⌘B</kbd> nav
-        </span>
+      <div className="flex h-7 shrink-0 items-center gap-2 border-b border-edge bg-sidebar/80 px-3 text-xs text-gray-500 backdrop-blur supports-[backdrop-filter]:bg-sidebar/70" data-tauri-drag-region style={{ WebkitAppRegion: 'drag' } as any}>
+        <span className="text-sm font-semibold tracking-tight text-gray-200" style={{ letterSpacing: '-0.01em' }}>Storage Agent</span>
+        <span className="hidden sm:inline text-gray-500" style={{ letterSpacing: '-0.01em' }}>· {status === "connected" ? "Ready" : status === "starting" ? "Starting…" : "Offline"}</span>
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -231,23 +224,23 @@ export default function App() {
         </div>
 
         {showDetails && (
-          <div className="hidden w-64 shrink-0 border-l border-edge bg-panel lg:flex flex-col">
+          <div className="hidden w-[280px] shrink-0 border-l border-edge bg-panel lg:flex flex-col">
             <div className="flex h-8 items-center justify-between border-b border-edge px-3">
-              <span className="text-xs font-semibold tracking-tight text-gray-200">Details</span>
-              <button onClick={() => { setDetailsOpen(false); localStorage.setItem(DETAILS_KEY, "0"); }} className="grid h-7 w-7 place-items-center rounded-md text-gray-400 hover:bg-hover hover:text-gray-200">
+              <span className="text-xs font-medium tracking-tight text-gray-200" style={{ letterSpacing: '-0.01em' }}>Details</span>
+              <button onClick={() => { setDetailsOpen(false); localStorage.setItem(DETAILS_KEY, "0"); }} className="grid h-7 w-7 place-items-center rounded-md text-gray-400 transition-[background-color,color] duration-fast hover:bg-hover hover:text-gray-200">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6 6 18M6 6l12 12" /></svg>
               </button>
             </div>
             <div className="flex-1 overflow-auto p-3 text-xs leading-relaxed text-gray-500">
               <div className="space-y-4">
                 <div>
-                  <div className="mb-1.5 text-xs font-semibold tracking-tight text-gray-200">Task</div>
-                  <div className="rounded-lg border border-edge bg-canvas px-3 py-2.5 text-sm font-medium text-gray-200">{activeTaskId ? tasks.find((t) => t.id === activeTaskId)?.title || "Untitled" : "No task selected"}</div>
-                  <div className="mt-1 text-2xs text-gray-500">{activeTaskId ? "Local-first · read-only · durable" : "Select a task or delegate a new goal."}</div>
+                  <div className="mb-1.5 text-xs font-medium tracking-tight text-gray-200" style={{ letterSpacing: '-0.01em' }}>Task</div>
+                  <div className="rounded-lg border border-edge bg-canvas px-3 py-2.5 text-sm font-normal text-gray-200" style={{ letterSpacing: '-0.011em' }}>{activeTaskId ? tasks.find((t) => t.id === activeTaskId)?.title || "Untitled" : "No task selected"}</div>
+                  <div className="mt-1 text-2xs leading-relaxed text-gray-500">{activeTaskId ? "Local-first · read-only · durable" : "Select a task or delegate a new goal."}</div>
                 </div>
                 <div className="h-px bg-edge" />
                 <div>
-                  <div className="mb-1.5 text-xs font-semibold tracking-tight text-gray-200">Navigate</div>
+                  <div className="mb-1.5 text-xs font-medium tracking-tight text-gray-200" style={{ letterSpacing: '-0.01em' }}>Navigate</div>
                   <div className="space-y-1">
                     {[
                       ["Palette", "⌘K"],
@@ -275,12 +268,12 @@ export default function App() {
         )}
       </div>
 
-      <div className="flex h-5 shrink-0 items-center gap-2 border-t border-edge bg-panel px-3 text-2xs text-gray-500">
+      <div className="flex h-[22px] shrink-0 items-center gap-2 border-t border-edge bg-panel px-3 text-2xs text-gray-500">
         <span className="hidden sm:inline">{tasks.length} tasks</span>
         <span className="sm:hidden">{tasks.length}</span>
         <span>·</span>
         <span>{activeTaskId ? "Task open" : "No task"}</span>
-        <span className="ml-auto hidden sm:inline">Storage Agent · warm editorial · Codex/Cursor native</span>
+        <span className="ml-auto hidden sm:inline" style={{ letterSpacing: '-0.01em' }}>Storage Agent · warm editorial · Codex native</span>
       </div>
 
       <SettingsDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />

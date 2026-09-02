@@ -6,6 +6,23 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.08.0] - 2026-09-02
+
+_Codex full replica — native teardown. No migration (head remains **027**)._ 
+
+### Changed
+
+- **Native shell** — `titleBarStyle: overlay` + `hiddenTitle` + `trafficLightPosition 12,12`, 28px vibrancy header, left-aligned 13px semibold title, no painted `⌘K/⌘N/⌘B` legend; activity bar 44px · 32px hit · 1.5px accent; status bar 22px hairline.
+- **Work Result** — editorial page not card: hairline-only depth, `46rem` prose `15px/1.8` + `64rem` wide tables sharing left edge, display `400 -0.02em`, `93%` JetBrains Mono, tabular-nums; header weight 400.
+- **Composer** — Cursor-like ghost `h-7 w-7` paperclip, unified `32px` orange pill `13px medium tracking 0.01em`, `↑` history (20), `Enter`/`Shift+Enter`, `44→240px` iOS spring, no `transition-all`.
+- **Inspector** — 280px contextual (Task provenance + live tool trace + findings) not static placeholder; Review overlay remains for deep Evidence/Execution/Report.
+- **Explorer** — quiet chronological list preserved (Rename/Delete only); `⌘K` fuzzy is primary switch, type-ahead via palette.
+- **Motion** — iOS spring `0.16,1,0.3,1 120/180/240` only; only `background/border/transform/opacity` transition.
+
+### Security
+
+- Same floor. No new tools, no destructive S3, no generic shell.
+
 ## [1.07.0] - 2026-09-01
 
 _Codex 10/10 replica — full teardown. Magazine empty + Ask copy. No migration (head remains **027**)._

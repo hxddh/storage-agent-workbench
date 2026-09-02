@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.07.0.** This is the canonical product/UX specification. v1.04 keeps the v1.03 native Agent window and adds the Codex/Cursor rebuild (warm editorial, icon bar, Cursor-like Composer). v1.03 kept the v1.02 window and added gated extensions. v1.02 finished the native Agent window: v1.01 removed the workbench shell; v1.02 removes the leftover chat transcript. Historical release notes (including v1.00 header/strip/queues and v0.96 copilot OS) are not current product architecture.
+> **Applies to Storage Agent v1.08.0.** This is the canonical product/UX specification. v1.04 keeps the v1.03 native Agent window and adds the Codex/Cursor rebuild (warm editorial, icon bar, Cursor-like Composer). v1.03 kept the v1.02 window and added gated extensions. v1.02 finished the native Agent window: v1.01 removed the workbench shell; v1.02 removes the leftover chat transcript. Historical release notes (including v1.00 header/strip/queues and v0.96 copilot OS) are not current product architecture.
 
 ## Product definition
 

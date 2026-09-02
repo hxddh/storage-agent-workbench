@@ -59,7 +59,7 @@
   height: var(--control-h);
   place-items: center;
   border: 1px solid transparent;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--gray-500);
   transition: border-color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
@@ -105,9 +105,8 @@
   height: 100%;
   flex: none;
   flex-direction: column;
-  border-left: 1px solid color-mix(in srgb, var(--edge) 82%, transparent);
-  background: color-mix(in srgb, var(--panel) 88%, var(--canvas));
-  box-shadow: -14px 0 36px color-mix(in srgb, black 18%, transparent);
+  border-left: 1px solid var(--edge);
+  background: var(--panel);
 }
 
 .agent-review-header {
