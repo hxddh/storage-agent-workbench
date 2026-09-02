@@ -39,6 +39,9 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
     from . import gated_tools
     tools += gated_tools.build(conn, function_tool, activity, session_id, turn_id,
                                cancel_event=cancel_event)
+    # The plan the model owns (v1.12): a checklist the runtime records.
+    from . import plan_tools
+    tools += plan_tools.build(function_tool, activity)
     return tools
 
 

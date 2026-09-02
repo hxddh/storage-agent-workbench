@@ -16,6 +16,7 @@ from app import config
 from app.agent_runtime import session_agent
 from app.skills import context as skill_context
 from app.skills import loader
+from tests.turns import post_message
 
 ACCESS = "AKIAIOSFODNN7EXAMPLE"
 MODEL_KEY = "sk-MODELSECRETDONOTLEAK1234"
@@ -188,7 +189,7 @@ def test_session_assistant_prompt_includes_skill_context(client, monkeypatch):
         return "Here is guidance."
 
     monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
-    out = client.post(f"/sessions/{s['id']}/messages", json={"content": "why 403 AccessDenied?"}).json()
+    out = post_message(client, s['id'], json={"content": "why 403 AccessDenied?"}).json()
     prompt = captured["spec"]["prompt"]
     # Progressive disclosure: the prompt carries the skills CATALOG + read_skill,
     # not pre-injected full skill bodies.
@@ -211,7 +212,7 @@ def test_skills_used_bound_to_actual_read_skill(client, monkeypatch):
         return "ok (skills_used: storageops-security-iam-policy)"
 
     monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
-    out = client.post(f"/sessions/{s['id']}/messages", json={"content": "why 403?"}).json()
+    out = post_message(client, s['id'], json={"content": "why 403?"}).json()
     assert out["skills_used"] == []  # claimed but never loaded → dropped
 
 
@@ -272,7 +273,7 @@ def test_migrations_are_sequential_and_capped():
     # 27 is the v0.96 optimization copilot: price table, remediation plans,
     # baselines, revisit schedules, artifact status/payload. 28 (v1.10.0) adds
     # sessions.title_source and model_providers.reasoning_effort.
-    assert max(versions) == 29
+    assert max(versions) == 30
 
 
 def test_no_public_skills_api(client):

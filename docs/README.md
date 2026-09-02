@@ -1,6 +1,6 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.11.0** (`v1.11.0`).
+> **Current architecture baseline: Storage Agent v1.12.0** (`v1.12.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
@@ -22,7 +22,15 @@
 > card where the gated `import_evidence` tool raised it, then the answer as
 > plain Markdown. No metadata JSON block, no proposal list, no separate import
 > dialog; Artifacts is a right split panel; the Agent runtime is split by
-> responsibility. Migration head is **029**.
+> responsibility.
+> **v1.12.0 is native all the way through.** One protocol (the `/sessions`
+> message/turn/prepare shims are gone), a push-driven event stream with
+> `task.status`, the model's `update_plan` checklist, an approval policy
+> (ask · session · always) enforced in one place with the large-survey gate,
+> context compaction (`context.compacted`, ⌘K Compact context), `AGENTS.md`
+> instructions, Execution detail from the durable log, wall-clock *Worked
+> for …*, and the frontend split into document / runner / api modules.
+> Migration head is **030**.
 
 This directory documents the currently shipped Storage Agent architecture and operating contracts. It is deliberately organized so implementation agents and contributors do not reconstruct older product shells from historical terminology that still exists in persistence, APIs, release notes, or git history.
 

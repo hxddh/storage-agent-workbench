@@ -34,7 +34,7 @@ import time
 from typing import Any
 
 from .. import audit, config
-from ..agent_runtime import session_agent
+from ..agent_runtime import compaction, session_agent
 from ..agent_runtime.agent_service import AgentUnavailable, get_model_credentials
 from ..db import connect
 from ..repositories import session_activity
@@ -44,7 +44,7 @@ from ..security.redaction import redact_text
 from ..sessions import summary_builder
 from . import context as task_context
 from . import titling
-from . import hub, store
+from . import approval_policy, hub, store
 
 _CONTEXT_MESSAGES = session_agent._MAX_MESSAGES_CEIL
 
@@ -130,6 +130,9 @@ def submit(conn: sqlite3.Connection, task_id: str, direction: str,
                        commit=False)
     store.set_task_status(conn, task_id, store.TASK_WORKING,
                           active_execution_id=execution["id"])
+    # A follower of the running execution learns about the new queued
+    # Direction from its own stream (v1.12) — no state poll needed.
+    store.note_task_status(conn, task_id)
     audit.record(conn, "task.execution.submitted",
                  {"task_id": task_id, "execution_id": execution["id"], "kind": kind},
                  run_id=None, session_id=task_id)
@@ -182,10 +185,12 @@ def stop(conn: sqlite3.Connection, execution_id: str) -> dict[str, Any] | None:
         # non-queued rows). The live handle's cancel_event is set too, closing
         # the race where the worker claimed it between our read and update.
         store.set_execution_status(conn, execution_id, store.EXEC_CANCELLED)
+        # task.status BEFORE the terminal execution.status: a follower stops at
+        # the terminal frame, so the task's settled state must precede it.
+        store.refresh_task_status(conn, execution["task_id"])
         store.append_event(conn, execution_id, execution["task_id"],
                            "execution.status", {"status": store.EXEC_CANCELLED},
                            commit=False)
-        store.refresh_task_status(conn, execution["task_id"])
         conn.commit()
         hub.mark_done(execution_id)
     if handle is not None:
@@ -249,14 +254,20 @@ def request_approval(conn: sqlite3.Connection, execution_id: str, task_id: str, 
     process restarts meanwhile, recovery stamps the execution `interrupted` and
     the pending row stays for the user to see (Resume starts a new execution).
 
-    A prior "allow for this task" grant for the same action_type skips the
-    pause: the call is recorded as an already-approved Decision."""
-    if store.task_grant_exists(conn, task_id, action_type):
+    The approval policy (v1.12, ``allow_session`` / ``allow_always``) or a
+    prior "allow for this task" grant for the same action_type skips the pause:
+    the call is recorded as an already-approved Decision and the
+    ``approval.granted`` event says which policy answered it. This is the ONE
+    place a policy is consulted."""
+    auto = approval_policy.auto_grant_scope(conn)
+    if auto is None and store.task_grant_exists(conn, task_id, action_type):
+        auto = store.SCOPE_TASK
+    if auto is not None:
         granted = store.record_granted_approval(conn, task_id, execution_id, action_type,
-                                               title, proposal)
+                                               title, proposal, scope=auto)
         store.append_event(conn, execution_id, task_id, "approval.granted",
                            {"decision_id": granted["id"], "action_type": action_type,
-                            "title": granted.get("title")}, commit=False)
+                            "title": granted.get("title"), "policy": auto}, commit=False)
         conn.commit()
         return granted
     handle = live_handle(execution_id)
@@ -415,6 +426,23 @@ def _run_execution(execution: dict[str, Any]) -> None:
         attachments = sds_repo.list_pending_for_session(conn, task_id)
         creds = get_model_credentials(conn)  # raises AgentUnavailable
 
+        # v1.12 — compaction: when the last model call filled 80 % of the
+        # window, summarise-and-continue BEFORE this execution's model loop.
+        compacted_item: dict[str, Any] | None = None
+        if compaction.should_compact(conn, task_id, creds):
+            out = compaction.compact(conn, task_id, creds, exec_id, messages=recent)
+            if out:
+                payload = {k: out.get(k) for k in ("before_tokens", "after_tokens",
+                                                   "summary_chars")}
+                store.append_event(conn, exec_id, task_id, "context.compacted", payload)
+                compacted_item = {"kind": "compacted", "before_tokens": out.get("before_tokens"),
+                                  "after_tokens": out.get("after_tokens")}
+
+        def _with_compaction(data: dict[str, Any]) -> dict[str, Any]:
+            if compacted_item is not None:
+                data["turn_items"] = [compacted_item] + list(data.get("turn_items") or [])
+            return data
+
         # SESSION_LOOP is the documented single-turn test seam ("tests may
         # monkeypatch that seam with a fake"). When it is patched, drive the
         # legacy blocking loop so fakes keep working; the default is the same
@@ -427,9 +455,12 @@ def _run_execution(execution: dict[str, Any]) -> None:
                 cancel_event=handle.cancel_event)
             for rec in contract.get("tool_activity") or []:
                 _persist_tool_event(conn, exec_id, task_id, rec)
+            for steps in contract.get("plan_updates") or []:
+                store.append_event(conn, exec_id, task_id, "plan.updated",
+                                   {"steps": list(steps)})
             # The legacy blocking seam is a test double; the title step belongs
             # to the streamed runtime only.
-            _finish(conn, execution, handle, contract, creds,
+            _finish(conn, execution, handle, _with_compaction(contract), creds,
                     int((time.monotonic() - t0) * 1000), title_step=False)
             return
 
@@ -476,7 +507,7 @@ def _run_execution(execution: dict[str, Any]) -> None:
         if data is None:
             _fail(conn, exec_id, task_id, "the execution produced no result")
             return
-        _finish(conn, execution, handle, data, creds, elapsed_ms)
+        _finish(conn, execution, handle, _with_compaction(data), creds, elapsed_ms)
     except AgentUnavailable as exc:
         _fail(conn, exec_id, task_id, _safe_err(exc))
     except Exception as exc:  # noqa: BLE001
@@ -532,12 +563,18 @@ def _persist_tool_event(conn: sqlite3.Connection, exec_id: str, task_id: str,
     """One structured tool progress event, bounded. `user_steer` activity rows
     are the injection wrapper's delivery notices — persisted as steer.applied."""
     payload = {k: record.get(k) for k in ("id", "tool", "target", "result", "ok",
-                                           "decision_id")
+                                           "decision_id", "started_at", "finished_at",
+                                           "duration_ms")
                if record.get(k) is not None}
     status = record.get("status")
     if record.get("tool") == "user_steer":
         store.append_event(conn, exec_id, task_id, "steer.applied",
                            {"text": str(record.get("result") or "")[:200]})
+        return
+    if record.get("tool") == "update_plan":
+        if status != "started":
+            store.append_event(conn, exec_id, task_id, "plan.updated",
+                               {"steps": list(record.get("plan") or [])})
         return
     event_type = "tool.started" if status == "started" else "tool.completed"
     store.append_event(conn, exec_id, task_id, event_type, payload)
@@ -545,9 +582,9 @@ def _persist_tool_event(conn: sqlite3.Connection, exec_id: str, task_id: str,
 
 def _fail(conn: sqlite3.Connection, exec_id: str, task_id: str, error: str) -> None:
     store.set_execution_status(conn, exec_id, store.EXEC_FAILED, error=error)
+    store.refresh_task_status(conn, task_id)  # task.status precedes the terminal frame
     store.append_event(conn, exec_id, task_id, "execution.status",
                        {"status": store.EXEC_FAILED, "error": error[:400]}, commit=False)
-    store.refresh_task_status(conn, task_id)
     conn.commit()
 
 
@@ -635,11 +672,14 @@ def _finish(conn: sqlite3.Connection, execution: dict[str, Any], handle: LiveExe
     for k in ("budget_tokens", "budget_stopped_on", "repeat_calls_avoided"):
         if data.get(k) is not None:
             metrics[k] = data[k]
+    # task.status lands BEFORE the terminal execution.status: a follower stops
+    # at the terminal frame, so the task's settled state (ready / needs_decision
+    # / the queued follow-up) must already be on the stream.
+    store.refresh_task_status(conn, task_id)
     store.append_event(conn, exec_id, task_id, "execution.status",
                        {"status": final_status, "stopped": stopped,
                         "message_id": mid, "work_result_id": wr_id,
                         "metrics": metrics}, commit=False)
-    store.refresh_task_status(conn, task_id)
     conn.commit()
     # A steer that slipped in between the follow-up check above and the
     # terminal commit (the row still read `running`) is carried too.

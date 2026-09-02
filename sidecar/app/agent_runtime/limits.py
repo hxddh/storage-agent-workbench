@@ -201,6 +201,8 @@ _BUDGET_EXEMPT_TOOLS = {
     "update_memory_item", "resolve_memory_item",
     # App-generated status text, never rows; and it blocks on the user.
     "import_evidence",
+    # The plan checklist: a few bytes, never data.
+    "update_plan",
 }
 # Tools that wait on a HUMAN (an inline approval) get no wall-clock ceiling:
 # the user's Stop is their bound.
@@ -234,6 +236,8 @@ _CORE_TOOLS = {
     # are a few bytes — gating them would only cost a round-trip.
     "note_fact", "record_finding", "note_open_question",
     "update_memory_item", "resolve_memory_item",
+    # The plan the model owns — always at hand, never gated.
+    "update_plan",
     "simulate_storage_cost", "draft_remediation_plan", "verify_remediation_plan",
     "capture_task_baseline", "compare_task_drift", "get_price_table_status",
     "set_task_revisit_days",

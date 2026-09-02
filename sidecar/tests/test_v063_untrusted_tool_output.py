@@ -21,6 +21,7 @@ import json
 import pytest
 
 from .fake_model import FakeModel, text_turn, tool_turn
+from tests.turns import post_message
 
 OPEN = "<<external_untrusted_data>>"
 CLOSE = "<<end_external_untrusted_data>>"
@@ -45,8 +46,7 @@ def probed(client):
             "base_url": model.base_url, "model": "fake-model", "api_key": "k",
         })
         sid = client.post("/sessions", json={"title": "s"}).json()["id"]
-        res = client.post(f"/sessions/{sid}/messages",
-                          json={"content": "which providers are configured?", "turn_id": "t1"})
+        res = post_message(client, sid, json={"content": "which providers are configured?", "turn_id": "t1"})
         assert res.status_code == 200, res.text
         yield client, sid, model.requests
 
@@ -100,5 +100,5 @@ def test_the_injection_did_not_become_a_proposal(probed):
     """The end-to-end property: nothing destructive reaches the thread."""
     client, sid, _ = probed
     msg = client.get(f"/sessions/{sid}").json()["messages"][-1]
-    assert msg["proposed_actions"] == []
+    assert "proposed_actions" not in msg
     assert "delete every bucket" not in (msg["content"] or "")

@@ -116,6 +116,10 @@ INSTRUCTIONS = (
     "objects per storage class), use a table with the group in the FIRST column "
     "and one plain numeric column — the UI draws a chart from that shape.\n\n"
     "SAFETY RULES:\n" + "\n".join(f"- {r}" for r in SESSION_SAFETY_RULES) + "\n\n"
+    "For work that needs three or more distinct steps, keep a short plan with "
+    "update_plan (send the whole list each time; one step in_progress; mark "
+    "steps completed as you finish) — the user sees it as a live checklist. "
+    "Never plan trivial work.\n"
     "How you write: before each tool call you MAY write one short sentence of "
     "commentary (what you are checking and why) — it is shown to the user as "
     "the work happens. When the investigation is done, write the COMPLETE "
@@ -151,6 +155,10 @@ FINALIZE_INSTRUCTIONS = (
     "objects per storage class), use a table with the group in the FIRST column "
     "and one plain numeric column — the UI draws a chart from that shape.\n\n"
     "SAFETY RULES:\n" + "\n".join(f"- {r}" for r in SESSION_SAFETY_RULES) + "\n\n"
+    "For work that needs three or more distinct steps, keep a short plan with "
+    "update_plan (send the whole list each time; one step in_progress; mark "
+    "steps completed as you finish) — the user sees it as a live checklist. "
+    "Never plan trivial work.\n"
     "How you write: before each tool call you MAY write one short sentence of "
     "commentary (what you are checking and why) — it is shown to the user as "
     "the work happens. When the investigation is done, write the COMPLETE "
@@ -287,7 +295,7 @@ def _dedupe_replay_tools(messages: list[dict[str, Any]]) -> None:
 # means a provider's prompt-cache prefix survives from one turn to the next
 # instead of being invalidated at the first byte by the newest message.
 _STABLE_CONTEXT_KEYS = ("session", "summary", "agent_memory", "active_skill",
-                        "storage_task_context")
+                        "storage_task_context", "conversation_summary")
 
 # How many already-loaded skill methods ride along in the context. One: an
 # investigation follows a method, and carrying a second doubles the cost to cover
@@ -311,6 +319,15 @@ def _latest_task_context(conn: Any, session_id: str | None) -> dict[str, Any] | 
         if latest and latest.get("context"):
             return latest["context"]
         return task_context.build_snapshot(conn, session_id)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _latest_compaction(conn: Any, session_id: str | None) -> dict[str, Any] | None:
+    """Latest compaction summary for the task (v1.12), or None."""
+    try:
+        from . import compaction as _compaction
+        return _compaction.latest_summary(conn, session_id)
     except Exception:  # noqa: BLE001
         return None
 
@@ -406,9 +423,21 @@ def build_session_context(
     explicit_window: int | None = None,
     active_skill: dict[str, Any] | None = None,
     task_context: dict[str, Any] | None = None,
+    compaction: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Bounded, redacted context — the ONLY thing the model sees."""
+    """Bounded, redacted context — the ONLY thing the model sees.
+
+    ``compaction`` (v1.12) is the latest ``{summary, through_seq}`` the
+    compaction step wrote: the summary rides in the stable half and only the
+    messages AFTER ``through_seq`` are replayed."""
     max_messages, max_replay_msg = _elastic_replay_caps(model, explicit_window)
+    conversation_summary: str | None = None
+    if compaction and compaction.get("summary"):
+        conversation_summary = redact_text(str(compaction["summary"]))[:4000]
+        through = compaction.get("through_seq")
+        if through is not None:
+            recent_messages = [m for m in recent_messages
+                               if m.get("seq") is None or int(m["seq"]) > int(through)]
     # The deterministic grounding summary scales with the window too (floored at
     # the historical 50) — agent_memory already went elastic; leaving these flat
     # clipped exactly the grounding a large-context model needs on big sessions.
@@ -457,6 +486,9 @@ def build_session_context(
         # in the STABLE half with the skill catalog / providers so a prompt-cache
         # hit survives across turns until the context version actually changes.
         **({"storage_task_context": typed} if typed else {}),
+        # v1.12 — the compaction step's continuation summary: what the earlier
+        # turns established, so the replay below can start after them.
+        **({"conversation_summary": conversation_summary} if conversation_summary else {}),
         # Prior assistant turns carry a `tools_run` trace of the read-only probes
         # they already ran (bounded) — so this turn sees what was checked and
         # re-fetches only what it needs fuller detail on, instead of re-probing.
@@ -556,7 +588,8 @@ def _build_prompt(
     context = build_session_context(session, summary, recent_messages, agent_memory,
                                      model=model, explicit_window=explicit_window,
                                      active_skill=active_skill_block(conn, session.get("id")),
-                                     task_context=_latest_task_context(conn, session.get("id")))
+                                     task_context=_latest_task_context(conn, session.get("id")),
+                                     compaction=_latest_compaction(conn, session.get("id")))
     skill_names = skill_context.skill_names()
 
     # Prompt order is CACHE order, most stable first: skill catalog (identical in
@@ -572,6 +605,12 @@ def _build_prompt(
     catalog = skill_context.catalog_text()
     if catalog:
         prompt_parts.append(catalog)
+    # v1.12 — AGENTS.md: the user's standing instructions, bounded and redacted,
+    # right after the catalog (stable across turns; cacheable).
+    from . import instructions as _instructions
+    agents_md = _instructions.prompt_block()
+    if agents_md:
+        prompt_parts.append(agents_md)
     # Pre-list configured providers so the agent skips a list_providers round
     # trip (latency) and already knows the provider_id values. No secrets.
     providers: list[dict[str, Any]] = []

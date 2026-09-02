@@ -1,6 +1,6 @@
 # Data model
 
-> **Storage Agent v1.11.0 persistence reference.** Migration head **029** (`session_messages.turn_items`; `task_decisions.kind` / `scope`). `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI.
+> **Storage Agent v1.12.0 persistence reference.** Migration head **030** (`task_context_versions.summary_sanitized` / `summary_through_seq` for context compaction). `app_settings` gains the `approval_policy` key. `task_decisions.scope` now also takes `session` / `always` (policy grants). `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI.
 >
 > Product vocabulary is Agent Task / Direction / Execution / Decision / Work Result / Artifact. SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
 
@@ -18,7 +18,7 @@ Secrets are stored separately in the encrypted local vault. SQLite stores only o
 
 The schema is created by append-only migrations in `sidecar/app/migrations.py`.
 
-**Current migration head: 029.**
+**Current migration head: 030.**
 
 Rules:
 
@@ -60,6 +60,7 @@ Rules:
 | 027 | `optimization_copilot` | local price table, versioned remediation plans, task baselines, per-task revisit schedules, artifact status/payload |
 | 028 | `native_agent_titles_effort` | `sessions.title_source` (`NULL` seed / `agent` / `user`) for runtime task titles; `model_providers.reasoning_effort` (`low`/`medium`/`high`/`NULL`) |
 | 029 | `native_agent_turn_items_approvals` | `session_messages.turn_items` (ordered commentary/tool items before the answer); `task_decisions.kind` (`approval` / `proposal`) and `scope` (`once` / `task`) for Decisions raised inline by gated tools |
+| 030 | `native_agent_context_compaction` | `task_context_versions.summary_sanitized` (the bounded, redacted continuation summary the compaction step wrote; carried forward onto later versions) and `summary_through_seq` (the `session_messages` rowid it covers through — the prompt replays only later messages) |
 
 ## Product-to-persistence mapping
 
@@ -226,8 +227,7 @@ Durable Direction and Work Result records:
 - referenced run/evidence ids;
 - sanitized `tool_activity`;
 - sanitized `grounding`;
-- sanitized `proposed_actions` (always empty since v1.11; kept for older rows);
-- sanitized `turn_items` (v1.11): the ordered `message` / `tool` items the turn produced before its answer;
+- sanitized `turn_items` (v1.11): the ordered `message` / `tool` items the turn produced before its answer — plus `plan` (one per turn, latest steps) and a leading `compacted` marker since v1.12 (`proposed_actions` is no longer projected; older rows may still carry the column);
 - timestamp.
 
 Needs-decision state is derived from pending `task_decisions` rows only.
@@ -323,7 +323,9 @@ Execution is a durable object with a real lifecycle:
   running execution (`kind=approval`, since v1.11; `proposal` rows are history).
   At most one pending Decision exists per `(task, action_type)`; a later request
   of the same type supersedes the earlier pending row. `scope=task` on an
-  approved row is an explicit grant for later calls of that `action_type`.
+  approved row is an explicit grant for later calls of that `action_type`;
+  `scope=session` / `scope=always` (v1.12) record a call the approval policy
+  answered (`resolution_note` says which).
 - `task_artifacts` — the unified Artifact index (`report`, `evidence_import`,
   `analysis`, `remediation_plan`, `baseline`, `drift_report`) pointing at the
   durable referent via `ref_kind`/`ref_id`. Optional `status` and sanitized
@@ -332,7 +334,11 @@ Execution is a durable object with a real lifecycle:
   JSON snapshot of machine state: provider scope, buckets in focus, evidence on
   hand, memory counts, open decisions), appended only when changed. Recovery
   and the Agent prompt's stable half read this; they never replay messages to
-  rebuild machine state.
+  rebuild machine state. Since v1.12 a version may also carry
+  `summary_sanitized` + `summary_through_seq`: the compaction step writes a
+  new version with them (even when the snapshot is unchanged) and later
+  versions carry them forward; the prompt puts the summary in its stable half
+  and replays only messages after `summary_through_seq`.
 - `storage_price_table` — local ordinary configuration (per-class GB-month and
   request/retrieval rates). Ships as an example schedule labelled as such;
   `confirmed` starts false. Not a secret store; credentials never belong here.
@@ -411,7 +417,7 @@ Stores run-associated report metadata/path. Task report endpoints may aggregate 
 
 ## App settings
 
-`app_settings` is a small non-secret key/value store. It must never become a secret store.
+`app_settings` is a small non-secret key/value store. It must never become a secret store. Keys in use: the active model provider, the price table, and since v1.12 `approval_policy` (`ask` | `allow_always`; `allow_session` is held in process memory only and is never written here).
 
 ## Redaction/persistence rule
 

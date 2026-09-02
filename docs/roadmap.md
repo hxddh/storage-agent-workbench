@@ -1,5 +1,12 @@
 # Roadmap
 
+> **Status: delivered in v1.12.0** (see `releases/1.12.0.md` and the
+> CHANGELOG). Two details landed differently from the plan below:
+> `allow_session` is held in process memory (never written to `app_settings`);
+> compaction runs at execution START (before the model loop) or on demand via
+> `POST /agent-tasks/{id}/compact`, and the summary lives on
+> `task_context_versions.summary_sanitized` / `summary_through_seq`.
+
 > **Baseline: Storage Agent v1.11.0.** This file is the plan for
 > **v1.12.0 — Native all the way through**: one runtime protocol, a push
 > transport, a plan the model owns, an approval policy the runtime enforces,

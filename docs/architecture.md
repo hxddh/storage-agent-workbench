@@ -176,7 +176,7 @@ presentation state. Losing it (reload, task switch, second window) loses
 nothing — the client reattaches by replaying the durable event log from any
 sequence number.
 
-Tool rows are one collapsed *Worked for …* group between the model's commentary segments (v1.11 transcript turn). The Artifacts panel exposes sanitized Execution detail without turning the Task into a permanent trace console.
+Tool rows are one collapsed *Worked for …* group between the model's commentary segments (v1.11 transcript turn); its time is the group's wall clock, not a sum of durations (v1.12). The model's plan (`update_plan`) is one quiet checklist card at the position of its first call; a compaction is one muted marker line. The Artifacts panel exposes sanitized Execution detail — built from `task_executions` + the durable `execution_events` log + one sanitized `tool_calls` row on demand, never a `/runs` stream (v1.12) — without turning the Task into a permanent trace console.
 
 ### Decision (inline approval)
 
@@ -229,7 +229,9 @@ observes:
    queued execution (idempotent on the client turn id);
 3. follow the execution's durable structured event stream (resumable by
    sequence number). A dropped stream reconnects with `after=<last seq>`
-   only — there is no blocking POST fallback and no assistant-id poll;
+   only — there is no blocking POST fallback and no assistant-id poll; while
+   the stream is open the client reads `task.status` frames instead of
+   polling `/state` (v1.12);
 4. update real Tool activity and streamed Work Result from those events;
 5. Steer posts into the CURRENT execution (`POST /agent-tasks/{id}/steer`) —
    never cancel-and-resend; Stop cancels the durable execution (including a
@@ -278,6 +280,50 @@ The Sidecar owns:
 - provider adapters and secret resolution.
 
 There is exactly one model-driven Agent loop. Deterministic engines remain beneath it as security/reproducibility mechanisms; they are not a second product Agent.
+
+### 6.x Native runtime additions (v1.12.0)
+
+- **Push transport.** `task_runtime/hub.py` keeps one entry per live
+  execution; a follower (`event_stream.execution_frames`) registers an
+  `asyncio.Event` and is woken from the worker thread on every delta, marker,
+  and durable append (`loop.call_soon_threadsafe`). There is no SQLite poll
+  loop; an idle stream sends a heartbeat comment every 15 s. The store appends
+  `task.status` (status, active execution, bounded queue, pending decisions
+  with impact, last execution) to the running/waiting execution's log whenever
+  the derived task status or queue changes, so a following client never polls
+  `/state`.
+- **One protocol.** The `/sessions` message, stream, cancel, turn, and
+  action-prepare endpoints, the `legacy_frames` translation, and
+  `proposed_actions` are gone; `sessions/next_actions.py` keeps only the
+  deterministic proposal normaliser the summary/triage engines use.
+- **Plan tool.** `agent_runtime/plan_tools.py` registers `update_plan`
+  (≤ 12 steps × 160 chars, redacted, CoT-stripped, budget-exempt). Each call
+  is a `plan.updated` event; `stream._Segments` folds all calls of a turn into
+  ONE `plan` turn item at the first call's position; the record is never a
+  tool row and never in the Work Result's `tool_activity`.
+- **Approval policy.** `task_runtime/approval_policy.py` (`ask` ·
+  `allow_session` in process memory · `allow_always` in `app_settings`) is
+  consulted only in `runtime.request_approval`; an auto-approval is a durable
+  approved Decision (`scope = session | always`) plus `approval.granted
+  {policy}`. `survey_account(max_buckets > 100)` raises
+  `survey_account_large` through the same gate.
+- **Compaction.** `agent_runtime/compaction.py`: when the last turn's reported
+  input usage ≥ 80 % of `model_budget.context_window`, `_run_execution` runs
+  one tool-less streamed call (marker `[[storage-agent:compact]]`, private
+  loop, 60 s ceiling, seam `COMPACT_STEP`) that summarises the sanitized
+  replay into ≤ 2 000 redacted chars, stored as a new context version
+  (`summary_sanitized`, `summary_through_seq`, migration 030). The prompt
+  builder puts `conversation_summary` in the stable half and replays only
+  later messages; `context.compacted` is appended and the turn starts with a
+  `compacted` item. `POST /agent-tasks/{id}/compact` runs the same step on
+  demand (idle task only). The overflow cut marker stays as the last resort.
+- **Instructions file.** `agent_runtime/instructions.py` loads
+  `STORAGE_AGENT_DATA_DIR/AGENTS.md` (or `STORAGE_AGENT_INSTRUCTIONS`):
+  Markdown only, ≤ 8 000 chars, redacted, injected after the skills catalog in
+  the stable prompt half, never executed; `GET /settings/instructions` reports
+  status only.
+- **Tool timing.** Tool records and `tool.*` events carry `started_at` /
+  `finished_at` / `duration_ms`; *Worked for …* is the group's wall clock.
 
 ### 6.x Title step and reasoning effort (v1.10.0)
 

@@ -60,6 +60,14 @@ DECISION_KIND_PROPOSAL = "proposal"
 # action_type in this task.
 SCOPE_ONCE = "once"
 SCOPE_TASK = "task"
+# v1.12 — how an approval policy answered a gate (see task_runtime/approval_policy).
+SCOPE_SESSION = "session"
+SCOPE_ALWAYS = "always"
+_GRANT_NOTES = {
+    SCOPE_TASK: "allowed for this task earlier",
+    SCOPE_SESSION: "allowed by policy: this session",
+    SCOPE_ALWAYS: "allowed by policy: always",
+}
 
 # Bound on one persisted event payload. Structured progress records are small by
 # construction; this is the backstop that keeps the durable log from ever
@@ -184,7 +192,70 @@ def refresh_task_status(conn: sqlite3.Connection, task_id: str) -> str:
         return TASK_ARCHIVED
     set_task_status(conn, task_id, status,
                     clear_active=(status != TASK_WORKING))
+    _append_task_status_event(conn, task_id, status)
     return status
+
+
+_MAX_STATUS_QUEUE = 10
+_MAX_STATUS_DECISIONS = 10
+
+
+def task_status_payload(conn: sqlite3.Connection, task_id: str,
+                        status: str | None = None) -> dict[str, Any]:
+    """What a client needs to know about the task beside the execution it is
+    following (v1.12): derived status, the live execution, queued Directions,
+    pending Decisions (with the impact the raising tool projected), and the
+    latest execution's terminal state. Bounded — never a whole task."""
+    live = active_execution(conn, task_id)
+    queued = conn.execute(
+        "SELECT id, direction, kind, created_at FROM task_executions "
+        "WHERE task_id = ? AND status = ? ORDER BY rowid ASC LIMIT ?",
+        (task_id, EXEC_QUEUED, _MAX_STATUS_QUEUE)).fetchall()
+    pending = list_decisions(conn, task_id, status=DECISION_PENDING)[:_MAX_STATUS_DECISIONS]
+    last = conn.execute(
+        "SELECT id, status FROM task_executions WHERE task_id = ? "
+        "ORDER BY rowid DESC LIMIT 1", (task_id,)).fetchone()
+    return {
+        "status": status or derive_task_status(conn, task_id),
+        "active_execution_id": live["id"] if live else None,
+        "queued": [{"id": q["id"], "direction": (q["direction"] or "")[:200],
+                    "kind": q["kind"], "created_at": q["created_at"]} for q in queued],
+        "pending_decisions": [
+            {"id": d["id"], "action_type": d["action_type"], "title": d["title"],
+             "reason": d["reason"], "kind": d.get("kind"), "status": d["status"],
+             "execution_id": d.get("execution_id"),
+             "impact": (d.get("proposal") or {}).get("impact")
+             if isinstance(d.get("proposal"), dict) else None}
+            for d in pending],
+        "last_execution": {"id": last["id"], "status": last["status"]} if last else None,
+    }
+
+
+def _status_target_execution(conn: sqlite3.Connection, task_id: str) -> str | None:
+    """The execution log a `task.status` event belongs to: the one a follower
+    would be attached to — running, else waiting, else the newest row."""
+    row = conn.execute(
+        "SELECT id FROM task_executions WHERE task_id = ? AND status IN (?, ?) "
+        "ORDER BY rowid ASC LIMIT 1", (task_id, EXEC_RUNNING, EXEC_WAITING)).fetchone()
+    if row is None:
+        row = conn.execute(
+            "SELECT id FROM task_executions WHERE task_id = ? ORDER BY rowid DESC LIMIT 1",
+            (task_id,)).fetchone()
+    return row["id"] if row else None
+
+
+def _append_task_status_event(conn: sqlite3.Connection, task_id: str, status: str) -> None:
+    target = _status_target_execution(conn, task_id)
+    if target is None:
+        return
+    append_event(conn, target, task_id, "task.status",
+                 task_status_payload(conn, task_id, status), commit=False)
+
+
+def note_task_status(conn: sqlite3.Connection, task_id: str) -> None:
+    """Announce the task's current status/queue/pending set on the execution
+    log a follower is attached to (no status change required)."""
+    _append_task_status_event(conn, task_id, derive_task_status(conn, task_id))
 
 
 # --- task_executions ------------------------------------------------------------
@@ -420,11 +491,14 @@ def task_grant_exists(conn: sqlite3.Connection, task_id: str, action_type: str) 
 
 def record_granted_approval(conn: sqlite3.Connection, task_id: str,
                             execution_id: str | None, action_type: str, title: str,
-                            proposal: dict[str, Any]) -> dict[str, Any]:
-    """A call auto-approved by an earlier "allow for this task" grant: recorded
-    as an already-approved Decision so the transcript and audit stay complete."""
+                            proposal: dict[str, Any],
+                            scope: str = SCOPE_TASK) -> dict[str, Any]:
+    """A call auto-approved by an earlier "allow for this task" grant or by the
+    approval policy (``scope`` = task | session | always): recorded as an
+    already-approved Decision so the transcript and audit stay complete."""
     dec_id = _new_id()
     now = utcnow()
+    scope = scope if scope in _GRANT_NOTES else SCOPE_TASK
     conn.execute(
         "INSERT INTO task_decisions (id, task_id, execution_id, work_result_id, "
         "action_type, title, reason, proposal_json_sanitized, status, created_at, "
@@ -432,8 +506,8 @@ def record_granted_approval(conn: sqlite3.Connection, task_id: str,
         "VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
         (dec_id, task_id, execution_id, str(action_type)[:64],
          redact_text(str(title or ""))[:160] or None, _dumps(proposal),
-         DECISION_APPROVED, now, now, "allowed for this task earlier",
-         DECISION_KIND_APPROVAL, SCOPE_TASK),
+         DECISION_APPROVED, now, now, _GRANT_NOTES[scope],
+         DECISION_KIND_APPROVAL, scope),
     )
     return get_decision(conn, dec_id)  # type: ignore[return-value]
 
@@ -565,11 +639,17 @@ def latest_context(conn: sqlite3.Connection, task_id: str) -> dict[str, Any] | N
         "ORDER BY version DESC LIMIT 1", (task_id,)).fetchone()
     if row is None:
         return None
+    keys = row.keys()
     return {
         "task_id": row["task_id"], "version": row["version"],
         "context": _loads(row["context_json_sanitized"], {}),
         "updated_by_execution_id": row["updated_by_execution_id"],
         "created_at": row["created_at"],
+        # v1.12 — compaction summary (carried forward across versions).
+        "summary": row["summary_sanitized"] if "summary_sanitized" in keys else None,
+        "summary_through_seq": (int(row["summary_through_seq"])
+                                if "summary_through_seq" in keys
+                                and row["summary_through_seq"] is not None else None),
     }
 
 
@@ -580,15 +660,43 @@ def save_context_version(conn: sqlite3.Connection, task_id: str,
     new version number, or None when unchanged (no version churn)."""
     raw = _dumps(context_doc)
     latest = conn.execute(
-        "SELECT version, context_json_sanitized FROM task_context_versions "
-        "WHERE task_id = ? ORDER BY version DESC LIMIT 1", (task_id,)).fetchone()
+        "SELECT version, context_json_sanitized, summary_sanitized, summary_through_seq "
+        "FROM task_context_versions WHERE task_id = ? ORDER BY version DESC LIMIT 1",
+        (task_id,)).fetchone()
     if latest is not None and latest["context_json_sanitized"] == raw:
         return None
+    return _insert_context_version(
+        conn, task_id, latest, raw, execution_id,
+        summary=latest["summary_sanitized"] if latest is not None else None,
+        through_seq=latest["summary_through_seq"] if latest is not None else None)
+
+
+def save_context_summary(conn: sqlite3.Connection, task_id: str,
+                         context_doc: dict[str, Any], summary: str,
+                         through_seq: int | None,
+                         execution_id: str | None = None) -> int:
+    """v1.12 — persist a compaction summary as a NEW context version (even when
+    the typed document itself is unchanged): the summary is part of the
+    grounding the next execution starts from, so it is versioned with it."""
+    raw = _dumps(context_doc)
+    latest = conn.execute(
+        "SELECT version FROM task_context_versions WHERE task_id = ? "
+        "ORDER BY version DESC LIMIT 1", (task_id,)).fetchone()
+    return _insert_context_version(conn, task_id, latest, raw, execution_id,
+                                   summary=redact_text(str(summary))[:4000],
+                                   through_seq=through_seq)
+
+
+def _insert_context_version(conn: sqlite3.Connection, task_id: str, latest: Any,
+                            raw: str, execution_id: str | None, *,
+                            summary: str | None, through_seq: int | None) -> int:
     version = (int(latest["version"]) if latest is not None else 0) + 1
     conn.execute(
         "INSERT INTO task_context_versions (task_id, version, context_json_sanitized, "
-        "updated_by_execution_id, created_at) VALUES (?, ?, ?, ?, ?)",
-        (task_id, version, raw, execution_id, utcnow()),
+        "updated_by_execution_id, created_at, summary_sanitized, summary_through_seq) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (task_id, version, raw, execution_id, utcnow(), summary,
+         int(through_seq) if through_seq is not None else None),
     )
     conn.execute(
         "UPDATE agent_tasks SET context_version = ?, updated_at = ? WHERE id = ?",

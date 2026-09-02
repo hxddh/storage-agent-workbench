@@ -252,7 +252,13 @@ def _finalize_contract(raw: Any, skill_names: list[str], activity: list[dict[str
     contract["skills_offered"] = skill_names
     # Persist only COMPLETED tool records; transient "started" markers are for
     # the live SSE stream, not the durable transcript.
-    contract["tool_activity"] = [a for a in activity if a.get("status") != "started"]
+    # (update_plan records become the plan turn item, not a tool row.)
+    contract["tool_activity"] = [a for a in activity
+                                 if a.get("status") != "started" and a.get("tool") != "update_plan"]
+    # Every plan the model recorded, in order — the runtime persists each as a
+    # `plan.updated` event whichever loop produced the turn.
+    contract["plan_updates"] = [list(a.get("plan") or []) for a in activity
+                                if a.get("tool") == "update_plan" and a.get("status") != "started"]
     return contract
 
 

@@ -24,6 +24,7 @@ import json
 import pytest
 
 from .fake_model import FakeModel, text_turn, tool_turn
+from tests.turns import post_message
 
 SKILL = "storageops-security-iam-policy"
 
@@ -42,8 +43,7 @@ def turned(client):
         })
         assert created.status_code in (200, 201), created.text
         sid = client.post("/sessions", json={"title": "403 on acme-logs"}).json()["id"]
-        res = client.post(f"/sessions/{sid}/messages",
-                          json={"content": "why does acme-logs return 403 on list?",
+        res = post_message(client, sid, json={"content": "why does acme-logs return 403 on list?",
                                 "turn_id": "turn-1"})
         assert res.status_code == 200, res.text
         yield client, sid, res.json(), model
@@ -98,7 +98,7 @@ def test_grounding_and_turn_items_survive_the_reload(turned):
     client, sid, _, _ = turned
     msg = client.get(f"/sessions/{sid}").json()["messages"][-1]
     assert msg["grounding"]["skills_used"] == [SKILL]
-    assert msg["proposed_actions"] == []
+    assert "proposed_actions" not in msg
     assert [i["kind"] for i in msg["turn_items"]] == ["tool"]
     assert msg["turn_items"][0]["id"] == msg["tool_activity"][0]["id"]
 
@@ -143,8 +143,7 @@ def test_no_credential_value_is_sent_to_the_model(client):
             "api_key": "modelkeyprobe-UNIQUE0004",
         })
         sid = client.post("/sessions", json={"title": "s"}).json()["id"]
-        assert client.post(f"/sessions/{sid}/messages",
-                           json={"content": "check acme-logs", "turn_id": "t1"}).status_code == 200
+        assert post_message(client, sid, json={"content": "check acme-logs", "turn_id": "t1"}).status_code == 200
 
         body = json.dumps(model.requests)
         for probe in ("AKIAUNIQUEPROBE0001", "secretprobe/UNIQUE0002",
@@ -173,10 +172,8 @@ def test_a_second_turn_appends_rather_than_replacing(client):
             "base_url": model.base_url, "model": "fake-model", "api_key": "k",
         })
         sid = client.post("/sessions", json={"title": "s"}).json()["id"]
-        assert client.post(f"/sessions/{sid}/messages",
-                           json={"content": "first question", "turn_id": "t1"}).status_code == 200
-        assert client.post(f"/sessions/{sid}/messages",
-                           json={"content": "second question", "turn_id": "t2"}).status_code == 200
+        assert post_message(client, sid, json={"content": "first question", "turn_id": "t1"}).status_code == 200
+        assert post_message(client, sid, json={"content": "second question", "turn_id": "t2"}).status_code == 200
 
         detail = client.get(f"/sessions/{sid}")
         assert detail.status_code == 200, detail.text

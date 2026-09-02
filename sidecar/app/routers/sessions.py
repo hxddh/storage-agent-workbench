@@ -6,8 +6,9 @@ The session agent is a read-only tool-calling investigator (bounded, sanitized
 context; secrets never reach it) that also keeps working memory. This is NOT a
 project-management / kanban / ticketing surface.
 
-Since v0.94 the message endpoints here are SHIMS over the durable task runtime
-(`app.task_runtime`): posting a message submits a durable Execution, the SSE
+Since v1.12 there are no message/turn endpoints here: every turn is a durable
+Execution submitted through ``/agent-tasks``. This router keeps the task's
+durable CRUD, memory, runs linkage, observability, report and dataset
 variant streams that execution's durable event log translated into the legacy
 `delta`/`tool`/`done`/`error` vocabulary, and turn state/cancel read and act on
 durable execution rows. There is exactly one submission lifecycle.
@@ -19,27 +20,21 @@ import os
 import shutil
 import sqlite3
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import StreamingResponse
 
 from .. import audit, config
 from ..agent_runtime import session_agent
-from ..agent_runtime.agent_service import AgentUnavailable
 from ..db import get_conn
 from ..models.schemas import (
-    ActionRequest,
     SessionCreate,
     SessionDetail,
     SessionDatasetUploadResponse,
     SessionMemoryResolve,
     SessionMemoryUpdate,
-    SessionMessageCreate,
     SessionSummary,
-    SessionTurnState,
     SessionUpdate,
 )
 from ..repositories import model_providers as model_providers_repo
@@ -48,10 +43,8 @@ from ..repositories import session_activity
 from ..repositories import session_datasets as sds_repo
 from ..repositories import sessions as repo
 from ..security.redaction import redact_text
-from ..sessions import next_actions, session_report, summary_builder
-from ..skills import context as skill_context
+from ..sessions import session_report, summary_builder
 from ..task_runtime import artifacts as task_artifacts
-from ..task_runtime import event_stream, runtime
 from ..task_runtime import store as task_store
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -268,38 +261,6 @@ def resolve_agent_memory_item(session_id: str, mem_id: str, body: SessionMemoryR
     return _detail(conn, session_id)
 
 
-def _iso_age_ms(started_at: str | None) -> int | None:
-    if not started_at:
-        return None
-    try:
-        dt = datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return max(0, int((datetime.now(timezone.utc) - dt).total_seconds() * 1000))
-    except ValueError:
-        return None
-
-
-@router.get("/{session_id}/turn", response_model=SessionTurnState)
-def get_turn_state(session_id: str, conn: sqlite3.Connection = Depends(get_conn)):
-    """Is an execution running for this task right now?
-
-    Read from the DURABLE execution rows (v0.94), so the answer is true across
-    reloads, task switches, AND sidecar restarts — a restart no longer erases
-    the fact that work was in flight; recovery marks it `interrupted` and the
-    client sees that state through /agent-tasks/{id}/state."""
-    if repo.get_row(conn, session_id) is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    execution = task_store.active_execution(conn, session_id)
-    if execution is None:
-        return SessionTurnState(running=False)
-    started = execution.get("started_at") or execution.get("created_at")
-    return SessionTurnState(running=True, turn_id=execution.get("turn_id"),
-                            started_at=started, age_ms=_iso_age_ms(started),
-                            execution_id=execution["id"],
-                            execution_status=execution["status"])
-
-
 @router.post("/{session_id}/runs/{run_id}", response_model=SessionDetail)
 def attach_run(session_id: str, run_id: str, conn: sqlite3.Connection = Depends(get_conn)):
     if repo.get_row(conn, session_id) is None:
@@ -455,31 +416,6 @@ def get_session_report(session_id: str, conn: sqlite3.Connection = Depends(get_c
     return {"session_id": session_id, "format": "markdown", "content": content}
 
 
-@router.post("/{session_id}/actions/prepare")
-def prepare_action(session_id: str, body: ActionRequest, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
-    """Turn a proposal into a prefilled hand-over to an existing safe flow.
-
-    It only prepares; it does NOT create a run, download evidence, confirm an
-    import, or call S3/LLM. The user opens the prefilled flow and acts.
-    """
-    row = repo.get_row(conn, session_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    proposal = next_actions.normalize_proposal(body.proposal)
-    if proposal is None:
-        raise HTTPException(status_code=422, detail="proposal action_type is missing or carries a forbidden token")
-    out = next_actions.prepare(conn, dict(row), proposal)
-    audit.record(conn, "next_action_prepared",
-                 {"session_id": session_id, "action_type": proposal["action_type"], "status": out["status"]},
-                 run_id=None, session_id=session_id)
-    if out["status"] == "ready":
-        audit.record(conn, "next_action_opened",
-                     {"session_id": session_id, "action_type": proposal["action_type"], "open": out["open"]},
-                     run_id=None, session_id=session_id)
-    conn.commit()
-    return {"proposal": proposal, **out}
-
-
 @router.get("/{session_id}/messages")
 def list_session_messages(
     session_id: str,
@@ -600,129 +536,3 @@ async def upload_session_dataset(
         dataset_id=dataset_id, session_id=session_id, dataset_type=dataset_type,
         filename=filename, status="uploaded",
     )
-
-
-# How long the blocking compatibility endpoint waits for the durable execution
-# to finish before answering 409 (the execution keeps going server-side).
-_BLOCKING_WAIT_S = 150.0
-
-
-def _turn_result_envelope(conn: sqlite3.Connection, session_id: str,
-                          execution: dict[str, Any]) -> dict[str, Any]:
-    """The legacy blocking-response body, rebuilt from durable rows."""
-    wr = None
-    if execution.get("work_result_id"):
-        wr = task_store.get_work_result(conn, execution["work_result_id"])
-    grounding = (wr or {}).get("grounding") or {}
-    return {
-        "session_id": session_id,
-        "messages": repo.list_messages(conn, session_id, limit=repo.DEFAULT_MESSAGE_PAGE),
-        "message_total": repo.count_messages(conn, session_id),
-        "proposed_actions": (wr or {}).get("proposals") or [],
-        "skills_used": grounding.get("skills_used", []),
-        "skills_offered": skill_context.skill_names(),
-        "evidence_used": grounding.get("evidence_used", []),
-        "evidence_gaps": grounding.get("evidence_gaps", []),
-        "stopped": bool((wr or {}).get("stopped")),
-        # Additive durable identifiers (v0.94).
-        "execution_id": execution["id"],
-        "execution_status": execution["status"],
-        "work_result_id": execution.get("work_result_id"),
-    }
-
-
-@router.post("/{session_id}/messages")
-def post_session_message(
-    session_id: str, body: SessionMessageCreate, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
-    """Blocking compatibility turn: submit a durable Execution and wait for it.
-
-    The same durable lifecycle as the streaming endpoint — this shim only
-    changes HOW LONG the caller waits, never what runs. Idempotency is the
-    durable (task, turn_id) index: a fallback retry of a turn the streaming
-    attempt already submitted ATTACHES to that execution instead of re-running
-    it, exactly the guarantee the in-process turn registry used to provide."""
-    if repo.get_row(conn, session_id) is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    # A client that omits turn_id gets a server-side one so idempotent
-    # attachment always has a key to work with.
-    if not body.turn_id:
-        body.turn_id = uuid.uuid4().hex
-
-    execution = task_store.get_execution_by_turn(conn, session_id, body.turn_id)
-    if execution is None:
-        try:
-            execution = runtime.submit(conn, session_id, body.content, body.turn_id)
-        except AgentUnavailable as exc:
-            # Clean failure: nothing persisted; the user keeps their text.
-            raise HTTPException(status_code=422, detail=_safe_err(exc))
-    runtime.wait_for_completion(execution["id"], _BLOCKING_WAIT_S)
-    current = task_store.get_execution(conn, execution["id"]) or execution
-    if current["status"] == task_store.EXEC_FAILED:
-        raise HTTPException(status_code=502,
-                            detail=redact_text(current.get("error") or "the turn failed"))
-    if current["status"] in task_store.EXEC_ACTIVE_STATUSES:
-        raise HTTPException(status_code=409, detail="turn still in progress")
-    if current["status"] == task_store.EXEC_INTERRUPTED:
-        raise HTTPException(status_code=502,
-                            detail="the sidecar restarted while this turn was in flight; "
-                                   "resume it from the task")
-    return _turn_result_envelope(conn, session_id, current)
-
-
-@router.post("/{session_id}/turns/{turn_id}/cancel")
-def cancel_turn(session_id: str, turn_id: str,
-                conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
-    """Ask a running turn to stop. Contract (the frontend wires against this):
-
-    - 200 {"status": "cancelling"} — the execution is active; it was asked to
-      stop. The runtime persists the PARTIAL Work Result with "stopped": true.
-    - 200 {"status": "completed"} — the execution already finished.
-    - 404 — no execution is (or was) recorded for this turn.
-    """
-    if repo.get_row(conn, session_id) is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    execution = task_store.get_execution_by_turn(conn, session_id, turn_id)
-    if execution is None:
-        raise HTTPException(status_code=404, detail="unknown turn")
-    if execution["status"] not in task_store.EXEC_ACTIVE_STATUSES:
-        return {"status": "completed"}
-    runtime.stop(conn, execution["id"])
-    audit.record(conn, "session.turn.cancel", {"session_id": session_id, "turn_id": turn_id},
-                 run_id=None, session_id=session_id)
-    conn.commit()
-    return {"status": "cancelling"}
-
-
-@router.post("/{session_id}/messages/stream")
-async def post_session_message_stream(
-    session_id: str, body: SessionMessageCreate,
-    conn: sqlite3.Connection = Depends(get_conn)
-):
-    """Streaming compatibility turn (SSE): submits a durable Execution and
-    streams its durable event log in the legacy vocabulary — `tool` events as
-    the agent investigates, `delta` events as the answer is generated, a final
-    `done`. 422 (like the blocking path) when no model is configured.
-
-    Because the stream is a VIEW over durable events, a dropped connection no
-    longer needs a blocking re-run to recover: the execution keeps going and
-    any later attach replays what was missed."""
-    if repo.get_row(conn, session_id) is None:
-        raise HTTPException(status_code=404, detail="session not found")
-    if not body.turn_id:
-        body.turn_id = uuid.uuid4().hex
-
-    # A second stream for a turn that is already registered would double-report
-    # the same execution; decline symmetrically with the historical contract —
-    # the client falls back to POST /messages, which attaches durably.
-    if task_store.get_execution_by_turn(conn, session_id, body.turn_id) is not None:
-        raise HTTPException(status_code=409, detail="turn already in progress")
-    try:
-        execution = runtime.submit(conn, session_id, body.content, body.turn_id)
-    except AgentUnavailable as exc:
-        raise HTTPException(status_code=422, detail=_safe_err(exc))
-
-    return StreamingResponse(event_stream.legacy_frames(execution["id"]),
-                             media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache",
-                                      "X-Accel-Buffering": "no"})

@@ -16,6 +16,7 @@ import time
 import pytest
 
 from app.agent_runtime import session_agent
+from tests.turns import post_message
 
 MODEL_KEY = "sk-TESTKEY-DONOTLEAK-0001"
 
@@ -442,8 +443,7 @@ def test_legacy_blocking_endpoint_rides_the_durable_runtime(client, monkeypatch)
     task = _task(client)
     _add_model_provider(client)
     monkeypatch.setattr(session_agent, "SESSION_LOOP", lambda spec: _contract("legacy ok"))
-    r = client.post(f"/sessions/{task['id']}/messages",
-                    json={"content": "hello", "turn_id": "legacy1"})
+    r = post_message(client, task['id'], json={"content": "hello", "turn_id": "legacy1"})
     assert r.status_code == 200
     body = r.json()
     assert body["execution_id"]
@@ -454,12 +454,15 @@ def test_legacy_blocking_endpoint_rides_the_durable_runtime(client, monkeypatch)
 
 
 def test_no_second_submit_path(client):
-    """Executable architecture guard: the sessions router owns NO turn loop of
-    its own — both message endpoints delegate to the task runtime."""
+    """Executable architecture guard (v1.12): the sessions router owns NO turn
+    path at all — every turn is submitted through /agent-tasks."""
     import pathlib
     src = (pathlib.Path(__file__).resolve().parents[1] /
            "app" / "routers" / "sessions.py").read_text()
-    assert "runtime.submit" in src
+    assert "runtime.submit" not in src
+    for retired in ("/messages/stream", "/turns/{turn_id}/cancel", "actions/prepare",
+                    "legacy_frames", "wait_for_completion", "next_actions"):
+        assert retired not in src, retired
     assert "threading.Thread" not in src
     assert "turn_guard" not in src
     assert "session_agent.answer(" not in src

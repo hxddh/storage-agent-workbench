@@ -148,9 +148,9 @@ def test_report_bounds_a_runaway_memory_and_says_so(client, conn):
 
 def test_turn_state_is_not_running_by_default(client, conn):
     sid = _session(client)
-    body = client.get(f"/sessions/{sid}/turn").json()
-    assert body["running"] is False and body["turn_id"] is None
-    assert client.get("/sessions/missing/turn").status_code == 404
+    body = client.get(f"/agent-tasks/{sid}/state").json()
+    assert body["active_execution"] is None
+    assert client.get("/agent-tasks/missing/state").status_code == 404
 
 
 def _register_execution(conn, session_id: str, turn_id: str) -> str:
@@ -166,26 +166,26 @@ def test_turn_state_reports_a_live_turn_and_stops_when_it_ends(client, conn):
     from app.task_runtime import store as task_store
     sid = _session(client)
     exec_id = _register_execution(conn, sid, "turn-abc")
-    body = client.get(f"/sessions/{sid}/turn").json()
+    body = client.get(f"/agent-tasks/{sid}/state").json()
     # This is the whole point: a client that reloaded mid-turn has no local
     # state, and must be able to learn the turn is still running. Since v0.94
     # the answer comes from the DURABLE execution row, so it also survives a
     # sidecar restart (where recovery marks the execution interrupted).
-    assert body["running"] is True
-    assert body["turn_id"] == "turn-abc"
-    assert body["started_at"] and body["age_ms"] is not None
-    assert body["execution_id"] == exec_id
+    active = body["active_execution"]
+    assert active is not None
+    assert active["turn_id"] == "turn-abc"
+    assert active["id"] == exec_id
 
     task_store.set_execution_status(conn, exec_id, task_store.EXEC_COMPLETED)
     conn.commit()
-    assert client.get(f"/sessions/{sid}/turn").json()["running"] is False
+    assert client.get(f"/agent-tasks/{sid}/state").json()["active_execution"] is None
 
 
 def test_a_turn_is_never_reported_for_another_session(client, conn):
     a, b = _session(client, "a"), _session(client, "b")
     _register_execution(conn, a, "turn-xyz")
-    assert client.get(f"/sessions/{a}/turn").json()["running"] is True
-    assert client.get(f"/sessions/{b}/turn").json()["running"] is False
+    assert client.get(f"/agent-tasks/{a}/state").json()["active_execution"] is not None
+    assert client.get(f"/agent-tasks/{b}/state").json()["active_execution"] is None
 
 
 def test_attached_files_are_listed_without_their_filesystem_paths(client, conn):

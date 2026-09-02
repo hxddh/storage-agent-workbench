@@ -184,7 +184,7 @@ def test_turn_items_persist_on_the_assistant_message(client, monkeypatch):
     assert assistant["content"] == "Two buckets."
     assert assistant["turn_items"] == [{"kind": "message", "text": "Listing buckets first."},
                                        {"kind": "tool", "id": "c1"}]
-    assert assistant["proposed_actions"] == []
+    assert "proposed_actions" not in assistant
     # No proposal-derived Decision exists any more.
     state = client.get(f"/agent-tasks/{task['id']}/state").json()
     assert state["pending_decisions"] == []
@@ -408,3 +408,164 @@ def test_live_stream_interleaves_deltas_and_durable_events_in_worker_order(clien
     frames = asyncio.run(collect())
     types = [line.split(": ", 1)[1] for f in frames for line in f.splitlines() if line.startswith("event: ")]
     assert types[-2:] == ["message.completed", "end"] or types[-1] == "end"
+
+
+# --- v1.12: push transport -------------------------------------------------------
+
+
+def test_follower_wakes_on_hub_events_without_polling(client, monkeypatch):
+    """The SSE follower sleeps on the hub's wakeup and reads SQLite only when
+    something happened: over a quiet second on a live execution it issues no
+    event query at all, and a delta pushed from another thread reaches it
+    without waiting for any poll interval."""
+    import asyncio
+    from app.db import connect
+    from app.task_runtime import event_stream, hub, store
+
+    task = _task(client)
+    conn = connect()
+    try:
+        store.ensure_task(conn, task["id"])
+        execution = store.create_execution(conn, task["id"], "quiet", "w2")
+        store.set_execution_status(conn, execution["id"], store.EXEC_RUNNING)
+        conn.commit()
+    finally:
+        conn.close()
+    hub.open_live(execution["id"])
+    reads = {"n": 0}
+    real_list = store.list_events
+
+    def counting_list(*a, **k):
+        reads["n"] += 1
+        return real_list(*a, **k)
+
+    monkeypatch.setattr(event_stream.store, "list_events", counting_list)
+
+    async def drive():
+        frames = []
+        gen = event_stream.execution_frames(execution["id"], after_seq=0)
+        # Quiet second: nothing arrives, nothing is read after the first drain.
+        task_ = asyncio.ensure_future(gen.__anext__())
+        await asyncio.sleep(1.0)
+        baseline = reads["n"]
+        assert not task_.done()
+        # A delta from the worker thread wakes the follower promptly.
+        t0 = asyncio.get_running_loop().time()
+        await asyncio.get_running_loop().run_in_executor(
+            None, hub.push_delta, execution["id"], "hello")
+        frame = await asyncio.wait_for(task_, 1.0)
+        assert "hello" in frame and asyncio.get_running_loop().time() - t0 < 0.5
+        frames.append(frame)
+        hub.mark_done(execution["id"])
+        conn2 = connect()
+        try:
+            store.set_execution_status(conn2, execution["id"], store.EXEC_COMPLETED)
+            conn2.commit()
+        finally:
+            conn2.close()
+        async for f in gen:
+            frames.append(f)
+        return baseline, frames
+
+    baseline, frames = asyncio.run(drive())
+    # The first drain reads once; the quiet second reads nothing more.
+    assert baseline <= 2, baseline
+    assert frames[-1].startswith("event: end")
+
+
+def test_task_status_rides_the_execution_stream(client, monkeypatch):
+    """Queued Directions and pending approvals reach a follower as
+    `task.status` events, so it never polls /state while attached."""
+    task = _task(client)
+    _add_model_provider(client)
+    release = threading.Event()
+
+    def slow_loop(spec):
+        release.wait(5.0)
+        return {"answer": "done", "skills_used": [], "skills_offered": [], "evidence_used": [],
+                "evidence_gaps": [], "tool_activity": []}
+
+    monkeypatch.setattr(session_agent, "SESSION_LOOP", slow_loop)
+    first = client.post(f"/agent-tasks/{task['id']}/executions",
+                        json={"direction": "one"}).json()["execution"]
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and client.get(
+            f"/agent-tasks/{task['id']}/executions/{first['id']}").json()["status"] != "running":
+        time.sleep(0.02)
+    second = client.post(f"/agent-tasks/{task['id']}/executions",
+                         json={"direction": "two"}).json()["execution"]
+    release.set()
+    _wait_settled(client, task["id"], first["id"])
+    _wait_settled(client, task["id"], second["id"])
+    rows = client.get(f"/agent-tasks/{task['id']}/events?after=0&limit=1000").json()["events"]
+    statuses = [e for e in rows if e["event_type"] == "task.status"]
+    assert statuses, [e["event_type"] for e in rows]
+    # While the first ran, a status event on ITS log listed the second as queued.
+    seen_queued = [e for e in statuses if e["execution_id"] == first["id"]
+                   and any(q["id"] == second["id"] for q in e["payload"]["queued"])]
+    assert seen_queued
+    assert statuses[-1]["payload"]["status"] == "ready"
+    assert statuses[-1]["payload"]["queued"] == []
+
+
+# --- v1.12: the plan the model owns -------------------------------------------------
+
+
+def test_update_plan_is_a_bounded_core_tool_that_becomes_one_plan_item(client, monkeypatch):
+    from agents import function_tool
+    from app.agent_runtime import limits, plan_tools
+
+    assert "update_plan" in limits._CORE_TOOLS
+    activity: list = []
+    assert plan_tools.build(function_tool, activity)[0].name == "update_plan"
+    steps = [{"text": "Survey the account", "status": "completed"},
+             {"text": "Check acme-logs policy <think>secret</think>", "status": "in_progress"},
+             {"text": "x" * 500, "status": "bogus"}] + [{"text": f"s{i}", "status": "pending"} for i in range(20)]
+    norm = plan_tools.normalize_steps(steps)
+    assert len(norm) == plan_tools.MAX_STEPS
+    assert norm[1] == {"text": "Check acme-logs policy", "status": "in_progress"}
+    assert len(norm[2]["text"]) == plan_tools.MAX_STEP_CHARS and norm[2]["status"] == "pending"
+
+    # Through the runtime: two calls → ONE plan item at the first call's
+    # position, updated in place; a `plan.updated` event per call; the plan is
+    # not a tool row of the Work Result.
+    task = _task(client)
+    _add_model_provider(client)
+
+    def fake_loop(spec):
+        spec["activity"].append({"id": "p1", "tool": "update_plan", "target": "2 steps",
+                                 "result": "0/2 done", "ok": True, "status": "completed",
+                                 "plan": [{"text": "A", "status": "in_progress"}, {"text": "B", "status": "pending"}]})
+        spec["activity"].append({"id": "c1", "tool": "head_bucket", "target": "acme",
+                                 "result": "200", "ok": True, "status": "completed"})
+        spec["activity"].append({"id": "p2", "tool": "update_plan", "target": "2 steps",
+                                 "result": "2/2 done", "ok": True, "status": "completed",
+                                 "plan": [{"text": "A", "status": "completed"}, {"text": "B", "status": "completed"}]})
+        return {"answer": "Done.", "skills_used": [], "skills_offered": [], "evidence_used": [],
+                "evidence_gaps": [],
+                "tool_activity": [a for a in spec["activity"] if a["tool"] != "update_plan"],
+                "plan_updates": [a["plan"] for a in spec["activity"] if a["tool"] == "update_plan"],
+                "turn_items": [{"kind": "plan", "steps": [{"text": "A", "status": "completed"},
+                                                          {"text": "B", "status": "completed"}]},
+                               {"kind": "tool", "id": "c1", "tool": "head_bucket"}]}
+
+    monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
+    ex = client.post(f"/agent-tasks/{task['id']}/executions", json={"direction": "plan it"}).json()["execution"]
+    assert _wait_settled(client, task["id"], ex["id"])["status"] == "completed"
+    msg = [m for m in client.get(f"/sessions/{task['id']}").json()["messages"] if m["role"] == "assistant"][-1]
+    assert msg["turn_items"][0] == {"kind": "plan", "steps": [{"text": "A", "status": "completed"},
+                                                              {"text": "B", "status": "completed"}]}
+    assert [a["tool"] for a in msg["tool_activity"]] == ["head_bucket"]
+    events = client.get(f"/agent-tasks/{task['id']}/events?after=0&limit=1000").json()["events"]
+    plans = [e["payload"]["steps"] for e in events if e["event_type"] == "plan.updated"]
+    assert len(plans) == 2 and plans[-1][0]["status"] == "completed"
+
+
+def test_stream_folds_update_plan_calls_into_one_plan_item():
+    from app.agent_runtime.stream import _Segments
+    seg = _Segments()
+    seg.tool({"id": "p1", "tool": "update_plan", "status": "completed", "plan": [{"text": "A", "status": "in_progress"}]})
+    seg.tool({"id": "t1", "tool": "head_bucket", "status": "completed"})
+    seg.tool({"id": "p2", "tool": "update_plan", "status": "completed", "plan": [{"text": "A", "status": "completed"}]})
+    assert seg.items == [{"kind": "plan", "steps": [{"text": "A", "status": "completed"}]},
+                         {"kind": "tool", "id": "t1", "tool": "head_bucket"}]

@@ -23,6 +23,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from app.agent_runtime.compaction import COMPACT_MARKER
 from app.task_runtime.titling import TITLE_MARKER
 
 
@@ -74,7 +75,7 @@ class FakeModel:
     """
 
     def __init__(self, turns: list[list[bytes]], delay_s: float = 0.0,
-                 title: str | None = None):
+                 title: str | None = None, compaction: str | None = None):
         self.turns = turns
         self.delay_s = delay_s
         # v1.10.0 — the runtime's title step is a separate bounded request
@@ -84,6 +85,9 @@ class FakeModel:
         # None answers nothing, which keeps the deterministic seed title.
         self.title = title
         self.title_requests: list[dict] = []
+        # v1.12 — the compaction step is another marked, tool-less request.
+        self.compaction = compaction
+        self.compaction_requests: list[dict] = []
         self.requests: list[dict] = []
         self._i = 0
         self._lock = threading.Lock()
@@ -101,9 +105,13 @@ class FakeModel:
                     parsed = json.loads(body or b"{}")
                 except ValueError:
                     parsed = {}
-                if TITLE_MARKER in (body or b"").decode("utf-8", "replace"):
+                text_body = (body or b"").decode("utf-8", "replace")
+                if TITLE_MARKER in text_body:
                     fake.title_requests.append(parsed)
                     chunks = text_turn(fake.title or "")
+                elif COMPACT_MARKER in text_body:
+                    fake.compaction_requests.append(parsed)
+                    chunks = text_turn(fake.compaction or "")
                 else:
                     fake.requests.append(parsed)
                     with fake._lock:

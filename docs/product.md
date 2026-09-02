@@ -223,7 +223,8 @@ v1.10.0 is the native Agent window on a native shell. Visual language is specifi
 - Composer is the Agent input and the empty-start surface: `+` attach, textarea, model chip, and a round send (↑) at rest; Steer (↑) + Stop (■) while working. No wizard, no `/` SKU menu, no attach-type chips, no persistent keyboard legend, no approval-mode chip.
 - The title bar carries the task name and its real state. Artifacts open from the document in the Artifacts panel beside it (⌘I). ⌘K works; it is not painted. New task is a button; the shortcut is not painted on it.
 - Task navigation is one chronological title list. State is a row mark; Ready paints nothing. Rename and Delete only.
-- Settings is a centered dialog: General · Model Providers · Cloud Providers · Skills & bridges · Safety.
+- Settings is a centered dialog: General · Model Providers · Cloud Providers · Skills & bridges · Safety. Safety (v1.12) holds the read-only floor statement, the **Approvals** policy control (Ask every time · Allow for this session · Always allow) with the list of gated tools, and nothing else; Skills & bridges gains **Open instructions file** (`AGENTS.md` in the data directory).
+- The transcript shows the model's own plan as one quiet checklist card (`update_plan`, v1.12) that updates in place and folds to *Plan · n/n* when done; a context compaction is one muted line *Context compacted · 48k → 9k tokens*; an approval the policy answered says so on the card. ⌘K offers **Compact context** for an idle task.
 - Every non-ideal state (empty list, no Evidence, offline, interrupted, load earlier) is designed. Copy is restrained, specific, and bilingual.
 - Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped as Actions vs Tasks. It is not a Review destination menu.
 - Perceived latency: cached task documents render instantly on switch; never flash an empty canvas while the durable document is already known.

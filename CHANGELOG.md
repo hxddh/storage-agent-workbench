@@ -6,6 +6,33 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-09-03
+
+_Native all the way through — one protocol, a push-driven event stream, the model's own plan, an approval policy, context compaction, `AGENTS.md`, Execution detail from the durable log, and the frontend split by responsibility. Migration **030** (`task_context_versions.summary_sanitized` / `summary_through_seq`)._
+
+### Added
+
+- **`task.status` on the execution stream** — appended whenever the task's derived status, queue, or pending-decision set changes; a following client no longer polls `/state`. The Sidecar follower is woken by the in-process hub (`asyncio` waiters bridged from the worker thread) instead of polling SQLite every 120 ms; idle streams heartbeat every 15 s.
+- **`update_plan` tool** — the model keeps a ≤ 12-step checklist (redacted, CoT-stripped, budget-exempt); each call is a `plan.updated` event and ONE `plan` turn item per turn, rendered as a quiet plan card that updates in place and folds to *Plan · n/n*.
+- **Approval policy** — `GET/PUT /settings/approval-policy` (`ask` · `allow_session` · `allow_always`) enforced only in `runtime.request_approval`; every auto-approval is a durable approved Decision (`scope = session | always`) and an `approval.granted {policy}` event the card shows. Settings → Safety is a native pane: the floor statement, the Approvals control, the gated-tool list.
+- **Large-survey gate** — `survey_account(max_buckets > 100)` raises `survey_account_large` through the same gate with `{provider, buckets, estimated_calls}`; outside a durable execution the cap is clamped, never widened.
+- **Context compaction** — `agent_runtime/compaction.py`: at 80 % of the model's window the runtime runs one tool-less summary step before the model loop, stores the bounded redacted summary on the typed context, appends `context.compacted {before_tokens, after_tokens, summary_chars}`, and replays only later messages. `POST /agent-tasks/{id}/compact` runs it on demand; ⌘K **Compact context**; a muted *Context compacted* line in the transcript; the context meter drops accordingly.
+- **`AGENTS.md`** — standing instructions from `STORAGE_AGENT_DATA_DIR/AGENTS.md` (or `STORAGE_AGENT_INSTRUCTIONS`), ≤ 8 000 chars, redacted, injected after the skills catalog in the stable prompt half; `GET /settings/instructions`; Skills & bridges → **Open instructions file** (Tauri `open_app_folder("data")`).
+- **Tool timing** — tool records and `tool.*` events carry `started_at` / `finished_at` / `duration_ms`; *Worked for …* is the group's wall clock (live from the first row's start), never a sum.
+- Contracts: Sidecar `tests/test_v112_native_protocol.py` and `tests/turns.py` (the execution-API test helper); frontend `architecture.test.ts` v1.12 block, follower/plan/policy/compaction/execution-detail unit tests, E2E specs and gallery captures.
+
+### Changed
+
+- **Execution detail** is built from `task_executions` + the durable `execution_events` log + one sanitized `tool_calls` row on demand; no `EventSource` on `/runs`, no `/runs` API in the product UI.
+- Frontend split: the Task document (`TaskDocument` · `TaskBanners` · `TaskComposerHost` · `useApprovals`) and `api/runtime.ts` · `api/tasks.ts` · `api/settings.ts` · `api/providers.ts` behind the `api.ts` barrel; `useSessionDocument` reads `task.status` while following.
+- `sessions/next_actions.py` keeps only the deterministic proposal normaliser the summary/triage engines use.
+- `approval.granted` carries `policy`; `record_granted_approval` takes a scope.
+
+### Removed
+
+- `POST /sessions/{id}/messages`, `POST /sessions/{id}/messages/stream`, `POST /sessions/{id}/turns/{turn_id}/cancel`, `GET /sessions/{id}/turn`, `POST /sessions/{id}/actions/prepare`, the `legacy_frames` translation, `SessionMessage.proposed_actions`, `SessionMessageCreate` / `ActionRequest` / `SessionTurnState`, and the frontend clients that used them (`cancelSessionTurn`, `getSessionTurn`, evidence-import clients, the runner's legacy branch).
+- The Sidecar SSE poll loop and the 1.5 s client `/state` poll while following.
+
 ## [1.11.0] - 2026-09-02
 
 _Codex parity all the way down — a transcript turn, approvals raised inline by the gated tool, an Artifacts panel, the runtime split by responsibility. Migration **029** (`session_messages.turn_items`; `task_decisions.kind` / `scope`)._

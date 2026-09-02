@@ -447,8 +447,11 @@ fn set_window_title(window: tauri::Window, title: String) -> Result<(), String> 
 /// tool: no arbitrary path, no read, no write beyond `create_dir_all`.
 #[tauri::command]
 fn open_app_folder(app: tauri::AppHandle, sub: String) -> Result<String, String> {
+    // "skills": the user-skills folder; "data": the app-data root itself (where
+    // AGENTS.md lives, v1.12). Anything else is refused — never a caller-chosen path.
     let sub = match sub.as_str() {
         "skills" => "skills",
+        "data" => "",
         _ => return Err("unknown app folder".to_string()),
     };
     let dir = app

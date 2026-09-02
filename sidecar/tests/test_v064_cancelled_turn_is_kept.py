@@ -40,41 +40,56 @@ def _provider(client, model):
     })
 
 
+def _follow(client, sid, execution_id, stop_after: int | None = None):
+    """Follow the execution's durable SSE stream; return (event, data) pairs."""
+    events = []
+    with client.stream("GET", f"/agent-tasks/{sid}/executions/{execution_id}/events?after=0") as res:
+        assert res.status_code == 200, res.read()
+        kind = None
+        seen = 0
+        for line in res.iter_lines():
+            line = line if isinstance(line, str) else line.decode()
+            if line.startswith("event:"):
+                kind = line.split(":", 1)[1].strip()
+            elif line.startswith("data:"):
+                raw = line.split(":", 1)[1].strip()
+                try:
+                    events.append((kind, json.loads(raw)))
+                except ValueError:
+                    events.append((kind, raw))
+                seen += 1
+                if stop_after is not None and seen >= stop_after:
+                    break  # hang up mid-answer, the way the client does
+                if kind == "end":
+                    break
+    return events
+
+
 def _run_and_cancel(client, cancel_after_s: float = 0.6):
-    """Start a streamed turn, cancel it mid-answer, return (session_id, events)."""
+    """Start a turn, stop it mid-answer, return (session_id, events)."""
     with FakeModel([text_turn(LONG)], delay_s=0.05) as model:
         _provider(client, model)
         sid = client.post("/sessions", json={"title": "acme-logs"}).json()["id"]
+        r = client.post(f"/agent-tasks/{sid}/executions",
+                        json={"direction": "why does acme-logs return 403?", "turn_id": "turn-1"})
+        assert r.status_code in (200, 201), r.text
+        execution_id = r.json()["execution"]["id"]
 
         def cancel_soon():
             time.sleep(cancel_after_s)
-            client.post(f"/sessions/{sid}/turns/turn-1/cancel")
+            client.post(f"/agent-tasks/{sid}/executions/{execution_id}/stop")
 
         t = threading.Thread(target=cancel_soon, daemon=True)
         t.start()
-        events = []
-        with client.stream("POST", f"/sessions/{sid}/messages/stream",
-                           json={"content": "why does acme-logs return 403?",
-                                 "turn_id": "turn-1"}) as res:
-            assert res.status_code == 200, res.read()
-            kind = None
-            for line in res.iter_lines():
-                line = line if isinstance(line, str) else line.decode()
-                if line.startswith("event:"):
-                    kind = line.split(":", 1)[1].strip()
-                elif line.startswith("data:"):
-                    raw = line.split(":", 1)[1].strip()
-                    try:
-                        events.append((kind, json.loads(raw)))
-                    except ValueError:
-                        events.append((kind, raw))
+        events = _follow(client, sid, execution_id)
         t.join(timeout=5)
         return sid, events
 
 
 def test_the_cancelled_turn_reports_that_it_was_stopped(client):
     _, events = _run_and_cancel(client)
-    done = [d for k, d in events if k == "done"]
+    done = [d["payload"] for k, d in events if k == "execution.status"
+            and isinstance(d, dict) and d.get("payload", {}).get("status") == "cancelled"]
     assert done, [k for k, _ in events]
     assert done[-1].get("stopped") is True
 
@@ -115,12 +130,12 @@ def test_cancelling_before_any_text_still_keeps_the_question(client):
 
 def test_the_turn_is_released_so_the_next_one_is_not_queued_behind_it(client):
     sid, _ = _run_and_cancel(client)
-    assert client.get(f"/sessions/{sid}/turn").json()["running"] is False
+    assert client.get(f"/agent-tasks/{sid}/state").json()["active_execution"] is None
 
 
-def test_cancelling_an_unknown_turn_is_a_404_not_a_crash(client):
+def test_stopping_an_unknown_execution_is_a_404_not_a_crash(client):
     sid = client.post("/sessions", json={"title": "s"}).json()["id"]
-    assert client.post(f"/sessions/{sid}/turns/nope/cancel").status_code == 404
+    assert client.post(f"/agent-tasks/{sid}/executions/nope/stop").status_code == 404
 
 
 @pytest.mark.parametrize("after", [0.05, 0.3, 0.6, 1.0])
@@ -140,16 +155,10 @@ def test_hanging_up_mid_stream_does_not_throw_the_exchange_away(client):
     with FakeModel([text_turn(LONG)], delay_s=0.05) as model:
         _provider(client, model)
         sid = client.post("/sessions", json={"title": "acme-logs"}).json()["id"]
-        with client.stream("POST", f"/sessions/{sid}/messages/stream",
-                           json={"content": "why does acme-logs return 403?",
-                                 "turn_id": "turn-1"}) as res:
-            assert res.status_code == 200
-            seen = 0
-            for line in res.iter_lines():
-                if (line if isinstance(line, str) else line.decode()).startswith("data:"):
-                    seen += 1
-                    if seen >= 3:
-                        break  # hang up mid-answer, the way the client does
+        r = client.post(f"/agent-tasks/{sid}/executions",
+                        json={"direction": "why does acme-logs return 403?", "turn_id": "turn-1"})
+        assert r.status_code in (200, 201)
+        _follow(client, sid, r.json()["execution"]["id"], stop_after=3)
         # Give the worker a moment to finish and persist.
         for _ in range(60):
             msgs = client.get(f"/sessions/{sid}").json()["messages"]

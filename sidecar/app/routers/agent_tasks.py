@@ -26,7 +26,6 @@ from ..db import get_conn
 from ..models.schemas import SessionSummary
 from ..repositories import sessions as sessions_repo
 from ..security.redaction import redact_text
-from ..sessions import next_actions
 from ..task_runtime import context as task_context
 from ..task_runtime import event_stream, provenance, runtime, store
 
@@ -139,12 +138,15 @@ def _with_impact(conn: sqlite3.Connection, task_id: str,
                  decision: dict[str, Any]) -> dict[str, Any]:
     out = dict(decision)
     proposal = decision.get("proposal") if isinstance(decision.get("proposal"), dict) else {}
-    if decision.get("kind") == store.DECISION_KIND_APPROVAL and isinstance(proposal.get("impact"), dict):
+    if isinstance(proposal.get("impact"), dict):
         # An inline approval projected its impact when the tool raised it
         # (bounded plan counts, bucket, prefix) — that projection is the truth.
         out["impact"] = proposal["impact"]
     else:
-        out["impact"] = next_actions.project_impact(conn, task_id, decision)
+        # A pre-1.11 proposal-derived row: nothing was planned, say so.
+        out["impact"] = {"gate": "confirmation", "why": decision.get("reason"),
+                         "bucket": None, "prefix": None, "source_type": None,
+                         "file_count": None, "total_bytes": None, "scan_scope": None}
     return out
 
 
@@ -380,6 +382,30 @@ def put_revisit(task_id: str, body: RevisitScheduleIn,
     row = revisit_mod.set_schedule(
         conn, task_id, interval_days=body.interval_days, enabled=body.enabled)
     return {"task_id": task_id, "schedule": row}
+
+
+@router.post("/{task_id}/compact")
+def compact_context(task_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+    """v1.12 — run the compaction step on demand (palette: Compact context).
+    Only for a task with no live execution; the same step the runtime runs
+    automatically when the window fills. Appends ``context.compacted`` to the
+    task's event log (no execution) and returns the figures for the meter."""
+    _task_or_404(conn, task_id)
+    if store.active_execution(conn, task_id) is not None:
+        raise HTTPException(status_code=409, detail="an execution is active on this task")
+    from ..agent_runtime import compaction
+    from ..agent_runtime.agent_service import get_model_credentials
+    try:
+        creds = get_model_credentials(conn)
+    except AgentUnavailable as exc:
+        raise HTTPException(status_code=422, detail=redact_text(str(exc)))
+    out = compaction.compact(conn, task_id, creds, None)
+    if not out:
+        return {"compacted": False, "reason": "nothing to compact or no usable summary"}
+    payload = {k: out.get(k) for k in ("before_tokens", "after_tokens", "summary_chars")}
+    store.append_event(conn, "", task_id, "context.compacted", payload)
+    conn.commit()
+    return {"compacted": True, **payload}
 
 
 @router.post("/{task_id}/verify", status_code=status.HTTP_201_CREATED)
