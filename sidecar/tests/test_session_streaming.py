@@ -200,10 +200,12 @@ def test_stream_deltas_are_cot_stripped_and_tail_held():
     assert deltas.strip().endswith("Done.")
 
 
-def test_stream_holds_back_contract_json_block():
+def test_stream_delivers_json_examples_as_ordinary_markdown():
+    """v1.11: no metadata block exists, so a fenced JSON example (a policy)
+    streams like any other Markdown instead of being held back."""
     parts = [
-        "Here is the answer.\n",
-        '```json\n{"skills_used": [], "next_action_proposals": []}\n```',
+        "Here is the policy.\n",
+        '```json\n{"Effect": "Deny", "Action": "s3:ListBucket"}\n```',
     ]
 
     class FakeResult:
@@ -215,9 +217,8 @@ def test_stream_holds_back_contract_json_block():
 
     events = _drive(FakeResult())
     deltas = "".join(d for k, d in events if k == "delta")
-    assert "Here is the answer." in deltas
-    assert "next_action_proposals" not in deltas  # contract block never visible
-    assert "```json" not in deltas
+    assert "Here is the policy." in deltas
+    assert '"Effect": "Deny"' in deltas
 
 
 # --- (fix 3) cancellation stops promptly + persists a partial answer ---------

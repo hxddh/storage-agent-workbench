@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { seedOptimizationTask } from "./seed";
 
-test("clicking a finding opens Review Evidence anchored to that finding", async ({ page }) => {
+test("clicking a finding opens Artifacts › Evidence anchored to that finding", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("saw.lang", "en");
     localStorage.setItem("saw.onboarded", "1");
@@ -16,7 +16,7 @@ test("clicking a finding opens Review Evidence anchored to that finding", async 
   await mark.hover();
   await expect(page.getByTestId("provenance-preview").first()).toBeVisible();
   await mark.click();
-  await expect(page.getByTestId("agent-review-panel")).toBeVisible();
+  await expect(page.getByTestId("agent-artifacts-panel")).toBeVisible();
   await expect(page.getByTestId("evidence-review")).toBeVisible();
   const row = page.locator(`#finding-${findingId}`);
   await expect(row).toBeVisible();

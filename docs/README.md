@@ -1,6 +1,6 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.10.0** (`v1.10.0`).
+> **Current architecture baseline: Storage Agent v1.11.0** (`v1.11.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
@@ -17,7 +17,12 @@
 > bridge; the runtime names tasks after the first Work Result and takes a
 > reasoning effort for models that accept one; Execution detail and the
 > provider panes are native documents; the pre-v0.94 message client is gone.
-> Migration head is **028**.
+> **v1.11.0 is Codex parity all the way down.** A turn is a transcript: user
+> bubble, commentary segments, one *Worked for …* group, an inline approval
+> card where the gated `import_evidence` tool raised it, then the answer as
+> plain Markdown. No metadata JSON block, no proposal list, no separate import
+> dialog; Artifacts is a right split panel; the Agent runtime is split by
+> responsibility. Migration head is **029**.
 
 This directory documents the currently shipped Storage Agent architecture and operating contracts. It is deliberately organized so implementation agents and contributors do not reconstruct older product shells from historical terminology that still exists in persistence, APIs, release notes, or git history.
 
@@ -45,9 +50,9 @@ Use these terms in product-facing and new frontend architecture work:
 | **Agent Task** | The durable unit of delegated work and the primary application object. |
 | **Direction** | User objective, constraint, correction, or steering input. |
 | **Execution** | Real runtime/tool work; never a synthetic plan. Shown as tool rows in the document. |
-| **Decision required** | A real confirmation boundary that blocks gated work. |
+| **Approval** (Waiting for approval) | A real confirmation boundary a gated tool raises inside the Execution; Allow · Allow for this task · Deny. |
 | **Work Result** | Durable Agent output for a Task, including inline figures. |
-| **Artifact** | Reviewable Evidence, Execution detail, or Report, opened as an overlay. |
+| **Artifact** | Evidence, Execution detail, Reports, Plans, Baselines/Drift in the Artifacts panel. |
 | **Review** | Light overlay over the active Task. Not an application destination. |
 | **Delegate / Steer / Stop** | The one Agent control path. |
 

@@ -365,11 +365,19 @@ export interface ToolActivity {
    * its presence — not its value — is the signal. A gap the reader cannot see
    * reads as "nothing happened", which is why it reaches the UI at all. */
   audit_error?: string | null;
+  /** The inline approval this call raised (v1.11). Set on a gated call whose
+   * execution paused for the user; the approval card renders at this row. */
+  decision_id?: string | null;
 }
+
+/** One ordered transcript item recorded BEFORE the answer (v1.11). A `tool`
+ * item references `tool_activity[].id`; pre-1.11 rows carry no items. */
+export type TurnItemRef =
+  | { kind: "message"; text: string }
+  | { kind: "tool"; id: string };
 
 // The per-turn result shared by the blocking POST and the SSE `done` event.
 export interface TurnResult {
-  proposed_actions: NextAction[];
   evidence_used?: string[];
   evidence_gaps?: string[];
   skills_used?: string[];
@@ -392,7 +400,10 @@ export interface SessionMessage {
   // Persisted per assistant turn (v0.21.0) so grounding + proposals survive a
   // reload; null/empty for user messages and pre-0.21.0 history.
   grounding?: Grounding | null;
-  proposed_actions?: NextAction[];
+  /** Always `[]` since v1.11; kept for the persistence contract only. */
+  proposed_actions?: unknown[];
+  /** Ordered commentary / tool items before the answer (v1.11). */
+  turn_items?: TurnItemRef[];
   /** Opaque paging cursor (v0.47.0); hand the oldest back as `before`. */
   seq?: number | null;
   created_at: string;
@@ -529,6 +540,9 @@ export interface ExecutionMetrics extends TokenUsage {
   /** Identical (tool, args) calls answered from Task memory instead of
    * being re-run. Absent when the turn repeated nothing. */
   repeat_calls_avoided?: number | null;
+  /** The model's context window (v1.11), for a context meter. Null when the
+   * runtime does not know it. */
+  context_window?: number | null;
 }
 
 /** A persisted per-turn metrics row, keyed to the assistant message. */

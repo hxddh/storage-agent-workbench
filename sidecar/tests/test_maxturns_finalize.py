@@ -45,8 +45,9 @@ def test_stream_finalizes_on_max_turns_instead_of_erroring():
     kinds = [k for k, _ in events]
     # No exception propagated, and the run ends with a normal 'final'.
     assert "final" in kinds
-    # The finalize answer is streamed as a delta AND carried into the contract.
-    assert any(k == "delta" and "work completed so far" in d for k, d in events)
+    # The finalize answer is committed as the final segment AND carried into the contract.
+    assert any(k == "segment" and d["final"] and "work completed so far" in d["text"]
+               for k, d in events)
     final = next(d for k, d in events if k == "final")
     assert "work completed so far" in (final.get("answer") or "")
 
@@ -93,7 +94,7 @@ def test_transient_provider_error_detection():
         type("BadRequestError", (Exception,), {"status_code": 400})("bad"))
 
 
-def test_stream_finalizes_on_transient_error_with_continue_proposal():
+def test_stream_finalizes_on_transient_error_marked_cut_short():
     class FakeResult:
         final_output = ""
 
@@ -115,9 +116,8 @@ def test_stream_finalizes_on_transient_error_with_continue_proposal():
     # Grounded answer synthesized from the trace, marked as a transient interruption.
     assert "reachable" in (final.get("answer") or "")
     assert "temporary provider error" in (final.get("answer") or "")
-    # And a one-click continue proposal is offered.
-    assert any(p.get("action_type") == session_agent._CONTINUE_ACTION
-               for p in final.get("next_action_proposals") or [])
+    # And the Work Result is marked cut short (the user can ask to continue).
+    assert final.get("cut_short") is True
 
 
 def test_tool_output_budget_hard_caps_a_single_oversized_output():
@@ -172,7 +172,7 @@ def test_tool_output_budget_note_is_status_not_error():
     assert budget["exhausted"] is True
 
 
-def test_budget_exhausted_turn_is_cut_short_with_continue_proposal():
+def test_budget_exhausted_turn_is_cut_short():
     class FakeResult:
         final_output = "Here is what I found."
 
@@ -192,11 +192,10 @@ def test_budget_exhausted_turn_is_cut_short_with_continue_proposal():
     events = asyncio.run(collect())
     final = next(d for k, d in events if k == "final")
     assert "cut short" in (final.get("answer") or "").lower()
-    assert any(p.get("action_type") == session_agent._CONTINUE_ACTION
-               for p in final.get("next_action_proposals") or [])
+    assert final.get("cut_short") is True
 
 
-def test_normal_turn_without_budget_exhaustion_has_no_continue_proposal():
+def test_normal_turn_without_budget_exhaustion_is_not_cut_short():
     class FakeResult:
         final_output = "All good."
 
@@ -216,5 +215,4 @@ def test_normal_turn_without_budget_exhaustion_has_no_continue_proposal():
     events = asyncio.run(collect())
     final = next(d for k, d in events if k == "final")
     assert "cut short" not in (final.get("answer") or "").lower()
-    assert not any(p.get("action_type") == session_agent._CONTINUE_ACTION
-                   for p in final.get("next_action_proposals") or [])
+    assert not final.get("cut_short")

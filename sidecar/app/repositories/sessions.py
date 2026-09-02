@@ -470,13 +470,14 @@ def add_message(
     tool_activity: list[dict[str, Any]] | None = None,
     grounding: dict[str, Any] | None = None,
     proposed_actions: list[dict[str, Any]] | None = None,
+    turn_items: list[dict[str, Any]] | None = None,
 ) -> str:
     msg_id = uuid.uuid4().hex
     conn.execute(
         "INSERT INTO session_messages "
         "(id, session_id, role, content, referenced_run_ids, referenced_evidence_ids, "
-        " tool_activity, grounding, proposed_actions, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " tool_activity, grounding, proposed_actions, turn_items, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         # The JSON columns go through redact() like every sibling repo
         # (replace_findings / upsert_summary / create_case): the agent runtime
         # sanitizes upstream, but rule 14 wants the persistence boundary to hold
@@ -486,11 +487,36 @@ def add_message(
          _dumps(tool_activity or []),
          _dumps(grounding) if grounding is not None else None,
          _dumps(proposed_actions) if proposed_actions is not None else None,
+         _dumps(_bounded_turn_items(turn_items)) if turn_items else None,
          utcnow()),
     )
     _touch(conn, session_id)
     conn.commit()
     return msg_id
+
+
+_MAX_TURN_ITEMS = 200
+_MAX_TURN_ITEM_TEXT = 4000
+
+
+def _bounded_turn_items(items: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """The assistant turn's ordered transcript items, bounded and redacted.
+
+    ``message`` items carry the commentary text; ``tool`` items reference the
+    tool_activity record by id (the record itself is the single source of the
+    call's truth). Anything else is dropped."""
+    out: list[dict[str, Any]] = []
+    for it in (items or [])[:_MAX_TURN_ITEMS]:
+        if not isinstance(it, dict):
+            continue
+        kind = it.get("kind")
+        if kind == "message":
+            text = redact_text(str(it.get("text") or ""))[:_MAX_TURN_ITEM_TEXT]
+            if text.strip():
+                out.append({"kind": "message", "text": text})
+        elif kind == "tool" and it.get("id"):
+            out.append({"kind": "tool", "id": str(it["id"])[:64]})
+    return out
 
 
 # --- agent working memory ---------------------------------------------------
@@ -698,6 +724,7 @@ def list_messages(conn: sqlite3.Connection, session_id: str,
             "tool_activity": _loads(r["tool_activity"] if "tool_activity" in keys else None, []),
             "grounding": _loads(r["grounding"], None) if "grounding" in keys else None,
             "proposed_actions": _loads(r["proposed_actions"], []) if "proposed_actions" in keys else [],
+            "turn_items": _loads(r["turn_items"], []) if "turn_items" in keys else [],
             "created_at": r["created_at"],
         })
     return out

@@ -22,12 +22,7 @@ from .fake_model import FakeModel, text_turn, tool_turn
 
 SKILL = "storageops-lifecycle-cost"
 
-ANSWER = """Objects under logs/ have no expiry, which is the cost.
-
-```json
-{"skills_used": ["%s"], "evidence_used": ["read_skill: lifecycle method"]}
-```
-""" % SKILL
+ANSWER = "Objects under logs/ have no expiry, which is the cost.\n"
 
 
 def _events(client, sid, question="why is storage growing?", turn_id="t1"):
@@ -76,13 +71,14 @@ def test_the_streamed_deltas_add_up_to_the_answer(streamed):
     assert "no expiry" in text
 
 
-def test_the_contract_block_never_appears_in_the_live_stream(streamed):
-    """It is held back deliberately: a reader must not watch bookkeeping JSON
-    scroll past mid-answer."""
-    _, _, events = streamed
-    text = "".join(d if isinstance(d, str) else (d.get("text") or d.get("delta") or "")
-                   for k, d in events if k == "delta")
-    assert "skills_used" not in text
+def test_the_answer_is_committed_as_a_final_segment(streamed):
+    """v1.11: the live stream closes the answer with `message.completed`
+    (final=true) carrying the fully sanitized text."""
+    client, sid, _ = streamed
+    events = client.get(f"/agent-tasks/{sid}/events").json()["events"]
+    finals = [e["payload"] for e in events if e["event_type"] == "message.completed"]
+    assert finals and finals[-1]["final"] is True
+    assert "no expiry" in finals[-1]["text"]
 
 
 def test_the_session_opens_after_a_streamed_turn(streamed):

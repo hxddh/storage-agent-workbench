@@ -21,19 +21,12 @@ const task = (page: Page) => page.locator("main");
 
 const SKILL = "storageops-security-iam-policy";
 
+// v1.11: the answer is plain Markdown. There is no metadata block any more;
+// grounding is derived from the tool log server-side.
 const ANSWER =
   "The bucket policy omits s3:ListBucket for that principal, which is why every " +
-  "list call returns 403 while GetObject still works.\n\n" +
-  "```json\n" +
-  JSON.stringify({
-    skills_used: [SKILL],
-    evidence_used: ["read_skill returned the IAM policy method"],
-    evidence_gaps: ["no live bucket was reachable"],
-    next_action_proposals: [
-      { action_type: "review_bucket_security", title: "Review the bucket's security posture" },
-    ],
-  }) +
-  "\n```";
+  "list call returns 403 while GetObject still works.";
+const COMMENTARY = "I will read the IAM policy skill before answering.";
 
 const SECOND = "The ACL is not involved: object ownership is set to BucketOwnerEnforced.";
 
@@ -70,6 +63,12 @@ const twoTurns = withModel([
   textTurn(ANSWER),
   textTurn(SECOND),
 ]);
+// Commentary before the action: text the model writes in the SAME completion
+// as its tool call, which the runtime closes as its own segment.
+const commentaryThenTool = withModel([
+  [...textTurn(COMMENTARY).slice(0, -1), ...toolTurn("read_skill", { name: SKILL })],
+  textTurn(ANSWER),
+]);
 
 test.describe("a real agent turn", () => {
   // Two scripted turns through the real Sidecar (model round-trips, durable
@@ -81,39 +80,63 @@ test.describe("a real agent turn", () => {
     try {
       await ask(page, "why does acme-logs return 403 on every list call?");
       await expect(task(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
-      // The bookkeeping block is held back — a reader must never watch it scroll past.
+      // No bookkeeping block, no proposal-era Decision card, ever.
       await expect(task(page).getByText(/next_action_proposals/)).toHaveCount(0);
+      await expect(task(page).getByText(/Decision required/)).toHaveCount(0);
+      await expect(page.getByTestId("approval-card")).toHaveCount(0);
+      await expect(page.getByTestId("turn-answer").last()).toContainText("omits s3:ListBucket");
     } finally {
       await cleanup();
     }
   });
 
-  test("the finished turn keeps its footer — what ran, and how long", async ({ page }) => {
+  test("the finished turn keeps its worked group — what ran, and how long", async ({ page }) => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, "why does acme-logs return 403?");
       await expect(task(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
-      // The footer hangs off the PERSISTED message, so its presence is the proof
-      // that the post-turn reload actually landed. This is the exact affordance
-      // that disappeared in the released build.
-      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 30_000 });
-      // No click: the newest turn shows what it ran without being asked. The
-      // live trace is removed the moment the answer arrives, so if what replaced
-      // it were also folded, the one turn you just watched work would hide that
-      // work behind a click.
-      await expect(task(page).getByText("read_skill").first()).toBeVisible();
+      // The worked group hangs off the PERSISTED message, so its presence is
+      // the proof that the post-turn reload actually landed. It sits BEFORE
+      // the answer and folds once the turn is done; a click opens the rows.
+      const group = page.getByTestId("worked-group").last();
+      await expect(group).toBeVisible({ timeout: 30_000 });
+      await expect(group).toContainText(/Worked/);
+      await group.getByTestId("execution-head").click();
+      await expect(group.getByTestId("worked-row").first()).toContainText("read_skill");
+      const order = await task(page).evaluate((el) =>
+        [...el.querySelectorAll("[data-testid='worked-group'],[data-testid='turn-answer']")]
+          .map((node) => node.getAttribute("data-testid")));
+      expect(order.indexOf("worked-group")).toBeLessThan(order.indexOf("turn-answer"));
     } finally {
       await cleanup();
     }
   });
 
-  test("the user's question keeps a copy action", async ({ page }) => {
+  test("commentary the model wrote before acting is its own segment before the worked group", async ({ page }) => {
+    const { cleanup } = await commentaryThenTool(page);
+    try {
+      await ask(page, "why does acme-logs return 403?");
+      await expect(task(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("turn-commentary").first()).toContainText(/read the IAM policy skill/);
+      const order = await task(page).evaluate((el) =>
+        [...el.querySelectorAll("[data-testid='turn-commentary'],[data-testid='worked-group'],[data-testid='turn-answer']")]
+          .map((node) => node.getAttribute("data-testid")));
+      expect(order).toEqual(["turn-commentary", "worked-group", "turn-answer"]);
+      // The commentary is NOT repeated inside the answer.
+      await expect(page.getByTestId("turn-answer").last()).not.toContainText(/read the IAM policy skill/);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("the user's question is a bubble with a copy action", async ({ page }) => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, "why does acme-logs return 403?");
-      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("worked-group")).toBeVisible({ timeout: 60_000 });
 
-      const q = task(page).getByText("why does acme-logs return 403?").last();
+      const q = page.getByTestId("turn-user").last();
+      await expect(q).toContainText("why does acme-logs return 403?");
       await q.hover();
       await expect(page.getByTestId("redirect-direction")).toHaveCount(0);
       await expect(page.getByTestId("branch-task")).toHaveCount(0);
@@ -123,13 +146,15 @@ test.describe("a real agent turn", () => {
     }
   });
 
-  test("what the agent proposed next is not painted as a continue chip", async ({ page }) => {
+  test("nothing is painted after the answer: no chips, no footer, no proposals", async ({ page }) => {
     const { cleanup } = await oneTurn(page);
     try {
       await ask(page, "why does acme-logs return 403?");
-      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("turn-answer").last()).toBeVisible({ timeout: 60_000 });
       await expect(page.getByRole("button", { name: /Continue task/i })).toHaveCount(0);
-      await expect(page.getByTestId("agent-next-action")).toHaveCount(0);
+      await expect(page.getByTestId("work-result-open-report")).toHaveCount(0);
+      await expect(page.getByTestId("work-result-artifacts")).toHaveCount(0);
+      await expect(task(page).getByText(/tool calls?\s*\(/)).toHaveCount(0);
     } finally {
       await cleanup();
     }
@@ -140,7 +165,7 @@ test.describe("a real agent turn", () => {
     try {
       await ask(page, "first question about acme-logs");
       await expect(task(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
-      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId("worked-group")).toBeVisible({ timeout: 30_000 });
 
       await ask(page, "second question about acme-logs");
       await expect(task(page).getByText(/BucketOwnerEnforced/)).toBeVisible({ timeout: 60_000 });
@@ -163,7 +188,7 @@ test.describe("a real agent turn", () => {
     const { cleanup } = await twoTurns(page);
     try {
       await ask(page, "first question about acme-logs");
-      await expect(page.getByTestId("live-trace")).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId("worked-group")).toBeVisible({ timeout: 60_000 });
       await ask(page, "second question about acme-logs");
       await expect(task(page).getByText(/BucketOwnerEnforced/)).toBeVisible({ timeout: 60_000 });
 

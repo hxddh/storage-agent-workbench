@@ -10,33 +10,42 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { createElement, createRef } from "react";
 import { I18nProvider } from "../i18n";
 import { Composer } from "./Composer";
+import { ActiveTaskContext } from "../agent/activeTask";
+import { dropSessionRun, patchSessionRun } from "../sessionRuns";
+import type { ExecutionMetrics } from "../types";
 
-function mount(offline: boolean, text = "why does acme-logs 403?") {
+function mount(offline: boolean, text = "why does acme-logs 403?", busy = false, taskId: string | null = null) {
   const onSend = vi.fn();
+  const onStop = vi.fn();
+  const setText = vi.fn();
   render(
     createElement(
       I18nProvider,
       null,
-      createElement(Composer, {
-        text,
-        setText: () => {},
-        attached: null,
-        onClearAttachment: () => {},
-        onPickFile: () => {},
-        onOpenFilePicker: () => {},
-        fileRef: createRef<HTMLInputElement>(),
-        taRef: createRef<HTMLTextAreaElement>(),
-        busy: false,
-        offline,
-        uploading: false,
-        onSend,
-        onStop: () => {},
-        onSteer: () => {},
-      }),
+      createElement(
+        ActiveTaskContext.Provider,
+        { value: taskId },
+        createElement(Composer, {
+          text,
+          setText,
+          attached: null,
+          onClearAttachment: () => {},
+          onPickFile: () => {},
+          onOpenFilePicker: () => {},
+          fileRef: createRef<HTMLInputElement>(),
+          taRef: createRef<HTMLTextAreaElement>(),
+          busy,
+          offline,
+          uploading: false,
+          onSend,
+          onStop,
+          onSteer: () => {},
+        }),
+      ),
     ),
   );
   const textbox = within(screen.getByTestId("agent-composer")).getByRole("textbox") as HTMLTextAreaElement;
-  return { onSend, textbox };
+  return { onSend, onStop, setText, textbox };
 }
 
 describe("the Agent task Composer while the sidecar is unreachable", () => {
@@ -62,5 +71,53 @@ describe("the Agent task Composer while the sidecar is unreachable", () => {
   it("preserves the user's task direction while offline", () => {
     const { textbox } = mount(true);
     expect(textbox.value).toContain("acme-logs");
+  });
+});
+
+describe("Esc in the Composer", () => {
+  it("stops the running execution when the Composer is empty", () => {
+    const { onStop, textbox } = mount(false, "", true);
+    fireEvent.keyDown(textbox, { key: "Escape" });
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing while the Composer holds text — the draft is never cleared", () => {
+    const { onStop, setText, textbox } = mount(false, "keep looking at the bucket policy", true);
+    fireEvent.keyDown(textbox, { key: "Escape" });
+    expect(onStop).not.toHaveBeenCalled();
+    expect(setText).not.toHaveBeenCalled();
+    expect(textbox.value).toBe("keep looking at the bucket policy");
+  });
+
+  it("does nothing when no execution is running", () => {
+    const { onStop, textbox } = mount(false, "", false);
+    fireEvent.keyDown(textbox, { key: "Escape" });
+    expect(onStop).not.toHaveBeenCalled();
+  });
+});
+
+describe("the context meter beside the model chip", () => {
+  const metrics = (over: Partial<ExecutionMetrics> & { context_window?: number | null }) => ({ messageId: "m1", metrics: over as ExecutionMetrics });
+
+  it("renders nothing until an execution reported usage AND a context window", () => {
+    patchSessionRun("ctx-none", { lastMetrics: metrics({ total_tokens: 12_000 }) });
+    mount(false, "", false, "ctx-none");
+    expect(screen.queryByTestId("context-meter")).toBeNull();
+    dropSessionRun("ctx-none");
+  });
+
+  it("shows the share of the window the last execution used", () => {
+    patchSessionRun("ctx-some", { lastMetrics: metrics({ usage: { total_tokens: 32_000 }, context_window: 128_000 }) });
+    mount(false, "", false, "ctx-some");
+    const meter = screen.getByTestId("context-meter");
+    expect(meter.getAttribute("data-pct")).toBe("25");
+    expect(meter.textContent).toContain("25%");
+    expect(meter.getAttribute("title")).toContain("32.0k of 128k tokens");
+    dropSessionRun("ctx-some");
+  });
+
+  it("paints nothing on the empty start surface", () => {
+    mount(false, "", false, null);
+    expect(screen.queryByTestId("context-meter")).toBeNull();
   });
 });

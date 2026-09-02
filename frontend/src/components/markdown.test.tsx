@@ -13,11 +13,10 @@
  * mode was always "it parses and then nobody renders it".
  */
 import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
 import { Markdown } from "./Markdown";
-import { chartSpec, parseMeasure } from "./Chart";
 import { highlight, normalizeLang } from "../lib/highlight";
 
 const md = (text: string) => render(createElement(I18nProvider, null, createElement(Markdown, { text })));
@@ -163,82 +162,21 @@ describe("syntax highlighting", () => {
   });
 });
 
-describe("charts derived from a table", () => {
-  it("draws bars for a measure-by-category table and keeps the numbers", () => {
+describe("tables scroll inside their own container", () => {
+  it("wraps a table in a horizontal scroll container and never fades or charts it", () => {
     const { container } = md(
       "| prefix | objects |\n| --- | ---: |\n| logs/ | 900 |\n| data/ | 120 |\n| tmp/ | 15 |",
     );
-    expect(screen.getByTestId("table-chart").getAttribute("data-chart-kind")).toBe("bar");
-    expect(screen.getAllByTestId("chart-bar").length).toBe(3);
-    expect(container.querySelectorAll("tbody tr").length).toBe(3);
-    expect(container.textContent).toContain("120");
-  });
-
-  it("scales bars against the largest value", () => {
-    md("| p | n |\n| --- | --- |\n| a | 100 |\n| b | 50 |");
-    const widths = screen.getAllByTestId("chart-bar").map((b) => (b as HTMLElement).style.width);
-    expect(widths[0]).toBe("100%");
-    expect(widths[1]).toBe("50%");
-  });
-
-  it("switches to a column chart when the categories are a time series", () => {
-    md("| hour | errors |\n| --- | --- |\n| 00:00 | 3 |\n| 01:00 | 9 |\n| 02:00 | 4 |\n| 03:00 | 7 |");
-    expect(screen.getByTestId("table-chart").getAttribute("data-chart-kind")).toBe("column");
-  });
-
-  it("can be dismissed without taking the table with it", () => {
-    const { container } = md("| p | n |\n| --- | --- |\n| a | 2 |\n| b | 1 |");
-    fireEvent.click(screen.getByTestId("chart-toggle"));
-    expect(screen.queryByTestId("table-chart")).toBeNull();
-    expect(container.querySelectorAll("tbody tr").length).toBe(2);
-  });
-
-  it("does not draw itself over a table long enough to need its own scroll", () => {
-    const rows = Array.from({ length: 24 }, (_, i) => `| p${i} | ${i * 7 + 1} |`).join("\n");
-    md(`| prefix | objects |\n| --- | ---: |\n${rows}`);
-    expect(screen.queryByTestId("table-chart")).toBeNull();
-    fireEvent.click(screen.getByTestId("chart-toggle"));
-    expect(screen.getByTestId("table-chart")).toBeTruthy();
-  });
-
-  it("decides that on the rows it HAS, not the rows it mounted with", () => {
-    const head = "| prefix | objects |\n| --- | ---: |\n";
-    const short = `${head}| a | 10 |\n| b | 20 |`;
-    const { rerender } = md(short);
-    expect(screen.getByTestId("table-chart")).toBeTruthy();
-
-    const grown = head + Array.from({ length: 24 }, (_, i) => `| p${i} | ${i * 7 + 1} |`).join("\n");
-    rerender(createElement(I18nProvider, null, createElement(Markdown, { text: grown })));
-    expect(screen.queryByTestId("table-chart")).toBeNull();
-  });
-
-  it("draws nothing for a table that is not a measure", () => {
-    md("| bucket | versioning |\n| --- | --- |\n| a | Enabled |\n| b | Not set |");
-    expect(screen.queryByTestId("table-chart")).toBeNull();
-  });
-
-  it("refuses a column with one unmeasurable cell", () => {
-    expect(chartSpec(["bucket", "objects"], [["a", "10"], ["b", "Provider unsupported"], ["c", "4"]])).toBeNull();
-  });
-
-  it("refuses negative measures and all-zero columns", () => {
-    expect(chartSpec(["k", "v"], [["a", "-1"], ["b", "2"]])).toBeNull();
-    expect(chartSpec(["k", "v"], [["a", "0"], ["b", "0"]])).toBeNull();
-  });
-
-  it("reads comma-grouped numbers and percentages, but not units", () => {
-    expect(parseMeasure("1,204")).toBe(1204);
-    expect(parseMeasure("12.5%")).toBe(12.5);
-    expect(parseMeasure("4 GB")).toBeNull();
-  });
-
-  it("stops charting once a table is a data dump", () => {
-    const rows = Array.from({ length: 60 }, (_, i) => [`k${i}`, String(i + 1)]);
-    expect(chartSpec(["key", "n"], rows)).toBeNull();
+    const scroller = screen.getByTestId("table-scroll");
+    expect(scroller.className).toContain("agent-table-scroll");
+    expect(scroller.querySelector("table")).toBeTruthy();
+    expect(container.querySelector("[data-testid='chart-toggle']")).toBeNull();
+    expect(container.querySelector("[data-testid='table-chart']")).toBeNull();
+    expect(container.innerHTML).not.toContain("mask-image");
+    expect(container.querySelector(".agent-result-wide")).toBeNull();
   });
 });
 
-/** A Work Result is a navigable document, not a chat response bubble. */
 describe("Work Result structure", () => {
   it("renders real heading elements, not divs", () => {
     const { container } = md("## Why it is large\n\ntext");

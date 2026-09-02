@@ -20,14 +20,14 @@ export type DurableTaskStatus =
  * Product-level state of an Agent task from live execution plus durable task
  * runtime truth.
  *
- * Live execution outranks a previously persisted Decision because the Agent is
- * actively doing work — and since v0.94 "working" is DURABLE: an execution
- * queued or running in the Sidecar's task runtime reports `working` through
- * `durableStatus` even when this browser has no live run state at all (a
- * reload, a fresh window, another client's delegation). A
- * confirmation-required Decision — live or durable — outranks Ready. This
- * keeps the task list truthful across reloads, task switches,
- * app restarts, and Sidecar restarts (where recovery reports needs_attention).
+ * "working" is DURABLE: an execution queued or running in the Sidecar's task
+ * runtime reports `working` through `durableStatus` even when this browser
+ * has no live run state at all (a reload, a fresh window, another client's
+ * delegation). "decision" (since v1.11) is an execution parked on an inline
+ * approval: the worker is alive and waits for the user, live (`run.waiting`)
+ * or durable (`needs_decision`). It outranks Ready; a live upload outranks
+ * everything. This keeps the task list truthful across reloads, task
+ * switches, app restarts and Sidecar restarts (recovery reports needs_attention).
  */
 export function agentTaskState(
   run: SessionRun,
@@ -36,14 +36,9 @@ export function agentTaskState(
   durableStatus?: DurableTaskStatus | string | null,
 ): AgentTaskState {
   if (run.uploading) return "uploading";
+  if (run.busy && run.waiting) return "decision";
   if (run.busy || durableStatus === "working") return "working";
-  if (
-    run.proposals?.some((proposal) => proposal.requires_confirmation) ||
-    hasDurableDecision ||
-    durableStatus === "needs_decision"
-  ) {
-    return "decision";
-  }
+  if (hasDurableDecision || durableStatus === "needs_decision") return "decision";
   if (run.error || run.needKey || run.stalled || durableStatus === "needs_attention") {
     return "attention";
   }

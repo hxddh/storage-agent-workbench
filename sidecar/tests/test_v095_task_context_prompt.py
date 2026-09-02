@@ -98,13 +98,10 @@ def test_typed_context_is_in_stable_half_and_survives_restart(tmp_path):
 def test_open_decisions_come_from_typed_context_not_replay(tmp_path):
     conn = _fresh_db(tmp_path / "dec.db")
     task_id = _seed_task(conn)
-    store.open_decisions_from_proposals(
-        conn, task_id, None, None,
-        [{"action_type": "plan_access_log_import", "title": "Import logs",
-          "reason": "Need the files", "requires_confirmation": True,
-          "confidence": "high", "prefill": {"bucket": "acme-logs",
-                                            "source_type": "access_log"}}],
-    )
+    store.open_approval(
+        conn, task_id, None, "import_access_log", "Import logs", "Need the files",
+        {"tool": "import_evidence", "prefill": {"bucket": "acme-logs",
+                                                "source_type": "access_log"}})
     conn.commit()
     task_context.refresh(conn, task_id)
     conn.commit()

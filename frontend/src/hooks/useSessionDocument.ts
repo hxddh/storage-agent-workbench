@@ -10,7 +10,7 @@ import {
 } from "../api";
 import type { TFunc } from "../i18n";
 import { getSessionRun, patchSessionRun } from "../sessionRuns";
-import { mergeTool } from "./useTurnRunner";
+import { liveHandlers } from "./useTurnRunnerImplementation";
 import type {
   SessionDetail,
   SessionMessage,
@@ -193,20 +193,17 @@ export function useSessionDocument({
       followCtl = new AbortController();
       const ageMs = startedAt ? Math.max(0, Date.now() - Date.parse(startedAt)) : null;
       setRemoteTurn({ running: true, age_ms: Number.isFinite(ageMs) ? ageMs : null });
+      const startedMs = startedAt ? Date.parse(startedAt) : NaN;
       patchSessionRun(sessionId, {
         busy: true, error: null, stopped: false, stalled: false,
-        streamText: null, streamTools: [],
+        items: [], answer: null, waiting: false,
+        startedAt: Number.isFinite(startedMs) ? startedMs : Date.now(),
         ...(direction ? { pending: direction } : {}),
       });
       try {
         await followExecutionEvents(
           sessionId, executionId,
-          {
-            onDelta: (chunk) =>
-              patchSessionRun(sessionId, (s) => ({ streamText: (s.streamText ?? "") + chunk })),
-            onTool: (rec) =>
-              patchSessionRun(sessionId, (s) => ({ streamTools: mergeTool(s.streamTools, rec) })),
-          },
+          liveHandlers(sessionId),
           { signal: followCtl.signal },
         );
       } catch {
@@ -215,7 +212,7 @@ export function useSessionDocument({
       following = false;
       if (stopped) return;
       patchSessionRun(sessionId, {
-        busy: false, pending: null, streamText: null, streamTools: [], stopped: false,
+        busy: false, pending: null, items: [], answer: null, waiting: false, startedAt: null, stopped: false,
       });
       setRemoteTurn(null);
       if (localId.current === sessionId) void reload(sessionId);
@@ -243,7 +240,10 @@ export function useSessionDocument({
         return;
       }
       const active = state.active_execution;
-      if (active && (active.status === "running" || active.status === "queued")) {
+      // `waiting` (v1.11) is an execution parked on an inline approval whose
+      // worker is alive: follow it so the approval card renders from replay.
+      if (active && (active.status === "running" || active.status === "queued"
+        || (active.status === "waiting" && active.id !== loadedSettledExecId))) {
         sawOwnBusy = false;
         void follow(active.id, active.direction, active.started_at);
       } else {
@@ -252,11 +252,15 @@ export function useSessionDocument({
           settledId
           && state.last_execution
           && state.last_execution.status !== "running"
-          && state.last_execution.status !== "queued",
+          && state.last_execution.status !== "queued"
+          && state.last_execution.status !== "waiting",
         );
         if (remoteTurnRef.current || sawOwnBusy) {
           if (settledId) loadedSettledExecId = settledId;
           void reload(sessionId);
+          // The execution this client drove just settled: look once more for
+          // a follow-up the runtime queued behind it (a late steer).
+          timer = window.setTimeout(tick, 1200);
         } else if (settled && loadedSettledExecId !== settledId) {
           loadedSettledExecId = settledId;
           void reload(sessionId);
@@ -282,7 +286,7 @@ export function useSessionDocument({
       followCtl?.abort();
       if (following) {
         patchSessionRun(sessionId, {
-          busy: false, streamText: null, streamTools: [], stopped: false,
+          busy: false, items: [], answer: null, waiting: false, startedAt: null, stopped: false,
         });
       }
       document.removeEventListener("visibilitychange", onVisible);

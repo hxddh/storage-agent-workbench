@@ -38,13 +38,13 @@ User input is durable task direction: the objective, correction, constraint, or 
 
 Execution is real runtime/tool activity. Storage Agent shows actual progress and sanitized tool detail; it does not invent plans, workers, terminals, browsers, worktrees, or sub-agents that the runtime does not implement.
 
-### Decision required
+### Waiting for approval
 
-Read-only investigation can proceed autonomously. Operations that move cloud data or cross a configured safety boundary pause at an explicit **Decision required** state before execution.
+Read-only investigation proceeds autonomously. The one operation that moves cloud data — the `import_evidence` tool — plans a bounded download and pauses the Execution at an inline approval card (**Allow · Allow for this task · Deny**) before anything moves.
 
 ### Work Result and Review
 
-Completed work becomes a durable **Work Result**: a page in the Task document with one *Worked for …* group of real tool rows above it. Evidence, Execution detail, and Markdown Reports open as a sheet over the same Task.
+A turn reads like a native Agent's transcript: your message, the model's short commentary, one *Worked for …* group of real tool rows, and the answer as Markdown — the durable **Work Result**. Evidence, Execution detail, Reports, Plans and Baselines live in the Artifacts panel beside the Task (⌘I).
 
 ## Storage capabilities
 

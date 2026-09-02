@@ -896,6 +896,29 @@ ALTER TABLE sessions ADD COLUMN title_source TEXT;
 ALTER TABLE model_providers ADD COLUMN reasoning_effort TEXT;
 """
 
+# --- Migration 029: v1.11 native agent — turn items + inline approvals ---------
+# Three nullable/defaulted columns, no rewrites, no backfill:
+#   session_messages.turn_items   JSON list of the assistant turn's ordered
+#                                 transcript items ({kind: message|tool, …}):
+#                                 the commentary segments the model wrote
+#                                 before acting and the tool rows between them.
+#                                 The answer itself stays in `content`. NULL on
+#                                 pre-1.11 rows (rendered as answer-only).
+#   task_decisions.kind           'approval' for a Decision a gated TOOL raised
+#                                 inside a running execution (the execution
+#                                 waits on it); 'proposal' for pre-1.11 rows.
+#   task_decisions.scope          how an approval was granted: 'once' | 'task'
+#                                 ('task' auto-approves later calls of the same
+#                                 action_type in that task). NULL = declined
+#                                 or not yet resolved.
+# Never edit shipped 028.
+
+_M029 = """
+ALTER TABLE session_messages ADD COLUMN turn_items TEXT;
+ALTER TABLE task_decisions ADD COLUMN kind TEXT NOT NULL DEFAULT 'proposal';
+ALTER TABLE task_decisions ADD COLUMN scope TEXT;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -938,6 +961,9 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     # v1.10.0 — runtime-generated task titles (user rename wins) and per-provider
     # reasoning effort for known-reasoning models. Append-only.
     (28, "native_agent_titles_effort", _M028),
+    # v1.11.0 — Codex-style turns: ordered turn items on the assistant message,
+    # and Decisions raised inline by gated tools (kind/scope). Append-only.
+    (29, "native_agent_turn_items_approvals", _M029),
 ]
 
 

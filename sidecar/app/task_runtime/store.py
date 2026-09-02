@@ -50,14 +50,16 @@ DECISION_APPROVED = "approved"
 DECISION_DECLINED = "declined"
 DECISION_SUPERSEDED = "superseded"
 
-# Proposal action types that raise a first-class blocking Decision. Everything
-# else stays a suggestion on the Work Result (the agent can be asked to do it
-# conversationally). The data-moving imports MUST stay here — they gate cloud
-# downloads behind explicit confirmation; the saved report gates a durable
-# artifact write.
-DECISION_GATED_ACTION_TYPES = frozenset({
-    "plan_inventory_import", "plan_access_log_import", "generate_session_report",
-})
+# Decision kinds. Since v1.11 a Decision is raised by a gated TOOL inside a
+# running execution (`approval`): the execution waits on it, and the tool
+# continues (or refuses) once it is resolved. `proposal` rows are pre-1.11
+# history (Decisions derived from a Work Result's next-step proposals).
+DECISION_KIND_APPROVAL = "approval"
+DECISION_KIND_PROPOSAL = "proposal"
+# How an approval was granted: once, or for every later call of the same
+# action_type in this task.
+SCOPE_ONCE = "once"
+SCOPE_TASK = "task"
 
 # Bound on one persisted event payload. Structured progress records are small by
 # construction; this is the backstop that keeps the durable log from ever
@@ -294,16 +296,23 @@ def append_event(conn: sqlite3.Connection, execution_id: str, task_id: str,
     seq = int(cur.lastrowid or 0)
     # Wake any live subscriber promptly (best-effort; polling is the fallback).
     from . import hub
-    hub.notify(execution_id)
+    hub.notify(execution_id, seq)
     return seq
 
 
 def list_events(conn: sqlite3.Connection, execution_id: str, after_seq: int = 0,
-                limit: int = 1000) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        "SELECT seq, execution_id, task_id, event_type, payload_json_sanitized, created_at "
-        "FROM execution_events WHERE execution_id = ? AND seq > ? ORDER BY seq LIMIT ?",
-        (execution_id, int(after_seq), max(1, int(limit)))).fetchall()
+                limit: int = 1000, up_to_seq: int | None = None) -> list[dict[str, Any]]:
+    if up_to_seq is not None:
+        rows = conn.execute(
+            "SELECT seq, execution_id, task_id, event_type, payload_json_sanitized, created_at "
+            "FROM execution_events WHERE execution_id = ? AND seq > ? AND seq <= ? "
+            "ORDER BY seq LIMIT ?",
+            (execution_id, int(after_seq), int(up_to_seq), max(1, int(limit)))).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT seq, execution_id, task_id, event_type, payload_json_sanitized, created_at "
+            "FROM execution_events WHERE execution_id = ? AND seq > ? ORDER BY seq LIMIT ?",
+            (execution_id, int(after_seq), max(1, int(limit)))).fetchall()
     return [{
         "seq": r["seq"], "execution_id": r["execution_id"], "task_id": r["task_id"],
         "event_type": r["event_type"],
@@ -372,56 +381,61 @@ def _work_result_dict(r: sqlite3.Row) -> dict[str, Any]:
 # --- task_decisions ----------------------------------------------------------------
 
 
-def open_decisions_from_proposals(conn: sqlite3.Connection, task_id: str,
-                                  execution_id: str | None, work_result_id: str | None,
-                                  proposals: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Create pending Decision rows for the confirmation-gated proposals of a new
-    Work Result, superseding the task's PRIOR pending decisions (a later Work
-    Result outranks older blockers — the same rule the old projection applied,
-    now durable instead of re-derived)."""
-    gated = [p for p in (proposals or [])
-             if isinstance(p, dict)
-             and p.get("requires_confirmation") is True
-             and p.get("action_type") in DECISION_GATED_ACTION_TYPES]
-    # One pending Decision per (task, action_type): later proposal of the same
-    # type supersedes the earlier pending row. Also collapse duplicates inside
-    # this Work Result (last occurrence wins).
-    by_type: dict[str, dict[str, Any]] = {}
-    for p in gated:
-        by_type[str(p.get("action_type"))[:64]] = p
-    gated = list(by_type.values())
+def open_approval(conn: sqlite3.Connection, task_id: str, execution_id: str | None,
+                  action_type: str, title: str, reason: str | None,
+                  proposal: dict[str, Any]) -> dict[str, Any]:
+    """Open the pending Decision a gated tool raised inside a running execution.
+
+    One pending Decision per (task, action_type): a later request of the same
+    type supersedes the earlier pending row. ``proposal`` carries the tool, its
+    (sanitized) args, and the projected impact the approval card shows."""
     now = utcnow()
-    if gated:
-        types = list(by_type.keys())
-        ph = ",".join("?" * len(types))
-        conn.execute(
-            f"UPDATE task_decisions SET status = ?, resolved_at = ?, "
-            f"resolution_note = COALESCE(resolution_note, 'superseded by a newer work result') "
-            f"WHERE task_id = ? AND status = ? AND action_type IN ({ph})",
-            (DECISION_SUPERSEDED, now, task_id, DECISION_PENDING, *types))
-    else:
-        # Empty proposals still retire every pending blocker — a later Work
-        # Result that no longer asks for confirmation outranks older ones.
-        conn.execute(
-            "UPDATE task_decisions SET status = ?, resolved_at = ?, "
-            "resolution_note = COALESCE(resolution_note, 'superseded by a newer work result') "
-            "WHERE task_id = ? AND status = ?",
-            (DECISION_SUPERSEDED, now, task_id, DECISION_PENDING))
-    out: list[dict[str, Any]] = []
-    for p in gated:
-        dec_id = _new_id()
-        conn.execute(
-            "INSERT INTO task_decisions (id, task_id, execution_id, work_result_id, "
-            "action_type, title, reason, proposal_json_sanitized, status, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (dec_id, task_id, execution_id, work_result_id,
-             str(p.get("action_type"))[:64],
-             redact_text(str(p.get("title") or ""))[:160] or None,
-             redact_text(str(p.get("reason") or ""))[:400] or None,
-             _dumps(p), DECISION_PENDING, now),
-        )
-        out.append(get_decision(conn, dec_id))  # type: ignore[arg-type]
-    return out
+    action_type = str(action_type)[:64]
+    conn.execute(
+        "UPDATE task_decisions SET status = ?, resolved_at = ?, "
+        "resolution_note = COALESCE(resolution_note, 'superseded by a newer request') "
+        "WHERE task_id = ? AND status = ? AND action_type = ?",
+        (DECISION_SUPERSEDED, now, task_id, DECISION_PENDING, action_type))
+    dec_id = _new_id()
+    conn.execute(
+        "INSERT INTO task_decisions (id, task_id, execution_id, work_result_id, "
+        "action_type, title, reason, proposal_json_sanitized, status, created_at, kind) "
+        "VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+        (dec_id, task_id, execution_id, action_type,
+         redact_text(str(title or ""))[:160] or None,
+         redact_text(str(reason or ""))[:400] or None,
+         _dumps(proposal), DECISION_PENDING, now, DECISION_KIND_APPROVAL),
+    )
+    return get_decision(conn, dec_id)  # type: ignore[return-value]
+
+
+def task_grant_exists(conn: sqlite3.Connection, task_id: str, action_type: str) -> bool:
+    """Did the user already allow this action_type for the whole task?"""
+    row = conn.execute(
+        "SELECT 1 FROM task_decisions WHERE task_id = ? AND action_type = ? "
+        "AND status = ? AND scope = ? LIMIT 1",
+        (task_id, str(action_type)[:64], DECISION_APPROVED, SCOPE_TASK)).fetchone()
+    return row is not None
+
+
+def record_granted_approval(conn: sqlite3.Connection, task_id: str,
+                            execution_id: str | None, action_type: str, title: str,
+                            proposal: dict[str, Any]) -> dict[str, Any]:
+    """A call auto-approved by an earlier "allow for this task" grant: recorded
+    as an already-approved Decision so the transcript and audit stay complete."""
+    dec_id = _new_id()
+    now = utcnow()
+    conn.execute(
+        "INSERT INTO task_decisions (id, task_id, execution_id, work_result_id, "
+        "action_type, title, reason, proposal_json_sanitized, status, created_at, "
+        "resolved_at, resolution_note, kind, scope) "
+        "VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+        (dec_id, task_id, execution_id, str(action_type)[:64],
+         redact_text(str(title or ""))[:160] or None, _dumps(proposal),
+         DECISION_APPROVED, now, now, "allowed for this task earlier",
+         DECISION_KIND_APPROVAL, SCOPE_TASK),
+    )
+    return get_decision(conn, dec_id)  # type: ignore[return-value]
 
 
 def get_decision(conn: sqlite3.Connection, decision_id: str) -> dict[str, Any] | None:
@@ -456,15 +470,20 @@ def pending_decision_tasks(conn: sqlite3.Connection,
 
 
 def resolve_decision(conn: sqlite3.Connection, decision_id: str, resolution: str,
-                     note: str | None = None) -> dict[str, Any] | None:
-    """Resolve one pending decision (approved | declined). Returns the updated
-    row, or None if it was not pending (already resolved / superseded)."""
+                     note: str | None = None, scope: str | None = None) -> dict[str, Any] | None:
+    """Resolve one pending decision (approved | declined). ``scope`` records how
+    an approval was granted (once | task). Returns the updated row, or None if
+    it was not pending (already resolved / superseded)."""
     if resolution not in (DECISION_APPROVED, DECISION_DECLINED):
         raise ValueError(f"invalid decision resolution: {resolution!r}")
+    if resolution == DECISION_APPROVED:
+        scope = SCOPE_TASK if scope == SCOPE_TASK else SCOPE_ONCE
+    else:
+        scope = None
     cur = conn.execute(
-        "UPDATE task_decisions SET status = ?, resolved_at = ?, resolution_note = ? "
+        "UPDATE task_decisions SET status = ?, resolved_at = ?, resolution_note = ?, scope = ? "
         "WHERE id = ? AND status = ?",
-        (resolution, utcnow(), redact_text(note or "")[:400] or None,
+        (resolution, utcnow(), redact_text(note or "")[:400] or None, scope,
          decision_id, DECISION_PENDING))
     if cur.rowcount <= 0:
         return None
@@ -478,6 +497,8 @@ def _decision_dict(r: sqlite3.Row) -> dict[str, Any]:
         "title": r["title"], "reason": r["reason"],
         "proposal": _loads(r["proposal_json_sanitized"], {}),
         "status": r["status"], "resolution_note": r["resolution_note"],
+        "kind": (r["kind"] if "kind" in r.keys() else None) or DECISION_KIND_PROPOSAL,
+        "scope": r["scope"] if "scope" in r.keys() else None,
         "created_at": r["created_at"], "resolved_at": r["resolved_at"],
     }
 

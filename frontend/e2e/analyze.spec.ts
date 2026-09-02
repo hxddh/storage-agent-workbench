@@ -110,6 +110,9 @@ test.describe("analyzing an attached file", () => {
       await attachAndAsk(page, "what is in this inventory?");
       await waitForInventoryAnswer(page);
       await expect(page.getByTestId("live-trace")).toBeVisible();
+      // A finished group is collapsed; open it to read the rows.
+      const group = page.getByTestId("worked-group").last();
+      if ((await group.getAttribute("data-expanded")) === "false") await group.getByTestId("execution-head").click();
 
       const trace = await task(page).evaluate((el) => el.textContent ?? "");
       expect(trace).toContain("list_uploaded_files");

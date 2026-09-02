@@ -251,32 +251,63 @@ def test_stop_running_execution_cancels_durably(client, monkeypatch):
 # --- decisions gate executions ----------------------------------------------------
 
 
-def test_gated_proposal_leaves_execution_waiting_until_decision(client, monkeypatch):
+def test_gated_tool_leaves_execution_waiting_until_decision(client, monkeypatch):
+    """v1.11: the Decision is raised by the gated tool INSIDE the execution; the
+    same execution waits, then continues once the user resolves it."""
+    from app.db import connect
+    from app.task_runtime import runtime
+
     task = _task(client)
     _add_model_provider(client)
-    monkeypatch.setattr(session_agent, "SESSION_LOOP",
-                        lambda spec: _contract(proposals=[_gated_proposal()]))
+    seen: dict = {}
+
+    def loop(spec):
+        conn = connect()
+        try:
+            from app.task_runtime import store
+            execution = store.get_execution_by_turn(conn, spec["session_id"], spec["turn_id"])
+            seen["decision"] = runtime.request_approval(
+                conn, execution["id"], spec["session_id"], action_type="import_access_log",
+                title="Import logs", reason="bounded", proposal={"impact": {"file_count": 2}},
+                cancel_event=spec.get("cancel_event"))
+        finally:
+            conn.close()
+        return _contract(answer="Declined, so here is what I have.")
+
+    monkeypatch.setattr(session_agent, "SESSION_LOOP", loop)
     execution = client.post(f"/agent-tasks/{task['id']}/executions",
                             json={"direction": "import the logs", "turn_id": "d1"}
                             ).json()["execution"]
-    row = _wait_settled(client, task["id"], execution["id"])
-    # The model work is done but the confirmation boundary is not crossed:
-    # the execution WAITS on the durable Decision.
-    assert row["status"] == "waiting"
-    state = client.get(f"/agent-tasks/{task['id']}/state").json()
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        state = client.get(f"/agent-tasks/{task['id']}/state").json()
+        if state["pending_decisions"]:
+            break
+        time.sleep(0.05)
     assert state["status"] == "needs_decision"
     decisions = state["pending_decisions"]
     assert len(decisions) == 1 and decisions[0]["execution_id"] == execution["id"]
+    assert decisions[0]["kind"] == "approval"
+    assert client.get(f"/agent-tasks/{task['id']}/executions/{execution['id']}"
+                      ).json()["status"] == "waiting"
 
     r = client.post(f"/agent-tasks/{task['id']}/decisions/{decisions[0]['id']}/resolve",
                     json={"resolution": "declined", "note": "not now"})
     assert r.status_code == 200
-    row = client.get(f"/agent-tasks/{task['id']}/executions/{execution['id']}").json()
+    # The SAME execution goes waiting → running → completed once the tool
+    # thread wakes; `waiting` is not settled here.
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        row = client.get(f"/agent-tasks/{task['id']}/executions/{execution['id']}").json()
+        if row["status"] not in ("queued", "running", "waiting"):
+            break
+        time.sleep(0.05)
     assert row["status"] == "completed"
+    assert seen["decision"]["status"] == "declined"
     assert client.get(f"/agent-tasks/{task['id']}/state").json()["status"] == "ready"
     events = client.get(f"/agent-tasks/{task['id']}/events").json()["events"]
     kinds = [e["event_type"] for e in events]
-    assert "decision.opened" in kinds and "decision.resolved" in kinds
+    assert "approval.opened" in kinds and "decision.resolved" in kinds
 
 
 # --- recovery ------------------------------------------------------------------
@@ -389,14 +420,19 @@ def test_typed_context_is_versioned_and_never_replays_chat(client, monkeypatch):
     assert "open_decisions" in ctx["context"]
 
     # An execution that changes durable state bumps the version.
-    monkeypatch.setattr(session_agent, "SESSION_LOOP",
-                        lambda spec: _contract(proposals=[_gated_proposal()]))
+    def loop(spec):
+        from app.repositories import sessions as sessions_repo
+        sessions_repo.add_agent_memory(spec["conn"], spec["session_id"], "finding",
+                                       "bucket acme-logs has no lifecycle rule")
+        return _contract(activity=[{"id": "h1", "tool": "head_bucket", "target": "acme-logs",
+                                    "result": "200", "ok": True, "status": "completed"}])
+    monkeypatch.setattr(session_agent, "SESSION_LOOP", loop)
     execution = client.post(f"/agent-tasks/{task['id']}/executions",
-                            json={"direction": "import", "turn_id": "c1"}).json()["execution"]
+                            json={"direction": "check acme-logs", "turn_id": "c1"}).json()["execution"]
     _wait_settled(client, task["id"], execution["id"])
     ctx2 = client.get(f"/agent-tasks/{task['id']}/context").json()
     assert ctx2["version"] > ctx["version"]
-    assert ctx2["context"]["open_decisions"]
+    assert ctx2["context"]["open_decisions"] == []
 
 
 # --- compatibility shims stay on the ONE lifecycle ----------------------------------

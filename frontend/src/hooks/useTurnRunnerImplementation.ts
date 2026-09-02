@@ -29,15 +29,30 @@ import {
   uploadSessionDataset,
 } from "../api";
 import {
+  CLEAR_TURN,
   getSessionRun,
+  liveTurnOf,
   patchSessionRun,
   registerTurnAbort,
   registerTurnCancel,
   unregisterTurnAbort,
   unregisterTurnCancel,
+  type SessionRun,
 } from "../sessionRuns";
 import { useI18n, type TFunc } from "../i18n";
-import type { ToolActivity } from "../types";
+import {
+  applyDelta,
+  applyStatus,
+  applyTool,
+  completeMessage,
+  grantApproval,
+  mergeTool,
+  openApproval,
+  resolveApproval,
+  type LiveTurn,
+} from "../lib/turnItems";
+
+export { mergeTool };
 
 // Turn a raw sidecar/provider error into a short, actionable, localized line.
 // The model-provider hints (bad key / unknown model / provider unreachable)
@@ -77,29 +92,24 @@ const newTurnId = () =>
     ? crypto.randomUUID()
     : `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-// Merge a streamed `tool` event into the live list. A "started" record renders
-// as an in-progress row; the completed record for the same call resolves it in
-// place instead of appending a duplicate.
-export const mergeTool = (list: ToolActivity[], rec: ToolActivity): ToolActivity[] => {
-  if (rec.status === "started") return [...list, rec];
-  // Resolve by the call's own id when it has one (v0.55.0). Matching on
-  // tool+target was ambiguous the moment v0.54.0 enabled parallel calls: two
-  // concurrent `get_bucket_config_detail` calls on the same bucket are identical
-  // under that key, so a completed record could resolve the wrong started row
-  // and both would be mislabelled. The tool+target path stays as the fallback
-  // for records replayed from pre-v0.55.0 history, which carry no id.
-  const byId = rec.id ? list.findIndex((a) => a.status === "started" && a.id === rec.id) : -1;
-  const i = byId >= 0 ? byId : list.findIndex(
-    (a) => a.status === "started" && !a.id && a.tool === rec.tool
-      && (!a.target || !rec.target || a.target === rec.target),
-  );
-  if (i >= 0) {
-    const next = list.slice();
-    next[i] = rec;
-    return next;
-  }
-  return [...list, rec];
-};
+/** The one handler map every live follower uses: each durable frame is
+ * reduced into the run's ordered turn items (lib/turnItems). */
+export function liveHandlers(id: string) {
+  const reduce = (fn: (turn: LiveTurn) => LiveTurn) =>
+    patchSessionRun(id, (s: SessionRun) => {
+      const next = fn(liveTurnOf(s));
+      return { items: next.items, answer: next.answer, waiting: next.waiting };
+    });
+  return {
+    onDelta: (chunk: string) => reduce((turn) => applyDelta(turn, chunk)),
+    onTool: (rec: Parameters<typeof applyTool>[1]) => reduce((turn) => applyTool(turn, rec)),
+    onMessageCompleted: (payload: Parameters<typeof completeMessage>[1]) => reduce((turn) => completeMessage(turn, payload)),
+    onApprovalOpened: (payload: Parameters<typeof openApproval>[1]) => reduce((turn) => openApproval(turn, payload)),
+    onApprovalGranted: (payload: Parameters<typeof grantApproval>[1]) => reduce((turn) => grantApproval(turn, payload)),
+    onDecisionResolved: (payload: Parameters<typeof resolveApproval>[1]) => reduce((turn) => resolveApproval(turn, payload)),
+    onStatus: (payload: { status: string }) => reduce((turn) => applyStatus(turn, payload.status)),
+  };
+}
 
 type Outcome = "ok" | "stopped" | "failed" | "triaged" | "inprogress";
 
@@ -215,11 +225,7 @@ export function useTurnRunner(opts: {
     controller: AbortController,
     after = 0,
   ) => {
-    const handlers = {
-      onDelta: (chunk: string) => patchSessionRun(id, (s) => ({ streamText: (s.streamText ?? "") + chunk })),
-      onTool: (rec: ToolActivity) => patchSessionRun(id, (s) => ({ streamTools: mergeTool(s.streamTools, rec) })),
-    };
-    return followExecutionEvents(id, executionId, handlers, { signal: controller.signal, after });
+    return followExecutionEvents(id, executionId, liveHandlers(id), { signal: controller.signal, after });
   };
 
   // After Stop aborts the local view, drain remaining durable events at
@@ -266,7 +272,7 @@ export function useTurnRunner(opts: {
     const turnId = newTurnId();
     patchSessionRun(id, {
       busy: true, error: null, needKey: false, pending: q,
-      streamText: null, streamTools: [], stopped: false, stalled: false,
+      ...CLEAR_TURN, startedAt: Date.now(), stopped: false, stalled: false,
     });
     onRegistered?.();
     const controller = new AbortController();
@@ -289,7 +295,7 @@ export function useTurnRunner(opts: {
         outcome = await classifySubmitError(id, q, String(e));
         if (outcome === "triaged") {
           if (localId.current === id) await reload(id);
-          patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
+          patchSessionRun(id, { pending: null, ...CLEAR_TURN, stopped: false });
           onChanged();
           return;
         }
@@ -307,12 +313,12 @@ export function useTurnRunner(opts: {
         if (localId.current === id) {
           setText(q);
           patchSessionRun(id, {
-            pending: null, streamText: null, streamTools: [], stopped: false,
+            pending: null, ...CLEAR_TURN, stopped: false,
             stalled: false, failedText: null,
           });
         } else {
           patchSessionRun(id, {
-            pending: null, streamText: null, streamTools: [], stopped: false,
+            pending: null, ...CLEAR_TURN, stopped: false,
             stalled: false, failedText: q,
           });
         }
@@ -323,7 +329,6 @@ export function useTurnRunner(opts: {
         const r = await followDurable(id, submitted.execution.id, controller, 0);
         lastSeq = r.last_seq;
         patchSessionRun(id, {
-          proposals: r.proposed_actions || [],
           lastMetrics: r.metrics ? { messageId: r.message_id ?? null, metrics: r.metrics } : null,
         });
         outcome = r.stopped ? "stopped" : "ok";
@@ -343,7 +348,7 @@ export function useTurnRunner(opts: {
           /* cancel is best-effort */
         }
         await drainAfterStop(id, flight.executionId, lastSeq);
-        patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
+        patchSessionRun(id, { pending: null, ...CLEAR_TURN, stopped: false });
         onChanged();
         return;
       }
@@ -363,12 +368,12 @@ export function useTurnRunner(opts: {
         if (localId.current === id) {
           setText(q);
           patchSessionRun(id, {
-            pending: null, streamText: null, streamTools: [], stopped: false,
+            pending: null, ...CLEAR_TURN, stopped: false,
             stalled: false, failedText: null,
           });
         } else {
           patchSessionRun(id, {
-            pending: null, streamText: null, streamTools: [], stopped: false,
+            pending: null, ...CLEAR_TURN, stopped: false,
             stalled: false, failedText: q,
           });
         }
@@ -377,7 +382,7 @@ export function useTurnRunner(opts: {
 
       if (outcome === "triaged") {
         if (localId.current === id) await reload(id);
-        patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
+        patchSessionRun(id, { pending: null, ...CLEAR_TURN, stopped: false });
         onChanged();
         return;
       }
@@ -392,7 +397,7 @@ export function useTurnRunner(opts: {
           }
         }
       }
-      patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
+      patchSessionRun(id, { pending: null, ...CLEAR_TURN, stopped: false });
       onChanged();
     } finally {
       turnsRef.current.delete(id);
@@ -410,7 +415,7 @@ export function useTurnRunner(opts: {
     patchSessionRun(id, {
       busy: true, error: null, needKey: false,
       pending: direction || getSessionRun(id).pending,
-      streamText: null, streamTools: [], stopped: false, stalled: false,
+      ...CLEAR_TURN, startedAt: Date.now(), stopped: false, stalled: false,
     });
     const turnId = newTurnId();
     const controller = new AbortController();
@@ -426,11 +431,10 @@ export function useTurnRunner(opts: {
     try {
       const r = await followDurable(id, executionId, controller, 0);
       patchSessionRun(id, {
-        proposals: r.proposed_actions || [],
         lastMetrics: r.metrics ? { messageId: r.message_id ?? null, metrics: r.metrics } : null,
       });
       if (localId.current === id) await reload(id);
-      patchSessionRun(id, { pending: null, streamText: null, streamTools: [], stopped: false });
+      patchSessionRun(id, { pending: null, ...CLEAR_TURN, stopped: false });
       onChanged();
     } catch (e) {
       if (!controller.signal.aborted) {
@@ -542,6 +546,15 @@ export function useTurnRunner(opts: {
       if (e instanceof ApiError && e.status === 409) {
         // The execution settled between the check and the steer — the
         // direction becomes an ordinary delegation instead of being lost.
+        // The local flight may still hold the submit latch for a moment
+        // (its stream is draining), so wait for it rather than have the
+        // delegation refused silently.
+        const settled = await waitForIdle(id);
+        if (!settled || localId.current !== id) {
+          if (localId.current === id) setText(q);
+          else patchSessionRun(id, { failedText: q });
+          return;
+        }
         await submit(q);
         return;
       }
@@ -619,7 +632,7 @@ export function useTurnRunner(opts: {
       void getTaskState(id)
         .then((state) => {
           const execId = state.active_execution?.id
-            ?? (state.last_execution && ["queued", "running"].includes(state.last_execution.status)
+            ?? (state.last_execution && ["queued", "running", "waiting"].includes(state.last_execution.status)
               ? state.last_execution.id : null);
           if (execId) return stopTaskExecution(id, execId).then(() => undefined);
           return undefined;

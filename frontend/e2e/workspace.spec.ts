@@ -5,7 +5,7 @@ const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("t
 
 async function openEvidence(page: Page) {
   await page.keyboard.press("Control+i");
-  const review = page.getByTestId("agent-review-panel");
+  const review = page.getByTestId("agent-artifacts-panel");
   await expect(review).toBeVisible();
   await expect(page.getByTestId("evidence-review")).toBeVisible();
   return review;
@@ -44,7 +44,7 @@ async function completeTurn(page: Page) {
 }
 
 test.describe("Agent-native task shell", () => {
-  test("Review is contextual output and never replaces the active Agent task", async ({ page }) => {
+  test("Artifacts is a panel beside the task and never replaces the active Agent task", async ({ page }) => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
@@ -52,7 +52,7 @@ test.describe("Agent-native task shell", () => {
       await expect(task).toBeVisible();
 
       await openEvidence(page);
-      const review = page.getByTestId("agent-review-panel");
+      const review = page.getByTestId("agent-artifacts-panel");
       await expect(review).toBeVisible();
       await expect(task).toBeVisible();
       await expect(page.getByRole("tab")).toHaveCount(0);
@@ -81,13 +81,13 @@ test.describe("Agent-native task shell", () => {
     }
   });
 
-  test("Review stays open while the same task Composer continues the Agent task", async ({ page }) => {
+  test("Artifacts stays open while the same task Composer continues the Agent task", async ({ page }) => {
     const { cleanup, model } = await setup(page);
     try {
       await completeTurn(page);
       const baselineRequests = model.requests.length;
       await openEvidence(page);
-      const review = page.getByTestId("agent-review-panel");
+      const review = page.getByTestId("agent-artifacts-panel");
       await expect(review).toBeVisible();
 
       await composer(page).fill(FOLLOW_UP);
@@ -126,13 +126,14 @@ test.describe("Agent-native task shell", () => {
     }
   });
 
-  test("Report opens as an Artifact review beside the durable task", async ({ page }) => {
+  test("Report opens as an Artifact document beside the durable task", async ({ page }) => {
     const { cleanup } = await setup(page);
     try {
       await completeTurn(page);
-      await page.getByTestId("work-result-open-report").click();
+      await page.keyboard.press("Control+i");
+      await page.getByTestId("artifact-report-row").click();
 
-      const review = page.getByTestId("agent-review-panel");
+      const review = page.getByTestId("agent-artifacts-panel");
       await expect(review).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId("report-artifact")).toBeVisible();
       await expect(page.getByTestId("task-scroll")).toBeVisible();

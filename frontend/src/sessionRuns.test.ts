@@ -1,6 +1,6 @@
 /**
  * Tests for the per-session run store. This holds in-flight turn state OUTSIDE
- * the Thread component so a turn survives session switches; its drop/late-write
+ * the task renderer so a turn survives task switches; its drop/late-write
  * guard (F3) and the new failedText field (FE2) are exactly the state-machine
  * bits the v0.38 fixes leaned on, and were untested.
  *
@@ -25,6 +25,9 @@ describe("patchSessionRun / getSessionRun", () => {
     expect(r.busy).toBe(false);
     expect(r.pending).toBeNull();
     expect(r.failedText).toBeNull();
+    expect(r.items).toEqual([]);
+    expect(r.answer).toBeNull();
+    expect(r.waiting).toBe(false);
   });
 
   it("merges partial patches", () => {
@@ -38,9 +41,9 @@ describe("patchSessionRun / getSessionRun", () => {
 
   it("supports functional patches over the current value", () => {
     const id = sid();
-    patchSessionRun(id, { streamText: "a" });
-    patchSessionRun(id, (s) => ({ streamText: (s.streamText ?? "") + "b" }));
-    expect(getSessionRun(id).streamText).toBe("ab");
+    patchSessionRun(id, { answer: "a" });
+    patchSessionRun(id, (s) => ({ answer: (s.answer ?? "") + "b" }));
+    expect(getSessionRun(id).answer).toBe("ab");
   });
 
   it("round-trips failedText (FE2)", () => {

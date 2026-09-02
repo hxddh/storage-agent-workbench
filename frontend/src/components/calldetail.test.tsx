@@ -17,7 +17,14 @@ import type { ToolActivity } from "../types";
 const getSessionCall = vi.fn();
 vi.mock("../api", () => ({ getSessionCall: (...a: unknown[]) => getSessionCall(...a) }));
 
-const wrap = (node: React.ReactNode) => render(createElement(I18nProvider, null, node));
+const wrap = (node: React.ReactNode) => {
+  const out = render(createElement(I18nProvider, null, node));
+  // A finished group is collapsed until the reader opens it (Codex parity);
+  // these tests read the rows, so open it first.
+  const head = screen.queryByTestId("execution-head");
+  if (head && screen.getByTestId("worked-group").getAttribute("data-expanded") === "false") fireEvent.click(head);
+  return out;
+};
 const call = (over: Partial<ToolActivity> = {}): ToolActivity => ({
   id: "c1", tool: "list_objects", target: "acme-logs", result: "1000 keys",
   ok: true, status: "completed", ...over,

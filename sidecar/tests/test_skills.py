@@ -15,7 +15,6 @@ from pathlib import Path
 from app import config
 from app.agent_runtime import session_agent
 from app.skills import context as skill_context
-from app.skills import contract as skill_contract
 from app.skills import loader
 
 ACCESS = "AKIAIOSFODNN7EXAMPLE"
@@ -150,21 +149,27 @@ def test_read_skill_is_a_readonly_session_tool():
 # --- contract parser --------------------------------------------------------
 
 
-def test_agent_contract_minimal_shape_and_coercion():
-    raw = (
-        "Region mismatch is most likely. <thinking>secret</thinking>\n"
-        "```json\n"
-        '{"answer": "Region mismatch is most likely.", "skills_used": ["storageops-s3-protocol-compatibility", "made-up-skill"],'
-        ' "evidence_used": ["triage parsed signals"], "evidence_gaps": ["client region config"],'
-        ' "next_action_proposals": [{"title": "Run a diagnostic", "action_type": "run_diagnostic"},'
-        ' {"title": "rm -rf", "action_type": "exec_shell_wipe"}]}\n```'
-    )
-    out = skill_contract.parse_agent_contract(raw, allowed_skill_names=["storageops-s3-protocol-compatibility"])
-    assert set(out) == {"answer", "skills_used", "evidence_used", "evidence_gaps", "next_action_proposals"}
-    assert "secret" not in out["answer"]  # CoT stripped
+def test_final_work_result_has_no_metadata_block_and_derives_grounding():
+    """v1.11: the answer is plain Markdown — no ```json contract. Grounding is
+    DERIVED from the tool trace: skills_used from read_skill calls, evidence_gaps
+    from note_open_question, never claimed by the model."""
+    from app.agent_runtime.finalize import _finalize_contract
+    raw = "Region mismatch is most likely. <thinking>secret</thinking>"
+    activity = [
+        {"id": "a", "tool": "read_skill", "target": "storageops-s3-protocol-compatibility",
+         "result": "loaded", "ok": True, "status": "completed"},
+        {"id": "b", "tool": "read_skill", "target": "made-up-skill", "result": "loaded",
+         "ok": True, "status": "completed"},
+        {"id": "c", "tool": "note_open_question", "target": "client region config",
+         "result": "recorded", "ok": True, "status": "completed"},
+        {"id": "d", "tool": "head_bucket", "target": "acme", "status": "started"},
+    ]
+    out = _finalize_contract(raw, ["storageops-s3-protocol-compatibility"], activity)
+    assert out["answer"] == "Region mismatch is most likely."  # CoT stripped
     assert out["skills_used"] == ["storageops-s3-protocol-compatibility"]  # unknown dropped
-    assert len(out["next_action_proposals"]) == 1  # forbidden-token action_type dropped
-    assert out["next_action_proposals"][0]["requires_confirmation"] is True
+    assert out["evidence_gaps"] == ["client region config"]
+    assert "next_action_proposals" not in out
+    assert all(a["status"] != "started" for a in out["tool_activity"])
 
 
 # --- session assistant injection --------------------------------------------
@@ -177,7 +182,10 @@ def test_session_assistant_prompt_includes_skill_context(client, monkeypatch):
 
     def fake_loop(spec):
         captured["spec"] = spec
-        return "Here is guidance.\n```json\n{\"answer\": \"Here is guidance.\", \"skills_used\": [], \"evidence_gaps\": [\"need the policy\"]}\n```"
+        spec["activity"].append({"id": "q1", "tool": "note_open_question",
+                                 "target": "need the policy", "result": "recorded",
+                                 "ok": True, "status": "completed"})
+        return "Here is guidance."
 
     monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
     out = client.post(f"/sessions/{s['id']}/messages", json={"content": "why 403 AccessDenied?"}).json()
@@ -185,7 +193,8 @@ def test_session_assistant_prompt_includes_skill_context(client, monkeypatch):
     # Progressive disclosure: the prompt carries the skills CATALOG + read_skill,
     # not pre-injected full skill bodies.
     assert "STORAGEOPS SKILLS" in prompt and "read_skill(" in prompt
-    # contract surfaced in response
+    # v1.11: no metadata block in the prompt, grounding derived from the trace
+    assert "```json" not in prompt and "next_action_proposals" not in prompt
     assert "skills_used" in out and "evidence_gaps" in out
     assert out["evidence_gaps"] == ["need the policy"]
 
@@ -197,9 +206,9 @@ def test_skills_used_bound_to_actual_read_skill(client, monkeypatch):
     _add_model_provider(client)
 
     def fake_loop(spec):
-        # Claims a real skill name but the fake loop never calls read_skill,
-        # so there's no read_skill in tool_activity.
-        return ('{"answer": "ok", "skills_used": ["storageops-security-iam-policy"]}')
+        # Claims a real skill name in prose but the fake loop never calls
+        # read_skill, so there's no read_skill in tool_activity.
+        return "ok (skills_used: storageops-security-iam-policy)"
 
     monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
     out = client.post(f"/sessions/{s['id']}/messages", json={"content": "why 403?"}).json()
@@ -207,13 +216,14 @@ def test_skills_used_bound_to_actual_read_skill(client, monkeypatch):
 
 
 def test_skills_used_cap_matches_read_skill_budget():
-    """The contract keeps up to 6 skills_used (was 3), matching the per-turn
-    read_skill budget, so a turn that loaded several skills reports all of them."""
-    from app.skills import contract as skill_contract
-
-    six = str([f"storageops-skill-{i}" for i in range(6)]).replace("'", '"')
-    raw = 'ok\n```json\n{"answer": "ok", "skills_used": ' + six + "}\n```"
-    out = skill_contract.parse_agent_contract(raw)  # no allowlist filter
+    """The Work Result keeps up to 12 grounding items (≥ the per-turn read_skill
+    budget of 6), so a turn that loaded several skills reports all of them."""
+    from app.agent_runtime.finalize import _MAX_GROUNDING_ITEMS, _finalize_contract
+    assert _MAX_GROUNDING_ITEMS >= 6
+    names = [f"storageops-skill-{i}" for i in range(6)]
+    activity = [{"id": str(i), "tool": "read_skill", "target": n, "result": "loaded",
+                 "ok": True, "status": "completed"} for i, n in enumerate(names)]
+    out = _finalize_contract("ok", names, activity)
     assert len(out["skills_used"]) == 6
 
 
@@ -262,7 +272,7 @@ def test_migrations_are_sequential_and_capped():
     # 27 is the v0.96 optimization copilot: price table, remediation plans,
     # baselines, revisit schedules, artifact status/payload. 28 (v1.10.0) adds
     # sessions.title_source and model_providers.reasoning_effort.
-    assert max(versions) == 28
+    assert max(versions) == 29
 
 
 def test_no_public_skills_api(client):

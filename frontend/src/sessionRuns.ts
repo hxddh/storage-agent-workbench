@@ -7,16 +7,22 @@
  * task list can reflect that state without inventing background workers.
  */
 import { useCallback, useSyncExternalStore } from "react";
-import type { Grounding, NextAction, ToolActivity, ExecutionMetrics } from "./types";
+import type { ExecutionMetrics } from "./types";
+import type { LiveTurn, TurnItem } from "./lib/turnItems";
 
 export type SessionRun = {
   busy: boolean;
   uploading: boolean;
   pending: string | null;
-  streamText: string | null;
-  streamTools: ToolActivity[];
-  proposals: NextAction[] | null;
-  grounding: Grounding | null;
+  /** Ordered live transcript items of the current turn (commentary, tool
+   * rows, approvals) BEFORE the answer. See lib/turnItems. */
+  items: TurnItem[];
+  /** The final segment, once the model closed it. */
+  answer: string | null;
+  /** The execution is parked on an inline approval; the worker is alive. */
+  waiting: boolean;
+  /** When this client saw the turn start, for the live elapsed timer. */
+  startedAt: number | null;
   lastMetrics: { messageId: string | null; metrics: ExecutionMetrics } | null;
   needKey: boolean;
   error: string | null;
@@ -25,14 +31,21 @@ export type SessionRun = {
   failedText: string | null;
 };
 
+/** The live-turn slice of a run, for the pure reducers. */
+export const liveTurnOf = (run: SessionRun): LiveTurn =>
+  ({ items: run.items, answer: run.answer, waiting: run.waiting });
+
+/** A cleared live turn, used whenever a run starts or settles. */
+export const CLEAR_TURN = { items: [] as TurnItem[], answer: null, waiting: false, startedAt: null };
+
 const EMPTY: SessionRun = {
   busy: false,
   uploading: false,
   pending: null,
-  streamText: null,
-  streamTools: [],
-  proposals: null,
-  grounding: null,
+  items: [],
+  answer: null,
+  waiting: false,
+  startedAt: null,
   lastMetrics: null,
   needKey: false,
   error: null,

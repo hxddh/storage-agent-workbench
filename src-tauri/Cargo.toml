@@ -1,6 +1,6 @@
 [package]
 name = "storage-agent-workbench"
-version = "1.10.0"
+version = "1.11.0"
 description = "Local-first agent for object storage operations, analytics, and management on S3-compatible systems"
 edition = "2021"
 rust-version = "1.77.2"
@@ -43,6 +43,9 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-opener = "2"
+# - window-state: remember the window's size / position / maximised state
+#   across launches (restored by the Rust side alone; no JS counterpart)
+tauri-plugin-window-state = "2"
 
 # NOTE: The Python FastAPI sidecar is packaged with PyInstaller as a ONE-DIR
 # bundle, shipped as a Tauri resource, and launched directly from src/lib.rs via

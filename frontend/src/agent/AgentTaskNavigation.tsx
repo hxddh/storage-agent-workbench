@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
-import { useI18n, type TFunc } from "../i18n";
+import { useI18n, type Lang, type TFunc } from "../i18n";
 import { useSessionRun, useSessionRunIndexVersion } from "../sessionRuns";
 import { useNavigationCopy } from "./navigationCopy";
 import {
@@ -22,6 +22,44 @@ function relTime(iso: string, t: TFunc): string {
   if (seconds < 172800) return t("time.yesterday");
   if (seconds < 604800) return t("time.dAgo", { n: Math.floor(seconds / 86400) });
   return t("time.wAgo", { n: Math.floor(seconds / 604800) });
+}
+
+/** Start of the local calendar day `iso` falls on, as a sortable key. */
+function localDayKey(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+export type TaskDayGroup = { key: string; label: string; tasks: AgentTaskSummary[] };
+
+/**
+ * The list is chronological and grouped by the day each task was last
+ * touched: Today, Yesterday, then one dated header per earlier day. Groups
+ * keep the newest-first order, so keyboard navigation can still flatten them.
+ */
+export function dayGroups(tasks: AgentTaskSummary[], lang: Lang, now: Date = new Date()): TaskDayGroup[] {
+  const today = localDayKey(now.getTime());
+  const yesterday = today - 86_400_000;
+  const fmt = new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : "en-US", { month: "long", day: "numeric" });
+  const fmtYear = new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "long", day: "numeric" });
+  const groups: TaskDayGroup[] = [];
+  for (const task of tasks) {
+    const ms = Date.parse(task.updated_at);
+    const day = Number.isNaN(ms) ? Number.NaN : localDayKey(ms);
+    let key: string;
+    let label: string;
+    if (Number.isNaN(day)) { key = "undated"; label = lang === "zh" ? "更早" : "Earlier"; }
+    else if (day >= today) { key = "today"; label = lang === "zh" ? "今天" : "Today"; }
+    else if (day >= yesterday) { key = "yesterday"; label = lang === "zh" ? "昨天" : "Yesterday"; }
+    else {
+      key = String(day);
+      label = (new Date(day).getFullYear() === now.getFullYear() ? fmt : fmtYear).format(day);
+    }
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.tasks.push(task);
+    else groups.push({ key, label, tasks: [task] });
+  }
+  return groups;
 }
 
 function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTask, setMenuId, setRenamingId, setConfirmId, actions }: {
@@ -138,6 +176,7 @@ export type AgentTaskNavigationProps = {
 /** The sidebar: window chrome row, New task, one chronological task list, Settings. */
 export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, onOpenSettings, actions, editRequest = null, width, collapsed, trafficLights, onToggleCollapse, onResize }: AgentTaskNavigationProps) {
   const copy = useNavigationCopy();
+  const { lang } = useI18n();
   useSessionRunIndexVersion();
   const [menuId, setMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -146,6 +185,7 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
 
   const visible = tasks.filter((task) => task.status !== "archived");
   visible.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+  const groups = dayGroups(visible, lang);
 
   // The native menu's Task → Rename / Delete land here, on the same inline
   // controls the More menu opens; there is no second edit path.
@@ -215,13 +255,17 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
           <span>{copy.newTask}</span>
         </button>
 
-        <div className="native-sidebar-section">{copy.tasks}</div>
         <nav ref={listRef} className="native-task-list" aria-label={copy.tasks} role="listbox" onKeyDown={onListKeyDown}>
           {visible.length === 0 ? (
             <p className="native-empty-list" data-testid="task-nav-empty">{copy.noTasks} {copy.noTasksHint}</p>
           ) : (
-            visible.map((task) => (
-              <TaskRow key={task.id} task={task} activeTaskId={activeTaskId} menuId={menuId} renamingId={renamingId} confirmId={confirmId} onSelectTask={onSelectTask} setMenuId={setMenuId} setRenamingId={setRenamingId} setConfirmId={setConfirmId} actions={actions} />
+            groups.map((group) => (
+              <div key={group.key} className="native-task-group" role="group" aria-label={group.label} data-testid="task-group" data-group={group.key}>
+                <div className="native-sidebar-section" aria-hidden>{group.label}</div>
+                {group.tasks.map((task) => (
+                  <TaskRow key={task.id} task={task} activeTaskId={activeTaskId} menuId={menuId} renamingId={renamingId} confirmId={confirmId} onSelectTask={onSelectTask} setMenuId={setMenuId} setRenamingId={setRenamingId} setConfirmId={setConfirmId} actions={actions} />
+                ))}
+              </div>
             ))
           )}
         </nav>
@@ -231,6 +275,12 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
             <Icon name="settings" />
             <span>{copy.settings}</span>
           </button>
+          {/* A fixed fact about the runtime, never a switch: storage tools are
+              read-only and any import waits for an explicit approval. */}
+          <span className="native-sidebar-readonly" data-testid="sidebar-read-only" title={copy.readOnlyHint} aria-label={copy.readOnlyHint}>
+            <Icon name="shield" size={12} />
+            <span>{copy.readOnly}</span>
+          </span>
         </footer>
       </div>
     </aside>

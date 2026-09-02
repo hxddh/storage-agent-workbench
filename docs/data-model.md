@@ -1,6 +1,6 @@
 # Data model
 
-> **Storage Agent v1.10.0 persistence reference.** Migration head **028** (two nullable columns: `sessions.title_source`, `model_providers.reasoning_effort`). `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI.
+> **Storage Agent v1.11.0 persistence reference.** Migration head **029** (`session_messages.turn_items`; `task_decisions.kind` / `scope`). `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI.
 >
 > Product vocabulary is Agent Task / Direction / Execution / Decision / Work Result / Artifact. SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
 
@@ -18,7 +18,7 @@ Secrets are stored separately in the encrypted local vault. SQLite stores only o
 
 The schema is created by append-only migrations in `sidecar/app/migrations.py`.
 
-**Current migration head: 028.**
+**Current migration head: 029.**
 
 Rules:
 
@@ -59,6 +59,7 @@ Rules:
 | 026 | `durable_task_runtime` | durable Agent Task/Execution objects, structured execution events, first-class Decision/Work Result/Artifact rows, typed versioned Storage Task Context |
 | 027 | `optimization_copilot` | local price table, versioned remediation plans, task baselines, per-task revisit schedules, artifact status/payload |
 | 028 | `native_agent_titles_effort` | `sessions.title_source` (`NULL` seed / `agent` / `user`) for runtime task titles; `model_providers.reasoning_effort` (`low`/`medium`/`high`/`NULL`) |
+| 029 | `native_agent_turn_items_approvals` | `session_messages.turn_items` (ordered commentary/tool items before the answer); `task_decisions.kind` (`approval` / `proposal`) and `scope` (`once` / `task`) for Decisions raised inline by gated tools |
 
 ## Product-to-persistence mapping
 
@@ -68,7 +69,7 @@ Rules:
 | Direction | `task_executions.direction` (+ durable steer events) | `session_messages` (user rows) |
 | Execution | `task_executions` + `execution_events` (append-only structured progress) | `runs`, `session_runs`, `tool_calls`, `turn_metrics` |
 | Work Result | `work_results` (runtime metadata; content via `message_id`) | `session_messages` (assistant rows) |
-| Decision | `task_decisions` (pending / approved / declined / superseded) | `session_messages.proposed_actions`, `approval_events`, evidence-import state |
+| Decision | `task_decisions` (pending / approved / declined / superseded; `kind`, `scope`) | `approval_events`, evidence-import state |
 | Artifact | `task_artifacts` (unified index over reports/imports/analyses/remediation plans/baselines/drift) | `reports`, evidence-import tables, report files, `remediation_plans` |
 | Remediation Plan | `remediation_plans` (`proposed` / `verified` / `partially_verified` / `stale`) | indexed via `task_artifacts` |
 | Baseline | `task_baselines` (bounded snapshot JSON, not raw rows) | — |
@@ -225,10 +226,11 @@ Durable Direction and Work Result records:
 - referenced run/evidence ids;
 - sanitized `tool_activity`;
 - sanitized `grounding`;
-- sanitized `proposed_actions`;
+- sanitized `proposed_actions` (always empty since v1.11; kept for older rows);
+- sanitized `turn_items` (v1.11): the ordered `message` / `tool` items the turn produced before its answer;
 - timestamp.
 
-The latest assistant-side `proposed_actions` is also used by the `/agent-tasks` projection to recover current durable Needs decision state after reload/restart.
+Needs-decision state is derived from pending `task_decisions` rows only.
 
 ### `session_runs`
 
@@ -315,12 +317,13 @@ Execution is a durable object with a real lifecycle:
   loading events into Python; truncation rewrites the oldest
   dropped row as an explicit `execution.events_truncated` marker and never
   touches queued/running/waiting logs. `0` on either cap disables that cap.
-- `work_results` — the durable output of an execution: stopped/cut-short flags,
-  grounding and proposals; the text stays on the linked `session_messages` row.
-- `task_decisions` — first-class Decision rows for confirmation-gated
-  proposals; a newer Work Result supersedes older pending decisions. At most
-  one pending Decision exists per `(task, action_type)`; a later proposal of
-  the same type supersedes the earlier pending row.
+- `work_results` — the durable output of an execution: stopped/cut-short flags
+  and derived grounding; the text stays on the linked `session_messages` row.
+- `task_decisions` — first-class Decision rows raised by gated tools inside a
+  running execution (`kind=approval`, since v1.11; `proposal` rows are history).
+  At most one pending Decision exists per `(task, action_type)`; a later request
+  of the same type supersedes the earlier pending row. `scope=task` on an
+  approved row is an explicit grant for later calls of that `action_type`.
 - `task_artifacts` — the unified Artifact index (`report`, `evidence_import`,
   `analysis`, `remediation_plan`, `baseline`, `drift_report`) pointing at the
   durable referent via `ref_kind`/`ref_id`. Optional `status` and sanitized

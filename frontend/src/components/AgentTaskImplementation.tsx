@@ -1,34 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  approveDecisionOrPrepare,
-  listTaskDecisions,
   resolveTaskDecision,
   stopTaskExecution,
-  type DecisionImpact,
   type TaskDecision,
 } from "../api";
-import type {
-  Grounding,
-  NextAction,
-  SessionDetail,
-  ToolActivity,
-  TriageCase,
-} from "../types";
-import { useSessionRun, patchSessionRun, getSessionRun } from "../sessionRuns";
+import type { SessionDetail, SessionMessage, TriageCase } from "../types";
+import { useSessionRun, patchSessionRun, getSessionRun, liveTurnOf } from "../sessionRuns";
 import { loadDraft, saveDraft } from "../drafts";
 import { useTurnRunner, cleanError } from "../hooks/useTurnRunner";
 import { useSessionDocument } from "../hooks/useSessionDocument";
 import { useTaskViewport } from "../hooks/useTaskViewport";
+import { fmtElapsed } from "../hooks/useElapsed";
 import { openAgentReview } from "../agent/commands";
+import { pickStartGreeting } from "../agent/startGreeting";
 import { publishPaletteActions } from "../agent/paletteActions";
 import { Button } from "./ui";
 import { Composer } from "./Composer";
-import { EvidenceImportDialog } from "./EvidenceImportDialog";
-import { AgentTaskResult } from "./AgentTaskResult";
-import { AgentNextAction } from "./AgentDecisionCard";
+import { AgentTurn, UserTurn } from "./TranscriptTurn";
+import { ApprovalCard, type ApprovalResolution, type ApprovalScope } from "./ApprovalCard";
 import { TriageCard } from "./AgentRuntimeArtifacts";
-import { WorkingRow } from "./LiveTrace";
-import { fmtDuration } from "./ExecutionMetrics";
 import { useI18n } from "../i18n";
 import { matches } from "../shortcuts";
 import { clearFind, findRanges, paintFind } from "../lib/findHighlight";
@@ -39,6 +29,7 @@ import {
   isCurrentPersistedWorkResult,
   pendingMatchesPersistedDirection,
 } from "../lib/pendingDirection";
+import { resolveApproval, turnItemsOf, unplacedApprovals, type TurnItem } from "../lib/turnItems";
 import { FindBar } from "./FindBar";
 import { useTaskProvenance } from "../hooks/useTaskProvenance";
 import { AnalysisFigures } from "../viz/AnalysisFigures";
@@ -58,29 +49,10 @@ type Item =
       role: string;
       content: string | null;
       id: string;
-      toolActivity?: ToolActivity[];
-      grounding?: Grounding | null;
-      nextActions?: NextAction[];
-      referencedRunIds?: string[];
-      referencedEvidenceIds?: string[];
+      message: SessionMessage;
     }
   | { kind: "run"; ts: string; data: SessionDetail["runs"][number] }
   | { kind: "triage"; ts: string; data: TriageCase };
-
-const actionKey = (action: NextAction) => `${action.action_type}::${action.title}`;
-
-function nextActionFromDecision(decision: TaskDecision): NextAction {
-  const proposal = decision.proposal;
-  return {
-    title: proposal?.title || decision.title || decision.action_type,
-    reason: proposal?.reason ?? decision.reason,
-    action_type: decision.action_type,
-    requires_confirmation: true,
-    confidence: proposal?.confidence || "high",
-    source_run_ids: proposal?.source_run_ids ?? [],
-    prefill: proposal?.prefill,
-  };
-}
 
 function useTaskCopy() {
   const { lang } = useI18n();
@@ -107,14 +79,14 @@ function useTaskCopy() {
         liveFailed: "这个任务执行失败。",
         liveStopped: "这个任务已停止。",
         liveWorking: "Agent 正在执行这个任务。",
+        liveWaiting: "Agent 正在等待你的批准。",
         liveReady: "工作结果已就绪。",
-        continueTask: "继续当前任务，从尚未完成的线索继续推进并深入检查。",
         resumeTitle: "这次执行被中断了",
         resumeBody: "恢复会用同一条方向开始新的执行。",
         resumeAction: "恢复执行",
+        queued: "排队中",
         queuedHint: "排队中 · 当前执行结束后开始",
         queuedCancel: "取消",
-        declineMissing: "没有找到对应的待处理决定。",
         greeting: "让 Agent 处理什么？",
       }
     : {
@@ -139,14 +111,14 @@ function useTaskCopy() {
         liveFailed: "This task failed.",
         liveStopped: "This task was stopped.",
         liveWorking: "The Agent is working on this task.",
+        liveWaiting: "The Agent is waiting for your approval.",
         liveReady: "Work result is ready.",
-        continueTask: "Continue this task from the unfinished lines of work and go deeper where needed.",
         resumeTitle: "This execution was interrupted",
         resumeBody: "Resume starts a new execution with the same Direction.",
         resumeAction: "Resume execution",
+        queued: "Queued",
         queuedHint: "Queued · starts when the current execution finishes",
         queuedCancel: "Cancel",
-        declineMissing: "No matching pending Decision was found.",
         greeting: "What should the Agent work on?",
       };
 }
@@ -172,7 +144,7 @@ export function AgentTaskImplementation({
   settingsOpen: boolean;
   reloadKey?: number;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const taskCopy = useTaskCopy();
   const {
     scrollRef, contentRef, pinned, onScroll, releaseToUser,
@@ -183,12 +155,8 @@ export function AgentTaskImplementation({
     setTextState(next);
     saveDraft(localId.current, next);
   };
-  const [importHandoff, setImportHandoff] = useState<
-    { sourceType: "inventory" | "access_log"; accountRunId: string; bucketName: string } | null
-  >(null);
   const run = useSessionRun(sessionId);
-  const { busy, uploading, pending, streamText, streamTools, needKey } = run;
-  const liveNextActions = run.proposals;
+  const { busy, uploading, pending, items: liveItems, answer: liveAnswer, waiting, needKey } = run;
   const [viewError, setViewError] = useState<string | null>(null);
   useEffect(() => {
     if (run.busy) setViewError(null);
@@ -205,6 +173,7 @@ export function AgentTaskImplementation({
   const [attachType, setAttachType] = useState<"inventory" | "access_log" | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const presetTypeRef = useRef<"inventory" | "access_log" | null>(null);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
   const provenance = useTaskProvenance(sessionId);
   const hasFigures = Boolean(
     provenance?.analysis.cost || provenance?.analysis.inventory || provenance?.analysis.drift || provenance?.analysis.access_log,
@@ -248,8 +217,8 @@ export function AgentTaskImplementation({
     } else {
       setText(loadDraft(sessionId));
     }
-    setImportHandoff(null);
     setViewError(null);
+    setResolvingId(null);
     resetPinned();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
@@ -259,9 +228,7 @@ export function AgentTaskImplementation({
     for (const message of [...earlier, ...(detail?.messages ?? [])]) {
       output.push({
         kind: "message", ts: message.created_at, role: message.role, content: message.content, id: message.id,
-        toolActivity: message.tool_activity, grounding: message.grounding, nextActions: message.proposed_actions,
-        referencedRunIds: message.referenced_run_ids ?? [],
-        referencedEvidenceIds: message.referenced_evidence_ids ?? [],
+        message,
       });
     }
     for (const execution of detail?.runs ?? []) {
@@ -280,7 +247,23 @@ export function AgentTaskImplementation({
     patchSessionRun(sessionId, { pending: null });
   }, [sessionId, pending, busy, items]);
 
-  const nextActions = liveNextActions ?? [];
+  const pendingDecisions = useMemo<TaskDecision[]>(
+    () => (taskRuntime?.pending_decisions ?? []).filter((d) => d.status === "pending"),
+    [taskRuntime],
+  );
+  // The durable projection of every Agent turn: ordered items + answer. A
+  // pending inline approval renders at the tool row that raised it.
+  const turnItems = useMemo(() => {
+    const byId = new Map<string, TurnItem[]>();
+    for (const item of items) {
+      if (item.kind === "message" && item.role === "assistant") byId.set(item.id, turnItemsOf(item.message, pendingDecisions));
+    }
+    return byId;
+  }, [items, pendingDecisions]);
+  const unplaced = useMemo(
+    () => (busy ? [] : unplacedApprovals([...turnItems.values()], pendingDecisions)),
+    [busy, turnItems, pendingDecisions],
+  );
 
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -300,7 +283,7 @@ export function AgentTaskImplementation({
     const found = findQuery.trim().length >= 2 ? findRanges(root, findQuery) : [];
     setRanges(found);
     return () => clearFind();
-  }, [findOpen, findQuery, items, earlier.length, streamText]);
+  }, [findOpen, findQuery, items, earlier.length, liveAnswer, liveItems]);
 
   const activeRange = matchTotal ? ranges[Math.min(findIdx, matchTotal - 1)] : null;
   useEffect(() => {
@@ -334,7 +317,7 @@ export function AgentTaskImplementation({
   }, []);
   useEffect(() => {
     followLatest();
-  }, [items.length, nextActions.length, pending, streamText?.length, streamTools.length, followLatest]);
+  }, [items.length, pending, liveAnswer?.length, liveItems, followLatest]);
 
   const send = () => {
     if (busy || uploading) return;
@@ -354,77 +337,28 @@ export function AgentTaskImplementation({
     setAttachType(preset ?? attachKind(file.name));
   };
 
-  const INLINE_ACTION_PROMPT: Record<string, string> = {
-    run_account_discovery: "act.run_account_discovery",
-    run_bucket_config_review: "act.run_bucket_config_review",
-    run_diagnostic: "act.run_diagnostic",
-  };
-  const promptForAction = (actionType: string): string | null => {
-    if (actionType === "continue_investigation") return taskCopy.continueTask;
-    const key = INLINE_ACTION_PROMPT[actionType];
-    return key ? t(key) : null;
-  };
-
-  const runAction = async (action: NextAction) => {
-    const actionPrompt = promptForAction(action.action_type);
-    if (run.busy) {
-      if (actionPrompt) void runner.steer(actionPrompt);
-      return;
-    }
-    if (actionPrompt) {
-      void runner.submit(actionPrompt);
-      return;
-    }
-    if (action.action_type === "run_inventory_analysis" || action.action_type === "run_access_log_analysis") {
-      presetTypeRef.current = action.action_type === "run_inventory_analysis" ? "inventory" : "access_log";
-      fileRef.current?.click();
-      return;
-    }
-    if (!localId.current) return;
-    try {
-      // A confirmation-gated action may be backed by a first-class durable
-      // Decision: approving records the resolution durably (and settles the
-      // execution waiting on it) before handing over to the confirmed flow.
-      // Actions with no pending durable decision use the legacy prepare path.
-      const prepared = await approveDecisionOrPrepare(localId.current, action);
-      await reload(localId.current);
-      if (prepared.open === "evidence_import" && prepared.status === "ready") {
-        setImportHandoff({
-          sourceType: prepared.prefill.source_type as "inventory" | "access_log",
-          accountRunId: prepared.prefill.account_run_id,
-          bucketName: prepared.prefill.bucket_name,
-        });
-      } else if (prepared.open === "session_report") {
-        openAgentReview("report");
-      } else if (prepared.open === "message_composer") {
-        setText(prepared.prefill.question || "");
-        taRef.current?.focus();
-      } else {
-        void runner.submit(action.title);
-      }
-    } catch (caught) {
-      setViewError(cleanError(String(caught), t));
-    }
-  };
-
-  const declineAction = async (action: NextAction) => {
+  // Allow / Allow for this task / Deny an inline approval. The execution
+  // continues server-side; a live follower keeps reading the same stream, a
+  // cold document reattaches to the execution the approval belongs to.
+  const resolveApprovalDecision = async (decisionId: string, resolution: ApprovalResolution, scope: ApprovalScope) => {
     const id = localId.current;
     if (!id) return;
+    setResolvingId(decisionId);
     try {
-      let match = (taskRuntime?.pending_decisions ?? []).find((d) => d.action_type === action.action_type);
-      if (!match) {
-        const listed = await listTaskDecisions(id, "pending");
-        match = listed.decisions.find((d) => d.action_type === action.action_type);
+      const { decision } = await resolveTaskDecision(id, decisionId, resolution, scope);
+      patchSessionRun(id, (s) => {
+        const next = resolveApproval(liveTurnOf(s), { decision_id: decisionId, resolution, scope });
+        return { items: next.items, answer: next.answer, waiting: next.waiting };
+      });
+      if (!getSessionRun(id).busy) {
+        await reload(id);
+        if (decision.execution_id) void runner.followExecution(decision.execution_id, null);
       }
-      if (!match) {
-        setViewError(taskCopy.declineMissing);
-        return;
-      }
-      await resolveTaskDecision(id, match.id, "declined");
-      await reload(id);
       onChanged();
     } catch (caught) {
       setViewError(cleanError(String(caught), t));
+    } finally {
+      setResolvingId(null);
     }
   };
 
@@ -451,19 +385,7 @@ export function AgentTaskImplementation({
     }
     return undefined;
   }, [items]);
-  const lastPersisted = !!(
-    lastResult &&
-    (lastResult.grounding || (lastResult.nextActions && lastResult.nextActions.length > 0))
-  );
 
-  const pendingDecisions = taskRuntime?.pending_decisions ?? [];
-  const impactByType = new Map(pendingDecisions.map((d) => [d.action_type, d.impact ?? null]));
-  const shownActionTypes = new Set<string>();
-  for (const item of items) {
-    if (item.kind === "message") item.nextActions?.forEach((action) => shownActionTypes.add(action.action_type));
-  }
-  nextActions.forEach((action) => shownActionTypes.add(action.action_type));
-  const extraPending = pendingDecisions.filter((d) => d.status === "pending" && !shownActionTypes.has(d.action_type));
   const lastExec = taskRuntime?.last_execution;
   const offline = sidecarStatus === "disconnected" || sidecarStatus === "error";
   const showResume = Boolean(
@@ -483,15 +405,6 @@ export function AgentTaskImplementation({
     hasTask: Boolean(sessionId),
   }), [busy, showResume, lastExec, sessionId, runner]);
   const queuedDirections = taskRuntime?.queued_executions ?? [];
-  const renderAction = (action: NextAction, actionIndex: number, impact?: DecisionImpact | null) => (
-    <AgentNextAction
-      key={`${actionKey(action)}-${actionIndex}`}
-      action={action}
-      onRun={runAction}
-      onDecline={action.requires_confirmation ? declineAction : undefined}
-      impact={impact ?? impactByType.get(action.action_type)}
-    />
-  );
 
   const composer = (
     <Composer
@@ -528,10 +441,24 @@ export function AgentTaskImplementation({
       : run.stopped
         ? taskCopy.liveStopped
         : busy
-          ? taskCopy.liveWorking
-          : lastPersisted
+          ? (waiting ? taskCopy.liveWaiting : taskCopy.liveWorking)
+          : lastResult
             ? taskCopy.liveReady
             : "";
+
+  const figuresFor = (item: Extract<Item, { kind: "message" }>) =>
+    item.id === lastResult?.id && (hasFigures || provenance?.findings.length) ? (
+      <section className="task-analysis-figures mt-4" data-testid="task-analysis-figures">
+        {hasFigures ? <AnalysisFigures provenance={provenance} /> : null}
+        {provenance?.findings.length ? (
+          <div className={hasFigures ? "mt-4 space-y-1" : "space-y-1"}>
+            {provenance.findings.slice(0, 8).map((finding) => (
+              <ProvenanceMark key={finding.id} finding={finding} />
+            ))}
+          </div>
+        ) : null}
+      </section>
+    ) : undefined;
 
   const banners = (
     <>
@@ -572,12 +499,14 @@ export function AgentTaskImplementation({
         </div>
       ) : null}
       {queuedDirections.map((execution) => (
-        <div key={execution.id} data-testid="queued-direction" className="native-queued" title={taskCopy.queuedHint}>
-          <span className="working-mark" style={{ width: 6, height: 6, animation: "none", opacity: 0.5 }} aria-hidden />
-          <span>{execution.direction}</span>
-          <button type="button" data-testid="queued-direction-cancel" className="native-ghost-action" onClick={() => void cancelQueued(execution.id)}>
-            {taskCopy.queuedCancel}
-          </button>
+        <div key={execution.id} data-testid="queued-direction" className="turn-user native-queued" title={taskCopy.queuedHint}>
+          <div className="turn-user-bubble" data-queued="true">{execution.direction}</div>
+          <div className="turn-user-actions" data-always="true">
+            <span className="turn-tag">{taskCopy.queued}</span>
+            <button type="button" data-testid="queued-direction-cancel" className="native-ghost-action" onClick={() => void cancelQueued(execution.id)}>
+              {taskCopy.queuedCancel}
+            </button>
+          </div>
         </div>
       ))}
     </>
@@ -598,7 +527,7 @@ export function AgentTaskImplementation({
       ) : loadingTask ? (
         <div className="flex flex-1 flex-col px-6 py-7" data-testid="task-document-skeleton">
           <div className="native-document space-y-4">
-            <span className="skeleton h-10 w-2/3 max-w-[30rem] rounded-xl" />
+            <span className="skeleton ml-auto h-10 w-2/3 max-w-[30rem] rounded-xl" />
             <span className="skeleton h-4 w-40" />
             <span className="skeleton h-32 w-full max-w-[46rem]" />
             <span className="skeleton h-8 w-full max-w-[36rem]" />
@@ -607,7 +536,7 @@ export function AgentTaskImplementation({
       ) : isEmpty ? (
         <div className="native-start" data-testid="task-start">
           <div className="native-start-inner">
-            <p className="native-start-greeting">{taskCopy.greeting}</p>
+            <p className="native-start-greeting">{pickStartGreeting(lang)}</p>
             {composer}
             <div className="mt-4 space-y-2">{banners}</div>
           </div>
@@ -627,7 +556,7 @@ export function AgentTaskImplementation({
               {findOpen ? (
                 <FindBar query={findQuery} onQuery={setFindQuery} total={matchTotal} index={findIdx} onStep={stepFind} onClose={closeFind} />
               ) : null}
-              <div ref={contentRef} className="native-document space-y-7">
+              <div ref={contentRef} className="native-document space-y-6">
                 {hiddenCount > 0 ? (
                   <div className="flex justify-center gap-1.5">
                     <button type="button" onClick={loadEarlier} disabled={loadingEarlier} data-testid="load-earlier" className="native-chip disabled:opacity-50">
@@ -641,136 +570,104 @@ export function AgentTaskImplementation({
 
                 {items.map((item) => {
                   if (item.kind === "message") {
-                    const latest = item.id === lastResult?.id;
-                    const decisions = (item.nextActions ?? []).filter((action) => action.requires_confirmation);
+                    if (item.role === "user") {
+                      return (
+                        <div key={item.id} id={`task-item-${item.id}`} className="task-item" data-direction={item.content ?? ""}>
+                          <UserTurn content={item.content} />
+                        </div>
+                      );
+                    }
                     return (
-                      <div
-                        key={item.id}
-                        id={`task-item-${item.id}`}
-                        className="task-item space-y-4"
-                        data-direction={item.role === "user" ? (item.content ?? "") : undefined}
-                      >
-                        <AgentTaskResult
-                          role={item.role}
-                          content={item.content}
-                          toolActivity={item.toolActivity}
-                          referencedRunIds={item.referencedRunIds}
-                          referencedEvidenceIds={item.referencedEvidenceIds}
-                          hasReport={latest}
+                      <div key={item.id} id={`task-item-${item.id}`} className="task-item">
+                        <AgentTurn
+                          items={turnItems.get(item.id) ?? []}
+                          answer={item.content}
                           sessionId={sessionId}
-                          figures={latest && item.role === "assistant" && (hasFigures || provenance?.findings.length) ? (
-                            <section className="task-analysis-figures mt-4" data-testid="task-analysis-figures">
-                              {hasFigures ? <AnalysisFigures provenance={provenance} /> : null}
-                              {provenance?.findings.length ? (
-                                <div className={hasFigures ? "mt-4 space-y-1" : "space-y-1"}>
-                                  {provenance.findings.slice(0, 8).map((finding) => (
-                                    <ProvenanceMark key={finding.id} finding={finding} />
-                                  ))}
-                                </div>
-                              ) : null}
-                            </section>
-                          ) : undefined}
+                          figures={figuresFor(item)}
+                          onResolve={resolveApprovalDecision}
+                          resolvingId={resolvingId}
                         />
-                        {decisions.length > 0 ? (
-                          <div className="space-y-3">
-                            {decisions.map((action, actionIndex) => renderAction(action, actionIndex))}
-                          </div>
-                        ) : null}
                       </div>
                     );
                   }
                   if (item.kind === "run") return null;
-                  return <div key={item.data.id} className="task-item"><TriageCard c={item.data} onRun={runAction} /></div>;
+                  return <div key={item.data.id} className="task-item"><TriageCard c={item.data} /></div>;
                 })}
+
+                {unplaced.length > 0 ? (
+                  <div className="space-y-3" data-testid="pending-approvals">
+                    {unplaced.map((approval) => (
+                      <ApprovalCard
+                        key={approval.decision_id}
+                        item={approval}
+                        onResolve={resolveApprovalDecision}
+                        busy={resolvingId === approval.decision_id}
+                      />
+                    ))}
+                  </div>
+                ) : null}
 
                 {!pending && remoteExecution?.running ? (
                   <div data-testid="remote-execution" className="flex items-center gap-2 text-xs text-gray-400">
                     <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
-                    {taskCopy.remoteExecution(fmtDuration(remoteExecution.age_ms ?? null) ?? "—")}
+                    {taskCopy.remoteExecution(fmtElapsed(remoteExecution.age_ms ?? null) ?? "—")}
                   </div>
                 ) : null}
 
                 {pending && !hideLiveDirection ? (
                   <div id={PENDING_DIRECTION_ID} className="task-item" data-direction={pending}>
-                    <AgentTaskResult role="user" content={pending} />
+                    <UserTurn content={pending} />
                   </div>
                 ) : null}
 
                 {pending && !hideLiveWorkResult ? (
-                  <>
-                    {streamText !== null || streamTools.length ? (
-                      <>
-                        <AgentTaskResult role="assistant" content={streamText ?? ""} toolActivity={streamTools} streaming={!run.stopped} sessionId={sessionId} />
-                        {run.stopped ? <div className="text-2xs text-gray-500">{taskCopy.stopped}</div> : null}
-                      </>
-                    ) : run.stopped ? (
-                      <div className="text-2xs text-gray-500">{taskCopy.stopped}</div>
-                    ) : run.stalled ? (
-                      <div className="native-banner">
-                        {taskCopy.stalled}
-                        <div className="native-banner-actions">
-                          <Button variant="default" size="sm" onClick={() => {
-                            const id = localId.current;
-                            if (!id) return;
-                            patchSessionRun(id, { pending: null, stalled: false, streamText: null, streamTools: [] });
-                            void reload(id);
-                          }}>{taskCopy.reload}</Button>
-                        </div>
+                  run.stalled && liveItems.length === 0 && !liveAnswer ? (
+                    <div className="native-banner">
+                      {taskCopy.stalled}
+                      <div className="native-banner-actions">
+                        <Button variant="default" size="sm" onClick={() => {
+                          const id = localId.current;
+                          if (!id) return;
+                          patchSessionRun(id, { pending: null, stalled: false, items: [], answer: null, waiting: false });
+                          void reload(id);
+                        }}>{taskCopy.reload}</Button>
                       </div>
-                    ) : busy ? <WorkingRow label={taskCopy.liveWorking} /> : null}
-                  </>
+                    </div>
+                  ) : busy || run.stopped || liveItems.length > 0 || liveAnswer ? (
+                    <AgentTurn
+                      items={liveItems}
+                      answer={liveAnswer}
+                      live={!run.stopped}
+                      waiting={waiting}
+                      stoppedLabel={run.stopped ? taskCopy.stopped : null}
+                      startedAt={run.startedAt}
+                      sessionId={sessionId}
+                      onResolve={resolveApprovalDecision}
+                      resolvingId={resolvingId}
+                    />
+                  ) : null
                 ) : null}
 
                 <p className="sr-only" role="status" aria-live="polite" data-testid="task-status">{liveStatus}</p>
 
                 <div className="space-y-2 empty:hidden">{banners}</div>
-
-                {extraPending.length > 0 ? (
-                  <div className="space-y-3" data-testid="durable-pending-decisions">
-                    {extraPending.map((decision, actionIndex) =>
-                      renderAction(nextActionFromDecision(decision), actionIndex, decision.impact))}
-                  </div>
-                ) : null}
-
-                {!pending && nextActions.some((action) => action.requires_confirmation) && !lastPersisted ? (
-                  <div className="space-y-3">
-                    {nextActions.filter((action) => action.requires_confirmation).map((action, actionIndex) => renderAction(action, actionIndex))}
-                  </div>
-                ) : null}
               </div>
             </div>
           </div>
 
           <div className="relative px-6 pb-4 pt-1">
             {!pinned ? (
-              <div className="pointer-events-none absolute -top-10 left-0 right-0 flex justify-center">
+              <div className="pointer-events-none absolute -top-10 left-0 right-0 z-floating flex justify-center">
                 <button type="button" onClick={jumpToLatest} data-testid="jump-to-latest" className="native-chip pointer-events-auto bg-panel shadow-pop">
                   <Icon name="arrowDown" size={12} stroke={2} />
                   {busy ? taskCopy.jumpWorking : taskCopy.jumpLatest}
                 </button>
               </div>
             ) : null}
-            <div className="native-document">
-              <div className="max-w-[min(46rem,100%)]">{composer}</div>
-            </div>
+            <div className="native-document">{composer}</div>
           </div>
         </>
       )}
-
-      {importHandoff ? (
-        <EvidenceImportDialog
-          accountRunId={importHandoff.accountRunId}
-          bucketName={importHandoff.bucketName}
-          sourceType={importHandoff.sourceType}
-          sessionId={localId.current ?? undefined}
-          onClose={() => setImportHandoff(null)}
-          onImported={async () => {
-            setImportHandoff(null);
-            await reload(localId.current);
-            onChanged();
-          }}
-        />
-      ) : null}
     </main>
   );
 }

@@ -102,24 +102,27 @@ test.describe("Work Result layout with unbreakable storage identifiers", () => {
   });
 });
 
-test("a capped table fades only while more rows remain below", async ({ page }) => {
+test("a wide table scrolls inside its own container instead of the page", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  const { title } = seedSession(2, `fade ${Date.now()}`, "tall");
+  const { title } = seedSession(2, `scroll ${Date.now()}`, "tall");
   await boot(page);
   await navigation(page).getByText(title, { exact: true }).first().click();
   const table = page.getByTestId("work-result").locator("table").first();
   await expect(table).toBeVisible({ timeout: 20_000 });
   const box = table.locator("xpath=..");
-  const maskAt = async (top: number | "end") => {
-    await box.evaluate((el, value) => { el.scrollTop = value === "end" ? el.scrollHeight : value as number; }, top);
-    await page.waitForTimeout(250);
-    return box.evaluate((el) => getComputedStyle(el).maskImage || "none");
-  };
-  expect(await maskAt(0)).not.toBe("none");
-  expect(await maskAt("end")).toBe("none");
+  const style = await box.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { overflowX: cs.overflowX, mask: cs.maskImage || "none", scrollW: el.scrollWidth, clientW: el.clientWidth };
+  });
+  expect(style.overflowX).toBe("auto");
+  expect(style.mask).toBe("none");
+  // The document itself never scrolls sideways.
+  const scroll = page.getByTestId("task-scroll");
+  const m = await scroll.evaluate((el) => ({ scrollW: el.scrollWidth, clientW: el.clientWidth }));
+  expect(m.scrollW).toBeLessThanOrEqual(m.clientW + 1);
 });
 
-test("data-rich Work Results use a wider track than prose without changing the left edge", async ({ page }) => {
+test("data-rich answers keep the same reading measure and left edge as prose", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const { title } = seedSession(2, `widths ${Date.now()}`, "tall");
   await boot(page);
@@ -127,22 +130,19 @@ test("data-rich Work Results use a wider track than prose without changing the l
   await expect(page.locator(".agent-result-prose table").first()).toBeVisible({ timeout: 20_000 });
   const w = await page.evaluate(() => {
     const prose = document.querySelector(".agent-result-prose li, .agent-result-prose p") as HTMLElement;
-    const wide = document.querySelector(".agent-result-prose .agent-result-wide") as HTMLElement;
+    const table = document.querySelector(".agent-result-prose table") as HTMLElement;
+    const box = table.parentElement as HTMLElement;
     const column = prose.closest(".agent-result-prose") as HTMLElement;
     return {
-      prose: Math.round(prose.getBoundingClientRect().width),
       proseLeft: Math.round(prose.getBoundingClientRect().left),
-      wide: Math.round(wide.getBoundingClientRect().width),
-      wideLeft: Math.round(wide.getBoundingClientRect().left),
+      boxLeft: Math.round(box.getBoundingClientRect().left),
+      box: Math.round(box.getBoundingClientRect().width),
       column: Math.round(column.getBoundingClientRect().width),
-      font: Math.round(parseFloat(getComputedStyle(prose).fontSize)),
     };
   });
-  expect(w.wide).toBeGreaterThan(w.prose + 100);
-  expect(w.wide).toBeGreaterThanOrEqual(w.column - 2);
-  expect(w.prose).toBeLessThanOrEqual(46 * 16 + 2);
-  expect(Math.abs(w.proseLeft - w.wideLeft)).toBeLessThanOrEqual(1);
-  expect(w.font).toBeGreaterThanOrEqual(15);
+  expect(Math.abs(w.boxLeft - w.proseLeft)).toBeLessThanOrEqual(2);
+  expect(w.box).toBeLessThanOrEqual(w.column + 1);
+  expect(w.column).toBeLessThanOrEqual(46 * 16 + 2);
 });
 
 test.describe("task navigation at a small window", () => {

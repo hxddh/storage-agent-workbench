@@ -65,7 +65,7 @@ export function ChartFrame({
   extra?: string | null;
 }) {
   return (
-    <figure data-testid={testId} className="agent-result-wide min-w-0">
+    <figure data-testid={testId} className="agent-figure min-w-0">
       <figcaption className="mb-2 text-2xs font-medium uppercase tracking-[0.08em] text-gray-500">{title}</figcaption>
       {children}
       <CoverageMark coverage={coverage ?? null} estimate={estimate} extra={extra} />

@@ -7,70 +7,29 @@ import { seedOptimizationTask } from "./seed";
  * v0.96 closed loop against the real Sidecar: cost simulator → remediation
  * plan Artifact → Verify Execution → Drift report, plus a due revisit that
  * catch-up-submits through the existing runtime path and stops at a pending
- * Decision.
+ * inline approval is never auto-approved.
  */
 
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
 const task = (page: Page) => page.getByTestId("task-scroll");
 
+// v1.11: answers are plain Markdown; grounding is derived from the tool log.
 const PLAN_ANSWER =
   "## Cost review\n\n" +
   "This is an estimate from the local simulator, coverage 100 objects / 100 GB as of 2026-08-01.\n\n" +
-  "A remediation plan Artifact was drafted with a pasteable AbortIncompleteMultipartUpload rule. Apply it in your own console; Storage Agent stays read-only.\n\n" +
-  "```json\n" +
-  JSON.stringify({
-    skills_used: [],
-    evidence_used: ["simulate_storage_cost", "draft_remediation_plan", "capture_task_baseline"],
-    evidence_gaps: [],
-    next_action_proposals: [],
-  }) +
-  "\n```";
+  "A remediation plan Artifact was drafted with a pasteable AbortIncompleteMultipartUpload rule. Apply it in your own console; Storage Agent stays read-only.";
 
 const VERIFY_ANSWER =
   "## Verify\n\n" +
-  "Read-only re-probe complete. Abort-MPU is not_applied; the plan stays proposed.\n\n" +
-  "```json\n" +
-  JSON.stringify({
-    skills_used: [],
-    evidence_used: ["verify_remediation_plan"],
-    evidence_gaps: ["live lifecycle did not yet show the recommended abort-MPU rule"],
-    next_action_proposals: [],
-  }) +
-  "\n```";
+  "Read-only re-probe complete. Abort-MPU is not_applied; the plan stays proposed.";
 
 const DRIFT_ANSWER =
   "## Drift report\n\n" +
-  "Compared against baseline v1. Findings still present: incomplete multipart uploads are not aborted. No fabricated trend — two bounded snapshots only.\n\n" +
-  "```json\n" +
-  JSON.stringify({
-    skills_used: [],
-    evidence_used: ["compare_task_drift"],
-    evidence_gaps: [],
-    next_action_proposals: [],
-  }) +
-  "\n```";
+  "Compared against baseline v1. Findings still present: incomplete multipart uploads are not aborted. No fabricated trend — two bounded snapshots only.";
 
 const REVISIT_ANSWER =
   "## Catch-up revisit\n\n" +
-  "Read-only re-check after the app was closed past the due time. A confirmation-gated import is proposed and must wait.\n\n" +
-  "```json\n" +
-  JSON.stringify({
-    skills_used: [],
-    evidence_used: ["compare_task_drift"],
-    evidence_gaps: [],
-    next_action_proposals: [
-      {
-        title: "Import discovered access logs",
-        reason: "This downloads bounded evidence from the discovered logging target.",
-        action_type: "plan_access_log_import",
-        requires_confirmation: true,
-        confidence: "high",
-        source_run_ids: [],
-        prefill: { bucket_name: "acme-logs", prefix: "logs/2026/", source_type: "access_log" },
-      },
-    ],
-  }) +
-  "\n```";
+  "Read-only re-check after the app was closed past the due time. Nothing was downloaded; a log import would need your approval first.";
 
 async function boot(page: Page) {
   await page.addInitScript(() => {
@@ -152,7 +111,7 @@ test.describe("v0.96 optimization copilot closed loop", () => {
     }
   });
 
-  test("due revisit catch-up is a read-only Execution that stops at a pending Decision", async ({ page }) => {
+  test("due revisit catch-up is a read-only Execution and never auto-approves anything", async ({ page }) => {
     const { title, id } = seedOptimizationTask("Due revisit catch-up", "due");
     const model = await startFakeModel([
       toolTurn("compare_task_drift", {}),
@@ -164,18 +123,16 @@ test.describe("v0.96 optimization copilot closed loop", () => {
       await page.getByText(title, { exact: true }).first().click();
       await expect.poll(async () => {
         const state = await (await fetch(`${sidecarOrigin()}/agent-tasks/${id}/state`)).json() as {
-          pending_decisions: Array<{ status: string; action_type: string }>;
           last_execution: { kind?: string; direction?: string; status: string } | null;
         };
         const revisit = state.last_execution?.kind === "revisit"
           || /\[revisit\]/.test(state.last_execution?.direction || "");
-        const pending = state.pending_decisions.some(
-          (d) => d.status === "pending" && d.action_type === "plan_access_log_import",
-        );
-        return revisit && pending;
-      }, { timeout: 90_000, message: "catch-up revisit must finish as a pending Decision" }).toBe(true);
-      await expect(page.getByTestId("agent-decision-required")).toBeVisible({ timeout: 20_000 });
-      await expect(task(page).getByRole("heading", { name: /Catch-up revisit/i })).toBeVisible();
+        return revisit && ["completed", "waiting"].includes(state.last_execution?.status ?? "");
+      }, { timeout: 90_000, message: "catch-up revisit must settle as a read-only Execution" }).toBe(true);
+      await expect(task(page).getByRole("heading", { name: /Catch-up revisit/i })).toBeVisible({ timeout: 20_000 });
+      // No proposal-era Decision card: an approval only ever comes from a gated
+      // tool call, and a revisit never auto-approves one.
+      await expect(task(page).getByText(/Decision required/)).toHaveCount(0);
       const resolved = await (await fetch(`${sidecarOrigin()}/agent-tasks/${id}/decisions`)).json() as {
         decisions: Array<{ status: string }>;
       };

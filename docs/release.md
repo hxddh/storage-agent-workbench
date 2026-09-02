@@ -47,8 +47,8 @@ For every release candidate, `release-smoke-test.md` is the product acceptance c
 - one Delegate / Steer / Stop control path;
 - real Execution rather than synthetic Agent chrome;
 - durable Work Results;
-- explicit Decision required state for gated work;
-- contextual Evidence / Execution / Report Review;
+- explicit Waiting-for-approval state raised inline by the gated tool;
+- the Artifacts panel (Evidence / Reports / Plans / Baselines / Execution detail);
 - real per-task in-flight state across task switching;
 - current safety/secret boundaries.
 

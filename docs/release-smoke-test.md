@@ -72,12 +72,13 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] Navigation reflects Working/Needs decision/Needs attention/Ready truth for relevant Tasks.
 - [ ] The UI does not describe this as a fleet of hidden autonomous background Agents.
 
-### Decision required
+### Waiting for approval
 
-- [ ] A confirmation-gated proposal is promoted to visible **Decision required / Needs decision** state.
-- [ ] The Decision card states why confirmation is required and the scan/movement bounds when those facts exist.
-- [ ] The gated operation does not execute before explicit approval.
-- [ ] **Decline** records the durable resolution and does not perform the action.
+- [ ] When the Agent calls `import_evidence`, the title bar reads **Waiting for approval** and an approval card appears inline in the transcript at that point.
+- [ ] The card states why confirmation is required and the bucket/prefix/files/bytes bounds from the real plan.
+- [ ] Nothing downloads before **Allow**; the same Execution continues afterwards with the import result.
+- [ ] **Deny** records the durable resolution, performs nothing, and the Agent answers from what it has; **Allow for this task** lets a later call of the same type proceed as a recorded, already-approved Decision.
+- [ ] Stop while waiting withdraws the request (recorded as declined).
 - [ ] Reload/reopen a Task with a still-current durable Decision: the Decision remains visible from persisted truth.
 - [ ] A newer real active execution correctly outranks an older persisted Decision where the runtime contract says work is already active.
 
@@ -166,7 +167,7 @@ Use synthetic/local test data and non-sensitive test providers where available.
 - [ ] Focus is contained/restored correctly for overlays.
 - [ ] English and Chinese UI preserve the same product semantics and states.
 - [ ] Narrow-window layout remains usable.
-- [ ] The real-state visual-review artifact covers at least Delegate, Working+Steer, Decision required, Work Result, Execution, contextual Review, task navigation, runtime failure, narrow layout, and Chinese localization.
+- [ ] The real-state visual-review artifact covers at least Delegate, Working+Steer, Waiting for approval, the transcript turn (commentary · Worked for … · answer), the Artifacts panel, task navigation, runtime failure, narrow layout, and Chinese localization.
 
 ## H. Anti-regression checks
 

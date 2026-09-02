@@ -93,13 +93,12 @@ def test_an_unclosed_think_tag_never_reaches_the_answer():
     assert "Let me check the policy" not in out, out
 
 
-def test_an_answer_that_is_only_the_contract_block_does_not_persist_as_blank():
-    """The bookkeeping block is correctly held back from the answer. When it is
-    ALL the model produced, the turn still owes the user a visible result rather
-    than an empty bubble."""
-    out = _answer('```json\n{"skills_used": [], "evidence_used": []}\n```', "")
+def test_an_answer_that_is_only_hidden_reasoning_does_not_persist_as_blank():
+    """When everything the model produced is stripped (hidden reasoning), the
+    turn still owes the user a visible result rather than an empty bubble."""
+    out = _answer("<think>only thoughts</think>", "")
     assert out.strip()
-    assert "skills_used" not in out, out
+    assert "only thoughts" not in out, out
 
 
 def test_nothing_streamed_and_nothing_finalized_still_says_something():
@@ -122,9 +121,8 @@ def test_the_fallback_is_sanitized_like_every_other_answer():
     assert "acme-logs" in out, "sanitizing must not destroy the diagnosis"
 
 
-def test_the_fallback_drops_the_bookkeeping_block_too():
-    """Falling back to the stream must not leak the contract JSON the normal
-    path holds back."""
-    out = _answer("", 'The policy omits s3:ListBucket.\n\n```json\n{"skills_used": []}\n```')
+def test_the_fallback_strips_hidden_reasoning_too():
+    """Falling back to the stream must apply the same CoT strip as the normal path."""
+    out = _answer("", 'The policy omits s3:ListBucket.<think>because</think>')
     assert "s3:ListBucket" in out
-    assert "skills_used" not in out, out
+    assert "because" not in out, out

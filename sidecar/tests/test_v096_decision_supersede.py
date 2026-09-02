@@ -20,35 +20,40 @@ def _db(path):
     return conn
 
 
-def _gated(action="plan_inventory_import", title="Import"):
-    return {
-        "action_type": action,
-        "title": title,
-        "requires_confirmation": True,
-        "reason": "downloads bounded evidence",
-    }
+def _open(conn, title, action="import_inventory"):
+    return store.open_approval(conn, "task", None, action, title, "downloads bounded evidence",
+                               {"tool": "import_evidence", "title": title})
 
 
 def test_same_action_type_supersedes_prior_pending(tmp_path):
     conn = _db(tmp_path / "d.db")
-    first = store.open_decisions_from_proposals(conn, "task", None, None, [_gated(title="one")])
-    second = store.open_decisions_from_proposals(conn, "task", None, None, [_gated(title="two")])
+    first = _open(conn, "one")
+    second = _open(conn, "two")
     conn.commit()
     pending = store.list_decisions(conn, "task", status="pending")
     assert len(pending) == 1
-    assert pending[0]["id"] == second[0]["id"]
+    assert pending[0]["id"] == second["id"]
     assert pending[0]["proposal"]["title"] == "two"
-    old = store.get_decision(conn, first[0]["id"])
+    assert pending[0]["kind"] == "approval"
+    old = store.get_decision(conn, first["id"])
     assert old["status"] == "superseded"
 
 
-def test_duplicate_action_type_in_one_work_result_collapses(tmp_path):
+def test_different_action_types_stay_pending_side_by_side(tmp_path):
     conn = _db(tmp_path / "c.db")
-    opened = store.open_decisions_from_proposals(
-        conn, "task", None, None,
-        [_gated(title="first"), _gated(title="second")],
-    )
-    assert len(opened) == 1
-    assert opened[0]["proposal"]["title"] == "second"
+    _open(conn, "inventory", "import_inventory")
+    _open(conn, "logs", "import_access_log")
     pending = store.list_decisions(conn, "task", status="pending")
-    assert len(pending) == 1
+    assert len(pending) == 2
+
+
+def test_task_scope_grant_is_remembered_per_action_type(tmp_path):
+    conn = _db(tmp_path / "g.db")
+    dec = _open(conn, "inventory")
+    store.resolve_decision(conn, dec["id"], store.DECISION_APPROVED, scope="task")
+    assert store.task_grant_exists(conn, "task", "import_inventory")
+    assert not store.task_grant_exists(conn, "task", "import_access_log")
+    once = _open(conn, "logs", "import_access_log")
+    store.resolve_decision(conn, once["id"], store.DECISION_APPROVED)
+    assert store.get_decision(conn, once["id"])["scope"] == "once"
+    assert not store.task_grant_exists(conn, "task", "import_access_log")

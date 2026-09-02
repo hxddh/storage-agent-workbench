@@ -60,46 +60,50 @@ async function shoot(page: Page, name: string, theme: Theme, lang: Lang = "en") 
   taken.push({ name, theme, lang, file });
 }
 
-function seedDecisionTask(title = "Review bounded evidence import"): string {
+function seedDecisionTask(title = "Waiting for approval"): string {
   const { id } = seedTask(1, title, "short");
   const raw = fs.readFileSync(STATE_FILE, "utf8");
   const { dataDir } = JSON.parse(raw) as { dataDir: string };
-  // A blocking Decision is DURABLE state since v0.94: a pending task_decisions
-  // row for a confirmation-gated (data-moving) action, exactly as the runtime
-  // records it when a Work Result proposes an import. The message's
-  // proposed_actions carries the same proposal so the in-task card renders.
-  const proposal = JSON.stringify([
-    {
-      title: "Import discovered access logs",
-      reason: "This downloads bounded evidence from the discovered logging target.",
-      action_type: "plan_access_log_import",
-      requires_confirmation: true,
-      confidence: "high",
-      source_run_ids: [],
-      prefill: { bucket_name: "acme-logs", prefix: "logs/2026/", source_type: "access_log" },
+  // v1.11: a Decision is raised by the gated `import_evidence` tool INSIDE a
+  // running execution — a pending `kind=approval` row carrying the projected
+  // impact, with the execution parked `waiting`. The document renders the
+  // approval card inline; the title bar reads "Waiting for approval".
+  const proposal = JSON.stringify({
+    tool: "import_evidence",
+    args: { source_type: "access_log", bucket_name: "acme-logs" },
+    impact: {
+      gate: "cloud_download",
+      why: "Moves object bytes from the configured bucket onto this machine. Nothing downloads until you approve this bounded plan.",
+      bucket: "acme-logs",
+      prefix: "logs/2026/",
+      source_type: "access_log",
+      file_count: 42,
+      total_bytes: 18_874_368,
+      scan_scope: "prefix logs/2026/; max 500 files; max 268435456 bytes",
     },
-  ]);
+  });
   const py = `
 import json, sqlite3, sys, uuid
 conn = sqlite3.connect(sys.argv[1])
-sid, proposals = sys.argv[2], sys.argv[3]
-conn.execute(
-  "UPDATE session_messages SET proposed_actions=? WHERE id=(SELECT id FROM session_messages WHERE session_id=? AND role='assistant' ORDER BY created_at DESC, rowid DESC LIMIT 1)",
-  (proposals, sid),
-)
-item = json.loads(proposals)[0]
+sid, proposal = sys.argv[2], sys.argv[3]
 conn.execute(
   "INSERT INTO agent_tasks (id, title, status, created_at, updated_at)"
   " VALUES (?, ?, 'needs_decision', datetime('now'), datetime('now'))"
   " ON CONFLICT(id) DO UPDATE SET status='needs_decision'",
   (sid, "seeded"),
 )
+eid = uuid.uuid4().hex
 conn.execute(
-  "INSERT INTO task_decisions (id, task_id, action_type, title, reason,"
-  " proposal_json_sanitized, status, created_at)"
-  " VALUES (?, ?, ?, ?, ?, ?, 'pending', datetime('now'))",
-  (uuid.uuid4().hex, sid, item["action_type"], item["title"], item["reason"],
-   json.dumps(item)),
+  "INSERT INTO task_executions (id, task_id, turn_id, direction, kind, status, created_at, updated_at, started_at)"
+  " VALUES (?, ?, ?, 'Import the access logs for acme-logs and find the 403s.', 'direction', 'waiting', datetime('now'), datetime('now'), datetime('now'))",
+  (eid, sid, uuid.uuid4().hex),
+)
+conn.execute(
+  "INSERT INTO task_decisions (id, task_id, execution_id, action_type, title, reason,"
+  " proposal_json_sanitized, status, created_at, kind)"
+  " VALUES (?, ?, ?, 'import_access_log', 'Import 42 access log files from acme-logs',"
+  " 'Moves object bytes from the configured bucket onto this machine.', ?, 'pending', datetime('now'), 'approval')",
+  (uuid.uuid4().hex, sid, eid, proposal),
 )
 conn.commit()
 `;
@@ -155,7 +159,7 @@ for (const theme of THEMES) {
   test.describe(`${theme} ${lang} Agent surfaces`, () => {
     test("Delegate — fresh Agent task", async ({ page }) => {
       await openAgent(page, theme, lang);
-      const placeholder = lang === "zh" ? /给 Agent 一个目标/ : /Give the Agent a goal/;
+      const placeholder = lang === "zh" ? /问问你的存储/ : /Ask about your storage/;
       await expect(composer(page)).toHaveAttribute("placeholder", placeholder);
       await expect(page.getByTestId("agent-composer")).toBeVisible();
       await expect(page.getByTestId("delegate-suggestion-checkup")).toHaveCount(0);
@@ -167,7 +171,7 @@ for (const theme of THEMES) {
       seedTask(3, title, "tall");
       await openAgent(page, theme, lang);
       await openTask(page, title);
-      await expect(page.getByTestId("direction-event").first()).toBeVisible();
+      await expect(page.getByTestId("turn-user").first()).toBeVisible();
       await expect(page.getByTestId("work-result").first()).toBeVisible();
       await shoot(page, "02-work-result", theme, lang);
     });
@@ -178,20 +182,23 @@ for (const theme of THEMES) {
       await openAgent(page, theme, lang);
       await openTask(page, title);
       await expect(page.getByTestId("live-trace").last()).toBeVisible();
+      // A finished Worked group is collapsed; open it for the capture.
+      const group = page.getByTestId("worked-group").last();
+      if ((await group.getAttribute("data-expanded")) === "false") await group.getByTestId("execution-head").click();
       await expect(page.getByText("head_bucket").last()).toBeVisible();
       await shoot(page, "03-execution", theme, lang);
     });
 
-    test("Evidence artifact opens from the document", async ({ page }) => {
+    test("Artifacts panel opens beside the document", async ({ page }) => {
       const title = `Artifact review ${theme} ${lang}`;
       seedTask(2, title, "tall");
       await openAgent(page, theme, lang);
       await openTask(page, title);
       await page.keyboard.press("Control+i");
-      await expect(page.getByTestId("agent-review-panel")).toBeVisible();
+      await expect(page.getByTestId("agent-artifacts-panel")).toBeVisible();
       await expect(page.getByTestId("evidence-review")).toBeVisible();
       await expect(page.getByTestId("agent-composer")).toBeVisible();
-      await shoot(page, "04-review", theme, lang);
+      await shoot(page, "04-artifacts", theme, lang);
     });
 
     test("Task navigation — task list, not a console", async ({ page }) => {
@@ -204,13 +211,14 @@ for (const theme of THEMES) {
       await shoot(page, "05-task-navigation-collapsed", theme, lang);
     });
 
-    test("Decision — Agent blocks and the task is promoted to Needs you", async ({ page }) => {
-      const title = seedDecisionTask(`Review bounded evidence import ${theme} ${lang}`);
+    test("Waiting for approval — the gated tool paused the execution on an inline card", async ({ page }) => {
+      const title = seedDecisionTask(`Waiting for approval ${theme} ${lang}`);
       await openAgent(page, theme, lang);
       await openTask(page, title);
-      await expect(page.getByTestId("agent-decision-required")).toBeVisible({ timeout: 20_000 });
-      await expect(page.getByTestId("decision-impact")).toBeVisible();
-      await shoot(page, "11-decision-required", theme, lang);
+      await expect(page.getByTestId("approval-card")).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("approval-impact")).toBeVisible();
+      await expect(page.getByTestId("approval-allow")).toBeVisible();
+      await shoot(page, "11-approval", theme, lang);
     });
 
     test("Needs attention — interrupted execution offers Resume", async ({ page }) => {
@@ -248,11 +256,9 @@ for (const theme of THEMES) {
       seedExecutionRun(id);
       await openAgent(page, theme, lang);
       await openTask(page, title);
-      await page.getByTestId("work-result-open-execution").first().click();
-      await expect(page.getByTestId("agent-review-panel")).toBeVisible();
-      // One referenced run opens directly; several open the list first.
-      const row = page.locator(".agent-run-row").first();
-      if (await row.isVisible().catch(() => false)) await row.click();
+      await page.keyboard.press("Control+i");
+      await expect(page.getByTestId("agent-artifacts-panel")).toBeVisible();
+      await page.locator(".agent-run-row").first().click();
       await expect(page.getByTestId("execution-detail")).toBeVisible();
       await expect(page.getByTestId("execution-status")).toBeVisible();
       await shoot(page, "18-execution-detail", theme, lang);
@@ -277,7 +283,7 @@ test.describe("Agent runtime states", () => {
     test.setTimeout(120_000);
     const model = await startFakeModel(
       [toolTurn("head_bucket", { bucket: "acme-logs" }), textTurn(LIVE_RESULT)],
-      { deltaDelayMs: 55 },
+      { deltaDelayMs: 120 },
     );
     const providerId = await useFakeModel(model.baseUrl);
     try {
@@ -285,7 +291,7 @@ test.describe("Agent runtime states", () => {
       await composer(page).fill("Diagnose why acme-logs rejects list operations and keep the evidence auditable.");
       await composer(page).press("Enter");
       await expect(page.getByTestId("agent-composer")).toHaveAttribute("data-agent-state", "working", { timeout: 20_000 });
-      await expect(composer(page)).toHaveAttribute("placeholder", /Add direction or constraints|补充方向/);
+      await expect(composer(page)).toHaveAttribute("placeholder", /Steer the Agent|补充方向/);
       await expect(navigation(page).locator('[data-testid="task-row"][data-state="working"]').first()).toBeVisible({ timeout: 20_000 });
       await shoot(page, "10-working-steer", "dark", "en");
     } finally {
@@ -346,6 +352,6 @@ test.afterAll(() => {
     path.join(OUT, "index.html"),
     `<!doctype html><meta charset="utf-8"><title>Storage Agent visual review</title><style>
 body{margin:0;padding:32px;background:#111318;color:#eef0f5;font:14px Inter,system-ui,sans-serif}h1{font-size:26px;margin:0 0 8px}p{color:#9ca3af;margin:0 0 32px;max-width:760px;line-height:1.6}section{margin:0 0 42px}h2{font-size:15px;font-weight:600;margin:0 0 12px;color:#c9ced8}.pair{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}figure{margin:0;background:#191c22;border:1px solid #2a2f39;border-radius:12px;overflow:hidden}figcaption{padding:8px 12px;color:#8f98a8;border-bottom:1px solid #2a2f39;font-size:12px}img{display:block;width:100%;height:auto}.missing{min-height:80px}@media(max-width:1100px){.pair{grid-template-columns:repeat(2,minmax(0,1fr))}}
-</style><h1>Storage Agent — v1.10.0 visual review</h1><p>Native Agent window: sidebar · title bar · one Task document · one Composer. Empty start is a greeting and the Composer; tools appear as one Worked group in the Work Result; Decision is an approval card. No activity bar, no status bar, no inspector. Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale.</p>${rows}`,
+</style><h1>Storage Agent — v1.11.0 visual review</h1><p>Native Agent window: sidebar · title bar · one transcript · one Composer · the Artifacts panel. Empty start is a greeting and the Composer; a turn is the user bubble, commentary, one Worked for … group, an inline approval card where the gated tool raised it, and the answer. No activity bar, no status bar, no inspector. Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale.</p>${rows}`,
   );
 });

@@ -23,14 +23,23 @@ _MAX_RETAINED = 128              # finished executions kept for late re-attach
 _lock = threading.Lock()
 
 
+_MAX_MARKERS = 4096              # per execution; older markers fall off the head
+
+
 class _Entry:
-    __slots__ = ("delta_text", "delta_dropped", "done", "cond")
+    __slots__ = ("delta_text", "delta_dropped", "done", "cond", "markers")
 
     def __init__(self) -> None:
         self.delta_text = ""       # accumulated sanitized delta text
         self.delta_dropped = 0     # chars evicted from the head (never silent)
         self.done = False
         self.cond = threading.Condition(_lock)
+        # (logical delta offset, durable seq): "durable events up to `seq`
+        # were appended when the delta stream stood at `offset`". Lets a
+        # subscriber interleave transient deltas and durable events in the
+        # order they really happened (a tool row never lands after text the
+        # model wrote once the tool had returned).
+        self.markers: list[tuple[int, int]] = []
 
 
 _entries: dict[str, _Entry] = {}
@@ -73,11 +82,17 @@ def push_delta(execution_id: str, text: str) -> None:
         entry.cond.notify_all()
 
 
-def notify(execution_id: str) -> None:
-    """Wake subscribers: new durable events exist for this execution."""
+def notify(execution_id: str, seq: int | None = None) -> None:
+    """Wake subscribers: new durable events exist for this execution. With
+    ``seq``, also record WHERE in the delta stream that event landed."""
     with _lock:
         entry = _entries.get(execution_id)
         if entry is not None:
+            if seq is not None:
+                offset = entry.delta_dropped + len(entry.delta_text)
+                entry.markers.append((offset, int(seq)))
+                if len(entry.markers) > _MAX_MARKERS:
+                    del entry.markers[: len(entry.markers) - _MAX_MARKERS]
             entry.cond.notify_all()
 
 
@@ -106,6 +121,33 @@ def delta_snapshot(execution_id: str, cursor: int) -> tuple[str, int, int]:
         dropped = max(0, start_logical - cursor)
         text = entry.delta_text[max(0, cursor - start_logical):]
         return text, end_logical, dropped
+
+
+def ordered_snapshot(execution_id: str, cursor: int) -> tuple[list[tuple[str, object]], int, int]:
+    """Like ``delta_snapshot`` but keeps the durable-event markers in place:
+    returns ``([("text", str) | ("mark", seq), ...], next_cursor, dropped)``.
+    A subscriber yields text parts as deltas and, at each mark, the durable
+    events up to that seq — the order the worker produced them."""
+    with _lock:
+        entry = _entries.get(execution_id)
+        if entry is None:
+            return [], cursor, 0
+        start_logical = entry.delta_dropped
+        end_logical = start_logical + len(entry.delta_text)
+        dropped = max(0, start_logical - cursor)
+        pos = max(cursor, start_logical)
+        parts: list[tuple[str, object]] = []
+        for offset, seq in entry.markers:
+            if offset < cursor:
+                continue
+            if offset > pos:
+                parts.append(("text", entry.delta_text[pos - start_logical: offset - start_logical]))
+                pos = offset
+            parts.append(("mark", seq))
+        if end_logical > pos:
+            parts.append(("text", entry.delta_text[pos - start_logical:]))
+        # Markers already consumed are not needed again by anyone reading past them.
+        return parts, max(cursor, end_logical), dropped
 
 
 def is_done(execution_id: str) -> bool:

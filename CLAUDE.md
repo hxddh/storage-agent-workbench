@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.10.0.**
+> **Implementation contract for Storage Agent v1.11.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.10.0 product invariant is:
+The v1.11.0 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -18,21 +18,21 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v1.10.0 native Agent window
+## 1. Never regress the v1.11.0 native Agent window
 
 The window is **sidebar · title bar · one Task document · one Composer**. There is no activity bar, no status bar, no Details/inspector column, and no marketing copy in chrome. New product/frontend work must preserve these boundaries:
 
 - **Agent Task** is the primary application object and primary work area.
 - **AgentTaskNavigation** is the sidebar: window chrome row, **New task**, one quiet chronological title list, **Settings**. Rename and Delete only (from the row's More control or the native Task menu). State is a row mark (Ready paints nothing). ↑/↓ move between tasks. Collapsed, its toggle and New task move into the title bar. Titles are seeded from the first Direction and replaced by the runtime after the first Work Result unless the user renamed the task (`title_source`).
-- **AgentShell** owns the active task environment and the Review sheet state. The title bar above it carries only the task name and its real state. There is no task header inside the document, no live execution strip, and no second presentation mode.
+- **AgentShell** owns the active task environment and the Artifacts panel state. The title bar above it carries only the task name and its real state. There is no task header inside the document, no live execution strip, and no second presentation mode.
 - **AgentTask** is the public task boundary; persistence compatibility names stay behind adapters.
 - **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active. Attach (button or a dropped file) + textarea + the **model chip** (backed by the real provider list; switching activates a provider server-side; shows `model · effort` and a reasoning-effort control only when the active model is known-reasoning) + those actions. No persistent keyboard legend, no painted mode/approval chips.
 - **Direction** is user intent/steering input. Copy is the only Direction chrome.
-- **Execution** is real runtime/tool work, shown as one **Worked for …** group of tool rows in the Task document (rows stay visible; the header folds only a long, finished trace). Never invent plans, steps, workers, or capabilities the runtime does not expose.
-- **Decision required** is a blocking confirmation state derived from real backend proposals, rendered as an approval card with projected bounds/impact, **Approve**, and a durable **Decline** path.
-- **Work Result** is a page, not a card and not a bubble: prose on the 46rem measure, data on the 64rem track sharing the left edge, artifact chips (Evidence / Execution / Report) below. Figures and provenance sit inside the latest Work Result. Working copy is Agent-native, not chat-era "still running" language.
-- Review is a sheet over the Task (Evidence, Execution detail, Report), opened from the document or ⌘I. Execution detail is a document in the sheet (header · *Worked for …* tool rows · findings · result · report), not a two-column run page. It is not a 4-tab application destination, not a side-column application, and not a document hero. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules may exist as Sidecar engines; they have no product UI entry.
-- Production UI must not teach a chat transcript: no `New chat` titles, no `thread.*` copy keys, no leftover `.thread-prose` layout layer.
+- **Execution** is real runtime/tool work. A turn is rendered as one **transcript turn** (Codex parity): the user's message as a right-aligned bubble, the model's short **commentary segments** in order, one collapsed **Worked for …** group of tool rows between segments (live elapsed while running), any **approval card** inline where the gated tool raised it, then the **answer** as Markdown on the 46rem measure. Never invent plans, steps, workers, or capabilities the runtime does not expose.
+- **Approval** (`Waiting for approval`) is raised only by a gated tool (`import_evidence`) inside the running Execution: the Sidecar plans, opens a durable Decision (`kind=approval`) with projected bounds/impact, and the Execution waits. The card offers **Allow · Allow for this task · Deny**; Allow runs the audited import server-side and the same Execution continues; Deny returns a structured refusal to the model. Model prose never raises a Decision; there is no `next_action_proposals` list, no metadata JSON block, and no separate import dialog.
+- **Work Result** is the answer at the end of the turn: plain Markdown, tables scrolling inside their own container, figures and provenance inline in the latest answer. No data track, no artifact chip row, no metrics footer, no grey Direction block. Working copy is Agent-native, not chat-era "still running" language.
+- **Artifacts** is a right split panel (⌘I toggles; opened from the document): Evidence, Reports, Remediation Plans, Baselines/Drift, and Execution detail (a document: header · *Worked for …* rows · findings · result). It replaces the Review sheet. It is not a tabbed application destination and not a document hero. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules may exist as Sidecar engines; they have no product UI entry beyond that panel's read-only lists.
+- Production UI must not teach a chat *application*: no `New chat` titles, no `thread.*` copy keys, no leftover `.thread-prose` layout layer. The transcript turn is the Agent's work record, not a chat product.
 
 Do not reconstruct earlier chat/investigation/workbench information architecture from old release notes, database names, API names, or git history. Historical `session` and `run` terminology is compatibility vocabulary, not a reason to change current product semantics.
 
@@ -70,7 +70,7 @@ The frontend never receives cloud/model secret values. The Sidecar resolves secr
 
 ## 3. One real Agent, deterministic compute beneath it
 
-There is one model-driven Agent runtime: the durable task/session Agent implemented under `sidecar/app/agent_runtime/`.
+There is one model-driven Agent runtime: the durable task/session Agent implemented under `sidecar/app/agent_runtime/` (`session_agent.py` is the entry; `prompt`, `limits`, `guards`, `steer`, `usage`, `finalize`, `stream`, `gated_tools` split it by responsibility).
 
 It may invoke explicit read-only storage tools, StorageOps skills, bounded file-analysis tools, deterministic account/config analysis, and report/evidence workflows. The model drives the investigation; deterministic engines remain the security/reproducibility floor for operations that should not expose raw analytical rows to the model.
 
@@ -105,7 +105,7 @@ Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned b
 - deterministic cost/lifecycle simulation, Remediation Plans, baselines/Drift, and per-task revisits remain Sidecar engines on this same runtime — never a second Agent, a second submit path, or a Settings/Review destination;
 - Verify (`kind=verify`) and scheduled revisits (`kind=revisit`) remain runtime paths; the UI does not paint a Verify control or a revisit scheduler. The user asks in Composer. Revisits are read-only and never auto-resolve a Decision;
 - `execution_events` retention is a periodic SQL-set prune (terminal executions only, dual cap, explicit `execution.events_truncated` marker; `0` disables). Active and waiting logs are never touched;
-- at most one pending Decision exists per `(task, action_type)`; a later proposal of the same type supersedes the earlier pending row;
+- at most one pending Decision exists per `(task, action_type)`; a later request of the same type supersedes the earlier pending row. Since v1.11 a Decision is raised by the gated `import_evidence` tool from inside the running Execution (`runtime.request_approval`): `approval.opened`, execution `waiting`, the tool thread blocks until `decisions/{id}/resolve` (Allow / Allow for this task via `scope=task` / Deny) or Stop (withdrawn as declined), then the same execution returns to `running`. Grounding (`skills_used`, `evidence_used`, `evidence_gaps`) is derived from the tool trace, never claimed by the model; the model's commentary segments and tool rows persist as `session_messages.turn_items`, the answer as `content`;
 - after a task's **first** Work Result the runtime runs one bounded, tool-less **title step** (`task_runtime/titling.py`): Direction + Work Result text only, redacted, ≤ 8 words, stored with `sessions.title_source = 'agent'` and logged as `task.titled`; a user rename sets `'user'` and wins forever; an unavailable or empty answer keeps the seed title; the step never fails a turn and is not a second Agent;
 - a provider's `reasoning_effort` (`low | medium | high | NULL`) is forwarded to the model call only when `model_budget.is_reasoning_model` recognises the model; endpoints that cannot take it never receive it.
 
@@ -162,7 +162,7 @@ Do not infer tool availability from a documentation example. `docs/tools.md` and
 
 ## 8. Data ownership
 
-SQLite stores application metadata and durable task/execution records. Current migrations are append-only through **028**; never edit a shipped migration, append a new one.
+SQLite stores application metadata and durable task/execution records. Current migrations are append-only through **029**; never edit a shipped migration, append a new one.
 
 DuckDB/local files store analytical data and large inputs/artifacts. User data lives under the application data directory, never the install directory.
 

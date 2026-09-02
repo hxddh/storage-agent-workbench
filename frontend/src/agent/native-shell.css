@@ -114,12 +114,16 @@
   color: var(--gray-400);
 }
 
+/* Day groups: Today · Yesterday · a dated header. Quiet, not uppercase. */
 .native-sidebar-section {
-  margin: 10px 16px 4px;
+  margin: 10px 8px 4px;
   color: var(--gray-500);
   font-size: var(--text-2xs);
   font-weight: 500;
   letter-spacing: 0.02em;
+}
+.native-task-group + .native-task-group .native-sidebar-section {
+  margin-top: 14px;
 }
 
 .native-task-list {
@@ -186,9 +190,11 @@
   background: var(--gray-100);
   animation: native-pulse 1.4s var(--ease-in-out) infinite;
 }
+/* An approval waiting on the user is a Working task, not a state of its own:
+ * the mark is ink, held still. No yellow. */
 .native-task-row[data-state="decision"] .native-task-mark {
   display: block;
-  background: var(--warn);
+  background: var(--gray-100);
 }
 .native-task-row[data-state="attention"] .native-task-mark {
   display: block;
@@ -316,6 +322,38 @@
   background: var(--hover);
   color: var(--gray-100);
 }
+/* A fixed fact about the runtime beside Settings, never a switch. */
+.native-sidebar-readonly {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  gap: 5px;
+  margin: 2px 0 0;
+  padding: 0 8px;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  cursor: default;
+  user-select: none;
+}
+
+/* Context meter beside the model chip: a ring and a percentage, only when the
+ * runtime reported a window to measure against. */
+.native-context-meter {
+  display: inline-flex;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+.native-context-meter[data-pct="100"],
+.native-context-meter[data-pct^="9"] {
+  color: var(--warn-fg);
+}
 
 .native-empty-list {
   margin: 0;
@@ -375,7 +413,7 @@
   color: var(--gray-500);
   font-size: var(--text-2xs);
 }
-.native-titlebar-state[data-state="decision"] { color: var(--warn-fg); }
+.native-titlebar-state[data-state="decision"] { color: var(--gray-300); }
 .native-titlebar-state[data-state="attention"] { color: var(--danger); }
 
 .native-task-area {
@@ -395,59 +433,60 @@
   overflow: hidden;
 }
 
-/* ---------- Review overlay (sheet from the right) ---------- */
+/* ---------- Artifacts panel (right split; overlay under narrow windows) ---------- */
 
-.agent-review-overlay {
+.agent-artifacts-panel {
+  display: flex;
+  width: clamp(320px, 30vw, 440px);
+  min-width: 300px;
+  min-height: 0;
+  height: 100%;
+  flex: none;
+  flex-direction: column;
+  border-left: 1px solid var(--edge);
+  background: var(--panel);
+}
+.agent-artifacts-scrim {
   position: absolute;
   inset: 0;
   z-index: 60;
   display: flex;
   justify-content: flex-end;
   background: var(--scrim);
-  animation: review-scrim-in var(--duration-base) var(--ease-out);
 }
-@keyframes review-scrim-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.agent-artifacts-scrim .agent-artifacts-panel {
+  width: min(100%, 440px);
+  animation: artifacts-panel-in var(--duration-slow) var(--ease-out);
 }
-
-.agent-review-panel {
-  display: flex;
-  width: clamp(380px, 38vw, 560px);
-  min-width: 340px;
-  min-height: 0;
-  height: 100%;
-  flex: none;
-  flex-direction: column;
-  border-left: 1px solid var(--edge);
-  background: var(--canvas);
-  animation: review-panel-in var(--duration-slow) var(--ease-out);
-}
-@keyframes review-panel-in {
-  from { transform: translateX(24px); }
-  to { transform: translateX(0); }
+@keyframes artifacts-panel-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
-.agent-review-header {
+.agent-artifacts-header {
   display: flex;
   height: var(--header-h);
   flex: none;
   align-items: center;
-  gap: 12px;
-  padding: 0 8px 0 16px;
+  gap: 8px;
+  padding: 0 8px 0 14px;
   border-bottom: 1px solid var(--edge);
 }
-.agent-review-header strong {
+.agent-artifacts-header strong {
   display: block;
+  min-width: 0;
+  overflow: hidden;
   color: var(--gray-100);
   font-size: var(--text-sm);
   font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.agent-review-close {
+.agent-artifacts-close, .agent-artifacts-back {
   display: grid;
   width: 28px;
   height: 28px;
-  margin-left: auto;
+  flex: none;
   place-items: center;
   border: 0;
   border-radius: var(--radius-md);
@@ -455,17 +494,68 @@
   color: var(--gray-400);
   transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
-.agent-review-close:hover {
+.agent-artifacts-close { margin-left: auto; }
+.agent-artifacts-back { margin-left: -6px; }
+.agent-artifacts-back-icon { display: inline-flex; transform: rotate(180deg); }
+.agent-artifacts-close:hover, .agent-artifacts-back:hover {
   background: var(--hover);
   color: var(--gray-100);
 }
 
-.agent-review-body {
+.agent-artifacts-body {
   min-height: 0;
   flex: 1;
   overflow: auto;
   overscroll-behavior: contain;
+  padding-bottom: 32px;
 }
+.agent-artifacts-section { padding: 12px 14px 14px; }
+.agent-artifacts-section + .agent-artifacts-section { border-top: 1px solid var(--edge); }
+.agent-artifacts-section > h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: var(--gray-100);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+.agent-artifacts-section > h2 small { color: var(--gray-500); font-size: var(--text-2xs); font-weight: 400; }
+.agent-artifacts-section .agent-review-artifact { padding: 0; }
+.agent-artifacts-section .agent-review-block h2 { font-size: var(--text-xs); }
+
+.agent-artifact-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--gray-400);
+  text-align: left;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+.agent-artifact-row:hover { background: var(--hover); color: var(--gray-100); }
+.agent-artifact-row-main { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
+.agent-artifact-row-main strong { overflow: hidden; color: var(--gray-100); font-size: var(--text-sm); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.agent-artifact-row-main small { overflow: hidden; color: var(--gray-500); font-size: var(--text-2xs); text-overflow: ellipsis; white-space: nowrap; }
+
+.agent-artifact-document { padding: 14px 16px 40px; color: var(--gray-200); font-size: var(--text-sm); line-height: 1.55; }
+.agent-artifact-document > header { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
+.agent-artifact-document > header strong { color: var(--gray-100); font-size: var(--text-base); font-weight: 500; }
+.agent-artifact-document > header small { color: var(--gray-500); font-size: var(--text-2xs); }
+.agent-artifact-document h3 { margin: 16px 0 6px; color: var(--gray-100); font-size: var(--text-xs); font-weight: 500; }
+.agent-artifact-document p { margin: 0 0 8px; }
+.agent-artifact-note { margin-top: 16px; color: var(--gray-500); font-size: var(--text-2xs); }
+.agent-plan-actions { margin: 0; padding-left: 18px; }
+.agent-plan-actions li { margin-bottom: 10px; }
+.agent-plan-actions li strong { display: block; color: var(--gray-100); font-weight: 500; }
+.agent-plan-actions li small { color: var(--gray-500); font-size: var(--text-2xs); }
+.agent-plan-checklist { margin: 0; padding-left: 18px; }
+.agent-plan-json { margin: 6px 0 0; overflow: auto; border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 8px 10px; background: var(--elevated); color: var(--gray-200); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-2xs); line-height: 1.5; }
+
 .agent-review-artifact { padding: 16px 20px 48px; }
 .agent-review-block { padding: 4px 0 20px; }
 .agent-review-block + .agent-review-block { border-top: 1px solid var(--edge); padding-top: 18px; }
@@ -556,11 +646,11 @@
 .native-settings-code { border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 3px 8px; background: var(--elevated); color: var(--gray-100); font-family: "JetBrains Mono Variable", ui-monospace, monospace; font-size: var(--text-xs); }
 
 @media (max-width: 720px) {
-  .agent-review-panel { width: 100%; min-width: 0; }
+  .agent-artifacts-panel { width: 100%; min-width: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .native-sidebar { transition: none; }
   .native-task-row[data-state="working"] .native-task-mark { animation: none; }
-  .agent-review-overlay, .agent-review-panel { animation: none; }
+  .agent-artifacts-scrim .agent-artifacts-panel { animation: none; }
 }

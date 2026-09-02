@@ -73,7 +73,7 @@ describe("the durable execution path", () => {
     api.createTaskExecution.mockResolvedValue({ execution: { id: "exec-1" }, created: true });
     api.followExecutionEvents.mockResolvedValue({
       status: "completed", stopped: false, message_id: "m1",
-      proposed_actions: [], metrics: { duration_ms: 10, tool_calls: 0 }, last_seq: 5,
+      metrics: { duration_ms: 10, tool_calls: 0 }, last_seq: 5,
     });
 
     const { result } = renderHook(() => useHarness(id), { wrapper });
@@ -136,8 +136,7 @@ describe("the durable execution path", () => {
       resumed_from: "exec-old",
     });
     api.followExecutionEvents.mockResolvedValue({
-      status: "completed", stopped: false, message_id: "m2",
-      proposed_actions: [], last_seq: 3,
+      status: "completed", stopped: false, message_id: "m2", last_seq: 3,
     });
     const { result } = renderHook(() => useHarness(id), { wrapper });
     result.current.localId.current = id;
@@ -147,6 +146,47 @@ describe("the durable execution path", () => {
     expect(api.resumeTaskExecution).toHaveBeenCalledWith(id, "exec-old");
     expect(api.followExecutionEvents).toHaveBeenCalledWith(
       id, "exec-new", expect.anything(), expect.anything());
+  });
+});
+
+describe("the live turn (v1.11)", () => {
+  it("reduces stream frames into ordered items, parks on an approval, and resumes after resolve", async () => {
+    const id = "sessLive";
+    let seen: import("../api").LiveEventHandlers | null = null;
+    api.createTaskExecution.mockResolvedValue({ execution: { id: "exec-live" }, created: true });
+    api.followExecutionEvents.mockImplementation(async (_id: string, _exec: string, on: import("../api").LiveEventHandlers) => {
+      seen = on;
+      on.onDelta("Checking the ");
+      on.onDelta("policy.");
+      on.onMessageCompleted?.({ text: "Checking the policy.", final: false });
+      on.onTool({ id: "c1", tool: "plan_evidence_import", target: "acme-logs", result: "", status: "started" });
+      on.onApprovalOpened?.({ decision_id: "d1", action_type: "import_access_log", title: "Download logs", reason: null, impact: null });
+      on.onStatus?.({ status: "waiting", reason: "approval", decision_id: "d1" });
+      const mid = getSessionRun(id);
+      expect(mid.busy).toBe(true);
+      expect(mid.waiting).toBe(true);
+      expect(mid.items.map((item) => item.kind)).toEqual(["message", "tool", "approval"]);
+      on.onDecisionResolved?.({ decision_id: "d1", resolution: "approved", scope: "once" });
+      on.onStatus?.({ status: "running", reason: "approval_resolved", decision_id: "d1" });
+      on.onTool({ id: "c1", tool: "plan_evidence_import", target: "acme-logs", result: "312 files", ok: true, status: "completed" });
+      on.onDelta("The logs show 403s.");
+      on.onMessageCompleted?.({ text: "The logs show 403s.", final: true });
+      const late = getSessionRun(id);
+      expect(late.waiting).toBe(false);
+      expect(late.answer).toBe("The logs show 403s.");
+      expect(late.items[2]).toMatchObject({ kind: "approval", status: "approved" });
+      return { status: "completed", stopped: false, message_id: "m9", last_seq: 12 };
+    });
+
+    const { result } = renderHook(() => useHarness(id), { wrapper });
+    result.current.localId.current = id;
+    await act(async () => {
+      await result.current.runner.submit("import the access logs");
+    });
+    expect(seen).not.toBeNull();
+    expect(getSessionRun(id).busy).toBe(false);
+    expect(getSessionRun(id).items).toEqual([]);
+    expect(getSessionRun(id).answer).toBeNull();
   });
 });
 

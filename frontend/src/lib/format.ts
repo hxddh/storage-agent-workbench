@@ -2,7 +2,7 @@
  * One way to write a quantity, for a product whose whole output is quantities.
  *
  * Byte formatting was implemented three times — `RunDetail.bytesH`,
- * `EvidenceImportDialog.bytesH` and `Composer.formatGiB` — and the two ladders
+ * the retired import dialog's `bytesH` and `Composer.formatGiB` — and the two ladders
  * disagreed about their own top step (PiB vs TiB). Nobody would ever see the
  * difference in one screenshot, which is exactly why it drifts: a run detail and
  * an import dialog describing the same object could round it differently.

@@ -57,7 +57,8 @@ class LiveExecution:
     """In-process handle for one running execution (signals only — all durable
     state lives in the store)."""
 
-    __slots__ = ("execution_id", "task_id", "cancel_event", "steer_queue", "done_event")
+    __slots__ = ("execution_id", "task_id", "cancel_event", "steer_queue", "done_event",
+                 "approvals")
 
     def __init__(self, execution_id: str, task_id: str) -> None:
         self.execution_id = execution_id
@@ -65,6 +66,9 @@ class LiveExecution:
         self.cancel_event = threading.Event()
         self.steer_queue = session_agent.SteerQueue()
         self.done_event = threading.Event()
+        # decision_id → Event set when the user resolves it (the tool that
+        # raised the approval blocks on this, never on an HTTP request).
+        self.approvals: dict[str, threading.Event] = {}
 
 
 _lock = threading.RLock()
@@ -212,25 +216,107 @@ def resume(conn: sqlite3.Connection, execution_id: str) -> dict[str, Any]:
 
 
 def on_decision_resolved(conn: sqlite3.Connection, decision: dict[str, Any]) -> None:
-    """Durable follow-through of a Decision resolution: event + settle any
-    execution that was WAITING on it + task status."""
-    store.append_event(conn, decision.get("execution_id") or "", decision["task_id"],
-                       "decision.resolved",
+    """Durable follow-through of a Decision resolution: event + wake the tool
+    that raised it (an inline approval) or settle a legacy waiting execution +
+    task status."""
+    exec_id = decision.get("execution_id") or ""
+    store.append_event(conn, exec_id, decision["task_id"], "decision.resolved",
                        {"decision_id": decision["id"], "resolution": decision["status"],
-                        "action_type": decision["action_type"]}, commit=False)
-    settle_waiting_executions(conn, decision["task_id"])
+                        "action_type": decision["action_type"],
+                        "scope": decision.get("scope")}, commit=False)
+    handle = live_handle(exec_id) if exec_id else None
+    if handle is not None and decision["id"] in handle.approvals:
+        # The gated tool is blocked on this event: it re-reads the row, then
+        # continues (approved) or returns a structured refusal (declined).
+        # The execution goes back to RUNNING there — not here.
+        handle.approvals[decision["id"]].set()
+    else:
+        settle_waiting_executions(conn, decision["task_id"])
     store.refresh_task_status(conn, decision["task_id"])
     conn.commit()
 
 
+def request_approval(conn: sqlite3.Connection, execution_id: str, task_id: str, *,
+                     action_type: str, title: str, reason: str | None,
+                     proposal: dict[str, Any], cancel_event: Any = None,
+                     timeout_s: float | None = None) -> dict[str, Any]:
+    """Raise a Decision from INSIDE a running execution and block until the user
+    resolves it (or stops the execution).
+
+    Durable order: decision row → `approval.opened` event → execution status
+    `waiting`. The tool thread then waits on an in-process Event; on resolve the
+    execution returns to `running` and the resolved row is returned. If the
+    process restarts meanwhile, recovery stamps the execution `interrupted` and
+    the pending row stays for the user to see (Resume starts a new execution).
+
+    A prior "allow for this task" grant for the same action_type skips the
+    pause: the call is recorded as an already-approved Decision."""
+    if store.task_grant_exists(conn, task_id, action_type):
+        granted = store.record_granted_approval(conn, task_id, execution_id, action_type,
+                                               title, proposal)
+        store.append_event(conn, execution_id, task_id, "approval.granted",
+                           {"decision_id": granted["id"], "action_type": action_type,
+                            "title": granted.get("title")}, commit=False)
+        conn.commit()
+        return granted
+    handle = live_handle(execution_id)
+    decision = store.open_approval(conn, task_id, execution_id, action_type, title, reason,
+                                   proposal)
+    event = threading.Event()
+    if handle is not None:
+        handle.approvals[decision["id"]] = event
+    store.append_event(conn, execution_id, task_id, "approval.opened",
+                       {"decision_id": decision["id"], "action_type": action_type,
+                        "title": decision.get("title"), "reason": decision.get("reason"),
+                        "impact": (proposal.get("impact") or {})}, commit=False)
+    store.set_execution_status(conn, execution_id, store.EXEC_WAITING)
+    store.append_event(conn, execution_id, task_id, "execution.status",
+                       {"status": store.EXEC_WAITING, "reason": "approval",
+                        "decision_id": decision["id"]}, commit=False)
+    store.refresh_task_status(conn, task_id)
+    conn.commit()
+    try:
+        deadline = (time.monotonic() + timeout_s) if timeout_s else None
+        while not event.is_set():
+            if cancel_event is not None and cancel_event.is_set():
+                break
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            event.wait(0.5)
+    finally:
+        if handle is not None:
+            handle.approvals.pop(decision["id"], None)
+        conn.commit()  # end the read snapshot so the re-read sees the resolution
+    resolved = store.get_decision(conn, decision["id"]) or decision
+    if resolved["status"] == store.DECISION_PENDING:
+        # Stopped (or timed out) while waiting: the request is withdrawn, never
+        # silently approved.
+        store.resolve_decision(conn, decision["id"], store.DECISION_DECLINED,
+                               note="execution stopped while waiting for approval")
+        resolved = store.get_decision(conn, decision["id"]) or resolved
+        store.append_event(conn, execution_id, task_id, "decision.resolved",
+                           {"decision_id": decision["id"], "resolution": resolved["status"],
+                            "action_type": action_type, "reason": "stopped"}, commit=False)
+    store.set_execution_status(conn, execution_id, store.EXEC_RUNNING)
+    store.append_event(conn, execution_id, task_id, "execution.status",
+                       {"status": store.EXEC_RUNNING, "reason": "approval_resolved",
+                        "decision_id": decision["id"]}, commit=False)
+    store.refresh_task_status(conn, task_id)
+    conn.commit()
+    return resolved
+
+
 def settle_waiting_executions(conn: sqlite3.Connection, task_id: str) -> None:
     """Complete every WAITING execution whose pending decisions are all gone
-    (resolved or superseded). The confirmation boundary was crossed — the
-    delegated work is now finished, durably."""
+    (resolved or superseded) and that has no live worker — pre-1.11 executions
+    that ended on a proposal-derived Decision. An execution waiting on an
+    INLINE approval keeps its worker and settles itself."""
     rows = conn.execute(
         "SELECT id FROM task_executions WHERE task_id = ? AND status = ?",
         (task_id, store.EXEC_WAITING)).fetchall()
     for r in rows:
+        if live_handle(r["id"]) is not None:
+            continue
         pending = conn.execute(
             "SELECT 1 FROM task_decisions WHERE execution_id = ? AND status = ? LIMIT 1",
             (r["id"], store.DECISION_PENDING)).fetchone()
@@ -371,6 +457,8 @@ def _run_execution(execution: dict[str, Any]) -> None:
                     final["data"] = data
                 elif kind == "delta":
                     hub.push_delta(exec_id, data)
+                elif kind == "segment":
+                    _persist_segment_event(conn, exec_id, task_id, data)
                 elif kind == "tool":
                     _persist_tool_event(conn, exec_id, task_id, data)
                     emitted_tools += 1
@@ -420,11 +508,31 @@ def _run_execution(execution: dict[str, Any]) -> None:
             pass
 
 
+_MAX_SEGMENT_EVENT_TEXT = 3600
+
+
+def _persist_segment_event(conn: sqlite3.Connection, exec_id: str, task_id: str,
+                           segment: dict[str, Any]) -> None:
+    """One closed message segment (commentary before a tool call, or the final
+    answer). The client replaces its live text with this committed, sanitized
+    version; a segment longer than one event payload is marked truncated and
+    the client keeps what it streamed (the Work Result carries the full text)."""
+    text = str(segment.get("text") or "")
+    payload: dict[str, Any] = {"final": bool(segment.get("final"))}
+    if len(text) > _MAX_SEGMENT_EVENT_TEXT:
+        payload["text"] = text[:_MAX_SEGMENT_EVENT_TEXT]
+        payload["truncated"] = True
+    else:
+        payload["text"] = text
+    store.append_event(conn, exec_id, task_id, "message.completed", payload)
+
+
 def _persist_tool_event(conn: sqlite3.Connection, exec_id: str, task_id: str,
                         record: dict[str, Any]) -> None:
     """One structured tool progress event, bounded. `user_steer` activity rows
     are the injection wrapper's delivery notices — persisted as steer.applied."""
-    payload = {k: record.get(k) for k in ("id", "tool", "target", "result", "ok")
+    payload = {k: record.get(k) for k in ("id", "tool", "target", "result", "ok",
+                                           "decision_id")
                if record.get(k) is not None}
     status = record.get("status")
     if record.get("tool") == "user_steer":
@@ -451,33 +559,34 @@ def _finish(conn: sqlite3.Connection, execution: dict[str, Any], handle: LiveExe
     → execution status. Then carry any undelivered steer into a follow-up."""
     exec_id, task_id = execution["id"], execution["task_id"]
     stopped = bool(data.get("stopped"))
-    proposals = data.get("next_action_proposals") or []
     grounding = {
         "evidence_used": data.get("evidence_used", []),
         "evidence_gaps": data.get("evidence_gaps", []),
         "skills_used": data.get("skills_used", []),
     }
-    cut_short = data.get("budget_stopped_on") or None
+    cut_short = data.get("budget_stopped_on") or ("finalize" if data.get("cut_short") else None)
 
     sessions_repo.add_message(conn, task_id, "user", execution["direction"] or "")
     for steer_text in handle.steer_queue.delivered:
         sessions_repo.add_message(conn, task_id, "user", f"[steer] {steer_text}")
     mid = sessions_repo.add_message(conn, task_id, "assistant", data["answer"],
                                     tool_activity=data.get("tool_activity"),
-                                    grounding=grounding, proposed_actions=proposals)
+                                    grounding=grounding,
+                                    turn_items=data.get("turn_items"))
     wr_id = store.record_work_result(conn, task_id, exec_id, mid, stopped=stopped,
-                                     cut_short=cut_short, grounding=grounding,
-                                     proposals=proposals)
+                                     cut_short=cut_short, grounding=grounding)
     store.append_event(conn, exec_id, task_id, "work_result.recorded",
                        {"work_result_id": wr_id, "message_id": mid, "stopped": stopped,
                         **({"cut_short": cut_short} if cut_short else {})}, commit=False)
-    decisions = store.open_decisions_from_proposals(conn, task_id, exec_id, wr_id, proposals)
-    for d in decisions:
-        store.append_event(conn, exec_id, task_id, "decision.opened",
-                           {"decision_id": d["id"], "action_type": d["action_type"],
-                            "title": d["title"]}, commit=False)
-    # A newer Work Result superseded older pending decisions — any execution
-    # still waiting on those is now settled.
+    # A finished execution never leaves its OWN approval pending: a tool that
+    # raised one either got its answer or was stopped (withdrawn). Pre-1.11
+    # proposal-derived rows of this task are retired by the newer Work Result.
+    conn.execute(
+        "UPDATE task_decisions SET status = ?, resolved_at = ?, "
+        "resolution_note = COALESCE(resolution_note, 'superseded by a newer work result') "
+        "WHERE task_id = ? AND status = ? AND kind = ?",
+        (store.DECISION_SUPERSEDED, _now(), task_id, store.DECISION_PENDING,
+         store.DECISION_KIND_PROPOSAL))
     settle_waiting_executions(conn, task_id)
     audit.record(conn, "session.message", {"session_id": task_id, "stopped": stopped},
                  run_id=None, session_id=task_id)
@@ -503,16 +612,24 @@ def _finish(conn: sqlite3.Connection, execution: dict[str, Any], handle: LiveExe
         if titled:
             store.append_event(conn, exec_id, task_id, "task.titled",
                                {"title": titled}, commit=False)
-    if decisions and not stopped:
-        final_status = store.EXEC_WAITING
-    elif stopped:
-        final_status = store.EXEC_CANCELLED
-    else:
-        final_status = store.EXEC_COMPLETED
+    final_status = store.EXEC_CANCELLED if stopped else store.EXEC_COMPLETED
+    # A steer that arrived while the model was already writing its answer was
+    # never injectable — carry it forward as its own QUEUED execution so the
+    # user's direction is acted on, not dropped. Queued BEFORE this execution's
+    # terminal status lands, so a client that polls task state on settle
+    # always sees the follow-up instead of racing its creation.
+    undelivered = handle.steer_queue.undelivered()
+    if undelivered and not stopped:
+        try:
+            submit(conn, task_id, "\n".join(undelivered), kind="steer_followup",
+                   require_model=False)
+        except Exception:  # noqa: BLE001 — best-effort; the steer is in the event log
+            pass
     store.set_execution_status(conn, exec_id, final_status, work_result_id=wr_id)
     metrics = {"duration_ms": elapsed_ms,
                "tool_calls": len(data.get("tool_activity") or []),
-               "model": (creds or {}).get("model")}
+               "model": (creds or {}).get("model"),
+               "context_window": _context_window(creds)}
     if data.get("usage"):
         metrics["usage"] = data["usage"]
     for k in ("budget_tokens", "budget_stopped_on", "repeat_calls_avoided"):
@@ -521,31 +638,17 @@ def _finish(conn: sqlite3.Connection, execution: dict[str, Any], handle: LiveExe
     store.append_event(conn, exec_id, task_id, "execution.status",
                        {"status": final_status, "stopped": stopped,
                         "message_id": mid, "work_result_id": wr_id,
-                        "proposed_actions": _bounded_proposals(proposals),
                         "metrics": metrics}, commit=False)
     store.refresh_task_status(conn, task_id)
     conn.commit()
-    # A steer that arrived while the model was already writing its answer was
-    # never injectable — carry it forward as its own execution so the user's
-    # direction is acted on, not dropped.
-    undelivered = handle.steer_queue.undelivered()
-    if undelivered and not stopped:
+    # A steer that slipped in between the follow-up check above and the
+    # terminal commit (the row still read `running`) is carried too.
+    late = [s for s in handle.steer_queue.undelivered() if s not in undelivered]
+    if late and not stopped:
         try:
-            submit(conn, task_id, "\n".join(undelivered), kind="steer_followup",
-                   require_model=False)
-        except Exception:  # noqa: BLE001 — best-effort; the steer is in the event log
+            submit(conn, task_id, "\n".join(late), kind="steer_followup", require_model=False)
+        except Exception:  # noqa: BLE001
             pass
-
-
-def _bounded_proposals(proposals: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Proposal summaries small enough for one event payload."""
-    out = []
-    for p in (proposals or [])[:10]:
-        if isinstance(p, dict):
-            out.append({"id": p.get("id"), "action_type": p.get("action_type"),
-                        "title": str(p.get("title") or "")[:120],
-                        "requires_confirmation": bool(p.get("requires_confirmation"))})
-    return out
 
 
 def wait_for_completion(execution_id: str, timeout_s: float = 150.0) -> bool:
@@ -568,6 +671,18 @@ def wait_for_completion(execution_id: str, timeout_s: float = 150.0) -> bool:
             return True
         time.sleep(0.25)
     return False
+
+
+def _context_window(creds: dict[str, Any] | None) -> int | None:
+    """The model's context window this execution ran under (for the client's
+    context meter). None when unknown — never a fabricated size."""
+    if not creds:
+        return None
+    try:
+        from ..agent_runtime import model_budget
+        return int(model_budget.context_window(creds.get("model"), creds.get("context_window")))
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _now() -> str:

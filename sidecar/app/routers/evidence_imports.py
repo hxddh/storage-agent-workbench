@@ -1,140 +1,42 @@
-"""Managed evidence-import endpoints.
+"""Managed evidence-import endpoints (compatibility API over ``import_service``).
 
-Flow: plan -> (explicit) confirm -> run. Nothing is downloaded until a plan is
-explicitly confirmed; confirmation is recorded in approval_events + audit_logs.
-Import targets are validated against the evidence sources DISCOVERED by
-account_discovery — the caller cannot point this at an arbitrary
-bucket/key. On run, only the confirmed evidence files are downloaded (bounded by
-max_files / max_bytes) and fed into the existing inventory_analysis /
-access_log_analysis path.
+Flow: plan -> (explicit) confirm -> run. See ``app.evidence.import_service`` —
+the same bounded path the Agent's gated ``import_evidence`` tool uses.
 """
 
 from __future__ import annotations
 
-import json
-import shutil
 import sqlite3
-import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from .. import audit, config, run_service
 from ..db import get_conn
-from ..evidence import managed_import as mi
+from ..evidence import import_service
 from ..models.schemas import (
     EvidenceImportOut,
     EvidenceImportPlanRequest,
     EvidenceImportRunResult,
-    RunCreate,
 )
-from ..repositories import account_discovery as account_repo
-from ..repositories import datasets as datasets_repo
 from ..repositories import evidence_imports as repo
-from ..repositories import runs as runs_repo
-from ..s3 import client_factory
-from ..security.redaction import redact_text
 
 router = APIRouter(prefix="/evidence-imports", tags=["evidence-imports"])
 
 
-def _safe_err(exc: object) -> str:
-    """Redact secrets AND collapse absolute filesystem paths from an error
-    surfaced to the client (an OSError/download failure can carry the app's
-    absolute paths, which `redact_text` alone leaves in)."""
-    return config.scrub_paths(redact_text(str(exc)))
-
-
-# The import API uses "access_log"; the discovered evidence source
-# is named "server_access_logging".
-_SOURCE_TYPE_ALIAS = {"access_log": "server_access_logging", "inventory": "inventory"}
-
-
-def _find_evidence_source(profile: dict[str, Any], bucket_name: str, source_type: str) -> dict[str, Any] | None:
-    target = _SOURCE_TYPE_ALIAS.get(source_type, source_type)
-    for b in profile.get("buckets", []) or []:
-        if b.get("bucket_name") != bucket_name:
-            continue
-        for s in b.get("evidence_sources", []) or []:
-            if s.get("source_type") == target and s.get("status") == "available":
-                return s.get("detail") or {}
-    return None
+def _raise(exc: import_service.ImportServiceError) -> None:
+    raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
 
 
 @router.post("/plan", response_model=EvidenceImportOut, status_code=status.HTTP_201_CREATED)
 def plan_import(body: EvidenceImportPlanRequest, conn: sqlite3.Connection = Depends(get_conn)):
-    profile = account_repo.get_profile(conn, body.account_run_id)
-    if profile is None:
-        raise HTTPException(status_code=404, detail="no account profile for that account_run_id")
-
-    detail = _find_evidence_source(profile, body.bucket_name, body.source_type)
-    if detail is None:
-        raise HTTPException(
-            status_code=422,
-            detail=f"no discovered '{body.source_type}' evidence source (status=available) "
-                   f"for bucket '{body.bucket_name}' in that account discovery run",
-        )
-
-    provider_id = profile.get("provider_id")
-    snapshot_id = None  # profile is keyed by run; snapshot linkage is implicit
-    max_files, max_bytes = mi.clamp_bounds(body.max_files, body.max_bytes)
-
     try:
-        if body.source_type == "inventory":
-            configs = detail.get("configurations") or []
-            if not configs:
-                raise HTTPException(status_code=422, detail="inventory evidence source has no configuration")
-            cfg = configs[0]
-            dest_bucket = cfg.get("destination_bucket")
-            dest_prefix = cfg.get("destination_prefix") or ""
-            if not dest_bucket:
-                raise HTTPException(status_code=422, detail="inventory destination bucket is unknown")
-            plan = mi.plan_inventory(
-                conn, provider_id, dest_bucket, dest_prefix,
-                evidence_ref=cfg.get("inventory_id"), declared_format=cfg.get("format"),
-                max_files=max_files, max_bytes=max_bytes,
-            )
-        else:  # access_log
-            if not body.time_range_start or not body.time_range_end:
-                raise HTTPException(status_code=422, detail="access_log import requires time_range_start and time_range_end")
-            target_bucket = detail.get("target_bucket")
-            target_prefix = detail.get("target_prefix") or ""
-            if not target_bucket:
-                raise HTTPException(status_code=422, detail="logging target bucket is unknown")
-            plan = mi.plan_access_log(
-                conn, provider_id, target_bucket, target_prefix,
-                evidence_ref="server_access_logging",
-                time_range_start=body.time_range_start, time_range_end=body.time_range_end,
-                max_files=max_files, max_bytes=max_bytes,
-            )
-    except HTTPException:
-        raise
-    except client_factory.CredentialResolutionError as exc:
-        # The one place this is EXPECTED to surface to a user action (the import
-        # proposal click) — an actionable 424, not a raw 500.
-        raise HTTPException(status_code=424, detail=_safe_err(exc)) from exc
-    except client_factory.ProviderNotFound as exc:
-        raise HTTPException(status_code=404, detail="cloud provider not found") from exc
-    except Exception as exc:  # noqa: BLE001 — S3/listing errors → sanitized 502, never a raw 500
-        raise HTTPException(status_code=502,
-                            detail=_safe_err(f"planning failed: {exc}")) from exc
-
-    import_id = repo.create_plan(
-        conn, provider_id=provider_id, account_run_id=body.account_run_id, snapshot_id=snapshot_id,
-        source_type=plan.source_type, source_bucket=plan.source_bucket, source_prefix=plan.source_prefix,
-        evidence_ref=plan.evidence_ref, fmt=plan.fmt, fmt_schema=plan.schema, plan_source=plan.plan_source,
-        max_files=plan.max_files, max_bytes=plan.max_bytes,
-        time_range_start=plan.time_range_start, time_range_end=plan.time_range_end,
-        planned_file_count=plan.planned_file_count, planned_total_bytes=plan.planned_total_bytes,
-        selected_file_count=len(plan.selected), selected_total_bytes=plan.selected_total_bytes,
-        warnings=plan.warnings, files=plan.selected,
-    )
-    audit.record(conn, "evidence_import.plan",
-                 {"import_id": import_id, "source_type": plan.source_type,
-                  "plan_source": plan.plan_source, "selected_files": len(plan.selected),
-                  "selected_bytes": plan.selected_total_bytes}, run_id=None)
-    conn.commit()
-    return EvidenceImportOut(**repo.get(conn, import_id))
+        data = import_service.plan(
+            conn, account_run_id=body.account_run_id, bucket_name=body.bucket_name,
+            source_type=body.source_type, max_files=body.max_files, max_bytes=body.max_bytes,
+            time_range_start=body.time_range_start, time_range_end=body.time_range_end)
+    except import_service.ImportServiceError as exc:
+        _raise(exc)
+    return EvidenceImportOut(**data)
 
 
 @router.get("/{import_id}", response_model=EvidenceImportOut)
@@ -155,148 +57,17 @@ def list_import_files(import_id: str, conn: sqlite3.Connection = Depends(get_con
 
 @router.post("/{import_id}/confirm", response_model=EvidenceImportOut)
 def confirm_import(import_id: str, conn: sqlite3.Connection = Depends(get_conn)):
-    data = repo.get(conn, import_id)
-    if data is None:
-        raise HTTPException(status_code=404, detail="evidence import not found")
-    if data["status"] != "planned":
-        raise HTTPException(status_code=409, detail=f"import is '{data['status']}', not 'planned'")
-    if data["selected_file_count"] <= 0:
-        raise HTTPException(status_code=422, detail="nothing to import: the plan selected zero files")
-    if data["selected_file_count"] > mi.HARD_MAX_FILES or data["selected_total_bytes"] > mi.HARD_MAX_BYTES:
-        raise HTTPException(status_code=422, detail="selection exceeds hard limits; lower max_files / max_bytes")
-
-    repo.set_status(conn, import_id, "confirmed")
-    # Record the explicit approval (approval_events + audit_logs). Build the JSON
-    # with json.dumps bound as a parameter — never hand-interpolated into SQL —
-    # so it stays correct (and injection-proof) if any field ever becomes
-    # user-influenced.
-    approval_detail = json.dumps({
-        "import_id": import_id,
-        "selected_files": data["selected_file_count"],
-        "selected_bytes": data["selected_total_bytes"],
-    })
-    conn.execute(
-        "INSERT INTO approval_events (id, run_id, action, decision, detail_json_sanitized, created_at) "
-        "VALUES (?, NULL, 'evidence_import.download', 'approved', ?, datetime('now'))",
-        (uuid.uuid4().hex, approval_detail),
-    )
-    audit.record(conn, "evidence_import.confirm",
-                 {"import_id": import_id, "selected_files": data["selected_file_count"],
-                  "selected_bytes": data["selected_total_bytes"]}, run_id=None)
-    conn.commit()
-    return EvidenceImportOut(**repo.get(conn, import_id))
+    try:
+        data = import_service.confirm(conn, import_id)
+    except import_service.ImportServiceError as exc:
+        _raise(exc)
+    return EvidenceImportOut(**data)
 
 
 @router.post("/{import_id}/run", response_model=EvidenceImportRunResult)
 def run_import(import_id: str, conn: sqlite3.Connection = Depends(get_conn)):
-    data = repo.get(conn, import_id)
-    if data is None:
-        raise HTTPException(status_code=404, detail="evidence import not found")
-    if data["status"] != "confirmed":
-        raise HTTPException(status_code=409, detail=f"import must be confirmed before running (is '{data['status']}')")
-
-    source_type = data["source_type"]
-    dataset_type = "inventory" if source_type == "inventory" else "access_log"
-    run_type = "inventory_analysis" if source_type == "inventory" else "access_log_analysis"
-
-    # Create the analysis run that will own the downloaded dataset.
-    label = f"managed-evidence:{data['source_bucket']}/{data['source_prefix'] or ''}"
-    analysis_run_id = runs_repo.create(
-        conn,
-        RunCreate(
-            run_type=run_type, provider_id=data["provider_id"],
-            title=f"Managed {dataset_type} import",
-            user_prompt="Analyze evidence imported from a discovered evidence source.",
-        ),
-        status="pending",
-    )
-    # Atomically claim the confirmed→importing transition. Two concurrent runs
-    # would otherwise both pass the status check above and double-download; the
-    # single conditional UPDATE lets exactly one win.
-    if not repo.claim_for_import(conn, import_id, analysis_run_id):
-        # The loser must fail its just-created run, or it lingers 'pending' forever
-        # (session-unlinked, only reconciled at the next restart).
-        runs_repo.set_status(conn, analysis_run_id, "failed",
-                             final_summary="Superseded by a concurrent import of the same evidence.")
-        conn.commit()
-        current = repo.get(conn, import_id)
-        raise HTTPException(
-            status_code=409,
-            detail=f"import is already being processed (is '{current['status'] if current else 'unknown'}')",
-        )
-    from ..events import bus
-    bus.create(analysis_run_id)
-
-    selected = repo.selected_files(conn, import_id)
-    files = [{"object_key": f["object_key"], "size": f["size_bytes"]} for f in selected]
-    dest_dir = config.run_dir(analysis_run_id) / "raw"
-
     try:
-        combined, total = mi.download_and_combine(
-            conn, data["provider_id"], source_type, data["source_bucket"],
-            data.get("format"), data.get("fmt_schema"),
-            files, data["max_files"], data["max_bytes"], dest_dir,
-        )
-    except Exception as exc:  # noqa: BLE001 - any download/combine failure is sanitized + surfaced as 400
-        repo.set_status(conn, import_id, "failed")
-        repo.mark_files(conn, import_id, "failed")
-        # The combined file is written directly at its final path (no temp-rename),
-        # so a mid-combine failure leaves a partial file behind; and the analysis
-        # run stays 'pending' until the NEXT app restart reconciles it. Remove the
-        # partial raw dir and fail the run now so neither lingers.
-        shutil.rmtree(dest_dir, ignore_errors=True)
-        runs_repo.set_status(conn, analysis_run_id, "failed",
-                             final_summary="Evidence import failed before analysis could run.")
-        audit.record(conn, "evidence_import.failed",
-                     {"import_id": import_id, "error": _safe_err(exc)}, run_id=None)
-        conn.commit()
-        raise HTTPException(status_code=400, detail=f"evidence download failed: {_safe_err(exc)}")
-
-    # The download succeeded; persist the dataset + flip the import to 'imported'.
-    # This block MUST be guarded too: if datasets_repo.create / rel_path / a commit
-    # raises here, the import was left 'importing' — a terminal-ish state that can
-    # never be re-confirmed or re-run (and, unlike the run, has no startup
-    # reconciler), so it would wedge forever. On failure, revert it to 'failed'
-    # (mirroring the download-failure branch) and clean up.
-    try:
-        stored_rel = config.rel_path(combined)
-        datasets_repo.create(
-            conn, analysis_run_id, dataset_type,
-            name="managed_evidence_import", source_filename=redact_text(label),
-            stored_path_rel=stored_rel,
-        )
-        repo.mark_files(conn, import_id, "downloaded")
-        repo.set_status(conn, import_id, "imported")
-        audit.record(conn, "evidence_import.download",
-                     {"import_id": import_id, "downloaded_files": len(files),
-                      "downloaded_bytes": total, "stored_path": stored_rel,
-                      "analysis_run_id": analysis_run_id}, run_id=analysis_run_id)
-        conn.commit()
-    except Exception as exc:  # noqa: BLE001 - persist failure must not wedge the import
-        repo.set_status(conn, import_id, "failed")
-        repo.mark_files(conn, import_id, "failed")
-        shutil.rmtree(dest_dir, ignore_errors=True)
-        runs_repo.set_status(conn, analysis_run_id, "failed",
-                             final_summary="Evidence import failed while persisting the dataset.")
-        audit.record(conn, "evidence_import.failed",
-                     {"import_id": import_id, "error": _safe_err(exc)}, run_id=None)
-        conn.commit()
-        raise HTTPException(status_code=500, detail=f"evidence import failed: {_safe_err(exc)}")
-
-    # First-class Artifact: index the imported evidence snapshot against the
-    # task that discovered it (best-effort; never fails the import).
-    from ..repositories import sessions as sessions_repo
-    from ..task_runtime import artifacts as task_artifacts
-    task_id = sessions_repo.session_id_for_run(conn, data["account_run_id"]) \
-        if data.get("account_run_id") else None
-    task_artifacts.record_evidence_import(
-        conn, task_id, import_id, source_type=source_type,
-        summary=f"{len(files)} files, {total} bytes from {data['source_bucket']}")
-
-    # Hand off to the existing deterministic analysis executor.
-    run_service.start(analysis_run_id)
-
-    return EvidenceImportRunResult(
-        import_id=import_id, status="imported", analysis_run_id=analysis_run_id,
-        downloaded_file_count=len(files), downloaded_total_bytes=total,
-    )
+        out = import_service.run(conn, import_id)
+    except import_service.ImportServiceError as exc:
+        _raise(exc)
+    return EvidenceImportRunResult(**out)

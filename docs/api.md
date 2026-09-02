@@ -84,11 +84,11 @@ PUT  /agent-tasks/{task_id}/revisit
 - `POST executions` delegates a Direction. Optional `kind` is `direction` (default), `verify`, or `revisit`. Idempotent on `(task, turn_id)` via a unique index — a duplicate submit attaches (`created: false`) instead of re-running. A submission while another execution runs is QUEUED durably and runs after it.
 - `POST .../verify` submits a Verify Execution through that same path when a Remediation Plan exists (`kind=verify`). 404 when the Task has no plan.
 - `GET/PUT .../revisit` reads or sets the optional per-task revisit interval. Due revisits are submitted by startup/periodic maintenance (and app-open task-list catch-up) via `runtime.submit(kind=revisit)`, never a second runner. Catch-up Directions are labelled. Confirmation-gated work stays pending.
-- The `events` SSE streams the execution's append-only structured event log; every durable frame carries `id: <seq>` and the stream resumes from `?after=<seq>`. Frame vocabulary: `execution.status`, `tool.started`, `tool.completed`, `steer.received`, `steer.applied`, `decision.opened`, `decision.resolved`, `work_result.recorded`, `artifact.recorded`, `context.updated`, `execution.events_truncated`, transient `delta`, terminal `end`. Frontend recovery is this sequence reconnect only.
+- The `events` SSE streams the execution's append-only structured event log; every durable frame carries `id: <seq>` and the stream resumes from `?after=<seq>`. Frame vocabulary: `execution.status`, `tool.started`, `tool.completed`, `message.completed` (a closed commentary segment, or the answer when `final: true`), `approval.opened`, `approval.granted`, `decision.resolved`, `steer.received`, `steer.applied`, `work_result.recorded`, `artifact.recorded`, `context.updated`, `task.titled`, `execution.events_truncated`, transient `delta`, terminal `end`. Frontend recovery is this sequence reconnect only.
 - `steer` acts ON the current execution: the text is injected into the running model loop at its next tool boundary; a steer the loop could no longer take is carried into an automatic follow-up execution. 409 when nothing is executing.
 - `stop` cancels durably; the partial Work Result persists with `stopped: true`.
 - `resume` turns an `interrupted` / `failed` / `cancelled` execution into a NEW execution carrying the same Direction (history is never rewritten).
-- A Work Result whose proposals include confirmation-gated work leaves its execution `waiting`; `decisions/{id}/resolve` (`approved` | `declined`) records the call durably, settles the waiting execution, and — on approval — returns the same validate-and-prefill hand-over as the action-prepare flow. Nothing auto-executes.
+- The gated `import_evidence` tool opens a Decision (`kind=approval`) from inside the running execution and leaves it `waiting`; `decisions/{id}/resolve` (`approved` | `declined`, optional `scope: once | task`) records the call durably and wakes the tool: approval runs the bounded, audited import server-side and the same execution continues with its result; decline returns a structured refusal to the model. `prepared` in the response is always `null`.
 - `context` returns the latest TYPED, versioned Storage Task Context (machine state derived from durable rows — recovery never replays messages). The same snapshot is injected into the Agent prompt's stable half.
 - `GET .../provenance` is a **read-only projection** of existing `session_findings`, `tool_calls`, `task_artifacts`, and `runs`. It returns the latest cost / inventory / access-log / drift analysis documents plus per-finding evidence chains (tool, time, coverage, Review target). A missing link is `gap: "no_direct_evidence"` — never a fabricated source. No new tables.
 
@@ -242,11 +242,11 @@ Event classes include:
 
 - `delta` — streamed Work Result text;
 - `tool` — sanitized Tool activity, including started/completed records where available;
-- `done` — durable completion metadata such as message id, proposed actions, grounding/evidence/skills and runtime metrics as implemented;
+- `done` — durable completion metadata such as message id, grounding/evidence/skills and runtime metrics as implemented (`proposed_actions` is always empty since v1.11);
 - `error` — sanitized failure;
 - stopped/cancelled completion state where applicable.
 
-Persisted message grounding/proposed actions survive reload and are not only transient SSE state.
+Persisted message grounding and `turn_items` (the ordered commentary/tool items before the answer, v1.11) survive reload and are not only transient SSE state.
 
 Tool activity records may carry stable Tool-call ids, exact success state, and measured duration. Older persisted history can legitimately lack fields added by later versions; clients must treat absence as unknown rather than false/zero.
 

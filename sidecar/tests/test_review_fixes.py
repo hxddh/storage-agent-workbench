@@ -49,30 +49,20 @@ def test_config_review_tools_have_nonempty_descriptions(client):
 # --- H-2 (agent): contract parser must not eat a JSON example in the answer ---
 
 
-def test_contract_parser_keeps_json_example_in_prose():
-    from app.skills import contract
+def test_answer_keeps_json_examples_verbatim():
+    """v1.11: there is no metadata block to strip, so a JSON example in the
+    answer (a bucket policy) is never at risk of being eaten."""
+    from app.agent_runtime.finalize import _finalize_contract
 
     answer = (
         "Here is the bucket policy that makes it public:\n\n"
         "```json\n{\"Statement\": [{\"Effect\": \"Allow\", \"Principal\": \"*\"}]}\n```\n\n"
-        "That is the problem.\n\n"
-        "```json\n{\"skills_used\": [], \"evidence_used\": [\"finding:x\"], "
-        "\"next_action_proposals\": []}\n```"
+        "That is the problem."
     )
-    out = contract.parse_agent_contract(answer)
-    # The policy example stays in the answer; the trailing metadata block is consumed.
+    out = _finalize_contract(answer, [], [])
     assert '"Statement"' in out["answer"]
     assert '"Effect"' in out["answer"]
-    assert "skills_used" not in out["answer"]
-    assert out["evidence_used"] == ["finding:x"]
-
-
-def test_contract_parser_still_parses_plain_metadata_block():
-    from app.skills import contract
-
-    answer = "The bucket is fine.\n\n```json\n{\"next_action_proposals\": []}\n```"
-    out = contract.parse_agent_contract(answer)
-    assert out["answer"] == "The bucket is fine."
+    assert out["answer"].endswith("That is the problem.")
 
 
 # --- H-2/H3: GET /sessions/{id} must surface grounding + proposed_actions -----
@@ -496,7 +486,6 @@ def test_long_user_message_truncation_is_marked(client):
 
 def test_raised_budgets_and_caps():
     from app.agent_runtime import session_agent, session_tools
-    from app.skills import contract
 
     # Depth: the step count is a runaway SAFETY ceiling; the elastic tool-output
     # budget is the primary governor of how deep a turn goes (context-size, not an
@@ -517,12 +506,15 @@ def test_raised_budgets_and_caps():
     assert "_MAX_SKILL_LOADS = 20" in src
     assert "_MAX_PREVIEWS = 16" in src
     assert "_MAX_LATENCY_RUNS = 8" in src
-    # The skills_used contract cap tracks _MAX_SKILL_LOADS (v0.38: 10 → 20), so a
-    # turn that loaded up to 20 skills reports them all. 25 in → capped at 20.
-    raw = "answer\n```json\n" + json.dumps(
-        {"skills_used": [f"s{i}" for i in range(25)], "next_action_proposals": []}
-    ) + "\n```"
-    assert len(contract.parse_agent_contract(raw)["skills_used"]) == 20
+    # skills_used is derived from read_skill calls (v1.11) and bounded by the
+    # grounding cap; the cap is below the load budget, so the report stays
+    # readable rather than listing every opened skill.
+    from app.agent_runtime import finalize
+    names = [f"s{i}" for i in range(25)]
+    activity = [{"id": str(i), "tool": "read_skill", "target": n, "result": "loaded",
+                 "ok": True, "status": "completed"} for i, n in enumerate(names)]
+    out = finalize._finalize_contract("answer", names, activity)
+    assert len(out["skills_used"]) == finalize._MAX_GROUNDING_ITEMS
 
 
 # --- B3: denylist no longer ossifies against a constrained aggregate tool -----
