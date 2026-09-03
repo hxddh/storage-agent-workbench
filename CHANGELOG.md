@@ -6,6 +6,19 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.16.1] - 2026-09-03
+
+_Patch — tables render whole, search counts what it finds, wrapping and layout honesty, Codex-grade polish, green CI. No migration (head stays **030**)._ See `docs/releases/1.16.1.md`.
+
+### Fixed
+
+- **Tables render whole** — pagination, inner scroller and sticky header removed; `table-layout: fixed` stops intrinsic min-content spill; cells wrap at word boundaries.
+- **Search counts what it finds** — worked groups unfold while a runnable find query is open; the task scroller moves by measured offset.
+- **Layout honesty** — `min-w-0` on the task root, column, footer and bubble; flex `min-width: auto` no longer stretches the column past the window.
+- **Wrapping** — `overflow-wrap: anywhere` replaced by `break-word` everywhere.
+- **Polish** — 40 px title bar, 36 px sidebar rows, bordered menus, airier surfaces, unified bubble corners, palette ring, empty-start mark.
+- **CI green** — rotted E2E and screenshot assertions rewritten to current copy and behavior.
+
 ## [1.16.0] - 2026-09-04
 
 _True Native Agent, finished — dict-owned copy, engine discovery in the palette, honest usage end to end, isolated Escape, retried reconnects. No migration (head stays **030**)._ See `docs/releases/1.16.0.md`.
