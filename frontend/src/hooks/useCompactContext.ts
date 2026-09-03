@@ -25,7 +25,12 @@ export function useCompactContext(taskId: string | null) {
       const result = await compactTaskContext(taskId);
       if (result.compacted) {
         if (result.after_tokens != null) patchSessionRun(taskId, { contextTokens: result.after_tokens });
-        toast.success(t("compact.done", { before: fmtTokens(result.before_tokens), after: fmtTokens(result.after_tokens) }));
+        const before = result.before_tokens != null && result.before_tokens > 0 ? result.before_tokens : null;
+        toast.success(before != null && result.after_tokens != null
+          ? t("compact.done", { before: fmtTokens(before), after: fmtTokens(result.after_tokens) })
+          : result.after_tokens != null
+            ? t("compact.doneAfter", { after: fmtTokens(result.after_tokens) })
+            : t("compact.markerBare"));
       } else {
         toast.info(t("compact.skipped", { reason: result.reason || "" }));
       }

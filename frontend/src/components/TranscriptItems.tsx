@@ -58,12 +58,17 @@ export const TranscriptItems = memo(function TranscriptItems({
           return <PlanCard key={`p${index}`} steps={segment.steps} live={live} />;
         }
         if (segment.kind === "compacted") {
-          const both = segment.before_tokens != null && segment.after_tokens != null;
+          // An endpoint that reports no usage leaves `before` null (or a measured
+          // zero, which says the same): show what the summary now costs, never "0 →".
+          const before = segment.before_tokens != null && segment.before_tokens > 0 ? segment.before_tokens : null;
+          const after = segment.after_tokens;
           return (
             <div key={`k${index}`} className="context-compacted" data-testid="context-compacted" role="note">
-              {both
-                ? t("compact.marker", { before: fmtTokens(segment.before_tokens), after: fmtTokens(segment.after_tokens) })
-                : t("compact.markerBare")}
+              {before != null && after != null
+                ? t("compact.marker", { before: fmtTokens(before), after: fmtTokens(after) })
+                : after != null
+                  ? t("compact.markerAfter", { after: fmtTokens(after) })
+                  : t("compact.markerBare")}
             </div>
           );
         }

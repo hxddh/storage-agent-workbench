@@ -91,8 +91,10 @@ test.describe("Execution detail from the durable log", () => {
   });
 
   test("a real execution's detail matches the transcript's rows", async ({ page }) => {
+    // read_skill records a tool row without a cloud provider (the fake has
+    // none); a bucket probe would be an unknown tool call and run nothing.
     const model = await startFakeModel([
-      toolTurn("head_bucket", { bucket: "acme-logs" }),
+      toolTurn("read_skill", { name: "storageops-security-iam-policy" }),
       textTurn("acme-logs answers HEAD; the policy is the problem."),
     ]);
     const providerId = await useFakeModel(model.baseUrl);
@@ -110,7 +112,7 @@ test.describe("Execution detail from the durable log", () => {
       const group = body.getByTestId("worked-group");
       await expect(group).toBeVisible({ timeout: 20_000 });
       if ((await group.getAttribute("data-expanded")) === "false") await group.getByTestId("execution-head").click();
-      await expect(group.getByTestId("worked-row").first()).toContainText("head_bucket");
+      await expect(group.getByTestId("worked-row").first()).toContainText("read_skill");
       await expect(body.getByTestId("execution-result")).toContainText("policy is the problem");
       await expect(page.getByTestId("execution-error")).toHaveCount(0);
       expect(runs).toEqual([]);
