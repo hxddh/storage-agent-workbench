@@ -71,7 +71,7 @@ v1.12.0 made the *runtime* native all the way through. What remains is truthfuln
 
 ### W9 — Release truth (F12)
 
-- Updater from `TAURI_UPDATER_PUBKEY`/`TAURI_UPDATER_ENDPOINTS` (both-or-neither); packaging smoke required on `release/*`.
+- Updater from `TAURI_UPDATER_PUBKEY`/`TAURI_UPDATER_ENDPOINTS` (both-or-neither); packaging smoke required on `release/*` (implemented in `449ccdf`, held from push by token scope — re-apply privileged; see `releases/1.13.0.md`).
 
 ### W10 — Named fanout; MCP-client non-goal (F11, F13)
 
