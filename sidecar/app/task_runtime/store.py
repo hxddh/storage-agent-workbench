@@ -337,6 +337,23 @@ def set_execution_status(conn: sqlite3.Connection, execution_id: str, status: st
     conn.execute(f"UPDATE task_executions SET {', '.join(sets)} WHERE id = ?", params)
 
 
+def update_queued_direction(conn: sqlite3.Connection, execution_id: str,
+                            direction: str) -> dict[str, Any] | None:
+    """Replace a QUEUED execution's direction (v1.14 — queued work is
+    editable, not just cancellable). Returns the updated row, or None when
+    the execution is unknown or no longer queued."""
+    cur = conn.execute(
+        "UPDATE task_executions SET direction = ?, updated_at = ? "
+        "WHERE id = ? AND status = ?",
+        (redact_text(direction or "")[:_MAX_DIRECTION], utcnow(),
+         execution_id, EXEC_QUEUED))
+    if cur.rowcount <= 0:
+        return None
+    row = conn.execute("SELECT * FROM task_executions WHERE id = ?",
+                       (execution_id,)).fetchone()
+    return dict(row) if row else None
+
+
 def bump_steer_count(conn: sqlite3.Connection, execution_id: str) -> None:
     conn.execute(
         "UPDATE task_executions SET steer_count = steer_count + 1, updated_at = ? "

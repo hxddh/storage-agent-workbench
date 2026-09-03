@@ -1,6 +1,8 @@
 import { useEffect, type ReactNode } from "react";
 import type { SessionDetail } from "../types";
 import { Markdown } from "../components/Markdown";
+import { SeverityMark, confidenceLabel } from "../components/SeverityMark";
+import { useI18n } from "../i18n";
 import { useAgentCopy } from "./agentCopy";
 import type { TaskProvenance } from "../viz/types";
 
@@ -20,6 +22,7 @@ export function EvidenceReview({
   provenance?: TaskProvenance | null;
 }) {
   const copy = useAgentCopy();
+  const { t } = useI18n();
   const findings = detail?.findings ?? [];
   useEffect(() => {
     if (!selectedFindingId) return;
@@ -66,8 +69,8 @@ export function EvidenceReview({
                   data-selected={selected ? "true" : "false"}
                 >
                   <div className="agent-record-meta">
-                    <span>{finding.severity || "info"}</span>
-                    {finding.confidence ? <span>{finding.confidence}</span> : null}
+                    <SeverityMark severity={finding.severity} />
+                    {finding.confidence ? <span>{confidenceLabel(finding.confidence, t)}</span> : null}
                     {linked?.source_tool ? <span>{linked.source_tool}</span> : null}
                     {linked?.gap === "no_direct_evidence" ? <span data-testid={`finding-gap-${finding.id}`}>No direct evidence chain</span> : null}
                   </div>
@@ -87,7 +90,7 @@ export function EvidenceReview({
             {files.map((file) => (
               <div className="agent-file-row" key={file.id}>
                 <span className="agent-file-name">{file.source_filename || file.id}</span>
-                <span>{file.status || "ready"}</span>
+                <span>{file.status || t("evidence.statusReady")}</span>
               </div>
             ))}
           </div>

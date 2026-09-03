@@ -6,6 +6,28 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-09-04
+
+_Interaction truth and content craft — the waiting-state steer lands where it belongs, queued work edits, usage renders, and figures speak both languages. No migration (head stays **030**)._ See `docs/releases/1.14.0.md`.
+
+### Fixed
+
+- **Waiting-state steer** — `runtime.steerable_execution` prefers running/queued, else a live waiting execution: raised-while-waiting text delivers post-decision (or rides the follow-up on decline), never silently re-queues as new work.
+- **UTC/time honesty** — shared `lib/time.ts` (DST-safe day keys): relative times everywhere with full UTC on hover, plus a minutely ticker so idle windows stop lying.
+- **Focus honesty** — collapsed sidebar is `inert`; the overlay Artifacts panel traps focus; the model menu is a keyboard listbox with listbox semantics.
+- **Outline/heading truth** — outlines start at two sections with smooth in-scroller jumps; duplicate headings get suffixed ids.
+- **Chart geometry** — one slot variable centers columns over day labels at any horizon count.
+
+### Added
+
+- **Editable queue** — `PATCH .../executions/{eid}` (409 past the queue), audited; queued rows edit inline (Enter saves, Esc closes).
+- **Usage rows** — Execution detail matches the Work Result to `turn_metrics` and renders reported fields only (unreported stays hidden, never zero).
+- **Localized content** — viz/evidence/triage through i18n (EN/ZH) with one `SeverityMark`; drift/config copy stays honest about backend strings.
+- **Bounded inputs** — Composer counter past 75 % (8 000 steer / 32 000 direction), refuse past 100 % with the reason; renames cap at 120.
+- **Document craft** — table size + TSV copy; baselines as findings with folded raw JSON + copy; yaml/toml/ini highlighting; editorial h1/h2 weights; one clipboard path (`hooks/useCopy.ts`).
+- **Discoverability** — daily rotating engine hint on the empty start; the model offers engines in one sentence when relevant.
+- Contracts: `tests/test_v114_interaction.py`; frontend `architecture.test.ts` v1.14 block, `components/v114.test.tsx`, `lib/time.test.ts`, `lib/highlight.test.ts`, ExecutionDetail usage case; documentation contract at v1.14.0.
+
 ## [1.13.0] - 2026-09-04
 
 _Honesty and completeness — every known gap from the v1.12 review closes in one version. No migration (head stays **030**)._ See `docs/releases/1.13.0.md`.

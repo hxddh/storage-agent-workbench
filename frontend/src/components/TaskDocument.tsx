@@ -4,6 +4,7 @@ import type { SessionRun } from "../sessionRuns";
 import type { ApprovalItem, TurnItem } from "../lib/turnItems";
 import { matches } from "../shortcuts";
 import { clearFind, findRanges, paintFind } from "../lib/findHighlight";
+import { getFindRoots } from "../lib/findRoots";
 import { stepHit } from "../taskFind";
 import { fmtElapsed } from "../hooks/useElapsed";
 import { useTaskProvenance } from "../hooks/useTaskProvenance";
@@ -150,9 +151,11 @@ export function TaskDocument({
       setRanges([]);
       return;
     }
-    const root = scrollRef.current;
-    if (!root) return;
-    const found = findQuery.trim().length >= 2 ? findRanges(root, findQuery) : [];
+    // v1.14 — the open Artifacts panel registers its body, so Find covers
+    // open documents too, not just the transcript.
+    const roots = [scrollRef.current, ...getFindRoots()].filter((node): node is HTMLDivElement => node != null);
+    if (roots.length === 0) return;
+    const found = findQuery.trim().length >= 2 ? roots.flatMap((root) => findRanges(root, findQuery)) : [];
     setRanges(found);
     return () => clearFind();
     // eslint-disable-next-line react-hooks/exhaustive-deps

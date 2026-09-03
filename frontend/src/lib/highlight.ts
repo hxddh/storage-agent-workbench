@@ -50,6 +50,12 @@ const ALIASES: Record<string, string> = {
   "shell-session": "bash",
   sql: "sql",
   duckdb: "sql",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  ini: "ini",
+  cfg: "ini",
+  conf: "ini",
 };
 
 export function normalizeLang(lang: string): string | null {
@@ -133,6 +139,30 @@ const SQL_RULES: Rule[] = [
 
 const BASH_KEYWORDS = /(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|function|return|export|local|set|source|in)\b/y;
 
+const YAML_RULES: Rule[] = [
+  { re: /#[^\n]*/y, c: "com" },
+  { re: /"(?:[^"\\]|\\.)*"/y, c: "str" },
+  { re: /'(?:[^']|'')*'/y, c: "str" },
+  { re: /\b(?:true|false|null|yes|no|on|off)\b/y, c: "kw" },
+  { re: /-?\d+(?:\.\d+)?/y, c: "num" },
+  // A mapping key is the bare word a colon follows.
+  { re: /[A-Za-z0-9_./-]+(?=\s*:)/y, c: "name" },
+  { re: /[A-Za-z_][\w./-]*/y, c: "plain" },
+  { re: /[{\}[\],:&*?!|><=%@`-]/y, c: "punct" },
+];
+
+const TOML_INI_RULES: Rule[] = [
+  { re: /#[^\n]*|;[^\n]*/y, c: "com" },
+  { re: /\[[^\]\n]*\]/y, c: "name" },
+  { re: /"(?:[^"\\]|\\.)*"/y, c: "str" },
+  { re: /'(?:[^']|'')*'/y, c: "str" },
+  { re: /\b(?:true|false)\b/y, c: "kw" },
+  { re: /-?\d+(?:\.\d+)?/y, c: "num" },
+  { re: /[A-Za-z_][\w.-]*(?=\s*=)/y, c: "name" },
+  { re: /[A-Za-z_][\w.-]*/y, c: "plain" },
+  { re: /[=.,:]/y, c: "punct" },
+];
+
 const BASH_RULES: Rule[] = [
   { re: /#[^\n]*/y, c: "com" },
   { re: /"(?:[^"\\]|\\.)*"|'[^']*'/y, c: "str" },
@@ -200,6 +230,11 @@ export function highlight(code: string, lang: string): Tok[] | null {
       return scan(code, SQL_RULES);
     case "bash":
       return markCommands(scan(code, BASH_RULES));
+    case "yaml":
+      return scan(code, YAML_RULES);
+    case "toml":
+    case "ini":
+      return scan(code, TOML_INI_RULES);
     default:
       return null;
   }

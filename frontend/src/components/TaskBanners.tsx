@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { TaskExecution } from "../api";
 import { useI18n } from "../i18n";
 import { Button } from "./ui";
@@ -23,6 +24,7 @@ export function TaskBanners({
   onResume,
   queued,
   onCancelQueued,
+  onEditQueued,
 }: {
   offline: boolean;
   needKey: boolean;
@@ -36,9 +38,13 @@ export function TaskBanners({
   onResume: (executionId: string) => void;
   queued: TaskExecution[];
   onCancelQueued: (executionId: string) => void;
+  onEditQueued: (executionId: string, direction: string) => void;
 }) {
   const { t } = useI18n();
   const copy = useTaskCopy();
+  // v1.14 — one queued row edits at a time; saving an empty draft cancels.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
   return (
     <>
       {offline ? (
@@ -79,9 +85,52 @@ export function TaskBanners({
       ) : null}
       {queued.map((execution) => (
         <div key={execution.id} data-testid="queued-direction" className="turn-user native-queued" title={copy.queuedHint}>
-          <div className="turn-user-bubble" data-queued="true">{execution.direction}</div>
+          {editingId === execution.id ? (
+            <div className="turn-user-bubble" data-queued="true">
+              <textarea
+                data-testid="queued-direction-editor"
+                aria-label={copy.queuedEditing}
+                rows={2}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing) return;
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    setEditingId(null);
+                    if (draft.trim()) onEditQueued(execution.id, draft.trim());
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    setEditingId(null);
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <div className="turn-user-bubble" data-queued="true">{execution.direction}</div>
+          )}
           <div className="turn-user-actions" data-always="true">
             <span className="turn-tag">{copy.queued}</span>
+            {editingId === execution.id ? (
+              <button
+                type="button"
+                data-testid="queued-direction-save"
+                className="native-ghost-action"
+                disabled={!draft.trim()}
+                onClick={() => { setEditingId(null); if (draft.trim()) onEditQueued(execution.id, draft.trim()); }}
+              >
+                {copy.queuedSave}
+              </button>
+            ) : (
+              <button
+                type="button"
+                data-testid="queued-direction-edit"
+                className="native-ghost-action"
+                onClick={() => { setDraft(execution.direction ?? ""); setEditingId(execution.id); }}
+              >
+                {copy.queuedEdit}
+              </button>
+            )}
             <button type="button" data-testid="queued-direction-cancel" className="native-ghost-action" onClick={() => onCancelQueued(execution.id)}>
               {copy.queuedCancel}
             </button>

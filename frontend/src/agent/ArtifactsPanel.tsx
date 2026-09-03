@@ -5,6 +5,11 @@ import { Markdown } from "../components/Markdown";
 import { ExecutionDetail } from "../components/ExecutionDetail";
 import { Icon } from "../components/icons";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
+import { useCopy } from "../hooks/useCopy";
+import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useI18n } from "../i18n";
+import { registerFindRoot } from "../lib/findRoots";
+import { timeAgo } from "../lib/time";
 import { useAgentCopy } from "./agentCopy";
 import { EvidenceReview } from "./EvidenceReview";
 import { ReportArtifact } from "./ReportArtifact";
@@ -50,7 +55,7 @@ function Row({
   testId,
 }: {
   title: string;
-  meta?: string | null;
+  meta?: ReactNode;
   status?: string | null;
   onOpen: () => void;
   testId?: string;
@@ -143,9 +148,43 @@ function PlanDocument({ plan }: { plan: RemediationPlan }) {
   );
 }
 
+/** Findings inside a baseline snapshot, rendered as findings when present. */
+function SnapshotFindings({ payload }: { payload: Record<string, unknown> }) {
+  const copy = useAgentCopy();
+  const c = copy.artifacts.baseline;
+  const items = listOf((payload as { findings?: unknown }).findings);
+  if (items.length === 0) return null;
+  return (
+    <>
+      <h3>{c.snapshotFindings}</h3>
+      <ul className="agent-plan-checklist">
+        {items.map((item, index) => (
+          <li key={index}>{stringOf(item.title) ?? stringOf(item.finding) ?? JSON.stringify(item)}</li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+function CopySnapshot({ payload }: { payload: Record<string, unknown> }) {
+  const { t } = useI18n();
+  const { copied, copy } = useCopy();
+  return (
+    <button
+      type="button"
+      onClick={() => copy(JSON.stringify(payload, null, 2))}
+      className="native-ghost-action"
+      data-testid="baseline-copy"
+    >
+      {copied ? t("common.copied") : t("common.copy")}
+    </button>
+  );
+}
+
 /** A baseline or drift artifact as a read-only document: the bounded payload. */
 function BaselineDocument({ artifact }: { artifact: TaskArtifact }) {
   const copy = useAgentCopy();
+  const { t: tBaseline } = useI18n();
   const c = copy.artifacts.baseline;
   const payload = artifact.payload ?? {};
   const added = listOf(payload.added);
@@ -168,7 +207,7 @@ function BaselineDocument({ artifact }: { artifact: TaskArtifact }) {
     <article className="agent-artifact-document" data-testid="artifact-baseline-document">
       <header>
         <strong>{artifact.title || c.kinds[artifact.artifact_type] || artifact.artifact_type}</strong>
-        <small>{artifact.created_at}</small>
+        <small title={artifact.created_at}>{timeAgo(artifact.created_at, tBaseline)}</small>
       </header>
       {artifact.summary ? <p>{artifact.summary}</p> : null}
       {isDrift ? (
@@ -183,7 +222,16 @@ function BaselineDocument({ artifact }: { artifact: TaskArtifact }) {
       ) : (
         <>
           <h3>{c.snapshot}</h3>
-          <pre className="agent-plan-json"><code>{JSON.stringify(payload, null, 2).slice(0, 12_000)}</code></pre>
+          {/* v1.14 — findings read as findings; the raw snapshot stays one
+              click away (copied or folded), never a 12k wall of JSON. */}
+          <SnapshotFindings payload={payload} />
+          <details className="agent-plan-raw">
+            <summary>{c.rawSnapshot}</summary>
+            <div className="agent-plan-raw-actions">
+              <CopySnapshot payload={payload} />
+            </div>
+            <pre className="agent-plan-json"><code>{JSON.stringify(payload, null, 2).slice(0, 12_000)}</code></pre>
+          </details>
         </>
       )}
     </article>
@@ -217,12 +265,27 @@ export function ArtifactsPanel({
   onClose: () => void;
 }) {
   const copy = useAgentCopy();
+  const { t } = useI18n();
   const c = copy.artifacts;
+  // v1.14 — stored timestamps are UTC; rows read as relative time with the
+  // full stamp on hover, never a bare UTC slice mistaken for local time.
+  const when = (iso?: string | null) =>
+    iso ? <span title={iso}>{timeAgo(iso, t) || iso.slice(0, 16)}</span> : null;
   const { detail, executions, plans, baselines, report, reportLoading, error } = projection;
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const documentOpen = selectionOpensDocument(selection);
+  // v1.14 — an overlay panel traps focus like every other dialog; a split
+  // panel does not (it shares the window with the document).
+  const trapRef = useFocusTrap<HTMLElement>(overlay);
 
   useDismissOnEscape(overlay, onClose);
+
+  // v1.14 — ⌘F covers open panel documents too, not just the transcript.
+  useEffect(() => {
+    const node = bodyRef.current;
+    if (!node) return;
+    return registerFindRoot(node);
+  }, [overlay, documentOpen]);
 
   useEffect(() => {
     if (!selection || documentOpen) return;
@@ -231,7 +294,9 @@ export function ArtifactsPanel({
   }, [selection, documentOpen]);
 
   const findings = detail?.findings ?? [];
-  const hasReport = (detail?.runs?.length ?? 0) > 0 || findings.length > 0 || (detail?.messages?.length ?? 0) > 0;
+  // v1.14 — a report needs something to report: an assistant answer, not
+  // just a user bubble sitting in the transcript.
+  const hasReport = (detail?.messages ?? []).some((message) => message.role === "assistant" && (message.content ?? "").trim());
 
   let document: ReactNode = null;
   let documentTitle: string = c.title;
@@ -258,6 +323,8 @@ export function ArtifactsPanel({
 
   const panel = (
     <aside
+      ref={trapRef}
+      tabIndex={-1}
       className="agent-artifacts-panel"
       data-testid="agent-artifacts-panel"
       data-mode={overlay ? "overlay" : "split"}
@@ -312,7 +379,7 @@ export function ArtifactsPanel({
                 <Row
                   key={artifact.id}
                   title={artifact.title || c.baseline.kinds[artifact.artifact_type] || artifact.artifact_type}
-                  meta={artifact.summary ?? artifact.created_at}
+                  meta={artifact.summary ?? when(artifact.created_at)}
                   onOpen={() => onOpen("baseline", artifact.id)}
                   testId="artifact-baseline-row"
                 />
@@ -335,7 +402,7 @@ export function ArtifactsPanel({
                       <span className="agent-run-status" data-status={execution.status} aria-hidden />
                       <span className="agent-run-main">
                         <strong>{executionTitle(execution) || c.execution.kinds[execution.kind] || execution.kind}</strong>
-                        <small>{[c.execution.statuses[execution.status] ?? execution.status, c.execution.kinds[execution.kind] ?? null, execution.created_at?.replace("T", " ").slice(0, 16)].filter(Boolean).join(" · ")}</small>
+                        <small>{[c.execution.statuses[execution.status] ?? execution.status, c.execution.kinds[execution.kind] ?? null].filter(Boolean).join(" · ")} · {when(execution.created_at)}</small>
                       </span>
                     </button>
                   ))}

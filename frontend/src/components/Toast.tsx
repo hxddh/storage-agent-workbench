@@ -129,8 +129,8 @@ function ToastViewport({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id:
   if (toasts.length === 0) return null;
   return (
     <div
-      // Assertive: these announce a failure or a completed action the user is
-      // waiting on, not ambient chatter.
+      // Polite, not assertive: these announce a failure or a completed action
+      // the user is waiting on — important, but never interrupting speech.
       role="status"
       aria-live="polite"
       data-testid="toast-viewport"

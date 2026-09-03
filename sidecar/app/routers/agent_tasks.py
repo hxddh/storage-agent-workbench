@@ -50,6 +50,10 @@ class SteerRequest(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
 
 
+class ExecutionEdit(BaseModel):
+    direction: str = Field(min_length=1, max_length=32000)
+
+
 class DecisionResolve(BaseModel):
     resolution: str = Field(pattern="^(approved|declined)$")
     note: str | None = Field(default=None, max_length=1000)
@@ -267,6 +271,28 @@ def stop_execution(task_id: str, execution_id: str,
         raise HTTPException(status_code=404, detail="execution not found")
     return {"status": "stopping" if execution["status"] in store.EXEC_ACTIVE_STATUSES
             else execution["status"], "execution": execution}
+
+
+@router.patch("/{task_id}/executions/{execution_id}")
+def edit_execution(task_id: str, execution_id: str, body: ExecutionEdit,
+                   conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+    """Rewrite a QUEUED execution's Direction (v1.14 — queued work is
+    editable, not just cancellable). 404 when unknown; 409 once it left the
+    queue (edit it with Steer instead)."""
+    _task_or_404(conn, task_id)
+    prior = store.get_execution(conn, execution_id)
+    if prior is None or prior["task_id"] != task_id:
+        raise HTTPException(status_code=404, detail="execution not found")
+    execution = store.update_queued_direction(conn, execution_id, body.direction)
+    if execution is None:
+        raise HTTPException(status_code=409,
+                            detail="only a queued execution can be edited")
+    audit.record(conn, "task.execution.edit",
+                 {"task_id": task_id, "execution_id": execution_id},
+                 run_id=None, session_id=task_id)
+    store.note_task_status(conn, task_id)
+    conn.commit()
+    return {"execution": execution}
 
 
 @router.post("/{task_id}/executions/{execution_id}/resume",

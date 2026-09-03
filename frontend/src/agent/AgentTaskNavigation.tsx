@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
-import { useI18n, type Lang, type TFunc } from "../i18n";
+import { useI18n, type Lang } from "../i18n";
+import { localDayKey, previousDayKey, timeAgo } from "../lib/time";
 import { useSessionRun, useSessionRunIndexVersion } from "../sessionRuns";
 import { useNavigationCopy } from "./navigationCopy";
 import {
@@ -12,23 +13,8 @@ import {
 import { agentTaskState } from "./taskState";
 import { Icon } from "../components/icons";
 
-function relTime(iso: string, t: TFunc): string {
-  const ms = Date.parse(iso);
-  if (Number.isNaN(ms)) return "";
-  const seconds = Math.max(0, (Date.now() - ms) / 1000);
-  if (seconds < 60) return t("time.now");
-  if (seconds < 3600) return t("time.mAgo", { n: Math.floor(seconds / 60) });
-  if (seconds < 86400) return t("time.hAgo", { n: Math.floor(seconds / 3600) });
-  if (seconds < 172800) return t("time.yesterday");
-  if (seconds < 604800) return t("time.dAgo", { n: Math.floor(seconds / 86400) });
-  return t("time.wAgo", { n: Math.floor(seconds / 604800) });
-}
-
-/** Start of the local calendar day `iso` falls on, as a sortable key. */
-function localDayKey(ms: number): number {
-  const d = new Date(ms);
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-}
+// v1.14 — relative time and day keys live in lib/time (shared with the
+// Artifacts panel and Execution detail); this module keeps the grouping.
 
 export type TaskDayGroup = { key: string; label: string; tasks: AgentTaskSummary[] };
 
@@ -39,7 +25,7 @@ export type TaskDayGroup = { key: string; label: string; tasks: AgentTaskSummary
  */
 export function dayGroups(tasks: AgentTaskSummary[], lang: Lang, now: Date = new Date()): TaskDayGroup[] {
   const today = localDayKey(now.getTime());
-  const yesterday = today - 86_400_000;
+  const yesterday = previousDayKey(today);
   const fmt = new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : "en-US", { month: "long", day: "numeric" });
   const fmtYear = new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "long", day: "numeric" });
   const groups: TaskDayGroup[] = [];
@@ -100,6 +86,7 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
         <input
           ref={renameRef}
           value={renameValue}
+          maxLength={120}
           onChange={(event) => setRenameValue(event.target.value)}
           onBlur={() => { setRenamingId(null); const title = renameValue.trim(); if (title && title !== task.title) actions.onRename(task, title); }}
           onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") setRenamingId(null); }}
@@ -121,13 +108,14 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
       aria-selected={selected}
       tabIndex={selected ? 0 : -1}
       onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onSelectTask(task.id); } }}
-      title={stateLabel ? `${title} — ${stateLabel}` : title}
+      title={[title, stateLabel, timeAgo(task.updated_at, t)].filter(Boolean).join(" — ")}
+      aria-label={[title, stateLabel, timeAgo(task.updated_at, t)].filter(Boolean).join(", ")}
     >
       <div className="native-task-title">
         <span className="native-task-mark" aria-hidden />
         <strong>{title}</strong>
       </div>
-      <span className="native-task-meta" aria-hidden>{relTime(task.updated_at, t)}</span>
+      <span className="native-task-meta" aria-hidden>{timeAgo(task.updated_at, t)}</span>
       <button
         type="button"
         aria-label={t("menu.more")}
@@ -182,6 +170,13 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const listRef = useRef<HTMLElement>(null);
+  // v1.14 — relative times go stale on an idle window; re-render them
+  // minutely (times only, never the list order).
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const visible = tasks.filter((task) => task.status !== "archived");
   visible.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
@@ -225,6 +220,8 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
     handle.addEventListener("pointercancel", stop);
   };
 
+  // v1.14 — a zero-width sidebar keeps no tab stops: width alone hides
+  // sighted content while keyboard focus would still land inside it.
   return (
     <aside
       data-testid="agent-task-navigation"
@@ -232,6 +229,7 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
       data-collapsed={collapsed ? "true" : "false"}
       aria-label={copy.tasks}
       aria-hidden={collapsed ? true : undefined}
+      inert={collapsed ? true : undefined}
       style={{ width, minWidth: width }}
       className="native-sidebar"
     >

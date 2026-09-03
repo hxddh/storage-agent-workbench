@@ -406,6 +406,15 @@
   color: var(--danger);
   font-size: var(--text-xs);
 }
+.native-composer-count {
+  flex: none;
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--gray-500);
+}
+.native-composer-count[data-over="true"] {
+  color: var(--danger);
+}
 .native-round {
   display: grid;
   width: 30px;
@@ -559,12 +568,19 @@
   padding-bottom: 12vh;
 }
 .native-start-greeting {
-  margin: 0 0 18px;
+  margin: 0 0 6px;
   color: var(--gray-100);
   font-size: var(--text-2xl);
   font-weight: 400;
   letter-spacing: -0.02em;
   line-height: 1.25;
+  text-align: center;
+}
+.native-start-hint {
+  margin: 0 0 18px;
+  color: var(--gray-500);
+  font-size: var(--text-sm);
+  line-height: 1.5;
   text-align: center;
 }
 

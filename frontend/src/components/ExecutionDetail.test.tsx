@@ -20,6 +20,7 @@ const api = vi.hoisted(() => ({
   listExecutionEventsPage: vi.fn(),
   getSession: vi.fn(),
   getSessionCall: vi.fn(),
+  getSessionOverview: vi.fn(),
   followExecutionEvents: vi.fn(),
 }));
 
@@ -78,6 +79,21 @@ beforeEach(() => {
     ],
   });
   api.getSessionCall.mockResolvedValue({ id: "c2", tool_name: "head_bucket", input: { bucket: "acme-logs" }, output: { status: 200 }, status: "success", duration_ms: 300, created_at: at(6) });
+  api.getSessionOverview.mockResolvedValue({
+    session_id: "t1", tool_calls: 3, tool_errors: 0, tool_ms: 12300, audit_events: 0, approvals: 0,
+    usage: {
+      available: true, turns: 1, turns_measured: 1, partial: false,
+      input_tokens: 12_400, output_tokens: 800, total_tokens: 13_200, requests: 4,
+      cached_input_tokens: 9_000, reasoning_tokens: null,
+    },
+    turns: [{
+      turn_id: "turn-1", message_id: "m-answer", model: "fake", requests: 4,
+      input_tokens: 12_400, output_tokens: 800, total_tokens: 13_200,
+      cached_input_tokens: 9_000, reasoning_tokens: null,
+      budget_tokens: null, repeat_calls_avoided: null, duration_ms: 16_000,
+      tool_calls: 2, created_at: at(18),
+    }],
+  });
 });
 
 describe("replayExecutionEvents", () => {
@@ -136,6 +152,11 @@ describe("ExecutionDetail", () => {
     expect(screen.getByText("acme-logs policy is public")).toBeTruthy();
     expect(screen.getByTestId("execution-gaps").textContent).toContain("no access logs");
     expect(screen.getByTestId("execution-span").textContent).toBe("16s");
+    // v1.14 — reported usage renders; unreported fields never render as zero.
+    await waitFor(() => expect(screen.getByTestId("execution-usage")).toBeTruthy());
+    expect(screen.getByTestId("execution-usage").textContent).toContain("12k");
+    expect(screen.getByTestId("execution-usage").textContent).toContain("9k");
+    expect(screen.getByTestId("execution-usage").textContent).not.toMatch(/reasoning/);
   });
 
   it("opens one call's sanitized input and output in place", async () => {

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useI18n } from "../i18n";
 import type { Coverage } from "./types";
 
 const SERIES = ["var(--viz-1)", "var(--viz-2)", "var(--viz-3)", "var(--viz-4)", "var(--viz-5)", "var(--viz-6)"];
@@ -16,16 +17,17 @@ export function CoverageMark({
   estimate?: boolean;
   extra?: string | null;
 }) {
+  const { t } = useI18n();
   const bits: string[] = [];
-  if (estimate) bits.push("Estimate");
-  if (coverage?.object_count != null) bits.push(`${coverage.object_count.toLocaleString()} objects`);
+  if (estimate) bits.push(t("viz.estimate"));
+  if (coverage?.object_count != null) bits.push(t("viz.objects", { n: coverage.object_count.toLocaleString() }));
   if (coverage?.bytes != null) bits.push(formatBytes(coverage.bytes));
-  if (coverage?.total_requests != null) bits.push(`${coverage.total_requests.toLocaleString()} requests`);
+  if (coverage?.total_requests != null) bits.push(t("viz.requests", { n: coverage.total_requests.toLocaleString() }));
   if (coverage?.inventory_as_of) bits.push(coverage.inventory_as_of.slice(0, 10));
-  if (coverage?.unknown_age_ratio) bits.push(`${Math.round(coverage.unknown_age_ratio * 100)}% age unknown`);
-  if (coverage?.truncated) bits.push("truncated");
+  if (coverage?.unknown_age_ratio) bits.push(t("viz.ageUnknown", { n: Math.round(coverage.unknown_age_ratio * 100) }));
+  if (coverage?.truncated) bits.push(t("viz.truncated"));
   if (coverage?.parsed_fraction != null && coverage.parsed_fraction < 1) {
-    bits.push(`${Math.round(coverage.parsed_fraction * 100)}% parsed`);
+    bits.push(t("viz.parsed", { n: Math.round(coverage.parsed_fraction * 100) }));
   }
   if (extra) bits.push(extra);
   if (bits.length === 0 && !coverage?.note) return null;
@@ -35,6 +37,16 @@ export function CoverageMark({
       {coverage?.note ? <span className="mt-0.5 block">{coverage.note}</span> : null}
     </p>
   );
+}
+
+function NoMix() {
+  const { t } = useI18n();
+  return <GapState title={t("viz.noMix")} />;
+}
+
+function NoDist() {
+  const { t } = useI18n();
+  return <GapState title={t("viz.noDist")} />;
 }
 
 export function GapState({ title, body }: { title: string; body?: string | null }) {
@@ -82,17 +94,19 @@ export function StackedHorizon({
   series: string[];
   values: number[][];
 }) {
-  if (days.length === 0 || series.length === 0) return <GapState title="No class mix to plot." />;
+  if (days.length === 0 || series.length === 0) return <NoMix />;
   const totals = values.map((row) => row.reduce((sum, n) => sum + n, 0));
   const max = Math.max(...totals, 1);
   const width = 320;
   const height = 88;
-  const gap = days.length === 1 ? 36 : 10;
-  const barW = Math.min(36, (width - gap * (days.length + 1)) / days.length);
+  // v1.14 — one slot variable drives bar width AND position, so columns sit
+  // centered over their day labels at any horizon count (they used to drift).
+  const slot = width / days.length;
+  const barW = Math.min(36, slot - 10);
   return (
     <svg viewBox={`0 0 ${width} ${height + 18}`} className="h-28 w-full text-gray-500" role="img" aria-label="Storage class mix by simulator horizon">
       {days.map((day, i) => {
-        const x = gap + i * ((width - gap) / days.length);
+        const x = i * slot + (slot - barW) / 2;
         let y = height;
         return (
           <g key={day}>
@@ -125,20 +139,21 @@ export function CostColumns({
   const max = Math.max(...nums, 0.01);
   const width = 320;
   const height = 72;
-  const gap = days.length === 1 ? 36 : 10;
-  const slot = (width - gap) / days.length;
-  const barW = Math.min(14, slot / 2 - 2);
+  // v1.14 — same single-slot rule as StackedHorizon: the pair centers over
+  // its day label instead of leaning on a margin constant.
+  const slot = width / days.length;
+  const barW = Math.min(14, (slot - 10) / 2);
   return (
     <svg viewBox={`0 0 ${width} ${height + 18}`} className="mt-2 h-24 w-full text-gray-500" role="img" aria-label="Monthly cost at simulator horizons">
       {days.map((day, i) => {
-        const x = gap + i * slot;
+        const x = i * slot + (slot - (barW * 2 + 2)) / 2;
         const b = baseline[i];
         const c = candidate[i];
         return (
           <g key={day}>
             {b != null ? <rect x={x} y={height - (b / max) * height} width={barW} height={(b / max) * height} fill="var(--viz-6)" rx={1} /> : null}
             {c != null ? <rect x={x + barW + 2} y={height - (c / max) * height} width={barW} height={(c / max) * height} fill="var(--viz-1)" rx={1} /> : null}
-            <text x={x + barW} y={height + 14} textAnchor="middle" className="fill-current" fontSize="9">{day}d</text>
+            <text x={x + barW + 1} y={height + 14} textAnchor="middle" className="fill-current" fontSize="9">{day}d</text>
           </g>
         );
       })}
@@ -153,13 +168,13 @@ export function RankedBars({
   points: Array<{ label: string; value: number }>;
   ariaLabel: string;
 }) {
-  if (points.length === 0) return <GapState title="No distribution to plot." />;
+  if (points.length === 0) return <NoDist />;
   const max = Math.max(...points.map((p) => p.value), 1);
   const peak = points.reduce((a, b) => (b.value > a.value ? b : a));
   return (
     <div role="img" aria-label={ariaLabel} className="space-y-1">
-      {points.map((p) => (
-        <div key={p.label} className="grid grid-cols-[minmax(0,7rem)_1fr_auto] items-center gap-2">
+      {points.map((p, index) => (
+        <div key={`${p.label}·${index}`} className="grid grid-cols-[minmax(0,7rem)_1fr_auto] items-center gap-2">
           <span className="truncate font-mono text-2xs text-gray-400" title={p.label}>{p.label}</span>
           <div className="h-1.5 overflow-hidden rounded-full bg-edge">
             <div

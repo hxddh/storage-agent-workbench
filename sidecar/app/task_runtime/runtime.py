@@ -144,10 +144,32 @@ def submit(conn: sqlite3.Connection, task_id: str, direction: str,
     return execution
 
 
+def steerable_execution(conn: sqlite3.Connection, task_id: str) -> dict[str, Any] | None:
+    """The execution a steer acts on: running/queued first, else a live
+    `waiting` one (v1.14 — steering while an approval is open used to 409 and
+    the client silently re-submitted it as a queued follow-up, which reads as
+    guidance for the pending decision but runs after it)."""
+    execution = store.active_execution(conn, task_id)
+    if execution is not None:
+        return execution
+    row = conn.execute(
+        "SELECT * FROM task_executions WHERE task_id = ? AND status = ? "
+        "ORDER BY rowid ASC LIMIT 1", (task_id, store.EXEC_WAITING)).fetchone()
+    if row is None:
+        return None
+    candidate = dict(row)
+    # Without a live worker there is nothing to inject into (a restart stamps
+    # waiting rows interrupted, so this is only a race window) — fall through
+    # to None so the caller submits instead of writing to a dead execution.
+    if live_handle(candidate["id"]) is None:
+        return None
+    return candidate
+
+
 def steer(conn: sqlite3.Connection, task_id: str, text: str) -> dict[str, Any] | None:
     """Steer the task's CURRENT execution. Returns the execution row steered,
     or None when nothing is active (the caller should submit instead)."""
-    execution = store.active_execution(conn, task_id)
+    execution = steerable_execution(conn, task_id)
     if execution is None:
         return None
     store.bump_steer_count(conn, execution["id"])

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getSessionCall } from "../api";
+import { useCopy } from "../hooks/useCopy";
 import { useI18n } from "../i18n";
 import type { SessionActivityItem } from "../types";
 
@@ -20,29 +21,9 @@ function present(value: unknown): string {
 // payload ended there.
 const MAX_RENDER = 4000;
 
-function copyText(text: string, done: () => void) {
-  const fallback = () => {
-    try {
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textarea);
-      done();
-    } catch {
-      /* no remaining clipboard path */
-    }
-  };
-  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(fallback);
-  else fallback();
-}
-
 function PayloadBlock({ label, value }: { label: string; value: unknown }) {
   const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopy();
   const text = present(value);
   const clipped = text.length > MAX_RENDER;
   const visible = clipped ? `${text.slice(0, MAX_RENDER)}\n…` : text;
@@ -55,10 +36,7 @@ function PayloadBlock({ label, value }: { label: string; value: unknown }) {
         </div>
         <button
           type="button"
-          onClick={() => copyText(text, () => {
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1400);
-          })}
+          onClick={() => copy(text)}
           className="ml-auto inline-flex items-center gap-1 rounded px-1 py-0.5 text-2xs text-gray-500 opacity-0 transition-[color,opacity] hover:text-gray-200 group-hover/payload:opacity-100 focus:opacity-100"
         >
           {copied ? (

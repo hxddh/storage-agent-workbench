@@ -3,12 +3,14 @@ import {
   dispatchDurableEvent,
   followExecutionEvents,
   getSession,
+  getSessionOverview,
   getTaskExecution,
   listExecutionEventsPage,
   type LiveEventHandlers,
   type TaskEvent,
   type TaskExecution,
 } from "../api";
+import type { TurnMetricsRow } from "../types";
 import type { SessionDetail, SessionFinding, SessionMessage } from "../types";
 import {
   applyCompacted,
@@ -26,7 +28,10 @@ import {
 import { TranscriptItems } from "./TranscriptItems";
 import { Markdown } from "./Markdown";
 import { useI18n } from "../i18n";
+import { fmtTokens } from "../hooks/useCompactContext";
 import { fmtElapsed } from "../hooks/useElapsed";
+import { timeAgo } from "../lib/time";
+import type { TFunc } from "../i18n";
 import { Icon } from "./icons";
 
 const SEVERITY_KEY: Record<string, string> = {
@@ -118,6 +123,18 @@ async function readExecutionLog(taskId: string, executionId: string, after = 0):
   return { events, lastSeq: events.length ? events[events.length - 1].seq : after };
 }
 
+/** What this execution spent, from its turn metrics (v1.14). Only reported
+ * fields render — an endpoint that stayed silent leaves no zeroes behind. */
+function usageLine(usage: TurnMetricsRow | null, t: TFunc): string | null {
+  if (!usage) return null;
+  const parts: string[] = [];
+  if (usage.input_tokens != null) parts.push(t("usage.in", { n: fmtTokens(usage.input_tokens) }));
+  if (usage.output_tokens != null) parts.push(t("usage.out", { n: fmtTokens(usage.output_tokens) }));
+  if (usage.cached_input_tokens != null) parts.push(t("usage.cached", { n: fmtTokens(usage.cached_input_tokens) }));
+  if (usage.reasoning_tokens != null) parts.push(t("usage.reasoning", { n: fmtTokens(usage.reasoning_tokens) }));
+  return parts.length ? parts.join(" · ") : null;
+}
+
 function stamp(value?: string | null): number | null {
   if (!value) return null;
   const ms = Date.parse(value);
@@ -150,6 +167,7 @@ export function ExecutionDetailImplementation({
   const [turn, setTurn] = useState<LiveTurn>(EMPTY_TURN);
   const [replay, setReplay] = useState<Omit<Replay, "turn">>({ lastSeq: 0, status: null, error: null, messageId: null, stopped: false });
   const [document, setDocument] = useState<SessionDetail | null>(null);
+  const [usage, setUsage] = useState<TurnMetricsRow | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const turnRef = useRef<LiveTurn>(EMPTY_TURN);
   const { t, lang } = useI18n();
@@ -214,6 +232,7 @@ export function ExecutionDetailImplementation({
     setReplay({ lastSeq: 0, status: null, error: null, messageId: null, stopped: false });
     setExecution(null);
     setDocument(null);
+    setUsage(null);
     setLoadError(null);
 
     const update = (fn: (turn: LiveTurn) => LiveTurn) => {
@@ -223,6 +242,17 @@ export function ExecutionDetailImplementation({
     const readDocument = () => getSession(taskId)
       .then((next) => { if (!cancelled) setDocument(next); })
       .catch(() => undefined);
+    // v1.14 — what this execution actually spent, matched by Work Result.
+    // Absent fields stay hidden: unreported usage is not zero usage.
+    const readUsage = (messageId: string | null) => {
+      if (!messageId) { if (!cancelled) setUsage(null); return; }
+      void getSessionOverview(taskId)
+        .then((overview) => {
+          if (cancelled) return;
+          setUsage(overview.turns.find((row) => row.message_id === messageId) ?? null);
+        })
+        .catch(() => undefined);
+    };
     const readHeader = () => getTaskExecution(taskId, executionId)
       .then((next) => { if (!cancelled) setExecution(next); return next; });
 
@@ -248,6 +278,7 @@ export function ExecutionDetailImplementation({
       setTurn(replayed.turn);
       setReplay({ lastSeq: replayed.lastSeq, status: replayed.status, error: replayed.error, messageId: replayed.messageId, stopped: replayed.stopped });
       void readDocument();
+      void readUsage(replayed.messageId);
       if (TERMINAL.has(header.status)) return;
       // Still executing: keep reading the SAME durable stream from where the
       // replay stopped. Closing it changes nothing server-side.
@@ -255,12 +286,14 @@ export function ExecutionDetailImplementation({
       const handlers = reducerHandlers(update, {
         onTerminal: (status, payload) => {
           if (cancelled) return;
+          const messageId = typeof payload.message_id === "string" ? payload.message_id : null;
           setReplay((prev) => ({
             ...prev, status,
             error: typeof payload.error === "string" ? payload.error : prev.error,
-            messageId: typeof payload.message_id === "string" ? payload.message_id : prev.messageId,
+            messageId: messageId ?? prev.messageId,
             stopped: payload.stopped === true || prev.stopped,
           }));
+          if (messageId) void readUsage(messageId);
         },
       });
       try {
@@ -324,9 +357,12 @@ export function ExecutionDetailImplementation({
             {copy.statuses[status] ?? status}
           </span>
           {execution?.kind ? <span data-testid="execution-kind">{copy.kinds[execution.kind] ?? execution.kind}</span> : null}
-          {execution?.started_at ? <span>{execution.started_at.replace("T", " ").slice(0, 19)}</span> : null}
+          {execution?.started_at ? (
+            <span title={execution.started_at}>{timeAgo(execution.started_at, t)}</span>
+          ) : null}
           {spanMs != null ? <span data-testid="execution-span">{fmtElapsed(spanMs) ?? "—"}</span> : null}
           {execution?.steer_count ? <span>steer × {execution.steer_count}</span> : null}
+          {usageLine(usage, t) ? <span data-testid="execution-usage" className="tabular-nums">{usageLine(usage, t)}</span> : null}
         </p>
       </header>
 
