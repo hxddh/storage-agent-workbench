@@ -60,7 +60,7 @@ def test_steer_with_nothing_live_returns_none(client):
 
 def test_queued_direction_is_editable_until_it_runs(client):
     task = _task(client)
-    _store_task(client)
+    _store_task(task)
     conn = db.connect()
     try:
         execution = store.create_execution(conn, task["id"], "first draft", "t-edit")

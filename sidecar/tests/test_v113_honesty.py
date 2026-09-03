@@ -169,6 +169,10 @@ def test_resume_of_cancelled_is_labelled_retry(client):
         assert "[retry]" in (nxt["direction"] or "")
     finally:
         conn.close()
+    # Join the worker resume() just started: otherwise it outlives this test
+    # and crashes against the next test's database (unhandled-thread warning).
+    # The fake endpoint refuses fast, so this is bounded by the timeout.
+    runtime.wait_for_completion(nxt["id"], timeout_s=60.0)
 
 
 # --- redaction -----------------------------------------------------------------
