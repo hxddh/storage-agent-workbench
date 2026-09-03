@@ -1,6 +1,6 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.15.0** (`v1.15.0`).
+> **Current architecture baseline: Storage Agent v1.16.0** (`v1.16.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
@@ -30,7 +30,7 @@
 > context compaction (`context.compacted`, ⌘K Compact context), `AGENTS.md`
 > instructions, Execution detail from the durable log, wall-clock *Worked
 > for …*, and the frontend split into document / runner / api modules.
-> Migration head is **030** (v1.13.0–v1.15.0 add no migration).
+> Migration head is **030** (v1.13.0–v1.16.0 add no migration).
 > **v1.14.0 is interaction truth and content craft.** Steering reaches waiting
 > executions, queued Directions edit until they run, Execution detail shows
 > measured usage, figures and evidence read localized, times read relative,
@@ -39,6 +39,11 @@
 > static greeting plus the Composer, Settings alone in the sidebar, painted
 > search with CJK single-char find, self-healing streams, fitting tables,
 > one usage vocabulary, dict-owned copy, and elevated craft.
+> **v1.16.0 finishes the true native agent.** Dict-owned copy, engine asks and
+> shortcuts in the palette, governor and memory reuse beside tokens, a labeled
+> window denominator, disambiguated approvals, isolated Escape, dismissible
+> errors, backed-off reconnects, a themed last resort, and matching secret
+> shapes.
 > **v1.13.0 is honesty and completeness.** The MCP bridge executes instead of
 echoing, the OTel export carries real spans, restart recovery covers waiting
 executions, unknown execution kinds are rejected, compaction chains and

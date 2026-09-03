@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.15.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native: menu bar, deep links, notifications, summon shortcut, runtime task titles, a reasoning-effort control, and native Execution-detail / provider panes. Earlier release notes are not current product architecture.
+> **Applies to Storage Agent v1.16.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native: menu bar, deep links, notifications, summon shortcut, runtime task titles, a reasoning-effort control, and native Execution-detail / provider panes. Earlier release notes are not current product architecture.
 
 ## Product definition
 
@@ -230,7 +230,8 @@ v1.10.0 is the native Agent window on a native shell. Visual language is specifi
 - A steer raised while an approval is open acts on the waiting execution (v1.14): it is delivered after the decision resolves, or carried into the follow-up on decline — never silently re-queued as new work.
 - Figures, evidence states, triage, and coverage read localized (v1.14). The empty start is one static greeting line plus the Composer (v1.15) — no suggestion grid in any form; engine discoverability is the painted palette (⌘K), and the model never pitches engines in prose.
 - A stalled stream heals itself with a quiet reconnecting line and auto-retry (v1.15) — there is no Resync button. Earlier history loads as the reader nears the top.
-- Tables fit when they fit and hint only when truly wide, with paginated long tables (v1.15). Usage renders from one vocabulary (v1.15): cached as a subset, partial reports as `~` floors, silence named, compaction marked estimated.
+- Tables fit when they fit and hint only when truly wide, with paginated long tables (v1.15).
+- Copy lives in dictionaries with zh/en parity (v1.16); engines and shortcuts are palette entries that prefill the Composer; usage names the governor, memory reuse and window source; approvals name their scope; one Escape closes one layer; errors dismiss; reconnects back off. Usage renders from one vocabulary (v1.15): cached as a subset, partial reports as `~` floors, silence named, compaction marked estimated.
 - A live turn running past ~90 s says it is still running and that Steer/Stop are available (v1.13); the *Worked for …* clock is the group's wall clock throughout.
 - Perceived latency: cached task documents render instantly on switch; never flash an empty canvas while the durable document is already known.
 - First Work Result on a new install is real delegated work, not a demo or a wizard checkup.

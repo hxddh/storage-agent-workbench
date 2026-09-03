@@ -235,6 +235,8 @@ GET /sessions/{session_id}/overview
 
 Missing provider token usage remains unavailable/NULL, not a fabricated zero.
 
+Per-turn metrics additionally carry `budget_tokens` / `repeat_calls_avoided` when the turn had them, and `context_window_source` (`declared` when the operator configured the window, else `inferred` from the model table) beside `context_window` (v1.16, additive).
+
 ## Session/Task stream events
 
 The only stream is the execution event stream (`GET /agent-tasks/{id}/executions/{eid}/events`, above). The legacy `delta`/`tool`/`done`/`error` vocabulary and the `legacy_frames` translation are gone (v1.12).

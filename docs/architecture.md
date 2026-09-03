@@ -328,6 +328,12 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 - **Tool timing.** Tool records and `tool.*` events carry `started_at` /
   `finished_at` / `duration_ms`; *Worked for …* is the group's wall clock.
 
+### 6.x True native agent, finished (v1.16.0)
+
+- **Dict-owned copy; palette engines.** `palette/chip/triage/shortcuts` keys plus `NAV_DAY_LABELS`; engine group prefills the Composer via `prefill`, window-owned `shortcuts` via base actions.
+- **Usage end to end.** `budget_tokens` + `repeat_calls_avoided` render; additive `context_window_source` (`declared`/`inferred`) from `task_runtime/runtime.py`; title-step exclusion disclosed.
+- **Isolated Escape, honest banners, retried reconnects.** Per-layer `stopPropagation`; Dismiss for view errors; offline suppresses needKey; 2/4/8 s backoff with clear-on-success.
+
 ### 6.x True Native Agent (v1.15.0)
 
 - **Work language, painted search, self-healing transport.** Static greeting;

@@ -6,6 +6,26 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-09-04
+
+_True Native Agent, finished — dict-owned copy, engine discovery in the palette, honest usage end to end, isolated Escape, retried reconnects. No migration (head stays **030**)._ See `docs/releases/1.16.0.md`.
+
+### Fixed
+
+- **Dict-owned copy** — palette, model chip, triage, shortcuts sheet and sidebar day labels moved into dictionaries; zh/en parity enforced by contract.
+- **Engine discovery** — the palette lists the five engine asks as Composer prefills plus the shortcuts entry; `@` completion and attachment types explain themselves.
+- **Usage, finished** — persisted governor and memory reuse render beside tokens; the window denominator is labeled declared/inferred; the title-step exclusion is disclosed.
+- **Approval wording** — session policy vs per-task grant disambiguated; gate action ids localized; legacy granted rows claim no scope.
+- **Keyboard truth** — one Escape closes one layer; disabled Find explains itself.
+- **Banner honesty** — view errors dismiss; offline suppresses the model banner; the queued editor honors the 32 000 ceiling.
+- **Reconnects** — 2/4/8 s backoff with clear-on-success; history auto-load guarded.
+- **Last resort** — the error boundary follows the theme; server 413 messages read GiB like the Composer.
+
+### Added
+
+- Contracts: `architecture.test.ts` v1.16 block, `components/v116.test.tsx`; documentation contract at v1.16.0.
+- Sidecar: additive `context_window_source` on execution metrics; prompt tables read-first.
+
 ## [1.15.0] - 2026-09-05
 
 _True Native Agent — no chat placeholders, no painted hints, no footer policy fact, no manual transport chrome; search is painted; tables fit first; usage speaks one vocabulary. No migration (head stays **030**)._ See `docs/releases/1.15.0.md`.
