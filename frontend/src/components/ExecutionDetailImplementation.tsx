@@ -28,10 +28,11 @@ import {
 import { TranscriptItems } from "./TranscriptItems";
 import { Markdown } from "./Markdown";
 import { useI18n } from "../i18n";
-import { fmtTokens } from "../hooks/useCompactContext";
 import { fmtElapsed } from "../hooks/useElapsed";
 import { timeAgo } from "../lib/time";
 import type { TFunc } from "../i18n";
+import { formatUsageLine, usageTitle } from "../lib/usage";
+import { useAgentCopy } from "../agent/agentCopy";
 import { Icon } from "./icons";
 
 const SEVERITY_KEY: Record<string, string> = {
@@ -123,16 +124,11 @@ async function readExecutionLog(taskId: string, executionId: string, after = 0):
   return { events, lastSeq: events.length ? events[events.length - 1].seq : after };
 }
 
-/** What this execution spent, from its turn metrics (v1.14). Only reported
- * fields render — an endpoint that stayed silent leaves no zeroes behind. */
+/** What this execution spent, from its turn metrics (v1.15: one vocabulary
+ * with the Composer meter — cached is a subset, a floor wears `~`, silence
+ * renders nothing but never a zero). */
 function usageLine(usage: TurnMetricsRow | null, t: TFunc): string | null {
-  if (!usage) return null;
-  const parts: string[] = [];
-  if (usage.input_tokens != null) parts.push(t("usage.in", { n: fmtTokens(usage.input_tokens) }));
-  if (usage.output_tokens != null) parts.push(t("usage.out", { n: fmtTokens(usage.output_tokens) }));
-  if (usage.cached_input_tokens != null) parts.push(t("usage.cached", { n: fmtTokens(usage.cached_input_tokens) }));
-  if (usage.reasoning_tokens != null) parts.push(t("usage.reasoning", { n: fmtTokens(usage.reasoning_tokens) }));
-  return parts.length ? parts.join(" · ") : null;
+  return formatUsageLine(usage, t);
 }
 
 function stamp(value?: string | null): number | null {
@@ -170,54 +166,27 @@ export function ExecutionDetailImplementation({
   const [usage, setUsage] = useState<TurnMetricsRow | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const turnRef = useRef<LiveTurn>(EMPTY_TURN);
-  const { t, lang } = useI18n();
-  const copy = lang === "zh"
-    ? {
-        back: "返回 Execution 列表",
-        loadFailed: "无法加载这次 Execution：",
-        failure: "Execution 失败：",
-        fallbackTitle: "Agent Execution",
-        direction: "Direction",
-        findings: "Findings",
-        noFindings: "这次 Execution 没有记录 Findings。",
-        noTools: "这次 Execution 没有调用工具。",
-        result: "Work Result",
-        noResult: "这次 Execution 没有留下 Work Result。",
-        stopped: "已由你停止",
-        gaps: "证据缺口",
-        skills: "使用的技能",
-        statuses: {
-          queued: "排队中", running: "执行中", waiting: "等待批准", completed: "已完成",
-          failed: "失败", cancelled: "已停止", interrupted: "已中断",
-        } as Record<string, string>,
-        kinds: {
-          direction: "方向", verify: "验证", revisit: "回访", steer_followup: "补充方向的后续执行",
-          resume: "恢复执行", retry: "重新执行",
-        } as Record<string, string>,
-      }
-    : {
-        back: "Back to Executions",
-        loadFailed: "Couldn't load this execution:",
-        failure: "Execution failed:",
-        fallbackTitle: "Agent execution",
-        direction: "Direction",
-        findings: "Findings",
-        noFindings: "This execution recorded no findings.",
-        noTools: "This execution called no tools.",
-        result: "Work Result",
-        noResult: "This execution left no Work Result.",
-        stopped: "Stopped by you",
-        gaps: "Evidence gaps",
-        skills: "Skills used",
-        statuses: {
-          queued: "queued", running: "running", waiting: "waiting for approval", completed: "complete",
-          failed: "failed", cancelled: "stopped", interrupted: "interrupted",
-        } as Record<string, string>,
-        kinds: {
-          direction: "Direction", verify: "Verify", revisit: "Revisit", steer_followup: "Steer follow-up",
-          resume: "Resume", retry: "Retry",
-        } as Record<string, string>,
-      };
+  const { t } = useI18n();
+  const agentCopy = useAgentCopy();
+  // v1.15 — Execution copy lives in the i18n dict like everything else;
+  // hardcoded EN/ZH blocks were the mixed-language source.
+  const copy = {
+    back: t("exec.back"),
+    loadFailed: t("exec.loadFailed"),
+    failure: t("exec.failure"),
+    fallbackTitle: t("exec.fallbackTitle"),
+    direction: t("exec.direction"),
+    findings: t("exec.findings"),
+    noFindings: t("exec.noFindings"),
+    noTools: t("exec.noTools"),
+    result: t("exec.result"),
+    noResult: t("exec.noResult"),
+    stopped: t("exec.stopped"),
+    gaps: t("exec.gaps"),
+    skills: t("exec.skills"),
+    statuses: agentCopy.artifacts.execution.statuses as Record<string, string>,
+    kinds: agentCopy.artifacts.execution.kinds as Record<string, string>,
+  };
 
   const severityLabel = (severity?: string | null): string => {
     const normalized = (severity || "").toLowerCase();
@@ -362,7 +331,7 @@ export function ExecutionDetailImplementation({
           ) : null}
           {spanMs != null ? <span data-testid="execution-span">{fmtElapsed(spanMs) ?? "—"}</span> : null}
           {execution?.steer_count ? <span>steer × {execution.steer_count}</span> : null}
-          {usageLine(usage, t) ? <span data-testid="execution-usage" className="tabular-nums">{usageLine(usage, t)}</span> : null}
+          {usageLine(usage, t) ? <span data-testid="execution-usage" className="tabular-nums" title={usageTitle(usage, t)}>{usageLine(usage, t)}</span> : null}
         </p>
       </header>
 

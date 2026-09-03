@@ -120,8 +120,10 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(composer).toContain("steerAction");
     expect(composer).toContain("onStop");
     expect(composer).toContain("<ModelChip");
-    expect(composer).toContain("Ask about your storage…");
-    expect(composer).toContain("问问你的存储…");
+    expect(composer).toContain("Describe the storage work to delegate…");
+    expect(composer).toContain("描述要委派的存储工作…");
+    expect(composer).not.toContain("Ask about your storage");
+    expect(composer).not.toContain("问问你的存储");
     expect(composer).not.toContain("Give the Agent a goal");
     expect(composer).not.toContain("Ask Storage Agent");
     expect(composer).not.toContain("Ask anything");
@@ -517,21 +519,20 @@ describe("v1.10.0 native shell, runtime and pane boundaries", () => {
  * title bar; the OS window remembers its geometry through the Rust plugin.
  */
 describe("v1.11.0 shell details", () => {
-  it("groups the sidebar by day and carries the Read-only fact beside Settings", () => {
+  it("groups the sidebar by day with Settings alone in the footer", () => {
     const navigation = source("./AgentTaskNavigation.tsx");
     const copy = source("./navigationCopy.ts");
     const css = source("./native-shell.css");
     expect(navigation).toContain("export function dayGroups(");
     expect(navigation).toContain('data-testid="task-group"');
     expect(navigation).toContain("Intl.DateTimeFormat");
-    expect(navigation).toContain('data-testid="sidebar-read-only"');
-    expect(navigation).toContain("copy.readOnlyHint");
+    // v1.15 — the footer is Settings alone; the read-only policy lives in
+    // Settings → Safety. The painted footer fact clipped to "之读".
+    expect(navigation).not.toContain('data-testid="sidebar-read-only"');
+    expect(navigation).not.toContain("copy.readOnly");
     expect(navigation).not.toContain('role="switch"');
     expect(navigation).not.toContain("Previous 7 days");
-    expect(copy).toContain('readOnly: "Read-only"');
-    expect(copy).toContain('readOnly: "只读"');
-    expect(copy).toContain("imports pause for your approval");
-    expect(css).toContain(".native-sidebar-readonly");
+    expect(copy).not.toContain("readOnly");
     expect(css).toContain(".native-task-group + .native-task-group");
     // No yellow: an approval waiting on the user is a Working task.
     expect(css).not.toMatch(/\[data-state="decision"\] \.native-task-mark \{[^}]*--warn/);
@@ -547,10 +548,13 @@ describe("v1.11.0 shell details", () => {
     expect(composer).toContain("<ContextMeter />");
     // The Esc branch returns before any history / clear handling runs.
     expect(composer).toMatch(/if \(event\.key === "Escape"\) \{\s*if \(busy && !text\.trim\(\)\) \{ event\.preventDefault\(\); onStop\(\); \}\s*return;\s*\}/);
-    expect(meter).toContain("context_window");
-    expect(meter).toContain("run.lastMetrics?.metrics");
+    // v1.15 — one usage vocabulary in lib/usage; silence renders a badge.
+    expect(source("../lib/usage.ts")).toContain("context_window");
+    expect(source("../lib/usage.ts")).toContain("export function contextReading(");
+    expect(source("../lib/usage.ts")).toContain("export function formatUsageLine(");
+    expect(meter).toContain("contextReading");
     expect(meter).toContain('data-testid="context-meter"');
-    expect(meter).toContain("if (!usage) return null");
+    expect(meter).toContain('data-state="unreported"');
     expect(meter).not.toContain("128000");
     expect(app).toContain("<ActiveTaskContext.Provider value={activeTaskId}>");
     expect(shortcuts).toContain('id: "stopEmpty"');
@@ -1059,13 +1063,102 @@ describe("v1.14.0 interaction truth and content craft", () => {
     expect(highlight).toContain("TOML_INI_RULES");
   });
 
-  it("hints at invisible engines on the empty start and gates reports on answers", () => {
+  it("keeps the empty start to one greeting line plus the Composer", () => {
     const greeting = source("./startGreeting.ts");
     const root = source("../components/AgentTaskImplementation.tsx");
     const panel = source("./ArtifactsPanel.tsx");
-    expect(greeting).toContain("export const START_HINTS");
-    expect(greeting).toContain("export function pickStartHint(");
-    expect(root).toContain('data-testid="start-hint"');
+    // v1.15 — the rotating "Try:" hint is gone; discoverability lives in
+    // the palette (⌘K), not in painted suggestions.
+    expect(root).not.toContain('data-testid="start-hint"');
+    expect(root).not.toContain("pickStartHint");
+    expect(greeting).not.toContain("试试：");
+    expect(greeting).not.toContain("Try:");
     expect(panel).toContain('message.role === "assistant"');
+  });
+});
+
+/**
+ * v1.15.0 — True Native Agent: no chat placeholders, no painted hints, no
+ * footer policy fact, no manual transport chrome; search is painted; tables
+ * fit first; usage speaks one vocabulary; CJK-safe settings; elevated craft.
+ */
+describe("v1.15.0 true native agent", () => {
+  it("delegates in work language on the one input", () => {
+    const composer = source("../components/Composer.tsx");
+    expect(composer).toContain("Describe the storage work to delegate…");
+    expect(composer).toContain("描述要委派的存储工作…");
+    expect(composer).not.toContain("Ask about your storage");
+    expect(composer).not.toContain("问问你的存储");
+  });
+
+  it("paints search: title-bar entries plus a document entry", () => {
+    const app = source("../App.tsx");
+    const doc = source("../components/TaskDocument.tsx");
+    expect(app).toContain('data-testid="titlebar-find"');
+    expect(app).toContain('data-testid="titlebar-palette"');
+    expect(doc).toContain('data-testid="task-find-open"');
+    expect(doc).toContain("setFindOpen(true)");
+  });
+
+  it("searches one CJK character — one Han字 is a word", () => {
+    const find = source("../taskFind.ts");
+    expect(find).toContain("minQueryFor");
+    expect(find).toContain("meetsMinQuery");
+    expect(find).toContain("\\u4e00");
+  });
+
+  it("heals stalled streams itself — status, never a Resync button", () => {
+    const doc = source("../components/TaskDocument.tsx");
+    expect(doc).toContain('data-testid="task-reconnecting"');
+    expect(doc).toContain("task.reconnecting");
+    expect(doc).not.toContain("copy.reload");
+    expect(doc).not.toContain("copy.stalled");
+    expect(doc).not.toContain("onClick={onResync}");
+  });
+
+  it("fits tables first, hints only when truly wide, paginates long ones", () => {
+    const md = source("../components/MarkdownImplementation.tsx");
+    expect(md).toContain('data-testid="table-scroll-hint"');
+    expect(md).toContain('data-testid="table-expand"');
+    expect(md).toContain('data-testid="table-page"');
+    expect(md).not.toContain("w-max border-collapse");
+    expect(md).toContain("break-words");
+  });
+
+  it("renders usage from one vocabulary: subset cached, floor ~, named silence", () => {
+    const lib = source("../lib/usage.ts");
+    const meter = source("../components/ContextMeter.tsx");
+    const detail = source("../components/ExecutionDetailImplementation.tsx");
+    expect(lib).toContain("export function formatUsageLine(");
+    expect(lib).toContain("export function contextReading(");
+    expect(lib).toContain("incl.");
+    expect(detail).toContain("formatUsageLine(usage, t)");
+    expect(detail).toContain("usageTitle(usage, t)");
+    expect(meter).toContain('data-state="unreported"');
+    expect(detail).not.toContain("usage.cached\", { n");
+  });
+
+  it("keeps Execution, Find and Skills copy in the i18n dict", () => {
+    const i18n = source("../i18n.tsx");
+    for (const key of ["\"task.find\"", "\"exec.back\"", "\"skills.noSkills\"", "\"table.scrollHint\"", "\"usage.cachedOf\""]) {
+      expect(i18n).toContain(key);
+    }
+    expect(source("../components/ExecutionDetailImplementation.tsx")).not.toContain("返回 Execution 列表");
+    expect(source("../components/FindBar.tsx")).not.toContain("在当前任务中查找…\",");
+    expect(source("../components/NativeAgentPanel.tsx")).not.toContain("还没有技能。把 SKILL.md");
+  });
+
+  it("stacks settings grids on narrow widths with strict CJK breaks", () => {
+    const css = source("../../src/index.css");
+    expect(css).toContain("line-break: strict");
+    expect(source("./native-shell.css")).toContain("max-width: 560px");
+    expect(source("../settings/ModelProvidersPane.tsx")).toContain("sm:grid-cols-2");
+  });
+
+  it("elevates the Composer and the user bubble above the canvas", () => {
+    const css = source("./native-document.css");
+    expect(css).toContain("--shadow-elev");
+    expect(css).toContain(".turn-user-bubble");
+    expect(css).toContain("border-top-right-radius");
   });
 });

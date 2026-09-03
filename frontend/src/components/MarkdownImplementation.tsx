@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo, type ReactNode } from "react";
+import { Fragment, memo, useMemo, useState, type ReactNode } from "react";
 import { useCopy } from "../hooks/useCopy";
 import { openExternal, tauriInvoke } from "../config";
 import { useI18n } from "../i18n";
@@ -181,6 +181,7 @@ const ALIGN_CLASS: Record<Align, string> = {
 };
 
 export const TALL_TABLE_ROWS = 12;
+const PAGE_TABLE_ROWS = 30;
 
 function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Align | null)[]; rows: string[][] }) {
   const columns = useMemo(() => {
@@ -194,17 +195,34 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
   const tall = rows.length > TALL_TABLE_ROWS;
   const { t } = useI18n();
   const { copied, copy } = useCopy();
+  // v1.15 — long tables paginate instead of growing a tall inner scroller:
+  // the first page reads in place, the rest opens on one explicit action.
+  const [expanded, setExpanded] = useState(false);
+  const paged = rows.length > PAGE_TABLE_ROWS && !expanded;
+  const visible = paged ? rows.slice(0, PAGE_TABLE_ROWS) : rows;
   const copyTsv = () => {
     const cell = (value: string) => value.replace(/[\t\n\r]+/g, " ");
     copy([headers, ...rows].map((row) => row.map(cell).join("\t")).join("\n"));
   };
 
-  // A wide table scrolls sideways inside its own container: the reading
-  // column never grows and nothing is faded out.
+  // v1.15 — fit when the content fits: the table is fluid (`w-full`) and
+  // cells wrap, so a 2–4 column table with short values never scrolls. Only
+  // genuinely wide content (many columns or a long value) overflows, and
+  // then the container scrolls with an explicit hint instead of a mystery
+  // cut. Numeric columns keep tabular figures but may wrap like the rest.
+  const maxCell = useMemo(() => {
+    let m = 0;
+    for (const h of headers) m = Math.max(m, h.length);
+    for (const r of rows) for (const c of r) m = Math.max(m, (c ?? "").length);
+    return m;
+  }, [headers, rows]);
+  const wide = headers.length > 4 || maxCell > 60;
   return (
-    <div className="agent-table my-1">
+    <div className="agent-table my-1" data-wide={wide ? "true" : "false"}>
       <div className="mb-1 flex items-center gap-2 text-2xs text-gray-500">
         <span data-testid="table-size">{t("table.size", { rows: rows.length, cols: headers.length })}</span>
+        {wide ? <span data-testid="table-scroll-hint" className="agent-table-hint">{t("table.scrollHint")}</span> : null}
+        {paged ? <span data-testid="table-page" className="tabular-nums">{t("table.page", { shown: visible.length, total: rows.length })}</span> : null}
         <button
           type="button"
           onClick={copyTsv}
@@ -216,7 +234,7 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
         </button>
       </div>
       <div className={`agent-table-scroll ${tall ? "max-h-[22rem]" : ""}`} data-testid="table-scroll">
-        <table className="w-max border-collapse text-xs">
+        <table className={`${wide ? "w-max min-w-full" : "w-full"} border-collapse text-xs`}>
           <thead>
             <tr className={`bg-canvas ${tall ? "sticky top-0 z-sticky" : ""}`}>
               {headers.map((h, i) => (
@@ -227,10 +245,10 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, ri) => (
+            {visible.map((r, ri) => (
               <tr key={ri} className="border-b border-edge/50 last:border-0">
                 {r.map((c, ci) => (
-                  <td key={ci} className={`px-3 py-1 align-top text-gray-300 ${ALIGN_CLASS[columns[ci]?.align ?? "left"]} ${columns[ci]?.numeric ? "whitespace-nowrap tabular-nums" : ""}`}>
+                  <td key={ci} className={`break-words px-3 py-1 align-top text-gray-300 ${ALIGN_CLASS[columns[ci]?.align ?? "left"]} ${columns[ci]?.numeric ? "tabular-nums" : ""}`}>
                     {inline(c)}
                   </td>
                 ))}
@@ -239,6 +257,19 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
           </tbody>
         </table>
       </div>
+      {rows.length > PAGE_TABLE_ROWS ? (
+        <div className="mt-1">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            data-testid="table-expand"
+            data-expanded={expanded ? "true" : "false"}
+            className="native-ghost-action"
+          >
+            {expanded ? t("table.showLess") : t("table.showAll", { n: rows.length })}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -18,7 +18,9 @@
   margin-inline: auto;
 }
 
-/* User turn: a right-aligned bubble, at most 70% of the measure, no label. */
+/* User turn (v1.15): a right-aligned bubble with its own elevation step —
+   one rung above the canvas, one below the Composer — so the transcript
+   reads as user / Agent / chrome instead of one flat panel colour. */
 .turn-user {
   display: flex;
   flex-direction: column;
@@ -26,9 +28,12 @@
 }
 .turn-user-bubble {
   max-width: min(70%, var(--doc-measure));
+  border: 1px solid var(--edge);
   border-radius: var(--radius-xl);
+  border-top-right-radius: var(--radius-md);
   padding: 10px 14px;
-  background: var(--panel);
+  background: var(--elevated);
+  box-shadow: var(--shadow-elev);
   color: var(--gray-100);
   font-size: var(--text-base);
   line-height: 1.55;
@@ -341,19 +346,22 @@
 
 .native-queued { opacity: 0.85; }
 
-/* Composer */
+/* Composer (v1.15) — the one elevated card on the canvas: a raised surface,
+   a real shadow, a focus ring that reads. Hairline-only made it disappear
+   into the background next to Codex. */
 .native-composer {
   position: relative;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-3xl);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--radius-2xl);
   background: var(--panel);
-  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  box-shadow: var(--shadow-elev);
+  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
 }
 .native-composer:focus-within {
-  border-color: var(--edge-strong);
-  box-shadow: var(--shadow-glow);
+  border-color: var(--gray-500);
+  box-shadow: var(--shadow-pop);
 }
 .native-composer[data-agent-state="working"] {
   border-color: var(--edge-strong);
@@ -552,7 +560,9 @@
   font-size: var(--text-2xs);
 }
 
-/* Empty start: greeting + Composer in the middle band. */
+/* Empty start (v1.15): exactly one greeting line plus the Composer in the
+   middle band. No hint line, no suggestion grid — the hint selector stays
+   as a deprecated no-op. */
 .native-start {
   display: flex;
   flex: 1;
@@ -568,20 +578,17 @@
   padding-bottom: 12vh;
 }
 .native-start-greeting {
-  margin: 0 0 6px;
+  margin: 0 0 18px;
   color: var(--gray-100);
   font-size: var(--text-2xl);
   font-weight: 400;
   letter-spacing: -0.02em;
   line-height: 1.25;
   text-align: center;
+  text-wrap: balance;
 }
 .native-start-hint {
-  margin: 0 0 18px;
-  color: var(--gray-500);
-  font-size: var(--text-sm);
-  line-height: 1.5;
-  text-align: center;
+  display: none;
 }
 
 /* Prose (Work Result, Evidence, Report). */
@@ -599,9 +606,17 @@
 }
 .agent-result-prose { width: 100%; min-width: 0; }
 .agent-result-prose > * + * { margin-top: 0.7rem; }
-/* Tables scroll sideways inside their own container; the column never grows. */
+/* Tables (v1.15): fit when they fit, scroll with a hint when they don't.
+   Cells wrap (`MarkdownImplementation` drops `whitespace-nowrap`); the
+   container only overflows on genuinely wide content. */
 .agent-table { width: 100%; min-width: 0; }
+.agent-table[data-wide="true"] .agent-table-scroll {
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  box-shadow: inset -12px 0 12px -12px rgba(0, 0, 0, 0.5);
+}
 .agent-table-scroll { max-width: 100%; overflow: auto; scrollbar-gutter: stable; }
+.agent-table-hint { color: var(--gray-500); font-style: italic; }
 .agent-prose nav[data-testid="result-outline"] { margin: 0.2rem 0 0.6rem; border: 0; padding: 0 0 0.6rem; background: transparent; border-bottom: 1px solid var(--edge); border-radius: 0; }
 .agent-prose nav[data-testid="result-outline"] ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.25rem; row-gap: 0.1rem; }
 .agent-prose nav[data-testid="result-outline"] a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }

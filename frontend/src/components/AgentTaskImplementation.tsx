@@ -7,7 +7,7 @@ import { useCompactContext } from "../hooks/useCompactContext";
 import { useTaskViewport } from "../hooks/useTaskViewport";
 import { useApprovals } from "../hooks/useApprovals";
 import { openAgentReview } from "../agent/commands";
-import { pickStartGreeting, pickStartHint } from "../agent/startGreeting";
+import { pickStartGreeting } from "../agent/startGreeting";
 import { publishPaletteActions } from "../agent/paletteActions";
 import { Button } from "./ui";
 import { useI18n } from "../i18n";
@@ -237,7 +237,6 @@ export function AgentTaskImplementation({
         <div className="native-start" data-testid="task-start">
           <div className="native-start-inner">
             <p className="native-start-greeting">{pickStartGreeting(lang)}</p>
-            <p className="native-start-hint" data-testid="start-hint">{pickStartHint(lang)}</p>
             {composerNode}
             <div className="mt-4 space-y-2">{banners}</div>
           </div>

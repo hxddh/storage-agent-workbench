@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useI18n } from "../i18n";
-import { MIN_QUERY } from "../taskFind";
+import { meetsMinQuery, minQueryFor } from "../taskFind";
 
 /** Browser-like find for the active Agent task. */
 export function FindBar({
@@ -18,34 +18,26 @@ export function FindBar({
   onStep: (delta: number) => void;
   onClose: () => void;
 }) {
-  const { lang, t } = useI18n();
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const copy = lang === "zh"
-    ? {
-        placeholder: "在当前任务中查找…",
-        tooShort: (n: number) => `至少输入 ${n} 个字符`,
-        counter: (i: number, n: number) => `${i} / ${n}`,
-        none: "没有匹配项",
-        previous: "上一个匹配",
-        next: "下一个匹配",
-      }
-    : {
-        placeholder: "Find in this task…",
-        tooShort: (n: number) => `Type at least ${n} characters`,
-        counter: (i: number, n: number) => `${i} / ${n}`,
-        none: "No matches",
-        previous: "Previous match",
-        next: "Next match",
-      };
+  // v1.15 — find copy lives in the i18n dict.
+  const copy = {
+    placeholder: t("find.placeholder"),
+    tooShort: (n: number) => t("find.tooShort", { n }),
+    counter: (i: number, n: number) => t("find.counter", { i, n }),
+    none: t("find.none"),
+    previous: t("find.previous"),
+    next: t("find.next"),
+  };
 
   useEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
   }, []);
 
-  const short = query.trim().length > 0 && query.trim().length < MIN_QUERY;
+  const short = query.trim().length > 0 && !meetsMinQuery(query);
   const status = short
-    ? copy.tooShort(MIN_QUERY)
+    ? copy.tooShort(minQueryFor(query))
     : total > 0
       ? copy.counter(index + 1, total)
       : query.trim()

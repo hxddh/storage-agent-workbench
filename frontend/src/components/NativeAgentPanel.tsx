@@ -41,27 +41,29 @@ function downloadInBrowser(filename: string, content: string) {
 
 /** Skills, observability export, and the read-only MCP bridge — as actions on real runtime facts. */
 export function NativeAgentPanel() {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const toast = useToast();
-  const copy = lang === "zh"
-    ? {
-        noSkills: "还没有技能。把 SKILL.md 放到应用数据的 skills 目录即可添加。",
-        bundled: "内置", user: "用户", openFolder: "打开技能目录", folderOpened: "已打开",
-        folderUnavailable: "桌面版才能打开目录；技能目录在：",
-        exportTrace: "导出追踪…", exporting: "导出中…", exported: "追踪已保存到", exportFailed: "导出失败：",
-        exportHint: "把所有任务的持久化执行日志、工具调用、指标和产物索引导出为 OTel 风格的 JSON（有界、已脱敏）。",
-        enabled: "MCP 已启用", disabled: "MCP 已关闭", tools: "个只读工具", unavailable: "MCP 状态不可用。",
-        mcpHow: "在 Sidecar 环境中设置后重启即可启用：", copied: "已复制",
-      }
-    : {
-        noSkills: "No skills yet. Drop a SKILL.md into the app data skills folder to add one.",
-        bundled: "Bundled", user: "User", openFolder: "Open skills folder", folderOpened: "Opened",
-        folderUnavailable: "Opening folders needs the desktop app; the skills folder is at",
-        exportTrace: "Export trace…", exporting: "Exporting…", exported: "Trace saved to", exportFailed: "Export failed:",
-        exportHint: "Every task's durable execution log, tool calls, metrics and artifact index as OTel-style JSON (bounded, sanitized).",
-        enabled: "MCP enabled", disabled: "MCP disabled", tools: "read-only tools", unavailable: "MCP status unavailable.",
-        mcpHow: "Set this in the Sidecar's environment and restart to enable it:", copied: "Copied",
-      };
+  // v1.15 — panel copy lives in the i18n dict; hardcoded blocks were the
+  // mixed-language source.
+  const copy = {
+    noSkills: t("skills.noSkills"),
+    bundled: t("skills.bundled"),
+    user: t("skills.user"),
+    openFolder: t("skills.openFolder"),
+    folderOpened: t("skills.folderOpened"),
+    folderUnavailable: t("skills.folderUnavailable"),
+    exportTrace: t("skills.exportTrace"),
+    exporting: t("skills.exporting"),
+    exported: t("skills.exported"),
+    exportFailed: t("skills.exportFailed"),
+    exportHint: t("skills.exportHint"),
+    enabled: t("skills.enabled"),
+    disabled: t("skills.disabled"),
+    tools: t("skills.tools"),
+    unavailable: t("skills.unavailable"),
+    mcpHow: t("skills.mcpHow"),
+    copied: t("skills.copied"),
+  };
   const [skills, setSkills] = useState<{ name: string; description: string; source?: string }[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(true);
   const [mcp, setMcp] = useState<{ enabled: boolean; allowed_tools: string[]; note: string } | null>(null);

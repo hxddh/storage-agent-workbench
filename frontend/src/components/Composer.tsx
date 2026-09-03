@@ -63,8 +63,8 @@ export function useComposerCopy() {
   const { lang } = useI18n();
   return lang === "zh"
     ? {
-        delegateHint: "问问你的存储…",
-        steerHint: "给 Agent 补充方向…",
+        delegateHint: "描述要委派的存储工作…",
+        steerHint: "补充这次执行的方向…",
         uploading: (name: string) => `正在准备 ${name}…`,
         stop: "停止",
         steerAction: "调整方向",
@@ -78,8 +78,8 @@ export function useComposerCopy() {
         readOnly: "只读工具",
       }
     : {
-        delegateHint: "Ask about your storage…",
-        steerHint: "Steer the Agent…",
+        delegateHint: "Describe the storage work to delegate…",
+        steerHint: "Steer this execution…",
         uploading: (name: string) => `Preparing ${name}…`,
         stop: "Stop",
         steerAction: "Steer Agent",

@@ -1,6 +1,7 @@
-/* Storage Agent — native Agent window (v1.09).
-   One neutral surface ladder, one monochrome primary, hairline depth.
-   Status carries the only colour. Nothing here invents runtime state. */
+/* Storage Agent — native Agent window (v1.15).
+   One neutral surface ladder, one monochrome primary, hairline depth with
+   real elevation on floating surfaces. Status carries the only colour.
+   Nothing here invents runtime state. */
 
 @import "tailwindcss";
 @config "../tailwind.config.js";
@@ -133,9 +134,9 @@
   --space-5: 1.25rem;
   --space-6: 1.5rem;
   --space-8: 2rem;
-  --shadow-elev: 0 0 0 1px var(--edge);
-  --shadow-pop: 0 0 0 1px var(--edge-strong), 0 16px 40px -16px rgba(0, 0, 0, 0.6);
-  --shadow-glow: 0 0 0 1px var(--edge-strong);
+  --shadow-elev: 0 0 0 1px var(--edge), 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 0 0 1px var(--edge-strong), 0 16px 40px -16px rgba(0, 0, 0, 0.6), 0 4px 12px -4px rgba(0, 0, 0, 0.45);
+  --shadow-glow: 0 0 0 1px var(--edge-strong), 0 0 24px -6px rgba(255, 255, 255, 0.08);
   --skeleton-shine: color-mix(in srgb, var(--hover) 75%, var(--gray-100) 6%);
 }
 
@@ -187,9 +188,9 @@
   --syn-name: #1d4ed8;
   --syn-tag: #0e7490;
   --syn-punct: #52586a;
-  --shadow-elev: 0 0 0 1px var(--edge);
-  --shadow-pop: 0 0 0 1px var(--edge-strong), 0 16px 40px -16px rgba(13, 13, 13, 0.18);
-  --shadow-glow: 0 0 0 1px var(--edge-strong);
+  --shadow-elev: 0 0 0 1px var(--edge), 0 1px 2px rgba(13, 13, 13, 0.08);
+  --shadow-pop: 0 0 0 1px var(--edge-strong), 0 16px 40px -16px rgba(13, 13, 13, 0.18), 0 4px 12px -4px rgba(13, 13, 13, 0.12);
+  --shadow-glow: 0 0 0 1px var(--edge-strong), 0 0 24px -6px rgba(13, 13, 13, 0.1);
   --skeleton-shine: color-mix(in srgb, var(--hover) 60%, white);
 }
 
@@ -212,6 +213,30 @@ body {
   color: var(--gray-100);
   overscroll-behavior: none;
   user-select: none;
+}
+
+/* v1.15 — CJK typography: strict kinsoku, no orphan punctuation, balanced
+   headings, pretty body. Without this a Chinese hint breaks after a single
+   character and reads as a rendering bug. */
+:lang(zh) {
+  line-break: strict;
+  overflow-wrap: anywhere;
+}
+.agent-prose p,
+.native-banner,
+.native-settings-list > li,
+.native-composer textarea {
+  text-wrap: pretty;
+}
+.agent-prose h1,
+.agent-prose h2,
+.native-start-greeting {
+  text-wrap: balance;
+}
+.native-settings-list > li > div,
+.native-settings-editor,
+.native-banner p {
+  overflow-wrap: anywhere;
 }
 
 /* Reading and typing surfaces are selectable; chrome is not. */

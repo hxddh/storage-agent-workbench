@@ -322,18 +322,12 @@
   background: var(--hover);
   color: var(--gray-100);
 }
-/* A fixed fact about the runtime beside Settings, never a switch. */
+/* v1.15 — the sidebar footer is Settings alone. The read-only policy lives
+   in Settings → Safety and on the Composer lock affordance; a painted footer
+   fact clipped to "之读" at narrow widths and competed with the task list.
+   The selector stays as a deprecated no-op so older snapshots fail visibly. */
 .native-sidebar-readonly {
-  display: inline-flex;
-  height: 24px;
-  align-items: center;
-  gap: 5px;
-  margin: 2px 0 0;
-  padding: 0 8px;
-  color: var(--gray-500);
-  font-size: var(--text-2xs);
-  cursor: default;
-  user-select: none;
+  display: none;
 }
 
 /* Context meter beside the model chip: a ring and a percentage, only when the
@@ -631,7 +625,14 @@
 .native-settings-list > li { display: flex; align-items: flex-start; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--edge); }
 .native-settings-list > li[data-active="true"] { background: color-mix(in srgb, var(--panel) 60%, transparent); }
 .native-settings-empty { color: var(--gray-500); font-size: var(--text-sm); }
-.native-settings-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 4px; }
+/* v1.15 — provider rows wrap cleanly at narrow widths: the action group
+   drops below the identity instead of squeezing CJK hints into orphans. */
+.native-settings-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 16rem; }
+@media (max-width: 560px) {
+  .native-settings-list > li { flex-wrap: wrap; }
+  .native-settings-list > li > div:first-child { flex-basis: 100%; }
+  .native-settings-actions { max-width: none; }
+}
 .native-settings-dot { display: inline-block; width: 6px; height: 6px; flex-shrink: 0; border-radius: 999px; background: var(--gray-500); }
 .native-settings-dot[data-on="true"] { background: var(--success); }
 .native-settings-card[data-enabled="true"] .native-settings-dot { background: var(--success); }

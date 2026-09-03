@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.14.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native: menu bar, deep links, notifications, summon shortcut, runtime task titles, a reasoning-effort control, and native Execution-detail / provider panes. Earlier release notes are not current product architecture.
+> **Applies to Storage Agent v1.15.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native: menu bar, deep links, notifications, summon shortcut, runtime task titles, a reasoning-effort control, and native Execution-detail / provider panes. Earlier release notes are not current product architecture.
 
 ## Product definition
 
@@ -221,14 +221,16 @@ v1.10.0 is the native Agent window on a native shell. Visual language is specifi
 - Figures use `--viz-*` tokens and SVG/CSS only. No chart library. Never interpolate, extrapolate, or invent a horizon the runtime did not emit.
 - Findings carry provenance. Missing chain is labelled, never implied.
 - Composer is the Agent input and the empty-start surface: `+` attach, textarea, model chip, and a round send (↑) at rest; Steer (↑) + Stop (■) while working. No wizard, no `/` SKU menu, no attach-type chips, no persistent keyboard legend, no approval-mode chip.
-- The title bar carries the task name and its real state. Artifacts open from the document in the Artifacts panel beside it (⌘I). ⌘K works; it is not painted. New task is a button; the shortcut is not painted on it.
+- The title bar carries the task name, its real state, and the two painted discovery entries: Find in task (⌘F) and commands/tasks (⌘K). Artifacts open from the document in the Artifacts panel beside it (⌘I). New task is a button; the shortcut is not painted on it.
 - Task navigation is one chronological title list. State is a row mark; Ready paints nothing. Rename and Delete only.
 - Settings is a centered dialog: General · Model Providers · Cloud Providers · Skills & bridges · Safety. Safety (v1.12) holds the read-only floor statement, the **Approvals** policy control (Ask every time · Allow for this session · Always allow) with the list of gated tools, and nothing else; Skills & bridges gains **Open instructions file** (`AGENTS.md` in the data directory).
 - The transcript shows the model's own plan as one quiet checklist card (`update_plan`, v1.12) that updates in place and folds to *Plan · n/n* when done; a context compaction is one muted line *Context compacted · 48k → 9k tokens*; an approval the policy answered says so on the card. ⌘K offers **Compact context** for an idle task.
 - Every non-ideal state (empty list, no Evidence, offline, interrupted, load earlier) is designed. Copy is restrained, specific, and bilingual.
 - Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped as Actions vs Tasks, with tasks fuzzy-ranked as you type (v1.13). It is not a Review destination menu.
 - A steer raised while an approval is open acts on the waiting execution (v1.14): it is delivered after the decision resolves, or carried into the follow-up on decline — never silently re-queued as new work.
-- Figures, evidence states, triage, and coverage read localized (v1.14); the empty start names one example question a day so the engines are discoverable without a card grid.
+- Figures, evidence states, triage, and coverage read localized (v1.14). The empty start is one static greeting line plus the Composer (v1.15) — no suggestion grid in any form; engine discoverability is the painted palette (⌘K), and the model never pitches engines in prose.
+- A stalled stream heals itself with a quiet reconnecting line and auto-retry (v1.15) — there is no Resync button. Earlier history loads as the reader nears the top.
+- Tables fit when they fit and hint only when truly wide, with paginated long tables (v1.15). Usage renders from one vocabulary (v1.15): cached as a subset, partial reports as `~` floors, silence named, compaction marked estimated.
 - A live turn running past ~90 s says it is still running and that Steer/Stop are available (v1.13); the *Worked for …* clock is the group's wall clock throughout.
 - Perceived latency: cached task documents render instantly on switch; never flash an empty canvas while the durable document is already known.
 - First Work Result on a new install is real delegated work, not a demo or a wizard checkup.

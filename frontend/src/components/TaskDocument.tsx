@@ -5,7 +5,7 @@ import type { ApprovalItem, TurnItem } from "../lib/turnItems";
 import { matches } from "../shortcuts";
 import { clearFind, findRanges, paintFind } from "../lib/findHighlight";
 import { getFindRoots } from "../lib/findRoots";
-import { stepHit } from "../taskFind";
+import { meetsMinQuery, stepHit } from "../taskFind";
 import { fmtElapsed } from "../hooks/useElapsed";
 import { useTaskProvenance } from "../hooks/useTaskProvenance";
 import type { useTaskViewport } from "../hooks/useTaskViewport";
@@ -15,9 +15,9 @@ import { AgentTurn, UserTurn } from "./TranscriptTurn";
 import { ApprovalCard, type ApprovalResolution, type ApprovalScope } from "./ApprovalCard";
 import { TriageCard } from "./AgentRuntimeArtifacts";
 import { FindBar } from "./FindBar";
-import { Button } from "./ui";
 import { Icon } from "./icons";
 import { useTaskCopy } from "./taskCopy";
+import { useI18n } from "../i18n";
 
 const PENDING_DIRECTION_ID = "task-pending-direction";
 
@@ -117,6 +117,7 @@ export function TaskDocument({
   onResync: () => void;
 }) {
   const copy = useTaskCopy();
+  const { t } = useI18n();
   const { scrollRef, contentRef, pinned, onScroll, releaseToUser, jumpToLatest, followLatest } = viewport;
   const { busy, pending, items: liveItems, answer: liveAnswer, waiting } = run;
 
@@ -155,7 +156,7 @@ export function TaskDocument({
     // open documents too, not just the transcript.
     const roots = [scrollRef.current, ...getFindRoots()].filter((node): node is HTMLDivElement => node != null);
     if (roots.length === 0) return;
-    const found = findQuery.trim().length >= 2 ? roots.flatMap((root) => findRanges(root, findQuery)) : [];
+    const found = meetsMinQuery(findQuery) ? roots.flatMap((root) => findRanges(root, findQuery)) : [];
     setRanges(found);
     return () => clearFind();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,13 +195,31 @@ export function TaskDocument({
     followLatest();
   }, [items.length, pending, liveAnswer?.length, liveItems, followLatest]);
 
+  // v1.15 — a stalled stream heals itself: retry once after a short pause
+  // instead of asking the user to press Resync. The line below is status,
+  // not an action.
+  const stalled = run.stalled && liveItems.length === 0 && !liveAnswer;
+  useEffect(() => {
+    if (!stalled) return;
+    const timer = window.setTimeout(() => onResync(), 2000);
+    return () => window.clearTimeout(timer);
+  }, [stalled, onResync]);
+
+  // v1.15 — earlier history loads as the reader approaches the top, the
+  // buttons below remain as an explicit fallback (and the E2E hook).
+  const handleScroll: React.UIEventHandler<HTMLDivElement> = () => {
+    onScroll();
+    const el = scrollRef.current;
+    if (el && el.scrollTop < 120 && hiddenCount > 0 && !loadingEarlier) loadEarlier();
+  };
+
   return (
     <>
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
           ref={scrollRef}
           data-testid="task-scroll"
-          onScroll={onScroll}
+          onScroll={handleScroll}
           onWheel={releaseToUser}
           onTouchMove={releaseToUser}
           onKeyDown={releaseToUser}
@@ -208,6 +227,20 @@ export function TaskDocument({
         >
           {findOpen ? (
             <FindBar query={findQuery} onQuery={setFindQuery} total={matchTotal} index={findIdx} onStep={stepFind} onClose={closeFind} />
+          ) : items.length > 0 ? (
+            <div className="mx-auto mb-2 flex w-full max-w-[46rem] justify-end">
+              <button
+                type="button"
+                onClick={() => setFindOpen(true)}
+                data-testid="task-find-open"
+                aria-label={t("task.find")}
+                title={`${t("task.findHint")} ⌘F`}
+                className="native-ghost-action"
+              >
+                <Icon name="search" size={12} />
+                {t("task.find")}
+              </button>
+            </div>
           ) : null}
           <div ref={contentRef} className="native-document space-y-6">
             {hiddenCount > 0 ? (
@@ -274,12 +307,10 @@ export function TaskDocument({
             ) : null}
 
             {pending && !hideLiveWorkResult ? (
-              run.stalled && liveItems.length === 0 && !liveAnswer ? (
-                <div className="native-banner">
-                  {copy.stalled}
-                  <div className="native-banner-actions">
-                    <Button variant="default" size="sm" onClick={onResync}>{copy.reload}</Button>
-                  </div>
+              stalled ? (
+                <div className="flex items-center gap-2 text-xs text-gray-400" data-testid="task-reconnecting" role="status">
+                  <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
+                  {t("task.reconnecting")}
                 </div>
               ) : busy || run.stopped || liveItems.length > 0 || liveAnswer ? (
                 <AgentTurn

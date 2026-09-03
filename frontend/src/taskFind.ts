@@ -29,9 +29,25 @@ export interface FindHit {
   role?: string;
 }
 
-/** The shortest query worth running. One character matches nearly everything and
- * turns the bar into noise; two is where a search starts to mean something. */
+/** The shortest query worth running.
+ *
+ * v1.15 — Latin text still needs two characters before a search means
+ * something (one matches nearly everything). A single CJK character is a
+ * complete word (桶/键/账), so it must be searchable: the floor is 1 when
+ * the query contains CJK, 2 otherwise. */
 export const MIN_QUERY = 2;
+
+const CJK_RE = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af\uff00-\uffef]/;
+
+export function minQueryFor(query: string): number {
+  return CJK_RE.test(query.trim()) ? 1 : MIN_QUERY;
+}
+
+export function meetsMinQuery(query: string): boolean {
+  const q = query.trim();
+  if (!q) return false;
+  return q.length >= minQueryFor(q);
+}
 
 /** Count non-overlapping occurrences of `needle` in `haystack`, case-folded.
  * `indexOf` rather than a RegExp: the query is user text and may contain `(`,
@@ -58,7 +74,7 @@ export function countOccurrences(haystack: string, needle: string): number {
  * it here would promise more than the result could deliver. */
 export function findInTask(items: readonly TaskFindableItem[], query: string): FindHit[] {
   const q = query.trim();
-  if (q.length < MIN_QUERY) return [];
+  if (!meetsMinQuery(q)) return [];
   const hits: FindHit[] = [];
   items.forEach((it, index) => {
     if (it.kind !== "message" || !it.id) return;
@@ -97,7 +113,7 @@ export function highlightSegments(
   query: string,
 ): Array<{ text: string; hit: boolean }> {
   const q = query.trim();
-  if (q.length < MIN_QUERY || !text) return [{ text, hit: false }];
+  if (!meetsMinQuery(q) || !text) return [{ text, hit: false }];
   const lower = text.toLowerCase();
   const needle = q.toLowerCase();
   const out: Array<{ text: string; hit: boolean }> = [];

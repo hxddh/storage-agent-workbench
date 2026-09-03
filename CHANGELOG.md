@@ -6,6 +6,26 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-09-05
+
+_True Native Agent — no chat placeholders, no painted hints, no footer policy fact, no manual transport chrome; search is painted; tables fit first; usage speaks one vocabulary. No migration (head stays **030**)._ See `docs/releases/1.15.0.md`.
+
+### Fixed
+
+- **Work language** — Composer delegates in work language; the empty start is one static greeting line plus the Composer (rotating `Try:/试试：` hint removed).
+- **Sidebar truth** — footer is Settings alone; the clipping `只读` fact is gone (policy lives in Settings → Safety).
+- **Transport heals itself** — stalled streams show a quiet reconnecting line with auto-retry; `Resync/重新同步` removed; earlier history auto-loads near the top.
+- **Tables fit first** — fluid tables with wrapping cells; scroll hint only when truly wide; long tables paginate with expand.
+- **Usage truth** — `lib/usage.ts` is the one vocabulary: cached as subset, floors wear `~`, silence is a badge, compaction marked estimated; one formatter everywhere.
+- **Settings truth** — narrow widths stack to one column; strict CJK kinsoku; provider rows wrap cleanly.
+- **Elevated craft** — real shadows on floating surfaces; Composer card and user bubble above the canvas.
+
+### Added
+
+- **Painted search** — title-bar Find (⌘F) and palette (⌘K) entries plus a document Find entry; CJK single-character search (`minQueryFor`/`meetsMinQuery`).
+- **Copy in the dict** — `task.*`, `find.*`, `exec.*`, `usage.*`, `table.*`, `skills.*`; Execution/Find/Skills panels read `t()`.
+- Contracts: `architecture.test.ts` v1.15 block, `legacy-ui-contracts` v1.15 removals, `components/v115.test.tsx`, CJK find cases; documentation contract at v1.15.0.
+
 ## [1.14.0] - 2026-09-04
 
 _Interaction truth and content craft — the waiting-state steer lands where it belongs, queued work edits, usage renders, and figures speak both languages. No migration (head stays **030**)._ See `docs/releases/1.14.0.md`.

@@ -101,13 +101,12 @@ describe("the sidebar", () => {
     expect(dayGroups([task("d", "d", new Date(2025, 11, 31, 9).toISOString())], "en", now)[0].label).toBe("December 31, 2025");
   });
 
-  it("carries a quiet Read-only fact in the footer, beside Settings, never as a switch", () => {
+  it("keeps Settings alone in the footer, never a policy fact or a switch", () => {
     renderNav();
-    const label = screen.getByTestId("sidebar-read-only");
-    expect(label.tagName).toBe("SPAN");
-    expect(label.textContent).toContain("Read-only");
-    expect(label.getAttribute("title")).toBe("Storage tools are read-only; imports pause for your approval");
-    expect(label.closest("footer")?.querySelector('[data-testid="task-navigation-settings"]')).toBeTruthy();
+    // v1.15 — the read-only footer fact is gone (it clipped to "之读");
+    // the policy lives in Settings → Safety.
+    expect(screen.queryByTestId("sidebar-read-only")).toBeNull();
+    expect(screen.getByTestId("task-navigation-settings")).toBeTruthy();
     expect(screen.queryByRole("switch")).toBeNull();
   });
 });

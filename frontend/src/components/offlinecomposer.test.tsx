@@ -99,10 +99,11 @@ describe("Esc in the Composer", () => {
 describe("the context meter beside the model chip", () => {
   const metrics = (over: Partial<ExecutionMetrics> & { context_window?: number | null }) => ({ messageId: "m1", metrics: over as ExecutionMetrics });
 
-  it("renders nothing until an execution reported usage AND a context window", () => {
+  it("names silence instead of vanishing when usage or the window is missing", () => {
     patchSessionRun("ctx-none", { lastMetrics: metrics({ total_tokens: 12_000 }) });
     mount(false, "", false, "ctx-none");
-    expect(screen.queryByTestId("context-meter")).toBeNull();
+    // v1.15 — vanishing was the lie; the meter paints a quiet badge.
+    expect(screen.getByTestId("context-meter").getAttribute("data-state")).toBe("unreported");
     dropSessionRun("ctx-none");
   });
 
@@ -112,7 +113,7 @@ describe("the context meter beside the model chip", () => {
     const meter = screen.getByTestId("context-meter");
     expect(meter.getAttribute("data-pct")).toBe("25");
     expect(meter.textContent).toContain("25%");
-    expect(meter.getAttribute("title")).toContain("32.0k of 128k tokens");
+    expect(meter.getAttribute("title")).toContain("32k of 128k");
     dropSessionRun("ctx-some");
   });
 

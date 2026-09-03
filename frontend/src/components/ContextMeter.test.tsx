@@ -34,7 +34,7 @@ describe("the context meter after compaction", () => {
     mount(id);
     const meter = screen.getByTestId("context-meter");
     expect(meter.getAttribute("data-pct")).toBe("7");
-    expect(meter.getAttribute("title")).toContain("9.0k of 128k tokens");
+    expect(meter.getAttribute("title")).toContain("9k of 128k");
   });
 
   it("takes the figure from a context.compacted frame on the live stream", () => {

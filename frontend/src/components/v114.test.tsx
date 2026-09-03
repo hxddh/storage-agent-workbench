@@ -142,13 +142,10 @@ describe("v1.14 find roots", () => {
   });
 });
 
-describe("v1.14 start hints", () => {
-  it("rotates one example question per day, never empty", () => {
-    const a = pickStartHint("en", new Date(2026, 0, 1));
-    const b = pickStartHint("en", new Date(2026, 0, 2));
-    const zh = pickStartHint("zh", new Date(2026, 0, 1));
-    expect(a.length).toBeGreaterThan(0);
-    expect(zh.length).toBeGreaterThan(0);
-    expect(new Set([a, b, pickStartHint("en", new Date(2026, 0, 3)), pickStartHint("en", new Date(2026, 0, 4))]).size).toBeGreaterThan(1);
+describe("v1.15 empty start", () => {
+  it("paints no hint line — discoverability lives in the palette", () => {
+    // v1.15 removed the rotating "Try:" hint; the alias stays empty.
+    expect(pickStartHint("en", new Date(2026, 0, 1))).toBe("");
+    expect(pickStartHint("zh", new Date(2026, 0, 1))).toBe("");
   });
 });

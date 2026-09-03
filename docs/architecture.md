@@ -328,6 +328,21 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 - **Tool timing.** Tool records and `tool.*` events carry `started_at` /
   `finished_at` / `duration_ms`; *Worked for …* is the group's wall clock.
 
+### 6.x True Native Agent (v1.15.0)
+
+- **Work language, painted search, self-healing transport.** Static greeting;
+  delegate/steer placeholders; sidebar footer is Settings alone; stalled is a
+  reconnecting status with auto-retry (no Resync); title-bar Find/palette +
+  document Find entry; `minQueryFor`/`meetsMinQuery` (CJK 1, Latin 2).
+- **Tables fit first.** Fluid tables with wrapping cells; `wide` heuristic
+  with scroll hint; > 30 rows paginate with expand.
+- **One usage vocabulary** (`frontend/src/lib/usage.ts`): `fmtTokensUnified`,
+  `formatUsageLine` (cached-as-subset), `contextReading`
+  (none/unreported/measured + estimated/floor). Meter and detail share it.
+- **Copy in the dict; elevated craft.** `task/find/exec/usage/table/skills`
+  keys; Composer card and user bubble above the canvas; kinsoku + stacked
+  settings grids. Prompt no longer pitches engines in prose.
+
 ### 6.x Interaction truth and content craft (v1.14.0)
 
 - **Steer reaches waiting executions.** `runtime.steerable_execution`

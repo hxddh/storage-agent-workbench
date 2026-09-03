@@ -1,64 +1,39 @@
 import type { Lang } from "../i18n";
 
 /**
- * The one greeting line above the Composer on the empty start surface.
+ * The one greeting line above the Composer on the empty start surface (v1.15).
  *
- * It rotates by the hour of day — a morning line, a daytime line, an evening
- * line, a late one — so the window does not read the same sentence at every
- * launch, while the surface itself stays exactly one line plus the Composer.
- * Every variant is a question about work to delegate; none is marketing copy.
+ * A single static line per language. Time-of-day rotation was chatbot
+ * hospitality, not a native window — the window reads the same at every
+ * launch. The empty start is exactly this line plus the Composer.
  */
 export const START_GREETINGS: Record<Lang, readonly string[]> = {
-  en: [
-    "Good morning. What should the Agent work on?",
-    "What should the Agent work on?",
-    "What should the Agent look into this evening?",
-    "Working late? Hand the Agent a storage question.",
-  ],
-  zh: [
-    "早上好。让 Agent 处理什么？",
-    "让 Agent 处理什么？",
-    "今晚让 Agent 看看什么？",
-    "还在忙？把存储问题交给 Agent。",
-  ],
+  en: ["What should the Agent work on?"],
+  zh: ["让 Agent 处理什么？"],
 };
 
 /**
- * One muted example question under the greeting (v1.14): the engines
- * (cost, plans, baselines, reports) are invisible by design, so the empty
- * start names one thing worth asking. Rotates daily, never a button grid —
- * typing is still the only action.
+ * @deprecated v1.15 removed the rotating engine hint. The empty start is one
+ * greeting line plus the Composer; engine discoverability lives in the
+ * command palette, not in a painted suggestion. Kept as a no-op alias so
+ * older imports fail loudly at the type level rather than silently.
  */
 export const START_HINTS: Record<Lang, readonly string[]> = {
-  en: [
-    "Try: which buckets cost the most, and why?",
-    "Try: is any bucket publicly exposed?",
-    "Try: draft a plan to cut storage spend.",
-    "Try: what changed since the last survey?",
-  ],
-  zh: [
-    "试试：哪些桶最烧钱，原因是什么？",
-    "试试：有没有桶是公开暴露的？",
-    "试试：起草一个降低存储花费的计划。",
-    "试试：和上次巡检相比变化了什么？",
-  ],
+  en: [],
+  zh: [],
 };
 
-export function pickStartHint(lang: Lang, now: Date = new Date()): string {
-  const lines = START_HINTS[lang] ?? START_HINTS.en;
-  const day = Math.floor(now.getTime() / 86_400_000);
-  return lines[((day % lines.length) + lines.length) % lines.length] ?? lines[0];
+/** @deprecated v1.15 — the hint line is gone; always returns "". */
+export function pickStartHint(_lang: Lang, _now: Date = new Date()): string {
+  return "";
 }
 
-/** 5–11 morning · 11–18 day · 18–23 evening · 23–5 late. */
-export function startGreetingIndex(hour: number): number {
-  if (hour >= 5 && hour < 11) return 0;
-  if (hour >= 11 && hour < 18) return 1;
-  if (hour >= 18 && hour < 23) return 2;
-  return 3;
+/** @deprecated v1.15 — the greeting no longer rotates; always 0. */
+export function startGreetingIndex(_hour: number): number {
+  return 0;
 }
 
-export function pickStartGreeting(lang: Lang, now: Date = new Date()): string {
+export function pickStartGreeting(lang: Lang, _now: Date = new Date()): string {
   const lines = START_GREETINGS[lang] ?? START_GREETINGS.en;
-  return lines[startGreetingIndex(now.getHours())] ?? lines[0];
+  return lines[0] ?? "What should the Agent work on?";
 }

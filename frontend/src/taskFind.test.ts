@@ -85,6 +85,11 @@ describe("findInTask", () => {
     expect(MIN_QUERY).toBe(2);
   });
 
+  it("searches a single CJK character — one Han字 is a complete word", () => {
+    const zh = [msg("z1", "桶 acme-logs 增长很快"), msg("z2", "nothing here")];
+    expect(findInTask(zh, "桶").map((h) => h.id)).toEqual(["z1"]);
+  });
+
   it("returns nothing rather than everything for an empty query", () => {
     expect(findInTask(THREAD, "")).toEqual([]);
   });
@@ -136,5 +141,12 @@ describe("highlightSegments", () => {
   it("returns the text untouched below the minimum query", () => {
     expect(highlightSegments("acme", "a")).toEqual([{ text: "acme", hit: false }]);
     expect(highlightSegments("", "acme")).toEqual([{ text: "", hit: false }]);
+  });
+
+  it("highlights a single CJK character", () => {
+    expect(highlightSegments("桶增长很快", "桶")).toEqual([
+      { text: "桶", hit: true },
+      { text: "增长很快", hit: false },
+    ]);
   });
 });

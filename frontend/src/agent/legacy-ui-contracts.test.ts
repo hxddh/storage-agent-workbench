@@ -57,7 +57,13 @@ const forbidden: Array<[string, RegExp]> = [
   ["proposal-era next-action contract", /next_action_proposals|nextActionFromDecision|AgentNextAction|EvidenceImportDialog/],
   ["Work Result shape switch", /resultShape|agent-result-wide|data-result-shape/],
   ["metrics footer", /TurnMetricsBar|ExecutionMetrics\.tsx/],
-];
+  // v1.15 true-native removals (user-visible strings only; deprecated
+  // aliases stay as typed no-ops so old imports fail loudly, never painted).
+  ["v1.15 chat placeholder", /Ask about your storage|问问你的存储/],
+  ["v1.15 suggestion hint", /data-testid="start-hint"|试试：|Try: which buckets cost/],
+  ["v1.15 footer policy fact", /data-testid="sidebar-read-only"/],
+  ["v1.15 manual resync", /Resync task|重新同步任务/],
+]
 
 describe("Agent-native production UI has no v0.92 Chat-era contracts", () => {
   it("has no Workbench module directory", () => {

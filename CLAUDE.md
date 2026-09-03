@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.14.0.**
+> **Implementation contract for Storage Agent v1.15.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.14.0 product invariant is:
+The v1.15.0 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -18,7 +18,7 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v1.14.0 native Agent window
+## 1. Never regress the v1.15.0 native Agent window
 
 The window is **sidebar · title bar · one Task document · one Composer**. There is no activity bar, no status bar, no Details/inspector column, and no marketing copy in chrome. New product/frontend work must preserve these boundaries:
 
@@ -122,7 +122,8 @@ Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned b
 - (v1.13) golden evals (`sidecar/tests/test_v113_eval_golden.py`, see `docs/evals.md`) pin grounded/confident-safe/honest-coverage behaviour; `scripts/stamp-version.py` wires the Tauri updater from `TAURI_UPDATER_PUBKEY`/`TAURI_UPDATER_ENDPOINTS` (both-or-neither, else loud fail); CI packaging smoke is required on `release/*`.
 - (v1.14) `runtime.steerable_execution` prefers running/queued, else a live `waiting` execution — steering during an open approval delivers post-decision (or rides the follow-up on decline), never silently re-queues; `PATCH .../executions/{eid}` rewrites a queued Direction (409 past the queue), audited;
 - (v1.14) Execution detail matches the Work Result to `turn_metrics` and renders reported usage only; figures/evidence/triage read localized (EN/ZH) with one `SeverityMark`; times read relative (`lib/time.ts`, DST-safe) with UTC on hover; Composer input is bounded where the server bounds it (counter past 75 %, refuse past 100 %); renames cap at 120 chars;
-- (v1.14) collapsed sidebar is `inert`, the overlay Artifacts panel traps focus, the model menu is a keyboard listbox; outlines start at two sections with smooth in-scroller jumps and unique heading ids; tables size with TSV copy; baselines render findings with folded raw JSON; yaml/toml/ini highlight; one clipboard path (`hooks/useCopy.ts`); the empty start rotates one engine hint daily and the model offers engines in one sentence when relevant.
+- (v1.14) collapsed sidebar is `inert`, the overlay Artifacts panel traps focus, the model menu is a keyboard listbox; outlines start at two sections with smooth in-scroller jumps and unique heading ids; tables size with TSV copy; baselines render findings with folded raw JSON; yaml/toml/ini highlight; one clipboard path (`hooks/useCopy.ts`).
+- (v1.15) the empty start is one static greeting line plus the Composer (no `Try:/试试：` hint; discoverability is the painted palette); the Composer delegates in work language; the sidebar footer is Settings alone; stalled streams heal with a quiet reconnecting line (no Resync); Find/palette are painted (title-bar + document) with CJK single-char search; tables fit first with scroll hint + pagination; usage renders from one vocabulary (`lib/usage.ts`: cached-as-subset, `~` floors, named silence, estimated compaction); Execution/Find/Skills copy lives in the i18n dict; Settings stacks with strict CJK breaks; Composer/bubble carry real elevation.
 
 The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream (reconnect by sequence), steer/stop/resume/verify the current execution, then reload persisted task state. There are no `/sessions` message endpoints any more. Do not create a second submit path.
 

@@ -1,8 +1,9 @@
 # Roadmap
 
-> **Status: delivered in v1.14.0** (see `releases/1.14.0.md` and the
+> **Status: delivered in v1.15.0** (see `releases/1.15.0.md` and the
 > CHANGELOG). Everything below landed as planned, with no migration and no
-> second batch.
+> second batch. The v1.14.0 plan this file replaces is recorded in
+> `releases/1.14.0.md`.
 
 > **Baseline: Storage Agent v1.13.0.** This file is the plan for
 > **v1.14.0 — Interaction truth and content craft**: the waiting-state steer

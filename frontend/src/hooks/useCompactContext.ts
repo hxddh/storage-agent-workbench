@@ -3,9 +3,10 @@ import { ApiError, compactTaskContext } from "../api";
 import { useToast } from "../components/Toast";
 import { useI18n } from "../i18n";
 import { patchSessionRun } from "../sessionRuns";
+import { fmtTokensUnified } from "../lib/usage";
 
-export const fmtTokens = (n: number | null | undefined): string =>
-  n == null || !Number.isFinite(n) ? "—" : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
+/** v1.15 — single formatter lives in lib/usage; kept here for imports. */
+export const fmtTokens = fmtTokensUnified;
 
 /**
  * Palette → Compact context (v1.12): run the runtime's compaction step on

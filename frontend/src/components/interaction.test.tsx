@@ -139,15 +139,14 @@ describe("shortcut registry", () => {
 });
 
 describe("the start greeting", () => {
-  it("rotates by hour of day through a small set, in both languages", () => {
-    expect(START_GREETINGS.en.length).toBe(4);
-    expect(START_GREETINGS.zh.length).toBe(START_GREETINGS.en.length);
+  it("is one static line per language — no time rotation, no marketing", () => {
+    expect(START_GREETINGS.en).toEqual(["What should the Agent work on?"]);
+    expect(START_GREETINGS.zh).toEqual(["让 Agent 处理什么？"]);
     const at = (hour: number) => new Date(2026, 8, 2, hour);
-    expect(pickStartGreeting("en", at(8))).toMatch(/Good morning/);
-    expect(pickStartGreeting("en", at(14))).toBe("What should the Agent work on?");
-    expect(pickStartGreeting("en", at(20))).toMatch(/evening/);
-    expect(pickStartGreeting("zh", at(2))).toBe(START_GREETINGS.zh[3]);
-    expect(new Set([0, 8, 12, 19].map(startGreetingIndex)).size).toBe(4);
+    expect(pickStartGreeting("en", at(8))).toBe("What should the Agent work on?");
+    expect(pickStartGreeting("en", at(20))).toBe("What should the Agent work on?");
+    expect(pickStartGreeting("zh", at(2))).toBe("让 Agent 处理什么？");
+    expect(startGreetingIndex(8)).toBe(0);
   });
 
   it("is one line with no marketing copy", () => {

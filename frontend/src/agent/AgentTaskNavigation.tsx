@@ -273,12 +273,6 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
             <Icon name="settings" />
             <span>{copy.settings}</span>
           </button>
-          {/* A fixed fact about the runtime, never a switch: storage tools are
-              read-only and any import waits for an explicit approval. */}
-          <span className="native-sidebar-readonly" data-testid="sidebar-read-only" title={copy.readOnlyHint} aria-label={copy.readOnlyHint}>
-            <Icon name="shield" size={12} />
-            <span>{copy.readOnly}</span>
-          </span>
         </footer>
       </div>
     </aside>
