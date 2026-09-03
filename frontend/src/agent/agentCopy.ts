@@ -51,7 +51,11 @@ const COPY = {
         snapshot: "Snapshot",
       },
       execution: {
-        statuses: { pending: "queued", running: "running", completed: "complete", failed: "failed", not_implemented: "unavailable" } as Record<string, string>,
+        statuses: {
+          queued: "queued", running: "running", waiting: "waiting for approval", completed: "complete",
+          failed: "failed", cancelled: "stopped", interrupted: "interrupted",
+        } as Record<string, string>,
+        kinds: { direction: "Direction", verify: "Verify", revisit: "Revisit", steer_followup: "Steer follow-up" } as Record<string, string>,
       },
       error: "Couldn't load this task's artifacts:",
     },
@@ -127,7 +131,11 @@ const COPY = {
         snapshot: "快照",
       },
       execution: {
-        statuses: { pending: "排队中", running: "执行中", completed: "已完成", failed: "失败", not_implemented: "不可用" } as Record<string, string>,
+        statuses: {
+          queued: "排队中", running: "执行中", waiting: "等待批准", completed: "已完成",
+          failed: "失败", cancelled: "已停止", interrupted: "已中断",
+        } as Record<string, string>,
+        kinds: { direction: "方向", verify: "验证", revisit: "回访", steer_followup: "补充方向的后续执行" } as Record<string, string>,
       },
       error: "无法加载这个任务的产物：",
     },

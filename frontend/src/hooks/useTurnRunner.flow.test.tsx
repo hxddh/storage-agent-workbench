@@ -6,7 +6,8 @@
  *       failure on the VISIBLE session restores it straight into the composer.
  *
  * Stream recovery is `followExecutionEvents` (seq reconnect). There is no
- * blocking POST fallback and no assistant-id poll.
+ * blocking POST fallback, no turn-cancel endpoint, and no assistant-id poll:
+ * `stopTaskExecution` is the one cancel path (v1.12).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
@@ -21,7 +22,6 @@ const wrapper = ({ children }: { children: ReactNode }) =>
 const api = vi.hoisted(() => ({
   createSession: vi.fn(),
   getSession: vi.fn(),
-  cancelSessionTurn: vi.fn(),
   uploadSessionDataset: vi.fn(),
   submitErrorTriage: vi.fn(),
   deleteSession: vi.fn(),
@@ -32,7 +32,6 @@ const api = vi.hoisted(() => ({
   stopTaskExecution: vi.fn(),
   resumeTaskExecution: vi.fn(),
   getTaskState: vi.fn(),
-  getSessionTurnState: vi.fn(),
 }));
 
 vi.mock("../api", async (importOriginal) => {
@@ -85,7 +84,6 @@ describe("the durable execution path", () => {
     expect(api.createTaskExecution).toHaveBeenCalledWith(id, "check the bucket", expect.any(String));
     expect(api.followExecutionEvents).toHaveBeenCalledWith(
       id, "exec-1", expect.anything(), expect.anything());
-    expect(api.getSessionTurnState).not.toHaveBeenCalled();
     expect(getSessionRun(id).busy).toBe(false);
     expect(getSessionRun(id).lastMetrics?.messageId).toBe("m1");
   });
@@ -101,7 +99,6 @@ describe("the durable execution path", () => {
       await result.current.runner.steer("focus on us-east-1");
     });
     expect(api.steerTaskExecution).toHaveBeenCalledWith(id, "focus on us-east-1");
-    expect(api.cancelSessionTurn).not.toHaveBeenCalled();
     expect(api.stopTaskExecution).not.toHaveBeenCalled();
     patchSessionRun(id, { busy: false });
   });
@@ -125,7 +122,6 @@ describe("the durable execution path", () => {
       await Promise.resolve();
     });
     expect(api.stopTaskExecution).toHaveBeenCalledWith(id, "exec-3");
-    expect(api.getSessionTurnState).not.toHaveBeenCalled();
     patchSessionRun(id, { busy: false });
   });
 

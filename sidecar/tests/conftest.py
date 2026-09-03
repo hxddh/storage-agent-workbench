@@ -31,6 +31,8 @@ def _secret_vault(tmp_path, monkeypatch):
         turn_guard._reset_for_tests()
         task_hub._reset_for_tests()
         task_runtime_mod._reset_for_tests()
+        from app.task_runtime import approval_policy
+        approval_policy.reset_session()
 
 
 @pytest.fixture()

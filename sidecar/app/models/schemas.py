@@ -505,21 +505,6 @@ class SessionSummaryOut(BaseModel):
     updated_at: str | None = None
 
 
-class SessionMessageCreate(BaseModel):
-    content: str = Field(min_length=1)
-    # Optional client-generated turn id. Lets the streaming endpoint and its
-    # blocking fallback dedup the same turn — idempotency is the durable
-    # (task, turn_id) unique index on task_executions (v0.94).
-    turn_id: str | None = None
-
-
-class ActionRequest(BaseModel):
-    """A next-action proposal to preview / prepare."""
-    proposal: dict
-
-
-# --- Error triage ------------------------------------------------
-
 ErrorInputKind = Literal["error_code", "http_response", "sdk_stack_trace", "cli_output", "mixed"]
 
 
@@ -611,7 +596,6 @@ class SessionMessageOut(BaseModel):
     # without them pydantic would silently drop the columns the migration exists
     # to preserve.
     grounding: dict | None = None
-    proposed_actions: list[dict] = Field(default_factory=list)
     turn_items: list[dict] = Field(default_factory=list)
     created_at: str
     seq: int | None = None
@@ -708,20 +692,3 @@ class SessionMemoryResolve(BaseModel):
     """Close a memory item (answered question, fixed finding, stale fact)."""
 
     reason: str | None = Field(default=None, max_length=300)
-
-
-class SessionTurnState(BaseModel):
-    """Is a turn running for this session right now? (v0.51.0)
-
-    Run state lives in the client's memory, so a reload during a turn used to
-    show an idle session while the worker kept generating and spending. This is
-    the server's answer to "is anything in flight", so the client can reattach."""
-
-    running: bool = False
-    turn_id: str | None = None
-    started_at: str | None = None
-    age_ms: int | None = None
-    # v0.94: the durable execution behind the running turn, so a reattaching
-    # client can resume the structured event stream instead of just spinning.
-    execution_id: str | None = None
-    execution_status: str | None = None

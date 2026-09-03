@@ -516,6 +516,16 @@ def _bounded_turn_items(items: list[dict[str, Any]] | None) -> list[dict[str, An
                 out.append({"kind": "message", "text": text})
         elif kind == "tool" and it.get("id"):
             out.append({"kind": "tool", "id": str(it["id"])[:64]})
+        elif kind == "plan":
+            steps = [{"text": redact_text(str(st.get("text") or ""))[:160],
+                      "status": str(st.get("status") or "pending")[:16]}
+                     for st in (it.get("steps") or [])[:12] if isinstance(st, dict)]
+            if steps:
+                out.append({"kind": "plan", "steps": steps})
+        elif kind == "compacted":
+            out.append({"kind": "compacted",
+                        "before_tokens": it.get("before_tokens"),
+                        "after_tokens": it.get("after_tokens")})
     return out
 
 
@@ -723,7 +733,6 @@ def list_messages(conn: sqlite3.Connection, session_id: str,
             "referenced_evidence_ids": _loads(r["referenced_evidence_ids"], []),
             "tool_activity": _loads(r["tool_activity"] if "tool_activity" in keys else None, []),
             "grounding": _loads(r["grounding"], None) if "grounding" in keys else None,
-            "proposed_actions": _loads(r["proposed_actions"], []) if "proposed_actions" in keys else [],
             "turn_items": _loads(r["turn_items"], []) if "turn_items" in keys else [],
             "created_at": r["created_at"],
         })

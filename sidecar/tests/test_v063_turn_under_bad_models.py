@@ -17,6 +17,7 @@ import json
 import pytest
 
 from .fake_model import FakeModel, text_turn, tool_turn
+from tests.turns import post_message
 
 SKILL = "storageops-security-iam-policy"
 
@@ -33,8 +34,7 @@ def _ask(client, turns, question="why does acme-logs return 403?"):
     with FakeModel(turns) as model:
         _provider(client, model)
         sid = client.post("/sessions", json={"title": "s"}).json()["id"]
-        res = client.post(f"/sessions/{sid}/messages",
-                          json={"content": question, "turn_id": "t1"})
+        res = post_message(client, sid, json={"content": question, "turn_id": "t1"})
         return res, sid
 
 
@@ -114,7 +114,7 @@ def test_a_destructive_proposal_never_reaches_the_thread(client, action_type):
               '[{"action_type": "%s", "title": "Clean up"}]}\n```' % action_type)
     _, sid = _ask(client, [text_turn(answer)])
     msg = client.get(f"/sessions/{sid}").json()["messages"][-1]
-    assert msg["proposed_actions"] == [], msg["proposed_actions"]
+    assert "proposed_actions" not in msg
     assert client.get(f"/agent-tasks/{sid}/decisions").json()["decisions"] == []
 
 
@@ -142,8 +142,8 @@ def test_the_same_turn_id_twice_does_not_duplicate_the_exchange(client):
     with FakeModel([text_turn("One answer."), text_turn("A second answer.")]) as model:
         _provider(client, model)
         sid = client.post("/sessions", json={"title": "s"}).json()["id"]
-        a = client.post(f"/sessions/{sid}/messages", json={"content": "q", "turn_id": "same"})
-        b = client.post(f"/sessions/{sid}/messages", json={"content": "q", "turn_id": "same"})
+        a = post_message(client, sid, json={"content": "q", "turn_id": "same"})
+        b = post_message(client, sid, json={"content": "q", "turn_id": "same"})
         assert a.status_code == 200 and b.status_code == 200, (a.text, b.text)
         assert client.get(f"/sessions/{sid}").json()["message_total"] == 2
 
@@ -177,7 +177,7 @@ def test_a_model_that_never_stops_calling_tools_is_bounded(client):
     with FakeModel([tool_turn("read_skill", {"name": SKILL})]) as model:
         _provider(client, model)
         sid = client.post("/sessions", json={"title": "s"}).json()["id"]
-        res = client.post(f"/sessions/{sid}/messages", json={"content": "q", "turn_id": "t1"})
+        res = post_message(client, sid, json={"content": "q", "turn_id": "t1"})
         assert res.status_code in (200, 422, 500), res.text
         # Whatever the outcome, the session must remain openable.
         assert client.get(f"/sessions/{sid}").status_code == 200

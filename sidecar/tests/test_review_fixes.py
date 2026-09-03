@@ -89,7 +89,7 @@ def test_session_detail_surfaces_grounding_and_proposals(client):
     msg = next(m for m in detail["messages"] if m["role"] == "assistant")
     assert msg["grounding"] is not None
     assert msg["grounding"]["evidence_used"] == ["run:1"]
-    assert msg["proposed_actions"] and msg["proposed_actions"][0]["title"] == "Do X"
+    assert "proposed_actions" not in msg  # v1.12: the column is never projected
 
 
 # --- H-1: the sidecar rejects unauthenticated calls when a token is set -------

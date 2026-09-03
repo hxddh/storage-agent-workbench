@@ -919,6 +919,22 @@ ALTER TABLE task_decisions ADD COLUMN kind TEXT NOT NULL DEFAULT 'proposal';
 ALTER TABLE task_decisions ADD COLUMN scope TEXT;
 """
 
+# --- Migration 030: v1.12 native agent — context compaction ------------------
+# Two nullable columns on the typed context version, no rewrites, no backfill:
+#   task_context_versions.summary_sanitized   the bounded, redacted continuation
+#                                             summary the compaction step wrote
+#                                             (NULL = never compacted); carried
+#                                             forward onto later versions.
+#   task_context_versions.summary_through_seq the session_messages rowid the
+#                                             summary covers through; the prompt
+#                                             replays only later messages.
+# Never edit shipped 029.
+
+_M030 = """
+ALTER TABLE task_context_versions ADD COLUMN summary_sanitized TEXT;
+ALTER TABLE task_context_versions ADD COLUMN summary_through_seq INTEGER;
+"""
+
 # Ordered list of migrations. Append new ones; never edit shipped entries.
 MIGRATIONS: list[tuple[int, str, str]] = [
     (1, "initial_schema", _M001),
@@ -964,6 +980,8 @@ MIGRATIONS: list[tuple[int, str, str]] = [
     # v1.11.0 — Codex-style turns: ordered turn items on the assistant message,
     # and Decisions raised inline by gated tools (kind/scope). Append-only.
     (29, "native_agent_turn_items_approvals", _M029),
+    # v1.12.0 — context compaction summary on the typed task context. Append-only.
+    (30, "native_agent_context_compaction", _M030),
 ]
 
 

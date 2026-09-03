@@ -65,3 +65,16 @@ describe("the inline approval card", () => {
     expect(screen.getByText("Sending…")).toBeTruthy();
   });
 });
+
+describe("the approval policy (v1.12)", () => {
+  it("says which policy allowed a granted approval", () => {
+    draw(<ApprovalCard item={item({ status: "granted", policy: "session" })} />);
+    expect(screen.getByTestId("approval-resolved").textContent).toContain("Allowed by policy (this session)");
+    expect(screen.getByTestId("approval-card").getAttribute("data-policy")).toBe("session");
+  });
+
+  it("keeps the task-scoped wording when no policy is reported", () => {
+    draw(<ApprovalCard item={item({ status: "granted" })} />);
+    expect(screen.getByTestId("approval-resolved").textContent).toContain("Allowed automatically for this task");
+  });
+});

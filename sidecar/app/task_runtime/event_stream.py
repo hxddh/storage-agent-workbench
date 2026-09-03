@@ -12,10 +12,8 @@ Frame vocabulary (product stream):
   event: end   / data: {status}                   (the execution left the live set)
   : keepalive                                     (comment heartbeat)
 
-``legacy_frames`` translates the same durable stream into the pre-v0.94
-``delta``/``tool``/``done``/``error`` vocabulary so the compatibility
-``/sessions/{id}/messages/stream`` endpoint keeps its wire contract while the
-runtime underneath is the durable one.
+Since v1.12 this is the ONLY live protocol: the pre-v0.94 message stream and
+its vocabulary are gone.
 """
 
 from __future__ import annotations
@@ -28,8 +26,10 @@ from typing import Any, AsyncIterator
 from ..db import connect
 from . import hub, store
 
-_POLL_S = 0.12
+# The follower sleeps on a hub wakeup, never on a poll; this bound only paces
+# the keepalive comment and the settled re-check when nothing arrives.
 _HEARTBEAT_S = 15.0
+_SETTLE_RECHECK_S = 2.0
 _STREAM_MAX_S = 3600.0
 
 # Statuses after which no further durable events will be produced by the
@@ -62,6 +62,9 @@ async def execution_frames(execution_id: str, after_seq: int = 0,
     wrote once the tool had returned, and a segment's held-back tail never
     arrives after the ``message.completed`` that closed it."""
     conn = connect()
+    loop = asyncio.get_running_loop()
+    wake = asyncio.Event()
+    hub.subscribe(execution_id, loop, wake)
     try:
         cursor = int(after_seq)
         delta_cursor = -1  # -1 → start from the beginning of the live buffer
@@ -97,6 +100,7 @@ async def execution_frames(execution_id: str, after_seq: int = 0,
             return out
 
         while True:
+            wake.clear()
             frames = _drain()
             for frame in frames:
                 yield frame
@@ -115,90 +119,19 @@ async def execution_frames(execution_id: str, after_seq: int = 0,
             if time.monotonic() - started >= _STREAM_MAX_S:
                 yield _sse("end", {"status": "stream_timeout"})
                 return
-            await asyncio.sleep(_POLL_S)
-            idle += _POLL_S
-            if idle >= _HEARTBEAT_S:
-                idle = 0.0
-                yield ": keepalive\n\n"
-    finally:
-        conn.close()
-
-
-# --- legacy translation --------------------------------------------------------
-
-
-def _legacy_done_payload(conn: Any, payload: dict[str, Any]) -> dict[str, Any]:
-    """Rebuild the pre-v0.94 `done` event body from the durable Work Result."""
-    wr = store.get_work_result(conn, str(payload.get("work_result_id") or "")) or {}
-    grounding = wr.get("grounding") or {}
-    return {
-        "message_id": payload.get("message_id"),
-        "proposed_actions": [],
-        "evidence_used": grounding.get("evidence_used", []),
-        "evidence_gaps": grounding.get("evidence_gaps", []),
-        "skills_used": grounding.get("skills_used", []),
-        "stopped": bool(payload.get("stopped")),
-        "metrics": payload.get("metrics") or {},
-        # New, additive: the durable ids a modern client can hang state on.
-        "execution_id": payload.get("execution_id"),
-        "work_result_id": payload.get("work_result_id"),
-    }
-
-
-async def legacy_frames(execution_id: str) -> AsyncIterator[str]:
-    """The same durable stream, spoken in the pre-v0.94 wire vocabulary
-    (`delta` / `tool` / `done` / `error`) for the compatibility endpoint."""
-    conn = connect()
-    try:
-        async for frame in execution_frames(execution_id, include_deltas=True):
-            if frame.startswith(":"):
-                yield frame
-                continue
-            event, data = _parse_frame(frame)
-            if event == "delta":
-                yield _sse("delta", {"text": data.get("text", "")})
-            elif event == "message.completed":
-                # No legacy equivalent: the legacy client rebuilds the answer
-                # from the Work Result on `done`.
-                continue
-            elif event in ("tool.started", "tool.completed"):
-                payload = dict(data.get("payload") or {})
-                payload["status"] = "started" if event == "tool.started" else "completed"
-                yield _sse("tool", payload)
-            elif event == "steer.applied":
-                yield _sse("tool", {"tool": "user_steer", "target": "",
-                                    "result": (data.get("payload") or {}).get("text", ""),
-                                    "ok": True, "status": "completed"})
-            elif event == "execution.status":
-                payload = data.get("payload") or {}
-                status = payload.get("status")
-                if status == store.EXEC_FAILED:
-                    yield _sse("error", {"detail": payload.get("error")
-                                         or "the execution failed"})
-                elif status in (store.EXEC_COMPLETED, store.EXEC_WAITING,
-                                store.EXEC_CANCELLED) and payload.get("work_result_id"):
-                    done = _legacy_done_payload(conn, {**payload,
-                                                       "execution_id": execution_id})
-                    yield _sse("done", done)
-                elif status == store.EXEC_INTERRUPTED:
-                    yield _sse("error", {"detail": "the sidecar restarted while this "
-                                                   "execution was in flight"})
-            elif event == "end":
-                return
-            # Other structured events (queued/running/decision.*/context.*) have
-            # no legacy equivalent; the legacy client derives nothing from them.
-    finally:
-        conn.close()
-
-
-def _parse_frame(frame: str) -> tuple[str, dict[str, Any]]:
-    event, data = "", {}
-    for line in frame.splitlines():
-        if line.startswith("event: "):
-            event = line[len("event: "):]
-        elif line.startswith("data: "):
+            # Sleep until the hub wakes us (a delta, a durable event, done), or
+            # the heartbeat bound elapses. A `waiting` execution has a live
+            # worker, so its wakeups arrive the same way; only an execution
+            # settled by another process is re-checked on the bound.
+            bound = _SETTLE_RECHECK_S if settled else _HEARTBEAT_S
             try:
-                data = json.loads(line[len("data: "):])
-            except (TypeError, ValueError):
-                data = {}
-    return event, data
+                await asyncio.wait_for(wake.wait(), timeout=bound)
+                idle = 0.0
+            except asyncio.TimeoutError:
+                idle += bound
+                if idle >= _HEARTBEAT_S:
+                    idle = 0.0
+                    yield ": keepalive\n\n"
+    finally:
+        hub.unsubscribe(execution_id, wake)
+        conn.close()

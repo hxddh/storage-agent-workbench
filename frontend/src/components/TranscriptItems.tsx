@@ -1,12 +1,16 @@
 import { memo, useMemo } from "react";
+import { useI18n } from "../i18n";
+import { fmtTokens } from "../hooks/useCompactContext";
 import { segmentsOf, type TurnItem } from "../lib/turnItems";
 import { ApprovalCard, type ApprovalResolution, type ApprovalScope } from "./ApprovalCard";
 import { Markdown } from "./Markdown";
+import { PlanCard } from "./PlanCard";
 import { WorkedGroup } from "./WorkedGroup";
 
 /**
  * The items of one Agent turn BEFORE its answer: commentary segments, one
- * "Worked for …" group per run of tool rows, inline approval cards. Live and
+ * "Worked for …" group per run of tool rows, inline approval cards, the plan
+ * card (v1.12, only from a `plan` item) and the compaction marker. Live and
  * durable turns feed the same list (lib/turnItems).
  */
 export const TranscriptItems = memo(function TranscriptItems({
@@ -24,6 +28,7 @@ export const TranscriptItems = memo(function TranscriptItems({
   onResolve?: (decisionId: string, resolution: ApprovalResolution, scope: ApprovalScope) => void;
   resolvingId?: string | null;
 }) {
+  const { t } = useI18n();
   const segments = useMemo(() => segmentsOf(items), [items]);
   if (segments.length === 0) return null;
   const lastIndex = segments.length - 1;
@@ -47,6 +52,24 @@ export const TranscriptItems = memo(function TranscriptItems({
               live={live && index === lastIndex}
               startedAt={startedAt}
             />
+          );
+        }
+        if (segment.kind === "plan") {
+          return <PlanCard key={`p${index}`} steps={segment.steps} live={live} />;
+        }
+        if (segment.kind === "compacted") {
+          // An endpoint that reports no usage leaves `before` null (or a measured
+          // zero, which says the same): show what the summary now costs, never "0 →".
+          const before = segment.before_tokens != null && segment.before_tokens > 0 ? segment.before_tokens : null;
+          const after = segment.after_tokens;
+          return (
+            <div key={`k${index}`} className="context-compacted" data-testid="context-compacted" role="note">
+              {before != null && after != null
+                ? t("compact.marker", { before: fmtTokens(before), after: fmtTokens(after) })
+                : after != null
+                  ? t("compact.markerAfter", { after: fmtTokens(after) })
+                  : t("compact.markerBare")}
+            </div>
           );
         }
         return (

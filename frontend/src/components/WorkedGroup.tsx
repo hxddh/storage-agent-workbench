@@ -30,13 +30,40 @@ export function fmtCallMs(ms?: number | null): string | null {
   return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
 }
 
-function totalMs(items: ToolActivity[]): number | null {
-  let sum = 0;
-  let any = false;
+const stamp = (value?: string | null): number | null => {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+};
+
+/** When the group's first row started (v1.12): the live "Worked for" clock
+ * runs from here, not from the turn's start. Null until a row carries it. */
+export function groupStartMs(items: ToolActivity[]): number | null {
+  let min: number | null = null;
   for (const item of items) {
-    if (typeof item.duration_ms === "number" && Number.isFinite(item.duration_ms)) { sum += item.duration_ms; any = true; }
+    const at = stamp(item.started_at);
+    if (at != null && (min == null || at < min)) min = at;
   }
-  return any ? sum : null;
+  return min;
+}
+
+/**
+ * The group's wall-clock (v1.12): first start → last finish when every row
+ * carries both stamps; otherwise the longest single call — tools run in
+ * parallel, so a sum of durations would overstate the wait.
+ */
+export function groupSpanMs(items: ToolActivity[]): number | null {
+  if (!items.length) return null;
+  const starts = items.map((item) => stamp(item.started_at));
+  const ends = items.map((item) => stamp(item.finished_at));
+  if (starts.every((at) => at != null) && ends.every((at) => at != null)) {
+    return Math.max(0, Math.max(...(ends as number[])) - Math.min(...(starts as number[])));
+  }
+  let max: number | null = null;
+  for (const item of items) {
+    if (typeof item.duration_ms === "number" && Number.isFinite(item.duration_ms) && (max == null || item.duration_ms > max)) max = item.duration_ms;
+  }
+  return max;
 }
 
 // Deep execution can run dozens of tools. Keep the latest work visible and fold
@@ -59,7 +86,7 @@ export function WorkedGroup({
   sessionId?: string | null;
   /** The turn is still executing (the group may still grow). */
   live?: boolean;
-  /** When the turn started, for the live elapsed timer. */
+  /** When the turn started — the live clock's fallback before any row carries its own start. */
   startedAt?: number | null;
 }) {
   const { t } = useI18n();
@@ -68,12 +95,12 @@ export function WorkedGroup({
   const [showAll, setShowAll] = useState(false);
   const [open, setOpen] = useState<boolean | null>(null);
   const [openCall, setOpenCall] = useState<string | null>(null);
-  const elapsed = useElapsed(startedAt, running);
+  const elapsed = useElapsed(groupStartMs(records) ?? startedAt, running);
   if (!records.length) return null;
 
   const expanded = open ?? (running || anyFailed);
   const done = records.filter((item) => item.status !== "started").length;
-  const worked = totalMs(records);
+  const worked = groupSpanMs(records);
   const folded = !showAll && records.length > FOLD_AFTER;
   const hiddenCount = folded ? records.length - TAIL_WHEN_FOLDED : 0;
   const shown = folded

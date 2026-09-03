@@ -156,7 +156,9 @@ The UI presents this state as **Waiting for approval** with an inline approval c
 
 Since v1.11 the boundary is raised by the gated tool itself: `import_evidence` plans the bounded download (a read-only listing), opens a pending `task_decisions` row (`kind=approval`) carrying the projected impact, and the raising execution is `waiting` while the tool thread blocks. Resolution is persisted with an audit trail before anything moves: `approved` runs the same confirm → run path (the `approval_events` row and `evidence_import.*` audit rows are written by that path), `declined` returns a structured refusal to the model, and a Stop while waiting withdraws the request as `declined`. `scope=task` records an explicit user grant; later calls of the same `action_type` in that Task are recorded as already-approved Decisions rather than silently skipped. The durable execution event log stores structured, sanitized, bounded progress only: never secrets, raw analytical rows, or chain-of-thought.
 
-A plan/prepare step is not execution and must not perform hidden downloads or mutation.
+**Approval policy (v1.12).** The user chooses once, in Settings → Safety, how gated calls are answered: `ask` (default), `allow_session` (auto-approved for the lifetime of this Sidecar process — held in memory only, a restart falls back to `ask`), or `allow_always` (auto-approved for this data directory — stored in `app_settings`, ordinary configuration, never a secret). The policy is consulted in exactly one place, `runtime.request_approval`, so no tool can grow its own bypass. An auto-approval is still a durable already-approved Decision row (`scope = session | always`) and an `approval.granted` event carrying `policy`; the transcript and audit trail show what was allowed and why. A policy can only answer a gate that exists: it cannot create a tool, widen a provider scope, raise a bound, or make a read-only tool write.
+
+A plan step is not execution and must not perform hidden downloads or mutation.
 
 Remediation Plans, Verify Executions, and scheduled revisits are also read-only toward the cloud. A plan contains pasteable JSON for the operator's console; Storage Agent never applies it. Verify re-reads configuration with existing read-only tools. A revisit that needs confirmation-gated work opens a pending Decision and waits — it never auto-resolves. At most one pending Decision exists per `(task, action_type)`.
 
@@ -195,7 +197,8 @@ Current safety rule:
 
 - bounded read-only samples/pages may run autonomously;
 - materially large scans require explicit limits such as object count/prefix and, where classified by the workflow, an explicit user Decision;
-- a true full-bucket scan requires explicit confirmation.
+- a true full-bucket scan requires explicit confirmation;
+- (v1.12) an account survey above the default 100-bucket cap is a gated call: `survey_account(max_buckets > 100)` raises `action_type = survey_account_large` through the same `request_approval` path as data movement, with the projected impact (`provider`, `buckets`, `estimated_calls`); Deny returns a refusal and nothing is enumerated; a call not attached to a durable execution is clamped to the default cap, never widened.
 
 Bounds must be reported. Silent truncation is not acceptable evidence.
 
@@ -355,17 +358,15 @@ Auditability must not become a reason to persist secrets or raw chain-of-thought
 
 If audit persistence is incomplete, surface an audit gap rather than asserting a complete trail.
 
-## 20. Next steps and the legacy action-prepare handoff
+## 20. Next steps, plans, and instructions
 
-The Agent no longer emits structured next-action proposals (v1.11): next steps are asked for in prose, and the only gated action is a tool call the user approves inline. The compatibility `/sessions/{id}/actions/prepare` endpoint remains for older clients; it may validate, sanitize, and prefill an action. It must not:
+The Agent emits no structured next-action proposals and there is no action-prepare endpoint (removed in v1.12). Next steps are asked for in prose; the only gated actions are tool calls the user approves inline (or the approval policy answers, §8).
 
-- auto-confirm a gated operation;
-- create hidden cloud data movement;
-- mutate storage;
-- execute arbitrary shell/SQL;
-- turn free-form Agent text into an unrestricted method dispatcher.
+The model's plan (`update_plan`, v1.12) is a bounded list of ≤ 12 short steps with a status — a checklist the model keeps for the user, not a plan the runtime executes. Steps are redacted and chain-of-thought-stripped; the tool never dispatches anything and never appears as a tool row.
 
-Destructive/mutating action identifiers are rejected/sanitized. Special recognized action types only route into purpose-built safe UI/workflows; they do not define the entire Agent capability set.
+`AGENTS.md` (v1.12) is standing guidance the user keeps in the data directory (or at `STORAGE_AGENT_INSTRUCTIONS`). It is Markdown only: bounded to 8 000 characters, redacted, never executed, injected after the skills catalog and beneath the system safety rules, which it cannot override. It cannot add a tool, widen a scope, or approve a gate. The UI reports only its status, never its text.
+
+The deterministic summary/triage engines still normalise `next_actions` internally for their own findings; destructive/mutating action identifiers are rejected/sanitized there and nothing dispatches on them.
 
 ## 21. Provider unsupported is a first-class outcome
 

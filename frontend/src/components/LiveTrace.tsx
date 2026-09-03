@@ -14,9 +14,8 @@ export function WorkingRow({ label }: { label: string }) {
 }
 
 /**
- * Real tool work grouped under one "Worked for …" line. This is the same
- * WorkedGroup the transcript renders; the name stays for the Execution detail
- * document, which reads one durable Execution's rows.
+ * Real tool work grouped under one "Worked for …" line: the same WorkedGroup
+ * the transcript renders, kept as a bare-rows entry for the unit contracts.
  */
 export function LiveTrace({ items, sessionId, streaming = false }: { items: ToolActivity[]; sessionId?: string | null; streaming?: boolean }) {
   return <WorkedGroup records={items} sessionId={sessionId} live={streaming} />;

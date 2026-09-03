@@ -103,6 +103,8 @@ export interface FakeModel {
   requests: unknown[];
   /** The title-step requests (see TITLE_MARKER), kept apart from `requests`. */
   titleRequests: unknown[];
+  /** The compaction-step requests (see COMPACT_MARKER), kept apart too (v1.12). */
+  compactionRequests: unknown[];
   close: () => Promise<void>;
 }
 
@@ -132,12 +134,20 @@ function requestSignature(body: unknown): string {
  * empty answer keeps the deterministic seed title. */
 const TITLE_MARKER = "[[storage-agent:title]]";
 
+/** The runtime's compaction step (sidecar `agent_runtime/compaction.py`) is
+ * another marked, tool-less request — automatic at 80 % of the window, or on
+ * demand from the palette. Answered out of band like the title step, never
+ * consuming a scripted turn. `opts.compaction` is the summary it returns; an
+ * empty answer makes the runtime report "nothing to compact". */
+const COMPACT_MARKER = "[[storage-agent:compact]]";
+
 export async function startFakeModel(
   turns: Turn[],
-  opts: { deltaDelayMs?: number; title?: string } = {},
+  opts: { deltaDelayMs?: number; title?: string; compaction?: string } = {},
 ): Promise<FakeModel> {
   const requests: unknown[] = [];
   const titleRequests: unknown[] = [];
+  const compactionRequests: unknown[] = [];
   const delay = opts.deltaDelayMs ?? 0;
   let i = 0;
   // Playwright retries and SDK reconnects re-POST the same completion. Replay
@@ -154,10 +164,12 @@ export async function startFakeModel(
       } catch {
         parsed = {};
       }
-      if (JSON.stringify(parsed).includes(TITLE_MARKER)) {
-        titleRequests.push(parsed);
+      const marked = JSON.stringify(parsed);
+      if (marked.includes(TITLE_MARKER) || marked.includes(COMPACT_MARKER)) {
+        const isTitle = marked.includes(TITLE_MARKER);
+        (isTitle ? titleRequests : compactionRequests).push(parsed);
         res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
-        for (const c of textTurn(opts.title ?? "")) res.write(c);
+        for (const c of textTurn((isTitle ? opts.title : opts.compaction) ?? "")) res.write(c);
         res.write("data: [DONE]\n\n");
         res.end();
         return;
@@ -195,6 +207,7 @@ export async function startFakeModel(
     baseUrl: `http://127.0.0.1:${port}/v1`,
     requests,
     titleRequests,
+    compactionRequests,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }

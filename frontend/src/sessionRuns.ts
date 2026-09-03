@@ -8,6 +8,7 @@
  */
 import { useCallback, useSyncExternalStore } from "react";
 import type { ExecutionMetrics } from "./types";
+import type { TaskStatusPayload } from "./api";
 import type { LiveTurn, TurnItem } from "./lib/turnItems";
 
 export type SessionRun = {
@@ -24,6 +25,13 @@ export type SessionRun = {
   /** When this client saw the turn start, for the live elapsed timer. */
   startedAt: number | null;
   lastMetrics: { messageId: string | null; metrics: ExecutionMetrics } | null;
+  /** The latest `task.status` frame a follower saw (v1.12): the task's
+   * derived status, queue and pending Decisions, so the document stops
+   * polling `/state` while a stream is open. */
+  taskStatus: TaskStatusPayload | null;
+  /** Tokens in context after the last compaction (v1.12) — the meter reads
+   * this over `lastMetrics` until the next execution reports usage. */
+  contextTokens: number | null;
   needKey: boolean;
   error: string | null;
   stopped: boolean;
@@ -47,6 +55,8 @@ const EMPTY: SessionRun = {
   waiting: false,
   startedAt: null,
   lastMetrics: null,
+  taskStatus: null,
+  contextTokens: null,
   needKey: false,
   error: null,
   stopped: false,

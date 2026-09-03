@@ -6,8 +6,8 @@
  * execution settles the persisted message's `turn_items` + `tool_activity` +
  * `content` reproduce the same list. Both feed ONE renderer.
  */
-import type { DecisionImpact, TaskDecision } from "../api";
-import type { SessionMessage, ToolActivity, TurnItemRef } from "../types";
+import type { ApprovalGrantPolicy, DecisionImpact, TaskDecision } from "../api";
+import type { PlanStep, SessionMessage, ToolActivity, TurnItemRef } from "../types";
 
 export type ApprovalStatus = "pending" | "approved" | "declined" | "superseded" | "granted";
 
@@ -20,12 +20,22 @@ export type ApprovalItem = {
   impact: DecisionImpact | null;
   status: ApprovalStatus;
   scope?: "once" | "task" | null;
+  /** Why a `granted` approval never asked (v1.12 approval policy). */
+  policy?: ApprovalGrantPolicy | null;
 };
+
+/** The plan the model owns (v1.12): ONE item per turn, updated in place. */
+export type PlanItem = { kind: "plan"; steps: PlanStep[] };
+
+/** The runtime compacted the replayed context at this point (v1.12). */
+export type CompactedItem = { kind: "compacted"; before_tokens: number | null; after_tokens: number | null };
 
 export type TurnItem =
   | { kind: "message"; text: string; live?: boolean }
   | { kind: "tool"; record: ToolActivity }
-  | ApprovalItem;
+  | ApprovalItem
+  | PlanItem
+  | CompactedItem;
 
 export type LiveTurn = {
   items: TurnItem[];
@@ -46,7 +56,9 @@ export function mergeTool(list: ToolActivity[], rec: ToolActivity): ToolActivity
   );
   if (i >= 0) {
     const next = list.slice();
-    next[i] = rec;
+    // The completed frame rarely repeats the start stamp; keep the one the
+    // started row carried so the group's wall-clock span survives the resolve.
+    next[i] = rec.started_at || !list[i].started_at ? rec : { ...rec, started_at: list[i].started_at };
     return next;
   }
   return [...list, rec];
@@ -124,13 +136,43 @@ export function openApproval(
 
 export function grantApproval(
   turn: LiveTurn,
-  payload: { decision_id: string; action_type: string; title: string | null },
+  payload: { decision_id: string; action_type: string; title: string | null; policy?: ApprovalGrantPolicy | null },
 ): LiveTurn {
   if (turn.items.some((item) => item.kind === "approval" && item.decision_id === payload.decision_id)) return turn;
+  const { policy = null, ...rest } = payload;
   return {
     ...turn,
-    items: [...turn.items, { kind: "approval", ...payload, reason: null, impact: null, status: "granted", scope: "task" }],
+    items: [...turn.items, {
+      kind: "approval", ...rest, reason: null, impact: null, status: "granted",
+      scope: policy === "task" || policy == null ? "task" : null, policy,
+    }],
   };
+}
+
+/** `plan.updated` (v1.12): the FIRST call in a turn places ONE plan item at
+ * the current position; every later call rewrites that item in place. */
+export function applyPlan(turn: LiveTurn, steps: PlanStep[]): LiveTurn {
+  const bounded = steps.slice(0, 12).map((step) => ({
+    text: String(step.text ?? ""),
+    status: step.status === "completed" || step.status === "in_progress" ? step.status : "pending" as const,
+  }));
+  const i = turn.items.findIndex((item) => item.kind === "plan");
+  const items = turn.items.slice();
+  if (i >= 0) items[i] = { kind: "plan", steps: bounded };
+  else items.push({ kind: "plan", steps: bounded });
+  return { ...turn, items };
+}
+
+/** `context.compacted` (v1.12): one quiet marker at the current position —
+ * the top of the turn when the runtime compacted before its model loop. */
+export function applyCompacted(
+  turn: LiveTurn,
+  payload: { before_tokens: number | null; after_tokens: number | null },
+): LiveTurn {
+  const marker: CompactedItem = {
+    kind: "compacted", before_tokens: payload.before_tokens ?? null, after_tokens: payload.after_tokens ?? null,
+  };
+  return { ...turn, items: [...turn.items, marker] };
 }
 
 export function resolveApproval(
@@ -197,6 +239,12 @@ export function turnItemsOf(
     } else if (ref.kind === "tool") {
       const record = byId.get(ref.id);
       if (record && !seen.has(ref.id)) pushTool(record);
+    } else if (ref.kind === "plan") {
+      if (Array.isArray(ref.steps) && ref.steps.length && !items.some((item) => item.kind === "plan")) {
+        items.push({ kind: "plan", steps: ref.steps });
+      }
+    } else if (ref.kind === "compacted") {
+      items.push({ kind: "compacted", before_tokens: ref.before_tokens ?? null, after_tokens: ref.after_tokens ?? null });
     }
   }
   // Tool rows the item list did not reference (pre-1.11 rows, or a call the
@@ -223,7 +271,9 @@ export function unplacedApprovals(placed: TurnItem[][], pendingDecisions: TaskDe
 export type TurnSegment =
   | { kind: "commentary"; text: string; live: boolean }
   | { kind: "worked"; records: ToolActivity[] }
-  | ApprovalItem;
+  | ApprovalItem
+  | PlanItem
+  | CompactedItem;
 
 export function segmentsOf(items: TurnItem[]): TurnSegment[] {
   const out: TurnSegment[] = [];

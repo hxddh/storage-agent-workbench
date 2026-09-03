@@ -275,7 +275,11 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
             args = dict(_open.get("args") or {}) if matched else {}
             row: dict[str, Any] = {"id": call_id, "tool": tool, "target": target[:80],
                                    "result": summary, "args": args, "ok": ok,
-                                   "duration_ms": duration_ms, "status": "completed"}
+                                   "duration_ms": duration_ms, "status": "completed",
+                                   # v1.12 — wall-clock for the "Worked for" group.
+                                   "finished_at": utcnow()}
+            if matched and _open.get("started_at"):
+                row["started_at"] = _open["started_at"]
             # Only present when `rec`'s audit write failed (v0.59.0). Absent on
             # the overwhelmingly normal path, so nothing downstream has to learn
             # a new always-there field to say "fine".
@@ -399,13 +403,14 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         _open.clear()
         _open.update({"tool": tool, "input": {k: str(v)[:200] for k, v in kw.items()},
                       "args": _args_of(kw), "t0": time.monotonic(), "call_id": call_id,
-                      "audit_error": audit_error})
+                      "audit_error": audit_error, "started_at": utcnow()})
         # Emit a START record so the live stream can show "running <tool>…"
         # while the (possibly slow) call executes. Only "completed" records are
         # persisted on the message; the UI ignores fields it doesn't know.
         if activity is not None:
             activity.append({"id": call_id, "tool": tool, "target": _target_of(kw)[:80],
-                             "args": _args_of(kw), "status": "started"})
+                             "args": _args_of(kw), "status": "started",
+                             "started_at": utcnow()})
 
     @function_tool
     def list_providers() -> str:

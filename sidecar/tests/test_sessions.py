@@ -18,6 +18,7 @@ import pytest
 from app import config, run_service
 from app.agent_runtime import session_agent
 from app.repositories import sessions as sessions_repo
+from tests.turns import post_message
 
 ACCESS = "AKIAIOSFODNN7EXAMPLE"
 MODEL_KEY = "sk-MODEL-SECRET-DO-NOT-LEAK"
@@ -94,10 +95,10 @@ def test_grounding_and_proposals_persist_across_reload(client):
     assert assistant["grounding"]["evidence_used"] == ["list_object_versions"]
     assert assistant["grounding"]["evidence_gaps"] == ["no lifecycle rule"]
     assert assistant["grounding"]["skills_used"] == ["storageops-lifecycle-cost"]
-    assert assistant["proposed_actions"][0]["action_type"] == "review_bucket_config"
+    assert "proposed_actions" not in assistant  # v1.12: never projected
     # User message carries no grounding.
     user = [m for m in msgs if m["role"] == "user"][0]
-    assert user["grounding"] is None and user["proposed_actions"] == []
+    assert user["grounding"] is None
 
 
 def test_list_sessions(client):
@@ -129,7 +130,7 @@ def test_fork_session_copies_thread(client, monkeypatch):
         "name": "m", "provider_type": "openai", "base_url": "https://api.openai.com/v1",
         "model": "gpt-4o-mini", "api_key": "sk-TESTKEY-DONOTLEAK-0001"})
     s = _session(client, title="Branch me")
-    client.post(f"/sessions/{s['id']}/messages", json={"content": "how many buckets?"})
+    post_message(client, s['id'], json={"content": "how many buckets?"})
     src_msgs = client.get(f"/sessions/{s['id']}/messages").json()["messages"]
     assert len(src_msgs) >= 2  # user + assistant
 
@@ -187,7 +188,7 @@ def test_fork_preserves_grounding_and_proposals(client):
     fmsgs = client.get(f"/sessions/{forked['id']}/messages").json()["messages"]
     assert len(fmsgs) == 1
     assert fmsgs[0]["grounding"]["evidence_used"] == ["review_bucket_security"]
-    assert fmsgs[0]["proposed_actions"][0]["action_type"] == "review_bucket_security"
+    assert "proposed_actions" not in fmsgs[0]
 
 
 def test_delete_session_removes_it(client):
@@ -308,7 +309,7 @@ def test_assistant_sanitized_context_no_tools_and_cot_stripped(client, sync_runs
         return "Looks storage-side. <thinking>secret reasoning here</thinking>"
 
     monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
-    out = client.post(f"/sessions/{s['id']}/messages", json={"content": "client or storage problem?"})
+    out = post_message(client, s['id'], json={"content": "client or storage problem?"})
     assert out.status_code == 200
     msgs = out.json()["messages"]
     assistant = [m for m in msgs if m["role"] == "assistant"][-1]
@@ -334,7 +335,7 @@ def test_assistant_missing_model_key_clean_failure(client, sync_runs):
     s = _session(client)
     _run_access_log_in_session(client, s["id"])
     # no model provider configured
-    r = client.post(f"/sessions/{s['id']}/messages", json={"content": "status?"})
+    r = post_message(client, s['id'], json={"content": "status?"})
     assert r.status_code == 422
     assert "model provider" in r.json()["detail"].lower()
     # Clean failure persists NOTHING (no dangling user message) — same as the
@@ -349,28 +350,13 @@ def test_messages_persist_sanitized_content(client, monkeypatch):
     _add_model_provider(client)
     monkeypatch.setattr(session_agent, "SESSION_LOOP", lambda spec: "ack")
     # user message contains a secret-shaped value -> must be redacted at rest
-    client.post(f"/sessions/{s['id']}/messages", json={"content": f"my key is {ACCESS} ok"})
+    post_message(client, s['id'], json={"content": f"my key is {ACCESS} ok"})
     msgs = client.get(f"/sessions/{s['id']}/messages").json()["messages"]
     user_msg = [m for m in msgs if m["role"] == "user"][-1]
     assert ACCESS not in user_msg["content"]
 
 
 # --- turn registry: cancel + in-progress attach -----------------------------
-
-
-def test_cancel_unknown_turn_is_404(client):
-    s = _session(client)
-    r = client.post(f"/sessions/{s['id']}/turns/never-ran/cancel")
-    assert r.status_code == 404
-
-
-def test_cancel_completed_turn_reports_completed(client, monkeypatch):
-    s = _session(client)
-    _add_model_provider(client)
-    monkeypatch.setattr(session_agent, "SESSION_LOOP", lambda spec: "done")
-    client.post(f"/sessions/{s['id']}/messages", json={"content": "hi", "turn_id": "turnDone"})
-    r = client.post(f"/sessions/{s['id']}/turns/turnDone/cancel")
-    assert r.status_code == 200 and r.json()["status"] == "completed"
 
 
 def _register_inflight_execution(session_id: str, turn_id: str):
@@ -392,50 +378,36 @@ def _register_inflight_execution(session_id: str, turn_id: str):
     return execution, handle
 
 
-def test_cancel_running_turn_sets_cancel_event(client):
+def test_stop_unknown_execution_is_404(client):
+    s = _session(client)
+    assert client.post(f"/agent-tasks/{s['id']}/executions/never-ran/stop").status_code == 404
+
+
+def test_stop_running_execution_sets_cancel_event(client):
     s = _session(client)
     # Register a durable in-flight execution (as the runtime worker would).
-    _execution, handle = _register_inflight_execution(s["id"], "turnRun")
-    r = client.post(f"/sessions/{s['id']}/turns/turnRun/cancel")
-    assert r.status_code == 200 and r.json()["status"] == "cancelling"
+    execution, handle = _register_inflight_execution(s["id"], "turnRun")
+    r = client.post(f"/agent-tasks/{s['id']}/executions/{execution['id']}/stop")
+    assert r.status_code == 200
     assert handle.cancel_event.is_set()
 
 
-def test_in_progress_turn_blocks_concurrent_rerun_with_409(client, monkeypatch):
-    """A blocking POST for a turn already recorded as in-flight must NOT re-run
-    concurrently. With no result yet it returns 409 — the frontend fallback
-    attaches to the durable execution instead of doubling the work/spend."""
+def test_in_progress_turn_attaches_instead_of_rerunning(client, monkeypatch):
+    """A submit for a turn already recorded as in-flight must NOT re-run
+    concurrently: the durable (task, turn_id) index attaches to the existing
+    execution instead of doubling the work/spend."""
     from app.agent_runtime import session_agent as sa
     s = _session(client)
     _add_model_provider(client)
     # Simulate an earlier attempt having submitted this turn's execution.
-    _register_inflight_execution(s["id"], "turnBusy")
+    execution, _handle = _register_inflight_execution(s["id"], "turnBusy")
     monkeypatch.setattr(sa, "SESSION_LOOP", lambda spec: "should not run")
-    from app.routers import sessions as sessions_router
-    # Shrink the attach wait so the test doesn't block for 150s.
-    monkeypatch.setattr(sessions_router, "_BLOCKING_WAIT_S", 0.2)
-    r = client.post(f"/sessions/{s['id']}/messages", json={"content": "hi", "turn_id": "turnBusy"})
-    assert r.status_code == 409
-    assert "in progress" in r.json()["detail"].lower()
+    r = client.post(f"/agent-tasks/{s['id']}/executions",
+                    json={"direction": "hi", "turn_id": "turnBusy"})
+    assert r.status_code in (200, 201)
+    assert r.json()["created"] is False
+    assert r.json()["execution"]["id"] == execution["id"]
     # And no message was persisted (the concurrent re-run was prevented).
-    assert client.get(f"/sessions/{s['id']}/messages").json()["messages"] == []
-
-
-def test_stream_declines_duplicate_turn_id_with_409(client, monkeypatch):
-    """The STREAMING endpoint must be symmetric with the blocking one: a stream
-    POST for a turn_id an earlier attempt already owns must NOT start a second
-    execution (which would double-run the agent + persist duplicate messages).
-    It declines with 409 so the client falls back to POST /messages (which
-    attaches to the durable execution) instead of re-running."""
-    s = _session(client)
-    _add_model_provider(client)
-    # An earlier attempt already registered this turn's durable execution.
-    _register_inflight_execution(s["id"], "turnDup")
-    r = client.post(f"/sessions/{s['id']}/messages/stream",
-                    json={"content": "hi", "turn_id": "turnDup"})
-    assert r.status_code == 409
-    assert "in progress" in r.json()["detail"].lower()
-    # No second execution ran → nothing persisted.
     assert client.get(f"/sessions/{s['id']}/messages").json()["messages"] == []
 
 

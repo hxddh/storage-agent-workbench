@@ -2,7 +2,7 @@
 
 The app streams. `POST /messages` is the fallback the client reaches for only
 when the stream fails, so the path the released build actually runs on every
-question is `POST /messages/stream` — and it had never been driven end to end
+question is the durable execution stream — and it had never been driven end to end
 either, for the same reason: it needed a model.
 
 This is where the shipped bug was *felt*. The stream succeeded, the answer was
@@ -14,7 +14,6 @@ whether the session can be opened.
 """
 from __future__ import annotations
 
-import json
 
 import pytest
 
@@ -26,23 +25,17 @@ ANSWER = "Objects under logs/ have no expiry, which is the cost.\n"
 
 
 def _events(client, sid, question="why is storage growing?", turn_id="t1"):
-    """Drive the SSE endpoint and return the parsed events, in order."""
-    out = []
-    with client.stream("POST", f"/sessions/{sid}/messages/stream",
-                       json={"content": question, "turn_id": turn_id}) as res:
-        assert res.status_code == 200, res.read()
-        event = None
-        for line in res.iter_lines():
-            line = line if isinstance(line, str) else line.decode()
-            if line.startswith("event:"):
-                event = line.split(":", 1)[1].strip()
-            elif line.startswith("data:"):
-                raw = line.split(":", 1)[1].strip()
-                try:
-                    out.append((event, json.loads(raw)))
-                except ValueError:
-                    out.append((event, raw))
-    return out
+    """Submit a durable Execution and return its event log, in order."""
+    from app.task_runtime import runtime
+    r = client.post(f"/agent-tasks/{sid}/executions",
+                    json={"direction": question, "turn_id": turn_id})
+    assert r.status_code in (200, 201), r.text
+    execution = r.json()["execution"]
+    runtime.wait_for_completion(execution["id"], 60.0)
+    res = client.get(f"/agent-tasks/{sid}/events?after=0&limit=1000")
+    assert res.status_code == 200, res.text[:200]
+    return [(e["event_type"], e["payload"]) for e in res.json()["events"]
+            if e["execution_id"] == execution["id"]]
 
 
 @pytest.fixture
@@ -59,16 +52,16 @@ def streamed(client):
 def test_the_stream_reports_the_tool_then_the_answer_then_done(streamed):
     _, _, events = streamed
     kinds = [k for k, _ in events]
-    assert "tool" in kinds
-    assert "delta" in kinds
-    assert kinds[-1] == "done", kinds[-3:]
+    assert "tool.completed" in kinds
+    assert "message.completed" in kinds
+    assert kinds[-1] == "execution.status", kinds[-3:]
+    assert events[-1][1]["status"] == "completed"
 
 
-def test_the_streamed_deltas_add_up_to_the_answer(streamed):
+def test_the_streamed_answer_is_the_final_segment(streamed):
     _, _, events = streamed
-    text = "".join(d if isinstance(d, str) else (d.get("text") or d.get("delta") or "")
-                   for k, d in events if k == "delta")
-    assert "no expiry" in text
+    finals = [d for k, d in events if k == "message.completed" and d.get("final")]
+    assert finals and "no expiry" in finals[-1]["text"]
 
 
 def test_the_answer_is_committed_as_a_final_segment(streamed):
@@ -104,7 +97,7 @@ def test_the_turn_is_no_longer_reported_as_running(streamed):
     """A finished turn must clear its handle, or a reopened window shows an
     eternal 'a turn is still running' banner."""
     client, sid, _ = streamed
-    assert client.get(f"/sessions/{sid}/turn").json()["running"] is False
+    assert client.get(f"/agent-tasks/{sid}/state").json()["active_execution"] is None
 
 
 def test_a_second_streamed_turn_keeps_the_first(client):
@@ -130,7 +123,7 @@ def test_a_second_streamed_turn_keeps_the_first(client):
 def test_a_stream_with_no_model_configured_is_a_clean_422(client):
     """A fresh install must get the documented fallback signal, not a 500."""
     sid = client.post("/sessions", json={"title": "s"}).json()["id"]
-    res = client.post(f"/sessions/{sid}/messages/stream", json={"content": "hi", "turn_id": "t1"})
+    res = client.post(f"/agent-tasks/{sid}/executions", json={"direction": "hi", "turn_id": "t1"})
     assert res.status_code == 422, res.text
     # And nothing dangles: no half-written user message in the thread.
     assert client.get(f"/sessions/{sid}").json()["message_total"] == 0

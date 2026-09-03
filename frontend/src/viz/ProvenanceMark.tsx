@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { openAgentExecution, openAgentReview } from "../agent/commands";
+import { openAgentReview } from "../agent/commands";
 import type { ProvenanceChain, ProvenanceFinding } from "./types";
 
 function preview(chain: ProvenanceChain | null, gap: string | null) {
@@ -22,8 +22,11 @@ export function ProvenanceMark({
   const card = preview(finding.chain, finding.gap);
   const go = () => {
     const chain = finding.chain;
-    if (chain?.review === "execution" && (chain.id || finding.source_run_id)) {
-      openAgentExecution(chain.id || finding.source_run_id || "");
+    // A chain names the deterministic run behind a finding; the Execution
+    // section lists the durable Executions that ran it (v1.12 — the detail
+    // document is keyed by execution id, never by run id).
+    if (chain?.review === "execution") {
+      openAgentReview("execution");
       return;
     }
     if (chain?.review === "report") {

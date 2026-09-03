@@ -23,7 +23,6 @@ from collections.abc import Callable
 from typing import Any
 
 from ..security.redaction import redact_text
-from ..sessions import next_actions
 
 TOOL_NAME = "import_evidence"
 ACTION_TYPES = {"inventory": "import_inventory", "access_log": "import_access_log"}
@@ -41,6 +40,20 @@ def _latest_account_run(conn: sqlite3.Connection, session_id: str) -> str | None
     return row["run_id"] if row else None
 
 
+def _scan_scope_line(prefix: str | None, max_files: Any, max_bytes: Any,
+                     time_start: Any, time_end: Any) -> str | None:
+    parts: list[str] = []
+    if prefix:
+        parts.append(f"prefix {prefix}")
+    if max_files:
+        parts.append(f"max {int(max_files)} files")
+    if max_bytes:
+        parts.append(f"max {int(max_bytes)} bytes")
+    if time_start or time_end:
+        parts.append(f"range {time_start or '…'} → {time_end or '…'}")
+    return "; ".join(parts) if parts else None
+
+
 def _impact(plan_row: dict[str, Any], source_type: str) -> dict[str, Any]:
     prefix = plan_row.get("source_prefix") or None
     return {
@@ -52,7 +65,7 @@ def _impact(plan_row: dict[str, Any], source_type: str) -> dict[str, Any]:
         "source_type": source_type,
         "file_count": int(plan_row.get("selected_file_count") or 0) or None,
         "total_bytes": int(plan_row.get("selected_total_bytes") or 0) or None,
-        "scan_scope": next_actions._scan_scope_line(
+        "scan_scope": _scan_scope_line(
             prefix, plan_row.get("max_files"), plan_row.get("max_bytes"),
             plan_row.get("time_range_start"), plan_row.get("time_range_end")),
         "warnings": [redact_text(str(w))[:200] for w in (plan_row.get("warnings") or [])[:5]],

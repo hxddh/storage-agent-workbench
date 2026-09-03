@@ -177,9 +177,10 @@ test.describe("durable Agent context", () => {
           body: JSON.stringify({ title: "turnstate" }),
         })
       ).json();
-      return await (await fetch(`${url}/sessions/${created.id}/turn`)).json();
+      return await (await fetch(`${url}/agent-tasks/${created.id}/state`)).json();
     });
-    expect(state.running).toBe(false);
+    expect(state.active_execution).toBeNull();
+    expect(state.status).toBe("ready");
   });
 });
 

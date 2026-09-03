@@ -186,6 +186,8 @@ Runs bounded deterministic account discovery/config snapshot work for the curren
 
 The result is persisted and sanitized; raw object rows/bodies are not sent to the model.
 
+Since v1.12 the default cap (100 buckets) is the autonomous boundary. A call with `max_buckets` above it is a gated call: the tool raises a Decision (`action_type = survey_account_large`) with the projected impact (`provider`, `buckets`, `estimated_calls`, `scan_scope`) through the same `runtime.request_approval` path as `import_evidence`, the Execution waits, and the approval policy may answer it. Deny returns a structured refusal (the model may re-call without `max_buckets`). Outside a durable execution the cap is clamped to the default, never widened.
+
 ### `review_bucket_config`
 
 Runs the deterministic bucket-review engine as Agent-invoked Execution and returns bounded sanitized result context.
@@ -264,6 +266,8 @@ The workflow remains:
 
 > **plan → approval (inline Decision) → confirmed execution**
 
+Since v1.12 the approval policy (`ask` · `allow_session` · `allow_always`, Settings → Safety) may answer the Decision instead of the user; the call is still recorded as an approved Decision with `scope = session | always` and `approval.granted` carries `policy`.
+
 It is bounded by file/byte/time/source constraints and re-validates limits during download. The model cannot confirm it, and no prose proposal can raise it.
 
 See `security.md` and `api.md`.
@@ -299,6 +303,12 @@ Shows whether the local price table is still the example schedule or has been co
 ### `set_task_revisit_days`
 
 Sets this Task's optional revisit interval (1–365 days) or disables it. Revisits are read-only Executions submitted through `runtime.submit` when the Sidecar is running.
+
+## Plan tool (v1.12)
+
+### `update_plan`
+
+Args: `steps` — a list of `{text, status}` (`pending` | `in_progress` | `completed`), at most 12 steps of at most 160 characters each. The model keeps a short checklist of what it intends to do and updates it as steps complete (Codex `update_plan` semantics). Each call replaces the whole plan; the runtime appends a `plan.updated` event and the turn carries ONE `plan` item at the position of the first call, holding the latest steps. Steps are redacted and chain-of-thought-stripped. The tool executes nothing, is budget-exempt, and is never a tool row in the *Worked for …* group.
 
 ## Task memory tools
 

@@ -1,9 +1,15 @@
 # Sidecar API
 
-> **Storage Agent v1.10.0 API reference.** Provenance projection unchanged from v1.02.0; v1.03 adds Skills, Observability export and MCP bridge, v1.04 keeps the window and adds warm editorial + Codex/Cursor layout. Unchanged from
-> v0.98.0. No migration. Runtime, tools, and other `/agent-tasks` contracts
-> are unchanged from v0.96.0. Engine endpoints such as `/settings/price-table`
-> remain; they are not product destinations.
+> **Storage Agent v1.12.0 API reference.** One protocol: the durable Execution
+> API under `/agent-tasks` is the ONLY way work is submitted, followed, steered,
+> stopped, and resumed. The pre-v0.94 message/turn endpoints under `/sessions`
+> (`POST …/messages`, `POST …/messages/stream`, `POST …/turns/{id}/cancel`,
+> `GET …/turn`, `POST …/actions/prepare`) are removed. The execution stream is
+> push-driven (no Sidecar poll loop) and carries `task.status`, `plan.updated`
+> and `context.compacted`. New: `POST /agent-tasks/{id}/compact`,
+> `GET/PUT /settings/approval-policy`, `GET /settings/instructions`.
+> Migration **030**. Engine endpoints such as `/settings/price-table` and
+> `/evidence-imports` remain; they are not product destinations.
 >
 > The public product model is Agent Task / Direction / Execution / Decision / Work Result / Artifact. Many HTTP paths intentionally retain historical `session`/`run` compatibility names. Do not mirror those path names into new product information architecture.
 
@@ -66,6 +72,7 @@ GET  /agent-tasks/{task_id}/executions/{execution_id}/events   (SSE)
 POST /agent-tasks/{task_id}/executions/{execution_id}/stop
 POST /agent-tasks/{task_id}/executions/{execution_id}/resume
 POST /agent-tasks/{task_id}/verify
+POST /agent-tasks/{task_id}/compact
 POST /agent-tasks/{task_id}/steer
 GET  /agent-tasks/{task_id}/events
 GET  /agent-tasks/{task_id}/decisions
@@ -84,7 +91,8 @@ PUT  /agent-tasks/{task_id}/revisit
 - `POST executions` delegates a Direction. Optional `kind` is `direction` (default), `verify`, or `revisit`. Idempotent on `(task, turn_id)` via a unique index — a duplicate submit attaches (`created: false`) instead of re-running. A submission while another execution runs is QUEUED durably and runs after it.
 - `POST .../verify` submits a Verify Execution through that same path when a Remediation Plan exists (`kind=verify`). 404 when the Task has no plan.
 - `GET/PUT .../revisit` reads or sets the optional per-task revisit interval. Due revisits are submitted by startup/periodic maintenance (and app-open task-list catch-up) via `runtime.submit(kind=revisit)`, never a second runner. Catch-up Directions are labelled. Confirmation-gated work stays pending.
-- The `events` SSE streams the execution's append-only structured event log; every durable frame carries `id: <seq>` and the stream resumes from `?after=<seq>`. Frame vocabulary: `execution.status`, `tool.started`, `tool.completed`, `message.completed` (a closed commentary segment, or the answer when `final: true`), `approval.opened`, `approval.granted`, `decision.resolved`, `steer.received`, `steer.applied`, `work_result.recorded`, `artifact.recorded`, `context.updated`, `task.titled`, `execution.events_truncated`, transient `delta`, terminal `end`. Frontend recovery is this sequence reconnect only.
+- The `events` SSE streams the execution's append-only structured event log; every durable frame carries `id: <seq>` and the stream resumes from `?after=<seq>`. Frame vocabulary: `execution.status`, `tool.started`, `tool.completed` (since v1.12 with `started_at` / `finished_at` / `duration_ms` when the tool path stamped them), `message.completed` (a closed commentary segment, or the answer when `final: true`), `plan.updated` (`{steps}` — the model's `update_plan` tool, v1.12), `approval.opened`, `approval.granted` (with `policy: task | session | always`, v1.12), `decision.resolved`, `steer.received`, `steer.applied`, `context.compacted` (`{before_tokens, after_tokens, summary_chars}`, v1.12), `work_result.recorded`, `artifact.recorded`, `context.updated`, `task.titled`, `task.status` (`{status, active_execution_id, queued, pending_decisions, last_execution}` whenever the task's derived state or queue changes, v1.12 — a follower needs no `/state` poll), `execution.events_truncated`, transient `delta`, terminal `end`. Frontend recovery is this sequence reconnect only. Since v1.12 the Sidecar follower is woken by the in-process hub (no SQLite poll loop); an idle stream sends a heartbeat comment every 15 s.
+- `POST .../compact` (v1.12) runs the context compaction step on demand for a task with no live execution: one tool-less model call summarises the replayed turns into a bounded, redacted continuation summary stored on the typed context (`task_context_versions.summary_sanitized`), and `context.compacted` is appended to the task's event log with an empty `execution_id`; the next execution re-emits it on its own stream (and starts its turn with the `compacted` item) so the transcript shows the marker where work resumed. Returns `{compacted, before_tokens, after_tokens, summary_chars}` or `{compacted: false, reason}`; 409 while an execution is active; 422 without a model. The runtime runs the same step automatically before an execution's model loop when the last turn's reported input usage crossed 80 % of the model's context window.
 - `steer` acts ON the current execution: the text is injected into the running model loop at its next tool boundary; a steer the loop could no longer take is carried into an automatic follow-up execution. 409 when nothing is executing.
 - `stop` cancels durably; the partial Work Result persists with `stopped: true`.
 - `resume` turns an `interrupted` / `failed` / `cancelled` execution into a NEW execution carrying the same Direction (history is never rewritten).
@@ -156,21 +164,9 @@ Current behaviors include create/list/detail, rename/pin/archive, deletion, dupl
 
 A branch from `from_message_id` includes content through that point and excludes later work. An unknown branch point is an error, not a silent whole-task duplicate.
 
-### Direction / turn execution
+### Direction / turn execution — removed in v1.12
 
-```text
-POST /sessions/{session_id}/messages
-POST /sessions/{session_id}/messages/stream
-POST /sessions/{session_id}/turns/{turn_id}/cancel
-GET  /sessions/{session_id}/turn
-```
-
-Since v0.94 these are compatibility SHIMS over the durable task runtime — there is exactly one submission lifecycle:
-
-- `/messages/stream` submits a durable Execution and streams its event log translated into the legacy `delta`/`tool`/`done`/`error` vocabulary.
-- The blocking `/messages` endpoint submits (or attaches to) the same durable execution and waits; idempotency is the durable `(task, turn_id)` unique index.
-- `cancel` backs the product Stop control (maps to the durable execution stop).
-- `/turn` reads the DURABLE execution rows, so it stays truthful across reloads AND Sidecar restarts; it now also carries `execution_id`/`execution_status` so a client can resume the structured event stream.
+There are no message or turn endpoints under `/sessions`. `POST …/messages`, `POST …/messages/stream`, `POST …/turns/{turn_id}/cancel`, `GET …/turn` and the `legacy_frames` translation are gone. Submitting, following, steering, stopping and resuming work happens only through `/agent-tasks/{id}/executions…` (above). `GET /sessions/{id}/messages` (the paged document) stays.
 
 Executions survive the HTTP request entirely; after a Sidecar restart, recovery stamps orphaned executions `interrupted` (an explicit durable state with a resume affordance) instead of silently reporting nothing.
 
@@ -209,13 +205,12 @@ These link deterministic/auditable executions to a Task. The existence of these 
 
 ```text
 GET  /sessions/{session_id}/report
-POST /sessions/{session_id}/actions/prepare
 POST /sessions/{session_id}/datasets/upload
 GET  /sessions/{session_id}/error-triage
 ```
 
 - report generation/fetch produces a durable Markdown Artifact;
-- action preparation validates/prefills a proposed next action but does not bypass confirmation or execute hidden work;
+- `POST …/actions/prepare` is removed in v1.12 (there are no next-action proposals; the only gated actions are tool calls approved inline);
 - dataset upload attaches local evidence to the Task for bounded local analysis;
 - error-triage cases can be associated with the Task.
 
@@ -236,17 +231,9 @@ Missing provider token usage remains unavailable/NULL, not a fabricated zero.
 
 ## Session/Task stream events
 
-`POST /sessions/{id}/messages/stream` emits the real execution stream used by the Agent Task UI.
+The only stream is the execution event stream (`GET /agent-tasks/{id}/executions/{eid}/events`, above). The legacy `delta`/`tool`/`done`/`error` vocabulary and the `legacy_frames` translation are gone (v1.12).
 
-Event classes include:
-
-- `delta` — streamed Work Result text;
-- `tool` — sanitized Tool activity, including started/completed records where available;
-- `done` — durable completion metadata such as message id, grounding/evidence/skills and runtime metrics as implemented (`proposed_actions` is always empty since v1.11);
-- `error` — sanitized failure;
-- stopped/cancelled completion state where applicable.
-
-Persisted message grounding and `turn_items` (the ordered commentary/tool items before the answer, v1.11) survive reload and are not only transient SSE state.
+Persisted message grounding and `turn_items` survive reload and are not only transient SSE state. `turn_items` are the ordered items the turn produced before its answer: `message` (commentary), `tool` (a reference to the `tool_activity` record by id), `plan` (`{steps}` — one per turn, at the position of the first `update_plan` call, holding the latest plan, v1.12), and a leading `compacted` (`{before_tokens, after_tokens}` when the runtime compacted the context before this turn, v1.12). `proposed_actions` is no longer projected.
 
 Tool activity records may carry stable Tool-call ids, exact success state, and measured duration. Older persisted history can legitimately lack fields added by later versions; clients must treat absence as unknown rather than false/zero.
 
@@ -302,6 +289,8 @@ Uploads are streamed to disk and bounded by explicit size limits. Dataset metada
 
 Prefix: `/evidence-imports`
 
+Engine API over `evidence/import_service` (the same code path the gated `import_evidence` tool runs after an approval). Since v1.12 the product UI does not call it; the only user-facing import path is the inline approval card.
+
 ```text
 POST /evidence-imports/plan
 GET  /evidence-imports/{import_id}
@@ -336,7 +325,13 @@ Current settings API includes secret-vault health/status endpoints as implemente
 GET  /settings/secret-vault
 GET  /settings/price-table
 PUT  /settings/price-table
+GET  /settings/approval-policy
+PUT  /settings/approval-policy
+GET  /settings/instructions
 ```
+
+- `approval-policy` (v1.12) reads/sets how gated tools get their answer: `ask` (default — every gated call raises a Decision and the Execution waits), `allow_session` (auto-approved for this Sidecar process; a restart falls back to `ask`), `allow_always` (auto-approved for this data directory; stored in `app_settings`). The response lists the `gated_tools` a policy can answer (`import_evidence` → `import_inventory` / `import_access_log`; `survey_account` → `survey_account_large`). Enforced only in `runtime.request_approval`; every auto-approval is still a durable, already-approved Decision plus an `approval.granted` event with `policy`.
+- `instructions` (v1.12) reports whether an `AGENTS.md` instructions file is loaded (`{loaded, path, chars, truncated, error}`) — from `STORAGE_AGENT_DATA_DIR/AGENTS.md` or the `STORAGE_AGENT_INSTRUCTIONS` path. The text itself is never an API payload; it is injected, bounded (8 000 chars) and redacted, into the stable half of the Agent prompt.
 
 The price table is ordinary local configuration used by the cost simulator: per-storage-class GB-month rates plus request/retrieval rates. It ships as an example schedule. Dollar simulation remains a gap until `confirmed` is true. The table is not a secret store and must never contain credentials. **Settings UI does not edit it** — if the Agent needs prices it asks in the Task or reports a gap.
 

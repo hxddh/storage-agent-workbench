@@ -12,6 +12,7 @@ import sqlite3
 
 from app import config, db, run_service
 from app.agent_runtime import session_agent, session_analysis_tools
+from tests.turns import post_message
 
 ACCESS_LOG_TEXT = (
     '2026-06-25T10:00:00Z bucket-alpha GET /a/p1.parquet 206 1048576 42 ms '
@@ -145,7 +146,7 @@ def test_message_turn_surfaces_attachment_to_agent(client, monkeypatch):
         return "ack"
 
     monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
-    r = client.post(f"/sessions/{sid}/messages", json={"content": "分析下", "turn_id": "t1"})
+    r = post_message(client, sid, json={"content": "分析下", "turn_id": "t1"})
     assert r.status_code == 200
     assert "attached_files" in captured["prompt"]
     assert "a.log" in captured["prompt"]

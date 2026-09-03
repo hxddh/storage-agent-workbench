@@ -6,6 +6,9 @@ export type PaletteActions = {
   focusComposer?: () => void;
   find?: () => void;
   review?: () => void;
+  /** Compact the task's context now (v1.12) — only for an open, idle task. */
+  compact?: () => void;
+  compacting?: boolean;
   busy?: boolean;
   canResume?: boolean;
   hasTask?: boolean;

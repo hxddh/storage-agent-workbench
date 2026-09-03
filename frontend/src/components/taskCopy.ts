@@ -1,0 +1,73 @@
+import { useI18n } from "../i18n";
+
+/** The Task document's own copy (banners, paging, live status), EN/ZH. */
+export function useTaskCopy() {
+  const { lang } = useI18n();
+  return lang === "zh"
+    ? {
+        loadFailed: "无法加载这个任务。",
+        actionFailed: "Agent 无法继续这个任务。",
+        workspace: "Agent 任务",
+        stopped: "已由你停止",
+        offline: "本地运行时暂时不可用，任务现在无法执行。",
+        offlineHint: "正在自动重连。你写下的方向会保留，恢复后可以继续。",
+        needModel: "先配置一个模型提供商，Agent 才能继续这个任务。",
+        needModelAction: "配置模型提供商",
+        retry: "重试任务",
+        loadingEarlier: "正在载入更早的记录…",
+        loadEarlier: (n: number) => `载入更早的 ${n} 条记录`,
+        jumpToStart: "回到任务开始",
+        remoteExecution: (age: string) => `这个任务的一次执行仍在后台进行（${age}）。结果完成后会回到这里。`,
+        stalled: "这次执行比预期更久；结果可能已经持久化，可以重新同步任务。",
+        reload: "重新同步",
+        jumpLatest: "回到最新",
+        jumpWorking: "回到最新 · Agent 仍在执行",
+        liveNeedModel: "Agent 需要先配置模型提供商才能继续。",
+        liveFailed: "这个任务执行失败。",
+        liveStopped: "这个任务已停止。",
+        liveWorking: "Agent 正在执行这个任务。",
+        liveWaiting: "Agent 正在等待你的批准。",
+        liveReady: "工作结果已就绪。",
+        resumeTitle: "这次执行被中断了",
+        resumeBody: "恢复会用同一条方向开始新的执行。",
+        resumeAction: "恢复执行",
+        queued: "排队中",
+        queuedHint: "排队中 · 当前执行结束后开始",
+        queuedCancel: "取消",
+        greeting: "让 Agent 处理什么？",
+      }
+    : {
+        loadFailed: "Couldn't load this task.",
+        actionFailed: "The Agent couldn't continue this task.",
+        workspace: "Agent task",
+        stopped: "Stopped by you",
+        offline: "The local runtime is unavailable, so this task cannot run right now.",
+        offlineHint: "Reconnecting automatically. What you typed is kept and can continue when the runtime is back.",
+        needModel: "Configure a Model Provider before the Agent can continue this task.",
+        needModelAction: "Configure Model Provider",
+        retry: "Retry task",
+        loadingEarlier: "Loading earlier history…",
+        loadEarlier: (n: number) => `Load ${n} earlier records`,
+        jumpToStart: "Jump to the start",
+        remoteExecution: (age: string) => `Execution for this task is still running in the background (${age}). Its result will return here.`,
+        stalled: "This execution is taking longer than expected; the result may already be durable. Resync the task to check.",
+        reload: "Resync task",
+        jumpLatest: "Jump to latest",
+        jumpWorking: "Jump to latest · Agent still working",
+        liveNeedModel: "The Agent needs a Model Provider before it can continue.",
+        liveFailed: "This task failed.",
+        liveStopped: "This task was stopped.",
+        liveWorking: "The Agent is working on this task.",
+        liveWaiting: "The Agent is waiting for your approval.",
+        liveReady: "Work result is ready.",
+        resumeTitle: "This execution was interrupted",
+        resumeBody: "Resume starts a new execution with the same Direction.",
+        resumeAction: "Resume execution",
+        queued: "Queued",
+        queuedHint: "Queued · starts when the current execution finishes",
+        queuedCancel: "Cancel",
+        greeting: "What should the Agent work on?",
+      };
+}
+
+export type TaskCopy = ReturnType<typeof useTaskCopy>;

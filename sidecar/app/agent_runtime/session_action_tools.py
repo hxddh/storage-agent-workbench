@@ -50,6 +50,12 @@ _DEFAULT_PROMPTS = {
 _MAX_SUMMARY = 2000
 _MAX_SUMMARY_CEIL = 16000
 
+# v1.12 — the autonomous survey cap (matches account_discovery_run.DEFAULT_MAX_BUCKETS);
+# above it a survey crosses the confirmation boundary (survey_account_large).
+_DEFAULT_SURVEY_BUCKETS = 100
+_CALLS_PER_BUCKET = 12  # head_bucket + the config snapshot reads, estimated
+
+
 
 def _err(msg: str) -> str:
     return json.dumps({"error": redact_text(str(msg))[:300]})
@@ -213,6 +219,42 @@ def build(
     # run the heavier deterministic SURVEY/REVIEW compute (which persists a profile
     # for evidence/summary) without surfacing a run card.
 
+    def _approve_large_survey(mb: int, provider_id: str, pname: str) -> tuple[int, str | None]:
+        """v1.12 — a survey above the default cap is a materially large scan:
+        it crosses the SAME confirmation boundary as data movement (a Decision
+        raised inside the running execution; the approval policy may answer it).
+        Returns (effective cap, refusal text). Not attached to a durable
+        execution → clamped to the default, never silently widened."""
+        if not (session_id and turn_id):
+            return _DEFAULT_SURVEY_BUCKETS, None
+        from ..task_runtime import runtime, store
+        row = store.get_execution_by_turn(conn, session_id, turn_id)
+        if row is None:
+            return _DEFAULT_SURVEY_BUCKETS, None
+        impact = {
+            "gate": "large_scan",
+            "why": (f"Enumerates up to {mb} buckets on {pname} with live read-only S3 "
+                    f"calls (about {_CALLS_PER_BUCKET} per bucket), above the default "
+                    f"{_DEFAULT_SURVEY_BUCKETS}-bucket cap."),
+            "provider": pname, "buckets": mb,
+            "estimated_calls": mb * _CALLS_PER_BUCKET,
+            "scan_scope": f"up to {mb} buckets",
+        }
+        proposal = {"tool": "survey_account", "action_type": "survey_account_large",
+                    "args": {"provider_id": provider_id, "max_buckets": mb},
+                    "impact": impact}
+        decision = runtime.request_approval(
+            conn, row["id"], session_id, action_type="survey_account_large",
+            title=f"Survey up to {mb} buckets on {pname}", reason=impact["why"],
+            proposal=proposal, cancel_event=cancel_event)
+        if decision["status"] == store.DECISION_APPROVED:
+            return mb, None
+        return mb, (
+            "status: declined — the user did not approve a survey above the default "
+            f"{_DEFAULT_SURVEY_BUCKETS}-bucket cap. Do not retry it in this turn; call "
+            "survey_account again WITHOUT max_buckets for a default-capped survey, or "
+            "answer from what you have.")
+
     @function_tool
     def review_bucket_config(provider_id: str, bucket: str) -> str:
         """Read-only review of one bucket's configuration (security, lifecycle, observability, cost, performance). Runs the deterministic config-review engine and returns its findings for you to interpret and narrate. Does NOT surface a separate card — fold the findings into your own answer. Use only when the user's request is about this bucket's configuration. Args: provider_id, bucket."""
@@ -249,6 +291,11 @@ def build(
             # model's own advertised maximum straight into a ValidationError,
             # so asking for a bigger survey failed the tool outright.
             mb = max(1, min(int(max_buckets), 500)) if max_buckets else None
+            if mb is not None and mb > _DEFAULT_SURVEY_BUCKETS:
+                mb, refusal = _approve_large_survey(mb, provider_id, provider_name(provider_id))
+                if refusal:
+                    note("survey_account", provider_name(provider_id), "declined", ok=False)
+                    return refusal
             body = RunCreate(run_type="account_discovery", provider_id=provider_id,
                              user_prompt=_DEFAULT_PROMPTS["account_discovery"],
                              session_id=session_id, max_buckets=mb)

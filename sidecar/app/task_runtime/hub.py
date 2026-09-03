@@ -7,8 +7,9 @@ hub adds only the two things a durable log cannot give:
 - transient ANSWER DELTAS for a live execution (sanitized text the user watches
   arrive; the persisted Work Result is the durable form, so deltas are never
   written to the log), and
-- prompt wakeups, so a live subscriber is notified when new durable events land
-  instead of pure polling.
+- wakeups, so a live subscriber (an SSE follower on its asyncio loop) is
+  woken the moment a delta or a durable event lands — the live path pushes,
+  it does not poll SQLite (v1.12).
 
 Best-effort and process-local by design: losing this state loses nothing
 durable. Bounded everywhere.
@@ -16,6 +17,7 @@ durable. Bounded everywhere.
 
 from __future__ import annotations
 
+import asyncio
 import threading
 
 _MAX_DELTA_CHARS = 400_000       # per execution; beyond this the tail wins
@@ -27,7 +29,7 @@ _MAX_MARKERS = 4096              # per execution; older markers fall off the hea
 
 
 class _Entry:
-    __slots__ = ("delta_text", "delta_dropped", "done", "cond", "markers")
+    __slots__ = ("delta_text", "delta_dropped", "done", "cond", "markers", "waiters")
 
     def __init__(self) -> None:
         self.delta_text = ""       # accumulated sanitized delta text
@@ -40,9 +42,37 @@ class _Entry:
         # order they really happened (a tool row never lands after text the
         # model wrote once the tool had returned).
         self.markers: list[tuple[int, int]] = []
+        # Live subscribers: (event loop, asyncio.Event). Every push / notify /
+        # mark_done sets each event on its own loop, so an SSE follower wakes
+        # the moment something happened instead of polling SQLite.
+        self.waiters: list[tuple[asyncio.AbstractEventLoop, asyncio.Event]] = []
 
 
 _entries: dict[str, _Entry] = {}
+
+
+def _wake_locked(entry: _Entry) -> None:
+    for loop, event in entry.waiters:
+        try:
+            loop.call_soon_threadsafe(event.set)
+        except RuntimeError:
+            pass  # the subscriber's loop is gone; it will unsubscribe
+
+
+def subscribe(execution_id: str, loop: asyncio.AbstractEventLoop, event: asyncio.Event) -> None:
+    """Register an asyncio waiter for this execution (created if unknown so a
+    follower attaching before the worker opened it still wakes)."""
+    with _lock:
+        entry = _get(execution_id, create=True)
+        assert entry is not None
+        entry.waiters.append((loop, event))
+
+
+def unsubscribe(execution_id: str, event: asyncio.Event) -> None:
+    with _lock:
+        entry = _entries.get(execution_id)
+        if entry is not None:
+            entry.waiters = [w for w in entry.waiters if w[1] is not event]
 
 
 def _get(execution_id: str, create: bool = False) -> _Entry | None:
@@ -80,6 +110,7 @@ def push_delta(execution_id: str, text: str) -> None:
             entry.delta_text = entry.delta_text[overflow:]
             entry.delta_dropped += overflow
         entry.cond.notify_all()
+        _wake_locked(entry)
 
 
 def notify(execution_id: str, seq: int | None = None) -> None:
@@ -94,6 +125,7 @@ def notify(execution_id: str, seq: int | None = None) -> None:
                 if len(entry.markers) > _MAX_MARKERS:
                     del entry.markers[: len(entry.markers) - _MAX_MARKERS]
             entry.cond.notify_all()
+            _wake_locked(entry)
 
 
 def mark_done(execution_id: str) -> None:
@@ -102,6 +134,7 @@ def mark_done(execution_id: str) -> None:
         if entry is not None:
             entry.done = True
             entry.cond.notify_all()
+            _wake_locked(entry)
 
 
 def delta_snapshot(execution_id: str, cursor: int) -> tuple[str, int, int]:

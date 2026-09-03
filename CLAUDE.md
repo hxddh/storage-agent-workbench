@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.11.0.**
+> **Implementation contract for Storage Agent v1.12.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.11.0 product invariant is:
+The v1.12.0 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -18,7 +18,7 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v1.11.0 native Agent window
+## 1. Never regress the v1.12.0 native Agent window
 
 The window is **sidebar · title bar · one Task document · one Composer**. There is no activity bar, no status bar, no Details/inspector column, and no marketing copy in chrome. New product/frontend work must preserve these boundaries:
 
@@ -28,15 +28,15 @@ The window is **sidebar · title bar · one Task document · one Composer**. The
 - **AgentTask** is the public task boundary; persistence compatibility names stay behind adapters.
 - **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active. Attach (button or a dropped file) + textarea + the **model chip** (backed by the real provider list; switching activates a provider server-side; shows `model · effort` and a reasoning-effort control only when the active model is known-reasoning) + those actions. No persistent keyboard legend, no painted mode/approval chips.
 - **Direction** is user intent/steering input. Copy is the only Direction chrome.
-- **Execution** is real runtime/tool work. A turn is rendered as one **transcript turn** (Codex parity): the user's message as a right-aligned bubble, the model's short **commentary segments** in order, one collapsed **Worked for …** group of tool rows between segments (live elapsed while running), any **approval card** inline where the gated tool raised it, then the **answer** as Markdown on the 46rem measure. Never invent plans, steps, workers, or capabilities the runtime does not expose.
-- **Approval** (`Waiting for approval`) is raised only by a gated tool (`import_evidence`) inside the running Execution: the Sidecar plans, opens a durable Decision (`kind=approval`) with projected bounds/impact, and the Execution waits. The card offers **Allow · Allow for this task · Deny**; Allow runs the audited import server-side and the same Execution continues; Deny returns a structured refusal to the model. Model prose never raises a Decision; there is no `next_action_proposals` list, no metadata JSON block, and no separate import dialog.
+- **Execution** is real runtime/tool work. A turn is rendered as one **transcript turn** (Codex parity): the user's message as a right-aligned bubble, the model's short **commentary segments** in order, one collapsed **Worked for …** group of tool rows between segments (wall-clock of the group, live while running), the model's own **plan card** (from the `update_plan` tool, one per turn, updated in place, folded to *Plan · n/n* when done), a one-line **Context compacted** marker when the runtime compacted before the turn, any **approval card** inline where the gated tool raised it, then the **answer** as Markdown on the 46rem measure. Never invent plans, steps, workers, or capabilities the runtime does not expose — the plan card renders only `plan.updated` events.
+- **Approval** (`Waiting for approval`) is raised only by a gated tool (`import_evidence`, or `survey_account` above its default 100-bucket cap as `survey_account_large`) inside the running Execution: the Sidecar plans, opens a durable Decision (`kind=approval`) with projected bounds/impact, and the Execution waits. The card offers **Allow · Allow for this task · Deny**; Allow runs the audited work server-side and the same Execution continues; Deny returns a structured refusal to the model. The **approval policy** (Settings → Safety: Ask every time · Allow for this session · Always allow) may answer the gate instead of the user — enforced only in `runtime.request_approval`, always recorded as an approved Decision and an `approval.granted {policy}` event the card shows. Model prose never raises a Decision; there is no `next_action_proposals` list, no metadata JSON block, and no separate import dialog.
 - **Work Result** is the answer at the end of the turn: plain Markdown, tables scrolling inside their own container, figures and provenance inline in the latest answer. No data track, no artifact chip row, no metrics footer, no grey Direction block. Working copy is Agent-native, not chat-era "still running" language.
-- **Artifacts** is a right split panel (⌘I toggles; opened from the document): Evidence, Reports, Remediation Plans, Baselines/Drift, and Execution detail (a document: header · *Worked for …* rows · findings · result). It replaces the Review sheet. It is not a tabbed application destination and not a document hero. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules may exist as Sidecar engines; they have no product UI entry beyond that panel's read-only lists.
+- **Artifacts** is a right split panel (⌘I toggles; opened from the document): Evidence, Reports, Remediation Plans, Baselines/Drift, and Execution detail (a document: header · *Worked for …* rows · findings · result — built from `task_executions`, the durable `execution_events` log and one sanitized `tool_calls` row on demand; never a `/runs` stream). It replaces the Review sheet. It is not a tabbed application destination and not a document hero. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules may exist as Sidecar engines; they have no product UI entry beyond that panel's read-only lists.
 - Production UI must not teach a chat *application*: no `New chat` titles, no `thread.*` copy keys, no leftover `.thread-prose` layout layer. The transcript turn is the Agent's work record, not a chat product.
 
 Do not reconstruct earlier chat/investigation/workbench information architecture from old release notes, database names, API names, or git history. Historical `session` and `run` terminology is compatibility vocabulary, not a reason to change current product semantics.
 
-The executable frontend guards under `frontend/src/agent/` are part of this contract. If an intentional architecture replacement is needed, change the code, tests, and canonical docs together in one PR.
+The executable frontend guards under `frontend/src/agent/` and the Sidecar contracts `tests/test_v111_native_turns.py` / `tests/test_v112_native_protocol.py` are part of this contract. If an intentional architecture replacement is needed, change the code, tests, and canonical docs together in one PR.
 
 ## 2. Runtime architecture
 
@@ -107,19 +107,24 @@ Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned b
 - `execution_events` retention is a periodic SQL-set prune (terminal executions only, dual cap, explicit `execution.events_truncated` marker; `0` disables). Active and waiting logs are never touched;
 - at most one pending Decision exists per `(task, action_type)`; a later request of the same type supersedes the earlier pending row. Since v1.11 a Decision is raised by the gated `import_evidence` tool from inside the running Execution (`runtime.request_approval`): `approval.opened`, execution `waiting`, the tool thread blocks until `decisions/{id}/resolve` (Allow / Allow for this task via `scope=task` / Deny) or Stop (withdrawn as declined), then the same execution returns to `running`. Grounding (`skills_used`, `evidence_used`, `evidence_gaps`) is derived from the tool trace, never claimed by the model; the model's commentary segments and tool rows persist as `session_messages.turn_items`, the answer as `content`;
 - after a task's **first** Work Result the runtime runs one bounded, tool-less **title step** (`task_runtime/titling.py`): Direction + Work Result text only, redacted, ≤ 8 words, stored with `sessions.title_source = 'agent'` and logged as `task.titled`; a user rename sets `'user'` and wins forever; an unavailable or empty answer keeps the seed title; the step never fails a turn and is not a second Agent;
-- a provider's `reasoning_effort` (`low | medium | high | NULL`) is forwarded to the model call only when `model_budget.is_reasoning_model` recognises the model; endpoints that cannot take it never receive it.
+- a provider's `reasoning_effort` (`low | medium | high | NULL`) is forwarded to the model call only when `model_budget.is_reasoning_model` recognises the model; endpoints that cannot take it never receive it;
+- (v1.12) the follower is **push-driven**: the in-process hub wakes each open event stream on every delta and durable append (no SQLite poll loop), and `task.status` rides the running execution's log whenever the derived status or queue changes;
+- (v1.12) the model keeps its own plan with the `update_plan` tool (≤ 12 steps, redacted): each call is a `plan.updated` event and ONE `plan` turn item per turn, never a tool row;
+- (v1.12) the **approval policy** (`ask` · `allow_session` in process memory · `allow_always` in `app_settings`) is consulted only in `runtime.request_approval`; every auto-approval is a durable approved Decision (`scope = session | always`) plus `approval.granted {policy}`;
+- (v1.12) **compaction** (`agent_runtime/compaction.py`): when the last turn's reported input usage reaches 80 % of the model's context window, the runtime runs one tool-less, bounded, redacted summary step before the model loop, stores it on the typed context (`summary_sanitized` / `summary_through_seq`, migration 030), appends `context.compacted`, and the prompt replays only later messages with the summary in its stable half; `POST /agent-tasks/{id}/compact` runs it on demand for an idle task. Never a second Agent; never raw rows; never chain-of-thought;
+- (v1.12) `AGENTS.md` in the data directory (or `STORAGE_AGENT_INSTRUCTIONS`) is bounded (8 000 chars), redacted Markdown injected after the skills catalog in the stable prompt half; never executed, never above the safety rules.
 
-The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream (reconnect by sequence), steer/stop/resume/verify the current execution, then reload persisted task state. The legacy `/sessions` message endpoints are compatibility shims over this runtime. Do not create a second submit path.
+The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream (reconnect by sequence), steer/stop/resume/verify the current execution, then reload persisted task state. There are no `/sessions` message endpoints any more. Do not create a second submit path.
 
 ## 5. Current Sidecar API boundary
 
 The Sidecar exposes both product projection and compatibility APIs:
 
-- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the runtime API — executions (submit / steer / stop / resume / SSE event stream resumable by sequence), Verify (`POST .../verify`, kind=`verify`), queued visibility, decisions (list / resolve with impact projection), work results, artifacts, **read-only provenance** (`GET .../provenance`), remediation plans, baselines, revisit schedule, and the typed task context. Engine endpoints are not product destinations.
-- `/sessions/...` remains the durable task/message/runtime compatibility API.
+- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the runtime API — executions (submit / steer / stop / resume / SSE event stream resumable by sequence, push-driven, carrying `task.status` so a follower never polls), Verify (`POST .../verify`, kind=`verify`), on-demand compaction (`POST .../compact`), queued visibility, decisions (list / resolve with impact projection), work results, artifacts, **read-only provenance** (`GET .../provenance`), remediation plans, baselines, revisit schedule, and the typed task context. Engine endpoints are not product destinations.
+- `/sessions/...` remains the durable task document/paging/memory/activity compatibility API. Since v1.12 it has **no** message, stream, cancel, turn, or action-prepare endpoints; the durable execution API is the only submit path.
 - `/runs/...` remains deterministic execution/report compatibility API and is not a top-level product surface.
 - `/evidence-imports/...` owns bounded plan → confirm → execute data movement.
-- `/model-providers`, `/cloud-providers`, `/settings` (including the local price-table **engine** API; Settings UI does not edit it), `/tools`, `/error-triage`, `/reports`, and dataset endpoints keep their existing responsibilities.
+- `/model-providers`, `/cloud-providers`, `/settings` (including the local price-table **engine** API; Settings UI does not edit it; plus `approval-policy` and the read-only `instructions` status since v1.12), `/tools`, `/error-triage`, `/reports`, and dataset endpoints keep their existing responsibilities.
 
 Do not rename persistence/API contracts just for cosmetic consistency if that adds migration risk. Adapt them at explicit boundaries instead.
 
@@ -162,7 +167,7 @@ Do not infer tool availability from a documentation example. `docs/tools.md` and
 
 ## 8. Data ownership
 
-SQLite stores application metadata and durable task/execution records. Current migrations are append-only through **029**; never edit a shipped migration, append a new one.
+SQLite stores application metadata and durable task/execution records. Current migrations are append-only through **030**; never edit a shipped migration, append a new one.
 
 DuckDB/local files store analytical data and large inputs/artifacts. User data lives under the application data directory, never the install directory.
 
@@ -180,7 +185,8 @@ Product-to-persistence mapping:
 | Baseline / Drift | `task_baselines` + `drift_report` artifacts | — |
 | Revisit schedule | `task_revisit_schedules` | submitted as `task_executions.kind=revisit` |
 | Price table | `storage_price_table` (ordinary config, not a secret) | `/settings/price-table` |
-| Storage Task Context | `task_context_versions` | — |
+| Approval policy | `app_settings.approval_policy` (`ask` / `allow_always`; `allow_session` in memory) | `/settings/approval-policy` |
+| Storage Task Context | `task_context_versions` (+ `summary_sanitized` / `summary_through_seq`) | — |
 | Task memory | — | session summaries/findings/agent memory |
 
 See `docs/data-model.md`.
@@ -190,7 +196,7 @@ See `docs/data-model.md`.
 - Optimize the first viewport for: **what is the Task, what is happening/what was produced, what can the user do now**.
 - The Task is a **document**: one reading column, figures inline in the Work Result. Artifacts open from the document.
 - Composer is the only start surface. An empty window is one greeting line and the Composer in the middle band. Missing model is a banner plus Settings. The model discovers tools; there is no slash SKU catalog and no first-run wizard.
-- Settings is a centered dialog with sections **General (theme/language) · Model Providers · Cloud Providers · Skills & bridges · Safety**. Provider sections are native preference panes: one list, a preset menu (OpenAI · Anthropic · DeepSeek · OpenRouter · Ollama · LM Studio · vLLM · llama.cpp · OpenAI-compatible; AWS S3 · Cloudflare R2 · MinIO · OSS · COS · BOS · TOS · B2 · GCS · Custom), one editor with masked keys and inline Test. Skills & bridges offers actions (open skills folder, export trace, copy the MCP env var), never raw endpoint paths. There is no price-table spreadsheet.
+- Settings is a centered dialog with sections **General (theme/language) · Model Providers · Cloud Providers · Skills & bridges · Safety**. Provider sections are native preference panes: one list, a preset menu (OpenAI · Anthropic · DeepSeek · OpenRouter · Ollama · LM Studio · vLLM · llama.cpp · OpenAI-compatible; AWS S3 · Cloudflare R2 · MinIO · OSS · COS · BOS · TOS · B2 · GCS · Custom), one editor with masked keys and inline Test. Skills & bridges offers actions (open skills folder, open the instructions file folder, export trace, copy the MCP env var), never raw endpoint paths. Safety is the read-only floor statement plus the Approvals policy control and the gated-tool list. There is no price-table spreadsheet.
 - Keep settings/provider/model selection secondary to delegated work.
 - Keep technical results readable as documents: prose, tables, code/config, structured errors, tool rows, provenance.
 - Presentation is one achromatic surface ladder, an ink primary (near-white on dark, near-black on light), hairline depth, and status as the only colour. Tokens live in `frontend/src/index.css`; see `docs/design-tokens.md`.
@@ -216,7 +222,9 @@ product/runtime rewrite:
 - **Gated extensions (since post-1.02 modern native-agent work):**
   - `STORAGE_AGENT_DATA_DIR/skills/*/SKILL.md` + `STORAGE_AGENT_SKILLS_DIR`
     user skills (markdown guidance only, shadows bundled by name, bounded,
-    never executed) — `GET /skills`;
+    never executed) — `GET /skills`; and since v1.12 `STORAGE_AGENT_DATA_DIR/AGENTS.md`
+    (+ `STORAGE_AGENT_INSTRUCTIONS`) standing instructions — same rules,
+    `GET /settings/instructions` reports status only;
   - local model providers (`ollama`, `lmstudio`, `vllm`, `llama.cpp` and
     `openai-compatible` without a stored key, localhost defaults, dummy
     `not-needed` bearer) — same probe and budgeting as cloud models;
