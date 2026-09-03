@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.10.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native: menu bar, deep links, notifications, summon shortcut, runtime task titles, a reasoning-effort control, and native Execution-detail / provider panes. Earlier release notes are not current product architecture.
+> **Applies to Storage Agent v1.13.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native: menu bar, deep links, notifications, summon shortcut, runtime task titles, a reasoning-effort control, and native Execution-detail / provider panes. Earlier release notes are not current product architecture.
 
 ## Product definition
 
@@ -57,7 +57,7 @@ Since v0.94 an Execution is a durable object with a real lifecycle — `queued`,
 
 v0.95 makes that lifecycle operable in the Task:
 
-- **Resume** is a task-area action when the Task is `needs_attention` and the last Execution is `interrupted` or `failed`. It starts a new Execution with the same Direction and follows the new event stream. Cancelled, missing-key, and generic error states are not Resume.
+- **Resume** is a task-area action when the Task is `needs_attention` and the last Execution is `interrupted` or `failed`. It starts a new Execution with the same Direction and follows the new event stream. Since v1.13 a restart also interrupts `waiting` executions (their gated tool died with the process; the pending Decision survives and Resume re-plans/re-raises it). Resuming a user-cancelled execution is labelled a **retry** (`[retry]`), not a recovery. Missing-key and generic error states are not Resume.
 - A **Queued Direction** submitted while another Execution is running is visible in the Task and can be cancelled.
 - Stream recovery after a drop is **sequence-only** (`after=<last seq>`). The blocking `/sessions` POST is not a recovery path.
 
@@ -73,7 +73,7 @@ The UI may summarize or progressively disclose Execution, but must not invent:
 
 ### Waiting for approval (inline Decision)
 
-The only confirmation boundary in the shipped product is the gated `import_evidence` tool. When the model calls it, the Sidecar plans the bounded download, records a first-class durable Decision, and the Execution waits — the transcript shows an **approval card inline** at that point (title, bucket, prefix, files, bytes, scope, why) with **Allow**, **Allow for this task**, and **Deny**. Allow runs the audited import server-side and the same Execution continues with the result; Deny hands the model a structured refusal and it answers from what it has. The title bar reads *Waiting for approval*. Nothing the model writes in prose raises a Decision, and no second dialog exists.
+Confirmation boundaries in the shipped product are the gated `import_evidence` tool and an over-cap `survey_account` (v1.12). When the model calls it, the Sidecar plans the bounded download, records a first-class durable Decision, and the Execution waits — the transcript shows an **approval card inline** at that point (title, bucket, prefix, files, bytes, scope, why) with **Allow**, **Allow for this task**, and **Deny**. A large-scan card also projects buckets and estimated live calls (v1.13). Allow runs the audited import server-side and the same Execution continues with the result; Deny hands the model a structured refusal and it answers from what it has. The title bar reads *Waiting for approval*. Nothing the model writes in prose raises a Decision, and no second dialog exists.
 
 Approval cards project **bounds and impact** from the real plan: why confirmation is required, scan scope, and how many files/bytes would move. Absence of a count is a gap, not an invented number.
 
@@ -136,7 +136,7 @@ This does **not** mean the product has hidden autonomous worker Agents. It means
 
 An optional per-task revisit schedule may exist as a Sidecar engine. It has no product UI. The desktop app has no background daemon.
 
-The empty start is the Composer. There is no first-run wizard, no slash SKU catalog (`/checkup` `/cost` `/drift`), and no suggestion-card grid. Missing model is a banner plus Open Settings. Typing `/` is ordinary Direction text. The model discovers tools.
+The empty start is the Composer. There is no first-run wizard, no slash SKU catalog (`/checkup` `/cost` `/drift`), and no suggestion-card grid. Missing model is a banner plus Open Settings. Typing `/` is ordinary Direction text. The model discovers tools. Typing `@` completes files attached to the Task (v1.13); the model resolves the name via `list_uploaded_files`. Composer history (↑) never stores key material: entries carrying secrets are dropped, credential values masked.
 
 ## Storage-specific capability model
 
@@ -226,7 +226,8 @@ v1.10.0 is the native Agent window on a native shell. Visual language is specifi
 - Settings is a centered dialog: General · Model Providers · Cloud Providers · Skills & bridges · Safety. Safety (v1.12) holds the read-only floor statement, the **Approvals** policy control (Ask every time · Allow for this session · Always allow) with the list of gated tools, and nothing else; Skills & bridges gains **Open instructions file** (`AGENTS.md` in the data directory).
 - The transcript shows the model's own plan as one quiet checklist card (`update_plan`, v1.12) that updates in place and folds to *Plan · n/n* when done; a context compaction is one muted line *Context compacted · 48k → 9k tokens*; an approval the policy answered says so on the card. ⌘K offers **Compact context** for an idle task.
 - Every non-ideal state (empty list, no Evidence, offline, interrupted, load earlier) is designed. Copy is restrained, specific, and bilingual.
-- Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped as Actions vs Tasks. It is not a Review destination menu.
+- Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped as Actions vs Tasks, with tasks fuzzy-ranked as you type (v1.13). It is not a Review destination menu.
+- A live turn running past ~90 s says it is still running and that Steer/Stop are available (v1.13); the *Worked for …* clock is the group's wall clock throughout.
 - Perceived latency: cached task documents render instantly on switch; never flash an empty canvas while the durable document is already known.
 - First Work Result on a new install is real delegated work, not a demo or a wizard checkup.
 

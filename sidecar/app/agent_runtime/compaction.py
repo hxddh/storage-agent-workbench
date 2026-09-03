@@ -76,10 +76,19 @@ def last_input_tokens(conn: sqlite3.Connection, task_id: str) -> int | None:
 def should_compact(conn: sqlite3.Connection, task_id: str, creds: dict[str, Any] | None) -> bool:
     if not creds:
         return False
+    window = model_budget.context_window(creds.get("model"), creds.get("context_window"))
     tokens = last_input_tokens(conn, task_id)
     if tokens is None:
-        return False
-    window = model_budget.context_window(creds.get("model"), creds.get("context_window"))
+        # v1.13 — endpoints that never report usage (many OpenAI-compatible
+        # gateways) left auto-compaction permanently silent. Fall back to a
+        # character estimate over the replayable thread; a false positive
+        # costs one bounded summary, a false negative costs a cut turn.
+        try:
+            msgs = sessions_repo.list_messages(conn, task_id, limit=_MAX_MESSAGES)
+        except Exception:  # noqa: BLE001 — fall back to not compacting
+            return False
+        chars = sum(len(str(m.get("content") or "")) for m in msgs)
+        tokens = estimate_tokens("x" * chars)
     return tokens >= int(TRIGGER_RATIO * window)
 
 
@@ -160,7 +169,12 @@ COMPACT_STEP = generate_summary
 
 
 def estimate_tokens(text: str) -> int:
-    return max(1, len(text) // 4)
+    # v1.13 — CJK-weighted heuristic: CJK characters carry ~1 token each
+    # while Latin text averages ~1 token per 4 chars. The old len//4
+    # underestimated Chinese threads 4-8x, making after_tokens optimistic.
+    cjk = sum(1 for ch in text if ("\u4e00" <= ch <= "\u9fff" or "\u3040" <= ch <= "\u30ff"
+                                  or "\uac00" <= ch <= "\ud7af"))
+    return max(1, cjk + (len(text) - cjk) // 4)
 
 
 def compact(conn: sqlite3.Connection, task_id: str, creds: dict[str, Any],

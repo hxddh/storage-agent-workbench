@@ -176,6 +176,9 @@ export function AgentTaskImplementation({
       offline={offline}
       onOpenSettings={onOpenSettings}
       settingsOpen={settingsOpen}
+      mentionables={(detail?.attached_files ?? [])
+        .filter((f) => f.source_filename)
+        .map((f) => ({ id: f.id, filename: f.source_filename as string }))}
     />
   );
 

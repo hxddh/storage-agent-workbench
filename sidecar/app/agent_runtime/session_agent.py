@@ -89,6 +89,21 @@ _NO_PARALLEL_ENDPOINTS: set[str] = set()
 # two capability memories above: ask once, remember a refusal for the process,
 # never let a cost optimization cost a turn.
 _NO_CACHE_RETENTION_ENDPOINTS: set[str] = set()
+def forget_endpoint_capabilities(base_url: str | None, model: str | None) -> None:
+    """Drop remembered capability refusals for one endpoint (v1.13).
+
+    Called when `POST /model-providers/{id}/test` succeeds: a proxy upgrade
+    that fixed usage/parallel/cache support must not wait for a Sidecar
+    restart to be retried. Best-effort; never raises."""
+    try:
+        key = f"{base_url or 'openai'}|{model or ''}"
+        _NO_USAGE_ENDPOINTS.discard(key)
+        _NO_PARALLEL_ENDPOINTS.discard(key)
+        _NO_CACHE_RETENTION_ENDPOINTS.discard(key)
+    except Exception:  # noqa: BLE001 — bookkeeping must never fail a request
+        pass
+
+
 # What we ask for when the endpoint accepts it. "24h" is OpenAI's extended
 # retention; the default (5-10 minutes) expires between a user's questions,
 # which is exactly the gap that matters here — the fixed prefix is identical

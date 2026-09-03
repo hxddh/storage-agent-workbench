@@ -17,7 +17,7 @@ import type { TaskEvent } from "../api";
 
 const api = vi.hoisted(() => ({
   getTaskExecution: vi.fn(),
-  listTaskEvents: vi.fn(),
+  listExecutionEventsPage: vi.fn(),
   getSession: vi.fn(),
   getSessionCall: vi.fn(),
   followExecutionEvents: vi.fn(),
@@ -66,7 +66,7 @@ beforeEach(() => {
     kind: "direction", status: "completed", error: null, resumed_from: null, steer_count: 0, work_result_id: "wr1",
     created_at: at(2), started_at: at(2), finished_at: at(18),
   });
-  api.listTaskEvents.mockResolvedValue({ task_id: "t1", events: log(), last_seq: 19 });
+  api.listExecutionEventsPage.mockResolvedValue({ task_id: "t1", execution_id: "exec-1", events: log(), last_seq: 19 });
   api.getSession.mockResolvedValue({
     id: "t1", title: "Survey", goal: null, provider_id: null, primary_bucket: null, status: "active",
     created_at: at(0), updated_at: at(18), runs: [], summary: null,
@@ -122,7 +122,7 @@ describe("ExecutionDetail", () => {
     render(createElement(ExecutionDetail, { taskId: "t1", executionId: "exec-1", onBack: () => undefined }), { wrapper });
     await waitFor(() => expect(screen.getByTestId("execution-status").textContent).toContain("complete"));
     expect(api.getTaskExecution).toHaveBeenCalledWith("t1", "exec-1");
-    expect(api.listTaskEvents).toHaveBeenCalledWith("t1", { after: 0, limit: 1000 });
+    expect(api.listExecutionEventsPage).toHaveBeenCalledWith("t1", "exec-1", { after: 0, limit: 1000 });
     expect(api.followExecutionEvents).not.toHaveBeenCalled();
     // The document's own title; the Markdown answer below renders its own h1.
     expect(screen.getAllByRole("heading", { level: 1 })[0].textContent).toBe("Survey the acme account and check bucket policies.");
@@ -153,7 +153,7 @@ describe("ExecutionDetail", () => {
       id: "exec-1", task_id: "t1", turn_id: null, direction: "Survey", kind: "direction", status: "running",
       error: null, resumed_from: null, steer_count: 0, work_result_id: null, created_at: at(2), started_at: at(2), finished_at: null,
     });
-    api.listTaskEvents.mockResolvedValueOnce({ task_id: "t1", events: log().slice(0, 9), last_seq: 9 });
+    api.listExecutionEventsPage.mockResolvedValueOnce({ task_id: "t1", execution_id: "exec-1", events: log().slice(0, 9), last_seq: 9 });
     api.followExecutionEvents.mockImplementation(async (_t: string, _e: string, on: import("../api").LiveEventHandlers) => {
       on.onTool({ id: "c1", tool: "survey_account", target: "acme", result: "3 buckets", ok: true, status: "completed" });
       on.onMessageCompleted?.({ text: "Done.", final: true });
@@ -172,6 +172,6 @@ describe("ExecutionDetail", () => {
     api.getTaskExecution.mockRejectedValueOnce(new Error("execution not found"));
     render(createElement(ExecutionDetail, { taskId: "t1", executionId: "nope", onBack: () => undefined }), { wrapper });
     await waitFor(() => expect(screen.getByText(/execution not found/)).toBeTruthy());
-    expect(api.listTaskEvents).not.toHaveBeenCalled();
+    expect(api.listExecutionEventsPage).not.toHaveBeenCalled();
   });
 });

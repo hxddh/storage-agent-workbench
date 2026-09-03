@@ -120,6 +120,7 @@ export function TaskComposerHost({
   offline,
   onOpenSettings,
   settingsOpen,
+  mentionables,
 }: {
   composer: TaskComposerState;
   actions: ComposerActions;
@@ -128,6 +129,8 @@ export function TaskComposerHost({
   offline: boolean;
   onOpenSettings: () => void;
   settingsOpen: boolean;
+  /** v1.13 — `@` completion source, forwarded to the Composer. */
+  mentionables?: { id: string; filename: string }[];
 }) {
   // Settings edits providers; when it closes, the model chip re-reads the list.
   const [modelRefreshKey, setModelRefreshKey] = useState(0);
@@ -150,6 +153,7 @@ export function TaskComposerHost({
       onSteer={actions.steer}
       onOpenSettings={onOpenSettings}
       modelRefreshKey={modelRefreshKey}
+      mentionables={mentionables}
     />
   );
 }

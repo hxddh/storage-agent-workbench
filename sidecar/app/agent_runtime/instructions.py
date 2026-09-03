@@ -16,6 +16,8 @@ API payload.
 from __future__ import annotations
 
 import os
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +27,13 @@ FILE_NAME = "AGENTS.md"
 ENV_OVERRIDE = "STORAGE_AGENT_INSTRUCTIONS"
 MAX_CHARS = 8000
 _TRUNCATED_MARKER = "\n\n[instructions truncated at 8000 characters]"
+
+# v1.13 — the file is read on every prompt build (per turn); cache by mtime
+# for 5 s so a burst of turns costs one read. A mid-save half-write only ever
+# affects one turn — the next turn re-reads.
+_CACHE_TTL_S = 5.0
+_cache: dict[str, Any] = {"mtime": None, "size": None, "at": 0.0, "result": None}
+_cache_lock = threading.Lock()
 
 
 def path() -> Path:
@@ -39,10 +48,22 @@ def load() -> dict[str, Any]:
     """``{loaded, path, chars, truncated, error, text}``. Missing file → not
     loaded, no error. Unreadable → not loaded, error. Never raises."""
     p = path()
+    try:
+        st = p.stat()
+        sig = (str(p), st.st_mtime_ns, st.st_size)
+    except OSError:
+        sig = (str(p), None)
+    with _cache_lock:
+        if (_cache["result"] is not None and _cache["mtime"] == sig
+                and time.monotonic() - _cache["at"] < _CACHE_TTL_S):
+            cached = dict(_cache["result"])
+            cached["path"] = str(p)
+            return cached
     out: dict[str, Any] = {"loaded": False, "path": str(p), "chars": 0,
                            "truncated": False, "error": None, "text": ""}
     try:
         if not p.is_file():
+            _store_cache(sig, out)
             return out
         raw = p.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:  # noqa: PERF203 — one read, one bounded error
@@ -50,12 +71,25 @@ def load() -> dict[str, Any]:
         return out
     text = redact_text(raw.replace("\r\n", "\n")).strip()
     if not text:
+        _store_cache(sig, out)
         return out
     if len(text) > MAX_CHARS:
         text = text[:MAX_CHARS].rstrip() + _TRUNCATED_MARKER
         out["truncated"] = True
     out.update({"loaded": True, "chars": len(text), "text": text})
+    _store_cache(sig, out)
     return out
+
+
+def _store_cache(sig: Any, out: dict[str, Any]) -> None:
+    """Remember a load result keyed by file identity (best-effort)."""
+    try:
+        with _cache_lock:
+            _cache["mtime"] = sig
+            _cache["at"] = time.monotonic()
+            _cache["result"] = dict(out)
+    except Exception:  # noqa: BLE001 — caching never breaks loading
+        pass
 
 
 def status() -> dict[str, Any]:

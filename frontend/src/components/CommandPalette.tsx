@@ -10,6 +10,30 @@ import { Icon, type IconName } from "./icons";
 
 type Cmd = { id: string; label: string; hint?: string; icon: IconName; run: () => void; group: "action" | "task" };
 
+/** v1.13 — subsequence fuzzy score (higher is better, -1 is no match).
+ * Contiguous runs and prefix matches score above scattered letters, so
+ * `srvy` still finds `account survey` but `survey account` ranks first. */
+export function fuzzyScore(query: string, label: string): number {
+  const q = query.toLowerCase();
+  const s = label.toLowerCase();
+  if (!q) return 0;
+  let qi = 0;
+  let score = 0;
+  let run = 0;
+  for (let si = 0; si < s.length && qi < q.length; si++) {
+    if (s[si] === q[qi]) {
+      qi++;
+      run++;
+      score += 2 + run; // contiguous run bonus grows quadratically-ish
+      if (si === qi - 1) score += 4; // prefix alignment
+    } else {
+      run = 0;
+    }
+  }
+  if (qi < q.length) return -1;
+  return score - s.length * 0.01; // shorter labels win ties
+}
+
 /** ⌘K: switch tasks or run a real runtime action. An overlay, not a destination. */
 export function CommandPalette({
   open,
@@ -114,8 +138,17 @@ export function CommandPalette({
       group: "task",
     }));
     const all = [...actions, ...taskItems];
-    const query = q.trim().toLowerCase();
-    return query ? all.filter((command) => command.label.toLowerCase().includes(query)) : all;
+    const query = q.trim();
+    if (!query) return all;
+    // Tasks rank by fuzzy score; actions keep substring matching (few, fixed).
+    const ranked = taskItems
+      .map((command) => ({ command, score: fuzzyScore(query, command.label) }))
+      .filter((row) => row.score >= 0)
+      .sort((a, b) => b.score - a.score)
+      .map((row) => row.command);
+    const ql = query.toLowerCase();
+    const matchedActions = actions.filter((command) => command.label.toLowerCase().includes(ql));
+    return [...matchedActions, ...ranked];
   }, [q, tasks, onNew, onOpenSettings, onSelectTask, onClose, t, copy, theme, toggle, lang, setLang]);
 
   useEffect(() => {

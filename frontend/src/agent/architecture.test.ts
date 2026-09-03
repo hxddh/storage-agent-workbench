@@ -856,7 +856,9 @@ describe("v1.12.0 one protocol and the frontend split", () => {
     expect(detail).not.toContain("getRun");
     expect(detail).not.toContain("getReport");
     expect(detail).toContain("getTaskExecution(");
-    expect(detail).toContain("listTaskEvents(");
+    // v1.13 reads one execution's pages (events-page), not the whole task log.
+    expect(detail).toContain("listExecutionEventsPage(");
+    expect(detail).not.toContain("listTaskEvents(");
     expect(detail).toContain("dispatchDurableEvent(");
     expect(detail).toContain("followExecutionEvents(");
     expect(detail).toContain("getSession(");
@@ -890,5 +892,59 @@ describe("v1.12.0 one protocol and the frontend split", () => {
     expect(group).not.toMatch(/reduce\([^)]*duration_ms/);
     expect(runtime).toContain("started_at: p.started_at ?? seenAt");
     expect(runtime).toContain("finished_at: p.finished_at ?? seenAt");
+  });
+});
+
+/**
+ * v1.13.0 — honesty and completeness: `@` file mentions with a redacted
+ * history, fuzzy palette search, the large-scan approval projection,
+ * per-execution detail reads, a long-run hint, and a bounded document cache.
+ */
+describe("v1.13.0 honesty and completeness", () => {
+  it("completes `@` files from the Task and never stores secrets in history", () => {
+    const composer = source("../components/Composer.tsx");
+    const host = source("../components/TaskComposerHost.tsx");
+    const root = source("../components/AgentTaskImplementation.tsx");
+    expect(composer).toContain('data-testid="composer-mentions"');
+    expect(composer).toContain("export function cleanHistory(");
+    expect(composer).toContain("mentionables");
+    expect(composer).toContain("completeMention(");
+    expect(host).toContain("mentionables={mentionables}");
+    expect(root).toContain("detail?.attached_files");
+    // History entries carrying key material are dropped, values masked.
+    expect(composer).toContain("AKIA");
+    expect(composer).toContain("***REDACTED***");
+  });
+
+  it("ranks palette tasks by fuzzy score, not substring", () => {
+    const palette = source("../components/CommandPalette.tsx");
+    expect(palette).toContain("export function fuzzyScore(");
+    expect(palette).toContain("fuzzyScore(query, command.label)");
+  });
+
+  it("projects large-scan bounds on the approval card", () => {
+    const card = source("../components/ApprovalCard.tsx");
+    const api = source("../api/runtime.ts");
+    const i18n = source("../i18n.tsx");
+    expect(card).toContain('data-testid="approval-scan-calls"');
+    expect(card).toContain("estimated_calls");
+    expect(api).toContain("estimated_calls?: number | null");
+    expect(api).toContain("buckets?: number | null");
+    expect(i18n).toContain('"approval.estimatedCalls"');
+    expect(i18n).toContain('"turn.longRunning"');
+  });
+
+  it("reads Execution detail per execution and hints at long runs", () => {
+    const detail = source("../components/ExecutionDetailImplementation.tsx");
+    const api = source("../api/runtime.ts");
+    const turn = source("../components/TranscriptTurn.tsx");
+    const doc = source("../hooks/useSessionDocument.ts");
+    expect(detail).toContain("listExecutionEventsPage(");
+    expect(detail).toContain("readExecutionLog(");
+    expect(detail).not.toContain("readTaskLog(");
+    expect(api).toContain("export const listExecutionEventsPage");
+    expect(api).toContain("/executions/${executionId}/events-page");
+    expect(turn).toContain('data-testid="turn-long-running"');
+    expect(doc).toContain("slice(-200)");
   });
 });

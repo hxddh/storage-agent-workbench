@@ -300,6 +300,9 @@ const en: Dict = {
   "approval.why": "Why",
   "approval.warnings": "Warnings",
   "approval.fileCount": "{n} files",
+  "turn.longRunning": "Still running — you can steer or stop it at any time.",
+  "approval.scanCalls": "Scan",
+  "approval.estimatedCalls": "{buckets} buckets · ~{calls} live calls",
   "approval.waits": "The Agent waits here until you decide.",
   "approval.sending": "Sending…",
   // v1.12 transcript
@@ -612,6 +615,9 @@ const zh: Dict = {
   "approval.why": "原因",
   "approval.warnings": "警告",
   "approval.fileCount": "{n} 个文件",
+  "turn.longRunning": "仍在运行——随时可以补充方向或停止。",
+  "approval.scanCalls": "扫描量",
+  "approval.estimatedCalls": "{buckets} 个桶 · 约 {calls} 次实时调用",
   "approval.waits": "Agent 在这里等待你的决定。",
   "approval.sending": "正在发送…",
   // v1.12 transcript

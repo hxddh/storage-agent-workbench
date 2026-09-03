@@ -179,7 +179,10 @@ def ordered_snapshot(execution_id: str, cursor: int) -> tuple[list[tuple[str, ob
             parts.append(("mark", seq))
         if end_logical > pos:
             parts.append(("text", entry.delta_text[pos - start_logical:]))
-        # Markers already consumed are not needed again by anyone reading past them.
+        # Markers are intentionally NOT pruned here: they are shared across
+        # followers with different cursors, so deleting what one follower
+        # consumed would corrupt a laggard's ordering. They are bounded by
+        # _MAX_MARKERS (oldest falls off the head) instead.
         return parts, max(cursor, end_logical), dropped
 
 

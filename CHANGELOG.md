@@ -6,6 +6,28 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-09-04
+
+_Honesty and completeness — every known gap from the v1.12 review closes in one version. No migration (head stays **030**)._ See `docs/releases/1.13.0.md`.
+
+### Fixed
+
+- **MCP bridge executes** — `POST /mcp/tools/call` runs the stateless allowlist through the S3 layer (scope/input clamps, `run_tool`-recorded); session-bound tools are out by design; `GET /mcp/client/status` reports the consuming side as disabled-by-design with the threat-model pointer.
+- **OTel export carries events + spans** — fixed the wrong-column query (it returned `events: []`), added deterministic `trace_id`/`span_id`/W3C `traceparent` span projection (no migration), and made the failure path log.
+- **Restart recovery covers `waiting`** — a dead gated tool can no longer settle as completed without running; the pending Decision survives and Resume re-plans. Unknown execution `kind` is 422; cancelled resumes are `kind=retry`.
+- **Composer history redacted** — key-material entries dropped, credential values masked, pre-v1.13 entries migration-cleaned on read.
+- **Redaction covers plural secret keys** (`credentials`, `tokens`, `secrets`, …).
+- **Optimization tools emit full activity rows** — no more empty shells in the event log.
+
+### Added
+
+- **`@` file mentions** in the Composer (Task files; model resolves via `list_uploaded_files`); **fuzzy palette search**; **large-scan approval projection** (buckets + estimated calls); **90 s long-run hint**; **per-execution event pages** (`GET .../executions/{eid}/events-page`); **200-message document-cache bound**.
+- **Golden evals** — `sidecar/tests/test_v113_eval_golden.py` + `docs/evals.md` pin grounded/redacted/gap-honest/no-mutation behaviour.
+- **Bounded fanout, named** — survey `_PROBE_WORKERS = 4` pinned with `fanout_workers` in the result and a single-row merge test.
+- **Compaction without usage** — character-estimate trigger fallback, CJK-weighted estimates, chained summaries, 5 s `AGENTS.md` cache; capability memories clear on a green provider test.
+- **Wirable updater** — `TAURI_UPDATER_PUBKEY`/`TAURI_UPDATER_ENDPOINTS` (both-or-neither) via `scripts/stamp-version.py`; packaging smoke required on `release/*`.
+- Contracts: `tests/test_v113_honesty.py`, `test_v113_mcp_bridge.py`, `test_v113_native_fanout.py`; frontend `architecture.test.ts` v1.13 block, `components/v113.test.tsx`; documentation contract at v1.13.0.
+
 ## [1.12.0] - 2026-09-03
 
 _Native all the way through — one protocol, a push-driven event stream, the model's own plan, an approval policy, context compaction, `AGENTS.md`, Execution detail from the durable log, and the frontend split by responsibility. Migration **030** (`task_context_versions.summary_sanitized` / `summary_through_seq`)._

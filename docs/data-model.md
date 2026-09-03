@@ -306,8 +306,13 @@ Execution is a durable object with a real lifecycle:
 - `task_executions` — one unit of delegated work. Lifecycle: `queued` →
   `running` → `completed` | `waiting` (a confirmation-gated Decision is
   pending) | `failed` | `cancelled` | `interrupted` (stamped by restart
-  recovery; resumable). `turn_id` carries client idempotency durably
-  (a unique index arbitrates duplicate submits).
+  recovery — including `waiting`, v1.13, whose gated tool died with the
+  process; resumable). `turn_id` carries client idempotency durably
+  (a unique index arbitrates duplicate submits). `kind` is `direction` |
+  `verify` | `revisit` (submit path; anything else is 422, v1.13) |
+  `resume` | `retry` (a resumed user-cancelled execution, v1.13) |
+  `steer_followup` (a late steer carried forward). No migration in v1.13:
+  head stays **030**.
 - `execution_events` — append-only structured progress keyed by sequence
   number: status transitions, tool started/completed, steer received/applied,
   decision opened/resolved, work result recorded, context updated. Sanitized,

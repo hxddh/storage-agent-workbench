@@ -10,19 +10,52 @@ const formatGiB = (n: number) => `${(n / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
 const HISTORY_KEY = "saw.composerHistory";
 const HISTORY_LIMIT = 20;
 
+// v1.13 — history lives in plaintext localStorage, so secret-shaped content
+// must never be stored: entries carrying key material are dropped entirely,
+// credential-bearing values are masked. Mirrors the Sidecar redactor's shapes.
+const SECRET_ENTRY = [
+  /\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA|ANVA)[A-Z0-9]{16}\b/,
+  /\bsk-[A-Za-z0-9][A-Za-z0-9_\-]{5,}/,
+  /\bxox[baprs]-[A-Za-z0-9-]{10,}/,
+  /\bgh[pousr]_[A-Za-z0-9]{20,}/,
+  /-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----/,
+];
+const SECRET_VALUES: [RegExp, string][] = [
+  [/([?&][A-Za-z0-9_.-]*(?:password|passwd|pwd|client_secret|secret|access_token|refresh_token|credential|auth|session|token|api_key)=)([^&\s]+)/gi, "$1***REDACTED***"],
+  [/\b(api[_-]?key|token)(\s*[:=]\s*)(['"]?)[A-Za-z0-9/+=_.\-]{4,}/gi, "$1$2$3***REDACTED***"],
+  [/\b(Bearer\s+)[A-Za-z0-9._\-/+=]+/gi, "$1***REDACTED***"],
+];
+
+export function cleanHistory(entry: string): string | null {
+  if (SECRET_ENTRY.some((re) => re.test(entry))) return null;
+  let out = entry;
+  for (const [re, rep] of SECRET_VALUES) out = out.replace(re, rep);
+  return out;
+}
+
 function loadHistory(): string[] {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
+    if (!Array.isArray(parsed)) return [];
+    // Migration-clean pre-v1.13 entries on read.
+    const cleaned: string[] = [];
+    for (const x of parsed) {
+      if (typeof x !== "string") continue;
+      const c = cleanHistory(x);
+      if (c && !cleaned.includes(c)) cleaned.push(c);
+    }
+    return cleaned.slice(0, HISTORY_LIMIT);
   } catch { return []; }
 }
 function pushHistory(entry: string) {
   const trimmed = entry.trim();
   if (!trimmed) return;
+  const cleaned = cleanHistory(trimmed);
+  if (!cleaned) return;
   const hist = loadHistory();
-  const deduped = [trimmed, ...hist.filter((h) => h !== trimmed)].slice(0, HISTORY_LIMIT);
+  const deduped = [cleaned, ...hist.filter((h) => h !== cleaned)].slice(0, HISTORY_LIMIT);
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(deduped)); } catch {}
 }
 
@@ -82,6 +115,7 @@ export function Composer({
   onSteer,
   onOpenSettings,
   modelRefreshKey = 0,
+  mentionables = [],
 }: {
   text: string;
   setText: (v: string) => void;
@@ -99,12 +133,38 @@ export function Composer({
   onSteer: () => void;
   onOpenSettings?: () => void;
   modelRefreshKey?: number;
+  /** v1.13 — `@` completion source: files attached to this Task. Selecting one
+   * inserts `@filename`; the model resolves it via list_uploaded_files. */
+  mentionables?: { id: string; filename: string }[];
 }) {
   const { t } = useI18n();
   const copy = useComposerCopy();
   const [sizeError, setSizeError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const histIndex = useRef<number | null>(null);
+  const [mention, setMention] = useState<{ query: string; index: number } | null>(null);
+
+  const updateMention = (value: string, caret: number | null) => {
+    if (!mentionables.length || caret == null) { setMention(null); return; }
+    const before = value.slice(0, caret);
+    const m = before.match(/@([^\s@]{0,64})$/);
+    if (!m) { setMention(null); return; }
+    setMention((prev) => ({ query: m[1], index: prev && prev.query === m[1] ? prev.index : 0 }));
+  };
+  const mentionMatches = mention
+    ? mentionables.filter((f) => f.filename.toLowerCase().includes(mention.query.toLowerCase())).slice(0, 6)
+    : [];
+  const completeMention = (filename: string) => {
+    const ta = taRef.current;
+    const caret = ta?.selectionStart ?? text.length;
+    const before = text.slice(0, caret).replace(/@[^\s@]*$/, `@${filename} `);
+    setText(before + text.slice(caret));
+    setMention(null);
+    histIndex.current = null;
+    requestAnimationFrame(() => {
+      if (ta) { ta.focus(); ta.selectionStart = ta.selectionEnd = before.length; }
+    });
+  };
 
   // A file dropped anywhere on the Composer takes the same attach path as the
   // `+` button: one file, the same size ceiling, the same accept list.
@@ -197,14 +257,52 @@ export function Composer({
         }}
       />
 
+      {mention && mentionMatches.length > 0 ? (
+        <div className="native-mention-list" data-testid="composer-mentions" role="listbox">
+          {mentionMatches.map((f, i) => (
+            <button
+              key={f.id}
+              type="button"
+              role="option"
+              aria-selected={i === mention.index}
+              data-active={i === mention.index ? "true" : "false"}
+              className="native-mention-item"
+              onMouseDown={(e) => { e.preventDefault(); completeMention(f.filename); }}
+            >
+              <Icon name="file" size={12} />
+              <span>{f.filename}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       <textarea
         ref={taRef}
         data-focus-ring="container"
         rows={1}
         value={text}
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => {
+          setText(event.target.value);
+          histIndex.current = null;
+          updateMention(event.target.value, event.target.selectionStart);
+        }}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
+          // v1.13 `@` file completion takes precedence while open.
+          if (mention && mentionMatches.length > 0) {
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              const delta = event.key === "ArrowDown" ? 1 : -1;
+              setMention({ query: mention.query, index: (mention.index + delta + mentionMatches.length) % mentionMatches.length });
+              return;
+            }
+            if (event.key === "Enter" || event.key === "Tab") {
+              event.preventDefault();
+              completeMention(mentionMatches[mention.index]?.filename ?? mentionMatches[0].filename);
+              return;
+            }
+            if (event.key === "Escape") { event.preventDefault(); setMention(null); return; }
+          } else if (mention && event.key === "Escape") { setMention(null); return; }
           // Esc in an EMPTY Composer stops the running execution — the same
           // Stop as the button and ⌘. — and does nothing at all otherwise:
           // typed text is never cleared by a key the hand reaches for reflexively.

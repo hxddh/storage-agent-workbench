@@ -246,14 +246,17 @@ observes:
 9. reload the persisted task document.
 
 UI disconnect, task switching, and reload never interrupt an execution; a
-Sidecar restart stamps in-flight executions `interrupted`, which the Task
-surfaces with an explicit Resume action. Do not bypass this lifecycle with
-another submit/steer path. The `/sessions` message endpoints remain
+Sidecar restart stamps in-flight executions `interrupted` — including
+`waiting` ones (v1.13: their gated tool died with the process, so no worker
+remains to continue it; the pending Decision survives and Resume re-plans and
+re-raises it) — which the Task surfaces with an explicit Resume action
+(`retry` when the prior execution was user-cancelled). Do not bypass this
+lifecycle with another submit/steer path. The `/sessions` message endpoints remain
 compatibility shims and are not the frontend recovery means.
 
 ### 5.3 Durable task document
 
-Task document loading is paged. Recent durable content is loaded first and earlier content can be prepended without losing current Execution state or viewport ownership.
+Task document loading is paged. Recent durable content is loaded first and earlier content can be prepended without losing current Execution state or viewport ownership. The browser document cache keeps at most 24 tasks and truncates cached transcripts to the latest 200 messages (v1.13) — earlier pages re-fetch from `message_total`, so the bound costs a re-fetch, never content.
 
 Long-task scalability is therefore a persistence/paging concern, not a reason to collapse the product back into message-history navigation.
 
@@ -324,6 +327,31 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
   status only.
 - **Tool timing.** Tool records and `tool.*` events carry `started_at` /
   `finished_at` / `duration_ms`; *Worked for …* is the group's wall clock.
+
+### 6.x Honesty and completeness (v1.13.0)
+
+- **Real MCP dispatch.** `routers/mcp.py` executes the stateless allowlist
+  through the S3 layer with the same scope/redaction/bounds, recorded via
+  `tool_runner` (sanitized `tool_calls` + audit rows). Session-bound tools
+  (surveys, profiles, uploads) are not exposed — the bridge is stateless by
+  design. `GET /mcp/client/status` reports the consuming-client non-goal.
+- **OTel spans.** `routers/observability.py` projects durable events as
+  OTel-inspired spans (deterministic `trace_id`/`span_id`, W3C
+  `traceparent`), no migration; the events column bug (wrong column name
+  swallowed by a bare except) is fixed and the failure path logs.
+- **Per-execution event pages.** `GET
+  /agent-tasks/{id}/executions/{eid}/events-page` serves one execution's JSON
+  pages; Execution detail reads here instead of scanning the whole task log.
+- **Strict kinds.** Unknown execution `kind` is 422, never a silent downgrade.
+- **Compaction without usage.** The trigger falls back to a character
+  estimate when the endpoint reports no usage; token estimates are
+  CJK-weighted; each step folds the prior summary (chained); `AGENTS.md`
+  reads are mtime-cached for 5 s.
+- **Capability memories clear** on a green `POST /model-providers/{id}/test`.
+- **Bounded fanout, named.** The account survey's `_PROBE_WORKERS = 4`
+  thread pool is the product's single-agent fanout (shards in parallel,
+  merged as one `survey_account` tool row, `fanout_workers` in the result).
+  Pinned by `test_v113_native_fanout.py`.
 
 ### 6.x Title step and reasoning effort (v1.10.0)
 
@@ -518,6 +546,9 @@ The following concepts must not enter the product until a real runtime + safety 
 - generic terminal/browser/computer control;
 - hidden worker processes represented as autonomous Agents;
 - destructive storage mutation;
-- page-per-persistence-table navigation.
+- page-per-persistence-table navigation;
+- realtime collaboration, multi-user SaaS/RBAC, or Postgres/Redis for the
+  local desktop product (v1.13: local-first SQLite/DuckDB + single-user vault
+  is the design, not a missing feature — see also §9 gated extensions).
 
 The goal is a trustworthy delegated-work loop: the user sets Direction, watches real Execution, can Steer/Stop, crosses only real Decisions, and receives reviewable durable results.

@@ -37,14 +37,14 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v1.12 documentation contract", () => {
+describe("v1.13 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
       expect(text, `${path} must name Agent Task`).toMatch(/Agent Task/);
     }
-    expect(readRepo("docs/README.md")).toContain("v1.12.0");
-    expect(readRepo("CLAUDE.md")).toContain("v1.12.0");
+    expect(readRepo("docs/README.md")).toContain("v1.13.0");
+    expect(readRepo("CLAUDE.md")).toContain("v1.13.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
     expect(readRepo("docs/design-tokens.md")).toContain("--duration-fast");
     expect(readRepo("docs/design-tokens.md")).toContain("prefers-reduced-motion");
@@ -123,6 +123,16 @@ describe("v1.12 documentation contract", () => {
     expect(readRepo("docs/architecture.md")).toContain("agent-artifacts-panel");
     expect(readRepo("docs/tools.md")).toContain("simulate_storage_cost");
     expect(readRepo("docs/roadmap.md")).not.toMatch(/Add ORC support/);
+    expect(readRepo("docs/releases/1.13.0.md")).toContain("Honesty and completeness");
+    expect(readRepo("docs/api.md")).toContain("events-page");
+    expect(readRepo("docs/api.md")).toContain("traceparent");
+    expect(readRepo("docs/api.md")).toContain("unknown");
+    expect(readRepo("docs/security.md")).toContain("MCP-client threat model");
+    expect(readRepo("docs/tools.md")).toContain("Bounds are not gates");
+    expect(readRepo("docs/evals.md")).toContain("test_v113_eval_golden");
+    expect(readRepo("docs/product.md")).toContain("v1.13");
+    expect(readRepo("docs/architecture.md")).toContain("v1.13.0");
+    expect(readRepo("docs/data-model.md")).toContain("retry");
   });
 
   it("marks historical v0.92 material as superseded rather than normative", () => {

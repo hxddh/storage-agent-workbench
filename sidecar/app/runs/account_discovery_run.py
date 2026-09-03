@@ -40,6 +40,12 @@ HARD_MAX_BUCKETS = 500
 # the loop below). Kept deliberately small: this is one user's desktop app
 # talking to one account, and a wide fan-out invites provider-side throttling
 # (SlowDown), which would make the survey slower AND noisier, not faster.
+#
+# v1.13 — this IS the product's single-agent fanout (no sub-agent fleet): one
+# survey_account tool row fans its bucket shards across these workers, sharing
+# the turn's SteerQueue/budget, and merges as that one row. The bound is
+# pinned by test_v113_native_fanout.py; raise it only with provider-throttle
+# evidence, never to match a model's whim.
 _PROBE_WORKERS = 4
 _CONFIGURED = "available"
 _NOT_CONFIGURED = "not_configured"

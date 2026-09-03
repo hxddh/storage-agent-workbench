@@ -1,6 +1,6 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.12.0** (`v1.12.0`).
+> **Current architecture baseline: Storage Agent v1.13.0** (`v1.13.0`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
@@ -30,7 +30,13 @@
 > context compaction (`context.compacted`, ⌘K Compact context), `AGENTS.md`
 > instructions, Execution detail from the durable log, wall-clock *Worked
 > for …*, and the frontend split into document / runner / api modules.
-> Migration head is **030**.
+> Migration head is **030** (v1.13.0 adds no migration).
+> **v1.13.0 is honesty and completeness.** The MCP bridge executes instead of
+echoing, the OTel export carries real spans, restart recovery covers waiting
+executions, unknown execution kinds are rejected, compaction chains and
+triggers without reported usage, the Composer completes `@` files with a
+redacted history, the palette fuzzy-ranks, approvals project scan bounds,
+golden evals pin quality, and the updater is wirable from the environment.
 
 This directory documents the currently shipped Storage Agent architecture and operating contracts. It is deliberately organized so implementation agents and contributors do not reconstruct older product shells from historical terminology that still exists in persistence, APIs, release notes, or git history.
 

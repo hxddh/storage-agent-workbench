@@ -3,10 +3,16 @@
 In-process workers do not survive a restart. Before this runtime existed, that
 truth was silent: the turn registry was memory, so a restart reported "nothing
 running" and the work simply vanished. Now the executions are rows, and a
-restart stamps every one a prior process left ``queued``/``running`` as
-``interrupted`` — an explicit durable state with an explicit affordance
-(resume). ``waiting`` executions are NOT touched: they are waiting on the
-USER's decision, which a restart does not invalidate.
+restart stamps every one a prior process left ``queued``/``running``/``waiting``
+as ``interrupted`` — an explicit durable state with an explicit affordance
+(resume).
+
+``waiting`` is included deliberately (v1.13): its tool thread blocked on an
+in-process approval Event that died with the process, so no worker remains to
+continue the gated action on resolve. Leaving it ``waiting`` let a later Allow
+settle the execution as completed WITHOUT the import/scan ever running. The
+pending Decision row itself is untouched (the user's boundary stands); Resume
+starts a new execution that re-plans and re-raises it.
 """
 
 from __future__ import annotations
@@ -22,8 +28,8 @@ def reconcile_interrupted_executions() -> int:
     conn = connect()
     try:
         rows = conn.execute(
-            "SELECT id, task_id, status FROM task_executions WHERE status IN (?, ?)",
-            (store.EXEC_QUEUED, store.EXEC_RUNNING)).fetchall()
+            "SELECT id, task_id, status FROM task_executions WHERE status IN (?, ?, ?)",
+            (store.EXEC_QUEUED, store.EXEC_RUNNING, store.EXEC_WAITING)).fetchall()
         count = 0
         tasks: set[str] = set()
         for r in rows:

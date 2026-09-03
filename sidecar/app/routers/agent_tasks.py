@@ -166,8 +166,10 @@ def create_execution(task_id: str, body: ExecutionCreate,
         return {"execution": existing, "created": False}
     try:
         kind = (body.kind or "direction").strip().lower()
+        # v1.13 — unknown kinds are a client bug, not a direction: 422 instead
+        # of silently running an ordinary investigation for a misspelled kind.
         if kind not in ("direction", "verify", "revisit"):
-            kind = "direction"
+            raise HTTPException(status_code=422, detail=f"unknown execution kind: {body.kind!r}")
         execution = runtime.submit(conn, task_id, body.direction, body.turn_id,
                                    kind=kind)
     except AgentUnavailable as exc:
@@ -209,6 +211,27 @@ async def stream_execution_events(task_id: str, execution_id: str, after: int = 
                                       include_deltas=deltas),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.get("/{task_id}/executions/{execution_id}/events-page")
+def list_execution_events_page(task_id: str, execution_id: str, after: int = 0,
+                               limit: int = 1000,
+                               conn: sqlite3.Connection = Depends(get_conn)) -> dict[str, Any]:
+    """One execution's durable events as JSON pages (v1.13).
+
+    The Execution detail document reads its rows here instead of paging the
+    whole task log — opening detail on a long task no longer costs O(task).
+    The SSE stream (`.../events?after=`) stays the live view; sequence numbers
+    are global, so `after` continues across both."""
+    _task_or_404(conn, task_id)
+    execution = store.get_execution(conn, execution_id)
+    if execution is None or execution["task_id"] != task_id:
+        raise HTTPException(status_code=404, detail="execution not found")
+    events = store.list_events(conn, execution_id, after_seq=after,
+                               limit=max(1, min(int(limit), 1000)))
+    return {"task_id": task_id, "execution_id": execution_id,
+            "events": events,
+            "last_seq": events[-1]["seq"] if events else int(after)}
 
 
 @router.get("/{task_id}/events")
