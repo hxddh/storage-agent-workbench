@@ -27,6 +27,7 @@
   align-items: flex-end;
 }
 .turn-user-bubble {
+  min-width: 0;
   max-width: min(70%, var(--doc-measure));
   border: 1px solid var(--edge);
   border-radius: var(--radius-2xl);
@@ -629,7 +630,10 @@
 .agent-table-grid {
   width: 100%;
   border-collapse: collapse;
-  table-layout: auto;
+  /* Fixed layout: the grid is exactly the column width. Auto layout sizes
+     by intrinsic min-content, which `break-word` does not shrink — the
+     table then spills visibly and drags the task sideways. */
+  table-layout: fixed;
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
 }

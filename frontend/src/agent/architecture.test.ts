@@ -1276,8 +1276,19 @@ describe("v1.16.0 true native agent, finished", () => {
   it("renders tables whole with wrapping cells", () => {
     const css = source("./native-document.css");
     expect(css).toContain(".agent-table-grid");
+    expect(css).toContain("table-layout: fixed");
     expect(css).toContain("overflow-wrap: break-word");
     expect(css).not.toContain("overflow-wrap: anywhere");
     expect(source("../../src/index.css")).not.toContain("overflow-wrap: anywhere");
+  });
+
+  it("lets flex columns shrink past unbreakable runs", () => {
+    // min-width:auto on a flex item is its longest unbreakable run: ARNs
+    // stretched the whole column past the window instead of wrapping.
+    const root = source("../components/AgentTaskImplementation.tsx");
+    expect(root).toContain("min-w-0 flex-1 flex-col");
+    const doc = source("../components/TaskDocument.tsx");
+    expect(doc).toContain("min-w-0 flex-1 flex-col");
+    expect(doc).toContain("min-w-0 px-6 pb-4");
   });
 });

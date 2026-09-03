@@ -84,12 +84,13 @@ test.describe("Work Result layout with unbreakable storage identifiers", () => {
     expect((await measure(page)).leaks).toEqual([]);
   });
 
-  test("wide tables scroll inside their own data box", async ({ page }) => {
+  test("wide tables fit their own data box instead of overflowing it", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await openSeeded(page, seed());
     const m = await measure(page);
     expect(m.tableExists).toBe(true);
-    expect(m.tableScrolls).toBe(true);
+    // The grid is exactly the column width: fixed layout, wrapped cells.
+    expect(m.tableScrolls).toBe(false);
   });
 
   test("the same guarantees hold after task navigation folds", async ({ page }) => {
@@ -102,7 +103,8 @@ test.describe("Work Result layout with unbreakable storage identifiers", () => {
   });
 });
 
-test("a wide table scrolls inside its own container instead of the page", async ({ page }) => {
+test("a wide table wraps in the page flow instead of sliding sideways", async ({ page }) => {
+  // Tables never fold and never slide: no inner scroller at any width.
   await page.setViewportSize({ width: 1280, height: 800 });
   const { title } = seedSession(2, `scroll ${Date.now()}`, "tall");
   await boot(page);
@@ -112,11 +114,12 @@ test("a wide table scrolls inside its own container instead of the page", async 
   const box = table.locator("xpath=..");
   const style = await box.evaluate((el) => {
     const cs = getComputedStyle(el);
-    return { overflowX: cs.overflowX, mask: cs.maskImage || "none", scrollW: el.scrollWidth, clientW: el.clientWidth };
+    return { overflowX: cs.overflowX, scrollW: el.scrollWidth, clientW: el.clientWidth };
   });
-  expect(style.overflowX).toBe("auto");
-  expect(style.mask).toBe("none");
-  // The document itself never scrolls sideways.
+  expect(style.overflowX).not.toBe("auto");
+  expect(style.overflowX).not.toBe("scroll");
+  // Neither the wrapper nor the document scrolls sideways.
+  expect(style.scrollW).toBeLessThanOrEqual(style.clientW + 1);
   const scroll = page.getByTestId("task-scroll");
   const m = await scroll.evaluate((el) => ({ scrollW: el.scrollWidth, clientW: el.clientWidth }));
   expect(m.scrollW).toBeLessThanOrEqual(m.clientW + 1);

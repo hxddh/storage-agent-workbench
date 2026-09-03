@@ -253,8 +253,10 @@ export function TaskDocument({
   };
 
   return (
+    // min-w-0 on the column and footer wrappers: same flex blowout as the
+    // task root — column flex items default to min-width:auto.
     <>
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <div
           ref={scrollRef}
           data-testid="task-scroll"
@@ -375,7 +377,7 @@ export function TaskDocument({
         </div>
       </div>
 
-      <div className="relative px-6 pb-4 pt-1">
+      <div className="relative min-w-0 px-6 pb-4 pt-1">
         {!pinned ? (
           <div className="pointer-events-none absolute -top-10 left-0 right-0 z-floating flex justify-center">
             <button type="button" onClick={jumpToLatest} data-testid="jump-to-latest" className="native-chip pointer-events-auto bg-panel shadow-pop">

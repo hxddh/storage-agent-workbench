@@ -215,7 +215,10 @@ export function AgentTaskImplementation({
   );
 
   return (
-    <main aria-label={taskCopy.workspace} className="flex h-full flex-1 flex-col bg-canvas">
+    // min-w-0: a flex item defaults to min-width:auto (its longest
+    // unbreakable run), which stretched the whole column past the window
+    // on ARNs and long tokens instead of wrapping them.
+    <main aria-label={taskCopy.workspace} className="flex h-full min-w-0 flex-1 flex-col bg-canvas">
       {loadError ? (
         <div className="flex flex-1 items-center justify-center px-6 py-10">
           <div className="native-banner w-full max-w-md" data-tone="danger">
