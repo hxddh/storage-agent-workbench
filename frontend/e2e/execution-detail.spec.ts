@@ -5,15 +5,16 @@ import { seedExecutionLog, seedSession } from "./seed";
 import { waitForDurableAnswer } from "./work-result";
 
 /**
- * v1.12 — Execution detail on the durable log.
+ * v1.12 — Execution detail on the durable log (v1.13: one execution's
+ * pages).
  *
  * The Artifacts panel lists the task's durable Executions
  * (`GET /agent-tasks/{id}/executions`) and opens one as a document built
- * from its row plus the task's structured event log
- * (`GET /agent-tasks/{id}/events`): the plan, the tool rows with their
- * wall-clock, the Work Result. One call's sanitized input and output open in
- * place through `GET /sessions/{id}/activity/{call_id}`. Nothing under
- * `/runs` is ever requested.
+ * from its row plus that execution's structured event pages
+ * (`GET /agent-tasks/{id}/executions/{eid}/events-page`): the plan, the tool
+ * rows with their wall-clock, the Work Result. One call's sanitized input
+ * and output open in place through `GET /sessions/{id}/activity/{call_id}`.
+ * Nothing under `/runs` is ever requested.
  */
 
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");
@@ -86,7 +87,8 @@ test.describe("Execution detail from the durable log", () => {
     await expect(body.getByTestId("execution-result")).toContainText("ANSWER-00");
 
     expect(surface.saw(new RegExp(`GET /agent-tasks/${id}/executions/${executionId}$`))).toBe(true);
-    expect(surface.saw(new RegExp(`GET /agent-tasks/${id}/events\\?after=0`))).toBe(true);
+    expect(surface.saw(new RegExp(`GET /agent-tasks/${id}/executions/${executionId}/events-page\\?after=0`))).toBe(true);
+    expect(surface.saw(new RegExp(`GET /agent-tasks/${id}/events\\?`))).toBe(false);
     expect(runs).toEqual([]);
   });
 

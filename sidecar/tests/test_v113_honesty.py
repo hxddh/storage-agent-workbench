@@ -152,9 +152,11 @@ def test_recovery_stamps_waiting_interrupted_and_keeps_decision(client):
 
 def test_resume_of_cancelled_is_labelled_retry(client):
     # No worker is started on purpose: submit() would race the stop, so the
-    # queued row is created directly for a deterministic cancel.
+    # queued row is created directly for a deterministic cancel. Resume still
+    # goes through submit(), which requires a configured model provider.
     from app.task_runtime import runtime, store
     task = _task(client)
+    _add_model_provider(client)
     conn = db.connect()
     try:
         store.ensure_task(conn, task["id"], task["title"], task.get("goal"))
