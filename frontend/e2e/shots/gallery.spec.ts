@@ -124,7 +124,7 @@ for (const theme of THEMES) {
   test.describe(`${theme} ${lang} Agent surfaces`, () => {
     test("Delegate — fresh Agent task", async ({ page }) => {
       await openAgent(page, theme, lang);
-      const placeholder = lang === "zh" ? /问问你的存储/ : /Ask about your storage/;
+      const placeholder = lang === "zh" ? /描述要委派的存储工作/ : /Describe the storage work to delegate/;
       await expect(composer(page)).toHaveAttribute("placeholder", placeholder);
       await expect(page.getByTestId("agent-composer")).toBeVisible();
       await expect(page.getByTestId("delegate-suggestion-checkup")).toHaveCount(0);
@@ -266,7 +266,7 @@ test.describe("Agent runtime states", () => {
       await composer(page).fill("Diagnose why acme-logs rejects list operations and keep the evidence auditable.");
       await composer(page).press("Enter");
       await expect(page.getByTestId("agent-composer")).toHaveAttribute("data-agent-state", "working", { timeout: 20_000 });
-      await expect(composer(page)).toHaveAttribute("placeholder", /Steer the Agent|补充方向/);
+      await expect(composer(page)).toHaveAttribute("placeholder", /Steer this execution|补充这次执行的方向/);
       await expect(navigation(page).locator('[data-testid="task-row"][data-state="working"]').first()).toBeVisible({ timeout: 20_000 });
       await shoot(page, "10-working-steer", "dark", "en");
     } finally {
