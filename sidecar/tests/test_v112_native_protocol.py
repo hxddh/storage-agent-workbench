@@ -397,6 +397,32 @@ def test_runtime_compacts_before_the_model_loop_when_the_window_is_full(client, 
     assert msg["turn_items"][1] == {"kind": "message", "text": "ok"}
 
 
+def test_on_demand_compaction_is_carried_by_the_next_execution_once(client, monkeypatch):
+    from app.agent_runtime import compaction, session_agent
+    _add_model_provider(client)
+    task = _task(client)
+    _seed_turns(client, task["id"], 1)
+    monkeypatch.setattr(compaction, "COMPACT_STEP",
+                        lambda creds, msgs, prior: "Summary: one turn about acme-logs.")
+    assert client.post(f"/agent-tasks/{task['id']}/compact").json()["compacted"] is True
+    monkeypatch.setattr(session_agent, "SESSION_LOOP", lambda spec: {
+        "answer": "ok", "skills_used": [], "skills_offered": [], "evidence_used": [],
+        "evidence_gaps": [], "tool_activity": [], "turn_items": []})
+    for direction, expect_marker in (("next", True), ("after that", False)):
+        ex = client.post(f"/agent-tasks/{task['id']}/executions",
+                         json={"direction": direction}).json()["execution"]
+        assert _wait_settled(client, task["id"], ex["id"])["status"] == "completed"
+        events = client.get(f"/agent-tasks/{task['id']}/events").json()["events"]
+        mine = [e for e in events if e["event_type"] == "context.compacted"
+                and e["execution_id"] == ex["id"]]
+        msg = [m for m in _messages(client, task["id"]) if m["role"] == "assistant"][-1]
+        if expect_marker:
+            assert len(mine) == 1 and mine[0]["payload"]["before_tokens"] == 1000
+            assert msg["turn_items"][0]["kind"] == "compacted"
+        else:
+            assert mine == [] and not msg["turn_items"]
+
+
 # --- W7: AGENTS.md ----------------------------------------------------------------
 
 

@@ -392,6 +392,27 @@ def list_events(conn: sqlite3.Connection, execution_id: str, after_seq: int = 0,
     } for r in rows]
 
 
+def unannounced_compaction(conn: sqlite3.Connection, task_id: str,
+                           exclude_execution_id: str) -> dict[str, Any] | None:
+    """v1.12 — the payload of an ON-DEMAND compaction (`context.compacted` with
+    an empty execution_id) that no execution has carried yet: nothing but this
+    new execution's own frames landed after it. The next execution re-emits it
+    on its stream so the transcript shows the marker where the turn starts."""
+    row = conn.execute(
+        "SELECT seq, payload_json_sanitized FROM execution_events WHERE task_id = ? "
+        "AND event_type = 'context.compacted' AND execution_id = '' "
+        "ORDER BY seq DESC LIMIT 1", (task_id,)).fetchone()
+    if row is None:
+        return None
+    later = conn.execute(
+        "SELECT 1 FROM execution_events WHERE task_id = ? AND seq > ? "
+        "AND execution_id != '' AND execution_id != ? LIMIT 1",
+        (task_id, int(row["seq"]), exclude_execution_id)).fetchone()
+    if later is not None:
+        return None
+    return _loads(row["payload_json_sanitized"], {})
+
+
 def list_task_events(conn: sqlite3.Connection, task_id: str, after_seq: int = 0,
                      limit: int = 1000) -> list[dict[str, Any]]:
     rows = conn.execute(

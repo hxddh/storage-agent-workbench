@@ -429,14 +429,20 @@ def _run_execution(execution: dict[str, Any]) -> None:
         # v1.12 — compaction: when the last model call filled 80 % of the
         # window, summarise-and-continue BEFORE this execution's model loop.
         compacted_item: dict[str, Any] | None = None
+        payload: dict[str, Any] | None = None
         if compaction.should_compact(conn, task_id, creds):
             out = compaction.compact(conn, task_id, creds, exec_id, messages=recent)
             if out:
                 payload = {k: out.get(k) for k in ("before_tokens", "after_tokens",
                                                    "summary_chars")}
-                store.append_event(conn, exec_id, task_id, "context.compacted", payload)
-                compacted_item = {"kind": "compacted", "before_tokens": out.get("before_tokens"),
-                                  "after_tokens": out.get("after_tokens")}
+        else:
+            # An on-demand compaction (palette) since the last execution: this
+            # turn is the first to run on the summary, so it carries the marker.
+            payload = store.unannounced_compaction(conn, task_id, exec_id)
+        if payload is not None:
+            store.append_event(conn, exec_id, task_id, "context.compacted", payload)
+            compacted_item = {"kind": "compacted", "before_tokens": payload.get("before_tokens"),
+                              "after_tokens": payload.get("after_tokens")}
 
         def _with_compaction(data: dict[str, Any]) -> dict[str, Any]:
             if compacted_item is not None:
