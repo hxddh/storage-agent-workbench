@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 
 from app.agent_runtime import session_agent
-from app.agent_runtime.guardrails import is_forbidden_tool
 from app.analysis import baseline as baseline_mod
 from app.analysis import cost_sim
 from app.analysis import remediation as plan_mod
@@ -168,9 +167,16 @@ def test_golden_remediation_plan_has_no_mutating_step(client):
         for verb in ("delete_objects", "delete_bucket", "put_bucket_policy",
                      "DeleteObjects", "PutBucketPolicy"):
             assert verb not in blob
-        for action in (doc.get("plan", {}).get("actions") or []):
-            assert not is_forbidden_tool(str(action.get("kind", "")) or
-                                         str(action.get("action", "")))
+        # Plans never dispatch: every action is pasteable console/CLI material
+        # the OPERATOR applies (`apply_where`), marked read-only toward the
+        # cloud. (Plan kinds like `abort_mpu` name a lifecycle rule for the
+        # operator — they are not tool names, so the tool-name guardrail does
+        # not apply to them.)
+        actions = doc.get("plan", {}).get("actions") or []
+        assert actions, "a finding should draft at least one action"
+        for action in actions:
+            assert action.get("apply_where") == "console_or_cli"
+            assert action.get("read_only") is True
     finally:
         conn.close()
 

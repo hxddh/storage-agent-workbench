@@ -79,7 +79,8 @@ def _event_spans(task_id: str, events: list[dict]) -> list[dict]:
     spans: list[dict] = []
     seen_execs: dict[str, str] = {}
     for ev in events:
-        if ev.get("event_type") not in _SPAN_EVENTS:
+        # Export dicts key the type as "type" (store rows use "event_type").
+        if ev.get("type", ev.get("event_type")) not in _SPAN_EVENTS:
             continue
         exec_id = str(ev.get("execution_id") or "")
         parent = seen_execs.get(exec_id)
@@ -97,6 +98,7 @@ def _event_spans(task_id: str, events: list[dict]) -> list[dict]:
                 "end": None,
                 "attributes": {"execution_id": exec_id} if exec_id else {},
             })
+        etype = str(ev.get("type", ev.get("event_type")))
         sid = _span_id("event", exec_id, ev.get("seq"))
         try:
             attrs = json.loads(ev.get("payload") or "{}")
@@ -110,7 +112,7 @@ def _event_spans(task_id: str, events: list[dict]) -> list[dict]:
             "span_id": sid,
             "parent_span_id": parent,
             "traceparent": _traceparent(trace_id, sid),
-            "name": str(ev.get("event_type")),
+            "name": etype,
             "kind": "internal",
             "start": ev.get("at"),
             "end": ev.get("at"),
