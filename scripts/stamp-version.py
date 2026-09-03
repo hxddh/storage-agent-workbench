@@ -28,6 +28,7 @@ Usage: python scripts/stamp-version.py v0.21.1
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import sys
@@ -125,7 +126,33 @@ def stamp(root: pathlib.Path, raw: str) -> str | None:
         _die(f"stamped versions disagree with {ver}: {disagree}")
 
     print(f"stamped version {ver} (from tag {raw}) across: {', '.join(targets)}")
+    stamp_updater(root)
     return ver
+
+
+def stamp_updater(root: pathlib.Path) -> None:
+    """Wire the Tauri updater from the environment, or keep it inert (v1.13).
+
+    ``TAURI_UPDATER_PUBKEY`` (minisign public key from ``tauri signer generate``)
+    and ``TAURI_UPDATER_ENDPOINTS`` (comma-separated release-feed URLs) are read
+    at packaging time and written into ``src-tauri/tauri.conf.json``. Both or
+    neither: a pubkey without endpoints (or vice versa) fails loudly instead of
+    shipping a half-live updater. With neither set the updater stays inert —
+    today's behaviour for ad-hoc/unsigned distribution (see docs/signing.md).
+    """
+    pubkey = os.environ.get("TAURI_UPDATER_PUBKEY", "").strip()
+    endpoints = [e.strip() for e in os.environ.get("TAURI_UPDATER_ENDPOINTS", "").split(",")
+                 if e.strip()]
+    if bool(pubkey) != bool(endpoints):
+        _die("TAURI_UPDATER_PUBKEY and TAURI_UPDATER_ENDPOINTS must be set together "
+             "(both or neither); refusing a half-live updater")
+    conf_path = root / "src-tauri" / "tauri.conf.json"
+    data = json.loads(conf_path.read_text())
+    updater = data.setdefault("plugins", {}).setdefault("updater", {})
+    updater["pubkey"] = pubkey
+    updater["endpoints"] = endpoints
+    conf_path.write_text(json.dumps(data, indent=2) + "\n")
+    print("updater: " + (f"live ({len(endpoints)} endpoint(s))" if pubkey else "inert (no key configured)"))
 
 
 def main(argv: list[str] | None = None) -> int:

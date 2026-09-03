@@ -174,6 +174,7 @@ def build(
     stops the turn.
     """
     from . import model_budget
+    from ..runs.account_discovery_run import _PROBE_WORKERS
 
     # Elastic summary echo: floor at _MAX_SUMMARY (128k/200k windows unchanged),
     # scaled with the window like agent memory / thread replay.
@@ -188,7 +189,13 @@ def build(
         return p.name if p else provider_id[:8]
 
     def bucket_ok(p, bucket: str) -> bool:
-        return (not p.allowed_buckets) or (bucket in p.allowed_buckets)
+        # v1.13 — one scope function everywhere: bucket-level metadata reads
+        # are allowed under a prefix-scoped provider (prefixes constrain
+        # object addressing, not bucket metadata), exactly like the agent's
+        # session tools and the /tools endpoints (s3/scope.check_scope).
+        from ..s3.scope import check_scope
+        return check_scope(p.allowed_buckets, p.allowed_prefixes, bucket,
+                           listing=False) is None
 
     # One id per call, minted by start() and consumed by the matching note()
     # (v0.55.0). Per THREAD: the SDK dispatches a sync tool with
@@ -309,6 +316,9 @@ def build(
             result["bucket_count"] = profile.get("bucket_count")
             result["visible_count"] = profile.get("visible_count")
             result["truncated"] = profile.get("truncated")
+        # v1.13 — the bounded single-agent fanout this survey ran under:
+        # bucket shards in parallel, merged as this one tool row.
+        result["fanout_workers"] = _PROBE_WORKERS
         result["has_prior_survey"] = had_prior
         if had_prior:
             result["next_step"] = ("A prior survey exists — call compare_to_last_survey "

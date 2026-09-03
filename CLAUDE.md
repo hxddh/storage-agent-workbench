@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.12.0.**
+> **Implementation contract for Storage Agent v1.13.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.12.0 product invariant is:
+The v1.13.0 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -18,7 +18,7 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v1.12.0 native Agent window
+## 1. Never regress the v1.13.0 native Agent window
 
 The window is **sidebar · title bar · one Task document · one Composer**. There is no activity bar, no status bar, no Details/inspector column, and no marketing copy in chrome. New product/frontend work must preserve these boundaries:
 
@@ -113,6 +113,13 @@ Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned b
 - (v1.12) the **approval policy** (`ask` · `allow_session` in process memory · `allow_always` in `app_settings`) is consulted only in `runtime.request_approval`; every auto-approval is a durable approved Decision (`scope = session | always`) plus `approval.granted {policy}`;
 - (v1.12) **compaction** (`agent_runtime/compaction.py`): when the last turn's reported input usage reaches 80 % of the model's context window, the runtime runs one tool-less, bounded, redacted summary step before the model loop, stores it on the typed context (`summary_sanitized` / `summary_through_seq`, migration 030), appends `context.compacted`, and the prompt replays only later messages with the summary in its stable half; `POST /agent-tasks/{id}/compact` runs it on demand for an idle task. Never a second Agent; never raw rows; never chain-of-thought;
 - (v1.12) `AGENTS.md` in the data directory (or `STORAGE_AGENT_INSTRUCTIONS`) is bounded (8 000 chars), redacted Markdown injected after the skills catalog in the stable prompt half; never executed, never above the safety rules.
+- (v1.13) restart recovery stamps `waiting` executions `interrupted` too (their tool thread died with the process; the pending Decision survives and Resume re-plans/re-raises it) — a later Allow never settles an execution whose gated action never ran;
+- (v1.13) `POST /agent-tasks/{id}/executions` rejects unknown `kind` with 422 (no silent downgrade to `direction`); resuming a user-cancelled execution submits `kind=retry` (`[retry]` note) instead of `[resume]`;
+- (v1.13) the read-only MCP bridge (`STORAGE_AGENT_ENABLE_MCP=1`) executes the stateless allowlist through the S3 layer with the same scope/redaction/bounds, recorded via `run_tool`; session-bound tools are not exposed (stateless bridge by design); `GET /mcp/client/status` reports the consuming-client non-goal with its threat-model pointer;
+- (v1.13) the OTel export carries derived OTel spans (`trace_id`/`span_id`/W3C `traceparent`, deterministic, no migration) alongside the raw events; `GET .../executions/{eid}/events-page` serves one execution's JSON pages so Execution detail never scans the whole task log;
+- (v1.13) compaction triggers on a character estimate when the endpoint reports no usage, estimates CJK-weighted tokens, and chains (each step folds the prior summary); `AGENTS.md` reads are mtime-cached 5 s;
+- (v1.13) endpoint capability refusals clear on a green `POST /model-providers/{id}/test`; redaction covers plural secret keys; Composer history drops key-material entries and masks credential values; `@` completes Task files (model resolves via `list_uploaded_files`); the large-scan approval card shows buckets + estimated calls; the palette fuzzy-ranks tasks; a 90 s+ live turn says so; the survey result carries `fanout_workers` (bounded single-agent fanout, `_PROBE_WORKERS=4` pinned);
+- (v1.13) golden evals (`sidecar/tests/test_v113_eval_golden.py`, see `docs/evals.md`) pin grounded/confident-safe/honest-coverage behaviour; `scripts/stamp-version.py` wires the Tauri updater from `TAURI_UPDATER_PUBKEY`/`TAURI_UPDATER_ENDPOINTS` (both-or-neither, else loud fail); CI packaging smoke is required on `release/*`.
 
 The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream (reconnect by sequence), steer/stop/resume/verify the current execution, then reload persisted task state. There are no `/sessions` message endpoints any more. Do not create a second submit path.
 
@@ -120,11 +127,11 @@ The execution runner is the one submission lifecycle: submit a Direction as a du
 
 The Sidecar exposes both product projection and compatibility APIs:
 
-- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the runtime API — executions (submit / steer / stop / resume / SSE event stream resumable by sequence, push-driven, carrying `task.status` so a follower never polls), Verify (`POST .../verify`, kind=`verify`), on-demand compaction (`POST .../compact`), queued visibility, decisions (list / resolve with impact projection), work results, artifacts, **read-only provenance** (`GET .../provenance`), remediation plans, baselines, revisit schedule, and the typed task context. Engine endpoints are not product destinations.
+- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the runtime API — executions (submit with strict `kind` / steer / stop / resume / SSE event stream resumable by sequence, push-driven, carrying `task.status` so a follower never polls; per-execution JSON pages via `GET .../executions/{eid}/events-page`), Verify (`POST .../verify`, kind=`verify`), on-demand compaction (`POST .../compact`), queued visibility, decisions (list / resolve with impact projection incl. large-scan bounds), work results, artifacts, **read-only provenance** (`GET .../provenance`), remediation plans, baselines, revisit schedule, the typed task context, and the OTel export with derived spans (`GET .../export/otel`). Engine endpoints are not product destinations.
 - `/sessions/...` remains the durable task document/paging/memory/activity compatibility API. Since v1.12 it has **no** message, stream, cancel, turn, or action-prepare endpoints; the durable execution API is the only submit path.
 - `/runs/...` remains deterministic execution/report compatibility API and is not a top-level product surface.
 - `/evidence-imports/...` owns bounded plan → confirm → execute data movement.
-- `/model-providers`, `/cloud-providers`, `/settings` (including the local price-table **engine** API; Settings UI does not edit it; plus `approval-policy` and the read-only `instructions` status since v1.12), `/tools`, `/error-triage`, `/reports`, and dataset endpoints keep their existing responsibilities.
+- `/model-providers` (a green `POST .../{id}/test` also clears remembered endpoint capability refusals), `/cloud-providers`, `/settings` (including the local price-table **engine** API; Settings UI does not edit it; plus `approval-policy` and the read-only `instructions` status since v1.12), `/tools`, `/mcp` (stateless read-only bridge when `STORAGE_AGENT_ENABLE_MCP=1`; `GET /mcp/client/status` reports the consuming-client non-goal), `/error-triage`, `/reports`, and dataset endpoints keep their existing responsibilities.
 
 Do not rename persistence/API contracts just for cosmetic consistency if that adds migration risk. Adapt them at explicit boundaries instead.
 

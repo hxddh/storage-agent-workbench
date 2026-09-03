@@ -105,6 +105,24 @@ Expected state should explicitly identify a notarized Developer ID result. Do no
 
 If Windows distribution is hardened later, use a real Authenticode code-signing identity and verify the final installer signature in CI/release acceptance. Update `install.md`, `release.md`, and `release-smoke-test.md` in the same change so users are not told to bypass warnings that no longer apply.
 
+## In-app updater (wirable since v1.13.0)
+
+The Tauri updater plugin is bundled but inert until key material is
+supplied — no half-live state. `scripts/stamp-version.py` wires it at
+packaging time from the environment:
+
+- `TAURI_UPDATER_PUBKEY` — the minisign public key (`tauri signer generate`
+  prints the pair; the private key stays a CI/release secret, never in repo);
+- `TAURI_UPDATER_ENDPOINTS` — comma-separated release-feed URLs serving the
+  updater JSON + signed bundles.
+
+Both or neither: a pubkey without endpoints (or vice versa) fails the stamp
+loudly instead of shipping an updater that checks nowhere or verifies
+nothing. With neither set the updater stays inert — today's ad-hoc/unsigned
+distribution behaviour. When a live updater ships, update `install.md`
+(update expectations) and this section (feed location, key rotation) in the
+same change.
+
 ## Secret handling for signing credentials
 
 Signing/notarization credentials are CI/release secrets, not application/provider secrets.

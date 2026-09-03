@@ -40,6 +40,9 @@ def _clip(value: Any, n: int = _PREVIEW) -> str:
 
 def _latest_tool(conn: sqlite3.Connection, task_id: str, names: tuple[str, ...],
                  *, kind: str | None = None) -> dict[str, Any] | None:
+    # NOTE (v1.13): the LIMIT 12 window below is a recency heuristic over the
+    # latest USABLE outputs, not a full history scan — error rows are skipped.
+    # Callers must not read it as "the Nth tool ever ran".
     placeholders = ",".join("?" * len(names))
     rows = conn.execute(
         "SELECT id, tool_name, output_json_sanitized, created_at, run_id "

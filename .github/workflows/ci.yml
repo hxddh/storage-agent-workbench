@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # release/* runs the same gates as main, but the packaged-Sidecar smoke
+    # below turns blocking there (v1.13): a broken PyInstaller bundle must
+    # fail the release branch, not ride along as informational.
+    branches: [main, 'release/*']
   pull_request:
     branches: [main]
 
@@ -95,9 +98,9 @@ jobs:
         run: pytest -q
 
   package-sidecar:
-    name: Package sidecar (informational)
+    name: Package sidecar (informational on main, required on release/*)
     runs-on: ubuntu-latest
-    continue-on-error: true
+    continue-on-error: ${{ !startsWith(github.ref, 'refs/heads/release/') }}
     defaults:
       run:
         working-directory: sidecar

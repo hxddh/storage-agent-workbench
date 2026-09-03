@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from typing import Any, Callable
 
 from .. import audit
@@ -63,8 +64,14 @@ def build(conn: sqlite3.Connection, function_tool: Callable,
         return []
 
     def _rec(name: str, summary: str) -> None:
+        # v1.13 — full activity shape (id/target/result/ok/status) like every
+        # other tool family: these run real deterministic compute, so they
+        # render as tool rows and persist as tool.completed events instead of
+        # empty shells in the event log.
         if activity is not None:
-            activity.append({"tool": name, "summary": summary[:200]})
+            activity.append({"id": uuid.uuid4().hex, "tool": name,
+                             "target": session_id or "", "result": summary[:80],
+                             "ok": True, "status": "completed"})
         audit.record(conn, "session_tool",
                      {"tool": name, "session_id": session_id},
                      run_id=None, session_id=session_id)

@@ -163,5 +163,16 @@ def test_model_provider(
     ok = (checks.get("endpoint_reachable", False)
           and api_key_verified is not False
           and not checks.get("server_error", False))
+    if ok:
+        # v1.13 — a green probe means the endpoint works NOW: drop any
+        # remembered capability refusals (usage/parallel/cache) so a fixed
+        # proxy is retried instead of waiting for a Sidecar restart.
+        try:
+            from ..agent_runtime.session_agent import forget_endpoint_capabilities
+            forget_endpoint_capabilities(
+                provider.base_url or _LOCAL_URLS.get((provider.provider_type or "").strip().lower()),
+                provider.model)
+        except Exception:  # noqa: BLE001 — bookkeeping never fails the probe
+            pass
     return ModelProviderTestResult(ok=ok, checks=checks, api_key_verified=api_key_verified,
                                    detail=live_detail)

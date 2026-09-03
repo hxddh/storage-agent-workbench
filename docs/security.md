@@ -1,6 +1,6 @@
 # Security
 
-> **Storage Agent v1.11.0 security contract.** v1.11 moves the confirmation boundary INSIDE the turn: the gated `import_evidence` tool plans, opens a durable Decision, and blocks until the user allows or denies — the same plan → confirm → run path, the same bounds, the same audit rows; no model prose can raise or satisfy it. Otherwise unchanged from v0.96.0; v1.10 adds a bounded runtime title step (Direction + Work Result text only, redacted, never tool payloads) and a per-provider reasoning effort (ordinary config, not a secret) on the same floor; v1.03 keeps the v1.02 window and adds gated extensions — local models, user skills, MCP, observability, OS shell — same safety floor.
+> **Storage Agent v1.13.0 security contract.** v1.13 executes the stateless MCP allowlist through the S3 layer (same scope/redaction/bounds, `run_tool`-recorded), fixes the OTel export column, stamps `waiting` executions `interrupted` on restart (pending Decisions survive), rejects unknown execution kinds, chains compaction, redacts Composer history, and covers plural secret keys — same floor, no new capabilities except the honest MCP dispatch. v1.11 moves the confirmation boundary INSIDE the turn: the gated `import_evidence` tool plans, opens a durable Decision, and blocks until the user allows or denies — the same plan → confirm → run path, the same bounds, the same audit rows; no model prose can raise or satisfy it. Otherwise unchanged from v0.96.0; v1.10 adds a bounded runtime title step (Direction + Work Result text only, redacted, never tool payloads) and a per-provider reasoning effort (ordinary config, not a secret) on the same floor; v1.03 keeps the v1.02 window and adds gated extensions — local models, user skills, MCP, observability, OS shell — same safety floor.
 >
 > Security is part of the Agent Task product model, not a secondary implementation detail. Read-only autonomy is allowed only inside explicit, bounded, sanitized capabilities. Data movement and materially large/full scans cross a real **approval** boundary inside the Execution.
 
@@ -57,7 +57,7 @@ Secrets include, at minimum:
 
 1. Secret values must never enter model prompts/context.
 2. Secret values must never be stored in SQLite.
-3. Secret values must never be written to application logs, Tool traces, audit payloads, reports, screenshots, JSON/YAML state, or generated artifacts.
+3. Secret values must never be written to application logs, Tool traces, audit payloads, reports, screenshots, JSON/YAML state, generated artifacts, or plaintext browser storage (Composer history drops key-material entries and masks credential values, v1.13).
 4. Frontend state may contain a newly entered secret only for the minimum time needed to submit it; API responses never return the plaintext value.
 5. SQLite stores opaque secret references such as `keyring://scope/name`, never the secret itself.
 6. Provider/model code resolves secret references only inside the Sidecar immediately before the configured external call.
@@ -154,7 +154,7 @@ A real confirmation boundary is required before operations that materially move 
 
 The UI presents this state as **Waiting for approval** with an inline approval card, but the Sidecar remains authoritative. A visual button or Agent-generated recommendation cannot bypass server-side confirmation state.
 
-Since v1.11 the boundary is raised by the gated tool itself: `import_evidence` plans the bounded download (a read-only listing), opens a pending `task_decisions` row (`kind=approval`) carrying the projected impact, and the raising execution is `waiting` while the tool thread blocks. Resolution is persisted with an audit trail before anything moves: `approved` runs the same confirm → run path (the `approval_events` row and `evidence_import.*` audit rows are written by that path), `declined` returns a structured refusal to the model, and a Stop while waiting withdraws the request as `declined`. `scope=task` records an explicit user grant; later calls of the same `action_type` in that Task are recorded as already-approved Decisions rather than silently skipped. The durable execution event log stores structured, sanitized, bounded progress only: never secrets, raw analytical rows, or chain-of-thought.
+Since v1.11 the boundary is raised by the gated tool itself: `import_evidence` plans the bounded download (a read-only listing), opens a pending `task_decisions` row (`kind=approval`) carrying the projected impact, and the raising execution is `waiting` while the tool thread blocks. Resolution is persisted with an audit trail before anything moves: `approved` runs the same confirm → run path (the `approval_events` row and `evidence_import.*` audit rows are written by that path), `declined` returns a structured refusal to the model, and a Stop while waiting withdraws the request as `declined`. `scope=task` records an explicit user grant; later calls of the same `action_type` in that Task are recorded as already-approved Decisions rather than silently skipped. A Sidecar restart stamps a `waiting` execution `interrupted` (v1.13) — its tool thread died with the process, so no worker remains to continue the gated action; the pending Decision row itself survives untouched, and Resume starts a new execution that re-plans and re-raises it. A later Allow never settles an execution whose action never ran. The durable execution event log stores structured, sanitized, bounded progress only: never secrets, raw analytical rows, or chain-of-thought.
 
 **Approval policy (v1.12).** The user chooses once, in Settings → Safety, how gated calls are answered: `ask` (default), `allow_session` (auto-approved for the lifetime of this Sidecar process — held in memory only, a restart falls back to `ask`), or `allow_always` (auto-approved for this data directory — stored in `app_settings`, ordinary configuration, never a secret). The policy is consulted in exactly one place, `runtime.request_approval`, so no tool can grow its own bypass. An auto-approval is still a durable already-approved Decision row (`scope = session | always`) and an `approval.granted` event carrying `policy`; the transcript and audit trail show what was allowed and why. A policy can only answer a gate that exists: it cannot create a tool, widen a provider scope, raise a bound, or make a read-only tool write.
 
@@ -306,7 +306,7 @@ It must cover, among other supported shapes:
 - GCP service-account private-key material;
 - Azure AccountKey-style connection secrets;
 - Azure SAS `sig`;
-- credential-bearing query/config parameter names such as password/client_secret/access_token/refresh_token/credential/auth/session variants.
+- credential-bearing query/config parameter names such as password/client_secret/access_token/refresh_token/credential/auth/session variants — including plural key spellings (`credentials`, `tokens`, `secrets`, …, v1.13).
 
 Do not redact ordinary storage identifiers merely because their parameter name is generic: for example object `key` and non-secret SAS metadata such as expiry/permission parameters must remain diagnostically useful when they are not secrets.
 
@@ -387,6 +387,13 @@ A missing API must not be displayed as “configuration off” unless that fact 
 
 Never persist or expose model chain-of-thought/hidden reasoning.
 
+A provider-authored *reasoning summary* is still model reasoning text for the
+purposes of this rule (v1.13): the transcript shows tool activity, measured
+metadata, Work Results, Evidence/provenance, and gaps — never a reasoning
+summary, however the provider labels it. If a future provider knob offers a
+sanitized summary distinct from hidden reasoning, it needs its own rule here
+before any UI may render it.
+
 Execution transparency means:
 
 - real Tool activity;
@@ -397,7 +404,30 @@ Execution transparency means:
 
 It does not mean storing private reasoning tokens or inventing a fake plan to make the Agent look transparent.
 
-## 23. Security changes require executable coverage
+## 23. MCP-client threat model (v1.13 appendix)
+
+Consuming third-party MCP servers is **not implemented**: `GET
+/mcp/client/status` reports disabled with this pointer. If it is ever built,
+the design must satisfy this appendix first — it is a new trust boundary, not
+a new transport:
+
+- server text is untrusted input: tool descriptions, schemas, and results are
+  attacker-controlled data, never instructions; they enter the model only
+  inside the untrusted-data envelope;
+- tool schemas are attacker-controlled: parameter names/defaults must not
+  smuggle credential exfiltration (e.g. a `callback_url` that echoes context)
+  — calls allowlist parameters and redact values like any other tool I/O;
+- no secret ever leaves the machine toward an MCP server: secret references
+  resolve only for configured first-party endpoints, never from server text;
+- server identity is pinned (localhost-only by default); a remote server needs
+  an explicit operator grant recorded in `app_settings`;
+- every call is `run_tool`-recorded and audited; data-moving verbs a server
+  advertises are refused client-side (read-only bridge, same floor).
+
+Until an implementation satisfies all five, the status endpoint stays
+disabled-by-design and no execution path ships.
+
+## 24. Security changes require executable coverage
 
 A PR that changes any of the following must update tests and this document in the same change:
 

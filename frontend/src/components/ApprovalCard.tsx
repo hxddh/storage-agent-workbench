@@ -26,6 +26,10 @@ export function ApprovalCard({
   const title = item.title || item.action_type;
   const files = impact?.file_count != null ? t("approval.fileCount", { n: impact.file_count }) : null;
   const bytes = impact?.total_bytes != null ? fmtBytes(impact.total_bytes) : null;
+  // v1.13 — large-scan gate: buckets + estimated live calls.
+  const scanCalls = impact?.estimated_calls != null
+    ? t("approval.estimatedCalls", { buckets: impact.buckets ?? "—", calls: impact.estimated_calls })
+    : null;
   const why = impact?.why || item.reason;
   const resolved = item.status === "approved"
     ? (item.scope === "task" ? t("approval.allowedTask") : t("approval.allowed"))
@@ -58,6 +62,7 @@ export function ApprovalCard({
             <><dt>{t("approval.moves")}</dt><dd className="tabular-nums" data-testid="approval-movement">{[files, bytes].filter(Boolean).join(" · ")}</dd></>
           ) : null}
           {impact.scan_scope ? (<><dt>{t("approval.scope")}</dt><dd>{impact.scan_scope}</dd></>) : null}
+          {scanCalls ? (<><dt>{t("approval.scanCalls")}</dt><dd className="tabular-nums" data-testid="approval-scan-calls">{scanCalls}</dd></>) : null}
           {why ? (<><dt>{t("approval.why")}</dt><dd>{why}</dd></>) : null}
           {impact.warnings?.length ? (
             <><dt>{t("approval.warnings")}</dt><dd>{impact.warnings.join("; ")}</dd></>

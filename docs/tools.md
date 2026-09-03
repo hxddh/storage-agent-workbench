@@ -1,6 +1,6 @@
 # Agent tools and capability contract
 
-> **Storage Agent v1.10.0.** Tool surface unchanged from v1.02.0 except for gated `GET /skills`, `GET /.*export/otel` and `GET /mcp.*` projections and local-model provider types. Agent-accessible capabilities are explicit, typed, whitelisted, bounded, sanitized, and read-only unless a separately documented confirmation-gated data-movement workflow says otherwise.
+> **Storage Agent v1.13.0.** Tool surface unchanged from v1.02.0 except for gated `GET /skills`, `GET /.*export/otel` (now with derived spans), `GET /mcp.*` + executing `POST /mcp/tools/call`, and local-model provider types. Agent-accessible capabilities are explicit, typed, whitelisted, bounded, sanitized, and read-only unless a separately documented confirmation-gated data-movement workflow says otherwise.
 
 This document describes capability classes available to the one model-driven Agent runtime plus deterministic compute it can invoke. It is not a promise that every internal S3 helper is a public Agent tool or HTTP route.
 
@@ -327,6 +327,32 @@ These records are replayed into later Task work according to runtime bounds and 
 ### `read_skill`
 
 Loads first-party StorageOps guidance on demand. Skill text is trusted first-party instruction by design; the tool does not execute arbitrary scripts from the skill.
+
+## MCP bridge tools (stateless subset, v1.13)
+
+`POST /mcp/tools/call` (behind `STORAGE_AGENT_ENABLE_MCP=1`) executes the
+stateless read-only tools — S3/config/review reads, `diagnose_presigned_url`,
+`inspect_endpoint_tls`, `read_skill`, `get_price_table_status` — through the
+same S3 layer with the same scope/input clamps, recorded via `run_tool`.
+Session-bound tools (`survey_account`, `query_account_profile`,
+`compare_to_last_survey`, `list_uploaded_files`) are intentionally not
+exposed: the bridge is stateless and they need a Task's runs. Consuming
+third-party MCP servers is not implemented (`GET /mcp/client/status`).
+
+## Read-only fanout (v1.13)
+
+The account survey fans bucket shards across `_PROBE_WORKERS = 4` threads
+inside the deterministic executor and merges as ONE `survey_account` tool row
+(`fanout_workers` in the result). This is the product's single-agent fanout:
+no sub-agent fleet, shared turn budget, per-bucket failures isolated. The
+bound is pinned by `test_v113_native_fanout.py`.
+
+## Bounds are not gates (v1.13)
+
+Per-turn preview/range/latency budgets degrade into a synthesize note when
+spent — they never raise a Decision. Only classified gates (`import_evidence`,
+`survey_account_large`) pause an execution; a policy can only answer a gate
+that exists.
 
 ## Report capability
 

@@ -121,9 +121,18 @@ def bound_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
     dropped to the default), so a deliberate wider sample works.
     """
     out = dict(args or {})
-    if name == "list_objects_v2":
+    # v1.13 — every paged list tool gets the same graded clamp as
+    # list_objects_v2 (the S3 layer is the truth; this keeps the agent-side
+    # echo consistent so a deliberate wider sample is honored, never dropped).
+    if name in ("list_objects_v2", "list_object_versions"):
         mk = int(out.get("max_keys", AGENT_DEFAULT_LIST_KEYS) or AGENT_DEFAULT_LIST_KEYS)
         out["max_keys"] = max(1, min(mk, AGENT_MAX_LIST_KEYS))
+    if name == "list_multipart_uploads":
+        mu = int(out.get("max_uploads", AGENT_DEFAULT_LIST_KEYS) or AGENT_DEFAULT_LIST_KEYS)
+        out["max_uploads"] = max(1, min(mu, AGENT_MAX_LIST_KEYS))
+    if name == "list_upload_parts":
+        mp = int(out.get("max_parts", AGENT_DEFAULT_LIST_KEYS) or AGENT_DEFAULT_LIST_KEYS)
+        out["max_parts"] = max(1, min(mp, AGENT_MAX_LIST_KEYS))
     return out
 
 

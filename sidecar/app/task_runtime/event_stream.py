@@ -34,9 +34,11 @@ _STREAM_MAX_S = 3600.0
 
 # Statuses after which no further durable events will be produced by the
 # execution itself (decision resolution may still append later — a reconnecting
-# client picks those up by replay).
+# client picks those up by replay). `waiting` is NOT settled: its worker is
+# alive and wakes followers the same way, so it rides the heartbeat branch
+# instead of the 2 s settle re-check (v1.13).
 _SETTLED = (store.EXEC_COMPLETED, store.EXEC_FAILED, store.EXEC_CANCELLED,
-            store.EXEC_INTERRUPTED, store.EXEC_WAITING)
+            store.EXEC_INTERRUPTED)
 
 
 def _sse(event: str, data: dict[str, Any], seq: int | None = None) -> str:

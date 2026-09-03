@@ -45,6 +45,10 @@ export interface DecisionImpact {
   total_bytes: number | null;
   scan_scope: string | null;
   warnings?: string[];
+  // v1.13 — large-scan gate projection (survey_account_large).
+  provider?: string | null;
+  buckets?: number | null;
+  estimated_calls?: number | null;
 }
 
 export interface TaskDecision {
@@ -134,6 +138,12 @@ export const getTaskExecution = (taskId: string, executionId: string) =>
 export const listTaskEvents = (taskId: string, opts: { after?: number; limit?: number } = {}) =>
   request<{ task_id: string; events: TaskEvent[]; last_seq: number }>(
     `/agent-tasks/${taskId}/events?after=${opts.after ?? 0}&limit=${opts.limit ?? 1000}`);
+
+/** v1.13 — one execution's durable events as JSON pages (Execution detail
+ * reads its rows here instead of paging the whole task log). */
+export const listExecutionEventsPage = (taskId: string, executionId: string, opts: { after?: number; limit?: number } = {}) =>
+  request<{ task_id: string; execution_id: string; events: TaskEvent[]; last_seq: number }>(
+    `/agent-tasks/${taskId}/executions/${executionId}/events-page?after=${opts.after ?? 0}&limit=${opts.limit ?? 1000}`);
 
 export const listTaskDecisions = (taskId: string, status?: string) =>
   request<{ task_id: string; decisions: TaskDecision[] }>(

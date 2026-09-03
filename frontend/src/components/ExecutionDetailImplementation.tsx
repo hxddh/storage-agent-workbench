@@ -4,7 +4,7 @@ import {
   followExecutionEvents,
   getSession,
   getTaskExecution,
-  listTaskEvents,
+  listExecutionEventsPage,
   type LiveEventHandlers,
   type TaskEvent,
   type TaskExecution,
@@ -104,12 +104,13 @@ export function replayExecutionEvents(events: TaskEvent[], executionId: string):
   return out;
 }
 
-/** Read the whole task log in pages — never a silent cap. */
-async function readTaskLog(taskId: string, after = 0): Promise<{ events: TaskEvent[]; lastSeq: number }> {
+/** Read one execution's rows in pages — never the whole task log, never a
+ * silent cap (v1.13: `events-page` replaces the task-log scan). */
+async function readExecutionLog(taskId: string, executionId: string, after = 0): Promise<{ events: TaskEvent[]; lastSeq: number }> {
   const events: TaskEvent[] = [];
   let cursor = after;
   for (let page = 0; page < EVENT_PAGES_MAX; page++) {
-    const chunk = await listTaskEvents(taskId, { after: cursor, limit: EVENT_PAGE });
+    const chunk = await listExecutionEventsPage(taskId, executionId, { after: cursor, limit: EVENT_PAGE });
     events.push(...chunk.events);
     if (chunk.events.length < EVENT_PAGE) break;
     cursor = chunk.events[chunk.events.length - 1]?.seq ?? cursor;
@@ -173,6 +174,7 @@ export function ExecutionDetailImplementation({
         } as Record<string, string>,
         kinds: {
           direction: "方向", verify: "验证", revisit: "回访", steer_followup: "补充方向的后续执行",
+          resume: "恢复执行", retry: "重新执行",
         } as Record<string, string>,
       }
     : {
@@ -195,6 +197,7 @@ export function ExecutionDetailImplementation({
         } as Record<string, string>,
         kinds: {
           direction: "Direction", verify: "Verify", revisit: "Revisit", steer_followup: "Steer follow-up",
+          resume: "Resume", retry: "Retry",
         } as Record<string, string>,
       };
 
@@ -233,7 +236,7 @@ export function ExecutionDetailImplementation({
       }
       let replayed: Replay;
       try {
-        const log = await readTaskLog(taskId);
+        const log = await readExecutionLog(taskId, executionId);
         replayed = replayExecutionEvents(log.events, executionId);
         replayed.lastSeq = log.lastSeq;
       } catch (error) {

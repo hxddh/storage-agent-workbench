@@ -8,11 +8,19 @@ Endpoints:
   GET /agent-tasks/{task_id}/export/otel   — per-task export (bounded)
   GET /observability/export                — global bounded health snapshot
 
+The per-task export carries both the raw durable `events` and a derived
+`spans` projection (deterministic trace_id/span_id + W3C `traceparent` per
+span, v1.13) importable into Jaeger/Tempo. Span ids are derived, not stored:
+no migration, same task always maps to the same trace.
+
 Both are auth-gated (same Sidecar token) and bounded to prevent unbounded dumps.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -25,6 +33,91 @@ router = APIRouter(tags=["observability"])
 MAX_EVENTS = 500
 MAX_TOOL_CALLS = 200
 MAX_AUDIT = 200
+
+
+def _trace_id(task_id: str) -> str:
+    """Deterministic 32-hex trace id for a task (v1.13, no migration).
+
+    Derived, not stored: the same task always maps to the same trace so an
+    export opened in Jaeger correlates across repeated pulls."""
+    return hashlib.sha256(f"storage-agent:task:{task_id}".encode()).hexdigest()[:32]
+
+
+def _span_id(*parts: object) -> str:
+    """Deterministic 16-hex span id from stable parts."""
+    h = hashlib.sha256()
+    for p in parts:
+        h.update(str(p).encode())
+        h.update(b"\x00")
+    return h.hexdigest()[:16]
+
+
+def _traceparent(trace_id: str, span_id: str) -> str:
+    """W3C traceparent header value (version 00, sampled)."""
+    return f"00-{trace_id}-{span_id}-01"
+
+
+# Durable event types projected as OTel spans (v1.13). Everything else stays
+# in the raw `events` section only.
+_SPAN_EVENTS = frozenset({
+    "tool.started", "tool.completed", "plan.updated", "approval.opened",
+    "approval.granted", "steer.received", "steer.applied",
+    "message.completed", "context.compacted", "decision.resolved",
+    "work_result.recorded", "execution.status", "task.status",
+    "context.updated", "task.titled",
+})
+
+
+def _event_spans(task_id: str, events: list[dict]) -> list[dict]:
+    """Project durable events as OTel-inspired spans.
+
+    One parent span per execution (`execution:<id>`); each event is a child
+    span carrying the sanitized payload as attributes. Timestamps reuse the
+    event's `created_at` for start/end (durations come from the payload's
+    `duration_ms` where the emitter recorded one)."""
+    trace_id = _trace_id(task_id)
+    spans: list[dict] = []
+    seen_execs: dict[str, str] = {}
+    for ev in events:
+        if ev.get("event_type") not in _SPAN_EVENTS:
+            continue
+        exec_id = str(ev.get("execution_id") or "")
+        parent = seen_execs.get(exec_id)
+        if parent is None:
+            parent = _span_id("execution", exec_id or task_id)
+            seen_execs[exec_id] = parent
+            spans.append({
+                "trace_id": trace_id,
+                "span_id": parent,
+                "parent_span_id": None,
+                "traceparent": _traceparent(trace_id, parent),
+                "name": f"execution:{exec_id[:8]}" if exec_id else "task",
+                "kind": "internal",
+                "start": None,
+                "end": None,
+                "attributes": {"execution_id": exec_id} if exec_id else {},
+            })
+        sid = _span_id("event", exec_id, ev.get("seq"))
+        try:
+            attrs = json.loads(ev.get("payload") or "{}")
+            if not isinstance(attrs, dict):
+                attrs = {"value": attrs}
+        except (TypeError, ValueError):
+            attrs = {}
+        attrs = {"seq": ev.get("seq"), "execution_id": exec_id, **attrs}
+        spans.append({
+            "trace_id": trace_id,
+            "span_id": sid,
+            "parent_span_id": parent,
+            "traceparent": _traceparent(trace_id, sid),
+            "name": str(ev.get("event_type")),
+            "kind": "internal",
+            "start": ev.get("at"),
+            "end": ev.get("at"),
+            "duration_ms": attrs.get("duration_ms"),
+            "attributes": attrs,
+        })
+    return spans
 
 
 @router.get("/agent-tasks/{task_id}/export/otel")
@@ -72,7 +165,7 @@ def export_task_otel(
     if include_events:
         try:
             events = conn.execute(
-                "SELECT seq, execution_id, event_type, payload_json, created_at "
+                "SELECT seq, execution_id, event_type, payload_json_sanitized, created_at "
                 "FROM execution_events WHERE task_id = ? ORDER BY seq DESC LIMIT ?",
                 (task_id, limit_events),
             ).fetchall()
@@ -81,13 +174,20 @@ def export_task_otel(
                     "seq": r["seq"],
                     "execution_id": r["execution_id"],
                     "type": r["event_type"],
-                    "payload": r["payload_json"],
+                    "payload": r["payload_json_sanitized"],
                     "at": r["created_at"],
                 }
                 for r in reversed(events)
             ]
             payload["events_truncated"] = len(events) == limit_events
-        except Exception:  # noqa: BLE001
+            # v1.13 — OTel span projection of the same events (derived ids,
+            # no new storage). Importable into Jaeger/Tempo via the OTLP/JSON
+            # span shape (trace_id/span_id/traceparent).
+            payload["trace_id"] = _trace_id(task_id)
+            payload["spans"] = _event_spans(task_id, payload["events"])
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning(
+                "OTel export: execution_events read failed (%s)", type(exc).__name__)
             payload["events"] = []
             payload["events_truncated"] = False
 

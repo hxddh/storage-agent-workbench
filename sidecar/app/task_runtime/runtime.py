@@ -180,7 +180,7 @@ def stop(conn: sqlite3.Connection, execution_id: str) -> dict[str, Any] | None:
     if execution["status"] in store.EXEC_TERMINAL_STATUSES + (store.EXEC_WAITING,):
         return execution
     handle = live_handle(execution_id)
-    if execution["status"] == store.EXEC_QUEUED and (handle is None or True):
+    if execution["status"] == store.EXEC_QUEUED:
         # Not started yet: cancel durably right now (the worker skips
         # non-queued rows). The live handle's cancel_event is set too, closing
         # the race where the worker claimed it between our read and update.
@@ -213,11 +213,16 @@ def resume(conn: sqlite3.Connection, execution_id: str) -> dict[str, Any]:
                                    store.EXEC_CANCELLED):
         raise ValueError("only an interrupted, failed, or cancelled execution can be resumed")
     direction = (execution["direction"] or "").strip()
-    note = ("\n\n[resume] The previous execution of this direction was "
-            f"{execution['status']} before it could finish. Continue from what the "
+    was = execution["status"]
+    # A user-cancelled direction is an explicit "I don't want this" — resuming
+    # it is a RETRY the user asked for, not a recovery of lost work. The kind
+    # and note say so, so history never reads a cancelled turn as interrupted.
+    tag = "retry" if was == store.EXEC_CANCELLED else "resume"
+    note = (f"\n\n[{tag}] The previous execution of this direction was "
+            f"{was} before it could finish. Continue from what the "
             "task has already established; do not start over.")
     return submit(conn, execution["task_id"], direction + note,
-                  kind="resume", resumed_from=execution_id)
+                  kind=tag, resumed_from=execution_id)
 
 
 def on_decision_resolved(conn: sqlite3.Connection, decision: dict[str, Any]) -> None:

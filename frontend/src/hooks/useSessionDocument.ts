@@ -166,7 +166,13 @@ export function useSessionDocument({
 
   useEffect(() => {
     if (!sessionId || !detail || detail.id !== sessionId) return;
-    rememberDocument(sessionId, { detail, triage, taskRuntime, earlier });
+    // v1.13 — cache by count AND size: keep only the latest 200 messages in
+    // the cached document (earlier pages reload via loadEarlier from
+    // message_total/hiddenCount, so nothing is lost, only re-fetched).
+    const slim = detail.messages.length > 200
+      ? { ...detail, messages: detail.messages.slice(-200) }
+      : detail;
+    rememberDocument(sessionId, { detail: slim, triage, taskRuntime, earlier });
   }, [sessionId, detail, triage, taskRuntime, earlier]);
 
   useEffect(() => {

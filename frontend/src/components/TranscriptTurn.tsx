@@ -118,6 +118,9 @@ export const AgentTurn = memo(function AgentTurn({
     || (last.kind === "approval" && last.status === "pending")
   ));
   const showWorking = live && !stoppedLabel && !text.trim() && !inProgress;
+  // v1.13 — long-run reassurance: past 90 s of live work, say the turn is
+  // still going (and steer/stop are available) instead of a bare shimmer.
+  const longRunning = live && !stoppedLabel && !waiting && elapsed != null && elapsed >= 90_000;
   const workingLabel = waiting
     ? t("turn.waitingApproval")
     : elapsed != null && elapsed >= 1000
@@ -141,6 +144,9 @@ export const AgentTurn = memo(function AgentTurn({
         resolvingId={resolvingId}
       />
       {showWorking ? <WorkingRow label={workingLabel} /> : null}
+      {longRunning ? (
+        <p className="turn-long-running" data-testid="turn-long-running">{t("turn.longRunning")}</p>
+      ) : null}
       {text.trim() ? (
         <div className="turn-answer" data-testid="turn-answer">
           <Markdown text={text} />
