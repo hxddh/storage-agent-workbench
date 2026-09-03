@@ -40,7 +40,14 @@ function renderNav(collapsed = false, tasks = [task("a", "acme-logs 403"), task(
 
 describe("the sidebar", () => {
   it("opens Rename and Delete behind one More control and nothing else", () => {
-    const actions = renderNav();
+    // Distinct timestamps: the list sorts newest-first, and two `new Date()`
+    // calls in the same millisecond only stay ordered by sort stability —
+    // across a millisecond boundary in CI the rows flip and the wrong More
+    // button opens.
+    const actions = renderNav(false, [
+      task("a", "acme-logs 403", "2026-09-02T00:00:00Z"),
+      task("b", "inventory review", "2026-09-01T00:00:00Z"),
+    ]);
     fireEvent.click(screen.getAllByRole("button", { name: /more actions/i })[0]);
     expect(screen.getByRole("button", { name: "Rename" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
