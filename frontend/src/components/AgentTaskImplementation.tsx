@@ -238,6 +238,13 @@ export function AgentTaskImplementation({
       ) : isEmpty ? (
         <div className="native-start" data-testid="task-start">
           <div className="native-start-inner">
+            <div className="native-start-mark" aria-hidden data-testid="start-mark">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round">
+                <path d="M12 3 3.5 8 12 13l8.5-5z" />
+                <path d="M3.5 12 12 17l8.5-5" opacity="0.65" />
+                <path d="M3.5 16 12 21l8.5-5" opacity="0.35" />
+              </svg>
+            </div>
             <p className="native-start-greeting">{pickStartGreeting(lang)}</p>
             {composerNode}
             <div className="mt-4 space-y-2">{banners}</div>

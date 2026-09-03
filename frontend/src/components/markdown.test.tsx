@@ -162,14 +162,15 @@ describe("syntax highlighting", () => {
   });
 });
 
-describe("tables scroll inside their own container", () => {
-  it("wraps a table in a horizontal scroll container and never fades or charts it", () => {
+describe("tables render whole in the page flow", () => {
+  it("renders every row and column with no scroller, and never fades or charts it", () => {
     const { container } = md(
       "| prefix | objects |\n| --- | ---: |\n| logs/ | 900 |\n| data/ | 120 |\n| tmp/ | 15 |",
     );
-    const scroller = screen.getByTestId("table-scroll");
-    expect(scroller.className).toContain("agent-table-scroll");
-    expect(scroller.querySelector("table")).toBeTruthy();
+    const grid = screen.getByTestId("table-grid");
+    expect(grid.tagName).toBe("TABLE");
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(3);
+    expect(screen.queryByTestId("table-scroll")).toBeNull();
     expect(container.querySelector("[data-testid='chart-toggle']")).toBeNull();
     expect(container.querySelector("[data-testid='table-chart']")).toBeNull();
     expect(container.innerHTML).not.toContain("mask-image");

@@ -1,4 +1,5 @@
 import { useI18n } from "../i18n";
+import { approvalActionLabel } from "../lib/approvalAction";
 import { fmtBytes } from "../lib/format";
 import type { ApprovalItem } from "../lib/turnItems";
 import { Icon } from "./icons";
@@ -23,7 +24,9 @@ export function ApprovalCard({
   const { t } = useI18n();
   const impact = item.impact;
   const pending = item.status === "pending";
-  const title = item.title || item.action_type;
+  // v1.16 — a missing title falls back to the localized gate name, never
+  // raw snake_case (both current gates always send titles; this is the net).
+  const title = item.title || approvalActionLabel(item.action_type, t);
   const files = impact?.file_count != null ? t("approval.fileCount", { n: impact.file_count }) : null;
   const bytes = impact?.total_bytes != null ? fmtBytes(impact.total_bytes) : null;
   // v1.13 — large-scan gate: buckets + estimated live calls.

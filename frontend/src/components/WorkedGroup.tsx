@@ -81,6 +81,9 @@ export function WorkedGroup({
   sessionId,
   live = false,
   startedAt = null,
+  /** Find holds a runnable query: render every row — folded rows are
+   * unmounted, and unmounted rows are unfindable. */
+  forceExpanded = false,
 }: {
   records: ToolActivity[];
   sessionId?: string | null;
@@ -88,6 +91,7 @@ export function WorkedGroup({
   live?: boolean;
   /** When the turn started — the live clock's fallback before any row carries its own start. */
   startedAt?: number | null;
+  forceExpanded?: boolean;
 }) {
   const { t } = useI18n();
   const running = live || records.some((item) => item.status === "started");
@@ -98,10 +102,10 @@ export function WorkedGroup({
   const elapsed = useElapsed(groupStartMs(records) ?? startedAt, running);
   if (!records.length) return null;
 
-  const expanded = open ?? (running || anyFailed);
+  const expanded = open ?? (forceExpanded || running || anyFailed);
   const done = records.filter((item) => item.status !== "started").length;
   const worked = groupSpanMs(records);
-  const folded = !showAll && records.length > FOLD_AFTER;
+  const folded = !forceExpanded && !showAll && records.length > FOLD_AFTER;
   const hiddenCount = folded ? records.length - TAIL_WHEN_FOLDED : 0;
   const shown = folded
     ? records.filter((a, i) => i >= records.length - TAIL_WHEN_FOLDED || isFailed(a))

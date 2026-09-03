@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n";
+import { mentionQueryAt, mentionTriggered } from "../lib/mention";
 import { MOD } from "../shortcuts";
 import { Icon } from "./icons";
 import { ModelChip } from "./ModelChip";
@@ -151,10 +152,11 @@ export function Composer({
 
   const updateMention = (value: string, caret: number | null) => {
     if (!mentionables.length || caret == null) { setMention(null); return; }
-    const before = value.slice(0, caret);
-    const m = before.match(/@([^\s@]{0,64})$/);
-    if (!m) { setMention(null); return; }
-    setMention((prev) => ({ query: m[1], index: prev && prev.query === m[1] ? prev.index : 0 }));
+    // v1.16 — word-boundary trigger shared with the hint lines below, so
+    // email addresses never open file completion.
+    const query = mentionQueryAt(value, caret);
+    if (query == null) { setMention(null); return; }
+    setMention((prev) => ({ query, index: prev && prev.query === query ? prev.index : 0 }));
   };
   const mentionMatches = mention
     ? mentionables.filter((f) => f.filename.toLowerCase().includes(mention.query.toLowerCase())).slice(0, 6)
@@ -192,10 +194,10 @@ export function Composer({
     setSizeError(null);
     onPickFile(file);
   };
-  // v1.16 — `@` discoverability: a quiet line under the field instead of
-  // silence when there is nothing (or no file) to complete.
-  const showMentionHint = mentionables.length > 0 && !mention;
-  const showMentionNeedsFile = mentionables.length === 0 && !mention && text.includes("@");
+  // v1.16 — `@` discoverability: a quiet line only while the user is
+  // actually typing a trigger (R1: never a permanent fixture).
+  const showMentionHint = mentionables.length > 0 && !mention && mentionTriggered(text);
+  const showMentionNeedsFile = mentionables.length === 0 && !mention && mentionTriggered(text);
 
   useEffect(() => { setSizeError(null); }, [attached]);
   useEffect(() => {
@@ -274,7 +276,7 @@ export function Composer({
       <input
         ref={fileRef}
         type="file"
-        accept=".csv,.parquet,.tsv,.log,.txt,.gz,.json,.jsonl"
+        accept={ANALYZED_EXT.join(",")}
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0] ?? null;

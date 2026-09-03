@@ -16,7 +16,7 @@ test.describe("empty Agent start", () => {
     await expect(page.getByTestId("first-run-resume")).toHaveCount(0);
     await expect(page.getByTestId("agent-composer").getByRole("textbox")).toHaveAttribute(
       "placeholder",
-      /Ask about your storage/,
+      /Describe the storage work to delegate/,
     );
   });
 });

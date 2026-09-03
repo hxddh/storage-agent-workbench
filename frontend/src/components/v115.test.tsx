@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { render, screen, fireEvent, cleanup, within } from "@testing-library/react";
+import { render, screen, cleanup, within } from "@testing-library/react";
 import { createElement, createRef } from "react";
 import { afterEach } from "vitest";
 import { I18nProvider } from "../i18n";
@@ -85,24 +85,30 @@ describe("v1.15 usage truth", () => {
   });
 });
 
-describe("v1.15 tables fit first", () => {
-  it("fits a narrow table with no scroll hint and paginates a long one", () => {
-    draw(<Markdown text={"| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |"} />);
-    expect(screen.getByTestId("table-size").textContent).toMatch(/2 rows/);
+describe("tables render whole: no folding, no sliding", () => {
+  it("renders every row with no pagination chrome", () => {
+    const rows = Array.from({ length: 35 }, (_, i) => `| ${i} | x |`).join("\n");
+    const { container } = draw(<Markdown text={`| a | b |\n|---|---|\n${rows}`} />);
+    expect(screen.getByTestId("table-size").textContent).toMatch(/35 rows/);
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(35);
     expect(screen.queryByTestId("table-scroll-hint")).toBeNull();
     expect(screen.queryByTestId("table-expand")).toBeNull();
-    cleanup();
-    const rows = Array.from({ length: 35 }, (_, i) => `| ${i} | x |`).join("\n");
-    draw(<Markdown text={`| a | b |\n|---|---|\n${rows}`} />);
-    expect(screen.getByTestId("table-page").textContent).toMatch(/30/);
-    fireEvent.click(screen.getByTestId("table-expand"));
-    expect(screen.getByTestId("table-expand").getAttribute("data-expanded")).toBe("true");
+    expect(screen.queryByTestId("table-page")).toBeNull();
   });
 
-  it("hints before cutting a genuinely wide table", () => {
+  it("renders wide content in the page flow, never in a scroller", () => {
     const long = "x".repeat(80);
-    draw(<Markdown text={`| a | b | c | d | e |\n|---|---|---|---|---|\n| ${long} | 2 | 3 | 4 | 5 |`} />);
-    expect(screen.getByTestId("table-scroll-hint")).toBeTruthy();
+    const { container } = draw(<Markdown text={`| a | b | c | d | e |\n|---|---|---|---|---|\n| ${long} | 2 | 3 | 4 | 5 |`} />);
+    const grid = container.querySelector('[data-testid="table-grid"]') as HTMLElement;
+    expect(grid.tagName).toBe("TABLE");
+    expect(grid.parentElement?.tagName).not.toBe("TABLE");
+    // No overflow container anywhere between the table and the prose root.
+    let el: HTMLElement | null = grid.parentElement;
+    while (el && !el.classList.contains("agent-result-prose")) {
+      expect(getComputedStyle(el).overflowX).not.toBe("auto");
+      expect(getComputedStyle(el).overflowX).not.toBe("scroll");
+      el = el.parentElement;
+    }
   });
 });
 

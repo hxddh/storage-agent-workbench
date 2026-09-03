@@ -379,7 +379,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(css).toContain("--doc-measure: 46rem");
     expect(css).toContain("--doc-track: 64rem");
     expect(shell).not.toContain("box-shadow: 0 8px");
-    expect(document).toContain(".agent-table-scroll");
+    expect(document).toContain(".agent-table-grid");
     expect(document).toContain(".turn-user-bubble");
     expect(document).not.toContain(".agent-result-wide");
     expect(document).not.toContain(".native-decision");
@@ -628,11 +628,12 @@ describe("v1.11.0 turn transcript boundaries", () => {
     expect(doc).toContain("liveHandlers(sessionId)");
   });
 
-  it("keeps the answer a Markdown page: tables scroll, no chart toggle, no chip row, no footer", () => {
+  it("keeps the answer a Markdown page: whole tables, no chart toggle, no chip row, no footer", () => {
     const md = source("../components/MarkdownImplementation.tsx");
     const turn = source("../components/TranscriptTurn.tsx");
     const task = source("../components/AgentTaskImplementation.tsx") + source("../components/TaskDocument.tsx");
-    expect(md).toContain("agent-table-scroll");
+    expect(md).toContain("agent-table-grid");
+    expect(md).not.toContain("agent-table-scroll");
     expect(md).not.toContain("chart-toggle");
     expect(md).not.toContain("mask-image");
     expect(md).not.toContain("agent-result-wide");
@@ -1121,13 +1122,17 @@ describe("v1.15.0 true native agent", () => {
     expect(doc).not.toContain("onClick={onResync}");
   });
 
-  it("fits tables first, hints only when truly wide, paginates long ones", () => {
+  it("renders tables whole: no folding, no sliding", () => {
     const md = source("../components/MarkdownImplementation.tsx");
-    expect(md).toContain('data-testid="table-scroll-hint"');
-    expect(md).toContain('data-testid="table-expand"');
-    expect(md).toContain('data-testid="table-page"');
-    expect(md).not.toContain("w-max border-collapse");
-    expect(md).toContain("break-words");
+    expect(md).toContain('data-testid="table-grid"');
+    expect(md).toContain("agent-table-grid");
+    expect(md).not.toContain('data-testid="table-scroll-hint"');
+    expect(md).not.toContain('data-testid="table-expand"');
+    expect(md).not.toContain('data-testid="table-page"');
+    expect(md).not.toContain("agent-table-scroll");
+    expect(md).not.toContain("useState");
+    const css = source("./native-document.css");
+    expect(css).not.toMatch(/\.agent-table-scroll\s*\{[^}]*overflow/);
   });
 
   it("renders usage from one vocabulary: subset cached, floor ~, named silence", () => {
@@ -1164,7 +1169,8 @@ describe("v1.15.0 true native agent", () => {
     const css = source("./native-document.css");
     expect(css).toContain("--shadow-elev");
     expect(css).toContain(".turn-user-bubble");
-    expect(css).toContain("border-top-right-radius");
+    // Uniform bubble corners; the tail radius is gone.
+    expect(css).not.toContain("border-top-right-radius");
   });
 });
 
@@ -1216,7 +1222,7 @@ describe("v1.16.0 true native agent, finished", () => {
     expect(banners).toContain("onDismissError");
     expect(banners).toContain('t("common.dismiss")');
     expect(banners).toContain("needKey && !offline");
-    expect(banners).toContain("maxLength={32000}");
+    expect(banners).toContain("maxLength={QUEUED_DIRECTION_LIMIT}");
   });
 
   it("retries reconnects with backoff and locks the history auto-load", () => {
@@ -1232,5 +1238,46 @@ describe("v1.16.0 true native agent, finished", () => {
     expect(boundary).not.toContain("#0b0e14");
     expect(source("../components/Composer.tsx")).toContain("ghu_");
     expect(source("../components/Composer.tsx")).toContain("glpat-");
+  });
+
+  it("triggers @ mentions on word boundaries and shares the gate-name map", () => {
+    const composer = source("../components/Composer.tsx");
+    expect(composer).toContain("mentionQueryAt(value, caret)");
+    expect(composer).toContain("mentionTriggered(text)");
+    expect(composer).toContain("accept={ANALYZED_EXT.join");
+    expect(source("../lib/mention.ts")).toContain("mentionTriggered");
+    expect(source("../lib/approvalAction.ts")).toContain("approvalActionLabel");
+    expect(source("../components/ApprovalCard.tsx")).toContain("approvalActionLabel(item.action_type, t)");
+    expect(source("../settings/SafetyPane.tsx")).toContain("approvalActionLabel(a, t)");
+  });
+
+  it("prefills full-sentence drafts and promises no charts from tables", () => {
+    const palette = source("../components/CommandPalette.tsx");
+    expect(palette).toContain("copy.engineCostAsk");
+    expect(palette).toContain("useMemo(() => ({");
+    const prompt = source("../../../sidecar/app/agent_runtime/prompt.py");
+    expect(prompt).not.toContain("the UI draws a chart from that shape");
+    expect(prompt).toContain("never draws charts from answer text");
+    expect(source("../components/TaskBanners.tsx")).toContain("QUEUED_DIRECTION_LIMIT");
+    expect(source("../components/TaskBanners.tsx")).toContain("maxLength={QUEUED_DIRECTION_LIMIT}");
+  });
+
+  it("searches what it counts: groups unfold, scrolling is measured", () => {
+    const doc = source("../components/TaskDocument.tsx");
+    expect(doc).toContain("findActive = findOpen && meetsMinQuery(findQuery)");
+    expect(doc).toContain("findActive={findActive}");
+    expect(doc).toContain("root.scrollTop +=");
+    expect(doc).not.toContain("scrollIntoView({");
+    expect(source("../components/TranscriptItems.tsx")).toContain("forceExpanded={findActive}");
+    expect(source("../components/TranscriptTurn.tsx")).toContain("findActive?: boolean");
+    expect(source("../components/WorkedGroup.tsx")).toContain("forceExpanded = false");
+  });
+
+  it("renders tables whole with wrapping cells", () => {
+    const css = source("./native-document.css");
+    expect(css).toContain(".agent-table-grid");
+    expect(css).toContain("overflow-wrap: break-word");
+    expect(css).not.toContain("overflow-wrap: anywhere");
+    expect(source("../../src/index.css")).not.toContain("overflow-wrap: anywhere");
   });
 });

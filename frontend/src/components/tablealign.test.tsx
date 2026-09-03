@@ -18,7 +18,7 @@
  * The two go together, which is why both are asserted here.
  */
 import { describe, it, expect } from "vitest";
-import { render } from "@testing-library/react";
+import { render, cleanup } from "@testing-library/react";
 import { createElement } from "react";
 import { Markdown } from "./Markdown";
 import { inferAlign, TALL_TABLE_ROWS } from "./Markdown";
@@ -112,19 +112,15 @@ describe("a long table", () => {
   const scroller = (c: HTMLElement) => c.querySelector("table")?.parentElement as HTMLElement;
   const headRow = (c: HTMLElement) => c.querySelector("thead tr") as HTMLElement;
 
-  it("keeps its header in view by scrolling inside itself", () => {
-    // Observed on a seeded investigation at 1440x900: 24 rows put the header
-    // off-screen before the last row, leaving a viewport of bare numbers.
-    const { container } = draw(table("| --- | --- | --- |", rowsOf(TALL_TABLE_ROWS + 12)));
-    expect(scroller(container).className).toContain("max-h-");
-    expect(headRow(container).className).toContain("sticky");
-  });
-
-  it("leaves a short table alone in the page flow", () => {
-    // A nested scroll region is a real cost — a trapped wheel — and a short
-    // table never loses its header, so it must not pay for the fix.
-    const { container } = draw(table("| --- | --- | --- |", rowsOf(4)));
-    expect(scroller(container).className).not.toContain("max-h-");
-    expect(headRow(container).className).not.toContain("sticky");
+  it("renders whole in the page flow: no inner scroller, no sticky header", () => {
+    // Tables never fold and never slide: a trapped wheel and a hidden row
+    // are both worse than a long page, at any row count.
+    for (const n of [4, TALL_TABLE_ROWS + 12]) {
+      const { container } = draw(table("| --- | --- | --- |", rowsOf(n)));
+      expect(container.querySelectorAll("tbody tr")).toHaveLength(n);
+      expect(scroller(container).className).not.toContain("max-h-");
+      expect(headRow(container).className).not.toContain("sticky");
+      cleanup();
+    }
   });
 });

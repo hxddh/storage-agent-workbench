@@ -53,7 +53,8 @@ export function CommandPalette({
   const { lang, setLang, t } = useI18n();
   const { theme, toggle } = useTheme();
   // v1.16 — palette copy lives in the i18n dict, like every other surface.
-  const copy = {
+  // Memoized: a fresh object every render defeated the items useMemo below.
+  const copy = useMemo(() => ({
     placeholder: t("palette.placeholder"),
     newTask: t("palette.newTask"),
     settings: t("palette.settings"),
@@ -76,7 +77,14 @@ export function CommandPalette({
     engineBaseline: t("palette.engineBaseline"),
     engineDrift: t("palette.engineDrift"),
     engineReport: t("palette.engineReport"),
-  };
+    // v1.16 — full-sentence drafts: a bare label is too thin a direction
+    // (no scope), and the user reviews the draft before sending.
+    engineCostAsk: t("palette.engineCostAsk"),
+    enginePlanAsk: t("palette.enginePlanAsk"),
+    engineBaselineAsk: t("palette.engineBaselineAsk"),
+    engineDriftAsk: t("palette.engineDriftAsk"),
+    engineReportAsk: t("palette.engineReportAsk"),
+  }), [t]);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -127,11 +135,11 @@ export function CommandPalette({
     // Typing stays the action; the palette only saves the wording.
     const engines: Cmd[] = live.prefill && !live.busy
       ? [
-          { id: "engine-cost", label: copy.engineCost, icon: "storage", run: () => { live.prefill?.(copy.engineCost); onClose(); }, group: "engine" },
-          { id: "engine-plan", label: copy.enginePlan, icon: "tool", run: () => { live.prefill?.(copy.enginePlan); onClose(); }, group: "engine" },
-          { id: "engine-baseline", label: copy.engineBaseline, icon: "file", run: () => { live.prefill?.(copy.engineBaseline); onClose(); }, group: "engine" },
-          { id: "engine-drift", label: copy.engineDrift, icon: "refresh", run: () => { live.prefill?.(copy.engineDrift); onClose(); }, group: "engine" },
-          { id: "engine-report", label: copy.engineReport, icon: "compose", run: () => { live.prefill?.(copy.engineReport); onClose(); }, group: "engine" },
+          { id: "engine-cost", label: copy.engineCost, icon: "storage", run: () => { live.prefill?.(copy.engineCostAsk); onClose(); }, group: "engine" },
+          { id: "engine-plan", label: copy.enginePlan, icon: "tool", run: () => { live.prefill?.(copy.enginePlanAsk); onClose(); }, group: "engine" },
+          { id: "engine-baseline", label: copy.engineBaseline, icon: "file", run: () => { live.prefill?.(copy.engineBaselineAsk); onClose(); }, group: "engine" },
+          { id: "engine-drift", label: copy.engineDrift, icon: "refresh", run: () => { live.prefill?.(copy.engineDriftAsk); onClose(); }, group: "engine" },
+          { id: "engine-report", label: copy.engineReport, icon: "compose", run: () => { live.prefill?.(copy.engineReportAsk); onClose(); }, group: "engine" },
         ]
       : [];
     actions.push(
@@ -206,7 +214,7 @@ export function CommandPalette({
               <button
                 onMouseEnter={() => setSel(index)}
                 onClick={() => command.run()}
-                className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-[background-color] duration-fast ${index === sel ? "bg-hover" : ""}`}
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-[background-color] duration-fast ${index === sel ? "bg-hover ring-1 ring-inset ring-edge" : ""}`}
               >
                 <Icon name={command.icon} size={15} className={index === sel ? "text-gray-100" : "text-gray-500"} />
                 <span className="min-w-0 flex-1 truncate text-sm text-gray-100">{command.label}</span>

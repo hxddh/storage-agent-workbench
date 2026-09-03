@@ -39,7 +39,7 @@ test.describe("Agent task navigation", () => {
     await expect(taskRow).not.toContainText(/\b\d+[FR]\b/);
   });
 
-  test("the list is grouped by day and states the read-only floor beside Settings", async ({ page }) => {
+  test("the list is grouped by day with Settings alone in the footer", async ({ page }) => {
     const TITLE = await open(page);
     // Every task sits under a day group (Today · Yesterday · a dated header);
     // the seeded task carries a fixed past date, so its group is a dated one.
@@ -48,9 +48,9 @@ test.describe("Agent task navigation", () => {
     await expect(group).toHaveAttribute("data-group", /^(today|yesterday|\d+)$/);
     await expect(group.locator(".native-sidebar-section").first()).toBeVisible();
     await expect(group.getByTestId("task-row").filter({ hasText: TITLE })).toHaveCount(1);
-    const readOnly = navigation(page).getByTestId("sidebar-read-only");
-    await expect(readOnly).toHaveText(/Read-only/);
-    await expect(readOnly).toHaveAttribute("title", /imports pause for your approval/);
+    // v1.15 — the footer policy fact is gone; the footer is Settings alone.
+    await expect(navigation(page).getByTestId("sidebar-read-only")).toHaveCount(0);
+    await expect(navigation(page).getByTestId("task-navigation-settings")).toBeVisible();
     await expect(navigation(page).getByRole("switch")).toHaveCount(0);
   });
 

@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo, useState, type ReactNode } from "react";
+import { Fragment, memo, useMemo, type ReactNode } from "react";
 import { useCopy } from "../hooks/useCopy";
 import { openExternal, tauriInvoke } from "../config";
 import { useI18n } from "../i18n";
@@ -180,8 +180,11 @@ const ALIGN_CLASS: Record<Align, string> = {
   right: "text-right",
 };
 
+/** Tables render whole: every row, every column, in the page flow.
+ * No pagination, no inner scroller, no sticky header — a trapped wheel and
+ * a hidden row are both worse than a long page. Width is handled by
+ * wrapping (`agent-table` CSS), never by sideways scrolling. */
 export const TALL_TABLE_ROWS = 12;
-const PAGE_TABLE_ROWS = 30;
 
 function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Align | null)[]; rows: string[][] }) {
   const columns = useMemo(() => {
@@ -192,37 +195,17 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
       return { align, numeric: align === "right" };
     });
   }, [headers, aligns, rows]);
-  const tall = rows.length > TALL_TABLE_ROWS;
   const { t } = useI18n();
   const { copied, copy } = useCopy();
-  // v1.15 — long tables paginate instead of growing a tall inner scroller:
-  // the first page reads in place, the rest opens on one explicit action.
-  const [expanded, setExpanded] = useState(false);
-  const paged = rows.length > PAGE_TABLE_ROWS && !expanded;
-  const visible = paged ? rows.slice(0, PAGE_TABLE_ROWS) : rows;
   const copyTsv = () => {
     const cell = (value: string) => value.replace(/[\t\n\r]+/g, " ");
     copy([headers, ...rows].map((row) => row.map(cell).join("\t")).join("\n"));
   };
 
-  // v1.15 — fit when the content fits: the table is fluid (`w-full`) and
-  // cells wrap, so a 2–4 column table with short values never scrolls. Only
-  // genuinely wide content (many columns or a long value) overflows, and
-  // then the container scrolls with an explicit hint instead of a mystery
-  // cut. Numeric columns keep tabular figures but may wrap like the rest.
-  const maxCell = useMemo(() => {
-    let m = 0;
-    for (const h of headers) m = Math.max(m, h.length);
-    for (const r of rows) for (const c of r) m = Math.max(m, (c ?? "").length);
-    return m;
-  }, [headers, rows]);
-  const wide = headers.length > 4 || maxCell > 60;
   return (
-    <div className="agent-table my-1" data-wide={wide ? "true" : "false"}>
+    <div className="agent-table my-1">
       <div className="mb-1 flex items-center gap-2 text-2xs text-gray-500">
         <span data-testid="table-size">{t("table.size", { rows: rows.length, cols: headers.length })}</span>
-        {wide ? <span data-testid="table-scroll-hint" className="agent-table-hint">{t("table.scrollHint")}</span> : null}
-        {paged ? <span data-testid="table-page" className="tabular-nums">{t("table.page", { shown: visible.length, total: rows.length })}</span> : null}
         <button
           type="button"
           onClick={copyTsv}
@@ -233,43 +216,28 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
           {copied ? t("common.copied") : t("common.copy")}
         </button>
       </div>
-      <div className={`agent-table-scroll ${tall ? "max-h-[22rem]" : ""}`} data-testid="table-scroll">
-        <table className={`${wide ? "w-max min-w-full" : "w-full"} border-collapse text-xs`}>
-          <thead>
-            <tr className={`bg-canvas ${tall ? "sticky top-0 z-sticky" : ""}`}>
-              {headers.map((h, i) => (
-                <th key={i} className={`border-b border-edge-strong px-3 pb-1.5 pt-0.5 text-2xs font-semibold uppercase tracking-[0.08em] text-gray-400 ${ALIGN_CLASS[columns[i]?.align ?? "left"]}`}>
-                  {inline(h)}
-                </th>
+      <table className="agent-table-grid" data-testid="table-grid">
+        <thead>
+          <tr>
+            {headers.map((h, i) => (
+              <th key={i} className={ALIGN_CLASS[columns[i]?.align ?? "left"]}>
+                {inline(h)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, ri) => (
+            <tr key={ri}>
+              {r.map((c, ci) => (
+                <td key={ci} className={`${ALIGN_CLASS[columns[ci]?.align ?? "left"]} ${columns[ci]?.numeric ? "tabular-nums" : ""}`}>
+                  {inline(c)}
+                </td>
               ))}
             </tr>
-          </thead>
-          <tbody>
-            {visible.map((r, ri) => (
-              <tr key={ri} className="border-b border-edge/50 last:border-0">
-                {r.map((c, ci) => (
-                  <td key={ci} className={`break-words px-3 py-1 align-top text-gray-300 ${ALIGN_CLASS[columns[ci]?.align ?? "left"]} ${columns[ci]?.numeric ? "tabular-nums" : ""}`}>
-                    {inline(c)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {rows.length > PAGE_TABLE_ROWS ? (
-        <div className="mt-1">
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            data-testid="table-expand"
-            data-expanded={expanded ? "true" : "false"}
-            className="native-ghost-action"
-          >
-            {expanded ? t("table.showLess") : t("table.showAll", { n: rows.length })}
-          </button>
-        </div>
-      ) : null}
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -4,7 +4,9 @@ import { createElement } from "react";
 import { I18nProvider } from "../i18n";
 import { ThemeProvider } from "../theme";
 import type { TFunc } from "../i18n";
-import { formatUsageLine, contextReading } from "../lib/usage";
+import { formatUsageLine, contextReading, usageTitle } from "../lib/usage";
+import { mentionQueryAt, mentionTriggered } from "../lib/mention";
+import { approvalActionLabel } from "../lib/approvalAction";
 import { NAV_DAY_LABELS } from "../agent/navigationCopy";
 import { publishPaletteActions, publishBasePaletteActions } from "../agent/paletteActions";
 import { CommandPalette } from "./CommandPalette";
@@ -86,7 +88,8 @@ describe("v1.16 discoverability without painted hints", () => {
         onOpenSettings: () => {},
       }))));
     fireEvent.click(screen.getByText("Draft a remediation plan"));
-    expect(prefill).toHaveBeenCalledWith("Draft a remediation plan");
+    // v1.16 — a full-sentence draft, not the bare label.
+    expect(prefill).toHaveBeenCalledWith("Draft a remediation plan to cut storage spend.");
   });
 });
 
@@ -133,5 +136,34 @@ describe("v1.16 copy lives in dictionaries", () => {
     expect(NAV_DAY_LABELS.en.today).toBe("Today");
     expect(NAV_DAY_LABELS.zh.today).toBe("今天");
     expect(NAV_DAY_LABELS.zh.earlier).toBe("更早");
+  });
+
+  it("localizes gate ids with a raw fallback", () => {
+    const dict = (key: string) => key;
+    expect(approvalActionLabel("import_inventory", dict as TFunc)).toBe("approval.actionImportInventory");
+    expect(approvalActionLabel("survey_account_large", dict as TFunc)).toBe("approval.actionSurveyLarge");
+    expect(approvalActionLabel("some_future_gate", dict as TFunc)).toBe("some_future_gate");
+  });
+});
+
+describe("v1.16 @ triggers on word boundaries only", () => {
+  it("ignores email addresses", () => {
+    expect(mentionQueryAt("mail user@example.com", 21)).toBeNull();
+    expect(mentionTriggered("mail user@example.com")).toBe(false);
+  });
+
+  it("completes after whitespace or at the start", () => {
+    expect(mentionQueryAt("@inv", 4)).toBe("inv");
+    expect(mentionQueryAt("see @inv", 8)).toBe("inv");
+    expect(mentionTriggered("see @inv")).toBe(true);
+    expect(mentionTriggered("nothing here")).toBe(false);
+  });
+});
+
+describe("v1.16 usage tooltip matches the meter", () => {
+  it("always discloses the one-time-steps exclusion", () => {
+    const key = ((k: string) => k) as TFunc;
+    expect(usageTitle({ total_tokens: 100 }, key)).toContain("usage.systemNote");
+    expect(usageTitle(null, key)).toBeUndefined();
   });
 });

@@ -20,6 +20,8 @@ export const TranscriptItems = memo(function TranscriptItems({
   startedAt = null,
   onResolve,
   resolvingId = null,
+  /** Find is open with a runnable query: unfold everything searchable. */
+  findActive = false,
 }: {
   items: TurnItem[];
   live?: boolean;
@@ -27,6 +29,7 @@ export const TranscriptItems = memo(function TranscriptItems({
   startedAt?: number | null;
   onResolve?: (decisionId: string, resolution: ApprovalResolution, scope: ApprovalScope) => void;
   resolvingId?: string | null;
+  findActive?: boolean;
 }) {
   const { t } = useI18n();
   const segments = useMemo(() => segmentsOf(items), [items]);
@@ -51,6 +54,7 @@ export const TranscriptItems = memo(function TranscriptItems({
               sessionId={sessionId}
               live={live && index === lastIndex}
               startedAt={startedAt}
+              forceExpanded={findActive}
             />
           );
         }

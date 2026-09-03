@@ -1,17 +1,9 @@
 import { useEffect, useState } from "react";
 import { getApprovalPolicy, putApprovalPolicy, type ApprovalPolicy, type ApprovalPolicyInfo } from "../api";
 import { useI18n } from "../i18n";
+import { approvalActionLabel } from "../lib/approvalAction";
 
 const POLICIES: ApprovalPolicy[] = ["ask", "allow_session", "allow_always"];
-
-/** v1.16 — backend action ids are stable snake_case; render them localized
- * with the raw id as the fallback so a new gate never paints blank. */
-function actionLabel(action: string, t: (key: string) => string): string {
-  if (action === "import_inventory") return t("approval.actionImportInventory");
-  if (action === "import_access_log") return t("approval.actionImportAccessLog");
-  if (action === "survey_account_large") return t("approval.actionSurveyLarge");
-  return action;
-}
 
 /**
  * Settings → Safety (v1.12): the approval policy the Sidecar enforces in
@@ -106,7 +98,7 @@ export function SafetyPane() {
                     <div className="text-xs leading-relaxed text-gray-500">{tool.why}</div>
                   </div>
                   {tool.action_types.length ? (
-                    <span className="native-settings-tag">{tool.action_types.map((a) => actionLabel(a, t)).join(" · ")}</span>
+                    <span className="native-settings-tag">{tool.action_types.map((a) => approvalActionLabel(a, t)).join(" · ")}</span>
                   ) : null}
                 </li>
               ))}

@@ -84,13 +84,18 @@ export function formatUsageLine(usage: (TokenUsage & UsageExtras) | null | undef
   return isUsageFloor(usage) ? t("usage.floor", { text: `~${text}` }) : text;
 }
 
-/** Tooltip for a usage line: floor reason, or nothing when exact. */
+/** Tooltip for a usage line (v1.16): same notes as the Composer meter —
+ * the floor reason when partial, always the one-time-steps disclosure. */
 export function usageTitle(usage: TokenUsage | null | undefined, t: TFunc): string | undefined {
-  if (!usage || !isUsageFloor(usage)) return undefined;
-  return t("usage.floorHint", {
-    reported: usage.reported_requests ?? 0,
-    total: usage.requests ?? 0,
-  });
+  if (!usage) return undefined;
+  const notes = [t("usage.systemNote")];
+  if (isUsageFloor(usage)) {
+    notes.push(t("usage.floorHint", {
+      reported: usage.reported_requests ?? 0,
+      total: usage.requests ?? 0,
+    }));
+  }
+  return notes.join(" ");
 }
 
 export type ContextReading =

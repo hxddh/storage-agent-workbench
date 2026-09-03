@@ -65,6 +65,7 @@ export const AgentTurn = memo(function AgentTurn({
   figures,
   onResolve,
   resolvingId = null,
+  findActive = false,
 }: {
   items: TurnItem[];
   answer: string | null;
@@ -77,6 +78,8 @@ export const AgentTurn = memo(function AgentTurn({
   figures?: ReactNode;
   onResolve?: (decisionId: string, resolution: ApprovalResolution, scope: ApprovalScope) => void;
   resolvingId?: string | null;
+  /** Find holds a runnable query: unfold groups so hits exist in the DOM. */
+  findActive?: boolean;
 }) {
   const { t } = useI18n();
   const text = answer ?? "";
@@ -115,6 +118,7 @@ export const AgentTurn = memo(function AgentTurn({
         startedAt={startedAt}
         onResolve={onResolve}
         resolvingId={resolvingId}
+        findActive={findActive}
       />
       {showWorking ? <WorkingRow label={workingLabel} /> : null}
       {longRunning ? (

@@ -146,6 +146,11 @@ export function TaskDocument({
   const [findQuery, setFindQuery] = useState("");
   const [findIdx, setFindIdx] = useState(0);
   useEffect(() => setFindIdx(0), [findQuery]);
+  // Folded tool rows are unmounted — unfindable. While a runnable query is
+  // open every group renders whole, so the counter and the DOM agree.
+  // (Call-detail bodies stay collapsed: multi-megabyte dumps would freeze
+  // the walk. Their one-line rows are still searchable.)
+  const findActive = findOpen && meetsMinQuery(findQuery);
   const [ranges, setRanges] = useState<Range[]>([]);
   const matchTotal = ranges.length;
   useEffect(() => {
@@ -162,7 +167,7 @@ export function TaskDocument({
     setRanges(found);
     return () => clearFind();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [findOpen, findQuery, items, liveAnswer, liveItems]);
+  }, [findOpen, findQuery, findActive, items, liveAnswer, liveItems]);
   const activeRange = matchTotal ? ranges[Math.min(findIdx, matchTotal - 1)] : null;
   useEffect(() => {
     if (!findOpen) return;
@@ -170,8 +175,16 @@ export function TaskDocument({
   }, [findOpen, ranges, findIdx, matchTotal]);
   useEffect(() => {
     if (!findOpen || !activeRange) return;
+    // Scroll the TASK scroller by measured offset: `scrollIntoView` on the
+    // match's parent scrolls the nearest inner scroller instead (tables and
+    // code blocks nest their own), leaving the document unmoved.
     const frame = requestAnimationFrame(() => {
-      activeRange.startContainer.parentElement?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const host = activeRange.startContainer.parentElement;
+      const root = scrollRef.current;
+      if (!host || !root) return;
+      const toHost = host.getBoundingClientRect();
+      const toRoot = root.getBoundingClientRect();
+      root.scrollTop += toHost.top + toHost.height / 2 - (toRoot.top + toRoot.height / 2);
     });
     return () => cancelAnimationFrame(frame);
   }, [findOpen, activeRange]);
@@ -298,6 +311,7 @@ export function TaskDocument({
                       figures={figuresFor(item)}
                       onResolve={onResolve}
                       resolvingId={resolvingId}
+                      findActive={findActive}
                     />
                   </div>
                 );
@@ -349,6 +363,7 @@ export function TaskDocument({
                   sessionId={sessionId}
                   onResolve={onResolve}
                   resolvingId={resolvingId}
+                  findActive={findActive}
                 />
               ) : null
             ) : null}

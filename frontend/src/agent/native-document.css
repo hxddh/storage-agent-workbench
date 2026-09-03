@@ -29,16 +29,15 @@
 .turn-user-bubble {
   max-width: min(70%, var(--doc-measure));
   border: 1px solid var(--edge);
-  border-radius: var(--radius-xl);
-  border-top-right-radius: var(--radius-md);
-  padding: 10px 14px;
+  border-radius: var(--radius-2xl);
+  padding: 12px 16px;
   background: var(--elevated);
   box-shadow: var(--shadow-elev);
   color: var(--gray-100);
   font-size: var(--text-base);
-  line-height: 1.55;
+  line-height: 1.6;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .turn-user-bubble[data-queued="true"] {
   color: var(--gray-400);
@@ -69,7 +68,7 @@
   min-width: 0;
 }
 .turn-agent > * + * {
-  margin-top: 10px;
+  margin-top: 12px;
 }
 .turn-commentary {
   color: var(--gray-400);
@@ -226,12 +225,12 @@
 
 .native-chip {
   display: inline-flex;
-  height: 26px;
+  height: 28px;
   align-items: center;
   gap: 6px;
   border: 1px solid var(--edge);
   border-radius: 999px;
-  padding: 0 10px 0 8px;
+  padding: 0 12px 0 10px;
   background: transparent;
   color: var(--gray-300);
   font-size: var(--text-xs);
@@ -265,9 +264,10 @@
 .approval-card {
   max-width: min(var(--doc-measure), 100%);
   border: 1px solid var(--edge-strong);
-  border-radius: var(--radius-xl);
-  padding: 12px 14px 10px;
+  border-radius: var(--radius-2xl);
+  padding: 16px 18px 14px;
   background: var(--panel);
+  box-shadow: var(--shadow-elev);
 }
 .approval-card-head {
   display: flex;
@@ -280,36 +280,36 @@
   text-transform: uppercase;
 }
 .approval-card-title {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   color: var(--gray-100);
-  font-size: var(--text-base);
+  font-size: var(--text-prose);
   font-weight: 500;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 .approval-card-why {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   color: var(--gray-300);
   font-size: var(--text-sm);
-  line-height: 1.55;
+  line-height: 1.6;
 }
 .approval-card-impact {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
-  gap: 4px 14px;
-  margin: 10px 0 0;
+  gap: 6px 16px;
+  margin: 12px 0 0;
   border-top: 1px solid var(--edge);
-  padding-top: 10px;
+  padding-top: 12px;
   font-size: var(--text-xs);
 }
 .approval-card-impact dt { color: var(--gray-500); }
-.approval-card-impact dd { margin: 0; color: var(--gray-200); overflow-wrap: anywhere; }
+.approval-card-impact dd { margin: 0; color: var(--gray-200); overflow-wrap: break-word; }
 .approval-card-impact dd[data-mono="true"] { font-family: "JetBrains Mono Variable", ui-monospace, monospace; }
 .approval-card-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 10px;
+  margin-top: 14px;
 }
 .approval-card-actions small {
   margin-left: auto;
@@ -332,8 +332,8 @@
 .native-banner {
   max-width: min(var(--doc-measure), 100%);
   border: 1px solid var(--edge);
-  border-radius: var(--radius-xl);
-  padding: 12px 14px;
+  border-radius: var(--radius-2xl);
+  padding: 14px 16px;
   background: var(--panel);
   color: var(--gray-200);
   font-size: var(--text-sm);
@@ -341,8 +341,8 @@
 }
 .native-banner[data-tone="danger"] { border-color: var(--danger-border); color: var(--danger); }
 .native-banner[data-tone="warn"] { border-color: var(--warn-border); }
-.native-banner p { margin: 4px 0 0; color: var(--gray-400); font-size: var(--text-xs); line-height: 1.55; }
-.native-banner-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.native-banner p { margin: 6px 0 0; color: var(--gray-400); font-size: var(--text-xs); line-height: 1.6; }
+.native-banner-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
 .native-queued { opacity: 0.85; }
 
@@ -373,15 +373,15 @@
 .native-composer textarea {
   display: block;
   width: 100%;
-  min-height: 24px;
+  min-height: 28px;
   max-height: 240px;
   resize: none;
   border: 0;
-  padding: 14px 18px 4px;
+  padding: 16px 20px 6px;
   background: transparent;
   color: var(--gray-100);
-  font-size: var(--text-base);
-  line-height: 1.5;
+  font-size: var(--text-prose);
+  line-height: 1.6;
   outline: none;
 }
 .native-composer textarea::placeholder {
@@ -390,8 +390,8 @@
 .native-composer-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 8px 8px 10px;
+  gap: 6px;
+  padding: 8px 10px 10px 12px;
 }
 .native-composer-attachment {
   display: flex;
@@ -425,8 +425,8 @@
 }
 .native-round {
   display: grid;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   flex: none;
   place-items: center;
   border: 0;
@@ -511,6 +511,7 @@
   left: 8px;
   width: min(20rem, calc(100% - 16px));
   overflow: hidden;
+  border: 1px solid var(--edge);
   border-radius: var(--radius-xl);
   padding: 4px;
   background: var(--panel);
@@ -523,7 +524,7 @@
   gap: 8px;
   border: 0;
   border-radius: var(--radius-md);
-  padding: 7px 8px;
+  padding: 8px 10px;
   background: transparent;
   color: var(--gray-200);
   font-size: var(--text-xs);
@@ -594,6 +595,13 @@
   text-align: center;
   text-wrap: balance;
 }
+/* Empty-start mark: one quiet geometric glyph, no words, no logo. */
+.native-start-mark {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 20px;
+  color: var(--gray-500);
+}
 .native-start-hint {
   display: none;
 }
@@ -613,17 +621,39 @@
 }
 .agent-result-prose { width: 100%; min-width: 0; }
 .agent-result-prose > * + * { margin-top: 0.7rem; }
-/* Tables (v1.15): fit when they fit, scroll with a hint when they don't.
-   Cells wrap (`MarkdownImplementation` drops `whitespace-nowrap`); the
-   container only overflows on genuinely wide content. */
+/* Tables: rendered whole in the page flow — no inner scroller, no folding.
+   The grid is fluid and every cell wraps at word boundaries (CJK breaks
+   between any two characters via the document's `line-break: strict`);
+   long tokens wrap only when they must (`break-word`, never `anywhere`). */
 .agent-table { width: 100%; min-width: 0; }
-.agent-table[data-wide="true"] .agent-table-scroll {
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-lg);
-  box-shadow: inset -12px 0 12px -12px rgba(0, 0, 0, 0.5);
+.agent-table-grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
 }
-.agent-table-scroll { max-width: 100%; overflow: auto; scrollbar-gutter: stable; }
-.agent-table-hint { color: var(--gray-500); font-style: italic; }
+.agent-table-grid thead tr { background: var(--canvas); }
+.agent-table-grid th {
+  border-bottom: 1px solid var(--edge-strong);
+  padding: 4px 14px 8px;
+  color: var(--gray-400);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  vertical-align: bottom;
+  overflow-wrap: break-word;
+}
+.agent-table-grid td {
+  min-width: 0;
+  padding: 6px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--edge) 50%, transparent);
+  vertical-align: top;
+  color: var(--gray-300);
+  overflow-wrap: break-word;
+}
+.agent-table-grid tbody tr:last-child td { border-bottom: 0; padding-bottom: 6px; }
 .agent-prose nav[data-testid="result-outline"] { margin: 0.2rem 0 0.6rem; border: 0; padding: 0 0 0.6rem; background: transparent; border-bottom: 1px solid var(--edge); border-radius: 0; }
 .agent-prose nav[data-testid="result-outline"] ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.25rem; row-gap: 0.1rem; }
 .agent-prose nav[data-testid="result-outline"] a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }
@@ -649,7 +679,7 @@
   max-width: min(var(--doc-measure), 100%);
   border: 1px solid var(--edge);
   border-radius: var(--radius-xl);
-  padding: 4px 10px;
+  padding: 8px 14px;
   background: var(--panel);
 }
 .plan-card-head {
@@ -702,7 +732,7 @@
   border: 1px solid currentColor;
   border-radius: 999px;
 }
-.plan-step-text { min-width: 0; overflow-wrap: anywhere; }
+.plan-step-text { min-width: 0; overflow-wrap: break-word; }
 
 /* v1.12 — the compaction marker: one muted line between segments, never a card. */
 .context-compacted {

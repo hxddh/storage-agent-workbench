@@ -5,6 +5,9 @@ import { Button } from "./ui";
 import { Icon } from "./icons";
 import { useTaskCopy } from "./taskCopy";
 
+/** Server PATCH ceiling for a queued Direction (routers/agent_tasks.py). */
+export const QUEUED_DIRECTION_LIMIT = 32000;
+
 /**
  * What the Task needs from the user right now, beneath the transcript (or
  * beneath the Composer on an empty task): the runtime is offline, no model is
@@ -99,9 +102,9 @@ export function TaskBanners({
                 aria-label={copy.queuedEditing}
                 rows={2}
                 value={draft}
-                // v1.16 — same 32 000 ceiling the server enforces (PATCH
-                // 422s past it): refuse in the editor, not in a bare error.
-                maxLength={32000}
+                // v1.16 — the server ceiling (PATCH 422s past it): refuse
+                // in the editor, not in a bare error.
+                maxLength={QUEUED_DIRECTION_LIMIT}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.nativeEvent.isComposing) return;
@@ -117,9 +120,9 @@ export function TaskBanners({
                   }
                 }}
               />
-              {draft.length > 24000 ? (
+              {draft.length > QUEUED_DIRECTION_LIMIT * 0.75 ? (
                 <div className="native-composer-count" data-testid="queued-direction-count">
-                  {draft.length.toLocaleString()} / 32,000
+                  {draft.length.toLocaleString()} / {QUEUED_DIRECTION_LIMIT.toLocaleString()}
                 </div>
               ) : null}
             </div>

@@ -51,3 +51,22 @@ describe("the worked group clock", () => {
     expect(screen.getByTestId("worked-elapsed").textContent).toMatch(/^Working · 8\.\ds$/);
   });
 });
+
+describe("find unfolds the group", () => {
+  const many = Array.from({ length: 12 }, (_, i) => call({ id: `c${i}`, tool: `tool_${i}` }));
+
+  it("mounts no rows by default, past the fold point", () => {
+    draw(<WorkedGroup records={many} />);
+    expect(screen.getByTestId("worked-group").getAttribute("data-expanded")).toBe("false");
+    expect(screen.queryAllByTestId("worked-row")).toHaveLength(0);
+  });
+
+  it("renders every row while a find query is active", () => {
+    // Folded rows are unmounted — unfindable. Find must see what it counts.
+    draw(<WorkedGroup records={many} forceExpanded />);
+    expect(screen.getByTestId("worked-group").getAttribute("data-expanded")).toBe("true");
+    expect(screen.queryAllByTestId("worked-row")).toHaveLength(12);
+    expect(screen.getByText("tool_0")).toBeTruthy();
+    expect(screen.getByText("tool_11")).toBeTruthy();
+  });
+});

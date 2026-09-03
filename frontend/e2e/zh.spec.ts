@@ -19,7 +19,7 @@ const ENGLISH_LEAK =
 test.describe("Agent product in Chinese", () => {
   test("the task start surface is Chinese, not a half-translated legacy screen", async ({ page }) => {
     await bootZh(page);
-    await expect(composerZh(page)).toHaveAttribute("placeholder", /问问你的存储/);
+    await expect(composerZh(page)).toHaveAttribute("placeholder", /描述要委派的存储工作/);
     const shell = await page.locator("body").evaluate((el) => el.textContent ?? "");
     expect(shell).toContain("新任务");
     expect(shell).not.toContain("新对话");
@@ -87,13 +87,13 @@ test.describe("Agent product in Chinese", () => {
 
     await page.getByTestId("task-navigation-settings").click();
     await page.getByRole("button", { name: /^简体中文$/ }).first().click();
-    await expect(composerZh(page)).toHaveAttribute("placeholder", /问问你的存储/);
+    await expect(composerZh(page)).toHaveAttribute("placeholder", /描述要委派的存储工作/);
     await expect(page.getByTestId("agent-task-navigation").getByRole("button", { name: /新任务/ })).toBeVisible();
     await expect.poll(() => page.evaluate(() => localStorage.getItem("saw.lang"))).toBe("zh");
 
     await page.reload();
     await expect(composerZh(page)).toBeVisible({ timeout: 20_000 });
-    await expect(composerZh(page)).toHaveAttribute("placeholder", /问问你的存储/);
+    await expect(composerZh(page)).toHaveAttribute("placeholder", /描述要委派的存储工作/);
     await expect(page.getByTestId("agent-task-navigation").getByRole("button", { name: /新任务/ })).toBeVisible();
     await expect.poll(() => page.evaluate(() => localStorage.getItem("saw.lang"))).toBe("zh");
 

@@ -123,7 +123,7 @@
   --radius-2xl: 1rem;
   --radius-3xl: 1.5rem;
   --control-h: 2rem;
-  --header-h: 2.25rem;
+  --header-h: 2.5rem;
   --sidebar-w: 16.25rem;
   --doc-measure: 46rem;
   --doc-track: 64rem;
@@ -220,7 +220,7 @@ body {
    character and reads as a rendering bug. */
 :lang(zh) {
   line-break: strict;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .agent-prose p,
 .native-banner,
@@ -236,7 +236,7 @@ body {
 .native-settings-list > li > div,
 .native-settings-editor,
 .native-banner p {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 /* Reading and typing surfaces are selectable; chrome is not. */
