@@ -1,4 +1,5 @@
-import { Fragment, memo, useMemo, useState, type ReactNode } from "react";
+import { Fragment, memo, useMemo, type ReactNode } from "react";
+import { useCopy } from "../hooks/useCopy";
 import { openExternal, tauriInvoke } from "../config";
 import { useI18n } from "../i18n";
 import { highlight, TOK_CLASS } from "../lib/highlight";
@@ -20,8 +21,9 @@ export function outlineOf(blocks: Block[]): Array<{ id: string; text: string; le
   const heads = blocks.filter(
     (b): b is Extract<Block, { type: "heading" }> => b.type === "heading" && b.level <= 2,
   );
-  if (heads.length < 3) return [];
-  return heads.map((h) => ({ id: headingId(h.text), text: h.text, level: h.level }));
+  // v1.14 — two sections deserve navigation as much as three do.
+  if (heads.length < 2) return [];
+  return heads.map((h) => ({ id: h.id, text: h.text, level: h.level }));
 }
 
 function Outline({ entries }: { entries: Array<{ id: string; text: string; level: number }> }) {
@@ -32,7 +34,18 @@ function Outline({ entries }: { entries: Array<{ id: string; text: string; level
       <ul className="space-y-0.5">
         {entries.map((e) => (
           <li key={e.id} className={e.level === 2 ? "pl-3" : ""}>
-            <a href={`#${e.id}`} className="text-xs text-gray-500 transition-colors hover:text-accent-soft">{e.text}</a>
+            {/* The document lives in a nested scroller: a bare fragment href
+                would miss it, so scroll the resolved node explicitly. */}
+            <a
+              href={`#${e.id}`}
+              onClick={(event) => {
+                event.preventDefault();
+                document.getElementById(e.id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+              className="text-xs text-gray-500 transition-colors hover:text-accent-soft"
+            >
+              {e.text}
+            </a>
           </li>
         ))}
       </ul>
@@ -51,7 +64,7 @@ function Blocks({ blocks }: { blocks: Block[] }) {
             const cls = HEADING_CLASS[b.level] ?? HEADING_CLASS[6];
             const Tag = `h${Math.min(Math.max(b.level, 1), 6)}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
             return (
-              <Tag key={i} id={headingId(b.text)} data-heading-level={b.level} className={`scroll-mt-4 font-semibold text-gray-100 first:mt-0 ${cls}`}>
+              <Tag key={i} id={b.id} data-heading-level={b.level} className={`scroll-mt-4 text-gray-100 first:mt-0 ${cls}`}>
                 {inline(b.text)}
               </Tag>
             );
@@ -86,13 +99,15 @@ export function headingId(text: string): string {
   return slug ? `sec-${slug}` : "sec";
 }
 
+// v1.14 — display headings carry weight through size and tracking, not
+// boldness: h1/h2 read as editorial voice, h3+ stay semibold working heads.
 const HEADING_CLASS: Record<number, string> = {
-  1: "mt-5 mb-0.5 text-xl leading-tight",
-  2: "mt-5 mb-0.5 text-lg leading-snug",
-  3: "mt-4 mb-0 text-prose leading-snug",
-  4: "mt-4 mb-0 text-sm",
-  5: "mt-3 mb-0 text-sm text-gray-300",
-  6: "mt-3 mb-0 text-xs uppercase tracking-[0.06em] text-gray-400",
+  1: "mt-5 mb-0.5 text-xl font-normal leading-tight tracking-[-0.01em]",
+  2: "mt-5 mb-0.5 text-lg font-medium leading-snug tracking-[-0.01em]",
+  3: "mt-4 mb-0 text-prose font-semibold leading-snug",
+  4: "mt-4 mb-0 text-sm font-semibold",
+  5: "mt-3 mb-0 text-sm font-semibold text-gray-300",
+  6: "mt-3 mb-0 text-xs font-semibold uppercase tracking-[0.06em] text-gray-400",
 };
 
 function ListBlock({ block }: { block: ListBlockT }) {
@@ -135,36 +150,13 @@ function ListBlock({ block }: { block: ListBlockT }) {
 
 function CodeBlock({ lang, content }: { lang: string; content: string }) {
   const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopy();
   const toks = useMemo(() => highlight(content, lang), [content, lang]);
-  const copy = () => {
-    const done = () => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1400);
-    };
-    const fallback = () => {
-      try {
-        const ta = document.createElement("textarea");
-        ta.value = content;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-        done();
-      } catch {
-        /* no remaining clipboard path */
-      }
-    };
-    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(content).then(done).catch(fallback);
-    else fallback();
-  };
   return (
     <div className="group/code overflow-hidden rounded-lg border border-edge bg-code">
       <div className="flex items-center gap-2 border-b border-edge/70 px-3 py-1.5">
         <span className="font-mono text-2xs uppercase tracking-wide text-gray-500">{lang || "code"}</span>
-        <button onClick={copy} className="ml-auto flex items-center gap-1 text-2xs text-gray-500 transition-colors hover:text-gray-200">
+        <button onClick={() => copy(content)} className="ml-auto flex items-center gap-1 text-2xs text-gray-500 transition-colors hover:text-gray-200">
           {copied ? (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
           ) : (
@@ -200,11 +192,29 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
     });
   }, [headers, aligns, rows]);
   const tall = rows.length > TALL_TABLE_ROWS;
+  const { t } = useI18n();
+  const { copied, copy } = useCopy();
+  const copyTsv = () => {
+    const cell = (value: string) => value.replace(/[\t\n\r]+/g, " ");
+    copy([headers, ...rows].map((row) => row.map(cell).join("\t")).join("\n"));
+  };
 
   // A wide table scrolls sideways inside its own container: the reading
   // column never grows and nothing is faded out.
   return (
     <div className="agent-table my-1">
+      <div className="mb-1 flex items-center gap-2 text-2xs text-gray-500">
+        <span data-testid="table-size">{t("table.size", { rows: rows.length, cols: headers.length })}</span>
+        <button
+          type="button"
+          onClick={copyTsv}
+          data-testid="table-copy"
+          className="rounded px-1 py-0.5 transition-colors hover:text-gray-200"
+          aria-label={t("common.copy")}
+        >
+          {copied ? t("common.copied") : t("common.copy")}
+        </button>
+      </div>
       <div className={`agent-table-scroll ${tall ? "max-h-[22rem]" : ""}`} data-testid="table-scroll">
         <table className="w-max border-collapse text-xs">
           <thead>
@@ -239,7 +249,7 @@ type ListBlockT = { type: "list"; ordered: boolean; start: number; items: ListIt
 
 type Block =
   | { type: "p"; content: string }
-  | { type: "heading"; level: number; text: string }
+  | { type: "heading"; level: number; text: string; id: string }
   | { type: "code"; lang: string; content: string }
   | ListBlockT
   | { type: "quote"; lines: string[] }
@@ -263,6 +273,15 @@ const MAX_DEPTH = 5;
 function parseBlocks(text: string, depth = 0): Block[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const blocks: Block[] = [];
+  // v1.14 — duplicate heading text gets suffixed ids (sec-x, sec-x-2),
+  // so outline links and the DOM never collide.
+  const seenIds: Record<string, number> = {};
+  const uniqueHeadingId = (headingText: string): string => {
+    const base = headingId(headingText);
+    const n = (seenIds[base] ?? 0) + 1;
+    seenIds[base] = n;
+    return n === 1 ? base : `${base}-${n}`;
+  };
   let i = 0;
   let para: string[] = [];
   const flush = () => {
@@ -292,7 +311,7 @@ function parseBlocks(text: string, depth = 0): Block[] {
     const h = line.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
       flush();
-      blocks.push({ type: "heading", level: h[1].length, text: h[2] });
+      blocks.push({ type: "heading", level: h[1].length, text: h[2], id: uniqueHeadingId(h[2]) });
       i++;
       continue;
     }

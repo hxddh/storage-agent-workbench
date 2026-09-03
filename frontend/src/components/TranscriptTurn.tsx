@@ -1,4 +1,5 @@
-import { memo, useMemo, useState, type ReactNode } from "react";
+import { memo, useMemo, type ReactNode } from "react";
+import { useCopy } from "../hooks/useCopy";
 import { useI18n } from "../i18n";
 import { isMostlyError, parseS3Error } from "../lib/s3error";
 import { segmentsOf, type TurnItem } from "../lib/turnItems";
@@ -10,42 +11,14 @@ import { TranscriptItems } from "./TranscriptItems";
 import { WorkingRow } from "./LiveTrace";
 import { Icon } from "./icons";
 
-function fallbackCopy(text: string): boolean {
-  try {
-    const node = document.createElement("textarea");
-    node.value = text;
-    node.style.position = "fixed";
-    node.style.opacity = "0";
-    document.body.appendChild(node);
-    node.select();
-    const ok = document.execCommand("copy");
-    document.body.removeChild(node);
-    return ok;
-  } catch {
-    return false;
-  }
-}
-
-async function copyText(text: string): Promise<boolean> {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      return fallbackCopy(text);
-    }
-  }
-  return fallbackCopy(text);
-}
-
 function CopyAction({ text, testId }: { text: string; testId: string }) {
   const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopy(1200);
   return (
     <button
       type="button"
       className="native-ghost-action"
-      onClick={() => void copyText(text).then((ok) => { if (!ok) return; setCopied(true); window.setTimeout(() => setCopied(false), 1200); })}
+      onClick={() => copy(text)}
       aria-label={t("common.copy")}
       data-testid={testId}
     >

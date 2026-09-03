@@ -23,6 +23,33 @@ export const START_GREETINGS: Record<Lang, readonly string[]> = {
   ],
 };
 
+/**
+ * One muted example question under the greeting (v1.14): the engines
+ * (cost, plans, baselines, reports) are invisible by design, so the empty
+ * start names one thing worth asking. Rotates daily, never a button grid —
+ * typing is still the only action.
+ */
+export const START_HINTS: Record<Lang, readonly string[]> = {
+  en: [
+    "Try: which buckets cost the most, and why?",
+    "Try: is any bucket publicly exposed?",
+    "Try: draft a plan to cut storage spend.",
+    "Try: what changed since the last survey?",
+  ],
+  zh: [
+    "试试：哪些桶最烧钱，原因是什么？",
+    "试试：有没有桶是公开暴露的？",
+    "试试：起草一个降低存储花费的计划。",
+    "试试：和上次巡检相比变化了什么？",
+  ],
+};
+
+export function pickStartHint(lang: Lang, now: Date = new Date()): string {
+  const lines = START_HINTS[lang] ?? START_HINTS.en;
+  const day = Math.floor(now.getTime() / 86_400_000);
+  return lines[((day % lines.length) + lines.length) % lines.length] ?? lines[0];
+}
+
 /** 5–11 morning · 11–18 day · 18–23 evening · 23–5 late. */
 export function startGreetingIndex(hour: number): number {
   if (hour >= 5 && hour < 11) return 0;

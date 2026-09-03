@@ -328,6 +328,20 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 - **Tool timing.** Tool records and `tool.*` events carry `started_at` /
   `finished_at` / `duration_ms`; *Worked for …* is the group's wall clock.
 
+### 6.x Interaction truth and content craft (v1.14.0)
+
+- **Steer reaches waiting executions.** `runtime.steerable_execution`
+  prefers running/queued, else a live `waiting` execution: the text lands in
+  its steer queue (plus a `steer.received` event) and injects at the next
+  tool boundary after the decision resolves — or rides the follow-up on
+  decline. No more 409-then-silent-requeue.
+- **Editable queue.** `PATCH .../executions/{eid}` rewrites a queued
+  Direction (`store.update_queued_direction`, 409 past the queue), audited.
+- **Usage rows.** Execution detail matches the Work Result's message to
+  `turn_metrics` and renders only reported fields.
+- **One clipboard path** (`hooks/useCopy.ts`), yaml/toml/ini highlighting,
+  per-execution detail pages (v1.13) unchanged.
+
 ### 6.x Honesty and completeness (v1.13.0)
 
 - **Real MCP dispatch.** `routers/mcp.py` executes the stateless allowlist

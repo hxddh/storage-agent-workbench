@@ -1,34 +1,7 @@
 import { Fragment, useState } from "react";
+import { useCopy } from "../hooks/useCopy";
 import type { S3Error } from "../lib/s3error";
 import { useI18n } from "../i18n";
-
-function fallbackCopy(text: string): boolean {
-  try {
-    const node = document.createElement("textarea");
-    node.value = text;
-    node.style.position = "fixed";
-    node.style.opacity = "0";
-    document.body.appendChild(node);
-    node.select();
-    const ok = document.execCommand("copy");
-    document.body.removeChild(node);
-    return ok;
-  } catch {
-    return false;
-  }
-}
-
-async function copyText(text: string): Promise<boolean> {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      return fallbackCopy(text);
-    }
-  }
-  return fallbackCopy(text);
-}
 
 /** Structured Direction artifact for pasted S3-compatible errors. */
 export function S3ErrorArtifact({
@@ -40,7 +13,7 @@ export function S3ErrorArtifact({
 }) {
   const { t } = useI18n();
   const [showRaw, setShowRaw] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopy(1200);
   const facts: { label: string; value: string; mono?: boolean }[] = [];
   if (error.bucket) facts.push({ label: t("s3err.bucket"), value: error.bucket, mono: true });
   if (error.key) facts.push({ label: t("s3err.key"), value: error.key, mono: true });
@@ -71,7 +44,7 @@ export function S3ErrorArtifact({
         </button>
         <button
           type="button"
-          onClick={() => void copyText(raw).then((ok) => { if (ok) { setCopied(true); window.setTimeout(() => setCopied(false), 1200); } })}
+          onClick={() => copy(raw)}
           className="text-2xs text-gray-500 transition-colors hover:text-gray-300"
           aria-label={t("common.copy")}
         >

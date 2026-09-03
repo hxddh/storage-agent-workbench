@@ -126,6 +126,12 @@ export const resumeTaskExecution = (taskId: string, executionId: string) =>
   request<{ execution: TaskExecution; resumed_from: string }>(
     `/agent-tasks/${taskId}/executions/${executionId}/resume`, { method: "POST" });
 
+/** v1.14 — rewrite a QUEUED execution's Direction (409 once it runs). */
+export const editQueuedExecution = (taskId: string, executionId: string, direction: string) =>
+  request<{ execution: TaskExecution }>(
+    `/agent-tasks/${taskId}/executions/${executionId}`,
+    { method: "PATCH", body: JSON.stringify({ direction }) });
+
 export const listTaskExecutions = (taskId: string, limit = 50) =>
   request<{ task_id: string; executions: TaskExecution[] }>(
     `/agent-tasks/${taskId}/executions?limit=${limit}`);

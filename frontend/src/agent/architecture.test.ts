@@ -354,11 +354,14 @@ describe("v1.09.0 native Agent window boundaries", () => {
     const mark = source("../viz/ProvenanceMark.tsx");
     expect(pkg).not.toMatch(/recharts|chart\.js|d3|plotly|nivo|visx|highcharts/i);
     expect(figures).toContain('data-testid="analysis-figures"');
-    expect(figures).toContain("Cost axis withheld");
+    // v1.14 — figure copy lives in i18n, referenced by key from the renderer.
+    expect(figures).toContain('t("viz.costWithheld")');
+    expect(source("../i18n.tsx")).toContain('"viz.costWithheld": "Cost axis withheld."');
     expect(extract).toContain("Never invent a day the runtime did not emit");
     expect(task).toContain("task-analysis-figures");
     expect(task).toContain("figures={figuresFor(item)}");
-    expect(mark).toContain("No direct evidence chain");
+    // v1.14 — provenance gaps are localized through the same key.
+    expect(mark).toContain('t("viz.noChain")');
     expect(source("../api/tasks.ts")).toContain("/agent-tasks/${taskId}/provenance");
     expect(source("./ArtifactsPanel.tsx")).not.toContain("AnalysisFigures");
   });
@@ -946,5 +949,123 @@ describe("v1.13.0 honesty and completeness", () => {
     expect(api).toContain("/executions/${executionId}/events-page");
     expect(turn).toContain('data-testid="turn-long-running"');
     expect(doc).toContain("slice(-200)");
+  });
+});
+
+/**
+ * v1.14.0 — interaction truth and content craft: steer lands on waiting
+ * executions (Sidecar), queued work edits, usage rows, localized figures,
+ * honest times, keyboard-correct menus, and one clipboard path.
+ */
+describe("v1.14.0 interaction truth and content craft", () => {
+  it("edits queued work instead of only cancelling it", () => {
+    const api = source("../api/runtime.ts");
+    const banners = source("../components/TaskBanners.tsx");
+    const root = source("../components/AgentTaskImplementation.tsx");
+    expect(api).toContain("export const editQueuedExecution");
+    expect(api).toContain('method: "PATCH"');
+    expect(banners).toContain('data-testid="queued-direction-edit"');
+    expect(banners).toContain('data-testid="queued-direction-editor"');
+    expect(banners).toContain('data-testid="queued-direction-save"');
+    expect(root).toContain("onEditQueued");
+  });
+
+  it("bounds composer input and rename titles before the server 422s", () => {
+    const composer = source("../components/Composer.tsx");
+    const navigation = source("./AgentTaskNavigation.tsx");
+    expect(composer).toContain('data-testid="composer-count"');
+    expect(composer).toContain("textLimit");
+    expect(composer).toContain('t("composer.nearLimit")');
+    expect(navigation).toContain("maxLength={120}");
+  });
+
+  it("keeps no focus inside a collapsed sidebar and traps overlay panels", () => {
+    const navigation = source("./AgentTaskNavigation.tsx");
+    const panel = source("./ArtifactsPanel.tsx");
+    expect(navigation).toContain("inert={collapsed ? true : undefined}");
+    expect(panel).toContain("useFocusTrap<HTMLElement>(overlay)");
+    expect(panel).toContain("tabIndex={-1}");
+  });
+
+  it("navigates the model menu by keyboard with listbox semantics", () => {
+    const chip = source("../components/ModelChip.tsx");
+    expect(chip).toContain('role="listbox"');
+    expect(chip).toContain("aria-selected={");
+    expect(chip).not.toContain("aria-checked={provider.active}");
+    expect(chip).toContain("aria-activedescendant");
+  });
+
+  it("shares one relative-time implementation with honest UTC sources", () => {
+    const navigation = source("./AgentTaskNavigation.tsx");
+    const panel = source("./ArtifactsPanel.tsx");
+    const detail = source("../components/ExecutionDetailImplementation.tsx");
+    expect(navigation).toContain('from "../lib/time"');
+    expect(navigation).toContain("previousDayKey(today)");
+    expect(navigation).toContain("setInterval");
+    expect(panel).toContain("timeAgo(");
+    expect(detail).toContain("timeAgo(execution.started_at, t)");
+    expect(detail).toContain('data-testid="execution-usage"');
+  });
+
+  it("searches open panel documents and renders usage only when reported", () => {
+    const document = source("../components/TaskDocument.tsx");
+    const detail = source("../components/ExecutionDetailImplementation.tsx");
+    expect(document).toContain("getFindRoots()");
+    expect(source("./ArtifactsPanel.tsx")).toContain("registerFindRoot");
+    expect(detail).toContain("usageLine(usage, t)");
+    expect(detail).toContain("unreported usage is not zero");
+  });
+
+  it("gives every heading a unique anchor, an outline for two sections, and tables a size with copy", () => {
+    const md = source("../components/MarkdownImplementation.tsx");
+    expect(md).toContain("uniqueHeadingId");
+    expect(md).toContain("scrollIntoView");
+    expect(md).toContain("heads.length < 2");
+    expect(md).toContain('data-testid="table-size"');
+    expect(md).toContain('data-testid="table-copy"');
+    expect(md).toContain("font-normal");
+  });
+
+  it("localizes figures, evidence states, and triage through i18n", () => {
+    const figures = source("../viz/AnalysisFigures.tsx");
+    const marks = source("../viz/marks.tsx");
+    const preview = source("../viz/ProvenanceMark.tsx");
+    const evidence = source("./EvidenceReview.tsx");
+    const triage = source("../components/AgentRuntimeArtifacts.tsx");
+    const i18n = source("../i18n.tsx");
+    for (const hard of ["Cost simulation", "No inventory to simulate.", "Still here", "No class mix to plot."]) {
+      expect(figures + marks).not.toContain(`"${hard}"`);
+    }
+    expect(preview).toContain('t("viz.noChain")');
+    expect(evidence).toContain("SeverityMark");
+    expect(evidence).toContain('t("evidence.statusReady")');
+    expect(triage).toContain('t("triage.next")');
+    expect(i18n).toContain('"viz.costTitle"');
+    expect(i18n).toContain('"severity.critical"');
+  });
+
+  it("copies through one path and highlights config languages", () => {
+    const hook = source("../hooks/useCopy.ts");
+    expect(hook).toContain("export async function copyTextToClipboard");
+    expect(hook).toContain("export function useCopy(");
+    for (const relative of ["../components/TranscriptTurn.tsx", "../components/MarkdownImplementation.tsx", "../components/S3ErrorArtifact.tsx", "../components/CallDetail.tsx"]) {
+      expect(source(relative)).toContain("useCopy");
+      expect(source(relative)).not.toContain("execCommand");
+    }
+    const highlight = source("../lib/highlight.ts");
+    expect(highlight).toContain('yaml: "yaml"');
+    expect(highlight).toContain('toml: "toml"');
+    expect(highlight).toContain("YAML_RULES");
+    expect(highlight).toContain("TOML_INI_RULES");
+  });
+
+  it("hints at invisible engines on the empty start and gates reports on answers", () => {
+    const greeting = source("./startGreeting.ts");
+    const root = source("../components/AgentTaskImplementation.tsx");
+    const panel = source("./ArtifactsPanel.tsx");
+    expect(greeting).toContain("export const START_HINTS");
+    expect(greeting).toContain("export function pickStartHint(");
+    expect(root).toContain('data-testid="start-hint"');
+    expect(panel).toContain('message.role === "assistant"');
   });
 });

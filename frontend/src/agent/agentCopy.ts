@@ -49,6 +49,8 @@ const COPY = {
         estimate: "Estimate — deterministic comparison over bounded snapshots.",
         noDrift: "No findings changed between the two snapshots.",
         snapshot: "Snapshot",
+        rawSnapshot: "Raw snapshot",
+        snapshotFindings: "Findings in this snapshot",
       },
       execution: {
         statuses: {
@@ -129,6 +131,8 @@ const COPY = {
         estimate: "估算——基于有界快照的确定性比较。",
         noDrift: "两次快照之间没有发现变化。",
         snapshot: "快照",
+        rawSnapshot: "原始快照",
+        snapshotFindings: "快照中的发现",
       },
       execution: {
         statuses: {

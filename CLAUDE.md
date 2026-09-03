@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.13.0.**
+> **Implementation contract for Storage Agent v1.14.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.13.0 product invariant is:
+The v1.14.0 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -18,7 +18,7 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v1.13.0 native Agent window
+## 1. Never regress the v1.14.0 native Agent window
 
 The window is **sidebar · title bar · one Task document · one Composer**. There is no activity bar, no status bar, no Details/inspector column, and no marketing copy in chrome. New product/frontend work must preserve these boundaries:
 
@@ -120,6 +120,9 @@ Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned b
 - (v1.13) compaction triggers on a character estimate when the endpoint reports no usage, estimates CJK-weighted tokens, and chains (each step folds the prior summary); `AGENTS.md` reads are mtime-cached 5 s;
 - (v1.13) endpoint capability refusals clear on a green `POST /model-providers/{id}/test`; redaction covers plural secret keys; Composer history drops key-material entries and masks credential values; `@` completes Task files (model resolves via `list_uploaded_files`); the large-scan approval card shows buckets + estimated calls; the palette fuzzy-ranks tasks; a 90 s+ live turn says so; the survey result carries `fanout_workers` (bounded single-agent fanout, `_PROBE_WORKERS=4` pinned);
 - (v1.13) golden evals (`sidecar/tests/test_v113_eval_golden.py`, see `docs/evals.md`) pin grounded/confident-safe/honest-coverage behaviour; `scripts/stamp-version.py` wires the Tauri updater from `TAURI_UPDATER_PUBKEY`/`TAURI_UPDATER_ENDPOINTS` (both-or-neither, else loud fail); CI packaging smoke is required on `release/*`.
+- (v1.14) `runtime.steerable_execution` prefers running/queued, else a live `waiting` execution — steering during an open approval delivers post-decision (or rides the follow-up on decline), never silently re-queues; `PATCH .../executions/{eid}` rewrites a queued Direction (409 past the queue), audited;
+- (v1.14) Execution detail matches the Work Result to `turn_metrics` and renders reported usage only; figures/evidence/triage read localized (EN/ZH) with one `SeverityMark`; times read relative (`lib/time.ts`, DST-safe) with UTC on hover; Composer input is bounded where the server bounds it (counter past 75 %, refuse past 100 %); renames cap at 120 chars;
+- (v1.14) collapsed sidebar is `inert`, the overlay Artifacts panel traps focus, the model menu is a keyboard listbox; outlines start at two sections with smooth in-scroller jumps and unique heading ids; tables size with TSV copy; baselines render findings with folded raw JSON; yaml/toml/ini highlight; one clipboard path (`hooks/useCopy.ts`); the empty start rotates one engine hint daily and the model offers engines in one sentence when relevant.
 
 The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream (reconnect by sequence), steer/stop/resume/verify the current execution, then reload persisted task state. There are no `/sessions` message endpoints any more. Do not create a second submit path.
 
@@ -127,7 +130,7 @@ The execution runner is the one submission lifecycle: submit a Direction as a du
 
 The Sidecar exposes both product projection and compatibility APIs:
 
-- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the runtime API — executions (submit with strict `kind` / steer / stop / resume / SSE event stream resumable by sequence, push-driven, carrying `task.status` so a follower never polls; per-execution JSON pages via `GET .../executions/{eid}/events-page`), Verify (`POST .../verify`, kind=`verify`), on-demand compaction (`POST .../compact`), queued visibility, decisions (list / resolve with impact projection incl. large-scan bounds), work results, artifacts, **read-only provenance** (`GET .../provenance`), remediation plans, baselines, revisit schedule, the typed task context, and the OTel export with derived spans (`GET .../export/otel`). Engine endpoints are not product destinations.
+- `/agent-tasks` is the product-level task surface: the task list (with durable decision/lifecycle state) plus the runtime API — executions (submit with strict `kind` / steer (incl. live waiting executions) / stop / resume / edit queued (`PATCH .../executions/{eid}`, 409 past the queue) / SSE event stream resumable by sequence, push-driven, carrying `task.status` so a follower never polls; per-execution JSON pages via `GET .../executions/{eid}/events-page`), Verify (`POST .../verify`, kind=`verify`), on-demand compaction (`POST .../compact`), queued visibility, decisions (list / resolve with impact projection incl. large-scan bounds), work results, artifacts, **read-only provenance** (`GET .../provenance`), remediation plans, baselines, revisit schedule, the typed task context, and the OTel export with derived spans (`GET .../export/otel`). Engine endpoints are not product destinations.
 - `/sessions/...` remains the durable task document/paging/memory/activity compatibility API. Since v1.12 it has **no** message, stream, cancel, turn, or action-prepare endpoints; the durable execution API is the only submit path.
 - `/runs/...` remains deterministic execution/report compatibility API and is not a top-level product surface.
 - `/evidence-imports/...` owns bounded plan → confirm → execute data movement.

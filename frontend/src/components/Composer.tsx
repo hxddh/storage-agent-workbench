@@ -188,7 +188,14 @@ export function Composer({
 
   const running = busy || uploading;
   const blocked = offline;
-  const canDelegate = !uploading && !blocked && (Boolean(text.trim()) || Boolean(attached));
+  // v1.14 — the Sidecar caps Direction at 32 000 chars and steer text at
+  // 8 000; show a counter past 75 % and refuse past 100 % instead of
+  // letting a long paste die as a 422 in the error banner.
+  const textLimit = busy ? 8000 : 32000;
+  const textLen = text.length;
+  const overLimit = textLen > textLimit;
+  const showCount = textLen > textLimit * 0.75;
+  const canDelegate = !uploading && !blocked && !overLimit && (Boolean(text.trim()) || Boolean(attached));
 
   const handleSend = () => {
     if (text.trim() || attached) pushHistory(text.trim() || attached?.name || "");
@@ -196,7 +203,8 @@ export function Composer({
     onSend();
   };
   const handleSteer = () => {
-    if (text.trim()) pushHistory(text.trim());
+    if (!text.trim() || overLimit) return;
+    pushHistory(text.trim());
     histIndex.current = null;
     onSteer();
   };
@@ -359,6 +367,16 @@ export function Composer({
 
         <ModelChip onOpenSettings={onOpenSettings} refreshKey={modelRefreshKey} disabled={busy} />
         <ContextMeter />
+        {showCount ? (
+          <span
+            className="native-composer-count"
+            data-over={overLimit ? "true" : "false"}
+            data-testid="composer-count"
+            title={overLimit ? t("composer.nearLimit") : undefined}
+          >
+            {textLen.toLocaleString()} / {textLimit.toLocaleString()}
+          </span>
+        ) : null}
 
         <div className="ml-auto flex items-center gap-1.5">
           {busy ? (
@@ -366,9 +384,9 @@ export function Composer({
               <button
                 type="button"
                 onClick={handleSteer}
-                disabled={!text.trim()}
+                disabled={!text.trim() || overLimit}
                 aria-label={copy.steerAction}
-                title={`${copy.steerAction} ⏎`}
+                title={overLimit ? t("composer.nearLimit") : `${copy.steerAction} ⏎`}
                 className="native-round"
                 data-primary={text.trim() ? "true" : "false"}
               >

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { I18nProvider } from "../i18n";
 import { AnalysisFigures } from "./AnalysisFigures";
 import type { TaskProvenance } from "./types";
 
@@ -12,12 +13,13 @@ const empty: TaskProvenance = {
 
 describe("AnalysisFigures", () => {
   it("renders nothing when there is no analysis document", () => {
-    const { container } = render(<AnalysisFigures provenance={empty} />);
+    const { container } = render(<I18nProvider><AnalysisFigures provenance={empty} /></I18nProvider>);
     expect(container).toBeEmptyDOMElement();
   });
 
   it("renders an explicit cost gap instead of a line", () => {
     render(
+      <I18nProvider>
       <AnalysisFigures
         provenance={{
           ...empty,
@@ -30,7 +32,8 @@ describe("AnalysisFigures", () => {
             },
           },
         }}
-      />,
+      />
+      </I18nProvider>,
     );
     expect(screen.getByTestId("viz-gap")).toHaveTextContent(/No inventory/i);
     expect(screen.queryByTestId("viz-cost-delta")).toBeNull();
@@ -38,6 +41,7 @@ describe("AnalysisFigures", () => {
 
   it("withholds the cost axis when prices are unconfirmed, still plotting class mix", () => {
     render(
+      <I18nProvider>
       <AnalysisFigures
         provenance={{
           ...empty,
@@ -56,7 +60,8 @@ describe("AnalysisFigures", () => {
             },
           },
         }}
-      />,
+      />
+      </I18nProvider>,
     );
     expect(screen.getByTestId("viz-cost")).toHaveTextContent("STANDARD");
     expect(screen.getByTestId("viz-gap")).toHaveTextContent(/Cost axis withheld/i);
@@ -65,6 +70,7 @@ describe("AnalysisFigures", () => {
 
   it("plots a single emitted horizon as a single column, not a filled area", () => {
     render(
+      <I18nProvider>
       <AnalysisFigures
         provenance={{
           ...empty,
@@ -86,7 +92,8 @@ describe("AnalysisFigures", () => {
             },
           },
         }}
-      />,
+      />
+      </I18nProvider>,
     );
     expect(screen.getByTestId("viz-cost")).toHaveTextContent("0d");
     const dayLabels = [...screen.getByTestId("viz-cost").querySelectorAll("svg text")].map((n) => n.textContent);
@@ -98,6 +105,7 @@ describe("AnalysisFigures", () => {
 
   it("renders drift gap and independent inventory bars, never a joint matrix", () => {
     render(
+      <I18nProvider>
       <AnalysisFigures
         provenance={{
           ...empty,
@@ -119,7 +127,8 @@ describe("AnalysisFigures", () => {
             },
           },
         }}
-      />,
+      />
+      </I18nProvider>,
     );
     expect(screen.getByTestId("viz-inventory")).toHaveTextContent(/not observed/i);
     expect(screen.getByTestId("viz-drift")).toHaveTextContent(/No comparable baseline/i);

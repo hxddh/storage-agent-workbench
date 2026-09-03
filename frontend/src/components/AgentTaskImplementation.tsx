@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { stopTaskExecution } from "../api";
+import { editQueuedExecution, stopTaskExecution } from "../api";
 import { useSessionRun, patchSessionRun } from "../sessionRuns";
 import { useTurnRunner, cleanError } from "../hooks/useTurnRunner";
 import { useSessionDocument } from "../hooks/useSessionDocument";
@@ -7,7 +7,7 @@ import { useCompactContext } from "../hooks/useCompactContext";
 import { useTaskViewport } from "../hooks/useTaskViewport";
 import { useApprovals } from "../hooks/useApprovals";
 import { openAgentReview } from "../agent/commands";
-import { pickStartGreeting } from "../agent/startGreeting";
+import { pickStartGreeting, pickStartHint } from "../agent/startGreeting";
 import { publishPaletteActions } from "../agent/paletteActions";
 import { Button } from "./ui";
 import { useI18n } from "../i18n";
@@ -128,6 +128,19 @@ export function AgentTaskImplementation({
     }
   };
 
+  // v1.14 — queued work is editable until it runs (409 past that point).
+  const editQueued = async (executionId: string, direction: string) => {
+    const id = localId.current;
+    if (!id) return;
+    try {
+      await editQueuedExecution(id, executionId, direction);
+      await reload(id);
+      onChanged();
+    } catch (caught) {
+      setViewError(cleanError(String(caught), t));
+    }
+  };
+
   const loadingTask = Boolean(sessionId) && detail?.id !== sessionId && !loadError;
   const isEmpty = items.length === 0 && !pending && !loadError && !loadingTask;
   const lastResult = useMemo(() => lastWorkResult(items), [items]);
@@ -195,6 +208,7 @@ export function AgentTaskImplementation({
       onResume={(executionId) => void runner.resume(executionId)}
       queued={taskRuntime?.queued_executions ?? []}
       onCancelQueued={(executionId) => void cancelQueued(executionId)}
+      onEditQueued={(executionId, direction) => void editQueued(executionId, direction)}
     />
   );
 
@@ -223,6 +237,7 @@ export function AgentTaskImplementation({
         <div className="native-start" data-testid="task-start">
           <div className="native-start-inner">
             <p className="native-start-greeting">{pickStartGreeting(lang)}</p>
+            <p className="native-start-hint" data-testid="start-hint">{pickStartHint(lang)}</p>
             {composerNode}
             <div className="mt-4 space-y-2">{banners}</div>
           </div>

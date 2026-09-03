@@ -34,6 +34,9 @@ export function useTaskCopy() {
         queued: "排队中",
         queuedHint: "排队中 · 当前执行结束后开始",
         queuedCancel: "取消",
+        queuedEdit: "编辑",
+        queuedSave: "保存",
+        queuedEditing: "编辑排队方向…",
         greeting: "让 Agent 处理什么？",
       }
     : {
@@ -66,6 +69,9 @@ export function useTaskCopy() {
         queued: "Queued",
         queuedHint: "Queued · starts when the current execution finishes",
         queuedCancel: "Cancel",
+        queuedEdit: "Edit",
+        queuedSave: "Save",
+        queuedEditing: "Edit queued direction…",
         greeting: "What should the Agent work on?",
       };
 }

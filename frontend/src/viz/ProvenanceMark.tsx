@@ -1,15 +1,16 @@
 import { useState } from "react";
 import { openAgentReview } from "../agent/commands";
+import { useI18n, type TFunc } from "../i18n";
 import type { ProvenanceChain, ProvenanceFinding } from "./types";
 
-function preview(chain: ProvenanceChain | null, gap: string | null) {
+function preview(chain: ProvenanceChain | null, gap: string | null, t: TFunc) {
   if (gap === "no_direct_evidence" || !chain) {
-    return { title: "No direct evidence chain", body: "This finding is not linked to a tool call, Execution, or Artifact." };
+    return { title: t("viz.noChain"), body: t("viz.noChainBody") };
   }
   const bits = [chain.tool, chain.created_at?.replace("T", " ").slice(0, 16)].filter(Boolean);
   const cov = chain.coverage;
-  if (cov?.object_count != null) bits.push(`${cov.object_count} objects`);
-  if (cov?.truncated) bits.push("truncated");
+  if (cov?.object_count != null) bits.push(t("viz.objects", { n: cov.object_count }));
+  if (cov?.truncated) bits.push(t("viz.truncated"));
   return { title: chain.tool || chain.kind, body: bits.join(" · ") || chain.kind };
 }
 
@@ -19,7 +20,8 @@ export function ProvenanceMark({
   finding: Pick<ProvenanceFinding, "id" | "title" | "interpretation" | "severity" | "chain" | "gap" | "source_run_id">;
 }) {
   const [open, setOpen] = useState(false);
-  const card = preview(finding.chain, finding.gap);
+  const { t } = useI18n();
+  const card = preview(finding.chain, finding.gap, t);
   const go = () => {
     const chain = finding.chain;
     // A chain names the deterministic run behind a finding; the Execution

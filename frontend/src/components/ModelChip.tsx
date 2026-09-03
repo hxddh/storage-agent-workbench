@@ -30,7 +30,16 @@ export function ModelChip({ onOpenSettings, refreshKey = 0, disabled = false }: 
   const [providers, setProviders] = useState<ModelProvider[] | null>(null);
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
+  // v1.14 — keyboard position in the provider list (listbox pattern).
+  const [highlight, setHighlight] = useState(0);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setHighlight((i) => Math.min(i, Math.max((providers?.length ?? 1) - 1, 0)));
+    menuRef.current?.focus();
+  }, [open, providers?.length]);
 
   useEffect(() => {
     let alive = true;
@@ -111,10 +120,38 @@ export function ModelChip({ onOpenSettings, refreshKey = 0, disabled = false }: 
         <Icon name="chevron" size={11} className="rotate-90 opacity-60" />
       </button>
       {open ? (
-        <div className="native-model-menu" role="listbox" aria-label={copy.title} data-testid="model-chip-menu">
+        <div
+          ref={menuRef}
+          className="native-model-menu"
+          role="listbox"
+          aria-label={copy.title}
+          aria-activedescendant={providers[highlight] ? `model-option-${providers[highlight].id}` : undefined}
+          data-testid="model-chip-menu"
+          tabIndex={-1}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              const delta = event.key === "ArrowDown" ? 1 : -1;
+              setHighlight((i) => (i + delta + providers.length) % Math.max(providers.length, 1));
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              const target = providers[highlight];
+              if (target) void choose(target);
+            }
+          }}
+        >
           <div className="native-model-menu-title">{copy.title}</div>
-          {providers.map((provider) => (
-            <button key={provider.id} type="button" role="option" aria-checked={provider.active} onClick={() => void choose(provider)}>
+          {providers.map((provider, index) => (
+            <button
+              key={provider.id}
+              id={`model-option-${provider.id}`}
+              type="button"
+              role="option"
+              aria-selected={provider.active || index === highlight}
+              data-highlight={index === highlight ? "true" : "false"}
+              onMouseEnter={() => setHighlight(index)}
+              onClick={() => void choose(provider)}
+            >
               <span className="grid w-3.5 place-items-center">{provider.active ? <Icon name="check" size={12} stroke={2} /> : null}</span>
               <span className="min-w-0 flex-1 truncate">{label(provider)}</span>
               <small>{provider.name}</small>
