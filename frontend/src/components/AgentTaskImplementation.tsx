@@ -159,6 +159,7 @@ export function AgentTaskImplementation({
     stop: () => runner.stop(),
     resume: showResume && lastExec ? () => { void runner.resume(lastExec.id); } : undefined,
     focusComposer: composer.focus,
+    prefill: (text: string) => { composer.setText(text); composer.focus(); },
     find: () => setFindOpen(true),
     review: sessionId ? () => openAgentReview("evidence") : undefined,
     compact: sessionId && !busy ? () => { void compactContext(); } : undefined,
@@ -202,6 +203,7 @@ export function AgentTaskImplementation({
       error={error}
       canRetry={Boolean(composer.text.trim())}
       onRetry={actions.send}
+      onDismissError={() => setViewError(null)}
       onOpenSettings={onOpenSettings}
       showResume={showResume}
       lastExecution={lastExec}
@@ -263,11 +265,14 @@ export function AgentTaskImplementation({
           viewport={viewport}
           findOpen={findOpen}
           setFindOpen={setFindOpen}
-          onResync={() => {
+          onResync={async () => {
             const id = localId.current;
-            if (!id) return;
-            patchSessionRun(id, { pending: null, stalled: false, items: [], answer: null, waiting: false });
-            void reload(id);
+            if (!id) return false;
+            // v1.16 — clear the live turn only when the reload landed; on
+            // failure the stalled line stays and backs off for another try.
+            const ok = await reload(id);
+            if (ok) patchSessionRun(id, { pending: null, stalled: false, items: [], answer: null, waiting: false });
+            return ok;
           }}
         />
       )}

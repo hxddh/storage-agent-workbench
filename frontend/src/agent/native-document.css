@@ -559,6 +559,13 @@
   color: var(--gray-500);
   font-size: var(--text-2xs);
 }
+/* v1.16 — `@` discoverability: quieter than placeholder text, never a button. */
+.native-composer-mention-hint {
+  padding: 6px 18px 0;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+}
 
 /* Empty start (v1.15): exactly one greeting line plus the Composer in the
    middle band. No hint line, no suggestion grid — the hint selector stays

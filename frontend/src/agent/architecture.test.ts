@@ -546,8 +546,9 @@ describe("v1.11.0 shell details", () => {
     expect(composer).toContain('event.key === "Escape"');
     expect(composer).toContain("if (busy && !text.trim()) { event.preventDefault(); onStop(); }");
     expect(composer).toContain("<ContextMeter />");
-    // The Esc branch returns before any history / clear handling runs.
-    expect(composer).toMatch(/if \(event\.key === "Escape"\) \{\s*if \(busy && !text\.trim\(\)\) \{ event\.preventDefault\(\); onStop\(\); \}\s*return;\s*\}/);
+    // The Esc branch returns before any history / clear handling runs, and
+    // stops propagation so one keypress never also closes an overlay.
+    expect(composer).toMatch(/if \(event\.key === "Escape"\) \{[\s\S]*?event\.stopPropagation\(\);[\s\S]*?if \(busy && !text\.trim\(\)\) \{ event\.preventDefault\(\); onStop\(\); \}[\s\S]*?return;\s*\}/);
     // v1.15 — one usage vocabulary in lib/usage; silence renders a badge.
     expect(source("../lib/usage.ts")).toContain("context_window");
     expect(source("../lib/usage.ts")).toContain("export function contextReading(");
@@ -729,8 +730,12 @@ describe("v1.12.0 native runtime", () => {
     const hook = source("../hooks/useCompactContext.ts");
     const card = source("../components/ApprovalCard.tsx");
     const i18n = source("../i18n.tsx");
-    expect(palette).toContain('compact: "Compact context"');
-    expect(palette).toContain('compact: "压缩上下文"');
+    // v1.16 — palette copy lives in the i18n dict; engines + shortcuts entries exist.
+    expect(palette).toContain('t("palette.compact")');
+    expect(i18n).toContain('"palette.compact"');
+    expect(palette).toContain('t("palette.shortcuts")');
+    expect(palette).toContain('group: "engine"');
+    expect(palette).toContain('data-testid={`command-palette-${command.group}s`}');
     expect(palette).toContain("live.hasTask && !live.busy && !live.compacting && live.compact");
     expect(actions).toContain("compact?: () => void");
     expect(meter).toContain("run.contextTokens");
@@ -1160,5 +1165,72 @@ describe("v1.15.0 true native agent", () => {
     expect(css).toContain("--shadow-elev");
     expect(css).toContain(".turn-user-bubble");
     expect(css).toContain("border-top-right-radius");
+  });
+});
+
+/**
+ * v1.16.0 — finish the native agent: dict-owned copy, engine discovery in
+ * the palette, honest usage end to end, isolated Escape, dismissible errors,
+ * retried reconnects, themed last-resort chrome, matching secret shapes.
+ */
+describe("v1.16.0 true native agent, finished", () => {
+  it("owns palette, chip, triage, shortcuts and day labels in dictionaries", () => {
+    const i18n = source("../i18n.tsx");
+    for (const key of ["\"palette.placeholder\"", "\"palette.engineCost\"", "\"chip.none\"", "\"triage.title\"", "\"shortcuts.title\""]) {
+      expect(i18n).toContain(key);
+    }
+    expect(source("../components/CommandPalette.tsx")).toContain('t("palette.placeholder")');
+    expect(source("../components/ModelChip.tsx")).toContain('t("chip.none")');
+    expect(source("../components/AgentRuntimeArtifacts.tsx")).toContain('t("triage.title")');
+    expect(source("../components/ShortcutsSheet.tsx")).toContain('t("shortcuts.title")');
+    expect(source("./AgentTaskNavigation.tsx")).toContain("NAV_DAY_LABELS");
+    expect(source("./navigationCopy.ts")).toContain("NAV_DAY_LABELS");
+  });
+
+  it("discovers engines and shortcuts through live palette actions", () => {
+    const palette = source("../components/CommandPalette.tsx");
+    const actions = source("./paletteActions.ts");
+    expect(actions).toContain("prefill?: (text: string) => void");
+    expect(actions).toContain("shortcuts?: () => void");
+    expect(actions).toContain("publishBasePaletteActions");
+    expect(palette).toContain("live.prefill");
+    expect(palette).toContain("live.shortcuts");
+  });
+
+  it("renders the persisted governor and memory reuse beside tokens", () => {
+    const lib = source("../lib/usage.ts");
+    expect(lib).toContain("budget_tokens");
+    expect(lib).toContain("repeat_calls_avoided");
+    expect(lib).toContain("windowSource");
+    expect(source("../../../sidecar/app/task_runtime/runtime.py")).toContain("context_window_source");
+  });
+
+  it("isolates Escape per layer instead of closing two things at once", () => {
+    expect(source("../components/FindBar.tsx")).toContain("event.stopPropagation()");
+    expect(source("../components/Composer.tsx")).toContain("event.stopPropagation()");
+    expect(source("../components/TaskBanners.tsx")).toContain("event.stopPropagation()");
+  });
+
+  it("dismisses view errors and stacks banners honestly", () => {
+    const banners = source("../components/TaskBanners.tsx");
+    expect(banners).toContain("onDismissError");
+    expect(banners).toContain('t("common.dismiss")');
+    expect(banners).toContain("needKey && !offline");
+    expect(banners).toContain("maxLength={32000}");
+  });
+
+  it("retries reconnects with backoff and locks the history auto-load", () => {
+    const doc = source("../components/TaskDocument.tsx");
+    expect(doc).toContain("stallTries");
+    expect(doc).toContain("loadingEarlierRef");
+    expect(source("../components/AgentTaskImplementation.tsx")).toMatch(/onResync=\{async \(\)/);
+  });
+
+  it("themes the last-resort boundary and matches secret shapes end to end", () => {
+    const boundary = source("../ErrorBoundary.tsx");
+    expect(boundary).toContain("var(--canvas");
+    expect(boundary).not.toContain("#0b0e14");
+    expect(source("../components/Composer.tsx")).toContain("ghu_");
+    expect(source("../components/Composer.tsx")).toContain("glpat-");
   });
 });

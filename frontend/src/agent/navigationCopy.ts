@@ -49,3 +49,9 @@ export function useNavigationCopy() {
   const { lang } = useI18n();
   return COPY[lang];
 }
+
+/** v1.16 — sidebar day-group labels live with the rest of navigation copy. */
+export const NAV_DAY_LABELS = {
+  en: { today: "Today", yesterday: "Yesterday", earlier: "Earlier" },
+  zh: { today: "今天", yesterday: "昨天", earlier: "更早" },
+} as const;

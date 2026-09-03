@@ -89,6 +89,7 @@ export function ApprovalCard({
             data-testid="approval-allow-task"
             disabled={busy || !onResolve}
             onClick={() => onResolve?.(item.decision_id, "approved", "task")}
+            title={t("approval.allowTaskHint")}
           >
             {t("approval.allowTask")}
           </button>

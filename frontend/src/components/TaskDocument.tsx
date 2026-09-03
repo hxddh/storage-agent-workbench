@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SessionDetail, SessionMessage, TriageCase } from "../types";
 import type { SessionRun } from "../sessionRuns";
 import type { ApprovalItem, TurnItem } from "../lib/turnItems";
@@ -113,8 +113,10 @@ export function TaskDocument({
   viewport: ReturnType<typeof useTaskViewport>;
   findOpen: boolean;
   setFindOpen: (open: boolean) => void;
-  /** The stalled banner's Resync: clear the live turn and reload the document. */
-  onResync: () => void;
+  /** v1.16 — heal a stalled stream: reload the document, clearing the live
+   * turn only on success. Returns whether the reload landed, so the caller
+   * can back off and retry instead of going silent. */
+  onResync: () => boolean | Promise<boolean>;
 }) {
   const copy = useTaskCopy();
   const { t } = useI18n();
@@ -195,22 +197,46 @@ export function TaskDocument({
     followLatest();
   }, [items.length, pending, liveAnswer?.length, liveItems, followLatest]);
 
-  // v1.15 — a stalled stream heals itself: retry once after a short pause
-  // instead of asking the user to press Resync. The line below is status,
-  // not an action.
+  // v1.15 — a stalled stream heals itself instead of asking the user to
+  // press Resync. The line below is status, not an action.
+  // v1.16 — retry with backoff (2s/4s/8s, then stop): one attempt against a
+  // restarting Sidecar went silent forever.
   const stalled = run.stalled && liveItems.length === 0 && !liveAnswer;
+  const stallTries = useRef(0);
+  const [, setStallTick] = useState(0);
+  useEffect(() => { if (!stalled) stallTries.current = 0; }, [stalled]);
   useEffect(() => {
     if (!stalled) return;
-    const timer = window.setTimeout(() => onResync(), 2000);
-    return () => window.clearTimeout(timer);
+    const delay = Math.min(2000 * 2 ** stallTries.current, 8000);
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      void Promise.resolve(onResync()).then((ok) => {
+        if (!alive) return;
+        // A failed reload keeps the line and schedules the next backoff
+        // rung (state tick re-arms this effect); then it stops, never loops.
+        if (!ok && stallTries.current < 2) {
+          stallTries.current += 1;
+          setStallTick((n) => n + 1);
+        }
+      });
+    }, delay);
+    return () => { alive = false; window.clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stalled, onResync]);
 
   // v1.15 — earlier history loads as the reader approaches the top, the
   // buttons below remain as an explicit fallback (and the E2E hook).
+  // v1.16 — guarded: state lags the in-flight request, so rapid scrolling
+  // fired loadEarlier once per frame.
+  const loadingEarlierRef = useRef(false);
+  useEffect(() => { loadingEarlierRef.current = loadingEarlier; }, [loadingEarlier]);
   const handleScroll: React.UIEventHandler<HTMLDivElement> = () => {
     onScroll();
     const el = scrollRef.current;
-    if (el && el.scrollTop < 120 && hiddenCount > 0 && !loadingEarlier) loadEarlier();
+    if (el && el.scrollTop < 120 && hiddenCount > 0 && !loadingEarlierRef.current) {
+      loadingEarlierRef.current = true;
+      loadEarlier();
+    }
   };
 
   return (

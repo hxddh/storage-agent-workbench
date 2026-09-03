@@ -56,11 +56,16 @@ export function FindBar({
         value={query}
         onChange={(event) => onQuery(event.target.value)}
         onKeyDown={(event) => {
+          // v1.16 — stop here: the window closes its top overlay on Escape,
+          // and one keypress must not close both the find bar and the
+          // palette (or Settings) behind it.
           if (event.key === "Escape") {
             event.preventDefault();
+            event.stopPropagation();
             onClose();
           } else if (event.key === "Enter") {
             event.preventDefault();
+            event.stopPropagation();
             onStep(event.shiftKey ? -1 : 1);
           }
         }}

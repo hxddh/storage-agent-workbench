@@ -18,10 +18,11 @@ function Key({ children }: { children: string }) {
 export function ShortcutsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { lang, t } = useI18n();
   const trapRef = useFocusTrap<HTMLDivElement>(open);
-  const title = lang === "zh" ? "键盘快捷键" : "Keyboard shortcuts";
+  // v1.16 — sheet chrome lives in the i18n dict.
+  const title = t("shortcuts.title");
   const groupTitle = (group: (typeof GROUPS)[number]) => group === "global"
-    ? (lang === "zh" ? "窗口" : "Window")
-    : (lang === "zh" ? "当前任务" : "Active task");
+    ? t("shortcuts.groupWindow")
+    : t("shortcuts.groupTask");
 
   useDismissOnEscape(open, onClose);
   if (!open) return null;

@@ -699,7 +699,8 @@ def _finish(conn: sqlite3.Connection, execution: dict[str, Any], handle: LiveExe
     metrics = {"duration_ms": elapsed_ms,
                "tool_calls": len(data.get("tool_activity") or []),
                "model": (creds or {}).get("model"),
-               "context_window": _context_window(creds)}
+               "context_window": _context_window(creds),
+               "context_window_source": _context_window_source(creds)}
     if data.get("usage"):
         metrics["usage"] = data["usage"]
     for k in ("budget_tokens", "budget_stopped_on", "repeat_calls_avoided"):
@@ -754,6 +755,19 @@ def _context_window(creds: dict[str, Any] | None) -> int | None:
     try:
         from ..agent_runtime import model_budget
         return int(model_budget.context_window(creds.get("model"), creds.get("context_window")))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _context_window_source(creds: dict[str, Any] | None) -> str | None:
+    """Where the reported window came from (v1.16): ``declared`` when the
+    operator set it on the provider, else ``inferred`` from the model table.
+    Additive — older clients ignore it."""
+    if not creds:
+        return None
+    try:
+        explicit = creds.get("context_window")
+        return "declared" if explicit and int(explicit) > 0 else "inferred"
     except Exception:  # noqa: BLE001
         return None
 

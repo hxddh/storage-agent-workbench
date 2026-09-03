@@ -51,12 +51,20 @@ function totalOf(usage: TokenUsage): number | null {
   return null;
 }
 
+/** Extra turn facts the backend persists beside tokens (v1.16). */
+export type UsageExtras = {
+  budget_tokens?: number | null;
+  repeat_calls_avoided?: number | null;
+};
+
 /**
  * One line for an execution's spend. Cached renders as a subset
  * ("incl. X cached"), never as an additive part. A floor renders with a `~`
  * prefix; the caller puts the floor reason in the title/tooltip.
+ * v1.16 also names the turn governor (budget) and memory reuse — both were
+ * persisted for releases and never painted, so capped turns looked broken.
  */
-export function formatUsageLine(usage: TokenUsage | null | undefined, t: TFunc): string | null {
+export function formatUsageLine(usage: (TokenUsage & UsageExtras) | null | undefined, t: TFunc): string | null {
   if (!usage || isUsageUnreported(usage)) return null;
   const parts: string[] = [];
   if (usage.input_tokens != null) parts.push(t("usage.in", { n: fmtTokensUnified(usage.input_tokens) }));
@@ -67,6 +75,10 @@ export function formatUsageLine(usage: TokenUsage | null | undefined, t: TFunc):
   if (usage.cached_input_tokens != null) parts.push(t("usage.cachedOf", { n: fmtTokensUnified(usage.cached_input_tokens) }));
   if (usage.reasoning_tokens != null) parts.push(t("usage.reasoning", { n: fmtTokensUnified(usage.reasoning_tokens) }));
   if (usage.requests != null && usage.requests > 0) parts.push(t("usage.requests", { n: usage.requests }));
+  if (usage.budget_tokens != null) parts.push(t("usage.budget", { n: fmtTokensUnified(usage.budget_tokens) }));
+  if (usage.repeat_calls_avoided != null && usage.repeat_calls_avoided > 0) {
+    parts.push(t("usage.reused", { n: usage.repeat_calls_avoided }));
+  }
   if (!parts.length) return null;
   const text = parts.join(" · ");
   return isUsageFloor(usage) ? t("usage.floor", { text: `~${text}` }) : text;
@@ -84,7 +96,7 @@ export function usageTitle(usage: TokenUsage | null | undefined, t: TFunc): stri
 export type ContextReading =
   | { kind: "none" }
   | { kind: "unreported" }
-  | { kind: "measured"; used: number; window: number; pct: number; floor: boolean; estimated: boolean };
+  | { kind: "measured"; used: number; window: number; pct: number; floor: boolean; estimated: boolean; windowSource: string | null };
 
 /**
  * The Composer meter reading. `none` (fresh task, no metrics yet) paints
@@ -92,7 +104,7 @@ export type ContextReading =
  * `measured` paints the ring; `estimated` marks a post-compaction estimate.
  */
 export function contextReading(
-  metrics: { usage?: TokenUsage | null; total_tokens?: number | null; input_tokens?: number | null; output_tokens?: number | null; context_window?: number | null } | null | undefined,
+  metrics: { usage?: TokenUsage | null; total_tokens?: number | null; input_tokens?: number | null; output_tokens?: number | null; context_window?: number | null; context_window_source?: string | null } | null | undefined,
   compactedTokens: number | null = null,
 ): ContextReading {
   if (!metrics) return { kind: "none" };
@@ -115,5 +127,6 @@ export function contextReading(
     pct: Math.min(100, Math.max(0, Math.round((used / window) * 100))),
     floor: isUsageFloor(usage),
     estimated,
+    windowSource: (metrics as { context_window_source?: string | null }).context_window_source ?? null,
   };
 }

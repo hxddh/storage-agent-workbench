@@ -11,7 +11,7 @@ import { useTheme } from "./theme";
 import { useToast } from "./components/Toast";
 import { ShortcutsSheet } from "./components/ShortcutsSheet";
 import { isEditable, matches } from "./shortcuts";
-import { getPaletteActions } from "./agent/paletteActions";
+import { getPaletteActions, publishBasePaletteActions } from "./agent/paletteActions";
 import { AgentTaskNavigation } from "./agent/AgentTaskNavigation";
 import { useNavigationCopy } from "./agent/navigationCopy";
 import { DEFAULT_TASK_NAV_WIDTH, clampTaskNavigationWidth, type AgentTaskSummary, type TaskActions, type TaskEditRequest } from "./agent/navigationModel";
@@ -76,7 +76,7 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew, on
         </>
       ) : null}
       <span className="native-titlebar-title" data-task={task ? "true" : "false"} data-tauri-drag-region>{title}</span>
-      <button type="button" onClick={onFind} disabled={!task} aria-label={t("task.find")} title={`${t("task.findHint")} ⌘F`} data-testid="titlebar-find" className="native-icon-button">
+      <button type="button" onClick={onFind} disabled={!task} aria-label={t("task.find")} title={task ? `${t("task.findHint")} ⌘F` : t("task.findNeedsTask")} data-testid="titlebar-find" className="native-icon-button">
         <Icon name="search" size={15} />
       </button>
       <button type="button" onClick={onPalette} aria-label={t("task.palette")} title={`${t("task.paletteHint")} ⌘K`} data-testid="titlebar-palette" className="native-icon-button">
@@ -216,6 +216,12 @@ export default function App() {
     onSummon: useCallback(() => { getPaletteActions().focusComposer?.(); }, []),
   });
   useSettleNotifications(tasks, activeTaskId);
+
+  // v1.16 — window-owned palette entries (the shortcuts sheet) survive task
+  // switches: the task publisher below never sets them.
+  useEffect(() => {
+    publishBasePaletteActions({ shortcuts: () => runCommand("shortcuts") });
+  }, [runCommand]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

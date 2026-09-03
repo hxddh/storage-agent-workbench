@@ -13,11 +13,16 @@ const HISTORY_LIMIT = 20;
 // v1.13 — history lives in plaintext localStorage, so secret-shaped content
 // must never be stored: entries carrying key material are dropped entirely,
 // credential-bearing values are masked. Mirrors the Sidecar redactor's shapes.
+// v1.16 — mirrors sidecar/app/security/redaction.py shapes. When adding one
+// here, add it there too (and to architecture.test.ts's ghu assertion).
 const SECRET_ENTRY = [
   /\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA|ANVA)[A-Z0-9]{16}\b/,
   /\bsk-[A-Za-z0-9][A-Za-z0-9_\-]{5,}/,
-  /\bxox[baprs]-[A-Za-z0-9-]{10,}/,
+  /\bxox[baprse]-[A-Za-z0-9-]{10,}/,
   /\bgh[pousr]_[A-Za-z0-9]{20,}/,
+  /\bghu_[A-Za-z0-9]{36}/,
+  /\bgithub_pat_[A-Za-z0-9_]{22,}/,
+  /\bglpat-[A-Za-z0-9_\-]{20,}/,
   /-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----/,
 ];
 const SECRET_VALUES: [RegExp, string][] = [
@@ -166,10 +171,20 @@ export function Composer({
     });
   };
 
+  // v1.16 — analyzed types, in one place so button, drop and picker agree.
+  const ANALYZED_EXT = [".csv", ".parquet", ".tsv", ".log", ".txt", ".gz", ".json", ".jsonl"];
+  const isAnalyzedType = (name: string) => {
+    const lower = name.toLowerCase();
+    return ANALYZED_EXT.some((ext) => lower.endsWith(ext));
+  };
   // A file dropped anywhere on the Composer takes the same attach path as the
   // `+` button: one file, the same size ceiling, the same accept list.
   const acceptFile = (file: File | null) => {
     if (!file) return;
+    if (!isAnalyzedType(file.name)) {
+      setSizeError(t("attach.badType"));
+      return;
+    }
     if (file.size > MAX_UPLOAD_BYTES) {
       setSizeError(t("attach.tooLarge", { size: formatGiB(file.size) }));
       return;
@@ -177,6 +192,10 @@ export function Composer({
     setSizeError(null);
     onPickFile(file);
   };
+  // v1.16 — `@` discoverability: a quiet line under the field instead of
+  // silence when there is nothing (or no file) to complete.
+  const showMentionHint = mentionables.length > 0 && !mention;
+  const showMentionNeedsFile = mentionables.length === 0 && !mention && text.includes("@");
 
   useEffect(() => { setSizeError(null); }, [attached]);
   useEffect(() => {
@@ -284,11 +303,19 @@ export function Composer({
         </div>
       ) : null}
 
+      {showMentionHint ? (
+        <div className="native-composer-mention-hint" data-testid="composer-mention-hint">{t("attach.mentionHint")}</div>
+      ) : null}
+      {showMentionNeedsFile ? (
+        <div className="native-composer-mention-hint" data-testid="composer-mention-needs-file">{t("attach.mentionNeedsFile")}</div>
+      ) : null}
+
       <textarea
         ref={taRef}
         data-focus-ring="container"
         rows={1}
         value={text}
+        title={t("composer.historyHint")}
         onChange={(event) => {
           setText(event.target.value);
           histIndex.current = null;
@@ -309,12 +336,16 @@ export function Composer({
               completeMention(mentionMatches[mention.index]?.filename ?? mentionMatches[0].filename);
               return;
             }
-            if (event.key === "Escape") { event.preventDefault(); setMention(null); return; }
-          } else if (mention && event.key === "Escape") { setMention(null); return; }
+            if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setMention(null); return; }
+          } else if (mention && event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setMention(null); return; }
           // Esc in an EMPTY Composer stops the running execution — the same
           // Stop as the button and ⌘. — and does nothing at all otherwise:
           // typed text is never cleared by a key the hand reaches for reflexively.
           if (event.key === "Escape") {
+            // v1.16 — stop here: the window also closes its top overlay on
+            // Escape, and one keypress must not stop an execution AND close
+            // the palette behind it.
+            event.stopPropagation();
             if (busy && !text.trim()) { event.preventDefault(); onStop(); }
             return;
           }

@@ -355,6 +355,8 @@ export interface ExecutionMetrics extends TokenUsage {
   /** The model's context window (v1.11), for a context meter. Null when the
    * runtime does not know it. */
   context_window?: number | null;
+  /** Where the window came from (v1.16): "declared" | "inferred" | null. */
+  context_window_source?: string | null;
 }
 
 /** A persisted per-turn metrics row, keyed to the assistant message. */

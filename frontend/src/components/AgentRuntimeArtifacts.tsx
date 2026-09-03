@@ -11,10 +11,9 @@ const CONF_CLASS: Record<string, string> = {
 
 /** Deterministic offline error triage produced by the runtime: findings only. */
 export function TriageCard({ c }: { c: TriageCase }) {
-  const { lang, t } = useI18n();
-  const copy = lang === "zh"
-    ? { title: "错误诊断", next: t("triage.next") }
-    : { title: "Error triage", next: t("triage.next") };
+  const { t } = useI18n();
+  // v1.16 — triage title lives in the i18n dict.
+  const copy = { title: t("triage.title"), next: t("triage.next") };
   return (
     <div className="turn-agent" data-testid="agent-triage-artifact">
       <div className="mb-2 flex items-center gap-2 text-xs text-gray-500">

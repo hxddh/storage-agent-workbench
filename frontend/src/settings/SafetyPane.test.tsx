@@ -46,7 +46,9 @@ describe("the Safety pane", () => {
     expect(screen.getByText("Always allow")).toBeTruthy();
     const tools = screen.getByTestId("approval-gated-tools");
     expect(tools.textContent).toContain("import_evidence");
-    expect(tools.textContent).toContain("survey_account_large");
+    // v1.16 — backend action ids render localized, never raw snake_case.
+    expect(tools.textContent).toContain("Large account scan");
+    expect(tools.textContent).not.toContain("survey_account_large");
   });
 
   it("persists a change with PUT and reflects the reply", async () => {

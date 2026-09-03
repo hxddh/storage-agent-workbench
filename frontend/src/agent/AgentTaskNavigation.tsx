@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type 
 import { useI18n, type Lang } from "../i18n";
 import { localDayKey, previousDayKey, timeAgo } from "../lib/time";
 import { useSessionRun, useSessionRunIndexVersion } from "../sessionRuns";
-import { useNavigationCopy } from "./navigationCopy";
+import { NAV_DAY_LABELS, useNavigationCopy } from "./navigationCopy";
 import {
   DEFAULT_TASK_NAV_WIDTH,
   clampTaskNavigationWidth,
@@ -34,9 +34,11 @@ export function dayGroups(tasks: AgentTaskSummary[], lang: Lang, now: Date = new
     const day = Number.isNaN(ms) ? Number.NaN : localDayKey(ms);
     let key: string;
     let label: string;
-    if (Number.isNaN(day)) { key = "undated"; label = lang === "zh" ? "更早" : "Earlier"; }
-    else if (day >= today) { key = "today"; label = lang === "zh" ? "今天" : "Today"; }
-    else if (day >= yesterday) { key = "yesterday"; label = lang === "zh" ? "昨天" : "Yesterday"; }
+    // v1.16 — day labels come from navigation copy, not inline ternaries.
+    const dayLabels = NAV_DAY_LABELS[lang] ?? NAV_DAY_LABELS.en;
+    if (Number.isNaN(day)) { key = "undated"; label = dayLabels.earlier; }
+    else if (day >= today) { key = "today"; label = dayLabels.today; }
+    else if (day >= yesterday) { key = "yesterday"; label = dayLabels.yesterday; }
     else {
       key = String(day);
       label = (new Date(day).getFullYear() === now.getFullYear() ? fmt : fmtYear).format(day);

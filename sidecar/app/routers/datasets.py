@@ -90,7 +90,8 @@ async def upload_dataset(
                 if total > MAX_UPLOAD_BYTES:
                     raise HTTPException(
                         status_code=413,
-                        detail=f"upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MiB limit",
+                        # v1.16 - GiB, matching the Composer ceiling copy ("2 GiB").
+                        detail=f"upload exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024 * 1024)} GiB limit",
                     )
                 fh.write(chunk)
         os.replace(tmp, dest)

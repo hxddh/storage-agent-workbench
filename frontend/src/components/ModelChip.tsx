@@ -23,10 +23,13 @@ export function ModelChip({ onOpenSettings, refreshKey = 0, disabled = false }: 
   refreshKey?: number;
   disabled?: boolean;
 }) {
-  const { lang } = useI18n();
-  const copy = lang === "zh"
-    ? { none: "未配置模型", setUp: "配置模型…", title: "模型", settings: "管理模型…", switching: "切换中…", effort: "推理强度", effortDefault: "默认", low: "低", medium: "中", high: "高" }
-    : { none: "No model", setUp: "Set up a model…", title: "Model", settings: "Manage models…", switching: "Switching…", effort: "Reasoning effort", effortDefault: "Default", low: "Low", medium: "Medium", high: "High" };
+  const { t } = useI18n();
+  // v1.16 — chip copy lives in the i18n dict.
+  const copy = {
+    none: t("chip.none"), setUp: t("chip.setUp"), title: t("chip.title"),
+    settings: t("chip.settings"), switching: t("chip.switching"), effort: t("chip.effort"),
+    effortDefault: t("chip.effortDefault"), low: t("chip.low"), medium: t("chip.medium"), high: t("chip.high"),
+  };
   const [providers, setProviders] = useState<ModelProvider[] | null>(null);
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);

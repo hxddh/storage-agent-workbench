@@ -8,7 +8,7 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 import { Icon, type IconName } from "./icons";
 
-type Cmd = { id: string; label: string; hint?: string; icon: IconName; run: () => void; group: "action" | "task" };
+type Cmd = { id: string; label: string; hint?: string; icon: IconName; run: () => void; group: "action" | "engine" | "task" };
 
 /** v1.13 — subsequence fuzzy score (higher is better, -1 is no match).
  * Contiguous runs and prefix matches score above scattered letters, so
@@ -52,41 +52,31 @@ export function CommandPalette({
 }) {
   const { lang, setLang, t } = useI18n();
   const { theme, toggle } = useTheme();
-  const copy = lang === "zh"
-    ? {
-        placeholder: "搜索任务或运行命令…",
-        newTask: "新任务",
-        settings: "打开设置",
-        actions: "操作",
-        tasks: "任务",
-        empty: "没有匹配的任务或命令。",
-        stop: "停止当前执行",
-        resume: "恢复中断的执行",
-        steer: "调整当前执行的方向",
-        focus: "聚焦输入框",
-        compact: "压缩上下文",
-        themeLight: "切换到浅色主题",
-        themeDark: "切换到深色主题",
-        langEn: "Switch to English",
-        langZh: "切换到中文",
-      }
-    : {
-        placeholder: "Search tasks or run a command…",
-        newTask: "New task",
-        settings: "Open settings",
-        actions: "Actions",
-        tasks: "Tasks",
-        empty: "No matching tasks or commands.",
-        stop: "Stop current execution",
-        resume: "Resume interrupted execution",
-        steer: "Steer current execution",
-        focus: "Focus composer",
-        compact: "Compact context",
-        themeLight: "Switch to light theme",
-        themeDark: "Switch to dark theme",
-        langEn: "Switch to English",
-        langZh: "切换到中文",
-      };
+  // v1.16 — palette copy lives in the i18n dict, like every other surface.
+  const copy = {
+    placeholder: t("palette.placeholder"),
+    newTask: t("palette.newTask"),
+    settings: t("palette.settings"),
+    actions: t("palette.actions"),
+    tasks: t("palette.tasks"),
+    empty: t("palette.empty"),
+    stop: t("palette.stop"),
+    resume: t("palette.resume"),
+    steer: t("palette.steer"),
+    focus: t("palette.focus"),
+    compact: t("palette.compact"),
+    themeLight: t("palette.themeLight"),
+    themeDark: t("palette.themeDark"),
+    langEn: t("palette.langEn"),
+    langZh: t("palette.langZh"),
+    shortcuts: t("palette.shortcuts"),
+    engines: t("palette.engines"),
+    engineCost: t("palette.engineCost"),
+    enginePlan: t("palette.enginePlan"),
+    engineBaseline: t("palette.engineBaseline"),
+    engineDrift: t("palette.engineDrift"),
+    engineReport: t("palette.engineReport"),
+  };
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -126,6 +116,24 @@ export function CommandPalette({
         run: () => { live.compact?.(); onClose(); }, group: "action",
       });
     }
+    if (live.shortcuts) {
+      actions.push({
+        id: "shortcuts", label: copy.shortcuts, hint: "?", icon: "info",
+        run: () => { live.shortcuts?.(); onClose(); }, group: "action",
+      });
+    }
+    // v1.16 — the engines are discoverable here, not in painted hints or
+    // model prose: each item fills the Composer with the ask and focuses it.
+    // Typing stays the action; the palette only saves the wording.
+    const engines: Cmd[] = live.prefill && !live.busy
+      ? [
+          { id: "engine-cost", label: copy.engineCost, icon: "storage", run: () => { live.prefill?.(copy.engineCost); onClose(); }, group: "engine" },
+          { id: "engine-plan", label: copy.enginePlan, icon: "tool", run: () => { live.prefill?.(copy.enginePlan); onClose(); }, group: "engine" },
+          { id: "engine-baseline", label: copy.engineBaseline, icon: "file", run: () => { live.prefill?.(copy.engineBaseline); onClose(); }, group: "engine" },
+          { id: "engine-drift", label: copy.engineDrift, icon: "refresh", run: () => { live.prefill?.(copy.engineDrift); onClose(); }, group: "engine" },
+          { id: "engine-report", label: copy.engineReport, icon: "compose", run: () => { live.prefill?.(copy.engineReport); onClose(); }, group: "engine" },
+        ]
+      : [];
     actions.push(
       { id: "theme", label: theme === "dark" ? copy.themeLight : copy.themeDark, icon: "sun", run: () => { toggle(); onClose(); }, group: "action" },
       { id: "lang", label: lang === "zh" ? copy.langEn : copy.langZh, icon: "globe", run: () => { setLang(lang === "zh" ? "en" : "zh"); onClose(); }, group: "action" },
@@ -137,7 +145,7 @@ export function CommandPalette({
       run: () => { onSelectTask(task.id); onClose(); },
       group: "task",
     }));
-    const all = [...actions, ...taskItems];
+    const all = [...actions, ...engines, ...taskItems];
     const query = q.trim();
     if (!query) return all;
     // Tasks rank by fuzzy score; actions keep substring matching (few, fixed).
@@ -147,7 +155,7 @@ export function CommandPalette({
       .sort((a, b) => b.score - a.score)
       .map((row) => row.command);
     const ql = query.toLowerCase();
-    const matchedActions = actions.filter((command) => command.label.toLowerCase().includes(ql));
+    const matchedActions = [...actions, ...engines].filter((command) => command.label.toLowerCase().includes(ql));
     return [...matchedActions, ...ranked];
   }, [q, tasks, onNew, onOpenSettings, onSelectTask, onClose, t, copy, theme, toggle, lang, setLang]);
 
@@ -192,7 +200,7 @@ export function CommandPalette({
             <div key={command.id}>
               {command.group !== items[index - 1]?.group ? (
                 <div className="px-2 pb-1 pt-2 text-2xs font-medium text-gray-500" data-testid={`command-palette-${command.group}s`}>
-                  {command.group === "task" ? copy.tasks : copy.actions}
+                  {command.group === "task" ? copy.tasks : command.group === "engine" ? copy.engines : copy.actions}
                 </div>
               ) : null}
               <button

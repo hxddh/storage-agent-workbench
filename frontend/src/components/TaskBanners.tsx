@@ -25,6 +25,7 @@ export function TaskBanners({
   queued,
   onCancelQueued,
   onEditQueued,
+  onDismissError,
 }: {
   offline: boolean;
   needKey: boolean;
@@ -32,6 +33,9 @@ export function TaskBanners({
   /** The Composer still holds the failed text, so Retry re-sends it. */
   canRetry: boolean;
   onRetry: () => void;
+  /** v1.16 — view errors (e.g. a failed approval resolve) are dismissible:
+   * without text there is no Retry, and without Dismiss the banner stuck. */
+  onDismissError?: () => void;
   onOpenSettings: () => void;
   showResume: boolean;
   lastExecution: TaskExecution | null | undefined;
@@ -53,7 +57,9 @@ export function TaskBanners({
           <p>{copy.offlineHint}</p>
         </div>
       ) : null}
-      {needKey ? (
+      {/* v1.16 — offline suppresses needKey: key state can't be known
+          while the runtime is unreachable, and stacked banners bury the doc. */}
+      {needKey && !offline ? (
         <div className="native-banner" data-tone="warn">
           {copy.needModel}
           <div className="native-banner-actions">
@@ -62,12 +68,13 @@ export function TaskBanners({
         </div>
       ) : null}
       {error ? (
-        <div className="native-banner" data-tone="danger">
+        <div className="native-banner" data-tone="danger" data-testid="task-error">
           {copy.actionFailed}
           <p className="break-words">{error}</p>
           <div className="native-banner-actions">
             {canRetry ? <Button variant="primary" size="sm" onClick={onRetry}>{copy.retry}</Button> : null}
             <Button variant="default" size="sm" onClick={onOpenSettings}>{t("common.openSettings")}</Button>
+            {onDismissError ? <Button variant="ghost" size="sm" onClick={onDismissError}>{t("common.dismiss")}</Button> : null}
           </div>
         </div>
       ) : null}
@@ -92,19 +99,29 @@ export function TaskBanners({
                 aria-label={copy.queuedEditing}
                 rows={2}
                 value={draft}
+                // v1.16 — same 32 000 ceiling the server enforces (PATCH
+                // 422s past it): refuse in the editor, not in a bare error.
+                maxLength={32000}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {
                   if (event.nativeEvent.isComposing) return;
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
+                    event.stopPropagation();
                     setEditingId(null);
                     if (draft.trim()) onEditQueued(execution.id, draft.trim());
                   } else if (event.key === "Escape") {
                     event.preventDefault();
+                    event.stopPropagation();
                     setEditingId(null);
                   }
                 }}
               />
+              {draft.length > 24000 ? (
+                <div className="native-composer-count" data-testid="queued-direction-count">
+                  {draft.length.toLocaleString()} / 32,000
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="turn-user-bubble" data-queued="true">{execution.direction}</div>

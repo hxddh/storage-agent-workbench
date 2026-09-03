@@ -73,8 +73,11 @@ describe("the approval policy (v1.12)", () => {
     expect(screen.getByTestId("approval-card").getAttribute("data-policy")).toBe("session");
   });
 
-  it("keeps the task-scoped wording when no policy is reported", () => {
+  it("claims no scope when no policy is reported", () => {
+    // v1.16 — the legacy fallback must not assert "for this task": the
+    // scope is unknown, so it says only that the grant was automatic.
     draw(<ApprovalCard item={item({ status: "granted" })} />);
-    expect(screen.getByTestId("approval-resolved").textContent).toContain("Allowed automatically for this task");
+    expect(screen.getByTestId("approval-resolved").textContent).toContain("Allowed automatically");
+    expect(screen.getByTestId("approval-resolved").textContent).not.toContain("for this task");
   });
 });

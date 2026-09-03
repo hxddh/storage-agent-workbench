@@ -43,14 +43,19 @@ export function ContextMeter() {
   }
   const est = reading.estimated ? ` ${t("usage.estimated")}` : "";
   const floor = reading.floor ? "~" : "";
-  const title = lang === "zh"
-    ? `上下文已用 ${reading.pct}%（${floor}${fmtTokensUnified(reading.used)} / ${fmtTokensUnified(reading.window)} tokens${est}）`
-    : `${floor}${reading.pct}% of context used (${fmtTokensUnified(reading.used)} of ${fmtTokensUnified(reading.window)} tokens${est})`;
-  const fullTitle = reading.floor
-    ? `${title} — ${t("usage.floorHint", { reported: (run.lastMetrics?.metrics?.usage?.reported_requests ?? run.lastMetrics?.metrics?.reported_requests ?? 0), total: (run.lastMetrics?.metrics?.usage?.requests ?? run.lastMetrics?.metrics?.requests ?? 0) })}`
-    : reading.estimated
-      ? `${title} — ${t("usage.estimatedHint")}`
-      : title;
+  // v1.16 — the denominator is labeled: configured vs inferred-from-table.
+  const source = reading.windowSource === "declared" ? t("usage.windowDeclared")
+    : reading.windowSource === "inferred" ? t("usage.windowInferred") : null;
+  const base = lang === "zh"
+    ? `上下文已用 ${reading.pct}%（${floor}${fmtTokensUnified(reading.used)} / ${fmtTokensUnified(reading.window)} tokens${est}${source ? `，${source}` : ""}）`
+    : `${floor}${reading.pct}% of context used (${fmtTokensUnified(reading.used)} of ${fmtTokensUnified(reading.window)} tokens${est}${source ? `, ${source}` : ""})`;
+  const notes = [t("usage.systemNote")];
+  if (reading.floor) {
+    notes.push(t("usage.floorHint", { reported: (run.lastMetrics?.metrics?.usage?.reported_requests ?? run.lastMetrics?.metrics?.reported_requests ?? 0), total: (run.lastMetrics?.metrics?.usage?.requests ?? run.lastMetrics?.metrics?.requests ?? 0) }));
+  }
+  if (reading.estimated) notes.push(t("usage.estimatedHint"));
+  const fullTitle = `${base} — ${notes.join(" ")}`;
+  const title = base;
   return (
     <span className="native-context-meter" data-testid="context-meter" data-pct={reading.pct} data-estimated={reading.estimated ? "true" : "false"} data-floor={reading.floor ? "true" : "false"} title={fullTitle} aria-label={title} role="img">
       <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
