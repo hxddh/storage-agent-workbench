@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), "utf8");
@@ -140,7 +141,9 @@ describe("v1.09.0 native Agent window boundaries", () => {
     const turn = source("../components/TranscriptTurn.tsx");
     const items = source("../components/TranscriptItems.tsx");
     const group = source("../components/WorkedGroup.tsx");
-    const task = source("../components/AgentTaskImplementation.tsx");
+    const task = source("../components/TaskDocument.tsx");
+    const root = source("../components/AgentTaskImplementation.tsx");
+    const banners = source("../components/TaskBanners.tsx");
     expect(turn).toContain('data-testid="turn-user"');
     expect(turn).toContain('data-testid="work-result"');
     expect(turn).toContain('data-testid="turn-answer"');
@@ -162,22 +165,24 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(task).toContain('import { AgentTurn, UserTurn } from "./TranscriptTurn"');
     expect(task).toContain("<AgentTurn");
     expect(task).toContain("<UserTurn");
-    expect(task).toContain("turnItemsOf(");
+    expect(source("../hooks/useApprovals.ts")).toContain("turnItemsOf(");
     expect(task).toContain('data-testid="task-scroll"');
     expect(task).toContain("task-item-");
     expect(task).toContain("data-direction=");
     expect(task).toContain('data-testid="remote-execution"');
     expect(task).toContain('data-testid="task-status"');
-    expect(task).toContain('data-testid="queued-direction"');
-    expect(task).toContain('data-testid="task-resume"');
-    expect(task).toContain("runner.resume");
-    expect(task).not.toContain("MessageCard");
-    expect(task).not.toContain("TaskContent");
-    expect(task).not.toContain("ThinkingBubble");
-    expect(task).not.toContain("ExecutionSummary");
-    expect(task).not.toContain('data-testid="thread-scroll"');
-    expect(task).not.toContain('data-testid="task-verify"');
-    expect(task).not.toContain("delegate-suggestion");
+    expect(banners).toContain('data-testid="queued-direction"');
+    expect(banners).toContain('data-testid="task-resume"');
+    expect(root).toContain("runner.resume");
+    for (const text of [task, root, banners]) {
+      expect(text).not.toContain("MessageCard");
+      expect(text).not.toContain("TaskContent");
+      expect(text).not.toContain("ThinkingBubble");
+      expect(text).not.toContain("ExecutionSummary");
+      expect(text).not.toContain('data-testid="thread-scroll"');
+      expect(text).not.toContain('data-testid="task-verify"');
+      expect(text).not.toContain("delegate-suggestion");
+    }
   });
 
   it("makes the empty start a greeting and the Composer, with no wizard or SKU catalog", () => {
@@ -185,8 +190,8 @@ describe("v1.09.0 native Agent window boundaries", () => {
     const app = source("../App.tsx");
     expect(task).toContain('data-testid="task-start"');
     expect(task).toContain("native-start-greeting");
-    expect(task).toContain("{composer}");
-    expect(task).toContain("void runner.submit");
+    expect(task).toContain("{composerNode}");
+    expect(source("../components/TaskComposerHost.tsx")).toContain("void runner.submit");
     expect(task).not.toContain("FirstRunFlow");
     expect(task).not.toContain("showFirstRun");
     expect(task).not.toContain("delegate-suggestion");
@@ -198,20 +203,23 @@ describe("v1.09.0 native Agent window boundaries", () => {
 
   it("raises approvals inline from gated tool calls, with Allow / Allow for this task / Deny", () => {
     const card = source("../components/ApprovalCard.tsx");
-    const task = source("../components/AgentTaskImplementation.tsx");
+    const task = source("../components/TaskDocument.tsx");
+    const approvals = source("../hooks/useApprovals.ts");
     const model = source("../lib/turnItems.ts");
-    const api = source("../api.ts");
+    const api = source("../api/runtime.ts");
     expect(card).toContain('data-testid="approval-card"');
     expect(card).toContain('data-testid="approval-allow"');
     expect(card).toContain('data-testid="approval-allow-task"');
     expect(card).toContain('data-testid="approval-deny"');
     expect(card).toContain('data-testid="approval-impact"');
     expect(card).not.toContain("Decision required");
-    expect(task).toContain("resolveTaskDecision(");
+    expect(approvals).toContain("resolveTaskDecision(");
     expect(task).toContain("<ApprovalCard");
-    expect(task).not.toContain("durable-pending-decisions");
-    expect(task).not.toContain("EvidenceImportDialog");
-    expect(task).not.toContain("AgentNextAction");
+    for (const text of [task, approvals, source("../components/AgentTaskImplementation.tsx")]) {
+      expect(text).not.toContain("durable-pending-decisions");
+      expect(text).not.toContain("EvidenceImportDialog");
+      expect(text).not.toContain("AgentNextAction");
+    }
     expect(model).toContain("export function openApproval(");
     expect(api).toContain('"approval.opened"');
     expect(api).toContain('"message.completed"');
@@ -280,7 +288,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
 
   it("recovers a dropped event stream only by sequence number", () => {
     const impl = source("../hooks/useTurnRunnerImplementation.ts");
-    const api = source("../api.ts");
+    const api = source("../api/runtime.ts");
     expect(impl).toContain("followExecutionEvents");
     expect(impl).toContain("liveHandlers(");
     expect(impl).not.toContain("streamText");
@@ -342,7 +350,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     const pkg = source("../../package.json");
     const figures = source("../viz/AnalysisFigures.tsx");
     const extract = source("../viz/extract.ts");
-    const task = source("../components/AgentTaskImplementation.tsx");
+    const task = source("../components/TaskDocument.tsx");
     const mark = source("../viz/ProvenanceMark.tsx");
     expect(pkg).not.toMatch(/recharts|chart\.js|d3|plotly|nivo|visx|highcharts/i);
     expect(figures).toContain('data-testid="analysis-figures"');
@@ -351,7 +359,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(task).toContain("task-analysis-figures");
     expect(task).toContain("figures={figuresFor(item)}");
     expect(mark).toContain("No direct evidence chain");
-    expect(source("../api.ts")).toContain("/agent-tasks/${taskId}/provenance");
+    expect(source("../api/tasks.ts")).toContain("/agent-tasks/${taskId}/provenance");
     expect(source("./ArtifactsPanel.tsx")).not.toContain("AnalysisFigures");
   });
 
@@ -443,7 +451,7 @@ describe("v1.10.0 native shell, runtime and pane boundaries", () => {
     const detail = source("../components/ExecutionDetailImplementation.tsx");
     const css = source("./native-shell.css");
     expect(detail).toContain("native-execution-doc");
-    expect(detail).toContain("<LiveTrace");
+    expect(detail).toContain("<TranscriptItems");
     expect(detail).toContain('data-testid="execution-status"');
     expect(detail).toContain('data-testid="execution-error"');
     expect(detail).not.toContain("metrics-cards");
@@ -476,7 +484,8 @@ describe("v1.10.0 native shell, runtime and pane boundaries", () => {
   });
 
   it("has one submit path: the execution runner, with no session-message client", () => {
-    const api = source("../api.ts");
+    const api = ["../api.ts", "../api/client.ts", "../api/runtime.ts", "../api/tasks.ts", "../api/settings.ts", "../api/providers.ts"]
+      .map((relative) => source(relative)).join("\n");
     expect(api).not.toContain("postSessionMessage");
     expect(api).not.toContain("streamSessionMessage");
     expect(api).not.toContain("/messages/stream");
@@ -614,7 +623,7 @@ describe("v1.11.0 turn transcript boundaries", () => {
   it("keeps the answer a Markdown page: tables scroll, no chart toggle, no chip row, no footer", () => {
     const md = source("../components/MarkdownImplementation.tsx");
     const turn = source("../components/TranscriptTurn.tsx");
-    const task = source("../components/AgentTaskImplementation.tsx");
+    const task = source("../components/AgentTaskImplementation.tsx") + source("../components/TaskDocument.tsx");
     expect(md).toContain("agent-table-scroll");
     expect(md).not.toContain("chart-toggle");
     expect(md).not.toContain("mask-image");
@@ -631,5 +640,255 @@ describe("v1.11.0 turn transcript boundaries", () => {
     expect(e2e).not.toContain("next_action_proposals: [");
     expect(e2e).toContain('"turn-commentary"');
     expect(e2e).toContain('"worked-group"');
+  });
+});
+
+/**
+ * v1.12.0 — native all the way through: the plan the model owns, the
+ * compaction marker, task status on the stream, the approval policy pane,
+ * the instructions file, and a wall-clock "Worked for".
+ */
+describe("v1.12.0 native runtime", () => {
+  it("renders the plan card only from a `plan` turn item the runtime emitted", () => {
+    const card = source("../components/PlanCard.tsx");
+    const items = source("../components/TranscriptItems.tsx");
+    const model = source("../lib/turnItems.ts");
+    const runner = source("../hooks/useTurnRunnerImplementation.ts");
+    const api = source("../api/runtime.ts");
+    expect(card).toContain('data-testid="plan-card"');
+    expect(card).toContain('data-testid="plan-step"');
+    expect(card).toContain("data-status={step.status}");
+    expect(card).toContain("The UI never invents a step");
+    expect(items).toMatch(/segment\.kind === "plan"[\s\S]{0,120}<PlanCard/);
+    expect(items).toContain('data-testid="context-compacted"');
+    expect(model).toContain("export function applyPlan(");
+    expect(model).toContain("export function applyCompacted(");
+    expect(model).toContain('ref.kind === "plan"');
+    expect(model).toContain('ref.kind === "compacted"');
+    expect(runner).toContain("onPlanUpdated");
+    expect(runner).toContain("onContextCompacted");
+    expect(runner).toContain("onTaskStatus");
+    expect(api).toContain('type === "plan.updated"');
+    expect(api).toContain('type === "context.compacted"');
+    expect(api).toContain('type === "task.status"');
+    // Only the transcript items renderer mounts the card.
+    for (const relative of ["../components/AgentTaskImplementation.tsx", "../components/TaskDocument.tsx", "../components/TranscriptTurn.tsx", "../components/ExecutionDetailImplementation.tsx"]) {
+      expect(source(relative)).not.toContain("<PlanCard");
+    }
+  });
+
+  it("reads task status from the stream and never polls /state on an interval while following", () => {
+    const doc = source("../hooks/useSessionDocument.ts");
+    const runs = source("../sessionRuns.ts");
+    expect(doc).toContain("applyTaskStatus(");
+    expect(doc).toContain("run.taskStatus");
+    expect(doc).toContain("tickRef");
+    expect(doc).not.toMatch(/\.busy\)\s*\{[^}]*setTimeout\(tick/);
+    expect(runs).toContain("taskStatus: TaskStatusPayload | null");
+    expect(runs).toContain("contextTokens: number | null");
+  });
+
+  it("times a worked group by wall-clock, not by a sum of call durations", () => {
+    const group = source("../components/WorkedGroup.tsx");
+    expect(group).toContain("export function groupSpanMs(");
+    expect(group).toContain("export function groupStartMs(");
+    expect(group).toContain('data-testid="worked-elapsed"');
+    expect(group).not.toContain("sum +=");
+  });
+
+  it("puts the approval policy in Settings → Safety and the instructions file in Skills & bridges", () => {
+    const pane = source("../settings/SafetyPane.tsx");
+    const settings = source("../components/SettingsDialog.tsx");
+    const agent = source("../components/NativeAgentPanel.tsx");
+    const api = source("../api/settings.ts");
+    expect(settings).toContain("<SafetyPane");
+    expect(settings).toContain('t("settings.safety")');
+    expect(pane).toContain('data-testid="approval-policy"');
+    expect(pane).toContain("data-testid={`approval-policy-${policy}`}");
+    expect(pane).toContain('["ask", "allow_session", "allow_always"]');
+    expect(pane).toContain("putApprovalPolicy(");
+    expect(pane).toContain('data-testid="approval-gated-tools"');
+    expect(agent).toContain("getInstructionsStatus");
+    expect(agent).toContain('data-testid="instructions-open"');
+    expect(agent).toContain('openNativeFolder("data")');
+    expect(api).toContain('"/settings/approval-policy"');
+    expect(api).toContain('"/settings/instructions"');
+  });
+
+  it("compacts context from the palette and drops the meter to the compacted figure", () => {
+    const palette = source("../components/CommandPalette.tsx");
+    const actions = source("./paletteActions.ts");
+    const meter = source("../components/ContextMeter.tsx");
+    const hook = source("../hooks/useCompactContext.ts");
+    const card = source("../components/ApprovalCard.tsx");
+    const i18n = source("../i18n.tsx");
+    expect(palette).toContain('compact: "Compact context"');
+    expect(palette).toContain('compact: "压缩上下文"');
+    expect(palette).toContain("live.hasTask && !live.busy && !live.compacting && live.compact");
+    expect(actions).toContain("compact?: () => void");
+    expect(meter).toContain("run.contextTokens");
+    expect(hook).toContain("compactTaskContext(");
+    expect(hook).toContain("toast.success");
+    expect(card).toContain('t("approval.policySession")');
+    expect(i18n.match(/\/\/ v1\.12 transcript/g)).toHaveLength(2);
+  });
+});
+
+/**
+ * v1.12.0 — one protocol, one log, one split (W1 · W6).
+ *
+ * The frontend speaks the durable runtime only: no session-message client, no
+ * turn-cancel path, no evidence-import flow, no `/runs` engine API in the
+ * product UI. Execution detail replays the same durable log the transcript
+ * follows. The document, the runner and the client are split by responsibility.
+ */
+describe("v1.12.0 one protocol and the frontend split", () => {
+  const productionSources = (): Array<[string, string]> => {
+    const root = join(process.cwd(), "src");
+    const out: Array<[string, string]> = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const child = join(dir, entry.name);
+        if (entry.isDirectory()) walk(child);
+        else if (/\.(?:ts|tsx)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) && !child.includes("/test/")) {
+          out.push([relative(root, child), readFileSync(child, "utf8")]);
+        }
+      }
+    };
+    walk(root);
+    return out;
+  };
+
+  it("carries none of the retired session-message protocol", () => {
+    const retired: Array<[string, RegExp]> = [
+      ["session message POST", /\/sessions\/\$\{[a-zA-Z]+\}\/messages(?:\/stream)?["'`]/],
+      ["session message stream", /\/messages\/stream/],
+      ["turn cancel path", /\/turns\/\$\{[a-zA-Z]+\}\/cancel|cancelSessionTurn/],
+      ["turn state poll", /\/sessions\/\$\{[a-zA-Z]+\}\/turn["'`]|getSessionTurn(?:State)?|SessionTurnState/],
+      ["action prepare", /\/actions\/prepare|prepareSessionAction/],
+      ["legacy frames", /legacy_frames/],
+      ["proposed actions", /proposed_actions|ProposedAction/],
+      ["evidence-import clients", /\/evidence-imports|planEvidenceImport|confirmEvidenceImport|runEvidenceImport|getEvidenceImport|EvidenceImportRunResult/],
+      ["runs engine API", /["'`]\/runs\/|runEventsUrl|getRun\(|getAccountProfile|\bRunDetail\b|\bRunEvent\b/],
+    ];
+    const files = productionSources();
+    for (const [label, pattern] of retired) {
+      const offenders = files.filter(([, text]) => pattern.test(text)).map(([path]) => path);
+      expect(offenders, label).toEqual([]);
+    }
+  });
+
+  it("splits the client by responsibility behind one barrel", () => {
+    for (const relative of ["../api/client.ts", "../api/runtime.ts", "../api/tasks.ts", "../api/settings.ts", "../api/providers.ts"]) {
+      expect(existsSync(new URL(relative, import.meta.url)), relative).toBe(true);
+    }
+    const barrel = source("../api.ts");
+    for (const module of ["client", "runtime", "tasks", "settings", "providers"]) {
+      expect(barrel).toContain(`export * from "./api/${module}"`);
+    }
+    expect(barrel).not.toContain("fetch(");
+    const runtime = source("../api/runtime.ts");
+    expect(runtime).toContain("/agent-tasks/${taskId}/executions");
+    expect(runtime).toContain("/executions/${executionId}/events?after=${after}");
+    expect(runtime).toContain("export function dispatchDurableEvent(");
+    expect(runtime).toContain("export const listTaskEvents");
+    expect(runtime).toContain("export const getTaskExecution");
+    expect(runtime).toContain("export const stopTaskExecution");
+    expect(runtime).toContain("export const compactTaskContext");
+    const tasks = source("../api/tasks.ts");
+    expect(tasks).toContain("/sessions/${id}/activity/${encodeURIComponent(callId)}");
+    expect(tasks).not.toContain("/agent-tasks/${taskId}/executions");
+    const settings = source("../api/settings.ts");
+    expect(settings).toContain('"/settings/approval-policy"');
+    expect(settings).toContain('"/settings/instructions"');
+    expect(settings).toContain('"/settings/price-table"');
+    const providers = source("../api/providers.ts");
+    expect(providers).toContain('"/model-providers"');
+    expect(providers).toContain('"/cloud-providers"');
+    // The runner has one cancel path.
+    const runner = source("../hooks/useTurnRunnerImplementation.ts");
+    expect(runner).toContain("stopTaskExecution");
+    expect(runner).not.toContain("cancelSessionTurn");
+    expect(runner).not.toContain("legacy");
+  });
+
+  it("splits the Task document by responsibility behind one thin root", () => {
+    const root = source("../components/AgentTaskImplementation.tsx");
+    const document = source("../components/TaskDocument.tsx");
+    const banners = source("../components/TaskBanners.tsx");
+    const host = source("../components/TaskComposerHost.tsx");
+    const approvals = source("../hooks/useApprovals.ts");
+    expect(root).toContain("<TaskDocument");
+    expect(root).toContain("<TaskBanners");
+    expect(root).toContain("<TaskComposerHost");
+    expect(root).toContain("useApprovals(");
+    expect(root).toContain("useTaskComposer(");
+    expect(root).toContain("useComposerActions(");
+    expect(root.split("\n").length).toBeLessThan(320);
+    expect(root).not.toContain("<AgentTurn");
+    expect(root).not.toContain("<Composer ");
+    expect(root).not.toContain("findRanges");
+    expect(document).toContain("export function TaskDocument(");
+    expect(document).toContain("export function useTaskItems(");
+    expect(document).toContain("<FindBar");
+    expect(document).toContain('data-testid="load-earlier"');
+    expect(document).toContain('data-testid="jump-to-latest"');
+    expect(banners).toContain("export function TaskBanners(");
+    expect(banners).toContain('data-testid="offline-banner"');
+    expect(host).toContain("export function useTaskComposer(");
+    expect(host).toContain("export function useComposerActions(");
+    expect(host).toContain("export function TaskComposerHost(");
+    expect(host).toContain("<Composer");
+    expect(host).toContain("runner.steer(");
+    expect(host).toContain("runner.stop()");
+    expect(approvals).toContain("export function useApprovals(");
+    expect(approvals).toContain("unplacedApprovals(");
+    expect(source("../components/taskCopy.ts")).toContain("export function useTaskCopy(");
+  });
+
+  it("reads Execution detail from the durable log, never from /runs or an EventSource", () => {
+    const detail = source("../components/ExecutionDetailImplementation.tsx");
+    const boundary = source("../components/ExecutionDetail.tsx");
+    const panel = source("./ArtifactsPanel.tsx");
+    const projection = source("./useAgentTaskProjection.ts");
+    expect(detail).not.toContain("EventSource");
+    expect(detail).not.toContain("/runs");
+    expect(detail).not.toContain("getRun");
+    expect(detail).not.toContain("getReport");
+    expect(detail).toContain("getTaskExecution(");
+    expect(detail).toContain("listTaskEvents(");
+    expect(detail).toContain("dispatchDurableEvent(");
+    expect(detail).toContain("followExecutionEvents(");
+    expect(detail).toContain("getSession(");
+    expect(detail).toContain("export function replayExecutionEvents(");
+    expect(detail).toContain('event.event_type === "work_result.recorded"');
+    expect(detail).toContain('data-testid="execution-detail-body"');
+    expect(detail).toContain('data-testid="execution-status"');
+    expect(detail).toContain('data-testid="execution-error"');
+    expect(detail).toContain('data-testid="execution-steps"');
+    expect(detail).toContain('data-testid="execution-result"');
+    expect(detail).toContain("<TranscriptItems");
+    // One call's sanitized input/output opens in place through the worked row.
+    expect(source("../components/WorkedGroup.tsx")).toContain("<CallDetail");
+    expect(source("../components/CallDetail.tsx")).toContain("getSessionCall(");
+    expect(detail).toContain("taskId: string;");
+    expect(detail).toContain("executionId: string;");
+    expect(boundary).not.toContain("runId");
+    expect(boundary).toContain("<ExecutionDetailImplementation {...props} />");
+    expect(panel).toContain("<ExecutionDetail taskId={taskId} executionId={selection.id}");
+    expect(panel).toContain('data-testid="execution-row"');
+    expect(panel).not.toContain("executions = detail?.runs");
+    expect(panel).not.toContain("execution.run_id");
+    expect(panel).toContain("executions.map((execution) => (");
+    expect(projection).toContain("listTaskExecutions(");
+  });
+
+  it("names the wall-clock of a worked group from its first start to its last finish", () => {
+    const group = source("../components/WorkedGroup.tsx");
+    const runtime = source("../api/runtime.ts");
+    expect(group).toContain("Math.max(...(ends as number[])) - Math.min(...(starts as number[]))");
+    expect(group).not.toMatch(/reduce\([^)]*duration_ms/);
+    expect(runtime).toContain("started_at: p.started_at ?? seenAt");
+    expect(runtime).toContain("finished_at: p.finished_at ?? seenAt");
   });
 });

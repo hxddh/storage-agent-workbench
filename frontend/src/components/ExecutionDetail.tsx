@@ -4,8 +4,9 @@ import { ExecutionDetailImplementation } from "./ExecutionDetailImplementation";
 export type ExecutionDetailProps = ComponentProps<typeof ExecutionDetailImplementation>;
 
 /**
- * Review boundary for one explicit auditable execution.
- * `run` remains the backend persistence term; product UI treats it as Execution.
+ * Review boundary for one durable Execution (`task_executions` + its
+ * `execution_events`). Since v1.12 it reads the same durable log as the
+ * transcript — never the `/runs` engine API.
  */
 export function ExecutionDetail(props: ExecutionDetailProps) {
   return (

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ModelProvidersPanel } from "../settings/ModelProvidersPane";
 import { CloudProvidersPanel } from "../settings/CloudProvidersPane";
 import { NativeAgentPanel } from "./NativeAgentPanel";
+import { SafetyPane } from "../settings/SafetyPane";
 import { useI18n, LANGS, type Lang } from "../i18n";
 import { useTheme, type Theme } from "../theme";
 import { getVaultStatus } from "../api";
@@ -165,6 +166,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               <section>
                 <SectionHeading title={t("settings.safetyTitle")} />
                 <p className="max-w-[40rem] text-sm leading-relaxed text-gray-300">{t("settings.safety")}</p>
+                <SafetyPane />
               </section>
             ) : null}
           </div>

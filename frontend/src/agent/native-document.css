@@ -605,3 +605,81 @@
 @media (max-width: 760px) {
   .agent-prose nav[data-testid="result-outline"] ul { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* v1.12 — the plan the model owns (one card per turn, updated in place). */
+.plan-card {
+  max-width: min(var(--doc-measure), 100%);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-xl);
+  padding: 4px 10px;
+  background: var(--panel);
+}
+.plan-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--gray-400);
+  font: inherit;
+  font-size: var(--text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.plan-card-head:hover { color: var(--gray-200); }
+.plan-card-head svg.chevron { transition: transform var(--dur-fast, 120ms) ease; }
+.plan-card-head[aria-expanded="true"] svg.chevron { transform: rotate(90deg); }
+.plan-card-steps {
+  margin: 2px 0 6px;
+  padding: 0;
+  list-style: none;
+}
+.plan-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 3px 0 3px 2px;
+  color: var(--gray-300);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.plan-step[data-status="completed"] { color: var(--gray-500); }
+.plan-step[data-status="in_progress"] { color: var(--gray-100); }
+.plan-step-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 14px;
+  height: 21px;
+  color: var(--success);
+}
+.plan-step[data-status="pending"] .plan-step-mark { color: var(--gray-500); }
+.plan-step-dot {
+  width: 6px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+}
+.plan-step-text { min-width: 0; overflow-wrap: anywhere; }
+
+/* v1.12 — the compaction marker: one muted line between segments, never a card. */
+.context-compacted {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(var(--doc-measure), 100%);
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.02em;
+}
+.context-compacted::before,
+.context-compacted::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--edge);
+}

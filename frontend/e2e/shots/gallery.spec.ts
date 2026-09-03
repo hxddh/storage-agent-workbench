@@ -4,7 +4,7 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { dropModelProvider, startFakeModel, textTurn, toolTurn, useFakeModel } from "../fake-model";
 import { STATE_FILE } from "../global-setup";
-import { seedInterruptedTask, seedOptimizationTask, seedSession as seedTask } from "../seed";
+import { seedExecutionLog, seedInterruptedTask, seedOptimizationTask, seedSession as seedTask } from "../seed";
 
 /**
  * Human visual-review contact sheet for the Agent product.
@@ -111,41 +111,6 @@ conn.commit()
   return title;
 }
 
-/** Attach one completed deterministic run (bucket_config_review) to a seeded
- * task and reference it from the last Work Result, so the Execution chip and
- * the Execution-detail document render from durable rows. */
-function seedExecutionRun(taskId: string): string {
-  const { dataDir } = JSON.parse(fs.readFileSync(STATE_FILE, "utf8")) as { dataDir: string };
-  const runId = `run${Date.now().toString(16)}`;
-  const py = `
-import json, sqlite3, sys, uuid
-db, sid, rid = sys.argv[1:4]
-conn = sqlite3.connect(db)
-now = "2026-09-01T00:00:00Z"
-conn.execute("INSERT INTO runs (id, run_type, title, status, provider_id, bucket, user_prompt, final_summary, report_path, created_at, updated_at)"
-             " VALUES (?, 'bucket_config_review', 'Bucket configuration review · acme-logs', 'completed', NULL, 'acme-logs',"
-             " 'Review acme-logs for security, lifecycle and logging gaps.',"
-             " 'acme-logs has no lifecycle rule and server access logging is off; public access is blocked.', NULL, ?, ?)",
-             (rid, now, now))
-conn.execute("INSERT INTO session_runs (id, session_id, run_id, role, created_at) VALUES (?, ?, ?, 'evidence', ?)",
-             (uuid.uuid4().hex, sid, rid, now))
-for i, (tool, out) in enumerate([
-    ("get_bucket_config_detail", {"aspect": "lifecycle", "rules": [], "status_code": 200}),
-    ("get_bucket_config_detail", {"aspect": "logging", "enabled": False, "status_code": 200}),
-    ("get_bucket_public_access", {"blocked": True, "status_code": 200}),
-]):
-    conn.execute("INSERT INTO tool_calls (id, run_id, session_id, tool_name, input_json_sanitized, output_json_sanitized, status, duration_ms, created_at)"
-                 " VALUES (?, ?, ?, ?, ?, ?, 'success', ?, ?)",
-                 (uuid.uuid4().hex, rid, sid, tool, json.dumps({"bucket": "acme-logs"}), json.dumps(out), 60 + 30 * i, now))
-row = conn.execute("SELECT id FROM session_messages WHERE session_id = ? AND role = 'assistant' ORDER BY rowid DESC LIMIT 1", (sid,)).fetchone()
-if row:
-    conn.execute("UPDATE session_messages SET referenced_run_ids = ? WHERE id = ?", (json.dumps([rid]), row[0]))
-conn.commit()
-`;
-  execFileSync(process.env.E2E_PYTHON || "python3", ["-c", py, `${dataDir}/app.db`, taskId, runId]);
-  return runId;
-}
-
 test.beforeAll(() => {
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(OUT, { recursive: true });
@@ -250,18 +215,28 @@ for (const theme of THEMES) {
       await shoot(page, "17-settings-model-editor", theme, lang);
     });
 
-    test("Execution detail — one durable Execution read as a document", async ({ page }) => {
+    test("Execution detail — one durable Execution read from its event log", async ({ page }) => {
       const title = `Execution detail ${theme} ${lang}`;
       const { id } = seedTask(2, title, "tall");
-      seedExecutionRun(id);
+      seedExecutionLog(id);
       await openAgent(page, theme, lang);
       await openTask(page, title);
       await page.keyboard.press("Control+i");
       await expect(page.getByTestId("agent-artifacts-panel")).toBeVisible();
-      await page.locator(".agent-run-row").first().click();
+      await page.getByTestId("execution-row").first().click();
       await expect(page.getByTestId("execution-detail")).toBeVisible();
       await expect(page.getByTestId("execution-status")).toBeVisible();
+      await expect(page.getByTestId("execution-detail-body").getByTestId("worked-group")).toBeVisible();
       await shoot(page, "18-execution-detail", theme, lang);
+    });
+
+    test("Settings — Safety: the approval policy the runtime enforces", async ({ page }) => {
+      await openAgent(page, theme, lang);
+      await page.getByTestId("task-navigation-settings").click();
+      await page.getByRole("button", { name: lang === "zh" ? /^安全$/ : /^Safety$/ }).first().click();
+      await expect(page.getByTestId("approval-policy")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId("approval-gated-tools")).toBeVisible();
+      await shoot(page, "19-settings-safety", theme, lang);
     });
 
     test("Analysis figures — cost and drift from real artifacts", async ({ page }) => {
@@ -294,6 +269,57 @@ test.describe("Agent runtime states", () => {
       await expect(composer(page)).toHaveAttribute("placeholder", /Steer the Agent|补充方向/);
       await expect(navigation(page).locator('[data-testid="task-row"][data-state="working"]').first()).toBeVisible({ timeout: 20_000 });
       await shoot(page, "10-working-steer", "dark", "en");
+    } finally {
+      await dropModelProvider(providerId);
+      await model.close();
+    }
+  });
+
+  test("Plan checklist — the plan the model owns, folded once every step is done", async ({ page }) => {
+    test.setTimeout(120_000);
+    const model = await startFakeModel([
+      toolTurn("update_plan", { steps: [{ text: "Survey the account", status: "in_progress" }, { text: "Check policies", status: "pending" }] }),
+      toolTurn("update_plan", { steps: [{ text: "Survey the account", status: "completed" }, { text: "Check policies", status: "completed" }] }),
+      textTurn("Two buckets surveyed; the acme-logs policy allows public reads."),
+    ]);
+    const providerId = await useFakeModel(model.baseUrl);
+    try {
+      await openAgent(page, "dark");
+      await composer(page).fill("survey the acme account and check every bucket policy");
+      await composer(page).press("Enter");
+      await expect(page.locator('[data-testid="work-result"][data-streaming="false"]').filter({ hasText: /public reads/ }).last()).toBeVisible({ timeout: 90_000 });
+      const card = page.getByTestId("plan-card").last();
+      await expect(card).toHaveAttribute("data-done", "2", { timeout: 30_000 });
+      await card.getByTestId("plan-head").click();
+      await expect(card.getByTestId("plan-step")).toHaveCount(2);
+      await shoot(page, "22-plan-card", "dark", "en");
+    } finally {
+      await dropModelProvider(providerId);
+      await model.close();
+    }
+  });
+
+  test("Compaction marker — the runtime compacted the context before this turn", async ({ page }) => {
+    test.setTimeout(150_000);
+    const model = await startFakeModel(
+      [textTurn("The acme bucket policy grants s3:GetObject to every principal."), textTurn("After compaction: the policy is still public.")],
+      { compaction: "Summary: checked acme bucket; policy is public." },
+    );
+    const providerId = await useFakeModel(model.baseUrl);
+    try {
+      await openAgent(page, "dark");
+      await composer(page).fill("check the acme bucket policy");
+      await composer(page).press("Enter");
+      await expect(page.locator('[data-testid="work-result"][data-streaming="false"]').filter({ hasText: /every principal/ }).last()).toBeVisible({ timeout: 90_000 });
+      await expect(page.getByTestId("agent-composer")).not.toHaveAttribute("data-agent-state", "working", { timeout: 60_000 });
+      await page.keyboard.press("Control+k");
+      await page.getByTestId("command-palette").getByRole("button", { name: /Compact context/ }).click();
+      await expect(page.getByTestId("toast-viewport")).toContainText(/Context compacted/, { timeout: 30_000 });
+      await composer(page).fill("and now?");
+      await composer(page).press("Enter");
+      await expect(page.locator('[data-testid="work-result"][data-streaming="false"]').filter({ hasText: /still public/ }).last()).toBeVisible({ timeout: 90_000 });
+      await expect(page.getByTestId("context-compacted").last()).toBeVisible({ timeout: 30_000 });
+      await shoot(page, "23-context-compacted", "dark", "en");
     } finally {
       await dropModelProvider(providerId);
       await model.close();
@@ -352,6 +378,6 @@ test.afterAll(() => {
     path.join(OUT, "index.html"),
     `<!doctype html><meta charset="utf-8"><title>Storage Agent visual review</title><style>
 body{margin:0;padding:32px;background:#111318;color:#eef0f5;font:14px Inter,system-ui,sans-serif}h1{font-size:26px;margin:0 0 8px}p{color:#9ca3af;margin:0 0 32px;max-width:760px;line-height:1.6}section{margin:0 0 42px}h2{font-size:15px;font-weight:600;margin:0 0 12px;color:#c9ced8}.pair{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}figure{margin:0;background:#191c22;border:1px solid #2a2f39;border-radius:12px;overflow:hidden}figcaption{padding:8px 12px;color:#8f98a8;border-bottom:1px solid #2a2f39;font-size:12px}img{display:block;width:100%;height:auto}.missing{min-height:80px}@media(max-width:1100px){.pair{grid-template-columns:repeat(2,minmax(0,1fr))}}
-</style><h1>Storage Agent — v1.11.0 visual review</h1><p>Native Agent window: sidebar · title bar · one transcript · one Composer · the Artifacts panel. Empty start is a greeting and the Composer; a turn is the user bubble, commentary, one Worked for … group, an inline approval card where the gated tool raised it, and the answer. No activity bar, no status bar, no inspector. Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale.</p>${rows}`,
+</style><h1>Storage Agent — v1.12.0 visual review</h1><p>Native Agent window: sidebar · title bar · one transcript · one Composer · the Artifacts panel. Empty start is a greeting and the Composer; a turn is the user bubble, commentary, the plan checklist the model owns, one Worked for … group timed by wall-clock, an inline approval card where the gated tool raised it, the compaction marker, and the answer. Execution detail reads the same durable log; Settings → Safety carries the approval policy. No activity bar, no status bar, no inspector. Core states × dark/light × EN/ZH against the real Sidecar. Missing cells are extra states captured in one locale.</p>${rows}`,
   );
 });

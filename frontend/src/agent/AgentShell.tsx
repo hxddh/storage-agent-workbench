@@ -76,8 +76,9 @@ export function AgentShell({
       <section className="agent-task-content" data-testid="agent-task-content" data-empty={taskId ? "false" : "true"}>
         {taskContent}
       </section>
-      {open ? (
+      {open && taskId ? (
         <ArtifactsPanel
+          taskId={taskId}
           selection={state.selection}
           projection={projection}
           provenance={provenance}

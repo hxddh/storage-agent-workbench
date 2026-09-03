@@ -128,8 +128,10 @@ export async function setNativeWindowTitle(title: string): Promise<void> {
   try { await invoke("set_window_title", { title }); } catch { /* cosmetic */ }
 }
 
-/** Reveal a folder under the app data directory (only `skills` today). */
-export async function openNativeFolder(sub: "skills"): Promise<string | null> {
+/** Reveal a folder under the app data directory: `skills`, or `data` (the
+ * directory itself, where the AGENTS.md instructions file lives). Resolves
+ * null in a browser or when the shell does not know the folder. */
+export async function openNativeFolder(sub: "skills" | "data"): Promise<string | null> {
   const invoke = tauriInvoke();
   if (!invoke) return null;
   try {

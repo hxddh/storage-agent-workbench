@@ -1,20 +1,20 @@
 /**
  * The turn runner: ensureSession + submit (durable execution + event stream
- * with seq reconnect) + dataset-upload submit + Stop (server-side cancel).
- * Extracted from the task renderer so the view stays presentational.
+ * with seq reconnect) + dataset-upload submit + Stop (`stopTaskExecution`,
+ * the ONE cancel path). Extracted from the task renderer so the view stays
+ * presentational.
  *
  * All run state is written to the sessionRuns store keyed by the id the turn
  * STARTED with — not the currently-visible session — so a turn keeps streaming
  * (and keeps its content) if the user switches sessions mid-run.
  *
  * Stream recovery is `after=<last seq>` on the durable event log. There is no
- * blocking POST fallback and no assistant-id poll.
+ * blocking POST fallback, no turn-cancel endpoint, and no assistant-id poll.
  */
 import { useRef } from "react";
 import { deriveSessionTitle } from "../lib/sessionTitle";
 import {
   ApiError,
-  cancelSessionTurn,
   createTaskExecution,
   deleteSession,
   createSession,
@@ -41,7 +41,9 @@ import {
 } from "../sessionRuns";
 import { useI18n, type TFunc } from "../i18n";
 import {
+  applyCompacted,
   applyDelta,
+  applyPlan,
   applyStatus,
   applyTool,
   completeMessage,
@@ -108,6 +110,15 @@ export function liveHandlers(id: string) {
     onApprovalGranted: (payload: Parameters<typeof grantApproval>[1]) => reduce((turn) => grantApproval(turn, payload)),
     onDecisionResolved: (payload: Parameters<typeof resolveApproval>[1]) => reduce((turn) => resolveApproval(turn, payload)),
     onStatus: (payload: { status: string }) => reduce((turn) => applyStatus(turn, payload.status)),
+    // v1.12: the plan the model owns, the compaction marker (+ the meter's
+    // new figure), and the task's derived status straight from the stream.
+    onPlanUpdated: (payload: { steps: Parameters<typeof applyPlan>[1] }) => reduce((turn) => applyPlan(turn, payload.steps)),
+    onContextCompacted: (payload: Parameters<typeof applyCompacted>[1] & { summary_chars?: number }) =>
+      patchSessionRun(id, (s: SessionRun) => {
+        const next = applyCompacted(liveTurnOf(s), payload);
+        return { items: next.items, answer: next.answer, waiting: next.waiting, contextTokens: payload.after_tokens ?? s.contextTokens };
+      }),
+    onTaskStatus: (payload: SessionRun["taskStatus"]) => patchSessionRun(id, { taskStatus: payload }),
   };
 }
 
@@ -280,9 +291,10 @@ export function useTurnRunner(opts: {
     turnsRef.current.set(id, flight);
     const abort = () => controller.abort();
     registerTurnAbort(id, abort);
+    // Stop before the submit returned has no durable identity to address yet;
+    // the execution is stopped the moment its id is known (below).
     const serverCancel = () => {
       if (flight.executionId) void stopTaskExecution(id, flight.executionId).catch(() => undefined);
-      else void cancelSessionTurn(id, turnId).catch(() => undefined);
     };
     registerTurnCancel(id, serverCancel);
     let outcome: Outcome = "failed";
@@ -325,11 +337,17 @@ export function useTurnRunner(opts: {
         return;
       }
       flight.executionId = submitted.execution.id;
+      if (controller.signal.aborted) {
+        // Stop was pressed while the submit was in flight: the execution now
+        // exists, so stop it by its durable identity before draining.
+        flight.cancelPromise = stopTaskExecution(id, flight.executionId).catch(() => undefined);
+      }
       try {
         const r = await followDurable(id, submitted.execution.id, controller, 0);
         lastSeq = r.last_seq;
         patchSessionRun(id, {
           lastMetrics: r.metrics ? { messageId: r.message_id ?? null, metrics: r.metrics } : null,
+          ...(r.metrics ? { contextTokens: null } : {}),
         });
         outcome = r.stopped ? "stopped" : "ok";
       } catch (e) {
@@ -432,6 +450,7 @@ export function useTurnRunner(opts: {
       const r = await followDurable(id, executionId, controller, 0);
       patchSessionRun(id, {
         lastMetrics: r.metrics ? { messageId: r.message_id ?? null, metrics: r.metrics } : null,
+        ...(r.metrics ? { contextTokens: null } : {}),
       });
       if (localId.current === id) await reload(id);
       patchSessionRun(id, { pending: null, ...CLEAR_TURN, stopped: false });
@@ -641,9 +660,11 @@ export function useTurnRunner(opts: {
       return;
     }
     patchSessionRun(id, { stopped: true });
+    // One cancel path: the durable execution. Before the submit has returned
+    // there is nothing to address yet; runTurn stops it as soon as it exists.
     flight.cancelPromise = flight.executionId
       ? stopTaskExecution(id, flight.executionId).catch(() => undefined)
-      : cancelSessionTurn(id, flight.turnId).catch(() => undefined);
+      : null;
     flight.controller.abort();
   };
 

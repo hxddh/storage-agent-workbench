@@ -11,6 +11,8 @@ const run = (patch: Partial<SessionRun> = {}): SessionRun => ({
   waiting: false,
   startedAt: null,
   lastMetrics: null,
+  taskStatus: null,
+  contextTokens: null,
   needKey: false,
   error: null,
   stopped: false,

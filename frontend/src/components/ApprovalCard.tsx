@@ -30,7 +30,10 @@ export function ApprovalCard({
   const resolved = item.status === "approved"
     ? (item.scope === "task" ? t("approval.allowedTask") : t("approval.allowed"))
     : item.status === "declined" ? t("approval.denied")
-      : item.status === "granted" ? t("approval.granted")
+      : item.status === "granted"
+        ? (item.policy === "session" ? t("approval.policySession")
+          : item.policy === "always" ? t("approval.policyAlways")
+            : item.policy === "task" ? t("approval.policyTask") : t("approval.granted"))
         : item.status === "superseded" ? t("approval.superseded") : null;
 
   return (
@@ -39,6 +42,7 @@ export function ApprovalCard({
       data-testid="approval-card"
       data-status={item.status}
       data-action-type={item.action_type}
+      data-policy={item.policy ?? undefined}
       aria-label={t("approval.eyebrow")}
     >
       <div className="approval-card-head">

@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import type { RemediationPlan, TaskArtifact } from "../api";
+import type { RemediationPlan, TaskArtifact, TaskExecution } from "../api";
 import type { TaskProvenance } from "../viz/types";
 import { Markdown } from "../components/Markdown";
 import { ExecutionDetail } from "../components/ExecutionDetail";
@@ -68,6 +68,12 @@ function Row({
 
 function Empty({ children }: { children: ReactNode }) {
   return <p className="agent-empty-line">{children}</p>;
+}
+
+/** The first line of the Direction, bounded, as the row title. */
+function executionTitle(execution: TaskExecution): string {
+  const line = (execution.direction ?? "").split("\n").map((part) => part.trim()).find(Boolean) ?? "";
+  return line.length > 96 ? `${line.slice(0, 95)}…` : line;
 }
 
 function stringOf(value: unknown): string | null {
@@ -192,6 +198,7 @@ function BaselineDocument({ artifact }: { artifact: TaskArtifact }) {
  * window) and not a second application destination.
  */
 export function ArtifactsPanel({
+  taskId,
   selection,
   projection,
   provenance = null,
@@ -200,6 +207,7 @@ export function ArtifactsPanel({
   onBack,
   onClose,
 }: {
+  taskId: string;
   selection: ArtifactSelection | null;
   projection: ArtifactsProjection;
   provenance?: TaskProvenance | null;
@@ -210,7 +218,7 @@ export function ArtifactsPanel({
 }) {
   const copy = useAgentCopy();
   const c = copy.artifacts;
-  const { detail, plans, baselines, report, reportLoading, error } = projection;
+  const { detail, executions, plans, baselines, report, reportLoading, error } = projection;
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const documentOpen = selectionOpensDocument(selection);
 
@@ -222,7 +230,6 @@ export function ArtifactsPanel({
     node?.scrollIntoView({ block: "start" });
   }, [selection, documentOpen]);
 
-  const executions = detail?.runs ?? [];
   const findings = detail?.findings ?? [];
   const hasReport = (detail?.runs?.length ?? 0) > 0 || findings.length > 0 || (detail?.messages?.length ?? 0) > 0;
 
@@ -234,7 +241,7 @@ export function ArtifactsPanel({
       document = <ReportArtifact report={report} loading={reportLoading} error={error} />;
     } else if (selection.kind === "execution" && selection.id) {
       documentTitle = c.sections.execution;
-      document = <ExecutionDetail runId={selection.id} onBack={onBack} />;
+      document = <ExecutionDetail taskId={taskId} executionId={selection.id} onBack={onBack} />;
     } else if (selection.kind === "plan" && selection.id) {
       const plan = plans.find((item) => item.id === selection.id);
       documentTitle = c.sections.plans;
@@ -317,15 +324,18 @@ export function ArtifactsPanel({
                 <div className="agent-run-list" data-testid="execution-review">
                   {executions.map((execution) => (
                     <button
-                      key={execution.run_id}
+                      key={execution.id}
                       type="button"
                       className="agent-run-row"
-                      onClick={() => onOpen("execution", execution.run_id)}
+                      data-testid="execution-row"
+                      data-execution-id={execution.id}
+                      data-status={execution.status}
+                      onClick={() => onOpen("execution", execution.id)}
                     >
                       <span className="agent-run-status" data-status={execution.status} aria-hidden />
                       <span className="agent-run-main">
-                        <strong>{execution.title || execution.run_type}</strong>
-                        <small>{c.execution.statuses[execution.status] ?? execution.status}</small>
+                        <strong>{executionTitle(execution) || c.execution.kinds[execution.kind] || execution.kind}</strong>
+                        <small>{[c.execution.statuses[execution.status] ?? execution.status, c.execution.kinds[execution.kind] ?? null, execution.created_at?.replace("T", " ").slice(0, 16)].filter(Boolean).join(" · ")}</small>
                       </span>
                     </button>
                   ))}

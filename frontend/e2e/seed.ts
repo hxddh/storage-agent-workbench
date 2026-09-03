@@ -362,4 +362,86 @@ export function seedOptimizationTask(
   return { id, title };
 }
 
+const EXECUTION_LOG_PY = `
+import json, sqlite3, sys, uuid
+conn = sqlite3.connect(sys.argv[1])
+sid, direction = sys.argv[2], sys.argv[3]
+eid = "exec-" + uuid.uuid4().hex[:12]
+conn.execute(
+    "INSERT INTO agent_tasks (id, title, status, created_at, updated_at)"
+    " VALUES (?, ?, 'ready', datetime('now'), datetime('now'))"
+    " ON CONFLICT(id) DO NOTHING",
+    (sid, "seeded"),
+)
+t = lambda s: "2026-09-01T00:00:%02dZ" % s
+conn.execute(
+    "INSERT INTO task_executions (id, task_id, direction, kind, status,"
+    " created_at, updated_at, started_at, finished_at)"
+    " VALUES (?, ?, ?, 'direction', 'completed', ?, ?, ?, ?)",
+    (eid, sid, direction, t(0), t(20), t(0), t(20)),
+)
+row = conn.execute(
+    "SELECT id FROM session_messages WHERE session_id = ? AND role = 'assistant' ORDER BY rowid DESC LIMIT 1",
+    (sid,)).fetchone()
+mid = row[0] if row else None
+calls = [
+    ("c1", "get_bucket_config_detail", "acme-logs", "lifecycle: 0 rules", 2, 5),
+    ("c2", "get_bucket_config_detail", "acme-logs", "logging: off", 3, 9),
+    ("c3", "get_bucket_public_access", "acme-logs", "blocked", 9, 14),
+]
+events = [
+    ("execution.status", {"status": "running"}, t(0)),
+    ("plan.updated", {"steps": [{"text": "Review acme-logs configuration", "status": "in_progress"},
+                                 {"text": "Check public access", "status": "pending"}]}, t(1)),
+    ("message.completed", {"text": "Reading the bucket configuration first.", "final": False}, t(1)),
+]
+for cid, tool, target, result, a, b in calls:
+    call_id = "%s-%s" % (eid, cid)
+    events.append(("tool.started", {"id": call_id, "tool": tool, "target": target, "started_at": t(a)}, t(a)))
+    events.append(("tool.completed", {"id": call_id, "tool": tool, "target": target, "result": result,
+                                      "ok": True, "started_at": t(a), "finished_at": t(b),
+                                      "duration_ms": (b - a) * 1000}, t(b)))
+    conn.execute(
+        "INSERT INTO tool_calls (id, run_id, session_id, tool_name, input_json_sanitized,"
+        " output_json_sanitized, status, duration_ms, created_at)"
+        " VALUES (?, NULL, ?, ?, ?, ?, 'success', ?, ?)",
+        (call_id, sid, tool, json.dumps({"bucket": target}), json.dumps({"status": 200, "result": result}),
+         (b - a) * 1000, t(b)),
+    )
+events += [
+    ("plan.updated", {"steps": [{"text": "Review acme-logs configuration", "status": "completed"},
+                                 {"text": "Check public access", "status": "completed"}]}, t(15)),
+    ("message.completed", {"text": "acme-logs has no lifecycle rule and logging is off; public access is blocked.",
+                           "final": True}, t(19)),
+    ("work_result.recorded", {"work_result_id": "wr-" + eid, "message_id": mid, "stopped": False}, t(20)),
+    ("execution.status", {"status": "completed", "stopped": False, "message_id": mid,
+                          "work_result_id": "wr-" + eid,
+                          "metrics": {"duration_ms": 20000, "tool_calls": 3}}, t(20)),
+]
+for event_type, payload, at in events:
+    conn.execute(
+        "INSERT INTO execution_events (execution_id, task_id, event_type, payload_json_sanitized, created_at)"
+        " VALUES (?, ?, ?, ?, ?)",
+        (eid, sid, event_type, json.dumps(payload), at),
+    )
+conn.commit()
+print(eid)
+`;
 
+/**
+ * One completed durable Execution with its structured event log — a plan,
+ * commentary, three timed tool rows, the final segment and the Work Result
+ * link — attached to a seeded task, so the Artifacts panel's Execution
+ * section and the Execution detail document render from `task_executions`
+ * + `execution_events` (v1.12), never from the `/runs` engine API.
+ */
+export function seedExecutionLog(
+  taskId: string,
+  direction = "Review acme-logs for security, lifecycle and logging gaps.",
+): string {
+  return execFileSync(
+    process.env.E2E_PYTHON || "python3",
+    ["-c", EXECUTION_LOG_PY, `${dataDir()}/app.db`, taskId, direction],
+    { encoding: "utf8" },
+  ).trim();
+}

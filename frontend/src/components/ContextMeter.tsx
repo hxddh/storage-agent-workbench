@@ -9,11 +9,17 @@ import type { ExecutionMetrics } from "../types";
  * under (`metrics.context_window`); with either missing nothing is drawn —
  * a meter with a guessed denominator would be a made-up number.
  */
-export function contextUsage(metrics: ExecutionMetrics | null | undefined): { used: number; window: number; pct: number } | null {
+export function contextUsage(
+  metrics: ExecutionMetrics | null | undefined,
+  /** Tokens left after a compaction (v1.12) — replaces the usage figure until
+   * the next execution reports its own. The window still has to be real. */
+  compactedTokens: number | null = null,
+): { used: number; window: number; pct: number } | null {
   if (!metrics) return null;
   const window = (metrics as { context_window?: number | null }).context_window;
   if (typeof window !== "number" || !Number.isFinite(window) || window <= 0) return null;
-  const used = metrics.usage?.total_tokens ?? metrics.total_tokens
+  const used = compactedTokens != null && Number.isFinite(compactedTokens) ? compactedTokens
+    : metrics.usage?.total_tokens ?? metrics.total_tokens
     ?? ((metrics.usage?.input_tokens ?? metrics.input_tokens ?? 0) + (metrics.usage?.output_tokens ?? metrics.output_tokens ?? 0));
   if (typeof used !== "number" || !Number.isFinite(used) || used <= 0) return null;
   return { used, window, pct: Math.min(100, Math.max(0, Math.round((used / window) * 100))) };
@@ -27,7 +33,7 @@ export function ContextMeter() {
   const { lang } = useI18n();
   const taskId = useActiveTaskId();
   const run = useSessionRun(taskId);
-  const usage = contextUsage(run.lastMetrics?.metrics);
+  const usage = contextUsage(run.lastMetrics?.metrics, run.contextTokens);
   if (!usage) return null;
   const title = lang === "zh"
     ? `上下文已用 ${usage.pct}%（${formatTokens(usage.used)} / ${formatTokens(usage.window)} tokens）`

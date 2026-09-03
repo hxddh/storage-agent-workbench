@@ -9,7 +9,8 @@ import {
   type TaskState,
 } from "../api";
 import type { TFunc } from "../i18n";
-import { getSessionRun, patchSessionRun } from "../sessionRuns";
+import { getSessionRun, patchSessionRun, useSessionRun } from "../sessionRuns";
+import { applyTaskStatus } from "../lib/taskStatus";
 import { liveHandlers } from "./useTurnRunnerImplementation";
 import type {
   SessionDetail,
@@ -75,6 +76,25 @@ export function useSessionDocument({
   const remoteTurnRef = useRef<{ running: boolean; age_ms: number | null } | null>(null);
   remoteTurnRef.current = remoteTurn;
   const recheckedRef = useRef<string | null>(null);
+  // v1.12: while a follower is open (this hook's or the runner's) the task's
+  // derived status arrives as `task.status` frames on the stream. Fold each
+  // new frame into the document's task state instead of polling `/state`.
+  const run = useSessionRun(sessionId);
+  const appliedStatusRef = useRef<typeof run.taskStatus>(null);
+  useEffect(() => {
+    const payload = run.taskStatus;
+    if (!sessionId || !payload || payload === appliedStatusRef.current) return;
+    appliedStatusRef.current = payload;
+    setTaskRuntime((prev) => applyTaskStatus(prev, sessionId, payload));
+  }, [run.taskStatus, sessionId]);
+  // One discovery poll when the follower ends (busy → idle), never an interval.
+  const tickRef = useRef<(() => void) | null>(null);
+  const busyRef = useRef(run.busy);
+  useEffect(() => {
+    const was = busyRef.current;
+    busyRef.current = run.busy;
+    if (was && !run.busy) tickRef.current?.();
+  }, [run.busy]);
 
   const reload = useCallback(async (id: string | null): Promise<boolean> => {
     if (id !== shownIdRef.current) setEarlier([]);
@@ -174,6 +194,10 @@ export function useSessionDocument({
   // task switch back, a delegation from another window). Discovery and stream
   // recovery both use the durable task state + event seq — never GET /turn or
   // a blocking POST. Closing this stream affects nothing server-side.
+  //
+  // `/state` is read once on attach, on a visibility change, and once when a
+  // follower ends (v1.12). While a stream is open the `task.status` frames
+  // carry the queue and the pending Decisions; there is no interval.
   useEffect(() => {
     if (!sessionId || !sidecarReady) return;
     let stopped = false;
@@ -211,13 +235,13 @@ export function useSessionDocument({
       }
       following = false;
       if (stopped) return;
+      loadedSettledExecId = executionId;
+      setRemoteTurn(null);
+      if (localId.current === sessionId) void reload(sessionId);
+      // busy → idle: the effect above runs the one "end" poll.
       patchSessionRun(sessionId, {
         busy: false, pending: null, items: [], answer: null, waiting: false, startedAt: null, stopped: false,
       });
-      setRemoteTurn(null);
-      if (localId.current === sessionId) void reload(sessionId);
-      loadedSettledExecId = executionId;
-      timer = window.setTimeout(tick, 1000);
     };
 
     const tick = async () => {
@@ -231,12 +255,13 @@ export function useSessionDocument({
         return;
       }
       if (stopped || localId.current !== sessionId) return;
-      // Keep queued Directions / pending Decisions visible even while this
-      // client already owns the live stream. Do not attach a second follower.
+      // A follower is open (this client's own turn, or the stream above):
+      // queued Directions and pending Decisions now arrive as `task.status`
+      // frames on it. Do not attach a second follower and do not poll — the
+      // next read happens when the follower ends or the window comes back.
       if (getSessionRun(sessionId).busy) {
         setRemoteTurn(null);
         sawOwnBusy = true;
-        timer = window.setTimeout(tick, 1500);
         return;
       }
       const active = state.active_execution;
@@ -275,6 +300,7 @@ export function useSessionDocument({
         }
       }
     };
+    tickRef.current = () => { void tick(); };
     void tick();
     const onVisible = () => {
       if (document.visibilityState === "visible") void tick();
@@ -282,6 +308,7 @@ export function useSessionDocument({
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       stopped = true;
+      tickRef.current = null;
       window.clearTimeout(timer);
       followCtl?.abort();
       if (following) {

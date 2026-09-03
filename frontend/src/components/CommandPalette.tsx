@@ -40,6 +40,7 @@ export function CommandPalette({
         resume: "恢复中断的执行",
         steer: "调整当前执行的方向",
         focus: "聚焦输入框",
+        compact: "压缩上下文",
         themeLight: "切换到浅色主题",
         themeDark: "切换到深色主题",
         langEn: "Switch to English",
@@ -56,6 +57,7 @@ export function CommandPalette({
         resume: "Resume interrupted execution",
         steer: "Steer current execution",
         focus: "Focus composer",
+        compact: "Compact context",
         themeLight: "Switch to light theme",
         themeDark: "Switch to dark theme",
         langEn: "Switch to English",
@@ -93,6 +95,12 @@ export function CommandPalette({
     }
     if (live.canResume) {
       actions.splice(2, 0, { id: "resume", label: copy.resume, icon: "play", run: () => { live.resume?.(); onClose(); }, group: "action" });
+    }
+    if (live.hasTask && !live.busy && !live.compacting && live.compact) {
+      actions.splice(actions.length - 1, 0, {
+        id: "compact", label: copy.compact, icon: "refresh",
+        run: () => { live.compact?.(); onClose(); }, group: "action",
+      });
     }
     actions.push(
       { id: "theme", label: theme === "dark" ? copy.themeLight : copy.themeDark, icon: "sun", run: () => { toggle(); onClose(); }, group: "action" },

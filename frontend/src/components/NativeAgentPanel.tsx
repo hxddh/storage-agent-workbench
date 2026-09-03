@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getGlobalOtelExport, getMcpStatus, getSkillsDirs, listSkills } from "../api";
+import { getGlobalOtelExport, getInstructionsStatus, getMcpStatus, getSkillsDirs, listSkills, type InstructionsStatus } from "../api";
 import { saveTextFile } from "../config";
 import { isNativeShell, openNativeFolder } from "../hooks/useNativeAgent";
 import { useI18n } from "../i18n";
@@ -67,12 +67,14 @@ export function NativeAgentPanel() {
   const [mcp, setMcp] = useState<{ enabled: boolean; allowed_tools: string[]; note: string } | null>(null);
   const [dirs, setDirs] = useState<{ path: string; exists: boolean; skill_count: number }[] | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [instructions, setInstructions] = useState<InstructionsStatus | null>(null);
 
   useEffect(() => {
     let alive = true;
     listSkills().then((r) => { if (alive) setSkills(r.skills); }).catch(() => {}).finally(() => { if (alive) setSkillsLoading(false); });
     getMcpStatus().then((r) => { if (alive) setMcp(r); }).catch(() => {});
     getSkillsDirs().then((r) => { if (alive) setDirs(r.dirs); }).catch(() => {});
+    getInstructionsStatus().then((r) => { if (alive) setInstructions(r); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
@@ -82,6 +84,14 @@ export function NativeAgentPanel() {
     const opened = await openNativeFolder("skills");
     if (opened) toast.success(`${copy.folderOpened} ${opened}`);
     else toast.info(`${copy.folderUnavailable} ${userDir ?? "…/skills"}`);
+  };
+
+  // The instructions file lives in the data directory itself: reveal that
+  // folder on the desktop, or say where it is when the shell cannot.
+  const openInstructions = async () => {
+    const opened = await openNativeFolder("data");
+    if (opened) toast.success(`${copy.folderOpened} ${opened}`);
+    else toast.info(`${t("settings.instructionsAt")} ${instructions?.path ?? "…/AGENTS.md"}`);
   };
 
   const exportTrace = async () => {
@@ -134,6 +144,25 @@ export function NativeAgentPanel() {
           </ul>
         )}
         {userDir && !isNativeShell() ? <p className="mt-2 font-mono text-2xs text-gray-500">{userDir}</p> : null}
+      </section>
+
+      <section data-testid="settings-instructions">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="text-lg font-medium text-gray-100">{t("settings.instructions")}</h2>
+            <p className="mt-1 text-xs leading-relaxed text-gray-500">{t("settings.instructionsHint")}</p>
+            {instructions ? (
+              <p className="mt-2 text-xs text-gray-300" data-testid="instructions-status" data-loaded={instructions.loaded ? "true" : "false"}>
+                {instructions.loaded ? t("settings.instructionsLoaded", { chars: instructions.chars }) : t("settings.instructionsMissing")}
+                {instructions.path ? <span className="ml-2 font-mono text-2xs text-gray-500">{instructions.path}</span> : null}
+                {instructions.error ? <span className="ml-2 text-warn-fg">{instructions.error}</span> : null}
+              </p>
+            ) : null}
+          </div>
+          <Button onClick={() => void openInstructions()} data-testid="instructions-open">
+            <Icon name="file" size={13} /> {t("settings.instructionsOpen")}
+          </Button>
+        </div>
       </section>
 
       <section>

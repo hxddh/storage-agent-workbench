@@ -7,7 +7,9 @@ import type { TaskDecision } from "../api";
 import type { ToolActivity } from "../types";
 import {
   EMPTY_TURN,
+  applyCompacted,
   applyDelta,
+  applyPlan,
   applyStatus,
   applyTool,
   completeMessage,
@@ -164,5 +166,72 @@ describe("segments", () => {
   it("drops an empty closed segment but keeps an empty live one", () => {
     expect(segmentsOf([{ kind: "message", text: " " }])).toEqual([]);
     expect(segmentsOf([{ kind: "message", text: "", live: true }])).toHaveLength(1);
+  });
+});
+
+describe("the plan the model owns (v1.12)", () => {
+  const steps = (...statuses: Array<"pending" | "in_progress" | "completed">) =>
+    statuses.map((status, i) => ({ text: `step ${i + 1}`, status }));
+
+  it("inserts ONE plan item at the current position on the first update", () => {
+    let turn = applyDelta(EMPTY_TURN, "Let me plan this.");
+    turn = completeMessage(turn, { text: "Let me plan this.", final: false });
+    turn = applyPlan(turn, steps("in_progress", "pending"));
+    expect(turn.items.map((item) => item.kind)).toEqual(["message", "plan"]);
+    turn = applyTool(turn, call({ status: "started" }));
+    expect(turn.items.map((item) => item.kind)).toEqual(["message", "plan", "tool"]);
+  });
+
+  it("updates the same item in place on later calls — never a second card", () => {
+    let turn = applyPlan(EMPTY_TURN, steps("in_progress", "pending"));
+    turn = applyTool(turn, call());
+    turn = applyPlan(turn, steps("completed", "in_progress"));
+    turn = applyPlan(turn, steps("completed", "completed"));
+    const plans = turn.items.filter((item) => item.kind === "plan");
+    expect(plans).toHaveLength(1);
+    expect(turn.items[0]).toEqual({ kind: "plan", steps: steps("completed", "completed") });
+    expect(turn.items.map((item) => item.kind)).toEqual(["plan", "tool"]);
+  });
+
+  it("bounds the list to 12 steps and unknown statuses to pending", () => {
+    const many = Array.from({ length: 15 }, (_, i) => ({ text: `s${i}`, status: "later" as unknown as "pending" }));
+    const turn = applyPlan(EMPTY_TURN, many);
+    const plan = turn.items[0] as { kind: "plan"; steps: { status: string }[] };
+    expect(plan.steps).toHaveLength(12);
+    expect(plan.steps.every((step) => step.status === "pending")).toBe(true);
+  });
+
+  it("marks a compaction at the current position, at the top when it came first", () => {
+    let turn = applyCompacted(EMPTY_TURN, { before_tokens: 48_000, after_tokens: 9_000 });
+    turn = applyDelta(turn, "Continuing.");
+    expect(turn.items[0]).toEqual({ kind: "compacted", before_tokens: 48_000, after_tokens: 9_000 });
+    expect(turn.items[1]).toMatchObject({ kind: "message", live: true });
+  });
+
+  it("reproduces plan and compaction items from the durable turn_items", () => {
+    const items = turnItemsOf({
+      turn_items: [
+        { kind: "compacted", before_tokens: 48_000, after_tokens: 9_000 },
+        { kind: "message", text: "Planning." },
+        { kind: "plan", steps: steps("completed", "completed") },
+        { kind: "tool", id: "c1" },
+      ],
+      tool_activity: [call()],
+    });
+    expect(items.map((item) => item.kind)).toEqual(["compacted", "message", "plan", "tool"]);
+    const segments = segmentsOf(items);
+    expect(segments.map((segment) => segment.kind)).toEqual(["compacted", "commentary", "plan", "worked"]);
+  });
+
+  it("carries the started stamp across a resolve so the group keeps its span", () => {
+    const started = call({ status: "started", started_at: "2026-09-01T10:00:00.000Z" });
+    const merged = mergeTool([started], call({ finished_at: "2026-09-01T10:00:04.000Z" }));
+    expect(merged[0].started_at).toBe("2026-09-01T10:00:00.000Z");
+    expect(merged[0].finished_at).toBe("2026-09-01T10:00:04.000Z");
+  });
+
+  it("records why an auto-granted approval never asked", () => {
+    const turn = grantApproval(EMPTY_TURN, { decision_id: "d9", action_type: "import_access_log", title: null, policy: "session" });
+    expect(turn.items[0]).toMatchObject({ kind: "approval", status: "granted", policy: "session", scope: null });
   });
 });

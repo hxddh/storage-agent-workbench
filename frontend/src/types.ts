@@ -83,182 +83,6 @@ export interface ListObjectsResult {
   error_message_sanitized: string | null;
 }
 
-// --- Analysis runs (Phase 04) ---
-
-export type RunType =
-  | "diagnostic"
-  | "access_log_analysis"
-  | "inventory_analysis"
-  | "bucket_config_review"
-  | "account_discovery";
-
-export interface RunSummary {
-  id: string;
-  run_type: string;
-  title: string | null;
-  status: string;
-  provider_id: string | null;
-  bucket: string | null;
-  final_summary: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface RunMessage {
-  id: string;
-  role: string;
-  content: string | null;
-  created_at: string;
-}
-
-export interface RunToolCall {
-  id: string;
-  tool_name: string;
-  input_json_sanitized: string | null;
-  output_json_sanitized: string | null;
-  status: string | null;
-  duration_ms: number | null;
-  created_at: string;
-}
-
-export interface RunDetail {
-  id: string;
-  run_type: string;
-  title: string | null;
-  status: string;
-  provider_id: string | null;
-  bucket: string | null;
-  prefix: string | null;
-  user_prompt: string | null;
-  final_summary: string | null;
-  report_path: string | null;
-  created_at: string;
-  updated_at: string;
-  messages: RunMessage[];
-  tool_calls: RunToolCall[];
-}
-
-export interface ReportOut {
-  run_id: string;
-  report_path: string;
-  format: string;
-  created_at: string;
-  content: string;
-}
-
-export interface Dataset {
-  id: string;
-  run_id: string | null;
-  dataset_type: string;
-  name: string | null;
-  source_filename: string | null;
-  stored_path: string | null;
-  duckdb_path: string | null;
-  table_name: string | null;
-  row_count: number | null;
-  status: string;
-  created_at: string;
-}
-
-// SSE event payloads (discriminated by `type`). This is the exact set the
-// sidecar's run executors publish via bus.publish — keep in sync with
-// sidecar/app/runs/* (there is no run_started/guardrail/final_summary event).
-export type RunEvent =
-  | { type: "tool_call_started"; tool_name: string; tool_call_id: string }
-  | { type: "tool_call_finished"; tool_name: string; tool_call_id: string; status: string; output: Record<string, unknown> }
-  | { type: "summary"; content: string }
-  | { type: "finding"; severity: string; title: string; detail: string }
-  | { type: "report_ready"; run_id: string; report_path: string }
-  | { type: "error"; message: string };
-
-// --- Account discovery (Phase 14) ---
-
-export interface EvidenceSource {
-  source_type: string;
-  status: string;
-  configured: boolean | null;
-  detail: Record<string, unknown>;
-}
-
-export interface AccountBucket {
-  bucket_name: string;
-  region: string | null;
-  access_status: string;
-  head_bucket_status: string | null;
-  versioning_status: string | null;
-  versioning_enabled: boolean | null;
-  encryption_status: string | null;
-  lifecycle_status: string | null;
-  logging_status: string | null;
-  logging_enabled: boolean | null;
-  inventory_status: string | null;
-  replication_status: string | null;
-  policy_status: string | null;
-  public_access_block_status: string | null;
-  tagging_status: string | null;
-  provider_unsupported_items: string[];
-  access_denied_items: string[];
-  errors: string[];
-  evidence_sources: EvidenceSource[];
-}
-
-export interface AccountProfile {
-  run_id: string;
-  provider_id: string | null;
-  bucket_count: number;
-  visible_count: number;
-  processed_count: number;
-  truncated: boolean;
-  list_status: string;
-  summary: Record<string, unknown>;
-  buckets: AccountBucket[];
-  created_at: string | null;
-}
-
-// --- Managed evidence import (Phase 15) ---
-
-export interface EvidenceImportFile {
-  object_key: string;
-  size_bytes: number;
-  kind: string;
-  selected: boolean;
-  status: string;
-}
-
-export interface EvidenceImport {
-  id: string;
-  provider_id: string | null;
-  account_run_id: string | null;
-  source_type: string;
-  source_bucket: string | null;
-  source_prefix: string | null;
-  evidence_ref: string | null;
-  format: string | null;
-  plan_source: string | null;
-  max_files: number;
-  max_bytes: number;
-  time_range_start: string | null;
-  time_range_end: string | null;
-  planned_file_count: number;
-  planned_total_bytes: number;
-  selected_file_count: number;
-  selected_total_bytes: number;
-  status: string;
-  analysis_run_id: string | null;
-  warnings: string[];
-  created_at: string | null;
-  confirmed_at: string | null;
-  files: EvidenceImportFile[];
-}
-
-export interface EvidenceImportRunResult {
-  import_id: string;
-  status: string;
-  analysis_run_id: string | null;
-  downloaded_file_count: number;
-  downloaded_total_bytes: number;
-}
-
 // --- Sessions (Phase 16) ---
 
 export interface SessionSummaryRow {
@@ -368,27 +192,29 @@ export interface ToolActivity {
   /** The inline approval this call raised (v1.11). Set on a gated call whose
    * execution paused for the user; the approval card renders at this row. */
   decision_id?: string | null;
+  /** Wall-clock bounds of this call (v1.12). Durable rows may carry them from
+   * the Sidecar; a live row is stamped by the client when its `tool.started`
+   * / `tool.completed` frame arrives, so a "Worked for …" group can read the
+   * span of its rows rather than a sum of their durations. */
+  started_at?: string | null;
+  finished_at?: string | null;
+}
+
+/** One step of the plan the model owns through `update_plan` (v1.12). */
+export interface PlanStep {
+  text: string;
+  status: "pending" | "in_progress" | "completed";
 }
 
 /** One ordered transcript item recorded BEFORE the answer (v1.11). A `tool`
  * item references `tool_activity[].id`; pre-1.11 rows carry no items. */
 export type TurnItemRef =
   | { kind: "message"; text: string }
-  | { kind: "tool"; id: string };
-
-// The per-turn result shared by the blocking POST and the SSE `done` event.
-export interface TurnResult {
-  evidence_used?: string[];
-  evidence_gaps?: string[];
-  skills_used?: string[];
-  skills_offered?: string[];
-  /** Persisted assistant message id (streaming `done` event). */
-  message_id?: string;
-  /** True when the turn was cancelled and a partial answer was persisted. */
-  stopped?: boolean;
-  /** What the turn cost (v0.45.0). Absent on the blocking fallback path. */
-  metrics?: ExecutionMetrics;
-}
+  | { kind: "tool"; id: string }
+  /** The latest plan, at the position of the first `update_plan` call (v1.12). */
+  | { kind: "plan"; steps: PlanStep[] }
+  /** The runtime compacted the replayed context before this point (v1.12). */
+  | { kind: "compacted"; before_tokens: number | null; after_tokens: number | null };
 
 export interface SessionMessage {
   id: string;
@@ -400,8 +226,6 @@ export interface SessionMessage {
   // Persisted per assistant turn (v0.21.0) so grounding + proposals survive a
   // reload; null/empty for user messages and pre-0.21.0 history.
   grounding?: Grounding | null;
-  /** Always `[]` since v1.11; kept for the persistence contract only. */
-  proposed_actions?: unknown[];
   /** Ordered commentary / tool items before the answer (v1.11). */
   turn_items?: TurnItemRef[];
   /** Opaque paging cursor (v0.47.0); hand the oldest back as `before`. */
@@ -454,18 +278,6 @@ export interface AttachedFile {
   row_count?: number | null;
   status?: string | null;
   created_at?: string | null;
-}
-
-/** Is a turn running for this session right now (server truth, v0.51.0)? */
-export interface SessionTurnState {
-  running: boolean;
-  turn_id?: string | null;
-  started_at?: string | null;
-  age_ms?: number | null;
-  /** The durable execution behind the running turn (v0.94) — lets a
-   * reattaching client resume the structured event stream. */
-  execution_id?: string | null;
-  execution_status?: string | null;
 }
 
 // --- Error triage (Phase 18) ---

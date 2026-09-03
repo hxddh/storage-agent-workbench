@@ -25,6 +25,7 @@ vi.mock("../api", async (importOriginal) => {
 
 vi.mock("../sessionRuns", () => ({
   getSessionRun: () => ({ busy: false }),
+  useSessionRun: () => ({ busy: false, taskStatus: null }),
   patchSessionRun: vi.fn(),
 }));
 
