@@ -27,6 +27,7 @@ _Honesty and completeness — every known gap from the v1.12 review closes in on
 - **Compaction without usage** — character-estimate trigger fallback, CJK-weighted estimates, chained summaries, 5 s `AGENTS.md` cache; capability memories clear on a green provider test.
 - **Wirable updater** — `TAURI_UPDATER_PUBKEY`/`TAURI_UPDATER_ENDPOINTS` (both-or-neither) via `scripts/stamp-version.py`; packaging smoke required on `release/*`.
 - Contracts: `tests/test_v113_honesty.py`, `test_v113_mcp_bridge.py`, `test_v113_native_fanout.py`; frontend `architecture.test.ts` v1.13 block, `components/v113.test.tsx`; documentation contract at v1.13.0.
+- Packaging smoke required on `release/*` is implemented in-tree but held from push (token lacks `workflow` scope); re-apply privileged — see `docs/releases/1.13.0.md`.
 
 ## [1.12.0] - 2026-09-03
 
