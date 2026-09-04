@@ -82,7 +82,7 @@ test.describe("the Work Result that streamed is the Work Result that stays", () 
           timeout: 20_000,
           message: "a Work Result with no usable model text must still expose an outcome",
         })
-        .toMatch(/no readable answer/i);
+        .toMatch(/no readable Work Result/i);
       const settled = await task(page).evaluate((el) => el.textContent ?? "");
       expect(settled).not.toContain("<think>");
       expect(settled).not.toContain("so list returns 403");
