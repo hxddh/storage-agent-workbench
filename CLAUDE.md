@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.17.0.**
+> **Implementation contract for Storage Agent v1.17.1.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.17.0 product invariant is:
+The v1.17.1 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -18,7 +18,7 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v1.17.0 native Agent window
+## 1. Never regress the v1.17 native Agent window
 
 The window is **sidebar · title bar · one Task document · one Composer**. There is no activity bar, no status bar, no Details/inspector column, and no marketing copy in chrome. New product/frontend work must preserve these boundaries:
 
@@ -125,8 +125,8 @@ Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned b
 - (v1.14) collapsed sidebar is `inert`, the overlay Artifacts panel traps focus, the model menu is a keyboard listbox; outlines start at two sections with smooth in-scroller jumps and unique heading ids; tables size with TSV copy; baselines render findings with folded raw JSON; yaml/toml/ini highlight; one clipboard path (`hooks/useCopy.ts`).
 - (v1.15) the empty start is one static greeting line plus the Composer (no `Try:/试试：` hint; discoverability is the painted palette);
 - (v1.16.0) palette/chip/triage/shortcuts/day-label copy lives in dictionaries; the palette lists engine asks (Composer prefill) and shortcuts; usage renders `budget_tokens` + `repeat_calls_avoided` with a labeled window source (`context_window_source`); approvals disambiguate session policy vs per-task grants with localized gate names; Escape is per-layer; view errors dismiss; reconnects back off; the boundary follows the theme. the Composer delegates in work language; the sidebar footer is Settings alone; stalled streams heal with a quiet reconnecting line (no Resync); CJK single-char search; usage renders from one vocabulary (`lib/usage.ts`: cached-as-subset, `~` floors, named silence, estimated compaction); Execution/Find/Skills copy lives in the i18n dict; Settings stacks with strict CJK breaks. v1.16.1 made tables whole (no pagination).
-- (v1.17) Codex window: ContextMeter lives in the model menu, not the Composer bar; the title bar is name + state; the empty start is greeting + Composer with no glyph; the user bubble is a quiet fill; approval is sentence-case hairline *Waiting for approval*; *Worked for {t}* carries no tool-call count on the head; attachments are per-task; a file while busy is labeled Delegate; copy is Direction / Execution / Work Result. No migration (head stays **030**).
-- (follow-up) Queued banners never reprint the live Direction (or a `steer_followup` as a second Direction); Settings fields follow the editor pane (`@container`); quiet Find/palette icons return to the title bar. No migration.
+- (v1.17.0) Codex window: ContextMeter lives in the model menu, not the Composer bar; the title bar is name + state; the empty start is greeting + Composer with no glyph; the user bubble is a quiet fill; approval is sentence-case hairline *Waiting for approval*; *Worked for {t}* carries no tool-call count on the head; attachments are per-task; a file while busy is labeled Delegate; copy is Direction / Execution / Work Result. No migration (head stays **030**).
+- (v1.17.1) Queued banners never reprint the live Direction (or a `steer_followup` as a second Direction); Settings fields follow the editor pane (`@container`); quiet Find/palette icons return to the title bar. No migration.
 
 The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream (reconnect by sequence), steer/stop/resume/verify the current execution, then reload persisted task state. There are no `/sessions` message endpoints any more. Do not create a second submit path.
 

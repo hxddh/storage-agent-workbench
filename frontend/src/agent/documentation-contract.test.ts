@@ -46,11 +46,14 @@ describe("v1.17 documentation contract", () => {
     expect(readRepo("docs/README.md")).toContain("v1.16.0");
     expect(readRepo("docs/README.md")).toContain("v1.16.1");
     expect(readRepo("docs/README.md")).toContain("v1.17.0");
+    expect(readRepo("docs/README.md")).toContain("v1.17.1");
     expect(readRepo("CLAUDE.md")).toContain("v1.16.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.17.0");
+    expect(readRepo("CLAUDE.md")).toContain("v1.17.1");
     expect(readRepo("docs/product.md")).toContain("Design rules");
     expect(readRepo("docs/product.md")).toContain("v1.17.0");
-    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v1\.17\.0/);
+    expect(readRepo("docs/product.md")).toContain("v1.17.1");
+    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v1\.17\.1/);
     expect(readRepo("docs/architecture.md")).toContain("Migration head **030**");
     expect(readRepo("docs/architecture.md")).not.toMatch(/Current architecture baseline: Storage Agent v1\.10\.0/);
     expect(readRepo("docs/architecture.md")).not.toMatch(/Migration head \*\*028\*\*/);
@@ -145,6 +148,7 @@ describe("v1.17 documentation contract", () => {
     expect(readRepo("docs/tools.md")).toContain("simulate_storage_cost");
     expect(readRepo("docs/roadmap.md")).not.toMatch(/Add ORC support/);
     expect(readRepo("docs/roadmap.md")).toContain("v1.17.0");
+    expect(readRepo("docs/roadmap.md")).toContain("v1.17.1");
     expect(readRepo("docs/roadmap.md")).toContain("Codex window");
     expect(readRepo("docs/releases/1.13.0.md")).toContain("Honesty and completeness");
     expect(readRepo("docs/releases/1.14.0.md")).toContain("Interaction truth and content craft");
@@ -160,7 +164,9 @@ describe("v1.17 documentation contract", () => {
     expect(readRepo("docs/product.md")).toContain("v1.17");
     expect(readRepo("docs/architecture.md")).toContain("v1.16.0");
     expect(readRepo("docs/architecture.md")).toContain("v1.17.0");
+    expect(readRepo("docs/architecture.md")).toContain("v1.17.1");
     expect(readRepo("docs/releases/1.17.0.md")).toContain("Codex window");
+    expect(readRepo("docs/releases/1.17.1.md")).toContain("Queue honesty");
     expect(readRepo("docs/data-model.md")).toContain("retry");
     expect(readRepo("docs/api.md")).toContain("PATCH .../executions/{eid}");
     expect(readRepo("docs/api.md")).toContain("lands on the waiting execution");

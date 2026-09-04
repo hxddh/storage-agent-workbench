@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.17.0.** Codex window on the native Agent shell. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
+> **Current architecture baseline: Storage Agent v1.17.1.** Codex window on the native Agent shell, patched for queue honesty, Settings container layout, and title-bar Find. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -337,6 +337,12 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 - **Work language.** Artifacts says Execution, not Runs; empty fallback and prompt frame a Direction, not a question; aria is Direction / Work Result.
 - **Composer honesty.** Attachments are per-task; a file while busy is labeled Delegate, never Steer.
 
+### 6.x Window patch (v1.17.1)
+
+- **Queue honesty.** `task.status.queued[]` and `TaskBanners` drop the execution the client is already following; a `steer_followup` is labeled as itself.
+- **Settings pane.** Provider fields follow the editor (`@container`), not the viewport `sm:` breakpoint.
+- **Find.** Quiet title-bar Find / palette icons; no document ghost.
+
 ### 6.x True native agent, finished (v1.16.0)
 
 - **Dict-owned copy; palette engines.** `palette/chip/triage/shortcuts` keys plus `NAV_DAY_LABELS`; engine group prefills the Composer via `prefill`, window-owned `shortcuts` via base actions.
@@ -559,7 +565,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.17.0 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.17.1 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
 
 ### Real-Sidecar E2E
 
