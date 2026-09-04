@@ -18,7 +18,7 @@ export function Field({ label, children, hint }: { label: string; children: Reac
     : null;
   const controlId = (child?.props.id as string | undefined) ?? auto;
   return (
-    <div className="mb-3 block">
+    <div className="mb-3 block min-w-0">
       <label htmlFor={controlId} className="mb-1.5 block text-xs font-medium text-gray-300">
         {label}
       </label>

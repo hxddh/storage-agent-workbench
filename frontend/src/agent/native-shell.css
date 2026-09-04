@@ -620,26 +620,35 @@
 .native-execution-doc-findings li[data-severity="good"] .native-execution-doc-severity { color: var(--success); }
 .native-execution-doc-report { max-height: 32rem; overflow: auto; border: 1px solid var(--edge); border-radius: var(--radius-lg); padding: 10px 14px; background: var(--sidebar); }
 
-/* Settings panes: one list, one editor, presets menu. */
+/* Settings panes: one list, one editor, presets menu.
+   Fields follow the editor pane (`@container`), not the viewport: the
+   dialog is `min(880px, 96vw)` minus a 13rem nav, so `sm:` (640px viewport)
+   was painting two ~171px columns and squeezing CJK hints into orphans. */
 .native-settings-list { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--edge); }
-.native-settings-list > li { display: flex; align-items: flex-start; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--edge); }
+.native-settings-list > li { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--edge); }
 .native-settings-list > li[data-active="true"] { background: color-mix(in srgb, var(--panel) 60%, transparent); }
 .native-settings-empty { color: var(--gray-500); font-size: var(--text-sm); }
-/* v1.15 — provider rows wrap cleanly at narrow widths: the action group
-   drops below the identity instead of squeezing CJK hints into orphans. */
-.native-settings-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 16rem; }
-@media (max-width: 560px) {
-  .native-settings-list > li { flex-wrap: wrap; }
-  .native-settings-list > li > div:first-child { flex-basis: 100%; }
-  .native-settings-actions { max-width: none; }
-}
+.native-settings-list > li > div:first-child { flex: 1 1 12rem; min-width: 0; }
+.native-settings-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 .native-settings-dot { display: inline-block; width: 6px; height: 6px; flex-shrink: 0; border-radius: 999px; background: var(--gray-500); }
 .native-settings-dot[data-on="true"] { background: var(--success); }
 .native-settings-card[data-enabled="true"] .native-settings-dot { background: var(--success); }
-.native-settings-tag { display: inline-flex; align-items: center; border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 1px 7px; color: var(--gray-300); font-size: var(--text-2xs); }
+.native-settings-tags { display: flex; flex: 0 1 auto; flex-wrap: wrap; gap: 4px; }
+.native-settings-tag { display: inline-flex; flex-shrink: 0; align-items: center; border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 1px 7px; color: var(--gray-300); font-size: var(--text-2xs); white-space: nowrap; }
 .native-settings-tag[data-tone="ok"] { color: var(--success); border-color: var(--success-border); }
 .native-settings-tag[data-tone="warn"] { color: var(--warn); border-color: var(--warn-border); }
-.native-settings-editor { margin-bottom: 20px; border: 1px solid var(--edge); border-radius: var(--radius-xl); padding: 14px 16px 12px; background: var(--panel); }
+.native-settings-editor {
+  container-type: inline-size;
+  margin-bottom: 20px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-xl);
+  padding: 14px 16px 12px;
+  background: var(--panel);
+}
+.native-settings-fields { display: grid; grid-template-columns: 1fr; column-gap: 1rem; }
+@container (min-width: 32rem) {
+  .native-settings-fields { grid-template-columns: 1fr 1fr; }
+}
 .native-settings-editor-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; font-size: var(--text-sm); }
 .native-settings-editor-head strong { color: var(--gray-100); font-weight: 500; }
 .native-settings-advanced { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 10px; border: 0; background: none; padding: 0; color: var(--gray-500); font-size: var(--text-xs); cursor: pointer; }

@@ -23,7 +23,7 @@ Shipped:
 | Surface | v1.17 |
 | --- | --- |
 | Window | sidebar · quiet title · one transcript · one Composer |
-| Title bar | task name + live state; Find/palette are keyboard (⌘F / ⌘K) |
+| Title bar | task name + live state; quiet Find / palette icons (⌘F / ⌘K stay) |
 | Sidebar | New, day-grouped titles, Settings; Ready paints nothing |
 | Empty start | one greeting + Composer, no glyph |
 | User turn | right-aligned fill, no card chrome |
@@ -32,7 +32,7 @@ Shipped:
 | Plan | quiet checklist; folds to *Plan · n/n* |
 | Approval | sentence-case *Waiting for approval*; hairline; Allow / Deny |
 | Composer | `+` · textarea · model · send; ContextMeter in the model menu |
-| Find | ⌘F bar only |
+| Find | title-bar icon + ⌘F bar; no document ghost |
 | Copy | Direction / Execution / Work Result |
 
 Do **not** replicate Codex the coding Agent: worktrees, diffs, terminal,

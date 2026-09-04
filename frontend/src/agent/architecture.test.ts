@@ -1087,8 +1087,8 @@ describe("v1.14.0 interaction truth and content craft", () => {
 /**
  * v1.15.0 — True Native Agent: no chat placeholders, no painted hints, no
  * footer policy fact, no manual transport chrome; tables fit first; usage
- * speaks one vocabulary; CJK-safe settings; elevated craft. (v1.17 un-paints
- * title-bar Find/palette; ⌘F / ⌘K remain.)
+ * speaks one vocabulary; CJK-safe settings; elevated craft. Quiet title-bar
+ * Find/palette icons remain the discovery entry (⌘F / ⌘K stay).
  */
 describe("v1.15.0 true native agent", () => {
   it("delegates in work language on the one input", () => {
@@ -1099,11 +1099,11 @@ describe("v1.15.0 true native agent", () => {
     expect(composer).not.toContain("问问你的存储");
   });
 
-  it("opens Find and the palette from the keyboard, not painted title-bar icons", () => {
+  it("opens Find and the palette from quiet title-bar icons and the keyboard", () => {
     const app = source("../App.tsx");
     const doc = source("../components/TaskDocument.tsx");
-    expect(app).not.toContain('data-testid="titlebar-find"');
-    expect(app).not.toContain('data-testid="titlebar-palette"');
+    expect(app).toContain('data-testid="titlebar-find"');
+    expect(app).toContain('data-testid="titlebar-palette"');
     expect(doc).not.toContain('data-testid="task-find-open"');
     expect(doc).toContain("setFindOpen(true)");
     expect(doc).toContain('matches(event, "find")');
@@ -1163,11 +1163,15 @@ describe("v1.15.0 true native agent", () => {
     expect(source("../components/NativeAgentPanel.tsx")).not.toContain("还没有技能。把 SKILL.md");
   });
 
-  it("stacks settings grids on narrow widths with strict CJK breaks", () => {
+  it("stacks settings grids on the editor pane with strict CJK breaks", () => {
     const css = source("../../src/index.css");
     expect(css).toContain("line-break: strict");
-    expect(source("./native-shell.css")).toContain("max-width: 560px");
-    expect(source("../settings/ModelProvidersPane.tsx")).toContain("sm:grid-cols-2");
+    const shell = source("./native-shell.css");
+    expect(shell).toContain("container-type: inline-size");
+    expect(shell).toContain(".native-settings-fields");
+    expect(shell).toContain("@container (min-width: 32rem)");
+    expect(source("../settings/ModelProvidersPane.tsx")).toContain("native-settings-fields");
+    expect(source("../settings/ModelProvidersPane.tsx")).not.toContain("sm:grid-cols-2");
   });
 
   it("elevates the Composer and the user bubble above the canvas", () => {
@@ -1313,10 +1317,10 @@ describe("v1.17.0 Codex window", () => {
     expect(source("../components/ModelChip.tsx")).toContain("<ContextMeter />");
   });
 
-  it("leaves the title bar as name + state, Find and palette as keyboard", () => {
+  it("paints quiet Find and palette on the title bar, not on the document", () => {
     const app = source("../App.tsx");
-    expect(app).not.toContain("titlebar-find");
-    expect(app).not.toContain("titlebar-palette");
+    expect(app).toContain("titlebar-find");
+    expect(app).toContain("titlebar-palette");
     expect(source("../components/TaskDocument.tsx")).not.toContain("task-find-open");
     expect(source("../components/AgentTaskImplementation.tsx")).not.toContain("start-mark");
   });
@@ -1340,5 +1344,25 @@ describe("v1.17.0 Codex window", () => {
     expect(css).not.toMatch(/\.turn-user-bubble \{[^}]*box-shadow/);
     expect(css).not.toMatch(/\.approval-card-head \{[^}]*text-transform: uppercase/);
     expect(css).not.toMatch(/\.approval-card \{[^}]*box-shadow/);
+  });
+});
+
+/**
+ * Window follow-up: queued banners must not reprint the live Direction,
+ * Settings fields follow the editor pane, Find/palette icons stay discoverable.
+ */
+describe("window follow-up: queue honesty, Settings container, painted Find", () => {
+  it("filters the live Execution out of queued banners", () => {
+    const root = source("../components/AgentTaskImplementation.tsx");
+    expect(root).toContain("visibleQueuedExecutions(");
+    expect(source("../lib/pendingDirection.ts")).toContain("export function visibleQueuedExecutions");
+    expect(source("../lib/taskStatus.ts")).toContain("payload.queued.filter((q) => q.id !== activeId)");
+    expect(source("../components/TaskBanners.tsx")).toContain("queuedSteerFollowup");
+  });
+
+  it("keeps Find off the document and ContextMeter off the Composer bar", () => {
+    expect(source("../components/TaskDocument.tsx")).not.toContain("task-find-open");
+    expect(source("../components/Composer.tsx")).not.toContain("<ContextMeter");
+    expect(source("../components/AgentTaskImplementation.tsx")).not.toContain("start-mark");
   });
 });

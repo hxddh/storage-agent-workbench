@@ -3,6 +3,7 @@ import {
   isCurrentPersistedDirection,
   isCurrentPersistedWorkResult,
   pendingMatchesPersistedDirection,
+  visibleQueuedExecutions,
 } from "./pendingDirection";
 
 const user = (content: string) => ({ kind: "message", role: "user", content });
@@ -99,5 +100,30 @@ describe("isCurrentPersistedWorkResult", () => {
       [user("scan logs"), run, triage],
       "scan logs",
     )).toBe(false);
+  });
+});
+
+describe("visibleQueuedExecutions", () => {
+  const row = (id: string, direction: string) => ({ id, direction });
+
+  it("drops the execution the client is already following", () => {
+    expect(visibleQueuedExecutions(
+      [row("e1", "list the bucket"), row("e2", "then the ACL")],
+      { activeExecutionId: "e1", livePending: "list the bucket" },
+    )).toEqual([row("e2", "then the ACL")]);
+  });
+
+  it("drops a just-submitted row that matches the live Direction bubble", () => {
+    expect(visibleQueuedExecutions(
+      [row("e1", "list the bucket")],
+      { livePending: "list the bucket", hideLiveDirection: false },
+    )).toEqual([]);
+  });
+
+  it("keeps a later queued Direction that reuses the live wording", () => {
+    expect(visibleQueuedExecutions(
+      [row("e2", "list the bucket")],
+      { activeExecutionId: "e1", livePending: "list the bucket", hideLiveDirection: false },
+    )).toEqual([row("e2", "list the bucket")]);
   });
 });
