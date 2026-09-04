@@ -86,15 +86,19 @@ def test_tool_descriptions_are_shortened_to_one_sentence():
         name = "list_objects"
         description = (
             "List object keys under a prefix. Returns a page of keys with "
-            "continuation. Never treat key_count as the bucket total. "
+            "continuation and never treats key_count as the bucket total, "
+            "which is why a second sentence is here at all: the schema "
+            "already names every parameter and this prose was being re-sent "
+            "on every step of every turn. "
             "Args: provider_id, bucket, prefix, max_keys, continuation_token."
         )
 
     t = _Tool()
+    assert len(t.description) > sa._TOOL_DESC_LIMIT
     assert sa._shorten_tool_descriptions([t]) == 1
     assert t.description.startswith("List object keys under a prefix.")
     assert "Args:" in t.description
-    assert "Never treat" not in t.description
+    assert "second sentence" not in t.description
     assert len(t.description) <= sa._TOOL_DESC_LIMIT + 80
 
 
