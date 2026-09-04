@@ -41,4 +41,14 @@ describe("task.status frames", () => {
     expect(next.last_execution).toMatchObject({ id: "e7", status: "completed", task_id: "t9" });
     expect(next.queued_executions).toEqual([]);
   });
+
+  it("does not reprint the live Direction as a queued banner", () => {
+    const next = applyTaskStatus(null, "t1", {
+      status: "working", active_execution_id: "e1",
+      queued: [{ id: "e1", direction: "check the bucket", kind: "direction", created_at: "2026-09-01T00:00:00Z" }],
+      pending_decisions: [], last_execution: { id: "e1", status: "queued" },
+    });
+    expect(next.active_execution).toMatchObject({ id: "e1" });
+    expect(next.queued_executions).toEqual([]);
+  });
 });

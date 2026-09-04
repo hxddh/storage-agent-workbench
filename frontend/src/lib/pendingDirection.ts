@@ -36,6 +36,40 @@ export function pendingMatchesPersistedDirection(
   );
 }
 
+type QueuedDirection = { id: string; direction?: string | null };
+
+/**
+ * Queued banners are only Directions waiting *behind* the current Execution.
+ *
+ * The Sidecar inserts every submit as `queued` and `task.status.queued[]`
+ * can name the execution the client is already following. GET `/agent-tasks`
+ * already drops that row; the live Direction bubble paints it. Painting it
+ * again as a "Queued" user bubble is the mysterious duplicate.
+ */
+export function visibleQueuedExecutions<T extends QueuedDirection>(
+  queued: T[],
+  opts: {
+    activeExecutionId?: string | null;
+    livePending?: string | null;
+    hideLiveDirection?: boolean;
+  },
+): T[] {
+  const pending = (opts.livePending ?? "").trim();
+  const activeId = opts.activeExecutionId ?? "";
+  const liveBubbleShowsPending = Boolean(pending) && !opts.hideLiveDirection;
+  return queued.filter((row) => {
+    if (activeId && row.id === activeId) return false;
+    // Before the follower knows the active id, the just-submitted row still
+    // sits in queued[] with the same text as the live (or just-persisted)
+    // Direction. A later queued-behind Direction with the same wording is
+    // distinguishable only once we have an active id.
+    if (!activeId && pending && (row.direction ?? "").trim() === pending) {
+      if (liveBubbleShowsPending || opts.hideLiveDirection) return false;
+    }
+    return true;
+  });
+}
+
 /**
  * True when the current turn already has a persisted Work Result.
  *

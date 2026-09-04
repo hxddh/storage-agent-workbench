@@ -6,6 +6,16 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.17.1] - 2026-09-04
+
+_Patch — queue honesty, Settings container layout, title-bar Find. No migration (head stays **030**)._ See `docs/releases/1.17.1.md`.
+
+### Fixed
+
+- **Queue honesty** — a just-submitted Direction no longer reprints as a "Queued" bubble beside the live turn. `task.status` folds the same way GET `/agent-tasks` already did (drop the active execution from `queued[]`). A `steer_followup` waiting behind the current Execution is labeled as itself, not a second Direction. Durable queued-behind Directions stay visible and cancellable.
+- **Settings squeeze** — provider fields follow the editor pane (`@container`), not the viewport `sm:` breakpoint, so CJK hints are not forced into ~171px columns. Provider rows wrap on flex-basis instead of a 560px viewport query; Safety gate names are individual nowrap chips.
+- **Find discoverability** — quiet Find and palette icons return to the title bar (⌘F / ⌘K remain). The document ghost Find and empty-start glyph stay gone.
+
 ## [1.17.0] - 2026-09-04
 
 _Codex window — quiet chrome, work language, transcript craft. No migration (head stays **030**)._ See `docs/releases/1.17.0.md`.

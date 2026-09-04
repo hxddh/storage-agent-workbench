@@ -199,7 +199,7 @@ export function ModelProvidersPanel() {
             <strong>{editing ? t("prov.edit") : (creating?.label ?? t("prov.addModel"))}</strong>
             {editing ? <span className="text-gray-500">{editing.provider_type}</span> : null}
           </div>
-          <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+          <div className="native-settings-fields">
             <Field label={t("prov.fName")}>
               <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </Field>
@@ -235,7 +235,7 @@ export function ModelProvidersPanel() {
             {t("prov.advanced")}
           </button>
           {advanced ? (
-            <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+            <div className="native-settings-fields">
               <Field label={t("prov.fContextWindow")} hint={t("prov.hintContextWindow")}>
                 <TextInput type="number" min={1} value={form.context_window} onChange={(e) => setForm({ ...form, context_window: e.target.value })} placeholder="128000" />
               </Field>

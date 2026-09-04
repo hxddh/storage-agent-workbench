@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.17.0.** Codex window on the native Agent shell. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
+> **Current architecture baseline: Storage Agent v1.17.1.** Codex window on the native Agent shell, patched for queue honesty, Settings container layout, and title-bar Find. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -75,7 +75,7 @@ The packaged Tauri launcher chooses a free localhost port, generates a per-launc
 - durable task list refresh;
 - active task identity;
 - task lifecycle actions (create/rename/delete);
-- the window title bar (task name + real task state; the sidebar toggle and New task when the sidebar is collapsed) and the OS window title;
+- the window title bar (task name + real task state; quiet Find / palette icons; the sidebar toggle and New task when the sidebar is collapsed) and the OS window title;
 - the Settings dialog, command palette, and shortcuts sheet;
 - **one command handler** (`runCommand`) that the keyboard, the palette and the native menu all dispatch through, with a short de-duplication window so a menu accelerator and a keydown for one keypress are one command;
 - the shell bridge (`hooks/useNativeAgent.ts` → `useNativeShell`): menu commands, deep links, the summon shortcut, notifications on background settle (`useSettleNotifications`, driven by the per-task run store), and the window title. A plain browser is a no-op.
@@ -330,10 +330,18 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 
 ### 6.x Codex window (v1.17.0)
 
-- **Quiet chrome.** ContextMeter lives in the model menu; the title bar is name + state (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is the keyboard bar only.
+- **Quiet chrome.** ContextMeter lives in the model menu; the title bar is name + state plus quiet Find / palette icons (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is not a document ghost.
+- **Queue honesty.** `task.status.queued[]` can name the execution the client is already following; queued banners drop that row (and a just-submitted Direction that the live bubble already paints). A `steer_followup` waiting behind the current Execution is labeled as itself, not a second Direction.
+- **Settings pane.** Provider fields follow the editor's inline size (`@container`), not the viewport `sm:` breakpoint.
 - **Transcript craft.** User bubble is a quiet fill (no border, no shadow); approval is sentence-case *Waiting for approval* with a hairline; *Worked for {t}* carries no tool-call count on the head.
 - **Work language.** Artifacts says Execution, not Runs; empty fallback and prompt frame a Direction, not a question; aria is Direction / Work Result.
 - **Composer honesty.** Attachments are per-task; a file while busy is labeled Delegate, never Steer.
+
+### 6.x Window patch (v1.17.1)
+
+- **Queue honesty.** `task.status.queued[]` and `TaskBanners` drop the execution the client is already following; a `steer_followup` is labeled as itself.
+- **Settings pane.** Provider fields follow the editor (`@container`), not the viewport `sm:` breakpoint.
+- **Find.** Quiet title-bar Find / palette icons; no document ghost.
 
 ### 6.x True native agent, finished (v1.16.0)
 
@@ -557,7 +565,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.17.0 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.17.1 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
 
 ### Real-Sidecar E2E
 

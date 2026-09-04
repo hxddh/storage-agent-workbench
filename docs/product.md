@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.17.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native. v1.11–v1.16 made the transcript and the protocol native. **v1.17.0 is the Codex window:** UI and UE match Codex's quiet Agent surface. Earlier release notes are not current product architecture.
+> **Applies to Storage Agent v1.17.1.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native. v1.11–v1.16 made the transcript and the protocol native. **v1.17.0 is the Codex window;** **v1.17.1 patches queue honesty, Settings container layout, and title-bar Find.** Earlier release notes are not current product architecture.
 
 ## Product definition
 
@@ -211,7 +211,7 @@ Provider/model configuration, audit internals, and low-level counters are second
 
 ## Design rules
 
-v1.17.0 is the Codex window on a native shell. Visual language is specified in
+v1.17.1 is the current Codex window on a native shell. Visual language is specified in
 [`design-tokens.md`](design-tokens.md) and enforced by frontend token tests.
 
 - The window is **sidebar · title bar · one document**. No activity bar, no status bar, no inspector column, no marketing copy anywhere in chrome.
@@ -221,9 +221,9 @@ v1.17.0 is the Codex window on a native shell. Visual language is specified in
 - Figures use `--viz-*` tokens and SVG/CSS only. No chart library. Never interpolate, extrapolate, or invent a horizon the runtime did not emit.
 - Findings carry provenance. Missing chain is labelled, never implied.
 - Composer is the Agent input and the empty-start surface: `+` attach, textarea, model chip, and a round send (↑) at rest; Steer (↑) + Stop (■) while working. No ContextMeter on the bar (usage lives in the model menu and Execution detail). No wizard, no `/` SKU menu, no attach-type chips, no persistent keyboard legend, no approval-mode chip.
-- The title bar carries the task name and its real state. Find (⌘F) and the command palette (⌘K) are keyboard. Artifacts open from the document in the Artifacts panel beside it (⌘I). New task is a button; the shortcut is not painted on it.
+- The title bar carries the task name, its real state, and quiet Find / palette icons (⌘F / ⌘K remain). Artifacts open from the document in the Artifacts panel beside it (⌘I). New task is a button; the shortcut is not painted on it.
 - Task navigation is one chronological title list grouped by day. State is a row mark; Ready paints nothing. Rename and Delete only.
-- Settings is a centered dialog: General · Model Providers · Cloud Providers · Skills & bridges · Safety. Safety (v1.12) holds the read-only floor statement, the **Approvals** policy control (Ask every time · Allow for this session · Always allow) with the list of gated tools, and nothing else; Skills & bridges gains **Open instructions file** (`AGENTS.md` in the data directory).
+- Settings is a centered dialog: General · Model Providers · Cloud Providers · Skills & bridges · Safety. Provider editors size fields to the pane (`@container`), not the viewport. Safety (v1.12) holds the read-only floor statement, the **Approvals** policy control (Ask every time · Allow for this session · Always allow) with the list of gated tools, and nothing else; Skills & bridges gains **Open instructions file** (`AGENTS.md` in the data directory).
 - The transcript shows the model's own plan as one quiet checklist card (`update_plan`, v1.12) that updates in place and folds to *Plan · n/n* when done; a context compaction is one muted line *Context compacted · 48k → 9k tokens*; an approval the policy answered says so on the card. ⌘K offers **Compact context** for an idle task.
 - Every non-ideal state (empty list, no Evidence, offline, interrupted, load earlier) is designed. Copy is restrained, specific, and bilingual.
 - Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped as Actions vs Tasks, with tasks fuzzy-ranked as you type (v1.13). It is not an Artifacts destination menu.

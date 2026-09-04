@@ -39,10 +39,10 @@ function SectionHeading({ title, hint }: { title: string; hint?: string }) {
 
 function Row({ label, hint, children }: { label: ReactNode; hint?: string; children: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-6 border-b border-edge py-4 last:border-0">
-      <div className="min-w-0">
+    <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 border-b border-edge py-4 last:border-0">
+      <div className="min-w-0 flex-1 basis-44">
         <div className="text-sm text-gray-100">{label}</div>
-        {hint ? <div className="mt-0.5 text-xs text-gray-500">{hint}</div> : null}
+        {hint ? <div className="mt-0.5 text-xs leading-relaxed text-gray-500">{hint}</div> : null}
       </div>
       <div className="shrink-0">{children}</div>
     </div>

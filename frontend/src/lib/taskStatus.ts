@@ -39,7 +39,10 @@ export function applyTaskStatus(prev: TaskState | null, taskId: string, payload:
     active_execution: active,
     last_event_seq: prev?.last_event_seq ?? 0,
     last_execution: last,
-    queued_executions: payload.queued.map((q) => stub(taskId, q.id, known.get(q.id), {
+    // GET /agent-tasks already drops the active id from queued_executions.
+    // task.status.queued[] still lists a just-submitted row while it is
+    // queued, so fold the same way or the live Direction reprints as a banner.
+    queued_executions: payload.queued.filter((q) => q.id !== activeId).map((q) => stub(taskId, q.id, known.get(q.id), {
       direction: q.direction, kind: q.kind, created_at: q.created_at, status: "queued",
     })),
     pending_decisions: payload.pending_decisions,

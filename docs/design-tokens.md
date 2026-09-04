@@ -1,6 +1,6 @@
 # Design tokens
 
-> **Storage Agent v1.17.0.** Presentation contract for the native Agent
+> **Storage Agent v1.17.1.** Presentation contract for the native Agent
 > window. Tokens do not invent runtime state, progress, or capabilities.
 
 v1.09 replaces the v1.04–v1.08 warm/orange system with one achromatic surface

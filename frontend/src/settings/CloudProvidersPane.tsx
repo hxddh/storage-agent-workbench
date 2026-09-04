@@ -198,7 +198,7 @@ export function CloudProvidersPanel() {
           ) : null}
 
           {explicitEndpoint ? (
-            <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+            <div className="native-settings-fields">
               <Field label={t("prov.fEndpoint")} hint={preset.hint}>
                 <TextInput value={form.endpoint_url} onChange={(e) => setForm({ ...form, endpoint_url: e.target.value })} placeholder="https://s3.example.com" />
               </Field>
@@ -211,7 +211,7 @@ export function CloudProvidersPanel() {
               <TextInput value={form.account} onChange={(e) => setForm({ ...form, account: e.target.value })} placeholder="a1b2c3d4e5f6…" />
             </Field>
           ) : preset.variable === "endpoint" ? (
-            <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+            <div className="native-settings-fields">
               <Field label={t("prov.fEndpoint")} hint={preset.hint}>
                 <TextInput value={form.endpoint_url} onChange={(e) => setForm({ ...form, endpoint_url: e.target.value })} placeholder="https://minio.example.com:9000" />
               </Field>
@@ -225,7 +225,7 @@ export function CloudProvidersPanel() {
             </Field>
           ) : null}
 
-          <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+          <div className="native-settings-fields">
             <Field label={t("prov.fAccessKey")} hint={secretHint(editing?.has_access_key ?? false)}>
               <TextInput type="password" autoComplete="off" value={form.access_key} onChange={(e) => setForm({ ...form, access_key: e.target.value })} placeholder={editing?.has_access_key ? t("prov.savedPlaceholder") : ""} />
             </Field>
@@ -241,7 +241,7 @@ export function CloudProvidersPanel() {
 
           {advanced ? (
             <div className="native-settings-advanced-body">
-              <div className="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
+              <div className="native-settings-fields">
                 <Field label={t("prov.fName")}>
                   <TextInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={preset.label} />
                 </Field>
@@ -289,7 +289,7 @@ export function CloudProvidersPanel() {
 
       <ul className="native-settings-list" data-testid="cloud-provider-list">
         {items.map((provider) => (
-          <li key={provider.id} className="flex-wrap">
+          <li key={provider.id}>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="native-settings-dot" data-on={provider.has_access_key && provider.has_secret_key ? "true" : "false"} aria-hidden />
