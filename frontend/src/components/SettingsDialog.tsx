@@ -30,19 +30,19 @@ function VaultWarning() {
 
 function SectionHeading({ title, hint }: { title: string; hint?: string }) {
   return (
-    <div className="mb-4">
+    <div className="mb-4 min-w-0 pr-2">
       <h2 className="text-lg font-medium text-gray-100">{title}</h2>
-      {hint ? <p className="mt-1 text-xs leading-relaxed text-gray-500">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-xs leading-relaxed text-pretty text-gray-500">{hint}</p> : null}
     </div>
   );
 }
 
 function Row({ label, hint, children }: { label: ReactNode; hint?: string; children: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-6 border-b border-edge py-4 last:border-0">
-      <div className="min-w-0">
+    <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 border-b border-edge py-4 last:border-0">
+      <div className="min-w-0 flex-1 basis-44">
         <div className="text-sm text-gray-100">{label}</div>
-        {hint ? <div className="mt-0.5 text-xs text-gray-500">{hint}</div> : null}
+        {hint ? <div className="mt-0.5 text-xs leading-relaxed text-pretty text-gray-500">{hint}</div> : null}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -114,39 +114,39 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         tabIndex={-1}
         aria-label={t("settings.title")}
         data-testid="settings-dialog"
-        className="relative flex h-[min(640px,92vh)] w-[min(880px,96vw)] overflow-hidden rounded-2xl border border-edge bg-canvas shadow-pop animate-rise-in"
+        className="native-settings relative flex h-[min(640px,92vh)] w-[min(880px,96vw)] overflow-hidden rounded-2xl border border-edge bg-canvas shadow-pop animate-rise-in"
         onClick={(event) => event.stopPropagation()}
       >
-        <nav className="flex w-52 shrink-0 flex-col border-r border-edge bg-sidebar p-3" aria-label={t("settings.title")}>
-          <div className="px-2 pb-3 pt-1 text-sm font-medium text-gray-100">{t("settings.title")}</div>
-          <div className="space-y-0.5" role="group" aria-label={t("settings.title")}>
+        <nav className="native-settings-nav" aria-label={t("settings.title")}>
+          <div className="native-settings-nav-title">{t("settings.title")}</div>
+          <div className="native-settings-nav-list" role="group" aria-label={t("settings.title")}>
             {sections.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 aria-pressed={section === item.id}
                 onClick={() => setSection(item.id)}
-                className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-[background-color,color] duration-fast ${
-                  section === item.id ? "bg-elevated text-gray-100" : "text-gray-300 hover:bg-hover hover:text-gray-100"
-                }`}
+                className={section === item.id ? "is-active" : undefined}
               >
-                <Icon name={item.icon} size={15} className="text-gray-500" />
-                {item.label}
+                <Icon name={item.icon} size={15} className="shrink-0 text-gray-500" />
+                <span>{item.label}</span>
               </button>
             ))}
           </div>
-          <div className="mt-auto px-2 text-2xs leading-relaxed text-gray-500">{t("settings.footer")}</div>
+          <div className="native-settings-nav-footer">{t("settings.footer")}</div>
         </nav>
 
         <div className="relative flex min-w-0 flex-1 flex-col">
-          <button
-            onClick={onClose}
-            aria-label={t("common.close")}
-            className="native-icon-button absolute right-3 top-3"
-          >
-            <Icon name="close" size={15} />
-          </button>
-          <div className="min-h-0 flex-1 overflow-auto px-8 py-7">
+          <div className="native-settings-content-head">
+            <button
+              onClick={onClose}
+              aria-label={t("common.close")}
+              className="native-icon-button"
+            >
+              <Icon name="close" size={15} />
+            </button>
+          </div>
+          <div className="native-settings-pane">
             <VaultWarning />
             {section === "general" ? (
               <section>
@@ -165,7 +165,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
             {section === "safety" ? (
               <section>
                 <SectionHeading title={t("settings.safetyTitle")} />
-                <p className="max-w-[40rem] text-sm leading-relaxed text-gray-300">{t("settings.safety")}</p>
+                <p className="native-settings-prose">{t("settings.safety")}</p>
                 <SafetyPane />
               </section>
             ) : null}

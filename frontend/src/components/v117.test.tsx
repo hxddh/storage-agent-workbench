@@ -23,9 +23,15 @@ describe("v1.17 Codex window", () => {
     expect(source("./ModelChip.tsx")).toContain("native-model-menu-meter");
   });
 
-  it("does not paint Find or the palette on the title bar or the document", () => {
+  it("keeps Find a reading-column strip and Search a quieter sidebar row", () => {
     expect(source("../App.tsx")).not.toContain("titlebar-find");
     expect(source("../App.tsx")).not.toContain("titlebar-palette");
+    expect(source("../App.tsx")).toContain('case "find": live.find?.()');
+    expect(source("../App.tsx")).toContain('matches(event, "find")');
+    expect(source("../App.tsx")).toContain('case "palette": setPaletteOpen');
+    expect(source("../App.tsx")).toContain("onSearch={() => runCommand(\"palette\")}");
+    expect(source("../agent/AgentTaskNavigation.tsx")).toContain('data-testid="task-navigation-search"');
+    expect(source("../agent/AgentTaskNavigation.tsx")).toContain("native-sidebar-search");
     expect(source("./TaskDocument.tsx")).not.toContain("task-find-open");
     expect(source("./AgentTaskImplementation.tsx")).not.toContain("start-mark");
     expect(source("../agent/native-document.css")).not.toContain("native-start-mark");
@@ -70,6 +76,7 @@ describe("v1.17 Codex window", () => {
     const css = source("../agent/native-document.css");
     expect(css).toMatch(/\.turn-user-bubble \{[^}]*border: 0;/);
     expect(css).not.toMatch(/\.turn-user-bubble \{[^}]*box-shadow/);
+    expect(css).not.toMatch(/\.native-composer \{[^}]*box-shadow/);
     expect(css).not.toMatch(/\.approval-card-head \{[^}]*text-transform: uppercase/);
     expect(css).not.toMatch(/\.approval-card \{[^}]*box-shadow/);
     expect(source("./ApprovalCard.tsx")).not.toContain('name="shield"');

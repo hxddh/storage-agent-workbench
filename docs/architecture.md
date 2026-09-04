@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.17.0.** Codex window on the native Agent shell. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
+> **Current architecture baseline: Storage Agent v1.17.3.** Codex window on the native Agent shell, patched for a quiet title bar, lighter sidebar Search, a hairline Composer, gated engine tools, and a smaller per-step token prefix. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -86,7 +86,7 @@ Legacy frontend adapters from earlier releases were physically removed. Do not r
 
 ### 3.2 `AgentTaskNavigation`: the sidebar
 
-`frontend/src/agent/AgentTaskNavigation.tsx` owns the sidebar: a window chrome row (drag region + collapse toggle), **New task**, one chronological task list, and **Settings**.
+`frontend/src/agent/AgentTaskNavigation.tsx` owns the sidebar: a window chrome row (drag region + collapse toggle), **New task**, **Search**, one chronological task list, and **Settings**.
 
 Each task row combines:
 
@@ -95,7 +95,7 @@ Each task row combines:
 - a state mark (Ready paints nothing; Working pulses; Needs decision / Needs attention are status colours);
 - relative time on hover, and Rename / Delete behind one More control.
 
-The list is chronological by `updated_at`, grouped by day (`dayGroups()`: Today, Yesterday, then dated headers). Search, pin, duplicate, archive and database counters are not painted. The New task control is a button; it does not paint ⌘N. Collapsed, the sidebar has zero width and its toggle + New task move into the title bar.
+The list is chronological by `updated_at`, grouped by day (`dayGroups()`: Today, Yesterday, then dated headers). A labeled **Search** under New task opens the command palette (same overlay as ⌘K) — it is not an inline list filter, and it is painted lighter than New task. Pin, duplicate, archive and database counters are not painted. The New task control is a button; it does not paint ⌘N. Collapsed, the sidebar has zero width and its toggle + New task move into the title bar.
 
 The Sidecar `/agent-tasks` projection provides durable decision truth so a pending confirmation remains visible after reload/restart even when browser-local runtime state is gone.
 
@@ -311,15 +311,23 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
   {policy}`. `survey_account(max_buckets > 100)` raises
   `survey_account_large` through the same gate.
 - **Compaction.** `agent_runtime/compaction.py`: when the last turn's reported
-  input usage ≥ 80 % of `model_budget.context_window`, `_run_execution` runs
+  input usage ≥ 60 % of `model_budget.context_window`, `_run_execution` runs
   one tool-less streamed call (marker `[[storage-agent:compact]]`, private
   loop, 60 s ceiling, seam `COMPACT_STEP`) that summarises the sanitized
   replay into ≤ 2 000 redacted chars, stored as a new context version
   (`summary_sanitized`, `summary_through_seq`, migration 030). The prompt
-  builder puts `conversation_summary` in the stable half and replays only
-  later messages; `context.compacted` is appended and the turn starts with a
-  `compacted` item. `POST /agent-tasks/{id}/compact` runs the same step on
-  demand (idle task only). The overflow cut marker stays as the last resort.
+  builder puts `conversation_summary` in the stable half, omits `summary` and
+  `agent_memory` (the summary replaces them), keeps `storage_task_context`,
+  and replays only later messages; `context.compacted` is appended and the
+  turn starts with a `compacted` item. Uncompacted turns send `agent_memory`
+  plus a deterministic summary only for facts not already recorded, and
+  replay Directions in full with assistant turns as a tools_run + digest.
+  `RunConfig.group_id` is the durable task id (openai-agents 0.22 prompt-cache
+  routing on official OpenAI Chat Completions). Responses-API compaction
+  (`OpenAIResponsesCompactionSession`, `context_management`) is unused —
+  Chat Completions is the model path so third-party endpoints keep working.
+  `POST /agent-tasks/{id}/compact` runs the same step on demand (idle task
+  only). The overflow cut marker stays as the last resort.
 - **Instructions file.** `agent_runtime/instructions.py` loads
   `STORAGE_AGENT_DATA_DIR/AGENTS.md` (or `STORAGE_AGENT_INSTRUCTIONS`):
   Markdown only, ≤ 8 000 chars, redacted, injected after the skills catalog in
@@ -330,10 +338,30 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 
 ### 6.x Codex window (v1.17.0)
 
-- **Quiet chrome.** ContextMeter lives in the model menu; the title bar is name + state (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is the keyboard bar only.
+- **Quiet chrome.** ContextMeter lives in the model menu; the title bar is name + state (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is a strip under the title bar on the reading column, not a document ghost and not a corner overlay.
+- **Queue honesty.** `task.status.queued[]` can name the execution the client is already following; queued banners drop that row (and a just-submitted Direction that the live bubble already paints). A `steer_followup` waiting behind the current Execution is labeled as itself, not a second Direction.
+- **Settings pane.** Provider fields follow the editor's inline size (`@container`), not the viewport `sm:` breakpoint.
 - **Transcript craft.** User bubble is a quiet fill (no border, no shadow); approval is sentence-case *Waiting for approval* with a hairline; *Worked for {t}* carries no tool-call count on the head.
 - **Work language.** Artifacts says Execution, not Runs; empty fallback and prompt frame a Direction, not a question; aria is Direction / Work Result.
 - **Composer honesty.** Attachments are per-task; a file while busy is labeled Delegate, never Steer.
+
+### 6.x Window patch (v1.17.1)
+
+- **Queue honesty.** `task.status.queued[]` and `TaskBanners` drop the execution the client is already following; a `steer_followup` is labeled as itself.
+- **Settings pane.** Provider fields follow the editor (`@container`), not the viewport `sm:` breakpoint.
+- **Find discoverability.** Quiet Find and palette icons return to the title bar (⌘F / ⌘K remain). The document ghost Find and empty-start glyph stay gone.
+
+### 6.x Window craft (v1.17.2)
+
+- **Search / Find.** Codex Search is a labeled row under New task and opens the command palette. The Find icon stays on the left of the title bar; ⌘F opens a find strip under the title bar on the 46rem reading measure (not in the scroller, not a corner overlay).
+- **Settings dialog.** The dialog is its own container: nav labels do not wrap, the close control sits in a content head (not over the heading), Skills rows wrap identity vs actions, and at a narrow pane the nav becomes a horizontal strip.
+- **Context layers.** Compaction `conversation_summary` replaces `summary` / `agent_memory` (those keys are omitted); uncompacted turns send writable memory plus a gap-only summary and digest assistant replay; consumed JSON tool results keep scalars and counts; `RunConfig.group_id` is the task id (openai-agents prompt-cache routing). Auto-compaction at 60 % of the window.
+- **Chrome.** Title-bar state sits with the task name; Composer focus is a hairline; Find steps use icons.
+
+### 6.x Context economy and Codex chrome (v1.17.3)
+
+- **Prefix.** Engine tools are the gated `storage_engines` group, not CORE. Tool descriptions are one sentence plus Args. A first tool delivery over 6 000 characters is digested before the model sees it (`read_skill` exempt). Already-consumed outputs compact after one later step. The tool-output floor is 48k characters, 12 % of the window.
+- **Chrome.** The title bar is name + state (no painted Find/palette). ⌘F is a window keydown in `App.tsx`; ⌘K stays on the same handler. Sidebar Search is lighter than New task. Composer is a hairline slot (no elevation). Approval impact reads as stacked sentences. Find remains the 46rem strip under the title bar.
 
 ### 6.x True native agent, finished (v1.16.0)
 
@@ -557,7 +585,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.17.0 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.17.3 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
 
 ### Real-Sidecar E2E
 

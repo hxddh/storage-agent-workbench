@@ -40,7 +40,9 @@ function storedNavigationWidth(): number {
 }
 
 /** Window title row over the document: the task name and its real state.
- * Find (⌘F) and the palette (⌘K) are keyboard — Codex-quiet chrome. */
+ * ⌘F opens the reading-column Find strip; ⌘K opens the palette. Search is
+ * the quieter sidebar row under New task. Collapsed, the sidebar toggle
+ * and New task move here. */
 function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: {
   task: AgentTaskSummary | null;
   sidebarOpen: boolean;
@@ -71,13 +73,15 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: 
           </button>
         </>
       ) : null}
-      <span className="native-titlebar-title" data-task={task ? "true" : "false"} data-tauri-drag-region>{title}</span>
-      {stateLabel ? (
-        <span className="native-titlebar-state" data-state={state} data-testid="titlebar-state">
-          {state === "working" || state === "uploading" ? <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden /> : null}
-          {stateLabel}
-        </span>
-      ) : null}
+      <span className="native-titlebar-title" data-task={task ? "true" : "false"} data-tauri-drag-region>
+        <span className="native-titlebar-name">{title}</span>
+        {stateLabel ? (
+          <span className="native-titlebar-state" data-state={state} data-testid="titlebar-state">
+            {state === "working" || state === "uploading" ? <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden /> : null}
+            {stateLabel}
+          </span>
+        ) : null}
+      </span>
     </header>
   );
 }
@@ -216,6 +220,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (matches(event, "palette")) { event.preventDefault(); runCommand("palette"); }
+      else if (matches(event, "find")) { event.preventDefault(); runCommand("find"); }
       else if (matches(event, "newTask")) { event.preventDefault(); runCommand("new-task"); }
       else if (matches(event, "toggleTaskNavigation")) { event.preventDefault(); runCommand("toggle-sidebar"); }
       else if (matches(event, "shortcuts") && !isEditable(event.target)) { event.preventDefault(); runCommand("shortcuts"); }
@@ -237,6 +242,7 @@ export default function App() {
         activeTaskId={activeTaskId}
         onSelectTask={setActiveTaskId}
         onNew={() => setActiveTaskId(null)}
+        onSearch={() => runCommand("palette")}
         onOpenSettings={() => setSettingsOpen(true)}
         actions={taskActions}
         editRequest={editRequest}

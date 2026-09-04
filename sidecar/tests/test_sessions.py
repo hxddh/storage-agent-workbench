@@ -323,7 +323,8 @@ def test_assistant_sanitized_context_no_tools_and_cot_stripped(client, sync_runs
     # in the instructions (prompt), not re-injected as a context field — the
     # duplicate injection was removed (finding 16). Verify the single-source shape.
     ctx = spec["context"]
-    assert "summary" in ctx and "agent_memory" in ctx
+    assert "summary" in ctx
+    assert "agent_memory" not in ctx  # empty notes are omitted, not stacked as []
     assert "safety_rules" not in ctx  # no longer duplicated into the context JSON
     # The rules still exist, once, in the instructions the agent is given.
     assert "SAFETY RULES" in spec["instructions"]

@@ -128,6 +128,31 @@ describe("v1.14 queued edit", () => {
     fireEvent.click(screen.getByTestId("queued-direction-save"));
     expect(onEditQueued).toHaveBeenCalledWith("exec-q", "second draft");
   });
+
+  it("labels a steer follow-up as itself, not a second Direction", () => {
+    const followup = { id: "exec-s", direction: "also the ACL", kind: "steer_followup" } as TaskExecution;
+    render(
+      <I18nProvider>
+        <TaskBanners
+          offline={false}
+          needKey={false}
+          error={null}
+          canRetry={false}
+          onRetry={() => {}}
+          onOpenSettings={() => {}}
+          showResume={false}
+          lastExecution={null}
+          onResume={() => {}}
+          queued={[followup]}
+          onCancelQueued={() => {}}
+          onEditQueued={() => {}}
+        />
+      </I18nProvider>,
+    );
+    const row = screen.getByTestId("queued-direction");
+    expect(row.getAttribute("data-kind")).toBe("steer_followup");
+    expect(row.textContent).toContain("Steer follow-up");
+  });
 });
 
 describe("v1.14 find roots", () => {

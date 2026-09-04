@@ -25,10 +25,11 @@ def _elastic_memory_cap(model: str | None, explicit_window: int | None) -> int:
     factor = max(1, window // 128_000)
     return min(_MEM_RECALL_CEIL, _MAX_FACTS * factor)
 # How many recent thread messages the agent sees. 24 (was 12): a small-context
-# clip that now just makes the agent lose the thread on a long investigation —
-# 24 msgs × _MAX_REPLAY_MSG chars is still tiny under a modern context window.
-# This is the FLOOR: build_session_context scales it up with the model window
-# (bounded by _MAX_MESSAGES_CEIL), so a large-context model keeps more history.
+# clip that now just makes the agent lose the thread on a long investigation.
+# This is the FLOOR: build_session_context scales COUNT up with the model window
+# (bounded by _MAX_MESSAGES_CEIL). Assistant Work Results are digested to
+# `_MAX_REPLAY_ANSWER` — replaying the full markdown every turn restates
+# agent_memory. User Directions stay at `_MAX_REPLAY_MSG`.
 _MAX_MESSAGES = 24
 _MAX_MESSAGES_CEIL = 96
 # Tool-trace lines replayed per prior assistant turn. Each message already
@@ -148,9 +149,23 @@ _MODEL_TIMEOUT_S = 300.0
 #    part that was actually being reasoned about), and
 #  - the cut is stated in the item itself, never silent — the same rule every
 #    other bound in this product follows.
-_COMPACT_AFTER_STEPS = 2      # how many later tool results before one is compacted
-_COMPACT_MIN_CHARS = 1200     # below this there is nothing worth reclaiming
-_COMPACT_KEEP_HEAD = 800      # of the original payload, kept verbatim
+#
+# 1, not 2: the model has already used a result on the next step. Keeping it
+# full for two extra steps was the majority of the re-send bill.
+_COMPACT_AFTER_STEPS = 1      # how many later tool results before one is compacted
+_COMPACT_MIN_CHARS = 800      # below this there is nothing worth reclaiming
+_COMPACT_KEEP_HEAD = 500      # of a non-JSON payload, kept verbatim
+# First delivery to the model: a payload larger than this is reduced to a
+# structured digest BEFORE the model sees it. Typical list_objects pages stay
+# under this; surveys, aggregates, and 1000-key dumps do not. The full payload
+# is still audited; the model can call again with a tighter bound.
+_FIRST_DELIVERY_CHARS = 6000
+# Skill bodies are the method the model asked to load; the plan checklist is
+# a few bytes. Neither is a listing dump.
+_FIRST_DELIVERY_EXEMPT = frozenset({"read_skill", "update_plan"})
+# Tool descriptions ride in every step's prefix. Prose over this is shortened
+# to the first sentence plus Args.
+_TOOL_DESC_LIMIT = 240
 
 _SLOW_TOOLS = {"survey_account", "review_bucket_config", "analyze_uploaded_file",
                "aggregate_uploaded_file", "aggregate_imported_evidence",
@@ -163,22 +178,26 @@ _SLOW_TOOLS = {"survey_account", "review_bucket_config", "analyze_uploaded_file"
 # large-window models while the rest of the context went elastic in v0.27–28.
 _MAX_USER_MSG = 16000
 _MAX_USER_MSG_CEIL = 64000
-# Bound on each replayed prior message in the context. Also never silent.
-# 4000 (was 1000): 1000 chars clipped mid-answer on any substantial turn, so the
-# agent saw only truncated tails of its own prior reasoning; 4000 keeps a full
-# normal answer while staying bounded (24 × 4000 ≈ 24k tokens of thread history).
+# Bound on each replayed prior USER Direction. Also never silent.
+# 4000 (was 1000): pasted error/config dumps are a core flow; 1000 chars
+# clipped mid-Direction. Assistant Work Results use `_MAX_REPLAY_ANSWER`.
 _MAX_REPLAY_MSG = 4000       # FLOOR; scaled up with the model window, capped below
 _MAX_REPLAY_MSG_CEIL = 12000
+# Assistant replay is a digest: tools_run already says what was probed, and
+# agent_memory / conversation_summary already hold the conclusion. 600 chars
+# is enough to see how the last answer was framed without re-paying a table.
+_MAX_REPLAY_ANSWER = 600
 # Per-turn cumulative budget on tool OUTPUT characters handed to the model.
 # This is the PRIMARY, elastic governor of how deep a turn goes: it tracks the
 # context the model actually consumes, so a turn runs as deep as it needs until
 # real context pressure (not an arbitrary step count) says to synthesize. A
 # bound, not a gate — once exhausted, further tool calls return a short note
 # telling the model to synthesize, so a context-window overflow never becomes a
-# hard failure mid-investigation. 200k chars ≈ 50k tokens of tool output, which
-# leaves ample room under a modern 200k-token context for the prompt + reasoning;
-# the overflow → finalize path is the backstop above it.
-_MAX_TOOL_OUTPUT_CHARS = 200_000
+# hard failure mid-investigation.
+# 48k chars ≈ 12k tokens — a floor, not a 128k-window filling 50k-token dump.
+# model_budget scales this with the window (12 %); this constant is the fallback
+# when no model is known.
+_MAX_TOOL_OUTPUT_CHARS = 48_000
 _TOOL_BUDGET_EXHAUSTED = (
     "This turn's tool-output budget is used up — synthesize your findings from what "
     "you've already gathered and answer now. This budget resets if the user continues."
@@ -238,9 +257,6 @@ _CORE_TOOLS = {
     "update_memory_item", "resolve_memory_item",
     # The plan the model owns — always at hand, never gated.
     "update_plan",
-    "simulate_storage_cost", "draft_remediation_plan", "verify_remediation_plan",
-    "capture_task_baseline", "compare_task_drift", "get_price_table_status",
-    "set_task_revisit_days",
 }
 
 _TOOL_GROUPS: dict[str, tuple[str, frozenset[str]]] = {
@@ -283,6 +299,13 @@ _TOOL_GROUPS: dict[str, tuple[str, frozenset[str]]] = {
         "the last survey, read a backgrounded run's result",
         frozenset({"survey_account", "query_account_profile",
                    "compare_to_last_survey", "read_run_result"})),
+    "storage_engines": (
+        "deterministic cost, lifecycle plans, baselines, Drift, price-table "
+        "status, and optional revisits — never invent dollars",
+        frozenset({"simulate_storage_cost", "draft_remediation_plan",
+                   "verify_remediation_plan", "capture_task_baseline",
+                   "compare_task_drift", "get_price_table_status",
+                   "set_task_revisit_days"})),
 }
 
 # tool name -> the group that gates it (empty for CORE).

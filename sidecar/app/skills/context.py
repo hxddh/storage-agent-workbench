@@ -91,12 +91,7 @@ def catalog_text() -> str:
     if not items:
         return ""
     lines = [
-        "STORAGEOPS SKILLS — expert diagnostic methods available to you.",
-        "Each entry is name: when-to-use. When a skill fits the user's problem, "
-        "call read_skill(name) to load its full method, then apply it with your "
-        "read-only tools — running a survey/review inline, or proposing a "
-        "confirmed import, where the method calls for heavier analysis. You do "
-        "not have to use a skill if none applies.",
+        "StorageOps skills — name: when to use. Call read_skill(name) to load a method.",
         "",
     ]
     for it in items:

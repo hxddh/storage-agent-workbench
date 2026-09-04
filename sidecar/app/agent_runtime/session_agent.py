@@ -42,18 +42,19 @@ from .limits import (_MAX_PARALLEL_TOOLS, _MAX_TURNS, _MODEL_TIMEOUT_S, seed_unl
 from .prompt import (INSTRUCTIONS, _build_prompt)
 from .usage import (_PROMPT_CACHE_RETENTION, _endpoint_key, _stash_extra_usage)
 from .finalize import (_FINALIZE_FALLBACK, _answer_cap, _finalize_agent_and_prompt, _finalize_contract)
-from .guards import (_build_load_tools, _build_tools, _install_tool_gating, _install_tool_output_budget, _install_tool_timeouts, _install_untrusted_envelope, _make_input_filter, _make_tool_not_found_formatter, _strip_schema_titles)
+from .guards import (_build_load_tools, _build_tools, _install_tool_gating, _install_tool_output_budget, _install_tool_timeouts, _install_untrusted_envelope, _make_input_filter, _make_tool_not_found_formatter, _shorten_tool_descriptions, _strip_schema_titles)
 from .steer import (_install_steer_injection)
 from .stream import (_close_clients, stream_events_for)
 
 # Re-exports: the historical single-module surface (tests + adapters reach it).
 from .limits import (  # noqa: F401
-    _COMPACT_AFTER_STEPS, _CONTEXT_CUT_MARKER, _CORE_TOOLS, _GROUP_OF_TOOL,
-    _MAX_COMPLETION_TOKENS, _MAX_FACTS, _MAX_FINDINGS, _MAX_MESSAGES,
-    _MAX_MESSAGES_CEIL, _MAX_OUTPUT, _MAX_REPLAY_MSG, _MAX_REPLAY_MSG_CEIL,
-    _MAX_REPLAY_TOOLS, _MAX_TOOL_OUTPUT_CHARS, _MAX_USER_MSG, _MAX_USER_MSG_CEIL,
-    _MEM_RECALL_CEIL, _SLOW_TOOL_TIMEOUT_S, _STOPPED_MARKER, _TOOL_GROUPS,
-    _TOOL_TIMEOUT_S, _UNLOCK_RECENT_CALLS, _UNTRUSTED_CLOSE, _UNTRUSTED_OPEN,
+    _COMPACT_AFTER_STEPS, _CONTEXT_CUT_MARKER, _CORE_TOOLS, _FIRST_DELIVERY_CHARS,
+    _FIRST_DELIVERY_EXEMPT, _GROUP_OF_TOOL, _MAX_COMPLETION_TOKENS, _MAX_FACTS,
+    _MAX_FINDINGS, _MAX_MESSAGES, _MAX_MESSAGES_CEIL, _MAX_OUTPUT, _MAX_REPLAY_ANSWER,
+    _MAX_REPLAY_MSG, _MAX_REPLAY_MSG_CEIL, _MAX_REPLAY_TOOLS, _MAX_TOOL_OUTPUT_CHARS,
+    _MAX_USER_MSG, _MAX_USER_MSG_CEIL, _MEM_RECALL_CEIL, _SLOW_TOOL_TIMEOUT_S,
+    _STOPPED_MARKER, _TOOL_DESC_LIMIT, _TOOL_GROUPS, _TOOL_TIMEOUT_S,
+    _UNLOCK_RECENT_CALLS, _UNTRUSTED_CLOSE, _UNTRUSTED_OPEN,
     _elastic_memory_cap, tool_group_catalog)
 from .prompt import (  # noqa: F401
     FINALIZE_INSTRUCTIONS, SESSION_SAFETY_RULES, _build_agent_memory_block,
@@ -66,7 +67,8 @@ from .finalize import (  # noqa: F401
     _ANSWER_CUT_MARKER, _finalize_directive, _is_context_overflow, _is_max_turns,
     _is_model_timeout, _is_tool_call_sequence_error, _is_transient_provider_error,
     finalize_answer_text, sanitize_answer_text)
-from .guards import _compact_consumed_outputs  # noqa: F401
+from .guards import (  # noqa: F401
+    _compact_consumed_outputs, _first_delivery_digest, _shorten_tool_description)
 from .steer import SteerQueue  # noqa: F401
 from .stream import _StreamSanitizer  # noqa: F401
 
@@ -178,6 +180,7 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     # plain fact that a file is attached), so a continuing investigation does not
     # re-pay the unlock round-trip every turn.
     tools.append(_build_load_tools(function_tool, unlocked, activity))
+    _shorten_tool_descriptions(tools)
     _install_tool_gating(tools, unlocked)
     _strip_schema_titles(tools)
     _install_tool_timeouts(tools)
@@ -223,11 +226,20 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     # mistake into a self-correcting one; the formatter below makes it actionable
     # rather than merely non-fatal.
     unlock_hint = _make_tool_not_found_formatter(unlocked)
+    # openai-agents 0.22: RunConfig.group_id is the Chat Completions
+    # prompt_cache_key grouping. Official OpenAI then routes later turns of the
+    # SAME task to the same cache machines (prefix caching only helps if the
+    # request lands where the prefix lives). Third-party endpoints skip the
+    # extra arg (`_supports_default_prompt_cache_key` is official-OpenAI only).
+    # We do NOT use OpenAIResponsesCompactionSession / context_management —
+    # those are Responses-API only, and this product stays on Chat Completions
+    # so DeepSeek / Ollama / vLLM keep working.
     run_config = RunConfig(call_model_input_filter=_make_input_filter(compaction),
                            tool_not_found_behavior="return_error_to_model",
                            tool_error_formatter=unlock_hint,
                            tool_execution=ToolExecutionConfig(
-                               max_function_tool_concurrency=_MAX_PARALLEL_TOOLS))
+                               max_function_tool_concurrency=_MAX_PARALLEL_TOOLS),
+                           group_id=spec.get("session_id") or None)
     result = Runner.run_streamed(agent, spec["prompt"], max_turns=_MAX_TURNS,
                                  run_config=run_config)
     # Tag the run with the endpoint it targets, so a stream_options rejection
@@ -244,7 +256,8 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
         returns a safe fallback on any error."""
         try:
             fa, fp = _finalize_agent_and_prompt(creds, spec["prompt"], activity, clients)
-            fr = await Runner.run(fa, fp, max_turns=2)
+            fr = await Runner.run(fa, fp, max_turns=2,
+                                  run_config=RunConfig(group_id=spec.get("session_id") or None))
             _stash_extra_usage(result, fr)
             return getattr(fr, "final_output", "") or _FINALIZE_FALLBACK
         except Exception:  # noqa: BLE001

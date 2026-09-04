@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v1.17.0.**
+> **Current baseline: Storage Agent v1.17.3.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -30,6 +30,7 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] The Composer does not paint a persistent keyboard legend (`⏎ Delegate` / `⇧⏎`).
 - [ ] Global navigation is a single chronological Agent Task title list in the sidebar; collapsing it moves the toggle and New task into the title bar.
 - [ ] The New task button is labelled **New task**; ⌘N / Ctrl+N still works and is not painted on the button.
+- [ ] A labeled **Search** sits under New task and opens the command palette (same overlay as ⌘K). It is not an inline list filter.
 - [ ] Task rows support Rename and Delete without turning navigation into a backend-record browser.
 - [ ] Creating/delegating initial work creates a durable Task that remains available after reload/restart.
 
@@ -59,7 +60,7 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] A `needs_attention` Task whose last Execution is interrupted/failed exposes **Resume**; Resume follows the new execution event stream.
 - [ ] Settings contains model, storage credentials, language, and theme as a centered dialog — not a storage price table.
 - [ ] Composer has no `/checkup` `/cost` `/drift` SKU menu. Typing `/` is ordinary text.
-- [ ] There is no task header destination and no Overview / revisit / Verify painted chrome. The title bar is name + state; Find (⌘F) and the palette (⌘K) are keyboard.
+- [ ] There is no task header destination and no Overview / revisit / Verify painted chrome. The title bar is name + state; ⌘F opens a find strip on the reading column; ⌘K and the sidebar Search row open the palette. There is no document ghost Find.
 - [ ] Cost-review numbers in a Work Result are labelled estimates with coverage, or explicit gaps when inventory/price table is missing.
 - [ ] Cost / inventory / Drift / access-log figures render from runtime artifacts with coverage and Estimate; unconfirmed prices withhold the cost axis; missing series are gap states, never interpolated.
 - [ ] A finding with a provenance chain opens Evidence anchored to that finding; a missing chain is labelled, not implied.

@@ -1,12 +1,14 @@
 # Roadmap
 
-> **Status: delivered in v1.17.0.** v1.16.0 finished the true native Agent;
-> v1.16.1 patched tables, search, wrapping, and a first Codex-grade polish
-> pass (`docs/releases/1.16.1.md`). This file recorded the plan for
-> **v1.17.0 — Codex window**. That work shipped. The review of v1.16.1 and
-> the shipped workstreams live in `docs/releases/1.17.0.md`.
+> **Status: delivered in v1.17.3.** v1.16.0 finished the true native Agent;
+> v1.17.0 shipped the Codex window (`docs/releases/1.17.0.md`). v1.17.1
+> patched queue honesty, Settings field sizing, and title-bar Find
+> (`docs/releases/1.17.1.md`). v1.17.2 puts Codex Search on the left,
+> finishes Settings dialog chrome, and layers context
+> (`docs/releases/1.17.2.md`). v1.17.3 cuts the per-step token prefix and
+> matches Codex chrome (`docs/releases/1.17.3.md`).
 
-> **Baseline: Storage Agent v1.17.0.** The product invariant is unchanged:
+> **Baseline: Storage Agent v1.17.3.** The product invariant is unchanged:
 > **the Agent Task is the application.** The window is sidebar · title bar ·
 > one Task document · one Composer. UI and UE match Codex's quiet Agent
 > surface — same chrome, same transcript rhythm, same Composer craft —
@@ -23,16 +25,16 @@ Shipped:
 | Surface | v1.17 |
 | --- | --- |
 | Window | sidebar · quiet title · one transcript · one Composer |
-| Title bar | task name + live state; Find/palette are keyboard (⌘F / ⌘K) |
-| Sidebar | New, day-grouped titles, Settings; Ready paints nothing |
+| Title bar | name + quiet state (⌘F / ⌘K stay; no painted Find/palette) |
+| Sidebar | New task, Search (lighter row, command palette), day-grouped titles, Settings; Ready paints nothing |
 | Empty start | one greeting + Composer, no glyph |
 | User turn | right-aligned fill, no card chrome |
 | Agent turn | flush Markdown, not a bubble |
 | Worked group | one line *Worked for {t}*; count lives inside |
 | Plan | quiet checklist; folds to *Plan · n/n* |
 | Approval | sentence-case *Waiting for approval*; hairline; Allow / Deny |
-| Composer | `+` · textarea · model · send; ContextMeter in the model menu |
-| Find | ⌘F bar only |
+| Composer | `+` · textarea · model · send; hairline slot; ContextMeter in the model menu |
+| Find | ⌘F opens a strip under the title bar on the reading column; no document ghost; Search is the sidebar row |
 | Copy | Direction / Execution / Work Result |
 
 Do **not** replicate Codex the coding Agent: worktrees, diffs, terminal,
@@ -43,7 +45,7 @@ invents a worker, plan, or submit path the Sidecar does not expose.
 ## Next
 
 No next version is planned in this file. Follow-up is ordinary defects against
-the Codex window contract and the v1.17.0 security floor. Non-goals remain:
+the Codex window contract and the v1.17.3 security floor. Non-goals remain:
 coding-Agent features, a second submit path, slash SKUs, suggestion cards, a
 painted engine grid, the historical Review sheet, artifact chips, a grey
 Direction block, Next Actions, a metrics footer, table pagination, a second

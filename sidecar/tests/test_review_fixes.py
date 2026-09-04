@@ -492,7 +492,7 @@ def test_raised_budgets_and_caps():
     # arbitrary step number). Both raised so a deep read-only investigation runs to
     # completion in one turn instead of being cut short.
     assert session_agent._MAX_TURNS >= 40
-    assert session_agent._MAX_TOOL_OUTPUT_CHARS >= 200_000
+    assert session_agent._MAX_TOOL_OUTPUT_CHARS == 48_000
     assert session_tools._LIST_KEYS_CTX_CAP >= 500
     # Conversation context is no longer clipped for small-context models: the
     # agent sees more recent messages, each kept fuller, so it doesn't lose the

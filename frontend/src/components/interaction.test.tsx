@@ -118,6 +118,9 @@ describe("shortcut registry", () => {
     expect(matches(event({ key: "k", metaKey: true }), "palette")).toBe(true);
     expect(matches(event({ key: "K", ctrlKey: true }), "palette")).toBe(true);
     expect(matches(event({ key: "k" }), "palette")).toBe(false);
+    expect(matches(event({ key: "f", metaKey: true }), "find")).toBe(true);
+    expect(matches(event({ key: "F", ctrlKey: true }), "find")).toBe(true);
+    expect(matches(event({ key: "f" }), "find")).toBe(false);
   });
 
   it("does not let a bare-key shortcut swallow a modified chord", () => {

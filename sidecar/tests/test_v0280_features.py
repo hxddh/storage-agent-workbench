@@ -178,7 +178,7 @@ def test_explicit_context_window_overrides_table():
     assert mb.context_window("some-new-model") == 128_000
     assert mb.context_window("some-new-model", explicit=1_000_000) == 1_000_000
     # And that flows into the budgets.
-    assert mb.tool_output_char_budget("some-new-model", explicit_window=1_000_000) == 1_000_000
+    assert mb.tool_output_char_budget("some-new-model", explicit_window=1_000_000) == 480_000
     # A non-positive/None explicit value is ignored (table still decides).
     assert mb.context_window("gpt-4o", explicit=0) == 128_000
 

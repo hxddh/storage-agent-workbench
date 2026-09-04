@@ -18,9 +18,7 @@
   margin-inline: auto;
 }
 
-/* User turn (v1.15): a right-aligned bubble with its own elevation step —
-   one rung above the canvas, one below the Composer — so the transcript
-   reads as user / Agent / chrome instead of one flat panel colour. */
+/* User turn: a right-aligned bubble, quiet fill, no card chrome. */
 .turn-user {
   display: flex;
   flex-direction: column;
@@ -31,10 +29,10 @@
   max-width: min(70%, var(--doc-measure));
   border: 0;
   border-radius: var(--radius-2xl);
-  padding: 8px 14px;
+  padding: 10px 16px;
   background: var(--elevated);
   color: var(--gray-100);
-  font-size: var(--text-base);
+  font-size: var(--text-prose);
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -290,16 +288,23 @@
   line-height: 1.6;
 }
 .approval-card-impact {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 6px 16px;
-  margin: 12px 0 0;
-  border-top: 1px solid var(--edge);
-  padding-top: 12px;
-  font-size: var(--text-xs);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 10px 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--gray-300);
 }
-.approval-card-impact dt { color: var(--gray-500); }
-.approval-card-impact dd { margin: 0; color: var(--gray-200); overflow-wrap: break-word; }
+.approval-card-impact dt {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.approval-card-impact dd { margin: 0; color: var(--gray-300); overflow-wrap: break-word; }
 .approval-card-impact dd[data-mono="true"] { font-family: "JetBrains Mono Variable", ui-monospace, monospace; }
 .approval-card-actions {
   display: flex;
@@ -343,9 +348,33 @@
 
 .native-queued { opacity: 0.85; }
 
-/* Composer (v1.15) — the one elevated card on the canvas: a raised surface,
-   a real shadow, a focus ring that reads. Hairline-only made it disappear
-   into the background next to Codex. */
+/* Find — a strip under the title bar, on the 46rem reading measure.
+   Not inside the scroller (that stole layout and fought sticky) and not a
+   corner overlay (that hid the field from the document the user is reading). */
+.native-find-host {
+  flex: none;
+  border-bottom: 1px solid var(--edge);
+  background: var(--panel);
+}
+.native-find {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 46rem;
+  height: 36px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.native-find-status {
+  flex: none;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Composer — a slot on the canvas: hairline border, no elevation. Focus
+   is a stronger border, not a ring or shadow. */
 .native-composer {
   position: relative;
   display: flex;
@@ -353,12 +382,10 @@
   border: 1px solid var(--edge-strong);
   border-radius: var(--radius-2xl);
   background: var(--panel);
-  box-shadow: var(--shadow-elev);
-  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 .native-composer:focus-within {
-  border-color: var(--gray-500);
-  box-shadow: var(--shadow-pop);
+  border-color: var(--gray-400);
 }
 .native-composer[data-agent-state="working"] {
   border-color: var(--edge-strong);
