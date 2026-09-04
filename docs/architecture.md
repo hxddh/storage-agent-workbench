@@ -319,9 +319,15 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
   builder puts `conversation_summary` in the stable half, omits `summary` and
   `agent_memory` (the summary replaces them), keeps `storage_task_context`,
   and replays only later messages; `context.compacted` is appended and the
-  turn starts with a `compacted` item. `POST /agent-tasks/{id}/compact` runs
-  the same step on demand (idle task only). The overflow cut marker stays as
-  the last resort.
+  turn starts with a `compacted` item. Uncompacted turns send `agent_memory`
+  plus a deterministic summary only for facts not already recorded, and
+  replay Directions in full with assistant turns as a tools_run + digest.
+  `RunConfig.group_id` is the durable task id (openai-agents 0.22 prompt-cache
+  routing on official OpenAI Chat Completions). Responses-API compaction
+  (`OpenAIResponsesCompactionSession`, `context_management`) is unused —
+  Chat Completions is the model path so third-party endpoints keep working.
+  `POST /agent-tasks/{id}/compact` runs the same step on demand (idle task
+  only). The overflow cut marker stays as the last resort.
 - **Instructions file.** `agent_runtime/instructions.py` loads
   `STORAGE_AGENT_DATA_DIR/AGENTS.md` (or `STORAGE_AGENT_INSTRUCTIONS`):
   Markdown only, ≤ 8 000 chars, redacted, injected after the skills catalog in

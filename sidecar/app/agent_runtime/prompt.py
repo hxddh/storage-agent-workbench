@@ -10,7 +10,7 @@ from ..skills import context as skill_context
 from . import guardrails
 from . import model_budget
 
-from .limits import (_MAX_FACTS, _MAX_MESSAGES, _MAX_MESSAGES_CEIL, _MAX_REPLAY_MSG, _MAX_REPLAY_MSG_CEIL, _MAX_REPLAY_TOOLS, _MAX_USER_MSG, _MAX_USER_MSG_CEIL, _elastic_memory_cap, tool_group_catalog)
+from .limits import (_MAX_FACTS, _MAX_MESSAGES, _MAX_MESSAGES_CEIL, _MAX_REPLAY_ANSWER, _MAX_REPLAY_MSG, _MAX_REPLAY_MSG_CEIL, _MAX_REPLAY_TOOLS, _MAX_USER_MSG, _MAX_USER_MSG_CEIL, _elastic_memory_cap, tool_group_catalog)
 
 
 # Each safety rule is stated ONCE — here, inside the instructions. They are not
@@ -61,10 +61,13 @@ INSTRUCTIONS = (
     "Context JSON: session, configured_providers, attached_files, a CATALOG of "
     "StorageOps skills (load a matching method with read_skill(name)), and "
     "storage_task_context (authoritative: buckets, datasets, evidence imports, "
-    "open decisions). Before compaction it also carries a deterministic summary, "
-    "agent_memory, and recent turns. After compaction, conversation_summary "
-    "replaces earlier turns AND the summary/agent_memory blocks — those keys are "
-    "omitted; trust the summary plus storage_task_context plus the replayed tail.\n"
+    "open decisions). Before compaction it also carries agent_memory (your notes, "
+    "with ids) and a deterministic summary only for facts you have not already "
+    "recorded. recent_messages replay Directions in full and assistant turns as "
+    "a tools_run trace plus a short answer digest — not the full Work Result. "
+    "After compaction, conversation_summary replaces earlier turns AND the "
+    "summary/agent_memory blocks — those keys are omitted; trust the summary "
+    "plus storage_task_context plus the replayed tail.\n"
     "Visible tools are the CORE set. Specialist tools live in groups you unlock "
     "with load_tools(group) when the Direction needs them; they become callable "
     "on your next step. Unlock only what you will use. Groups:\n"
@@ -90,7 +93,8 @@ INSTRUCTIONS = (
     "Each recent assistant message carries a tools_run trace — consult it and "
     "DON'T re-run a check you've already done. A trailing '[+N repeats]' means "
     "N of that turn's calls were identical to earlier turns. Reuse agent_memory "
-    "instead of re-deriving it.\n"
+    "instead of re-deriving it. A digested assistant turn is not a missing "
+    "answer — the full Work Result is in the document and in memory.\n"
     "Your step budget is bounded: probe what the Direction needs; if more steps "
     "would be required, give your best grounded answer and say what remains.\n"
     "Your answer is markdown: headings, **bold**, `code`, fenced blocks with a "
@@ -172,6 +176,60 @@ def _build_agent_memory_block(memory: list[dict[str, Any]] | None,
     }
 
 
+def _norm_grounding_text(value: Any) -> str:
+    return " ".join(str(value or "").lower().split())[:200]
+
+
+def _memory_texts(memory: dict[str, list[Any]] | None) -> set[str]:
+    """Normalized texts already in the writable memory layer."""
+    texts: set[str] = set()
+    if not memory:
+        return texts
+    for item in memory.get("recorded_facts") or []:
+        texts.add(_norm_grounding_text(item.get("text")))
+    for item in memory.get("recorded_findings") or []:
+        texts.add(_norm_grounding_text(item.get("title")))
+    for item in memory.get("open_questions") or []:
+        texts.add(_norm_grounding_text(item.get("text")))
+    texts.discard("")
+    return texts
+
+
+def _summary_not_in_memory(
+    summary: dict[str, Any],
+    memory: dict[str, list[Any]] | None,
+) -> dict[str, Any] | None:
+    """Keep the deterministic summary only for facts memory does not already hold.
+
+    ``summary`` is engine-derived (source_run_id); ``agent_memory`` is what the
+    model wrote (with ids). Sending both copies of the same sentence is stacking,
+    not grounding. Memory wins because the model can update/resolve it. Summary
+    fills gaps the model has not recorded yet. Limitations always stay — they
+    are coverage, not notes.
+    """
+    covered = _memory_texts(memory)
+    if not covered:
+        if not any(summary.get(k) for k in ("known_facts", "findings", "open_questions", "limitations")):
+            return None
+        return summary
+    facts = [f for f in (summary.get("known_facts") or [])
+             if _norm_grounding_text(f.get("text")) not in covered]
+    findings = [f for f in (summary.get("findings") or [])
+                if _norm_grounding_text(f.get("title")) not in covered
+                and _norm_grounding_text(f.get("interpretation")) not in covered]
+    questions = [q for q in (summary.get("open_questions") or [])
+                 if _norm_grounding_text(q) not in covered]
+    limitations = list(summary.get("limitations") or [])
+    if not facts and not findings and not questions and not limitations:
+        return None
+    return {
+        "known_facts": facts,
+        "findings": findings,
+        "open_questions": questions,
+        "limitations": limitations,
+    }
+
+
 def _clip_marked(text: str, cap: int) -> str:
     """Bound text with an EXPLICIT truncation marker (never a silent cut)."""
     if len(text) <= cap:
@@ -206,11 +264,18 @@ def _replay_tools(activity: list[dict[str, Any]] | None) -> list[str]:
     return lines
 
 
-def _replay_message(m: dict[str, Any], max_chars: int = _MAX_REPLAY_MSG) -> dict[str, Any]:
+def _replay_message(m: dict[str, Any], max_chars: int = _MAX_REPLAY_MSG,
+                    answer_chars: int = _MAX_REPLAY_ANSWER) -> dict[str, Any]:
     """One replayed message: role + clipped content, plus a bounded tools_run
-    trace for assistant turns (cross-turn continuity of what was already probed)."""
+    trace for assistant turns (cross-turn continuity of what was already probed).
+
+    User Directions keep the elastic Direction cap. Assistant Work Results are
+    digested: the full answer already lives in the document and in
+    agent_memory / conversation_summary; replaying it restates that bill.
+    """
+    cap = answer_chars if m.get("role") == "assistant" else max_chars
     out = {"role": m.get("role"),
-           "content": _clip_marked(redact_text(str(m.get("content", ""))), max_chars)}
+           "content": _clip_marked(redact_text(str(m.get("content", ""))), cap)}
     if m.get("role") == "assistant":
         tools = _replay_tools(m.get("tool_activity"))
         if tools:
@@ -423,8 +488,9 @@ def build_session_context(
     ``summary`` and ``agent_memory`` (already folded into that summary) and
     replays only messages after ``through_seq``. ``storage_task_context``
     stays — machine state can change after compaction. Uncompacted turns
-    still send summary + agent_memory + the elastic replay, which is the
-    live grounding those layers exist for.
+    send agent_memory (writable, with ids) plus a deterministic summary
+    only for facts the model has not already recorded, and replay
+    Directions in full with assistant turns as a digest.
     """
     max_messages, max_replay_msg = _elastic_replay_caps(model, explicit_window)
     conversation_summary: str | None = None
@@ -441,7 +507,11 @@ def build_session_context(
     # still paying twice.
     summary_cap = _elastic_memory_cap(model, explicit_window)
     findings: list[dict[str, Any]] = []
+    memory_block: dict[str, list[Any]] | None = None
     if not compacted:
+        memory_block = _build_agent_memory_block(agent_memory, cap=summary_cap)
+        if not any(memory_block.values()):
+            memory_block = None
         for f in (summary.get("findings") or [])[:summary_cap]:
             findings.append({
                 "severity": str(f.get("severity", "info"))[:32],
@@ -457,7 +527,7 @@ def build_session_context(
     skill = _prompt_active_skill(active_skill, compacted=compacted)
     grounding: dict[str, Any] = {}
     if not compacted:
-        grounding["summary"] = {
+        summary_block = {
             "known_facts": [
                 {"text": redact_text(str(f.get("text", "")))[:300],
                  "confidence": f.get("confidence", "medium"),
@@ -468,8 +538,11 @@ def build_session_context(
             "open_questions": [redact_text(str(q))[:300] for q in (summary.get("open_questions") or [])[:summary_cap]],
             "limitations": [redact_text(str(x))[:300] for x in (summary.get("limitations") or [])[:summary_cap]],
         }
-        grounding["agent_memory"] = _build_agent_memory_block(
-            agent_memory, cap=summary_cap)
+        summary_block = _summary_not_in_memory(summary_block, memory_block)
+        if summary_block:
+            grounding["summary"] = summary_block
+        if memory_block:
+            grounding["agent_memory"] = memory_block
     context = {
         "session": {
             "title": redact_text(str(session.get("title", ""))),
@@ -644,11 +717,6 @@ def _build_prompt(
             "the full text as a file for complete analysis.]"
         )
     prompt_parts.append(f"Direction:\n{msg}")
-    prompt_parts.append(
-        "Write your FULL answer as Markdown prose. If the user asked you to list or "
-        "enumerate items, write out EVERY item the tool returned — all N rows, never "
-        "a sample, never abbreviated with '…'. No metadata block, no JSON contract, "
-        "no hidden chain-of-thought.")
     return "\n\n".join(prompt_parts), skill_names, context
 
 

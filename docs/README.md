@@ -59,7 +59,9 @@
 > icons return to the title bar. Codex Search is a labeled row under New
 > task in the sidebar (command palette). Find is a strip under the title
 > bar on the reading column (⌘F). Compaction summary replaces earlier
-> grounding rather than stacking on it; auto-compaction leaves 40 %
+> grounding rather than stacking on it; uncompacted turns send memory plus
+> a gap-only summary and digest assistant replay; `RunConfig.group_id`
+> routes official OpenAI prompt cache by task; auto-compaction leaves 40 %
 > headroom.
 > No migration (head stays **030**).
 > **v1.13.0 is honesty and completeness.** The MCP bridge executes instead of
