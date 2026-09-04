@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v1.17.1.**
+> **Current baseline: Storage Agent v1.17.2.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -30,6 +30,7 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] The Composer does not paint a persistent keyboard legend (`⏎ Delegate` / `⇧⏎`).
 - [ ] Global navigation is a single chronological Agent Task title list in the sidebar; collapsing it moves the toggle and New task into the title bar.
 - [ ] The New task button is labelled **New task**; ⌘N / Ctrl+N still works and is not painted on the button.
+- [ ] A labeled **Search** sits under New task and opens the command palette (same overlay as ⌘K). It is not an inline list filter.
 - [ ] Task rows support Rename and Delete without turning navigation into a backend-record browser.
 - [ ] Creating/delegating initial work creates a durable Task that remains available after reload/restart.
 

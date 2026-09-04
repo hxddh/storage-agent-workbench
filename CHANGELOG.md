@@ -6,6 +6,10 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.17.2] - 2026-09-04
+
+_Patch — Codex Search on the left, Settings dialog chrome, layered context. No migration (head stays **030**)._ See `docs/releases/1.17.2.md`.
+
 ### Fixed
 
 - **Find** — Codex Search lives on the **left**: a labeled Search under New task in the sidebar opens the command palette (same overlay as ⌘K). The Find icon stays on the left of the title bar; ⌘F opens a find strip under the title bar, on the 46rem reading measure (search, n/n, previous/next, close). It is not inside the scroller and not a corner overlay. A second ⌘F re-selects the query; Enter / Shift+Enter / ⌘G step; Escape closes. The palette stays on the right; the document ghost stays gone.

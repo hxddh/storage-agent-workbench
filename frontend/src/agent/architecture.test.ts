@@ -1411,3 +1411,34 @@ describe("document Find strip and Settings dialog chrome", () => {
     expect(shell).toContain(".native-settings-nav-footer");
   });
 });
+
+/**
+ * v1.17.2 — Codex Search on the left, Settings dialog chrome, layered context.
+ */
+describe("v1.17.2 Codex Search, Settings chrome, context layers", () => {
+  it("puts Search under New task and Find as a reading-column strip", () => {
+    expect(source("./AgentTaskNavigation.tsx")).toContain('data-testid="task-navigation-search"');
+    expect(source("./navigationCopy.ts")).toContain('search: "Search"');
+    expect(source("./navigationCopy.ts")).toContain('search: "搜索"');
+    expect(source("../App.tsx").indexOf("titlebar-find")).toBeLessThan(
+      source("../App.tsx").indexOf("native-titlebar-title"),
+    );
+    expect(source("../components/FindBar.tsx")).toContain("native-find-host");
+    expect(source("./native-document.css")).toMatch(/\.native-find \{[^}]*max-width: 46rem/);
+    expect(source("./native-document.css")).not.toContain("right: 16px");
+    expect(source("../components/TaskDocument.tsx")).not.toContain("task-find-open");
+  });
+
+  it("keeps Settings a container and layers compaction instead of restacking grounding", () => {
+    expect(source("../components/SettingsDialog.tsx")).toContain("native-settings-content-head");
+    expect(source("./native-shell.css")).toContain("@container settings (max-width: 40rem)");
+    expect(source("../../../sidecar/app/agent_runtime/compaction.py")).toContain("TRIGGER_RATIO = 0.6");
+    expect(source("../../../sidecar/app/agent_runtime/prompt.py")).toContain("_summary_not_in_memory");
+    expect(source("../../../sidecar/app/agent_runtime/session_agent.py")).toContain(
+      'group_id=spec.get("session_id")',
+    );
+    expect(source("../../../sidecar/app/agent_runtime/session_agent.py")).not.toMatch(
+      /OpenAIResponsesCompactionSession\(/,
+    );
+  });
+});

@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.17.1.** Codex window on the native Agent shell, patched for queue honesty, Settings container layout, and title-bar Find. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
+> **Current architecture baseline: Storage Agent v1.17.2.** Codex window on the native Agent shell, patched for Search on the left, Settings dialog chrome, and layered context. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -348,8 +348,15 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 ### 6.x Window patch (v1.17.1)
 
 - **Queue honesty.** `task.status.queued[]` and `TaskBanners` drop the execution the client is already following; a `steer_followup` is labeled as itself.
-- **Settings pane.** The dialog is its own container: nav labels do not wrap, the close control sits in a content head (not over the heading), Skills rows wrap identity vs actions, and at a narrow pane the nav becomes a horizontal strip. Provider fields follow the editor (`@container`), not the viewport `sm:` breakpoint.
-- **Find.** Codex Search is a labeled row under New task in the sidebar and opens the command palette. The Find icon stays on the left of the title bar; ⌘F opens a find strip under the title bar on the 46rem reading measure (not in the scroller, not a corner overlay); no document ghost.
+- **Settings pane.** Provider fields follow the editor (`@container`), not the viewport `sm:` breakpoint.
+- **Find discoverability.** Quiet Find and palette icons return to the title bar (⌘F / ⌘K remain). The document ghost Find and empty-start glyph stay gone.
+
+### 6.x Window craft (v1.17.2)
+
+- **Search / Find.** Codex Search is a labeled row under New task and opens the command palette. The Find icon stays on the left of the title bar; ⌘F opens a find strip under the title bar on the 46rem reading measure (not in the scroller, not a corner overlay).
+- **Settings dialog.** The dialog is its own container: nav labels do not wrap, the close control sits in a content head (not over the heading), Skills rows wrap identity vs actions, and at a narrow pane the nav becomes a horizontal strip.
+- **Context layers.** Compaction `conversation_summary` replaces `summary` / `agent_memory` (those keys are omitted); uncompacted turns send writable memory plus a gap-only summary and digest assistant replay; consumed JSON tool results keep scalars and counts; `RunConfig.group_id` is the task id (openai-agents prompt-cache routing). Auto-compaction at 60 % of the window.
+- **Chrome.** Title-bar state sits with the task name; Composer focus is a hairline; Find steps use icons.
 
 ### 6.x True native agent, finished (v1.16.0)
 
@@ -573,7 +580,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.17.1 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.17.2 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
 
 ### Real-Sidecar E2E
 

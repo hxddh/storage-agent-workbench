@@ -1,10 +1,12 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.17.1** (`v1.17.1`).
+> **Current architecture baseline: Storage Agent v1.17.2** (`v1.17.2`).
 > v1.16.0 finished the true native agent; v1.16.1 patched tables, search,
 > wrapping, and a first Codex-grade polish pass. **v1.17.0 is the Codex
 > window** (`docs/releases/1.17.0.md`); **v1.17.1** patches queue honesty,
-> Settings container layout, and title-bar Find (`docs/releases/1.17.1.md`).
+> Settings field sizing, and title-bar Find (`docs/releases/1.17.1.md`);
+> **v1.17.2** puts Codex Search on the left, finishes Settings dialog chrome,
+> and layers context (`docs/releases/1.17.2.md`).
 > The next plan lives in `docs/roadmap.md`.
 >
 > The normative product invariant is: **the Agent Task is the application**.
@@ -56,8 +58,9 @@
 > / Work Result.
 > **v1.17.1 patches that window.** Queued banners never reprint the live
 > Direction; Settings fields follow the editor pane; quiet Find/palette
-> icons return to the title bar. Codex Search is a labeled row under New
-> task in the sidebar (command palette). Find is a strip under the title
+> icons return to the title bar.
+> **v1.17.2 finishes the window craft.** Codex Search is a labeled row under
+> New task in the sidebar (command palette). Find is a strip under the title
 > bar on the reading column (⌘F). Compaction summary replaces earlier
 > grounding rather than stacking on it; uncompacted turns send memory plus
 > a gap-only summary and digest assistant replay; `RunConfig.group_id`
@@ -114,7 +117,7 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
 - [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 030, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — next direction after **v1.17.1**. Delivered history lives in `releases/`.
+- [`roadmap.md`](roadmap.md) — next direction after **v1.17.2**. Delivered history lives in `releases/`.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.
