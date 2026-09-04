@@ -72,7 +72,8 @@ test.describe("Execution detail from the durable log", () => {
     await expect(body.getByTestId("turn-commentary")).toContainText("Reading the bucket configuration first.");
     const group = body.getByTestId("worked-group");
     await expect(group).toBeVisible();
-    await expect(group).toContainText(/Worked for 12s · 3 tool calls/);
+    await expect(group).toContainText(/Worked for 12s/);
+    await expect(group).not.toContainText(/tool calls/);
     if ((await group.getAttribute("data-expanded")) === "false") await group.getByTestId("execution-head").click();
     await expect(group.getByTestId("worked-row")).toHaveCount(3);
     await expect(group.getByTestId("worked-row").first()).toContainText("get_bucket_config_detail");

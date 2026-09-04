@@ -24,19 +24,19 @@ describe("the worked group clock", () => {
     expect(groupSpanMs(records)).toBe(5000);
     expect(groupStartMs(records)).toBe(Date.parse("2026-09-01T10:00:00.000Z"));
     draw(<WorkedGroup records={records} />);
-    expect(screen.getByTestId("execution-head").textContent).toBe("Worked for 5.0s · 2 tool calls");
+    expect(screen.getByTestId("execution-head").textContent).toBe("Worked for 5.0s");
   });
 
   it("falls back to the longest call, not the sum, when stamps are missing", () => {
     const records = [call({ id: "a", duration_ms: 4000 }), call({ id: "b", duration_ms: 3000 })];
     expect(groupSpanMs(records)).toBe(4000);
     draw(<WorkedGroup records={records} />);
-    expect(screen.getByTestId("execution-head").textContent).toBe("Worked for 4.0s · 2 tool calls");
+    expect(screen.getByTestId("execution-head").textContent).toBe("Worked for 4.0s");
   });
 
   it("says nothing about time when no row measured any", () => {
     draw(<WorkedGroup records={[call({ duration_ms: null })]} />);
-    expect(screen.getByTestId("execution-head").textContent).toBe("Worked · 1 tool calls");
+    expect(screen.getByTestId("execution-head").textContent).toBe("Worked");
     expect(groupSpanMs([])).toBeNull();
   });
 

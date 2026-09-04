@@ -53,7 +53,6 @@ export function ApprovalCard({
       aria-label={t("approval.eyebrow")}
     >
       <div className="approval-card-head">
-        <Icon name="shield" size={13} />
         <span>{t("approval.eyebrow")}</span>
       </div>
       <h3 className="approval-card-title">{title}</h3>

@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.10.0.** Native Agent window on a native OS shell. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **028**.
+> **Current architecture baseline: Storage Agent v1.17.0.** Codex window on the native Agent shell. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -95,7 +95,7 @@ Each task row combines:
 - a state mark (Ready paints nothing; Working pulses; Needs decision / Needs attention are status colours);
 - relative time on hover, and Rename / Delete behind one More control.
 
-The list is one chronological sequence by `updated_at`. Section titles, search, pin, duplicate, archive, day buckets and database counters are not painted. The New task control is a button; it does not paint ⌘N. Collapsed, the sidebar has zero width and its toggle + New task move into the title bar.
+The list is chronological by `updated_at`, grouped by day (`dayGroups()`: Today, Yesterday, then dated headers). Search, pin, duplicate, archive and database counters are not painted. The New task control is a button; it does not paint ⌘N. Collapsed, the sidebar has zero width and its toggle + New task move into the title bar.
 
 The Sidecar `/agent-tasks` projection provides durable decision truth so a pending confirmation remains visible after reload/restart even when browser-local runtime state is gone.
 
@@ -104,13 +104,13 @@ The Sidecar `/agent-tasks` projection provides durable decision truth so a pendi
 `frontend/src/agent/AgentShell.tsx` owns the active task environment:
 
 - Artifacts panel open/close state and selection (`agent-artifacts-panel`, a right split; an overlay only under a narrow window), opened from the document or ⌘I;
-- selected Execution inside that sheet.
+- selected Execution inside that panel.
 
 There is no task header inside the document, no live execution strip, and no second presentation mode.
 
 `AgentShell` receives `taskContent: ReactNode`. Its primary area is always the Agent Task.
 
-Review is subordinate to the Task. Opening Review does not create another task, another lifecycle, or another Agent input.
+The Artifacts panel is subordinate to the Task. Opening it does not create another task, another lifecycle, or another Agent input.
 
 ### 3.4 `AgentTask`: public task boundary
 
@@ -126,14 +126,14 @@ Review is subordinate to the Task. Opening Review does not create another task, 
 - attachments (type inferred from filename);
 - Direction and Work Result rendering;
 - real tool rows in the document (`LiveTrace`, one *Worked for …* group);
-- Next Actions / Decisions that require confirmation;
+- inline approval cards (Allow / Allow for this task / Deny) raised by gated tools;
 - find and task viewport behavior.
 
 Historical `sessionId` terminology may appear inside compatibility adapters and API calls. Public product ownership remains `taskId`/Agent Task.
 
 ### 3.5 One Composer
 
-`frontend/src/components/Composer.tsx` is the only Agent input. It is `+` attach + textarea + model chip (`ModelChip`, backed by `/model-providers`; switching activates a provider server-side) + Delegate / Steer / Stop. Shortcuts exist; they are not painted as a persistent legend on the input.
+`frontend/src/components/Composer.tsx` is the only Agent input. It is `+` attach + textarea + model chip (`ModelChip`, backed by `/model-providers`; switching activates a provider server-side) + Delegate / Steer / Stop. Usage (`ContextMeter`) lives in the model menu, not on the Composer bar. Shortcuts exist; they are not painted as a persistent legend on the input. Attachments are keyed by task id. While busy, a present file labels the primary action Delegate (queued Direction), never Steer.
 
 ```text
 no active execution  -> Delegate (round ↑)
@@ -142,7 +142,7 @@ upload preparation   -> preparing/working state
 runtime unavailable  -> truthful disabled/actionable state
 ```
 
-Review or a deep artifact must never mount a hidden second composer.
+The Artifacts panel or a deep artifact must never mount a hidden second composer.
 
 ### 3.6 Presentation layers
 
@@ -188,7 +188,7 @@ The frontend must not downgrade a real confirmation boundary into an ordinary su
 
 A completed assistant-side task event is rendered as Work Result.
 
-Streaming work is Execution; persisted completed output is Work Result. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered — the Task shows one readable record. Work Results can contain structured Markdown, tables, code/config fragments, storage-specific artifacts, metrics, and provenance links into contextual Review.
+Streaming work is Execution; persisted completed output is Work Result. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered — the Task shows one readable record. Work Results can contain structured Markdown, tables (whole in the page flow), code/config fragments, storage-specific artifacts, metrics, and provenance links into the Artifacts panel.
 
 ### Artifacts
 
@@ -204,7 +204,7 @@ Streaming work is Execution; persisted completed output is Work Result. Once the
 - **Baselines & Drift** — versioned baselines and Drift reports.
 - **Execution** — persisted executions; one opens as a document (header · *Worked for …* rows · findings · result).
 
-There is no Overview surface, no tabbed Review application, and no engine walls: the panel lists durable referents and shows one document at a time, with a back control. It is not an independent application destination.
+There is no Overview surface, no tabbed application, and no engine walls: the panel lists durable referents and shows one document at a time, with a back control. It is not an independent application destination. It replaced the historical Review sheet.
 
 ## 5. Runtime state and task concurrency
 
@@ -327,6 +327,13 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
   status only.
 - **Tool timing.** Tool records and `tool.*` events carry `started_at` /
   `finished_at` / `duration_ms`; *Worked for …* is the group's wall clock.
+
+### 6.x Codex window (v1.17.0)
+
+- **Quiet chrome.** ContextMeter lives in the model menu; the title bar is name + state (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is the keyboard bar only.
+- **Transcript craft.** User bubble is a quiet fill (no border, no shadow); approval is sentence-case *Waiting for approval* with a hairline; *Worked for {t}* carries no tool-call count on the head.
+- **Work language.** Artifacts says Execution, not Runs; empty fallback and prompt frame a Direction, not a question; aria is Direction / Work Result.
+- **Composer honesty.** Attachments are per-task; a file while busy is labeled Delegate, never Steer.
 
 ### 6.x True native agent, finished (v1.16.0)
 
@@ -536,7 +543,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 - one Agent input: attach + text + model chip + Delegate / Steer / Stop, with the contract placeholders;
 - Direction / Execution (*Worked for …* group) / Work Result as one document without chat chrome;
 - the empty start as greeting + Composer, no wizard or SKU catalog;
-- explicit Decision boundaries with impact and Decline;
+- explicit Decision boundaries with impact and Deny;
 - the Artifacts panel limited to Evidence / Reports / Plans / Baselines & Drift / Execution detail;
 - Settings as a dialog of model + storage + general + safety;
 - sequence-only stream recovery and settled-execution catch-up;
@@ -550,7 +557,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.09 and prevents current product docs from drifting back toward retired information architecture.
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.17.0 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
 
 ### Real-Sidecar E2E
 
@@ -563,7 +570,7 @@ Playwright validates real Sidecar-backed behavior including:
 - evidence/file analysis;
 - Decisions and confirmation flows;
 - task navigation/drafts/paging;
-- contextual Review and Report artifacts;
+- Artifacts panel and Report artifacts;
 - localization, accessibility, contrast, narrow layouts;
 - credential sanitization.
 

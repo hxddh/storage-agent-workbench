@@ -1,6 +1,6 @@
 # Design tokens
 
-> **Storage Agent v1.10.0.** Presentation contract for the native Agent
+> **Storage Agent v1.17.0.** Presentation contract for the native Agent
 > window. Tokens do not invent runtime state, progress, or capabilities.
 
 v1.09 replaces the v1.04–v1.08 warm/orange system with one achromatic surface
@@ -32,7 +32,7 @@ edges `--edge #2a2a2a`, `--edge-strong #3d3d3d`. Light mirrors the ladder from `
 Ink: `--gray-100` strongest … `--gray-500` faintest. No `--gray-600/700`.
 
 Primary: `--accent` is **ink**, not a hue — `#ececec` on dark, `#0d0d0d` on
-light — with `--accent-fg` the opposing canvas. Filled controls (send, Approve,
+light — with `--accent-fg` the opposing canvas. Filled controls (send, Allow,
 primary buttons) are the only places it is used as a fill. `--accent-soft` is
 the hover step; `--accent-dim` a faint tint.
 

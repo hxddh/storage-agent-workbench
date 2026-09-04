@@ -331,8 +331,7 @@
   display: none;
 }
 
-/* Context meter beside the model chip: a ring and a percentage, only when the
- * runtime reported a window to measure against. */
+/* Context meter: lives in the model menu (v1.17), not on the Composer bar. */
 .native-context-meter {
   display: inline-flex;
   height: 28px;
@@ -637,7 +636,7 @@
 .native-settings-dot { display: inline-block; width: 6px; height: 6px; flex-shrink: 0; border-radius: 999px; background: var(--gray-500); }
 .native-settings-dot[data-on="true"] { background: var(--success); }
 .native-settings-card[data-enabled="true"] .native-settings-dot { background: var(--success); }
-.native-settings-tag { display: inline-flex; align-items: center; border: 1px solid var(--edge); border-radius: 999px; padding: 1px 7px; color: var(--gray-300); font-size: var(--text-2xs); }
+.native-settings-tag { display: inline-flex; align-items: center; border: 1px solid var(--edge); border-radius: var(--radius-md); padding: 1px 7px; color: var(--gray-300); font-size: var(--text-2xs); }
 .native-settings-tag[data-tone="ok"] { color: var(--success); border-color: var(--success-border); }
 .native-settings-tag[data-tone="warn"] { color: var(--warn); border-color: var(--warn-border); }
 .native-settings-editor { margin-bottom: 20px; border: 1px solid var(--edge); border-radius: var(--radius-xl); padding: 14px 16px 12px; background: var(--panel); }

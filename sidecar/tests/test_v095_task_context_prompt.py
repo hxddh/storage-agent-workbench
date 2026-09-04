@@ -53,7 +53,7 @@ def _stable_from_prompt(prompt: str) -> str:
     idx = prompt.find(marker)
     assert idx >= 0
     rest = prompt[idx:]
-    for cut in ("\n\nUser question:", "\n\nattached_files"):
+    for cut in ("\n\nDirection:", "\n\nattached_files"):
         at = rest.find(cut)
         if at > 0:
             rest = rest[:at]

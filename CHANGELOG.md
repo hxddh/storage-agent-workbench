@@ -6,9 +6,21 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
-- **v1.17.0 plan** — Codex window: UI/UE replicate Codex's quiet Agent surface
-  (chrome, transcript rhythm, Composer craft) while remaining a storage Agent.
-  Findings and workstreams in `docs/roadmap.md`. No migration (head stays **030**).
+## [1.17.0] - 2026-09-04
+
+_Codex window — quiet chrome, work language, transcript craft. No migration (head stays **030**)._ See `docs/releases/1.17.0.md`.
+
+### Fixed
+
+- **Canonical docs** — product, architecture, CLAUDE, tokens, security, and data-model describe the transcript + Artifacts + Allow/Deny window; architecture banner is v1.17.0 / migration **030**; day groups are painted; documentation contract fails retired IA as current.
+- **Work language** — Artifacts says Execution, not Runs; empty Work Result invites another Direction; the prompt frames Direction / Task / turns; aria is Direction / Work Result.
+- **Quiet chrome** — ContextMeter lives in the model menu; title bar is name + state; Find and the palette are keyboard; empty start is greeting + Composer with no glyph.
+- **Transcript craft** — user bubble is a quiet fill; approval is sentence-case hairline *Waiting for approval*; *Worked for {t}* carries no tool-call count on the head; Find highlight uses the selection token.
+- **Composer honesty** — attachments are per-task; a file while busy is labeled Delegate, never Steer.
+
+### Added
+
+- Contracts: `architecture.test.ts` v1.17 block, `components/v117.test.tsx`, `tests/test_v117_codex_window.py`; documentation contract at v1.17.0.
 
 ## [1.16.1] - 2026-09-03
 

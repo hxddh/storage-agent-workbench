@@ -268,20 +268,6 @@ export function TaskDocument({
         >
           {findOpen ? (
             <FindBar query={findQuery} onQuery={setFindQuery} total={matchTotal} index={findIdx} onStep={stepFind} onClose={closeFind} />
-          ) : items.length > 0 ? (
-            <div className="mx-auto mb-2 flex w-full max-w-[46rem] justify-end">
-              <button
-                type="button"
-                onClick={() => setFindOpen(true)}
-                data-testid="task-find-open"
-                aria-label={t("task.find")}
-                title={`${t("task.findHint")} ⌘F`}
-                className="native-ghost-action"
-              >
-                <Icon name="search" size={12} />
-                {t("task.find")}
-              </button>
-            </div>
           ) : null}
           <div ref={contentRef} className="native-document space-y-6">
             {hiddenCount > 0 ? (

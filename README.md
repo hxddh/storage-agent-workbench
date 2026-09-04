@@ -1,6 +1,6 @@
 # Storage Agent
 
-**Current release: v1.10.0**
+**Current release: v1.17.0**
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. Give it a storage goal or problem; it investigates with real read-only tools, remains steerable while it works, stops at explicit confirmation boundaries, and produces durable results backed by reviewable execution and evidence.
 

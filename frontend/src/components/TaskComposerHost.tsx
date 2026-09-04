@@ -14,12 +14,14 @@ export function attachKind(name: string): AttachKind {
 /**
  * The Composer's state for one Task: the draft text (kept per task), the
  * attached file and its detected kind, and the element refs the runner and
- * the palette focus. Switching tasks restores that task's draft, or the text
- * of a Direction that failed while the user was looking at another task.
+ * the palette focus. Switching tasks restores that task's draft and its
+ * attachment; a leftover file never rides onto another Task.
  */
 export function useTaskComposer(sessionId: string | null) {
   const localId = useRef<string | null>(sessionId);
   localId.current = sessionId;
+  const attachments = useRef(new Map<string, { file: File; type: AttachKind | null }>());
+  const attachedRef = useRef<{ file: File; type: AttachKind | null } | null>(null);
   const [text, setTextState] = useState("");
   const setText = (next: string) => {
     setTextState(next);
@@ -30,8 +32,19 @@ export function useTaskComposer(sessionId: string | null) {
   const presetTypeRef = useRef<AttachKind | null>(null);
   const [attached, setAttached] = useState<File | null>(null);
   const [attachType, setAttachType] = useState<AttachKind | null>(null);
+  attachedRef.current = attached ? { file: attached, type: attachType } : null;
 
   useEffect(() => {
+    const prev = localId.current;
+    if (prev && prev !== sessionId) {
+      const cur = attachedRef.current;
+      if (cur) attachments.current.set(prev, cur);
+      else attachments.current.delete(prev);
+    }
+    localId.current = sessionId;
+    const saved = sessionId ? attachments.current.get(sessionId) : undefined;
+    setAttached(saved?.file ?? null);
+    setAttachType(saved?.type ?? null);
     const failed = sessionId ? getSessionRun(sessionId).failedText : null;
     if (failed) {
       setText(failed);
@@ -45,13 +58,16 @@ export function useTaskComposer(sessionId: string | null) {
   const clearAttachment = () => {
     setAttached(null);
     setAttachType(null);
+    if (localId.current) attachments.current.delete(localId.current);
   };
   const onPickFile = (file: File | null) => {
     if (!file) return;
     const preset = presetTypeRef.current;
     presetTypeRef.current = null;
+    const type = preset ?? attachKind(file.name);
     setAttached(file);
-    setAttachType(preset ?? attachKind(file.name));
+    setAttachType(type);
+    if (localId.current) attachments.current.set(localId.current, { file, type });
   };
   const openFilePicker = () => {
     presetTypeRef.current = null;
@@ -72,8 +88,8 @@ export type TaskComposerState = ReturnType<typeof useTaskComposer>;
 
 /**
  * Delegate · Steer · Stop, wired to the one turn runner. An attachment rides
- * the dataset-upload path (a file cannot ride a steer, so with one attached a
- * steer becomes a new delegation once the current execution settles).
+ * the dataset-upload path and cannot ride a steer: with one attached while
+ * busy, the Composer paints Delegate (queued after settle), never Steer.
  */
 export function useComposerActions({
   composer,

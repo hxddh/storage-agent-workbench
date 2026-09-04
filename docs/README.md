@@ -1,8 +1,10 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.16.1** (`v1.16.1`).
-> v1.16.0 finished the true native agent. The plan for the next version is
-> **v1.17.0 — Codex window** (`docs/roadmap.md`).
+> **Current architecture baseline: Storage Agent v1.17.0** (`v1.17.0`).
+> v1.16.0 finished the true native agent; v1.16.1 patched tables, search,
+> wrapping, and a first Codex-grade polish pass. **v1.17.0 is the Codex
+> window** (`docs/releases/1.17.0.md`): UI and UE match Codex's quiet Agent
+> surface. The next plan lives in `docs/roadmap.md`.
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
@@ -46,9 +48,12 @@
 > window denominator, disambiguated approvals, isolated Escape, dismissible
 > errors, backed-off reconnects, a themed last resort, and matching secret
 > shapes.
-> **v1.16.1 is the layout-honesty patch.** Tables render whole, search counts
-> what it finds, wrapping is `break-word`, and a first Codex-grade polish pass
-> lands (40 px title bar, 36 px sidebar rows). No migration.
+> **v1.17.0 is the Codex window.** Title bar is name + state; Find and the
+> palette are keyboard; ContextMeter lives in the model menu; the empty start
+> is greeting + Composer with no glyph; the user bubble is a quiet fill;
+> approval is sentence-case hairline; *Worked for {t}* is wall-clock only;
+> attachments are per-task; copy is Direction / Execution / Work Result.
+> No migration (head stays **030**).
 > **v1.13.0 is honesty and completeness.** The MCP bridge executes instead of
 echoing, the OTel export carries real spans, restart recovery covers waiting
 executions, unknown execution kinds are rejected, compaction chains and
@@ -99,7 +104,7 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
 - [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 030, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — plan for **v1.17.0 — Codex window**. Delivered history lives in `releases/`.
+- [`roadmap.md`](roadmap.md) — next direction after **v1.17.0 — Codex window**. Delivered history lives in `releases/`.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.

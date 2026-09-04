@@ -4,7 +4,6 @@ import { mentionQueryAt, mentionTriggered } from "../lib/mention";
 import { MOD } from "../shortcuts";
 import { Icon } from "./icons";
 import { ModelChip } from "./ModelChip";
-import { ContextMeter } from "./ContextMeter";
 
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
 const formatGiB = (n: number) => `${(n / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
@@ -81,7 +80,6 @@ export function useComposerCopy() {
         model: "模型",
         switchModel: "切换模型",
         openSettings: "打开设置…",
-        readOnly: "只读工具",
       }
     : {
         delegateHint: "Describe the storage work to delegate…",
@@ -96,7 +94,6 @@ export function useComposerCopy() {
         model: "Model",
         switchModel: "Switch model",
         openSettings: "Open settings…",
-        readOnly: "Read-only tools",
       };
 }
 
@@ -223,8 +220,18 @@ export function Composer({
     histIndex.current = null;
     onSend();
   };
+  // A file cannot ride a steer. If one is present while busy, ↑ is Delegate
+  // (queued Direction after settle) — never a lying Steer label.
+  const fileWhileBusy = Boolean(busy && attached);
   const handleSteer = () => {
-    if (!text.trim() || overLimit) return;
+    if (overLimit) return;
+    if (fileWhileBusy) {
+      if (text.trim()) pushHistory(text.trim());
+      histIndex.current = null;
+      onSteer();
+      return;
+    }
+    if (!text.trim()) return;
     pushHistory(text.trim());
     histIndex.current = null;
     onSteer();
@@ -383,7 +390,7 @@ export function Composer({
             histIndex.current = null;
           }
         }}
-        placeholder={busy ? copy.steerHint : copy.delegateHint}
+        placeholder={busy && !attached ? copy.steerHint : copy.delegateHint}
       />
 
       <div className="native-composer-bar">
@@ -399,7 +406,6 @@ export function Composer({
         </button>
 
         <ModelChip onOpenSettings={onOpenSettings} refreshKey={modelRefreshKey} disabled={busy} />
-        <ContextMeter />
         {showCount ? (
           <span
             className="native-composer-count"
@@ -417,11 +423,12 @@ export function Composer({
               <button
                 type="button"
                 onClick={handleSteer}
-                disabled={!text.trim() || overLimit}
-                aria-label={copy.steerAction}
-                title={overLimit ? t("composer.nearLimit") : `${copy.steerAction} ⏎`}
+                disabled={fileWhileBusy ? overLimit : (!text.trim() || overLimit)}
+                aria-label={fileWhileBusy ? copy.delegateAction : copy.steerAction}
+                title={overLimit ? t("composer.nearLimit") : `${fileWhileBusy ? copy.delegateAction : copy.steerAction} ⏎`}
                 className="native-round"
-                data-primary={text.trim() ? "true" : "false"}
+                data-primary={fileWhileBusy || text.trim() ? "true" : "false"}
+                data-testid={fileWhileBusy ? "composer-delegate-queued" : "composer-steer"}
               >
                 <Icon name="arrowUp" size={16} stroke={2} />
               </button>

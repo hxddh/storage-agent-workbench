@@ -17,14 +17,14 @@ const COPY = {
         reports: "Reports",
         plans: "Plans",
         baselines: "Baselines & Drift",
-        execution: "Runs",
+        execution: "Execution",
       },
       empty: {
         evidence: "No evidence yet — delegate work or attach a file and the Agent will record what it used.",
         reports: "No report yet — ask the Agent for a write-up in the Composer.",
         plans: "No remediation plan yet — ask the Agent to draft one.",
         baselines: "No baseline yet — ask the Agent to capture one.",
-        execution: "No runs yet — delegate something above and runs will appear here.",
+        execution: "No executions yet — delegate work above and they will appear here.",
       },
       report: "Task report",
       plan: {
@@ -102,8 +102,8 @@ const COPY = {
         execution: "执行记录",
       },
       empty: {
-        evidence: "还没有证据——在输入框里委派工作或附加文件，Agent 会记下它用过的依据。",
-        reports: "还没有报告——在输入框里请 Agent 写一份。",
+        evidence: "还没有证据——在 Composer 里委派工作或附加文件，Agent 会记下它用过的依据。",
+        reports: "还没有报告——在 Composer 里请 Agent 写一份。",
         plans: "还没有整改方案——请 Agent 起草一份。",
         baselines: "还没有基线——请 Agent 记录一条。",
         execution: "还没有执行记录——在上方委派工作，执行会出现在这里。",
