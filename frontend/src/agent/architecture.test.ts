@@ -1105,6 +1105,7 @@ describe("v1.15.0 true native agent", () => {
     const task = source("../components/AgentTaskImplementation.tsx");
     expect(app).toContain('data-testid="titlebar-find"');
     expect(app).toContain('data-testid="titlebar-palette"');
+    expect(app.indexOf("titlebar-find")).toBeLessThan(app.indexOf("native-titlebar-title"));
     expect(doc).not.toContain('data-testid="task-find-open"');
     expect(task).toContain("openFind");
     expect(task).toContain("setFindOpen(true)");
@@ -1326,6 +1327,7 @@ describe("v1.17.0 Codex window", () => {
     const app = source("../App.tsx");
     expect(app).toContain("titlebar-find");
     expect(app).toContain("titlebar-palette");
+    expect(app.indexOf("titlebar-find")).toBeLessThan(app.indexOf("native-titlebar-title"));
     expect(source("../components/TaskDocument.tsx")).not.toContain("task-find-open");
     expect(source("../components/AgentTaskImplementation.tsx")).not.toContain("start-mark");
   });
@@ -1394,6 +1396,7 @@ describe("document Find strip and Settings dialog chrome", () => {
     expect(css).not.toContain("right: 16px");
     expect(doc).toContain("focusTick={findFocusTick}");
     expect(doc).not.toContain("matches(event, \"find\")");
+    expect(source("../App.tsx").indexOf("titlebar-find")).toBeLessThan(source("../App.tsx").indexOf("native-titlebar-title"));
   });
 
   it("sizes the Settings dialog as a container and keeps the close control out of the heading", () => {

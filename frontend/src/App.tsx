@@ -39,9 +39,8 @@ function storedNavigationWidth(): number {
   return Number.isFinite(raw) && raw > 0 ? clampTaskNavigationWidth(raw) : DEFAULT_TASK_NAV_WIDTH;
 }
 
-/** Window title row over the document: the task name, its real state,
- * and the two quiet discovery entries (Find in task, commands/tasks).
- * ⌘F / ⌘K remain; the icons are how a native window paints search. */
+/** Window title row over the document: Find on the left (Codex), then
+ * the task name and its real state, then the palette. ⌘F / ⌘K remain. */
 function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew, onFind, onPalette }: {
   task: AgentTaskSummary | null;
   sidebarOpen: boolean;
@@ -74,6 +73,9 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew, on
           </button>
         </>
       ) : null}
+      <button type="button" onClick={onFind} disabled={!task} aria-label={t("task.find")} title={`${t("task.findHint")} ⌘F`} data-testid="titlebar-find" className="native-icon-button">
+        <Icon name="search" size={15} />
+      </button>
       <span className="native-titlebar-title" data-task={task ? "true" : "false"} data-tauri-drag-region>
         <span className="native-titlebar-name">{title}</span>
         {stateLabel ? (
@@ -83,9 +85,6 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew, on
           </span>
         ) : null}
       </span>
-      <button type="button" onClick={onFind} disabled={!task} aria-label={t("task.find")} title={`${t("task.findHint")} ⌘F`} data-testid="titlebar-find" className="native-icon-button">
-        <Icon name="search" size={15} />
-      </button>
       <button type="button" onClick={onPalette} aria-label={t("task.palette")} title={`${t("task.paletteHint")} ⌘K`} data-testid="titlebar-palette" className="native-icon-button">
         <Icon name="command" size={15} />
       </button>

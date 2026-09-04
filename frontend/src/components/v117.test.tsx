@@ -23,9 +23,10 @@ describe("v1.17 Codex window", () => {
     expect(source("./ModelChip.tsx")).toContain("native-model-menu-meter");
   });
 
-  it("paints quiet Find and palette on the title bar, not the document", () => {
+  it("paints Find on the left of the title bar, palette on the right", () => {
     expect(source("../App.tsx")).toContain("titlebar-find");
     expect(source("../App.tsx")).toContain("titlebar-palette");
+    expect(source("../App.tsx").indexOf("titlebar-find")).toBeLessThan(source("../App.tsx").indexOf("native-titlebar-title"));
     expect(source("./TaskDocument.tsx")).not.toContain("task-find-open");
     expect(source("./AgentTaskImplementation.tsx")).not.toContain("start-mark");
     expect(source("../agent/native-document.css")).not.toContain("native-start-mark");

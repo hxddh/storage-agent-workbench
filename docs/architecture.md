@@ -75,7 +75,7 @@ The packaged Tauri launcher chooses a free localhost port, generates a per-launc
 - durable task list refresh;
 - active task identity;
 - task lifecycle actions (create/rename/delete);
-- the window title bar (task name + real task state; quiet Find / palette icons; the sidebar toggle and New task when the sidebar is collapsed) and the OS window title;
+- the window title bar (Find on the left, then task name + real task state, then the palette; the sidebar toggle and New task when the sidebar is collapsed) and the OS window title;
 - the Settings dialog, command palette, and shortcuts sheet;
 - **one command handler** (`runCommand`) that the keyboard, the palette and the native menu all dispatch through, with a short de-duplication window so a menu accelerator and a keydown for one keypress are one command;
 - the shell bridge (`hooks/useNativeAgent.ts` → `useNativeShell`): menu commands, deep links, the summon shortcut, notifications on background settle (`useSettleNotifications`, driven by the per-task run store), and the window title. A plain browser is a no-op.
@@ -332,7 +332,7 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 
 ### 6.x Codex window (v1.17.0)
 
-- **Quiet chrome.** ContextMeter lives in the model menu; the title bar is name + state plus quiet Find / palette icons (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is a strip under the title bar on the reading column, not a document ghost and not a corner overlay.
+- **Quiet chrome.** ContextMeter lives in the model menu; the title bar is Find on the left, then name + state, then the palette (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is a strip under the title bar on the reading column, not a document ghost and not a corner overlay.
 - **Queue honesty.** `task.status.queued[]` can name the execution the client is already following; queued banners drop that row (and a just-submitted Direction that the live bubble already paints). A `steer_followup` waiting behind the current Execution is labeled as itself, not a second Direction.
 - **Settings pane.** Provider fields follow the editor's inline size (`@container`), not the viewport `sm:` breakpoint.
 - **Transcript craft.** User bubble is a quiet fill (no border, no shadow); approval is sentence-case *Waiting for approval* with a hairline; *Worked for {t}* carries no tool-call count on the head.
@@ -343,7 +343,7 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 
 - **Queue honesty.** `task.status.queued[]` and `TaskBanners` drop the execution the client is already following; a `steer_followup` is labeled as itself.
 - **Settings pane.** The dialog is its own container: nav labels do not wrap, the close control sits in a content head (not over the heading), Skills rows wrap identity vs actions, and at a narrow pane the nav becomes a horizontal strip. Provider fields follow the editor (`@container`), not the viewport `sm:` breakpoint.
-- **Find.** Quiet title-bar Find / palette icons; ⌘F opens a find strip under the title bar on the 46rem reading measure (not in the scroller, not a corner overlay); no document ghost.
+- **Find.** Find icon on the left of the title bar; ⌘F opens a find strip under the title bar on the 46rem reading measure (not in the scroller, not a corner overlay); no document ghost.
 
 ### 6.x True native agent, finished (v1.16.0)
 

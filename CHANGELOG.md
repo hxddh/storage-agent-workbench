@@ -8,7 +8,7 @@ follow semantic versioning once it reaches 1.0.
 
 ### Fixed
 
-- **Find** — ⌘F opens a find strip under the title bar, on the 46rem reading measure (search, n/n, previous/next, close). It is not inside the scroller and not a corner overlay. A second ⌘F re-selects the query; Enter / Shift+Enter / ⌘G step; Escape closes. Title-bar Find / palette icons stay for discoverability; the document ghost stays gone.
+- **Find** — the Find icon sits on the left of the title bar (Codex). ⌘F opens a find strip under the title bar, on the 46rem reading measure (search, n/n, previous/next, close). It is not inside the scroller and not a corner overlay. A second ⌘F re-selects the query; Enter / Shift+Enter / ⌘G step; Escape closes. The palette stays on the right; the document ghost stays gone.
 - **Settings** — the dialog is its own container: nav labels no longer wrap, the close control sits in a content head instead of overlapping the heading, Skills/Instructions/Observability rows wrap identity vs actions, and a narrow pane stacks the nav into a tab strip.
 - **Context economy** — grounding is layered: a compaction `conversation_summary` replaces earlier turns *and* the `summary` / `agent_memory` blocks (those keys are omitted), while `storage_task_context` stays. Uncompacted turns still carry the full skill method in the cacheable half; compacted turns keep the skill name only. Auto-compaction fires at 60 % of the window so the next investigation has headroom. Safety rules and `load_tools` groups stay complete.
 - **Chrome** — title-bar state sits with the task name; Composer focus is a hairline, not a heavy pop shadow; Find steps use icons.

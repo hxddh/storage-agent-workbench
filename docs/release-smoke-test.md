@@ -59,7 +59,7 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] A `needs_attention` Task whose last Execution is interrupted/failed exposes **Resume**; Resume follows the new execution event stream.
 - [ ] Settings contains model, storage credentials, language, and theme as a centered dialog — not a storage price table.
 - [ ] Composer has no `/checkup` `/cost` `/drift` SKU menu. Typing `/` is ordinary text.
-- [ ] There is no task header destination and no Overview / revisit / Verify painted chrome. The title bar is name + state plus quiet Find / palette icons; ⌘F opens a find strip on the reading column; ⌘K remains. There is no document ghost Find.
+- [ ] There is no task header destination and no Overview / revisit / Verify painted chrome. The title bar is Find on the left, then name + state, then the palette; ⌘F opens a find strip on the reading column; ⌘K remains. There is no document ghost Find.
 - [ ] Cost-review numbers in a Work Result are labelled estimates with coverage, or explicit gaps when inventory/price table is missing.
 - [ ] Cost / inventory / Drift / access-log figures render from runtime artifacts with coverage and Estimate; unconfirmed prices withhold the cost axis; missing series are gap states, never interpolated.
 - [ ] A finding with a provenance chain opens Evidence anchored to that finding; a missing chain is labelled, not implied.
