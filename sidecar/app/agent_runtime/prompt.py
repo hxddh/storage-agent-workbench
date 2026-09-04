@@ -58,11 +58,13 @@ INSTRUCTIONS = (
     "the user's Direction LIVE with your read-only tools — act autonomously, "
     "don't narrate a plan first — and answer from what you find, staying on "
     "what they actually asked.\n"
-    "Context JSON carries the Task goal, a deterministic summary, agent_memory, "
-    "the typed storage_task_context (authoritative: buckets, datasets, evidence "
-    "imports, open decisions — trust it over recent_messages), recent turns, "
-    "configured_providers (use those provider_id values), attached_files, and a "
-    "CATALOG of StorageOps skills — load a matching method with read_skill(name).\n"
+    "Context JSON: session, configured_providers, attached_files, a CATALOG of "
+    "StorageOps skills (load a matching method with read_skill(name)), and "
+    "storage_task_context (authoritative: buckets, datasets, evidence imports, "
+    "open decisions). Before compaction it also carries a deterministic summary, "
+    "agent_memory, and recent turns. After compaction, conversation_summary "
+    "replaces earlier turns AND the summary/agent_memory blocks — those keys are "
+    "omitted; trust the summary plus storage_task_context plus the replayed tail.\n"
     "Visible tools are the CORE set. Specialist tools live in groups you unlock "
     "with load_tools(group) when the Direction needs them; they become callable "
     "on your next step. Unlock only what you will use. Groups:\n"
@@ -270,13 +272,6 @@ _STABLE_CONTEXT_KEYS = ("session", "summary", "agent_memory", "active_skill",
 # investigation follows a method, and carrying a second doubles the cost to cover
 # a case the agent can still reach with read_skill.
 _ACTIVE_SKILL_CAP = 1
-# The method body is ~3,300 chars. Riding the full text in the stable half every
-# turn after the agent has already applied it is waste; the outline is enough to
-# keep going, and read_skill still returns the rest.
-_ACTIVE_SKILL_METHOD_CAP = 1200
-# After compaction, conversation_summary already holds facts/findings/questions.
-# Re-sending the full elastic memory tail next to it triple-pays the same ground.
-_COMPACTED_MEMORY_CAP = 8
 
 
 def _latest_task_context(conn: Any, session_id: str | None) -> dict[str, Any] | None:
@@ -353,20 +348,24 @@ def active_skill_block(conn: Any, session_id: str | None) -> dict[str, Any] | No
                     "already here, do not read_skill it again."}
 
 
-def _clip_active_skill(skill: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Bound the carried skill method so the stable half does not re-bill a
-    full SKILL.md on every step. The agent can still read_skill for the rest."""
+def _prompt_active_skill(skill: dict[str, Any] | None, *, compacted: bool) -> dict[str, Any] | None:
+    """What of a loaded skill rides in the prompt.
+
+    Uncompacted: the full method, in the cacheable half — cheaper than a
+    re-read every turn (v0.54). Compacted: the method lived in turns the
+    summary already folded; keep the name so the agent does not guess, and
+    let it read_skill only if it needs the body again. Truncating the body
+    to a random char cap is neither complete nor cheap.
+    """
     if not skill:
         return None
-    method = str(skill.get("method") or "")
-    if len(method) <= _ACTIVE_SKILL_METHOD_CAP:
+    if not compacted:
         return skill
-    clipped = dict(skill)
-    omitted = len(method) - _ACTIVE_SKILL_METHOD_CAP
-    clipped["method"] = method[:_ACTIVE_SKILL_METHOD_CAP] + (
-        f" [TRUNCATED: {omitted} more characters cut; read_skill for the rest]"
-    )
-    return clipped
+    return {
+        "name": skill.get("name"),
+        "note": "You loaded this skill earlier. conversation_summary folded the "
+                "method; read_skill only if you need the full text again.",
+    }
 
 
 def split_context_for_cache(context: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -419,9 +418,14 @@ def build_session_context(
 ) -> dict[str, Any]:
     """Bounded, redacted context — the ONLY thing the model sees.
 
-    ``compaction`` (v1.12) is the latest ``{summary, through_seq}`` the
-    compaction step wrote: the summary rides in the stable half and only the
-    messages AFTER ``through_seq`` are replayed."""
+    Grounding is layered, not stacked. ``conversation_summary`` (when the
+    compaction step has run) *is* the earlier thread: the prompt then omits
+    ``summary`` and ``agent_memory`` (already folded into that summary) and
+    replays only messages after ``through_seq``. ``storage_task_context``
+    stays — machine state can change after compaction. Uncompacted turns
+    still send summary + agent_memory + the elastic replay, which is the
+    live grounding those layers exist for.
+    """
     max_messages, max_replay_msg = _elastic_replay_caps(model, explicit_window)
     conversation_summary: str | None = None
     if compaction and compaction.get("summary"):
@@ -430,33 +434,30 @@ def build_session_context(
         if through is not None:
             recent_messages = [m for m in recent_messages
                                if m.get("seq") is None or int(m["seq"]) > int(through)]
-    # The deterministic grounding summary scales with the window too (floored at
-    # the historical 50) — agent_memory already went elastic; leaving these flat
-    # clipped exactly the grounding a large-context model needs on big sessions.
+    compacted = bool(conversation_summary)
+    # Deterministic summary + agent_memory scale with the window when they
+    # are the live grounding. After compaction they are omitted, not capped
+    # — a short tail next to a summary that already holds the same facts is
+    # still paying twice.
     summary_cap = _elastic_memory_cap(model, explicit_window)
-    if conversation_summary:
-        summary_cap = min(_COMPACTED_MEMORY_CAP, summary_cap)
-    findings = []
-    for f in (summary.get("findings") or [])[:summary_cap]:
-        findings.append({
-            "severity": str(f.get("severity", "info"))[:32],
-            "confidence": str(f.get("confidence", "medium"))[:16],
-            "title": redact_text(str(f.get("title", "")))[:200],
-            "interpretation": redact_text(str(f.get("interpretation", "")))[:300],
-            "source_run_id": str(f.get("source_run_id") or "")[:64],
-        })
+    findings: list[dict[str, Any]] = []
+    if not compacted:
+        for f in (summary.get("findings") or [])[:summary_cap]:
+            findings.append({
+                "severity": str(f.get("severity", "info"))[:32],
+                "confidence": str(f.get("confidence", "medium"))[:16],
+                "title": redact_text(str(f.get("title", "")))[:200],
+                "interpretation": redact_text(str(f.get("interpretation", "")))[:300],
+                "source_run_id": str(f.get("source_run_id") or "")[:64],
+            })
     replayed = [_replay_message(m, max_replay_msg)
                 for m in recent_messages[-max_messages:]]
     _dedupe_replay_tools(replayed)
     typed = _prompt_task_context(task_context)
-    clipped_skill = _clip_active_skill(active_skill)
-    context = {
-        "session": {
-            "title": redact_text(str(session.get("title", ""))),
-            "goal": redact_text(str(session.get("goal") or "")),
-            "status": session.get("status", "active"),
-        },
-        "summary": {
+    skill = _prompt_active_skill(active_skill, compacted=compacted)
+    grounding: dict[str, Any] = {}
+    if not compacted:
+        grounding["summary"] = {
             "known_facts": [
                 {"text": redact_text(str(f.get("text", "")))[:300],
                  "confidence": f.get("confidence", "medium"),
@@ -465,30 +466,21 @@ def build_session_context(
             ],
             "findings": findings,
             "open_questions": [redact_text(str(q))[:300] for q in (summary.get("open_questions") or [])[:summary_cap]],
-            # NOTE: the deterministic rule-engine "next_actions" menu is intentionally
-            # NOT injected — the agent proposes its own next steps. (Removed in v0.20.)
             "limitations": [redact_text(str(x))[:300] for x in (summary.get("limitations") or [])[:summary_cap]],
+        }
+        grounding["agent_memory"] = _build_agent_memory_block(
+            agent_memory, cap=summary_cap)
+    context = {
+        "session": {
+            "title": redact_text(str(session.get("title", ""))),
+            "goal": redact_text(str(session.get("goal") or "")),
+            "status": session.get("status", "active"),
         },
-        # Things YOU recorded in earlier turns of this session (via note_fact /
-        # record_finding / note_open_question). Reuse them; don't re-derive.
-        "agent_memory": _build_agent_memory_block(
-            agent_memory, cap=summary_cap),
-        # The skill method this session is working from, carried across turns so
-        # it is not re-read every turn (v0.55.0). In the STABLE half, so a caching
-        # endpoint serves it instead of re-billing it.
-        **({"active_skill": clipped_skill} if clipped_skill else {}),
-        # Typed Storage Task Context (v0.95): authoritative machine state. Lives
-        # in the STABLE half with the skill catalog / providers so a prompt-cache
-        # hit survives across turns until the context version actually changes.
+        **grounding,
+        **({"active_skill": skill} if skill else {}),
         **({"storage_task_context": typed} if typed else {}),
-        # v1.12 — the compaction step's continuation summary: what the earlier
-        # turns established, so the replay below can start after them.
         **({"conversation_summary": conversation_summary} if conversation_summary else {}),
-        # Prior assistant turns carry a `tools_run` trace of the read-only probes
-        # they already ran (bounded) — so this turn sees what was checked and
-        # re-fetches only what it needs fuller detail on, instead of re-probing.
         "recent_messages": replayed,
-        # NOTE: safety rules live ONCE in the instructions — not re-injected here.
     }
     guardrails.assert_no_secrets_in_context(context)
     return context
@@ -535,9 +527,7 @@ def _prompt_task_context(doc: dict[str, Any] | None) -> dict[str, Any] | None:
         "memory_counts": {
             str(k)[:32]: int(v) for k, v in (doc.get("memory_counts") or {}).items()
         } if isinstance(doc.get("memory_counts"), dict) else {},
-        "note": ("Authoritative machine state for this task. Use buckets_in_focus, "
-                 "attached_datasets, evidence_imports, and open_decisions from here "
-                 "instead of re-deriving them from recent_messages."),
+        "note": "Authoritative machine state. Prefer this over recent_messages.",
     }
 
 

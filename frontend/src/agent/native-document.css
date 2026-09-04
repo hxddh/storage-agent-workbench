@@ -343,22 +343,22 @@
 
 .native-queued { opacity: 0.85; }
 
-/* Find — Codex overlay at the top-right of the document column, not an
-   in-flow 46rem card. Hairline + quiet elevation; the scroller is untouched. */
-.native-find {
-  position: absolute;
-  top: 10px;
-  right: 16px;
-  z-index: 30;
-  display: flex;
-  width: min(20rem, calc(100% - 32px));
-  align-items: center;
-  gap: 6px;
-  padding: 4px 4px 4px 10px;
-  border: 1px solid var(--edge-strong);
-  border-radius: var(--radius-lg);
+/* Find — a strip under the title bar, on the 46rem reading measure.
+   Not inside the scroller (that stole layout and fought sticky) and not a
+   corner overlay (that hid the field from the document the user is reading). */
+.native-find-host {
+  flex: none;
+  border-bottom: 1px solid var(--edge);
   background: var(--panel);
-  box-shadow: var(--shadow-elev);
+}
+.native-find {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 46rem;
+  height: 36px;
+  margin: 0 auto;
+  padding: 0 24px;
 }
 .native-find-status {
   flex: none;

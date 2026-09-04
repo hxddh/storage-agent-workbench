@@ -1,45 +1,50 @@
-"""Context economy: compact earlier, don't triple-pay grounding after a summary."""
+"""Context layers: compaction summary replaces earlier grounding, not stacks on it."""
 
 from app.agent_runtime import compaction, prompt
 
 
-def test_auto_compaction_triggers_at_sixty_percent():
+def test_auto_compaction_leaves_headroom_for_the_next_turn():
     assert compaction.TRIGGER_RATIO == 0.6
 
 
-def test_instructions_stay_shorter_than_the_safety_floor_allows():
-    # The markdown/engine coaching is the paid part we can shorten; every
-    # SAFETY RULE still has to be present in both prompts.
+def test_instructions_keep_every_safety_rule():
     for rule in prompt.SESSION_SAFETY_RULES:
         assert rule in prompt.INSTRUCTIONS
         assert rule in prompt.FINALIZE_INSTRUCTIONS
     assert len(prompt.FINALIZE_INSTRUCTIONS) < len(prompt.INSTRUCTIONS) * 0.7
 
 
-def test_compaction_summary_does_not_resend_the_full_memory_tail():
+def test_compaction_summary_replaces_summary_and_memory():
     facts = [{"text": f"fact {i}", "confidence": "high"} for i in range(40)]
     memory = [{"id": str(i), "kind": "fact", "text": f"mem {i}", "confidence": "high"}
               for i in range(40)]
-    fat = prompt.build_session_context(
+    live = prompt.build_session_context(
         {"title": "t", "goal": "g", "status": "active"},
         {"known_facts": facts, "findings": [], "open_questions": [], "limitations": []},
         [{"role": "user", "content": "q", "seq": 10}],
         agent_memory=memory,
+        active_skill={"name": "storageops-triage", "method": "M" * 4000,
+                      "note": "do not read_skill it again"},
     )
-    assert len(fat["summary"]["known_facts"]) == 40
-    assert len(fat["agent_memory"]["recorded_facts"]) == 40
+    assert len(live["summary"]["known_facts"]) == 40
+    assert len(live["agent_memory"]["recorded_facts"]) == 40
+    assert live["active_skill"]["method"] == "M" * 4000
 
     compact = prompt.build_session_context(
         {"title": "t", "goal": "g", "status": "active"},
         {"known_facts": facts, "findings": [], "open_questions": [], "limitations": []},
         [{"role": "user", "content": "q", "seq": 10}],
         agent_memory=memory,
+        active_skill={"name": "storageops-triage", "method": "M" * 4000,
+                      "note": "do not read_skill it again"},
         compaction={"summary": "Earlier work established the bucket is private.",
                     "through_seq": 9},
     )
     assert compact["conversation_summary"].startswith("Earlier work")
-    assert len(compact["summary"]["known_facts"]) <= prompt._COMPACTED_MEMORY_CAP
-    assert len(compact["agent_memory"]["recorded_facts"]) <= prompt._COMPACTED_MEMORY_CAP
+    assert "summary" not in compact
+    assert "agent_memory" not in compact
+    assert compact["active_skill"]["name"] == "storageops-triage"
+    assert "method" not in compact["active_skill"]
     assert "storage_task_context" not in compact
 
     grounded = prompt.build_session_context(
@@ -52,19 +57,5 @@ def test_compaction_summary_does_not_resend_the_full_memory_tail():
         compaction={"summary": "Earlier work established the bucket is private.",
                     "through_seq": 9},
     )
+    assert "summary" not in grounded
     assert grounded["storage_task_context"]["primary_bucket"] == "acme-logs"
-
-
-def test_carried_skill_method_is_clipped_in_the_prompt():
-    method = "M" * 4000
-    ctx = prompt.build_session_context(
-        {"title": "t", "goal": "g", "status": "active"},
-        {"known_facts": [], "findings": [], "open_questions": [], "limitations": []},
-        [{"role": "user", "content": "q"}],
-        active_skill={"name": "storageops-triage", "method": method,
-                      "note": "do not read_skill it again"},
-    )
-    carried = ctx["active_skill"]["method"]
-    assert len(carried) < 1600
-    assert "TRUNCATED" in carried
-    assert carried.startswith("M" * 20)

@@ -1373,24 +1373,25 @@ describe("window follow-up: queue honesty, Settings container, painted Find", ()
 });
 
 /**
- * Codex Find overlay, Settings dialog chrome, earlier compaction.
- * Find is a compact top-right widget (not an in-flow 46rem card); the
- * Settings dialog is its own container so the nav can stack; ⌘F while
- * open re-selects the input.
+ * Find is a strip under the title bar on the reading column (not a
+ * corner overlay and not an in-flow scroller card). Settings dialog is
+ * its own container so the nav can stack; ⌘F while open re-selects.
  */
-describe("Codex Find overlay and Settings dialog chrome", () => {
-  it("renders Find as a compact overlay, not an in-flow card", () => {
+describe("document Find strip and Settings dialog chrome", () => {
+  it("renders Find as a strip on the reading column, not a corner overlay", () => {
     const bar = source("../components/FindBar.tsx");
     const css = source("./native-document.css");
     const doc = source("../components/TaskDocument.tsx");
+    expect(bar).toContain("native-find-host");
     expect(bar).toContain("native-find");
     expect(bar).not.toContain("sticky");
     expect(bar).not.toContain("shadow-pop");
     expect(bar).not.toContain('"↑"');
     expect(bar).toContain('name={dir === 1 ? "arrowDown" : "arrowUp"}');
     expect(bar).toContain("focusTick");
-    expect(css).toContain(".native-find");
-    expect(css).toContain("width: min(20rem");
+    expect(css).toContain(".native-find-host");
+    expect(css).toMatch(/\.native-find \{[^}]*max-width: 46rem/);
+    expect(css).not.toContain("right: 16px");
     expect(doc).toContain("focusTick={findFocusTick}");
     expect(doc).not.toContain("matches(event, \"find\")");
   });

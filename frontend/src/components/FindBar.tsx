@@ -3,7 +3,8 @@ import { useI18n } from "../i18n";
 import { meetsMinQuery, minQueryFor } from "../taskFind";
 import { Icon } from "./icons";
 
-/** Compact Codex-style find overlay for the active Agent task. */
+/** Document find for the active Agent task — a strip under the title bar,
+ * on the reading column, not a corner gadget. */
 export function FindBar({
   query,
   onQuery,
@@ -49,46 +50,48 @@ export function FindBar({
         : "";
 
   return (
-    <div className="native-find" role="search" data-find-skip data-testid="find-bar">
-      <Icon name="search" size={14} className="shrink-0 text-gray-500" />
-      <input
-        ref={inputRef}
-        value={query}
-        onChange={(event) => onQuery(event.target.value)}
-        onKeyDown={(event) => {
-          // v1.16 — stop here: the window closes its top overlay on Escape,
-          // and one keypress must not close both the find bar and the
-          // palette (or Settings) behind it.
-          if (event.key === "Escape") {
-            event.preventDefault();
-            event.stopPropagation();
-            onClose();
-          } else if (event.key === "Enter" || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "g")) {
-            event.preventDefault();
-            event.stopPropagation();
-            onStep(event.shiftKey ? -1 : 1);
-          }
-        }}
-        placeholder={copy.placeholder}
-        aria-label={copy.placeholder}
-        data-testid="find-input"
-        className="min-w-0 flex-1 bg-transparent text-sm text-gray-100 placeholder:text-gray-500 outline-none"
-      />
-      <span className="native-find-status" data-testid="find-status" aria-live="polite">
-        {status}
-      </span>
-      <div className="flex shrink-0 items-center">
-        <FindStep dir={-1} onStep={onStep} disabled={total === 0} label={copy.previous} />
-        <FindStep dir={1} onStep={onStep} disabled={total === 0} label={copy.next} />
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={t("common.close")}
-          data-testid="find-close"
-          className="native-icon-button"
-        >
-          <Icon name="close" size={13} />
-        </button>
+    <div className="native-find-host" data-find-skip>
+      <div className="native-find" role="search" data-testid="find-bar">
+        <Icon name="search" size={14} className="shrink-0 text-gray-500" />
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          onKeyDown={(event) => {
+            // v1.16 — stop here: the window closes its top overlay on Escape,
+            // and one keypress must not close both the find bar and the
+            // palette (or Settings) behind it.
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              onClose();
+            } else if (event.key === "Enter" || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "g")) {
+              event.preventDefault();
+              event.stopPropagation();
+              onStep(event.shiftKey ? -1 : 1);
+            }
+          }}
+          placeholder={copy.placeholder}
+          aria-label={copy.placeholder}
+          data-testid="find-input"
+          className="min-w-0 flex-1 bg-transparent text-sm text-gray-100 placeholder:text-gray-500 outline-none"
+        />
+        <span className="native-find-status" data-testid="find-status" aria-live="polite">
+          {status}
+        </span>
+        <div className="flex shrink-0 items-center">
+          <FindStep dir={-1} onStep={onStep} disabled={total === 0} label={copy.previous} />
+          <FindStep dir={1} onStep={onStep} disabled={total === 0} label={copy.next} />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t("common.close")}
+            data-testid="find-close"
+            className="native-icon-button"
+          >
+            <Icon name="close" size={13} />
+          </button>
+        </div>
       </div>
     </div>
   );

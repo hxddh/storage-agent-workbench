@@ -316,10 +316,12 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
   loop, 60 s ceiling, seam `COMPACT_STEP`) that summarises the sanitized
   replay into ≤ 2 000 redacted chars, stored as a new context version
   (`summary_sanitized`, `summary_through_seq`, migration 030). The prompt
-  builder puts `conversation_summary` in the stable half and replays only
-  later messages; `context.compacted` is appended and the turn starts with a
-  `compacted` item. `POST /agent-tasks/{id}/compact` runs the same step on
-  demand (idle task only). The overflow cut marker stays as the last resort.
+  builder puts `conversation_summary` in the stable half, omits `summary` and
+  `agent_memory` (the summary replaces them), keeps `storage_task_context`,
+  and replays only later messages; `context.compacted` is appended and the
+  turn starts with a `compacted` item. `POST /agent-tasks/{id}/compact` runs
+  the same step on demand (idle task only). The overflow cut marker stays as
+  the last resort.
 - **Instructions file.** `agent_runtime/instructions.py` loads
   `STORAGE_AGENT_DATA_DIR/AGENTS.md` (or `STORAGE_AGENT_INSTRUCTIONS`):
   Markdown only, ≤ 8 000 chars, redacted, injected after the skills catalog in
@@ -330,7 +332,7 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 
 ### 6.x Codex window (v1.17.0)
 
-- **Quiet chrome.** ContextMeter lives in the model menu; the title bar is name + state plus quiet Find / palette icons (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is a compact overlay at the top-right of the document column, not a document ghost.
+- **Quiet chrome.** ContextMeter lives in the model menu; the title bar is name + state plus quiet Find / palette icons (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is a strip under the title bar on the reading column, not a document ghost and not a corner overlay.
 - **Queue honesty.** `task.status.queued[]` can name the execution the client is already following; queued banners drop that row (and a just-submitted Direction that the live bubble already paints). A `steer_followup` waiting behind the current Execution is labeled as itself, not a second Direction.
 - **Settings pane.** Provider fields follow the editor's inline size (`@container`), not the viewport `sm:` breakpoint.
 - **Transcript craft.** User bubble is a quiet fill (no border, no shadow); approval is sentence-case *Waiting for approval* with a hairline; *Worked for {t}* carries no tool-call count on the head.
@@ -341,7 +343,7 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 
 - **Queue honesty.** `task.status.queued[]` and `TaskBanners` drop the execution the client is already following; a `steer_followup` is labeled as itself.
 - **Settings pane.** The dialog is its own container: nav labels do not wrap, the close control sits in a content head (not over the heading), Skills rows wrap identity vs actions, and at a narrow pane the nav becomes a horizontal strip. Provider fields follow the editor (`@container`), not the viewport `sm:` breakpoint.
-- **Find.** Quiet title-bar Find / palette icons; ⌘F opens a compact overlay widget at the top-right of the document column (not an in-flow card); no document ghost.
+- **Find.** Quiet title-bar Find / palette icons; ⌘F opens a find strip under the title bar on the 46rem reading measure (not in the scroller, not a corner overlay); no document ghost.
 
 ### 6.x True native agent, finished (v1.16.0)
 

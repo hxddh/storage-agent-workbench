@@ -99,12 +99,13 @@ describe("the find bar", () => {
     expect(screen.getByTestId("find-status")).toHaveAttribute("aria-live", "polite");
   });
 
-  it("is a compact overlay widget, not a full-width in-flow card", () => {
+  it("is a document strip under the title bar, not a corner overlay", () => {
     bar();
     const host = screen.getByTestId("find-bar");
     expect(host.className).toContain("native-find");
     expect(host.className).not.toContain("sticky");
     expect(host.className).not.toContain("shadow-pop");
+    expect(host.parentElement?.className).toContain("native-find-host");
   });
 
   it("re-selects the input when ⌘F is pressed while it is already open", () => {
