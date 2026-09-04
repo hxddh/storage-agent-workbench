@@ -135,7 +135,7 @@ function requestSignature(body: unknown): string {
 const TITLE_MARKER = "[[storage-agent:title]]";
 
 /** The runtime's compaction step (sidecar `agent_runtime/compaction.py`) is
- * another marked, tool-less request — automatic at 80 % of the window, or on
+ * another marked, tool-less request — automatic at 60 % of the window, or on
  * demand from the palette. Answered out of band like the title step, never
  * consuming a scripted turn. `opts.compaction` is the summary it returns; an
  * empty answer makes the runtime report "nothing to compact". */

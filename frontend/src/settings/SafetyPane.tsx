@@ -98,7 +98,11 @@ export function SafetyPane() {
                     <div className="text-xs leading-relaxed text-gray-500">{tool.why}</div>
                   </div>
                   {tool.action_types.length ? (
-                    <span className="native-settings-tag">{tool.action_types.map((a) => approvalActionLabel(a, t)).join(" · ")}</span>
+                    <span className="native-settings-tags">
+                      {tool.action_types.map((action) => (
+                        <span key={action} className="native-settings-tag">{approvalActionLabel(action, t)}</span>
+                      ))}
+                    </span>
                   ) : null}
                 </li>
               ))}

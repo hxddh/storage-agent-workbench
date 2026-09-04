@@ -55,6 +55,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(app).toContain('import { AgentTaskNavigation } from "./agent/AgentTaskNavigation"');
     expect(app).toContain('import { AgentTask } from "./components/AgentTask"');
     expect(app).toContain("<AgentTaskNavigation");
+    expect(app).toContain("onSearch={() => runCommand(\"palette\")}");
     expect(app).toContain("<AgentShell");
     expect(app).toContain("<AgentTask");
     expect(app).toContain("native-titlebar");
@@ -89,6 +90,8 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(navigation).toContain('data-testid="agent-task-navigation"');
     expect(navigation).toContain('data-testid="task-navigation-toggle"');
     expect(navigation).toContain('data-testid="task-navigation-new"');
+    expect(navigation).toContain('data-testid="task-navigation-search"');
+    expect(navigation).toContain("onSearch");
     expect(navigation).toContain('data-testid="task-navigation-settings"');
     expect(navigation).toContain("native-task-list");
     expect(navigation).toContain("native-task-mark");
@@ -1087,8 +1090,8 @@ describe("v1.14.0 interaction truth and content craft", () => {
 /**
  * v1.15.0 — True Native Agent: no chat placeholders, no painted hints, no
  * footer policy fact, no manual transport chrome; tables fit first; usage
- * speaks one vocabulary; CJK-safe settings; elevated craft. (v1.17 un-paints
- * title-bar Find/palette; ⌘F / ⌘K remain.)
+ * speaks one vocabulary; CJK-safe settings; elevated craft. Quiet title-bar
+ * Find/palette icons remain the discovery entry (⌘F / ⌘K stay).
  */
 describe("v1.15.0 true native agent", () => {
   it("delegates in work language on the one input", () => {
@@ -1099,14 +1102,17 @@ describe("v1.15.0 true native agent", () => {
     expect(composer).not.toContain("问问你的存储");
   });
 
-  it("opens Find and the palette from the keyboard, not painted title-bar icons", () => {
+  it("opens Find and the palette from quiet title-bar icons and the keyboard", () => {
     const app = source("../App.tsx");
     const doc = source("../components/TaskDocument.tsx");
-    expect(app).not.toContain('data-testid="titlebar-find"');
-    expect(app).not.toContain('data-testid="titlebar-palette"');
+    const task = source("../components/AgentTaskImplementation.tsx");
+    expect(app).toContain('data-testid="titlebar-find"');
+    expect(app).toContain('data-testid="titlebar-palette"');
+    expect(app.indexOf("titlebar-find")).toBeLessThan(app.indexOf("native-titlebar-title"));
     expect(doc).not.toContain('data-testid="task-find-open"');
-    expect(doc).toContain("setFindOpen(true)");
-    expect(doc).toContain('matches(event, "find")');
+    expect(task).toContain("openFind");
+    expect(task).toContain("setFindOpen(true)");
+    expect(doc).not.toContain('matches(event, "find")');
     expect(app).toContain('case "find": live.find?.()');
     expect(app).toContain('case "palette": setPaletteOpen');
   });
@@ -1163,11 +1169,18 @@ describe("v1.15.0 true native agent", () => {
     expect(source("../components/NativeAgentPanel.tsx")).not.toContain("还没有技能。把 SKILL.md");
   });
 
-  it("stacks settings grids on narrow widths with strict CJK breaks", () => {
+  it("stacks settings grids on the editor pane with strict CJK breaks", () => {
     const css = source("../../src/index.css");
     expect(css).toContain("line-break: strict");
-    expect(source("./native-shell.css")).toContain("max-width: 560px");
-    expect(source("../settings/ModelProvidersPane.tsx")).toContain("sm:grid-cols-2");
+    const shell = source("./native-shell.css");
+    expect(shell).toContain("container-type: inline-size");
+    expect(shell).toContain(".native-settings-fields");
+    expect(shell).toContain("@container (min-width: 32rem)");
+    expect(shell).toContain("container-name: settings");
+    expect(source("../settings/ModelProvidersPane.tsx")).toContain("native-settings-fields");
+    expect(source("../settings/ModelProvidersPane.tsx")).not.toContain("sm:grid-cols-2");
+    expect(source("../components/SettingsDialog.tsx")).toContain("native-settings");
+    expect(source("../components/NativeAgentPanel.tsx")).toContain("native-settings-head");
   });
 
   it("elevates the Composer and the user bubble above the canvas", () => {
@@ -1253,7 +1266,7 @@ describe("v1.16.0 true native agent, finished", () => {
     expect(source("../lib/mention.ts")).toContain("mentionTriggered");
     expect(source("../lib/approvalAction.ts")).toContain("approvalActionLabel");
     expect(source("../components/ApprovalCard.tsx")).toContain("approvalActionLabel(item.action_type, t)");
-    expect(source("../settings/SafetyPane.tsx")).toContain("approvalActionLabel(a, t)");
+    expect(source("../settings/SafetyPane.tsx")).toContain("approvalActionLabel(action, t)");
   });
 
   it("prefills full-sentence drafts and promises no charts from tables", () => {
@@ -1313,10 +1326,11 @@ describe("v1.17.0 Codex window", () => {
     expect(source("../components/ModelChip.tsx")).toContain("<ContextMeter />");
   });
 
-  it("leaves the title bar as name + state, Find and palette as keyboard", () => {
+  it("paints quiet Find and palette on the title bar, not on the document", () => {
     const app = source("../App.tsx");
-    expect(app).not.toContain("titlebar-find");
-    expect(app).not.toContain("titlebar-palette");
+    expect(app).toContain("titlebar-find");
+    expect(app).toContain("titlebar-palette");
+    expect(app.indexOf("titlebar-find")).toBeLessThan(app.indexOf("native-titlebar-title"));
     expect(source("../components/TaskDocument.tsx")).not.toContain("task-find-open");
     expect(source("../components/AgentTaskImplementation.tsx")).not.toContain("start-mark");
   });
@@ -1340,5 +1354,91 @@ describe("v1.17.0 Codex window", () => {
     expect(css).not.toMatch(/\.turn-user-bubble \{[^}]*box-shadow/);
     expect(css).not.toMatch(/\.approval-card-head \{[^}]*text-transform: uppercase/);
     expect(css).not.toMatch(/\.approval-card \{[^}]*box-shadow/);
+  });
+});
+
+/**
+ * Window follow-up: queued banners must not reprint the live Direction,
+ * Settings fields follow the editor pane, Find/palette icons stay discoverable.
+ */
+describe("window follow-up: queue honesty, Settings container, painted Find", () => {
+  it("filters the live Execution out of queued banners", () => {
+    const root = source("../components/AgentTaskImplementation.tsx");
+    expect(root).toContain("visibleQueuedExecutions(");
+    expect(source("../lib/pendingDirection.ts")).toContain("export function visibleQueuedExecutions");
+    expect(source("../lib/taskStatus.ts")).toContain("payload.queued.filter((q) => q.id !== activeId)");
+    expect(source("../components/TaskBanners.tsx")).toContain("queuedSteerFollowup");
+  });
+
+  it("keeps Find off the document and ContextMeter off the Composer bar", () => {
+    expect(source("../components/TaskDocument.tsx")).not.toContain("task-find-open");
+    expect(source("../components/Composer.tsx")).not.toContain("<ContextMeter");
+    expect(source("../components/AgentTaskImplementation.tsx")).not.toContain("start-mark");
+  });
+});
+
+/**
+ * Find is a strip under the title bar on the reading column (not a
+ * corner overlay and not an in-flow scroller card). Settings dialog is
+ * its own container so the nav can stack; ⌘F while open re-selects.
+ */
+describe("document Find strip and Settings dialog chrome", () => {
+  it("renders Find as a strip on the reading column, not a corner overlay", () => {
+    const bar = source("../components/FindBar.tsx");
+    const css = source("./native-document.css");
+    const doc = source("../components/TaskDocument.tsx");
+    expect(bar).toContain("native-find-host");
+    expect(bar).toContain("native-find");
+    expect(bar).not.toContain("sticky");
+    expect(bar).not.toContain("shadow-pop");
+    expect(bar).not.toContain('"↑"');
+    expect(bar).toContain('name={dir === 1 ? "arrowDown" : "arrowUp"}');
+    expect(bar).toContain("focusTick");
+    expect(css).toContain(".native-find-host");
+    expect(css).toMatch(/\.native-find \{[^}]*max-width: 46rem/);
+    expect(css).not.toContain("right: 16px");
+    expect(doc).toContain("focusTick={findFocusTick}");
+    expect(doc).not.toContain("matches(event, \"find\")");
+    expect(source("../App.tsx").indexOf("titlebar-find")).toBeLessThan(source("../App.tsx").indexOf("native-titlebar-title"));
+  });
+
+  it("sizes the Settings dialog as a container and keeps the close control out of the heading", () => {
+    const settings = source("../components/SettingsDialog.tsx");
+    const shell = source("./native-shell.css");
+    expect(settings).toContain("native-settings-content-head");
+    expect(settings).not.toContain("absolute right-3 top-3");
+    expect(shell).toContain("@container settings (max-width: 40rem)");
+    expect(shell).toContain(".native-settings-nav-footer");
+  });
+});
+
+/**
+ * v1.17.2 — Codex Search on the left, Settings dialog chrome, layered context.
+ */
+describe("v1.17.2 Codex Search, Settings chrome, context layers", () => {
+  it("puts Search under New task and Find as a reading-column strip", () => {
+    expect(source("./AgentTaskNavigation.tsx")).toContain('data-testid="task-navigation-search"');
+    expect(source("./navigationCopy.ts")).toContain('search: "Search"');
+    expect(source("./navigationCopy.ts")).toContain('search: "搜索"');
+    expect(source("../App.tsx").indexOf("titlebar-find")).toBeLessThan(
+      source("../App.tsx").indexOf("native-titlebar-title"),
+    );
+    expect(source("../components/FindBar.tsx")).toContain("native-find-host");
+    expect(source("./native-document.css")).toMatch(/\.native-find \{[^}]*max-width: 46rem/);
+    expect(source("./native-document.css")).not.toContain("right: 16px");
+    expect(source("../components/TaskDocument.tsx")).not.toContain("task-find-open");
+  });
+
+  it("keeps Settings a container and layers compaction instead of restacking grounding", () => {
+    expect(source("../components/SettingsDialog.tsx")).toContain("native-settings-content-head");
+    expect(source("./native-shell.css")).toContain("@container settings (max-width: 40rem)");
+    expect(source("../../../sidecar/app/agent_runtime/compaction.py")).toContain("TRIGGER_RATIO = 0.6");
+    expect(source("../../../sidecar/app/agent_runtime/prompt.py")).toContain("_summary_not_in_memory");
+    expect(source("../../../sidecar/app/agent_runtime/session_agent.py")).toContain(
+      'group_id=spec.get("session_id")',
+    );
+    expect(source("../../../sidecar/app/agent_runtime/session_agent.py")).not.toMatch(
+      /OpenAIResponsesCompactionSession\(/,
+    );
   });
 });

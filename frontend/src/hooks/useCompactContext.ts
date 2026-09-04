@@ -12,7 +12,7 @@ export const fmtTokens = fmtTokensUnified;
  * Palette → Compact context (v1.12): run the runtime's compaction step on
  * demand for a task with no live execution, refresh the context meter from
  * the response, and say what happened in a toast. The same step the runtime
- * runs itself at 80 % of the window — never a second Agent.
+ * runs itself at 60 % of the window — never a second Agent.
  */
 export function useCompactContext(taskId: string | null) {
   const { t } = useI18n();

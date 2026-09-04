@@ -85,6 +85,21 @@ def test_the_head_of_the_payload_survives():
     assert marker in new[0]["output"]
 
 
+def test_a_consumed_json_listing_keeps_counts_not_the_keys():
+    import json
+    keys = [f"logs/2026/08/{i:04d}.log" for i in range(200)]
+    payload = json.dumps({"success": True, "keys": keys, "is_truncated": True,
+                          "key_count": 200})
+    items = [_out("a", payload), _out("b", "x"), _out("c", "y")]
+    new, reclaimed = sa._compact_consumed_outputs(items)
+    assert reclaimed > 0
+    first = [i for i in new if i["type"] == "function_call_output"][0]["output"]
+    assert "keys_count" in first
+    assert "logs/2026/08/0000.log" not in first
+    assert "COMPACTED" in first
+    assert "call the tool again" in first
+
+
 def test_a_small_result_is_left_alone():
     items = [_out("a", "tiny"), _out("b", "x"), _out("c", "y")]
     new, reclaimed = sa._compact_consumed_outputs(items)

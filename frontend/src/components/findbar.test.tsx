@@ -59,6 +59,15 @@ describe("the find bar", () => {
     expect(props.onStep).toHaveBeenCalledWith(-1);
   });
 
+  it("steps forward on ⌘G and backward on ⌘Shift+G", () => {
+    const props = bar();
+    const input = screen.getByTestId("find-input");
+    fireEvent.keyDown(input, { key: "g", metaKey: true });
+    expect(props.onStep).toHaveBeenCalledWith(1);
+    fireEvent.keyDown(input, { key: "g", metaKey: true, shiftKey: true });
+    expect(props.onStep).toHaveBeenCalledWith(-1);
+  });
+
   it("closes on Escape", () => {
     const props = bar();
     fireEvent.keyDown(screen.getByTestId("find-input"), { key: "Escape" });
@@ -88,5 +97,34 @@ describe("the find bar", () => {
   it("announces the counter to assistive tech as it changes", () => {
     bar();
     expect(screen.getByTestId("find-status")).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("is a document strip under the title bar, not a corner overlay", () => {
+    bar();
+    const host = screen.getByTestId("find-bar");
+    expect(host.className).toContain("native-find");
+    expect(host.className).not.toContain("sticky");
+    expect(host.className).not.toContain("shadow-pop");
+    expect(host.parentElement?.className).toContain("native-find-host");
+  });
+
+  it("re-selects the input when ⌘F is pressed while it is already open", () => {
+    function Harness() {
+      const [tick, setTick] = useState(0);
+      return createElement("div", null,
+        createElement("button", { type: "button", onClick: () => setTick((n) => n + 1), "data-testid": "bump" }, "bump"),
+        createElement(FindBar, {
+          query: "acme", onQuery: () => {}, total: 1, index: 0,
+          onStep: () => {}, onClose: () => {}, focusTick: tick,
+        }),
+      );
+    }
+    wrap(createElement(Harness));
+    const input = screen.getByTestId("find-input") as HTMLInputElement;
+    input.setSelectionRange(2, 2);
+    fireEvent.click(screen.getByTestId("bump"));
+    expect(document.activeElement).toBe(input);
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
   });
 });

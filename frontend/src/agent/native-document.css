@@ -343,6 +343,31 @@
 
 .native-queued { opacity: 0.85; }
 
+/* Find — a strip under the title bar, on the 46rem reading measure.
+   Not inside the scroller (that stole layout and fought sticky) and not a
+   corner overlay (that hid the field from the document the user is reading). */
+.native-find-host {
+  flex: none;
+  border-bottom: 1px solid var(--edge);
+  background: var(--panel);
+}
+.native-find {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 46rem;
+  height: 36px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.native-find-status {
+  flex: none;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* Composer (v1.15) — the one elevated card on the canvas: a raised surface,
    a real shadow, a focus ring that reads. Hairline-only made it disappear
    into the background next to Codex. */
@@ -357,8 +382,8 @@
   transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
 }
 .native-composer:focus-within {
-  border-color: var(--gray-500);
-  box-shadow: var(--shadow-pop);
+  border-color: var(--gray-400);
+  box-shadow: var(--shadow-elev), 0 0 0 1px var(--edge-strong);
 }
 .native-composer[data-agent-state="working"] {
   border-color: var(--edge-strong);

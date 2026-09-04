@@ -50,7 +50,7 @@ from .stream import (_close_clients, stream_events_for)
 from .limits import (  # noqa: F401
     _COMPACT_AFTER_STEPS, _CONTEXT_CUT_MARKER, _CORE_TOOLS, _GROUP_OF_TOOL,
     _MAX_COMPLETION_TOKENS, _MAX_FACTS, _MAX_FINDINGS, _MAX_MESSAGES,
-    _MAX_MESSAGES_CEIL, _MAX_OUTPUT, _MAX_REPLAY_MSG, _MAX_REPLAY_MSG_CEIL,
+    _MAX_MESSAGES_CEIL, _MAX_OUTPUT, _MAX_REPLAY_ANSWER, _MAX_REPLAY_MSG, _MAX_REPLAY_MSG_CEIL,
     _MAX_REPLAY_TOOLS, _MAX_TOOL_OUTPUT_CHARS, _MAX_USER_MSG, _MAX_USER_MSG_CEIL,
     _MEM_RECALL_CEIL, _SLOW_TOOL_TIMEOUT_S, _STOPPED_MARKER, _TOOL_GROUPS,
     _TOOL_TIMEOUT_S, _UNLOCK_RECENT_CALLS, _UNTRUSTED_CLOSE, _UNTRUSTED_OPEN,
@@ -223,11 +223,20 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     # mistake into a self-correcting one; the formatter below makes it actionable
     # rather than merely non-fatal.
     unlock_hint = _make_tool_not_found_formatter(unlocked)
+    # openai-agents 0.22: RunConfig.group_id is the Chat Completions
+    # prompt_cache_key grouping. Official OpenAI then routes later turns of the
+    # SAME task to the same cache machines (prefix caching only helps if the
+    # request lands where the prefix lives). Third-party endpoints skip the
+    # extra arg (`_supports_default_prompt_cache_key` is official-OpenAI only).
+    # We do NOT use OpenAIResponsesCompactionSession / context_management —
+    # those are Responses-API only, and this product stays on Chat Completions
+    # so DeepSeek / Ollama / vLLM keep working.
     run_config = RunConfig(call_model_input_filter=_make_input_filter(compaction),
                            tool_not_found_behavior="return_error_to_model",
                            tool_error_formatter=unlock_hint,
                            tool_execution=ToolExecutionConfig(
-                               max_function_tool_concurrency=_MAX_PARALLEL_TOOLS))
+                               max_function_tool_concurrency=_MAX_PARALLEL_TOOLS),
+                           group_id=spec.get("session_id") or None)
     result = Runner.run_streamed(agent, spec["prompt"], max_turns=_MAX_TURNS,
                                  run_config=run_config)
     # Tag the run with the endpoint it targets, so a stream_options rejection
@@ -244,7 +253,8 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
         returns a safe fallback on any error."""
         try:
             fa, fp = _finalize_agent_and_prompt(creds, spec["prompt"], activity, clients)
-            fr = await Runner.run(fa, fp, max_turns=2)
+            fr = await Runner.run(fa, fp, max_turns=2,
+                                  run_config=RunConfig(group_id=spec.get("session_id") or None))
             _stash_extra_usage(result, fr)
             return getattr(fr, "final_output", "") or _FINALIZE_FALLBACK
         except Exception:  # noqa: BLE001

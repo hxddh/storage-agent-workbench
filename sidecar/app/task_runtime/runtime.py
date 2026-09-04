@@ -453,7 +453,7 @@ def _run_execution(execution: dict[str, Any]) -> None:
         attachments = sds_repo.list_pending_for_session(conn, task_id)
         creds = get_model_credentials(conn)  # raises AgentUnavailable
 
-        # v1.12 — compaction: when the last model call filled 80 % of the
+        # v1.12 — compaction: when the last model call filled 60 % of the
         # window, summarise-and-continue BEFORE this execution's model loop.
         compacted_item: dict[str, Any] | None = None
         payload: dict[str, Any] | None = None

@@ -65,7 +65,6 @@ const forbidden: Array<[string, RegExp]> = [
   ["v1.15 manual resync", /Resync task|重新同步任务/],
   ["v1.17 chat aria", /Your message|Agent answer/],
   ["v1.17 Artifacts Runs title", /execution: "Runs"/],
-  ["v1.17 painted title-bar Find", /titlebar-find|titlebar-palette/],
   ["v1.17 document ghost Find", /task-find-open/],
   ["v1.17 empty-start glyph", /native-start-mark|data-testid="start-mark"/],
 ]

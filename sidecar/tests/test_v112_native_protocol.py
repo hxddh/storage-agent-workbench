@@ -283,7 +283,7 @@ def test_compaction_step_is_bounded_redacted_and_replaces_the_older_replay(clien
         creds = {"model": "gpt-4o-mini", "context_window": 128_000}
         assert compaction.should_compact(conn, task["id"], creds) is False
         # The last turn reported 3000 input tokens: an operator-declared 3500
-        # window crosses 80 %.
+        # window crosses 60 %.
         assert compaction.should_compact(conn, task["id"],
                                          {"model": "gpt-4o-mini", "context_window": 3500})
         # Usage not reported → never compacts on a guess.

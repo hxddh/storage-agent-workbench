@@ -31,7 +31,11 @@ from . import model_budget
 from .guardrails import strip_chain_of_thought
 
 COMPACT_MARKER = "[[storage-agent:compact]]"
-TRIGGER_RATIO = 0.8
+# Compact while the next investigation still has room. The stable prefix
+# (instructions, tool schemas, catalog, typed context) plus this turn's
+# tools need ~40 % of a typical window; waiting until 80 % means the next
+# turn starts already in overflow. 0.6 is that headroom, not a knob tweak.
+TRIGGER_RATIO = 0.6
 MAX_SUMMARY_CHARS = 2000
 STEP_TIMEOUT_S = 60.0
 _MODEL_TIMEOUT_S = 45.0
@@ -40,7 +44,7 @@ _MAX_MSG_CHARS = 3000
 _MAX_PROMPT_CHARS = 48_000
 # Rough size of the prompt that stays after compaction (instructions, skills
 # catalog, providers, typed context) — the after_tokens figure is an ESTIMATE.
-_BASE_PROMPT_TOKENS = 3000
+_BASE_PROMPT_TOKENS = 4500
 
 INSTRUCTIONS = (
     "You compact an object-storage investigation so the same Agent can continue it "

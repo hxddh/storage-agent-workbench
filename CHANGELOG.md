@@ -6,6 +6,32 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.17.2] - 2026-09-04
+
+_Patch — Codex Search on the left, Settings dialog chrome, layered context. No migration (head stays **030**)._ See `docs/releases/1.17.2.md`.
+
+### Fixed
+
+- **Find** — Codex Search lives on the **left**: a labeled Search under New task in the sidebar opens the command palette (same overlay as ⌘K). The Find icon stays on the left of the title bar; ⌘F opens a find strip under the title bar, on the 46rem reading measure (search, n/n, previous/next, close). It is not inside the scroller and not a corner overlay. A second ⌘F re-selects the query; Enter / Shift+Enter / ⌘G step; Escape closes. The palette stays on the right; the document ghost stays gone.
+- **Settings** — the dialog is its own container: nav labels no longer wrap, the close control sits in a content head instead of overlapping the heading, Skills/Instructions/Observability rows wrap identity vs actions, and a narrow pane stacks the nav into a tab strip.
+- **Context economy** — grounding is layered, not stacked:
+  - Compaction `conversation_summary` replaces earlier turns *and* the `summary` / `agent_memory` blocks (those keys are omitted); `storage_task_context` stays.
+  - Uncompacted: `agent_memory` (writable, with ids) plus a deterministic `summary` only for facts the model has not already recorded. Assistant replay is a tools_run + 600-char digest; user Directions stay full.
+  - In-turn, consumed JSON tool results keep scalars and array counts, not the start of a keys dump (`call_model_input_filter`).
+  - openai-agents `RunConfig.group_id` is the task id so official OpenAI Chat Completions routes later turns onto the same prompt-cache machines. Responses-API compaction (`OpenAIResponsesCompactionSession`, `context_management`) is not used — this product stays on Chat Completions for third-party endpoints.
+  - Uncompacted turns still carry the full skill method in the cacheable half; compacted turns keep the skill name only. Auto-compaction fires at 60 % of the window so the next investigation has headroom. Safety rules and `load_tools` groups stay complete.
+- **Chrome** — title-bar state sits with the task name; Composer focus is a hairline, not a heavy pop shadow; Find steps use icons.
+
+## [1.17.1] - 2026-09-04
+
+_Patch — queue honesty, Settings container layout, title-bar Find. No migration (head stays **030**)._ See `docs/releases/1.17.1.md`.
+
+### Fixed
+
+- **Queue honesty** — a just-submitted Direction no longer reprints as a "Queued" bubble beside the live turn. `task.status` folds the same way GET `/agent-tasks` already did (drop the active execution from `queued[]`). A `steer_followup` waiting behind the current Execution is labeled as itself, not a second Direction. Durable queued-behind Directions stay visible and cancellable.
+- **Settings squeeze** — provider fields follow the editor pane (`@container`), not the viewport `sm:` breakpoint, so CJK hints are not forced into ~171px columns. Provider rows wrap on flex-basis instead of a 560px viewport query; Safety gate names are individual nowrap chips.
+- **Find discoverability** — quiet Find and palette icons return to the title bar (⌘F / ⌘K remain). The document ghost Find and empty-start glyph stay gone.
+
 ## [1.17.0] - 2026-09-04
 
 _Codex window — quiet chrome, work language, transcript craft. No migration (head stays **030**)._ See `docs/releases/1.17.0.md`.

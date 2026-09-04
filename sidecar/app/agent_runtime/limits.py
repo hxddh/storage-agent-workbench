@@ -25,10 +25,11 @@ def _elastic_memory_cap(model: str | None, explicit_window: int | None) -> int:
     factor = max(1, window // 128_000)
     return min(_MEM_RECALL_CEIL, _MAX_FACTS * factor)
 # How many recent thread messages the agent sees. 24 (was 12): a small-context
-# clip that now just makes the agent lose the thread on a long investigation —
-# 24 msgs × _MAX_REPLAY_MSG chars is still tiny under a modern context window.
-# This is the FLOOR: build_session_context scales it up with the model window
-# (bounded by _MAX_MESSAGES_CEIL), so a large-context model keeps more history.
+# clip that now just makes the agent lose the thread on a long investigation.
+# This is the FLOOR: build_session_context scales COUNT up with the model window
+# (bounded by _MAX_MESSAGES_CEIL). Assistant Work Results are digested to
+# `_MAX_REPLAY_ANSWER` — replaying the full markdown every turn restates
+# agent_memory. User Directions stay at `_MAX_REPLAY_MSG`.
 _MAX_MESSAGES = 24
 _MAX_MESSAGES_CEIL = 96
 # Tool-trace lines replayed per prior assistant turn. Each message already
@@ -163,12 +164,15 @@ _SLOW_TOOLS = {"survey_account", "review_bucket_config", "analyze_uploaded_file"
 # large-window models while the rest of the context went elastic in v0.27–28.
 _MAX_USER_MSG = 16000
 _MAX_USER_MSG_CEIL = 64000
-# Bound on each replayed prior message in the context. Also never silent.
-# 4000 (was 1000): 1000 chars clipped mid-answer on any substantial turn, so the
-# agent saw only truncated tails of its own prior reasoning; 4000 keeps a full
-# normal answer while staying bounded (24 × 4000 ≈ 24k tokens of thread history).
+# Bound on each replayed prior USER Direction. Also never silent.
+# 4000 (was 1000): pasted error/config dumps are a core flow; 1000 chars
+# clipped mid-Direction. Assistant Work Results use `_MAX_REPLAY_ANSWER`.
 _MAX_REPLAY_MSG = 4000       # FLOOR; scaled up with the model window, capped below
 _MAX_REPLAY_MSG_CEIL = 12000
+# Assistant replay is a digest: tools_run already says what was probed, and
+# agent_memory / conversation_summary already hold the conclusion. 600 chars
+# is enough to see how the last answer was framed without re-paying a table.
+_MAX_REPLAY_ANSWER = 600
 # Per-turn cumulative budget on tool OUTPUT characters handed to the model.
 # This is the PRIMARY, elastic governor of how deep a turn goes: it tracks the
 # context the model actually consumes, so a turn runs as deep as it needs until

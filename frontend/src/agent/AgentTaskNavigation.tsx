@@ -157,14 +157,16 @@ export type AgentTaskNavigationProps = {
   activeTaskId: string | null;
   onSelectTask: (id: string) => void;
   onNew: () => void;
+  /** Opens the command palette — Codex Search lives on the left, not in the title bar. */
+  onSearch: () => void;
   onOpenSettings: () => void;
   actions: TaskActions;
   /** Rename / Delete requested from outside the sidebar (native menu). */
   editRequest?: TaskEditRequest | null;
 };
 
-/** The sidebar: window chrome row, New task, one chronological task list, Settings. */
-export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, onOpenSettings, actions, editRequest = null, width, collapsed, trafficLights, onToggleCollapse, onResize }: AgentTaskNavigationProps) {
+/** The sidebar: window chrome row, New task, Search, one chronological task list, Settings. */
+export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, onSearch, onOpenSettings, actions, editRequest = null, width, collapsed, trafficLights, onToggleCollapse, onResize }: AgentTaskNavigationProps) {
   const copy = useNavigationCopy();
   const { lang } = useI18n();
   useSessionRunIndexVersion();
@@ -250,10 +252,16 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
           ) : null}
         </div>
 
-        <button type="button" onClick={onNew} className="native-sidebar-new" data-testid="task-navigation-new">
-          <Icon name="compose" />
-          <span>{copy.newTask}</span>
-        </button>
+        <div className="native-sidebar-actions">
+          <button type="button" onClick={onNew} className="native-sidebar-new" data-testid="task-navigation-new">
+            <Icon name="compose" />
+            <span>{copy.newTask}</span>
+          </button>
+          <button type="button" onClick={onSearch} className="native-sidebar-new" data-testid="task-navigation-search" title={`${copy.search} ⌘K`}>
+            <Icon name="search" />
+            <span>{copy.search}</span>
+          </button>
+        </div>
 
         <nav ref={listRef} className="native-task-list" aria-label={copy.tasks} role="listbox" onKeyDown={onListKeyDown}>
           {visible.length === 0 ? (

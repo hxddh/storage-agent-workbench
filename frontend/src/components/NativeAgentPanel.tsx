@@ -119,10 +119,10 @@ export function NativeAgentPanel() {
   return (
     <div className="max-w-3xl space-y-8" data-testid="settings-agent">
       <section>
-        <div className="mb-3 flex items-start justify-between gap-4">
+        <div className="native-settings-head">
           <div>
             <h2 className="text-lg font-medium text-gray-100">{t("prov.skillsTitle")}</h2>
-            <p className="mt-1 text-xs leading-relaxed text-gray-500">{t("prov.skillsHint")}</p>
+            <p className="mt-1 text-xs leading-relaxed text-pretty text-gray-500">{t("prov.skillsHint")}</p>
           </div>
           <Button onClick={() => void openFolder()} data-testid="skills-open-folder">
             <Icon name="file" size={13} /> {copy.openFolder}
@@ -149,10 +149,10 @@ export function NativeAgentPanel() {
       </section>
 
       <section data-testid="settings-instructions">
-        <div className="flex items-start justify-between gap-4">
+        <div className="native-settings-head">
           <div className="min-w-0">
             <h2 className="text-lg font-medium text-gray-100">{t("settings.instructions")}</h2>
-            <p className="mt-1 text-xs leading-relaxed text-gray-500">{t("settings.instructionsHint")}</p>
+            <p className="mt-1 text-xs leading-relaxed text-pretty text-gray-500">{t("settings.instructionsHint")}</p>
             {instructions ? (
               <p className="mt-2 text-xs text-gray-300" data-testid="instructions-status" data-loaded={instructions.loaded ? "true" : "false"}>
                 {instructions.loaded ? t("settings.instructionsLoaded", { chars: instructions.chars }) : t("settings.instructionsMissing")}
@@ -168,10 +168,10 @@ export function NativeAgentPanel() {
       </section>
 
       <section>
-        <div className="flex items-start justify-between gap-4">
+        <div className="native-settings-head">
           <div>
             <h2 className="text-lg font-medium text-gray-100">{t("prov.observability")}</h2>
-            <p className="mt-1 text-xs leading-relaxed text-gray-500">{copy.exportHint}</p>
+            <p className="mt-1 text-xs leading-relaxed text-pretty text-gray-500">{copy.exportHint}</p>
           </div>
           <Button onClick={() => void exportTrace()} disabled={exporting} data-testid="observability-export">
             {exporting ? copy.exporting : copy.exportTrace}
