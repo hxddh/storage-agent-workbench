@@ -220,6 +220,7 @@ export default function App() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (matches(event, "palette")) { event.preventDefault(); runCommand("palette"); }
+      else if (matches(event, "find")) { event.preventDefault(); runCommand("find"); }
       else if (matches(event, "newTask")) { event.preventDefault(); runCommand("new-task"); }
       else if (matches(event, "toggleTaskNavigation")) { event.preventDefault(); runCommand("toggle-sidebar"); }
       else if (matches(event, "shortcuts") && !isEditable(event.target)) { event.preventDefault(); runCommand("shortcuts"); }

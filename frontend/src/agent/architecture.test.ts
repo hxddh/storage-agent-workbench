@@ -1115,6 +1115,7 @@ describe("v1.15.0 true native agent", () => {
     expect(task).toContain("setFindOpen(true)");
     expect(doc).not.toContain('matches(event, "find")');
     expect(app).toContain('case "find": live.find?.()');
+    expect(app).toContain('matches(event, "find")');
     expect(app).toContain('case "palette": setPaletteOpen');
   });
 
@@ -1464,6 +1465,7 @@ describe("v1.17.3 context economy and Codex chrome", () => {
     expect(app).toContain("native-titlebar-title");
     expect(app).toContain("native-titlebar-state");
     expect(app).toContain('case "find": live.find?.()');
+    expect(app).toContain('matches(event, "find")');
     expect(app).toContain('case "palette": setPaletteOpen');
     expect(source("./AgentTaskNavigation.tsx")).toContain("native-sidebar-search");
     expect(source("./native-shell.css")).toMatch(/\.native-sidebar-search \{[^}]*font-weight: 400/);

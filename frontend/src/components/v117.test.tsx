@@ -27,6 +27,7 @@ describe("v1.17 Codex window", () => {
     expect(source("../App.tsx")).not.toContain("titlebar-find");
     expect(source("../App.tsx")).not.toContain("titlebar-palette");
     expect(source("../App.tsx")).toContain('case "find": live.find?.()');
+    expect(source("../App.tsx")).toContain('matches(event, "find")');
     expect(source("../App.tsx")).toContain('case "palette": setPaletteOpen');
     expect(source("../App.tsx")).toContain("onSearch={() => runCommand(\"palette\")}");
     expect(source("../agent/AgentTaskNavigation.tsx")).toContain('data-testid="task-navigation-search"');

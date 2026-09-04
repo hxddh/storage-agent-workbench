@@ -14,7 +14,7 @@ _Patch — context economy and Codex chrome. No migration (head stays **030**)._
 
 - **Prefix** — engine tools (`simulate_storage_cost`, remediation/baseline/Drift/price/revisit) are the gated `storage_engines` group, not CORE. Tool descriptions are one sentence plus Args. The system prompt and skill-catalog preamble are shorter; every `SESSION_SAFETY_RULES` item is still verbatim in both `INSTRUCTIONS` and `FINALIZE_INSTRUCTIONS`.
 - **In-turn output** — a first tool delivery over 6 000 characters is reduced to a structured digest before the model sees it (`read_skill` / `update_plan` exempt). Already-consumed outputs compact after one later step. The tool-output floor is 48k characters (12 % of the window); the turn-token ceiling is two window-equivalents, floored at 250k.
-- **Chrome** — the title bar is the task name and its real state (⌘F / ⌘K stay; no painted Find/palette). Sidebar Search is a lighter row under New task. The Composer is a hairline slot, not an elevated card. The user bubble is ~15px with quieter padding. Approval impact reads as stacked sentences, not a two-column `dl`. Find remains the 46rem strip under the title bar.
+- **Chrome** — the title bar is the task name and its real state (no painted Find/palette). ⌘F is a window keydown, not a title-bar button; ⌘K stays. Sidebar Search is a lighter row under New task. The Composer is a hairline slot, not an elevated card. The user bubble is ~15px with quieter padding. Approval impact reads as stacked sentences, not a two-column `dl`. Find remains the 46rem strip under the title bar.
 
 ## [1.17.2] - 2026-09-04
 

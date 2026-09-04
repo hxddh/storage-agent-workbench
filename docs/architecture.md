@@ -361,7 +361,7 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 ### 6.x Context economy and Codex chrome (v1.17.3)
 
 - **Prefix.** Engine tools are the gated `storage_engines` group, not CORE. Tool descriptions are one sentence plus Args. A first tool delivery over 6 000 characters is digested before the model sees it (`read_skill` exempt). Already-consumed outputs compact after one later step. The tool-output floor is 48k characters, 12 % of the window.
-- **Chrome.** The title bar is name + state (⌘F / ⌘K stay; no painted Find/palette). Sidebar Search is lighter than New task. Composer is a hairline slot (no elevation). Approval impact reads as stacked sentences. Find remains the 46rem strip under the title bar.
+- **Chrome.** The title bar is name + state (no painted Find/palette). ⌘F is a window keydown in `App.tsx`; ⌘K stays on the same handler. Sidebar Search is lighter than New task. Composer is a hairline slot (no elevation). Approval impact reads as stacked sentences. Find remains the 46rem strip under the title bar.
 
 ### 6.x True native agent, finished (v1.16.0)
 
