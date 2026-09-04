@@ -18,6 +18,7 @@ afterEach(cleanup);
 
 function renderNav(collapsed = false, tasks = [task("a", "acme-logs 403"), task("b", "inventory review")]) {
   const actions = { onRename: vi.fn(), onDelete: vi.fn() };
+  const onSearch = vi.fn();
   render(
     <I18nProvider>
       <AgentTaskNavigation
@@ -25,6 +26,7 @@ function renderNav(collapsed = false, tasks = [task("a", "acme-logs 403"), task(
         activeTaskId="a"
         onSelectTask={() => undefined}
         onNew={() => undefined}
+        onSearch={onSearch}
         onOpenSettings={() => undefined}
         actions={actions}
         width={260}
@@ -35,7 +37,7 @@ function renderNav(collapsed = false, tasks = [task("a", "acme-logs 403"), task(
       />
     </I18nProvider>,
   );
-  return actions;
+  return { actions, onSearch };
 }
 
 describe("the sidebar", () => {
@@ -44,7 +46,7 @@ describe("the sidebar", () => {
     // calls in the same millisecond only stay ordered by sort stability —
     // across a millisecond boundary in CI the rows flip and the wrong More
     // button opens.
-    const actions = renderNav(false, [
+    const { actions } = renderNav(false, [
       task("a", "acme-logs 403", "2026-09-02T00:00:00Z"),
       task("b", "inventory review", "2026-09-01T00:00:00Z"),
     ]);
@@ -87,6 +89,14 @@ describe("the sidebar", () => {
       expect.stringContaining("lifecycle audit"),
     ]);
     expect(screen.queryByText("Tasks")).toBeNull();
+  });
+
+  it("paints Search under New task and opens the command palette from the left", () => {
+    const { onSearch } = renderNav();
+    const search = screen.getByTestId("task-navigation-search");
+    expect(search.textContent).toMatch(/search/i);
+    fireEvent.click(search);
+    expect(onSearch).toHaveBeenCalled();
   });
 
   it("formats day headers for Chinese and keeps the ordering", () => {

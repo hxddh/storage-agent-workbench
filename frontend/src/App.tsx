@@ -247,6 +247,7 @@ export default function App() {
         activeTaskId={activeTaskId}
         onSelectTask={setActiveTaskId}
         onNew={() => setActiveTaskId(null)}
+        onSearch={() => runCommand("palette")}
         onOpenSettings={() => setSettingsOpen(true)}
         actions={taskActions}
         editRequest={editRequest}

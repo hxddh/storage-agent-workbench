@@ -55,6 +55,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(app).toContain('import { AgentTaskNavigation } from "./agent/AgentTaskNavigation"');
     expect(app).toContain('import { AgentTask } from "./components/AgentTask"');
     expect(app).toContain("<AgentTaskNavigation");
+    expect(app).toContain("onSearch={() => runCommand(\"palette\")}");
     expect(app).toContain("<AgentShell");
     expect(app).toContain("<AgentTask");
     expect(app).toContain("native-titlebar");
@@ -89,6 +90,8 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(navigation).toContain('data-testid="agent-task-navigation"');
     expect(navigation).toContain('data-testid="task-navigation-toggle"');
     expect(navigation).toContain('data-testid="task-navigation-new"');
+    expect(navigation).toContain('data-testid="task-navigation-search"');
+    expect(navigation).toContain("onSearch");
     expect(navigation).toContain('data-testid="task-navigation-settings"');
     expect(navigation).toContain("native-task-list");
     expect(navigation).toContain("native-task-mark");

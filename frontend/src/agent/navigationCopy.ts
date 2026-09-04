@@ -4,6 +4,7 @@ const COPY = {
   en: {
     tasks: "Tasks",
     newTask: "New task",
+    search: "Search",
     noTasks: "No tasks yet.",
     noTasksHint: "Delegate a storage goal below. Every task is durable.",
     settings: "Settings",
@@ -25,6 +26,7 @@ const COPY = {
   zh: {
     tasks: "任务",
     newTask: "新任务",
+    search: "搜索",
     noTasks: "还没有任务。",
     noTasksHint: "在下方委派一个存储目标。每个任务都会持久保存。",
     settings: "设置",

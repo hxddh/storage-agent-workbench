@@ -89,13 +89,19 @@
   color: var(--gray-100);
 }
 
+.native-sidebar-actions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 1px;
+  margin: 6px 8px 8px;
+}
 .native-sidebar-new {
   display: flex;
   height: 36px;
   flex: none;
   align-items: center;
   gap: 8px;
-  margin: 6px 8px 4px;
   border: 0;
   border-radius: var(--radius-lg);
   padding: 0 8px;

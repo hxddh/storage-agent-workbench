@@ -56,9 +56,11 @@
 > / Work Result.
 > **v1.17.1 patches that window.** Queued banners never reprint the live
 > Direction; Settings fields follow the editor pane; quiet Find/palette
-> icons return to the title bar. Find is a strip under the title bar on
-> the reading column (⌘F). Compaction summary replaces earlier grounding
-> rather than stacking on it; auto-compaction leaves 40 % headroom.
+> icons return to the title bar. Codex Search is a labeled row under New
+> task in the sidebar (command palette). Find is a strip under the title
+> bar on the reading column (⌘F). Compaction summary replaces earlier
+> grounding rather than stacking on it; auto-compaction leaves 40 %
+> headroom.
 > No migration (head stays **030**).
 > **v1.13.0 is honesty and completeness.** The MCP bridge executes instead of
 echoing, the OTel export carries real spans, restart recovery covers waiting

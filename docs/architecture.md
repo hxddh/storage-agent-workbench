@@ -86,7 +86,7 @@ Legacy frontend adapters from earlier releases were physically removed. Do not r
 
 ### 3.2 `AgentTaskNavigation`: the sidebar
 
-`frontend/src/agent/AgentTaskNavigation.tsx` owns the sidebar: a window chrome row (drag region + collapse toggle), **New task**, one chronological task list, and **Settings**.
+`frontend/src/agent/AgentTaskNavigation.tsx` owns the sidebar: a window chrome row (drag region + collapse toggle), **New task**, **Search**, one chronological task list, and **Settings**.
 
 Each task row combines:
 
@@ -95,7 +95,7 @@ Each task row combines:
 - a state mark (Ready paints nothing; Working pulses; Needs decision / Needs attention are status colours);
 - relative time on hover, and Rename / Delete behind one More control.
 
-The list is chronological by `updated_at`, grouped by day (`dayGroups()`: Today, Yesterday, then dated headers). Search, pin, duplicate, archive and database counters are not painted. The New task control is a button; it does not paint ⌘N. Collapsed, the sidebar has zero width and its toggle + New task move into the title bar.
+The list is chronological by `updated_at`, grouped by day (`dayGroups()`: Today, Yesterday, then dated headers). A labeled **Search** under New task opens the command palette (same overlay as ⌘K) — it is not an inline list filter. Pin, duplicate, archive and database counters are not painted. The New task control is a button; it does not paint ⌘N. Collapsed, the sidebar has zero width and its toggle + New task move into the title bar.
 
 The Sidecar `/agent-tasks` projection provides durable decision truth so a pending confirmation remains visible after reload/restart even when browser-local runtime state is gone.
 
@@ -343,7 +343,7 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 
 - **Queue honesty.** `task.status.queued[]` and `TaskBanners` drop the execution the client is already following; a `steer_followup` is labeled as itself.
 - **Settings pane.** The dialog is its own container: nav labels do not wrap, the close control sits in a content head (not over the heading), Skills rows wrap identity vs actions, and at a narrow pane the nav becomes a horizontal strip. Provider fields follow the editor (`@container`), not the viewport `sm:` breakpoint.
-- **Find.** Find icon on the left of the title bar; ⌘F opens a find strip under the title bar on the 46rem reading measure (not in the scroller, not a corner overlay); no document ghost.
+- **Find.** Codex Search is a labeled row under New task in the sidebar and opens the command palette. The Find icon stays on the left of the title bar; ⌘F opens a find strip under the title bar on the 46rem reading measure (not in the scroller, not a corner overlay); no document ghost.
 
 ### 6.x True native agent, finished (v1.16.0)
 
