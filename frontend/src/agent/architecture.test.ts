@@ -1452,11 +1452,11 @@ describe("v1.17.2 Codex Search, Settings chrome, context layers", () => {
 });
 
 /**
- * After v1.17.2 — context economy and Codex chrome. Title bar is name +
+ * v1.17.3 — context economy and Codex chrome. Title bar is name +
  * state; Search is a quieter sidebar row; Composer is a hairline slot;
  * engine tools stay gated; first large deliveries are digested.
  */
-describe("context economy and Codex chrome", () => {
+describe("v1.17.3 context economy and Codex chrome", () => {
   it("leaves the title bar as name + state and Search as a lighter sidebar row", () => {
     const app = source("../App.tsx");
     expect(app).not.toContain("titlebar-find");

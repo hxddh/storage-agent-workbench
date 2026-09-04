@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.17.2.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native. v1.11–v1.16 made the transcript and the protocol native. **v1.17.0 is the Codex window;** **v1.17.1** patches queue honesty, Settings field sizing, and title-bar Find; **v1.17.2** puts Codex Search on the left, finishes Settings dialog chrome, and layers context instead of restacking it. Earlier release notes are not current product architecture.
+> **Applies to Storage Agent v1.17.3.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native. v1.11–v1.16 made the transcript and the protocol native. **v1.17.0 is the Codex window;** **v1.17.1** patches queue honesty, Settings field sizing, and title-bar Find; **v1.17.2** puts Codex Search on the left, finishes Settings dialog chrome, and layers context; **v1.17.3** cuts the per-step token prefix and matches Codex chrome (quiet title bar, lighter Search, hairline Composer). Earlier release notes are not current product architecture.
 
 ## Product definition
 
@@ -211,7 +211,7 @@ Provider/model configuration, audit internals, and low-level counters are second
 
 ## Design rules
 
-v1.17.2 is the current Codex window on a native shell. Visual language is specified in
+v1.17.3 is the current Codex window on a native shell. Visual language is specified in
 [`design-tokens.md`](design-tokens.md) and enforced by frontend token tests.
 
 - The window is **sidebar · title bar · one document**. No activity bar, no status bar, no inspector column, no marketing copy anywhere in chrome.

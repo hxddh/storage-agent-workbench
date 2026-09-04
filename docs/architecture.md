@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.17.2.** Codex window on the native Agent shell, patched for Search on the left, Settings dialog chrome, and layered context. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
+> **Current architecture baseline: Storage Agent v1.17.3.** Codex window on the native Agent shell, patched for a quiet title bar, lighter sidebar Search, a hairline Composer, gated engine tools, and a smaller per-step token prefix. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -353,11 +353,15 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 
 ### 6.x Window craft (v1.17.2)
 
-- **Search / Find.** Codex Search is a labeled row under New task and opens the command palette. Find is a strip under the title bar on the 46rem reading measure (⌘F; not in the scroller, not a corner overlay). The title bar itself is name + state.
+- **Search / Find.** Codex Search is a labeled row under New task and opens the command palette. The Find icon stays on the left of the title bar; ⌘F opens a find strip under the title bar on the 46rem reading measure (not in the scroller, not a corner overlay).
 - **Settings dialog.** The dialog is its own container: nav labels do not wrap, the close control sits in a content head (not over the heading), Skills rows wrap identity vs actions, and at a narrow pane the nav becomes a horizontal strip.
 - **Context layers.** Compaction `conversation_summary` replaces `summary` / `agent_memory` (those keys are omitted); uncompacted turns send writable memory plus a gap-only summary and digest assistant replay; consumed JSON tool results keep scalars and counts; `RunConfig.group_id` is the task id (openai-agents prompt-cache routing). Auto-compaction at 60 % of the window.
-- **Chrome.** Title-bar state sits with the task name; Composer is a hairline slot (no elevation); Find steps use icons.
-- **Prefix and output (after v1.17.2).** Engine tools are the gated `storage_engines` group, not CORE. Tool descriptions are one sentence plus Args. A first tool delivery over 6 000 characters is digested before the model sees it (`read_skill` exempt). Already-consumed outputs compact after one later step. The tool-output floor is 48k characters, 12 % of the window.
+- **Chrome.** Title-bar state sits with the task name; Composer focus is a hairline; Find steps use icons.
+
+### 6.x Context economy and Codex chrome (v1.17.3)
+
+- **Prefix.** Engine tools are the gated `storage_engines` group, not CORE. Tool descriptions are one sentence plus Args. A first tool delivery over 6 000 characters is digested before the model sees it (`read_skill` exempt). Already-consumed outputs compact after one later step. The tool-output floor is 48k characters, 12 % of the window.
+- **Chrome.** The title bar is name + state (⌘F / ⌘K stay; no painted Find/palette). Sidebar Search is lighter than New task. Composer is a hairline slot (no elevation). Approval impact reads as stacked sentences. Find remains the 46rem strip under the title bar.
 
 ### 6.x True native agent, finished (v1.16.0)
 
@@ -581,7 +585,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.17.2 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.17.3 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
 
 ### Real-Sidecar E2E
 

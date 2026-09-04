@@ -6,7 +6,9 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
-_After v1.17.2 — context economy and Codex chrome. No migration (head stays **030**)._
+## [1.17.3] - 2026-09-04
+
+_Patch — context economy and Codex chrome. No migration (head stays **030**)._ See `docs/releases/1.17.3.md`.
 
 ### Fixed
 

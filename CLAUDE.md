@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.17.2.**
+> **Implementation contract for Storage Agent v1.17.3.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.17.2 product invariant is:
+The v1.17.3 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -128,7 +128,7 @@ Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned b
 - (v1.17.0) Codex window: ContextMeter lives in the model menu, not the Composer bar; the title bar is name + state; the empty start is greeting + Composer with no glyph; the user bubble is a quiet fill; approval is sentence-case hairline *Waiting for approval*; *Worked for {t}* carries no tool-call count on the head; attachments are per-task; a file while busy is labeled Delegate; copy is Direction / Execution / Work Result. No migration (head stays **030**).
 - (v1.17.1) Queued banners never reprint the live Direction (or a `steer_followup` as a second Direction); Settings fields follow the editor pane (`@container`); quiet Find/palette icons return to the title bar. No migration.
 - (v1.17.2) Codex Search is a labeled row under New task (command palette). Find is a strip under the title bar on the reading column. Settings dialog is its own container. Compaction summary replaces earlier grounding rather than stacking on it; `RunConfig.group_id` routes official OpenAI prompt cache by task. No migration.
-- After v1.17.2 the title bar is name + state only (⌘F / ⌘K stay; Search is the quieter sidebar row). Engine tools (`simulate_storage_cost` and the other storage engines) are gated as `storage_engines`, not CORE. Tool descriptions are one sentence plus Args. A first tool delivery over 6 000 characters is digested before the model sees it (`read_skill` exempt). Consumed outputs compact after one later step. The tool-output floor is 48k characters (~12k tokens), 12 % of the window. No migration.
+- (v1.17.3) Title bar is name + state only (⌘F / ⌘K stay; Search is the quieter sidebar row). Engine tools (`simulate_storage_cost` and the other storage engines) are gated as `storage_engines`, not CORE. Tool descriptions are one sentence plus Args. A first tool delivery over 6 000 characters is digested before the model sees it (`read_skill` exempt). Consumed outputs compact after one later step. The tool-output floor is 48k characters (~12k tokens), 12 % of the window. No migration.
 
 The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream (reconnect by sequence), steer/stop/resume/verify the current execution, then reload persisted task state. There are no `/sessions` message endpoints any more. Do not create a second submit path.
 

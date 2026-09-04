@@ -1,12 +1,13 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.17.2** (`v1.17.2`).
+> **Current architecture baseline: Storage Agent v1.17.3** (`v1.17.3`).
 > v1.16.0 finished the true native agent; v1.16.1 patched tables, search,
 > wrapping, and a first Codex-grade polish pass. **v1.17.0 is the Codex
 > window** (`docs/releases/1.17.0.md`); **v1.17.1** patches queue honesty,
 > Settings field sizing, and title-bar Find (`docs/releases/1.17.1.md`);
 > **v1.17.2** puts Codex Search on the left, finishes Settings dialog chrome,
-> and layers context (`docs/releases/1.17.2.md`).
+> and layers context (`docs/releases/1.17.2.md`); **v1.17.3** cuts the
+> per-step token prefix and matches Codex chrome (`docs/releases/1.17.3.md`).
 > The next plan lives in `docs/roadmap.md`.
 >
 > The normative product invariant is: **the Agent Task is the application**.
@@ -66,11 +67,11 @@
 > a gap-only summary and digest assistant replay; `RunConfig.group_id`
 > routes official OpenAI prompt cache by task; auto-compaction leaves 40 %
 > headroom.
-> After v1.17.2 the title bar is name + state only (⌘F / ⌘K stay; Search is
-> the quieter sidebar row; Composer is a hairline slot). Engine tools are
-> gated as `storage_engines`; a first large tool delivery is digested;
-> consumed outputs compact after one step; the tool-output floor is 48k
-> characters.
+> **v1.17.3 cuts the prefix and matches Codex chrome.** The title bar is
+> name + state only (⌘F / ⌘K stay; Search is the quieter sidebar row;
+> Composer is a hairline slot). Engine tools are gated as `storage_engines`;
+> a first large tool delivery is digested; consumed outputs compact after
+> one step; the tool-output floor is 48k characters.
 > No migration (head stays **030**).
 > **v1.13.0 is honesty and completeness.** The MCP bridge executes instead of
 echoing, the OTel export carries real spans, restart recovery covers waiting
@@ -122,7 +123,7 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
 - [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 030, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — next direction after **v1.17.2**. Delivered history lives in `releases/`.
+- [`roadmap.md`](roadmap.md) — next direction after **v1.17.3**. Delivered history lives in `releases/`.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.

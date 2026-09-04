@@ -1,6 +1,6 @@
 # Release
 
-> **Current process baseline: Storage Agent v1.17.2.**
+> **Current process baseline: Storage Agent v1.17.3.**
 >
 > A release is a build of one exact verified source SHA. Release notes become historical records after publication; they do not override the current architecture contracts in `docs/README.md`, `product.md`, `architecture.md`, or `CLAUDE.md`.
 
@@ -70,7 +70,7 @@ The workflow creates/targets the matching `vX.Y.Z` release/tag according to `.gi
 
 Platform jobs run the repository's version-stamping script before build so Tauri/Cargo/Sidecar/frontend package metadata reflects the release version without requiring a version-only source commit.
 
-The GitHub tag and public asset names keep the release-branch spelling (`v1.17.2`). Bundle metadata is canonical semver (`1.17.2`): leading zeros in numeric components are stripped because Tauri and Cargo reject `1.02.0`.
+The GitHub tag and public asset names keep the release-branch spelling (`v1.17.3`). Bundle metadata is canonical semver (`1.17.3`): leading zeros in numeric components are stripped because Tauri and Cargo reject `1.02.0`.
 
 Do not treat the frontend development package version as the authoritative public release version when the release workflow stamps it from the release branch/tag.
 

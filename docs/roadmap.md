@@ -1,13 +1,14 @@
 # Roadmap
 
-> **Status: delivered in v1.17.2.** v1.16.0 finished the true native Agent;
+> **Status: delivered in v1.17.3.** v1.16.0 finished the true native Agent;
 > v1.17.0 shipped the Codex window (`docs/releases/1.17.0.md`). v1.17.1
 > patched queue honesty, Settings field sizing, and title-bar Find
 > (`docs/releases/1.17.1.md`). v1.17.2 puts Codex Search on the left,
 > finishes Settings dialog chrome, and layers context
-> (`docs/releases/1.17.2.md`).
+> (`docs/releases/1.17.2.md`). v1.17.3 cuts the per-step token prefix and
+> matches Codex chrome (`docs/releases/1.17.3.md`).
 
-> **Baseline: Storage Agent v1.17.2.** The product invariant is unchanged:
+> **Baseline: Storage Agent v1.17.3.** The product invariant is unchanged:
 > **the Agent Task is the application.** The window is sidebar · title bar ·
 > one Task document · one Composer. UI and UE match Codex's quiet Agent
 > surface — same chrome, same transcript rhythm, same Composer craft —
@@ -44,7 +45,7 @@ invents a worker, plan, or submit path the Sidecar does not expose.
 ## Next
 
 No next version is planned in this file. Follow-up is ordinary defects against
-the Codex window contract and the v1.17.2 security floor. Non-goals remain:
+the Codex window contract and the v1.17.3 security floor. Non-goals remain:
 coding-Agent features, a second submit path, slash SKUs, suggestion cards, a
 painted engine grid, the historical Review sheet, artifact chips, a grey
 Direction block, Next Actions, a metrics footer, table pagination, a second

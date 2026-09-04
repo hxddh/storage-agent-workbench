@@ -68,8 +68,7 @@ from .finalize import (  # noqa: F401
     _is_model_timeout, _is_tool_call_sequence_error, _is_transient_provider_error,
     finalize_answer_text, sanitize_answer_text)
 from .guards import (  # noqa: F401
-    _compact_consumed_outputs, _first_delivery_digest, _shorten_tool_description,
-    _shorten_tool_descriptions)
+    _compact_consumed_outputs, _first_delivery_digest, _shorten_tool_description)
 from .steer import SteerQueue  # noqa: F401
 from .stream import _StreamSanitizer  # noqa: F401
 
