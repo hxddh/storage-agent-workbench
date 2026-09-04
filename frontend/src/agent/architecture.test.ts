@@ -1257,7 +1257,7 @@ describe("v1.16.0 true native agent, finished", () => {
     expect(source("../lib/mention.ts")).toContain("mentionTriggered");
     expect(source("../lib/approvalAction.ts")).toContain("approvalActionLabel");
     expect(source("../components/ApprovalCard.tsx")).toContain("approvalActionLabel(item.action_type, t)");
-    expect(source("../settings/SafetyPane.tsx")).toContain("approvalActionLabel(a, t)");
+    expect(source("../settings/SafetyPane.tsx")).toContain("approvalActionLabel(action, t)");
   });
 
   it("prefills full-sentence drafts and promises no charts from tables", () => {

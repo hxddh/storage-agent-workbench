@@ -39,6 +39,9 @@ describe("task.status frames", () => {
     });
     expect(next.active_execution).toBeNull();
     expect(next.last_execution).toMatchObject({ id: "e7", status: "completed", task_id: "t9" });
+    expect(next.queued_executions).toEqual([]);
+  });
+
   it("does not reprint the live Direction as a queued banner", () => {
     const next = applyTaskStatus(null, "t1", {
       status: "working", active_execution_id: "e1",
