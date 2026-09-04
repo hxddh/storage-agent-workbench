@@ -29,7 +29,7 @@ export function Field({ label, children, hint }: { label: string; children: Reac
           })
         : children}
       {hint ? (
-        <span id={hintId} className="mt-1 block text-xs text-gray-500">
+        <span id={hintId} className="mt-1 block text-xs leading-relaxed text-pretty text-gray-500">
           {hint}
         </span>
       ) : null}

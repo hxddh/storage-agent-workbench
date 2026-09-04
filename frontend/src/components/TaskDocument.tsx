@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { SessionDetail, SessionMessage, TriageCase } from "../types";
 import type { SessionRun } from "../sessionRuns";
 import type { ApprovalItem, TurnItem } from "../lib/turnItems";
-import { matches } from "../shortcuts";
 import { clearFind, findRanges, paintFind } from "../lib/findHighlight";
 import { getFindRoots } from "../lib/findRoots";
 import { meetsMinQuery, stepHit } from "../taskFind";
@@ -91,6 +90,7 @@ export function TaskDocument({
   viewport,
   findOpen,
   setFindOpen,
+  findFocusTick,
   onResync,
 }: {
   sessionId: string | null;
@@ -113,6 +113,7 @@ export function TaskDocument({
   viewport: ReturnType<typeof useTaskViewport>;
   findOpen: boolean;
   setFindOpen: (open: boolean) => void;
+  findFocusTick: number;
   /** v1.16 — heal a stalled stream: reload the document, clearing the live
    * turn only on success. Returns whether the reload landed, so the caller
    * can back off and retry instead of going silent. */
@@ -196,15 +197,6 @@ export function TaskDocument({
     setFindOpen(false);
     setFindQuery("");
   }, [setFindOpen]);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (!matches(event, "find")) return;
-      event.preventDefault();
-      setFindOpen(true);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [setFindOpen]);
 
   useEffect(() => {
     followLatest();
@@ -257,6 +249,9 @@ export function TaskDocument({
     // task root — column flex items default to min-width:auto.
     <>
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        {findOpen ? (
+          <FindBar query={findQuery} onQuery={setFindQuery} total={matchTotal} index={findIdx} onStep={stepFind} onClose={closeFind} focusTick={findFocusTick} />
+        ) : null}
         <div
           ref={scrollRef}
           data-testid="task-scroll"
@@ -266,9 +261,6 @@ export function TaskDocument({
           onKeyDown={releaseToUser}
           className="flex-1 overflow-auto px-6 pb-6 pt-5"
         >
-          {findOpen ? (
-            <FindBar query={findQuery} onQuery={setFindQuery} total={matchTotal} index={findIdx} onStep={stepFind} onClose={closeFind} />
-          ) : null}
           <div ref={contentRef} className="native-document space-y-6">
             {hiddenCount > 0 ? (
               <div className="flex justify-center gap-1.5">
@@ -366,7 +358,7 @@ export function TaskDocument({
       <div className="relative min-w-0 px-6 pb-4 pt-1">
         {!pinned ? (
           <div className="pointer-events-none absolute -top-10 left-0 right-0 z-floating flex justify-center">
-            <button type="button" onClick={jumpToLatest} data-testid="jump-to-latest" className="native-chip pointer-events-auto bg-panel shadow-pop">
+            <button type="button" onClick={jumpToLatest} data-testid="jump-to-latest" className="native-chip pointer-events-auto bg-panel shadow-elev">
               <Icon name="arrowDown" size={12} stroke={2} />
               {busy ? copy.jumpWorking : copy.jumpLatest}
             </button>

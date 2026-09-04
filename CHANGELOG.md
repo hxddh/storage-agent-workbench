@@ -6,6 +6,13 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Find** — ⌘F opens a compact Codex overlay at the top-right of the document column (search, n/n, previous/next, close), not a full-width in-flow card. A second ⌘F re-selects the query; Enter / Shift+Enter / ⌘G step; Escape closes. Title-bar Find / palette icons stay for discoverability; the document ghost stays gone.
+- **Settings** — the dialog is its own container: nav labels no longer wrap, the close control sits in a content head instead of overlapping the heading, Skills/Instructions/Observability rows wrap identity vs actions, and a narrow pane stacks the nav into a tab strip.
+- **Context economy** — auto-compaction triggers at 60 % of the model window (was 80 %); after a compaction summary the prompt no longer re-sends the full memory/summary tail next to it; carried skill methods are clipped; instruction markdown/engine coaching is shorter. Safety rules, `load_tools` groups, and typed `storage_task_context` stay complete.
+- **Chrome** — title-bar state sits with the task name; Composer focus is a hairline, not a heavy pop shadow; Find steps use icons.
+
 ## [1.17.1] - 2026-09-04
 
 _Patch — queue honesty, Settings container layout, title-bar Find. No migration (head stays **030**)._ See `docs/releases/1.17.1.md`.

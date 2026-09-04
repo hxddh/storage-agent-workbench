@@ -21,6 +21,7 @@ import {
 import { TaskBanners } from "./TaskBanners";
 import { TaskComposerHost, useComposerActions, useTaskComposer } from "./TaskComposerHost";
 import { TaskDocument, lastWorkResult, useTaskItems } from "./TaskDocument";
+import { IdleFindBar } from "./FindBar";
 import { useTaskCopy } from "./taskCopy";
 
 /**
@@ -155,13 +156,18 @@ export function AgentTaskImplementation({
     && (lastExec.status === "interrupted" || lastExec.status === "failed"),
   );
   const [findOpen, setFindOpen] = useState(false);
+  const [findFocusTick, setFindFocusTick] = useState(0);
+  const openFind = () => {
+    setFindOpen(true);
+    setFindFocusTick((n) => n + 1);
+  };
   const { compact: compactContext, compacting } = useCompactContext(sessionId);
   useEffect(() => publishPaletteActions({
     stop: () => runner.stop(),
     resume: showResume && lastExec ? () => { void runner.resume(lastExec.id); } : undefined,
     focusComposer: composer.focus,
     prefill: (text: string) => { composer.setText(text); composer.focus(); },
-    find: () => setFindOpen(true),
+    find: openFind,
     review: sessionId ? () => openAgentReview("evidence") : undefined,
     compact: sessionId && !busy ? () => { void compactContext(); } : undefined,
     compacting,
@@ -244,11 +250,14 @@ export function AgentTaskImplementation({
           </div>
         </div>
       ) : isEmpty ? (
-        <div className="native-start" data-testid="task-start">
-          <div className="native-start-inner">
-            <p className="native-start-greeting">{pickStartGreeting(lang)}</p>
-            {composerNode}
-            <div className="mt-4 space-y-2">{banners}</div>
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          {findOpen ? <IdleFindBar onClose={() => setFindOpen(false)} focusTick={findFocusTick} /> : null}
+          <div className="native-start" data-testid="task-start">
+            <div className="native-start-inner">
+              <p className="native-start-greeting">{pickStartGreeting(lang)}</p>
+              {composerNode}
+              <div className="mt-4 space-y-2">{banners}</div>
+            </div>
           </div>
         </div>
       ) : (
@@ -273,6 +282,7 @@ export function AgentTaskImplementation({
           viewport={viewport}
           findOpen={findOpen}
           setFindOpen={setFindOpen}
+          findFocusTick={findFocusTick}
           onResync={async () => {
             const id = localId.current;
             if (!id) return false;

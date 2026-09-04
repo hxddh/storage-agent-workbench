@@ -74,19 +74,21 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew, on
           </button>
         </>
       ) : null}
-      <span className="native-titlebar-title" data-task={task ? "true" : "false"} data-tauri-drag-region>{title}</span>
+      <span className="native-titlebar-title" data-task={task ? "true" : "false"} data-tauri-drag-region>
+        <span className="native-titlebar-name">{title}</span>
+        {stateLabel ? (
+          <span className="native-titlebar-state" data-state={state} data-testid="titlebar-state">
+            {state === "working" || state === "uploading" ? <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden /> : null}
+            {stateLabel}
+          </span>
+        ) : null}
+      </span>
       <button type="button" onClick={onFind} disabled={!task} aria-label={t("task.find")} title={`${t("task.findHint")} ⌘F`} data-testid="titlebar-find" className="native-icon-button">
         <Icon name="search" size={15} />
       </button>
       <button type="button" onClick={onPalette} aria-label={t("task.palette")} title={`${t("task.paletteHint")} ⌘K`} data-testid="titlebar-palette" className="native-icon-button">
         <Icon name="command" size={15} />
       </button>
-      {stateLabel ? (
-        <span className="native-titlebar-state" data-state={state} data-testid="titlebar-state">
-          {state === "working" || state === "uploading" ? <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden /> : null}
-          {stateLabel}
-        </span>
-      ) : null}
     </header>
   );
 }

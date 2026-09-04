@@ -58,77 +58,52 @@ INSTRUCTIONS = (
     "the user's Direction LIVE with your read-only tools — act autonomously, "
     "don't narrate a plan first — and answer from what you find, staying on "
     "what they actually asked.\n"
-    "Your context JSON carries the Task goal, a deterministic summary, your "
-    "recorded agent_memory, the typed storage_task_context (authoritative machine "
-    "state: buckets in focus, attached datasets, evidence imports, open "
-    "decisions — trust it over re-deriving those from recent_messages), recent "
-    "turns, the configured_providers (use those provider_id values directly), "
-    "any attached_files the user uploaded this turn, "
-    "and a CATALOG of StorageOps expert skills — when one fits the problem, "
-    "load its full method with read_skill(name) and apply it.\n"
-    "Your visible tools are the CORE set — orientation, the two probes every "
-    "investigation starts from, skills and memory. Specialist tools live in "
-    "groups you unlock with load_tools(group) when the Direction needs them; "
-    "they become callable on your very next step. Unlock only what you will "
-    "actually use. Groups:\n"
+    "Context JSON carries the Task goal, a deterministic summary, agent_memory, "
+    "the typed storage_task_context (authoritative: buckets, datasets, evidence "
+    "imports, open decisions — trust it over recent_messages), recent turns, "
+    "configured_providers (use those provider_id values), attached_files, and a "
+    "CATALOG of StorageOps skills — load a matching method with read_skill(name).\n"
+    "Visible tools are the CORE set. Specialist tools live in groups you unlock "
+    "with load_tools(group) when the Direction needs them; they become callable "
+    "on your next step. Unlock only what you will use. Groups:\n"
     + tool_group_catalog() + "\n"
-    "Choose and chain tools by their descriptions. If a survey/review returns "
-    "status 'running' with a run_id, it continues in the background: don't "
-    "re-run it — read it later with read_run_result(run_id).\n"
-    "After a survey_account, if this provider has an earlier survey, call "
-    "compare_to_last_survey(provider_id) and tell the user what CHANGED since "
-    "last time — it reuses persisted snapshots, no new scan.\n"
-    "A follow-up Direction about evidence this Task ALREADY imported is "
-    "answered locally: list_imported_evidence then aggregate_imported_evidence "
-    "(same whitelist as the uploaded-file tools, no new download). Never propose "
-    "a re-import, and never ask the user to attach the file by hand, just to ask "
-    "a second time of data that is already here.\n"
-    "Cost, lifecycle simulation, remediation plans, baselines, and Drift are "
-    "deterministic tools (simulate_storage_cost, draft_remediation_plan, "
-    "verify_remediation_plan, capture_task_baseline, compare_task_drift). They "
-    "return bounded documents with coverage and gaps. Never invent a dollar "
-    "figure, a trend, or a missing inventory. A remediation plan is applied by "
-    "the user in their own console — you stay read-only. Verify diffs live "
-    "config against the plan. A [revisit] or [verify] Direction must stay "
-    "read-only; confirmation-gated work becomes a pending Decision, never an "
-    "auto-approval. Price-table dollars stay gaps until get_price_table_status "
-    "shows confirmed=true. The command palette names these engines, so use "
-    "one only when the Direction needs it; never pitch them in prose.\n"
-    "When preview_object truncates a large object and the answer needs its FULL "
-    "content, don't guess from the head: propose the confirmed evidence import "
-    "(for a bucket file) or use analyze_uploaded_file (for a file the user "
-    "attached) so the whole file is analyzed deterministically.\n"
-    "Record durable facts, notable findings, and open questions with note_fact "
-    "/ record_finding / note_open_question (update_memory_item / "
-    "resolve_memory_item to correct or close them). Each recent assistant message "
-    "carries a tools_run trace of the read-only probes that turn already ran — "
-    "consult it and DON'T re-run a check you've already done; re-fetch only when "
-    "you need fuller detail than the one-line result. A trailing '[+N repeats]' "
-    "entry means N of that turn's calls were identical to lines already listed "
-    "in an earlier turn and are not repeated here. Between that trace and "
-    "agent_memory, reuse what earlier turns established instead of re-deriving it.\n"
-    "Your step budget is bounded: probe what the Direction needs, and if a "
-    "complete answer would need more steps, give your best grounded answer and "
-    "say what remains.\n"
-    "Your answer is rendered as markdown: headings, **bold**, `code`, fenced "
-    "blocks with a language tag (json/xml/bash/sql get syntax highlighting), "
-    "nested and task lists, and pipe tables with column alignment all render. "
-    "Write tables for READING first: short headers, one idea per column, wrapped "
-    "text over wide grids. When you report a measure per group (bytes per prefix, "
-    "errors per hour, objects per storage class), prefer the group in the FIRST "
-    "column with plain numeric columns. Every table renders as a table — the UI "
-    "never draws charts from answer text.\n\n"
+    "Choose tools by their descriptions. If a survey/review returns status "
+    "'running' with a run_id, don't re-run it — read_run_result(run_id) later.\n"
+    "After survey_account, if this provider has an earlier survey, call "
+    "compare_to_last_survey(provider_id) and report what CHANGED.\n"
+    "A follow-up about evidence this Task ALREADY imported is local: "
+    "list_imported_evidence then aggregate_imported_evidence. Never re-import "
+    "or ask the user to re-attach data that is already here.\n"
+    "Cost, lifecycle, remediation, baselines, and Drift are deterministic tools "
+    "(simulate_storage_cost, draft_remediation_plan, verify_remediation_plan, "
+    "capture_task_baseline, compare_task_drift). They return bounded documents "
+    "with coverage and gaps — never invent dollars or a missing inventory. You "
+    "stay read-only; the user applies a plan in their console. A [revisit] or "
+    "[verify] Direction stays read-only. Price-table dollars stay gaps until "
+    "get_price_table_status shows confirmed=true. Never pitch these engines.\n"
+    "When preview_object truncates a large object, don't guess the rest: propose "
+    "confirmed evidence import (bucket file) or analyze_uploaded_file (attached).\n"
+    "Record facts/findings/questions with note_fact / record_finding / "
+    "note_open_question (update_memory_item / resolve_memory_item to correct). "
+    "Each recent assistant message carries a tools_run trace — consult it and "
+    "DON'T re-run a check you've already done. A trailing '[+N repeats]' means "
+    "N of that turn's calls were identical to earlier turns. Reuse agent_memory "
+    "instead of re-deriving it.\n"
+    "Your step budget is bounded: probe what the Direction needs; if more steps "
+    "would be required, give your best grounded answer and say what remains.\n"
+    "Your answer is markdown: headings, **bold**, `code`, fenced blocks with a "
+    "language tag, lists, and pipe tables. Write tables for READING: short "
+    "headers, one idea per column; put the group in the FIRST column with plain "
+    "numeric columns. The UI never draws charts from answer text.\n\n"
     "SAFETY RULES:\n" + "\n".join(f"- {r}" for r in SESSION_SAFETY_RULES) + "\n\n"
     "For work that needs three or more distinct steps, keep a short plan with "
     "update_plan (send the whole list each time; one step in_progress; mark "
     "steps completed as you finish) — the user sees it as a live checklist. "
     "Never plan trivial work.\n"
     "How you write: before each tool call you MAY write one short sentence of "
-    "commentary (what you are checking and why) — it is shown to the user as "
-    "the work happens. When the investigation is done, write the COMPLETE "
+    "commentary (what you are checking and why). When done, write the COMPLETE "
     "answer as one final message: plain Markdown, no metadata, no JSON block, "
-    "no hidden reasoning. If a next step needs the user (more context, a "
-    "decision), ask for it in that answer in your own words."
+    "no hidden reasoning. If a next step needs the user, ask in that answer."
 )
 
 
@@ -151,14 +126,10 @@ FINALIZE_INSTRUCTIONS = (
     "available to you — do not say you will check something, and do not imply a "
     "probe is still running. Answer from the investigation trace and context "
     "below, and state plainly what remains unknown.\n"
-    "Your answer is rendered as markdown: headings, **bold**, `code`, fenced "
-    "blocks with a language tag (json/xml/bash/sql get syntax highlighting), "
-    "nested and task lists, and pipe tables with column alignment all render. "
-    "Write tables for READING first: short headers, one idea per column, wrapped "
-    "text over wide grids. When you report a measure per group (bytes per prefix, "
-    "errors per hour, objects per storage class), prefer the group in the FIRST "
-    "column with plain numeric columns. Every table renders as a table — the UI "
-    "never draws charts from answer text.\n\n"
+    "Your answer is markdown: headings, **bold**, `code`, fenced blocks with a "
+    "language tag, lists, and pipe tables. Write tables for READING: short "
+    "headers, one idea per column; put the group in the FIRST column with plain "
+    "numeric columns. The UI never draws charts from answer text.\n\n"
     "SAFETY RULES:\n" + "\n".join(f"- {r}" for r in SESSION_SAFETY_RULES) + "\n\n"
     "Write the COMPLETE Work Result as one final message: plain Markdown, no "
     "metadata, no JSON block, no hidden reasoning. If a next step needs the user "
@@ -299,6 +270,13 @@ _STABLE_CONTEXT_KEYS = ("session", "summary", "agent_memory", "active_skill",
 # investigation follows a method, and carrying a second doubles the cost to cover
 # a case the agent can still reach with read_skill.
 _ACTIVE_SKILL_CAP = 1
+# The method body is ~3,300 chars. Riding the full text in the stable half every
+# turn after the agent has already applied it is waste; the outline is enough to
+# keep going, and read_skill still returns the rest.
+_ACTIVE_SKILL_METHOD_CAP = 1200
+# After compaction, conversation_summary already holds facts/findings/questions.
+# Re-sending the full elastic memory tail next to it triple-pays the same ground.
+_COMPACTED_MEMORY_CAP = 8
 
 
 def _latest_task_context(conn: Any, session_id: str | None) -> dict[str, Any] | None:
@@ -375,6 +353,22 @@ def active_skill_block(conn: Any, session_id: str | None) -> dict[str, Any] | No
                     "already here, do not read_skill it again."}
 
 
+def _clip_active_skill(skill: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Bound the carried skill method so the stable half does not re-bill a
+    full SKILL.md on every step. The agent can still read_skill for the rest."""
+    if not skill:
+        return None
+    method = str(skill.get("method") or "")
+    if len(method) <= _ACTIVE_SKILL_METHOD_CAP:
+        return skill
+    clipped = dict(skill)
+    omitted = len(method) - _ACTIVE_SKILL_METHOD_CAP
+    clipped["method"] = method[:_ACTIVE_SKILL_METHOD_CAP] + (
+        f" [TRUNCATED: {omitted} more characters cut; read_skill for the rest]"
+    )
+    return clipped
+
+
 def split_context_for_cache(context: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """(stable, volatile) halves of the context block.
 
@@ -440,6 +434,8 @@ def build_session_context(
     # the historical 50) — agent_memory already went elastic; leaving these flat
     # clipped exactly the grounding a large-context model needs on big sessions.
     summary_cap = _elastic_memory_cap(model, explicit_window)
+    if conversation_summary:
+        summary_cap = min(_COMPACTED_MEMORY_CAP, summary_cap)
     findings = []
     for f in (summary.get("findings") or [])[:summary_cap]:
         findings.append({
@@ -453,6 +449,7 @@ def build_session_context(
                 for m in recent_messages[-max_messages:]]
     _dedupe_replay_tools(replayed)
     typed = _prompt_task_context(task_context)
+    clipped_skill = _clip_active_skill(active_skill)
     context = {
         "session": {
             "title": redact_text(str(session.get("title", ""))),
@@ -475,11 +472,11 @@ def build_session_context(
         # Things YOU recorded in earlier turns of this session (via note_fact /
         # record_finding / note_open_question). Reuse them; don't re-derive.
         "agent_memory": _build_agent_memory_block(
-            agent_memory, cap=_elastic_memory_cap(model, explicit_window)),
+            agent_memory, cap=summary_cap),
         # The skill method this session is working from, carried across turns so
         # it is not re-read every turn (v0.55.0). In the STABLE half, so a caching
         # endpoint serves it instead of re-billing it.
-        **({"active_skill": active_skill} if active_skill else {}),
+        **({"active_skill": clipped_skill} if clipped_skill else {}),
         # Typed Storage Task Context (v0.95): authoritative machine state. Lives
         # in the STABLE half with the skill catalog / providers so a prompt-cache
         # hit survives across turns until the context version actually changes.

@@ -31,7 +31,7 @@ Shipped:
 | Plan | quiet checklist; folds to *Plan · n/n* |
 | Approval | sentence-case *Waiting for approval*; hairline; Allow / Deny |
 | Composer | `+` · textarea · model · send; ContextMeter in the model menu |
-| Find | title-bar icon + ⌘F bar; no document ghost |
+| Find | title-bar icon + compact overlay (⌘F); no document ghost |
 | Copy | Direction / Execution / Work Result |
 
 Do **not** replicate Codex the coding Agent: worktrees, diffs, terminal,

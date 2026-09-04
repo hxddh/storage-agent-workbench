@@ -1102,11 +1102,13 @@ describe("v1.15.0 true native agent", () => {
   it("opens Find and the palette from quiet title-bar icons and the keyboard", () => {
     const app = source("../App.tsx");
     const doc = source("../components/TaskDocument.tsx");
+    const task = source("../components/AgentTaskImplementation.tsx");
     expect(app).toContain('data-testid="titlebar-find"');
     expect(app).toContain('data-testid="titlebar-palette"');
     expect(doc).not.toContain('data-testid="task-find-open"');
-    expect(doc).toContain("setFindOpen(true)");
-    expect(doc).toContain('matches(event, "find")');
+    expect(task).toContain("openFind");
+    expect(task).toContain("setFindOpen(true)");
+    expect(doc).not.toContain('matches(event, "find")');
     expect(app).toContain('case "find": live.find?.()');
     expect(app).toContain('case "palette": setPaletteOpen');
   });
@@ -1170,8 +1172,11 @@ describe("v1.15.0 true native agent", () => {
     expect(shell).toContain("container-type: inline-size");
     expect(shell).toContain(".native-settings-fields");
     expect(shell).toContain("@container (min-width: 32rem)");
+    expect(shell).toContain("container-name: settings");
     expect(source("../settings/ModelProvidersPane.tsx")).toContain("native-settings-fields");
     expect(source("../settings/ModelProvidersPane.tsx")).not.toContain("sm:grid-cols-2");
+    expect(source("../components/SettingsDialog.tsx")).toContain("native-settings");
+    expect(source("../components/NativeAgentPanel.tsx")).toContain("native-settings-head");
   });
 
   it("elevates the Composer and the user bubble above the canvas", () => {
@@ -1364,5 +1369,38 @@ describe("window follow-up: queue honesty, Settings container, painted Find", ()
     expect(source("../components/TaskDocument.tsx")).not.toContain("task-find-open");
     expect(source("../components/Composer.tsx")).not.toContain("<ContextMeter");
     expect(source("../components/AgentTaskImplementation.tsx")).not.toContain("start-mark");
+  });
+});
+
+/**
+ * Codex Find overlay, Settings dialog chrome, earlier compaction.
+ * Find is a compact top-right widget (not an in-flow 46rem card); the
+ * Settings dialog is its own container so the nav can stack; ⌘F while
+ * open re-selects the input.
+ */
+describe("Codex Find overlay and Settings dialog chrome", () => {
+  it("renders Find as a compact overlay, not an in-flow card", () => {
+    const bar = source("../components/FindBar.tsx");
+    const css = source("./native-document.css");
+    const doc = source("../components/TaskDocument.tsx");
+    expect(bar).toContain("native-find");
+    expect(bar).not.toContain("sticky");
+    expect(bar).not.toContain("shadow-pop");
+    expect(bar).not.toContain('"↑"');
+    expect(bar).toContain('name={dir === 1 ? "arrowDown" : "arrowUp"}');
+    expect(bar).toContain("focusTick");
+    expect(css).toContain(".native-find");
+    expect(css).toContain("width: min(20rem");
+    expect(doc).toContain("focusTick={findFocusTick}");
+    expect(doc).not.toContain("matches(event, \"find\")");
+  });
+
+  it("sizes the Settings dialog as a container and keeps the close control out of the heading", () => {
+    const settings = source("../components/SettingsDialog.tsx");
+    const shell = source("./native-shell.css");
+    expect(settings).toContain("native-settings-content-head");
+    expect(settings).not.toContain("absolute right-3 top-3");
+    expect(shell).toContain("@container settings (max-width: 40rem)");
+    expect(shell).toContain(".native-settings-nav-footer");
   });
 });

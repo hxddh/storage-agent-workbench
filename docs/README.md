@@ -56,7 +56,8 @@
 > / Work Result.
 > **v1.17.1 patches that window.** Queued banners never reprint the live
 > Direction; Settings fields follow the editor pane; quiet Find/palette
-> icons return to the title bar.
+> icons return to the title bar. Find is a compact overlay (⌘F). Auto-
+> compaction triggers at 60 % of the window.
 > No migration (head stays **030**).
 > **v1.13.0 is honesty and completeness.** The MCP bridge executes instead of
 echoing, the OTel export carries real spans, restart recovery covers waiting

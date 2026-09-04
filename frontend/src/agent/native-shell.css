@@ -385,16 +385,23 @@
   padding-left: 76px;
 }
 .native-titlebar-title {
+  display: inline-flex;
   min-width: 0;
   flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   overflow: hidden;
   color: var(--gray-300);
   font-size: var(--text-sm);
   font-weight: 500;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: center;
   -webkit-app-region: drag;
+}
+.native-titlebar-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .native-titlebar-title[data-task="true"] {
   color: var(--gray-100);
@@ -406,6 +413,7 @@
   gap: 6px;
   color: var(--gray-500);
   font-size: var(--text-2xs);
+  font-weight: 400;
 }
 .native-titlebar-state[data-state="decision"] { color: var(--gray-300); }
 .native-titlebar-state[data-state="attention"] { color: var(--danger); }
@@ -623,7 +631,136 @@
 /* Settings panes: one list, one editor, presets menu.
    Fields follow the editor pane (`@container`), not the viewport: the
    dialog is `min(880px, 96vw)` minus a 13rem nav, so `sm:` (640px viewport)
-   was painting two ~171px columns and squeezing CJK hints into orphans. */
+   was painting two ~171px columns and squeezing CJK hints into orphans.
+   The dialog itself is also a container so the nav can stack into a tab
+   strip before the content pane collapses. */
+.native-settings {
+  container-type: inline-size;
+  container-name: settings;
+}
+.native-settings-nav {
+  display: flex;
+  width: 11.5rem;
+  flex-shrink: 0;
+  flex-direction: column;
+  padding: 12px;
+  border-right: 1px solid var(--edge);
+  background: var(--sidebar);
+}
+.native-settings-nav-title {
+  padding: 4px 8px 12px;
+  color: var(--gray-100);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.native-settings-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.native-settings-nav-list button {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: var(--radius-lg);
+  color: var(--gray-300);
+  font-size: var(--text-sm);
+  text-align: left;
+  overflow: hidden;
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.native-settings-nav-list button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.native-settings-nav-list button:hover {
+  background: var(--hover);
+  color: var(--gray-100);
+}
+.native-settings-nav-list button.is-active {
+  background: var(--elevated);
+  color: var(--gray-100);
+}
+.native-settings-nav-footer {
+  margin-top: auto;
+  padding: 12px 8px 4px;
+  color: var(--gray-500);
+  font-size: var(--text-2xs);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.native-settings-content-head {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+  padding: 10px 12px 0;
+}
+.native-settings-pane {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 8px 28px 28px;
+}
+.native-settings-prose {
+  max-width: 40rem;
+  color: var(--gray-300);
+  font-size: var(--text-sm);
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+.native-settings-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.native-settings-head > div:first-child {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.native-settings-head > button {
+  flex: 0 1 auto;
+}
+@container settings (max-width: 40rem) {
+  .native-settings {
+    flex-direction: column;
+  }
+  .native-settings-nav {
+    width: auto;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    overflow-x: auto;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--edge);
+  }
+  .native-settings-nav-title,
+  .native-settings-nav-footer {
+    display: none;
+  }
+  .native-settings-nav-list {
+    flex-direction: row;
+    width: 100%;
+    gap: 4px;
+  }
+  .native-settings-nav-list button {
+    width: auto;
+    flex: 1 0 auto;
+  }
+  .native-settings-pane {
+    padding: 8px 20px 20px;
+  }
+}
+
 .native-settings-list { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--edge); }
 .native-settings-list > li { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--edge); }
 .native-settings-list > li[data-active="true"] { background: color-mix(in srgb, var(--panel) 60%, transparent); }

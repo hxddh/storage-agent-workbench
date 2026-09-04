@@ -311,7 +311,7 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
   {policy}`. `survey_account(max_buckets > 100)` raises
   `survey_account_large` through the same gate.
 - **Compaction.** `agent_runtime/compaction.py`: when the last turn's reported
-  input usage ≥ 80 % of `model_budget.context_window`, `_run_execution` runs
+  input usage ≥ 60 % of `model_budget.context_window`, `_run_execution` runs
   one tool-less streamed call (marker `[[storage-agent:compact]]`, private
   loop, 60 s ceiling, seam `COMPACT_STEP`) that summarises the sanitized
   replay into ≤ 2 000 redacted chars, stored as a new context version
@@ -330,7 +330,7 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 
 ### 6.x Codex window (v1.17.0)
 
-- **Quiet chrome.** ContextMeter lives in the model menu; the title bar is name + state plus quiet Find / palette icons (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is not a document ghost.
+- **Quiet chrome.** ContextMeter lives in the model menu; the title bar is name + state plus quiet Find / palette icons (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is a compact overlay at the top-right of the document column, not a document ghost.
 - **Queue honesty.** `task.status.queued[]` can name the execution the client is already following; queued banners drop that row (and a just-submitted Direction that the live bubble already paints). A `steer_followup` waiting behind the current Execution is labeled as itself, not a second Direction.
 - **Settings pane.** Provider fields follow the editor's inline size (`@container`), not the viewport `sm:` breakpoint.
 - **Transcript craft.** User bubble is a quiet fill (no border, no shadow); approval is sentence-case *Waiting for approval* with a hairline; *Worked for {t}* carries no tool-call count on the head.
@@ -340,8 +340,8 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 ### 6.x Window patch (v1.17.1)
 
 - **Queue honesty.** `task.status.queued[]` and `TaskBanners` drop the execution the client is already following; a `steer_followup` is labeled as itself.
-- **Settings pane.** Provider fields follow the editor (`@container`), not the viewport `sm:` breakpoint.
-- **Find.** Quiet title-bar Find / palette icons; no document ghost.
+- **Settings pane.** The dialog is its own container: nav labels do not wrap, the close control sits in a content head (not over the heading), Skills rows wrap identity vs actions, and at a narrow pane the nav becomes a horizontal strip. Provider fields follow the editor (`@container`), not the viewport `sm:` breakpoint.
+- **Find.** Quiet title-bar Find / palette icons; ⌘F opens a compact overlay widget at the top-right of the document column (not an in-flow card); no document ghost.
 
 ### 6.x True native agent, finished (v1.16.0)
 
