@@ -12,7 +12,7 @@ from . import session_analysis_tools
 from . import session_memory_tools
 from . import session_tools
 
-from .limits import (_NO_TIMEOUT_TOOLS, _BUDGET_EXEMPT_TOOLS, _COMPACT_AFTER_STEPS, _COMPACT_KEEP_HEAD, _COMPACT_MIN_CHARS, _CORE_TOOLS, _DEDUPE_EXEMPT_TOOLS, _ENVELOPE_EXEMPT_TOOLS, _GROUP_OF_TOOL, _SLOW_TOOLS, _SLOW_TOOL_TIMEOUT_S, _TOOL_BUDGET_EXHAUSTED, _TOOL_GROUPS, _TOOL_OUTPUT_TOO_LARGE, _TOOL_TIMEOUT_S, _UNTRUSTED_CLOSE, _UNTRUSTED_OPEN)
+from .limits import (_NO_TIMEOUT_TOOLS, _BUDGET_EXEMPT_TOOLS, _COMPACT_AFTER_STEPS, _COMPACT_KEEP_HEAD, _COMPACT_MIN_CHARS, _CORE_TOOLS, _DEDUPE_EXEMPT_TOOLS, _ENVELOPE_EXEMPT_TOOLS, _FIRST_DELIVERY_CHARS, _FIRST_DELIVERY_EXEMPT, _GROUP_OF_TOOL, _SLOW_TOOLS, _SLOW_TOOL_TIMEOUT_S, _TOOL_BUDGET_EXHAUSTED, _TOOL_DESC_LIMIT, _TOOL_GROUPS, _TOOL_OUTPUT_TOO_LARGE, _TOOL_TIMEOUT_S, _UNTRUSTED_CLOSE, _UNTRUSTED_OPEN)
 
 def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, Any]] | None,
                  session_id: str | None, turn_id: str | None = None,
@@ -42,6 +42,7 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
     # The plan the model owns (v1.12): a checklist the runtime records.
     from . import plan_tools
     tools += plan_tools.build(function_tool, activity)
+    _shorten_tool_descriptions(tools)
     return tools
 
 
@@ -59,7 +60,7 @@ def _build_load_tools(function_tool: Callable, unlocked: set[str],
 
     @function_tool
     def load_tools(group: str) -> str:
-        """Unlock one GROUP of specialist read-only tools for this turn, when the question needs it. The group's tools become callable on your very next step. Groups (see the catalog in your instructions): object_forensics, endpoint_probes, storage_pileup, bucket_config, uploaded_files, account_wide. Unlock only what the question actually needs — an unused group costs tokens on every later step. Args: group."""
+        """Unlock one specialist tool group for this turn. Groups: object_forensics, endpoint_probes, storage_pileup, bucket_config, uploaded_files, evidence_import, account_wide, storage_engines. Unlock only what you will use. Args: group."""
         name = (group or "").strip()
         if name not in _TOOL_GROUPS:
             return json.dumps({
@@ -189,6 +190,64 @@ def _json_consumed_digest(body: str) -> str | None:
     if not digest:
         return None
     return json.dumps(digest, separators=(",", ":"), ensure_ascii=False)
+
+
+def _shorten_tool_description(text: str, limit: int = _TOOL_DESC_LIMIT) -> str:
+    """Keep a one-sentence purpose plus Args. Schema already has the parameters."""
+    import re
+    text = " ".join((text or "").split())
+    if len(text) <= limit:
+        return text
+    args = ""
+    split_at = text.find(" Args:")
+    if split_at >= 0:
+        text, args = text[:split_at], text[split_at:]
+    parts = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)
+    head = parts[0] if parts else text
+    out = head + args
+    if len(out) <= limit + 80:
+        return out
+    room = max(72, limit - len(args))
+    return head[:room].rstrip() + "…" + args
+
+
+def _shorten_tool_descriptions(tools: list[Any]) -> int:
+    """Trim every tool description. Returns how many were shortened."""
+    n = 0
+    for t in tools:
+        desc = getattr(t, "description", None)
+        if not isinstance(desc, str) or len(desc) <= _TOOL_DESC_LIMIT:
+            continue
+        short = _shorten_tool_description(desc)
+        if short == desc:
+            continue
+        try:
+            t.description = short
+        except Exception:  # noqa: BLE001
+            continue
+        n += 1
+    return n
+
+
+def _first_delivery_digest(text: str) -> str:
+    """Reduce a large first tool result before the model ever sees it.
+
+    The full payload was already audited inside the tool. A digest plus an
+    explicit bound is what the next reasoning step needs; the model can call
+    again with a tighter prefix, max_keys, or filter for a slice.
+    """
+    body, open_m, close_m = text, "", ""
+    if text.startswith(_UNTRUSTED_OPEN) and text.rstrip().endswith(_UNTRUSTED_CLOSE):
+        open_m, close_m = _UNTRUSTED_OPEN, _UNTRUSTED_CLOSE
+        body = text[len(_UNTRUSTED_OPEN):text.rstrip().rfind(_UNTRUSTED_CLOSE)].strip("\n")
+    digest = _json_consumed_digest(body)
+    remainder = digest if digest else body[:_COMPACT_KEEP_HEAD]
+    dropped = max(0, len(body) - len(remainder))
+    kept = f"{open_m}\n{remainder}\n{close_m}" if open_m else remainder
+    return (f"{kept}\n[BOUNDED: first delivery was {len(body)} characters; "
+            f"{dropped} were withheld so this turn still fits. You have counts "
+            f"and scalars. If you need a slice, call again with a tighter "
+            f"prefix, max_keys, or filter.]")
 
 
 def _compact_output_text(text: str) -> str:
@@ -460,8 +519,11 @@ def _install_tool_output_budget(tools: list[Any],
     A bound, not a gate: once ``limit`` is spent, every further (non-memory)
     tool call returns a short structured note telling the model to synthesize —
     so a sprawling investigation degrades into an answer instead of blowing the
-    provider's context window. Wraps each SDK FunctionTool's ``on_invoke_tool``;
-    fake tools in tests (plain callables) are left untouched.
+    provider's context window. A first delivery larger than
+    ``_FIRST_DELIVERY_CHARS`` is reduced to a digest before it is counted or
+    shown (``read_skill`` / ``update_plan`` are exempt). Wraps each SDK
+    FunctionTool's ``on_invoke_tool``; fake tools in tests (plain callables)
+    are left untouched.
     """
     if limit is None:
         limit = model_budget.tool_output_char_budget(model, explicit_window)
@@ -544,6 +606,9 @@ def _install_tool_output_budget(tools: list[Any],
                                        "next_step": _TOOL_BUDGET_EXHAUSTED})
                 out = await _orig(ctx, args)
                 text = str(out or "")
+                if (_name not in _FIRST_DELIVERY_EXEMPT
+                        and len(text) > _FIRST_DELIVERY_CHARS):
+                    text = _first_delivery_digest(text)
                 if spent["chars"] + len(text) > limit:
                     # This SINGLE output would push the turn past its context
                     # budget. Counting-after made the budget a soft post-hoc bound

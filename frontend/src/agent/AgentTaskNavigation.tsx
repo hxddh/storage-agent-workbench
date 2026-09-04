@@ -257,7 +257,7 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
             <Icon name="compose" />
             <span>{copy.newTask}</span>
           </button>
-          <button type="button" onClick={onSearch} className="native-sidebar-new" data-testid="task-navigation-search" title={`${copy.search} ⌘K`}>
+          <button type="button" onClick={onSearch} className="native-sidebar-search" data-testid="task-navigation-search" title={`${copy.search} ⌘K`}>
             <Icon name="search" />
             <span>{copy.search}</span>
           </button>

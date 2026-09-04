@@ -149,9 +149,23 @@ _MODEL_TIMEOUT_S = 300.0
 #    part that was actually being reasoned about), and
 #  - the cut is stated in the item itself, never silent — the same rule every
 #    other bound in this product follows.
-_COMPACT_AFTER_STEPS = 2      # how many later tool results before one is compacted
-_COMPACT_MIN_CHARS = 1200     # below this there is nothing worth reclaiming
-_COMPACT_KEEP_HEAD = 800      # of the original payload, kept verbatim
+#
+# 1, not 2: the model has already used a result on the next step. Keeping it
+# full for two extra steps was the majority of the re-send bill.
+_COMPACT_AFTER_STEPS = 1      # how many later tool results before one is compacted
+_COMPACT_MIN_CHARS = 800      # below this there is nothing worth reclaiming
+_COMPACT_KEEP_HEAD = 500      # of a non-JSON payload, kept verbatim
+# First delivery to the model: a payload larger than this is reduced to a
+# structured digest BEFORE the model sees it. Typical list_objects pages stay
+# under this; surveys, aggregates, and 1000-key dumps do not. The full payload
+# is still audited; the model can call again with a tighter bound.
+_FIRST_DELIVERY_CHARS = 6000
+# Skill bodies are the method the model asked to load; the plan checklist is
+# a few bytes. Neither is a listing dump.
+_FIRST_DELIVERY_EXEMPT = frozenset({"read_skill", "update_plan"})
+# Tool descriptions ride in every step's prefix. Prose over this is shortened
+# to the first sentence plus Args.
+_TOOL_DESC_LIMIT = 240
 
 _SLOW_TOOLS = {"survey_account", "review_bucket_config", "analyze_uploaded_file",
                "aggregate_uploaded_file", "aggregate_imported_evidence",
@@ -179,10 +193,11 @@ _MAX_REPLAY_ANSWER = 600
 # real context pressure (not an arbitrary step count) says to synthesize. A
 # bound, not a gate — once exhausted, further tool calls return a short note
 # telling the model to synthesize, so a context-window overflow never becomes a
-# hard failure mid-investigation. 200k chars ≈ 50k tokens of tool output, which
-# leaves ample room under a modern 200k-token context for the prompt + reasoning;
-# the overflow → finalize path is the backstop above it.
-_MAX_TOOL_OUTPUT_CHARS = 200_000
+# hard failure mid-investigation.
+# 48k chars ≈ 12k tokens — a floor, not a 128k-window filling 50k-token dump.
+# model_budget scales this with the window (12 %); this constant is the fallback
+# when no model is known.
+_MAX_TOOL_OUTPUT_CHARS = 48_000
 _TOOL_BUDGET_EXHAUSTED = (
     "This turn's tool-output budget is used up — synthesize your findings from what "
     "you've already gathered and answer now. This budget resets if the user continues."
@@ -242,9 +257,6 @@ _CORE_TOOLS = {
     "update_memory_item", "resolve_memory_item",
     # The plan the model owns — always at hand, never gated.
     "update_plan",
-    "simulate_storage_cost", "draft_remediation_plan", "verify_remediation_plan",
-    "capture_task_baseline", "compare_task_drift", "get_price_table_status",
-    "set_task_revisit_days",
 }
 
 _TOOL_GROUPS: dict[str, tuple[str, frozenset[str]]] = {
@@ -287,6 +299,13 @@ _TOOL_GROUPS: dict[str, tuple[str, frozenset[str]]] = {
         "the last survey, read a backgrounded run's result",
         frozenset({"survey_account", "query_account_profile",
                    "compare_to_last_survey", "read_run_result"})),
+    "storage_engines": (
+        "deterministic cost, lifecycle plans, baselines, Drift, price-table "
+        "status, and optional revisits — never invent dollars",
+        frozenset({"simulate_storage_cost", "draft_remediation_plan",
+                   "verify_remediation_plan", "capture_task_baseline",
+                   "compare_task_drift", "get_price_table_status",
+                   "set_task_revisit_days"})),
 }
 
 # tool name -> the group that gates it (empty for CORE).

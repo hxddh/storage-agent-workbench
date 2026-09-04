@@ -145,8 +145,8 @@ def test_budget_clamped_to_small_window():
     assert mb.completion_token_budget("my-local-model", 8_192) <= 8_192 // 2
     # 16k model: tool budget bounded by half the window's char equivalent.
     assert mb.tool_output_char_budget("my-local-model", 16_385) <= 16_385 * 4 // 2
-    # 128k/200k shipped models byte-for-byte unchanged.
-    assert mb.tool_output_char_budget("claude-sonnet-4") == mb.TOOL_OUTPUT_CHARS_FLOOR
+    # 128k/200k shipped models follow the 12 % share, not a 50k-token dump.
+    assert mb.tool_output_char_budget("claude-sonnet-4") == 96_000
     assert mb.completion_token_budget(None, 128_000) == mb.COMPLETION_TOKENS_FLOOR
 
 

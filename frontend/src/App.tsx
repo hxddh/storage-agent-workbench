@@ -39,16 +39,16 @@ function storedNavigationWidth(): number {
   return Number.isFinite(raw) && raw > 0 ? clampTaskNavigationWidth(raw) : DEFAULT_TASK_NAV_WIDTH;
 }
 
-/** Window title row over the document: Find on the left (Codex), then
- * the task name and its real state, then the palette. ⌘F / ⌘K remain. */
-function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew, onFind, onPalette }: {
+/** Window title row over the document: the task name and its real state.
+ * ⌘F opens the reading-column Find strip; ⌘K opens the palette. Search is
+ * the quieter sidebar row under New task. Collapsed, the sidebar toggle
+ * and New task move here. */
+function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: {
   task: AgentTaskSummary | null;
   sidebarOpen: boolean;
   trafficLights: boolean;
   onToggleSidebar: () => void;
   onNew: () => void;
-  onFind: () => void;
-  onPalette: () => void;
 }) {
   const copy = useNavigationCopy();
   const { t } = useI18n();
@@ -73,9 +73,6 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew, on
           </button>
         </>
       ) : null}
-      <button type="button" onClick={onFind} disabled={!task} aria-label={t("task.find")} title={`${t("task.findHint")} ⌘F`} data-testid="titlebar-find" className="native-icon-button">
-        <Icon name="search" size={15} />
-      </button>
       <span className="native-titlebar-title" data-task={task ? "true" : "false"} data-tauri-drag-region>
         <span className="native-titlebar-name">{title}</span>
         {stateLabel ? (
@@ -85,9 +82,6 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew, on
           </span>
         ) : null}
       </span>
-      <button type="button" onClick={onPalette} aria-label={t("task.palette")} title={`${t("task.paletteHint")} ⌘K`} data-testid="titlebar-palette" className="native-icon-button">
-        <Icon name="command" size={15} />
-      </button>
     </header>
   );
 }
@@ -259,7 +253,7 @@ export default function App() {
       />
 
       <div className="native-main">
-        <TitleBar task={activeTask} sidebarOpen={sidebarOpen} trafficLights={trafficLights} onToggleSidebar={toggleNavigation} onNew={() => setActiveTaskId(null)} onFind={() => runCommand("find")} onPalette={() => runCommand("palette")} />
+        <TitleBar task={activeTask} sidebarOpen={sidebarOpen} trafficLights={trafficLights} onToggleSidebar={toggleNavigation} onNew={() => setActiveTaskId(null)} />
         <ActiveTaskContext.Provider value={activeTaskId}>
         <AgentShell
           taskId={activeTaskId}

@@ -63,12 +63,13 @@ def test_model_budget_context_window_precedence_and_default():
 def test_model_budget_tool_output_never_below_floor():
     from app.agent_runtime import model_budget as mb
 
-    # A 128k/200k model is unchanged: exactly the historical floor.
-    assert mb.tool_output_char_budget("gpt-4o") == mb.TOOL_OUTPUT_CHARS_FLOOR
-    assert mb.tool_output_char_budget("claude-opus-4-8") == mb.TOOL_OUTPUT_CHARS_FLOOR
-    assert mb.tool_output_char_budget("unknown") == mb.TOOL_OUTPUT_CHARS_FLOOR
-    # A 1M-context model scales up proportionally (0.25 * 1M tokens * 4 chars).
-    assert mb.tool_output_char_budget("gpt-4.1") == 1_000_000
+    # 12 % of the window, floored at 48k chars. A 128k model is ~61k chars
+    # (~15k tokens of tool output), not a 50k-token dump.
+    assert mb.tool_output_char_budget("gpt-4o") == 61_440
+    assert mb.tool_output_char_budget("claude-opus-4-8") == 96_000
+    assert mb.tool_output_char_budget("unknown") == 61_440
+    # A 1M-context model scales with the same 12 % fraction.
+    assert mb.tool_output_char_budget("gpt-4.1") == 480_000
     # Never below floor for models whose window can HOLD the floor. (v0.41: a
     # small-window model — gpt-3.5's 16k — is now clamped to half its window
     # instead of being handed a 200k-char budget 3x its whole context.)
@@ -95,15 +96,14 @@ def test_model_budget_completion_floor_and_provider_cap():
 
 
 def test_install_tool_output_budget_honors_model_limit():
-    from app.agent_runtime import model_budget as mb
     from app.agent_runtime import session_agent
 
     # No explicit limit → derived from the model. A 1M model must lift the cap
-    # above the floor; a floor model must equal it.
+    # above a 128k model; unknown/default follows the 12 % window share.
     big = session_agent._install_tool_output_budget([], model="gpt-4.1")
     small = session_agent._install_tool_output_budget([], model="gpt-4o")
-    assert big["limit"] == 1_000_000
-    assert small["limit"] == mb.TOOL_OUTPUT_CHARS_FLOOR
+    assert big["limit"] == 480_000
+    assert small["limit"] == 61_440
 
 
 def test_replay_tools_keeps_the_tail_not_the_head():

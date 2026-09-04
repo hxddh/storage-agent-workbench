@@ -274,7 +274,7 @@ See `security.md` and `api.md`.
 
 ## Deterministic optimization tools
 
-These tools never send raw inventory or access-log rows to the model. They operate on bounded aggregates already on the Task, plus ordinary local configuration. Dollar figures and trends are estimates with coverage, or explicit gaps.
+These tools never send raw inventory or access-log rows to the model. They operate on bounded aggregates already on the Task, plus ordinary local configuration. Dollar figures and trends are estimates with coverage, or explicit gaps. They are the gated `storage_engines` group — unlock with `load_tools("storage_engines")`; they are not CORE.
 
 ### `simulate_storage_cost`
 

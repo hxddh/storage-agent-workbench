@@ -24,16 +24,16 @@ Shipped:
 | Surface | v1.17 |
 | --- | --- |
 | Window | sidebar · quiet title · one transcript · one Composer |
-| Title bar | Find on the left, then name + state, then palette (⌘F / ⌘K stay) |
-| Sidebar | New task, Search (command palette), day-grouped titles, Settings; Ready paints nothing |
+| Title bar | name + quiet state (⌘F / ⌘K stay; no painted Find/palette) |
+| Sidebar | New task, Search (lighter row, command palette), day-grouped titles, Settings; Ready paints nothing |
 | Empty start | one greeting + Composer, no glyph |
 | User turn | right-aligned fill, no card chrome |
 | Agent turn | flush Markdown, not a bubble |
 | Worked group | one line *Worked for {t}*; count lives inside |
 | Plan | quiet checklist; folds to *Plan · n/n* |
 | Approval | sentence-case *Waiting for approval*; hairline; Allow / Deny |
-| Composer | `+` · textarea · model · send; ContextMeter in the model menu |
-| Find | left title-bar icon + strip under the title bar on the reading column (⌘F); no document ghost |
+| Composer | `+` · textarea · model · send; hairline slot; ContextMeter in the model menu |
+| Find | ⌘F opens a strip under the title bar on the reading column; no document ghost; Search is the sidebar row |
 | Copy | Direction / Execution / Work Result |
 
 Do **not** replicate Codex the coding Agent: worktrees, diffs, terminal,

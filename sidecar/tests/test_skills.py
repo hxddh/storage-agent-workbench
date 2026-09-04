@@ -121,7 +121,7 @@ def test_session_agent_uses_progressive_disclosure_catalog():
     # The live agent gets a CATALOG (name + description for every skill) and a
     # read_skill tool — not pre-injected full bodies (the Agent Skills paradigm).
     cat = skill_context.catalog_text()
-    assert "STORAGEOPS SKILLS" in cat and "read_skill(" in cat
+    assert "StorageOps skills" in cat and "read_skill(" in cat
     names = skill_context.skill_names()
     assert "storageops-triage" in names and len(names) >= 10
     for n in names:  # every catalogued skill loads on demand
@@ -193,7 +193,7 @@ def test_session_assistant_prompt_includes_skill_context(client, monkeypatch):
     prompt = captured["spec"]["prompt"]
     # Progressive disclosure: the prompt carries the skills CATALOG + read_skill,
     # not pre-injected full skill bodies.
-    assert "STORAGEOPS SKILLS" in prompt and "read_skill(" in prompt
+    assert "StorageOps skills" in prompt and "read_skill(" in prompt
     # v1.11: no metadata block in the prompt, grounding derived from the trace
     assert "```json" not in prompt and "next_action_proposals" not in prompt
     assert "skills_used" in out and "evidence_gaps" in out

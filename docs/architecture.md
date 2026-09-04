@@ -75,7 +75,7 @@ The packaged Tauri launcher chooses a free localhost port, generates a per-launc
 - durable task list refresh;
 - active task identity;
 - task lifecycle actions (create/rename/delete);
-- the window title bar (Find on the left, then task name + real task state, then the palette; the sidebar toggle and New task when the sidebar is collapsed) and the OS window title;
+- the window title bar (task name + real task state; the sidebar toggle and New task when the sidebar is collapsed) and the OS window title;
 - the Settings dialog, command palette, and shortcuts sheet;
 - **one command handler** (`runCommand`) that the keyboard, the palette and the native menu all dispatch through, with a short de-duplication window so a menu accelerator and a keydown for one keypress are one command;
 - the shell bridge (`hooks/useNativeAgent.ts` → `useNativeShell`): menu commands, deep links, the summon shortcut, notifications on background settle (`useSettleNotifications`, driven by the per-task run store), and the window title. A plain browser is a no-op.
@@ -95,7 +95,7 @@ Each task row combines:
 - a state mark (Ready paints nothing; Working pulses; Needs decision / Needs attention are status colours);
 - relative time on hover, and Rename / Delete behind one More control.
 
-The list is chronological by `updated_at`, grouped by day (`dayGroups()`: Today, Yesterday, then dated headers). A labeled **Search** under New task opens the command palette (same overlay as ⌘K) — it is not an inline list filter. Pin, duplicate, archive and database counters are not painted. The New task control is a button; it does not paint ⌘N. Collapsed, the sidebar has zero width and its toggle + New task move into the title bar.
+The list is chronological by `updated_at`, grouped by day (`dayGroups()`: Today, Yesterday, then dated headers). A labeled **Search** under New task opens the command palette (same overlay as ⌘K) — it is not an inline list filter, and it is painted lighter than New task. Pin, duplicate, archive and database counters are not painted. The New task control is a button; it does not paint ⌘N. Collapsed, the sidebar has zero width and its toggle + New task move into the title bar.
 
 The Sidecar `/agent-tasks` projection provides durable decision truth so a pending confirmation remains visible after reload/restart even when browser-local runtime state is gone.
 
@@ -338,7 +338,7 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 
 ### 6.x Codex window (v1.17.0)
 
-- **Quiet chrome.** ContextMeter lives in the model menu; the title bar is Find on the left, then name + state, then the palette (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is a strip under the title bar on the reading column, not a document ghost and not a corner overlay.
+- **Quiet chrome.** ContextMeter lives in the model menu; the title bar is name + state (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is a strip under the title bar on the reading column, not a document ghost and not a corner overlay.
 - **Queue honesty.** `task.status.queued[]` can name the execution the client is already following; queued banners drop that row (and a just-submitted Direction that the live bubble already paints). A `steer_followup` waiting behind the current Execution is labeled as itself, not a second Direction.
 - **Settings pane.** Provider fields follow the editor's inline size (`@container`), not the viewport `sm:` breakpoint.
 - **Transcript craft.** User bubble is a quiet fill (no border, no shadow); approval is sentence-case *Waiting for approval* with a hairline; *Worked for {t}* carries no tool-call count on the head.
@@ -353,10 +353,11 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 
 ### 6.x Window craft (v1.17.2)
 
-- **Search / Find.** Codex Search is a labeled row under New task and opens the command palette. The Find icon stays on the left of the title bar; ⌘F opens a find strip under the title bar on the 46rem reading measure (not in the scroller, not a corner overlay).
+- **Search / Find.** Codex Search is a labeled row under New task and opens the command palette. Find is a strip under the title bar on the 46rem reading measure (⌘F; not in the scroller, not a corner overlay). The title bar itself is name + state.
 - **Settings dialog.** The dialog is its own container: nav labels do not wrap, the close control sits in a content head (not over the heading), Skills rows wrap identity vs actions, and at a narrow pane the nav becomes a horizontal strip.
 - **Context layers.** Compaction `conversation_summary` replaces `summary` / `agent_memory` (those keys are omitted); uncompacted turns send writable memory plus a gap-only summary and digest assistant replay; consumed JSON tool results keep scalars and counts; `RunConfig.group_id` is the task id (openai-agents prompt-cache routing). Auto-compaction at 60 % of the window.
-- **Chrome.** Title-bar state sits with the task name; Composer focus is a hairline; Find steps use icons.
+- **Chrome.** Title-bar state sits with the task name; Composer is a hairline slot (no elevation); Find steps use icons.
+- **Prefix and output (after v1.17.2).** Engine tools are the gated `storage_engines` group, not CORE. Tool descriptions are one sentence plus Args. A first tool delivery over 6 000 characters is digested before the model sees it (`read_skill` exempt). Already-consumed outputs compact after one later step. The tool-output floor is 48k characters, 12 % of the window.
 
 ### 6.x True native agent, finished (v1.16.0)
 

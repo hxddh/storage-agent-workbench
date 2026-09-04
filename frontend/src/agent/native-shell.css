@@ -119,6 +119,29 @@
 .native-sidebar-new svg {
   color: var(--gray-400);
 }
+.native-sidebar-search {
+  display: flex;
+  height: 36px;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  padding: 0 8px;
+  background: transparent;
+  color: var(--gray-400);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  text-align: left;
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.native-sidebar-search:hover {
+  background: var(--hover);
+  color: var(--gray-200);
+}
+.native-sidebar-search svg {
+  color: var(--gray-500);
+}
 
 /* Day groups: Today · Yesterday · a dated header. Quiet, not uppercase. */
 .native-sidebar-section {

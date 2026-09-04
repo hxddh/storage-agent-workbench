@@ -65,12 +65,16 @@ _MAX_OUTPUT_TOKENS: tuple[tuple[str, int], ...] = (
 _DEFAULT_MAX_OUTPUT = 16_384
 
 # Fraction of the window we let tool output consume, and chars/token.
-_TOOL_OUTPUT_FRACTION = 0.25
+# 0.12 — not 0.25: a 128k model was handed 200k chars (~50k tokens) of tool
+# output on top of a 7k-token prefix. 12 % of 128k is ~15k tokens of output,
+# which with first-delivery digesting and compact-after-1 is enough for a
+# real investigation without filling the window.
+_TOOL_OUTPUT_FRACTION = 0.12
 _CHARS_PER_TOKEN = 4
 
-# Floors == the historical hardcoded values. Budgets NEVER go below these, so an
-# existing 128k/200k deployment is byte-for-byte unchanged.
-TOOL_OUTPUT_CHARS_FLOOR = 200_000       # was session_agent._MAX_TOOL_OUTPUT_CHARS
+# Floor for unknown / default-window models. Never a license to dump 50k
+# tokens of tool output into a 128k window.
+TOOL_OUTPUT_CHARS_FLOOR = 48_000
 # Ceiling on the tool-output budget: an absurd operator-declared context_window
 # must not yield an effectively unbounded per-turn budget (2M chars ≈ a 2M-token
 # window's fair share — no shipping model exceeds that usefully today).
@@ -142,9 +146,12 @@ def max_output_tokens(model: str | None, explicit_max: int | None = None) -> int
 
 
 def tool_output_char_budget(model: str | None, explicit_window: int | None = None) -> int:
-    """Per-turn tool-output character budget, scaled to the model's window but
-    never below the historical floor. 128k/200k models → 200_000 (unchanged);
-    1M models → 1_000_000."""
+    """Per-turn tool-output character budget, scaled to the model's window.
+
+    128k models → ~61k chars (~15k tokens); 1M models → ~480k. Small windows
+    are clamped to half the window in characters. The floor is a minimum for
+    unknown models, not a 128k filling dump.
+    """
     window = context_window(model, explicit_window)
     tokens = int(window * _TOOL_OUTPUT_FRACTION)
     scaled = max(TOOL_OUTPUT_CHARS_FLOOR, tokens * _CHARS_PER_TOKEN)
@@ -164,15 +171,14 @@ def tool_output_char_budget(model: str | None, explicit_window: int | None = Non
 # step ceiling (60) permitted ~3.5M input tokens for ONE question. The budget was
 # linear; the bill is quadratic.
 #
-# 600k is ~3x a healthy deep investigation (an 8-tool turn measures ~199k) and
-# roughly a 6x cut to the permitted worst case. Scaled by window so a
-# large-context model, which legitimately carries more per step, is not held to a
-# small model's ceiling.
-TURN_TOKEN_BUDGET_FLOOR = 600_000
-TURN_TOKEN_BUDGET_CEILING = 4_000_000
-# Full context re-sends a turn may pay for. A turn that has re-sent its whole
-# window this many times has stopped converging.
-_WINDOW_RESENDS = 5
+# 250k is a healthy deep investigation after prefix/schema/output cuts
+# (an 8-tool turn was ~199k *before* those cuts). Scaled by window so a
+# large-context model is not held to a small model's ceiling.
+TURN_TOKEN_BUDGET_FLOOR = 250_000
+TURN_TOKEN_BUDGET_CEILING = 2_000_000
+# Full context re-sends a turn may pay for. Two window-equivalents is the
+# honest ceiling once old tool results compact after one step.
+_WINDOW_RESENDS = 2
 
 
 def turn_token_budget(model: str | None, explicit_window: int | None = None,

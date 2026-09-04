@@ -66,6 +66,11 @@
 > a gap-only summary and digest assistant replay; `RunConfig.group_id`
 > routes official OpenAI prompt cache by task; auto-compaction leaves 40 %
 > headroom.
+> After v1.17.2 the title bar is name + state only (⌘F / ⌘K stay; Search is
+> the quieter sidebar row; Composer is a hairline slot). Engine tools are
+> gated as `storage_engines`; a first large tool delivery is digested;
+> consumed outputs compact after one step; the tool-output floor is 48k
+> characters.
 > No migration (head stays **030**).
 > **v1.13.0 is honesty and completeness.** The MCP bridge executes instead of
 echoing, the OTel export carries real spans, restart recovery covers waiting

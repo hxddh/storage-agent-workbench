@@ -71,8 +71,8 @@ def _invoke(tool, args: str = "{}", ctx=None) -> str:
 def test_the_token_budget_scales_with_the_model_window():
     # The conversation is re-sent on every step, so the honest per-turn ceiling
     # is a multiple of the window, not a constant.
-    assert model_budget.turn_token_budget("gpt-4o") == 640_000          # 128k window
-    assert model_budget.turn_token_budget("claude-3-5-sonnet") == 1_000_000  # 200k
+    assert model_budget.turn_token_budget("gpt-4o") == 256_000          # 128k window × 2
+    assert model_budget.turn_token_budget("claude-3-5-sonnet") == 400_000  # 200k × 2
 
 
 def test_a_tiny_window_still_gets_a_workable_floor():
@@ -119,7 +119,7 @@ def test_an_endpoint_that_reports_no_usage_falls_back_to_the_char_budget():
 def test_the_turn_reports_the_ceiling_it_ran_under():
     t = _FakeTool("list_objects")
     spent = sa._install_tool_output_budget([t], model="gpt-4o")
-    assert spent["token_limit"] == 640_000
+    assert spent["token_limit"] == 256_000
 
 
 # --- B1: parallel tool calls, with capability memory -------------------------
