@@ -1,6 +1,8 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.16.0** (`v1.16.0`).
+> **Current architecture baseline: Storage Agent v1.16.1** (`v1.16.1`).
+> v1.16.0 finished the true native agent. The plan for the next version is
+> **v1.17.0 — Codex window** (`docs/roadmap.md`).
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
@@ -44,6 +46,9 @@
 > window denominator, disambiguated approvals, isolated Escape, dismissible
 > errors, backed-off reconnects, a themed last resort, and matching secret
 > shapes.
+> **v1.16.1 is the layout-honesty patch.** Tables render whole, search counts
+> what it finds, wrapping is `break-word`, and a first Codex-grade polish pass
+> lands (40 px title bar, 36 px sidebar rows). No migration.
 > **v1.13.0 is honesty and completeness.** The MCP bridge executes instead of
 echoing, the OTel export carries real spans, restart recovery covers waiting
 executions, unknown execution kinds are rejected, compaction chains and
@@ -80,7 +85,7 @@ Use these terms in product-facing and new frontend architecture work:
 | **Approval** (Waiting for approval) | A real confirmation boundary a gated tool raises inside the Execution; Allow · Allow for this task · Deny. |
 | **Work Result** | Durable Agent output for a Task, including inline figures. |
 | **Artifact** | Evidence, Execution detail, Reports, Plans, Baselines/Drift in the Artifacts panel. |
-| **Review** | Light overlay over the active Task. Not an application destination. |
+| **Artifacts panel** | Right split over the active Task (⌘I). Overlay only under a narrow window. Not an application destination. |
 | **Delegate / Steer / Stop** | The one Agent control path. |
 
 Historical compatibility vocabulary such as `session`, `run`, `session_message`, and `tool_call` remains valid inside Sidecar persistence/API code and narrowly scoped frontend adapters. It does **not** define the product information architecture.
@@ -92,9 +97,9 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 - [`architecture.md`](architecture.md) — Tauri/React/Sidecar topology and ownership boundaries.
 - [`security.md`](security.md) — secret, tool, model-context, evidence and approval guarantees.
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
-- [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 027, and product-to-persistence mapping.
+- [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 030, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — post-1.02 priorities and explicit non-directions.
+- [`roadmap.md`](roadmap.md) — plan for **v1.17.0 — Codex window**. Delivered history lives in `releases/`.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.

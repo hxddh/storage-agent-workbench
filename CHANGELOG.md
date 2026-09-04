@@ -6,6 +6,10 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+- **v1.17.0 plan** — Codex window: UI/UE replicate Codex's quiet Agent surface
+  (chrome, transcript rhythm, Composer craft) while remaining a storage Agent.
+  Findings and workstreams in `docs/roadmap.md`. No migration (head stays **030**).
+
 ## [1.16.1] - 2026-09-03
 
 _Patch — tables render whole, search counts what it finds, wrapping and layout honesty, Codex-grade polish, green CI. No migration (head stays **030**)._ See `docs/releases/1.16.1.md`.

@@ -44,6 +44,8 @@ describe("v1.16 documentation contract", () => {
       expect(text, `${path} must name Agent Task`).toMatch(/Agent Task/);
     }
     expect(readRepo("docs/README.md")).toContain("v1.16.0");
+    expect(readRepo("docs/README.md")).toContain("v1.16.1");
+    expect(readRepo("docs/README.md")).toContain("v1.17.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.16.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
     expect(readRepo("docs/design-tokens.md")).toContain("--duration-fast");
@@ -123,6 +125,8 @@ describe("v1.16 documentation contract", () => {
     expect(readRepo("docs/architecture.md")).toContain("agent-artifacts-panel");
     expect(readRepo("docs/tools.md")).toContain("simulate_storage_cost");
     expect(readRepo("docs/roadmap.md")).not.toMatch(/Add ORC support/);
+    expect(readRepo("docs/roadmap.md")).toContain("v1.17.0");
+    expect(readRepo("docs/roadmap.md")).toContain("Codex window");
     expect(readRepo("docs/releases/1.13.0.md")).toContain("Honesty and completeness");
     expect(readRepo("docs/releases/1.14.0.md")).toContain("Interaction truth and content craft");
     expect(readRepo("docs/releases/1.15.0.md")).toContain("True Native Agent");
