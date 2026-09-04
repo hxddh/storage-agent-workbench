@@ -263,8 +263,8 @@ def _finalize_contract(raw: Any, skill_names: list[str], activity: list[dict[str
 
 
 _EMPTY_ANSWER_FALLBACK = (
-    "The model returned no readable answer for this turn — what it did is in the "
-    "trace above. Ask again, or rephrase, and I'll re-run it."
+    "The model returned no readable Work Result for this turn — what it did is in the "
+    "trace above. Send another Direction to continue."
 )
 
 

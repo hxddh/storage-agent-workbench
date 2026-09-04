@@ -1,6 +1,6 @@
 # Packaging
 
-> **Storage Agent v1.10.0 packaging contract.** Unchanged from v0.96.0 in topology; v1.10 registers the `storage-agent://` deep-link scheme in `tauri.conf.json` (`plugins.deep-link`) and adds a native menu bar, notifications and a global summon shortcut in `src-tauri/src/lib.rs` — no new bundle resources.
+> **Storage Agent v1.17.0 packaging contract.** Unchanged from v0.96.0 in topology; v1.10 registers the `storage-agent://` deep-link scheme in `tauri.conf.json` (`plugins.deep-link`) and adds a native menu bar, notifications and a global summon shortcut in `src-tauri/src/lib.rs` — no new bundle resources.
 >
 > The desktop product is a Tauri v2 shell containing the production React bundle and a PyInstaller **one-dir** Python Sidecar resource. Packaging must preserve the same Agent Task runtime/safety behavior as development; it must not introduce a second execution path.
 

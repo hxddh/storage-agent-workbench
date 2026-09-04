@@ -4,6 +4,7 @@ import type { ModelProvider, ReasoningEffort } from "../types";
 import { useI18n } from "../i18n";
 import { pushOverlay } from "../lib/overlayStack";
 import { Icon } from "./icons";
+import { ContextMeter } from "./ContextMeter";
 
 const EFFORTS: ReasoningEffort[] = ["low", "medium", "high"];
 
@@ -187,6 +188,10 @@ export function ModelChip({ onOpenSettings, refreshKey = 0, disabled = false }: 
               </button>
             </>
           ) : null}
+          <div className="native-model-menu-sep" />
+          <div className="native-model-menu-meter">
+            <ContextMeter />
+          </div>
         </div>
       ) : null}
     </div>

@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.16.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native: menu bar, deep links, notifications, summon shortcut, runtime task titles, a reasoning-effort control, and native Execution-detail / provider panes. Earlier release notes are not current product architecture.
+> **Applies to Storage Agent v1.17.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native. v1.11–v1.16 made the transcript and the protocol native. **v1.17.0 is the Codex window:** UI and UE match Codex's quiet Agent surface. Earlier release notes are not current product architecture.
 
 ## Product definition
 
@@ -33,7 +33,7 @@ Storage Agent is not a generic chat assistant, not an admin dashboard with an AI
 6. Preserve findings, memory, evidence references, execution provenance, and follow-up context across a durable task.
 7. Produce evidence-backed Report artifacts.
 
-Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules remain **Sidecar engines** the Agent may invoke. They are not Settings spreadsheets, slash SKUs, Review destinations, or painted Task controls. If prices are missing, the Agent reports a gap or asks in the Task.
+Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules remain **Sidecar engines** the Agent may invoke. They are not Settings spreadsheets, slash SKUs, product destinations, or painted Task controls. If prices are missing, the Agent reports a gap or asks in the Task.
 
 ## Product objects
 
@@ -77,7 +77,7 @@ Confirmation boundaries in the shipped product are the gated `import_evidence` t
 
 Approval cards project **bounds and impact** from the real plan: why confirmation is required, scan scope, and how many files/bytes would move. Absence of a count is a gap, not an invented number.
 
-Durable Decision history lives in `task_decisions`. It is not a Review Overview wall.
+Durable Decision history lives in `task_decisions`. It is not an overview wall.
 
 Read-only investigation is autonomous by default. Confirmation is reserved for meaningful safety boundaries such as managed cloud Evidence Import or materially large/full scanning/data movement.
 
@@ -87,7 +87,7 @@ A Work Result is the durable output object of an Execution — recorded by the T
 
 Figures plot only values the runtime emitted. Gaps render as gap states. Unconfirmed prices withhold the cost axis. Age and storage class are independent series — there is no observed joint. Charts are not a new destination: they sit **inline in the Work Result** like a code block. Wide windows keep a 46rem reading measure; the right half stays quiet.
 
-Findings and key figures are clickable when a provenance chain exists (`GET /agent-tasks/{id}/provenance`). Hover shows tool, time, and coverage; click opens Review and anchors to that Evidence. A missing chain reads **No direct evidence chain** — never a fabricated source.
+Findings and key figures are clickable when a provenance chain exists (`GET /agent-tasks/{id}/provenance`). Hover shows tool, time, and coverage; click opens the Artifacts panel and anchors to that Evidence. A missing chain reads **No direct evidence chain** — never a fabricated source.
 
 A Work Result is not a transient chat bubble and should read like technical work output. Streaming work is live Execution in that same record. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered.
 
@@ -97,9 +97,9 @@ Artifacts are durable, reviewable outputs attached to a Task: Markdown Reports, 
 
 A Remediation Plan, if drafted, is typed and versioned. The operator applies it outside Storage Agent. There is no Verify button. The user can ask the Agent to re-probe.
 
-### Review
+### Artifacts
 
-Review is a **sheet** over the active Task — title, close, and the requested artifact. It opens from a finding, a Work Result Evidence/Execution/Report link, or ⌘I / Ctrl+I for Evidence. Escape closes it through the same overlay stack as Settings and the command palette. The overlay is not a side-column application, not a document hero, and not a 4-tab Overview / Evidence / Execution / Report destination.
+Artifacts is a **right split panel** over the active Task (⌘I / Ctrl+I). Under a narrow window it becomes an overlay. It lists Evidence, Reports, Remediation Plans, Baselines/Drift, and Execution detail. It replaces the historical Review sheet. It is not a side-column application, not a document hero, and not a 4-tab destination.
 
 It must not create a second Agent input or a second task lifecycle.
 
@@ -111,7 +111,7 @@ There is exactly one primary Agent input.
 - **Steer** while the current Task is executing — steering acts on the CURRENT Execution (the direction is delivered into the running work), never by cancelling and restarting it.
 - **Stop** while local execution is active.
 
-Opening Review or changing Task navigation state does not create a second composer.
+Opening Artifacts or changing Task navigation state does not create a second composer.
 
 ## Task states
 
@@ -193,7 +193,7 @@ Some database/API names predate v0.93 and remain for compatibility.
 
 Rules:
 
-1. Product-facing UI and new public frontend ownership use Agent Task / Direction / Execution / Decision / Work Result / Artifact / Review vocabulary.
+1. Product-facing UI and new public frontend ownership use Agent Task / Direction / Execution / Decision / Work Result / Artifact vocabulary.
 2. Historical names are valid in persistence, API contracts, repositories, and narrow adapters where migration compatibility requires them.
 3. A database/API name must never be used as justification for rebuilding old product information architecture.
 
@@ -203,7 +203,7 @@ The primary Task viewport should answer, in order:
 
 1. **What is the Agent working on?** — the task name in the window title bar and the document itself.
 2. **What is happening now or what did it produce?** — the Worked group and the Work Result in that same document.
-3. **What can I do now?** — Steer, Stop, Resume, Approve/Decline, open an artifact chip, or delegate the next Direction.
+3. **What can I do now?** — Steer, Stop, Resume, Allow/Deny, open Artifacts, or delegate the next Direction.
 
 The empty window is one greeting line and the Composer in the middle band. The sidebar is New task, quiet task titles, Settings. Nothing else is painted.
 
@@ -211,28 +211,28 @@ Provider/model configuration, audit internals, and low-level counters are second
 
 ## Design rules
 
-v1.10.0 is the native Agent window on a native shell. Visual language is specified in
+v1.17.0 is the Codex window on a native shell. Visual language is specified in
 [`design-tokens.md`](design-tokens.md) and enforced by frontend token tests.
 
 - The window is **sidebar · title bar · one document**. No activity bar, no status bar, no inspector column, no marketing copy anywhere in chrome.
 - One achromatic surface ladder (`--canvas` … `--hover`), an ink primary (near-white on dark, near-black on light), hairline depth. Status (`danger` / `warn` / `success`) is the only colour. Dark and light are first-class.
 - Type, radius, motion, and elevation come from tokens. No ad-hoc px type, no raw z-index, no `transition-all`.
-- The Task is a document. **Direction** is a quiet tinted block on the reading measure. **Execution** is one *Worked for …* group of real tool rows (rows visible; failures never fold away). **Work Result** is a page: prose on the 46rem measure, data on the 64rem track sharing the left edge, artifact chips (Evidence / Execution / Report) below. **Decision** is an approval card: eyebrow, title, why, impact, Approve / Decline.
+- The Task is a transcript. **Direction** is copy-only — a right-aligned user bubble, no grey Direction block. **Execution** is one *Worked for …* group of real tool rows (collapsed to wall-clock; rows visible when opened; failures never fold away). **Work Result** is plain Markdown on the 46rem measure. No data track, no chip row under the answer, no metrics footer. **Approval** is an inline card: sentence-case *Waiting for approval*, why, impact, Allow / Allow for this task / Deny.
 - Figures use `--viz-*` tokens and SVG/CSS only. No chart library. Never interpolate, extrapolate, or invent a horizon the runtime did not emit.
 - Findings carry provenance. Missing chain is labelled, never implied.
-- Composer is the Agent input and the empty-start surface: `+` attach, textarea, model chip, and a round send (↑) at rest; Steer (↑) + Stop (■) while working. No wizard, no `/` SKU menu, no attach-type chips, no persistent keyboard legend, no approval-mode chip.
-- The title bar carries the task name, its real state, and the two painted discovery entries: Find in task (⌘F) and commands/tasks (⌘K). Artifacts open from the document in the Artifacts panel beside it (⌘I). New task is a button; the shortcut is not painted on it.
-- Task navigation is one chronological title list. State is a row mark; Ready paints nothing. Rename and Delete only.
+- Composer is the Agent input and the empty-start surface: `+` attach, textarea, model chip, and a round send (↑) at rest; Steer (↑) + Stop (■) while working. No ContextMeter on the bar (usage lives in the model menu and Execution detail). No wizard, no `/` SKU menu, no attach-type chips, no persistent keyboard legend, no approval-mode chip.
+- The title bar carries the task name and its real state. Find (⌘F) and the command palette (⌘K) are keyboard. Artifacts open from the document in the Artifacts panel beside it (⌘I). New task is a button; the shortcut is not painted on it.
+- Task navigation is one chronological title list grouped by day. State is a row mark; Ready paints nothing. Rename and Delete only.
 - Settings is a centered dialog: General · Model Providers · Cloud Providers · Skills & bridges · Safety. Safety (v1.12) holds the read-only floor statement, the **Approvals** policy control (Ask every time · Allow for this session · Always allow) with the list of gated tools, and nothing else; Skills & bridges gains **Open instructions file** (`AGENTS.md` in the data directory).
 - The transcript shows the model's own plan as one quiet checklist card (`update_plan`, v1.12) that updates in place and folds to *Plan · n/n* when done; a context compaction is one muted line *Context compacted · 48k → 9k tokens*; an approval the policy answered says so on the card. ⌘K offers **Compact context** for an idle task.
 - Every non-ideal state (empty list, no Evidence, offline, interrupted, load earlier) is designed. Copy is restrained, specific, and bilingual.
-- Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped as Actions vs Tasks, with tasks fuzzy-ranked as you type (v1.13). It is not a Review destination menu.
+- Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped as Actions vs Tasks, with tasks fuzzy-ranked as you type (v1.13). It is not an Artifacts destination menu.
 - A steer raised while an approval is open acts on the waiting execution (v1.14): it is delivered after the decision resolves, or carried into the follow-up on decline — never silently re-queued as new work.
-- Figures, evidence states, triage, and coverage read localized (v1.14). The empty start is one static greeting line plus the Composer (v1.15) — no suggestion grid in any form; engine discoverability is the painted palette (⌘K), and the model never pitches engines in prose.
+- Figures, evidence states, triage, and coverage read localized (v1.14). The empty start is one static greeting line plus the Composer (v1.15) — no glyph, no suggestion grid; engine discoverability is the palette (⌘K), and the model never pitches engines in prose.
 - A stalled stream heals itself with a quiet reconnecting line and auto-retry (v1.15) — there is no Resync button. Earlier history loads as the reader nears the top.
-- Tables fit when they fit and hint only when truly wide, with paginated long tables (v1.15).
+- Tables render whole in the page flow (v1.16.1): no inner scroller, no pagination, `table-layout: fixed`, cells wrap at word boundaries.
 - Copy lives in dictionaries with zh/en parity (v1.16); engines and shortcuts are palette entries that prefill the Composer; usage names the governor, memory reuse and window source; approvals name their scope; one Escape closes one layer; errors dismiss; reconnects back off. Usage renders from one vocabulary (v1.15): cached as a subset, partial reports as `~` floors, silence named, compaction marked estimated.
-- A live turn running past ~90 s says it is still running and that Steer/Stop are available (v1.13); the *Worked for …* clock is the group's wall clock throughout.
+- A live turn running past ~90 s says the Execution is still working and that Steer/Stop remain (v1.17); the *Worked for …* clock is the group's wall clock throughout.
 - Perceived latency: cached task documents render instantly on switch; never flash an empty canvas while the durable document is already known.
 - First Work Result on a new install is real delegated work, not a demo or a wizard checkup.
 
@@ -243,7 +243,7 @@ The product model is protected by:
 - frontend architecture tests that assert current ownership boundaries and physical deletion of retired UI contracts;
 - negative legacy-contract scans over production frontend source;
 - documentation-contract tests over normative docs;
-- real-Sidecar Playwright tests for delegation, durable results, execution disclosure, Stop/Steer, task switching/concurrency, decisions, evidence/file analysis, Review/Reports, localization, accessibility, contrast, narrow layouts, and credential sanitization;
+- real-Sidecar Playwright tests for delegation, durable results, execution disclosure, Stop/Steer, task switching/concurrency, decisions, evidence/file analysis, Artifacts/Reports, localization, accessibility, contrast, narrow layouts, and credential sanitization;
 - real-state visual-review captures.
 
 ## Modern native-agent extensions (opt-in, additive)
@@ -280,7 +280,7 @@ navigation surface.
   via the same path the agent uses. No new tables.
 - **OS-native shell** (real since v1.10.0) — a native menu bar (App ·
   Edit · Task · View · Window · Help with ⌘, Settings, ⌘N New task, ⌘. Stop,
-  ⌘\ sidebar, ⌘F Find, ⌘I Review, ⌘K palette, ⌘L Composer), deep links
+  ⌘\ sidebar, ⌘F Find, ⌘I Artifacts, ⌘K palette, ⌘L Composer), deep links
   (`storage-agent://task/<id>` opens the Task, on cold start and from a
   second launch), one OS notification when an Execution settles while its
   Task is not on screen, a global summon shortcut (⌘⇧S / Ctrl+Shift+S) that

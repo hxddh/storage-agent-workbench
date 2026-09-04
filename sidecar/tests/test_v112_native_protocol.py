@@ -453,7 +453,7 @@ def test_instructions_file_is_bounded_redacted_and_in_the_stable_prompt_half(cli
     assert "[instructions truncated at 8000 characters]" in prompt
     # The block sits with the stable prefix, before this turn's question.
     assert prompt.index("operator_instructions") < prompt.index("configured_providers")
-    assert prompt.index("operator_instructions") < prompt.index("User question:")
+    assert prompt.index("operator_instructions") < prompt.index("Direction:")
     # Default location: the data directory.
     monkeypatch.delenv(instructions.ENV_OVERRIDE)
     assert instructions.path().name == "AGENTS.md"

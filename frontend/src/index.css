@@ -285,19 +285,19 @@ input,
 }
 
 ::highlight(saw-find) {
-  background-color: rgba(250, 204, 21, 0.28);
+  background-color: var(--selection);
   color: inherit;
 }
 ::highlight(saw-find-active) {
-  background-color: rgba(250, 204, 21, 0.9);
-  color: #111111;
+  background-color: color-mix(in srgb, var(--gray-100) 32%, transparent);
+  color: inherit;
 }
 :root[data-theme="light"] ::highlight(saw-find) {
-  background-color: rgba(250, 204, 21, 0.35);
+  background-color: var(--selection);
 }
 :root[data-theme="light"] ::highlight(saw-find-active) {
-  background-color: rgba(202, 138, 4, 0.9);
-  color: #ffffff;
+  background-color: color-mix(in srgb, var(--gray-100) 22%, transparent);
+  color: inherit;
 }
 
 kbd {

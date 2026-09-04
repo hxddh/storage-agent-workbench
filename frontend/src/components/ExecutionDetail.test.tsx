@@ -147,7 +147,8 @@ describe("ExecutionDetail", () => {
     expect(screen.getByTestId("approval-card").getAttribute("data-status")).toBe("approved");
     const group = screen.getByTestId("worked-group");
     // Two rows, 4s → 16s of wall-clock — never 12.3s summed.
-    expect(group.textContent).toMatch(/Worked for 12s · 2 tool calls/);
+    expect(group.textContent).toMatch(/Worked for 12s/);
+    expect(group.textContent).not.toMatch(/tool calls/);
     await waitFor(() => expect(screen.getByTestId("execution-result").textContent).toContain("Three buckets; one policy is public."));
     expect(screen.getByText("acme-logs policy is public")).toBeTruthy();
     expect(screen.getByTestId("execution-gaps").textContent).toContain("no access logs");

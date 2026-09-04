@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v1.10.0.**
+> **Current baseline: Storage Agent v1.17.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -38,7 +38,7 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] There is exactly one primary Agent composer/control.
 - [ ] At rest it represents **Delegate**.
 - [ ] During active execution it exposes real **Steer** and **Stop** behavior for the same Task.
-- [ ] Opening Review does not create another Agent input.
+- [ ] Opening the Artifacts panel does not create another Agent input.
 - [ ] ⌘K / Ctrl+K opens a command overlay over the Task; it is not a new destination.
 - [ ] Dark and light themes are both first-class; switching language does not change product semantics.
 
@@ -59,7 +59,7 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] A `needs_attention` Task whose last Execution is interrupted/failed exposes **Resume**; Resume follows the new execution event stream.
 - [ ] Settings contains model, storage credentials, language, and theme as a centered dialog — not a storage price table.
 - [ ] Composer has no `/checkup` `/cost` `/drift` SKU menu. Typing `/` is ordinary text.
-- [ ] There is no task header Review destination and no Overview / revisit / Verify painted chrome.
+- [ ] There is no task header destination and no Overview / revisit / Verify painted chrome. The title bar is name + state; Find (⌘F) and the palette (⌘K) are keyboard.
 - [ ] Cost-review numbers in a Work Result are labelled estimates with coverage, or explicit gaps when inventory/price table is missing.
 - [ ] Cost / inventory / Drift / access-log figures render from runtime artifacts with coverage and Estimate; unconfirmed prices withhold the cost axis; missing series are gap states, never interpolated.
 - [ ] A finding with a provenance chain opens Evidence anchored to that finding; a missing chain is labelled, not implied.
@@ -82,11 +82,11 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] Reload/reopen a Task with a still-current durable Decision: the Decision remains visible from persisted truth.
 - [ ] A newer real active execution correctly outranks an older persisted Decision where the runtime contract says work is already active.
 
-### Contextual Review and Artifacts
+### Artifacts panel
 
-- [ ] Task Overview/Evidence/Execution/Report open as **contextual Review attached to the active Task**.
-- [ ] Review does not replace the Agent Task with a separate application destination.
-- [ ] The one Composer remains logically owned by the active Task while Review is open.
+- [ ] Evidence / Reports / Plans / Baselines / Execution detail open in the **Artifacts panel** beside the active Task (⌘I).
+- [ ] The Artifacts panel does not replace the Agent Task with a separate application destination.
+- [ ] The one Composer remains logically owned by the active Task while Artifacts is open.
 - [ ] Evidence/Execution details display persisted sanitized truth.
 - [ ] Markdown Report is a durable Task Artifact and survives reload.
 
@@ -163,7 +163,7 @@ Use synthetic/local test data and non-sensitive test providers where available.
 ## G. UI quality and accessibility smoke
 
 - [ ] Light and dark themes preserve readable text contrast.
-- [ ] Keyboard access works for Task navigation, shortcuts, Review, and the one Composer without firing task-navigation keys while editing text.
+- [ ] Keyboard access works for Task navigation, shortcuts, Artifacts, and the one Composer without firing task-navigation keys while editing text.
 - [ ] Focus is contained/restored correctly for overlays.
 - [ ] English and Chinese UI preserve the same product semantics and states.
 - [ ] Narrow-window layout remains usable.
@@ -175,7 +175,7 @@ The candidate must **not** reintroduce an older application model through docume
 
 - [ ] The Agent Task remains the primary application object.
 - [ ] No second Agent input exists.
-- [ ] Review remains contextual to the Task.
+- [ ] The Artifacts panel remains contextual to the Task.
 - [ ] Persistence/API compatibility names do not become product navigation.
 - [ ] No fake multi-agent/worktree/terminal/browser/plan UI exists without runtime support.
 - [ ] Current architecture/legacy/documentation contract tests pass.
@@ -193,7 +193,7 @@ Before publication record:
 
 Never mark an unchecked item as passed merely because another automated gate was green.
 
-## v1.10.0 native shell smoke (desktop builds)
+## Native shell smoke (desktop builds)
 
 - The menu bar shows **Storage Agent · Edit · Task · View · Window · Help**; **Task → New Task** clears to the empty start; **Storage Agent → Settings…** (⌘,) opens the Settings dialog; **View → Toggle Sidebar** collapses the sidebar once (no double toggle from the accelerator).
 - Opening `storage-agent://task/<id>` from a terminal (`open` / `xdg-open` / `start`) focuses the window and opens that Task; a second launch with the link does not start a second Sidecar.

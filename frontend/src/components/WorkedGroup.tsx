@@ -114,8 +114,8 @@ export function WorkedGroup({
     ? t("turn.workingFor", { t: fmtElapsed(elapsed) ?? "" })
     : t("turn.working");
   const doneLabel = worked !== null
-    ? t("turn.workedFor", { t: fmtElapsed(worked) ?? "", n: records.length })
-    : t("turn.worked", { n: records.length });
+    ? t("turn.workedFor", { t: fmtElapsed(worked) ?? "" })
+    : t("turn.worked");
 
   return (
     <section className="native-execution" data-testid="worked-group" data-expanded={expanded ? "true" : "false"}>

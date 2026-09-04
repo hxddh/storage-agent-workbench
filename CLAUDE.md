@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> **Implementation contract for Storage Agent v1.16.0.**
+> **Implementation contract for Storage Agent v1.17.0.**
 >
 > Before changing product structure, read `docs/README.md`, `docs/product.md`,
 > `docs/architecture.md`, and `docs/security.md`. Current code and executable
@@ -8,7 +8,7 @@
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. It is not a generic chatbot, storage admin console, ticket system, or coding Agent.
 
-The v1.16.0 product invariant is:
+The v1.17.0 product invariant is:
 
 > **The Agent Task is the application.**
 
@@ -18,19 +18,19 @@ The canonical work model is:
 
 The user delegates work to one durable Agent Task, sees real runtime Execution, can Steer or Stop that same task, crosses explicit confirmation boundaries when necessary, and reviews durable Evidence/Execution/Report artifacts without leaving the Task.
 
-## 1. Never regress the v1.16.0 native Agent window
+## 1. Never regress the v1.17.0 native Agent window
 
 The window is **sidebar · title bar · one Task document · one Composer**. There is no activity bar, no status bar, no Details/inspector column, and no marketing copy in chrome. New product/frontend work must preserve these boundaries:
 
 - **Agent Task** is the primary application object and primary work area.
-- **AgentTaskNavigation** is the sidebar: window chrome row, **New task**, one quiet chronological title list, **Settings**. Rename and Delete only (from the row's More control or the native Task menu). State is a row mark (Ready paints nothing). ↑/↓ move between tasks. Collapsed, its toggle and New task move into the title bar. Titles are seeded from the first Direction and replaced by the runtime after the first Work Result unless the user renamed the task (`title_source`).
+- **AgentTaskNavigation** is the sidebar: window chrome row, **New task**, one quiet chronological title list grouped by day, **Settings**. Rename and Delete only (from the row's More control or the native Task menu). State is a row mark (Ready paints nothing). ↑/↓ move between tasks. Collapsed, its toggle and New task move into the title bar. Titles are seeded from the first Direction and replaced by the runtime after the first Work Result unless the user renamed the task (`title_source`).
 - **AgentShell** owns the active task environment and the Artifacts panel state. The title bar above it carries only the task name and its real state. There is no task header inside the document, no live execution strip, and no second presentation mode.
 - **AgentTask** is the public task boundary; persistence compatibility names stay behind adapters.
-- **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active. Attach (button or a dropped file) + textarea + the **model chip** (backed by the real provider list; switching activates a provider server-side; shows `model · effort` and a reasoning-effort control only when the active model is known-reasoning) + those actions. No persistent keyboard legend, no painted mode/approval chips.
+- **Composer** is the only Agent input: **Delegate** at rest, **Steer + Stop** while work is active. Attach (button or a dropped file; attachments are per-task) + textarea + the **model chip** (backed by the real provider list; switching activates a provider server-side; shows `model · effort` and a reasoning-effort control only when the active model is known-reasoning) + those actions. No ContextMeter on the bar (usage lives in the model menu and Execution detail). A file while busy labels the send control Delegate, never Steer. No persistent keyboard legend, no painted mode/approval chips. Find (⌘F) and the palette (⌘K) are keyboard; they are not painted on the title bar.
 - **Direction** is user intent/steering input. Copy is the only Direction chrome.
 - **Execution** is real runtime/tool work. A turn is rendered as one **transcript turn** (Codex parity): the user's message as a right-aligned bubble, the model's short **commentary segments** in order, one collapsed **Worked for …** group of tool rows between segments (wall-clock of the group, live while running), the model's own **plan card** (from the `update_plan` tool, one per turn, updated in place, folded to *Plan · n/n* when done), a one-line **Context compacted** marker when the runtime compacted before the turn, any **approval card** inline where the gated tool raised it, then the **answer** as Markdown on the 46rem measure. Never invent plans, steps, workers, or capabilities the runtime does not expose — the plan card renders only `plan.updated` events.
 - **Approval** (`Waiting for approval`) is raised only by a gated tool (`import_evidence`, or `survey_account` above its default 100-bucket cap as `survey_account_large`) inside the running Execution: the Sidecar plans, opens a durable Decision (`kind=approval`) with projected bounds/impact, and the Execution waits. The card offers **Allow · Allow for this task · Deny**; Allow runs the audited work server-side and the same Execution continues; Deny returns a structured refusal to the model. The **approval policy** (Settings → Safety: Ask every time · Allow for this session · Always allow) may answer the gate instead of the user — enforced only in `runtime.request_approval`, always recorded as an approved Decision and an `approval.granted {policy}` event the card shows. Model prose never raises a Decision; there is no `next_action_proposals` list, no metadata JSON block, and no separate import dialog.
-- **Work Result** is the answer at the end of the turn: plain Markdown, tables scrolling inside their own container, figures and provenance inline in the latest answer. No data track, no artifact chip row, no metrics footer, no grey Direction block. Working copy is Agent-native, not chat-era "still running" language.
+- **Work Result** is the answer at the end of the turn: plain Markdown, tables render whole in the page flow (no inner scroller, no pagination), figures and provenance inline in the latest answer. No data track, no artifact chip row, no metrics footer, no grey Direction block. Working copy is Agent-native, not chat-era "still running" language. The user bubble is a quiet fill; the *Worked for …* head is wall-clock only; the approval card is sentence-case *Waiting for approval*.
 - **Artifacts** is a right split panel (⌘I toggles; opened from the document): Evidence, Reports, Remediation Plans, Baselines/Drift, and Execution detail (a document: header · *Worked for …* rows · findings · result — built from `task_executions`, the durable `execution_events` log and one sanitized `tool_calls` row on demand; never a `/runs` stream). It replaces the Review sheet. It is not a tabbed application destination and not a document hero. Cost simulation, Remediation Plans, baselines, Drift, and revisit schedules may exist as Sidecar engines; they have no product UI entry beyond that panel's read-only lists.
 - Production UI must not teach a chat *application*: no `New chat` titles, no `thread.*` copy keys, no leftover `.thread-prose` layout layer. The transcript turn is the Agent's work record, not a chat product.
 
@@ -76,7 +76,7 @@ It may invoke explicit read-only storage tools, StorageOps skills, bounded file-
 
 Do not add a second planner/narrator Agent, hidden orchestration Agent, or simulated multi-agent UI. If the runtime does not implement a capability, the UI must not pretend it exists.
 
-Historical persistence still stores task work in `sessions`, `session_messages`, `runs`, `tool_calls`, evidence tables, and report artifacts. Product adapters project those records into Agent Task / Direction / Execution / Work Result / Review semantics.
+Historical persistence still stores task work in `sessions`, `session_messages`, `runs`, `tool_calls`, evidence tables, and report artifacts. Product adapters project those records into Agent Task / Direction / Execution / Work Result / Artifact semantics.
 
 ## 4. Task state and execution truth
 
@@ -102,7 +102,7 @@ Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned b
 - Decision (`task_decisions`), Work Result (`work_results`), Artifact (`task_artifacts`), and the typed versioned Storage Task Context (`task_context_versions`) are first-class durable rows;
 - the latest typed context version is injected into the Agent prompt's stable half so restart grounding matches the pre-restart snapshot;
 - deterministic cross-evidence correlation produces bounded findings through existing summary/findings/memory channels;
-- deterministic cost/lifecycle simulation, Remediation Plans, baselines/Drift, and per-task revisits remain Sidecar engines on this same runtime — never a second Agent, a second submit path, or a Settings/Review destination;
+- deterministic cost/lifecycle simulation, Remediation Plans, baselines/Drift, and per-task revisits remain Sidecar engines on this same runtime — never a second Agent, a second submit path, or a Settings/Artifacts destination;
 - Verify (`kind=verify`) and scheduled revisits (`kind=revisit`) remain runtime paths; the UI does not paint a Verify control or a revisit scheduler. The user asks in Composer. Revisits are read-only and never auto-resolve a Decision;
 - `execution_events` retention is a periodic SQL-set prune (terminal executions only, dual cap, explicit `execution.events_truncated` marker; `0` disables). Active and waiting logs are never touched;
 - at most one pending Decision exists per `(task, action_type)`; a later request of the same type supersedes the earlier pending row. Since v1.11 a Decision is raised by the gated `import_evidence` tool from inside the running Execution (`runtime.request_approval`): `approval.opened`, execution `waiting`, the tool thread blocks until `decisions/{id}/resolve` (Allow / Allow for this task via `scope=task` / Deny) or Stop (withdrawn as declined), then the same execution returns to `running`. Grounding (`skills_used`, `evidence_used`, `evidence_gaps`) is derived from the tool trace, never claimed by the model; the model's commentary segments and tool rows persist as `session_messages.turn_items`, the answer as `content`;
@@ -124,7 +124,8 @@ Since v0.94 the Agent Task and its Executions are DURABLE domain objects owned b
 - (v1.14) Execution detail matches the Work Result to `turn_metrics` and renders reported usage only; figures/evidence/triage read localized (EN/ZH) with one `SeverityMark`; times read relative (`lib/time.ts`, DST-safe) with UTC on hover; Composer input is bounded where the server bounds it (counter past 75 %, refuse past 100 %); renames cap at 120 chars;
 - (v1.14) collapsed sidebar is `inert`, the overlay Artifacts panel traps focus, the model menu is a keyboard listbox; outlines start at two sections with smooth in-scroller jumps and unique heading ids; tables size with TSV copy; baselines render findings with folded raw JSON; yaml/toml/ini highlight; one clipboard path (`hooks/useCopy.ts`).
 - (v1.15) the empty start is one static greeting line plus the Composer (no `Try:/试试：` hint; discoverability is the painted palette);
-- (v1.16) palette/chip/triage/shortcuts/day-label copy lives in dictionaries; the palette lists engine asks (Composer prefill) and shortcuts; usage renders `budget_tokens` + `repeat_calls_avoided` with a labeled window source (`context_window_source`); approvals disambiguate session policy vs per-task grants with localized gate names; Escape is per-layer; view errors dismiss; reconnects back off; the boundary follows the theme. the Composer delegates in work language; the sidebar footer is Settings alone; stalled streams heal with a quiet reconnecting line (no Resync); Find/palette are painted (title-bar + document) with CJK single-char search; tables fit first with scroll hint + pagination; usage renders from one vocabulary (`lib/usage.ts`: cached-as-subset, `~` floors, named silence, estimated compaction); Execution/Find/Skills copy lives in the i18n dict; Settings stacks with strict CJK breaks; Composer/bubble carry real elevation.
+- (v1.16.0) palette/chip/triage/shortcuts/day-label copy lives in dictionaries; the palette lists engine asks (Composer prefill) and shortcuts; usage renders `budget_tokens` + `repeat_calls_avoided` with a labeled window source (`context_window_source`); approvals disambiguate session policy vs per-task grants with localized gate names; Escape is per-layer; view errors dismiss; reconnects back off; the boundary follows the theme. the Composer delegates in work language; the sidebar footer is Settings alone; stalled streams heal with a quiet reconnecting line (no Resync); CJK single-char search; usage renders from one vocabulary (`lib/usage.ts`: cached-as-subset, `~` floors, named silence, estimated compaction); Execution/Find/Skills copy lives in the i18n dict; Settings stacks with strict CJK breaks. v1.16.1 made tables whole (no pagination).
+- (v1.17) Codex window: ContextMeter lives in the model menu, not the Composer bar; the title bar is name + state (Find/palette are keyboard); the empty start is greeting + Composer with no glyph; the user bubble is a quiet fill; approval is sentence-case hairline *Waiting for approval*; *Worked for {t}* carries no tool-call count on the head; attachments are per-task; a file while busy is labeled Delegate; copy is Direction / Execution / Work Result. No migration (head stays **030**).
 
 The execution runner is the one submission lifecycle: submit a Direction as a durable execution, follow its durable event stream (reconnect by sequence), steer/stop/resume/verify the current execution, then reload persisted task state. There are no `/sessions` message endpoints any more. Do not create a second submit path.
 

@@ -37,18 +37,39 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v1.16 documentation contract", () => {
+describe("v1.17 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
       expect(text, `${path} must name Agent Task`).toMatch(/Agent Task/);
     }
     expect(readRepo("docs/README.md")).toContain("v1.16.0");
+    expect(readRepo("docs/README.md")).toContain("v1.16.1");
+    expect(readRepo("docs/README.md")).toContain("v1.17.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.16.0");
+    expect(readRepo("CLAUDE.md")).toContain("v1.17.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
+    expect(readRepo("docs/product.md")).toContain("v1.17.0");
+    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v1\.17\.0/);
+    expect(readRepo("docs/architecture.md")).toContain("Migration head **030**");
+    expect(readRepo("docs/architecture.md")).not.toMatch(/Current architecture baseline: Storage Agent v1\.10\.0/);
+    expect(readRepo("docs/architecture.md")).not.toMatch(/Migration head \*\*028\*\*/);
     expect(readRepo("docs/design-tokens.md")).toContain("--duration-fast");
     expect(readRepo("docs/design-tokens.md")).toContain("prefers-reduced-motion");
     expect(readRepo("docs/design-tokens.md")).toContain("--viz-1");
+  });
+
+  it("does not present retired Task IA as current in product-contract docs", () => {
+    const retired: Array<[string, RegExp]> = [
+      ["Approve/Decline as current buttons", /\bApprove\s*\/\s*Decline\b/],
+      ["Review as a sheet", /Review is a \*\*sheet\*\*/],
+      ["tinted Direction block", /quiet tinted block/],
+      ["artifact chip row as current", /artifact chips \(Evidence/],
+    ];
+    for (const [label, pattern] of retired) {
+      const offenders = productContractDocs.filter((path) => pattern.test(readRepo(path)));
+      expect(offenders, `${label}: ${offenders.join(", ")}`).toEqual([]);
+    }
   });
 
   for (const [label, pattern] of removedArchitecture) {
@@ -123,6 +144,8 @@ describe("v1.16 documentation contract", () => {
     expect(readRepo("docs/architecture.md")).toContain("agent-artifacts-panel");
     expect(readRepo("docs/tools.md")).toContain("simulate_storage_cost");
     expect(readRepo("docs/roadmap.md")).not.toMatch(/Add ORC support/);
+    expect(readRepo("docs/roadmap.md")).toContain("v1.17.0");
+    expect(readRepo("docs/roadmap.md")).toContain("Codex window");
     expect(readRepo("docs/releases/1.13.0.md")).toContain("Honesty and completeness");
     expect(readRepo("docs/releases/1.14.0.md")).toContain("Interaction truth and content craft");
     expect(readRepo("docs/releases/1.15.0.md")).toContain("True Native Agent");
@@ -134,7 +157,10 @@ describe("v1.16 documentation contract", () => {
     expect(readRepo("docs/tools.md")).toContain("Bounds are not gates");
     expect(readRepo("docs/evals.md")).toContain("test_v113_eval_golden");
     expect(readRepo("docs/product.md")).toContain("v1.16");
+    expect(readRepo("docs/product.md")).toContain("v1.17");
     expect(readRepo("docs/architecture.md")).toContain("v1.16.0");
+    expect(readRepo("docs/architecture.md")).toContain("v1.17.0");
+    expect(readRepo("docs/releases/1.17.0.md")).toContain("Codex window");
     expect(readRepo("docs/data-model.md")).toContain("retry");
     expect(readRepo("docs/api.md")).toContain("PATCH .../executions/{eid}");
     expect(readRepo("docs/api.md")).toContain("lands on the waiting execution");

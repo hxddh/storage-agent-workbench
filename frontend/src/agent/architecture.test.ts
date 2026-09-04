@@ -545,7 +545,8 @@ describe("v1.11.0 shell details", () => {
     const shortcuts = source("../shortcuts.ts");
     expect(composer).toContain('event.key === "Escape"');
     expect(composer).toContain("if (busy && !text.trim()) { event.preventDefault(); onStop(); }");
-    expect(composer).toContain("<ContextMeter />");
+    expect(composer).not.toContain("<ContextMeter />");
+    expect(source("../components/ModelChip.tsx")).toContain("<ContextMeter />");
     // The Esc branch returns before any history / clear handling runs, and
     // stops propagation so one keypress never also closes an overlay.
     expect(composer).toMatch(/if \(event\.key === "Escape"\) \{[\s\S]*?event\.stopPropagation\(\);[\s\S]*?if \(busy && !text\.trim\(\)\) \{ event\.preventDefault\(\); onStop\(\); \}[\s\S]*?return;\s*\}/);
@@ -1085,8 +1086,9 @@ describe("v1.14.0 interaction truth and content craft", () => {
 
 /**
  * v1.15.0 — True Native Agent: no chat placeholders, no painted hints, no
- * footer policy fact, no manual transport chrome; search is painted; tables
- * fit first; usage speaks one vocabulary; CJK-safe settings; elevated craft.
+ * footer policy fact, no manual transport chrome; tables fit first; usage
+ * speaks one vocabulary; CJK-safe settings; elevated craft. (v1.17 un-paints
+ * title-bar Find/palette; ⌘F / ⌘K remain.)
  */
 describe("v1.15.0 true native agent", () => {
   it("delegates in work language on the one input", () => {
@@ -1097,13 +1099,16 @@ describe("v1.15.0 true native agent", () => {
     expect(composer).not.toContain("问问你的存储");
   });
 
-  it("paints search: title-bar entries plus a document entry", () => {
+  it("opens Find and the palette from the keyboard, not painted title-bar icons", () => {
     const app = source("../App.tsx");
     const doc = source("../components/TaskDocument.tsx");
-    expect(app).toContain('data-testid="titlebar-find"');
-    expect(app).toContain('data-testid="titlebar-palette"');
-    expect(doc).toContain('data-testid="task-find-open"');
+    expect(app).not.toContain('data-testid="titlebar-find"');
+    expect(app).not.toContain('data-testid="titlebar-palette"');
+    expect(doc).not.toContain('data-testid="task-find-open"');
     expect(doc).toContain("setFindOpen(true)");
+    expect(doc).toContain('matches(event, "find")');
+    expect(app).toContain('case "find": live.find?.()');
+    expect(app).toContain('case "palette": setPaletteOpen');
   });
 
   it("searches one CJK character — one Han字 is a word", () => {
@@ -1290,5 +1295,50 @@ describe("v1.16.0 true native agent, finished", () => {
     const doc = source("../components/TaskDocument.tsx");
     expect(doc).toContain("min-w-0 flex-1 flex-col");
     expect(doc).toContain("min-w-0 px-6 pb-4");
+  });
+});
+
+/**
+ * v1.17.0 — Codex window: quiet chrome, work language, transcript craft.
+ *
+ * The runtime transcript was already Codex-shaped. This version un-paints
+ * extra chrome, names Execution not Runs, and matches Codex's quiet bubble,
+ * approval, and Worked head.
+ */
+describe("v1.17.0 Codex window", () => {
+  it("keeps the Composer to attach + text + model + actions", () => {
+    const composer = source("../components/Composer.tsx");
+    expect(composer).not.toContain("<ContextMeter");
+    expect(composer).not.toContain("readOnly");
+    expect(source("../components/ModelChip.tsx")).toContain("<ContextMeter />");
+  });
+
+  it("leaves the title bar as name + state, Find and palette as keyboard", () => {
+    const app = source("../App.tsx");
+    expect(app).not.toContain("titlebar-find");
+    expect(app).not.toContain("titlebar-palette");
+    expect(source("../components/TaskDocument.tsx")).not.toContain("task-find-open");
+    expect(source("../components/AgentTaskImplementation.tsx")).not.toContain("start-mark");
+  });
+
+  it("uses work language on the turn, Artifacts, and empty fallback", () => {
+    const i18n = source("../i18n.tsx");
+    expect(i18n).toContain('"turn.workedFor": "Worked for {t}"');
+    expect(i18n).not.toContain('"turn.workedFor": "Worked for {t} · {n} tool calls"');
+    expect(i18n).toContain('"turn.userLabel": "Direction"');
+    expect(i18n).not.toContain('"turn.userLabel": "Your message"');
+    expect(source("../agent/agentCopy.ts")).toContain('execution: "Execution"');
+    expect(source("../agent/agentCopy.ts")).not.toContain('execution: "Runs"');
+    expect(source("../../../sidecar/app/agent_runtime/finalize.py")).not.toContain("Ask again");
+    expect(source("../../../sidecar/app/agent_runtime/prompt.py")).toContain('f"Direction:\\n{msg}"');
+    expect(source("../../../sidecar/app/agent_runtime/prompt.py")).not.toContain("User question:");
+  });
+
+  it("keeps the user bubble a quiet fill and the approval card sentence-case", () => {
+    const css = source("./native-document.css");
+    expect(css).toMatch(/\.turn-user-bubble \{[^}]*border: 0;/);
+    expect(css).not.toMatch(/\.turn-user-bubble \{[^}]*box-shadow/);
+    expect(css).not.toMatch(/\.approval-card-head \{[^}]*text-transform: uppercase/);
+    expect(css).not.toMatch(/\.approval-card \{[^}]*box-shadow/);
   });
 });

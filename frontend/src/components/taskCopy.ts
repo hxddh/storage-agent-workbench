@@ -60,7 +60,7 @@ export function useTaskCopy() {
         liveWaiting: "The Agent is waiting for your approval.",
         liveReady: "Work result is ready.",
         resumeTitle: "This execution was interrupted",
-        resumeBody: "Resume starts a new run from the same request.",
+        resumeBody: "Resume starts a new Execution from the same Direction.",
         resumeAction: "Resume execution",
         queued: "Queued",
         queuedHint: "Queued · starts when the current execution finishes",

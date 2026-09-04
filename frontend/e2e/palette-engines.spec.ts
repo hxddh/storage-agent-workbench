@@ -16,7 +16,7 @@ test("palette engine entries prefill the Composer with a reviewable draft", asyn
   const composer = page.getByTestId("agent-composer").getByRole("textbox");
   await expect(composer).toBeVisible({ timeout: 30_000 });
 
-  await page.getByTestId("titlebar-palette").click();
+  await page.keyboard.press("ControlOrMeta+k");
   await expect(page.getByTestId("command-palette")).toBeVisible();
   await expect(page.getByTestId("command-palette-engines")).toBeVisible();
 
