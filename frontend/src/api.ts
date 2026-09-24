@@ -8,11 +8,11 @@
  * - `api/runtime.ts`   — the durable Agent Task runtime: executions, the
  *                        event stream (SSE, resume by sequence), steer / stop /
  *                        resume, decisions, on-demand compaction.
- * - `api/tasks.ts`     — the task record: task list, document, messages,
- *                        triage, datasets, activity, artifacts, provenance,
- *                        engine outputs.
- * - `api/settings.ts`  — settings, approval policy, instructions file, price
- *                        table, skills, observability export, MCP bridge.
+ * - `api/tasks.ts`     — the task record: document, messages, triage,
+ *                        datasets, one tool call, artifacts, provenance,
+ *                        remediation plans.
+ * - `api/settings.ts`  — settings, approval policy, instructions file,
+ *                        skills, trace export, MCP bridge status.
  * - `api/providers.ts` — model + cloud providers and their inline probes.
  *
  * There is exactly one way to start work: `createTaskExecution` followed by

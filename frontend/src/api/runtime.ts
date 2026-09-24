@@ -151,10 +151,6 @@ export const listExecutionEventsPage = (taskId: string, executionId: string, opt
   request<{ task_id: string; execution_id: string; events: TaskEvent[]; last_seq: number }>(
     `/agent-tasks/${taskId}/executions/${executionId}/events-page?after=${opts.after ?? 0}&limit=${opts.limit ?? 1000}`);
 
-export const listTaskDecisions = (taskId: string, status?: string) =>
-  request<{ task_id: string; decisions: TaskDecision[] }>(
-    `/agent-tasks/${taskId}/decisions${status ? `?status_filter=${status}` : ""}`);
-
 /** Resolve an inline approval. Approving wakes the gated tool server-side and
  * the SAME execution continues; `scope=task` also allows later calls of the
  * same action type in this task. */

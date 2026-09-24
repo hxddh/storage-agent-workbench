@@ -1,14 +1,11 @@
 import { sidecarBaseUrl } from "../config";
 import { ApiError, authHeaders, boundedController, errorDetail, request, UPLOAD_TIMEOUT_MS } from "./client";
 import type {
-  BoundedList,
   ErrorInputKind,
   SessionActivityItem,
-  SessionAuditItem,
   SessionDetail,
   SessionMessage,
   SessionOverview,
-  SessionSummaryRow,
   TriageCase,
 } from "../types";
 import type { TaskProvenance } from "../viz/types";
@@ -33,9 +30,6 @@ export interface SessionCreateInput {
   primary_bucket?: string;
 }
 
-export const listSessions = (q?: string) =>
-  request<SessionSummaryRow[]>(`/sessions${q && q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ""}`);
-
 export const createSession = (body: SessionCreateInput) =>
   request<SessionDetail>("/sessions", { method: "POST", body: JSON.stringify(body) });
 
@@ -46,17 +40,6 @@ export const patchSession = (
   id: string,
   body: { title?: string; status?: "active" | "archived"; pinned?: boolean },
 ) => request<SessionDetail>(`/sessions/${id}`, { method: "PATCH", body: JSON.stringify(body) });
-
-/** Copy a task. With `fromMessageId`, BRANCH from that point instead of
- * copying all of it (v0.61.0): everything through that message comes along
- * and what followed does not. An unknown message id is a 404 rather than a
- * silent whole-task fork. */
-export const forkSession = (id: string, fromMessageId?: string) =>
-  request<SessionDetail>(
-    `/sessions/${id}/fork` +
-      (fromMessageId ? `?from_message_id=${encodeURIComponent(fromMessageId)}` : ""),
-    { method: "POST" },
-  );
 
 export const deleteSession = (id: string) =>
   request<void>(`/sessions/${id}`, { method: "DELETE" });
@@ -128,41 +111,14 @@ export async function uploadSessionDataset(
 
 // --- Task observability (rows sanitized on write) ---
 
-export const getSessionActivity = (id: string, limit?: number, offset?: number) =>
-  request<BoundedList<SessionActivityItem>>(
-    `/sessions/${id}/activity?limit=${limit ?? 200}&offset=${offset ?? 0}`,
-  );
-
 /** ONE tool call by the id its worked row carries (v0.56.0): the sanitized
  * arguments it was called with and the output it returned, opened in place.
  * Scoped to the task server-side. */
 export const getSessionCall = (id: string, callId: string) =>
   request<SessionActivityItem>(`/sessions/${id}/activity/${encodeURIComponent(callId)}`);
 
-export const getSessionAudit = (id: string, limit?: number, offset?: number) =>
-  request<BoundedList<SessionAuditItem>>(
-    `/sessions/${id}/audit?limit=${limit ?? 200}&offset=${offset ?? 0}`,
-  );
-
 export const getSessionOverview = (id: string) =>
   request<SessionOverview>(`/sessions/${id}/overview`);
-
-// --- Task memory ---
-
-/** Correct one of the agent's memory items. It replays its memory into every
- * later turn, so a wrong fact steers the rest of the Task until fixed. */
-export const correctSessionMemory = (id: string, memId: string, text: string) =>
-  request<SessionDetail>(`/sessions/${id}/memory/${memId}`, {
-    method: "PATCH",
-    body: JSON.stringify({ text }),
-  });
-
-/** Close a memory item so it stops being replayed (resolved, not deleted). */
-export const resolveSessionMemory = (id: string, memId: string, reason?: string) =>
-  request<SessionDetail>(`/sessions/${id}/memory/${memId}/resolve`, {
-    method: "POST",
-    body: JSON.stringify({ reason: reason ?? null }),
-  });
 
 // --- Artifacts, provenance, engines ---
 
@@ -196,27 +152,6 @@ export interface RemediationPlan {
   updated_at: string;
 }
 
-export interface TaskBaseline {
-  id: string;
-  task_id: string;
-  execution_id: string | null;
-  version: number;
-  snapshot: Record<string, unknown>;
-  context_version: number | null;
-  created_at: string;
-}
-
-export interface RevisitSchedule {
-  task_id: string;
-  enabled: number | boolean;
-  interval_days: number;
-  next_due_at: string | null;
-  last_revisit_at: string | null;
-  last_catchup_note: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 export const listTaskArtifacts = (taskId: string) =>
   request<{ task_id: string; artifacts: TaskArtifact[] }>(`/agent-tasks/${taskId}/artifacts`);
 
@@ -226,15 +161,3 @@ export const getTaskProvenance = (taskId: string) =>
 
 export const listRemediationPlans = (taskId: string) =>
   request<{ task_id: string; plans: RemediationPlan[] }>(`/agent-tasks/${taskId}/remediation-plans`);
-
-export const listTaskBaselines = (taskId: string) =>
-  request<{ task_id: string; baselines: TaskBaseline[] }>(`/agent-tasks/${taskId}/baselines`);
-
-export const getTaskRevisit = (taskId: string) =>
-  request<{ task_id: string; schedule: RevisitSchedule | null }>(`/agent-tasks/${taskId}/revisit`);
-
-export const putTaskRevisit = (taskId: string, intervalDays: number, enabled: boolean) =>
-  request<{ task_id: string; schedule: RevisitSchedule }>(
-    `/agent-tasks/${taskId}/revisit`,
-    { method: "PUT", body: JSON.stringify({ interval_days: intervalDays, enabled }) },
-  );

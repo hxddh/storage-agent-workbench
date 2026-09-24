@@ -815,7 +815,8 @@ describe("v1.12.0 one protocol and the frontend split", () => {
     const settings = source("../api/settings.ts");
     expect(settings).toContain('"/settings/approval-policy"');
     expect(settings).toContain('"/settings/instructions"');
-    expect(settings).toContain('"/settings/price-table"');
+    // The price table is an engine API: the frontend has no client for it.
+    expect(settings).not.toContain('"/settings/price-table"');
     const providers = source("../api/providers.ts");
     expect(providers).toContain('"/model-providers"');
     expect(providers).toContain('"/cloud-providers"');
@@ -1155,7 +1156,7 @@ describe("v1.15.0 true native agent", () => {
 
   it("keeps Execution, Find and Skills copy in the i18n dict", () => {
     const i18n = source("../i18n.tsx");
-    for (const key of ["\"task.find\"", "\"exec.back\"", "\"skills.noSkills\"", "\"table.scrollHint\"", "\"usage.cachedOf\""]) {
+    for (const key of ["\"find.placeholder\"", "\"exec.back\"", "\"skills.noSkills\"", "\"usage.cachedOf\""]) {
       expect(i18n).toContain(key);
     }
     expect(source("../components/ExecutionDetailImplementation.tsx")).not.toContain("返回 Execution 列表");

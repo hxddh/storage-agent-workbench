@@ -383,24 +383,6 @@ export interface SessionActivityItem {
   created_at: string;
 }
 
-export interface SessionAuditItem {
-  id: string;
-  event_type: string;
-  payload: Record<string, unknown> | null;
-  run_id: string | null;
-  created_at: string;
-}
-
-export interface BoundedList<T> {
-  session_id: string;
-  items: T[];
-  total: number;
-  offset: number;
-  limit: number;
-  /** True when more rows exist than were returned — never a silent cap. */
-  truncated: boolean;
-}
-
 export interface SessionUsageRollup {
   /** False when NO turn reported tokens — render "unavailable", not zero. */
   available: boolean;
