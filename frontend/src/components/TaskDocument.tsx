@@ -363,10 +363,10 @@ export function TaskDocument({
         </div>
       </div>
 
-      <div className="relative min-w-0 px-6 pb-4 pt-1">
+      <div className="native-dock relative min-w-0 px-6 pb-4 pt-1">
         {!pinned ? (
           <div className="pointer-events-none absolute -top-10 left-0 right-0 z-floating flex justify-center">
-            <button type="button" onClick={jumpToLatest} data-testid="jump-to-latest" className="native-chip pointer-events-auto bg-panel shadow-pop">
+            <button type="button" onClick={jumpToLatest} data-testid="jump-to-latest" className="native-chip native-jump pointer-events-auto">
               <Icon name="arrowDown" size={12} stroke={2} />
               {busy ? copy.jumpWorking : copy.jumpLatest}
             </button>

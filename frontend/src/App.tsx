@@ -74,7 +74,9 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: 
       <span className="native-titlebar-title" data-task={task ? "true" : "false"} data-tauri-drag-region>{title}</span>
       {stateLabel ? (
         <span className="native-titlebar-state" data-state={state} data-testid="titlebar-state">
-          {state === "working" || state === "uploading" ? <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden /> : null}
+          {state === "working" || state === "uploading"
+            ? <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
+            : <span className="native-state-dot" data-state={state} aria-hidden />}
           {stateLabel}
         </span>
       ) : null}

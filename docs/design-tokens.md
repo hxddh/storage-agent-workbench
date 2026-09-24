@@ -1,6 +1,6 @@
 # Design tokens
 
-> **Storage Agent v1.18.0.** Presentation contract for the native Agent
+> **Storage Agent v1.19.0.** Presentation contract for the native Agent
 > window. Tokens do not invent runtime state, progress, or capabilities.
 
 v1.09 replaces the v1.04–v1.08 warm/orange system with one achromatic surface
@@ -59,7 +59,9 @@ Never use a raw `red-950` (or similar) palette step. Status meaning is a token.
 | `--text-xl` | 19px | headings |
 | `--text-2xl` | 24px / 400 | the empty-start greeting |
 
-Faces: **Inter Variable** for UI and prose, **JetBrains Mono Variable** (93%
+Faces (v1.19): the **platform UI face first** — SF Pro on macOS, Segoe UI
+Variable on Windows — with vendored **Inter Variable** as the fallback where
+the platform face is not a UI face (Linux); **JetBrains Mono Variable** (93%
 size-adjusted) for tool names, keys, payloads, and code. CJK falls through to
 the platform face. Rank comes from size, weight, and space — not from fading
 text. Display weight is 400–500; nothing in chrome is bold.

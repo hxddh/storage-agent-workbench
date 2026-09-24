@@ -5,6 +5,39 @@ import type { ApprovalItem } from "../lib/turnItems";
 import { Icon } from "./icons";
 
 export type ApprovalResolution = "approved" | "declined";
+
+type TFunc = ReturnType<typeof useI18n>["t"];
+
+/** The server's bounded-scope line (`prefix p; max N files; max N bytes;
+ * up to N buckets`) in the UI language with human sizes (v1.19). A part this
+ * build does not recognise is kept verbatim rather than dropped. The prefix
+ * part is omitted when the card already shows the prefix on its own row. */
+export function formatScanScope(scope: string, t: TFunc, shownPrefix?: string | null): string {
+  return scope
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      let m = /^prefix (.+)$/.exec(part);
+      if (m) return shownPrefix && m[1] === shownPrefix ? null : t("approval.scopePrefix", { p: m[1] });
+      m = /^max (\d+) files$/.exec(part);
+      if (m) return t("approval.scopeFiles", { n: Number(m[1]).toLocaleString() });
+      m = /^max (\d+) bytes$/.exec(part);
+      if (m) return t("approval.scopeBytes", { size: fmtBytes(Number(m[1])) ?? `${m[1]} B` });
+      m = /^up to (\d+) buckets$/.exec(part);
+      if (m) return t("approval.scopeBuckets", { n: Number(m[1]).toLocaleString() });
+      return part;
+    })
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+}
+
+/** The gate's own explanation in the UI language; the server's sentence is
+ * the fallback for a gate this build does not know. */
+function gateWhy(gate: string | undefined, fallback: string | null | undefined, t: TFunc): string | null {
+  if (gate === "cloud_download") return t("approval.whyDownload");
+  return fallback || null;
+}
 export type ApprovalScope = "once" | "task";
 
 /**
@@ -33,7 +66,8 @@ export function ApprovalCard({
   const scanCalls = impact?.estimated_calls != null
     ? t("approval.estimatedCalls", { buckets: impact.buckets ?? "—", calls: impact.estimated_calls })
     : null;
-  const why = impact?.why || item.reason;
+  const why = impact ? gateWhy(impact.gate, impact.why || item.reason, t) : item.reason;
+  const scope = impact?.scan_scope ? formatScanScope(impact.scan_scope, t, impact.prefix) : "";
   const resolved = item.status === "approved"
     ? (item.scope === "task" ? t("approval.allowedTask") : t("approval.allowed"))
     : item.status === "declined" ? t("approval.denied")
@@ -63,7 +97,7 @@ export function ApprovalCard({
           {files || bytes ? (
             <><dt>{t("approval.moves")}</dt><dd className="tabular-nums" data-testid="approval-movement">{[files, bytes].filter(Boolean).join(" · ")}</dd></>
           ) : null}
-          {impact.scan_scope ? (<><dt>{t("approval.scope")}</dt><dd>{impact.scan_scope}</dd></>) : null}
+          {scope ? (<><dt>{t("approval.scope")}</dt><dd className="tabular-nums" data-testid="approval-scope">{scope}</dd></>) : null}
           {scanCalls ? (<><dt>{t("approval.scanCalls")}</dt><dd className="tabular-nums" data-testid="approval-scan-calls">{scanCalls}</dd></>) : null}
           {why ? (<><dt>{t("approval.why")}</dt><dd>{why}</dd></>) : null}
           {impact.warnings?.length ? (

@@ -1,6 +1,6 @@
 # Sidecar API
 
-> **Storage Agent v1.18.0 API reference.** (v1.18 removes the `/runs` submit/message/events/upload routes and the `/evidence-imports` plan/confirm/run routes.) One protocol: the durable Execution
+> **Storage Agent v1.19.0 API reference.** (v1.18 removes the `/runs` submit/message/events/upload routes and the `/evidence-imports` plan/confirm/run routes.) One protocol: the durable Execution
 > API under `/agent-tasks` is the ONLY way work is submitted, followed, steered,
 > stopped, and resumed. The pre-v0.94 message/turn endpoints under `/sessions`
 > (`POST …/messages`, `POST …/messages/stream`, `POST …/turns/{id}/cancel`,

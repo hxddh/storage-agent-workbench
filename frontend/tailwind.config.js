@@ -99,18 +99,21 @@ export default {
         xl: ["1.1875rem", { lineHeight: "1.625rem", letterSpacing: "-0.014em" }], // 19px
         "2xl": ["1.5rem", { lineHeight: "2rem", letterSpacing: "-0.02em" }],      // 24px — display / empty-start greeting
       },
-      // Vendored faces first, then the platform's own — including its CJK face,
-      // which Inter cannot supply. See the @font-face block in index.css.
+      // v1.19 — the platform's UI face first (native), vendored Inter as the
+      // fallback, then CJK faces. See the body rule in index.css.
       fontFamily: {
         sans: [
-          "Inter Variable",
           "-apple-system",
           "BlinkMacSystemFont",
+          "Segoe UI Variable Text",
           "Segoe UI",
+          "Inter Variable",
           "PingFang SC",
           "Hiragino Sans GB",
+          "Microsoft YaHei UI",
           "Microsoft YaHei",
           "Noto Sans CJK SC",
+          "system-ui",
           "sans-serif",
         ],
         mono: [

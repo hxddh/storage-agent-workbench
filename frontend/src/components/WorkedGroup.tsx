@@ -12,9 +12,14 @@ export function argLabel(key: string, value: string | number | boolean): string 
   return s.length > 28 ? `${s.slice(0, 28)}…` : s;
 }
 
-export function argSummary(args?: Record<string, string | number | boolean> | null): string {
+/** The call's arguments, minus any value the row already shows as its
+ * target (`head_bucket bucket-1 bucket-1` said the bucket twice). */
+export function argSummary(args?: Record<string, string | number | boolean> | null, target?: string | null): string {
   if (!args) return "";
-  return Object.entries(args).map(([k, v]) => argLabel(k, v)).join(" ");
+  return Object.entries(args)
+    .filter(([, v]) => !(target && typeof v === "string" && v === target))
+    .map(([k, v]) => argLabel(k, v))
+    .join(" ");
 }
 
 /** Prefer the Sidecar verdict; retain a conservative fallback for old persisted data. */
@@ -163,7 +168,7 @@ export function WorkedGroup({
             )}
             {shown.map((a, i) => {
               const isRunning = a.status === "started";
-              const args = argSummary(a.args);
+              const args = argSummary(a.args, a.target);
               const failed = isFailed(a);
               const ms = fmtCallMs(a.duration_ms);
               const canOpen = Boolean(taskId && a.id && !isRunning);

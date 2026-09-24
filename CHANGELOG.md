@@ -6,6 +6,24 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-09-24
+
+_Document-native window — the Task reads as a document, not a message exchange. No migration (head stays **030**)._ See `docs/releases/1.19.0.md`.
+
+### Changed
+
+- **A turn is a document section** — the Direction is a left-aligned heading (no bubble); later turns open with a hairline; the plan card is a flat checklist.
+- **Native type** — the platform UI face first (SF / Segoe UI Variable), Inter fallback.
+- **Status lives in one dot** — title bar, banners, model chip, Execution detail, drift cells; text stays ink.
+- **Palette** — opaque sheet, transform-only entry, key caps, no inner focus box.
+- **Execution detail** — one Back, no repeated Direction, sentence-case status, usage on its own line, heading-above-body type scale.
+- **Figures** — legends above plots, 2px segment gaps, ink single-series bars, ink drift counts, humanized deltas.
+- **Sidebar** — titles only; day groups carry time.
+
+### Fixed
+
+- Tool rows no longer repeat their target; approval scope is localized with human sizes; provenance previews name the tool once; "Jump to latest" is opaque; the model chip icon is a chip, not a moon.
+
 ## [1.18.0] - 2026-09-24
 
 _Native core — one Task boundary, one submit path, every data movement behind a Decision. No migration (head stays **030**)._ See `docs/releases/1.18.0.md`.

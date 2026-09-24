@@ -54,8 +54,8 @@ const COPY = {
       },
       execution: {
         statuses: {
-          queued: "queued", running: "running", waiting: "waiting for approval", completed: "complete",
-          failed: "failed", cancelled: "stopped", interrupted: "interrupted",
+          queued: "Queued", running: "Running", waiting: "Waiting for approval", completed: "Completed",
+          failed: "Failed", cancelled: "Stopped", interrupted: "Interrupted",
         } as Record<string, string>,
         kinds: { direction: "Direction", verify: "Verify", revisit: "Revisit", steer_followup: "Steer follow-up", resume: "Resume", retry: "Retry" } as Record<string, string>,
       },

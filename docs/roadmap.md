@@ -1,17 +1,26 @@
 # Roadmap
 
-> **Status: delivered in v1.18.0 — Native core.** v1.16.0 finished the true
-> native Agent; v1.16.1 patched tables and search; v1.17.0 shipped the Codex
-> window (`docs/releases/1.17.0.md`). v1.18.0 reviewed that window against
-> the runtime underneath it and removed what was not native: a second submit
-> path, Decision-less data movement, a read that started work, and session/run
-> vocabulary in product code (`docs/releases/1.18.0.md`).
+> **Status: delivered in v1.19.0 — Document-native window.** v1.16.0 finished
+> the true native Agent; v1.17.0 shipped
+> the Codex window; v1.18.0 the native core underneath it
+> (`docs/releases/1.18.0.md`). v1.19.0 reviewed the rendered window against
+> "native, simple, elegant, not a chat tool" and rebuilt the turn as a
+> document section (`docs/releases/1.19.0.md`).
 
-> **Baseline: Storage Agent v1.18.0.** The product invariant is unchanged:
+> **Baseline: Storage Agent v1.19.0.** The product invariant is unchanged:
 > **the Agent Task is the application.** The window is sidebar · title bar ·
-> one Task document · one Composer. UI and UE match Codex's quiet Agent
-> surface — same chrome, same transcript rhythm, same Composer craft —
-> while remaining a storage Agent.
+> one Task document · one Composer.
+
+## Document-native window (shipped in v1.19.0)
+
+| Surface | v1.19 |
+| --- | --- |
+| Turn | a document section: the Direction is its heading; hairline between turns |
+| Type | platform UI face first (SF / Segoe UI), Inter fallback |
+| Status | one dot (title bar, banners, model chip, Execution detail, figures); text stays ink |
+| Palette | opaque sheet, transform-only entry, key caps |
+| Sidebar | titles only; day groups carry time |
+| Figures | ink-first, legends above the plot, no coloured numbers |
 
 ## Native core (shipped in v1.18.0)
 

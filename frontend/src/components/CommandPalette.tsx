@@ -8,6 +8,16 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 import { Icon, type IconName } from "./icons";
 
+/** A shortcut as separate key caps (⌘ N, Ctrl N), never run-together text. */
+function Keys({ hint }: { hint: string }) {
+  const keys = hint.startsWith(MOD) && hint.length > MOD.length ? [MOD, hint.slice(MOD.length)] : [hint];
+  return (
+    <span className="flex shrink-0 items-center gap-1" data-testid="palette-keys">
+      {keys.map((key) => <kbd key={key} className="native-kbd">{key}</kbd>)}
+    </span>
+  );
+}
+
 type Cmd = { id: string; label: string; hint?: string; icon: IconName; run: () => void; group: "action" | "engine" | "task" };
 
 /** v1.13 — subsequence fuzzy score (higher is better, -1 is no match).
@@ -188,7 +198,7 @@ export function CommandPalette({
         aria-modal="true"
         aria-label={copy.placeholder}
         data-testid="command-palette"
-        className="w-[min(600px,92vw)] overflow-hidden rounded-2xl border border-edge bg-canvas shadow-pop animate-scale-in"
+        className="native-palette w-[min(600px,92vw)] overflow-hidden rounded-2xl animate-rise-in"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-edge px-4">
@@ -199,10 +209,12 @@ export function CommandPalette({
             onChange={(event) => { setQ(event.target.value); setSel(0); }}
             onKeyDown={onKeyDown}
             placeholder={copy.placeholder}
+            // The palette itself is the focused surface: no inner focus box.
+            data-focus-ring="container"
             className="w-full bg-transparent py-3.5 text-base text-gray-100 placeholder:text-gray-500 focus:outline-none"
           />
         </div>
-        <div className="max-h-[52vh] overflow-auto p-2">
+        <div className="native-palette-list max-h-[52vh] overflow-auto p-2">
           {items.length === 0 ? <div className="px-3 py-6 text-center text-sm text-gray-500">{copy.empty}</div> : null}
           {items.map((command, index) => (
             <div key={command.id}>
@@ -218,7 +230,7 @@ export function CommandPalette({
               >
                 <Icon name={command.icon} size={15} className={index === sel ? "text-gray-100" : "text-gray-500"} />
                 <span className="min-w-0 flex-1 truncate text-sm text-gray-100">{command.label}</span>
-                {command.hint ? <span className="shrink-0 font-mono text-2xs text-gray-500">{command.hint}</span> : null}
+                {command.hint ? <Keys hint={command.hint} /> : null}
               </button>
             </div>
           ))}

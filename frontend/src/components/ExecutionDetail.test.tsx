@@ -136,7 +136,7 @@ describe("replayExecutionEvents", () => {
 describe("ExecutionDetail", () => {
   it("renders header, rows, findings and the Work Result from the durable runtime only", async () => {
     render(createElement(ExecutionDetail, { taskId: "t1", executionId: "exec-1", onBack: () => undefined }), { wrapper });
-    await waitFor(() => expect(screen.getByTestId("execution-status").textContent).toContain("complete"));
+    await waitFor(() => expect(screen.getByTestId("execution-status").textContent).toContain("Completed"));
     expect(api.getTaskExecution).toHaveBeenCalledWith("t1", "exec-1");
     expect(api.listExecutionEventsPage).toHaveBeenCalledWith("t1", "exec-1", { after: 0, limit: 1000 });
     expect(api.followExecutionEvents).not.toHaveBeenCalled();
@@ -187,7 +187,7 @@ describe("ExecutionDetail", () => {
     const [, executionId, , opts] = api.followExecutionEvents.mock.calls[0];
     expect(executionId).toBe("exec-1");
     expect(opts.after).toBe(9);
-    await waitFor(() => expect(screen.getByTestId("execution-status").textContent).toContain("complete"));
+    await waitFor(() => expect(screen.getByTestId("execution-status").textContent).toContain("Completed"));
   });
 
   it("says so when the execution cannot be loaded, without a second vocabulary", async () => {

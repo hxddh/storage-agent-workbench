@@ -38,3 +38,11 @@ export function fmtBytes(n: number | null | undefined): string | null {
   }
   return i === 0 ? `${v} ${BYTE_UNITS[0]}` : `${v.toFixed(1)} ${BYTE_UNITS[i]}`;
 }
+
+/** A tool identifier as a reader-facing phrase: `review_bucket_lifecycle` →
+ * `Review bucket lifecycle`. Tool rows keep the raw name (they are the
+ * technical trace); previews and summaries use this. */
+export function humanizeTool(name: string | null | undefined): string {
+  const words = String(name ?? "").replace(/[_-]+/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "";
+}

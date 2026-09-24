@@ -37,7 +37,7 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v1.18 documentation contract", () => {
+describe("v1.19 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
@@ -47,11 +47,12 @@ describe("v1.18 documentation contract", () => {
     expect(readRepo("docs/README.md")).toContain("v1.16.1");
     expect(readRepo("docs/README.md")).toContain("v1.17.0");
     expect(readRepo("docs/README.md")).toContain("v1.18.0");
+    expect(readRepo("docs/README.md")).toContain("v1.19.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.16.0");
-    expect(readRepo("CLAUDE.md")).toContain("v1.18.0");
+    expect(readRepo("CLAUDE.md")).toContain("v1.19.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
-    expect(readRepo("docs/product.md")).toContain("v1.18.0");
-    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v1\.18\.0/);
+    expect(readRepo("docs/product.md")).toContain("v1.19.0");
+    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v1\.19\.0/);
     expect(readRepo("docs/architecture.md")).toContain("Migration head **030**");
     expect(readRepo("docs/architecture.md")).not.toMatch(/Current architecture baseline: Storage Agent v1\.10\.0/);
     expect(readRepo("docs/architecture.md")).not.toMatch(/Migration head \*\*028\*\*/);
@@ -145,8 +146,8 @@ describe("v1.18 documentation contract", () => {
     expect(readRepo("docs/architecture.md")).toContain("agent-artifacts-panel");
     expect(readRepo("docs/tools.md")).toContain("simulate_storage_cost");
     expect(readRepo("docs/roadmap.md")).not.toMatch(/Add ORC support/);
-    expect(readRepo("docs/roadmap.md")).toContain("v1.18.0");
-    expect(readRepo("docs/roadmap.md")).toContain("Native core");
+    expect(readRepo("docs/roadmap.md")).toContain("v1.19.0");
+    expect(readRepo("docs/roadmap.md")).toContain("Document-native");
     expect(readRepo("docs/releases/1.13.0.md")).toContain("Honesty and completeness");
     expect(readRepo("docs/releases/1.14.0.md")).toContain("Interaction truth and content craft");
     expect(readRepo("docs/releases/1.15.0.md")).toContain("True Native Agent");
@@ -163,6 +164,10 @@ describe("v1.18 documentation contract", () => {
     expect(readRepo("docs/architecture.md")).toContain("v1.17.0");
     expect(readRepo("docs/releases/1.17.0.md")).toContain("Codex window");
     expect(readRepo("docs/releases/1.18.0.md")).toContain("Native core");
+    expect(readRepo("docs/releases/1.19.0.md")).toContain("Document-native");
+    // v1.19 — no current product doc teaches the Direction as a bubble.
+    expect(readRepo("docs/product.md")).not.toContain("right-aligned user bubble");
+    expect(readRepo("CLAUDE.md")).not.toContain("right-aligned bubble");
     expect(readRepo("docs/api.md")).not.toMatch(/^POST \/runs$/m);
     expect(readRepo("docs/api.md")).not.toMatch(/^POST \/evidence-imports\/plan$/m);
     expect(readRepo("docs/data-model.md")).toContain("retry");

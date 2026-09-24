@@ -354,7 +354,8 @@ describe("the keyboard focus ring (v0.61.0)", () => {
     const users = sourceFiles(SRC).filter((f) =>
       fs.readFileSync(f, "utf8").includes('data-focus-ring="container"'),
     );
-    expect(users.map((f) => path.basename(f))).toEqual(["Composer.tsx"]);
+    // v1.19 — the command palette joins: its sheet draws the focus border.
+    expect(users.map((f) => path.basename(f)).sort()).toEqual(["CommandPalette.tsx", "Composer.tsx"]);
   });
 
   it("still suppresses the default outline it replaces", () => {
