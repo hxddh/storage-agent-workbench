@@ -504,7 +504,8 @@ def _bounded_turn_items(items: list[dict[str, Any]] | None) -> list[dict[str, An
 
     ``message`` items carry the commentary text; ``tool`` items reference the
     tool_activity record by id (the record itself is the single source of the
-    call's truth). Anything else is dropped."""
+    call's truth); ``plan``, ``compacted`` and ``steer`` items carry their own
+    bounded payload. Anything else is dropped."""
     out: list[dict[str, Any]] = []
     for it in (items or [])[:_MAX_TURN_ITEMS]:
         if not isinstance(it, dict):
@@ -526,6 +527,12 @@ def _bounded_turn_items(items: list[dict[str, Any]] | None) -> list[dict[str, An
             out.append({"kind": "compacted",
                         "before_tokens": it.get("before_tokens"),
                         "after_tokens": it.get("after_tokens")})
+        elif kind == "steer":
+            # A Steer the running loop took at this point (v1.18): the user's
+            # own Direction, redacted and bounded like commentary.
+            text = redact_text(str(it.get("text") or "")).strip()[:200]
+            if text:
+                out.append({"kind": "steer", "text": text})
     return out
 
 
