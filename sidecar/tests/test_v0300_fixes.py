@@ -13,7 +13,6 @@ Survey — conditional ACL read (skipped under BucketOwnerEnforced), acl_public
      flag, evidence discovery reuses the snapshot's reads (GET dedupe), summary
      carries public counts + a critical finding.
 C-1 — turn_guard.register_session_turn serializes turns per session.
-C-2 — /runs/{id}/message claims the run atomically (second POST → 409).
 """
 import sqlite3
 from typing import Any
@@ -301,21 +300,3 @@ def test_register_session_turn_returns_prior_live_handle():
     h3, _ = turn_guard.begin("t3", "sess")
     assert turn_guard.register_session_turn("sess", h3) is None
     turn_guard._reset_for_tests()
-
-
-# ============================ C-2: runs message atomic claim ================
-
-
-def test_runs_message_claims_atomically(client, monkeypatch):
-    from app import run_service
-    monkeypatch.setattr(run_service, "start", lambda run_id: None)  # don't execute
-    pid = _provider(client)
-    run_id = client.post("/runs", json={
-        "run_type": "diagnostic", "provider_id": pid, "bucket": "b",
-        "user_prompt": "x"}).json()["run_id"]
-    r1 = client.post(f"/runs/{run_id}/message", json={"content": "go"})
-    assert r1.status_code == 200
-    # The first POST claimed the row (status=running even though nothing executed) —
-    # a duplicate POST must be rejected instead of spawning a second executor.
-    r2 = client.post(f"/runs/{run_id}/message", json={"content": "go again"})
-    assert r2.status_code == 409

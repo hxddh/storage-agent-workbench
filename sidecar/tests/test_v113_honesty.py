@@ -172,7 +172,8 @@ def test_resume_of_cancelled_is_labelled_retry(client):
     # Join the worker resume() just started: otherwise it outlives this test
     # and crashes against the next test's database (unhandled-thread warning).
     # The fake endpoint refuses fast, so this is bounded by the timeout.
-    runtime.wait_for_completion(nxt["id"], timeout_s=60.0)
+    from .turns import wait_for_completion
+    wait_for_completion(nxt["id"], timeout_s=60.0)
 
 
 # --- redaction -----------------------------------------------------------------

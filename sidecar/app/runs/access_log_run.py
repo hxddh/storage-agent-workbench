@@ -7,7 +7,6 @@ from typing import Any
 
 from .. import config
 from ..analysis import access_logs
-from ..events import bus
 from ..repositories import datasets as datasets_repo
 from ._common import RunError, require_success, run_executor, run_tool_with_events
 from .analysis_report import render_access_log, write
@@ -52,8 +51,6 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
     ))
 
     findings = access_logs.derive_findings(metrics)
-    for f in findings:
-        bus.publish(run_id, {"type": "finding", **f})
 
     summary = (
         f"Analyzed {metrics.get('total_requests', 0)} request(s) from format "
@@ -65,7 +62,6 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
             f" NOTE: the file exceeded the ingest cap ({imp.get('ingest_cap'):,} rows); "
             "metrics cover only the analyzed rows (a lower bound, not the whole file)."
         )
-    bus.publish(run_id, {"type": "summary", "content": summary})
 
     ds_info = {"source_filename": ds.source_filename}
     require_success(run_tool_with_events(

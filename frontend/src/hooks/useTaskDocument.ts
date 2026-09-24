@@ -217,6 +217,7 @@ export function useTaskDocument({
     // never lands in the document.
     let loadedSettledExecId: string | null = null;
     let discoverPolls = 0;
+    let loadFailures = 0;
 
     const follow = async (executionId: string, direction: string | null, startedAt: string | null) => {
       following = true;
@@ -257,9 +258,12 @@ export function useTaskDocument({
         state = await getTaskState(taskId);
         if (!stopped && localId.current === taskId) setTaskRuntime(state);
       } catch {
-        timer = window.setTimeout(tick, 1500);
+        // Sidecar unreachable: back off (1.5 s → 30 s) instead of a fixed poll.
+        loadFailures += 1;
+        timer = window.setTimeout(tick, Math.min(1500 * 2 ** (loadFailures - 1), 30_000));
         return;
       }
+      loadFailures = 0;
       if (stopped || localId.current !== taskId) return;
       // A follower is open (this client's own turn, or the stream above):
       // queued Directions and pending Decisions now arrive as `task.status`
@@ -299,8 +303,10 @@ export function useTaskDocument({
         sawOwnBusy = false;
         setRemoteTurn(null);
         // A catch-up revisit may still be queued when this Task is first
-        // selected. Keep a bounded poll until an Execution settles.
-        if (!settled && discoverPolls < 40) {
+        // selected. Keep a bounded poll until an Execution settles — only for
+        // a Task that has executed before: a Task with no Execution has
+        // nothing to catch up, and its first Direction opens a follower.
+        if (!settled && state.last_execution && discoverPolls < 40) {
           discoverPolls += 1;
           timer = window.setTimeout(tick, 1500);
         }

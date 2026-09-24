@@ -43,6 +43,9 @@ dependencies = [
     # so v0.55.0 was developed against openai-agents 0.17.8 while CI validated it
     # against 0.19.4 — see scripts/lock-sidecar-deps.py.
     "pyyaml>=6.0",
+    # `typing_extensions.TypedDict` in tool schemas: pydantic rejects the
+    # stdlib one below Python 3.12 (requires-python is >=3.10).
+    "typing_extensions>=4.6",
 ]
 
 # NOTE: Adds the OpenAI Agents SDK (openai-agents) + openai for the conversational

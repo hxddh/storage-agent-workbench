@@ -19,6 +19,7 @@ from app import config, run_service
 from app.agent_runtime import session_agent
 from app.repositories import sessions as sessions_repo
 from tests.turns import post_message
+from . import runs_helper
 
 ACCESS = "AKIAIOSFODNN7EXAMPLE"
 MODEL_KEY = "sk-MODEL-SECRET-DO-NOT-LEAK"
@@ -53,14 +54,8 @@ def _add_model_provider(client):
 
 
 def _run_access_log_in_session(client, session_id, content=ACCESS_LOG_JSONL):
-    created = client.post("/runs", json={
-        "run_type": "access_log_analysis", "user_prompt": "analyze", "session_id": session_id}).json()
-    rid = created["run_id"]
-    client.post(f"/runs/{rid}/datasets/upload",
-                files={"file": ("a.jsonl", content.encode(), "text/plain")},
-                data={"dataset_type": "access_log"})
-    client.post(f"/runs/{rid}/message", json={"content": "go"})
-    return rid
+    return runs_helper.run("access_log_analysis", user_prompt="analyze", session_id=session_id,
+                           dataset=("access_log", "a.jsonl", content))
 
 
 # --- session CRUD + linkage -------------------------------------------------
@@ -201,12 +196,8 @@ def test_delete_session_removes_it(client):
 def test_attach_existing_run_to_session(client, sync_runs):
     s = _session(client)
     # a standalone run (no session)
-    created = client.post("/runs", json={"run_type": "access_log_analysis", "user_prompt": "x"}).json()
-    rid = created["run_id"]
-    client.post(f"/runs/{rid}/datasets/upload",
-                files={"file": ("a.jsonl", ACCESS_LOG_JSONL.encode(), "text/plain")},
-                data={"dataset_type": "access_log"})
-    client.post(f"/runs/{rid}/message", json={"content": "go"})
+    rid = runs_helper.run("access_log_analysis",
+                          dataset=("access_log", "a.jsonl", ACCESS_LOG_JSONL))
     # attach after the fact
     detail = client.post(f"/sessions/{s['id']}/runs/{rid}").json()
     assert any(r["run_id"] == rid for r in detail["runs"])
@@ -469,12 +460,8 @@ def test_session_search_by_title_and_content(client):
 
 def test_existing_run_apis_unaffected(client, sync_runs):
     # A run with no session_id still works exactly as before.
-    created = client.post("/runs", json={"run_type": "access_log_analysis", "user_prompt": "x"}).json()
-    rid = created["run_id"]
-    client.post(f"/runs/{rid}/datasets/upload",
-                files={"file": ("a.jsonl", ACCESS_LOG_JSONL.encode(), "text/plain")},
-                data={"dataset_type": "access_log"})
-    client.post(f"/runs/{rid}/message", json={"content": "go"})
+    rid = runs_helper.run("access_log_analysis",
+                          dataset=("access_log", "a.jsonl", ACCESS_LOG_JSONL))
     detail = client.get(f"/runs/{rid}").json()
     assert detail["status"] == "completed"
     assert detail["session_id"] is None

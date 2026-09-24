@@ -1,42 +1,25 @@
-"""Analysis Run endpoints.
+"""Deterministic run records — read-only compatibility API (+ delete).
 
 Runs are PURE deterministic compute — there is no LLM planner. All five run
 types (diagnostic, access_log_analysis, inventory_analysis, bucket_config_review,
-account_discovery) execute via their deterministic executors. The conversational
-agent invokes these engines as tools or proposes a saved report; it never plans
-or narrates inside a run.
-
-`POST /runs` (`create_run`) is an INTERNAL / testing entry point for the
-deterministic run layer — it is NOT a user-facing surface (the frontend never
-calls it; the agent uses `run_service` directly, and evidence import creates its
-run server-side). It stays because the deterministic layer is the reproducibility
-/ security floor and the test suite creates runs through it. Do not wire it into
-the UI as a "new run" form — that runs-first flow was removed.
+account_discovery) execute via their deterministic executors, reached ONLY
+through the Agent runtime (``run_service``) or evidence import's server-side
+analysis hand-off. There is no HTTP route that creates or starts a run and no
+run event stream: the durable Agent Task runtime is the one submit path, and a
+run's progress is its persisted ``runs`` / ``tool_calls`` / report rows.
 """
 
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
 
-from .. import audit, config, run_service
+from .. import audit, config
 from ..db import get_conn
-from ..events import bus, sse_stream
-from ..security.redaction import redact_text
-from ..models.schemas import (
-    AccountProfileOut,
-    MessageCreate,
-    RunCreate,
-    RunCreated,
-    RunDetail,
-    RunSummary,
-)
+from ..models.schemas import AccountProfileOut, RunDetail, RunSummary
 from ..repositories import account_discovery as account_repo
 from ..repositories import runs as repo
-from ..repositories import sessions as sessions_repo
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -44,77 +27,6 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 @router.get("", response_model=list[RunSummary])
 def list_runs(conn: sqlite3.Connection = Depends(get_conn)):
     return repo.list_all(conn)
-
-
-# Run types that actually execute (vs. placeholders).
-_EXECUTABLE = {
-    "diagnostic", "access_log_analysis", "inventory_analysis",
-    "bucket_config_review", "account_discovery",
-}
-# Run types that need a provider + bucket (vs. file-upload analysis runs).
-_NEEDS_BUCKET = {"diagnostic", "bucket_config_review"}
-# Run types that need a provider but operate at the account level (no bucket).
-_NEEDS_PROVIDER_ONLY = {"account_discovery"}
-@router.post("", response_model=RunCreated, status_code=status.HTTP_201_CREATED)
-def create_run(body: RunCreate, conn: sqlite3.Connection = Depends(get_conn)):
-    if body.run_type in _NEEDS_BUCKET:
-        missing = [
-            field
-            for field in ("provider_id", "bucket", "user_prompt")
-            if not getattr(body, field)
-        ]
-        if missing:
-            raise HTTPException(
-                status_code=422,
-                detail=f"{body.run_type} run requires: {', '.join(missing)}",
-            )
-        run_id = repo.create(conn, body, status="pending")
-        bus.create(run_id)
-    elif body.run_type in _NEEDS_PROVIDER_ONLY:
-        # account_discovery enumerates the whole account; it needs a provider but
-        # no bucket. user_prompt is optional (a default is supplied).
-        if not body.provider_id:
-            raise HTTPException(
-                status_code=422,
-                detail=f"{body.run_type} run requires: provider_id",
-            )
-        if not body.user_prompt:
-            body = body.model_copy(update={"user_prompt": "Discover account-level buckets and evidence sources."})
-        run_id = repo.create(conn, body, status="pending")
-        bus.create(run_id)
-    elif body.run_type in _EXECUTABLE:
-        # Analysis runs need a user_prompt; the dataset is uploaded separately.
-        if not body.user_prompt:
-            raise HTTPException(
-                status_code=422,
-                detail=f"{body.run_type} run requires: user_prompt",
-            )
-        run_id = repo.create(conn, body, status="pending")
-        bus.create(run_id)
-    else:
-        # Unreachable: run_type is a RunType Literal (FastAPI 422s anything else
-        # before this handler), and _EXECUTABLE covers every RunType value. Kept
-        # as a defensive guard rather than a silent fall-through.
-        raise HTTPException(status_code=422, detail=f"run_type '{body.run_type}' is not executable")
-
-    # Link the run to its session immediately so it appears in the timeline.
-    if body.session_id and sessions_repo.get_row(conn, body.session_id) is not None:
-        sessions_repo.link_run(conn, body.session_id, run_id, sessions_repo.RUN_ROLE.get(body.run_type))
-
-    # Scoped to the session when the run belongs to one, so the inspector's
-    # timeline shows the runs a session started alongside its tool calls.
-    audit.record(conn, "run.create",
-                 {"run_id": run_id, "run_type": body.run_type,
-                  "provider_id": body.provider_id, "bucket": body.bucket}, run_id=run_id,
-                 session_id=body.session_id)
-
-    row = repo.get_row(conn, run_id)
-    return RunCreated(
-        run_id=run_id,
-        status=row["status"],
-        title=row["title"],
-        created_at=row["created_at"],
-    )
 
 
 @router.get("/{run_id}", response_model=RunDetail)
@@ -162,69 +74,3 @@ def get_account_profile(run_id: str, conn: sqlite3.Connection = Depends(get_conn
     if profile is None:
         raise HTTPException(status_code=404, detail="no account profile for this run")
     return AccountProfileOut(**profile)
-
-
-@router.post("/{run_id}/message")
-def post_message(
-    run_id: str, body: MessageCreate, conn: sqlite3.Connection = Depends(get_conn)
-) -> dict[str, Any]:
-    row = repo.get_row(conn, run_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="run not found")
-    if row["run_type"] not in _EXECUTABLE:
-        raise HTTPException(
-            status_code=409,
-            detail=f"run_type '{row['run_type']}' has no executable message turn",
-        )
-    # Refuse to spawn a second executor over a run that is already in flight or
-    # finished. This must be an ATOMIC claim, not check-then-act: two concurrent
-    # POSTs (double-click / client retry) on separate threadpool threads both
-    # read 'pending' and both spawned executors racing on the same run row —
-    # duplicate tool_calls, both writing report.md, terminal-status flapping.
-    # A single conditional UPDATE lets exactly one caller through.
-    claimed = conn.execute(
-        "UPDATE runs SET status = 'running' WHERE id = ? "
-        "AND status NOT IN ('running', 'completed')",
-        (run_id,),
-    ).rowcount
-    conn.commit()
-    if not claimed:
-        raise HTTPException(
-            status_code=409,
-            detail="run is already running or completed; cannot start another executor for it",
-        )
-
-    # The claim committed the row as 'running'. If wiring up the executor now
-    # fails, revert to 'pending' before re-raising — otherwise the row is wedged
-    # 'running' with no executor and the atomic claim above blocks every retry
-    # until the next startup reconciler.
-    try:
-        audit.record(conn, "run.start", {"run_id": run_id, "run_type": row["run_type"]},
-                     run_id=run_id,
-                     session_id=sessions_repo.session_id_for_run(conn, run_id))
-        repo.add_message(conn, run_id, role="user", content=body.content)
-        bus.create(run_id)
-        run_service.start(run_id)
-    except Exception as exc:  # noqa: BLE001 — never leave the row wedged 'running'
-        conn.execute("UPDATE runs SET status = 'pending' WHERE id = ?", (run_id,))
-        conn.commit()
-        # scrub_paths too: an OSError/sqlite error carries the app data dir's
-        # absolute path (username included), which redact_text alone leaves in —
-        # same hardening the sessions router's _safe_err already has.
-        raise HTTPException(status_code=500,
-                            detail=config.scrub_paths(redact_text(str(exc)))) from exc
-    return {"run_id": run_id, "status": "running"}
-
-
-@router.get("/{run_id}/events")
-def run_events(run_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> StreamingResponse:
-    # 404 an unknown run rather than streaming an instantly-"done" empty timeline
-    # (snapshot() treats an unknown run as done) — a stale/typo'd id otherwise
-    # reads as a finished run to the client.
-    if repo.get_row(conn, run_id) is None:
-        raise HTTPException(status_code=404, detail="run not found")
-    return StreamingResponse(
-        sse_stream(run_id),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )

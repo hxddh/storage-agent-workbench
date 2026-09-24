@@ -195,7 +195,7 @@ def parse_iso(value: str | None) -> datetime | None:
 
     Users (and providers' LastModified serializations) mix naive and offset-
     aware timestamps; comparing the two raises TypeError, which used to surface
-    as a 500 on ``POST /evidence-imports/plan``. A missing offset is treated as
+    as a 500 while planning an import. A missing offset is treated as
     UTC so ``_within_range`` always compares aware datetimes.
     """
     if not value:

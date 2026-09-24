@@ -6,12 +6,11 @@ The session agent is a read-only tool-calling investigator (bounded, sanitized
 context; secrets never reach it) that also keeps working memory. This is NOT a
 project-management / kanban / ticketing surface.
 
-Since v1.12 there are no message/turn endpoints here: every turn is a durable
-Execution submitted through ``/agent-tasks``. This router keeps the task's
-durable CRUD, memory, runs linkage, observability, report and dataset
-variant streams that execution's durable event log translated into the legacy
-`delta`/`tool`/`done`/`error` vocabulary, and turn state/cancel read and act on
-durable execution rows. There is exactly one submission lifecycle.
+Since v1.12 there are no message, stream, turn or cancel endpoints here: every
+turn is a durable Execution submitted, followed, steered and stopped through
+``/agent-tasks``. This router keeps only the task's durable CRUD, memory, runs
+linkage, activity/audit/observability reads, the report, message paging and
+the per-task dataset upload. There is exactly one submission lifecycle.
 """
 
 from __future__ import annotations
@@ -486,12 +485,11 @@ async def upload_session_dataset(
     raw_dir = config.data_dir() / "sessions" / session_id / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
     dest = raw_dir / filename
-    # Stream to disk in bounded chunks with a total cap (same protection as the
-    # /runs upload endpoint): a single `await file.read()` buffered a multi-GB
+    # Stream to disk in bounded chunks with a total cap: a single `await file.read()` buffered a multi-GB
     # attachment fully in RAM — the sidecar OOM'd on exactly the large inventory
     # files this endpoint invites.
     from .datasets import _UPLOAD_CHUNK, MAX_UPLOAD_BYTES
-    # Temp-then-rename (see /runs upload): a mid-stream failure must never leave
+    # Temp-then-rename: a mid-stream failure must never leave
     # a truncated file at the final path a dataset row may already reference.
     total = 0
     tmp = dest.with_name(dest.name + f".part-{uuid.uuid4().hex[:8]}")

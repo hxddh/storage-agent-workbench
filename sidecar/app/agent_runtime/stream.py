@@ -150,6 +150,14 @@ class _Segments:
     def tool(self, record: dict[str, Any]) -> None:
         if record.get("status") == "started":
             return
+        if record.get("tool") == "user_steer":
+            # A Steer the loop took here is the user's Direction, not a tool
+            # call: its own item, so the durable transcript matches the live
+            # `steer.applied` line instead of dropping it (v1.18).
+            text = str(record.get("result") or "").strip()
+            if text:
+                self.items.append({"kind": "steer", "text": text[:200]})
+            return
         if record.get("tool") == "update_plan":
             # ONE plan item per turn, at the position of the first call;
             # later calls replace its steps in place (Codex semantics).

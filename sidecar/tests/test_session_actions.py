@@ -19,6 +19,7 @@ from app.repositories import account_discovery as account_repo
 from app.repositories import runs as runs_repo
 from app.repositories import sessions as sessions_repo
 from tests.turns import post_message
+from . import runs_helper
 
 ACCESS = "AKIAIOSFODNN7EXAMPLE"
 MODEL_KEY = "sk-MODEL-SECRET-DO-NOT-LEAK"
@@ -108,12 +109,8 @@ def test_no_kanban_or_pm_tables(client):
 
 def test_existing_run_apis_unaffected(client, monkeypatch):
     monkeypatch.setattr(run_service, "start", run_service.run_sync)
-    created = client.post("/runs", json={"run_type": "access_log_analysis", "user_prompt": "x"}).json()
-    rid = created["run_id"]
     log = '2026-06-25T10:00:00Z b GET /p 200 10 5 ms user-agent="x" remote_ip="192.0.2.10"\n'
-    client.post(f"/runs/{rid}/datasets/upload",
-                files={"file": ("a.log", log.encode(), "text/plain")}, data={"dataset_type": "access_log"})
-    client.post(f"/runs/{rid}/message", json={"content": "go"})
+    rid = runs_helper.run("access_log_analysis", dataset=("access_log", "a.log", log))
     detail = client.get(f"/runs/{rid}").json()
     assert detail["status"] == "completed" and detail["session_id"] is None
 

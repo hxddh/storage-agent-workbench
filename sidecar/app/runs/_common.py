@@ -2,8 +2,7 @@
 
 ``run_executor`` is the one harness every deterministic executor runs on: it
 owns the status transitions (pending → running → completed/failed), the
-reports-table row, the ``report_ready`` / ``error`` SSE events, and the
-sanitized failure path. Executors provide only a body that does the actual
+reports-table row, and the sanitized failure path. Executors provide only a body that does the actual
 work and returns the final summary text.
 """
 
@@ -15,7 +14,6 @@ from collections.abc import Callable
 from typing import Any
 
 from .. import config
-from ..events import bus
 from ..repositories import runs as runs_repo
 from ..repositories import utcnow
 from ..security.redaction import redact_text
@@ -31,23 +29,12 @@ def run_tool_with_events(
     executor: Callable[[], dict[str, Any]],
     duration_ms: int | None = None,
 ) -> dict[str, Any]:
-    """Publish started/finished SSE events around a recorded tool call.
+    """Run one recorded tool call (tool_calls + audit row) for a run.
 
     ``duration_ms`` is passed through to ``run_tool`` for work already performed
     elsewhere (see its docstring) so the recorded row reports the true elapsed
     time rather than the cost of handing back a finished result."""
-    tool_call_id = uuid.uuid4().hex
-    bus.publish(run_id, {"type": "tool_call_started", "tool_name": name, "tool_call_id": tool_call_id})
-    out = run_tool(conn, name, raw_input, executor, run_id=run_id, duration_ms=duration_ms)
-    status = "success" if out.get("success", True) else "error"
-    bus.publish(run_id, {
-        "type": "tool_call_finished",
-        "tool_name": name,
-        "tool_call_id": tool_call_id,
-        "status": status,
-        "output": out,
-    })
-    return out
+    return run_tool(conn, name, raw_input, executor, run_id=run_id, duration_ms=duration_ms)
 
 
 class RunError(Exception):
@@ -62,7 +49,7 @@ def require_success(out: dict[str, Any]) -> dict[str, Any]:
 
 
 def _finalize_success(conn: sqlite3.Connection, run_id: str, summary: str) -> None:
-    """Record the report row, mark the run completed, and announce the report.
+    """Record the report row and mark the run completed.
 
     The reports table and ``runs.report_path`` store the path RELATIVE to the
     app data dir (never an absolute path that may embed a username); readers
@@ -78,14 +65,6 @@ def _finalize_success(conn: sqlite3.Connection, run_id: str, summary: str) -> No
     )
     conn.commit()
     runs_repo.set_status(conn, run_id, "completed", final_summary=summary, report_path=report_rel)
-    # The run is now committed 'completed'. A failure in the notification below
-    # must NOT propagate — if it did, run_executor's except would fire and
-    # downgrade this finished run to 'failed', a terminal contradiction (a failed
-    # run that already has a report + success summary).
-    try:
-        bus.publish(run_id, {"type": "report_ready", "run_id": run_id, "report_path": report_rel})
-    except Exception:  # noqa: BLE001 - best-effort SSE notification; the run is already done
-        pass
 
 
 def run_executor(
@@ -94,10 +73,9 @@ def run_executor(
     failure_summary: str,
     body: Callable[[dict[str, Any]], str],
 ) -> None:
-    """Shared executor harness (status/report/SSE/error scaffolding).
+    """Shared executor harness (status/report/error scaffolding).
 
-    ``body(run)`` performs the run's real work — tool calls, findings/summary
-    events, and writing the report file to ``report_path_for(run_id)`` — and
+    ``body(run)`` performs the run's real work — recorded tool calls and writing the report file to ``report_path_for(run_id)`` — and
     returns the final summary text. The harness then persists the report row
     and marks the run completed. Any exception (including RunError) marks the
     run failed with a sanitized message; a run that *ran* but found an
@@ -106,8 +84,6 @@ def run_executor(
     """
     row = runs_repo.get_row(conn, run_id)
     if row is None:
-        bus.publish(run_id, {"type": "error", "message": "run not found"})
-        bus.mark_done(run_id)
         return
     run = dict(row)
     try:
@@ -122,6 +98,3 @@ def run_executor(
         cur = runs_repo.get_row(conn, run_id)
         if cur is None or cur["status"] not in ("completed", "failed"):
             runs_repo.set_status(conn, run_id, "failed", final_summary=final)
-            bus.publish(run_id, {"type": "error", "message": detail or failure_summary})
-    finally:
-        bus.mark_done(run_id)

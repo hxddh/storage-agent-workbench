@@ -150,31 +150,6 @@ def test_budget_clamped_to_small_window():
     assert mb.completion_token_budget(None, 128_000) == mb.COMPLETION_TOKENS_FLOOR
 
 
-# --- mining round: event bus (S-F6 / A2-F4 / A2-F6) --------------------------
-
-def test_bus_snapshot_marks_truncation():
-    from app import events
-
-    b = events.EventBus()
-    b.create("r")
-    for i in range(events._MAX_EVENTS_PER_RUN + 10):
-        b.publish("r", {"i": i})
-    evs, _, _ = b.snapshot("r", 0)
-    assert evs[0]["type"] == "truncated" and evs[0]["dropped"] == 10
-
-
-def test_bus_publish_does_not_mint_zombie_entries():
-    from app import events
-
-    b = events.EventBus()
-    b.publish("ghost", {"x": 1})   # never create()d
-    b.mark_done("ghost2")
-    assert "ghost" not in b._runs and "ghost2" not in b._runs
-    # An unknown run still reads as done (subscribers close immediately).
-    _, _, done = b.snapshot("ghost", 0)
-    assert done is True
-
-
 # --- mining round: provider session-token clear (M-F1) -----------------------
 
 def test_update_clears_session_token_with_empty_string(client):

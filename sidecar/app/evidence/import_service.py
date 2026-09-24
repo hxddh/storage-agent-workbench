@@ -1,10 +1,10 @@
 """Managed evidence import — the ONE data-moving path (plan → confirm → run).
 
-Used by two callers with the same bounds and the same audit trail:
-
-- the ``/evidence-imports`` compatibility API;
-- the Agent's gated ``import_evidence`` tool, which plans here, then PAUSES the
-  execution for the user's approval, and only runs after it was granted.
+Its one caller is the Agent's gated ``import_evidence`` tool, which plans
+here, then PAUSES the execution on a durable Decision
+(``runtime.request_approval``, approval policy consulted there), and only
+confirms and runs after it was granted. No HTTP route plans, confirms or runs
+an import; ``/evidence-imports`` only reads the recorded rows.
 
 Nothing is downloaded until a plan is explicitly confirmed; confirmation is
 recorded in approval_events + audit_logs. Import targets are validated against
@@ -203,8 +203,6 @@ def run(conn: sqlite3.Connection, import_id: str, task_id: str | None = None) ->
         current = repo.get(conn, import_id)
         raise ImportServiceError(
             409, f"import is already being processed (is '{current['status'] if current else 'unknown'}')")
-    from ..events import bus
-    bus.create(analysis_run_id)
 
     selected = repo.selected_files(conn, import_id)
     files = [{"object_key": f["object_key"], "size": f["size_bytes"]} for f in selected]

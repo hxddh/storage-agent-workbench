@@ -15,6 +15,8 @@ from app import config, run_service
 from app.s3 import client_factory
 from app.s3 import config_tools as ct
 
+from . import runs_helper
+
 # A policy that is deliberately insecure; includes an account-id-like number we
 # assert never reaches the report.
 INSECURE_POLICY = json.dumps({
@@ -314,13 +316,8 @@ def test_config_summary_status_buckets(cfg):
 
 
 def _start_review(cfg):
-    created = cfg.client.post("/runs", json={
-        "run_type": "bucket_config_review", "provider_id": cfg.pid,
-        "bucket": "demo-bucket", "user_prompt": "review config",
-    }).json()
-    run_id = created["run_id"]
-    assert cfg.client.post(f"/runs/{run_id}/message", json={"content": "go"}).status_code == 200
-    return run_id
+    return runs_helper.run("bucket_config_review", provider_id=cfg.pid,
+                           bucket="demo-bucket", user_prompt="review config")
 
 
 def test_config_review_run_invokes_all_six_tools(cfg):
@@ -356,14 +353,12 @@ def test_config_review_report_sanitized_no_raw_policy(cfg):
     assert '"Statement"' not in report               # raw policy doc not dumped
 
 
-def test_config_review_sse_events(cfg):
+def test_config_review_trace_has_no_canned_plan(cfg):
+    """The real recorded tool trace is the run's progress record."""
     run_id = _start_review(cfg)
-    text = cfg.client.get(f"/runs/{run_id}/events").text
-    types = [json.loads(ln[5:].strip())["type"]
-             for ln in text.splitlines() if ln.startswith("data:")]
-    for required in ("tool_call_started", "tool_call_finished", "finding", "report_ready"):
-        assert required in types
-    assert "plan" not in types  # no canned plan — the real tool trace stands in for it
+    names = [t["tool_name"] for t in cfg.client.get(f"/runs/{run_id}").json()["tool_calls"]]
+    assert "plan" not in names
+    assert names[-1] == "generate_markdown_report"
 
 
 def test_config_review_single_api_failure_does_not_fail_run(cfg):

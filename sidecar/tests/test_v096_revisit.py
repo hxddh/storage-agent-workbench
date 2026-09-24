@@ -159,3 +159,17 @@ def _row(path):
     c.execute("PRAGMA foreign_keys = ON")
     c.execute("PRAGMA busy_timeout = 5000")
     return c
+
+
+def test_listing_tasks_never_submits_a_revisit(client, monkeypatch):
+    """A GET is a read: due revisits are caught up at startup and by the
+    periodic maintenance loop, never by listing tasks."""
+    from app import data_maintenance
+
+    calls = []
+    monkeypatch.setattr(revisit_mod, "tick", lambda *a, **k: calls.append(1) or 0)
+    assert client.get("/agent-tasks").status_code == 200
+    assert calls == []
+    # The periodic path is where catch-up lives.
+    assert data_maintenance.run_periodic_maintenance()["revisits_submitted"] == 0
+    assert calls == [1]

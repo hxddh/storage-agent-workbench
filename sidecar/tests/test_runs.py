@@ -1,10 +1,10 @@
-"""Tests for Phase 04 diagnostic runs, SSE events, and reports.
+"""Tests for Phase 04 diagnostic runs and reports.
 
-A botocore Stubber stands in for S3; ``run_service.start`` is monkeypatched to
-run synchronously so assertions are deterministic (no thread races).
+A botocore Stubber stands in for S3; runs execute synchronously through
+``tests.runs_helper`` (``run_service.run_sync``) — no HTTP route creates or
+starts a run, and there is no run event bus.
 """
 
-import json
 import sqlite3
 from types import SimpleNamespace
 
@@ -14,6 +14,8 @@ from botocore.stub import Stubber
 
 from app import config, run_service
 from app.s3 import client_factory
+
+from . import runs_helper
 
 ACCESS = "AKIAIOSFODNN7EXAMPLE"
 SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
@@ -67,40 +69,35 @@ def _queue_success(s):
 
 
 def _start_run(d, prompt="diagnose my bucket"):
-    r = d.client.post(
-        "/runs",
-        json={"run_type": "diagnostic", "provider_id": d.pid, "bucket": BUCKET, "user_prompt": prompt},
-    ).json()
-    run_id = r["run_id"]
-    d.client.post(f"/runs/{run_id}/message", json={"content": prompt})
-    return run_id
+    return runs_helper.run("diagnostic", provider_id=d.pid, bucket=BUCKET,
+                           user_prompt=prompt, content=prompt)
 
 
-# --- creation ---------------------------------------------------------------
+# --- no HTTP submit path -----------------------------------------------------
 
 
-def test_create_diagnostic_run(client):
-    r = client.post(
-        "/runs",
-        json={"run_type": "diagnostic", "provider_id": "p1", "bucket": BUCKET, "user_prompt": "hi"},
-    )
-    assert r.status_code == 201
-    body = r.json()
-    assert body["status"] == "pending"
-    assert body["run_id"]
-    assert any(x["id"] == body["run_id"] for x in client.get("/runs").json())
+def test_no_http_route_creates_or_starts_a_run(client):
+    """The durable Agent Task runtime is the one submit path: the engines are
+    reached through the Agent (``run_service``), never a ``/runs`` POST."""
+    body = {"run_type": "diagnostic", "provider_id": "p1", "bucket": BUCKET, "user_prompt": "hi"}
+    assert client.post("/runs", json=body).status_code == 405
+    assert client.post("/runs/x/message", json={"content": "go"}).status_code in (404, 405)
+    assert client.get("/runs/x/events").status_code == 404
+    starting = [
+        (sorted(r.methods), r.path) for r in client.app.routes
+        if str(getattr(r, "path", "")).startswith("/runs")
+        and (set(getattr(r, "methods", None) or ()) - {"GET", "HEAD", "DELETE"})
+    ]
+    assert starting == []
+    import importlib.util
+    assert importlib.util.find_spec("app.events") is None
 
 
-def test_diagnostic_requires_fields(client):
-    r = client.post("/runs", json={"run_type": "diagnostic", "provider_id": "p1"})
-    assert r.status_code == 422
-
-
-def test_unknown_run_type_is_rejected(client):
-    # optimization_report was removed; an unknown run_type fails validation (422),
-    # rather than being created as a not_implemented placeholder.
-    r = client.post("/runs", json={"run_type": "optimization_report", "title": "later"})
-    assert r.status_code == 422
+def test_created_run_is_listed_pending(client):
+    run_id = runs_helper.create_run("diagnostic", provider_id="p1", bucket=BUCKET,
+                                    user_prompt="hi")
+    listed = {x["id"]: x for x in client.get("/runs").json()}
+    assert listed[run_id]["status"] == "pending"
 
 
 def test_unknown_run_type_marks_run_failed(client):
@@ -128,16 +125,6 @@ def test_unknown_run_type_marks_run_failed(client):
     finally:
         conn.close()
     assert row["status"] == "failed"
-
-
-def test_completed_run_rejects_second_message(diag):
-    """A run that already ran can't have a second executor spawned over it (409)
-    — guards against a concurrent/duplicate POST racing on the same row."""
-    _queue_success(diag.stub)
-    run_id = _start_run(diag)
-    assert diag.client.get(f"/runs/{run_id}").json()["status"] == "completed"
-    r = diag.client.post(f"/runs/{run_id}/message", json={"content": "again"})
-    assert r.status_code == 409
 
 
 def test_tool_call_created_at_is_iso_z(diag):
@@ -269,35 +256,3 @@ def test_report_generated_and_sanitized(diag):
     from pathlib import Path
     assert not Path(resp.json()["report_path"]).is_absolute()
     assert (config.data_dir() / resp.json()["report_path"]).exists()
-
-
-# --- SSE --------------------------------------------------------------------
-
-
-def test_sse_emits_required_events(diag):
-    _queue_success(diag.stub)
-    run_id = _start_run(diag)  # run already finished synchronously; events buffered
-
-    resp = diag.client.get(f"/runs/{run_id}/events")
-    assert resp.status_code == 200
-    types = []
-    for line in resp.text.splitlines():
-        if line.startswith("data:"):
-            types.append(json.loads(line[len("data:"):].strip())["type"])
-
-    for required in ("tool_call_started", "tool_call_finished",
-                     "summary", "finding", "report_ready"):
-        assert required in types, f"missing SSE event: {required}"
-    assert "plan" not in types  # no canned plan — the real tool trace stands in for it
-    # 3 probes + generate_markdown_report (v0.38: report gen is an audited tool
-    # call, routed through run_tool_with_events like every other executor).
-    assert types.count("tool_call_started") == 4
-    assert types.count("tool_call_finished") == 4
-
-
-def test_sse_events_carry_no_secrets(diag):
-    _queue_success(diag.stub)
-    run_id = _start_run(diag)
-    text = diag.client.get(f"/runs/{run_id}/events").text
-    for leaked in (ACCESS, SECRET, TOKEN):
-        assert leaked not in text

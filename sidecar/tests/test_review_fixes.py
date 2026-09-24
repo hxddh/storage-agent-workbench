@@ -150,39 +150,6 @@ def test_account_discovery_marks_denied_bucket(client, monkeypatch):
     assert access_status == adr._DENIED
 
 
-# --- M-3/M-6 (api): the run event buffer is bounded and evicts finished runs --
-
-
-def test_event_bus_buffer_is_bounded():
-    from app import events
-
-    bus = events.EventBus()
-    bus.create("r1")
-    total = events._MAX_EVENTS_PER_RUN + 500
-    for i in range(total):
-        bus.publish("r1", {"i": i})
-    evs, cursor, _ = bus.snapshot("r1", 0)
-    # Old events dropped; retained window is capped — plus ONE synthetic
-    # `truncated` marker so the drop is never silent (v0.41).
-    assert len(evs) <= events._MAX_EVENTS_PER_RUN + 1
-    assert evs[0] == {"type": "truncated", "dropped": 500}
-    # The last event is always retained and the cursor reflects the logical total.
-    assert evs[-1]["i"] == total - 1
-    assert cursor == total
-
-
-def test_event_bus_evicts_finished_runs():
-    from app import events
-
-    bus = events.EventBus()
-    for i in range(events._MAX_RETAINED_RUNS + 10):
-        rid = f"run-{i}"
-        bus.create(rid)
-        bus.mark_done(rid)
-    # Finished runs beyond the cap are evicted; total retained stays bounded.
-    assert len(bus._runs) <= events._MAX_RETAINED_RUNS
-
-
 # --- Ingestion row cap is reported, not silent (agent-native "no silent caps")
 
 

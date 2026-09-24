@@ -23,7 +23,6 @@ from collections import Counter
 from typing import Any
 
 from .. import config
-from ..events import bus
 from ..repositories import account_discovery as account_repo
 from ..repositories import cloud_providers as cloud_repo
 from ..s3 import account_tools, tools as s3tools
@@ -300,16 +299,6 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
         conn, run_id, "test_credentials", {"provider_id": provider_id},
         lambda: s3tools.test_credentials(conn, provider_id),
     )
-    # Reflect the credential probe in the findings instead of discarding it.
-    if cred.get("success"):
-        bus.publish(run_id, {"type": "finding", "severity": "info",
-                             "title": "Provider credentials valid",
-                             "detail": f"Identity: {cred.get('identity_hint') or 'unknown'}."})
-    else:
-        bus.publish(run_id, {"type": "finding", "severity": "error",
-                             "title": "Credential check failed",
-                             "detail": cred.get("error_message_sanitized")
-                             or cred.get("error_code") or "unknown error"})
 
     lb = run_tool_with_events(
         conn, run_id, "list_buckets", {"provider_id": provider_id},
@@ -341,11 +330,6 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
                     if check_scope(allowed_buckets, allowed_prefixes, n) is None]
     truncated = len(filtered) > max_buckets
     selected = filtered[:max_buckets]
-    if truncated:
-        bus.publish(run_id, {"type": "summary",
-                             "content": f"{len(filtered)} bucket(s) matched; processing the first "
-                                        f"{max_buckets} (max_buckets). The rest are not analyzed."})
-
     snapshot_id = account_repo.create_snapshot(
         conn, run_id, provider_id,
         bucket_count=visible, visible_count=visible, processed_count=len(selected),
@@ -362,8 +346,8 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
             # The network work already happened in the bounded pool above; these
             # callables just hand back its result (or re-raise its failure, so
             # run_tool records the same error row it always did). Recording stays
-            # SEQUENTIAL and in `selected` order, so tool_call/audit rows, SSE
-            # event order, and the per-bucket transaction isolation below are all
+            # SEQUENTIAL and in `selected` order, so tool_call/audit row order
+            # and the per-bucket transaction isolation below are all
             # byte-for-byte what they were when the probes ran inline. The real
             # elapsed time is passed through so the audit row isn't a ~0 ms lie.
             #
@@ -405,10 +389,7 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
                 "access_status": access_status,
                 "evidence_sources": sources,
             }
-        except Exception as exc:  # noqa: BLE001 - per-bucket isolation
-            bus.publish(run_id, {"type": "finding", "severity": "warning",
-                                 "title": f"Bucket {name}: discovery error",
-                                 "detail": redact_text(str(exc))})
+        except Exception:  # noqa: BLE001 - per-bucket isolation (recorded as "error")
             bucket_entry = {
                 "bucket_name": name, "access_status": "error", "region": None,
                 "errors": ["snapshot"], "evidence_sources": [],
@@ -426,11 +407,8 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
             for src in bucket_entry.get("evidence_sources", []):
                 account_repo.add_evidence_source(conn, snapshot_id, run_id, provider_id, name, src)
             conn.commit()
-        except Exception as exc:  # noqa: BLE001 - per-bucket persistence isolation
+        except Exception:  # noqa: BLE001 - per-bucket persistence isolation
             conn.rollback()
-            bus.publish(run_id, {"type": "finding", "severity": "warning",
-                                 "title": f"Bucket {name}: persistence error",
-                                 "detail": redact_text(str(exc))})
 
     summary = _build_summary(per_bucket, visible, len(per_bucket), truncated)
     # Persist the computed summary onto the snapshot row.
@@ -440,58 +418,6 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
     )
     conn.commit()
 
-    # A few account-level findings (bounded; no per-object detail).
-    # Public exposure FIRST — the account's most critical fact must never be
-    # discovered, persisted, and then silently dropped from the narration.
-    if summary["public_bucket_count"]:
-        names = ", ".join(summary["public_buckets"][:10])
-        more = summary["public_bucket_count"] - min(10, summary["public_bucket_count"])
-        bus.publish(run_id, {"type": "finding", "severity": "critical",
-                             "title": "PUBLIC buckets detected",
-                             "detail": (f"{summary['public_bucket_count']} bucket(s) are publicly "
-                                        f"exposed (policy verdict and/or ACL grants): {names}"
-                                        + (f" (+{more} more)" if more > 0 else "") + ". "
-                                        "Review each with review_bucket_security.")})
-    if summary["exposure_unknown_count"]:
-        names = ", ".join(summary["exposure_unknown_buckets"][:5])
-        more = summary["exposure_unknown_count"] - 5
-        bus.publish(run_id, {"type": "finding", "severity": "warning",
-                             "title": "Public exposure could not be determined",
-                             "detail": (f"{summary['exposure_unknown_count']} bucket(s) did not answer "
-                                        f"the policy/ACL exposure checks: {names}"
-                                        + (f" (+{more} more)" if more > 0 else "") + ". "
-                                        "The provider may not support them, or the credentials may "
-                                        "lack permission. This is NOT the same as 'not public'.")})
-    if summary["encryption_not_configured"]:
-        # Say what the count covers. "3 buckets have no default encryption" over
-        # an account where 8 more were never readable is a verdict on 11.
-        est = (len(per_bucket) - summary["encryption_undetermined"])
-        bus.publish(run_id, {"type": "finding", "severity": "warning",
-                             "title": "Buckets without default encryption",
-                             "detail": (f"{summary['encryption_not_configured']} bucket(s) have no "
-                                        f"default encryption, out of {est} whose encryption was "
-                                        f"established (of {len(per_bucket)} processed).")})
-    if summary["encryption_undetermined"]:
-        names = ", ".join(summary["encryption_undetermined_buckets"][:5])
-        more = summary["encryption_undetermined"] - 5
-        bus.publish(run_id, {"type": "finding", "severity": "warning",
-                             "title": "Encryption could not be determined",
-                             "detail": (f"{summary['encryption_undetermined']} bucket(s) did not answer "
-                                        f"the default-encryption check: {names}"
-                                        + (f" (+{more} more)" if more > 0 else "") + ". "
-                                        "The credentials may lack permission, or the read errored. "
-                                        "This is NOT the same as 'encrypted'.")})
-    if summary["buckets_with_inventory_evidence"]:
-        bus.publish(run_id, {"type": "finding", "severity": "info",
-                             "title": "Inventory evidence available",
-                             "detail": f"{len(summary['buckets_with_inventory_evidence'])} bucket(s) have an "
-                                       "inventory configuration that can feed inventory_analysis."})
-    if summary["buckets_with_logging_evidence"]:
-        bus.publish(run_id, {"type": "finding", "severity": "info",
-                             "title": "Access-log evidence available",
-                             "detail": f"{len(summary['buckets_with_logging_evidence'])} bucket(s) have server "
-                                       "access logging that can feed access_log_analysis."})
-
     counts = dict(Counter(b["access_status"] for b in per_bucket))
     public_note = exposure_note(summary)
     summary_text = (
@@ -500,7 +426,6 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
         f"Access status: " + (", ".join(f"{n} {s}" for s, n in counts.items()) or "—") + "."
         + public_note
     )
-    bus.publish(run_id, {"type": "summary", "content": summary_text})
 
     profile = {
         "run_id": run_id, "provider_id": provider_id, "bucket_count": visible,

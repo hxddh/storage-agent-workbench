@@ -3,7 +3,7 @@
 P0 — policy_status semantics: GetBucketPolicyStatus.IsPublic is POLICY-only; the
      review must not emit a false "Not public" verdict on an ACL-public bucket,
      and must not assert any overall verdict when the ACL is unreadable.
-P0 — the evidence-imports plan endpoint maps CredentialResolutionError to an
+P0 — evidence-import planning maps CredentialResolutionError to an
      actionable 424 instead of a raw 500.
 P0 — max-output table: gemini-2.5 / deepseek-reasoner are no longer clamped to
      8k; a stale session-token ref on a keyless provider no longer errors.
@@ -147,10 +147,10 @@ def test_clean_bucket_gets_combined_not_public(client, monkeypatch):
         conn.close()
 
 
-# ============ P0: plan endpoint maps credential errors to 424 ===============
+# ============ P0: import planning maps credential errors to 424 ============
 
 
-def test_plan_endpoint_maps_missing_vault_credential_to_424(client):
+def test_import_plan_maps_missing_vault_credential_to_424(client):
     from app.security import keyring_store
     pid = _provider(client)
     conn = _db()
@@ -172,10 +172,16 @@ def test_plan_endpoint_maps_missing_vault_credential_to_424(client):
         conn.close()
     # Simulate the out-of-sync vault the error targets.
     keyring_store.delete_secret("cloud_provider", f"{pid}/secret_key")
-    r = client.post("/evidence-imports/plan", json={
-        "account_run_id": run_id, "bucket_name": "biz", "source_type": "inventory"})
-    assert r.status_code == 424  # actionable, sanitized — NOT a raw 500
-    assert "vault" in r.json()["detail"].lower()
+    from app.evidence import import_service
+    conn = _db()
+    try:
+        with pytest.raises(import_service.ImportServiceError) as err:
+            import_service.plan(conn, account_run_id=run_id, bucket_name="biz",
+                                source_type="inventory")
+    finally:
+        conn.close()
+    assert err.value.status == 424  # actionable, sanitized — NOT a raw 500
+    assert "vault" in err.value.detail.lower()
 
 
 # ================= P0: max-output table + token-only ref ===================
