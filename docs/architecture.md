@@ -114,9 +114,9 @@ The Artifacts panel is subordinate to the Task. Opening it does not create anoth
 
 ### 3.4 `AgentTask`: public task boundary
 
-`frontend/src/components/AgentTask.tsx` is the public task component. It exposes Task-native props to `App` and owns semantic task navigation/keyboard behavior. Bare **j** / **k** move one Direction to the reading start by writing the task scroller; they do not animate to an already-visible target.
+`frontend/src/components/AgentTask.tsx` is the public task component and, since v1.18, the one composition root of a Task (the historical `AgentTaskImplementation` wrapper is gone). It exposes Task-native props (`taskId`, `onTaskCreated`, `onTaskDiscarded`) to `App` and mounts `hooks/useDirectionStepping`: bare **j** / **k** move one Direction to the reading start by writing the task scroller; they do not animate to an already-visible target.
 
-`AgentTaskImplementation.tsx` owns the large task document implementation:
+It composes (through `useTaskDocument`, `useLiveTask`, `useTurnRunner`, `useTaskComposer`, `useApprovals`, `TaskDocument`, `TaskBanners`, `TaskComposerHost`):
 
 - durable task document loading and paging;
 - task draft state;
@@ -125,11 +125,11 @@ The Artifacts panel is subordinate to the Task. Opening it does not create anoth
 - steering/stopping/resuming;
 - attachments (type inferred from filename);
 - Direction and Work Result rendering;
-- real tool rows in the document (`LiveTrace`, one *Worked for …* group);
+- real tool rows in the document (`WorkedGroup`, one *Worked for …* group), and a Steer as its own quiet *Steered* line where the model loop took it (a `steer` turn item, never a tool row);
 - inline approval cards (Allow / Allow for this task / Deny) raised by gated tools;
 - find and task viewport behavior.
 
-Historical `sessionId` terminology may appear inside compatibility adapters and API calls. Public product ownership remains `taskId`/Agent Task.
+Historical `session` terminology stays inside the `api/` adapters' URLs and wire types only. The adapters export Task names (`createTask`, `getTaskRecord`, `updateTask`, `deleteTask`, `getTaskMessages`, `getTaskCall`, `uploadTaskDataset`, `TaskRecord`, `TaskMessage`, …) and product code speaks `taskId`.
 
 ### 3.5 One Composer
 
@@ -210,7 +210,7 @@ There is no Overview surface, no tabbed application, and no engine walls: the pa
 
 ### 5.1 Per-task client execution state
 
-`frontend/src/sessionRuns.ts` retains a historical filename, but the store is keyed by durable task/session identity and preserves real in-flight state independently of which Task is visible.
+`frontend/src/liveTasks.ts` (`LiveTask`, `useLiveTask`, `patchLiveTask`) is keyed by durable task identity and preserves real in-flight state independently of which Task is visible.
 
 Therefore:
 
@@ -273,7 +273,7 @@ The Sidecar owns:
 - deterministic run/analysis engines, including cost/lifecycle simulation,
   remediation-plan verify diffs, and baseline/Drift comparison
   (`app/analysis/`);
-- optional per-task revisit scheduling (`app/task_runtime/revisit.py`);
+- optional per-task revisit scheduling (`app/task_runtime/revisit.py`), submitted by the Sidecar's own revisit clock (`STORAGE_AGENT_REVISIT_TICK_SECONDS`, default 60 s) and at startup — never by a read (v1.18);
 - account/config discovery;
 - Evidence Import plan/confirmation/execution;
 - local DuckDB analysis;

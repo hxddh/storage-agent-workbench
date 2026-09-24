@@ -85,6 +85,16 @@ _AUTH_TOKEN = os.environ.get("STORAGE_AGENT_AUTH_TOKEN") or None
 _AUTH_EXEMPT_PATHS = {"/health"}
 
 
+def revisit_tick_seconds() -> int:
+    """How often the revisit scheduler looks for due schedules
+    (`STORAGE_AGENT_REVISIT_TICK_SECONDS`, default 60, floor 5)."""
+    raw = os.environ.get("STORAGE_AGENT_REVISIT_TICK_SECONDS", "60")
+    try:
+        return max(5, int(raw))
+    except ValueError:
+        return 60
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # Create the database and apply migrations on startup.
@@ -125,15 +135,29 @@ async def lifespan(_app: FastAPI):
             await asyncio.sleep(interval)
             await asyncio.to_thread(data_maintenance.run_periodic_maintenance)
 
-    loop_task = asyncio.create_task(_periodic())
+    async def _revisits():
+        # The revisit scheduler (v1.18): due revisits are submitted by the
+        # Sidecar on its own clock through the one runtime path — never by a
+        # read. `tick()` is one indexed query when nothing is due.
+        interval = revisit_tick_seconds()
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await asyncio.to_thread(revisit_sched.tick)
+            except Exception:  # noqa: BLE001 — a failed tick retries next time
+                pass
+
+    loop_tasks = [asyncio.create_task(_periodic()), asyncio.create_task(_revisits())]
     try:
         yield
     finally:
-        loop_task.cancel()
-        try:
-            await loop_task
-        except asyncio.CancelledError:
-            pass
+        for loop_task in loop_tasks:
+            loop_task.cancel()
+        for loop_task in loop_tasks:
+            try:
+                await loop_task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(

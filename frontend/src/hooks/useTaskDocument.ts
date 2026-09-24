@@ -303,10 +303,10 @@ export function useTaskDocument({
         sawOwnBusy = false;
         setRemoteTurn(null);
         // A catch-up revisit may still be queued when this Task is first
-        // selected. Keep a bounded poll until an Execution settles — only for
-        // a Task that has executed before: a Task with no Execution has
-        // nothing to catch up, and its first Direction opens a follower.
-        if (!settled && state.last_execution && discoverPolls < 40) {
+        // selected (the Sidecar's revisit scheduler submits it on its own
+        // clock, even for a Task that never executed). Keep a bounded poll
+        // until an Execution settles.
+        if (!settled && discoverPolls < 40) {
           discoverPolls += 1;
           timer = window.setTimeout(tick, 1500);
         }

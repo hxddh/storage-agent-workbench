@@ -241,7 +241,7 @@ Per-turn metrics additionally carry `budget_tokens` / `repeat_calls_avoided` whe
 
 The only stream is the execution event stream (`GET /agent-tasks/{id}/executions/{eid}/events`, above). The legacy `delta`/`tool`/`done`/`error` vocabulary and the `legacy_frames` translation are gone (v1.12).
 
-Persisted message grounding and `turn_items` survive reload and are not only transient SSE state. `turn_items` are the ordered items the turn produced before its answer: `message` (commentary), `tool` (a reference to the `tool_activity` record by id), `plan` (`{steps}` — one per turn, at the position of the first `update_plan` call, holding the latest plan, v1.12), and a leading `compacted` (`{before_tokens, after_tokens}` when the runtime compacted the context before this turn, v1.12). `proposed_actions` is no longer projected.
+Persisted message grounding and `turn_items` survive reload and are not only transient SSE state. `turn_items` are the ordered items the turn produced before its answer: `message` (commentary), `tool` (a reference to the `tool_activity` record by id), `plan` (`{steps}` — one per turn, at the position of the first `update_plan` call, holding the latest plan, v1.12), a leading `compacted` (`{before_tokens, after_tokens}` when the runtime compacted the context before this turn, v1.12), and `steer` (`{text}` — a redacted Steer the running model loop received at that point, v1.18; the live counterpart is the `steer.applied` event, never a tool row). `proposed_actions` is no longer projected.
 
 Tool activity records may carry stable Tool-call ids, exact success state, and measured duration. Older persisted history can legitimately lack fields added by later versions; clients must treat absence as unknown rather than false/zero.
 
@@ -250,30 +250,13 @@ Tool activity records may carry stable Tool-call ids, exact success state, and m
 Prefix: `/runs`
 
 ```text
-GET  /runs
-POST /runs
-GET  /runs/{run_id}
-GET  /runs/{run_id}/account-profile
-POST /runs/{run_id}/message
-GET  /runs/{run_id}/events
+GET    /runs
+GET    /runs/{run_id}
+GET    /runs/{run_id}/account-profile
+DELETE /runs/{run_id}
 ```
 
-`POST /runs` is internal/testing compatibility for deterministic execution, not a user-facing “new run” product flow. Agent-driven deterministic compute and Evidence Import may create/link runs server-side.
-
-### Run SSE
-
-`GET /runs/{run_id}/events` streams deterministic execution events such as:
-
-```text
-tool_call_started
-tool_call_finished
-finding
-summary
-report_ready
-error
-```
-
-The deterministic run layer does not contain a second model planner/narrator.
+Read-only (plus delete) records of deterministic engine work. **No HTTP route creates, starts, messages or streams a run** (v1.18 removed `POST /runs`, `POST /runs/{id}/message`, `GET /runs/{id}/events` and the in-memory event bus behind it). Engines run only inside an Agent Execution, through `run_service.run_sync`; their progress is the Execution's own `tool.*` events and the persisted `tool_calls` trace. The deterministic run layer does not contain a second model planner/narrator.
 
 ## Reports
 
@@ -286,32 +269,25 @@ Fetches a run-associated Markdown report. Task-level Report Review may aggregate
 ## Deterministic datasets
 
 ```text
-POST /runs/{run_id}/datasets/upload
+POST /sessions/{task_id}/datasets/upload
 GET  /datasets
 GET  /datasets/{dataset_id}
 ```
 
-Uploads are streamed to disk and bounded by explicit size limits. Dataset metadata includes persisted truncation/ingest-cap truth in current schema.
+A file reaches the Agent as a per-task upload (the Composer attachment); the per-run upload was removed in v1.18. Uploads are streamed to disk and bounded by explicit size limits. Dataset metadata includes persisted truncation/ingest-cap truth in current schema.
 
 ## Managed Evidence Import
 
 Prefix: `/evidence-imports`
 
-Engine API over `evidence/import_service` (the same code path the gated `import_evidence` tool runs after an approval). Since v1.12 the product UI does not call it; the only user-facing import path is the inline approval card.
+Read-only records of imports the Agent performed:
 
 ```text
-POST /evidence-imports/plan
 GET  /evidence-imports/{import_id}
 GET  /evidence-imports/{import_id}/files
-POST /evidence-imports/{import_id}/confirm
-POST /evidence-imports/{import_id}/run
 ```
 
-This is the durable safety flow for cloud data movement:
-
-> **plan → explicit confirmation → execution**
-
-A plan downloads nothing. Confirmation does not disappear merely because the frontend calls it a Decision. The Sidecar remains authoritative for bounds/state.
+Cloud data movement (`evidence/import_service`: plan → confirm → run) is reachable **only** through the gated `import_evidence` tool inside a running Execution: the tool plans, `runtime.request_approval` opens a durable Decision (`approval.opened`, execution `waiting`) or the approval policy answers it (recorded as an approved Decision + `approval.granted {policy}`), and only then does the import run. v1.18 removed `POST /evidence-imports/plan`, `/{id}/confirm` and `/{id}/run`, which moved data with no Decision row, no event and no policy check. A plan downloads nothing; the Sidecar remains authoritative for bounds/state.
 
 ## Error triage
 

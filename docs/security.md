@@ -235,6 +235,8 @@ Current hard workflow bounds include:
 
 A plan downloads nothing. Confirmation is persisted/audited. Execution without the required confirmation is forbidden.
 
+The gated `import_evidence` tool is the **only** caller of the plan → confirm → run service (v1.18). The former HTTP routes `POST /evidence-imports/plan`, `/{id}/confirm` and `/{id}/run` let a local client move data with no `task_decisions` row, no `approval.opened` event and no approval-policy check; they are removed, and `test_no_http_route_moves_data` pins that no mutating `/evidence-imports` route exists. Likewise no HTTP route creates, messages or streams a deterministic run (`test_no_http_route_creates_or_starts_a_run`).
+
 ## 12. Account discovery and configuration review
 
 Account discovery/config review uses read-only APIs only.

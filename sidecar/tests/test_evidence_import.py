@@ -4,7 +4,7 @@ A fake S3 client stands in for boto3 (no live cloud, no credentials). The
 account profile (Phase 14 output) is seeded directly so the tests focus on the
 managed-import flow: plan -> confirm -> run, driven through
 ``import_service`` directly — the service the gated ``import_evidence`` tool
-uses. There is no HTTP route that plans, confirms or runs an import (v1.17:
+uses. There is no HTTP route that plans, confirms or runs an import (v1.18:
 data movement only crosses a Decision raised inside a running Execution). They verify bounded listing of the
 discovered destination ONLY, confirmation gating, max_files/max_bytes,
 time-range requirement, download of confirmed evidence files only, reuse of the
