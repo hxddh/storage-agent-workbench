@@ -144,7 +144,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     const items = source("../components/TranscriptItems.tsx");
     const group = source("../components/WorkedGroup.tsx");
     const task = source("../components/TaskDocument.tsx");
-    const root = source("../components/AgentTaskImplementation.tsx");
+    const root = source("../components/AgentTask.tsx");
     const banners = source("../components/TaskBanners.tsx");
     expect(turn).toContain('data-testid="turn-user"');
     expect(turn).toContain('data-testid="work-result"');
@@ -188,7 +188,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
   });
 
   it("makes the empty start a greeting and the Composer, with no wizard or SKU catalog", () => {
-    const task = source("../components/AgentTaskImplementation.tsx");
+    const task = source("../components/AgentTask.tsx");
     const app = source("../App.tsx");
     expect(task).toContain('data-testid="task-start"');
     expect(task).toContain("native-start-greeting");
@@ -217,7 +217,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(card).not.toContain("Decision required");
     expect(approvals).toContain("resolveTaskDecision(");
     expect(task).toContain("<ApprovalCard");
-    for (const text of [task, approvals, source("../components/AgentTaskImplementation.tsx")]) {
+    for (const text of [task, approvals, source("../components/AgentTask.tsx")]) {
       expect(text).not.toContain("durable-pending-decisions");
       expect(text).not.toContain("EvidenceImportDialog");
       expect(text).not.toContain("AgentNextAction");
@@ -289,7 +289,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
   });
 
   it("recovers a dropped event stream only by sequence number", () => {
-    const impl = source("../hooks/useTurnRunnerImplementation.ts");
+    const impl = source("../hooks/useTurnRunner.ts");
     const api = source("../api/runtime.ts");
     expect(impl).toContain("followExecutionEvents");
     expect(impl).toContain("liveHandlers(");
@@ -304,11 +304,11 @@ describe("v1.09.0 native Agent window boundaries", () => {
   });
 
   it("reloads the task document when a background Execution settles without a live follow", () => {
-    const doc = source("../hooks/useSessionDocument.ts");
+    const doc = source("../hooks/useTaskDocument.ts");
     expect(doc).toContain("loadedSettledExecId");
     expect(doc).toContain("discoverPolls");
     expect(doc).toContain("Catch-up");
-    expect(doc).toContain("void reload(sessionId)");
+    expect(doc).toContain("void reload(taskId)");
     expect(doc).toContain("followExecutionEvents");
     expect(doc).toContain('active.status === "waiting"');
     expect(doc).toContain("shownIdRef");
@@ -318,8 +318,9 @@ describe("v1.09.0 native Agent window boundaries", () => {
   it("uses task-native keyboard contracts", () => {
     const shortcuts = source("../shortcuts.ts");
     const app = source("../App.tsx");
-    const boundary = source("../components/AgentTask.tsx");
-    const implementation = source("../components/AgentTaskImplementation.tsx");
+    // j/k Direction stepping is its own hook; the Task root only mounts it.
+    const boundary = source("../hooks/useDirectionStepping.ts");
+    const root = source("../components/AgentTask.tsx");
     const viewport = source("../hooks/useTaskViewport.ts");
     const nav = source("../lib/taskNavigation.ts");
     const css = source("./native-document.css");
@@ -341,7 +342,8 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(viewport).toContain("RELEASE_TASK_FOLLOW_EVENT");
     expect(nav).toContain("TASK_STEP_SCROLL_MARGIN = 72");
     expect(css).toContain("scroll-margin-top: 72px");
-    expect(implementation).not.toContain('matches(event, "nextStep")');
+    expect(root).toContain("useDirectionStepping(workspaceRef, taskId)");
+    expect(root).not.toContain('matches(event, "nextStep")');
     const palette = source("../components/CommandPalette.tsx");
     expect(palette).toContain('data-testid="command-palette"');
     expect(palette).not.toContain("review-overview");
@@ -453,7 +455,7 @@ describe("v1.10.0 native shell, runtime and pane boundaries", () => {
   });
 
   it("reads Execution detail as a document in the sheet and the providers as native panes", () => {
-    const detail = source("../components/ExecutionDetailImplementation.tsx");
+    const detail = source("../components/ExecutionDetail.tsx");
     const css = source("./native-shell.css");
     expect(detail).toContain("native-execution-doc");
     expect(detail).toContain("<TranscriptItems");
@@ -612,9 +614,9 @@ describe("v1.11.0 shell details", () => {
 describe("v1.11.0 turn transcript boundaries", () => {
   it("feeds live and durable turns through the same item model", () => {
     const model = source("../lib/turnItems.ts");
-    const runs = source("../sessionRuns.ts");
-    const runner = source("../hooks/useTurnRunnerImplementation.ts");
-    const doc = source("../hooks/useSessionDocument.ts");
+    const runs = source("../liveTasks.ts");
+    const runner = source("../hooks/useTurnRunner.ts");
+    const doc = source("../hooks/useTaskDocument.ts");
     expect(model).toContain("export function turnItemsOf(");
     expect(model).toContain("export function completeMessage(");
     expect(model).toContain("export function segmentsOf(");
@@ -626,13 +628,13 @@ describe("v1.11.0 turn transcript boundaries", () => {
     expect(runner).toContain("onMessageCompleted");
     expect(runner).toContain("onApprovalOpened");
     expect(runner).toContain("onDecisionResolved");
-    expect(doc).toContain("liveHandlers(sessionId)");
+    expect(doc).toContain("liveHandlers(taskId)");
   });
 
   it("keeps the answer a Markdown page: whole tables, no chart toggle, no chip row, no footer", () => {
-    const md = source("../components/MarkdownImplementation.tsx");
+    const md = source("../components/Markdown.tsx");
     const turn = source("../components/TranscriptTurn.tsx");
-    const task = source("../components/AgentTaskImplementation.tsx") + source("../components/TaskDocument.tsx");
+    const task = source("../components/AgentTask.tsx") + source("../components/TaskDocument.tsx");
     expect(md).toContain("agent-table-grid");
     expect(md).not.toContain("agent-table-scroll");
     expect(md).not.toContain("chart-toggle");
@@ -663,7 +665,7 @@ describe("v1.12.0 native runtime", () => {
     const card = source("../components/PlanCard.tsx");
     const items = source("../components/TranscriptItems.tsx");
     const model = source("../lib/turnItems.ts");
-    const runner = source("../hooks/useTurnRunnerImplementation.ts");
+    const runner = source("../hooks/useTurnRunner.ts");
     const api = source("../api/runtime.ts");
     expect(card).toContain('data-testid="plan-card"');
     expect(card).toContain('data-testid="plan-step"');
@@ -682,14 +684,14 @@ describe("v1.12.0 native runtime", () => {
     expect(api).toContain('type === "context.compacted"');
     expect(api).toContain('type === "task.status"');
     // Only the transcript items renderer mounts the card.
-    for (const relative of ["../components/AgentTaskImplementation.tsx", "../components/TaskDocument.tsx", "../components/TranscriptTurn.tsx", "../components/ExecutionDetailImplementation.tsx"]) {
+    for (const relative of ["../components/AgentTask.tsx", "../components/TaskDocument.tsx", "../components/TranscriptTurn.tsx", "../components/ExecutionDetail.tsx"]) {
       expect(source(relative)).not.toContain("<PlanCard");
     }
   });
 
   it("reads task status from the stream and never polls /state on an interval while following", () => {
-    const doc = source("../hooks/useSessionDocument.ts");
-    const runs = source("../sessionRuns.ts");
+    const doc = source("../hooks/useTaskDocument.ts");
+    const runs = source("../liveTasks.ts");
     expect(doc).toContain("applyTaskStatus(");
     expect(doc).toContain("run.taskStatus");
     expect(doc).toContain("tickRef");
@@ -821,14 +823,14 @@ describe("v1.12.0 one protocol and the frontend split", () => {
     expect(providers).toContain('"/model-providers"');
     expect(providers).toContain('"/cloud-providers"');
     // The runner has one cancel path.
-    const runner = source("../hooks/useTurnRunnerImplementation.ts");
+    const runner = source("../hooks/useTurnRunner.ts");
     expect(runner).toContain("stopTaskExecution");
     expect(runner).not.toContain("cancelSessionTurn");
     expect(runner).not.toContain("legacy");
   });
 
   it("splits the Task document by responsibility behind one thin root", () => {
-    const root = source("../components/AgentTaskImplementation.tsx");
+    const root = source("../components/AgentTask.tsx");
     const document = source("../components/TaskDocument.tsx");
     const banners = source("../components/TaskBanners.tsx");
     const host = source("../components/TaskComposerHost.tsx");
@@ -862,7 +864,7 @@ describe("v1.12.0 one protocol and the frontend split", () => {
   });
 
   it("reads Execution detail from the durable log, never from /runs or an EventSource", () => {
-    const detail = source("../components/ExecutionDetailImplementation.tsx");
+    const detail = source("../components/ExecutionDetail.tsx");
     const boundary = source("../components/ExecutionDetail.tsx");
     const panel = source("./ArtifactsPanel.tsx");
     const projection = source("./useAgentTaskProjection.ts");
@@ -876,7 +878,7 @@ describe("v1.12.0 one protocol and the frontend split", () => {
     expect(detail).not.toContain("listTaskEvents(");
     expect(detail).toContain("dispatchDurableEvent(");
     expect(detail).toContain("followExecutionEvents(");
-    expect(detail).toContain("getSession(");
+    expect(detail).toContain("getTaskRecord(");
     expect(detail).toContain("export function replayExecutionEvents(");
     expect(detail).toContain('event.event_type === "work_result.recorded"');
     expect(detail).toContain('data-testid="execution-detail-body"');
@@ -887,11 +889,11 @@ describe("v1.12.0 one protocol and the frontend split", () => {
     expect(detail).toContain("<TranscriptItems");
     // One call's sanitized input/output opens in place through the worked row.
     expect(source("../components/WorkedGroup.tsx")).toContain("<CallDetail");
-    expect(source("../components/CallDetail.tsx")).toContain("getSessionCall(");
+    expect(source("../components/CallDetail.tsx")).toContain("getTaskCall(");
     expect(detail).toContain("taskId: string;");
     expect(detail).toContain("executionId: string;");
     expect(boundary).not.toContain("runId");
-    expect(boundary).toContain("<ExecutionDetailImplementation {...props} />");
+    expect(boundary).toContain("<ExecutionDocument {...props} />");
     expect(panel).toContain("<ExecutionDetail taskId={taskId} executionId={selection.id}");
     expect(panel).toContain('data-testid="execution-row"');
     expect(panel).not.toContain("executions = detail?.runs");
@@ -919,7 +921,7 @@ describe("v1.13.0 honesty and completeness", () => {
   it("completes `@` files from the Task and never stores secrets in history", () => {
     const composer = source("../components/Composer.tsx");
     const host = source("../components/TaskComposerHost.tsx");
-    const root = source("../components/AgentTaskImplementation.tsx");
+    const root = source("../components/AgentTask.tsx");
     expect(composer).toContain('data-testid="composer-mentions"');
     expect(composer).toContain("export function cleanHistory(");
     expect(composer).toContain("mentionables");
@@ -950,10 +952,10 @@ describe("v1.13.0 honesty and completeness", () => {
   });
 
   it("reads Execution detail per execution and hints at long runs", () => {
-    const detail = source("../components/ExecutionDetailImplementation.tsx");
+    const detail = source("../components/ExecutionDetail.tsx");
     const api = source("../api/runtime.ts");
     const turn = source("../components/TranscriptTurn.tsx");
-    const doc = source("../hooks/useSessionDocument.ts");
+    const doc = source("../hooks/useTaskDocument.ts");
     expect(detail).toContain("listExecutionEventsPage(");
     expect(detail).toContain("readExecutionLog(");
     expect(detail).not.toContain("readTaskLog(");
@@ -973,7 +975,7 @@ describe("v1.14.0 interaction truth and content craft", () => {
   it("edits queued work instead of only cancelling it", () => {
     const api = source("../api/runtime.ts");
     const banners = source("../components/TaskBanners.tsx");
-    const root = source("../components/AgentTaskImplementation.tsx");
+    const root = source("../components/AgentTask.tsx");
     expect(api).toContain("export const editQueuedExecution");
     expect(api).toContain('method: "PATCH"');
     expect(banners).toContain('data-testid="queued-direction-edit"');
@@ -1010,7 +1012,7 @@ describe("v1.14.0 interaction truth and content craft", () => {
   it("shares one relative-time implementation with honest UTC sources", () => {
     const navigation = source("./AgentTaskNavigation.tsx");
     const panel = source("./ArtifactsPanel.tsx");
-    const detail = source("../components/ExecutionDetailImplementation.tsx");
+    const detail = source("../components/ExecutionDetail.tsx");
     expect(navigation).toContain('from "../lib/time"');
     expect(navigation).toContain("previousDayKey(today)");
     expect(navigation).toContain("setInterval");
@@ -1021,7 +1023,7 @@ describe("v1.14.0 interaction truth and content craft", () => {
 
   it("searches open panel documents and renders usage only when reported", () => {
     const document = source("../components/TaskDocument.tsx");
-    const detail = source("../components/ExecutionDetailImplementation.tsx");
+    const detail = source("../components/ExecutionDetail.tsx");
     expect(document).toContain("getFindRoots()");
     expect(source("./ArtifactsPanel.tsx")).toContain("registerFindRoot");
     expect(detail).toContain("usageLine(usage, t)");
@@ -1029,7 +1031,7 @@ describe("v1.14.0 interaction truth and content craft", () => {
   });
 
   it("gives every heading a unique anchor, an outline for two sections, and tables a size with copy", () => {
-    const md = source("../components/MarkdownImplementation.tsx");
+    const md = source("../components/Markdown.tsx");
     expect(md).toContain("uniqueHeadingId");
     expect(md).toContain("scrollIntoView");
     expect(md).toContain("heads.length < 2");
@@ -1060,7 +1062,7 @@ describe("v1.14.0 interaction truth and content craft", () => {
     const hook = source("../hooks/useCopy.ts");
     expect(hook).toContain("export async function copyTextToClipboard");
     expect(hook).toContain("export function useCopy(");
-    for (const relative of ["../components/TranscriptTurn.tsx", "../components/MarkdownImplementation.tsx", "../components/S3ErrorArtifact.tsx", "../components/CallDetail.tsx"]) {
+    for (const relative of ["../components/TranscriptTurn.tsx", "../components/Markdown.tsx", "../components/S3ErrorArtifact.tsx", "../components/CallDetail.tsx"]) {
       expect(source(relative)).toContain("useCopy");
       expect(source(relative)).not.toContain("execCommand");
     }
@@ -1073,7 +1075,7 @@ describe("v1.14.0 interaction truth and content craft", () => {
 
   it("keeps the empty start to one greeting line plus the Composer", () => {
     const greeting = source("./startGreeting.ts");
-    const root = source("../components/AgentTaskImplementation.tsx");
+    const root = source("../components/AgentTask.tsx");
     const panel = source("./ArtifactsPanel.tsx");
     // v1.15 — the rotating "Try:" hint is gone; discoverability lives in
     // the palette (⌘K), not in painted suggestions.
@@ -1129,7 +1131,7 @@ describe("v1.15.0 true native agent", () => {
   });
 
   it("renders tables whole: no folding, no sliding", () => {
-    const md = source("../components/MarkdownImplementation.tsx");
+    const md = source("../components/Markdown.tsx");
     expect(md).toContain('data-testid="table-grid"');
     expect(md).toContain("agent-table-grid");
     expect(md).not.toContain('data-testid="table-scroll-hint"');
@@ -1144,7 +1146,7 @@ describe("v1.15.0 true native agent", () => {
   it("renders usage from one vocabulary: subset cached, floor ~, named silence", () => {
     const lib = source("../lib/usage.ts");
     const meter = source("../components/ContextMeter.tsx");
-    const detail = source("../components/ExecutionDetailImplementation.tsx");
+    const detail = source("../components/ExecutionDetail.tsx");
     expect(lib).toContain("export function formatUsageLine(");
     expect(lib).toContain("export function contextReading(");
     expect(lib).toContain("incl.");
@@ -1159,7 +1161,7 @@ describe("v1.15.0 true native agent", () => {
     for (const key of ["\"find.placeholder\"", "\"exec.back\"", "\"skills.noSkills\"", "\"usage.cachedOf\""]) {
       expect(i18n).toContain(key);
     }
-    expect(source("../components/ExecutionDetailImplementation.tsx")).not.toContain("返回 Execution 列表");
+    expect(source("../components/ExecutionDetail.tsx")).not.toContain("返回 Execution 列表");
     expect(source("../components/FindBar.tsx")).not.toContain("在当前任务中查找…\",");
     expect(source("../components/NativeAgentPanel.tsx")).not.toContain("还没有技能。把 SKILL.md");
   });
@@ -1235,7 +1237,7 @@ describe("v1.16.0 true native agent, finished", () => {
     const doc = source("../components/TaskDocument.tsx");
     expect(doc).toContain("stallTries");
     expect(doc).toContain("loadingEarlierRef");
-    expect(source("../components/AgentTaskImplementation.tsx")).toMatch(/onResync=\{async \(\)/);
+    expect(source("../components/AgentTask.tsx")).toMatch(/onResync=\{async \(\)/);
   });
 
   it("themes the last-resort boundary and matches secret shapes end to end", () => {
@@ -1291,7 +1293,7 @@ describe("v1.16.0 true native agent, finished", () => {
   it("lets flex columns shrink past unbreakable runs", () => {
     // min-width:auto on a flex item is its longest unbreakable run: ARNs
     // stretched the whole column past the window instead of wrapping.
-    const root = source("../components/AgentTaskImplementation.tsx");
+    const root = source("../components/AgentTask.tsx");
     expect(root).toContain("min-w-0 flex-1 flex-col");
     const doc = source("../components/TaskDocument.tsx");
     expect(doc).toContain("min-w-0 flex-1 flex-col");
@@ -1319,7 +1321,7 @@ describe("v1.17.0 Codex window", () => {
     expect(app).not.toContain("titlebar-find");
     expect(app).not.toContain("titlebar-palette");
     expect(source("../components/TaskDocument.tsx")).not.toContain("task-find-open");
-    expect(source("../components/AgentTaskImplementation.tsx")).not.toContain("start-mark");
+    expect(source("../components/AgentTask.tsx")).not.toContain("start-mark");
   });
 
   it("uses work language on the turn, Artifacts, and empty fallback", () => {

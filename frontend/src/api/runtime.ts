@@ -103,11 +103,6 @@ export const createTaskExecution = (
     { method: "POST", body: JSON.stringify({ direction, turn_id: turnId, ...(kind ? { kind } : {}) }) },
   );
 
-/** Submit a Verify Execution through the one runtime submit path. */
-export const verifyTaskPlan = (taskId: string) =>
-  request<{ execution: TaskExecution; created: boolean }>(
-    `/agent-tasks/${taskId}/verify`, { method: "POST" });
-
 /** Steer the CURRENT execution — the direction is injected into the running
  * model loop server-side. 409 (ApiError) when nothing is executing. */
 export const steerTaskExecution = (taskId: string, text: string) =>
@@ -266,6 +261,9 @@ export interface LiveEventHandlers {
   onStatus?: (payload: ExecutionStatusPayload) => void;
   onTaskStatus?: (payload: TaskStatusPayload) => void;
   onPlanUpdated?: (payload: PlanUpdatedPayload) => void;
+  /** A Steer reached the running model loop (`steer.applied`): a Direction,
+   * never a tool row. */
+  onSteerApplied?: (payload: { text: string }) => void;
   onContextCompacted?: (payload: ContextCompactedPayload) => void;
 }
 
@@ -317,7 +315,7 @@ export function dispatchDurableEvent(
   if (type === "tool.started") on.onTool(toolFromEvent(payload, "started", seenAt));
   else if (type === "tool.completed") on.onTool(toolFromEvent(payload, "completed", seenAt));
   else if (type === "steer.applied")
-    on.onTool({ tool: "user_steer", target: "", result: payload.text || "", ok: true, status: "completed" });
+    on.onSteerApplied?.({ text: String(payload.text ?? "") });
   else if (type === "message.completed")
     on.onMessageCompleted?.({ text: payload.text ?? "", final: payload.final === true, truncated: payload.truncated === true });
   else if (type === "approval.opened")

@@ -2,10 +2,10 @@ import { sidecarBaseUrl } from "../config";
 import { ApiError, authHeaders, boundedController, errorDetail, request, UPLOAD_TIMEOUT_MS } from "./client";
 import type {
   ErrorInputKind,
-  SessionActivityItem,
-  SessionDetail,
-  SessionMessage,
-  SessionOverview,
+  TaskCallRecord,
+  TaskRecord,
+  TaskMessage,
+  TaskOverview,
   TriageCase,
 } from "../types";
 import type { TaskProvenance } from "../viz/types";
@@ -23,41 +23,41 @@ import type { TaskProvenance } from "../viz/types";
 
 // --- Task list and document ---
 
-export interface SessionCreateInput {
+export interface TaskCreateInput {
   title: string;
   goal?: string;
   provider_id?: string;
   primary_bucket?: string;
 }
 
-export const createSession = (body: SessionCreateInput) =>
-  request<SessionDetail>("/sessions", { method: "POST", body: JSON.stringify(body) });
+export const createTask = (body: TaskCreateInput) =>
+  request<TaskRecord>("/sessions", { method: "POST", body: JSON.stringify(body) });
 
-export const getSession = (id: string) => request<SessionDetail>(`/sessions/${id}`);
+export const getTaskRecord = (id: string) => request<TaskRecord>(`/sessions/${id}`);
 
 // Task management: rename / pin / archive (PATCH), fork, delete.
-export const patchSession = (
+export const updateTask = (
   id: string,
   body: { title?: string; status?: "active" | "archived"; pinned?: boolean },
-) => request<SessionDetail>(`/sessions/${id}`, { method: "PATCH", body: JSON.stringify(body) });
+) => request<TaskRecord>(`/sessions/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 
-export const deleteSession = (id: string) =>
+export const deleteTask = (id: string) =>
   request<void>(`/sessions/${id}`, { method: "DELETE" });
 
-export const getSessionReport = (id: string) =>
+export const getTaskReport = (id: string) =>
   request<{ session_id: string; format: string; content: string }>(`/sessions/${id}/report`);
 
 /** One page of Task messages, oldest-first, ending just before `before`.
  * Omit `before` for the newest page. `has_more` reports whether older messages
  * exist above the page — the Task never silently hides history. */
-export const getSessionMessages = (id: string, opts: { limit?: number; before?: number } = {}) => {
+export const getTaskMessages = (id: string, opts: { limit?: number; before?: number } = {}) => {
   const q = new URLSearchParams();
   if (opts.limit) q.set("limit", String(opts.limit));
   if (opts.before != null) q.set("before", String(opts.before));
   const suffix = q.toString() ? `?${q}` : "";
   return request<{
     session_id: string;
-    messages: SessionMessage[];
+    messages: TaskMessage[];
     total: number;
     has_more: boolean;
   }>(`/sessions/${id}/messages${suffix}`);
@@ -76,15 +76,15 @@ export interface ErrorTriageInput {
 export const submitErrorTriage = (body: ErrorTriageInput) =>
   request<TriageCase>("/error-triage", { method: "POST", body: JSON.stringify(body) });
 
-export const getSessionTriage = (sessionId: string) =>
-  request<{ session_id: string; cases: TriageCase[] }>(`/sessions/${sessionId}/error-triage`);
+export const getTaskTriage = (taskId: string) =>
+  request<{ session_id: string; cases: TriageCase[] }>(`/sessions/${taskId}/error-triage`);
 
 // --- Datasets ---
 // A data file is attached to the TASK; the Agent then analyzes it as a tool
 // and answers inline. There is no run-scoped upload surface.
 
-export async function uploadSessionDataset(
-  sessionId: string,
+export async function uploadTaskDataset(
+  taskId: string,
   file: File,
   datasetType: "access_log" | "inventory",
   signal?: AbortSignal,
@@ -96,7 +96,7 @@ export async function uploadSessionDataset(
   const { controller, clear } = boundedController(UPLOAD_TIMEOUT_MS, signal);
   let res: Response;
   try {
-    res = await fetch(`${sidecarBaseUrl()}/sessions/${sessionId}/datasets/upload`, {
+    res = await fetch(`${sidecarBaseUrl()}/sessions/${taskId}/datasets/upload`, {
       method: "POST",
       headers: authHeaders(), // browser sets the multipart boundary; no secrets involved
       body: form,
@@ -114,11 +114,11 @@ export async function uploadSessionDataset(
 /** ONE tool call by the id its worked row carries (v0.56.0): the sanitized
  * arguments it was called with and the output it returned, opened in place.
  * Scoped to the task server-side. */
-export const getSessionCall = (id: string, callId: string) =>
-  request<SessionActivityItem>(`/sessions/${id}/activity/${encodeURIComponent(callId)}`);
+export const getTaskCall = (id: string, callId: string) =>
+  request<TaskCallRecord>(`/sessions/${id}/activity/${encodeURIComponent(callId)}`);
 
-export const getSessionOverview = (id: string) =>
-  request<SessionOverview>(`/sessions/${id}/overview`);
+export const getTaskOverview = (id: string) =>
+  request<TaskOverview>(`/sessions/${id}/overview`);
 
 // --- Artifacts, provenance, engines ---
 

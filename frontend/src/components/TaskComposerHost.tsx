@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getSessionRun, patchSessionRun } from "../sessionRuns";
+import { getLiveTask, patchLiveTask } from "../liveTasks";
 import { loadDraft, saveDraft } from "../drafts";
 import { inferDatasetType } from "../datasetType";
 import type { TurnController } from "../hooks/useTurnRunner";
@@ -17,9 +17,9 @@ export function attachKind(name: string): AttachKind {
  * the palette focus. Switching tasks restores that task's draft and its
  * attachment; a leftover file never rides onto another Task.
  */
-export function useTaskComposer(sessionId: string | null) {
-  const localId = useRef<string | null>(sessionId);
-  localId.current = sessionId;
+export function useTaskComposer(taskId: string | null) {
+  const localId = useRef<string | null>(taskId);
+  localId.current = taskId;
   const attachments = useRef(new Map<string, { file: File; type: AttachKind | null }>());
   const attachedRef = useRef<{ file: File; type: AttachKind | null } | null>(null);
   const [text, setTextState] = useState("");
@@ -36,24 +36,24 @@ export function useTaskComposer(sessionId: string | null) {
 
   useEffect(() => {
     const prev = localId.current;
-    if (prev && prev !== sessionId) {
+    if (prev && prev !== taskId) {
       const cur = attachedRef.current;
       if (cur) attachments.current.set(prev, cur);
       else attachments.current.delete(prev);
     }
-    localId.current = sessionId;
-    const saved = sessionId ? attachments.current.get(sessionId) : undefined;
+    localId.current = taskId;
+    const saved = taskId ? attachments.current.get(taskId) : undefined;
     setAttached(saved?.file ?? null);
     setAttachType(saved?.type ?? null);
-    const failed = sessionId ? getSessionRun(sessionId).failedText : null;
+    const failed = taskId ? getLiveTask(taskId).failedText : null;
     if (failed) {
       setText(failed);
-      patchSessionRun(sessionId!, { failedText: null });
+      patchLiveTask(taskId!, { failedText: null });
     } else {
-      setText(loadDraft(sessionId));
+      setText(loadDraft(taskId));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [taskId]);
 
   const clearAttachment = () => {
     setAttached(null);

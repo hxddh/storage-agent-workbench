@@ -3,7 +3,7 @@
  *
  * The application keeps one visible task renderer while multiple tasks may be
  * executing. Runtime state therefore lives here, keyed by the durable backend
- * session id, so work keeps streaming when the operator switches tasks and the
+ * task id, so work keeps streaming when the operator switches tasks and the
  * task list can reflect that state without inventing background workers.
  */
 import { useCallback, useSyncExternalStore } from "react";
@@ -11,7 +11,7 @@ import type { ExecutionMetrics } from "./types";
 import type { TaskStatusPayload } from "./api";
 import type { LiveTurn, TurnItem } from "./lib/turnItems";
 
-export type SessionRun = {
+export type LiveTask = {
   busy: boolean;
   uploading: boolean;
   pending: string | null;
@@ -40,13 +40,13 @@ export type SessionRun = {
 };
 
 /** The live-turn slice of a run, for the pure reducers. */
-export const liveTurnOf = (run: SessionRun): LiveTurn =>
+export const liveTurnOf = (run: LiveTask): LiveTurn =>
   ({ items: run.items, answer: run.answer, waiting: run.waiting });
 
 /** A cleared live turn, used whenever a run starts or settles. */
 export const CLEAR_TURN = { items: [] as TurnItem[], answer: null, waiting: false, startedAt: null };
 
-const EMPTY: SessionRun = {
+const EMPTY: LiveTask = {
   busy: false,
   uploading: false,
   pending: null,
@@ -64,12 +64,12 @@ const EMPTY: SessionRun = {
   failedText: null,
 };
 
-const store = new Map<string, SessionRun>();
+const store = new Map<string, LiveTask>();
 const listeners = new Map<string, Set<() => void>>();
 const indexListeners = new Set<() => void>();
 let indexVersion = 0;
 
-// Backend session ids are durable task ids. Deleted ids are never reused, so a
+// Backend task ids are durable task ids. Deleted ids are never reused, so a
 // late write from an aborted execution must not recreate its runtime entry.
 const dropped = new Set<string>();
 const aborters = new Map<string, () => void>();
@@ -81,14 +81,14 @@ function notify(id: string) {
   indexListeners.forEach((listener) => listener());
 }
 
-export function getSessionRun(id: string | null): SessionRun {
+export function getLiveTask(id: string | null): LiveTask {
   if (!id) return EMPTY;
   return store.get(id) ?? EMPTY;
 }
 
-export function patchSessionRun(
+export function patchLiveTask(
   id: string,
-  patch: Partial<SessionRun> | ((state: SessionRun) => Partial<SessionRun>),
+  patch: Partial<LiveTask> | ((state: LiveTask) => Partial<LiveTask>),
 ): void {
   if (dropped.has(id)) return;
   const current = store.get(id) ?? EMPTY;
@@ -113,7 +113,7 @@ export function unregisterTurnCancel(id: string, cancel: () => void): void {
   if (cancellers.get(id) === cancel) cancellers.delete(id);
 }
 
-export function dropSessionRun(id: string): void {
+export function dropLiveTask(id: string): void {
   dropped.add(id);
   cancellers.get(id)?.();
   cancellers.delete(id);
@@ -139,9 +139,9 @@ function subscribe(id: string | null, callback: () => void): () => void {
 }
 
 /** Subscribe to one task's runtime state. */
-export function useSessionRun(id: string | null): SessionRun {
+export function useLiveTask(id: string | null): LiveTask {
   const sub = useCallback((callback: () => void) => subscribe(id, callback), [id]);
-  const getSnapshot = useCallback(() => getSessionRun(id), [id]);
+  const getSnapshot = useCallback(() => getLiveTask(id), [id]);
   return useSyncExternalStore(sub, getSnapshot);
 }
 
@@ -150,9 +150,9 @@ export function useSessionRun(id: string | null): SessionRun {
  *
  * AgentTaskNavigation uses this so a working row can update while another Task
  * is selected. The monotonically increasing number is intentionally opaque: callers read
- * individual task truth with getSessionRun after React schedules the render.
+ * individual task truth with getLiveTask after React schedules the render.
  */
-export function useSessionRunIndexVersion(): number {
+export function useLiveTaskIndexVersion(): number {
   const subscribeIndex = useCallback((callback: () => void) => {
     indexListeners.add(callback);
     return () => indexListeners.delete(callback);

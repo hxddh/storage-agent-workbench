@@ -9,15 +9,15 @@ import { act, renderHook } from "@testing-library/react";
 import { createRef } from "react";
 import type { LiveEventHandlers, TaskState } from "../api";
 import type { TFunc } from "../i18n";
-import type { SessionDetail } from "../types";
-import { dropSessionRun, getSessionRun } from "../sessionRuns";
-import { useSessionDocument } from "./useSessionDocument";
+import type { TaskRecord } from "../types";
+import { dropLiveTask, getLiveTask } from "../liveTasks";
+import { useTaskDocument } from "./useTaskDocument";
 
 const api = vi.hoisted(() => ({
-  getSession: vi.fn(),
-  getSessionMessages: vi.fn(),
-  getSessionOverview: vi.fn(),
-  getSessionTriage: vi.fn(),
+  getTaskRecord: vi.fn(),
+  getTaskMessages: vi.fn(),
+  getTaskOverview: vi.fn(),
+  getTaskTriage: vi.fn(),
   getTaskState: vi.fn(),
   followExecutionEvents: vi.fn(),
 }));
@@ -32,7 +32,7 @@ const TASK = "follow-task";
 
 // One persisted message: an EMPTY document gets one bounded recheck reload
 // (the reload-after-Stop race), which is not the interval this test guards.
-const detail = (id: string): SessionDetail => ({
+const detail = (id: string): TaskRecord => ({
   id, title: id, goal: null, provider_id: null, primary_bucket: null, status: "ready",
   created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
   runs: [], findings: [], summary: null, message_total: 1,
@@ -56,7 +56,7 @@ const flush = () => act(async () => {
   for (let i = 0; i < 8; i++) await Promise.resolve();
 });
 
-describe("useSessionDocument while a follower is open", () => {
+describe("useTaskDocument while a follower is open", () => {
   let handlers: LiveEventHandlers | null = null;
   let settle: (() => void) | null = null;
 
@@ -64,9 +64,9 @@ describe("useSessionDocument while a follower is open", () => {
     vi.useFakeTimers();
     handlers = null;
     settle = null;
-    api.getSession.mockReset().mockImplementation(async (id: string) => detail(id));
-    api.getSessionTriage.mockReset().mockResolvedValue({ cases: [] });
-    api.getSessionOverview.mockReset().mockResolvedValue({ turns: [] });
+    api.getTaskRecord.mockReset().mockImplementation(async (id: string) => detail(id));
+    api.getTaskTriage.mockReset().mockResolvedValue({ cases: [] });
+    api.getTaskOverview.mockReset().mockResolvedValue({ turns: [] });
     api.getTaskState.mockReset().mockImplementation(async () => running());
     api.followExecutionEvents.mockReset().mockImplementation(
       (_task: string, _exec: string, on: LiveEventHandlers) => new Promise<{ status: string; stopped: boolean; last_seq: number }>((resolve) => {
@@ -78,18 +78,18 @@ describe("useSessionDocument while a follower is open", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    dropSessionRun(TASK);
+    dropLiveTask(TASK);
   });
 
   it("polls /state once on attach, then only on visibility change and on end", async () => {
-    const { result } = renderHook(() => useSessionDocument({
-      sessionId: TASK, sidecarReady: true, reloadKey: 0, t,
+    const { result } = renderHook(() => useTaskDocument({
+      taskId: TASK, sidecarReady: true, reloadKey: 0, t,
       scrollRef: createRef<HTMLDivElement>(), setViewError: () => undefined,
     }));
     await flush();
     await flush();
     expect(api.followExecutionEvents).toHaveBeenCalledTimes(1);
-    expect(getSessionRun(TASK).busy).toBe(true);
+    expect(getLiveTask(TASK).busy).toBe(true);
     const onAttach = api.getTaskState.mock.calls.length;
     expect(onAttach).toBeGreaterThan(0);
 
@@ -130,6 +130,6 @@ describe("useSessionDocument while a follower is open", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
     // At most the one bounded "look once more for a queued follow-up" read.
     expect(api.getTaskState.mock.calls.length).toBeLessThanOrEqual(afterEnd + 1);
-    expect(getSessionRun(TASK).busy).toBe(false);
+    expect(getLiveTask(TASK).busy).toBe(false);
   });
 });

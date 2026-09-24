@@ -9,7 +9,7 @@ import type { TurnItem } from "../lib/turnItems";
 import type { ToolActivity } from "../types";
 import { AgentTurn, UserTurn } from "./TranscriptTurn";
 
-vi.mock("../api", () => ({ getSessionCall: vi.fn() }));
+vi.mock("../api", () => ({ getTaskCall: vi.fn() }));
 
 const call = (over: Partial<ToolActivity> = {}): ToolActivity => ({
   id: "c1", tool: "head_bucket", target: "acme-logs", result: "200", ok: true, duration_ms: 40, status: "completed", ...over,

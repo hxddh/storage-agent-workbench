@@ -317,7 +317,7 @@ export function ArtifactsPanel({
       document = artifact ? <BaselineDocument artifact={artifact} /> : <Empty>{c.empty.baselines}</Empty>;
     } else if (selection.kind === "evidence" && selection.id) {
       documentTitle = c.sections.evidence;
-      document = <EvidenceReview detail={detail} sessionId={detail?.id ?? ""} selectedFindingId={selection.id} provenance={provenance} />;
+      document = <EvidenceReview detail={detail} taskId={detail?.id ?? ""} selectedFindingId={selection.id} provenance={provenance} />;
     }
   }
 
@@ -351,7 +351,7 @@ export function ArtifactsPanel({
           <>
             <Section kind="evidence" title={c.sections.evidence} count={findings.length}>
               {!detail ? <Empty>{c.loading}</Empty> : (
-                <EvidenceReview detail={detail} sessionId={detail.id} selectedFindingId={selection?.findingId ?? null} provenance={provenance} />
+                <EvidenceReview detail={detail} taskId={detail.id} selectedFindingId={selection?.findingId ?? null} provenance={provenance} />
               )}
             </Section>
 

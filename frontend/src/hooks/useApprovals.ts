@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { resolveTaskDecision, type TaskDecision, type TaskState } from "../api";
 import type { TFunc } from "../i18n";
-import { getSessionRun, liveTurnOf, patchSessionRun } from "../sessionRuns";
+import { getLiveTask, liveTurnOf, patchLiveTask } from "../liveTasks";
 import { resolveApproval, turnItemsOf, unplacedApprovals, type TurnItem } from "../lib/turnItems";
 import type { ApprovalResolution, ApprovalScope } from "../components/ApprovalCard";
 import type { TaskItem } from "../components/TaskDocument";
@@ -18,7 +18,7 @@ import { cleanError } from "./useTurnRunner";
  * the execution the approval belongs to.
  */
 export function useApprovals({
-  sessionId,
+  taskId,
   localId,
   items,
   taskRuntime,
@@ -29,7 +29,7 @@ export function useApprovals({
   setViewError,
   t,
 }: {
-  sessionId: string | null;
+  taskId: string | null;
   localId: React.MutableRefObject<string | null>;
   items: TaskItem[];
   taskRuntime: TaskState | null;
@@ -41,7 +41,7 @@ export function useApprovals({
   t: TFunc;
 }) {
   const [resolvingId, setResolvingId] = useState<string | null>(null);
-  useEffect(() => setResolvingId(null), [sessionId]);
+  useEffect(() => setResolvingId(null), [taskId]);
 
   const pendingDecisions = useMemo<TaskDecision[]>(
     () => (taskRuntime?.pending_decisions ?? []).filter((d) => d.status === "pending"),
@@ -69,11 +69,11 @@ export function useApprovals({
     setResolvingId(decisionId);
     try {
       const { decision } = await resolveTaskDecision(id, decisionId, resolution, scope);
-      patchSessionRun(id, (s) => {
+      patchLiveTask(id, (s) => {
         const next = resolveApproval(liveTurnOf(s), { decision_id: decisionId, resolution, scope });
         return { items: next.items, answer: next.answer, waiting: next.waiting };
       });
-      if (!getSessionRun(id).busy) {
+      if (!getLiveTask(id).busy) {
         await reload(id);
         if (decision.execution_id) void followExecution(decision.execution_id, null);
       }

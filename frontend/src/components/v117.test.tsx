@@ -27,7 +27,7 @@ describe("v1.17 Codex window", () => {
     expect(source("../App.tsx")).not.toContain("titlebar-find");
     expect(source("../App.tsx")).not.toContain("titlebar-palette");
     expect(source("./TaskDocument.tsx")).not.toContain("task-find-open");
-    expect(source("./AgentTaskImplementation.tsx")).not.toContain("start-mark");
+    expect(source("./AgentTask.tsx")).not.toContain("start-mark");
     expect(source("../agent/native-document.css")).not.toContain("native-start-mark");
   });
 

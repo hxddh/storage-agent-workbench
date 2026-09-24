@@ -1,20 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import {
-  getSession,
-  getSessionMessages,
-  getSessionOverview,
-  getSessionTriage,
+  getTaskRecord,
+  getTaskMessages,
+  getTaskOverview,
+  getTaskTriage,
   getTaskState,
   followExecutionEvents,
   type TaskState,
 } from "../api";
 import type { TFunc } from "../i18n";
-import { getSessionRun, patchSessionRun, useSessionRun } from "../sessionRuns";
+import { getLiveTask, patchLiveTask, useLiveTask } from "../liveTasks";
 import { applyTaskStatus } from "../lib/taskStatus";
-import { liveHandlers } from "./useTurnRunnerImplementation";
+import { liveHandlers } from "./useTurnRunner";
 import type {
-  SessionDetail,
-  SessionMessage,
+  TaskRecord,
+  TaskMessage,
   TriageCase,
   TurnMetricsRow,
 } from "../types";
@@ -23,10 +23,10 @@ import { cleanError } from "./useTurnRunner";
 /** Instant task switch: keep the last rendered document so the canvas never flashes empty. */
 const DOCUMENT_CACHE_LIMIT = 24;
 type CachedDocument = {
-  detail: SessionDetail;
+  detail: TaskRecord;
   triage: TriageCase[];
   taskRuntime: TaskState | null;
-  earlier: SessionMessage[];
+  earlier: TaskMessage[];
 };
 const documentCache = new Map<string, CachedDocument>();
 
@@ -40,33 +40,33 @@ function rememberDocument(id: string, doc: CachedDocument) {
   }
 }
 
-export function useSessionDocument({
-  sessionId,
+export function useTaskDocument({
+  taskId,
   sidecarReady,
   reloadKey,
   t,
   scrollRef,
   setViewError,
 }: {
-  sessionId: string | null;
+  taskId: string | null;
   sidecarReady: boolean;
   reloadKey: number;
   t: TFunc;
   scrollRef: RefObject<HTMLDivElement | null>;
   setViewError: (message: string | null) => void;
 }) {
-  const [detail, setDetail] = useState<SessionDetail | null>(null);
+  const [detail, setDetail] = useState<TaskRecord | null>(null);
   const [triage, setTriage] = useState<TriageCase[]>([]);
-  const [earlier, setEarlier] = useState<SessionMessage[]>([]);
+  const [earlier, setEarlier] = useState<TaskMessage[]>([]);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [metrics, setMetrics] = useState<Record<string, TurnMetricsRow>>({});
   const [remoteTurn, setRemoteTurn] = useState<{ running: boolean; age_ms: number | null } | null>(null);
   const [taskRuntime, setTaskRuntime] = useState<TaskState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const localId = useRef<string | null>(sessionId);
-  localId.current = sessionId;
-  // loadedIdRef is a successful getSession for this id. shownIdRef is whatever
+  const localId = useRef<string | null>(taskId);
+  localId.current = taskId;
+  // loadedIdRef is a successful getTaskRecord for this id. shownIdRef is whatever
   // document is on screen (including a cache restore) so reload does not wipe
   // restored earlier messages. Cache restore must not set loadedIdRef or a
   // failed refresh after revisit would keep a stale document with no error.
@@ -79,14 +79,14 @@ export function useSessionDocument({
   // v1.12: while a follower is open (this hook's or the runner's) the task's
   // derived status arrives as `task.status` frames on the stream. Fold each
   // new frame into the document's task state instead of polling `/state`.
-  const run = useSessionRun(sessionId);
+  const run = useLiveTask(taskId);
   const appliedStatusRef = useRef<typeof run.taskStatus>(null);
   useEffect(() => {
     const payload = run.taskStatus;
-    if (!sessionId || !payload || payload === appliedStatusRef.current) return;
+    if (!taskId || !payload || payload === appliedStatusRef.current) return;
     appliedStatusRef.current = payload;
-    setTaskRuntime((prev) => applyTaskStatus(prev, sessionId, payload));
-  }, [run.taskStatus, sessionId]);
+    setTaskRuntime((prev) => applyTaskStatus(prev, taskId, payload));
+  }, [run.taskStatus, taskId]);
   // One discovery poll when the follower ends (busy → idle), never an interval.
   const tickRef = useRef<(() => void) | null>(null);
   const busyRef = useRef(run.busy);
@@ -107,10 +107,10 @@ export function useSessionDocument({
     }
 
     const seq = ++reloadSeqRef.current;
-    let nextDetail: SessionDetail | null = null;
+    let nextDetail: TaskRecord | null = null;
     let failed: string | null = null;
     const [detailResult, triageResult, stateResult] = await Promise.allSettled([
-      getSession(id), getSessionTriage(id), getTaskState(id),
+      getTaskRecord(id), getTaskTriage(id), getTaskState(id),
     ]);
     if (detailResult.status === "fulfilled") nextDetail = detailResult.value;
     else failed = cleanError(String(detailResult.reason), t, "load");
@@ -123,7 +123,7 @@ export function useSessionDocument({
       shownIdRef.current = id;
       setDetail(nextDetail);
       setLoadError(null);
-      void getSessionOverview(id)
+      void getTaskOverview(id)
         .then((overview) => {
           if (id !== localId.current) return;
           const byId: Record<string, TurnMetricsRow> = {};
@@ -143,58 +143,58 @@ export function useSessionDocument({
     return false;
   }, [t]);
 
-  // Session identity, stale-request protection and first load belong to the
+  // Task identity, stale-request protection and first load belong to the
   // persisted document layer, not to task composition.
   // Restore a cached document synchronously so switching tasks never whites out.
   useEffect(() => {
-    const cached = sessionId ? documentCache.get(sessionId) : undefined;
+    const cached = taskId ? documentCache.get(taskId) : undefined;
     if (cached) {
       setDetail(cached.detail);
       setTriage(cached.triage);
       setTaskRuntime(cached.taskRuntime);
       setEarlier(cached.earlier);
-      shownIdRef.current = sessionId;
-    } else if (sessionId !== shownIdRef.current) {
+      shownIdRef.current = taskId;
+    } else if (taskId !== shownIdRef.current) {
       setDetail(null);
       setTriage([]);
       setEarlier([]);
       setTaskRuntime(null);
     }
     setLoadError(null);
-    void reload(sessionId);
-  }, [sessionId, reload]);
+    void reload(taskId);
+  }, [taskId, reload]);
 
   useEffect(() => {
-    if (!sessionId || !detail || detail.id !== sessionId) return;
+    if (!taskId || !detail || detail.id !== taskId) return;
     // v1.13 — cache by count AND size: keep only the latest 200 messages in
     // the cached document (earlier pages reload via loadEarlier from
     // message_total/hiddenCount, so nothing is lost, only re-fetched).
     const slim = detail.messages.length > 200
       ? { ...detail, messages: detail.messages.slice(-200) }
       : detail;
-    rememberDocument(sessionId, { detail: slim, triage, taskRuntime, earlier });
-  }, [sessionId, detail, triage, taskRuntime, earlier]);
+    rememberDocument(taskId, { detail: slim, triage, taskRuntime, earlier });
+  }, [taskId, detail, triage, taskRuntime, earlier]);
 
   useEffect(() => {
-    if (reloadKey && sessionId) void reload(sessionId);
-  }, [reloadKey, sessionId, reload]);
+    if (reloadKey && taskId) void reload(taskId);
+  }, [reloadKey, taskId, reload]);
 
-  // A session observed empty once gets one bounded recheck. This closes the
-  // reload-after-Stop persistence race without turning idle sessions into a poll.
+  // A task observed empty once gets one bounded recheck. This closes the
+  // reload-after-Stop persistence race without turning idle tasks into a poll.
   useEffect(() => {
-    if (!sessionId || loadError) return;
-    if (detail?.id !== sessionId) return;
+    if (!taskId || loadError) return;
+    if (detail?.id !== taskId) return;
     const empty =
       (detail.messages?.length ?? 0) === 0 &&
       (detail.runs?.length ?? 0) === 0 &&
       triage.length === 0;
-    if (!empty || recheckedRef.current === sessionId) return;
-    recheckedRef.current = sessionId;
+    if (!empty || recheckedRef.current === taskId) return;
+    recheckedRef.current = taskId;
     const timer = window.setTimeout(() => {
-      if (localId.current === sessionId) void reload(sessionId);
+      if (localId.current === taskId) void reload(taskId);
     }, 1200);
     return () => window.clearTimeout(timer);
-  }, [detail, triage.length, sessionId, loadError, reload]);
+  }, [detail, triage.length, taskId, loadError, reload]);
 
   // Reattach to an execution this client did not start (a reload mid-run, a
   // task switch back, a delegation from another window). Discovery and stream
@@ -205,7 +205,7 @@ export function useSessionDocument({
   // follower ends (v1.12). While a stream is open the `task.status` frames
   // carry the queue and the pending Decisions; there is no interval.
   useEffect(() => {
-    if (!sessionId || !sidecarReady) return;
+    if (!taskId || !sidecarReady) return;
     let stopped = false;
     let timer = 0;
     let followCtl: AbortController | null = null;
@@ -224,7 +224,7 @@ export function useSessionDocument({
       const ageMs = startedAt ? Math.max(0, Date.now() - Date.parse(startedAt)) : null;
       setRemoteTurn({ running: true, age_ms: Number.isFinite(ageMs) ? ageMs : null });
       const startedMs = startedAt ? Date.parse(startedAt) : NaN;
-      patchSessionRun(sessionId, {
+      patchLiveTask(taskId, {
         busy: true, error: null, stopped: false, stalled: false,
         items: [], answer: null, waiting: false,
         startedAt: Number.isFinite(startedMs) ? startedMs : Date.now(),
@@ -232,8 +232,8 @@ export function useSessionDocument({
       });
       try {
         await followExecutionEvents(
-          sessionId, executionId,
-          liveHandlers(sessionId),
+          taskId, executionId,
+          liveHandlers(taskId),
           { signal: followCtl.signal },
         );
       } catch {
@@ -243,9 +243,9 @@ export function useSessionDocument({
       if (stopped) return;
       loadedSettledExecId = executionId;
       setRemoteTurn(null);
-      if (localId.current === sessionId) void reload(sessionId);
+      if (localId.current === taskId) void reload(taskId);
       // busy → idle: the effect above runs the one "end" poll.
-      patchSessionRun(sessionId, {
+      patchLiveTask(taskId, {
         busy: false, pending: null, items: [], answer: null, waiting: false, startedAt: null, stopped: false,
       });
     };
@@ -254,18 +254,18 @@ export function useSessionDocument({
       if (stopped) return;
       let state: TaskState | null = null;
       try {
-        state = await getTaskState(sessionId);
-        if (!stopped && localId.current === sessionId) setTaskRuntime(state);
+        state = await getTaskState(taskId);
+        if (!stopped && localId.current === taskId) setTaskRuntime(state);
       } catch {
         timer = window.setTimeout(tick, 1500);
         return;
       }
-      if (stopped || localId.current !== sessionId) return;
+      if (stopped || localId.current !== taskId) return;
       // A follower is open (this client's own turn, or the stream above):
       // queued Directions and pending Decisions now arrive as `task.status`
       // frames on it. Do not attach a second follower and do not poll — the
       // next read happens when the follower ends or the window comes back.
-      if (getSessionRun(sessionId).busy) {
+      if (getLiveTask(taskId).busy) {
         setRemoteTurn(null);
         sawOwnBusy = true;
         return;
@@ -288,13 +288,13 @@ export function useSessionDocument({
         );
         if (remoteTurnRef.current || sawOwnBusy) {
           if (settledId) loadedSettledExecId = settledId;
-          void reload(sessionId);
+          void reload(taskId);
           // The execution this client drove just settled: look once more for
           // a follow-up the runtime queued behind it (a late steer).
           timer = window.setTimeout(tick, 1200);
         } else if (settled && loadedSettledExecId !== settledId) {
           loadedSettledExecId = settledId;
-          void reload(sessionId);
+          void reload(taskId);
         }
         sawOwnBusy = false;
         setRemoteTurn(null);
@@ -318,13 +318,13 @@ export function useSessionDocument({
       window.clearTimeout(timer);
       followCtl?.abort();
       if (following) {
-        patchSessionRun(sessionId, {
+        patchLiveTask(taskId, {
           busy: false, items: [], answer: null, waiting: false, startedAt: null, stopped: false,
         });
       }
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [sessionId, sidecarReady, reload]);
+  }, [taskId, sidecarReady, reload]);
 
   const shownCount = earlier.length + (detail?.messages?.length ?? 0);
   const hiddenCount = Math.max(0, (detail?.message_total ?? shownCount) - shownCount);
@@ -335,9 +335,9 @@ export function useSessionDocument({
     setLoadingEarlier(true);
     try {
       let cursor = (earlier[0] ?? detail?.messages?.[0])?.seq;
-      const collected: SessionMessage[] = [];
+      const collected: TaskMessage[] = [];
       for (let pageNo = 0; pageNo < 200 && cursor != null; pageNo++) {
-        const page = await getSessionMessages(id, { before: cursor });
+        const page = await getTaskMessages(id, { before: cursor });
         if (id !== localId.current) return;
         if (page.messages.length === 0) break;
         collected.unshift(...page.messages);
@@ -360,7 +360,7 @@ export function useSessionDocument({
     if (oldest == null) return;
     setLoadingEarlier(true);
     try {
-      const page = await getSessionMessages(id, { before: oldest });
+      const page = await getTaskMessages(id, { before: oldest });
       if (id !== localId.current) return;
       const element = scrollRef.current;
       const before = element ? element.scrollHeight - element.scrollTop : 0;

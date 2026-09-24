@@ -1,5 +1,5 @@
 import { useI18n } from "../i18n";
-import { useSessionRun } from "../sessionRuns";
+import { useLiveTask } from "../liveTasks";
 import { useActiveTaskId } from "../agent/activeTask";
 import type { ExecutionMetrics } from "../types";
 import { contextReading, fmtTokensUnified } from "../lib/usage";
@@ -28,7 +28,7 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 export function ContextMeter() {
   const { lang, t } = useI18n();
   const taskId = useActiveTaskId();
-  const run = useSessionRun(taskId);
+  const run = useLiveTask(taskId);
   if (!run.lastMetrics?.metrics && run.contextTokens == null) return null;
   const reading = contextReading(run.lastMetrics?.metrics, run.contextTokens);
   if (reading.kind === "none") return null;

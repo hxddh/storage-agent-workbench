@@ -12,15 +12,15 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { I18nProvider } from "../i18n";
 import { ExecutionDetail } from "./ExecutionDetail";
-import { replayExecutionEvents } from "./ExecutionDetailImplementation";
+import { replayExecutionEvents } from "./ExecutionDetail";
 import type { TaskEvent } from "../api";
 
 const api = vi.hoisted(() => ({
   getTaskExecution: vi.fn(),
   listExecutionEventsPage: vi.fn(),
-  getSession: vi.fn(),
-  getSessionCall: vi.fn(),
-  getSessionOverview: vi.fn(),
+  getTaskRecord: vi.fn(),
+  getTaskCall: vi.fn(),
+  getTaskOverview: vi.fn(),
   followExecutionEvents: vi.fn(),
 }));
 
@@ -68,7 +68,7 @@ beforeEach(() => {
     created_at: at(2), started_at: at(2), finished_at: at(18),
   });
   api.listExecutionEventsPage.mockResolvedValue({ task_id: "t1", execution_id: "exec-1", events: log(), last_seq: 19 });
-  api.getSession.mockResolvedValue({
+  api.getTaskRecord.mockResolvedValue({
     id: "t1", title: "Survey", goal: null, provider_id: null, primary_bucket: null, status: "active",
     created_at: at(0), updated_at: at(18), runs: [], summary: null,
     findings: [{ id: "f1", source_run_id: "run-9", category: "security", severity: "warning", confidence: "high", kind: "policy", title: "acme-logs policy is public", interpretation: "s3:GetObject to *", status: "open", created_at: at(18) }],
@@ -78,8 +78,8 @@ beforeEach(() => {
         grounding: { evidence_used: ["survey"], evidence_gaps: ["no access logs"], skills_used: ["storageops-security"] }, created_at: at(18) },
     ],
   });
-  api.getSessionCall.mockResolvedValue({ id: "c2", tool_name: "head_bucket", input: { bucket: "acme-logs" }, output: { status: 200 }, status: "success", duration_ms: 300, created_at: at(6) });
-  api.getSessionOverview.mockResolvedValue({
+  api.getTaskCall.mockResolvedValue({ id: "c2", tool_name: "head_bucket", input: { bucket: "acme-logs" }, output: { status: 200 }, status: "success", duration_ms: 300, created_at: at(6) });
+  api.getTaskOverview.mockResolvedValue({
     session_id: "t1", tool_calls: 3, tool_errors: 0, tool_ms: 12300, audit_events: 0, approvals: 0,
     usage: {
       available: true, turns: 1, turns_measured: 1, partial: false,
@@ -166,7 +166,7 @@ describe("ExecutionDetail", () => {
     fireEvent.click(screen.getByTestId("execution-head"));
     const rows = screen.getAllByTestId("trace-row-open");
     fireEvent.click(rows[rows.length - 1]);
-    await waitFor(() => expect(api.getSessionCall).toHaveBeenCalledWith("t1", "c2"));
+    await waitFor(() => expect(api.getTaskCall).toHaveBeenCalledWith("t1", "c2"));
     await waitFor(() => expect(screen.getByTestId("call-detail")).toBeTruthy());
   });
 
