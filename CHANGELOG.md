@@ -6,7 +6,9 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
-_Native core — one Task boundary, one submit path, every data movement behind a Decision. No migration (head stays **030**)._
+## [1.18.0] - 2026-09-24
+
+_Native core — one Task boundary, one submit path, every data movement behind a Decision. No migration (head stays **030**)._ See `docs/releases/1.18.0.md`.
 
 ### Removed
 

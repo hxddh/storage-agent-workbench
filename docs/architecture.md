@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.17.0.** Codex window on the native Agent shell. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
+> **Current architecture baseline: Storage Agent v1.18.0.** Native core under the v1.17.0 Codex window: one submit path, every data movement behind a Decision, reads that never start work, Task vocabulary in product code. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -557,7 +557,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.17.0 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.18.0 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
 
 ### Real-Sidecar E2E
 
