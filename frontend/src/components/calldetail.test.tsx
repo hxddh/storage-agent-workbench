@@ -11,11 +11,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
-import { LiveTrace } from "./LiveTrace";
+import { WorkedGroup } from "./WorkedGroup";
 import type { ToolActivity } from "../types";
 
-const getSessionCall = vi.fn();
-vi.mock("../api", () => ({ getSessionCall: (...a: unknown[]) => getSessionCall(...a) }));
+const getTaskCall = vi.fn();
+vi.mock("../api", () => ({ getTaskCall: (...a: unknown[]) => getTaskCall(...a) }));
 
 const wrap = (node: React.ReactNode) => {
   const out = render(createElement(I18nProvider, null, node));
@@ -31,8 +31,8 @@ const call = (over: Partial<ToolActivity> = {}): ToolActivity => ({
 });
 
 beforeEach(() => {
-  getSessionCall.mockReset();
-  getSessionCall.mockResolvedValue({
+  getTaskCall.mockReset();
+  getTaskCall.mockResolvedValue({
     id: "c1", tool_name: "list_objects", status: "success", duration_ms: 120,
     created_at: "2026-08-05T00:00:00Z",
     input: { target: "acme-logs", prefix: "logs/2026/" },
@@ -42,24 +42,24 @@ beforeEach(() => {
 
 describe("opening a trace row", () => {
   it("shows what the call sent and what it returned", async () => {
-    wrap(createElement(LiveTrace, { items: [call()], sessionId: "s1" }));
+    wrap(createElement(WorkedGroup, { records: [call()], taskId: "s1" }));
     fireEvent.click(screen.getByTestId("trace-row-open"));
     await waitFor(() => expect(screen.getByTestId("call-detail")).toBeTruthy());
     const text = screen.getByTestId("call-detail").textContent ?? "";
     expect(text).toContain("logs/2026/");
     expect(text).toContain("1000 keys");
-    expect(getSessionCall).toHaveBeenCalledWith("s1", "c1");
+    expect(getTaskCall).toHaveBeenCalledWith("s1", "c1");
   });
 
   it("fetches only when the reader asks", () => {
-    wrap(createElement(LiveTrace, { items: [call()], sessionId: "s1" }));
+    wrap(createElement(WorkedGroup, { records: [call()], taskId: "s1" }));
     // A turn can run 60 tools; pre-fetching every payload would defeat the
     // point of the fold that keeps the answer on screen.
-    expect(getSessionCall).not.toHaveBeenCalled();
+    expect(getTaskCall).not.toHaveBeenCalled();
   });
 
   it("closes again on a second click", async () => {
-    wrap(createElement(LiveTrace, { items: [call()], sessionId: "s1" }));
+    wrap(createElement(WorkedGroup, { records: [call()], taskId: "s1" }));
     fireEvent.click(screen.getByTestId("trace-row-open"));
     await waitFor(() => expect(screen.getByTestId("call-detail")).toBeTruthy());
     fireEvent.click(screen.getByTestId("trace-row-open"));
@@ -67,7 +67,7 @@ describe("opening a trace row", () => {
   });
 
   it("opens with the keyboard, not just the mouse", async () => {
-    wrap(createElement(LiveTrace, { items: [call()], sessionId: "s1" }));
+    wrap(createElement(WorkedGroup, { records: [call()], taskId: "s1" }));
     const row = screen.getByTestId("trace-row-open");
     expect(row.getAttribute("tabIndex")).toBe("0");
     fireEvent.keyDown(row, { key: "Enter" });
@@ -75,19 +75,19 @@ describe("opening a trace row", () => {
   });
 
   it("keeps a still-running call closed", () => {
-    wrap(createElement(LiveTrace, { items: [call({ status: "started" })], sessionId: "s1" }));
+    wrap(createElement(WorkedGroup, { records: [call({ status: "started" })], taskId: "s1" }));
     // There is nothing persisted to open yet — the row resolves first.
     expect(screen.queryByTestId("trace-row-open")).toBeNull();
   });
 
   it("stays read-only for history that carries no call id", () => {
-    wrap(createElement(LiveTrace, { items: [call({ id: undefined })], sessionId: "s1" }));
+    wrap(createElement(WorkedGroup, { records: [call({ id: undefined })], taskId: "s1" }));
     expect(screen.queryByTestId("trace-row-open")).toBeNull();
   });
 
   it("says so plainly when the detail is gone", async () => {
-    getSessionCall.mockRejectedValue(new Error("404 tool call not found"));
-    wrap(createElement(LiveTrace, { items: [call()], sessionId: "s1" }));
+    getTaskCall.mockRejectedValue(new Error("404 tool call not found"));
+    wrap(createElement(WorkedGroup, { records: [call()], taskId: "s1" }));
     fireEvent.click(screen.getByTestId("trace-row-open"));
     // A pruned row is a real state (retention prunes tool_calls); it must read
     // as "gone", never as an empty payload that looks like the call sent nothing.

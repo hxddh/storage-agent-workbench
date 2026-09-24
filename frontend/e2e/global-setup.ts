@@ -48,7 +48,9 @@ export default async function globalSetup(): Promise<void> {
     ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", String(SIDECAR_PORT)],
     {
       cwd: sidecarDir,
-      env: { ...process.env, STORAGE_AGENT_DATA_DIR: dataDir },
+      // Due revisits are caught up by the Sidecar's own scheduler (never by a
+      // read); tick fast so a seeded due schedule settles inside a test.
+      env: { ...process.env, STORAGE_AGENT_DATA_DIR: dataDir, STORAGE_AGENT_REVISIT_TICK_SECONDS: "5" },
       stdio: ["ignore", "pipe", "pipe"],
       detached: false,
     },

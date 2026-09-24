@@ -13,18 +13,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { createElement, useRef, type ReactNode } from "react";
 import { useTurnRunner } from "./useTurnRunner";
-import { getSessionRun } from "../sessionRuns";
+import { getLiveTask } from "../liveTasks";
 import { I18nProvider } from "../i18n";
 
 const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(I18nProvider, null, children);
 
 const api = vi.hoisted(() => ({
-  createSession: vi.fn(),
-  getSession: vi.fn(),
-  uploadSessionDataset: vi.fn(),
+  createTask: vi.fn(),
+  getTaskRecord: vi.fn(),
+  uploadTaskDataset: vi.fn(),
   submitErrorTriage: vi.fn(),
-  deleteSession: vi.fn(),
+  deleteTask: vi.fn(),
   createTaskExecution: vi.fn(),
   followExecutionEvents: vi.fn(),
   streamExecutionEvents: vi.fn(),
@@ -45,8 +45,8 @@ function useHarness(initialId: string | null, onFail?: (v: string) => void) {
   const runner = useTurnRunner({
     getText: () => "",
     localId,
-    onSessionCreated: () => {},
-    onSessionDiscarded: () => {},
+    onTaskCreated: () => {},
+    onTaskDiscarded: () => {},
     reload: vi.fn(async () => true),
     onChanged: () => {},
     setText,
@@ -58,7 +58,7 @@ function useHarness(initialId: string | null, onFail?: (v: string) => void) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  api.getSession.mockResolvedValue({ messages: [] });
+  api.getTaskRecord.mockResolvedValue({ messages: [] });
   api.getTaskState.mockResolvedValue({
     active_execution: null, last_execution: null, queued_executions: [], pending_decisions: [],
   });
@@ -84,8 +84,8 @@ describe("the durable execution path", () => {
     expect(api.createTaskExecution).toHaveBeenCalledWith(id, "check the bucket", expect.any(String));
     expect(api.followExecutionEvents).toHaveBeenCalledWith(
       id, "exec-1", expect.anything(), expect.anything());
-    expect(getSessionRun(id).busy).toBe(false);
-    expect(getSessionRun(id).lastMetrics?.messageId).toBe("m1");
+    expect(getLiveTask(id).busy).toBe(false);
+    expect(getLiveTask(id).lastMetrics?.messageId).toBe("m1");
   });
 
   it("steers the CURRENT execution instead of cancelling it", async () => {
@@ -93,14 +93,14 @@ describe("the durable execution path", () => {
     api.steerTaskExecution.mockResolvedValue({ status: "steering", execution: { id: "exec-2" } });
     const { result } = renderHook(() => useHarness(id), { wrapper });
     result.current.localId.current = id;
-    const { patchSessionRun } = await import("../sessionRuns");
-    patchSessionRun(id, { busy: true });
+    const { patchLiveTask } = await import("../liveTasks");
+    patchLiveTask(id, { busy: true });
     await act(async () => {
       await result.current.runner.steer("focus on us-east-1");
     });
     expect(api.steerTaskExecution).toHaveBeenCalledWith(id, "focus on us-east-1");
     expect(api.stopTaskExecution).not.toHaveBeenCalled();
-    patchSessionRun(id, { busy: false });
+    patchLiveTask(id, { busy: false });
   });
 
   it("stops a reattached execution through its durable identity", async () => {
@@ -114,15 +114,15 @@ describe("the durable execution path", () => {
     api.stopTaskExecution.mockResolvedValue({ status: "stopping", execution: { id: "exec-3" } });
     const { result } = renderHook(() => useHarness(id), { wrapper });
     result.current.localId.current = id;
-    const { patchSessionRun } = await import("../sessionRuns");
-    patchSessionRun(id, { busy: true });
+    const { patchLiveTask } = await import("../liveTasks");
+    patchLiveTask(id, { busy: true });
     await act(async () => {
       result.current.runner.stop();
       await Promise.resolve();
       await Promise.resolve();
     });
     expect(api.stopTaskExecution).toHaveBeenCalledWith(id, "exec-3");
-    patchSessionRun(id, { busy: false });
+    patchLiveTask(id, { busy: false });
   });
 
   it("resumes an interrupted execution and follows the new event stream", async () => {
@@ -158,7 +158,7 @@ describe("the live turn (v1.11)", () => {
       on.onTool({ id: "c1", tool: "plan_evidence_import", target: "acme-logs", result: "", status: "started" });
       on.onApprovalOpened?.({ decision_id: "d1", action_type: "import_access_log", title: "Download logs", reason: null, impact: null });
       on.onStatus?.({ status: "waiting", reason: "approval", decision_id: "d1" });
-      const mid = getSessionRun(id);
+      const mid = getLiveTask(id);
       expect(mid.busy).toBe(true);
       expect(mid.waiting).toBe(true);
       expect(mid.items.map((item) => item.kind)).toEqual(["message", "tool", "approval"]);
@@ -167,7 +167,7 @@ describe("the live turn (v1.11)", () => {
       on.onTool({ id: "c1", tool: "plan_evidence_import", target: "acme-logs", result: "312 files", ok: true, status: "completed" });
       on.onDelta("The logs show 403s.");
       on.onMessageCompleted?.({ text: "The logs show 403s.", final: true });
-      const late = getSessionRun(id);
+      const late = getLiveTask(id);
       expect(late.waiting).toBe(false);
       expect(late.answer).toBe("The logs show 403s.");
       expect(late.items[2]).toMatchObject({ kind: "approval", status: "approved" });
@@ -180,9 +180,9 @@ describe("the live turn (v1.11)", () => {
       await result.current.runner.submit("import the access logs");
     });
     expect(seen).not.toBeNull();
-    expect(getSessionRun(id).busy).toBe(false);
-    expect(getSessionRun(id).items).toEqual([]);
-    expect(getSessionRun(id).answer).toBeNull();
+    expect(getLiveTask(id).busy).toBe(false);
+    expect(getLiveTask(id).items).toEqual([]);
+    expect(getLiveTask(id).answer).toBeNull();
   });
 });
 
@@ -201,9 +201,9 @@ describe("turn failure while viewing another session (FE2)", () => {
     });
 
     expect(result.current.setText).not.toHaveBeenCalledWith("my important question");
-    expect(getSessionRun(id).failedText).toBe("my important question");
-    expect(getSessionRun(id).pending).toBeNull();
-    expect(getSessionRun(id).busy).toBe(false);
+    expect(getLiveTask(id).failedText).toBe("my important question");
+    expect(getLiveTask(id).pending).toBeNull();
+    expect(getLiveTask(id).busy).toBe(false);
   });
 });
 
@@ -218,18 +218,18 @@ describe("turn failure while viewing THIS session", () => {
     });
 
     expect(result.current.setText).toHaveBeenCalledWith("keep me");
-    expect(getSessionRun(id).failedText).toBeNull();
-    expect(getSessionRun(id).needKey).toBe(true);
+    expect(getLiveTask(id).failedText).toBeNull();
+    expect(getLiveTask(id).needKey).toBe(true);
   });
 });
 
 describe("the empty-session sweep after a failed first turn", () => {
   it("keeps the ref when the user has already switched away", async () => {
-    api.createSession.mockResolvedValue({ id: "new1" });
-    api.deleteSession.mockResolvedValue(undefined);
+    api.createTask.mockResolvedValue({ id: "new1" });
+    api.deleteTask.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useHarness(null), { wrapper });
-    api.getSession.mockImplementation(async () => {
+    api.getTaskRecord.mockImplementation(async () => {
       result.current.localId.current = "other-session";
       return { messages: [] };
     });
@@ -242,14 +242,14 @@ describe("the empty-session sweep after a failed first turn", () => {
       await Promise.resolve();
     });
 
-    expect(api.deleteSession).toHaveBeenCalledWith("new1");
+    expect(api.deleteTask).toHaveBeenCalledWith("new1");
     expect(result.current.localId.current).toBe("other-session");
   });
 
   it("still clears the ref when that session is the one on screen", async () => {
-    api.createSession.mockResolvedValue({ id: "new2" });
-    api.deleteSession.mockResolvedValue(undefined);
-    api.getSession.mockResolvedValue({ messages: [] });
+    api.createTask.mockResolvedValue({ id: "new2" });
+    api.deleteTask.mockResolvedValue(undefined);
+    api.getTaskRecord.mockResolvedValue({ messages: [] });
 
     const { result } = renderHook(() => useHarness(null), { wrapper });
     await act(async () => {
@@ -260,7 +260,7 @@ describe("the empty-session sweep after a failed first turn", () => {
       await Promise.resolve();
     });
 
-    expect(api.deleteSession).toHaveBeenCalledWith("new2");
+    expect(api.deleteTask).toHaveBeenCalledWith("new2");
     expect(result.current.localId.current).toBeNull();
   });
 });

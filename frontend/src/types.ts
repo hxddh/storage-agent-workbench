@@ -85,7 +85,7 @@ export interface ListObjectsResult {
 
 // --- Sessions (Phase 16) ---
 
-export interface SessionSummaryRow {
+export interface TaskSummaryRow {
   id: string;
   title: string;
   goal: string | null;
@@ -99,7 +99,7 @@ export interface SessionSummaryRow {
   updated_at: string;
 }
 
-export interface SessionRunLink {
+export interface TaskRunLink {
   run_id: string;
   run_type: string;
   role: string | null;
@@ -113,7 +113,7 @@ export interface SessionRunLink {
   created_at: string;
 }
 
-export interface SessionFinding {
+export interface TaskFinding {
   id: string;
   source_run_id: string | null;
   category: string | null;
@@ -144,7 +144,7 @@ export interface Grounding {
   skills_used: string[];
 }
 
-export interface SessionSummaryData {
+export interface TaskSummaryData {
   session_id: string;
   summary_md: string;
   known_facts: Array<Record<string, unknown>>;
@@ -214,9 +214,11 @@ export type TurnItemRef =
   /** The latest plan, at the position of the first `update_plan` call (v1.12). */
   | { kind: "plan"; steps: PlanStep[] }
   /** The runtime compacted the replayed context before this point (v1.12). */
-  | { kind: "compacted"; before_tokens: number | null; after_tokens: number | null };
+  | { kind: "compacted"; before_tokens: number | null; after_tokens: number | null }
+  /** A Steer the running model loop received at this point (v1.18). */
+  | { kind: "steer"; text: string };
 
-export interface SessionMessage {
+export interface TaskMessage {
   id: string;
   role: string;
   content: string | null;
@@ -233,7 +235,7 @@ export interface SessionMessage {
   created_at: string;
 }
 
-export interface SessionDetail {
+export interface TaskRecord {
   id: string;
   title: string;
   goal: string | null;
@@ -242,11 +244,11 @@ export interface SessionDetail {
   status: string;
   created_at: string;
   updated_at: string;
-  runs: SessionRunLink[];
-  findings: SessionFinding[];
-  summary: SessionSummaryData | null;
+  runs: TaskRunLink[];
+  findings: TaskFinding[];
+  summary: TaskSummaryData | null;
   /** The TAIL of the Task document (v0.47.0), not the whole history. */
-  messages: SessionMessage[];
+  messages: TaskMessage[];
   /** How many messages exist in total, so the client can offer "load earlier". */
   message_total?: number;
   /** What the agent itself recorded and replays into every later turn (v0.51.0). */
@@ -373,7 +375,7 @@ export interface TurnMetricsRow extends TokenUsage {
   created_at: string;
 }
 
-export interface SessionActivityItem {
+export interface TaskCallRecord {
   id: string;
   tool_name: string;
   input: Record<string, unknown> | null;
@@ -383,25 +385,7 @@ export interface SessionActivityItem {
   created_at: string;
 }
 
-export interface SessionAuditItem {
-  id: string;
-  event_type: string;
-  payload: Record<string, unknown> | null;
-  run_id: string | null;
-  created_at: string;
-}
-
-export interface BoundedList<T> {
-  session_id: string;
-  items: T[];
-  total: number;
-  offset: number;
-  limit: number;
-  /** True when more rows exist than were returned — never a silent cap. */
-  truncated: boolean;
-}
-
-export interface SessionUsageRollup {
+export interface TaskUsageRollup {
   /** False when NO turn reported tokens — render "unavailable", not zero. */
   available: boolean;
   turns: number;
@@ -415,13 +399,13 @@ export interface SessionUsageRollup {
   duration_ms: number;
 }
 
-export interface SessionOverview {
+export interface TaskOverview {
   session_id: string;
   tool_calls: number;
   tool_errors: number;
   tool_ms: number;
   audit_events: number;
   approvals: number;
-  usage: SessionUsageRollup;
+  usage: TaskUsageRollup;
   turns: TurnMetricsRow[];
 }

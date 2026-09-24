@@ -1,4 +1,4 @@
-import type { SessionRun } from "../sessionRuns";
+import type { LiveTask } from "../liveTasks";
 
 export type AgentTaskState =
   | "idle"
@@ -30,7 +30,7 @@ export type DurableTaskStatus =
  * switches, app restarts and Sidecar restarts (recovery reports needs_attention).
  */
 export function agentTaskState(
-  run: SessionRun,
+  run: LiveTask,
   hasTask: boolean,
   hasDurableDecision = false,
   durableStatus?: DurableTaskStatus | string | null,

@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { ApiError, compactTaskContext } from "../api";
 import { useToast } from "../components/Toast";
 import { useI18n } from "../i18n";
-import { patchSessionRun } from "../sessionRuns";
+import { patchLiveTask } from "../liveTasks";
 import { fmtTokensUnified } from "../lib/usage";
 
 /** v1.15 — single formatter lives in lib/usage; kept here for imports. */
@@ -25,7 +25,7 @@ export function useCompactContext(taskId: string | null) {
     try {
       const result = await compactTaskContext(taskId);
       if (result.compacted) {
-        if (result.after_tokens != null) patchSessionRun(taskId, { contextTokens: result.after_tokens });
+        if (result.after_tokens != null) patchLiveTask(taskId, { contextTokens: result.after_tokens });
         const before = result.before_tokens != null && result.before_tokens > 0 ? result.before_tokens : null;
         toast.success(before != null && result.after_tokens != null
           ? t("compact.done", { before: fmtTokens(before), after: fmtTokens(result.after_tokens) })

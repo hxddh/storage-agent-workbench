@@ -189,6 +189,35 @@ def test_streamed_runtime_titles_the_task_after_the_first_work_result(client):
         assert listed[task["id"]]["title"] == "Acme logs 403 on list"
 
 
+def test_the_title_step_runs_outside_a_write_transaction(client, monkeypatch):
+    """The title step is a network call: the Work Result is committed before
+    it, so the SQLite write lock is never held across the model request."""
+    from app.task_runtime import runtime as task_runtime
+    seen = []
+    original = titling.run_title_step
+
+    def spy(conn, *a, **kw):
+        seen.append(conn.in_transaction)
+        return original(conn, *a, **kw)
+
+    monkeypatch.setattr(titling, "run_title_step", spy)
+    assert task_runtime.titling is titling
+    with FakeModel([text_turn("Answer.")], title="Lock free title") as model:
+        client.post("/model-providers", json={
+            "name": "fake", "provider_type": "openai-compatible",
+            "base_url": model.base_url, "model": "fake-model", "api_key": "not-a-real-key"})
+        task = _task(client)
+        row = _run(client, task["id"], "direction", "t1")
+        assert row["status"] == "completed"
+    assert seen == [False]
+    listed = {t["id"]: t for t in client.get("/agent-tasks").json()}
+    assert listed[task["id"]]["title"] == "Lock free title"
+    events = client.get(f"/agent-tasks/{task['id']}/executions/{row['id']}/events",
+                        params={"deltas": "false"}).text
+    assert events.index("work_result.recorded") < events.index("task.titled") \
+        < events.rindex("execution.status")
+
+
 def test_an_empty_model_title_keeps_the_seed_title(client):
     with FakeModel([text_turn("Answer.")], title=None) as model:
         client.post("/model-providers", json={

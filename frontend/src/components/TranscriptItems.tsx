@@ -16,7 +16,7 @@ import { WorkedGroup } from "./WorkedGroup";
 export const TranscriptItems = memo(function TranscriptItems({
   items,
   live = false,
-  sessionId,
+  taskId,
   startedAt = null,
   onResolve,
   resolvingId = null,
@@ -25,7 +25,7 @@ export const TranscriptItems = memo(function TranscriptItems({
 }: {
   items: TurnItem[];
   live?: boolean;
-  sessionId?: string | null;
+  taskId?: string | null;
   startedAt?: number | null;
   onResolve?: (decisionId: string, resolution: ApprovalResolution, scope: ApprovalScope) => void;
   resolvingId?: string | null;
@@ -51,7 +51,7 @@ export const TranscriptItems = memo(function TranscriptItems({
             <WorkedGroup
               key={`w${index}`}
               records={segment.records}
-              sessionId={sessionId}
+              taskId={taskId}
               live={live && index === lastIndex}
               startedAt={startedAt}
               forceExpanded={findActive}
@@ -60,6 +60,14 @@ export const TranscriptItems = memo(function TranscriptItems({
         }
         if (segment.kind === "plan") {
           return <PlanCard key={`p${index}`} steps={segment.steps} live={live} />;
+        }
+        if (segment.kind === "steer") {
+          return (
+            <div key={`s${index}`} className="turn-steer" data-testid="turn-steer" role="note">
+              <span className="turn-steer-label">{t("turn.steered")}</span>
+              <span className="turn-steer-text">{segment.text}</span>
+            </div>
+          );
         }
         if (segment.kind === "compacted") {
           // An endpoint that reports no usage leaves `before` null (or a measured

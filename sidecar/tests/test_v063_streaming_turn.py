@@ -18,6 +18,7 @@ from __future__ import annotations
 import pytest
 
 from .fake_model import FakeModel, text_turn, tool_turn
+from .turns import wait_for_completion
 
 SKILL = "storageops-lifecycle-cost"
 
@@ -26,12 +27,11 @@ ANSWER = "Objects under logs/ have no expiry, which is the cost.\n"
 
 def _events(client, sid, question="why is storage growing?", turn_id="t1"):
     """Submit a durable Execution and return its event log, in order."""
-    from app.task_runtime import runtime
     r = client.post(f"/agent-tasks/{sid}/executions",
                     json={"direction": question, "turn_id": turn_id})
     assert r.status_code in (200, 201), r.text
     execution = r.json()["execution"]
-    runtime.wait_for_completion(execution["id"], 60.0)
+    wait_for_completion(execution["id"], 60.0)
     res = client.get(f"/agent-tasks/{sid}/events?after=0&limit=1000")
     assert res.status_code == 200, res.text[:200]
     return [(e["event_type"], e["payload"]) for e in res.json()["events"]

@@ -1,7 +1,7 @@
 """Tests for Phase 05 DuckDB-backed access-log and inventory analysis.
 
 Uses local sample files only (no live AWS/BOS/MinIO). Runs execute synchronously
-via a monkeypatched run_service.start for deterministic assertions.
+through ``tests.runs_helper`` (``run_service.run_sync``).
 """
 
 import json
@@ -12,6 +12,8 @@ import pytest
 
 from app import config, run_service
 from app.analysis import access_logs, inventory
+
+from . import runs_helper
 
 # --- sample data ------------------------------------------------------------
 
@@ -312,7 +314,7 @@ def test_top_large_objects_capped_at_20(tmp_path):
     assert len(m["top_large_objects"]) == 20
 
 
-# --- full run flow (HTTP) ---------------------------------------------------
+# --- full run flow (run_service) -----------------------------------------------
 
 
 @pytest.fixture()
@@ -321,19 +323,8 @@ def sync_runs(monkeypatch):
 
 
 def _run_analysis(client, run_type, dataset_type, filename, content, prompt):
-    created = client.post(
-        "/runs", json={"run_type": run_type, "user_prompt": prompt, "title": f"{run_type} test"}
-    ).json()
-    run_id = created["run_id"]
-    up = client.post(
-        f"/runs/{run_id}/datasets/upload",
-        files={"file": (filename, content.encode(), "text/plain")},
-        data={"dataset_type": dataset_type},
-    )
-    assert up.status_code == 200, up.text
-    msg = client.post(f"/runs/{run_id}/message", json={"content": prompt})
-    assert msg.status_code == 200
-    return run_id
+    return runs_helper.run(run_type, user_prompt=prompt, title=f"{run_type} test",
+                           dataset=(dataset_type, filename, content), content=prompt)
 
 
 def test_access_log_run_end_to_end(client, sync_runs):
@@ -360,17 +351,22 @@ def test_access_log_run_end_to_end(client, sync_runs):
     assert "192.0.2.x" in report or "203.0.113.x" in report
 
 
-def test_access_log_run_sse_events(client, sync_runs):
+def test_access_log_run_trace_is_masked(client, sync_runs):
+    """The run's recorded trace (tool_calls rows) is its progress record — no
+    canned plan, and client IPs are masked there too."""
     run_id = _run_analysis(client, "access_log_analysis", "access_log",
                            "a.log", ACCESS_LOG_TEXT, "analyze")
-    text = client.get(f"/runs/{run_id}/events").text
-    types = [json.loads(ln[5:].strip())["type"]
-             for ln in text.splitlines() if ln.startswith("data:")]
-    # No canned 'plan' event — runs expose their real tool trace, not a fixed plan.
-    for required in ("tool_call_started", "tool_call_finished", "finding", "report_ready"):
-        assert required in types
-    assert "plan" not in types
-    assert "192.0.2.10" not in text  # masked even in event stream
+    conn = _db()
+    try:
+        rows = conn.execute(
+            "SELECT tool_name, input_json_sanitized, output_json_sanitized FROM tool_calls "
+            "WHERE run_id = ?", (run_id,)).fetchall()
+    finally:
+        conn.close()
+    names = [r[0] for r in rows]
+    assert "analyze_access_logs" in names and "generate_markdown_report" in names
+    assert "plan" not in names
+    assert "192.0.2.10" not in json.dumps([list(r) for r in rows])
 
 
 def test_inventory_run_end_to_end(client, sync_runs):
@@ -397,25 +393,3 @@ def test_datasets_endpoint_lists_uploaded(client, sync_runs):
                            "inv.csv", INVENTORY_CSV, "x")
     ds = client.get("/datasets").json()
     assert any(d["run_id"] == run_id and d["dataset_type"] == "inventory" for d in ds)
-
-
-def test_dataset_upload_over_cap_is_413(client, monkeypatch):
-    """The upload streams to disk with a size cap; exceeding it → 413, not an
-    unbounded in-memory read (fix 6)."""
-    from app.routers import datasets as datasets_router
-
-    monkeypatch.setattr(datasets_router, "MAX_UPLOAD_BYTES", 1024)  # 1 KiB for the test
-    created = client.post(
-        "/runs", json={"run_type": "inventory_analysis", "user_prompt": "x", "title": "cap"}
-    ).json()
-    run_id = created["run_id"]
-    big = b"k,v\n" + b"x" * 5000
-    up = client.post(
-        f"/runs/{run_id}/datasets/upload",
-        files={"file": ("big.csv", big, "text/csv")},
-        data={"dataset_type": "inventory"},
-    )
-    assert up.status_code == 413
-    # nothing persisted for this run
-    ds = client.get("/datasets").json()
-    assert not any(d["run_id"] == run_id for d in ds)

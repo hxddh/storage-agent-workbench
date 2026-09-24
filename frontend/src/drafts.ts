@@ -12,7 +12,7 @@ const KEY = "saw.drafts";
 /** A draft is a question, not a document; this is far above any real one and
  * exists so a pathological paste cannot fill the storage quota. */
 const MAX_DRAFT = 20_000;
-/** Drafts for at most this many sessions, newest-first; the rest are dropped. */
+/** Drafts for at most this many tasks, newest-first; the rest are dropped. */
 const MAX_SESSIONS = 50;
 
 /** The not-yet-created task. Typing into a fresh Composer is the MOST common
@@ -20,7 +20,7 @@ const MAX_SESSIONS = 50;
  * is sent — so it gets a stable key of its own rather than being dropped. */
 const NEW_SESSION_KEY = "__new__";
 
-const keyFor = (sessionId: string | null) => sessionId ?? NEW_SESSION_KEY;
+const keyFor = (taskId: string | null) => taskId ?? NEW_SESSION_KEY;
 
 type Store = Record<string, string>;
 
@@ -45,15 +45,15 @@ function write(store: Store): void {
   }
 }
 
-/** The saved draft for a session, or "" — never null, so the composer can use
+/** The saved draft for a task, or "" — never null, so the composer can use
  * it as its value directly. */
-export function loadDraft(sessionId: string | null): string {
-  return read()[keyFor(sessionId)] ?? "";
+export function loadDraft(taskId: string | null): string {
+  return read()[keyFor(taskId)] ?? "";
 }
 
-/** Save (or clear, when `text` is empty) one session's draft. */
-export function saveDraft(sessionId: string | null, text: string): void {
-  const key = keyFor(sessionId);
+/** Save (or clear, when `text` is empty) one task's draft. */
+export function saveDraft(taskId: string | null, text: string): void {
+  const key = keyFor(taskId);
   const store = read();
   if (!text) {
     if (!(key in store)) return;
@@ -61,7 +61,7 @@ export function saveDraft(sessionId: string | null, text: string): void {
   } else {
     store[key] = text.slice(0, MAX_DRAFT);
     // Re-insert last so the key order is oldest-first and trimming drops the
-    // sessions the user has not touched in longest.
+    // tasks the user has not touched in longest.
     const keys = Object.keys(store);
     if (keys.length > MAX_SESSIONS) {
       for (const k of keys.slice(0, keys.length - MAX_SESSIONS)) delete store[k];
@@ -70,7 +70,7 @@ export function saveDraft(sessionId: string | null, text: string): void {
   write(store);
 }
 
-/** Drop a session's draft (it was sent, or the session was deleted). */
-export function clearDraft(sessionId: string | null): void {
-  saveDraft(sessionId, "");
+/** Drop a task's draft (it was sent, or the task was deleted). */
+export function clearDraft(taskId: string | null): void {
+  saveDraft(taskId, "");
 }

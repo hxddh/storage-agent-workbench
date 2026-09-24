@@ -677,11 +677,17 @@ def _finish(conn: sqlite3.Connection, execution: dict[str, Any], handle: LiveExe
     # user rename wins). Lands in the event log before the terminal status so
     # the client's settle refresh sees the new title.
     if title_step and not stopped:
+        # The step makes a network call (bounded, but seconds): commit the Work
+        # Result first so the SQLite write lock is not held across it. The
+        # execution row is still `running`, so no follower settles early; the
+        # title and its event then land in their own short transaction.
+        conn.commit()
         titled = titling.run_title_step(conn, task_id, execution["direction"] or "",
                                         data.get("answer") or "", creds)
         if titled:
             store.append_event(conn, exec_id, task_id, "task.titled",
                                {"title": titled}, commit=False)
+        conn.commit()
     final_status = store.EXEC_CANCELLED if stopped else store.EXEC_COMPLETED
     # A steer that arrived while the model was already writing its answer was
     # never injectable — carry it forward as its own QUEUED execution so the
@@ -725,28 +731,6 @@ def _finish(conn: sqlite3.Connection, execution: dict[str, Any], handle: LiveExe
             pass
 
 
-def wait_for_completion(execution_id: str, timeout_s: float = 150.0) -> bool:
-    """Block until the execution's worker finishes (compat for the blocking
-    endpoint). True when it finished within the timeout. Falls back to polling
-    the durable row when no live handle exists (worker in another lifetime)."""
-    handle = live_handle(execution_id)
-    if handle is not None:
-        return handle.done_event.wait(timeout_s)
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        conn = connect()
-        try:
-            row = store.get_execution(conn, execution_id)
-        finally:
-            conn.close()
-        if row is None:
-            return True
-        if row["status"] not in store.EXEC_ACTIVE_STATUSES:
-            return True
-        time.sleep(0.25)
-    return False
-
-
 def _context_window(creds: dict[str, Any] | None) -> int | None:
     """The model's context window this execution ran under (for the client's
     context meter). None when unknown — never a fabricated size."""
@@ -784,5 +768,5 @@ def _reset_for_tests() -> None:
 
 
 __all__ = ["submit", "steer", "stop", "resume", "on_decision_resolved",
-           "settle_waiting_executions", "wait_for_completion", "live_handle",
+           "settle_waiting_executions", "live_handle",
            "LiveExecution"]

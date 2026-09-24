@@ -12,9 +12,11 @@ The runtime is split by responsibility (v1.11.0):
 
 This module owns what must be ONE binding process-wide: the endpoint capability
 memories, the SDK agent builder, the streamed run starter, and the
-``SESSION_LOOP`` test seam. ``answer`` (blocking) drives the same streaming
-implementation as ``build_stream`` + ``stream_events_for`` — there is one turn
-implementation. Names the rest of the app and the tests reach through this
+``SESSION_LOOP`` test seam. The task runtime drives ``build_stream`` +
+``stream_events_for``; ``answer`` runs one turn to completion through
+``SESSION_LOOP`` (the runtime uses it only when a test has patched that seam),
+and the default seam drives the same streaming implementation — there is one
+turn implementation. Names the rest of the app and the tests reach through this
 module are re-exported below.
 """
 from __future__ import annotations
@@ -190,7 +192,7 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
                                          explicit_window=creds.get("context_window"),
                                          explicit_token_budget=creds.get("turn_token_budget"),
                                          cancel_event=spec.get("cancel_event"))
-    spec["budget"] = budget  # readable by the blocking driver, which owns `spec`
+    spec["budget"] = budget  # readable by the SESSION_LOOP driver, which owns `spec`
     # Steer delivery is the OUTERMOST wrapper: a steer note must ride on every
     # tool return (real payloads and budget statuses alike) and stay outside the
     # untrusted-data envelope — it is the user's own direction.
@@ -257,17 +259,16 @@ def _streamed_session_loop(spec: dict[str, Any]) -> dict[str, Any]:
     """Default SESSION_LOOP: drive the SAME streaming implementation to
     completion on a private event loop and return the final contract dict.
 
-    This is the blocking endpoint's turn — there is no second, parallel
-    tool-loop implementation. Tests monkeypatch SESSION_LOOP with fakes that
-    return plain text; ``answer`` handles both shapes.
+    There is no second, parallel tool-loop implementation. Tests monkeypatch
+    SESSION_LOOP with fakes that return plain text; ``answer`` handles both
+    shapes.
     """
     try:
         async def _drive() -> dict[str, Any]:
             # Runner.run_streamed schedules the agent loop via asyncio.create_task,
             # so it MUST be started from WITHIN the running loop — not before it.
             # Calling _start_streamed_run() outside run_until_complete raises
-            # "no running event loop" (the blocking-fallback crash a client hit
-            # when it fell back to POST /messages after switching sessions).
+            # "no running event loop".
             clients: list[Any] = []
             try:
                 result, finalize, _ = _start_streamed_run(spec, clients)
@@ -326,12 +327,12 @@ def answer(
     attachments: list[dict[str, Any]] | None = None,
     cancel_event: Any = None,
 ) -> dict[str, Any]:
-    """Skill-grounded, sanitized session answer contract. Raises AgentUnavailable.
+    """Skill-grounded, sanitized turn contract. Raises AgentUnavailable.
 
-    Returns {answer, skills_used, evidence_used, evidence_gaps,
-    next_action_proposals} — all sanitized + CoT-stripped; proposals coerced +
-    forbidden-token-filtered. Drives the same streaming implementation as the
-    SSE endpoint (via SESSION_LOOP) to completion.
+    Returns {answer, skills_used, evidence_used, evidence_gaps, tool_activity,
+    ...} — all sanitized + CoT-stripped; grounding is derived from the tool
+    trace. Runs one turn to completion through SESSION_LOOP (whose default
+    drives the same streaming implementation the task runtime follows).
     """
     prompt, skill_names, context = _build_prompt(session, summary, recent_messages, user_message,
                                                  conn, attachments, model=creds.get("model"),
@@ -351,7 +352,7 @@ def answer(
     return _finalize_contract(raw, skill_names, activity, cap=_answer_cap(creds))
 
 
-# --- Streaming path (SDK-only; used by the SSE endpoint) --------------------
+# --- Streaming path (SDK-only; driven by the task runtime) ------------------
 
 def build_stream(
     session: dict[str, Any],
@@ -372,9 +373,9 @@ def build_stream(
     ``clients`` may be passed in so the CALLER owns closing them even if this
     setup raises after a client was created (see _start_streamed_run). ``budget``
     is the per-turn tool-output budget state; pass it to ``stream_events_for`` so
-    a budget-exhausted turn is marked cut-short with a "continue" proposal.
-    Raises AgentUnavailable if the SDK/key is unavailable — caller should then
-    fall back to the blocking endpoint.
+    a budget-exhausted turn is marked cut short on its Work Result.
+    Raises AgentUnavailable if the SDK/key is unavailable — the task runtime
+    then fails the Execution with that (sanitized) reason.
     """
     if clients is None:
         clients = []

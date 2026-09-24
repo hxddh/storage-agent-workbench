@@ -1,8 +1,9 @@
 """Run launch orchestration.
 
-A run executes in a background thread with its own SQLite connection, publishing
-events to the in-memory bus. No Redis/Celery/external queue. Tests monkeypatch
-``start`` to run synchronously.
+A run executes on its own SQLite connection — synchronously via ``run_sync``
+(the Agent's session tools and tests) or in a background thread via ``start``
+(evidence import's analysis hand-off). No HTTP route creates or starts a run;
+progress is the durable ``runs`` / ``tool_calls`` rows, not an event bus.
 """
 
 from __future__ import annotations
@@ -10,7 +11,6 @@ from __future__ import annotations
 import threading
 
 from . import config, db
-from .events import bus
 from .repositories import evidence_imports as evidence_imports_repo
 from .repositories import runs as runs_repo
 from .runs.access_log_run import execute_access_log_run
@@ -57,37 +57,31 @@ def run_sync(run_id: str) -> None:
     try:
         row = runs_repo.get_row(conn, run_id)
         if row is None:
-            # The router already bus.create()d this run's stream; a row deleted
-            # in the race window must still close it, or the SSE stays open
-            # until the client-side timeout.
-            bus.mark_done(run_id)
+            # Deleted in the race window: nothing to execute.
             return
         session_id = row["session_id"]
         executor = _EXECUTORS.get(row["run_type"])
         if executor is None:
             # Unknown run_type: mark the run failed (not left forever-pending) so
-            # a reader/UI sees a terminal state, then surface the error + close.
+            # a reader sees a terminal state with the reason.
             runs_repo.set_status(conn, run_id, "failed",
                                  final_summary=f"run_type '{row['run_type']}' is not executable")
-            bus.publish(run_id, {"type": "error", "message": f"run_type '{row['run_type']}' is not executable"})
-            bus.mark_done(run_id)
             return
         try:
             executor(conn, run_id)
         except Exception as exc:  # noqa: BLE001 - executor scaffolding failed before its own guard
             # A failure BEFORE the executor's internal try (e.g. get_row raising)
-            # would otherwise die silently on this thread, leaving the run pending
-            # and the SSE stream open. Mark it failed and close the stream.
+            # would otherwise die silently on this thread, leaving the run pending.
+            # Mark it failed with the sanitized reason — scrub_paths too: an
+            # OSError/sqlite failure carries the data dir's absolute path.
             from .security.redaction import redact_text
+            detail = config.scrub_paths(redact_text(str(exc))).strip()
             try:
-                runs_repo.set_status(conn, run_id, "failed", final_summary="Run failed to start.")
+                runs_repo.set_status(
+                    conn, run_id, "failed",
+                    final_summary=(f"Run failed to start. {detail}".strip())[:500])
             except Exception:  # noqa: BLE001 - best effort; never mask the original
                 pass
-            # scrub_paths too: this error renders in the UI via SSE, and an
-            # OSError/sqlite failure carries the data dir's absolute path.
-            bus.publish(run_id, {"type": "error",
-                                 "message": config.scrub_paths(redact_text(str(exc)))})
-            bus.mark_done(run_id)
             return
         # After the run finishes, refresh its session's deterministic summary.
         _finalize_session(conn, run_id, session_id)

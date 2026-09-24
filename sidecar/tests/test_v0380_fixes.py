@@ -4,8 +4,6 @@
        failed turn doesn't make the session's next turn hang 120 s.
   API3 set_result/fail are session-bound: a turn_id collision can't deliver one
        session's result to another.
-  CC2  bus.create() resets a re-created (previously done) run so a retry gets a
-       fresh SSE stream, not the old failure replayed + instant close.
   API1 _safe_filename maps "." / ".." / "" to a safe default (no os.replace onto
        a directory → 500).
   API6 config.scrub_paths collapses the data dir / home dir out of error text.
@@ -61,21 +59,6 @@ def test_fail_does_not_cross_sessions():
     turn_guard.fail("dup2", "A failed", "sessA")
     hB = turn_guard.get_handle("dup2", "sessB")
     assert hB is None or not hB.failed  # B's handle not marked failed by A
-
-
-# --- CC2: event bus resets a re-created done run -----------------------------
-
-def test_bus_create_resets_a_previously_done_run():
-    from app.events import EventBus
-
-    bus = EventBus()
-    bus.create("r1")
-    bus.publish("r1", {"type": "error", "msg": "old failure"})
-    bus.mark_done("r1")
-    # Retry: re-create the same run id.
-    bus.create("r1")
-    evs, _cursor, done = bus.snapshot("r1", 0)
-    assert evs == [] and done is False  # fresh stream, not the old failure + done
 
 
 # --- API1: filename sanitizer rejects directory refs -------------------------

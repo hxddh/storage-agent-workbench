@@ -3,8 +3,8 @@ import { closeTopOverlay } from "./lib/overlayStack";
 import { AgentTask } from "./components/AgentTask";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { CommandPalette } from "./components/CommandPalette";
-import { deleteSession, patchSession } from "./api";
-import { dropSessionRun, getSessionRun, useSessionRun, useSessionRunIndexVersion } from "./sessionRuns";
+import { deleteTask, updateTask } from "./api";
+import { dropLiveTask, getLiveTask, useLiveTask, useLiveTaskIndexVersion } from "./liveTasks";
 import { useSidecarHealth } from "./hooks/useSidecarHealth";
 import { useI18n } from "./i18n";
 import { useTheme } from "./theme";
@@ -50,7 +50,7 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: 
 }) {
   const copy = useNavigationCopy();
   const { t } = useI18n();
-  const run = useSessionRun(task?.id ?? null);
+  const run = useLiveTask(task?.id ?? null);
   const state = task ? agentTaskState(run, true, task.requires_decision, task.task_status) : "idle";
   const stateLabel = state in copy.state ? copy.state[state as keyof typeof copy.state] : "";
   const title = task ? (task.title || t("common.untitled")) : copy.appTitle;
@@ -88,14 +88,14 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: 
  * already follows — no polling, no second event path.
  */
 function useSettleNotifications(tasks: AgentTaskSummary[], activeTaskId: string | null) {
-  const version = useSessionRunIndexVersion();
+  const version = useLiveTaskIndexVersion();
   const copy = useNavigationCopy();
   const { t } = useI18n();
   const busyRef = useRef(new Map<string, boolean>());
   useEffect(() => {
     const seen = busyRef.current;
     for (const task of tasks) {
-      const busy = getSessionRun(task.id).busy;
+      const busy = getLiveTask(task.id).busy;
       const was = seen.get(task.id) ?? false;
       seen.set(task.id, busy);
       if (!was || busy) continue;
@@ -158,12 +158,12 @@ export default function App() {
   const fail = (error: unknown) => toast.error(`${t("app.actionFailed")} ${String(error)}`);
   const taskActions: TaskActions = {
     onRename: async (task, title) => {
-      try { await patchSession(task.id, { title }); } catch (error) { fail(error); }
+      try { await updateTask(task.id, { title }); } catch (error) { fail(error); }
       refreshTasks();
       if (task.id === activeTaskId) setTaskReloadKey((key) => key + 1);
     },
     onDelete: async (task) => {
-      try { await deleteSession(task.id); if (activeTaskId === task.id) setActiveTaskId(null); dropSessionRun(task.id); } catch (error) { fail(error); }
+      try { await deleteTask(task.id); if (activeTaskId === task.id) setActiveTaskId(null); dropLiveTask(task.id); } catch (error) { fail(error); }
       refreshTasks();
     },
   };

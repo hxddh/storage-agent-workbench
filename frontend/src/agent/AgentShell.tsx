@@ -4,7 +4,7 @@ import { ArtifactsPanel } from "./ArtifactsPanel";
 import { agentShellReducer, initialAgentShellState } from "./model";
 import { useAgentTaskProjection } from "./useAgentTaskProjection";
 import { useTaskProvenance } from "../hooks/useTaskProvenance";
-import { useSessionRun } from "../sessionRuns";
+import { useLiveTask } from "../liveTasks";
 
 const ARTIFACTS_KEY = "saw.artifacts.open";
 const OVERLAY_BELOW_PX = 960;
@@ -41,7 +41,7 @@ export function AgentShell({
 }) {
   const [state, dispatch] = useReducer(agentShellReducer, taskId, (id) => initialAgentShellState(id, readOpenPreference()));
   const narrow = useNarrowWindow();
-  const run = useSessionRun(taskId ?? "");
+  const run = useLiveTask(taskId ?? "");
   const [reloadKey, setReloadKey] = useState(0);
   const open = state.artifactsOpen && Boolean(taskId);
   const projection = useAgentTaskProjection(taskId, open, state.selection, reloadKey);

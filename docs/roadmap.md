@@ -1,16 +1,30 @@
 # Roadmap
 
-> **Status: delivered in v1.17.0.** v1.16.0 finished the true native Agent;
-> v1.16.1 patched tables, search, wrapping, and a first Codex-grade polish
-> pass (`docs/releases/1.16.1.md`). This file recorded the plan for
-> **v1.17.0 — Codex window**. That work shipped. The review of v1.16.1 and
-> the shipped workstreams live in `docs/releases/1.17.0.md`.
+> **Status: delivered in v1.18.0 — Native core.** v1.16.0 finished the true
+> native Agent; v1.16.1 patched tables and search; v1.17.0 shipped the Codex
+> window (`docs/releases/1.17.0.md`). v1.18.0 reviewed that window against
+> the runtime underneath it and removed what was not native: a second submit
+> path, Decision-less data movement, a read that started work, and session/run
+> vocabulary in product code (`docs/releases/1.18.0.md`).
 
-> **Baseline: Storage Agent v1.17.0.** The product invariant is unchanged:
+> **Baseline: Storage Agent v1.18.0.** The product invariant is unchanged:
 > **the Agent Task is the application.** The window is sidebar · title bar ·
 > one Task document · one Composer. UI and UE match Codex's quiet Agent
 > surface — same chrome, same transcript rhythm, same Composer craft —
 > while remaining a storage Agent.
+
+## Native core (shipped in v1.18.0)
+
+| Boundary | v1.18 |
+| --- | --- |
+| Submit | one path: `POST /agent-tasks/{id}/executions`; no `/runs` POST/message/events/upload, no run event bus |
+| Data movement | only the gated `import_evidence` tool behind a Decision; no `/evidence-imports` plan/confirm/run |
+| Reads | never submit work; revisits run on the Sidecar's own clock |
+| Steer | a `steer` turn item (*Steered* line), never a tool row |
+| Frontend | `AgentTask` is the one composition root; `liveTasks` / `useTaskDocument` / `taskId`; Task-named `api/` adapters |
+
+Follow-up: move the runtime tests off the blocking `SESSION_LOOP` /
+`answer()` seam onto the streamed path production uses.
 
 ## Codex window (shipped)
 
@@ -43,7 +57,7 @@ invents a worker, plan, or submit path the Sidecar does not expose.
 ## Next
 
 No next version is planned in this file. Follow-up is ordinary defects against
-the Codex window contract and the v1.17.0 security floor. Non-goals remain:
+the Codex window contract and the v1.18.0 security floor. Non-goals remain:
 coding-Agent features, a second submit path, slash SKUs, suggestion cards, a
 painted engine grid, the historical Review sheet, artifact chips, a grey
 Direction block, Next Actions, a metrics footer, table pagination, a second

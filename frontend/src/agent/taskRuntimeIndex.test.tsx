@@ -1,13 +1,13 @@
 import { act, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import {
-  dropSessionRun,
-  patchSessionRun,
-  useSessionRunIndexVersion,
-} from "../sessionRuns";
+  dropLiveTask,
+  patchLiveTask,
+  useLiveTaskIndexVersion,
+} from "../liveTasks";
 
 function RuntimeIndexProbe() {
-  const version = useSessionRunIndexVersion();
+  const version = useLiveTaskIndexVersion();
   return <output data-testid="runtime-index-version">{version}</output>;
 }
 
@@ -17,14 +17,14 @@ describe("Agent task runtime index", () => {
     render(<RuntimeIndexProbe />);
     const before = Number(screen.getByTestId("runtime-index-version").textContent);
 
-    act(() => patchSessionRun(taskId, { busy: true, pending: "inspect bucket" }));
+    act(() => patchLiveTask(taskId, { busy: true, pending: "inspect bucket" }));
     const working = Number(screen.getByTestId("runtime-index-version").textContent);
     expect(working).toBeGreaterThan(before);
 
-    act(() => patchSessionRun(taskId, { busy: false, pending: null }));
+    act(() => patchLiveTask(taskId, { busy: false, pending: null }));
     const settled = Number(screen.getByTestId("runtime-index-version").textContent);
     expect(settled).toBeGreaterThan(working);
 
-    act(() => dropSessionRun(taskId));
+    act(() => dropLiveTask(taskId));
   });
 });

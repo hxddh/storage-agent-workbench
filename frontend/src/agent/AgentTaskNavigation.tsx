@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { useI18n, type Lang } from "../i18n";
 import { localDayKey, previousDayKey, timeAgo } from "../lib/time";
-import { useSessionRun, useSessionRunIndexVersion } from "../sessionRuns";
+import { useLiveTask, useLiveTaskIndexVersion } from "../liveTasks";
 import { NAV_DAY_LABELS, useNavigationCopy } from "./navigationCopy";
 import {
   DEFAULT_TASK_NAV_WIDTH,
@@ -64,7 +64,7 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
 }) {
   const { t } = useI18n();
   const copy = useNavigationCopy();
-  const run = useSessionRun(task.id);
+  const run = useLiveTask(task.id);
   const selected = task.id === activeTaskId;
   const menuOpen = menuId === task.id;
   const renaming = renamingId === task.id;
@@ -167,7 +167,7 @@ export type AgentTaskNavigationProps = {
 export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, onOpenSettings, actions, editRequest = null, width, collapsed, trafficLights, onToggleCollapse, onResize }: AgentTaskNavigationProps) {
   const copy = useNavigationCopy();
   const { lang } = useI18n();
-  useSessionRunIndexVersion();
+  useLiveTaskIndexVersion();
   const [menuId, setMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);

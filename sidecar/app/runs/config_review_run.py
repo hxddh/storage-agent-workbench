@@ -12,7 +12,6 @@ from collections import Counter
 from typing import Any
 
 from .. import config
-from ..events import bus
 from ..repositories import cloud_providers as cloud_repo
 from ..s3 import config_tools as ct
 from ..s3.scope import check_scope
@@ -53,9 +52,6 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
     def call_and_collect(name: str, raw_input: dict[str, Any], executor) -> dict[str, Any]:
         out = run_tool_with_events(conn, run_id, name, raw_input, executor)
         for f in out.get("findings", []) or []:
-            # Config findings use 'category'; map to the SSE 'severity' slot.
-            bus.publish(run_id, {"type": "finding", "severity": f["category"],
-                                 "title": f["title"], "detail": f["detail"]})
             all_findings.append(f)
         return out
 
@@ -84,8 +80,6 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
                                      "title": "Performance profile skipped (prefix scope)",
                                      "detail": listing_denial}]}
         for f in performance["findings"]:
-            bus.publish(run_id, {"type": "finding", "severity": f["category"],
-                                 "title": f["title"], "detail": f["detail"]})
             all_findings.append(f)
     else:
         performance = call_and_collect(
@@ -111,7 +105,6 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
         + (f" Details: {digest}" + (f" (+{more} more in the report)" if more > 0 else "") + "."
            if digest else "")
     )
-    bus.publish(run_id, {"type": "summary", "content": summary_text})
 
     sections = {
         "security": security,

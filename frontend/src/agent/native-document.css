@@ -730,6 +730,25 @@
 .plan-step-text { min-width: 0; overflow-wrap: break-word; }
 
 /* v1.12 — the compaction marker: one muted line between segments, never a card. */
+/* A Steer the running Execution received (v1.18): the user's own words,
+   quiet, at the point the model loop took them — not a tool row. */
+.turn-steer {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: min(var(--doc-measure), 100%);
+  padding-left: 10px;
+  border-left: 1px solid var(--edge);
+  color: var(--gray-400);
+  font-size: var(--text-xs);
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+.turn-steer-label {
+  flex: none;
+  color: var(--gray-500);
+}
+
 .context-compacted {
   display: flex;
   align-items: center;

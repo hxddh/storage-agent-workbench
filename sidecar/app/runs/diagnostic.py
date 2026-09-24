@@ -1,7 +1,7 @@
 """Deterministic diagnostic run executor.
 
 Drives the existing Phase 03 read-only tools through the shared tool runner so
-every call is recorded against the run. Emits SSE events as it goes. No LLM,
+every call is recorded against the run. No LLM,
 no DuckDB, no direct boto3 — and no destructive operations.
 
 A diagnostic that successfully ran its probes COMPLETES even when the target is
@@ -15,7 +15,6 @@ import sqlite3
 from typing import Any
 
 from .. import config
-from ..events import bus
 from ..repositories import cloud_providers as cloud_repo
 from ..s3 import tools as s3_tools
 from ..s3.scope import check_scope
@@ -114,12 +113,9 @@ def _diagnostic_body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any])
          lambda: s3_tools.list_objects_v2(conn, provider_id, bucket, DIAGNOSTIC_MAX_KEYS, prefix))
 
     findings = _derive_findings(evidence)
-    for f in findings:
-        bus.publish(run_id, {"type": "finding", **f})
 
     all_ok = all(evidence.get(n, {}).get("success") for n in _TOOLS)
     summary = _summary_text(all_ok, evidence)
-    bus.publish(run_id, {"type": "summary", "content": summary})
 
     # Route report generation through run_tool_with_events like every other
     # executor, so it lands a tool_call + audit row (rule 17: report generation is

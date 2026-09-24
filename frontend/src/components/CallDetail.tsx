@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { getSessionCall } from "../api";
+import { getTaskCall } from "../api";
 import { useCopy } from "../hooks/useCopy";
 import { useI18n } from "../i18n";
-import type { SessionActivityItem } from "../types";
+import type { TaskCallRecord } from "../types";
 
 /** Pretty-print a sanitized payload for reading, not for round-tripping. */
 function present(value: unknown): string {
@@ -72,22 +72,22 @@ function PayloadBlock({ label, value }: { label: string; value: unknown }) {
  * either side directly copyable. On a narrow window the two payloads stack; on
  * a wide task work area they sit side-by-side for direct comparison.
  */
-export function CallDetail({ sessionId, callId }: { sessionId: string; callId: string }) {
+export function CallDetail({ taskId, callId }: { taskId: string; callId: string }) {
   const { t } = useI18n();
-  const [row, setRow] = useState<SessionActivityItem | null>(null);
+  const [row, setRow] = useState<TaskCallRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     setRow(null);
     setError(null);
-    getSessionCall(sessionId, callId)
+    getTaskCall(taskId, callId)
       .then((result) => alive && setRow(result))
       .catch((reason) => alive && setError(reason instanceof Error ? reason.message : String(reason)));
     return () => {
       alive = false;
     };
-  }, [sessionId, callId]);
+  }, [taskId, callId]);
 
   if (error) {
     return (

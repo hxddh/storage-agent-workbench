@@ -15,7 +15,11 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Callable
-from typing import Any, TypedDict
+from typing import Any
+
+# pydantic refuses `typing.TypedDict` below Python 3.12 (the package supports
+# >=3.10); the typing_extensions one is accepted everywhere.
+from typing_extensions import TypedDict
 
 from ..security.redaction import redact_text
 from .guardrails import strip_chain_of_thought

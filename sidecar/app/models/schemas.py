@@ -224,13 +224,6 @@ class RunCreate(BaseModel):
     session_id: str | None = None
 
 
-class RunCreated(BaseModel):
-    run_id: str
-    status: str
-    title: str | None
-    created_at: str
-
-
 class RunSummary(BaseModel):
     id: str
     run_type: str
@@ -279,10 +272,6 @@ class RunDetail(BaseModel):
     tool_calls: list[ToolCallOut]
 
 
-class MessageCreate(BaseModel):
-    content: str = Field(min_length=1)
-
-
 class ReportOut(BaseModel):
     run_id: str
     report_path: str
@@ -311,15 +300,6 @@ class DatasetOut(BaseModel):
     ingest_cap: int | None = None
     status: str
     created_at: str
-
-
-class DatasetUploadResponse(BaseModel):
-    dataset_id: str
-    run_id: str
-    dataset_type: str
-    filename: str
-    status: str
-    row_count: int | None = None
 
 
 class SessionDatasetUploadResponse(BaseModel):
@@ -380,20 +360,6 @@ class AccountProfileOut(BaseModel):
 
 # --- Managed evidence import -------------------------------------
 
-EvidenceSourceType = Literal["inventory", "access_log"]
-
-
-class EvidenceImportPlanRequest(BaseModel):
-    account_run_id: str = Field(min_length=1)
-    bucket_name: str = Field(min_length=1)
-    source_type: EvidenceSourceType
-    max_files: int | None = Field(default=None, ge=1, le=5000)
-    max_bytes: int | None = Field(default=None, ge=1)
-    # Required for access_log; ISO-8601 strings.
-    time_range_start: str | None = None
-    time_range_end: str | None = None
-
-
 class EvidenceImportFileOut(BaseModel):
     object_key: str
     size_bytes: int
@@ -427,14 +393,6 @@ class EvidenceImportOut(BaseModel):
     created_at: str | None = None
     confirmed_at: str | None = None
     files: list[EvidenceImportFileOut] = Field(default_factory=list)
-
-
-class EvidenceImportRunResult(BaseModel):
-    import_id: str
-    status: str
-    analysis_run_id: str | None = None
-    downloaded_file_count: int = 0
-    downloaded_total_bytes: int = 0
 
 
 # --- Sessions ----------------------------------------------------

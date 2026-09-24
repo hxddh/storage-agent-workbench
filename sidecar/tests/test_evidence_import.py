@@ -2,7 +2,10 @@
 
 A fake S3 client stands in for boto3 (no live cloud, no credentials). The
 account profile (Phase 14 output) is seeded directly so the tests focus on the
-managed-import flow: plan -> confirm -> run. They verify bounded listing of the
+managed-import flow: plan -> confirm -> run, driven through
+``import_service`` directly — the service the gated ``import_evidence`` tool
+uses. There is no HTTP route that plans, confirms or runs an import (v1.18:
+data movement only crosses a Decision raised inside a running Execution). They verify bounded listing of the
 discovered destination ONLY, confirmation gating, max_files/max_bytes,
 time-range requirement, download of confirmed evidence files only, reuse of the
 existing inventory_analysis / access_log_analysis path, approval+audit logging,
@@ -19,6 +22,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from app import config, run_service
+from app.evidence import import_service
 from app.models.schemas import RunCreate
 from app.repositories import account_discovery as account_repo
 from app.repositories import runs as runs_repo
@@ -149,9 +153,39 @@ def _inventory_fake(extra_files=None, data_size=4096):
     return FakeS3(objects, blobs)
 
 
+class _Result:
+    """The service outcome in the shape these tests assert on."""
+
+    def __init__(self, status_code: int, data):
+        self.status_code = status_code
+        self._data = data
+        self.text = json.dumps(data, default=str)
+
+    def json(self):
+        return self._data
+
+
+def _call(fn, *args, ok=200, **kwargs):
+    conn = _db()
+    try:
+        return _Result(ok, fn(conn, *args, **kwargs))
+    except import_service.ImportServiceError as exc:
+        return _Result(exc.status, {"detail": exc.detail})
+    finally:
+        conn.close()
+
+
 def _plan(client, run_id, source_type, **body):
-    return client.post("/evidence-imports/plan", json={
-        "account_run_id": run_id, "bucket_name": BUSINESS, "source_type": source_type, **body})
+    return _call(import_service.plan, ok=201, account_run_id=run_id,
+                 bucket_name=BUSINESS, source_type=source_type, **body)
+
+
+def _confirm(import_id):
+    return _call(import_service.confirm, import_id)
+
+
+def _run(import_id):
+    return _call(import_service.run, import_id)
 
 
 # --- inventory plan tests ---------------------------------------------------
@@ -182,7 +216,7 @@ def test_inventory_plan_no_manifest_clean_limitation(client, monkeypatch):
     assert p["selected_file_count"] == 0
     assert p["warnings"]  # clean limitation, not a crash
     # confirm must refuse a zero-file plan
-    c = client.post(f"/evidence-imports/{p['id']}/confirm")
+    c = _confirm(p['id'])
     assert c.status_code == 422
 
 
@@ -214,7 +248,7 @@ def test_inventory_import_requires_confirmation_before_download(client, monkeypa
     run_id = _seed_profile(pid)
     _use(monkeypatch, _inventory_fake())
     p = _plan(client, run_id, "inventory").json()
-    r = client.post(f"/evidence-imports/{p['id']}/run")
+    r = _run(p['id'])
     assert r.status_code == 409  # not confirmed
 
 
@@ -246,8 +280,8 @@ def test_inventory_import_into_analysis_and_app_dir(client, monkeypatch, sync_ru
     run_id = _seed_profile(pid)
     _use(monkeypatch, _inventory_fake())
     p = _plan(client, run_id, "inventory").json()
-    assert client.post(f"/evidence-imports/{p['id']}/confirm").json()["status"] == "confirmed"
-    res = client.post(f"/evidence-imports/{p['id']}/run").json()
+    assert _confirm(p['id']).json()["status"] == "confirmed"
+    res = _run(p['id']).json()
     analysis_run_id = res["analysis_run_id"]
     assert res["status"] == "imported" and res["downloaded_file_count"] == 1
 
@@ -272,8 +306,8 @@ def test_inventory_only_touches_destination_bucket(client, monkeypatch, sync_run
     fake = _inventory_fake()
     _use(monkeypatch, fake)
     p = _plan(client, run_id, "inventory").json()
-    client.post(f"/evidence-imports/{p['id']}/confirm")
-    client.post(f"/evidence-imports/{p['id']}/run")
+    _confirm(p['id'])
+    _run(p['id'])
     buckets_listed = {b for (op, b, _x) in fake.calls if op == "list"}
     buckets_got = {b for (op, b, _x) in fake.calls if op == "get"}
     assert buckets_listed == {INV_DEST}
@@ -370,8 +404,8 @@ def test_access_log_import_into_analysis_and_redacted(client, monkeypatch, sync_
     _use(monkeypatch, _logging_fake(n=2))
     p = _plan(client, run_id, "access_log",
               time_range_start="2026-06-25T00:00:00", time_range_end="2026-06-26T00:00:00").json()
-    client.post(f"/evidence-imports/{p['id']}/confirm")
-    res = client.post(f"/evidence-imports/{p['id']}/run").json()
+    _confirm(p['id'])
+    res = _run(p['id']).json()
     detail = client.get(f"/runs/{res['analysis_run_id']}").json()
     assert detail["status"] == "completed" and detail["run_type"] == "access_log_analysis"
     report = client.get(f"/reports/{res['analysis_run_id']}").json()["content"]
@@ -392,8 +426,8 @@ def test_download_only_uses_confirmed_files(client, monkeypatch, sync_runs):
     p = _plan(client, run_id, "access_log",
               time_range_start="2026-06-25T00:00:00", time_range_end="2026-06-26T00:00:00").json()
     planned_keys = {f["object_key"] for f in p["files"] if f["selected"]}
-    client.post(f"/evidence-imports/{p['id']}/confirm")
-    client.post(f"/evidence-imports/{p['id']}/run")
+    _confirm(p['id'])
+    _run(p['id'])
     got_keys = {k for (op, b, k) in fake.calls if op == "get"}
     assert got_keys <= planned_keys  # never fetched a key outside the confirmed list
 
@@ -408,8 +442,8 @@ def test_download_fails_on_byte_limit_overflow(client, monkeypatch, sync_runs):
     _use(monkeypatch, FakeS3(objects, blobs))
     p = _plan(client, run_id, "access_log", max_bytes=10,
               time_range_start="2026-06-25T00:00:00", time_range_end="2026-06-26T00:00:00").json()
-    client.post(f"/evidence-imports/{p['id']}/confirm")
-    r = client.post(f"/evidence-imports/{p['id']}/run")
+    _confirm(p['id'])
+    r = _run(p['id'])
     assert r.status_code == 400  # LimitExceeded
     assert client.get(f"/evidence-imports/{p['id']}").json()["status"] == "failed"
 
@@ -422,7 +456,7 @@ def test_confirm_records_approval_and_audit(client, monkeypatch):
     run_id = _seed_profile(pid)
     _use(monkeypatch, _inventory_fake())
     p = _plan(client, run_id, "inventory").json()
-    client.post(f"/evidence-imports/{p['id']}/confirm")
+    _confirm(p['id'])
     conn = _db()
     try:
         appr = conn.execute(
@@ -438,8 +472,23 @@ def test_confirm_records_approval_and_audit(client, monkeypatch):
 
 def test_evidence_import_404s(client):
     assert client.get("/evidence-imports/nope").status_code == 404
-    assert client.post("/evidence-imports/nope/confirm").status_code == 404
-    assert client.post("/evidence-imports/nope/run").status_code == 404
+    assert _confirm("nope").status_code == 404
+    assert _run("nope").status_code == 404
+
+
+def test_no_http_route_moves_data(client):
+    """Data movement only crosses a durable Decision raised by the gated
+    ``import_evidence`` tool — never a bare HTTP plan/confirm/run."""
+    assert client.post("/evidence-imports/plan", json={}).status_code in (404, 405)
+    assert client.post("/evidence-imports/x/confirm").status_code in (404, 405)
+    assert client.post("/evidence-imports/x/run").status_code in (404, 405)
+    mutating = [
+        (sorted(getattr(r, "methods", set()) or set()), getattr(r, "path", ""))
+        for r in client.app.routes
+        if str(getattr(r, "path", "")).startswith("/evidence-imports")
+        and (set(getattr(r, "methods", set()) or set()) - {"GET", "HEAD"})
+    ]
+    assert mutating == []
 
 
 # --- memory-safety: bounded gunzip + streaming combine (fix 3) ---------------
@@ -509,7 +558,7 @@ def test_claim_for_import_is_atomic(client, monkeypatch):
     run_id = _seed_profile(pid)
     _use(monkeypatch, _inventory_fake())
     p = _plan(client, run_id, "inventory").json()
-    client.post(f"/evidence-imports/{p['id']}/confirm")
+    _confirm(p['id'])
 
     conn = _db()
     try:

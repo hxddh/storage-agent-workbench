@@ -7,7 +7,7 @@
  * `content` reproduce the same list. Both feed ONE renderer.
  */
 import type { ApprovalGrantPolicy, DecisionImpact, TaskDecision } from "../api";
-import type { PlanStep, SessionMessage, ToolActivity, TurnItemRef } from "../types";
+import type { PlanStep, TaskMessage, ToolActivity, TurnItemRef } from "../types";
 
 export type ApprovalStatus = "pending" | "approved" | "declined" | "superseded" | "granted";
 
@@ -30,12 +30,17 @@ export type PlanItem = { kind: "plan"; steps: PlanStep[] };
 /** The runtime compacted the replayed context at this point (v1.12). */
 export type CompactedItem = { kind: "compacted"; before_tokens: number | null; after_tokens: number | null };
 
+/** A Steer the running Execution received here (v1.18): the user's
+ * Direction mid-turn, rendered as a quiet line — never a tool row. */
+export type SteerItem = { kind: "steer"; text: string };
+
 export type TurnItem =
   | { kind: "message"; text: string; live?: boolean }
   | { kind: "tool"; record: ToolActivity }
   | ApprovalItem
   | PlanItem
-  | CompactedItem;
+  | CompactedItem
+  | SteerItem;
 
 export type LiveTurn = {
   items: TurnItem[];
@@ -175,6 +180,13 @@ export function applyCompacted(
   return { ...turn, items: [...turn.items, marker] };
 }
 
+/** `steer.applied`: the Direction lands at the current position. */
+export function applySteer(turn: LiveTurn, text: string): LiveTurn {
+  const trimmed = text.trim();
+  if (!trimmed) return turn;
+  return { ...turn, items: [...turn.items, { kind: "steer", text: trimmed }] };
+}
+
 export function resolveApproval(
   turn: LiveTurn,
   payload: { decision_id: string; resolution: string; scope?: "once" | "task" | null },
@@ -217,7 +229,7 @@ function approvalFromDecision(decision: TaskDecision): ApprovalItem {
  * approval renders at the tool row that raised it.
  */
 export function turnItemsOf(
-  message: Pick<SessionMessage, "turn_items" | "tool_activity">,
+  message: Pick<TaskMessage, "turn_items" | "tool_activity">,
   pendingDecisions: TaskDecision[] = [],
 ): TurnItem[] {
   const activity = message.tool_activity ?? [];
@@ -245,11 +257,14 @@ export function turnItemsOf(
       }
     } else if (ref.kind === "compacted") {
       items.push({ kind: "compacted", before_tokens: ref.before_tokens ?? null, after_tokens: ref.after_tokens ?? null });
+    } else if (ref.kind === "steer") {
+      if (ref.text?.trim()) items.push({ kind: "steer", text: ref.text.trim() });
     }
   }
   // Tool rows the item list did not reference (pre-1.11 rows, or a call the
   // runtime recorded after its last segment) still belong to the turn.
   for (const record of activity) {
+    if (record.tool === "user_steer") continue; // pre-1.18 steer notice, not a tool
     if (record.id && seen.has(record.id)) continue;
     if (!record.id && refs.length > 0) continue;
     pushTool(record);
@@ -273,12 +288,18 @@ export type TurnSegment =
   | { kind: "worked"; records: ToolActivity[] }
   | ApprovalItem
   | PlanItem
-  | CompactedItem;
+  | CompactedItem
+  | SteerItem;
 
 export function segmentsOf(items: TurnItem[]): TurnSegment[] {
   const out: TurnSegment[] = [];
   for (const item of items) {
     if (item.kind === "tool") {
+      if (item.record.tool === "user_steer") {
+        // A pre-1.18 live row: the Steer, not a tool call.
+        if (item.record.result?.trim()) out.push({ kind: "steer", text: item.record.result.trim() });
+        continue;
+      }
       const last = out[out.length - 1];
       if (last && last.kind === "worked") last.records = [...last.records, item.record];
       else out.push({ kind: "worked", records: [item.record] });

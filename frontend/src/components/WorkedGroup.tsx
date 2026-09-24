@@ -71,6 +71,16 @@ export function groupSpanMs(items: ToolActivity[]): number | null {
 const FOLD_AFTER = 8;
 const TAIL_WHEN_FOLDED = 6;
 
+/** The Agent is working but has not emitted the first item yet. */
+export function WorkingRow({ label }: { label: string }) {
+  return (
+    <div className="flex min-h-6 items-center gap-2 text-xs" data-testid="working-row">
+      <span className="working-mark" data-testid="trace-running" aria-hidden />
+      <span className="working-shimmer min-w-0 truncate" data-contrast-exempt>{label}</span>
+    </div>
+  );
+}
+
 /**
  * One "Worked for …" group of real tool rows between two segments of a turn.
  * Expanded while live, collapsed once done (click to open); a failed row keeps
@@ -78,7 +88,7 @@ const TAIL_WHEN_FOLDED = 6;
  */
 export function WorkedGroup({
   records,
-  sessionId,
+  taskId,
   live = false,
   startedAt = null,
   /** Find holds a runnable query: render every row — folded rows are
@@ -86,7 +96,7 @@ export function WorkedGroup({
   forceExpanded = false,
 }: {
   records: ToolActivity[];
-  sessionId?: string | null;
+  taskId?: string | null;
   /** The turn is still executing (the group may still grow). */
   live?: boolean;
   /** When the turn started — the live clock's fallback before any row carries its own start. */
@@ -156,7 +166,7 @@ export function WorkedGroup({
               const args = argSummary(a.args);
               const failed = isFailed(a);
               const ms = fmtCallMs(a.duration_ms);
-              const canOpen = Boolean(sessionId && a.id && !isRunning);
+              const canOpen = Boolean(taskId && a.id && !isRunning);
               const isOpen = canOpen && openCall === a.id;
               return (
                 <div key={a.id ?? i} data-testid="worked-row" data-status={isRunning ? "running" : failed ? "failed" : "ok"}>
@@ -209,7 +219,7 @@ export function WorkedGroup({
                     )}
                     {ms && !isRunning ? <span className="native-tool-ms" data-testid="trace-duration">{ms}</span> : null}
                   </div>
-                  {isOpen && <CallDetail sessionId={sessionId as string} callId={a.id as string} />}
+                  {isOpen && <CallDetail taskId={taskId as string} callId={a.id as string} />}
                 </div>
               );
             })}

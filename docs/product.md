@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.17.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native. v1.11–v1.16 made the transcript and the protocol native. **v1.17.0 is the Codex window:** UI and UE match Codex's quiet Agent surface. Earlier release notes are not current product architecture.
+> **Applies to Storage Agent v1.18.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native. v1.11–v1.16 made the transcript and the protocol native. **v1.17.0 is the Codex window:** UI and UE match Codex's quiet Agent surface. **v1.18.0 is the native core:** the same window over one submit path, Decision-gated data movement, and a Steer rendered as the user's own *Steered* line instead of a tool row. Earlier release notes are not current product architecture.
 
 ## Product definition
 

@@ -18,6 +18,8 @@ from app import config, run_service
 from app.s3 import account_tools, client_factory
 from app.s3 import tools as s3tools
 
+from . import runs_helper
+
 ACCESS = "AKIAIOSFODNN7EXAMPLE"
 
 
@@ -126,13 +128,8 @@ def _use_fake(monkeypatch, fake):
 
 
 def _run_discovery(client, provider_id, **body):
-    created = client.post("/runs", json={
-        "run_type": "account_discovery", "provider_id": provider_id,
-        "user_prompt": "discover", "title": "acct", **body,
-    }).json()
-    rid = created["run_id"]
-    assert client.post(f"/runs/{rid}/message", json={"content": "go"}).status_code == 200
-    return rid
+    return runs_helper.run("account_discovery", provider_id=provider_id,
+                           user_prompt="discover", title="acct", **body)
 
 
 def _db():
@@ -388,13 +385,10 @@ def test_account_discovery_never_scans_or_downloads(client, monkeypatch, sync_ru
 
 def test_account_discovery_creates_deterministic_run(client):
     """There is no LLM planner: account_discovery always runs as a deterministic
-    run (a `planner_mode` field in the body is ignored — the concept is gone)."""
+    run (a `planner_mode` field is not part of the run shape — the concept is gone)."""
     pid = _provider(client)
-    r = client.post("/runs", json={
-        "run_type": "account_discovery", "provider_id": pid, "user_prompt": "go",
-    })
-    assert r.status_code == 201, r.text
-    assert r.json()["status"] == "pending"
+    rid = runs_helper.create_run("account_discovery", provider_id=pid, user_prompt="go")
+    assert client.get(f"/runs/{rid}").json()["status"] == "pending"
 
 
 def test_account_profile_404_when_absent(client):

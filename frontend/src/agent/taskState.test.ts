@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { SessionRun } from "../sessionRuns";
+import type { LiveTask } from "../liveTasks";
 import { agentTaskState } from "./taskState";
 
-const run = (patch: Partial<SessionRun> = {}): SessionRun => ({
+const run = (patch: Partial<LiveTask> = {}): LiveTask => ({
   busy: false,
   uploading: false,
   pending: null,

@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import type { SessionDetail } from "../types";
+import type { TaskRecord } from "../types";
 import { Markdown } from "../components/Markdown";
 import { SeverityMark, confidenceLabel } from "../components/SeverityMark";
 import { useI18n } from "../i18n";
@@ -16,8 +16,8 @@ export function EvidenceReview({
   selectedFindingId = null,
   provenance = null,
 }: {
-  detail: SessionDetail | null;
-  sessionId: string;
+  detail: TaskRecord | null;
+  taskId: string;
   selectedFindingId?: string | null;
   provenance?: TaskProvenance | null;
 }) {

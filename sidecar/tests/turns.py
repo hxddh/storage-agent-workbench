@@ -8,8 +8,33 @@ response-like object carrying the same envelope the blocking shim produced.
 
 from __future__ import annotations
 
+import time
 import uuid
 from typing import Any
+
+
+def wait_for_completion(execution_id: str, timeout_s: float = 150.0) -> bool:
+    """Block until the execution's worker finishes. True when it finished
+    within the timeout. Falls back to polling the durable row when no live
+    handle exists (worker in another lifetime). Test-only: the product follows
+    the execution's event stream instead of blocking."""
+    from app.db import connect
+    from app.task_runtime import runtime, store
+
+    handle = runtime.live_handle(execution_id)
+    if handle is not None:
+        return handle.done_event.wait(timeout_s)
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        conn = connect()
+        try:
+            row = store.get_execution(conn, execution_id)
+        finally:
+            conn.close()
+        if row is None or row["status"] not in store.EXEC_ACTIVE_STATUSES:
+            return True
+        time.sleep(0.25)
+    return False
 
 
 class TurnResponse:
@@ -30,8 +55,6 @@ class TurnResponse:
 
 def post_message(client, session_id: str, json: dict[str, Any] | None = None,
                  timeout_s: float = 150.0, **_ignored) -> TurnResponse:
-    from app.task_runtime import runtime
-
     body = dict(json or {})
     turn_id = body.get("turn_id") or uuid.uuid4().hex
     r = client.post(f"/agent-tasks/{session_id}/executions",
@@ -39,7 +62,7 @@ def post_message(client, session_id: str, json: dict[str, Any] | None = None,
     if r.status_code >= 400:
         return TurnResponse(r.status_code, r.json())
     execution = r.json()["execution"]
-    runtime.wait_for_completion(execution["id"], timeout_s)
+    wait_for_completion(execution["id"], timeout_s)
     current = client.get(f"/agent-tasks/{session_id}/executions/{execution['id']}").json()
     status = current.get("status")
     if status == "failed":

@@ -5,8 +5,9 @@ import { describe, expect, it } from "vitest";
 /**
  * Every production module under src/ is imported by something. A component
  * nothing renders is a second, unreviewed product surface waiting to be wired
- * back in (v1.09 shipped one: EvidenceActivity.tsx). Tests, the entry point,
- * and type-only barrels are the only files allowed to stand alone.
+ * back in (v1.09 shipped one: EvidenceActivity.tsx). Tests and the entry point
+ * are the only files allowed to stand alone, and a test importing a module
+ * does not keep it alive.
  */
 const srcRoot = join(process.cwd(), "src");
 const entryPoints = new Set(["main.tsx", "vite-env.d.ts"]);
@@ -24,7 +25,9 @@ function walk(dir: string, out: string[] = []): string[] {
 describe("production modules", () => {
   it("are all imported by something (no orphan components or hooks)", () => {
     const files = walk(srcRoot);
-    const sources = files.map((path) => readFileSync(path, "utf8")).join("\n");
+    // Only production code counts as a caller: a module that nothing but its
+    // own test imports is dead product code with a green test around it.
+    const sources = files.filter((path) => !isTest(path)).map((path) => readFileSync(path, "utf8")).join("\n");
     const orphans = files
       .filter((path) => !isTest(path) && !entryPoints.has(basename(path)))
       .filter((path) => {

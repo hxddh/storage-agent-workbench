@@ -76,13 +76,8 @@ def _task_or_404(conn: sqlite3.Connection, task_id: str) -> dict[str, Any]:
 
 @router.get("", response_model=list[AgentTaskSummary])
 def list_agent_tasks(q: str | None = None, conn: sqlite3.Connection = Depends(get_conn)):
-    # App-open catch-up: due revisits submit through the ONE runtime path.
-    # Cheap when nothing is due; AgentUnavailable skips rather than failing the list.
-    try:
-        from ..task_runtime import revisit as revisit_mod
-        revisit_mod.tick(conn=conn)
-    except Exception:
-        pass
+    # A read never submits work: due revisits are caught up at Sidecar start
+    # and by the periodic maintenance loop (main.py / data_maintenance.py).
     rows = sessions_repo.search(conn, q) if q else sessions_repo.list_all(conn)
     ids = [row["id"] for row in rows]
     decisions = store.pending_decision_tasks(conn, ids)

@@ -8,7 +8,7 @@ import type { ApprovalResolution, ApprovalScope } from "./ApprovalCard";
 import { Markdown } from "./Markdown";
 import { S3ErrorArtifact } from "./S3ErrorArtifact";
 import { TranscriptItems } from "./TranscriptItems";
-import { WorkingRow } from "./LiveTrace";
+import { WorkingRow } from "./WorkedGroup";
 import { Icon } from "./icons";
 
 function CopyAction({ text, testId }: { text: string; testId: string }) {
@@ -61,7 +61,7 @@ export const AgentTurn = memo(function AgentTurn({
   waiting = false,
   stoppedLabel = null,
   startedAt = null,
-  sessionId,
+  taskId,
   figures,
   onResolve,
   resolvingId = null,
@@ -74,7 +74,7 @@ export const AgentTurn = memo(function AgentTurn({
   /** Rendered as a tag on the last segment after the user pressed Stop. */
   stoppedLabel?: string | null;
   startedAt?: number | null;
-  sessionId?: string | null;
+  taskId?: string | null;
   figures?: ReactNode;
   onResolve?: (decisionId: string, resolution: ApprovalResolution, scope: ApprovalScope) => void;
   resolvingId?: string | null;
@@ -114,7 +114,7 @@ export const AgentTurn = memo(function AgentTurn({
       <TranscriptItems
         items={items}
         live={live}
-        sessionId={sessionId}
+        taskId={taskId}
         startedAt={startedAt}
         onResolve={onResolve}
         resolvingId={resolvingId}

@@ -9,7 +9,7 @@
  *
  * Deliberately NOT collapsed into here:
  *
- * - `LiveTrace.fmtCallMs` suppresses anything under 100 ms because sub-100 ms is
+ * - `WorkedGroup.fmtCallMs` suppresses anything under 100 ms because sub-100 ms is
  *   noise between steps and showing it implies a precision the number does not
  *   have once network jitter is in it. That is a different question from "how
  *   long did this turn take", and merging them would silently delete the reason.

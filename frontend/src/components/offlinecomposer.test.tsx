@@ -11,7 +11,7 @@ import { createElement, createRef } from "react";
 import { I18nProvider } from "../i18n";
 import { Composer } from "./Composer";
 import { ActiveTaskContext } from "../agent/activeTask";
-import { dropSessionRun, patchSessionRun } from "../sessionRuns";
+import { dropLiveTask, patchLiveTask } from "../liveTasks";
 import type { ExecutionMetrics, ModelProvider } from "../types";
 
 const api = vi.hoisted(() => ({
@@ -136,23 +136,23 @@ describe("the context meter in the model menu", () => {
   });
 
   it("names silence instead of vanishing when usage or the window is missing", async () => {
-    patchSessionRun("ctx-none", { lastMetrics: metrics({ total_tokens: 12_000 }) });
+    patchLiveTask("ctx-none", { lastMetrics: metrics({ total_tokens: 12_000 }) });
     mount(false, "", false, "ctx-none");
     await openMenu();
     // v1.15 — vanishing was the lie; the meter paints a quiet badge.
     expect(screen.getByTestId("context-meter").getAttribute("data-state")).toBe("unreported");
-    dropSessionRun("ctx-none");
+    dropLiveTask("ctx-none");
   });
 
   it("shows the share of the window the last execution used", async () => {
-    patchSessionRun("ctx-some", { lastMetrics: metrics({ usage: { total_tokens: 32_000 }, context_window: 128_000 }) });
+    patchLiveTask("ctx-some", { lastMetrics: metrics({ usage: { total_tokens: 32_000 }, context_window: 128_000 }) });
     mount(false, "", false, "ctx-some");
     await openMenu();
     const meter = screen.getByTestId("context-meter");
     expect(meter.getAttribute("data-pct")).toBe("25");
     expect(meter.textContent).toContain("25%");
     expect(meter.getAttribute("title")).toContain("32k of 128k");
-    dropSessionRun("ctx-some");
+    dropLiveTask("ctx-some");
   });
 
   it("paints nothing on the empty start surface", async () => {

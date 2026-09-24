@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
-import { LiveTrace, argLabel, argSummary } from "./LiveTrace";
+import { WorkedGroup, argLabel, argSummary } from "./WorkedGroup";
 import { AgentTurn } from "./TranscriptTurn";
 import type { ToolActivity } from "../types";
 
@@ -38,8 +38,8 @@ describe("live Agent execution", () => {
   });
 
   it("shows arguments that change the meaning of a tool call", () => {
-    wrap(createElement(LiveTrace, {
-      items: [call({ args: { prefix: "logs/2026/08/", max_keys: 1000, recursive: true } })],
+    wrap(createElement(WorkedGroup, {
+      records: [call({ args: { prefix: "logs/2026/08/", max_keys: 1000, recursive: true } })],
     }));
     const args = screen.getByTestId("trace-args").textContent ?? "";
     expect(args).toContain("logs/2026/08/");
@@ -48,62 +48,62 @@ describe("live Agent execution", () => {
   });
 
   it("renders a bare row when there are no distinguishing arguments", () => {
-    wrap(createElement(LiveTrace, { items: [call({ tool: "head_bucket", args: {} })] }));
+    wrap(createElement(WorkedGroup, { records: [call({ tool: "head_bucket", args: {} })] }));
     expect(screen.queryByTestId("trace-args")).toBeNull();
     expect(screen.getByText("head_bucket")).toBeTruthy();
   });
 
   it("marks only the in-flight call", () => {
-    const { container } = wrap(createElement(LiveTrace, {
-      items: [call({ tool: "head_bucket" }), call({ status: "started" })],
+    const { container } = wrap(createElement(WorkedGroup, {
+      records: [call({ tool: "head_bucket" }), call({ status: "started" })],
     }));
     expect(container.querySelectorAll("[data-testid='trace-running']")).toHaveLength(1);
   });
 
   it("shows a finished result and does not invent a result for a running call", () => {
-    wrap(createElement(LiveTrace, {
-      items: [call({ result: "404 NoSuchBucket" }), call({ status: "started" })],
+    wrap(createElement(WorkedGroup, {
+      records: [call({ result: "404 NoSuchBucket" }), call({ status: "started" })],
     }));
     expect(screen.getByText("404 NoSuchBucket")).toBeTruthy();
     expect(screen.getAllByText(/list_objects/)).toHaveLength(2);
   });
 
   it("renders nothing before the first call", () => {
-    const { container } = wrap(createElement(LiveTrace, { items: [] }));
+    const { container } = wrap(createElement(WorkedGroup, { records: [] }));
     expect(container.textContent).toBe("");
   });
 });
 
 describe("execution truth", () => {
   it("uses the sidecar verdict instead of guessing from result prose", () => {
-    wrap(createElement(LiveTrace, {
-      items: [call({ result: "AccessDenied · req 8A9F2C1B", ok: false })],
+    wrap(createElement(WorkedGroup, {
+      records: [call({ result: "AccessDenied · req 8A9F2C1B", ok: false })],
     }));
     expect(screen.getByTestId("trace-failed")).toBeTruthy();
   });
 
   it("does not invent a failure for a successful call", () => {
-    wrap(createElement(LiveTrace, { items: [call({ result: "1000 keys", ok: true })] }));
+    wrap(createElement(WorkedGroup, { records: [call({ result: "1000 keys", ok: true })] }));
     expect(screen.queryByTestId("trace-failed")).toBeNull();
   });
 
   it("still reads pre-verdict history conservatively", () => {
-    wrap(createElement(LiveTrace, { items: [call({ result: "error: boom" })] }));
+    wrap(createElement(WorkedGroup, { records: [call({ result: "error: boom" })] }));
     expect(screen.getByTestId("trace-failed")).toBeTruthy();
   });
 
   it("shows measured call duration", () => {
-    wrap(createElement(LiveTrace, { items: [call({ duration_ms: 4200 })] }));
+    wrap(createElement(WorkedGroup, { records: [call({ duration_ms: 4200 })] }));
     expect(screen.getByTestId("trace-duration").textContent).toBe("4.2s");
   });
 
   it("stays silent about sub-100ms jitter", () => {
-    wrap(createElement(LiveTrace, { items: [call({ duration_ms: 12 })] }));
+    wrap(createElement(WorkedGroup, { records: [call({ duration_ms: 12 })] }));
     expect(screen.queryByTestId("trace-duration")).toBeNull();
   });
 
   it("does not invent an unmeasured duration", () => {
-    wrap(createElement(LiveTrace, { items: [call({ duration_ms: null })] }));
+    wrap(createElement(WorkedGroup, { records: [call({ duration_ms: null })] }));
     expect(screen.queryByTestId("trace-duration")).toBeNull();
   });
 });
@@ -112,7 +112,7 @@ describe("deep execution", () => {
   const many = (n: number) => Array.from({ length: n }, (_, i) => call({ tool: `probe_${i}`, id: `c${i}` }));
 
   it("folds early steps so live execution does not bury the answer", () => {
-    wrap(createElement(LiveTrace, { items: many(30), streaming: true }));
+    wrap(createElement(WorkedGroup, { records: many(30), live: true }));
     expect(screen.queryByText("probe_0")).toBeNull();
     expect(screen.getByText("probe_29")).toBeTruthy();
     expect(screen.getByTestId("trace-fold").textContent).toContain("24");
@@ -121,13 +121,13 @@ describe("deep execution", () => {
   it("never folds a failure away, and a failed row keeps the group open", () => {
     const items = many(30);
     items[1] = call({ tool: "head_bucket", id: "boom", result: "NoSuchBucket", ok: false });
-    wrap(createElement(LiveTrace, { items }));
+    wrap(createElement(WorkedGroup, { records: items }));
     expect(screen.getByTestId("worked-group").getAttribute("data-expanded")).toBe("true");
     expect(screen.getByText("head_bucket")).toBeTruthy();
   });
 
   it("collapses a finished group until the reader opens it", () => {
-    render(createElement(I18nProvider, null, createElement(LiveTrace, { items: many(3) })));
+    render(createElement(I18nProvider, null, createElement(WorkedGroup, { records: many(3) })));
     expect(screen.getByTestId("worked-group").getAttribute("data-expanded")).toBe("false");
     expect(screen.queryByText("probe_0")).toBeNull();
     expect(screen.getByTestId("execution-head").textContent).toMatch(/Worked/);
@@ -136,14 +136,14 @@ describe("deep execution", () => {
   });
 
   it("shows all steps once the operator asks", () => {
-    wrap(createElement(LiveTrace, { items: many(30), streaming: true }));
+    wrap(createElement(WorkedGroup, { records: many(30), live: true }));
     fireEvent.click(screen.getByTestId("trace-fold"));
     expect(screen.getByText("probe_0")).toBeTruthy();
     expect(screen.queryByTestId("trace-fold")).toBeNull();
   });
 
   it("leaves a short execution alone", () => {
-    wrap(createElement(LiveTrace, { items: many(5), streaming: true }));
+    wrap(createElement(WorkedGroup, { records: many(5), live: true }));
     expect(screen.queryByTestId("trace-fold")).toBeNull();
     expect(screen.getByText("probe_0")).toBeTruthy();
   });
@@ -172,8 +172,8 @@ describe("tool argument formatting", () => {
 
 describe("audit-gap truth", () => {
   it("marks a call whose audit row could not be written", () => {
-    wrap(createElement(LiveTrace, {
-      items: [call({ audit_error: "OperationalError: disk I/O error" })],
+    wrap(createElement(WorkedGroup, {
+      records: [call({ audit_error: "OperationalError: disk I/O error" })],
     }));
     const mark = screen.getByTestId("trace-audit-gap");
     expect(mark).toBeInTheDocument();
@@ -181,20 +181,20 @@ describe("audit-gap truth", () => {
   });
 
   it("says the call itself ran and was saved", () => {
-    wrap(createElement(LiveTrace, {
-      items: [call({ audit_error: "OperationalError: disk I/O error" })],
+    wrap(createElement(WorkedGroup, {
+      records: [call({ audit_error: "OperationalError: disk I/O error" })],
     }));
     expect(screen.getByTestId("trace-audit-gap").getAttribute("title") ?? "").toMatch(/ran and was saved/i);
   });
 
   it("is absent on a healthy call", () => {
-    wrap(createElement(LiveTrace, { items: [call({ ok: true })] }));
+    wrap(createElement(WorkedGroup, { records: [call({ ok: true })] }));
     expect(screen.queryByTestId("trace-audit-gap")).toBeNull();
   });
 
   it("does not appear while a call is still running", () => {
-    wrap(createElement(LiveTrace, {
-      items: [call({ status: "started", audit_error: "x" })],
+    wrap(createElement(WorkedGroup, {
+      records: [call({ status: "started", audit_error: "x" })],
     }));
     expect(screen.queryByTestId("trace-audit-gap")).toBeNull();
   });

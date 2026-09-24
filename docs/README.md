@@ -1,10 +1,13 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v1.17.0** (`v1.17.0`).
+> **Current architecture baseline: Storage Agent v1.18.0** (`v1.18.0`).
 > v1.16.0 finished the true native agent; v1.16.1 patched tables, search,
 > wrapping, and a first Codex-grade polish pass. **v1.17.0 is the Codex
 > window** (`docs/releases/1.17.0.md`): UI and UE match Codex's quiet Agent
-> surface. The next plan lives in `docs/roadmap.md`.
+> surface. **v1.18.0 is the native core** (`docs/releases/1.18.0.md`): one
+> submit path, every data movement behind a Decision, reads that never start
+> work, and Task vocabulary in product code. The next plan lives in
+> `docs/roadmap.md`.
 >
 > The normative product invariant is: **the Agent Task is the application**.
 > v0.94.0 shipped the durable runtime; v0.95.0 made it user-visible; v0.96.0
@@ -54,6 +57,10 @@
 > approval is sentence-case hairline; *Worked for {t}* is wall-clock only;
 > attachments are per-task; copy is Direction / Execution / Work Result.
 > No migration (head stays **030**).
+> **v1.18.0 is the native core.** No HTTP route starts a run or moves data
+> without a Decision; revisits run on the Sidecar's own clock; a Steer is a
+> `steer` turn item; `AgentTask` is the one composition root and the `api/`
+> adapters speak Task. No migration (head stays **030**).
 > **v1.13.0 is honesty and completeness.** The MCP bridge executes instead of
 echoing, the OTel export carries real spans, restart recovery covers waiting
 executions, unknown execution kinds are rejected, compaction chains and
@@ -104,7 +111,7 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
 - [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 030, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — next direction after **v1.17.0 — Codex window**. Delivered history lives in `releases/`.
+- [`roadmap.md`](roadmap.md) — next direction after **v1.18.0 — Native core**. Delivered history lives in `releases/`.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.

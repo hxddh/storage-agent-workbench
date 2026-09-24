@@ -6,6 +6,32 @@ follow semantic versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-09-24
+
+_Native core — one Task boundary, one submit path, every data movement behind a Decision. No migration (head stays **030**)._ See `docs/releases/1.18.0.md`.
+
+### Removed
+
+- **Second submit path** — `POST /runs`, `POST /runs/{id}/message`, `GET /runs/{id}/events`, `POST /runs/{id}/datasets/upload` and the in-memory polling event bus (`app/events.py`). Engines run only inside an Agent Execution (`run_service.run_sync`); `/runs` keeps read-only GETs and DELETE.
+- **Decision-less data movement** — `POST /evidence-imports/plan`, `/{id}/confirm`, `/{id}/run`. The gated `import_evidence` tool is the only path.
+- **Frontend dead weight** — `AgentTaskImplementation`, `ExecutionDetailImplementation`, `MarkdownImplementation`, `useTurnRunnerImplementation`, `LiveTrace`, `lib/status.ts`, 17 unused API clients (session list/fork/activity/audit/memory, baselines, revisit, price table, per-task OTel, MCP call, verify) and 115 dead i18n keys.
+
+### Changed
+
+- **Task vocabulary in product code** — `liveTasks.ts` (`LiveTask`, `useLiveTask`), `useTaskDocument`, `lib/taskTitle`, `taskId` props; the `api/` adapters export `createTask`, `getTaskRecord`, `updateTask`, `deleteTask`, `getTaskMessages`, `getTaskCall`, `uploadTaskDataset`, `TaskRecord`, `TaskMessage` … over unchanged URLs.
+- **Steer is a turn item** — `steer.applied` renders as one quiet *Steered* line where the model loop took it, and persists as a `steer` turn item; it was a fake `user_steer` tool row live and silently dropped from the saved transcript.
+- **Reads never start work** — `GET /agent-tasks` no longer submits due revisits. The Sidecar runs its own revisit scheduler (`STORAGE_AGENT_REVISIT_TICK_SECONDS`, default 60 s, floor 5 s) through the one runtime path, plus startup catch-up.
+
+### Fixed
+
+- `_finish` no longer holds the SQLite write lock across the title step's model call.
+- `plan_tools` uses `typing_extensions.TypedDict`, so the Sidecar validates on Python 3.10/3.11 (the declared floor).
+- The frontend's task-state discovery backs off on Sidecar errors (1.5 s → 30 s) instead of retrying every 1.5 s forever.
+
+### Added
+
+- Contracts: orphan modules count production callers only; `i18n-keys.test.ts` (EN/ZH parity, no unreferenced key); `steerItem.test.ts`; `taskComposer.test.tsx`; `test_v118_steer_item.py`; `test_no_http_route_moves_data`; `test_no_http_route_creates_or_starts_a_run`; title-step transaction and read-only task-list regressions.
+
 ## [1.17.0] - 2026-09-04
 
 _Codex window — quiet chrome, work language, transcript craft. No migration (head stays **030**)._ See `docs/releases/1.17.0.md`.

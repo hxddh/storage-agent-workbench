@@ -159,3 +159,30 @@ def _row(path):
     c.execute("PRAGMA foreign_keys = ON")
     c.execute("PRAGMA busy_timeout = 5000")
     return c
+
+
+def test_listing_tasks_never_submits_a_revisit(client, monkeypatch):
+    """A GET is a read: due revisits are caught up at startup, by the revisit
+    scheduler and by the periodic maintenance loop, never by listing tasks."""
+    from app import data_maintenance
+
+    calls = []
+    monkeypatch.setattr(revisit_mod, "tick", lambda *a, **k: calls.append(1) or 0)
+    assert client.get("/agent-tasks").status_code == 200
+    assert calls == []
+    # The periodic path is where catch-up lives.
+    assert data_maintenance.run_periodic_maintenance()["revisits_submitted"] == 0
+    assert calls == [1]
+
+
+def test_the_revisit_scheduler_has_its_own_bounded_clock(monkeypatch):
+    """Due revisits run on the Sidecar's own revisit clock (v1.18), not on a
+    read: default one minute, never faster than five seconds."""
+    from app.main import revisit_tick_seconds
+
+    monkeypatch.delenv("STORAGE_AGENT_REVISIT_TICK_SECONDS", raising=False)
+    assert revisit_tick_seconds() == 60
+    monkeypatch.setenv("STORAGE_AGENT_REVISIT_TICK_SECONDS", "1")
+    assert revisit_tick_seconds() == 5
+    monkeypatch.setenv("STORAGE_AGENT_REVISIT_TICK_SECONDS", "nope")
+    assert revisit_tick_seconds() == 60

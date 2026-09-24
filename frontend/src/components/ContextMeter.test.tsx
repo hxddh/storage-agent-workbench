@@ -8,8 +8,8 @@ import { render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { I18nProvider } from "../i18n";
 import { ActiveTaskContext } from "../agent/activeTask";
-import { dropSessionRun, getSessionRun, patchSessionRun } from "../sessionRuns";
-import { liveHandlers } from "../hooks/useTurnRunnerImplementation";
+import { dropLiveTask, getLiveTask, patchLiveTask } from "../liveTasks";
+import { liveHandlers } from "../hooks/useTurnRunner";
 import type { ExecutionMetrics } from "../types";
 import { ContextMeter, contextUsage } from "./ContextMeter";
 
@@ -24,13 +24,13 @@ const mount = (taskId: string) => render(
 // test owns one id and drops only that one.
 let current: string | null = null;
 const use = (id: string) => { current = id; return id; };
-afterEach(() => { if (current) dropSessionRun(current); current = null; });
+afterEach(() => { if (current) dropLiveTask(current); current = null; });
 
 describe("the context meter after compaction", () => {
   it("drops to the compacted figure over the last execution's usage", () => {
     const id = use("ctx-compact");
-    patchSessionRun(id, { lastMetrics: metrics({ usage: { total_tokens: 96_000 }, context_window: 128_000 }) });
-    patchSessionRun(id, { contextTokens: 9_000 });
+    patchLiveTask(id, { lastMetrics: metrics({ usage: { total_tokens: 96_000 }, context_window: 128_000 }) });
+    patchLiveTask(id, { contextTokens: 9_000 });
     mount(id);
     const meter = screen.getByTestId("context-meter");
     expect(meter.getAttribute("data-pct")).toBe("7");
@@ -39,9 +39,9 @@ describe("the context meter after compaction", () => {
 
   it("takes the figure from a context.compacted frame on the live stream", () => {
     const id = use("ctx-frame");
-    patchSessionRun(id, { lastMetrics: metrics({ usage: { total_tokens: 100_000 }, context_window: 200_000 }) });
+    patchLiveTask(id, { lastMetrics: metrics({ usage: { total_tokens: 100_000 }, context_window: 200_000 }) });
     liveHandlers(id).onContextCompacted({ before_tokens: 100_000, after_tokens: 20_000, summary_chars: 1800 });
-    const run = getSessionRun(id);
+    const run = getLiveTask(id);
     expect(run.contextTokens).toBe(20_000);
     expect(run.items).toEqual([{ kind: "compacted", before_tokens: 100_000, after_tokens: 20_000 }]);
     mount(id);
@@ -50,7 +50,7 @@ describe("the context meter after compaction", () => {
 
   it("still needs a real window: a compacted figure alone paints nothing", () => {
     const id = use("ctx-fresh");
-    patchSessionRun(id, { contextTokens: 9_000 });
+    patchLiveTask(id, { contextTokens: 9_000 });
     mount(id);
     expect(screen.queryByTestId("context-meter")).toBeNull();
     expect(contextUsage(null, 9_000)).toBeNull();

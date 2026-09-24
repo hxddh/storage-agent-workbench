@@ -38,7 +38,7 @@ function clip(s: string, max = MAX): string {
  * Returns null when there is nothing to name it after, so the caller keeps
  * whatever default it would have used.
  */
-export function deriveSessionTitle(text: string | null | undefined): string | null {
+export function deriveTaskTitle(text: string | null | undefined): string | null {
   const raw = (text ?? "").trim();
   if (!raw) return null;
 

@@ -14,7 +14,7 @@
  *   - botocore's own sentence, which is what a Python traceback pastes.
  *
  * Pure and offline: this runs on a keystroke, before any provider exists, and
- * its result names the session as well as rendering it (`sessionTitle.ts`).
+ * its result names the session as well as rendering it (`taskTitle.ts`).
  */
 
 export interface S3Error {

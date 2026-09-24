@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { SessionDetail, SessionMessage, TriageCase } from "../types";
-import type { SessionRun } from "../sessionRuns";
+import type { TaskRecord, TaskMessage, TriageCase } from "../types";
+import type { LiveTask } from "../liveTasks";
 import type { ApprovalItem, TurnItem } from "../lib/turnItems";
 import { matches } from "../shortcuts";
 import { clearFind, findRanges, paintFind } from "../lib/findHighlight";
@@ -29,14 +29,14 @@ export type TaskItem =
       role: string;
       content: string | null;
       id: string;
-      message: SessionMessage;
+      message: TaskMessage;
     }
-  | { kind: "run"; ts: string; data: SessionDetail["runs"][number] }
+  | { kind: "run"; ts: string; data: TaskRecord["runs"][number] }
   | { kind: "triage"; ts: string; data: TriageCase };
 
 /** The persisted document as one ordered list: messages (earlier pages
  * first), the user's explicit runs, and offline triage cards. */
-export function useTaskItems(detail: SessionDetail | null, triage: TriageCase[], earlier: SessionMessage[]): TaskItem[] {
+export function useTaskItems(detail: TaskRecord | null, triage: TriageCase[], earlier: TaskMessage[]): TaskItem[] {
   return useMemo<TaskItem[]>(() => {
     const output: TaskItem[] = [];
     for (const message of [...earlier, ...(detail?.messages ?? [])]) {
@@ -71,7 +71,7 @@ export function lastWorkResult(items: TaskItem[]): Extract<TaskItem, { kind: "me
  * provenance render inline in the latest Work Result.
  */
 export function TaskDocument({
-  sessionId,
+  taskId,
   items,
   turnItems,
   unplaced,
@@ -93,11 +93,11 @@ export function TaskDocument({
   setFindOpen,
   onResync,
 }: {
-  sessionId: string | null;
+  taskId: string | null;
   items: TaskItem[];
   turnItems: Map<string, TurnItem[]>;
   unplaced: ApprovalItem[];
-  run: SessionRun;
+  run: LiveTask;
   hideLiveDirection: boolean;
   hideLiveWorkResult: boolean;
   remoteExecution: { running: boolean; age_ms: number | null } | null;
@@ -123,7 +123,7 @@ export function TaskDocument({
   const { scrollRef, contentRef, pinned, onScroll, releaseToUser, jumpToLatest, followLatest } = viewport;
   const { busy, pending, items: liveItems, answer: liveAnswer, waiting } = run;
 
-  const provenance = useTaskProvenance(sessionId);
+  const provenance = useTaskProvenance(taskId);
   const hasFigures = Boolean(
     provenance?.analysis.cost || provenance?.analysis.inventory || provenance?.analysis.drift || provenance?.analysis.access_log,
   );
@@ -295,7 +295,7 @@ export function TaskDocument({
                     <AgentTurn
                       items={turnItems.get(item.id) ?? []}
                       answer={item.content}
-                      sessionId={sessionId}
+                      taskId={taskId}
                       figures={figuresFor(item)}
                       onResolve={onResolve}
                       resolvingId={resolvingId}
@@ -348,7 +348,7 @@ export function TaskDocument({
                   waiting={waiting}
                   stoppedLabel={run.stopped ? copy.stopped : null}
                   startedAt={run.startedAt}
-                  sessionId={sessionId}
+                  taskId={taskId}
                   onResolve={onResolve}
                   resolvingId={resolvingId}
                   findActive={findActive}

@@ -29,7 +29,6 @@ from typing import Any, Callable
 
 from . import turn_guard
 from .. import audit, db, run_service
-from ..events import bus
 from ..models.schemas import RunCreate
 from ..repositories import account_discovery as account_repo
 from ..repositories import cloud_providers as cloud_repo
@@ -61,15 +60,15 @@ def _err(msg: str) -> str:
     return json.dumps({"error": redact_text(str(msg))[:300]})
 
 
-# Wall-clock ceiling for an inline run during a chat turn. boto3 already bounds
-# each S3 call (connect/read timeout); this bounds the AGGREGATE so a heavy run
-# (e.g. account_discovery over a large account) can't make the chat turn appear
+# Wall-clock ceiling for an inline run during an Execution's turn. boto3 already
+# bounds each S3 call (connect/read timeout); this bounds the AGGREGATE so a heavy
+# run (e.g. account_discovery over a large account) can't make the turn appear
 # hung indefinitely. On timeout the run keeps going in the background; the tool
 # returns the run's current (e.g. "running") status so the agent can move on and
 # re-read it later (agent runs are origin='agent' and never shown as a card).
 # 180s (was 60): a survey over a real account routinely needs >60s, and the old
-# value force-split one investigation across two user turns. The session SSE
-# stream emits keepalives during the wait, so the client connection stays alive.
+# value force-split one investigation across two user turns. The Execution's
+# durable event stream stays open (heartbeats) during the wait.
 _INLINE_RUN_TIMEOUT = 180.0
 # Ceiling on read_run_result's optional in-turn wait (seconds). Lets the agent
 # pick up a backgrounded run's result within the SAME turn instead of asking the
@@ -87,9 +86,9 @@ def _execute_run(conn: sqlite3.Connection, body: RunCreate,
     If ``cancel_event`` fires (the user stopped the turn) the wait ends early —
     the run itself keeps completing in the background like a timeout would.
 
-    Idempotency: if this turn already created a run with ``dedup_key`` (e.g. a
-    streaming attempt that then errored, triggering the blocking fallback), reuse
-    that run instead of creating a duplicate.
+    Idempotency: if this turn already created a run with ``dedup_key`` (e.g. the
+    model repeated the same survey call within the turn), reuse that run instead
+    of creating a duplicate.
     """
     if turn_id and dedup_key:
         existing = turn_guard.get_run(turn_id, dedup_key)
@@ -104,7 +103,6 @@ def _execute_run(conn: sqlite3.Connection, body: RunCreate,
         conn.commit()
     if turn_id and dedup_key:
         turn_guard.set_run(turn_id, dedup_key, run_id)
-    bus.create(run_id)
 
     done = threading.Event()
 
@@ -168,8 +166,8 @@ def build(
     thread — the agent narrates the result. They are read-only and bounded; there
     is no autonomy toggle and nothing data-moving here.
 
-    ``turn_id`` (the client turn id) makes a survey/review idempotent across a
-    streaming attempt and its blocking fallback (see ``turn_guard``).
+    ``turn_id`` (the Execution's turn id) makes a survey/review idempotent
+    within that turn (see ``turn_guard``).
     ``cancel_event`` lets the 180 s inline-run wait return early when the user
     stops the turn.
     """
@@ -205,7 +203,7 @@ def build(
     _ids: dict[int, str] = {}
 
     def start(tool: str, target: str) -> None:
-        # Emit a START marker so the live stream can show "running <tool>…"
+        # Emit a START marker so the Execution's tool row shows "running <tool>…"
         # while the (slow) inline run executes. Only "completed" records persist.
         call_id = uuid.uuid4().hex
         _ids[threading.get_ident()] = call_id
@@ -340,7 +338,7 @@ def build(
         # Bounded in-turn wait: poll until the run leaves pending/running or the
         # budget elapses. This whole turn already runs on a dedicated worker
         # thread (boto3 tools block it by design), so sleeping here stalls only
-        # this session's turn — the SSE keepalive keeps the client alive.
+        # this Execution's turn; its event stream keeps heartbeating.
         deadline = _time.monotonic() + max(0, min(int(wait_seconds), _MAX_RESULT_WAIT))
         while result["status"] in ("pending", "running") and _time.monotonic() < deadline:
             if cancel_event is not None and cancel_event.is_set():
