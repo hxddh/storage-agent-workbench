@@ -249,36 +249,39 @@ test.describe("Escape with two overlays open", () => {
     await expect(settings).toHaveCount(0);
   });
 
-  test("⌘I toggles the Artifacts split without replacing the Task; Escape leaves a split alone", async ({ page }) => {
+  test("⌘I expands the detail rows in place; Escape leaves them alone (v2.0)", async ({ page }) => {
     const { title } = seedSession(2);
     await seedFreshApp(page);
     await page.goto("/");
     await page.getByText(title, { exact: true }).first().click();
-    await expect(page.getByTestId("work-result").first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("task-result")).toBeVisible({ timeout: 20_000 });
+    const openRow = page.locator('[data-testid^="task-detail-"][data-open="true"]');
 
     await page.keyboard.press("Control+i");
-    await expect(page.getByTestId("agent-artifacts-panel")).toBeVisible();
+    // No row named by ⌘I exists on a task without findings: the first that
+    // does (the Report) opens, in the document, beside nothing.
+    await expect(openRow).toHaveCount(1);
+    await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "true");
     await expect(page.getByTestId("agent-composer")).toBeVisible();
 
-    // A split is not an overlay: Escape does not close it (Escape stops a
-    // running execution from an empty Composer instead).
+    // Details are part of the document, not an overlay: Escape leaves them.
     await page.keyboard.press("Escape");
-    await expect(page.getByTestId("agent-artifacts-panel")).toBeVisible();
+    await expect(openRow).toHaveCount(1);
 
     await page.keyboard.press("Control+i");
-    await expect(page.getByTestId("agent-artifacts-panel")).toHaveCount(0);
+    await expect(openRow).toHaveCount(0);
     await expect(page.getByTestId("agent-composer")).toBeVisible();
   });
 
-  test("a palette opened over Artifacts closes first", async ({ page }) => {
+  test("a palette opened over open details closes first", async ({ page }) => {
     const { title } = seedSession(2);
     await seedFreshApp(page);
     await page.goto("/");
     await page.getByText(title, { exact: true }).first().click();
-    await expect(page.getByTestId("work-result").first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("task-result")).toBeVisible({ timeout: 20_000 });
 
     await page.keyboard.press("Control+i");
-    await expect(page.getByTestId("agent-artifacts-panel")).toBeVisible();
+    await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "true");
 
     await page.keyboard.press("ControlOrMeta+k");
     const palette = page.getByTestId("command-palette");
@@ -286,27 +289,26 @@ test.describe("Escape with two overlays open", () => {
 
     await page.keyboard.press("Escape");
     await expect(palette).toHaveCount(0);
-    await expect(page.getByTestId("agent-artifacts-panel")).toBeVisible();
+    await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "true");
 
-    await page.getByTestId("artifacts-close").click();
-    await expect(page.getByTestId("agent-artifacts-panel")).toHaveCount(0);
+    await page.getByTestId("task-detail-toggle-report").click();
+    await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "false");
   });
 
-  test("under a narrow window Artifacts is an overlay that Escape closes", async ({ page }) => {
+  test("under a narrow window the details stay in the document — no overlay, no sideways scroll", async ({ page }) => {
     const { title } = seedSession(2);
     await seedFreshApp(page);
     await page.goto("/");
     await page.getByText(title, { exact: true }).first().click();
-    await expect(page.getByTestId("work-result").first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("task-result")).toBeVisible({ timeout: 20_000 });
     await page.setViewportSize({ width: 820, height: 760 });
     await page.waitForTimeout(300);
 
     await page.keyboard.press("Control+i");
-    await expect(page.getByTestId("agent-artifacts-scrim")).toBeVisible();
-    await expect(page.getByTestId("agent-artifacts-panel")).toHaveAttribute("data-mode", "overlay");
-
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("agent-artifacts-panel")).toHaveCount(0);
+    await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "true");
+    await expect(page.getByTestId("agent-artifacts-scrim")).toHaveCount(0);
+    const overflow = await page.getByTestId("task-scroll").evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
   });
 });
 

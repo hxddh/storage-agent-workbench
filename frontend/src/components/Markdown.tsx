@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo, type ReactNode } from "react";
+import { Fragment, memo, useMemo, useState, type ReactNode } from "react";
 import { useCopy } from "../hooks/useCopy";
 import { openExternal, tauriInvoke } from "../config";
 import { useI18n } from "../i18n";
@@ -180,11 +180,30 @@ const ALIGN_CLASS: Record<Align, string> = {
   right: "text-right",
 };
 
-/** Tables render whole: every row, every column, in the page flow.
- * No pagination, no inner scroller, no sticky header — a trapped wheel and
- * a hidden row are both worse than a long page. Width is handled by
- * wrapping (`agent-table` CSS), never by sideways scrolling. */
+/** Tables (v2.0): a long table previews its first rows in the page flow and
+ * expands in place — never an inner scroller, never pagination, never a
+ * sticky header. Folded rows stay in the DOM (hidden by CSS), so ⌘F still
+ * finds them: an open Find reveals every row (`[data-find-open]`). Column
+ * headers sort (numbers and sizes numerically); TSV copy takes the table in
+ * the order shown. */
 export const TALL_TABLE_ROWS = 12;
+export const TABLE_PREVIEW_ROWS = 8;
+
+const SIZE_UNITS: Record<string, number> = {
+  b: 1, kb: 1e3, mb: 1e6, gb: 1e9, tb: 1e12, pb: 1e15,
+  kib: 1024, mib: 1024 ** 2, gib: 1024 ** 3, tib: 1024 ** 4, pib: 1024 ** 5,
+};
+
+/** A sortable number from a cell: plain numbers, `12%`, `$1.10`, `328 GiB`. */
+export function cellNumber(cell: string): number | null {
+  const m = cell.replace(/[,\s]/g, "").match(/^[-+]?\$?(-?\d+(?:\.\d+)?)(%|[kmgtp]?i?b)?$/i);
+  if (!m) return null;
+  const value = Number(m[1]) * (cell.trim().startsWith("-") && !m[1].startsWith("-") ? -1 : 1);
+  const unit = m[2]?.toLowerCase();
+  return unit && unit !== "%" ? value * (SIZE_UNITS[unit] ?? 1) : value;
+}
+
+type SortState = { col: number; dir: "asc" | "desc" } | null;
 
 function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Align | null)[]; rows: string[][] }) {
   const columns = useMemo(() => {
@@ -197,13 +216,31 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
   }, [headers, aligns, rows]);
   const { t } = useI18n();
   const { copied, copy } = useCopy();
+  const [sort, setSort] = useState<SortState>(null);
+  const [expanded, setExpanded] = useState(false);
+  const sorted = useMemo(() => {
+    if (!sort) return rows;
+    const { col, dir } = sort;
+    const numeric = rows.every((r) => !(r[col] ?? "").trim() || cellNumber(r[col] ?? "") !== null);
+    const out = [...rows].sort((a, b) => {
+      const x = a[col] ?? "";
+      const y = b[col] ?? "";
+      const cmp = numeric ? (cellNumber(x) ?? -Infinity) - (cellNumber(y) ?? -Infinity) : x.localeCompare(y, undefined, { numeric: true });
+      return dir === "asc" ? cmp : -cmp;
+    });
+    return out;
+  }, [rows, sort]);
+  const foldable = rows.length > TALL_TABLE_ROWS;
+  const folded = foldable && !expanded;
+  const cycleSort = (col: number) =>
+    setSort((prev) => (!prev || prev.col !== col ? { col, dir: "asc" } : prev.dir === "asc" ? { col, dir: "desc" } : null));
   const copyTsv = () => {
     const cell = (value: string) => value.replace(/[\t\n\r]+/g, " ");
-    copy([headers, ...rows].map((row) => row.map(cell).join("\t")).join("\n"));
+    copy([headers, ...sorted].map((row) => row.map(cell).join("\t")).join("\n"));
   };
 
   return (
-    <div className="agent-table my-1">
+    <div className="agent-table my-1" data-folded={folded ? "true" : "false"}>
       <div className="mb-1 flex items-center gap-2 text-2xs text-gray-500">
         <span data-testid="table-size">{t("table.size", { rows: rows.length, cols: headers.length })}</span>
         <button
@@ -219,16 +256,26 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
       <table className="agent-table-grid" data-testid="table-grid">
         <thead>
           <tr>
-            {headers.map((h, i) => (
-              <th key={i} className={ALIGN_CLASS[columns[i]?.align ?? "left"]}>
-                {inline(h)}
-              </th>
-            ))}
+            {headers.map((h, i) => {
+              const dir = sort?.col === i ? sort.dir : null;
+              return (
+                <th
+                  key={i}
+                  className={ALIGN_CLASS[columns[i]?.align ?? "left"]}
+                  aria-sort={dir === "asc" ? "ascending" : dir === "desc" ? "descending" : "none"}
+                >
+                  <button type="button" className="agent-table-sort" onClick={() => cycleSort(i)} data-testid="table-sort" title={t("table.sortBy", { col: h })}>
+                    {inline(h)}
+                    <span className="agent-table-sort-mark" data-dir={dir ?? "none"} aria-hidden>{dir === "desc" ? "↓" : "↑"}</span>
+                  </button>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, ri) => (
-            <tr key={ri}>
+          {sorted.map((r, ri) => (
+            <tr key={ri} data-overflow={foldable && ri >= TABLE_PREVIEW_ROWS ? "true" : undefined}>
               {r.map((c, ci) => (
                 <td key={ci} className={`${ALIGN_CLASS[columns[ci]?.align ?? "left"]} ${columns[ci]?.numeric ? "tabular-nums" : ""}`}>
                   {inline(c)}
@@ -238,6 +285,11 @@ function TableBlock({ headers, aligns, rows }: { headers: string[]; aligns: (Ali
           ))}
         </tbody>
       </table>
+      {foldable ? (
+        <button type="button" className="agent-table-more" onClick={() => setExpanded((value) => !value)} data-testid="table-more" aria-expanded={expanded}>
+          {expanded ? t("table.showFewer") : t("table.showAll", { rows: rows.length })}
+        </button>
+      ) : null}
     </div>
   );
 }

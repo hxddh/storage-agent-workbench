@@ -103,10 +103,12 @@ test.describe("a real agent turn", () => {
       await expect(group).toContainText(/Worked/);
       await group.getByTestId("execution-head").click();
       await expect(group.getByTestId("worked-row").first()).toContainText("read_skill");
+      // v2.0 — the answer leads the Task as its Result; the turn in the Work
+      // log keeps its process in order and points up to it.
       const order = await task(page).evaluate((el) =>
-        [...el.querySelectorAll("[data-testid='worked-group'],[data-testid='turn-answer']")]
+        [...el.querySelectorAll("[data-testid='task-result'] [data-testid='turn-answer'],[data-testid='task-log'] [data-testid='worked-group'],[data-testid='task-log'] [data-testid='log-result-above']")]
           .map((node) => node.getAttribute("data-testid")));
-      expect(order.indexOf("worked-group")).toBeLessThan(order.indexOf("turn-answer"));
+      expect(order).toEqual(["turn-answer", "worked-group", "log-result-above"]);
     } finally {
       await cleanup();
     }
@@ -119,9 +121,9 @@ test.describe("a real agent turn", () => {
       await expect(task(page).getByText(/omits s3:ListBucket/)).toBeVisible({ timeout: 60_000 });
       await expect(page.getByTestId("turn-commentary").first()).toContainText(/read the IAM policy skill/);
       const order = await task(page).evaluate((el) =>
-        [...el.querySelectorAll("[data-testid='turn-commentary'],[data-testid='worked-group'],[data-testid='turn-answer']")]
+        [...el.querySelectorAll("[data-testid='task-log'] :is([data-testid='turn-commentary'],[data-testid='worked-group'],[data-testid='log-result-above'])")]
           .map((node) => node.getAttribute("data-testid")));
-      expect(order).toEqual(["turn-commentary", "worked-group", "turn-answer"]);
+      expect(order).toEqual(["turn-commentary", "worked-group", "log-result-above"]);
       // The commentary is NOT repeated inside the answer.
       await expect(page.getByTestId("turn-answer").last()).not.toContainText(/read the IAM policy skill/);
     } finally {

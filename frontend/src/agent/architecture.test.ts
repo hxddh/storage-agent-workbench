@@ -70,7 +70,9 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(app).not.toContain("FirstRunWizard");
     expect(shell).toContain("taskContent: ReactNode");
     expect(shell).toContain("agent-task-content");
-    expect(shell).toContain("<ArtifactsPanel");
+    // v2.0 — no side panel: the shell hands the detail rows to the document.
+    expect(shell).not.toContain("<ArtifactsPanel");
+    expect(shell).toContain("<TaskDetailsContext.Provider");
     expect(shell).toContain("publishAgentCommands");
     expect(shell).not.toContain("navigation: ReactNode");
     expect(shell).not.toContain("agent-task-header");
@@ -147,7 +149,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     const root = source("../components/AgentTask.tsx");
     const banners = source("../components/TaskBanners.tsx");
     expect(turn).toContain('data-testid="turn-user"');
-    expect(turn).toContain('data-testid="work-result"');
+    expect(turn).toContain('data-testid={answerMode === "full" ? "work-result" : "log-turn"}');
     expect(turn).toContain('data-testid="turn-answer"');
     expect(turn).toContain("turn-direction-text");
     expect(turn).not.toContain("AnswerDocument");
@@ -238,26 +240,26 @@ describe("v1.09.0 native Agent window boundaries", () => {
     absent("../components/Chart.tsx");
   });
 
-  it("keeps Artifacts a right split beside the Task: Evidence, Reports, Plans, Baselines & Drift, Execution", () => {
-    const panel = source("./ArtifactsPanel.tsx");
+  it("keeps the durable outputs as detail rows under the Result, never a side panel (v2.0)", () => {
+    const details = source("../components/TaskDetails.tsx");
     const shell = source("./AgentShell.tsx");
     const model = source("./model.ts");
     const commands = source("./commands.ts");
-    const css = source("./native-shell.css");
+    const css = source("./native-document.css");
+    absent("./ArtifactsPanel.tsx");
     absent("./AgentReviewPanel.tsx");
     absent("./ExecutionReview.tsx");
-    expect(panel).toContain('data-testid="agent-artifacts-panel"');
-    expect(panel).toContain("data-testid={`artifacts-section-${id}`}");
-    for (const section of ["evidence", "reports", "plans", "baselines", "execution"]) {
-      expect(panel).toContain(`"${section}"`);
-    }
-    expect(panel).toContain('data-testid="artifacts-back"');
-    expect(panel).toContain("<EvidenceReview");
-    expect(panel).toContain("<ReportArtifact");
-    expect(panel).toContain("<ExecutionDetail");
-    expect(panel).not.toContain("Workspace");
-    expect(panel).not.toContain('role="tablist"');
-    expect(panel).not.toContain("remediation-plan-page");
+    expect(details).toContain("data-testid={`task-detail-${kind}`}");
+    expect(details).toContain("aria-expanded={open}");
+    expect(details).toContain("<EvidenceReview");
+    expect(details).toContain("<ReportArtifact");
+    expect(details).toContain("<ExecutionDetail");
+    expect(details).toContain("<PlanDocument");
+    expect(details).toContain("<BaselineDocument");
+    // A row exists only when something is behind it: no empty placeholders.
+    expect(details).not.toContain("c.empty");
+    expect(details).not.toContain("useFocusTrap");
+    expect(details).not.toContain('role="dialog"');
     expect(model).toContain('export type ArtifactKind = "evidence" | "report" | "plan" | "baseline" | "execution"');
     expect(model).not.toContain("ReviewSurface");
     expect(model).not.toContain('"overview"');
@@ -265,12 +267,10 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(commands).toContain("openAgentArtifacts");
     expect(commands).toContain("openAgentReview");
     expect(commands).toContain("openAgentExecution");
-    // A split, not a sheet: the panel is a flex sibling of the document; only
-    // the narrow-window fallback paints a scrim.
-    expect(css).toContain(".agent-artifacts-panel");
-    expect(css).not.toContain(".agent-review-overlay");
-    expect(shell).toContain('data-artifacts={open ? "open" : "closed"}');
-    expect(shell).toContain("overlay={narrow}");
+    expect(shell).not.toContain("overlay");
+    expect(shell).not.toContain("localStorage");
+    expect(css).toContain(".task-details");
+    expect(source("./native-shell.css")).not.toContain(".agent-artifacts-panel");
     expect(source("./EvidenceReview.tsx")).toContain('data-testid="evidence-review"');
     expect(source("./ReportArtifact.tsx")).toContain("export function ReportArtifact");
     expect(source("../App.tsx")).toContain('case "review": toggleAgentArtifacts(); break;');
@@ -363,11 +363,11 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(source("../i18n.tsx")).toContain('"viz.costWithheld": "Cost axis withheld."');
     expect(extract).toContain("Never invent a day the runtime did not emit");
     expect(task).toContain("task-analysis-figures");
-    expect(task).toContain("figures={figuresFor(item)}");
+    expect(task).toContain("figures={figuresFor(lastResult)}");
     // v1.14 — provenance gaps are localized through the same key.
     expect(mark).toContain('t("viz.noChain")');
     expect(source("../api/tasks.ts")).toContain("/agent-tasks/${taskId}/provenance");
-    expect(source("./ArtifactsPanel.tsx")).not.toContain("AnalysisFigures");
+    expect(source("../components/TaskDetails.tsx")).not.toContain("AnalysisFigures");
   });
 
   it("keeps the presentation on tokens: one neutral ladder, an ink primary, hairline depth", () => {
@@ -849,7 +849,10 @@ describe("v1.12.0 one protocol and the frontend split", () => {
     expect(document).toContain("export function useTaskItems(");
     expect(document).toContain("<FindBar");
     expect(document).toContain('data-testid="load-earlier"');
-    expect(document).toContain('data-testid="jump-to-latest"');
+    // v2.0 — result-first: the Task opens at the top; nothing follows the end.
+    expect(document).not.toContain('data-testid="jump-to-latest"');
+    expect(document).toContain("<TaskResult");
+    expect(document).toContain('data-testid="task-log"');
     expect(banners).toContain("export function TaskBanners(");
     expect(banners).toContain('data-testid="offline-banner"');
     expect(host).toContain("export function useTaskComposer(");
@@ -866,7 +869,7 @@ describe("v1.12.0 one protocol and the frontend split", () => {
   it("reads Execution detail from the durable log, never from /runs or an EventSource", () => {
     const detail = source("../components/ExecutionDetail.tsx");
     const boundary = source("../components/ExecutionDetail.tsx");
-    const panel = source("./ArtifactsPanel.tsx");
+    const panel = source("../components/TaskDetails.tsx");
     const projection = source("./useAgentTaskProjection.ts");
     expect(detail).not.toContain("EventSource");
     expect(detail).not.toContain("/runs");
@@ -894,7 +897,7 @@ describe("v1.12.0 one protocol and the frontend split", () => {
     expect(detail).toContain("executionId: string;");
     expect(boundary).not.toContain("runId");
     expect(boundary).toContain("<ExecutionDocument {...props} />");
-    expect(panel).toContain("<ExecutionDetail taskId={taskId} executionId={selection.id}");
+    expect(panel).toContain("<ExecutionDetail taskId={taskId} executionId={openExecution}");
     expect(panel).toContain('data-testid="execution-row"');
     expect(panel).not.toContain("executions = detail?.runs");
     expect(panel).not.toContain("execution.run_id");
@@ -993,12 +996,9 @@ describe("v1.14.0 interaction truth and content craft", () => {
     expect(navigation).toContain("maxLength={120}");
   });
 
-  it("keeps no focus inside a collapsed sidebar and traps overlay panels", () => {
+  it("keeps no focus inside a collapsed sidebar", () => {
     const navigation = source("./AgentTaskNavigation.tsx");
-    const panel = source("./ArtifactsPanel.tsx");
     expect(navigation).toContain("inert={collapsed ? true : undefined}");
-    expect(panel).toContain("useFocusTrap<HTMLElement>(overlay)");
-    expect(panel).toContain("tabIndex={-1}");
   });
 
   it("navigates the model menu by keyboard with listbox semantics", () => {
@@ -1011,7 +1011,7 @@ describe("v1.14.0 interaction truth and content craft", () => {
 
   it("shares one relative-time implementation with honest UTC sources", () => {
     const navigation = source("./AgentTaskNavigation.tsx");
-    const panel = source("./ArtifactsPanel.tsx");
+    const panel = source("../components/TaskDetails.tsx");
     const detail = source("../components/ExecutionDetail.tsx");
     expect(navigation).toContain('from "../lib/time"');
     expect(navigation).toContain("previousDayKey(today)");
@@ -1021,11 +1021,12 @@ describe("v1.14.0 interaction truth and content craft", () => {
     expect(detail).toContain('data-testid="execution-usage"');
   });
 
-  it("searches open panel documents and renders usage only when reported", () => {
+  it("searches the detail rows with the document and renders usage only when reported", () => {
     const document = source("../components/TaskDocument.tsx");
     const detail = source("../components/ExecutionDetail.tsx");
+    // v2.0 — detail rows render inside the task scroller, so ⌘F walks them.
     expect(document).toContain("getFindRoots()");
-    expect(source("./ArtifactsPanel.tsx")).toContain("registerFindRoot");
+    expect(document).toContain("<TaskDetails");
     expect(detail).toContain("usageLine(usage, t)");
     expect(detail).toContain("unreported usage is not zero");
   });
@@ -1076,14 +1077,15 @@ describe("v1.14.0 interaction truth and content craft", () => {
   it("keeps the empty start to one greeting line plus the Composer", () => {
     const greeting = source("./startGreeting.ts");
     const root = source("../components/AgentTask.tsx");
-    const panel = source("./ArtifactsPanel.tsx");
+    const details = source("../components/TaskDetails.tsx");
     // v1.15 — the rotating "Try:" hint is gone; discoverability lives in
     // the palette (⌘K), not in painted suggestions.
     expect(root).not.toContain('data-testid="start-hint"');
     expect(root).not.toContain("pickStartHint");
     expect(greeting).not.toContain("试试：");
     expect(greeting).not.toContain("Try:");
-    expect(panel).toContain('message.role === "assistant"');
+    // A report row needs something to report: the Task's Result.
+    expect(details).toContain("if (hasResult)");
   });
 });
 
@@ -1130,16 +1132,20 @@ describe("v1.15.0 true native agent", () => {
     expect(doc).not.toContain("onClick={onResync}");
   });
 
-  it("renders tables whole: no folding, no sliding", () => {
+  it("previews long tables in place — no pagination, no sliding, still findable (v2.0)", () => {
     const md = source("../components/Markdown.tsx");
     expect(md).toContain('data-testid="table-grid"');
     expect(md).toContain("agent-table-grid");
+    expect(md).toContain("TABLE_PREVIEW_ROWS");
+    expect(md).toContain('data-testid="table-more"');
+    expect(md).toContain("aria-sort=");
+    // Folded rows stay in the DOM so ⌘F finds them.
+    expect(md).toContain('data-overflow={foldable && ri >= TABLE_PREVIEW_ROWS ? "true" : undefined}');
     expect(md).not.toContain('data-testid="table-scroll-hint"');
-    expect(md).not.toContain('data-testid="table-expand"');
     expect(md).not.toContain('data-testid="table-page"');
     expect(md).not.toContain("agent-table-scroll");
-    expect(md).not.toContain("useState");
     const css = source("./native-document.css");
+    expect(css).toContain('[data-find-open="true"] .agent-table[data-folded="true"] tbody tr[data-overflow="true"] { display: table-row; }');
     expect(css).not.toMatch(/\.agent-table-scroll\s*\{[^}]*overflow/);
   });
 

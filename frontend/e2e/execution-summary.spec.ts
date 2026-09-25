@@ -32,17 +32,16 @@ test.describe("Worked groups in the Agent turn", () => {
     await expect(task(page).getByText(/"status"\s*:\s*200/).first()).toBeVisible({ timeout: 15_000 });
   });
 
-  test("Artifacts open as a split beside the task without replacing it", async ({ page }) => {
+  test("details open in place under the Result without replacing the task (v2.0)", async ({ page }) => {
     await open(page);
     await page.keyboard.press("Control+i");
 
-    await expect(page.getByTestId("agent-shell")).toHaveAttribute("data-artifacts", "open");
-    const panel = page.getByTestId("agent-artifacts-panel");
-    await expect(panel).toBeVisible();
-    await expect(panel).toHaveAttribute("data-mode", "split");
-    await expect(page.getByTestId("artifacts-section-evidence")).toBeVisible();
-    await expect(page.getByTestId("artifacts-section-execution")).toBeVisible();
+    await expect(page.getByTestId("agent-shell")).not.toHaveAttribute("data-details", "closed");
+    const details = page.getByTestId("task-scroll").getByTestId("task-details");
+    await expect(details).toBeVisible();
+    await expect(details.locator('[data-testid^="task-detail-"][data-open="true"]')).toHaveCount(1);
     await expect(page.getByTestId("agent-composer")).toBeVisible();
+    await expect(page.getByTestId("agent-artifacts-panel")).toHaveCount(0);
     await expect(page.getByTestId("agent-artifacts-scrim")).toHaveCount(0);
   });
 });

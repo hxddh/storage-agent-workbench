@@ -1,9 +1,9 @@
-/* The Task document (v1.19): a sequence of sections, not an exchange of messages. Each turn
- * opens with the user's Direction as a left-aligned heading, then the
- * Agent's work (commentary · worked group · plan · approval) and the Work
- * Result flow beneath it in one 46rem reading column. Later turns are
- * separated by a hairline. There is no bubble and no left/right speaker
- * alternation. */
+/* The Task document (v2.0): result-first. From the top: banners, the work
+ * in progress, the latest Result (the recorded conclusion — answer, findings,
+ * next steps — then the full answer, figures and detail rows), then the Work
+ * log. In the log each turn opens with the user's Direction as a left-aligned
+ * heading (no bubble, no speaker alternation); later turns are separated by a
+ * hairline and older answers fold to one line. One 46rem reading column. */
 
 [data-testid="task-scroll"] {
   scrollbar-gutter: stable;
@@ -22,12 +22,206 @@
   margin-inline: auto;
 }
 
+/* The document's sections stack with room between them. */
+.native-document > * + * { margin-top: 28px; }
+.native-document > .task-banners:empty + * { margin-top: 0; }
+.task-log > .task-item + .task-item { margin-top: 20px; }
+
 /* Every turn after the first starts a new section. */
-.native-document > .task-item[data-direction] ~ .task-item[data-direction] {
+.task-log > .task-item[data-direction] ~ .task-item[data-direction] {
   margin-top: 40px;
   border-top: 1px solid var(--edge);
   padding-top: 32px;
 }
+
+/* A section's quiet label ("In progress", "Result", "Work log"). */
+.task-section-kicker,
+.task-result-kicker,
+.task-log-head {
+  display: block;
+  color: var(--gray-500);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.task-section-kicker { margin-bottom: 10px; }
+
+/* The work in progress: at the top, where the reader already is. */
+.task-live:has(~ .task-result, ~ .task-log) { padding-bottom: 28px; border-bottom: 1px solid var(--edge); }
+.task-live > .task-item + * { margin-top: 20px; }
+
+/* --- The Result ------------------------------------------------------- */
+.task-result-head {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.task-result-kicker { flex: none; }
+.task-result-for {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--gray-400);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.result-answer {
+  margin: 0;
+  color: var(--gray-100);
+  font-size: var(--text-xl);
+  font-weight: 560;
+  line-height: 1.4;
+  letter-spacing: -0.014em;
+  text-wrap: pretty;
+}
+.result-block { margin-top: 20px; }
+.result-label {
+  margin: 0 0 8px;
+  color: var(--gray-500);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+.turn-agent > .result-label { margin-top: 24px; }
+.result-findings { margin: 0; padding: 0; list-style: none; }
+.result-finding + .result-finding { border-top: 1px solid var(--edge); }
+.result-finding-head {
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 2px;
+  color: var(--gray-200);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  text-align: left;
+}
+button.result-finding-head { cursor: pointer; border-radius: var(--radius-sm); }
+button.result-finding-head:hover .result-finding-title { color: var(--gray-100); }
+.result-finding-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--gray-500);
+  transform: translateY(-1px);
+}
+.result-finding-dot[data-severity="high"] { background: var(--danger); }
+.result-finding-dot[data-severity="medium"] { background: var(--warn); }
+.result-finding-dot[data-severity="low"] { background: var(--gray-400); }
+.result-finding-dot[data-severity="info"] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--gray-500); }
+.result-finding-title { min-width: 0; flex: 1; overflow-wrap: break-word; }
+.result-finding-chevron { flex: none; color: var(--gray-500); transition: transform var(--duration-fast) var(--ease-out); }
+.result-finding-head[aria-expanded="true"] .result-finding-chevron { transform: rotate(90deg); }
+.result-finding-detail {
+  margin: 0 0 10px 19px;
+  color: var(--gray-400);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+.result-next-steps { display: flex; flex-wrap: wrap; gap: 8px; }
+.result-next-step {
+  max-width: 100%;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--radius-lg);
+  padding: 6px 12px;
+  color: var(--gray-200);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  text-align: left;
+  transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+.result-next-step:hover:not(:disabled) { border-color: var(--gray-500); color: var(--gray-100); }
+.result-next-step:disabled { cursor: default; opacity: 0.6; }
+.result-grounding {
+  margin: 6px 0 0;
+  color: var(--gray-500);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.turn-agent + .result-grounding { margin-top: 12px; }
+.result-conclusion + .turn-agent { margin-top: 8px; }
+
+/* Detail rows under the Result: expand in place, never a side panel. */
+.task-details {
+  margin-top: 24px;
+  border-top: 1px solid var(--edge);
+}
+.task-detail { border-bottom: 1px solid var(--edge); }
+.task-detail-head {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 2px;
+  text-align: left;
+}
+.task-detail-chevron {
+  display: inline-flex;
+  color: var(--gray-500);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.task-detail-head[aria-expanded="true"] .task-detail-chevron { transform: rotate(90deg); }
+.task-detail-label { color: var(--gray-200); font-size: var(--text-sm); font-weight: 500; }
+.task-detail-meta {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--gray-500);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-detail-head:hover .task-detail-label { color: var(--gray-100); }
+.task-detail-body { padding: 4px 0 18px 22px; }
+.task-detail-document > .native-ghost-action { margin: 0 0 8px -6px; }
+.task-detail-back-icon { display: inline-flex; transform: rotate(180deg); }
+
+/* --- The Work log ------------------------------------------------------ */
+.task-log[data-under-result="true"] {
+  margin-top: 56px;
+}
+.task-log-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 20px;
+}
+.task-log-head small { color: var(--gray-500); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+/* An older answer folds to one line; the latest points up to the Result. */
+.turn-answer-fold { margin-top: 10px; }
+.turn-answer-fold > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--gray-300);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.turn-answer-fold > summary::-webkit-details-marker { display: none; }
+.turn-answer-fold > summary:hover { color: var(--gray-100); }
+.turn-answer-fold-chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--gray-500);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+.turn-answer-fold[open] > summary .turn-answer-fold-chevron { transform: rotate(90deg); }
+.turn-answer-fold-gist { min-width: 0; overflow-wrap: break-word; }
+.turn-answer-fold > .turn-answer,
+.turn-answer-found { margin-top: 12px; }
+.turn-result-above {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--gray-500);
+  font-size: var(--text-xs);
+}
+.turn-result-above:hover { color: var(--gray-200); }
 
 /* The Direction: the section heading of a turn, in the user's own words. */
 .turn-direction {
@@ -706,6 +900,34 @@
   overflow-wrap: break-word;
 }
 .agent-table-grid tbody tr:last-child td { border-bottom: 0; padding-bottom: 6px; }
+/* Block and column-wide: an inline-block button is as wide as its longest
+   word, which pushed a fixed-layout grid past its column. */
+.agent-table-sort {
+  display: block;
+  width: 100%;
+  overflow-wrap: break-word;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  text-transform: inherit;
+}
+.agent-table-sort:hover { color: var(--gray-200); }
+.agent-table-sort-mark { margin-left: 4px; color: var(--gray-500); opacity: 0; }
+.agent-table-sort-mark:not([data-dir="none"]) { opacity: 1; color: var(--gray-200); }
+.agent-table-sort:hover .agent-table-sort-mark { opacity: 1; }
+/* v2.0 — a long table previews its first rows; the rest stay in the DOM for
+   Find, and an open Find shows them all. */
+.agent-table[data-folded="true"] tbody tr[data-overflow="true"] { display: none; }
+[data-find-open="true"] .agent-table[data-folded="true"] tbody tr[data-overflow="true"] { display: table-row; }
+.agent-table[data-folded="true"] tbody tr:nth-child(8) td { border-bottom: 0; }
+.agent-table-more {
+  margin-top: 4px;
+  padding: 4px 14px;
+  color: var(--gray-400);
+  font-size: var(--text-xs);
+}
+.agent-table-more:hover { color: var(--gray-100); }
 .agent-prose nav[data-testid="result-outline"] { margin: 0.2rem 0 0.6rem; border: 0; padding: 0 0 0.6rem; background: transparent; border-bottom: 1px solid var(--edge); border-radius: 0; }
 .agent-prose nav[data-testid="result-outline"] ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.25rem; row-gap: 0.1rem; }
 .agent-prose nav[data-testid="result-outline"] a { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: none; }

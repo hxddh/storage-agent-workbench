@@ -13,6 +13,7 @@
  */
 import { useMemo, useRef } from "react";
 import { deriveTaskTitle } from "../lib/taskTitle";
+import type { Conclusion } from "../types";
 import {
   ApiError,
   createTaskExecution,
@@ -120,6 +121,7 @@ export function liveHandlers(id: string) {
         return { items: next.items, answer: next.answer, waiting: next.waiting, contextTokens: payload.after_tokens ?? s.contextTokens };
       }),
     onTaskStatus: (payload: LiveTask["taskStatus"]) => patchLiveTask(id, { taskStatus: payload }),
+    onConclusionRecorded: (payload: Conclusion) => patchLiveTask(id, { conclusion: payload }),
   };
 }
 

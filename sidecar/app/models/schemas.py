@@ -555,6 +555,8 @@ class SessionMessageOut(BaseModel):
     # to preserve.
     grounding: dict | None = None
     turn_items: list[dict] = Field(default_factory=list)
+    # v2.0 — the Work Result's structured head (record_conclusion), or None.
+    conclusion: dict | None = None
     created_at: str
     seq: int | None = None
 

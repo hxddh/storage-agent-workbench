@@ -1,6 +1,6 @@
 # Data model
 
-> **Storage Agent v1.19.0 persistence reference.** Migration head **030** (`task_context_versions.summary_sanitized` / `summary_through_seq` for context compaction). `app_settings` gains the `approval_policy` key. `task_decisions.scope` now also takes `session` / `always` (policy grants). `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI. v1.17 and v1.18 add no migration; v1.18 adds a `steer` kind to `session_messages.turn_items` (JSON, no schema change).
+> **Storage Agent v2.0.0 persistence reference.** Migration head **031** (`session_messages.conclusion` and `work_results.conclusion_json_sanitized` — the conclusion the model recorded with `record_conclusion`; 030 added `task_context_versions.summary_sanitized` / `summary_through_seq` for context compaction). `app_settings` gains the `approval_policy` key. `task_decisions.scope` now also takes `session` / `always` (policy grants). `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI. v1.17 and v1.18 add no migration; v1.18 adds a `steer` kind to `session_messages.turn_items` (JSON, no schema change).
 >
 > Product vocabulary is Agent Task / Direction / Execution / Decision / Work Result / Artifact. SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
 
@@ -18,7 +18,7 @@ Secrets are stored separately in the encrypted local vault. SQLite stores only o
 
 The schema is created by append-only migrations in `sidecar/app/migrations.py`.
 
-**Current migration head: 030.**
+**Current migration head: 031.**
 
 Rules:
 
@@ -61,6 +61,7 @@ Rules:
 | 028 | `native_agent_titles_effort` | `sessions.title_source` (`NULL` seed / `agent` / `user`) for runtime task titles; `model_providers.reasoning_effort` (`low`/`medium`/`high`/`NULL`) |
 | 029 | `native_agent_turn_items_approvals` | `session_messages.turn_items` (ordered commentary/tool items before the answer); `task_decisions.kind` (`approval` / `proposal`) and `scope` (`once` / `task`) for Decisions raised inline by gated tools |
 | 030 | `native_agent_context_compaction` | `task_context_versions.summary_sanitized` (the bounded, redacted continuation summary the compaction step wrote; carried forward onto later versions) and `summary_through_seq` (the `session_messages` rowid it covers through — the prompt replays only later messages) |
+| 031 | `result_first_work_result_conclusion` | `session_messages.conclusion` and `work_results.conclusion_json_sanitized` — JSON `{answer, findings[{title, severity, detail?}], next_steps[]}` the model recorded with `record_conclusion` (bounded, redacted; `NULL` = none recorded, and the UI then shows the answer alone) |
 
 ## Product-to-persistence mapping
 
@@ -69,7 +70,7 @@ Rules:
 | Agent Task | `agent_tasks` (id equals the compatibility session id) | `sessions`; product surface `/agent-tasks` |
 | Direction | `task_executions.direction` (+ durable steer events) | `session_messages` (user rows) |
 | Execution | `task_executions` + `execution_events` (append-only structured progress) | `runs`, `session_runs`, `tool_calls`, `turn_metrics` |
-| Work Result | `work_results` (runtime metadata; content via `message_id`) | `session_messages` (assistant rows) |
+| Work Result | `work_results` (runtime metadata + `conclusion_json_sanitized`, v2.0; content via `message_id`) | `session_messages` (assistant rows, + `conclusion`) |
 | Decision | `task_decisions` (pending / approved / declined / superseded; `kind`, `scope`) | `approval_events`, evidence-import state |
 | Artifact | `task_artifacts` (unified index over reports/imports/analyses/remediation plans/baselines/drift) | `reports`, evidence-import tables, report files, `remediation_plans` |
 | Remediation Plan | `remediation_plans` (`proposed` / `verified` / `partially_verified` / `stale`) | indexed via `task_artifacts` |
@@ -322,8 +323,11 @@ Execution is a durable object with a real lifecycle:
   loading events into Python; truncation rewrites the oldest
   dropped row as an explicit `execution.events_truncated` marker and never
   touches queued/running/waiting logs. `0` on either cap disables that cap.
-- `work_results` — the durable output of an execution: stopped/cut-short flags
-  and derived grounding; the text stays on the linked `session_messages` row.
+- `work_results` — the durable output of an execution: stopped/cut-short flags,
+  derived grounding and (v2.0, migration 031) `conclusion_json_sanitized` — the
+  conclusion the model recorded with `record_conclusion`, or `NULL`; the text
+  stays on the linked `session_messages` row (which carries the same
+  `conclusion`).
 - `task_decisions` — first-class Decision rows raised by gated tools inside a
   running execution (`kind=approval`, since v1.11; `proposal` rows are history).
   At most one pending Decision exists per `(task, action_type)`; a later request

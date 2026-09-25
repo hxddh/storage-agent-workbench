@@ -41,7 +41,7 @@ def test_migration_030_adds_the_compaction_columns(client):
         cols = {r[1] for r in conn.execute("PRAGMA table_info(task_context_versions)")}
         assert {"summary_sanitized", "summary_through_seq"} <= cols
         head = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
-        assert int(head) == 30
+        assert int(head) >= 30  # 030 applied; v2.0 appends 031
     finally:
         conn.close()
 

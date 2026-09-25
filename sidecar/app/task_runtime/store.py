@@ -451,14 +451,17 @@ def record_work_result(conn: sqlite3.Connection, task_id: str, execution_id: str
                        message_id: str | None, *, kind: str = "answer",
                        stopped: bool = False, cut_short: str | None = None,
                        grounding: dict[str, Any] | None = None,
-                       proposals: list[dict[str, Any]] | None = None) -> str:
+                       proposals: list[dict[str, Any]] | None = None,
+                       conclusion: dict[str, Any] | None = None) -> str:
     wr_id = _new_id()
     conn.execute(
         "INSERT INTO work_results (id, task_id, execution_id, message_id, kind, stopped, "
-        "cut_short, grounding_json_sanitized, proposals_json_sanitized, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "cut_short, grounding_json_sanitized, proposals_json_sanitized, "
+        "conclusion_json_sanitized, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (wr_id, task_id, execution_id, message_id, kind, 1 if stopped else 0,
-         cut_short, _dumps(grounding or {}), _dumps(proposals or []), utcnow()),
+         cut_short, _dumps(grounding or {}), _dumps(proposals or []),
+         _dumps(conclusion) if conclusion else None, utcnow()),
     )
     return wr_id
 
@@ -483,6 +486,8 @@ def _work_result_dict(r: sqlite3.Row) -> dict[str, Any]:
         "cut_short": r["cut_short"],
         "grounding": _loads(r["grounding_json_sanitized"], {}),
         "proposals": _loads(r["proposals_json_sanitized"], []),
+        "conclusion": (_loads(r["conclusion_json_sanitized"], None)
+                       if "conclusion_json_sanitized" in r.keys() else None),
         "created_at": r["created_at"],
     }
 

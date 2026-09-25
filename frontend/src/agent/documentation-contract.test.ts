@@ -37,7 +37,7 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v1.19 documentation contract", () => {
+describe("v2.0 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
@@ -48,12 +48,14 @@ describe("v1.19 documentation contract", () => {
     expect(readRepo("docs/README.md")).toContain("v1.17.0");
     expect(readRepo("docs/README.md")).toContain("v1.18.0");
     expect(readRepo("docs/README.md")).toContain("v1.19.0");
+    expect(readRepo("docs/README.md")).toContain("v2.0.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.16.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.19.0");
+    expect(readRepo("CLAUDE.md")).toContain("v2.0.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
-    expect(readRepo("docs/product.md")).toContain("v1.19.0");
-    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v1\.19\.0/);
-    expect(readRepo("docs/architecture.md")).toContain("Migration head **030**");
+    expect(readRepo("docs/product.md")).toContain("v2.0.0");
+    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v2\.0\.0/);
+    expect(readRepo("docs/architecture.md")).toContain("Migration head **031**");
     expect(readRepo("docs/architecture.md")).not.toMatch(/Current architecture baseline: Storage Agent v1\.10\.0/);
     expect(readRepo("docs/architecture.md")).not.toMatch(/Migration head \*\*028\*\*/);
     expect(readRepo("docs/design-tokens.md")).toContain("--duration-fast");
@@ -98,7 +100,11 @@ describe("v1.19 documentation contract", () => {
     expect(api).toContain("/remediation-plans");
     expect(api).toContain("/settings/price-table");
     expect(api).toMatch(/product-level.*Agent Task/i);
-    expect(dataModel).toMatch(/Current migration head:\s*030/i);
+    expect(dataModel).toMatch(/Current migration head:\s*031/i);
+    expect(dataModel).toContain("result_first_work_result_conclusion");
+    expect(dataModel).toContain("conclusion_json_sanitized");
+    expect(api).toContain("conclusion.recorded");
+    expect(readRepo("docs/tools.md")).toContain("record_conclusion");
     expect(dataModel).toContain("native_agent_titles_effort");
     expect(dataModel).toContain("native_agent_turn_items_approvals");
     expect(dataModel).toContain("turn_items");
@@ -143,11 +149,17 @@ describe("v1.19 documentation contract", () => {
     expect(readRepo("CLAUDE.md")).not.toContain("Focus mode");
     expect(readRepo("CLAUDE.md")).not.toContain("command center");
     expect(readRepo("docs/architecture.md")).toContain("after=<last seq>");
-    expect(readRepo("docs/architecture.md")).toContain("agent-artifacts-panel");
+    // v2.0 — the Artifacts side panel is retired; details expand in place.
+    expect(readRepo("docs/architecture.md")).toContain("TaskDetails");
+    expect(readRepo("CLAUDE.md")).not.toContain("**Artifacts** is a right split panel");
+    expect(readRepo("docs/product.md")).not.toContain("Artifacts is a **right split panel**");
     expect(readRepo("docs/tools.md")).toContain("simulate_storage_cost");
     expect(readRepo("docs/roadmap.md")).not.toMatch(/Add ORC support/);
     expect(readRepo("docs/roadmap.md")).toContain("v1.19.0");
     expect(readRepo("docs/roadmap.md")).toContain("Document-native");
+    expect(readRepo("docs/roadmap.md")).toContain("v2.0.0");
+    expect(readRepo("docs/roadmap.md")).toContain("Result-first");
+    expect(readRepo("docs/releases/2.0.0.md")).toContain("Result-first");
     expect(readRepo("docs/releases/1.13.0.md")).toContain("Honesty and completeness");
     expect(readRepo("docs/releases/1.14.0.md")).toContain("Interaction truth and content craft");
     expect(readRepo("docs/releases/1.15.0.md")).toContain("True Native Agent");

@@ -59,8 +59,9 @@ test.describe("the plan checklist", () => {
       await waitForDurableAnswer(page, /public reads/);
       await expect(page.getByTestId("agent-composer")).not.toHaveAttribute("data-agent-state", "working", { timeout: 60_000 });
 
-      // Durable: ONE card on the persisted turn, folded to "Plan · 2/2".
-      const durable = page.locator('[data-testid="work-result"][data-streaming="false"]').last().getByTestId("plan-card");
+      // Durable: ONE card on the persisted turn in the Work log (v2.0 — the
+      // process record under the Result), folded to "Plan · 2/2".
+      const durable = page.getByTestId("task-log").getByTestId("log-turn").last().getByTestId("plan-card");
       await expect(durable).toHaveCount(1, { timeout: 30_000 });
       await expect(durable).toHaveAttribute("data-done", "2");
       await expect(durable).toHaveAttribute("data-total", "2");

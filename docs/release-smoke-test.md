@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v1.19.0.**
+> **Current baseline: Storage Agent v2.0.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -38,7 +38,7 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] There is exactly one primary Agent composer/control.
 - [ ] At rest it represents **Delegate**.
 - [ ] During active execution it exposes real **Steer** and **Stop** behavior for the same Task.
-- [ ] Opening the Artifacts panel does not create another Agent input.
+- [ ] Expanding a detail row does not create another Agent input.
 - [ ] ⌘K / Ctrl+K opens a command overlay over the Task; it is not a new destination.
 - [ ] Dark and light themes are both first-class; switching language does not change product semantics.
 
@@ -82,11 +82,12 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] Reload/reopen a Task with a still-current durable Decision: the Decision remains visible from persisted truth.
 - [ ] A newer real active execution correctly outranks an older persisted Decision where the runtime contract says work is already active.
 
-### Artifacts panel
+### Result and detail rows (v2.0)
 
-- [ ] Evidence / Reports / Plans / Baselines / Execution detail open in the **Artifacts panel** beside the active Task (⌘I).
-- [ ] The Artifacts panel does not replace the Agent Task with a separate application destination.
-- [ ] The one Composer remains logically owned by the active Task while Artifacts is open.
+- [ ] A Task opens at its top, on the latest **Result**; after an investigative Direction the Result leads with the recorded conclusion (answer, findings most severe first, next steps).
+- [ ] A next step fills the Composer and is not sent until the user delegates it.
+- [ ] Evidence / Report / Execution detail (and Plans / Baselines when they exist) are **rows under the Result** that expand in place (⌘I); no side panel opens.
+- [ ] The one Composer remains logically owned by the active Task while a detail row is open.
 - [ ] Evidence/Execution details display persisted sanitized truth.
 - [ ] Markdown Report is a durable Task Artifact and survives reload.
 
@@ -163,11 +164,11 @@ Use synthetic/local test data and non-sensitive test providers where available.
 ## G. UI quality and accessibility smoke
 
 - [ ] Light and dark themes preserve readable text contrast.
-- [ ] Keyboard access works for Task navigation, shortcuts, Artifacts, and the one Composer without firing task-navigation keys while editing text.
+- [ ] Keyboard access works for Task navigation, shortcuts, detail rows, and the one Composer without firing task-navigation keys while editing text.
 - [ ] Focus is contained/restored correctly for overlays.
 - [ ] English and Chinese UI preserve the same product semantics and states.
 - [ ] Narrow-window layout remains usable.
-- [ ] The real-state visual-review artifact covers at least Delegate, Working+Steer, Waiting for approval, the transcript turn (commentary · Worked for … · answer), the Artifacts panel, task navigation, runtime failure, narrow layout, and Chinese localization.
+- [ ] The real-state visual-review artifact covers at least Delegate, Working+Steer, Waiting for approval, the Result (conclusion · full answer), the Work log turn (commentary · Worked for …), the detail rows, task navigation, runtime failure, narrow layout, and Chinese localization.
 
 ## H. Anti-regression checks
 
@@ -175,7 +176,7 @@ The candidate must **not** reintroduce an older application model through docume
 
 - [ ] The Agent Task remains the primary application object.
 - [ ] No second Agent input exists.
-- [ ] The Artifacts panel remains contextual to the Task.
+- [ ] The detail rows remain contextual to the Task.
 - [ ] Persistence/API compatibility names do not become product navigation.
 - [ ] No fake multi-agent/worktree/terminal/browser/plan UI exists without runtime support.
 - [ ] Current architecture/legacy/documentation contract tests pass.

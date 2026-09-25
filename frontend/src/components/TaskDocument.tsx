@@ -15,7 +15,9 @@ import { AgentTurn, UserTurn } from "./TranscriptTurn";
 import { ApprovalCard, type ApprovalResolution, type ApprovalScope } from "./ApprovalCard";
 import { TriageCard } from "./AgentRuntimeArtifacts";
 import { FindBar } from "./FindBar";
-import { Icon } from "./icons";
+import { TaskDetails } from "./TaskDetails";
+import { ConclusionView, TaskResult } from "./TaskResult";
+import { asConclusion } from "../lib/conclusion";
 import { useTaskCopy } from "./taskCopy";
 import { useI18n } from "../i18n";
 
@@ -65,10 +67,11 @@ export function lastWorkResult(items: TaskItem[]): Extract<TaskItem, { kind: "me
 }
 
 /**
- * The Task as a document: earlier-history paging, the transcript turns
- * (persisted, then the live one), the approvals the document could not
- * place, banners, and Find (⌘F) over the reading column. Figures and
- * provenance render inline in the latest Work Result.
+ * The Task as a result-first document (v2.0): banners, the work in progress
+ * (Direction + live execution + its conclusion as soon as it is recorded),
+ * the latest Result (conclusion · full answer · figures · detail rows), then
+ * the Work log — every turn, older answers folded to one line — and Find
+ * (⌘F) over the reading column.
  */
 export function TaskDocument({
   taskId,
@@ -92,6 +95,7 @@ export function TaskDocument({
   findOpen,
   setFindOpen,
   onResync,
+  onNextStep,
 }: {
   taskId: string | null;
   items: TaskItem[];
@@ -117,10 +121,12 @@ export function TaskDocument({
    * turn only on success. Returns whether the reload landed, so the caller
    * can back off and retry instead of going silent. */
   onResync: () => boolean | Promise<boolean>;
+  /** v2.0 — a conclusion's next step goes into the Composer (never sent). */
+  onNextStep?: (text: string) => void;
 }) {
   const copy = useTaskCopy();
   const { t } = useI18n();
-  const { scrollRef, contentRef, pinned, onScroll, releaseToUser, jumpToLatest, followLatest } = viewport;
+  const { scrollRef, contentRef, onScroll, releaseToUser } = viewport;
   const { busy, pending, items: liveItems, answer: liveAnswer, waiting } = run;
 
   const provenance = useTaskProvenance(taskId);
@@ -206,9 +212,18 @@ export function TaskDocument({
     return () => window.removeEventListener("keydown", onKey);
   }, [setFindOpen]);
 
+  // v2.0 — the Task opens at its top (the Result), and a new Direction
+  // brings the reader back up to the work in progress. Nothing follows the
+  // end of the document.
   useEffect(() => {
-    followLatest();
-  }, [items.length, pending, liveAnswer?.length, liveItems, followLatest]);
+    scrollRef.current?.scrollTo({ top: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId]);
+  const hasPending = Boolean(pending);
+  useEffect(() => {
+    if (hasPending) scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasPending]);
 
   // v1.15 — a stalled stream heals itself instead of asking the user to
   // press Resync. The line below is status, not an action.
@@ -252,6 +267,24 @@ export function TaskDocument({
     }
   };
 
+  const resultDirection = useMemo(() => {
+    if (!lastResult) return null;
+    const at = items.indexOf(lastResult);
+    for (let i = at - 1; i >= 0; i--) {
+      const item = items[i];
+      if (item.kind === "message" && item.role === "user") return item.content;
+    }
+    return null;
+  }, [items, lastResult]);
+  const directionCount = useMemo(
+    () => items.filter((item) => item.kind === "message" && item.role === "user").length,
+    [items],
+  );
+  const showLive = Boolean(pending) && !(hideLiveDirection && hideLiveWorkResult);
+  const liveConclusion = run.conclusion && !hideLiveWorkResult
+    ? <ConclusionView conclusion={run.conclusion} onNextStep={onNextStep} />
+    : null;
+
   return (
     // min-w-0 on the column and footer wrappers: same flex blowout as the
     // task root — column flex items default to min-width:auto.
@@ -260,6 +293,7 @@ export function TaskDocument({
         <div
           ref={scrollRef}
           data-testid="task-scroll"
+          data-find-open={findOpen ? "true" : undefined}
           onScroll={handleScroll}
           onWheel={releaseToUser}
           onTouchMove={releaseToUser}
@@ -269,44 +303,44 @@ export function TaskDocument({
           {findOpen ? (
             <FindBar query={findQuery} onQuery={setFindQuery} total={matchTotal} index={findIdx} onStep={stepFind} onClose={closeFind} />
           ) : null}
-          <div ref={contentRef} className="native-document space-y-6">
-            {hiddenCount > 0 ? (
-              <div className="flex justify-center gap-1.5">
-                <button type="button" onClick={loadEarlier} disabled={loadingEarlier} data-testid="load-earlier" className="native-chip disabled:opacity-50">
-                  {loadingEarlier ? <span className="inline-flex items-center gap-2"><span className="skeleton h-3 w-16" aria-hidden />{copy.loadingEarlier}</span> : copy.loadEarlier(hiddenCount)}
-                </button>
-                <button type="button" onClick={loadAllEarlier} disabled={loadingEarlier} data-testid="jump-to-start" className="native-chip disabled:opacity-50">
-                  {copy.jumpToStart}
-                </button>
-              </div>
-            ) : null}
+          {/* v2.0 — result-first: what needs the user, the work in progress,
+              the latest Result (conclusion first), then the Work log. The
+              Task opens at the top; nothing scrolls the reader to the end. */}
+          <div ref={contentRef} className="native-document">
+            <div className="task-banners space-y-2 empty:hidden">{banners}</div>
 
-            {items.map((item) => {
-              if (item.kind === "message") {
-                if (item.role === "user") {
-                  return (
-                    <div key={item.id} id={`task-item-${item.id}`} className="task-item" data-direction={item.content ?? ""}>
-                      <UserTurn content={item.content} />
+            {showLive ? (
+              <section className="task-live" data-testid="task-live">
+                <span className="task-section-kicker">{t("live.kicker")}</span>
+                {!hideLiveDirection ? (
+                  <div id={PENDING_DIRECTION_ID} className="task-item" data-direction={pending ?? ""}>
+                    <UserTurn content={pending} />
+                  </div>
+                ) : null}
+                {!hideLiveWorkResult ? (
+                  stalled ? (
+                    <div className="flex items-center gap-2 text-xs text-gray-400" data-testid="task-reconnecting" role="status">
+                      <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
+                      {t("task.reconnecting")}
                     </div>
-                  );
-                }
-                return (
-                  <div key={item.id} id={`task-item-${item.id}`} className="task-item">
+                  ) : busy || run.stopped || liveItems.length > 0 || liveAnswer ? (
                     <AgentTurn
-                      items={turnItems.get(item.id) ?? []}
-                      answer={item.content}
+                      items={liveItems}
+                      answer={liveAnswer}
+                      live={!run.stopped}
+                      waiting={waiting}
+                      stoppedLabel={run.stopped ? copy.stopped : null}
+                      startedAt={run.startedAt}
                       taskId={taskId}
-                      figures={figuresFor(item)}
                       onResolve={onResolve}
                       resolvingId={resolvingId}
                       findActive={findActive}
+                      head={liveConclusion}
                     />
-                  </div>
-                );
-              }
-              if (item.kind === "run") return null;
-              return <div key={item.data.id} className="task-item"><TriageCard c={item.data} /></div>;
-            })}
+                  ) : null
+                ) : null}
+              </section>
+            ) : null}
 
             {unplaced.length > 0 ? (
               <div className="space-y-3" data-testid="pending-approvals">
@@ -328,50 +362,76 @@ export function TaskDocument({
               </div>
             ) : null}
 
-            {pending && !hideLiveDirection ? (
-              <div id={PENDING_DIRECTION_ID} className="task-item" data-direction={pending}>
-                <UserTurn content={pending} />
-              </div>
+            {lastResult ? (
+              <TaskResult
+                message={lastResult.message}
+                direction={resultDirection}
+                figures={figuresFor(lastResult)}
+                details={<TaskDetails hasResult />}
+                onNextStep={onNextStep}
+              />
             ) : null}
 
-            {pending && !hideLiveWorkResult ? (
-              stalled ? (
-                <div className="flex items-center gap-2 text-xs text-gray-400" data-testid="task-reconnecting" role="status">
-                  <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
-                  {t("task.reconnecting")}
-                </div>
-              ) : busy || run.stopped || liveItems.length > 0 || liveAnswer ? (
-                <AgentTurn
-                  items={liveItems}
-                  answer={liveAnswer}
-                  live={!run.stopped}
-                  waiting={waiting}
-                  stoppedLabel={run.stopped ? copy.stopped : null}
-                  startedAt={run.startedAt}
-                  taskId={taskId}
-                  onResolve={onResolve}
-                  resolvingId={resolvingId}
-                  findActive={findActive}
-                />
-              ) : null
+            {items.length > 0 || hiddenCount > 0 ? (
+              <section className="task-log" data-testid="task-log" data-under-result={lastResult ? "true" : "false"}>
+                {lastResult ? (
+                  <h2 className="task-log-head">
+                    <span>{t("log.title")}</span>
+                    <small>{directionCount + hiddenCount}</small>
+                  </h2>
+                ) : null}
+                {hiddenCount > 0 ? (
+                  <div className="flex justify-center gap-1.5">
+                    <button type="button" onClick={loadEarlier} disabled={loadingEarlier} data-testid="load-earlier" className="native-chip disabled:opacity-50">
+                      {loadingEarlier ? <span className="inline-flex items-center gap-2"><span className="skeleton h-3 w-16" aria-hidden />{copy.loadingEarlier}</span> : copy.loadEarlier(hiddenCount)}
+                    </button>
+                    <button type="button" onClick={loadAllEarlier} disabled={loadingEarlier} data-testid="jump-to-start" className="native-chip disabled:opacity-50">
+                      {copy.jumpToStart}
+                    </button>
+                  </div>
+                ) : null}
+
+                {items.map((item) => {
+                  if (item.kind === "message") {
+                    if (item.role === "user") {
+                      return (
+                        <div key={item.id} id={`task-item-${item.id}`} className="task-item" data-direction={item.content ?? ""}>
+                          <UserTurn content={item.content} />
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={item.id} id={`task-item-${item.id}`} className="task-item">
+                        <AgentTurn
+                          items={turnItems.get(item.id) ?? []}
+                          answer={item.content}
+                          taskId={taskId}
+                          figures={lastResult ? undefined : figuresFor(item)}
+                          onResolve={onResolve}
+                          resolvingId={resolvingId}
+                          findActive={findActive}
+                          answerMode={!lastResult ? "full" : item.id === lastResult.id ? "above" : "folded"}
+                          conclusion={asConclusion(item.message.conclusion)}
+                        />
+                      </div>
+                    );
+                  }
+                  if (item.kind === "run") return null;
+                  return <div key={item.data.id} className="task-item"><TriageCard c={item.data} /></div>;
+                })}
+              </section>
             ) : null}
+
+            {/* Without a Result yet, details wait until nothing is running:
+                the work in progress is the page. */}
+            {!lastResult && !showLive ? <TaskDetails hasResult={false} /> : null}
 
             <p className="sr-only" role="status" aria-live="polite" data-testid="task-status">{liveStatus}</p>
-
-            <div className="space-y-2 empty:hidden">{banners}</div>
           </div>
         </div>
       </div>
 
       <div className="native-dock relative min-w-0 px-6 pb-4 pt-1">
-        {!pinned ? (
-          <div className="pointer-events-none absolute -top-10 left-0 right-0 z-floating flex justify-center">
-            <button type="button" onClick={jumpToLatest} data-testid="jump-to-latest" className="native-chip native-jump pointer-events-auto">
-              <Icon name="arrowDown" size={12} stroke={2} />
-              {busy ? copy.jumpWorking : copy.jumpLatest}
-            </button>
-          </div>
-        ) : null}
         <div className="native-document">{composer}</div>
       </div>
     </>

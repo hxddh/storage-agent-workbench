@@ -273,7 +273,7 @@ def test_migrations_are_sequential_and_capped():
     # 27 is the v0.96 optimization copilot: price table, remediation plans,
     # baselines, revisit schedules, artifact status/payload. 28 (v1.10.0) adds
     # sessions.title_source and model_providers.reasoning_effort.
-    assert max(versions) == 30
+    assert max(versions) == 31
 
 
 def test_no_public_skills_api(client):

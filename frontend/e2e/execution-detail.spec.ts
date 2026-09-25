@@ -8,7 +8,7 @@ import { waitForDurableAnswer } from "./work-result";
  * v1.12 — Execution detail on the durable log (v1.13: one execution's
  * pages).
  *
- * The Artifacts panel lists the task's durable Executions
+ * The Execution detail row under the Result (v2.0) lists the task's durable Executions
  * (`GET /agent-tasks/{id}/executions`) and opens one as a document built
  * from its row plus that execution's structured event pages
  * (`GET /agent-tasks/{id}/executions/{eid}/events-page`): the plan, the tool
@@ -37,9 +37,9 @@ async function boot(page: Page) {
 }
 
 async function openExecutionDetail(page: Page) {
-  await page.keyboard.press("Control+i");
-  await expect(page.getByTestId("agent-artifacts-panel")).toBeVisible();
-  await expect(page.getByTestId("artifacts-section-execution")).toBeVisible();
+  const toggle = page.getByTestId("task-detail-toggle-execution");
+  await expect(toggle).toBeVisible({ timeout: 20_000 });
+  if ((await page.getByTestId("task-detail-execution").getAttribute("data-open")) !== "true") await toggle.click();
   const row = page.getByTestId("execution-row").first();
   await expect(row).toBeVisible({ timeout: 20_000 });
   await row.click();

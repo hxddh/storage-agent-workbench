@@ -119,14 +119,25 @@ test("the answer is on screen when it finishes, not scrolled past", async ({ pag
   }
 });
 
-test("a long answer still lands at its end", async ({ page }) => {
+test("a long answer finishes with its Result's head on screen, not its tail (v2.0)", async ({ page }) => {
   test.setTimeout(120_000);
   const { cleanup } = await ask(page, LONG, "walk me through the whole policy");
   try {
     await expect(page.getByText(/Paragraph 29/).first()).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(2500);
+    // Result-first: the reader finishes looking at the top of the new Result
+    // (where the conclusion goes), and the long answer reads downward from it.
+    const head = await page.evaluate(() => {
+      const sc = document.querySelector('[data-testid="task-scroll"]') as HTMLElement;
+      const result = sc.querySelector('[data-testid="task-result"]') as HTMLElement;
+      const a = sc.getBoundingClientRect();
+      const r = result.getBoundingClientRect();
+      return { scrollTop: Math.round(sc.scrollTop), top: Math.round(r.top - a.top), h: Math.round(a.height) };
+    });
+    expect(head.scrollTop).toBeLessThanOrEqual(4);
+    expect(head.top).toBeGreaterThanOrEqual(0);
+    expect(head.top).toBeLessThan(head.h / 2);
     const g = await emptiness(page);
-    expect(g.fromBottom).toBeLessThanOrEqual(4);
     expect(g.below).toBeLessThanOrEqual(96);
   } finally {
     await cleanup();

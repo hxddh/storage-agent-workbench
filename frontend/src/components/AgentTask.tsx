@@ -289,13 +289,14 @@ export function AgentTask({
           viewport={viewport}
           findOpen={findOpen}
           setFindOpen={setFindOpen}
+          onNextStep={busy ? undefined : (text) => { composer.setText(text); composer.focus(); }}
           onResync={async () => {
             const id = localId.current;
             if (!id) return false;
             // v1.16 — clear the live turn only when the reload landed; on
             // failure the stalled line stays and backs off for another try.
             const ok = await reload(id);
-            if (ok) patchLiveTask(id, { pending: null, stalled: false, items: [], answer: null, waiting: false });
+            if (ok) patchLiveTask(id, { pending: null, stalled: false, items: [], answer: null, conclusion: null, waiting: false });
             return ok;
           }}
         />

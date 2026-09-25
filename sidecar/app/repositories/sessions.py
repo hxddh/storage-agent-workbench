@@ -471,13 +471,14 @@ def add_message(
     grounding: dict[str, Any] | None = None,
     proposed_actions: list[dict[str, Any]] | None = None,
     turn_items: list[dict[str, Any]] | None = None,
+    conclusion: dict[str, Any] | None = None,
 ) -> str:
     msg_id = uuid.uuid4().hex
     conn.execute(
         "INSERT INTO session_messages "
         "(id, session_id, role, content, referenced_run_ids, referenced_evidence_ids, "
-        " tool_activity, grounding, proposed_actions, turn_items, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " tool_activity, grounding, proposed_actions, turn_items, conclusion, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         # The JSON columns go through redact() like every sibling repo
         # (replace_findings / upsert_summary / create_case): the agent runtime
         # sanitizes upstream, but rule 14 wants the persistence boundary to hold
@@ -488,6 +489,7 @@ def add_message(
          _dumps(grounding) if grounding is not None else None,
          _dumps(proposed_actions) if proposed_actions is not None else None,
          _dumps(_bounded_turn_items(turn_items)) if turn_items else None,
+         _dumps(conclusion) if conclusion else None,
          utcnow()),
     )
     _touch(conn, session_id)
@@ -741,6 +743,7 @@ def list_messages(conn: sqlite3.Connection, session_id: str,
             "tool_activity": _loads(r["tool_activity"] if "tool_activity" in keys else None, []),
             "grounding": _loads(r["grounding"], None) if "grounding" in keys else None,
             "turn_items": _loads(r["turn_items"], []) if "turn_items" in keys else [],
+            "conclusion": _loads(r["conclusion"], None) if "conclusion" in keys else None,
             "created_at": r["created_at"],
         })
     return out

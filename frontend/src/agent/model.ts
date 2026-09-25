@@ -1,8 +1,8 @@
 /**
- * The Artifacts panel: a right split beside the Task document that lists the
- * durable outputs of the active task (Evidence · Reports · Plans · Baselines &
- * Drift · Execution) and opens one of them as a document inside the panel.
- * It is not an overlay and not a second application destination.
+ * The Task's durable outputs (Evidence · Report · Plans · Baselines & Drift ·
+ * Execution), shown as detail rows under the Result that expand in place
+ * (v2.0; formerly a right split panel). `artifactsOpen` + `selection` name the
+ * one expanded row and the document open in it.
  */
 export type ArtifactKind = "evidence" | "report" | "plan" | "baseline" | "execution";
 
@@ -46,8 +46,8 @@ function sameListSelection(a: ArtifactSelection | null, b: ArtifactSelection): b
 export function agentShellReducer(state: AgentShellState, action: AgentShellAction): AgentShellState {
   switch (action.type) {
     case "task.changed":
-      // The open/closed preference survives a task switch; the selection does not.
-      return { ...state, taskId: action.taskId, selection: null };
+      // Another task opens on its Result with every detail row folded.
+      return { ...state, taskId: action.taskId, artifactsOpen: false, selection: null };
     case "artifacts.open": {
       if (!state.taskId) return state;
       const next: ArtifactSelection = { kind: action.kind, id: action.id ?? null, findingId: action.findingId ?? null };

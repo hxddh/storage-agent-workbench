@@ -1,6 +1,6 @@
 # Product model
 
-> **Applies to Storage Agent v1.19.0.** This is the canonical product/UX specification. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native. v1.11–v1.16 made the transcript and the protocol native. **v1.17.0 is the Codex window:** UI and UE match Codex's quiet Agent surface. **v1.19.0 is the Document-native window:** a turn is a document section headed by its Direction — no bubbles, no speaker alternation. **v1.18.0 was the native core:** the same window over one submit path, Decision-gated data movement, and a Steer rendered as the user's own *Steered* line instead of a tool row. Earlier release notes are not current product architecture.
+> **Applies to Storage Agent v2.0.0.** This is the canonical product/UX specification. **v2.0.0 is the Result-first Task:** a Task opens on its latest Result — the conclusion the model recorded (answer, findings by severity, next steps), then the full answer, figures and detail rows that expand in place — with the Work log below; the Artifacts side panel is gone. v1.09 tears down the v1.04–v1.08 web-app chassis and ships the native Agent window: sidebar · title bar · one Task document · one Composer. v1.10 makes the OS shell and the runtime native. v1.11–v1.16 made the transcript and the protocol native. **v1.17.0 is the Codex window:** UI and UE match Codex's quiet Agent surface. **v1.19.0 is the Document-native window:** a turn is a document section headed by its Direction — no bubbles, no speaker alternation. **v1.18.0 was the native core:** the same window over one submit path, Decision-gated data movement, and a Steer rendered as the user's own *Steered* line instead of a tool row. Earlier release notes are not current product architecture.
 
 ## Product definition
 
@@ -83,11 +83,13 @@ Read-only investigation is autonomous by default. Confirmation is reserved for m
 
 ### Work Result
 
-A Work Result is the durable output object of an Execution — recorded by the Task runtime with its derived grounding (skills opened, evidence read, open questions recorded) and stopped/cut-short state. The model writes plain Markdown; there is no metadata block and no next-step proposal list. It can contain prose, Markdown structure, tables, **deterministic SVG figures** of runtime analysis (cost horizons, inventory distributions, Drift classes, access-log mix), code/config fragments, structured errors, findings, and references to supporting Evidence/Execution.
+A Work Result is the durable output object of an Execution — recorded by the Task runtime with its derived grounding (skills opened, evidence read, open questions recorded) and stopped/cut-short state. The model writes plain Markdown; there is no metadata block and no next-step proposal list in the prose.
 
-Figures plot only values the runtime emitted. Gaps render as gap states. Unconfirmed prices withhold the cost axis. Age and storage class are independent series — there is no observed joint. Charts are not a new destination: they sit **inline in the Work Result** like a code block. Wide windows keep a 46rem reading measure; the right half stays quiet.
+**Conclusion (v2.0).** For investigative work the model also records the turn's **conclusion** with the `record_conclusion` tool: the direct answer in one or two sentences, the findings that carry it (each `high` / `medium` / `low` / `info`), and up to four next steps. The runtime persists it with the Work Result. The UI renders it as the head of the **Result** — findings most severe first, each with one status dot; a next step fills the Composer and waits for the user to delegate it. A turn without a recorded conclusion shows its answer alone: the UI never guesses a conclusion from prose, and evidence counts come from the tool trace, never from the model. It can contain prose, Markdown structure, tables, **deterministic SVG figures** of runtime analysis (cost horizons, inventory distributions, Drift classes, access-log mix), code/config fragments, structured errors, findings, and references to supporting Evidence/Execution.
 
-Findings and key figures are clickable when a provenance chain exists (`GET /agent-tasks/{id}/provenance`). Hover shows tool, time, and coverage; click opens the Artifacts panel and anchors to that Evidence. A missing chain reads **No direct evidence chain** — never a fabricated source.
+Figures plot only values the runtime emitted. Gaps render as gap states. Unconfirmed prices withhold the cost axis. Age and storage class are independent series — there is no observed joint. Charts are not a new destination: they sit **inline in the Result** like a code block. Wide windows keep a 46rem reading measure; the right half stays quiet.
+
+Findings and key figures are clickable when a provenance chain exists (`GET /agent-tasks/{id}/provenance`). Hover shows tool, time, and coverage; click expands the Evidence row under the Result and anchors to that finding. A missing chain reads **No direct evidence chain** — never a fabricated source.
 
 A Work Result is not a transient chat bubble and should read like technical work output. Streaming work is live Execution in that same record. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered.
 
@@ -97,9 +99,9 @@ Artifacts are durable, reviewable outputs attached to a Task: Markdown Reports, 
 
 A Remediation Plan, if drafted, is typed and versioned. The operator applies it outside Storage Agent. There is no Verify button. The user can ask the Agent to re-probe.
 
-### Artifacts
+### Detail rows (v2.0; formerly the Artifacts panel)
 
-Artifacts is a **right split panel** over the active Task (⌘I / Ctrl+I). Under a narrow window it becomes an overlay. It lists Evidence, Reports, Remediation Plans, Baselines/Drift, and Execution detail. It replaces the historical Review sheet. It is not a side-column application, not a document hero, and not a 4-tab destination.
+The Task's durable outputs are **rows under the Result** that expand in place: Evidence, Report, Execution detail, and — only when they exist — Remediation Plans and Baselines & Drift (⌘I / Ctrl+I opens them; tool rows, provenance marks and the palette open the matching row). A row appears only when something is behind it. There is no side panel, no overlay, and no tabbed destination; the v1.11–v1.19 right split panel and the historical Review sheet are retired.
 
 It must not create a second Agent input or a second task lifecycle.
 
@@ -111,7 +113,7 @@ There is exactly one primary Agent input.
 - **Steer** while the current Task is executing — steering acts on the CURRENT Execution (the direction is delivered into the running work), never by cancelling and restarting it.
 - **Stop** while local execution is active.
 
-Opening Artifacts or changing Task navigation state does not create a second composer.
+Expanding a detail row or changing Task navigation state does not create a second composer.
 
 ## Task states
 
@@ -202,8 +204,8 @@ Rules:
 The primary Task viewport should answer, in order:
 
 1. **What is the Agent working on?** — the task name in the window title bar and the document itself.
-2. **What is happening now or what did it produce?** — the Worked group and the Work Result in that same document.
-3. **What can I do now?** — Steer, Stop, Resume, Allow/Deny, open Artifacts, or delegate the next Direction.
+2. **What did it conclude, and what is happening now?** — the work in progress at the top when an Execution runs, then the **Result** — the conclusion first (answer, findings by severity, next steps), then the full answer. The Task opens at its top; nothing scrolls the reader to the end.
+3. **What can I do now?** — Steer, Stop, Resume, Allow/Deny, put a next step in the Composer, open a detail row, or delegate the next Direction.
 
 The empty window is one greeting line and the Composer in the middle band. The sidebar is New task, quiet task titles, Settings. Nothing else is painted.
 
@@ -217,16 +219,16 @@ v1.17.0 is the Codex window on a native shell. Visual language is specified in
 - The window is **sidebar · title bar · one document**. No activity bar, no status bar, no inspector column, no marketing copy anywhere in chrome.
 - One achromatic surface ladder (`--canvas` … `--hover`), an ink primary (near-white on dark, near-black on light), hairline depth. Status (`danger` / `warn` / `success`) is the only colour, and it lives in a dot — never in prose, a border, or a number (v1.19). Dark and light are first-class.
 - Type, radius, motion, and elevation come from tokens. No ad-hoc px type, no raw z-index, no `transition-all`.
-- The Task is a document, not a message exchange (v1.19). Each turn is a section: its **Direction** is the section heading, left-aligned in the user's own words (no bubble, no grey Direction block, copy on hover); later turns open with a hairline. **Execution** is one *Worked for …* group of real tool rows (collapsed to wall-clock; rows visible when opened; failures never fold away). **Work Result** is plain Markdown on the 46rem measure. No data track, no chip row under the answer, no metrics footer. **Approval** is an inline card: sentence-case *Waiting for approval*, why, impact, Allow / Allow for this task / Deny.
+- The Task is a **result-first document** (v2.0): banners · work in progress · the Result (conclusion · full answer · figures · detail rows) · the **Work log**. Long tables preview their first rows and expand and sort in place; folded rows stay findable. The Work log is a document, not a message exchange (v1.19): each turn is a section, and older answers fold to one line (the latest points up to the Result): its **Direction** is the section heading, left-aligned in the user's own words (no bubble, no grey Direction block, copy on hover); later turns open with a hairline. **Execution** is one *Worked for …* group of real tool rows (collapsed to wall-clock; rows visible when opened; failures never fold away). **Work Result** is plain Markdown on the 46rem measure. No data track, no chip row under the answer, no metrics footer. **Approval** is an inline card: sentence-case *Waiting for approval*, why, impact, Allow / Allow for this task / Deny.
 - Figures use `--viz-*` tokens and SVG/CSS only. No chart library. Never interpolate, extrapolate, or invent a horizon the runtime did not emit.
 - Findings carry provenance. Missing chain is labelled, never implied.
 - Composer is the Agent input and the empty-start surface: `+` attach, textarea, model chip, and a round send (↑) at rest; Steer (↑) + Stop (■) while working. No ContextMeter on the bar (usage lives in the model menu and Execution detail). No wizard, no `/` SKU menu, no attach-type chips, no persistent keyboard legend, no approval-mode chip.
-- The title bar carries the task name and its real state. Find (⌘F) and the command palette (⌘K) are keyboard. Artifacts open from the document in the Artifacts panel beside it (⌘I). New task is a button; the shortcut is not painted on it.
+- The title bar carries the task name and its real state. Find (⌘F) and the command palette (⌘K) are keyboard. Detail rows open in place under the Result (⌘I). New task is a button; the shortcut is not painted on it.
 - Task navigation is one chronological title list grouped by day. State is a row mark; Ready paints nothing. Rename and Delete only.
 - Settings is a centered dialog: General · Model Providers · Cloud Providers · Skills & bridges · Safety. Safety (v1.12) holds the read-only floor statement, the **Approvals** policy control (Ask every time · Allow for this session · Always allow) with the list of gated tools, and nothing else; Skills & bridges gains **Open instructions file** (`AGENTS.md` in the data directory).
 - The transcript shows the model's own plan as one quiet checklist card (`update_plan`, v1.12) that updates in place and folds to *Plan · n/n* when done; a context compaction is one muted line *Context compacted · 48k → 9k tokens*; an approval the policy answered says so on the card. ⌘K offers **Compact context** for an idle task.
 - Every non-ideal state (empty list, no Evidence, offline, interrupted, load earlier) is designed. Copy is restrained, specific, and bilingual.
-- Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped as Actions vs Tasks, with tasks fuzzy-ranked as you type (v1.13). It is not an Artifacts destination menu.
+- Keyboard: ⌘K/Ctrl+K command overlay maps only to runtime-true actions, grouped as Actions vs Tasks, with tasks fuzzy-ranked as you type (v1.13). It is not a destination menu.
 - A steer raised while an approval is open acts on the waiting execution (v1.14): it is delivered after the decision resolves, or carried into the follow-up on decline — never silently re-queued as new work.
 - Figures, evidence states, triage, and coverage read localized (v1.14). The empty start is one static greeting line plus the Composer (v1.15) — no glyph, no suggestion grid; engine discoverability is the palette (⌘K), and the model never pitches engines in prose.
 - A stalled stream heals itself with a quiet reconnecting line and auto-retry (v1.15) — there is no Resync button. Earlier history loads as the reader nears the top.
