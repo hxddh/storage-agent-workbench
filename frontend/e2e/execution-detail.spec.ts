@@ -62,7 +62,7 @@ test.describe("Execution detail from the durable log", () => {
     await openExecutionDetail(page);
     const body = page.getByTestId("execution-detail-body");
     await expect(body).toHaveAttribute("data-execution-id", executionId);
-    await expect(page.getByTestId("execution-status")).toContainText("complete");
+    await expect(page.getByTestId("execution-status")).toContainText("Completed");
     await expect(body.getByRole("heading", { level: 1 })).toContainText("Review acme-logs");
 
     // Rows from the durable log: the plan, the commentary, one worked group
@@ -111,7 +111,7 @@ test.describe("Execution detail from the durable log", () => {
 
       await openExecutionDetail(page);
       const body = page.getByTestId("execution-detail-body");
-      await expect(page.getByTestId("execution-status")).toContainText("complete", { timeout: 20_000 });
+      await expect(page.getByTestId("execution-status")).toContainText("Completed", { timeout: 20_000 });
       const group = body.getByTestId("worked-group");
       await expect(group).toBeVisible({ timeout: 20_000 });
       if ((await group.getAttribute("data-expanded")) === "false") await group.getByTestId("execution-head").click();

@@ -1,6 +1,6 @@
 # Data model
 
-> **Storage Agent v1.18.0 persistence reference.** Migration head **030** (`task_context_versions.summary_sanitized` / `summary_through_seq` for context compaction). `app_settings` gains the `approval_policy` key. `task_decisions.scope` now also takes `session` / `always` (policy grants). `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI. v1.17 and v1.18 add no migration; v1.18 adds a `steer` kind to `session_messages.turn_items` (JSON, no schema change).
+> **Storage Agent v1.19.0 persistence reference.** Migration head **030** (`task_context_versions.summary_sanitized` / `summary_through_seq` for context compaction). `app_settings` gains the `approval_policy` key. `task_decisions.scope` now also takes `session` / `always` (policy grants). `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI. v1.17 and v1.18 add no migration; v1.18 adds a `steer` kind to `session_messages.turn_items` (JSON, no schema change).
 >
 > Product vocabulary is Agent Task / Direction / Execution / Decision / Work Result / Artifact. SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
 

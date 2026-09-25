@@ -81,3 +81,20 @@ describe("the approval policy (v1.12)", () => {
     expect(screen.getByTestId("approval-resolved").textContent).not.toContain("for this task");
   });
 });
+
+describe("formatScanScope", () => {
+  const t = (key: string, v?: Record<string, string | number>) =>
+    ({ "approval.scopePrefix": `under ${v?.p}`, "approval.scopeFiles": `at most ${v?.n} files`,
+       "approval.scopeBytes": `at most ${v?.size}`, "approval.scopeBuckets": `up to ${v?.n} buckets` } as Record<string, string>)[key] ?? key;
+
+  it("humanizes sizes and drops the prefix the card already shows", async () => {
+    const { formatScanScope } = await import("./ApprovalCard");
+    expect(formatScanScope("prefix logs/2026/; max 500 files; max 268435456 bytes", t as never, "logs/2026/"))
+      .toBe("at most 500 files · at most 256.0 MiB");
+  });
+
+  it("keeps an unknown part verbatim", async () => {
+    const { formatScanScope } = await import("./ApprovalCard");
+    expect(formatScanScope("range a → b", t as never)).toBe("range a → b");
+  });
+});

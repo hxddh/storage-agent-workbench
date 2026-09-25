@@ -1,5 +1,9 @@
-/* The Task document as a turn transcript: user bubble, commentary, worked
- * group, approval card, answer, Composer. One 46rem reading column. */
+/* The Task document (v1.19): a sequence of sections, not an exchange of messages. Each turn
+ * opens with the user's Direction as a left-aligned heading, then the
+ * Agent's work (commentary · worked group · plan · approval) and the Work
+ * Result flow beneath it in one 46rem reading column. Later turns are
+ * separated by a hairline. There is no bubble and no left/right speaker
+ * alternation. */
 
 [data-testid="task-scroll"] {
   scrollbar-gutter: stable;
@@ -11,54 +15,66 @@
   scroll-margin-top: 72px;
 }
 
-/* One reading column: user bubbles right, Agent content left. */
+/* One reading column for everything. */
 .native-document {
   width: 100%;
   max-width: min(var(--doc-measure), 100%);
   margin-inline: auto;
 }
 
-/* User turn (v1.15): a right-aligned bubble with its own elevation step —
-   one rung above the canvas, one below the Composer — so the transcript
-   reads as user / Agent / chrome instead of one flat panel colour. */
-.turn-user {
+/* Every turn after the first starts a new section. */
+.native-document > .task-item[data-direction] ~ .task-item[data-direction] {
+  margin-top: 40px;
+  border-top: 1px solid var(--edge);
+  padding-top: 32px;
+}
+
+/* The Direction: the section heading of a turn, in the user's own words. */
+.turn-direction {
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: stretch;
 }
-.turn-user-bubble {
+.turn-direction-text {
   min-width: 0;
-  max-width: min(70%, var(--doc-measure));
-  border: 0;
-  border-radius: var(--radius-2xl);
-  padding: 8px 14px;
-  background: var(--elevated);
   color: var(--gray-100);
-  font-size: var(--text-base);
-  line-height: 1.6;
+  font-size: var(--text-lg);
+  font-weight: 560;
+  line-height: 1.5;
+  letter-spacing: -0.011em;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  text-wrap: pretty;
 }
-.turn-user-bubble[data-queued="true"] {
+.turn-direction-text[data-queued="true"] {
   color: var(--gray-400);
+  font-weight: 500;
 }
-.turn-user-artifact {
+.turn-direction-artifact {
   width: 100%;
   max-width: min(var(--doc-measure), 100%);
 }
-.turn-user-actions {
+/* Hover actions sit in the gap under the heading; they reserve no row. */
+.turn-direction-actions {
+  position: absolute;
+  top: 100%;
+  left: -6px;
   display: flex;
-  min-height: 24px;
+  min-height: 22px;
   align-items: center;
   gap: 6px;
-  margin-top: 2px;
   opacity: 0;
   transition: opacity var(--duration-fast) var(--ease-out);
 }
-.turn-user:hover > .turn-user-actions,
-.turn-user-actions:focus-within,
-.turn-user-actions[data-always="true"] {
+.turn-direction:hover > .turn-direction-actions,
+.turn-direction-actions:focus-within,
+.turn-direction-actions[data-always="true"] {
   opacity: 1;
+}
+.turn-direction-actions[data-always="true"] {
+  position: static;
+  margin-top: 4px;
 }
 
 /* Agent turn: plain reading column, no bubble, no card. */
@@ -236,6 +252,15 @@
   font-size: var(--text-xs);
   transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
+/* The floating "Jump to latest" pill: an opaque raised surface, so the
+   document scrolling underneath never shows through its label. */
+.native-jump {
+  border-color: var(--edge-strong);
+  background: var(--elevated);
+  color: var(--gray-200);
+  box-shadow: var(--shadow-pop);
+}
+.native-jump:hover { background: var(--hover); }
 .native-chip:hover {
   border-color: var(--edge-strong);
   background: var(--panel);
@@ -336,12 +361,37 @@
   font-size: var(--text-sm);
   line-height: 1.5;
 }
-.native-banner[data-tone="danger"] { border-color: var(--danger-border); color: var(--danger); }
-.native-banner[data-tone="warn"] { border-color: var(--warn-border); }
+/* v1.19 — tone is one status dot, never a coloured border or red prose:
+   the sentence stays readable ink, the dot says how urgent it is. */
+.native-banner[data-tone] { position: relative; padding-left: 34px; color: var(--gray-100); }
+.native-banner[data-tone]::before {
+  content: "";
+  position: absolute;
+  top: 21px;
+  left: 16px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--gray-400);
+}
+.native-banner[data-tone="danger"]::before { background: var(--danger); }
+.native-banner[data-tone="warn"]::before { background: var(--warn); }
 .native-banner p { margin: 6px 0 0; color: var(--gray-400); font-size: var(--text-xs); line-height: 1.6; }
 .native-banner-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
 .native-queued { opacity: 0.85; }
+
+/* The Composer dock: the document fades under it instead of being cut. */
+.native-dock::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  height: 28px;
+  background: linear-gradient(to bottom, transparent, var(--canvas));
+  pointer-events: none;
+}
 
 /* Composer (v1.15) — the one elevated card on the canvas: a raised surface,
    a real shadow, a focus ring that reads. Hairline-only made it disappear
@@ -479,8 +529,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.native-model-chip[data-missing="true"] {
-  color: var(--warn-fg);
+/* No model yet: neutral text and one status dot — a quiet invitation, not a
+   yellow warning painted on every screen. */
+.native-model-chip[data-missing="true"]::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--warn);
 }
 .native-model-effort { color: var(--gray-500); }
 .native-model-effort-row {
@@ -670,13 +727,12 @@
 }
 
 /* v1.12 — the plan the model owns (one card per turn, updated in place). */
+/* v1.19 — a flat checklist in the document's own voice (no card): the same
+   head rhythm as the Worked group, steps indented on one hairline rule. */
 .plan-card {
   max-width: min(var(--doc-measure), 100%);
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-xl);
-  padding: 8px 14px;
-  background: var(--panel);
 }
+
 .plan-card-head {
   display: flex;
   align-items: center;
@@ -693,11 +749,12 @@
   cursor: pointer;
 }
 .plan-card-head:hover { color: var(--gray-200); }
-.plan-card-head svg.chevron { transition: transform var(--dur-fast, 120ms) ease; }
+.plan-card-head svg.chevron { flex: none; transition: transform var(--duration-fast) var(--ease-out); }
 .plan-card-head[aria-expanded="true"] svg.chevron { transform: rotate(90deg); }
 .plan-card-steps {
-  margin: 2px 0 6px;
-  padding: 0;
+  margin: 2px 0 6px 8px;
+  border-left: 1px solid var(--edge);
+  padding: 0 0 0 12px;
   list-style: none;
 }
 .plan-step {

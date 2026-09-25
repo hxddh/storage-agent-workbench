@@ -34,7 +34,6 @@ import { timeAgo } from "../lib/time";
 import type { TFunc } from "../i18n";
 import { formatUsageLine, usageTitle } from "../lib/usage";
 import { useAgentCopy } from "../agent/agentCopy";
-import { Icon } from "./icons";
 
 const SEVERITY_KEY: Record<string, string> = {
   critical: "metric.critical", error: "metric.critical", warning: "metric.warning",
@@ -155,10 +154,10 @@ function firstLine(text: string | null | undefined, max = 120): string {
 function ExecutionDocument({
   taskId,
   executionId,
-  onBack,
 }: {
   taskId: string;
   executionId: string;
+  /** The panel header owns Back (v1.19); the document paints no second one. */
   onBack: () => void;
 }) {
   const [execution, setExecution] = useState<TaskExecution | null>(null);
@@ -314,17 +313,15 @@ function ExecutionDocument({
   return (
     <article className="native-execution-doc" data-testid="execution-detail-body" data-execution-id={executionId}>
       <header className="native-execution-doc-head">
-        <button type="button" className="native-ghost-action -ml-1.5" onClick={onBack}>
-          <Icon name="arrowRight" size={13} className="rotate-180" />
-          {copy.back}
-        </button>
         {loadError ? (
           <p className="native-banner mt-3" data-tone="danger">{copy.loadFailed} {loadError}</p>
         ) : null}
         <h1>{title}</h1>
         <p className="native-execution-doc-meta">
           <span className="native-execution-doc-status" data-status={status} data-testid="execution-status">
-            {running ? <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden /> : null}
+            {running
+              ? <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
+              : <span className="native-state-dot" data-state={status === "failed" || status === "interrupted" ? "attention" : status} aria-hidden />}
             {copy.statuses[status] ?? status}
           </span>
           {execution?.kind ? <span data-testid="execution-kind">{copy.kinds[execution.kind] ?? execution.kind}</span> : null}
@@ -333,8 +330,10 @@ function ExecutionDocument({
           ) : null}
           {spanMs != null ? <span data-testid="execution-span">{fmtElapsed(spanMs) ?? "—"}</span> : null}
           {execution?.steer_count ? <span>steer × {execution.steer_count}</span> : null}
-          {usageLine(usage, t) ? <span data-testid="execution-usage" className="tabular-nums" title={usageTitle(usage, t)}>{usageLine(usage, t)}</span> : null}
         </p>
+        {usageLine(usage, t) ? (
+          <p className="native-execution-doc-usage tabular-nums" data-testid="execution-usage" title={usageTitle(usage, t)}>{usageLine(usage, t)}</p>
+        ) : null}
       </header>
 
       {errorMessage ? (
@@ -343,7 +342,9 @@ function ExecutionDocument({
         </div>
       ) : null}
 
-      {execution?.direction ? (
+      {/* The title is the Direction's first line; only a longer Direction
+          earns its own block (v1.19 — it used to repeat the title). */}
+      {execution?.direction && execution.direction.trim() !== title ? (
         <section className="native-execution-doc-block">
           <h2>{copy.direction}</h2>
           <blockquote className="native-direction">{execution.direction}</blockquote>

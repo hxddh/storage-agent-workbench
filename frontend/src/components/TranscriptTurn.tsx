@@ -28,20 +28,21 @@ function CopyAction({ text, testId }: { text: string; testId: string }) {
   );
 }
 
-/** The user's message: a right-aligned bubble, copy on hover, no other chrome. */
+/** The user's Direction: the section heading of a turn, left-aligned in the
+ * reading column — not a speech bubble. Copy on hover, no other chrome. */
 export const UserTurn = memo(function UserTurn({ content, tag }: { content: string | null; tag?: ReactNode }) {
   const { t } = useI18n();
   const text = content ?? "";
   const parsed = useMemo(() => parseS3Error(text), [text]);
   const structuredError = parsed !== null && isMostlyError(text, parsed);
   return (
-    <div className="turn-user group" data-testid="turn-user" aria-label={t("turn.userLabel")}>
+    <div className="turn-direction group" data-testid="turn-user" aria-label={t("turn.userLabel")}>
       {structuredError && parsed ? (
-        <div className="turn-user-artifact"><S3ErrorArtifact error={parsed} raw={text} /></div>
+        <div className="turn-direction-artifact"><S3ErrorArtifact error={parsed} raw={text} /></div>
       ) : (
-        <div className="turn-user-bubble">{text}</div>
+        <div className="turn-direction-text">{text}</div>
       )}
-      <div className="turn-user-actions">
+      <div className="turn-direction-actions">
         {tag}
         {!structuredError ? <CopyAction text={text} testId="copy-direction" /> : null}
       </div>

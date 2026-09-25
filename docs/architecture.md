@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v1.18.0.** Native core under the v1.17.0 Codex window: one submit path, every data movement behind a Decision, reads that never start work, Task vocabulary in product code. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
+> **Current architecture baseline: Storage Agent v1.19.0.** The Document-native window (a turn is a section headed by its Direction) on the v1.18.0 native core: one submit path, every data movement behind a Decision, reads that never start work, Task vocabulary in product code. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **030**.
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -328,6 +328,13 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 - **Tool timing.** Tool records and `tool.*` events carry `started_at` /
   `finished_at` / `duration_ms`; *Worked for …* is the group's wall clock.
 
+### 6.x Document-native window (v1.19.0)
+
+- **A document, not a message exchange.** Each turn is a section: the Direction is its left-aligned heading (`.turn-direction-text`, no fill, no radius), later turns open with a hairline, and the Agent's work and Work Result follow in the same 46rem column.
+- **Native type.** The platform UI face first (SF / Segoe UI Variable), vendored Inter as the fallback.
+- **Status in one dot.** Title-bar state, banners, the model chip ("No model"), Execution-detail status and drift cells carry colour only in a dot; text stays ink.
+- **Fewer, truer details.** Tool rows drop arguments equal to their target; approval scope renders localized with human sizes (`formatScanScope`); provenance previews name the tool once, in words; the palette is an opaque sheet (transform-only entry) with key caps; sidebar rows carry no time; Execution detail has one Back (the panel's), a Direction block only when it adds to the title, and usage on its own line; figures are ink-first with legends above the plot.
+
 ### 6.x Codex window (v1.17.0)
 
 - **Quiet chrome.** ContextMeter lives in the model menu; the title bar is name + state (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is the keyboard bar only.
@@ -557,7 +564,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.18.0 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v1.19.0 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
 
 ### Real-Sidecar E2E
 

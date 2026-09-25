@@ -94,9 +94,9 @@ export function TaskBanners({
         </div>
       ) : null}
       {queued.map((execution) => (
-        <div key={execution.id} data-testid="queued-direction" className="turn-user native-queued" title={copy.queuedHint}>
+        <div key={execution.id} data-testid="queued-direction" className="turn-direction native-queued" title={copy.queuedHint}>
           {editingId === execution.id ? (
-            <div className="turn-user-bubble" data-queued="true">
+            <div className="turn-direction-text" data-queued="true">
               <textarea
                 data-testid="queued-direction-editor"
                 aria-label={copy.queuedEditing}
@@ -127,9 +127,9 @@ export function TaskBanners({
               ) : null}
             </div>
           ) : (
-            <div className="turn-user-bubble" data-queued="true">{execution.direction}</div>
+            <div className="turn-direction-text" data-queued="true">{execution.direction}</div>
           )}
-          <div className="turn-user-actions" data-always="true">
+          <div className="turn-direction-actions" data-always="true">
             <span className="turn-tag">{copy.queued}</span>
             {editingId === execution.id ? (
               <button

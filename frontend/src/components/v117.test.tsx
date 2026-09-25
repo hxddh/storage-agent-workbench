@@ -66,10 +66,17 @@ describe("v1.17 Codex window", () => {
     expect(screen.getByTestId("execution-head").textContent).not.toMatch(/tool calls/);
   });
 
-  it("keeps the user bubble a quiet fill and the approval card sentence-case", () => {
+  it("renders the Direction as a section heading and the approval card sentence-case", () => {
     const css = source("../agent/native-document.css");
-    expect(css).toMatch(/\.turn-user-bubble \{[^}]*border: 0;/);
-    expect(css).not.toMatch(/\.turn-user-bubble \{[^}]*box-shadow/);
+    // v1.19 — the Direction is the section heading of a turn: left-aligned,
+    // unfilled, no bubble shape; later turns open with a hairline.
+    const direction = css.match(/\.turn-direction-text \{[^}]*\}/)?.[0] ?? "";
+    expect(direction).not.toMatch(/background:/);
+    expect(direction).not.toMatch(/border-radius/);
+    expect(direction).toMatch(/font-weight: 5\d\d/);
+    expect(css).not.toMatch(/\.turn-direction \{[^}]*align-items: flex-end/);
+    expect(css).toMatch(/\.task-item\[data-direction\] ~ \.task-item\[data-direction\] \{[^}]*border-top: 1px solid var\(--edge\)/);
+    expect(css).not.toContain("turn-user-bubble");
     expect(css).not.toMatch(/\.approval-card-head \{[^}]*text-transform: uppercase/);
     expect(css).not.toMatch(/\.approval-card \{[^}]*box-shadow/);
     expect(source("./ApprovalCard.tsx")).not.toContain('name="shield"');

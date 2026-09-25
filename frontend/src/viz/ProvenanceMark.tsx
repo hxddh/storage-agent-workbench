@@ -2,16 +2,19 @@ import { useState } from "react";
 import { openAgentReview } from "../agent/commands";
 import { useI18n, type TFunc } from "../i18n";
 import type { ProvenanceChain, ProvenanceFinding } from "./types";
+import { humanizeTool } from "../lib/format";
 
 function preview(chain: ProvenanceChain | null, gap: string | null, t: TFunc) {
   if (gap === "no_direct_evidence" || !chain) {
     return { title: t("viz.noChain"), body: t("viz.noChainBody") };
   }
-  const bits = [chain.tool, chain.created_at?.replace("T", " ").slice(0, 16)].filter(Boolean);
+  // v1.19 — the tool names the preview once (as its title), in words; the
+  // body carries only what the title does not: when, and how much.
+  const bits: string[] = [chain.created_at?.replace("T", " ").slice(0, 16) ?? ""].filter(Boolean);
   const cov = chain.coverage;
   if (cov?.object_count != null) bits.push(t("viz.objects", { n: cov.object_count }));
   if (cov?.truncated) bits.push(t("viz.truncated"));
-  return { title: chain.tool || chain.kind, body: bits.join(" · ") || chain.kind };
+  return { title: humanizeTool(chain.tool) || chain.kind, body: bits.join(" · ") || chain.kind };
 }
 
 export function ProvenanceMark({

@@ -117,7 +117,6 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
         <span className="native-task-mark" aria-hidden />
         <strong>{title}</strong>
       </div>
-      <span className="native-task-meta" aria-hidden>{timeAgo(task.updated_at, t)}</span>
       <button
         type="button"
         aria-label={t("menu.more")}

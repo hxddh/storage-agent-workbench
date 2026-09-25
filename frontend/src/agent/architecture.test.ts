@@ -149,7 +149,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(turn).toContain('data-testid="turn-user"');
     expect(turn).toContain('data-testid="work-result"');
     expect(turn).toContain('data-testid="turn-answer"');
-    expect(turn).toContain("turn-user-bubble");
+    expect(turn).toContain("turn-direction-text");
     expect(turn).not.toContain("AnswerDocument");
     expect(turn).not.toContain("onBranch");
     expect(turn).not.toContain("onRerun");
@@ -382,7 +382,7 @@ describe("v1.09.0 native Agent window boundaries", () => {
     expect(css).toContain("--doc-track: 64rem");
     expect(shell).not.toContain("box-shadow: 0 8px");
     expect(document).toContain(".agent-table-grid");
-    expect(document).toContain(".turn-user-bubble");
+    expect(document).toContain(".turn-direction-text");
     expect(document).not.toContain(".agent-result-wide");
     expect(document).not.toContain(".native-decision");
     expect(document).toContain(".native-composer");
@@ -1173,11 +1173,10 @@ describe("v1.15.0 true native agent", () => {
     expect(source("../settings/ModelProvidersPane.tsx")).toContain("sm:grid-cols-2");
   });
 
-  it("elevates the Composer and the user bubble above the canvas", () => {
+  it("elevates the Composer above the canvas; the Direction is not a bubble", () => {
     const css = source("./native-document.css");
     expect(css).toContain("--shadow-elev");
-    expect(css).toContain(".turn-user-bubble");
-    // Uniform bubble corners; the tail radius is gone.
+    expect(css).toContain(".turn-direction-text");
     expect(css).not.toContain("border-top-right-radius");
   });
 });
@@ -1337,10 +1336,17 @@ describe("v1.17.0 Codex window", () => {
     expect(source("../../../sidecar/app/agent_runtime/prompt.py")).not.toContain("User question:");
   });
 
-  it("keeps the user bubble a quiet fill and the approval card sentence-case", () => {
+  it("renders the Direction as a section heading and the approval card sentence-case", () => {
     const css = source("./native-document.css");
-    expect(css).toMatch(/\.turn-user-bubble \{[^}]*border: 0;/);
-    expect(css).not.toMatch(/\.turn-user-bubble \{[^}]*box-shadow/);
+    // v1.19 — the Direction is the section heading of a turn: left-aligned,
+    // unfilled, no bubble shape; later turns open with a hairline.
+    const direction = css.match(/\.turn-direction-text \{[^}]*\}/)?.[0] ?? "";
+    expect(direction).not.toMatch(/background:/);
+    expect(direction).not.toMatch(/border-radius/);
+    expect(direction).toMatch(/font-weight: 5\d\d/);
+    expect(css).not.toMatch(/\.turn-direction \{[^}]*align-items: flex-end/);
+    expect(css).toMatch(/\.task-item\[data-direction\] ~ \.task-item\[data-direction\] \{[^}]*border-top: 1px solid var\(--edge\)/);
+    expect(css).not.toContain("turn-user-bubble");
     expect(css).not.toMatch(/\.approval-card-head \{[^}]*text-transform: uppercase/);
     expect(css).not.toMatch(/\.approval-card \{[^}]*box-shadow/);
   });

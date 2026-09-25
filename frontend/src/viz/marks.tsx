@@ -61,6 +61,21 @@ export function GapState({ title, body }: { title: string; body?: string | null 
   );
 }
 
+/** A legend row: one swatch + ink label per series (identity is never colour
+ * alone — the label is always beside it). Sits above the plot. */
+export function Legend({ items }: { items: Array<{ label: string; color: string }> }) {
+  return (
+    <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-2xs text-gray-400" data-testid="viz-legend">
+      {items.map((item) => (
+        <span key={item.label} className="inline-flex items-center gap-1.5">
+          <i className="inline-block h-2 w-2 rounded-sm" style={{ background: item.color }} aria-hidden />
+          {item.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function ChartFrame({
   title,
   testId,
@@ -78,7 +93,7 @@ export function ChartFrame({
 }) {
   return (
     <figure data-testid={testId} className="agent-figure min-w-0">
-      <figcaption className="mb-2 text-2xs font-medium uppercase tracking-[0.08em] text-gray-500">{title}</figcaption>
+      <figcaption className="mb-2 text-xs font-medium text-gray-200">{title}</figcaption>
       {children}
       <CoverageMark coverage={coverage ?? null} estimate={estimate} extra={extra} />
     </figure>
@@ -104,7 +119,7 @@ export function StackedHorizon({
   const slot = width / days.length;
   const barW = Math.min(36, slot - 10);
   return (
-    <svg viewBox={`0 0 ${width} ${height + 18}`} className="h-28 w-full text-gray-500" role="img" aria-label="Storage class mix by simulator horizon">
+    <svg viewBox={`0 0 ${width} ${height + 18}`} preserveAspectRatio="xMinYMid meet" className="h-28 w-full max-w-[24rem] text-gray-500" role="img" aria-label="Storage class mix by simulator horizon">
       {days.map((day, i) => {
         const x = i * slot + (slot - barW) / 2;
         let y = height;
@@ -115,7 +130,9 @@ export function StackedHorizon({
               const h = (amount / max) * height;
               y -= h;
               if (h <= 0) return null;
-              return <rect key={name} x={x} y={y} width={barW} height={h} fill={seriesColor(s)} rx={s === series.length - 1 ? 2 : 0} />;
+              // A 2px surface gap separates stacked segments (never a stroke).
+              const gap = s > 0 ? 2 : 0;
+              return <rect key={name} x={x} y={y} width={barW} height={Math.max(h - gap, 1)} fill={seriesColor(s)} rx={2} />;
             })}
             <text x={x + barW / 2} y={height + 14} textAnchor="middle" className="fill-current" fontSize="9">{day}d</text>
           </g>
@@ -144,15 +161,15 @@ export function CostColumns({
   const slot = width / days.length;
   const barW = Math.min(14, (slot - 10) / 2);
   return (
-    <svg viewBox={`0 0 ${width} ${height + 18}`} className="mt-2 h-24 w-full text-gray-500" role="img" aria-label="Monthly cost at simulator horizons">
+    <svg viewBox={`0 0 ${width} ${height + 18}`} preserveAspectRatio="xMinYMid meet" className="h-24 w-full max-w-[24rem] text-gray-500" role="img" aria-label="Monthly cost at simulator horizons">
       {days.map((day, i) => {
         const x = i * slot + (slot - (barW * 2 + 2)) / 2;
         const b = baseline[i];
         const c = candidate[i];
         return (
           <g key={day}>
-            {b != null ? <rect x={x} y={height - (b / max) * height} width={barW} height={(b / max) * height} fill="var(--viz-6)" rx={1} /> : null}
-            {c != null ? <rect x={x + barW + 2} y={height - (c / max) * height} width={barW} height={(c / max) * height} fill="var(--viz-1)" rx={1} /> : null}
+            {b != null ? <rect x={x} y={height - (b / max) * height} width={barW} height={(b / max) * height} fill="var(--gray-500)" rx={2} /> : null}
+            {c != null ? <rect x={x + barW + 2} y={height - (c / max) * height} width={barW} height={(c / max) * height} fill="var(--viz-1)" rx={2} /> : null}
             <text x={x + barW + 1} y={height + 14} textAnchor="middle" className="fill-current" fontSize="9">{day}d</text>
           </g>
         );
@@ -175,17 +192,18 @@ export function RankedBars({
     <div role="img" aria-label={ariaLabel} className="space-y-1">
       {points.map((p, index) => (
         <div key={`${p.label}·${index}`} className="grid grid-cols-[minmax(0,7rem)_1fr_auto] items-center gap-2">
-          <span className="truncate font-mono text-2xs text-gray-400" title={p.label}>{p.label}</span>
+          <span className="truncate text-2xs text-gray-400" title={p.label}>{p.label}</span>
           <div className="h-1.5 overflow-hidden rounded-full bg-edge">
             <div
               className="h-full rounded-full"
               style={{
                 width: `${Math.max((p.value / max) * 100, 1.5)}%`,
-                background: p === peak ? "var(--viz-1)" : "color-mix(in srgb, var(--viz-1) 45%, transparent)",
+                // One series, one ink: the peak is full ink, the rest recede.
+                background: p === peak ? "var(--gray-200)" : "var(--gray-500)",
               }}
             />
           </div>
-          <span className="font-mono text-2xs tabular-nums text-gray-300">{p.value.toLocaleString()}</span>
+          <span className="text-2xs tabular-nums text-gray-300">{p.value.toLocaleString()}</span>
         </div>
       ))}
     </div>
@@ -198,6 +216,10 @@ export function formatBytes(n: number): string {
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)} MB`;
   if (n >= 1e3) return `${(n / 1e3).toFixed(0)} KB`;
   return `${n} B`;
+}
+
+export function formatSignedBytes(n: number): string {
+  return `${n < 0 ? "−" : "+"}${formatBytes(Math.abs(n))}`;
 }
 
 export function formatUsd(n: number): string {

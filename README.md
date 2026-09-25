@@ -1,6 +1,6 @@
 # Storage Agent
 
-**Current release: v1.18.0**
+**Current release: v1.19.0**
 
 Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. Give it a storage goal or problem; it investigates with real read-only tools, remains steerable while it works, stops at explicit confirmation boundaries, and produces durable results backed by reviewable execution and evidence.
 
@@ -32,7 +32,7 @@ Switching to another Task does not destroy the first Task's real in-flight state
 
 ### Direction
 
-User input is durable task direction: the objective, correction, constraint, or steering instruction. It is not modeled as a generic chat bubble.
+User input is durable task direction: the objective, correction, constraint, or steering instruction. It is the heading of its turn in the Task document, not a message bubble.
 
 ### Execution
 

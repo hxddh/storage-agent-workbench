@@ -204,16 +204,8 @@
 /* Hover must not move anything: meta hides, the More control fades in over
  * the same reserved 24px, so a click lands on what the eye saw. The meta
  * uses visibility, not a fade — half-faded text is unreadable text. */
-.native-task-meta {
-  flex: none;
-  color: var(--gray-500);
-  font-size: var(--text-2xs);
-  font-variant-numeric: tabular-nums;
-}
-.native-task-row:hover .native-task-meta,
-.native-task-row[data-menu-open="true"] .native-task-meta {
-  visibility: hidden;
-}
+/* v1.19 — rows carry no time: the day group already says when, and the
+   exact relative time is in the row tooltip and accessible label. */
 
 .native-task-more {
   position: absolute;
@@ -375,7 +367,7 @@
   flex: none;
   align-items: center;
   gap: 8px;
-  padding: 0 12px 0 8px;
+  padding: 0 16px 0 8px;
   -webkit-app-region: drag;
 }
 .native-titlebar > * {
@@ -399,6 +391,32 @@
 .native-titlebar-title[data-task="true"] {
   color: var(--gray-100);
 }
+/* Command palette (v1.19): a raised, opaque sheet above the scrim. */
+.native-palette {
+  border: 1px solid var(--edge-strong);
+  background: var(--panel);
+  box-shadow: var(--shadow-pop);
+}
+/* The palette draws the focus for its input (data-focus-ring="container"). */
+.native-palette:focus-within { border-color: var(--focus-ring); }
+.native-palette-list {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+}
+.native-kbd {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--radius-md);
+  padding: 0 5px;
+  background: var(--elevated);
+  color: var(--gray-400);
+  font-family: inherit;
+  font-size: var(--text-2xs);
+  line-height: 1;
+}
+
 .native-titlebar-state {
   display: inline-flex;
   flex: none;
@@ -407,8 +425,18 @@
   color: var(--gray-500);
   font-size: var(--text-2xs);
 }
+/* One shape for every state: a dot and a quiet label. Colour lives in the
+   dot only (v1.19) — a red sentence in the title bar read as an error page. */
 .native-titlebar-state[data-state="decision"] { color: var(--gray-300); }
-.native-titlebar-state[data-state="attention"] { color: var(--danger); }
+.native-state-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--gray-500);
+}
+.native-state-dot[data-state="decision"] { background: var(--gray-100); }
+.native-state-dot[data-state="attention"] { background: var(--danger); }
 
 .native-task-area {
   position: relative;
@@ -600,12 +628,20 @@
 [data-testid="execution-detail"] { min-height: 100%; background: var(--canvas); }
 .native-execution-doc { padding: 12px 20px 56px; }
 .native-execution-doc-head { padding-bottom: 14px; border-bottom: 1px solid var(--edge); }
-.native-execution-doc-head h1 { margin: 10px 0 4px; color: var(--gray-100); font-size: var(--text-base); font-weight: 500; line-height: 1.35; }
-.native-execution-doc-meta { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; color: var(--gray-500); font-size: var(--text-xs); }
-.native-execution-doc-status { display: inline-flex; align-items: center; gap: 6px; color: var(--gray-300); }
-.native-execution-doc-status[data-status="completed"] { color: var(--success); }
-.native-execution-doc-status[data-status="failed"] { color: var(--danger); }
-.native-execution-doc-status[data-status="running"] { color: var(--warn); }
+.native-execution-doc-head h1 { margin: 6px 0 8px; color: var(--gray-100); font-size: var(--text-lg); font-weight: 560; line-height: 1.4; letter-spacing: -0.01em; }
+/* Meta reads as a sentence of facts separated by middots; colour only in the dot. */
+.native-execution-doc-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; margin: 0; color: var(--gray-500); font-size: var(--text-xs); }
+.native-execution-doc-meta > * + *::before { content: "·"; margin: 0 7px; color: var(--gray-500); }
+.native-execution-doc-usage { margin: 4px 0 0; color: var(--gray-500); font-size: var(--text-2xs); }
+.native-execution-doc-status { display: inline-flex; align-items: center; gap: 6px; color: var(--gray-200); }
+.native-state-dot[data-state="completed"] { background: var(--success); }
+.native-state-dot[data-state="waiting"] { background: var(--gray-100); }
+/* Result prose steps down with the panel, keeping headings above body text. */
+.native-execution-doc .agent-result-prose { font-size: var(--text-sm); line-height: 1.65; }
+.native-execution-doc .agent-prose h1,
+.native-execution-doc .agent-prose h2 { font-size: var(--text-base); }
+.native-execution-doc .agent-prose h3,
+.native-execution-doc .agent-prose h4 { font-size: var(--text-sm); }
 .native-execution-doc-block { padding: 16px 0 4px; }
 .native-execution-doc-block + .native-execution-doc-block { border-top: 1px solid var(--edge); margin-top: 12px; }
 .native-execution-doc-block h2 { margin: 0 0 10px; color: var(--gray-100); font-size: var(--text-sm); font-weight: 500; }
