@@ -37,7 +37,7 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v2.2 documentation contract", () => {
+describe("v3.0 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
@@ -51,14 +51,15 @@ describe("v2.2 documentation contract", () => {
     expect(readRepo("docs/README.md")).toContain("v2.0.0");
     expect(readRepo("docs/README.md")).toContain("v2.1.0");
     expect(readRepo("docs/README.md")).toContain("v2.2.0");
+    expect(readRepo("docs/README.md")).toContain("v3.0.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.16.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.19.0");
     expect(readRepo("CLAUDE.md")).toContain("v2.0.0");
     expect(readRepo("CLAUDE.md")).toContain("v2.1.0");
-    expect(readRepo("CLAUDE.md")).toContain("Implementation contract for Storage Agent v2.2.0");
+    expect(readRepo("CLAUDE.md")).toContain("Implementation contract for Storage Agent v3.0.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
-    expect(readRepo("docs/product.md")).toContain("v2.2.0");
-    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v2\.2\.0/);
+    expect(readRepo("docs/product.md")).toContain("v3.0.0");
+    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v3\.0\.0/);
     expect(readRepo("docs/architecture.md")).toContain("Migration head **031**");
     expect(readRepo("docs/architecture.md")).not.toMatch(/Current architecture baseline: Storage Agent v1\.10\.0/);
     expect(readRepo("docs/architecture.md")).not.toMatch(/Migration head \*\*028\*\*/);
@@ -158,8 +159,10 @@ describe("v2.2 documentation contract", () => {
     expect(readRepo("CLAUDE.md")).not.toContain("Focus mode");
     expect(readRepo("CLAUDE.md")).not.toContain("command center");
     expect(readRepo("docs/architecture.md")).toContain("after=<last seq>");
-    // v2.0 — the Artifacts side panel is retired; details expand in place.
+    // v2.0 retired the Artifacts side panel; v3.0 opens outputs in one
+    // resizable side pane beside the Result (TaskDetails / TaskInspector).
     expect(readRepo("docs/architecture.md")).toContain("TaskDetails");
+    expect(readRepo("CLAUDE.md")).toContain("side pane");
     expect(readRepo("CLAUDE.md")).not.toContain("**Artifacts** is a right split panel");
     expect(readRepo("docs/product.md")).not.toContain("Artifacts is a **right split panel**");
     expect(readRepo("docs/tools.md")).toContain("simulate_storage_cost");
@@ -174,6 +177,9 @@ describe("v2.2 documentation contract", () => {
     expect(readRepo("docs/releases/2.0.0.md")).toContain("Result-first");
     expect(readRepo("docs/releases/2.1.0.md")).toContain("Native agent");
     expect(readRepo("docs/releases/2.2.0.md")).toContain("Native agent depth");
+    expect(readRepo("docs/roadmap.md")).toContain("v3.0.0");
+    expect(readRepo("docs/roadmap.md")).toContain("Design system v3");
+    expect(readRepo("docs/releases/3.0.0.md")).toContain("Design system v3");
     expect(readRepo("docs/tools.md")).toContain("tool.progress");
     expect(readRepo("docs/api.md")).toContain("direction.recorded");
     expect(readRepo("docs/releases/1.13.0.md")).toContain("Honesty and completeness");
