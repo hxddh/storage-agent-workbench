@@ -345,11 +345,15 @@ export function RankedBars({
   ariaLabel,
   title,
   format = (n: number) => n.toLocaleString(),
+  share = true,
 }: {
   points: Array<{ label: string; value: number }>;
   ariaLabel: string;
   title?: string;
   format?: (n: number) => string;
+  /** Show each bar's share of the total. Only for additive counts — never
+   * for percentiles, which do not sum. */
+  share?: boolean;
 }) {
   if (points.length === 0) return <NoDist />;
   const max = Math.max(...points.map((p) => p.value), 1);
@@ -361,7 +365,7 @@ export function RankedBars({
         <div
           key={`${p.label}·${index}`}
           className="viz-ranked-row"
-          title={`${p.label}: ${format(p.value)} (${Math.round((p.value / total) * 100)}%)`}
+          title={share ? `${p.label}: ${format(p.value)} (${Math.round((p.value / total) * 100)}%)` : `${p.label}: ${format(p.value)}`}
         >
           <span className="viz-ranked-label">{p.label}</span>
           <span className="viz-ranked-track">

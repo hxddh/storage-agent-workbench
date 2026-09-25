@@ -177,12 +177,20 @@ export function CommandPalette({
     // starters and the Composer are where work is worded.
     if (!query) return [...taskItems.slice(0, RECENT_LIMIT), ...actions];
     // Everything ranks by one fuzzy score; the matched letters are marked.
+    // Groups stay contiguous, and the group holding the single best match
+    // leads, so Enter always runs the best match (`new` → New task, even
+    // with a task called "Network audit").
     const rank = (list: Cmd[]) => list
       .map((command) => ({ command, score: fuzzyScore(query, command.label) }))
       .filter((row) => row.score >= 0)
-      .sort((a, b) => b.score - a.score)
-      .map((row) => ({ ...row.command, marks: fuzzyIndices(query, row.command.label) }));
-    return [...rank(taskItems), ...rank(actions)];
+      .sort((a, b) => b.score - a.score);
+    const tasksRanked = rank(taskItems);
+    const actionsRanked = rank(actions);
+    const mark = (rows: typeof tasksRanked) => rows.map((row) => ({ ...row.command, marks: fuzzyIndices(query, row.command.label) }));
+    const actionsLead = (actionsRanked[0]?.score ?? -1) > (tasksRanked[0]?.score ?? -1);
+    return actionsLead
+      ? [...mark(actionsRanked), ...mark(tasksRanked)]
+      : [...mark(tasksRanked), ...mark(actionsRanked)];
   }, [q, tasks, onNew, onOpenSettings, onSelectTask, onClose, t, copy, theme, toggle, lang, setLang]);
 
   useEffect(() => {

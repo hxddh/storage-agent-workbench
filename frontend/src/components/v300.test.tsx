@@ -122,3 +122,10 @@ describe("v3.0 side pane", () => {
     expect(app).toContain("aria-pressed={inspectorOpen}");
   });
 });
+
+describe("v3.0 review fixes", () => {
+  it("latency percentiles never show a share of a total", () => {
+    const figures = source("../viz/AnalysisFigures.tsx");
+    expect(figures).toMatch(/format=\{\(n\) => `\$\{n\.toLocaleString\(\)\} ms`\}\s*share=\{false\}/);
+  });
+});

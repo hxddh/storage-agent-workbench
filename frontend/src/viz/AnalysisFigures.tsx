@@ -155,6 +155,7 @@ export function AnalysisFigures({
             <RankedBars
               title={t("viz.latency")}
               format={(n) => `${n.toLocaleString()} ms`}
+              share={false}
               points={[
                 { label: "p50", value: access.latency.p50 },
                 { label: "p95", value: access.latency.p95 },

@@ -76,6 +76,20 @@ describe("v1.16 discoverability without painted hints (v3.0 palette)", () => {
     expect(screen.getByText("Keyboard shortcuts")).toBeTruthy();
   });
 
+  it("puts the best match first even when it is an action", () => {
+    publishPaletteActions({ hasTask: true, busy: false });
+    render(createElement(ThemeProvider, null, createElement(I18nProvider, null, createElement(CommandPalette, {
+        open: true,
+        onClose: () => {},
+        tasks: [{ id: "n1", title: "Network audit", state: "ready" }] as unknown as Parameters<typeof CommandPalette>[0]["tasks"],
+        onSelectTask: () => {},
+        onNew: () => {},
+        onOpenSettings: () => {},
+      }))));
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "new" } });
+    expect(screen.getAllByRole("option")[0]).toHaveTextContent("New task");
+  });
+
   it("marks the letters a fuzzy query matched and opens the task", () => {
     const onSelectTask = vi.fn();
     publishPaletteActions({ hasTask: true, busy: false });
