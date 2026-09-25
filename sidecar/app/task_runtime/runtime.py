@@ -625,5 +625,5 @@ def _reset_for_tests() -> None:
         _workers.clear()
 
 
-__all__ = ["submit", "steer", "stop", "resume", "resume_interrupted", "live_handle",
+__all__ = ["submit", "steer", "stop", "resume", "live_handle",
            "LiveExecution"]
