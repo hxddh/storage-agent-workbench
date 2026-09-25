@@ -31,6 +31,11 @@ export function availableKinds(details: TaskDetailsState, hasResult: boolean): A
   return kinds;
 }
 
+function shownKind(selected: ArtifactKind | null, kinds: ArtifactKind[]): ArtifactKind | null {
+  if (!selected) return null;
+  return kinds.includes(selected) ? selected : kinds[0] ?? null;
+}
+
 function useKindLabels() {
   const copy = useAgentCopy();
   return {
@@ -60,11 +65,14 @@ export function TaskDetails({ hasResult }: { hasResult: boolean }) {
   if (!taskId) return null;
   const kinds = availableKinds(details, hasResult);
   if (kinds.length === 0) return null;
+  // The kind the side pane actually shows (a selection without anything
+  // behind it falls back to the first output, as the pane does).
+  const shown = shownKind(selection?.kind ?? null, kinds);
   return (
     <nav className="task-outputs" data-testid="task-details" aria-label={labels.execution}>
       {kinds.map((kind) => {
         const count = kindCount(details, kind);
-        const active = selection?.kind === kind;
+        const active = shown === kind;
         return (
           <button
             key={kind}
@@ -112,9 +120,7 @@ export function TaskInspector({ hasResult }: { hasResult: boolean }) {
   const [width, setWidth] = useState<number | null>(storedInspectorWidth);
   const panelRef = useRef<HTMLElement | null>(null);
   const kinds = availableKinds(details, hasResult);
-  const kind: ArtifactKind | null = selection
-    ? kinds.includes(selection.kind) ? selection.kind : kinds[0] ?? null
-    : null;
+  const kind = shownKind(selection?.kind ?? null, kinds);
 
   // Focus lands in the panel when it opens, so the keyboard follows the eye.
   useEffect(() => {
