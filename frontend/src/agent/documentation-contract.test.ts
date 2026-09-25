@@ -37,7 +37,7 @@ const removedArchitecture: Array<[string, RegExp]> = [
   ["new-investigation product action", /\bNew investigation\b/i],
 ];
 
-describe("v2.0 documentation contract", () => {
+describe("v2.1 documentation contract", () => {
   it("anchors normative documentation to the current Agent Task architecture", () => {
     for (const path of normativeDocs) {
       const text = readRepo(path);
@@ -49,12 +49,14 @@ describe("v2.0 documentation contract", () => {
     expect(readRepo("docs/README.md")).toContain("v1.18.0");
     expect(readRepo("docs/README.md")).toContain("v1.19.0");
     expect(readRepo("docs/README.md")).toContain("v2.0.0");
+    expect(readRepo("docs/README.md")).toContain("v2.1.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.16.0");
     expect(readRepo("CLAUDE.md")).toContain("v1.19.0");
     expect(readRepo("CLAUDE.md")).toContain("v2.0.0");
+    expect(readRepo("CLAUDE.md")).toContain("Implementation contract for Storage Agent v2.1.0");
     expect(readRepo("docs/product.md")).toContain("Design rules");
-    expect(readRepo("docs/product.md")).toContain("v2.0.0");
-    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v2\.0\.0/);
+    expect(readRepo("docs/product.md")).toContain("v2.1.0");
+    expect(readRepo("docs/architecture.md")).toMatch(/Current architecture baseline: Storage Agent v2\.1\.0/);
     expect(readRepo("docs/architecture.md")).toContain("Migration head **031**");
     expect(readRepo("docs/architecture.md")).not.toMatch(/Current architecture baseline: Storage Agent v1\.10\.0/);
     expect(readRepo("docs/architecture.md")).not.toMatch(/Migration head \*\*028\*\*/);
@@ -93,7 +95,9 @@ describe("v2.0 documentation contract", () => {
     expect(api).toContain("/agent-tasks/{task_id}/provenance");
     expect(api).toContain("POST /agent-tasks/{task_id}/executions");
     expect(api).toContain("POST /agent-tasks/{task_id}/steer");
-    expect(api).toContain("/decisions/{decision_id}/resolve");
+    // v2.1 — nothing asks for approval: no resolve route, no policy route.
+    expect(api).not.toContain("/decisions/{decision_id}/resolve");
+    expect(api).not.toMatch(/^(GET|PUT) \/settings\/approval-policy/m);
     expect(api).toContain("queued_executions");
     expect(api).toContain("execution.events_truncated");
     expect(api).toContain("POST /agent-tasks/{task_id}/verify");
@@ -109,9 +113,12 @@ describe("v2.0 documentation contract", () => {
     expect(dataModel).toContain("native_agent_turn_items_approvals");
     expect(dataModel).toContain("turn_items");
     expect(api).toContain("message.completed");
-    expect(api).toContain("approval.opened");
+    expect(api).not.toMatch(/`approval\.opened`[^\n]*(is|are) (appended|emitted)/);
     expect(readRepo("docs/tools.md")).toContain("import_evidence");
-    expect(readRepo("docs/product.md")).toContain("Waiting for approval");
+    expect(readRepo("docs/product.md")).not.toContain("Waiting for approval");
+    expect(readRepo("CLAUDE.md")).toContain("No approval, no plan");
+    expect(readRepo("CLAUDE.md")).toContain("≤ 500 files / 256 MiB");
+    expect(readRepo("docs/tools.md")).not.toMatch(/^### `update_plan`/m);
     expect(api).toContain("reasoning_effort");
     expect(api).toContain("title_source");
     expect(readRepo("docs/architecture.md")).toContain("menu-command");
@@ -159,7 +166,9 @@ describe("v2.0 documentation contract", () => {
     expect(readRepo("docs/roadmap.md")).toContain("Document-native");
     expect(readRepo("docs/roadmap.md")).toContain("v2.0.0");
     expect(readRepo("docs/roadmap.md")).toContain("Result-first");
+    expect(readRepo("docs/roadmap.md")).toContain("v2.1.0");
     expect(readRepo("docs/releases/2.0.0.md")).toContain("Result-first");
+    expect(readRepo("docs/releases/2.1.0.md")).toContain("Native agent");
     expect(readRepo("docs/releases/1.13.0.md")).toContain("Honesty and completeness");
     expect(readRepo("docs/releases/1.14.0.md")).toContain("Interaction truth and content craft");
     expect(readRepo("docs/releases/1.15.0.md")).toContain("True Native Agent");

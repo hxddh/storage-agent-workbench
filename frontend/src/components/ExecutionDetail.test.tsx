@@ -103,18 +103,14 @@ describe("replayExecutionEvents", () => {
     expect(replay.messageId).toBe("m-answer");
     expect(replay.lastSeq).toBe(19);
     expect(replay.turn.answer).toBe("Three buckets; one policy is public.");
-    expect(replay.turn.waiting).toBe(false);
-    expect(replay.turn.items.map((item) => item.kind)).toEqual(["compacted", "plan", "message", "tool", "tool", "approval"]);
+    // A pre-2.1 log still carries plan / approval frames: they are ignored.
+    expect(replay.turn.items.map((item) => item.kind)).toEqual(["compacted", "message", "tool", "tool"]);
     const tools = replay.turn.items.filter((item): item is { kind: "tool"; record: import("../types").ToolActivity } => item.kind === "tool");
     expect(tools.map((item) => item.record.tool)).toEqual(["survey_account", "head_bucket"]);
     // Rows without Sidecar stamps take the log's own timestamps, so the
     // group's wall-clock is first start → last finish (4s → 16s), not a sum.
     expect(tools[0].record.started_at).toBe(at(4));
     expect(tools[0].record.finished_at).toBe(at(16));
-    const plan = replay.turn.items.find((item) => item.kind === "plan") as { kind: "plan"; steps: { status: string }[] };
-    expect(plan.steps.every((step) => step.status === "completed")).toBe(true);
-    const approval = replay.turn.items.find((item) => item.kind === "approval") as { status: string };
-    expect(approval.status).toBe("approved");
     expect(replay.turn.items.some((item) => item.kind === "tool" && item.record.tool === "list_objects")).toBe(false);
   });
 
@@ -142,9 +138,9 @@ describe("ExecutionDetail", () => {
     expect(api.followExecutionEvents).not.toHaveBeenCalled();
     // The document's own title; the Markdown answer below renders its own h1.
     expect(screen.getAllByRole("heading", { level: 1 })[0].textContent).toBe("Survey the acme account and check bucket policies.");
-    expect(screen.getByTestId("plan-card")).toBeTruthy();
+    expect(screen.queryByTestId("plan-card")).toBeNull();
     expect(screen.getByTestId("context-compacted")).toBeTruthy();
-    expect(screen.getByTestId("approval-card").getAttribute("data-status")).toBe("approved");
+    expect(screen.queryByTestId("approval-card")).toBeNull();
     const group = screen.getByTestId("worked-group");
     // Two rows, 4s → 16s of wall-clock — never 12.3s summed.
     expect(group.textContent).toMatch(/Worked for 12s/);

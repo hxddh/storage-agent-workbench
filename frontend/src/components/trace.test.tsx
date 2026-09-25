@@ -50,7 +50,7 @@ describe("live Agent execution", () => {
   it("renders a bare row when there are no distinguishing arguments", () => {
     wrap(createElement(WorkedGroup, { records: [call({ tool: "head_bucket", args: {} })] }));
     expect(screen.queryByTestId("trace-args")).toBeNull();
-    expect(screen.getByText("head_bucket")).toBeTruthy();
+    expect(screen.getByTitle("head_bucket")).toBeTruthy();
   });
 
   it("marks only the in-flight call", () => {
@@ -65,7 +65,7 @@ describe("live Agent execution", () => {
       records: [call({ result: "404 NoSuchBucket" }), call({ status: "started" })],
     }));
     expect(screen.getByText("404 NoSuchBucket")).toBeTruthy();
-    expect(screen.getAllByText(/list_objects/)).toHaveLength(2);
+    expect(screen.getAllByTitle("list_objects")).toHaveLength(2);
   });
 
   it("renders nothing before the first call", () => {
@@ -113,8 +113,8 @@ describe("deep execution", () => {
 
   it("folds early steps so live execution does not bury the answer", () => {
     wrap(createElement(WorkedGroup, { records: many(30), live: true }));
-    expect(screen.queryByText("probe_0")).toBeNull();
-    expect(screen.getByText("probe_29")).toBeTruthy();
+    expect(screen.queryByTitle("probe_0")).toBeNull();
+    expect(screen.getByTitle("probe_29")).toBeTruthy();
     expect(screen.getByTestId("trace-fold").textContent).toContain("24");
   });
 
@@ -123,29 +123,29 @@ describe("deep execution", () => {
     items[1] = call({ tool: "head_bucket", id: "boom", result: "NoSuchBucket", ok: false });
     wrap(createElement(WorkedGroup, { records: items }));
     expect(screen.getByTestId("worked-group").getAttribute("data-expanded")).toBe("true");
-    expect(screen.getByText("head_bucket")).toBeTruthy();
+    expect(screen.getByTitle("head_bucket")).toBeTruthy();
   });
 
   it("collapses a finished group until the reader opens it", () => {
     render(createElement(I18nProvider, null, createElement(WorkedGroup, { records: many(3) })));
     expect(screen.getByTestId("worked-group").getAttribute("data-expanded")).toBe("false");
-    expect(screen.queryByText("probe_0")).toBeNull();
+    expect(screen.queryByTitle("probe_0")).toBeNull();
     expect(screen.getByTestId("execution-head").textContent).toMatch(/Worked/);
     fireEvent.click(screen.getByTestId("execution-head"));
-    expect(screen.getByText("probe_0")).toBeTruthy();
+    expect(screen.getByTitle("probe_0")).toBeTruthy();
   });
 
   it("shows all steps once the operator asks", () => {
     wrap(createElement(WorkedGroup, { records: many(30), live: true }));
     fireEvent.click(screen.getByTestId("trace-fold"));
-    expect(screen.getByText("probe_0")).toBeTruthy();
+    expect(screen.getByTitle("probe_0")).toBeTruthy();
     expect(screen.queryByTestId("trace-fold")).toBeNull();
   });
 
   it("leaves a short execution alone", () => {
     wrap(createElement(WorkedGroup, { records: many(5), live: true }));
     expect(screen.queryByTestId("trace-fold")).toBeNull();
-    expect(screen.getByText("probe_0")).toBeTruthy();
+    expect(screen.getByTitle("probe_0")).toBeTruthy();
   });
 });
 

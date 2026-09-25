@@ -4,8 +4,8 @@ import type { ArtifactKind, ArtifactSelection } from "./model";
 import type { ArtifactsProjection } from "./useAgentTaskProjection";
 
 /**
- * v2.0 — the Task's durable outputs (Evidence · Report · Execution · Plans ·
- * Baselines & Drift) live IN the document, under the Result, as rows that
+ * v2.0 — the Task's durable outputs (Evidence · Report · Execution) live IN
+ * the document, under the Result, as rows that
  * expand in place. The shell owns which row is open and what the rows list;
  * the document renders them. There is no side panel.
  */
@@ -21,7 +21,7 @@ export type TaskDetailsState = {
 };
 
 const EMPTY_PROJECTION: ArtifactsProjection = {
-  detail: null, executions: [], plans: [], baselines: [], report: null, reportLoading: false, error: null,
+  detail: null, executions: [], report: null, reportLoading: false, error: null,
 };
 
 export const TaskDetailsContext = createContext<TaskDetailsState>({

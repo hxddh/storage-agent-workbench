@@ -126,7 +126,7 @@ def test_unknown_execution_kind_is_422(client):
 # --- recovery truth -----------------------------------------------------------------
 
 
-def test_recovery_stamps_waiting_interrupted_and_keeps_decision(client):
+def test_recovery_stamps_waiting_interrupted_and_withdraws_decision(client):
     from app.task_runtime import recovery, store
     task = _task(client)
     conn = db.connect()
@@ -134,18 +134,20 @@ def test_recovery_stamps_waiting_interrupted_and_keeps_decision(client):
         store.ensure_task(conn, task["id"], task["title"], task.get("goal"))
         execution = store.create_execution(conn, task["id"], "import it", "t-wait")
         store.set_execution_status(conn, execution["id"], store.EXEC_WAITING)
-        decision = store.open_approval(conn, task["id"], execution["id"],
-                                       "import_inventory", "Import 3 files",
-                                       "moves bytes", {"impact": {"bucket": "b"}})
+        conn.execute(
+            "INSERT INTO task_decisions (id, task_id, execution_id, action_type, title, "
+            "proposal_json_sanitized, status, created_at, kind) VALUES "
+            "('dec-w', ?, ?, 'import_inventory', 'Import 3 files', '{}', 'pending', "
+            "datetime('now'), 'approval')", (task["id"], execution["id"]))
         conn.commit()
     finally:
         conn.close()
-    assert recovery.reconcile_interrupted_executions() >= 1
+    assert execution["id"] in recovery.reconcile_interrupted_executions()
     conn = db.connect()
     try:
         assert store.get_execution(conn, execution["id"])["status"] == store.EXEC_INTERRUPTED
-        # The boundary stands: the pending Decision survives for Resume to re-raise.
-        assert store.get_decision(conn, decision["id"])["status"] == store.DECISION_PENDING
+        # v2.1 — nothing can resolve a Decision any more: it is withdrawn.
+        assert store.get_decision(conn, "dec-w")["status"] == store.DECISION_SUPERSEDED
     finally:
         conn.close()
 

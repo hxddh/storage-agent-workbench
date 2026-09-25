@@ -15,15 +15,10 @@ import type { TaskRecord, TaskFinding, TaskMessage } from "../types";
 import {
   applyCompacted,
   applyDelta,
-  applyPlan,
   applySteer,
-  applyStatus,
   applyTool,
   completeMessage,
   EMPTY_TURN,
-  grantApproval,
-  openApproval,
-  resolveApproval,
   type LiveTurn,
 } from "../lib/turnItems";
 import { TranscriptItems } from "./TranscriptItems";
@@ -67,14 +62,9 @@ function reducerHandlers(update: (fn: (turn: LiveTurn) => LiveTurn) => void, met
     onDelta: (text) => update((turn) => applyDelta(turn, text)),
     onTool: (record) => update((turn) => applyTool(turn, record)),
     onMessageCompleted: (payload) => update((turn) => completeMessage(turn, payload)),
-    onApprovalOpened: (payload) => update((turn) => openApproval(turn, payload)),
-    onApprovalGranted: (payload) => update((turn) => grantApproval(turn, payload)),
-    onDecisionResolved: (payload) => update((turn) => resolveApproval(turn, payload)),
-    onPlanUpdated: (payload) => update((turn) => applyPlan(turn, payload.steps)),
     onSteerApplied: (payload) => update((turn) => applySteer(turn, payload.text)),
     onContextCompacted: (payload) => update((turn) => applyCompacted(turn, payload)),
     onStatus: (payload) => {
-      update((turn) => applyStatus(turn, payload.status));
       if (TERMINAL.has(payload.status)) meta.onTerminal(payload.status, payload as Record<string, any>);
     },
   };
@@ -146,7 +136,7 @@ function firstLine(text: string | null | undefined, max = 120): string {
 /**
  * One durable Execution, read as a document inside the Artifacts panel:
  * header from the execution row, one *Worked for …* group of its tool rows
- * (plan · approvals · compaction marker in order) from the durable event
+ * (steers · compaction marker in order) from the durable event
  * log, the findings and the Work Result it produced. Live while the
  * execution is still going — the same event stream the transcript follows,
  * resumed at the last replayed sequence — durable afterwards.

@@ -66,7 +66,7 @@ describe("v1.17 Codex window", () => {
     expect(screen.getByTestId("execution-head").textContent).not.toMatch(/tool calls/);
   });
 
-  it("renders the Direction as a section heading and the approval card sentence-case", () => {
+  it("renders the Direction as a section heading", () => {
     const css = source("../agent/native-document.css");
     // v1.19 — the Direction is the section heading of a turn: left-aligned,
     // unfilled, no bubble shape; later turns open with a hairline.
@@ -77,10 +77,8 @@ describe("v1.17 Codex window", () => {
     expect(css).not.toMatch(/\.turn-direction \{[^}]*align-items: flex-end/);
     expect(css).toMatch(/\.task-item\[data-direction\] ~ \.task-item\[data-direction\] \{[^}]*border-top: 1px solid var\(--edge\)/);
     expect(css).not.toContain("turn-user-bubble");
-    expect(css).not.toMatch(/\.approval-card-head \{[^}]*text-transform: uppercase/);
-    expect(css).not.toMatch(/\.approval-card \{[^}]*box-shadow/);
-    expect(source("./ApprovalCard.tsx")).not.toContain('name="shield"');
-    expect(source("../i18n.tsx")).toContain('"approval.eyebrow": "Waiting for approval"');
+    // v2.1 — there is no approval card at all.
+    expect(css).not.toContain(".approval-card");
     expect(source("../i18n.tsx")).toContain('"turn.userLabel": "Direction"');
     expect(source("../i18n.tsx")).toContain('"turn.answerLabel": "Work Result"');
   });

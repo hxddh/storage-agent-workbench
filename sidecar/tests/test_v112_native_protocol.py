@@ -1,18 +1,17 @@
 """v1.12.0 — "Native all the way through" contracts.
 
-One protocol (no message/turn shims), push transport, the model's plan tool,
-the approval policy enforced in ONE place, the large-survey gate, context
-compaction, and the AGENTS.md instructions file.
+One protocol (no message/turn shims), push transport, context compaction, and
+the AGENTS.md instructions file. (v2.1 removed the plan tool, the approval
+policy and the large-survey gate: a larger survey is bounded, never asked.)
 """
 
 from __future__ import annotations
 
 import json
-import threading
 import time
 
 from tests.test_v111_native_turns import (  # noqa: F401 — shared helpers
-    MODEL_KEY, _add_model_provider, _approval_execution, _proposal, _task, _wait_settled,
+    MODEL_KEY, _add_model_provider, _task, _wait_settled,
 )
 
 
@@ -30,7 +29,9 @@ def test_no_message_or_turn_shims_remain(client):
     assert set(spec["/sessions/{session_id}/messages"]) == {"get"}
     assert "/agent-tasks/{task_id}/executions" in paths
     assert "/agent-tasks/{task_id}/compact" in paths
-    assert "/settings/approval-policy" in paths
+    # v2.1 — nothing asks for approval: no policy, no resolve route.
+    assert "/settings/approval-policy" not in paths
+    assert "/agent-tasks/{task_id}/decisions/{decision_id}/resolve" not in paths
     assert "/settings/instructions" in paths
 
 
@@ -46,92 +47,7 @@ def test_migration_030_adds_the_compaction_columns(client):
         conn.close()
 
 
-# --- W4: approval policy ---------------------------------------------------------
-
-
-def test_policy_endpoint_round_trips_and_session_grant_is_process_scoped(client):
-    from app.task_runtime import approval_policy
-    r = client.get("/settings/approval-policy")
-    assert r.status_code == 200
-    assert r.json()["policy"] == "ask"
-    names = {t["name"] for t in r.json()["gated_tools"]}
-    assert names == {"import_evidence", "survey_account"}
-    assert client.put("/settings/approval-policy", json={"policy": "bogus"}).status_code == 422
-
-    assert client.put("/settings/approval-policy", json={"policy": "allow_session"}
-                      ).json()["policy"] == "allow_session"
-    assert client.get("/settings/approval-policy").json()["policy"] == "allow_session"
-    # A restart (new process) forgets the session grant …
-    approval_policy.reset_session()
-    assert client.get("/settings/approval-policy").json()["policy"] == "ask"
-    # … but `allow_always` is durable configuration (never a secret).
-    client.put("/settings/approval-policy", json={"policy": "allow_always"})
-    approval_policy.reset_session()
-    assert client.get("/settings/approval-policy").json()["policy"] == "allow_always"
-    client.put("/settings/approval-policy", json={"policy": "ask"})
-    assert client.get("/settings/approval-policy").json()["policy"] == "ask"
-
-
-def test_policy_answers_the_gate_in_request_approval_only(client):
-    from app.db import connect
-    from app.task_runtime import runtime
-    task = _task(client)
-    execution, handle = _approval_execution(client, task["id"])
-    client.put("/settings/approval-policy", json={"policy": "allow_session"})
-    conn = connect()
-    try:
-        t0 = time.monotonic()
-        granted = runtime.request_approval(
-            conn, execution["id"], task["id"], action_type="import_inventory",
-            title="Import 3 inventory files", reason=None, proposal=_proposal(),
-            cancel_event=handle.cancel_event)
-        assert time.monotonic() - t0 < 1.0
-        assert granted["status"] == "approved" and granted["scope"] == "session"
-        assert "policy" in (granted.get("resolution_note") or "")
-        # The execution never went to `waiting`.
-        assert client.get(f"/agent-tasks/{task['id']}/executions/{execution['id']}"
-                          ).json()["status"] == "running"
-    finally:
-        conn.close()
-    events = client.get(f"/agent-tasks/{task['id']}/events").json()["events"]
-    granted_events = [e for e in events if e["event_type"] == "approval.granted"]
-    assert granted_events and granted_events[-1]["payload"]["policy"] == "session"
-    assert not any(e["event_type"] == "approval.opened" for e in events)
-
-    # Back to `ask`: the same call pauses again (a policy is not a grant).
-    client.put("/settings/approval-policy", json={"policy": "ask"})
-    out: list = []
-
-    def tool_thread():
-        c = connect()
-        try:
-            out.append(runtime.request_approval(
-                c, execution["id"], task["id"], action_type="import_access_log",
-                title="Import logs", reason=None, proposal=_proposal(),
-                cancel_event=handle.cancel_event))
-        finally:
-            c.close()
-
-    t = threading.Thread(target=tool_thread, daemon=True)
-    t.start()
-    deadline = time.monotonic() + 5
-    pending: list = []
-    while time.monotonic() < deadline:
-        pending = client.get(f"/agent-tasks/{task['id']}/decisions?status_filter=pending"
-                             ).json()["decisions"]
-        if pending:
-            break
-        time.sleep(0.05)
-    assert pending and pending[0]["action_type"] == "import_access_log"
-    client.post(f"/agent-tasks/{task['id']}/decisions/{pending[0]['id']}/resolve",
-                json={"resolution": "declined"})
-    t.join(5)
-    assert out and out[0]["status"] == "declined"
-    with runtime._lock:
-        runtime._live.pop(execution["id"], None)
-
-
-# --- W4: the large-survey gate ---------------------------------------------------
+# --- v2.1: a larger survey is bounded, never gated ----------------------------------
 
 
 class _FT:
@@ -148,84 +64,52 @@ def _cloud_provider(client):
     return r.json()["id"]
 
 
-def test_survey_above_the_default_cap_crosses_the_confirmation_boundary(client, monkeypatch):
+def _running_execution(task_id):
+    from app.db import connect
+    from app.task_runtime import runtime, store
+    conn = connect()
+    try:
+        store.ensure_task(conn, task_id)
+        execution = store.create_execution(conn, task_id, "survey the account", "r-survey")
+        store.set_execution_status(conn, execution["id"], store.EXEC_RUNNING)
+        conn.commit()
+    finally:
+        conn.close()
+    handle = runtime.LiveExecution(execution["id"], task_id)
+    with runtime._lock:
+        runtime._live[execution["id"]] = handle
+    return execution, handle
+
+
+def test_a_survey_above_the_default_cap_runs_bounded_without_a_decision(client, monkeypatch):
     from app.agent_runtime import session_action_tools
     from app.db import connect
     from app.task_runtime import runtime, store
     pid = _cloud_provider(client)
     task = _task(client)
-    execution, handle = _approval_execution(client, task["id"])
+    execution, handle = _running_execution(task["id"])
     seen: dict = {}
 
     def fake_execute_run(conn, body, turn_id, dedup_key, cancel_event=None):
         seen["max_buckets"] = body.max_buckets
-        raise RuntimeError("stop here — the gate is what this test checks")
+        raise RuntimeError("stop here — the bound is what this test checks")
 
     monkeypatch.setattr(session_action_tools, "_execute_run", fake_execute_run)
     conn = connect()
     try:
-        activity: list = []
         tools = {t.name: t for t in session_action_tools.build(
-            conn, _FT(), activity, session_id=task["id"], turn_id=execution["turn_id"],
+            conn, _FT(), [], session_id=task["id"], turn_id=execution["turn_id"],
             cancel_event=handle.cancel_event)}
         survey = tools["survey_account"]
-
-        # Default cap: autonomous, no Decision.
         survey(pid)
         assert seen["max_buckets"] is None
-        assert not client.get(f"/agent-tasks/{task['id']}/decisions?status_filter=pending"
-                              ).json()["decisions"]
-
-        # Above the cap: a Decision with the projected impact; Deny → refusal,
-        # nothing enumerated.
-        out: dict = {}
-
-        def call():
-            c = connect()
-            try:
-                tools2 = {t.name: t for t in session_action_tools.build(
-                    c, _FT(), activity, session_id=task["id"], turn_id=execution["turn_id"],
-                    cancel_event=handle.cancel_event)}
-                out["text"] = tools2["survey_account"](pid, 300)
-            finally:
-                c.close()
-
-        seen.clear()
-        t = threading.Thread(target=call, daemon=True)
-        t.start()
-        deadline = time.monotonic() + 5
-        pending: list = []
-        while time.monotonic() < deadline:
-            pending = client.get(f"/agent-tasks/{task['id']}/decisions?status_filter=pending"
-                                 ).json()["decisions"]
-            if pending:
-                break
-            time.sleep(0.05)
-        assert pending and pending[0]["action_type"] == "survey_account_large"
-        impact = pending[0]["impact"]
-        assert impact["gate"] == "large_scan" and impact["buckets"] == 300
-        assert impact["estimated_calls"] >= 300 and impact["provider"] == "acme"
-        client.post(f"/agent-tasks/{task['id']}/decisions/{pending[0]['id']}/resolve",
-                    json={"resolution": "declined"})
-        t.join(5)
-        assert "declined" in out["text"] and "max_buckets" not in seen
-        assert activity[-1]["tool"] == "survey_account" and activity[-1]["ok"] is False
-
-        # Allowed by policy: the same call proceeds at the requested cap.
-        client.put("/settings/approval-policy", json={"policy": "allow_always"})
-        text = survey(pid, 300)
-        assert seen["max_buckets"] == 300 and "failed" in text
-        ev = client.get(f"/agent-tasks/{task['id']}/events").json()["events"]
-        assert any(e["event_type"] == "approval.granted" and e["payload"]["policy"] == "always"
-                   and e["payload"]["action_type"] == "survey_account_large" for e in ev)
-        client.put("/settings/approval-policy", json={"policy": "ask"})
-
-        # Not attached to a durable execution: clamped to the default, never widened.
-        tools3 = {t.name: t for t in session_action_tools.build(conn, _FT(), [],
-                                                                session_id=task["id"])}
-        seen.clear()
-        tools3["survey_account"](pid, 400)
-        assert seen["max_buckets"] == 100
+        t0 = time.monotonic()
+        survey(pid, 300)
+        assert time.monotonic() - t0 < 2.0  # never waits on anyone
+        assert seen["max_buckets"] == 300
+        survey(pid, 9000)
+        assert seen["max_buckets"] == 500  # the hard cap, whatever is asked
+        assert client.get(f"/agent-tasks/{task['id']}/decisions").json()["decisions"] == []
         assert store.get_execution(conn, execution["id"])["status"] == "running"
     finally:
         conn.close()
@@ -347,7 +231,7 @@ def test_compact_endpoint_is_idle_only_and_needs_a_model(client, monkeypatch):
     assert ev and ev[-1]["execution_id"] == "" and ev[-1]["payload"]["summary_chars"] > 0
     assert client.post("/agent-tasks/nope/compact").status_code == 404
     # Busy task → 409.
-    execution, handle = _approval_execution(client, task["id"])
+    execution, handle = _running_execution(task["id"])
     try:
         assert client.post(f"/agent-tasks/{task['id']}/compact").status_code == 409
     finally:

@@ -6,7 +6,6 @@ import { ThemeProvider } from "../theme";
 import type { TFunc } from "../i18n";
 import { formatUsageLine, contextReading, usageTitle } from "../lib/usage";
 import { mentionQueryAt, mentionTriggered } from "../lib/mention";
-import { approvalActionLabel } from "../lib/approvalAction";
 import { NAV_DAY_LABELS } from "../agent/navigationCopy";
 import { publishPaletteActions, publishBasePaletteActions } from "../agent/paletteActions";
 import { CommandPalette } from "./CommandPalette";
@@ -136,13 +135,6 @@ describe("v1.16 copy lives in dictionaries", () => {
     expect(NAV_DAY_LABELS.en.today).toBe("Today");
     expect(NAV_DAY_LABELS.zh.today).toBe("今天");
     expect(NAV_DAY_LABELS.zh.earlier).toBe("更早");
-  });
-
-  it("localizes gate ids with a raw fallback", () => {
-    const dict = (key: string) => key;
-    expect(approvalActionLabel("import_inventory", dict as TFunc)).toBe("approval.actionImportInventory");
-    expect(approvalActionLabel("survey_account_large", dict as TFunc)).toBe("approval.actionSurveyLarge");
-    expect(approvalActionLabel("some_future_gate", dict as TFunc)).toBe("some_future_gate");
   });
 });
 

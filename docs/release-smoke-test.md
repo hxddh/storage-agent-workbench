@@ -1,6 +1,6 @@
 # Release smoke test
 
-> **Current baseline: Storage Agent v2.0.0.**
+> **Current baseline: Storage Agent v2.1.0.**
 >
 > Run this against a candidate desktop build before publishing. Packaging health is necessary but not sufficient: the release must preserve the Agent Task product model, runtime truth, safety boundaries, and durable behavior.
 
@@ -46,7 +46,7 @@ A user must be able to recognize and use the v1.09 product model without reading
 
 - [ ] User input is presented as **Direction** / task intent, not as an old chat-product shell.
 - [ ] Active work enters **Working** based on real runtime state.
-- [ ] Real Tool activity becomes visible in the Work Result as one **Worked for …** group of tool rows; no synthetic plan/worker/sub-agent UI is invented.
+- [ ] Real Tool activity becomes visible as one **Worked for …** group of tool rows that read as localized verbs (e.g. *Checked bucket*) with the target quiet and status only in the glyph; in the live work in progress every group stays open until the turn settles; no plan card, worker or sub-agent UI is invented.
 - [ ] A completed turn produces a durable **Work Result** that survives reload.
 - [ ] Tool rows remain linked to the Work Result that produced them.
 - [ ] Structured storage errors render as storage/error artifacts where applicable rather than losing useful fields in generic prose.
@@ -56,10 +56,10 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] While a real execution is in flight, entering a steering Direction changes the active work through the runtime steering path rather than creating a second task/input.
 - [ ] **Stop** cancels the active turn promptly (including a queued Direction).
 - [ ] A stopped execution leaves a truthful durable partial/stopped result/state as implemented and the Task becomes controllable again.
-- [ ] A `needs_attention` Task whose last Execution is interrupted/failed exposes **Resume**; Resume follows the new execution event stream.
-- [ ] Settings contains model, storage credentials, language, and theme as a centered dialog — not a storage price table.
+- [ ] A `needs_attention` Task whose last Execution is interrupted/failed and could not continue automatically exposes **Resume** (its copy says the Agent could not continue on its own); Resume follows the new execution event stream.
+- [ ] Settings contains model, storage credentials, language, and theme as a centered dialog (General · Model Providers · Cloud Providers · Skills & bridges; General states the read-only safety floor including the 500 files / 256 MiB import bound) — no Safety section, no approval policy, not a storage price table.
 - [ ] Composer has no `/checkup` `/cost` `/drift` SKU menu. Typing `/` is ordinary text.
-- [ ] There is no task header destination and no Overview / revisit / Verify painted chrome. The title bar is name + state; Find (⌘F) and the palette (⌘K) are keyboard.
+- [ ] There is no task header destination and no Overview / revisit / Verify painted chrome. The title bar centres name + state as one group; Find (⌘F) and the palette (⌘K) are keyboard.
 - [ ] Cost-review numbers in a Work Result are labelled estimates with coverage, or explicit gaps when inventory/price table is missing.
 - [ ] Cost / inventory / Drift / access-log figures render from runtime artifacts with coverage and Estimate; unconfirmed prices withhold the cost axis; missing series are gap states, never interpolated.
 - [ ] A finding with a provenance chain opens Evidence anchored to that finding; a missing chain is labelled, not implied.
@@ -69,24 +69,27 @@ A user must be able to recognize and use the v1.09 product model without reading
 
 - [ ] Start real work in Task A, switch to Task B, then return to Task A.
 - [ ] Task A retains/reconnects to the same real in-flight or completed execution state rather than being reset because it was not visible.
-- [ ] Navigation reflects Working/Needs decision/Needs attention/Ready truth for relevant Tasks.
+- [ ] Navigation reflects Working / Needs attention (warn mark) / Ready truth for relevant Tasks; no Task ever shows a decision state.
 - [ ] The UI does not describe this as a fleet of hidden autonomous background Agents.
 
-### Waiting for approval
+### Bounded evidence import
 
-- [ ] When the Agent calls `import_evidence`, the title bar reads **Waiting for approval** and an approval card appears inline in the transcript at that point.
-- [ ] The card states why confirmation is required and the bucket/prefix/files/bytes bounds from the real plan.
-- [ ] Nothing downloads before **Allow**; the same Execution continues afterwards with the import result.
-- [ ] **Deny** records the durable resolution, performs nothing, and the Agent answers from what it has; **Allow for this task** lets a later call of the same type proceed as a recorded, already-approved Decision.
-- [ ] Stop while waiting withdraws the request (recorded as declined).
-- [ ] Reload/reopen a Task with a still-current durable Decision: the Decision remains visible from persisted truth.
-- [ ] A newer real active execution correctly outranks an older persisted Decision where the runtime contract says work is already active.
+- [ ] When the Agent calls `import_evidence`, the import runs inside the turn: no approval card appears, the title bar stays **Working**, and nothing waits for the user.
+- [ ] The tool row shows what moved (files, bytes); a request larger than 500 files / 256 MiB is clamped and the result says coverage is partial.
+- [ ] A source the task's survey did not discover is refused; with less than 1 GiB free in the data directory the call is refused and nothing downloads.
+- [ ] **Stop** during the turn ends it; no further download starts.
+- [ ] The import is audited (`approved_by=agent`) and its Evidence attaches to the Task.
+
+### Automatic continuation after restart
+
+- [ ] Kill the Sidecar during a running Execution and relaunch: the interrupted work continues on its own as a new execution (`[resume]`) without a click.
+- [ ] If that continuation is itself interrupted, it is not continued again (no crash loop); with no usable model the Task shows **Needs attention** and the manual **Resume** banner.
 
 ### Result and detail rows (v2.0)
 
-- [ ] A Task opens at its top, on the latest **Result**; after an investigative Direction the Result leads with the recorded conclusion (answer, findings most severe first, next steps).
+- [ ] A Task opens at its top, on the latest **Result**: one meta line (*Result · when · Evidence n · Gaps n · Tool calls n*), then, after an investigative Direction, the recorded conclusion (the answer as a lead paragraph, findings most severe first, next steps as a list of asks).
 - [ ] A next step fills the Composer and is not sent until the user delegates it.
-- [ ] Evidence / Report / Execution detail (and Plans / Baselines when they exist) are **rows under the Result** that expand in place (⌘I); no side panel opens.
+- [ ] Evidence / Report / Execution detail are **rows under the Result** that expand in place (⌘I) with a short reveal (none under reduced motion); there are no Plans / Baselines rows and no side panel opens.
 - [ ] The one Composer remains logically owned by the active Task while a detail row is open.
 - [ ] Evidence/Execution details display persisted sanitized truth.
 - [ ] Markdown Report is a durable Task Artifact and survives reload.
@@ -112,12 +115,11 @@ Use synthetic/local test data and non-sensitive test providers where available.
 ## D. Managed Evidence Import smoke
 
 - [ ] Planning a managed Evidence Import downloads nothing.
-- [ ] The plan shows bounded source/file/byte/time scope.
-- [ ] The Task enters a real Decision state before cloud evidence movement.
-- [ ] Confirming the plan executes only the selected bounded import.
-- [ ] Rejecting/cancelling performs no download.
+- [ ] The import is limited to a discovered source and bounded file/byte/time scope (≤ 500 files / 256 MiB per call).
+- [ ] No Decision state is entered; the Agent-confirmed import executes only the selected bounded file set.
+- [ ] Stopping the Execution before download performs no download.
 - [ ] Import result/evidence attaches back to the Task and can be reviewed.
-- [ ] Audit/approval state is persisted and sanitized.
+- [ ] Audit state (`approved_by=agent`) is persisted and sanitized.
 
 ## E. Safety spot checks
 
@@ -142,8 +144,8 @@ Use synthetic/local test data and non-sensitive test providers where available.
 - [ ] No generic shell/arbitrary subprocess/raw S3 client capability is exposed to the Agent.
 - [ ] Provider bucket/prefix scope is enforced server-side.
 - [ ] Object listing/preview/range behavior respects runtime bounds.
-- [ ] A full/materially large scan cannot bypass its configured limit/Decision boundary.
-- [ ] Managed Evidence Import cannot auto-confirm itself.
+- [ ] A full/materially large scan cannot bypass its configured limit (survey ≤ 500 buckets, reports `truncated`).
+- [ ] Managed Evidence Import cannot exceed its server-side bounds (source, 500 files / 256 MiB, disk headroom), whatever the model asks.
 
 ### Trust and evidence
 
@@ -168,7 +170,7 @@ Use synthetic/local test data and non-sensitive test providers where available.
 - [ ] Focus is contained/restored correctly for overlays.
 - [ ] English and Chinese UI preserve the same product semantics and states.
 - [ ] Narrow-window layout remains usable.
-- [ ] The real-state visual-review artifact covers at least Delegate, Working+Steer, Waiting for approval, the Result (conclusion · full answer), the Work log turn (commentary · Worked for …), the detail rows, task navigation, runtime failure, narrow layout, and Chinese localization.
+- [ ] The real-state visual-review artifact covers at least Delegate, Working+Steer, a bounded evidence import tool row, the Result (conclusion · full answer), the Work log turn (commentary · Worked for …), the detail rows, task navigation, runtime failure, narrow layout, and Chinese localization.
 
 ## H. Anti-regression checks
 
@@ -178,7 +180,7 @@ The candidate must **not** reintroduce an older application model through docume
 - [ ] No second Agent input exists.
 - [ ] The detail rows remain contextual to the Task.
 - [ ] Persistence/API compatibility names do not become product navigation.
-- [ ] No fake multi-agent/worktree/terminal/browser/plan UI exists without runtime support.
+- [ ] No fake multi-agent/worktree/terminal/browser/plan UI exists, and no approval card or approval policy returns.
 - [ ] Current architecture/legacy/documentation contract tests pass.
 
 ## I. Release record

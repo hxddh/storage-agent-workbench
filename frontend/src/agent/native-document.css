@@ -51,29 +51,37 @@
 .task-live > .task-item + * { margin-top: 20px; }
 
 /* --- The Result ------------------------------------------------------- */
+/* v2.1 — one quiet line: "Result · Jan 1 · Evidence 2 · Tool calls 5". */
 .task-result-head {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 10px;
-  margin-bottom: 10px;
+  column-gap: 0;
+  row-gap: 2px;
+  margin-bottom: 12px;
 }
-.task-result-kicker { flex: none; }
-.task-result-for {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--gray-400);
+.task-result-kicker { flex: none; color: var(--gray-300); }
+.task-result-meta {
+  color: var(--gray-500);
   font-size: var(--text-xs);
-  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.task-result-meta::before {
+  content: "·";
+  margin: 0 7px;
+  color: var(--gray-500);
+}
+/* The answer is a lead paragraph, not a headline: one size, one weight,
+   whether findings follow or not. */
 .result-answer {
   margin: 0;
   color: var(--gray-100);
-  font-size: var(--text-xl);
-  font-weight: 560;
-  line-height: 1.4;
-  letter-spacing: -0.014em;
+  font-size: 1.0625rem;
+  font-weight: 500;
+  line-height: 1.55;
+  letter-spacing: -0.008em;
   text-wrap: pretty;
 }
 .result-block { margin-top: 20px; }
@@ -115,32 +123,38 @@ button.result-finding-head:hover .result-finding-title { color: var(--gray-100);
 .result-finding-chevron { flex: none; color: var(--gray-500); transition: transform var(--duration-fast) var(--ease-out); }
 .result-finding-head[aria-expanded="true"] .result-finding-chevron { transform: rotate(90deg); }
 .result-finding-detail {
+  animation: reveal-in var(--duration-base, 180ms) var(--ease-out);
   margin: 0 0 10px 19px;
   color: var(--gray-400);
   font-size: var(--text-sm);
   line-height: 1.6;
 }
-.result-next-steps { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Next steps read as a short list of asks; one goes into the Composer. */
+.result-next-steps { margin: 0 0 0 -8px; padding: 0; list-style: none; }
 .result-next-step {
-  max-width: 100%;
-  border: 1px solid var(--edge-strong);
-  border-radius: var(--radius-lg);
-  padding: 6px 12px;
-  color: var(--gray-200);
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  gap: 10px;
+  border-radius: var(--radius-md);
+  padding: 5px 8px;
+  color: var(--gray-300);
   font-size: var(--text-sm);
-  line-height: 1.4;
+  line-height: 1.5;
   text-align: left;
-  transition: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
-.result-next-step:hover:not(:disabled) { border-color: var(--gray-500); color: var(--gray-100); }
-.result-next-step:disabled { cursor: default; opacity: 0.6; }
-.result-grounding {
-  margin: 6px 0 0;
+.result-next-step-mark {
+  display: inline-flex;
+  flex: none;
   color: var(--gray-500);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
+  transform: translateY(2px);
+  transition: transform var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
-.turn-agent + .result-grounding { margin-top: 12px; }
+.result-next-step-text { min-width: 0; overflow-wrap: break-word; }
+.result-next-step:hover:not(:disabled) { background: var(--hover); color: var(--gray-100); }
+.result-next-step:hover:not(:disabled) .result-next-step-mark { color: var(--gray-200); transform: translate(2px, 2px); }
+.result-next-step:disabled { cursor: default; opacity: 0.6; }
 .result-conclusion + .turn-agent { margin-top: 8px; }
 
 /* Detail rows under the Result: expand in place, never a side panel. */
@@ -174,7 +188,7 @@ button.result-finding-head:hover .result-finding-title { color: var(--gray-100);
   white-space: nowrap;
 }
 .task-detail-head:hover .task-detail-label { color: var(--gray-100); }
-.task-detail-body { padding: 4px 0 18px 22px; }
+.task-detail-body { padding: 4px 0 18px 22px; animation: reveal-in var(--duration-base, 180ms) var(--ease-out); }
 .task-detail-document > .native-ghost-action { margin: 0 0 8px -6px; }
 .task-detail-back-icon { display: inline-flex; transform: rotate(180deg); }
 
@@ -213,6 +227,24 @@ button.result-finding-head:hover .result-finding-title { color: var(--gray-100);
 .turn-answer-fold-gist { min-width: 0; overflow-wrap: break-word; }
 .turn-answer-fold > .turn-answer,
 .turn-answer-found { margin-top: 12px; }
+.turn-answer-fold[open] > .turn-answer { animation: reveal-in var(--duration-base, 180ms) var(--ease-out); }
+
+/* v2.1 — one short reveal for everything that opens in place (detail rows,
+   finding details, folded answers, worked rows, new live items). Motion is
+   dropped entirely when the system asks for less. */
+@keyframes reveal-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-detail-body,
+  .result-finding-detail,
+  .turn-answer-fold[open] > .turn-answer,
+  .native-execution-rows,
+  .task-live .turn-commentary,
+  .task-live [data-testid="worked-row"] { animation: none !important; }
+  .result-next-step-mark { transition: none; }
+}
 .turn-result-above {
   display: inline-flex;
   align-items: center;
@@ -240,6 +272,13 @@ button.result-finding-head:hover .result-finding-title { color: var(--gray-100);
   white-space: pre-wrap;
   overflow-wrap: break-word;
   text-wrap: pretty;
+}
+/* In the Work log a Direction heads its turn one step below the Result's
+   lead, so the Result stays the loudest thing on the page. */
+.task-log .turn-direction-text {
+  color: var(--gray-200);
+  font-size: var(--text-prose);
+  font-weight: 540;
 }
 .turn-direction-text[data-queued="true"] {
   color: var(--gray-400);
@@ -371,6 +410,7 @@ button.result-finding-head:hover .result-finding-title { color: var(--gray-100);
   transform: rotate(90deg);
 }
 .native-execution-rows {
+  animation: reveal-in var(--duration-base, 180ms) var(--ease-out);
   margin: 2px 0 0 8px;
   padding-left: 12px;
   border-left: 1px solid var(--edge);
@@ -393,16 +433,21 @@ button.result-finding-head:hover .result-finding-title { color: var(--gray-100);
   background: var(--panel);
   color: var(--gray-300);
 }
+/* v2.1 — a row reads as what the Agent did: a verb in the UI face, the
+   target quiet in mono, the result as a muted note at the end. Status is the
+   glyph alone; a failed row keeps its words in ink. */
 .native-tool-name {
   flex: none;
   color: var(--gray-200);
-  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
   font-size: var(--text-xs);
+  font-weight: 500;
 }
-.native-tool-row[data-failed="true"] .native-tool-name { color: var(--danger); }
 .native-tool-target {
   min-width: 0;
   overflow: hidden;
+  color: var(--gray-500);
+  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  font-size: var(--text-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -411,12 +456,13 @@ button.result-finding-head:hover .result-finding-title { color: var(--gray-100);
   max-width: 40%;
   margin-left: auto;
   overflow: hidden;
-  font-family: "JetBrains Mono Variable", ui-monospace, monospace;
+  color: var(--gray-500);
   font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.native-tool-row[data-failed="true"] .native-tool-result { color: var(--danger); }
+.native-tool-row[data-failed="true"] .native-tool-result { color: var(--gray-300); }
 .native-tool-ms {
   flex: none;
   font-variant-numeric: tabular-nums;
@@ -478,71 +524,6 @@ button.result-finding-head:hover .result-finding-title { color: var(--gray-100);
   border-color: var(--warn-border);
   color: var(--warn-fg);
 }
-
-/* Approval: an inline gate a gated tool call parks the execution on. */
-.approval-card {
-  max-width: min(var(--doc-measure), 100%);
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-xl);
-  padding: 14px 16px 12px;
-  background: var(--panel);
-}
-.approval-card-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--gray-500);
-  font-size: var(--text-2xs);
-  font-weight: 500;
-}
-.approval-card-title {
-  margin: 8px 0 0;
-  color: var(--gray-100);
-  font-size: var(--text-prose);
-  font-weight: 500;
-  line-height: 1.5;
-}
-.approval-card-why {
-  margin: 6px 0 0;
-  color: var(--gray-300);
-  font-size: var(--text-sm);
-  line-height: 1.6;
-}
-.approval-card-impact {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 6px 16px;
-  margin: 12px 0 0;
-  border-top: 1px solid var(--edge);
-  padding-top: 12px;
-  font-size: var(--text-xs);
-}
-.approval-card-impact dt { color: var(--gray-500); }
-.approval-card-impact dd { margin: 0; color: var(--gray-200); overflow-wrap: break-word; }
-.approval-card-impact dd[data-mono="true"] { font-family: "JetBrains Mono Variable", ui-monospace, monospace; }
-.approval-card-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-}
-.approval-card-actions small {
-  margin-left: auto;
-  color: var(--gray-500);
-  font-size: var(--text-2xs);
-}
-.approval-card-resolved {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 8px 0 0;
-  color: var(--gray-400);
-  font-size: var(--text-xs);
-}
-.approval-card[data-status="declined"] .approval-card-resolved { color: var(--danger); }
-.approval-card[data-status="approved"] .approval-card-resolved,
-.approval-card[data-status="granted"] .approval-card-resolved { color: var(--success); }
 
 /* Banners: offline / model missing / failed / resume. */
 .native-banner {
@@ -948,66 +929,6 @@ button.result-finding-head:hover .result-finding-title { color: var(--gray-100);
   .agent-prose nav[data-testid="result-outline"] ul { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* v1.12 — the plan the model owns (one card per turn, updated in place). */
-/* v1.19 — a flat checklist in the document's own voice (no card): the same
-   head rhythm as the Worked group, steps indented on one hairline rule. */
-.plan-card {
-  max-width: min(var(--doc-measure), 100%);
-}
-
-.plan-card-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 28px;
-  border: 0;
-  padding: 0;
-  background: none;
-  color: var(--gray-400);
-  font: inherit;
-  font-size: var(--text-xs);
-  text-align: left;
-  cursor: pointer;
-}
-.plan-card-head:hover { color: var(--gray-200); }
-.plan-card-head svg.chevron { flex: none; transition: transform var(--duration-fast) var(--ease-out); }
-.plan-card-head[aria-expanded="true"] svg.chevron { transform: rotate(90deg); }
-.plan-card-steps {
-  margin: 2px 0 6px 8px;
-  border-left: 1px solid var(--edge);
-  padding: 0 0 0 12px;
-  list-style: none;
-}
-.plan-step {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 3px 0 3px 2px;
-  color: var(--gray-300);
-  font-size: var(--text-sm);
-  line-height: 1.5;
-}
-.plan-step[data-status="completed"] { color: var(--gray-500); }
-.plan-step[data-status="in_progress"] { color: var(--gray-100); }
-.plan-step-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 14px;
-  height: 21px;
-  color: var(--success);
-}
-.plan-step[data-status="pending"] .plan-step-mark { color: var(--gray-500); }
-.plan-step-dot {
-  width: 6px;
-  height: 6px;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-}
-.plan-step-text { min-width: 0; overflow-wrap: break-word; }
-
 /* v1.12 — the compaction marker: one muted line between segments, never a card. */
 /* A Steer the running Execution received (v1.18): the user's own words,
    quiet, at the point the model loop took them — not a tool row. */
@@ -1043,4 +964,11 @@ button.result-finding-head:hover .result-finding-title { color: var(--gray-100);
   flex: 1;
   height: 1px;
   background: var(--edge);
+}
+
+/* v2.1 — live work arrives as it happens: each new commentary segment and
+   tool row eases in instead of popping. */
+.task-live .turn-commentary,
+.task-live [data-testid="worked-row"] {
+  animation: reveal-in var(--duration-base) var(--ease-out);
 }

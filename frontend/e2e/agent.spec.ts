@@ -102,7 +102,7 @@ test.describe("a real agent turn", () => {
       await expect(group).toBeVisible({ timeout: 30_000 });
       await expect(group).toContainText(/Worked/);
       await group.getByTestId("execution-head").click();
-      await expect(group.getByTestId("worked-row").first()).toContainText("read_skill");
+      await expect(group.getByTestId("worked-row").first()).toHaveAttribute("data-tool", "read_skill");
       // v2.0 — the answer leads the Task as its Result; the turn in the Work
       // log keeps its process in order and points up to it.
       const order = await task(page).evaluate((el) =>

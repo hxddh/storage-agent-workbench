@@ -26,28 +26,6 @@ def _store_task(task):
         conn.close()
 
 
-def test_steer_lands_on_waiting_execution(client):
-    task = _task(client)
-    _store_task(task)
-    conn = db.connect()
-    try:
-        execution = store.create_execution(conn, task["id"], "import it", "t-wait-steer")
-        store.set_execution_status(conn, execution["id"], store.EXEC_WAITING)
-        conn.commit()
-        handle = runtime.LiveExecution(execution["id"], task["id"])
-        runtime._live[execution["id"]] = handle
-        try:
-            out = runtime.steer(conn, task["id"], "hold on, check X first")
-        finally:
-            runtime._live.pop(execution["id"], None)
-        assert out is not None and out["id"] == execution["id"]
-        assert handle.steer_queue.drain() == ["hold on, check X first"]
-        rows = store.list_events(conn, execution["id"])
-        assert any(e["event_type"] == "steer.received" for e in rows)
-    finally:
-        conn.close()
-
-
 def test_steer_with_nothing_live_returns_none(client):
     task = _task(client)
     _store_task(task)

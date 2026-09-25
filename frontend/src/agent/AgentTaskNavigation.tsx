@@ -78,7 +78,7 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
     requestAnimationFrame(() => { renameRef.current?.focus(); renameRef.current?.select(); });
   }, [renaming, task.title]);
 
-  const stateKey = agentTaskState(run, true, task.requires_decision, task.task_status);
+  const stateKey = agentTaskState(run, true, task.task_status);
   const stateLabel = stateKey in copy.state ? copy.state[stateKey as keyof typeof copy.state] : "";
   const act = (fn: () => void) => (event: MouseEvent<HTMLButtonElement>) => { event.stopPropagation(); setMenuId(null); fn(); };
 

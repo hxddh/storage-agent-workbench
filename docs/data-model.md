@@ -1,8 +1,8 @@
 # Data model
 
-> **Storage Agent v2.0.0 persistence reference.** Migration head **031** (`session_messages.conclusion` and `work_results.conclusion_json_sanitized` — the conclusion the model recorded with `record_conclusion`; 030 added `task_context_versions.summary_sanitized` / `summary_through_seq` for context compaction). `app_settings` gains the `approval_policy` key. `task_decisions.scope` now also takes `session` / `always` (policy grants). `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI. v1.17 and v1.18 add no migration; v1.18 adds a `steer` kind to `session_messages.turn_items` (JSON, no schema change).
+> **Storage Agent v2.1.0 persistence reference.** Migration head **031** (v2.1 adds no migration) (`session_messages.conclusion` and `work_results.conclusion_json_sanitized` — the conclusion the model recorded with `record_conclusion`; 030 added `task_context_versions.summary_sanitized` / `summary_through_seq` for context compaction). Since v2.1 nothing writes a Decision: `task_decisions` is read-only history, restart recovery withdraws pending rows (`superseded`), the `app_settings.approval_policy` key (v1.12) is no longer read, stored `plan` turn items are dropped on read, and the typed context no longer carries `open_decisions`. `GET /agent-tasks/{id}/provenance` is a read-only projection, not a new table. Engines that persist here still have no product UI. v1.17 and v1.18 add no migration; v1.18 adds a `steer` kind to `session_messages.turn_items` (JSON, no schema change).
 >
-> Product vocabulary is Agent Task / Direction / Execution / Decision / Work Result / Artifact. SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
+> Product vocabulary is Agent Task / Direction / Execution / Work Result / Artifact (Decision is history only since v2.1). SQLite/API table names predate that product model and remain compatibility contracts. Do not derive frontend information architecture from table names.
 
 ## Storage layers
 
@@ -71,7 +71,7 @@ Rules:
 | Direction | `task_executions.direction` (+ durable steer events) | `session_messages` (user rows) |
 | Execution | `task_executions` + `execution_events` (append-only structured progress) | `runs`, `session_runs`, `tool_calls`, `turn_metrics` |
 | Work Result | `work_results` (runtime metadata + `conclusion_json_sanitized`, v2.0; content via `message_id`) | `session_messages` (assistant rows, + `conclusion`) |
-| Decision | `task_decisions` (pending / approved / declined / superseded; `kind`, `scope`) | `approval_events`, evidence-import state |
+| Decision (history only since v2.1) | `task_decisions` (pending / approved / declined / superseded; `kind`, `scope`) | `approval_events`, evidence-import state |
 | Artifact | `task_artifacts` (unified index over reports/imports/analyses/remediation plans/baselines/drift) | `reports`, evidence-import tables, report files, `remediation_plans` |
 | Remediation Plan | `remediation_plans` (`proposed` / `verified` / `partially_verified` / `stale`) | indexed via `task_artifacts` |
 | Baseline | `task_baselines` (bounded snapshot JSON, not raw rows) | — |
@@ -203,7 +203,7 @@ Fields include:
 
 ### `approval_events`
 
-Stores explicit confirmation decisions associated with gated operations/executions. Detail is sanitized.
+Stores confirmation records for evidence imports. Since v2.1 every agent-run import is confirmed and recorded here with `approved_by="agent"` (also in `audit_logs`); older rows hold user decisions from the approval era. Detail is sanitized.
 
 ## Agent Task compatibility records
 
@@ -228,10 +228,10 @@ Durable Direction and Work Result records:
 - referenced run/evidence ids;
 - sanitized `tool_activity`;
 - sanitized `grounding`;
-- sanitized `turn_items` (v1.11): the ordered `message` / `tool` items the turn produced before its answer — plus `plan` (one per turn, latest steps) and a leading `compacted` marker since v1.12 (`proposed_actions` is no longer projected; older rows may still carry the column);
+- sanitized `turn_items` (v1.11): the ordered `message` / `tool` items the turn produced before its answer — plus a leading `compacted` marker since v1.12 and a `steer` item since v1.18 (the v1.12–v2.0 `plan` item is no longer written and is dropped on read) (`proposed_actions` is no longer projected; older rows may still carry the column);
 - timestamp.
 
-Needs-decision state is derived from pending `task_decisions` rows only.
+No task state is derived from `task_decisions` since v2.1 (`needs_decision` is never derived).
 
 ### `session_runs`
 
@@ -302,13 +302,14 @@ The task runtime's own durable records. The Agent Task is a durable domain
 object (`agent_tasks.id` equals the compatibility session id, 1:1) and an
 Execution is a durable object with a real lifecycle:
 
-- `agent_tasks` — task lifecycle (`ready` / `working` / `needs_decision` /
-  `needs_attention` / `archived`), active execution pointer, context version.
+- `agent_tasks` — task lifecycle (`ready` / `working` / `needs_attention` /
+  `archived`; `needs_decision` is a legacy value never derived since v2.1), active execution pointer, context version.
 - `task_executions` — one unit of delegated work. Lifecycle: `queued` →
-  `running` → `completed` | `waiting` (a confirmation-gated Decision is
-  pending) | `failed` | `cancelled` | `interrupted` (stamped by restart
-  recovery — including `waiting`, v1.13, whose gated tool died with the
-  process; resumable). `turn_id` carries client idempotency durably
+  `running` → `completed` | `failed` | `cancelled` | `interrupted` (stamped
+  by restart recovery; since v2.1 continued automatically once per chain as a
+  new `kind=resume` execution). `waiting` (v1.11–v2.0: blocked on a Decision)
+  remains a valid stored value but nothing enters it since v2.1; recovery
+  stamps any such row `interrupted`. `turn_id` carries client idempotency durably
   (a unique index arbitrates duplicate submits). `kind` is `direction` |
   `verify` | `revisit` (submit path; anything else is 422, v1.13) |
   `resume` | `retry` (a resumed user-cancelled execution, v1.13) |
@@ -316,7 +317,8 @@ Execution is a durable object with a real lifecycle:
   head stays **030**.
 - `execution_events` — append-only structured progress keyed by sequence
   number: status transitions, tool started/completed, steer received/applied,
-  decision opened/resolved, work result recorded, context updated. Sanitized,
+  conclusion recorded, work result recorded, context updated (pre-2.1 logs
+  may also hold `approval.*`, `decision.resolved` and `plan.updated`). Sanitized,
   bounded payloads; answer deltas are never persisted here. Periodic (and
   startup) retention may prune **terminal** Executions only (completed/failed/cancelled/interrupted),
   dual-capped by age and per-execution count, using a SQL set delete rather than
@@ -328,20 +330,19 @@ Execution is a durable object with a real lifecycle:
   conclusion the model recorded with `record_conclusion`, or `NULL`; the text
   stays on the linked `session_messages` row (which carries the same
   `conclusion`).
-- `task_decisions` — first-class Decision rows raised by gated tools inside a
-  running execution (`kind=approval`, since v1.11; `proposal` rows are history).
-  At most one pending Decision exists per `(task, action_type)`; a later request
-  of the same type supersedes the earlier pending row. `scope=task` on an
-  approved row is an explicit grant for later calls of that `action_type`;
-  `scope=session` / `scope=always` (v1.12) record a call the approval policy
-  answered (`resolution_note` says which).
+- `task_decisions` — read-only Decision history since v2.1. v1.11–v2.0
+  gated tools raised `kind=approval` rows inside a running execution
+  (`proposal` rows are older history; `scope` was `once` / `task`, and
+  `session` / `always` for v1.12 policy grants). Nothing writes new rows now;
+  restart recovery sets any row left `pending` to `superseded` with the note
+  "withdrawn: approvals were removed in v2.1". The table stays (no migration).
 - `task_artifacts` — the unified Artifact index (`report`, `evidence_import`,
   `analysis`, `remediation_plan`, `baseline`, `drift_report`) pointing at the
   durable referent via `ref_kind`/`ref_id`. Optional `status` and sanitized
   `payload` hold plan verification state and bounded Drift summaries.
 - `task_context_versions` — the typed Storage Task Context (schema-versioned
   JSON snapshot of machine state: provider scope, buckets in focus, evidence on
-  hand, memory counts, open decisions), appended only when changed. Recovery
+  hand, memory counts; `open_decisions` was dropped in v2.1), appended only when changed. Recovery
   and the Agent prompt's stable half read this; they never replay messages to
   rebuild machine state. Since v1.12 a version may also carry
   `summary_sanitized` + `summary_through_seq`: the compaction step writes a
@@ -396,7 +397,7 @@ Stores bounded plan/confirmation/execution state:
 
 Stores the bounded file set associated with an import plan and per-file selection/status metadata.
 
-A plan is not execution. Confirmation state is part of the durable safety boundary.
+A plan is not execution. Since v2.1 the Agent confirms its own bounded plan (`approved_by="agent"`, audited): at most 500 files / 256 MiB per call, a survey-discovered source only, refused without 1 GiB free disk.
 
 ## Error triage
 
@@ -426,7 +427,7 @@ Stores run-associated report metadata/path. Task report endpoints may aggregate 
 
 ## App settings
 
-`app_settings` is a small non-secret key/value store. It must never become a secret store. Keys in use: the active model provider, the price table, and since v1.12 `approval_policy` (`ask` | `allow_always`; `allow_session` is held in process memory only and is never written here).
+`app_settings` is a small non-secret key/value store. It must never become a secret store. Keys in use: the active model provider and the price table. The v1.12 `approval_policy` key may remain in older data directories; since v2.1 nothing reads or writes it.
 
 ## Redaction/persistence rule
 

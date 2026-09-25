@@ -16,19 +16,17 @@ export type LiveTask = {
   uploading: boolean;
   pending: string | null;
   /** Ordered live transcript items of the current turn (commentary, tool
-   * rows, approvals) BEFORE the answer. See lib/turnItems. */
+   * rows, steers) BEFORE the answer. See lib/turnItems. */
   items: TurnItem[];
   /** The final segment, once the model closed it. */
   answer: string | null;
   /** v2.0 — the turn's conclusion, once the model recorded it. */
   conclusion: Conclusion | null;
-  /** The execution is parked on an inline approval; the worker is alive. */
-  waiting: boolean;
   /** When this client saw the turn start, for the live elapsed timer. */
   startedAt: number | null;
   lastMetrics: { messageId: string | null; metrics: ExecutionMetrics } | null;
   /** The latest `task.status` frame a follower saw (v1.12): the task's
-   * derived status, queue and pending Decisions, so the document stops
+   * derived status and queue, so the document stops
    * polling `/state` while a stream is open. */
   taskStatus: TaskStatusPayload | null;
   /** Tokens in context after the last compaction (v1.12) — the meter reads
@@ -43,10 +41,10 @@ export type LiveTask = {
 
 /** The live-turn slice of a run, for the pure reducers. */
 export const liveTurnOf = (run: LiveTask): LiveTurn =>
-  ({ items: run.items, answer: run.answer, waiting: run.waiting });
+  ({ items: run.items, answer: run.answer });
 
 /** A cleared live turn, used whenever a run starts or settles. */
-export const CLEAR_TURN = { items: [] as TurnItem[], answer: null, conclusion: null, waiting: false, startedAt: null };
+export const CLEAR_TURN = { items: [] as TurnItem[], answer: null, conclusion: null, startedAt: null };
 
 const EMPTY: LiveTask = {
   busy: false,
@@ -55,7 +53,6 @@ const EMPTY: LiveTask = {
   items: [],
   answer: null,
   conclusion: null,
-  waiting: false,
   startedAt: null,
   lastMetrics: null,
   taskStatus: null,

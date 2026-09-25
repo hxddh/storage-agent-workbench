@@ -1,6 +1,6 @@
 # Agent tools and capability contract
 
-> **Storage Agent v1.13.0.** Tool surface unchanged from v1.02.0 except for gated `GET /skills`, `GET /.*export/otel` (now with derived spans), `GET /mcp.*` + executing `POST /mcp/tools/call`, and local-model provider types. Agent-accessible capabilities are explicit, typed, whitelisted, bounded, sanitized, and read-only unless a separately documented confirmation-gated data-movement workflow says otherwise.
+> **Storage Agent v2.1.0.** Tool surface unchanged from v1.02.0 except for gated `GET /skills`, `GET /.*export/otel` (now with derived spans), `GET /mcp.*` + executing `POST /mcp/tools/call`, local-model provider types, `record_conclusion` (v2.0), and — v2.1 — no approval gate and no `update_plan`: `import_evidence` is bounded server-side instead of gated, and `survey_account` runs to its 500-bucket hard cap without asking. Agent-accessible capabilities are explicit, typed, whitelisted, bounded, sanitized, and read-only except for the one bounded data-movement tool documented below.
 
 This document describes capability classes available to the one model-driven Agent runtime plus deterministic compute it can invoke. It is not a promise that every internal S3 helper is a public Agent tool or HTTP route.
 
@@ -186,7 +186,7 @@ Runs bounded deterministic account discovery/config snapshot work for the curren
 
 The result is persisted and sanitized; raw object rows/bodies are not sent to the model.
 
-Since v1.12 the default cap (100 buckets) is the autonomous boundary. A call with `max_buckets` above it is a gated call: the tool raises a Decision (`action_type = survey_account_large`) with the projected impact (`provider`, `buckets`, `estimated_calls`, `scan_scope`) through the same `runtime.request_approval` path as `import_evidence`, the Execution waits, and the approval policy may answer it. Deny returns a structured refusal (the model may re-call without `max_buckets`). Outside a durable execution the cap is clamped to the default, never widened.
+`max_buckets` (optional, 1–500) raises the per-survey bucket cap for large accounts: default 100 when not given, hard cap 500 (larger values are clamped). Since v2.1 a larger survey runs without asking — the v1.12–v2.0 `survey_account_large` gate is gone — and the result's `truncated` flag reports whether buckets were left out.
 
 ### `review_bucket_config`
 
@@ -251,24 +251,23 @@ These engines may be invoked through Task attachments, deterministic executions,
 
 ## Managed cloud Evidence Import
 
-Cloud evidence movement is **not** an ordinary autonomous Tool call. It is the ONE gated tool.
+Cloud evidence movement is the ONE data-moving tool. Since v2.1 it is **bounded, not gated**: it runs inside the Execution with no Decision and no pause, within a hard server-side envelope the model cannot widen (`sidecar/app/agent_runtime/import_tools.py`, formerly `gated_tools.py`).
 
 ### `import_evidence`
 
 Group `evidence_import`. Args: `source_type` (`inventory` | `access_log`), `bucket_name`, optional `account_run_id` (defaults to the Task's latest completed account survey), `time_range_start` / `time_range_end` (required for access logs), optional `max_files` / `max_bytes` (clamped server-side). The tool:
 
-1. validates the target against a DISCOVERED evidence source and plans the bounded download (read-only listing) through `app.evidence.import_service`;
-2. opens a durable Decision (`kind=approval`) carrying the projected impact (bucket, prefix, files, bytes, scope, why), appends `approval.opened`, and the Execution goes `waiting` — the transcript shows the approval card inline;
-3. blocks (no wall-clock timeout; Stop withdraws it) until the user chooses **Allow**, **Allow for this task**, or **Deny**;
-4. on Allow runs the same confirm → run path (approval_events + audit rows), starts the deterministic analysis, links the run and indexes the `evidence_import` Artifact, and returns a bounded status line to the model; on Deny returns a structured refusal the model must respect.
+1. validates the target against an evidence source DISCOVERED by the task's account survey (never an arbitrary bucket/key) and plans the bounded download (read-only listing) through `app.evidence.import_service`;
+2. clamps the plan to at most 500 files / 256 MiB per call (`AGENT_MAX_FILES` / `AGENT_MAX_BYTES`), whatever the model asked for; the result says when coverage is partial;
+3. refuses with nothing downloaded when the data directory would keep less than 1 GiB free;
+4. checks Stop before downloading (Stop ends the Execution; the storage side stays read-only);
+5. confirms and runs the import through the confirm → run path, audited as `approved_by="agent"` (`approval_events` + `audit_logs`), starts the deterministic analysis, links the run, indexes the `evidence_import` Artifact, and returns a bounded status line (files, bytes) to the model. It shows as an ordinary tool row.
 
-The workflow remains:
+The workflow is:
 
-> **plan → approval (inline Decision) → confirmed execution**
+> **plan → bounded, agent-confirmed, audited execution**
 
-Since v1.12 the approval policy (`ask` · `allow_session` · `allow_always`, Settings → Safety) may answer the Decision instead of the user; the call is still recorded as an approved Decision with `scope = session | always` and `approval.granted` carries `policy`.
-
-It is bounded by file/byte/time/source constraints and re-validates limits during download. The model cannot confirm it, and no prose proposal can raise it.
+The v1.11–v2.0 inline approval (Decision, `approval.opened`, `waiting`, Allow / Allow for this task / Deny) and the v1.12 approval policy were removed in v2.1. No prose proposal can raise the tool, and it re-validates limits during download.
 
 See `security.md` and `api.md`.
 
@@ -304,11 +303,9 @@ Shows whether the local price table is still the example schedule or has been co
 
 Sets this Task's optional revisit interval (1–365 days) or disables it. Revisits are read-only Executions submitted through `runtime.submit` when the Sidecar is running.
 
-## Plan tool (v1.12)
+## Plan tool (removed in v2.1)
 
-### `update_plan`
-
-Args: `steps` — a list of `{text, status}` (`pending` | `in_progress` | `completed`), at most 12 steps of at most 160 characters each. The model keeps a short checklist of what it intends to do and updates it as steps complete (Codex `update_plan` semantics). Each call replaces the whole plan; the runtime appends a `plan.updated` event and the turn carries ONE `plan` item at the position of the first call, holding the latest steps. Steps are redacted and chain-of-thought-stripped. The tool executes nothing, is budget-exempt, and is never a tool row in the *Worked for …* group.
+`update_plan` (v1.12–v2.0: a model-kept checklist emitted as `plan.updated` events and one `plan` turn item) was removed in v2.1 together with `agent_runtime/plan_tools.py`. The model keeps no plan the UI renders; stored pre-2.1 `plan` items are dropped on read.
 
 ## Conclusion tool (v2.0)
 
@@ -372,9 +369,10 @@ bound is pinned by `test_v113_native_fanout.py`.
 ## Bounds are not gates (v1.13)
 
 Per-turn preview/range/latency budgets degrade into a synthesize note when
-spent — they never raise a Decision. Only classified gates (`import_evidence`,
-`survey_account_large`) pause an execution; a policy can only answer a gate
-that exists.
+spent — they never raise a Decision. Since v2.1 nothing pauses an execution:
+the former gates (`import_evidence`, `survey_account_large`) are now hard
+server-side bounds too (≤ 500 files / 256 MiB per import call, clamped; disk
+headroom; a survey never exceeds 500 buckets and reports `truncated`).
 
 ## Report capability
 
@@ -403,7 +401,7 @@ Do not relax:
 - ingest caps;
 - Evidence Import file/byte bounds;
 - redaction rules;
-- confirmation boundaries.
+- the evidence-source, disk-headroom and survey-cap bounds that replaced confirmation (v2.1).
 
 Runtime governor metrics such as `budget_tokens` and `repeat_calls_avoided` can be persisted in turn metrics and shown as Execution detail when available.
 

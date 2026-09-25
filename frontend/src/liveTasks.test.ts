@@ -27,7 +27,6 @@ describe("patchLiveTask / getLiveTask", () => {
     expect(r.failedText).toBeNull();
     expect(r.items).toEqual([]);
     expect(r.answer).toBeNull();
-    expect(r.waiting).toBe(false);
   });
 
   it("merges partial patches", () => {

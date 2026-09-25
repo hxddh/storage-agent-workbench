@@ -49,7 +49,7 @@ const running = (): TaskState => ({
     error: null, resumed_from: null, steer_count: 0, work_result_id: null,
     created_at: "2026-01-01T00:00:00Z", started_at: new Date().toISOString(), finished_at: null,
   },
-  last_event_seq: 3, last_execution: null, queued_executions: [], pending_decisions: [], context_version: 1,
+  last_event_seq: 3, last_execution: null, queued_executions: [], context_version: 1,
 });
 
 const flush = () => act(async () => {
@@ -103,7 +103,7 @@ describe("useTaskDocument while a follower is open", () => {
       handlers?.onTaskStatus?.({
         status: "working", active_execution_id: "e1",
         queued: [{ id: "e2", direction: "then the ACL", kind: "direction", created_at: "2026-01-01T00:02:00Z" }],
-        pending_decisions: [], last_execution: null,
+        last_execution: null,
       });
     });
     await flush();

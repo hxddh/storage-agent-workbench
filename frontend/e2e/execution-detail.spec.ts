@@ -50,7 +50,7 @@ async function openExecutionDetail(page: Page) {
 test.describe("Execution detail from the durable log", () => {
   test.describe.configure({ timeout: 120_000 });
 
-  test("a seeded execution opens with its plan, timed rows and Work Result, and requests nothing under /runs", async ({ page }) => {
+  test("a seeded execution opens with its timed rows and Work Result, and requests nothing under /runs", async ({ page }) => {
     const { id, title } = seedSession(1, `execution log ${Date.now()}`, "short");
     const executionId = seedExecutionLog(id);
     const runs = watchRuns(page);
@@ -65,10 +65,10 @@ test.describe("Execution detail from the durable log", () => {
     await expect(page.getByTestId("execution-status")).toContainText("Completed");
     await expect(body.getByRole("heading", { level: 1 })).toContainText("Review acme-logs");
 
-    // Rows from the durable log: the plan, the commentary, one worked group
-    // timed by wall-clock (2s → 14s = 12s), never a sum (3s + 6s + 5s).
-    await expect(body.getByTestId("plan-card")).toBeVisible();
-    await expect(body.getByTestId("plan-card")).toHaveAttribute("data-done", "2");
+    // Rows from the durable log: the commentary and one worked group timed by
+    // wall-clock (2s → 14s = 12s), never a sum (3s + 6s + 5s). The log's
+    // pre-2.1 `plan.updated` frames paint nothing.
+    await expect(body.getByTestId("plan-card")).toHaveCount(0);
     await expect(body.getByTestId("turn-commentary")).toContainText("Reading the bucket configuration first.");
     const group = body.getByTestId("worked-group");
     await expect(group).toBeVisible();
@@ -76,8 +76,8 @@ test.describe("Execution detail from the durable log", () => {
     await expect(group).not.toContainText(/tool calls/);
     if ((await group.getAttribute("data-expanded")) === "false") await group.getByTestId("execution-head").click();
     await expect(group.getByTestId("worked-row")).toHaveCount(3);
-    await expect(group.getByTestId("worked-row").first()).toContainText("get_bucket_config_detail");
-    await expect(group.getByTestId("worked-row").last()).toContainText("get_bucket_public_access");
+    await expect(group.getByTestId("worked-row").first()).toHaveAttribute("data-tool", "get_bucket_config_detail");
+    await expect(group.getByTestId("worked-row").last()).toHaveAttribute("data-tool", "get_bucket_public_access");
 
     // One call's sanitized input and output, in place.
     await group.getByTestId("trace-row-open").last().click();
@@ -115,7 +115,7 @@ test.describe("Execution detail from the durable log", () => {
       const group = body.getByTestId("worked-group");
       await expect(group).toBeVisible({ timeout: 20_000 });
       if ((await group.getAttribute("data-expanded")) === "false") await group.getByTestId("execution-head").click();
-      await expect(group.getByTestId("worked-row").first()).toContainText("read_skill");
+      await expect(group.getByTestId("worked-row").first()).toHaveAttribute("data-tool", "read_skill");
       await expect(body.getByTestId("execution-result")).toContainText("policy is the problem");
       await expect(page.getByTestId("execution-error")).toHaveCount(0);
       expect(runs).toEqual([]);

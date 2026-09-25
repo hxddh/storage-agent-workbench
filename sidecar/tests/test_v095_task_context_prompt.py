@@ -76,7 +76,7 @@ def test_typed_context_is_in_stable_half_and_survives_restart(tmp_path):
     typed = ctx1["storage_task_context"]
     assert "acme-logs" in typed["buckets_in_focus"]
     assert typed["attached_datasets"][0]["id"] == "ds1"
-    assert typed["open_decisions"] == []
+    assert "open_decisions" not in typed  # v2.1: nothing is ever pending
     assert "Authoritative machine state" in typed["note"]
     stable, volatile = session_agent.split_context_for_cache(ctx1)
     assert "storage_task_context" in stable
@@ -95,18 +95,13 @@ def test_typed_context_is_in_stable_half_and_survives_restart(tmp_path):
     conn2.close()
 
 
-def test_open_decisions_come_from_typed_context_not_replay(tmp_path):
+def test_task_facts_come_from_typed_context_not_replay(tmp_path):
     conn = _fresh_db(tmp_path / "dec.db")
     task_id = _seed_task(conn)
-    store.open_approval(
-        conn, task_id, None, "import_access_log", "Import logs", "Need the files",
-        {"tool": "import_evidence", "prefill": {"bucket": "acme-logs",
-                                                "source_type": "access_log"}})
-    conn.commit()
     task_context.refresh(conn, task_id)
     conn.commit()
     session = dict(conn.execute("SELECT * FROM sessions WHERE id=?", (task_id,)).fetchone())
     session["id"] = task_id
     _, _, ctx = session_agent._build_prompt(session, {}, [], "continue", conn)
-    assert ctx["storage_task_context"]["open_decisions"]
+    assert "open_decisions" not in ctx["storage_task_context"]
     assert ctx["storage_task_context"]["primary_bucket"] == "acme-logs"

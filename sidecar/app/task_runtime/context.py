@@ -57,7 +57,6 @@ def build_snapshot(conn: sqlite3.Connection, task_id: str) -> dict[str, Any]:
         "AND json_valid(input_json_sanitized) "
         "AND json_extract(input_json_sanitized, '$.bucket') IS NOT NULL "
         "ORDER BY rowid DESC LIMIT ?", (task_id, _MAX_BUCKETS)).fetchall()
-    pending = store.list_decisions(conn, task_id, status=store.DECISION_PENDING)
     return {
         "schema_version": SCHEMA_VERSION,
         "task_id": task_id,
@@ -78,7 +77,6 @@ def build_snapshot(conn: sqlite3.Connection, task_id: str) -> dict[str, Any]:
             {"run_id": r["run_id"], "run_type": r["run_type"], "status": r["status"],
              "origin": r["origin"]} for r in runs],
         "memory_counts": {m["kind"]: int(m["n"]) for m in memory},
-        "open_decisions": [d["id"] for d in pending],
     }
 
 

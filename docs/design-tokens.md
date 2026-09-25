@@ -1,6 +1,6 @@
 # Design tokens
 
-> **Storage Agent v2.0.0.** Presentation contract for the native Agent
+> **Storage Agent v2.1.0.** Presentation contract for the native Agent
 > window. Tokens do not invent runtime state, progress, or capabilities.
 
 v1.09 replaces the v1.04–v1.08 warm/orange system with one achromatic surface
@@ -14,7 +14,7 @@ corner radii, z-index numbers, or `transition-all`.
 | CSS variables (color, type, radius, motion, shadow, measure) | `frontend/src/index.css` |
 | Tailwind mapping | `frontend/tailwind.config.js` |
 | Window, sidebar, title bar | `frontend/src/agent/native-shell.css` |
-| Result (conclusion, detail rows), Work log turns, tables, Composer, approval card, banners | `frontend/src/agent/native-document.css` |
+| Result (meta line, conclusion, detail rows), Work log turns, tool rows, tables, Composer, banners, the `reveal-in` keyframe | `frontend/src/agent/native-document.css` |
 | Enforcement | `frontend/src/design-tokens.test.ts`, `frontend/src/theme.tokens.test.ts`, `frontend/src/agent/architecture.test.ts` |
 
 Both themes are first-class. Dark is the default; light is not an inversion of
@@ -32,12 +32,13 @@ edges `--edge #2a2a2a`, `--edge-strong #3d3d3d`. Light mirrors the ladder from `
 Ink: `--gray-100` strongest … `--gray-500` faintest. No `--gray-600/700`.
 
 Primary: `--accent` is **ink**, not a hue — `#ececec` on dark, `#0d0d0d` on
-light — with `--accent-fg` the opposing canvas. Filled controls (send, Allow,
+light — with `--accent-fg` the opposing canvas. Filled controls (send,
 primary buttons) are the only places it is used as a fill. `--accent-soft` is
 the hover step; `--accent-dim` a faint tint.
 
 Status is the only colour: `--danger` / `--warn` / `--success` with matching
-`-bg` and `-border`; `--warn-fg` for warning text. Working is not a colour: it
+`-bg` and `-border`; `--warn-fg` for warning text. *Needs attention* is a
+warn-coloured dot (v2.1). Working is not a colour: it
 is the pulsing `.working-mark` and the `.working-shimmer` label.
 
 Code: `--code-bg` plus `--syn-*` slots, AA against the slab in both themes.
@@ -68,8 +69,8 @@ text. Display weight is 400–500; nothing in chrome is bold.
 
 ## Measure and layout
 
-`--doc-measure: 46rem` is the reading column for Direction, prose, figures,
-Decision cards and banners. `--doc-track: 64rem` is the document track: tables,
+`--doc-measure: 46rem` is the reading column for Direction, prose, figures
+and banners. `--doc-track: 64rem` is the document track: tables,
 code fences and other data may use it and share the left edge
 (`.agent-result-prose > .agent-result-wide`). `--sidebar-w: 16.25rem` is the
 default sidebar; `--header-h: 2.25rem` the title bar and chrome rows;
@@ -90,14 +91,19 @@ Radius: `--radius-sm` (3px) through `--radius-2xl` (16px, dialogs) and
 | --- | --- | --- |
 | `--duration-instant` | 70ms | hover color |
 | `--duration-fast` | 120ms | chrome, controls |
-| `--duration-base` | 180ms | dialogs, palette, scrim |
-| `--duration-slow` | 240ms | Artifacts panel, sidebar collapse |
+| `--duration-base` | 180ms | dialogs, palette, scrim, `reveal-in` |
+| `--duration-slow` | 240ms | sidebar collapse |
 
 Easing is one spring-like curve, `cubic-bezier(0.16, 1, 0.3, 1)` (`--ease-out`
 / `--ease-emphasized`); `--ease-in-out` for cycles. Only `background`,
 `border`, `color`, `transform`, `opacity`, `width` transition.
 `prefers-reduced-motion` zeros animation and transition duration and replaces
 skeletons/pulses/shimmer with static surfaces.
+
+Things that open in place — detail rows, finding details, folded answers,
+worked rows, new live items — ease in with one short reveal: the `reveal-in`
+keyframe (opacity 0 → 1, a 3px settle) at `--duration-base` with `--ease-out`
+(v2.1). Under `prefers-reduced-motion` the reveal is removed entirely.
 
 Loading uses **skeletons**, not spinners. In-flight tool rows use the
 `.working-mark` pulse and the *Working* shimmer, which is real activity — not a
@@ -113,6 +119,7 @@ language, and task switch — only runtime-true work.
 
 ## Non-goals
 
-Tokens must not be used to imply a second Agent, a synthetic plan/stepper, a
-status bar, an inspector column, or a second presentation lifecycle. The
-Artifacts panel is a quiet list of durable referents and one document at a time.
+Tokens must not be used to imply a second Agent, a synthetic plan/stepper, an
+approval pause, a status bar, an inspector column, or a second presentation
+lifecycle. Detail rows under the Result are a quiet list of durable referents,
+each expanding in place.

@@ -3,7 +3,6 @@ import type { TaskExecution } from "../api";
 import { useI18n } from "../i18n";
 import { timeAgo } from "../lib/time";
 import { useAgentCopy } from "../agent/agentCopy";
-import { BaselineDocument, PlanDocument } from "../agent/ArtifactDocuments";
 import { EvidenceReview } from "../agent/EvidenceReview";
 import { ReportArtifact } from "../agent/ReportArtifact";
 import type { ArtifactKind } from "../agent/model";
@@ -51,16 +50,15 @@ function DetailRow({
 
 /**
  * v2.0 — the Task's durable outputs as rows under the Result, each expanding
- * in place: Evidence, Report, Execution detail, and — only when they exist —
- * Remediation Plans and Baselines & Drift. A row appears only when there is
- * something behind it; there are no empty placeholders.
+ * in place: Evidence, Report and Execution detail. A row appears only when
+ * there is something behind it; there are no empty placeholders.
  */
 export function TaskDetails({ hasResult }: { hasResult: boolean }) {
   const copy = useAgentCopy();
   const { t } = useI18n();
   const c = copy.artifacts;
   const { taskId, selection, projection, provenance, open, back, close } = useTaskDetails();
-  const { detail, executions, plans, baselines, report, reportLoading, error } = projection;
+  const { detail, executions, report, reportLoading, error } = projection;
   if (!taskId) return null;
 
   const findings = detail?.findings ?? [];
@@ -69,8 +67,6 @@ export function TaskDetails({ hasResult }: { hasResult: boolean }) {
   if (findings.length > 0 || files.length > 0) available.push("evidence");
   if (hasResult) available.push("report");
   if (executions.length > 0) available.push("execution");
-  if (plans.length > 0) available.push("plan");
-  if (baselines.length > 0) available.push("baseline");
   // ⌘I or a command may name a row this task does not have: open the first
   // one it does, instead of expanding nothing.
   const openKind: ArtifactKind | null = selection
@@ -90,7 +86,7 @@ export function TaskDetails({ hasResult }: { hasResult: boolean }) {
   }
   if (hasResult) {
     rows.push(
-      <DetailRow key="report" kind="report" label={c.report} meta={copy.details.reportMeta} open={isOpen("report")} onToggle={toggle("report")}>
+      <DetailRow key="report" kind="report" label={c.report} open={isOpen("report")} onToggle={toggle("report")}>
         <ReportArtifact report={report} loading={reportLoading} error={error} />
       </DetailRow>,
     );
@@ -128,38 +124,6 @@ export function TaskDetails({ hasResult }: { hasResult: boolean }) {
             ))}
           </div>
         )}
-      </DetailRow>,
-    );
-  }
-  if (plans.length > 0) {
-    const openPlan = selection?.kind === "plan" && selection.id ? plans.find((plan) => plan.id === selection.id) : null;
-    rows.push(
-      <DetailRow key="plan" kind="plan" label={c.sections.plans} meta={String(plans.length)} open={isOpen("plan")} onToggle={toggle("plan")}>
-        {openPlan ? <PlanDocument plan={openPlan} /> : plans.map((plan) => (
-          <button key={plan.id} type="button" className="agent-artifact-row" data-testid="artifact-plan-row" data-status={plan.status} onClick={() => open("plan", plan.id)}>
-            <span className="agent-artifact-row-main">
-              <strong>{plan.title || c.sections.plans}</strong>
-              <small>{`${c.plan.version(plan.version)} · ${c.plan.status[plan.status] ?? plan.status}`}</small>
-            </span>
-            <Icon name="chevron" size={12} />
-          </button>
-        ))}
-      </DetailRow>,
-    );
-  }
-  if (baselines.length > 0) {
-    const openBaseline = selection?.kind === "baseline" && selection.id ? baselines.find((item) => item.id === selection.id) : null;
-    rows.push(
-      <DetailRow key="baseline" kind="baseline" label={c.sections.baselines} meta={String(baselines.length)} open={isOpen("baseline")} onToggle={toggle("baseline")}>
-        {openBaseline ? <BaselineDocument artifact={openBaseline} /> : baselines.map((artifact) => (
-          <button key={artifact.id} type="button" className="agent-artifact-row" data-testid="artifact-baseline-row" onClick={() => open("baseline", artifact.id)}>
-            <span className="agent-artifact-row-main">
-              <strong>{artifact.title || c.baseline.kinds[artifact.artifact_type] || artifact.artifact_type}</strong>
-              <small>{artifact.summary ?? when(artifact.created_at)}</small>
-            </span>
-            <Icon name="chevron" size={12} />
-          </button>
-        ))}
       </DetailRow>,
     );
   }

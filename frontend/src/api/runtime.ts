@@ -1,6 +1,6 @@
 import { sidecarBaseUrl } from "../config";
 import { authHeaders, errorDetail, request } from "./client";
-import type { Conclusion, ExecutionMetrics, PlanStep, ToolActivity } from "../types";
+import type { Conclusion, ExecutionMetrics, ToolActivity } from "../types";
 import { asConclusion } from "../lib/conclusion";
 
 /**
@@ -8,8 +8,8 @@ import { asConclusion } from "../lib/conclusion";
  *
  * The Agent Task and its Executions are durable domain objects: submitting a
  * Direction creates an execution row, progress is an append-only structured
- * event log addressable by sequence number, and Decision / Work Result /
- * Artifact are first-class rows. The client only OBSERVES executions —
+ * event log addressable by sequence number, and Work Result / Artifact are
+ * first-class rows. Nothing pauses an execution for approval (v2.1). The client only OBSERVES executions —
  * closing a stream, switching tasks, or reloading never interrupts one.
  *
  * The ONLY submission lifecycle is: `POST /agent-tasks/{id}/executions` →
@@ -18,14 +18,13 @@ import { asConclusion } from "../lib/conclusion";
  * message endpoint, no turn cancel path, and no blocking fallback.
  */
 
-export type { PlanStep };
-
 export interface TaskExecution {
   id: string;
   task_id: string;
   turn_id: string | null;
   direction: string | null;
   kind: string;
+  // `waiting` is legacy (pre-2.1 approvals); recovery stamps it interrupted.
   status: "queued" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "interrupted";
   error: string | null;
   resumed_from: string | null;
@@ -36,50 +35,13 @@ export interface TaskExecution {
   finished_at: string | null;
 }
 
-export interface DecisionImpact {
-  gate: "cloud_download" | "artifact_write" | "confirmation" | string;
-  why: string | null;
-  bucket: string | null;
-  prefix: string | null;
-  source_type: string | null;
-  file_count: number | null;
-  total_bytes: number | null;
-  scan_scope: string | null;
-  warnings?: string[];
-  // v1.13 — large-scan gate projection (survey_account_large).
-  provider?: string | null;
-  buckets?: number | null;
-  estimated_calls?: number | null;
-}
-
-export interface TaskDecision {
-  id: string;
-  task_id: string;
-  execution_id: string | null;
-  work_result_id: string | null;
-  action_type: string;
-  title: string | null;
-  reason: string | null;
-  /** `approval` (raised inline by a gated tool, v1.11) or a legacy `proposal`. */
-  kind?: "approval" | "proposal";
-  /** How the approval was granted: once, or for every later call in this task. */
-  scope?: "once" | "task" | null;
-  proposal?: Record<string, unknown> | null;
-  status: "pending" | "approved" | "declined" | "superseded";
-  resolution_note: string | null;
-  created_at: string;
-  resolved_at: string | null;
-  impact?: DecisionImpact | null;
-}
-
 export interface TaskState {
   task_id: string;
-  status: "ready" | "working" | "needs_decision" | "needs_attention" | "archived";
+  status: "ready" | "working" | "needs_attention" | "archived";
   active_execution: TaskExecution | null;
   last_event_seq: number;
   last_execution: TaskExecution | null;
   queued_executions: TaskExecution[];
-  pending_decisions: TaskDecision[];
   context_version: number;
 }
 
@@ -112,7 +74,7 @@ export const steerTaskExecution = (taskId: string, text: string) =>
     { method: "POST", body: JSON.stringify({ text }) },
   );
 
-/** The one cancel path: stop a queued, running or waiting execution by its
+/** The one cancel path: stop a queued or running execution by its
  * durable identity. A partial Work Result is persisted server-side. */
 export const stopTaskExecution = (taskId: string, executionId: string) =>
   request<{ status: string; execution: TaskExecution }>(
@@ -146,18 +108,6 @@ export const listTaskEvents = (taskId: string, opts: { after?: number; limit?: n
 export const listExecutionEventsPage = (taskId: string, executionId: string, opts: { after?: number; limit?: number } = {}) =>
   request<{ task_id: string; execution_id: string; events: TaskEvent[]; last_seq: number }>(
     `/agent-tasks/${taskId}/executions/${executionId}/events-page?after=${opts.after ?? 0}&limit=${opts.limit ?? 1000}`);
-
-/** Resolve an inline approval. Approving wakes the gated tool server-side and
- * the SAME execution continues; `scope=task` also allows later calls of the
- * same action type in this task. */
-export const resolveTaskDecision = (
-  taskId: string, decisionId: string, resolution: "approved" | "declined",
-  scope?: "once" | "task", note?: string,
-) =>
-  request<{ decision: TaskDecision; prepared: null }>(
-    `/agent-tasks/${taskId}/decisions/${decisionId}/resolve`,
-    { method: "POST", body: JSON.stringify({ resolution, note, ...(scope ? { scope } : {}) }) },
-  );
 
 // --- v1.12: on-demand compaction ---
 
@@ -195,42 +145,10 @@ export interface MessageCompletedPayload {
   truncated?: boolean;
 }
 
-/** A gated tool paused the execution for the user's approval (v1.11). */
-export interface ApprovalOpenedPayload {
-  decision_id: string;
-  action_type: string;
-  title: string | null;
-  reason: string | null;
-  impact: DecisionImpact | null;
-}
-
-export interface DecisionResolvedPayload {
-  decision_id: string;
-  resolution: "approved" | "declined" | "superseded";
-  action_type?: string;
-  scope?: "once" | "task" | null;
-}
-
 export interface ExecutionStatusPayload {
   status: string;
   reason?: string;
-  decision_id?: string;
   error?: string;
-}
-
-/** Why an approval was granted without asking (`approval.granted.policy`). */
-export type ApprovalGrantPolicy = "task" | "session" | "always";
-
-export interface ApprovalGrantedPayload {
-  decision_id: string;
-  action_type: string;
-  title: string | null;
-  policy?: ApprovalGrantPolicy | null;
-}
-
-/** `plan.updated`: the model replaced its plan (`update_plan`, ≤ 12 steps). */
-export interface PlanUpdatedPayload {
-  steps: PlanStep[];
 }
 
 /** `context.compacted`: the runtime summarised the replayed context. */
@@ -240,13 +158,12 @@ export interface ContextCompactedPayload {
   summary_chars: number;
 }
 
-/** `task.status`: the task's derived status, queue and pending Decisions —
+/** `task.status`: the task's derived status and queue —
  * everything a follower used to poll `/agent-tasks/{id}/state` for. */
 export interface TaskStatusPayload {
   status: TaskState["status"];
   active_execution_id: string | null;
   queued: { id: string; direction: string | null; kind: string; created_at: string }[];
-  pending_decisions: TaskDecision[];
   last_execution: { id: string; status: TaskExecution["status"] } | null;
 }
 
@@ -256,12 +173,8 @@ export interface LiveEventHandlers {
   onTool: (a: ToolActivity) => void;
   onSeq?: (seq: number) => void;
   onMessageCompleted?: (payload: MessageCompletedPayload) => void;
-  onApprovalOpened?: (payload: ApprovalOpenedPayload) => void;
-  onApprovalGranted?: (payload: ApprovalGrantedPayload) => void;
-  onDecisionResolved?: (payload: DecisionResolvedPayload) => void;
   onStatus?: (payload: ExecutionStatusPayload) => void;
   onTaskStatus?: (payload: TaskStatusPayload) => void;
-  onPlanUpdated?: (payload: PlanUpdatedPayload) => void;
   /** v2.0 — the model recorded this turn's conclusion (`conclusion.recorded`). */
   onConclusionRecorded?: (payload: Conclusion) => void;
   /** A Steer reached the running model loop (`steer.applied`): a Direction,
@@ -295,7 +208,6 @@ export function toolFromEvent(payload: Record<string, unknown> | null | undefine
     result: p.result ?? "",
     ok: p.ok,
     status,
-    ...(p.decision_id ? { decision_id: p.decision_id as string } : {}),
     ...(typeof p.duration_ms === "number" ? { duration_ms: p.duration_ms as number } : {}),
     ...(status === "started"
       ? { started_at: p.started_at ?? seenAt }
@@ -321,25 +233,12 @@ export function dispatchDurableEvent(
     on.onSteerApplied?.({ text: String(payload.text ?? "") });
   else if (type === "message.completed")
     on.onMessageCompleted?.({ text: payload.text ?? "", final: payload.final === true, truncated: payload.truncated === true });
-  else if (type === "approval.opened")
-    on.onApprovalOpened?.({
-      decision_id: payload.decision_id, action_type: payload.action_type ?? "",
-      title: payload.title ?? null, reason: payload.reason ?? null, impact: payload.impact ?? null,
-    });
-  else if (type === "approval.granted")
-    on.onApprovalGranted?.({
-      decision_id: payload.decision_id, action_type: payload.action_type ?? "", title: payload.title ?? null,
-      policy: payload.policy ?? null,
-    });
   else if (type === "task.status")
     on.onTaskStatus?.({
       status: payload.status, active_execution_id: payload.active_execution_id ?? null,
       queued: Array.isArray(payload.queued) ? payload.queued : [],
-      pending_decisions: Array.isArray(payload.pending_decisions) ? payload.pending_decisions : [],
       last_execution: payload.last_execution ?? null,
     });
-  else if (type === "plan.updated")
-    on.onPlanUpdated?.({ steps: Array.isArray(payload.steps) ? payload.steps : [] });
   else if (type === "conclusion.recorded") {
     const conclusion = asConclusion(payload);
     if (conclusion) on.onConclusionRecorded?.(conclusion);
@@ -349,14 +248,9 @@ export function dispatchDurableEvent(
       before_tokens: payload.before_tokens ?? null, after_tokens: payload.after_tokens ?? null,
       summary_chars: Number(payload.summary_chars) || 0,
     });
-  else if (type === "decision.resolved")
-    on.onDecisionResolved?.({
-      decision_id: payload.decision_id, resolution: payload.resolution,
-      action_type: payload.action_type, scope: payload.scope ?? null,
-    });
   else if (type === "execution.status") {
     const st = payload.status as string;
-    on.onStatus?.({ status: st, reason: payload.reason, decision_id: payload.decision_id, error: payload.error });
+    on.onStatus?.({ status: st, reason: payload.reason, error: payload.error });
     if (st === "completed" || st === "failed" || st === "cancelled" || st === "interrupted") {
       return { terminal: true, status: st, payload };
     }

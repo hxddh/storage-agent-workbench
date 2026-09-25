@@ -12,7 +12,7 @@ from .limits import _MAX_OUTPUT
 from .prompt import FINALIZE_INSTRUCTIONS
 
 # Activity records that are runtime structure, not tool calls the user sees.
-_NOT_TOOL_ROWS = frozenset({"update_plan", conclusion_tools.TOOL_NAME})
+_NOT_TOOL_ROWS = frozenset({conclusion_tools.TOOL_NAME})
 
 _FINALIZE_FALLBACK = (
     "I reached my investigation step budget before I could finish this. The steps "
@@ -255,15 +255,10 @@ def _finalize_contract(raw: Any, skill_names: list[str], activity: list[dict[str
     contract["skills_offered"] = skill_names
     # Persist only COMPLETED tool records; transient "started" markers are for
     # the live SSE stream, not the durable transcript.
-    # (update_plan records become the plan turn item and record_conclusion the
-    # Work Result's conclusion — neither is a tool row.)
+    # (record_conclusion becomes the Work Result's conclusion — not a tool row.)
     contract["tool_activity"] = [a for a in activity
                                  if a.get("status") != "started"
                                  and a.get("tool") not in _NOT_TOOL_ROWS]
-    # Every plan the model recorded, in order — the runtime persists each as a
-    # `plan.updated` event whichever loop produced the turn.
-    contract["plan_updates"] = [list(a.get("plan") or []) for a in activity
-                                if a.get("tool") == "update_plan" and a.get("status") != "started"]
     contract["conclusion"] = conclusion_tools.latest(activity)
     return contract
 

@@ -6,8 +6,8 @@ import { seedOptimizationTask } from "./seed";
 /**
  * v0.96 closed loop against the real Sidecar: cost simulator → remediation
  * plan Artifact → Verify Execution → Drift report, plus a due revisit that
- * catch-up-submits through the existing runtime path and stops at a pending
- * inline approval is never auto-approved.
+ * catch-up-submits through the existing runtime path as a read-only
+ * Execution. (v2.1: the engines have no product rows; the Agent narrates them.)
  */
 
 const composer = (page: Page) => page.getByTestId("agent-composer").getByRole("textbox");

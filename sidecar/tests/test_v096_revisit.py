@@ -62,33 +62,6 @@ def test_disabled_schedule_is_not_due(tmp_path):
     assert revisit_mod.due_rows(conn, now="2099-01-01T00:00:00Z") == []
 
 
-def test_tick_does_not_resolve_pending_decisions(tmp_path, monkeypatch):
-    conn = _db(tmp_path / "p.db")
-    store.open_approval(conn, "task", None, "import_inventory", "Import inventory", None,
-                        {"tool": "import_evidence"})
-    revisit_mod.set_schedule(conn, "task", interval_days=1, enabled=True)
-    conn.execute(
-        "UPDATE task_revisit_schedules SET next_due_at = ? WHERE task_id = ?",
-        ("2020-01-01T00:00:00Z", "task"),
-    )
-    conn.commit()
-    path = tmp_path / "p.db"
-    conn.close()
-
-    def fake_submit(conn, task_id, direction, turn_id=None, *, kind="direction", **kwargs):
-        pending = store.list_decisions(conn, task_id, status="pending")
-        assert pending, "revisit must not auto-resolve the pending Decision"
-        assert all(d["status"] == "pending" for d in pending)
-        return {"id": "exec", "kind": kind}
-
-    monkeypatch.setattr("app.task_runtime.runtime.submit", fake_submit)
-    monkeypatch.setattr("app.db.connect", lambda: _row(path))
-    revisit_mod.tick(now="2026-08-30T00:00:00Z")
-    conn = _row(path)
-    still = store.list_decisions(conn, "task", status="pending")
-    assert len(still) == 1
-
-
 def test_concurrent_ticks_submit_one_revisit(tmp_path, monkeypatch):
     import threading
     path = tmp_path / "c.db"

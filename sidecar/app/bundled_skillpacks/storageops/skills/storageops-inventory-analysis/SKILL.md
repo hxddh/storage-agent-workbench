@@ -51,10 +51,11 @@ Two paths, depending on where the inventory lives:
   No confirmation. If the result carries `"truncated": true`, the metrics cover
   only the first `rows_analyzed` rows — present them as a LOWER BOUND and offer a
   narrower slice.
-- **Inventory still in a bucket** — bringing it in is cloud-side data movement, so
-  it stays a confirmed step: propose `plan_inventory_import`. After the user
-  confirms and the run completes, read its findings; if it finished in the
-  background, pick the result back up with `read_run_result(run_id)` rather than
+- **Inventory still in a bucket** — once `survey_account` has discovered the
+  inventory configuration, call `import_evidence(source_type="inventory", …)`.
+  It downloads a bounded slice (at most 500 files / 256 MiB) and starts the
+  analysis; say whether coverage is partial. If it finished in the background,
+  pick the result back up with `read_run_result(run_id)` rather than
   re-importing.
 
 Use judgement about which metrics matter for the question — you don't need every

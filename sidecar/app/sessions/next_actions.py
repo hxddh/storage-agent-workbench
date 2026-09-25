@@ -2,8 +2,8 @@
 
 Used by the deterministic summary builder and the error-triage engine for the
 bounded, sanitized "safe next steps" they list. Since v1.12 the Agent runtime
-never produces proposals and nothing here prepares or executes anything: the
-only confirmation boundary is the gated tool path (``agent_runtime.gated_tools``).
+never produces proposals and nothing here prepares or executes anything; the
+one data-moving path is the bounded ``agent_runtime.import_tools``.
 """
 
 

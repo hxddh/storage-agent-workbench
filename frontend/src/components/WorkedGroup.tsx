@@ -4,6 +4,7 @@ import { useI18n } from "../i18n";
 import type { ToolActivity } from "../types";
 import { Icon } from "./icons";
 import { fmtElapsed, useElapsed } from "../hooks/useElapsed";
+import { toolLabel } from "../lib/toolLabels";
 
 export function argLabel(key: string, value: string | number | boolean): string {
   if (value === true) return `·${key}`;
@@ -99,6 +100,9 @@ export function WorkedGroup({
   /** Find holds a runnable query: render every row — folded rows are
    * unmounted, and unmounted rows are unfindable. */
   forceExpanded = false,
+  /** v2.1 — the turn is live: keep every group open until the turn settles,
+   * so the reader sees what ran even after the Agent started writing. */
+  keepOpen = false,
 }: {
   records: ToolActivity[];
   taskId?: string | null;
@@ -107,8 +111,9 @@ export function WorkedGroup({
   /** When the turn started — the live clock's fallback before any row carries its own start. */
   startedAt?: number | null;
   forceExpanded?: boolean;
+  keepOpen?: boolean;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const running = live || records.some((item) => item.status === "started");
   const anyFailed = records.some(isFailed);
   const [showAll, setShowAll] = useState(false);
@@ -117,7 +122,7 @@ export function WorkedGroup({
   const elapsed = useElapsed(groupStartMs(records) ?? startedAt, running);
   if (!records.length) return null;
 
-  const expanded = open ?? (forceExpanded || running || anyFailed);
+  const expanded = open ?? (forceExpanded || running || keepOpen || anyFailed);
   const done = records.filter((item) => item.status !== "started").length;
   const worked = groupSpanMs(records);
   const folded = !forceExpanded && !showAll && records.length > FOLD_AFTER;
@@ -174,7 +179,7 @@ export function WorkedGroup({
               const canOpen = Boolean(taskId && a.id && !isRunning);
               const isOpen = canOpen && openCall === a.id;
               return (
-                <div key={a.id ?? i} data-testid="worked-row" data-status={isRunning ? "running" : failed ? "failed" : "ok"}>
+                <div key={a.id ?? i} data-testid="worked-row" data-tool={a.tool} data-status={isRunning ? "running" : failed ? "failed" : "ok"}>
                   <div
                     className="native-tool-row"
                     data-failed={failed ? "true" : "false"}
@@ -204,7 +209,7 @@ export function WorkedGroup({
                         <Icon name="check" size={11} stroke={2.2} />
                       )}
                     </span>
-                    <span className="native-tool-name">{a.tool}</span>
+                    <span className="native-tool-name" title={a.tool}>{toolLabel(a.tool, lang)}</span>
                     {a.target ? <span className="native-tool-target" title={a.target}>{a.target}</span> : null}
                     {args ? <span className="native-tool-target font-mono" data-testid="trace-args" title={args}>{args}</span> : null}
                     {a.audit_error && !isRunning ? (

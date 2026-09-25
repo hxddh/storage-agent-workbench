@@ -1,6 +1,6 @@
 /**
  * `task.status` (v1.12): the durable event stream carries the task's derived
- * status, its queue and its pending Decisions, so a client following an
+ * status and its queue, so a client following an
  * execution no longer polls `/agent-tasks/{id}/state` on an interval. This
  * folds one frame into the `TaskState` shape the document already reads,
  * keeping whatever the last full state knew about the executions it names.
@@ -25,10 +25,7 @@ export function applyTaskStatus(prev: TaskState | null, taskId: string, payload:
   }
   const activeId = payload.active_execution_id;
   const active = activeId
-    ? stub(taskId, activeId, known.get(activeId), {
-        status: payload.status === "needs_decision" ? "waiting"
-          : known.get(activeId)?.status === "waiting" && payload.status !== "working" ? "waiting" : "running",
-      })
+    ? stub(taskId, activeId, known.get(activeId), { status: "running" })
     : null;
   const last = payload.last_execution
     ? stub(taskId, payload.last_execution.id, known.get(payload.last_execution.id), { status: payload.last_execution.status })
@@ -42,7 +39,6 @@ export function applyTaskStatus(prev: TaskState | null, taskId: string, payload:
     queued_executions: payload.queued.map((q) => stub(taskId, q.id, known.get(q.id), {
       direction: q.direction, kind: q.kind, created_at: q.created_at, status: "queued",
     })),
-    pending_decisions: payload.pending_decisions,
     context_version: prev?.context_version ?? 0,
   };
 }

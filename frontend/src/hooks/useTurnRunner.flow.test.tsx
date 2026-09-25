@@ -146,7 +146,7 @@ describe("the durable execution path", () => {
 });
 
 describe("the live turn (v1.11)", () => {
-  it("reduces stream frames into ordered items, parks on an approval, and resumes after resolve", async () => {
+  it("reduces stream frames into ordered items and never parks on anything (v2.1)", async () => {
     const id = "sessLive";
     let seen: import("../api").LiveEventHandlers | null = null;
     api.createTaskExecution.mockResolvedValue({ execution: { id: "exec-live" }, created: true });
@@ -155,22 +155,16 @@ describe("the live turn (v1.11)", () => {
       on.onDelta("Checking the ");
       on.onDelta("policy.");
       on.onMessageCompleted?.({ text: "Checking the policy.", final: false });
-      on.onTool({ id: "c1", tool: "plan_evidence_import", target: "acme-logs", result: "", status: "started" });
-      on.onApprovalOpened?.({ decision_id: "d1", action_type: "import_access_log", title: "Download logs", reason: null, impact: null });
-      on.onStatus?.({ status: "waiting", reason: "approval", decision_id: "d1" });
+      on.onTool({ id: "c1", tool: "import_evidence", target: "access_log:acme-logs", result: "", status: "started" });
       const mid = getLiveTask(id);
       expect(mid.busy).toBe(true);
-      expect(mid.waiting).toBe(true);
-      expect(mid.items.map((item) => item.kind)).toEqual(["message", "tool", "approval"]);
-      on.onDecisionResolved?.({ decision_id: "d1", resolution: "approved", scope: "once" });
-      on.onStatus?.({ status: "running", reason: "approval_resolved", decision_id: "d1" });
-      on.onTool({ id: "c1", tool: "plan_evidence_import", target: "acme-logs", result: "312 files", ok: true, status: "completed" });
+      expect(mid.items.map((item) => item.kind)).toEqual(["message", "tool"]);
+      on.onTool({ id: "c1", tool: "import_evidence", target: "access_log:acme-logs", result: "imported 312 files", ok: true, status: "completed" });
       on.onDelta("The logs show 403s.");
       on.onMessageCompleted?.({ text: "The logs show 403s.", final: true });
       const late = getLiveTask(id);
-      expect(late.waiting).toBe(false);
       expect(late.answer).toBe("The logs show 403s.");
-      expect(late.items[2]).toMatchObject({ kind: "approval", status: "approved" });
+      expect(late.items.map((item) => item.kind)).toEqual(["message", "tool"]);
       return { status: "completed", stopped: false, message_id: "m9", last_seq: 12 };
     });
 

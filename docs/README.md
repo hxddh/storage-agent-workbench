@@ -1,7 +1,16 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v2.0.0** (`v2.0.0`).
-> **v2.0.0 is the Result-first Task** (`docs/releases/2.0.0.md`): a Task
+> **Current architecture baseline: Storage Agent v2.1.0** (`v2.1.0`).
+> **v2.1.0 is the Native agent** (`docs/releases/2.1.0.md`): nothing pauses an
+> Execution for approval and the model keeps no plan. `import_evidence` runs in
+> the turn inside hard server-side bounds (a survey-discovered source, ≤ 500
+> files / 256 MiB per call, 1 GiB disk headroom, audited `approved_by=agent`,
+> stopped by Stop); a survey runs to its 500-bucket cap and reports coverage;
+> Decisions are read-only history; a restart continues interrupted work once on
+> its own. The approval card, approval policy, Safety section, plan card and the
+> Plans / Baselines detail rows are gone; tool rows read as localized verbs and
+> the Result leads with one meta line. No migration (head stays **031**).
+> **v2.0.0 was the Result-first Task** (`docs/releases/2.0.0.md`): a Task
 > opens on its latest Result — the conclusion the model recorded with
 > `record_conclusion` (answer, findings by severity, next steps), then the
 > full answer, figures and detail rows that expand in place — with the Work
@@ -11,7 +20,7 @@
 > wrapping, and a first Codex-grade polish pass. **v1.17.0 is the Codex
 > window** (`docs/releases/1.17.0.md`): UI and UE match Codex's quiet Agent
 > surface. **v1.18.0 is the native core** (`docs/releases/1.18.0.md`): one
-> submit path, every data movement behind a Decision, reads that never start
+> submit path, every data movement behind a Decision (bounded instead since v2.1), reads that never start
 > work, and Task vocabulary in product code. The next plan lives in
 > `docs/roadmap.md`. **v1.19.0 is the Document-native window**
 > (`docs/releases/1.19.0.md`): the Task reads as a document, not a message exchange.
@@ -23,8 +32,8 @@
 > painted a web-app chassis (activity bar, status bar, Details inspector) on top.
 > **v1.09.0 tears that chassis down.** The window is sidebar · title bar · one
 > Task document · one Composer. Empty start is a greeting and the Composer.
-> Execution is one *Worked for …* group in the Work Result. Decision is an
-> approval card. Settings is a centered dialog. Engines remain in the Sidecar
+> Execution is one *Worked for …* group in the Work Result. Decision was an
+> approval card (removed in v2.1). Settings is a centered dialog. Engines remain in the Sidecar
 > with no product UI entry.
 > **v1.10.0 makes the shell and the runtime native.** A real menu bar, deep
 > links, notifications and a summon shortcut reach the window through one
@@ -33,18 +42,18 @@
 > provider panes are native documents; the pre-v0.94 message client is gone.
 > **v1.11.0 is Codex parity all the way down.** A turn is a transcript: user
 > bubble, commentary segments, one *Worked for …* group, an inline approval
-> card where the gated `import_evidence` tool raised it, then the answer as
+> card where the gated `import_evidence` tool raised it (removed in v2.1), then the answer as
 > plain Markdown. No metadata JSON block, no proposal list, no separate import
 > dialog; Artifacts is a right split panel; the Agent runtime is split by
 > responsibility.
 > **v1.12.0 is native all the way through.** One protocol (the `/sessions`
 > message/turn/prepare shims are gone), a push-driven event stream with
-> `task.status`, the model's `update_plan` checklist, an approval policy
-> (ask · session · always) enforced in one place with the large-survey gate,
+> `task.status`, the model's `update_plan` checklist and an approval policy
+> (ask · session · always) with the large-survey gate (all three removed in v2.1),
 > context compaction (`context.compacted`, ⌘K Compact context), `AGENTS.md`
 > instructions, Execution detail from the durable log, wall-clock *Worked
 > for …*, and the frontend split into document / runner / api modules.
-> Migration head was **030** through v1.19.0 (v1.13.0–v1.19.0 add no migration; v2.0.0 appends **031**).
+> Migration head was **030** through v1.19.0 (v1.13.0–v1.19.0 add no migration; v2.0.0 appends **031**; v2.1.0 adds none).
 > **v1.14.0 is interaction truth and content craft.** Steering reaches waiting
 > executions, queued Directions edit until they run, Execution detail shows
 > measured usage, figures and evidence read localized, times read relative,
@@ -101,10 +110,9 @@ Use these terms in product-facing and new frontend architecture work:
 | **Agent Task** | The durable unit of delegated work and the primary application object. |
 | **Direction** | User objective, constraint, correction, or steering input. |
 | **Execution** | Real runtime/tool work; never a synthetic plan. Shown as tool rows in the document. |
-| **Approval** (Waiting for approval) | A real confirmation boundary a gated tool raises inside the Execution; Allow · Allow for this task · Deny. |
-| **Work Result** | Durable Agent output for a Task, including inline figures. |
-| **Artifact** | Evidence, Execution detail, Reports, Plans, Baselines/Drift in the Artifacts panel. |
-| **Artifacts panel** | Right split over the active Task (⌘I). Overlay only under a narrow window. Not an application destination. |
+| **Work Result** | Durable Agent output for a Task, including inline figures; the latest one is the **Result**, conclusion first. |
+| **Artifact** | Evidence, Execution detail and Reports, shown as detail rows under the Result (⌘I). Not an application destination. |
+| **Bounds** | Since v2.1 there is no approval: data movement runs inside hard server-side bounds and Stop is the brake. Decisions are read-only history. |
 | **Delegate / Steer / Stop** | The one Agent control path. |
 
 Historical compatibility vocabulary such as `session`, `run`, `session_message`, and `tool_call` remains valid inside Sidecar persistence/API code and narrowly scoped frontend adapters. It does **not** define the product information architecture.
@@ -114,11 +122,11 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 - [`product.md`](product.md) — product model, UX semantics, states, design rules, non-goals.
 - [`design-tokens.md`](design-tokens.md) — presentation tokens (type, color, motion, elevation, `--viz-*` series).
 - [`architecture.md`](architecture.md) — Tauri/React/Sidecar topology and ownership boundaries.
-- [`security.md`](security.md) — secret, tool, model-context, evidence and approval guarantees.
+- [`security.md`](security.md) — secret, tool, model-context, evidence and data-movement-bound guarantees.
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
 - [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 031, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — next direction after **v2.0.0 — Result-first Task**. Delivered history lives in `releases/`.
+- [`roadmap.md`](roadmap.md) — next direction after **v2.1.0 — Native agent**. Delivered history lives in `releases/`.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.

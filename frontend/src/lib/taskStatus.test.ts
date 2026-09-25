@@ -9,32 +9,27 @@ const execution = (id: string, status: TaskState["active_execution"] extends inf
 });
 
 describe("task.status frames", () => {
-  it("folds status, queue and pending Decisions into the task state the document reads", () => {
+  it("folds status and queue into the task state the document reads", () => {
     const prev: TaskState = {
       task_id: "t1", status: "working", active_execution: execution("e1", "running"), last_event_seq: 40,
-      last_execution: execution("e1", "running"), queued_executions: [], pending_decisions: [], context_version: 3,
+      last_execution: execution("e1", "running"), queued_executions: [], context_version: 3,
     };
     const next = applyTaskStatus(prev, "t1", {
-      status: "needs_decision", active_execution_id: "e1",
+      status: "working", active_execution_id: "e1",
       queued: [{ id: "e2", direction: "then check the ACL", kind: "direction", created_at: "2026-09-01T00:01:00Z" }],
-      pending_decisions: [{
-        id: "d1", task_id: "t1", execution_id: "e1", work_result_id: null, action_type: "import_access_log",
-        title: "Download logs", reason: null, kind: "approval", status: "pending", resolution_note: null,
-        created_at: "2026-09-01T00:00:30Z", resolved_at: null,
-      }],
-      last_execution: { id: "e1", status: "waiting" },
+      last_execution: { id: "e1", status: "running" },
     });
-    expect(next.status).toBe("needs_decision");
-    expect(next.active_execution).toMatchObject({ id: "e1", status: "waiting", direction: "check the bucket" });
+    expect(next.status).toBe("working");
+    expect(next.active_execution).toMatchObject({ id: "e1", status: "running", direction: "check the bucket" });
     expect(next.queued_executions).toEqual([expect.objectContaining({ id: "e2", direction: "then check the ACL", status: "queued" })]);
-    expect(next.pending_decisions.map((d) => d.id)).toEqual(["d1"]);
+    expect("pending_decisions" in next).toBe(false);
     expect(next.last_event_seq).toBe(40);
     expect(next.context_version).toBe(3);
   });
 
   it("builds a usable state from a frame alone when nothing was loaded yet", () => {
     const next = applyTaskStatus(null, "t9", {
-      status: "ready", active_execution_id: null, queued: [], pending_decisions: [],
+      status: "ready", active_execution_id: null, queued: [],
       last_execution: { id: "e7", status: "completed" },
     });
     expect(next.active_execution).toBeNull();

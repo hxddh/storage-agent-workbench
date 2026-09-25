@@ -34,14 +34,10 @@ def _build_tools(conn: Any, function_tool: Callable, activity: list[dict[str, An
     tools += session_analysis_tools.build(conn, function_tool, session_id, activity)
     from . import session_optimization_tools
     tools += session_optimization_tools.build(conn, function_tool, session_id, activity)
-    # The ONE data-moving tool: plans, then pauses the execution for the user's
-    # approval inside the turn (v1.11).
-    from . import gated_tools
-    tools += gated_tools.build(conn, function_tool, activity, session_id, turn_id,
-                               cancel_event=cancel_event)
-    # The plan the model owns (v1.12): a checklist the runtime records.
-    from . import plan_tools
-    tools += plan_tools.build(function_tool, activity)
+    # The ONE data-moving tool: bounded and audited, no approval pause (v2.1).
+    from . import import_tools
+    tools += import_tools.build(conn, function_tool, activity, session_id, turn_id,
+                                cancel_event=cancel_event)
     # The conclusion the model states (v2.0): the Work Result's structured head.
     from . import conclusion_tools
     tools += conclusion_tools.build(function_tool, activity)

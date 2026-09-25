@@ -1,6 +1,6 @@
 # Architecture
 
-> **Current architecture baseline: Storage Agent v2.0.0.** The Result-first Task (a Task opens on its latest Result — the runtime-recorded conclusion, then the full answer and detail rows — with the Work log below) on the v1.19.0 document and the v1.18.0 native core: one submit path, every data movement behind a Decision, reads that never start work, Task vocabulary in product code. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **031** (v2.0 conclusion columns; v1.12–v1.19 stayed at **030**).
+> **Current architecture baseline: Storage Agent v2.1.0.** The Native agent: nothing pauses an Execution for approval and the model keeps no plan — the one data-moving tool (`import_evidence`) runs inside hard server-side bounds, Stop is the brake, and restart recovery continues interrupted work on its own. It sits on the v2.0.0 Result-first Task (a Task opens on its latest Result — the runtime-recorded conclusion, then the full answer and detail rows — with the Work log below), the v1.19.0 document and the v1.18.0 native core: one submit path, reads that never start work, Task vocabulary in product code. Sidecar engines from v0.96 remain; they have no product UI entry. Product invariant unchanged. Migration head **031** (v2.0 conclusion columns; v2.1 adds no migration; v1.12–v1.19 stayed at **030**).
 >
 > Product invariant: **the Agent Task is the application**. See `docs/README.md` for documentation precedence.
 
@@ -19,15 +19,11 @@ Agent Task ─────────────── Steer / Stop
    ▼                           │
 Execution ─────────────────────┘
    │
-   ├── safe read-only work ───────────────────┐
-   │                                          │
-   └── gated tool (import_evidence)           │
-           │                                  │
-           ▼                                  │
-      Waiting for approval (inline card)      │
-           │                                  │
-           └──── Allow / Allow for task ──────┘
-                 Deny → structured refusal
+   ├── safe read-only work
+   │
+   └── bounded data movement (import_evidence:
+         discovered source · ≤ 500 files / 256 MiB per call ·
+         disk headroom · audited approved_by=agent · Stop ends it)
    │
    ▼
 Work Result
@@ -92,12 +88,12 @@ Each task row combines:
 
 - durable task metadata from the Sidecar task projection;
 - current per-task runtime state from the client execution store;
-- a state mark (Ready paints nothing; Working pulses; Needs decision / Needs attention are status colours);
+- a state mark (Ready paints nothing; Working pulses; Needs attention is warn-coloured);
 - relative time on hover, and Rename / Delete behind one More control.
 
 The list is chronological by `updated_at`, grouped by day (`dayGroups()`: Today, Yesterday, then dated headers). Search, pin, duplicate, archive and database counters are not painted. The New task control is a button; it does not paint ⌘N. Collapsed, the sidebar has zero width and its toggle + New task move into the title bar.
 
-The Sidecar `/agent-tasks` projection provides durable decision truth so a pending confirmation remains visible after reload/restart even when browser-local runtime state is gone.
+The Sidecar `/agent-tasks` projection provides durable lifecycle truth so state survives reload/restart even when browser-local runtime state is gone. Since v2.1 no row carries `requires_decision` and no task is derived *needs decision*.
 
 ### 3.3 `AgentShell`: active task environment
 
@@ -116,7 +112,7 @@ The detail rows are part of the Task document. Expanding one does not create ano
 
 `frontend/src/components/AgentTask.tsx` is the public task component and, since v1.18, the one composition root of a Task (the historical `AgentTaskImplementation` wrapper is gone). It exposes Task-native props (`taskId`, `onTaskCreated`, `onTaskDiscarded`) to `App` and mounts `hooks/useDirectionStepping`: bare **j** / **k** move one Direction to the reading start by writing the task scroller; they do not animate to an already-visible target.
 
-It composes (through `useTaskDocument`, `useLiveTask`, `useTurnRunner`, `useTaskComposer`, `useApprovals`, `TaskDocument`, `TaskBanners`, `TaskComposerHost`):
+It composes (through `useTaskDocument`, `useLiveTask`, `useTurnRunner`, `useTaskComposer`, `TaskDocument`, `TaskBanners`, `TaskComposerHost`):
 
 - durable task document loading and paging;
 - task draft state;
@@ -125,8 +121,7 @@ It composes (through `useTaskDocument`, `useLiveTask`, `useTurnRunner`, `useTask
 - steering/stopping/resuming;
 - attachments (type inferred from filename);
 - Direction and Work Result rendering;
-- real tool rows in the document (`WorkedGroup`, one *Worked for …* group), and a Steer as its own quiet *Steered* line where the model loop took it (a `steer` turn item, never a tool row);
-- inline approval cards (Allow / Allow for this task / Deny) raised by gated tools;
+- real tool rows in the document (`WorkedGroup`, one *Worked for …* group; each row a localized verb from `lib/toolLabels.ts`, the target quiet in mono, the result muted, status only in the glyph, the raw tool name as `data-tool` and tooltip), and a Steer as its own quiet *Steered* line where the model loop took it (a `steer` turn item, never a tool row);
 - find and task viewport behavior.
 
 Historical `session` terminology stays inside the `api/` adapters' URLs and wire types only. The adapters export Task names (`createTask`, `getTaskRecord`, `updateTask`, `deleteTask`, `getTaskMessages`, `getTaskCall`, `uploadTaskDataset`, `TaskRecord`, `TaskMessage`, …) and product code speaks `taskId`.
@@ -146,7 +141,7 @@ A detail row or a deep artifact must never mount a hidden second composer.
 
 ### 3.6 Presentation layers
 
-`frontend/src/index.css` holds the tokens (achromatic ladder, ink primary, status colours, type/radius/motion). `frontend/src/agent/native-shell.css` styles the window, sidebar and title bar. `frontend/src/agent/native-document.css` styles the Task document: the Result (conclusion, findings, next steps, detail rows), Work log turns (Direction heading, commentary, *Worked for …* group, approval card, folded answers), banners, Composer, empty start. There are no other presentation layers.
+`frontend/src/index.css` holds the tokens (achromatic ladder, ink primary, status colours, type/radius/motion). `frontend/src/agent/native-shell.css` styles the window, sidebar and title bar. `frontend/src/agent/native-document.css` styles the Task document: the Result (conclusion, findings, next steps, detail rows), Work log turns (Direction heading, commentary, *Worked for …* group, folded answers), banners, Composer, empty start; things that open in place ease in with the `reveal-in` keyframe (removed under `prefers-reduced-motion`). There are no other presentation layers.
 
 ## 4. Task document primitives
 
@@ -160,13 +155,15 @@ A predominantly machine-shaped S3/storage error can render through `S3ErrorArtif
 
 Execution represents real work performed by the runtime — and since v0.94 it is
 a DURABLE domain object owned by the Sidecar's task runtime (`task_executions`
-with lifecycle `queued` / `running` / `waiting` / `completed` / `failed` /
-`cancelled` / `interrupted`), not a conversational turn owned by an HTTP
-request.
+with lifecycle `queued` / `running` / `completed` / `failed` /
+`cancelled` / `interrupted`; `waiting` stays in the schema but nothing enters
+it since v2.1), not a conversational turn owned by an HTTP request.
 
 Durable truth is the execution row plus its append-only structured event log
 (`execution_events`): status transitions, tool started/completed, steer
-received/applied, decision opened/resolved, work result recorded. Execution
+received/applied, conclusion recorded, work result recorded (pre-2.1 logs may
+also hold `approval.*`, `decision.resolved` and `plan.updated`; they are
+ignored on read and replay). Execution
 progress is derived from these structured events — never inferred from
 assistant prose.
 
@@ -176,13 +173,13 @@ presentation state. Losing it (reload, task switch, second window) loses
 nothing — the client reattaches by replaying the durable event log from any
 sequence number.
 
-Tool rows are one collapsed *Worked for …* group between the model's commentary segments (v1.11 transcript turn); its time is the group's wall clock, not a sum of durations (v1.12). The model's plan (`update_plan`) is one quiet checklist card at the position of its first call; a compaction is one muted marker line. The Execution detail row exposes sanitized Execution detail — built from `task_executions` + the durable `execution_events` log + one sanitized `tool_calls` row on demand, never a `/runs` stream (v1.12) — without turning the Task into a permanent trace console.
+Tool rows are one collapsed *Worked for …* group between the model's commentary segments (v1.11 transcript turn); its time is the group's wall clock, not a sum of durations (v1.12). In the live work in progress every group stays open until the turn settles (v2.1). A compaction is one muted marker line. There is no plan card (the `update_plan` tool was removed in v2.1). The Execution detail row exposes sanitized Execution detail — built from `task_executions` + the durable `execution_events` log + one sanitized `tool_calls` row on demand, never a `/runs` stream (v1.12) — without turning the Task into a permanent trace console.
 
-### Decision (inline approval)
+### No approval (v2.1)
 
-Since v1.11 a Decision is raised by a **gated tool inside the running Execution** (`import_evidence`): the Sidecar plans the bounded download, opens a `task_decisions` row (`kind=approval`) with the projected impact, appends `approval.opened`, and the Execution goes `waiting` while its worker blocks. The transcript shows the approval card inline at that point with **Allow · Allow for this task · Deny**. Allow runs the audited import server-side and returns its bounded result to the model; Deny returns a structured refusal; "Allow for this task" (`scope=task`) lets later calls of the same `action_type` in that Task proceed as recorded, already-approved Decisions. Model prose never raises a Decision, and there is no separate confirmation dialog.
+Nothing pauses an Execution for the user. `import_evidence` (`agent_runtime/import_tools.py`, formerly `gated_tools.py`) plans and runs the import inside the running Execution without a Decision: the target must be an evidence source the task's account survey discovered; each call is clamped server-side to `AGENT_MAX_FILES` (500) / `AGENT_MAX_BYTES` (256 MiB) and the result says when coverage is partial; the call is refused with nothing downloaded when the data directory would keep less than 1 GiB free; the plan is confirmed and audited as `approved_by="agent"` (`approval_events` + `audit_logs`); the tool checks Stop before downloading. `survey_account` runs up to its 500-bucket hard cap (default 100) and reports coverage through `truncated`; the `survey_account_large` gate is gone.
 
-The frontend must not downgrade a real confirmation boundary into an ordinary suggestion for visual simplicity, and must not paint one the runtime did not raise.
+`runtime.request_approval`, `runtime.on_decision_resolved`, `settle_waiting_executions` and `task_runtime/approval_policy.py` were removed. `task_decisions` rows are read-only history (`GET /agent-tasks/{id}/decisions`); restart recovery withdraws any left pending (`superseded`). The frontend has no approval card, no approval policy UI and paints nothing the runtime did not do.
 
 ### Work Result
 
@@ -190,23 +187,21 @@ A completed assistant-side task event is rendered as Work Result.
 
 Streaming work is Execution; persisted completed output is Work Result. Once the current turn's Work Result is persisted, the live streaming copy is not also rendered — the Task shows one readable record. Work Results can contain structured Markdown, tables (long ones preview 8 rows, expand and sort in place; folded rows stay findable), code/config fragments, storage-specific artifacts, metrics, and provenance links into the detail rows.
 
-**v2.0 — result-first.** The latest Work Result is the **Result** at the top of the Task (`components/TaskResult.tsx`): the conclusion the model recorded with `record_conclusion` (`lib/conclusion.ts` accepts only the recorded shape; findings sort most severe first; next steps prefill the Composer), a grounding line derived from the trace, the full answer, figures, and the detail rows (`components/TaskDetails.tsx`). The **Work log** below holds every turn; older answers fold to one line and the latest points up to the Result. The live turn (Direction · Execution · approval · its conclusion from `conclusion.recorded`) renders above the Result. The Task opens at scrollTop 0 and never follows the end; *Jump to latest* is gone.
+**v2.0 — result-first.** The latest Work Result is the **Result** at the top of the Task (`components/TaskResult.tsx`): the conclusion the model recorded with `record_conclusion` (`lib/conclusion.ts` accepts only the recorded shape; findings sort most severe first; the answer is one lead paragraph; next steps are a vertical list of asks that prefill the Composer) under one meta line derived from the trace (*Result · when · Evidence n · Gaps n · Tool calls n*; a calendar date after a week), the full answer, figures, and the detail rows (`components/TaskDetails.tsx`). The **Work log** below holds every turn; older answers fold to one line and the latest points up to the Result. Work-log Direction headings sit one step below the Result lead. The live turn (Direction · Execution · its conclusion from `conclusion.recorded`) renders above the Result. The Task opens at scrollTop 0 and never follows the end; *Jump to latest* is gone.
 
 ### Detail rows (formerly Artifacts)
 
 `frontend/src/components/TaskDetails.tsx` renders the Task's durable outputs as rows under the Result (v2.0; the `agent-artifacts-panel` right split is retired). Each row expands in place; ⌘I opens the first available one; tool rows, provenance marks and the palette open the matching row:
 
 ```ts
-"evidence" | "report" | "plan" | "baseline" | "execution"
+"evidence" | "report" | "execution"
 ```
 
 - **Evidence** — persisted evidence/finding/activity truth, with provenance marks.
 - **Reports** — the durable Markdown Report artifact.
-- **Plans** — read-only Remediation Plan documents.
-- **Baselines & Drift** — versioned baselines and Drift reports.
 - **Execution** — persisted executions; one opens as a document (header · *Worked for …* rows · findings · result).
 
-A row appears only when something is behind it (no empty placeholders). There is no Overview surface, no tabbed application, no side panel or overlay, and no engine walls. It replaced the historical Review sheet and the v1.11–v1.19 Artifacts panel.
+A row appears only when something is behind it (no empty placeholders). v2.1 removed the Plans and Baselines & Drift rows; those engines remain in the Sidecar and the Agent narrates what they return. There is no Overview surface, no tabbed application, no side panel or overlay, and no engine walls. It replaced the historical Review sheet and the v1.11–v1.19 Artifacts panel.
 
 ## 5. Runtime state and task concurrency
 
@@ -239,20 +234,24 @@ observes:
    never cancel-and-resend; Stop cancels the durable execution (including a
    queued one) and the partial Work Result persists;
 6. Resume (`POST .../executions/{eid}/resume`) starts a NEW execution for an
-   `interrupted` / `failed` last Execution and the client follows that new
-   stream; Queued Directions are projected from task state;
+   `interrupted` / `failed` last Execution that could not continue
+   automatically, and the client follows that new stream; Queued Directions are projected from task state;
 7. Verify and scheduled revisits remain Sidecar `runtime.submit` kinds with
    no painted UI controls; the user asks in Composer;
-8. completion, waiting-on-Decision, failure, and interruption are durable
+8. completion, failure, cancellation and interruption are durable
    execution states, not inferences;
 9. reload the persisted task document.
 
 UI disconnect, task switching, and reload never interrupt an execution; a
-Sidecar restart stamps in-flight executions `interrupted` — including
-`waiting` ones (v1.13: their gated tool died with the process, so no worker
-remains to continue it; the pending Decision survives and Resume re-plans and
-re-raises it) — which the Task surfaces with an explicit Resume action
-(`retry` when the prior execution was user-cancelled). Do not bypass this
+Sidecar restart stamps in-flight executions `interrupted` (including any
+pre-2.1 `waiting` row, whose pending Decision is withdrawn as `superseded`) and,
+since v2.1, continues them automatically:
+`recovery.reconcile_interrupted_executions()` returns the ids it stamped and
+`recovery.resume_interrupted(ids)` submits one continuation each
+(`runtime.resume` → a new `kind=resume` execution with a `[resume]` note) —
+never for an execution that was itself a continuation of interrupted work (no
+crash loop), and not while no model is usable. Only then does the Task show the
+explicit Resume action (`retry` when the prior execution was user-cancelled). Do not bypass this
 lifecycle with another submit/steer path. The `/sessions` message endpoints remain
 compatibility shims and are not the frontend recovery means.
 
@@ -269,15 +268,16 @@ The Sidecar owns:
 - SQLite migrations/repositories;
 - the one model-driven Agent runtime;
 - the durable task runtime (`app/task_runtime/`): the execution supervisor,
-  durable event log, first-class Decisions/Work Results/Artifacts, typed task
-  context, and restart recovery;
+  durable event log, first-class Work Results/Artifacts (Decisions as
+  read-only history since v2.1), typed task context, and restart recovery with
+  automatic continuation;
 - whitelisted storage tools;
 - deterministic run/analysis engines, including cost/lifecycle simulation,
   remediation-plan verify diffs, and baseline/Drift comparison
   (`app/analysis/`);
 - optional per-task revisit scheduling (`app/task_runtime/revisit.py`), submitted by the Sidecar's own revisit clock (`STORAGE_AGENT_REVISIT_TICK_SECONDS`, default 60 s) and at startup — never by a read (v1.18);
 - account/config discovery;
-- Evidence Import plan/confirmation/execution;
+- bounded Evidence Import (plan, agent-confirmed and audited, executed inside the Execution);
 - local DuckDB analysis;
 - task memory/findings/summary;
 - reports;
@@ -293,25 +293,19 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
   `asyncio.Event` and is woken from the worker thread on every delta, marker,
   and durable append (`loop.call_soon_threadsafe`). There is no SQLite poll
   loop; an idle stream sends a heartbeat comment every 15 s. The store appends
-  `task.status` (status, active execution, bounded queue, pending decisions
-  with impact, last execution) to the running/waiting execution's log whenever
+  `task.status` (status, active execution, bounded queue, last execution;
+  `pending_decisions` was dropped in v2.1) to the running execution's log whenever
   the derived task status or queue changes, so a following client never polls
   `/state`.
 - **One protocol.** The `/sessions` message, stream, cancel, turn, and
   action-prepare endpoints, the `legacy_frames` translation, and
   `proposed_actions` are gone; `sessions/next_actions.py` keeps only the
   deterministic proposal normaliser the summary/triage engines use.
-- **Plan tool.** `agent_runtime/plan_tools.py` registers `update_plan`
-  (≤ 12 steps × 160 chars, redacted, CoT-stripped, budget-exempt). Each call
-  is a `plan.updated` event; `stream._Segments` folds all calls of a turn into
-  ONE `plan` turn item at the first call's position; the record is never a
-  tool row and never in the Work Result's `tool_activity`.
-- **Approval policy.** `task_runtime/approval_policy.py` (`ask` ·
-  `allow_session` in process memory · `allow_always` in `app_settings`) is
-  consulted only in `runtime.request_approval`; an auto-approval is a durable
-  approved Decision (`scope = session | always`) plus `approval.granted
-  {policy}`. `survey_account(max_buckets > 100)` raises
-  `survey_account_large` through the same gate.
+- **Plan tool and approval policy (removed in v2.1).** v1.12 added
+  `update_plan` (`plan_tools.py`, `plan.updated`, one `plan` turn item) and an
+  approval policy (`approval_policy.py`, consulted in
+  `runtime.request_approval`). v2.1 removed both; pre-2.1 `plan` turn items are
+  dropped on read.
 - **Compaction.** `agent_runtime/compaction.py`: when the last turn's reported
   input usage ≥ 80 % of `model_budget.context_window`, `_run_execution` runs
   one tool-less streamed call (marker `[[storage-agent:compact]]`, private
@@ -330,11 +324,18 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 - **Tool timing.** Tool records and `tool.*` events carry `started_at` /
   `finished_at` / `duration_ms`; *Worked for …* is the group's wall clock.
 
+### 6.x Native agent (v2.1.0)
+
+- **No approval.** `agent_runtime/import_tools.py` replaces `gated_tools.py`: `import_evidence` runs without a Decision inside hard bounds (discovered source only; `AGENT_MAX_FILES` 500 / `AGENT_MAX_BYTES` 256 MiB per call, clamped; refused below 1 GiB free disk; audited `approved_by="agent"`; checks Stop before downloading). `survey_account` runs to its 500-bucket hard cap. `runtime.request_approval`, `on_decision_resolved`, `settle_waiting_executions`, `approval_policy.py`, the approval-policy and decision resolve routes, `pending_decisions`, `requires_decision`, `open_decisions` and the `needs_decision` derivation are gone.
+- **No plan.** `update_plan`, `plan_tools.py`, `plan.updated` and `plan` turn items are gone.
+- **Work resumes itself.** Restart recovery continues each interrupted execution once (`recovery.resume_interrupted`), never a continuation of a continuation, and falls back to the manual Resume banner when no model is usable.
+- **Native reading.** Tool rows are localized verbs (`lib/toolLabels.ts`); the Result has one meta line and a lead-paragraph answer; next steps are a list of asks; live groups stay open until the turn settles; the title bar centres name and state as one group; reveals use `reveal-in` and honour `prefers-reduced-motion`; the native menu's ⌘I item reads *Show Details*. Pinned by `sidecar/tests/test_v210_native_agent.py` and the frontend architecture test "never pauses the Task for approval and never paints a plan (v2.1)".
+
 ### 6.x Result-first Task (v2.0.0)
 
 - **Runtime-recorded conclusion.** `agent_runtime/conclusion_tools.py` — the core, budget-exempt `record_conclusion(answer, findings, next_steps)` tool; bounded and redacted, last call wins, never a tool row. `finalize` carries it as `contract["conclusion"]`; `task_runtime/runtime.py` appends `conclusion.recorded` and persists it on the assistant message and the durable Work Result (migration 031).
 - **Result first.** The Task page is banners → work in progress → Result (conclusion · grounding · full answer · figures · detail rows) → Work log. It opens at the top; nothing follows the end.
-- **Details in place.** The Artifacts side panel is retired; `TaskDetailsContext` (AgentShell) + `TaskDetails` render Evidence · Report · Execution · Plans · Baselines as rows that expand in place.
+- **Details in place.** The Artifacts side panel is retired; `TaskDetailsContext` (AgentShell) + `TaskDetails` render Evidence · Report · Execution (v2.0 also had Plans · Baselines; v2.1 removed them) as rows that expand in place.
 - **Tables that read.** Long tables preview 8 rows and expand; headers sort (sizes and numbers numerically); folded rows stay in the DOM and an open Find shows them.
 
 ### 6.x Document-native window (v1.19.0)
@@ -342,12 +343,12 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 - **A document, not a message exchange.** Each turn is a section: the Direction is its left-aligned heading (`.turn-direction-text`, no fill, no radius), later turns open with a hairline, and the Agent's work and Work Result follow in the same 46rem column.
 - **Native type.** The platform UI face first (SF / Segoe UI Variable), vendored Inter as the fallback.
 - **Status in one dot.** Title-bar state, banners, the model chip ("No model"), Execution-detail status and drift cells carry colour only in a dot; text stays ink.
-- **Fewer, truer details.** Tool rows drop arguments equal to their target; approval scope renders localized with human sizes (`formatScanScope`); provenance previews name the tool once, in words; the palette is an opaque sheet (transform-only entry) with key caps; sidebar rows carry no time; Execution detail has one Back (the panel's), a Direction block only when it adds to the title, and usage on its own line; figures are ink-first with legends above the plot.
+- **Fewer, truer details.** Tool rows drop arguments equal to their target; scan scope renders localized with human sizes (`formatScanScope`); provenance previews name the tool once, in words; the palette is an opaque sheet (transform-only entry) with key caps; sidebar rows carry no time; Execution detail has one Back (the panel's), a Direction block only when it adds to the title, and usage on its own line; figures are ink-first with legends above the plot.
 
 ### 6.x Codex window (v1.17.0)
 
 - **Quiet chrome.** ContextMeter lives in the model menu; the title bar is name + state (⌘F / ⌘K stay); the empty start is greeting + Composer with no glyph; Find is the keyboard bar only.
-- **Transcript craft.** User bubble is a quiet fill (no border, no shadow); approval is sentence-case *Waiting for approval* with a hairline; *Worked for {t}* carries no tool-call count on the head.
+- **Transcript craft.** User bubble is a quiet fill (no border, no shadow; a heading since v1.19); the approval card was sentence-case with a hairline (removed in v2.1); *Worked for {t}* carries no tool-call count on the head.
 - **Work language.** Artifacts says Execution, not Runs; empty fallback and prompt frame a Direction, not a question; aria is Direction / Work Result.
 - **Composer honesty.** Attachments are per-task; a file while busy is labeled Delegate, never Steer.
 
@@ -374,11 +375,11 @@ There is exactly one model-driven Agent loop. Deterministic engines remain benea
 
 ### 6.x Interaction truth and content craft (v1.14.0)
 
-- **Steer reaches waiting executions.** `runtime.steerable_execution`
-  prefers running/queued, else a live `waiting` execution: the text lands in
-  its steer queue (plus a `steer.received` event) and injects at the next
-  tool boundary after the decision resolves — or rides the follow-up on
-  decline. No more 409-then-silent-requeue.
+- **Steer reaches the current execution.** In v1.14 `runtime.steerable_execution`
+  preferred running/queued, else a live `waiting` execution. Since v2.1 nothing
+  waits: it is the running (else queued) execution; the text lands in its steer
+  queue (plus a `steer.received` event) and injects at the next tool boundary.
+  No 409-then-silent-requeue.
 - **Editable queue.** `PATCH .../executions/{eid}` rewrites a queued
   Direction (`store.update_queued_direction`, 409 past the queue), audited.
 - **Usage rows.** Execution detail matches the Work Result's message to
@@ -443,7 +444,7 @@ The database/API schema predates v0.93. Renaming every stored entity would add m
 | Direction | `task_executions.direction` + steer events | `session_messages` (user rows) |
 | Execution | `task_executions` + `execution_events` | `runs`, `session_runs`, `tool_calls`, `turn_metrics` |
 | Work Result | `work_results` | `session_messages` (assistant rows) |
-| Decision | `task_decisions` (`kind=approval`, `scope`) | `approval_events` + evidence-import state |
+| Decision (history only since v2.1) | `task_decisions` (`kind=approval`, `scope`) | `approval_events` + evidence-import state |
 | Artifact | `task_artifacts` index | report endpoints/files, evidence-import tables |
 | Storage Task Context | `task_context_versions` | — |
 | Task memory | — | `session_summaries`, `session_findings`, `session_agent_memory` |
@@ -475,7 +476,7 @@ Boundary rules:
 ### Data movement and analysis
 
 - Bounded safe read-only investigation may proceed autonomously.
-- Data-moving or materially large/full-scan operations require a real confirmation boundary.
+- Data-moving or materially large/full-scan operations run inside hard server-side bounds instead of a confirmation (v2.1): evidence import only from a discovered source, ≤ 500 files / 256 MiB per call (clamped), refused without disk headroom, audited, stoppable; a survey never exceeds 500 buckets and reports coverage.
 - Raw inventory/access-log rows remain in local deterministic analysis paths; model context receives bounded sanitized aggregates/findings.
 
 ### Evidence truth
@@ -559,9 +560,9 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 - one Agent input: attach + text + model chip + Delegate / Steer / Stop, with the contract placeholders;
 - Direction / Execution (*Worked for …* group) / Work Result as one document without chat chrome;
 - the empty start as greeting + Composer, no wizard or SKU catalog;
-- explicit Decision boundaries with impact and Deny;
-- detail rows under the Result limited to Evidence / Report / Plans / Baselines & Drift / Execution detail — never a side panel;
-- Settings as a dialog of model + storage + general + safety;
+- no approval pause and no plan card (v2.1);
+- detail rows under the Result limited to Evidence / Report / Execution detail — never a side panel;
+- Settings as a dialog of general (with the read-only safety floor statement) + model + storage + skills & bridges;
 - sequence-only stream recovery and settled-execution catch-up;
 - task-native keyboard contracts;
 - deterministic figures from provenance;
@@ -573,7 +574,7 @@ Signing/notarization is a distribution concern documented in `signing.md`; CI do
 
 ### Documentation guard
 
-`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to v2.0.0 and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
+`frontend/src/agent/documentation-contract.test.ts` anchors normative documentation to the current release and prevents current product docs from drifting back toward retired information architecture (Approve/Decline, Review-as-sheet, tinted Direction, architecture banner `v1.10.0` / `028`).
 
 ### Real-Sidecar E2E
 
@@ -584,7 +585,7 @@ Playwright validates real Sidecar-backed behavior including:
 - Stop and mid-execution Steer;
 - task switching/concurrency;
 - evidence/file analysis;
-- Decisions and confirmation flows;
+- bounded evidence import without an approval pause, and automatic continuation after restart;
 - task navigation/drafts/paging;
 - the result-first page (conclusion, detail rows, Report) and landing at the top;
 - localization, accessibility, contrast, narrow layouts;
@@ -609,4 +610,4 @@ The following concepts must not enter the product until a real runtime + safety 
   local desktop product (v1.13: local-first SQLite/DuckDB + single-user vault
   is the design, not a missing feature — see also §9 gated extensions).
 
-The goal is a trustworthy delegated-work loop: the user sets Direction, watches real Execution, can Steer/Stop, crosses only real Decisions, and receives reviewable durable results.
+The goal is a trustworthy delegated-work loop: the user sets Direction, watches real Execution, can Steer/Stop, relies on hard server-side bounds for data movement, and receives reviewable durable results.

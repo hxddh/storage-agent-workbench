@@ -22,4 +22,4 @@ def test_finalize_prompt_does_not_coach_tools_or_plans():
     assert "update_plan" not in prompt.FINALIZE_INSTRUCTIONS
     assert "before each tool call" not in prompt.FINALIZE_INSTRUCTIONS
     assert "No further tools are available" in prompt.FINALIZE_INSTRUCTIONS
-    assert "update_plan" in prompt.INSTRUCTIONS
+    assert "update_plan" not in prompt.INSTRUCTIONS  # v2.1: no plan

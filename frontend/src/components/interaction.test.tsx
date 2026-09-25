@@ -29,7 +29,7 @@ describe("execution details", () => {
 
   it("keeps live execution visible while the Agent is working", () => {
     wrap(createElement(AgentTurn, { answer: null, items, live: true }));
-    expect(screen.getByText("list_objects")).toBeTruthy();
+    expect(screen.getByTitle("list_objects")).toBeTruthy();
     expect(screen.getByTestId("worked-group")).toBeTruthy();
   });
 
@@ -38,7 +38,7 @@ describe("execution details", () => {
     expect(screen.getByTestId("work-result")).toBeTruthy();
     expect(screen.getByTestId("worked-group").getAttribute("data-expanded")).toBe("false");
     fireEvent.click(screen.getByTestId("execution-head"));
-    expect(screen.getByText("list_objects")).toBeTruthy();
+    expect(screen.getByTitle("list_objects")).toBeTruthy();
     expect(screen.queryByTestId("execution-summary")).toBeNull();
   });
 });

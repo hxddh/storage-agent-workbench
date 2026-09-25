@@ -13,8 +13,7 @@ import type { TaskProvenance } from "../viz/types";
 /**
  * The Agent Task as a durable record: the task list, one task's document
  * (messages, findings, attached files), its message pages, its sanitized
- * activity/audit trail, its artifacts and provenance, and the engine outputs
- * (remediation plans, baselines, revisit schedule) the Artifacts panel lists.
+ * activity/audit trail, its artifacts and provenance.
  *
  * Persistence still names a task a `session`; the product boundary adapts the
  * vocabulary here. Nothing in this module starts work — every write that
@@ -137,21 +136,6 @@ export interface TaskArtifact {
   created_at: string;
 }
 
-export type RemediationPlanStatus = "proposed" | "verified" | "partially_verified" | "stale";
-
-export interface RemediationPlan {
-  id: string;
-  task_id: string;
-  execution_id: string | null;
-  version: number;
-  status: RemediationPlanStatus;
-  title: string | null;
-  plan: Record<string, unknown>;
-  simulation: Record<string, unknown> | null;
-  created_at: string;
-  updated_at: string;
-}
-
 export const listTaskArtifacts = (taskId: string) =>
   request<{ task_id: string; artifacts: TaskArtifact[] }>(`/agent-tasks/${taskId}/artifacts`);
 
@@ -159,5 +143,3 @@ export const listTaskArtifacts = (taskId: string) =>
 export const getTaskProvenance = (taskId: string) =>
   request<TaskProvenance>(`/agent-tasks/${taskId}/provenance`);
 
-export const listRemediationPlans = (taskId: string) =>
-  request<{ task_id: string; plans: RemediationPlan[] }>(`/agent-tasks/${taskId}/remediation-plans`);

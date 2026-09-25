@@ -1,9 +1,9 @@
 """v1.11.0 — Codex-style turns: per-segment streaming, durable turn items,
-Decisions raised inline by a gated tool, and the runtime split.
+and the runtime split. (v2.1 removed the inline approval pause and the model
+plan: nothing waits for a human, and there is no plan item.)
 
 Take the UI away: the runtime alone must produce a transcript of commentary
-segments and tool rows before the answer, persist it, and pause an execution
-for an approval that only the user can grant.
+segments and tool rows before the answer, and persist it.
 """
 
 from __future__ import annotations
@@ -185,9 +185,9 @@ def test_turn_items_persist_on_the_assistant_message(client, monkeypatch):
     assert assistant["turn_items"] == [{"kind": "message", "text": "Listing buckets first."},
                                        {"kind": "tool", "id": "c1"}]
     assert "proposed_actions" not in assistant
-    # No proposal-derived Decision exists any more.
+    # Nothing is ever pending: the task is simply ready again.
     state = client.get(f"/agent-tasks/{task['id']}/state").json()
-    assert state["pending_decisions"] == []
+    assert "pending_decisions" not in state
     assert state["status"] == "ready"
 
 
@@ -203,155 +203,17 @@ def test_migration_029_adds_turn_items_and_decision_kind_scope(client):
         conn.close()
 
 
-# --- inline approvals ------------------------------------------------------------
+# --- the one data-moving tool (v2.1: bounded, no approval pause) ---------------
 
 
-def _approval_execution(client, task_id):
-    """A running execution with a live handle, as the worker would have."""
-    from app.db import connect
-    from app.task_runtime import runtime, store
-    conn = connect()
-    try:
-        store.ensure_task(conn, task_id)
-        execution = store.create_execution(conn, task_id, "import the inventory", "r-approval")
-        store.set_execution_status(conn, execution["id"], store.EXEC_RUNNING)
-        conn.commit()
-    finally:
-        conn.close()
-    handle = runtime.LiveExecution(execution["id"], task_id)
-    with runtime._lock:
-        runtime._live[execution["id"]] = handle
-    return execution, handle
-
-
-def _proposal():
-    return {"tool": "import_evidence", "import_id": "imp1",
-            "args": {"source_type": "inventory", "bucket_name": "acme-inv"},
-            "impact": {"gate": "cloud_download", "bucket": "acme-inv", "prefix": "inv/",
-                       "file_count": 3, "total_bytes": 4096, "source_type": "inventory",
-                       "why": "Moves bytes onto this machine."}}
-
-
-def test_gated_tool_pauses_execution_until_the_user_allows(client):
-    from app.db import connect
-    from app.task_runtime import runtime, store
-    task = _task(client)
-    execution, handle = _approval_execution(client, task["id"])
-    result: dict = {}
-
-    def tool_thread():
-        conn = connect()
-        try:
-            result["decision"] = runtime.request_approval(
-                conn, execution["id"], task["id"], action_type="import_inventory",
-                title="Import 3 inventory files from acme-inv", reason="bounded download",
-                proposal=_proposal(), cancel_event=handle.cancel_event)
-        finally:
-            conn.close()
-
-    t = threading.Thread(target=tool_thread, daemon=True)
-    t.start()
-    # The execution is waiting and the Decision is visible with its impact.
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        state = client.get(f"/agent-tasks/{task['id']}/state").json()
-        if state["pending_decisions"]:
-            break
-        time.sleep(0.05)
-    assert state["status"] == "needs_decision"
-    pending = state["pending_decisions"][0]
-    assert pending["kind"] == "approval"
-    assert pending["impact"]["file_count"] == 3
-    assert pending["impact"]["bucket"] == "acme-inv"
-    assert client.get(f"/agent-tasks/{task['id']}/executions/{execution['id']}"
-                      ).json()["status"] == "waiting"
-    events = client.get(f"/agent-tasks/{task['id']}/events").json()["events"]
-    assert any(e["event_type"] == "approval.opened" and e["payload"]["decision_id"] == pending["id"]
-               for e in events)
-
-    r = client.post(f"/agent-tasks/{task['id']}/decisions/{pending['id']}/resolve",
-                    json={"resolution": "approved", "scope": "task"})
-    assert r.status_code == 200
-    assert r.json()["decision"]["scope"] == "task"
-    assert r.json()["prepared"] is None
-    t.join(5)
-    assert not t.is_alive()
-    assert result["decision"]["status"] == "approved"
-    # The SAME execution is running again — no second execution, no settle.
-    row = client.get(f"/agent-tasks/{task['id']}/executions/{execution['id']}").json()
-    assert row["status"] == "running"
-
-    # "Allow for this task": the next request of the same type does not pause.
-    conn = connect()
-    try:
-        t0 = time.monotonic()
-        granted = runtime.request_approval(
-            conn, execution["id"], task["id"], action_type="import_inventory",
-            title="Import again", reason=None, proposal=_proposal(),
-            cancel_event=handle.cancel_event)
-        assert time.monotonic() - t0 < 1.0
-        assert granted["status"] == "approved" and granted["scope"] == "task"
-        assert store.get_execution(conn, execution["id"])["status"] == "running"
-    finally:
-        conn.close()
-    events = client.get(f"/agent-tasks/{task['id']}/events").json()["events"]
-    assert any(e["event_type"] == "approval.granted" for e in events)
-    with runtime._lock:
-        runtime._live.pop(execution["id"], None)
-
-
-def test_deny_and_stop_never_approve(client):
-    from app.db import connect
-    from app.task_runtime import runtime
-    task = _task(client)
-    execution, handle = _approval_execution(client, task["id"])
-    out: list = []
-
-    def tool_thread():
-        conn = connect()
-        try:
-            out.append(runtime.request_approval(
-                conn, execution["id"], task["id"], action_type="import_access_log",
-                title="Import logs", reason=None, proposal=_proposal(),
-                cancel_event=handle.cancel_event))
-        finally:
-            conn.close()
-
-    t = threading.Thread(target=tool_thread, daemon=True)
-    t.start()
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        pending = client.get(f"/agent-tasks/{task['id']}/decisions?status_filter=pending"
-                             ).json()["decisions"]
-        if pending:
-            break
-        time.sleep(0.05)
-    client.post(f"/agent-tasks/{task['id']}/decisions/{pending[0]['id']}/resolve",
-                json={"resolution": "declined"})
-    t.join(5)
-    assert out[0]["status"] == "declined" and out[0]["scope"] is None
-
-    # Stop while waiting withdraws the request as declined.
-    out.clear()
-    t = threading.Thread(target=tool_thread, daemon=True)
-    t.start()
-    time.sleep(0.3)
-    handle.cancel_event.set()
-    t.join(5)
-    assert out and out[0]["status"] == "declined"
-    assert "stopped" in (out[0]["resolution_note"] or "")
-    with runtime._lock:
-        runtime._live.pop(execution["id"], None)
-
-
-def test_import_evidence_tool_is_registered_gated_and_untimed(client):
-    from app.agent_runtime import gated_tools, guards, limits
+def test_import_evidence_tool_is_registered_bounded_and_untimed(client):
+    from app.agent_runtime import guards, import_tools, limits
     from app.db import connect
     from agents import function_tool
     task = _task(client)
     conn = connect()
     try:
-        tools = gated_tools.build(conn, function_tool, [], task["id"], "turn-x")
+        tools = import_tools.build(conn, function_tool, [], task["id"], "turn-x")
     finally:
         conn.close()
     assert [t.name for t in tools] == ["import_evidence"]
@@ -508,64 +370,39 @@ def test_task_status_rides_the_execution_stream(client, monkeypatch):
     assert statuses[-1]["payload"]["queued"] == []
 
 
-# --- v1.12: the plan the model owns -------------------------------------------------
+# --- v2.1: the model keeps no plan -------------------------------------------------
 
 
-def test_update_plan_is_a_bounded_core_tool_that_becomes_one_plan_item(client, monkeypatch):
-    from agents import function_tool
-    from app.agent_runtime import limits, plan_tools
+def test_there_is_no_plan_tool_event_or_turn_item():
+    import importlib
 
-    assert "update_plan" in limits._CORE_TOOLS
-    activity: list = []
-    assert plan_tools.build(function_tool, activity)[0].name == "update_plan"
-    steps = [{"text": "Survey the account", "status": "completed"},
-             {"text": "Check acme-logs policy <think>secret</think>", "status": "in_progress"},
-             {"text": "x" * 500, "status": "bogus"}] + [{"text": f"s{i}", "status": "pending"} for i in range(20)]
-    norm = plan_tools.normalize_steps(steps)
-    assert len(norm) == plan_tools.MAX_STEPS
-    assert norm[1] == {"text": "Check acme-logs policy", "status": "in_progress"}
-    assert len(norm[2]["text"]) == plan_tools.MAX_STEP_CHARS and norm[2]["status"] == "pending"
+    import pytest
 
-    # Through the runtime: two calls → ONE plan item at the first call's
-    # position, updated in place; a `plan.updated` event per call; the plan is
-    # not a tool row of the Work Result.
-    task = _task(client)
-    _add_model_provider(client)
-
-    def fake_loop(spec):
-        spec["activity"].append({"id": "p1", "tool": "update_plan", "target": "2 steps",
-                                 "result": "0/2 done", "ok": True, "status": "completed",
-                                 "plan": [{"text": "A", "status": "in_progress"}, {"text": "B", "status": "pending"}]})
-        spec["activity"].append({"id": "c1", "tool": "head_bucket", "target": "acme",
-                                 "result": "200", "ok": True, "status": "completed"})
-        spec["activity"].append({"id": "p2", "tool": "update_plan", "target": "2 steps",
-                                 "result": "2/2 done", "ok": True, "status": "completed",
-                                 "plan": [{"text": "A", "status": "completed"}, {"text": "B", "status": "completed"}]})
-        return {"answer": "Done.", "skills_used": [], "skills_offered": [], "evidence_used": [],
-                "evidence_gaps": [],
-                "tool_activity": [a for a in spec["activity"] if a["tool"] != "update_plan"],
-                "plan_updates": [a["plan"] for a in spec["activity"] if a["tool"] == "update_plan"],
-                "turn_items": [{"kind": "plan", "steps": [{"text": "A", "status": "completed"},
-                                                          {"text": "B", "status": "completed"}]},
-                               {"kind": "tool", "id": "c1", "tool": "head_bucket"}]}
-
-    monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
-    ex = client.post(f"/agent-tasks/{task['id']}/executions", json={"direction": "plan it"}).json()["execution"]
-    assert _wait_settled(client, task["id"], ex["id"])["status"] == "completed"
-    msg = [m for m in client.get(f"/sessions/{task['id']}").json()["messages"] if m["role"] == "assistant"][-1]
-    assert msg["turn_items"][0] == {"kind": "plan", "steps": [{"text": "A", "status": "completed"},
-                                                              {"text": "B", "status": "completed"}]}
-    assert [a["tool"] for a in msg["tool_activity"]] == ["head_bucket"]
-    events = client.get(f"/agent-tasks/{task['id']}/events?after=0&limit=1000").json()["events"]
-    plans = [e["payload"]["steps"] for e in events if e["event_type"] == "plan.updated"]
-    assert len(plans) == 2 and plans[-1][0]["status"] == "completed"
-
-
-def test_stream_folds_update_plan_calls_into_one_plan_item():
+    from app.agent_runtime import limits, prompt
     from app.agent_runtime.stream import _Segments
+    assert "update_plan" not in limits._CORE_TOOLS
+    assert "update_plan" not in prompt.INSTRUCTIONS
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("app.agent_runtime.plan_tools")
     seg = _Segments()
-    seg.tool({"id": "p1", "tool": "update_plan", "status": "completed", "plan": [{"text": "A", "status": "in_progress"}]})
-    seg.tool({"id": "t1", "tool": "head_bucket", "status": "completed"})
-    seg.tool({"id": "p2", "tool": "update_plan", "status": "completed", "plan": [{"text": "A", "status": "completed"}]})
-    assert seg.items == [{"kind": "plan", "steps": [{"text": "A", "status": "completed"}]},
-                         {"kind": "tool", "id": "t1", "tool": "head_bucket"}]
+    seg.tool({"id": "p1", "tool": "update_plan", "status": "completed",
+              "plan": [{"text": "A", "status": "in_progress"}]})
+    assert not any(it.get("kind") == "plan" for it in seg.items)
+
+
+def test_a_stored_pre_2_1_plan_item_is_dropped_on_read(client):
+    from app.db import connect
+    task = _task(client)
+    conn = connect()
+    try:
+        conn.execute(
+            "INSERT INTO session_messages (id, session_id, role, content, turn_items, created_at) "
+            "VALUES ('m-old', ?, 'assistant', 'Done.', ?, datetime('now'))",
+            (task["id"], '[{"kind": "plan", "steps": [{"text": "A", "status": "completed"}]},'
+                         ' {"kind": "message", "text": "Checked."}]'))
+        conn.commit()
+    finally:
+        conn.close()
+    msg = [m for m in client.get(f"/sessions/{task['id']}").json()["messages"]
+           if m["id"] == "m-old"][0]
+    assert msg["turn_items"] == [{"kind": "message", "text": "Checked."}]

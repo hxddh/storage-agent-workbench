@@ -162,16 +162,6 @@ class _Segments:
             # The Work Result's conclusion (v2.0) — carried on the message,
             # not a transcript item.
             return
-        if record.get("tool") == "update_plan":
-            # ONE plan item per turn, at the position of the first call;
-            # later calls replace its steps in place (Codex semantics).
-            steps = list(record.get("plan") or [])
-            for item in self.items:
-                if item.get("kind") == "plan":
-                    item["steps"] = steps
-                    return
-            self.items.append({"kind": "plan", "steps": steps})
-            return
         self.items.append({"kind": "tool", "id": record.get("id"),
                            "tool": record.get("tool")})
 

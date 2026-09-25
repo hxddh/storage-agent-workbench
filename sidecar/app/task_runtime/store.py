@@ -25,14 +25,14 @@ from ..security.redaction import redact, redact_text
 # Task lifecycle (durable; projected straight into the product task states).
 TASK_READY = "ready"
 TASK_WORKING = "working"
-TASK_NEEDS_DECISION = "needs_decision"
+TASK_NEEDS_DECISION = "needs_decision"  # legacy (pre-2.1); never derived now
 TASK_NEEDS_ATTENTION = "needs_attention"
 TASK_ARCHIVED = "archived"
 
-# Execution lifecycle. `waiting` means the execution's model work is done but a
-# confirmation-gated Decision it raised is still pending — the delegated work is
-# not finished until the user crosses that boundary. `interrupted` is stamped by
-# restart recovery on executions a dead process left queued/running.
+# Execution lifecycle. `waiting` is legacy (pre-2.1 approvals paused an
+# execution on a Decision); nothing sets it now and recovery stamps any left
+# over `interrupted`. `interrupted` is stamped by restart recovery on
+# executions a dead process left in flight.
 EXEC_QUEUED = "queued"
 EXEC_RUNNING = "running"
 EXEC_WAITING = "waiting"
@@ -50,24 +50,11 @@ DECISION_APPROVED = "approved"
 DECISION_DECLINED = "declined"
 DECISION_SUPERSEDED = "superseded"
 
-# Decision kinds. Since v1.11 a Decision is raised by a gated TOOL inside a
-# running execution (`approval`): the execution waits on it, and the tool
-# continues (or refuses) once it is resolved. `proposal` rows are pre-1.11
-# history (Decisions derived from a Work Result's next-step proposals).
+# Decision kinds — history only since v2.1 (the product no longer raises or
+# resolves Decisions; the rows stay readable). `approval` rows were raised by
+# a gated tool (v1.11–v2.0); `proposal` rows are pre-1.11.
 DECISION_KIND_APPROVAL = "approval"
 DECISION_KIND_PROPOSAL = "proposal"
-# How an approval was granted: once, or for every later call of the same
-# action_type in this task.
-SCOPE_ONCE = "once"
-SCOPE_TASK = "task"
-# v1.12 — how an approval policy answered a gate (see task_runtime/approval_policy).
-SCOPE_SESSION = "session"
-SCOPE_ALWAYS = "always"
-_GRANT_NOTES = {
-    SCOPE_TASK: "allowed for this task earlier",
-    SCOPE_SESSION: "allowed by policy: this session",
-    SCOPE_ALWAYS: "allowed by policy: always",
-}
 
 # Bound on one persisted event payload. Structured progress records are small by
 # construction; this is the backstop that keeps the durable log from ever
@@ -162,20 +149,15 @@ def sync_task_identity(conn: sqlite3.Connection, task_id: str,
 def derive_task_status(conn: sqlite3.Connection, task_id: str) -> str:
     """The task's CURRENT status derived from durable runtime state.
 
-    Working (an execution queued/running) outranks a pending Decision; a pending
-    Decision outranks Ready; an interrupted or failed most-recent execution is
-    Needs attention. This is the single derivation both the setter and the
+    Working (an execution queued/running) outranks everything; an interrupted
+    or failed most-recent execution is Needs attention; otherwise Ready. (v2.1:
+    nothing pauses for a Decision any more, so there is no "needs decision".) This is the single derivation both the setter and the
     recovery path use, so the stored column can never drift from the rows."""
     active = conn.execute(
         "SELECT 1 FROM task_executions WHERE task_id = ? AND status IN (?, ?) LIMIT 1",
         (task_id, EXEC_QUEUED, EXEC_RUNNING)).fetchone()
     if active:
         return TASK_WORKING
-    pending = conn.execute(
-        "SELECT 1 FROM task_decisions WHERE task_id = ? AND status = ? LIMIT 1",
-        (task_id, DECISION_PENDING)).fetchone()
-    if pending:
-        return TASK_NEEDS_DECISION
     last = conn.execute(
         "SELECT status FROM task_executions WHERE task_id = ? "
         "ORDER BY rowid DESC LIMIT 1", (task_id,)).fetchone()
@@ -197,21 +179,18 @@ def refresh_task_status(conn: sqlite3.Connection, task_id: str) -> str:
 
 
 _MAX_STATUS_QUEUE = 10
-_MAX_STATUS_DECISIONS = 10
 
 
 def task_status_payload(conn: sqlite3.Connection, task_id: str,
                         status: str | None = None) -> dict[str, Any]:
     """What a client needs to know about the task beside the execution it is
     following (v1.12): derived status, the live execution, queued Directions,
-    pending Decisions (with the impact the raising tool projected), and the
-    latest execution's terminal state. Bounded — never a whole task."""
+    and the latest execution's terminal state. Bounded — never a whole task."""
     live = active_execution(conn, task_id)
     queued = conn.execute(
         "SELECT id, direction, kind, created_at FROM task_executions "
         "WHERE task_id = ? AND status = ? ORDER BY rowid ASC LIMIT ?",
         (task_id, EXEC_QUEUED, _MAX_STATUS_QUEUE)).fetchall()
-    pending = list_decisions(conn, task_id, status=DECISION_PENDING)[:_MAX_STATUS_DECISIONS]
     last = conn.execute(
         "SELECT id, status FROM task_executions WHERE task_id = ? "
         "ORDER BY rowid DESC LIMIT 1", (task_id,)).fetchone()
@@ -220,13 +199,6 @@ def task_status_payload(conn: sqlite3.Connection, task_id: str,
         "active_execution_id": live["id"] if live else None,
         "queued": [{"id": q["id"], "direction": (q["direction"] or "")[:200],
                     "kind": q["kind"], "created_at": q["created_at"]} for q in queued],
-        "pending_decisions": [
-            {"id": d["id"], "action_type": d["action_type"], "title": d["title"],
-             "reason": d["reason"], "kind": d.get("kind"), "status": d["status"],
-             "execution_id": d.get("execution_id"),
-             "impact": (d.get("proposal") or {}).get("impact")
-             if isinstance(d.get("proposal"), dict) else None}
-            for d in pending],
         "last_execution": {"id": last["id"], "status": last["status"]} if last else None,
     }
 
@@ -495,66 +467,6 @@ def _work_result_dict(r: sqlite3.Row) -> dict[str, Any]:
 # --- task_decisions ----------------------------------------------------------------
 
 
-def open_approval(conn: sqlite3.Connection, task_id: str, execution_id: str | None,
-                  action_type: str, title: str, reason: str | None,
-                  proposal: dict[str, Any]) -> dict[str, Any]:
-    """Open the pending Decision a gated tool raised inside a running execution.
-
-    One pending Decision per (task, action_type): a later request of the same
-    type supersedes the earlier pending row. ``proposal`` carries the tool, its
-    (sanitized) args, and the projected impact the approval card shows."""
-    now = utcnow()
-    action_type = str(action_type)[:64]
-    conn.execute(
-        "UPDATE task_decisions SET status = ?, resolved_at = ?, "
-        "resolution_note = COALESCE(resolution_note, 'superseded by a newer request') "
-        "WHERE task_id = ? AND status = ? AND action_type = ?",
-        (DECISION_SUPERSEDED, now, task_id, DECISION_PENDING, action_type))
-    dec_id = _new_id()
-    conn.execute(
-        "INSERT INTO task_decisions (id, task_id, execution_id, work_result_id, "
-        "action_type, title, reason, proposal_json_sanitized, status, created_at, kind) "
-        "VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
-        (dec_id, task_id, execution_id, action_type,
-         redact_text(str(title or ""))[:160] or None,
-         redact_text(str(reason or ""))[:400] or None,
-         _dumps(proposal), DECISION_PENDING, now, DECISION_KIND_APPROVAL),
-    )
-    return get_decision(conn, dec_id)  # type: ignore[return-value]
-
-
-def task_grant_exists(conn: sqlite3.Connection, task_id: str, action_type: str) -> bool:
-    """Did the user already allow this action_type for the whole task?"""
-    row = conn.execute(
-        "SELECT 1 FROM task_decisions WHERE task_id = ? AND action_type = ? "
-        "AND status = ? AND scope = ? LIMIT 1",
-        (task_id, str(action_type)[:64], DECISION_APPROVED, SCOPE_TASK)).fetchone()
-    return row is not None
-
-
-def record_granted_approval(conn: sqlite3.Connection, task_id: str,
-                            execution_id: str | None, action_type: str, title: str,
-                            proposal: dict[str, Any],
-                            scope: str = SCOPE_TASK) -> dict[str, Any]:
-    """A call auto-approved by an earlier "allow for this task" grant or by the
-    approval policy (``scope`` = task | session | always): recorded as an
-    already-approved Decision so the transcript and audit stay complete."""
-    dec_id = _new_id()
-    now = utcnow()
-    scope = scope if scope in _GRANT_NOTES else SCOPE_TASK
-    conn.execute(
-        "INSERT INTO task_decisions (id, task_id, execution_id, work_result_id, "
-        "action_type, title, reason, proposal_json_sanitized, status, created_at, "
-        "resolved_at, resolution_note, kind, scope) "
-        "VALUES (?, ?, ?, NULL, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
-        (dec_id, task_id, execution_id, str(action_type)[:64],
-         redact_text(str(title or ""))[:160] or None, _dumps(proposal),
-         DECISION_APPROVED, now, now, _GRANT_NOTES[scope],
-         DECISION_KIND_APPROVAL, scope),
-    )
-    return get_decision(conn, dec_id)  # type: ignore[return-value]
-
-
 def get_decision(conn: sqlite3.Connection, decision_id: str) -> dict[str, Any] | None:
     row = conn.execute("SELECT * FROM task_decisions WHERE id = ?", (decision_id,)).fetchone()
     return _decision_dict(row) if row else None
@@ -571,40 +483,6 @@ def list_decisions(conn: sqlite3.Connection, task_id: str,
             "SELECT * FROM task_decisions WHERE task_id = ? ORDER BY rowid",
             (task_id,)).fetchall()
     return [_decision_dict(r) for r in rows]
-
-
-def pending_decision_tasks(conn: sqlite3.Connection,
-                           task_ids: list[str]) -> dict[str, bool]:
-    """Which of these tasks currently has a pending durable Decision (batched)."""
-    if not task_ids:
-        return {}
-    ph = ",".join("?" * len(task_ids))
-    rows = conn.execute(
-        f"SELECT DISTINCT task_id FROM task_decisions "
-        f"WHERE status = ? AND task_id IN ({ph})",
-        [DECISION_PENDING, *task_ids]).fetchall()
-    return {r["task_id"]: True for r in rows}
-
-
-def resolve_decision(conn: sqlite3.Connection, decision_id: str, resolution: str,
-                     note: str | None = None, scope: str | None = None) -> dict[str, Any] | None:
-    """Resolve one pending decision (approved | declined). ``scope`` records how
-    an approval was granted (once | task). Returns the updated row, or None if
-    it was not pending (already resolved / superseded)."""
-    if resolution not in (DECISION_APPROVED, DECISION_DECLINED):
-        raise ValueError(f"invalid decision resolution: {resolution!r}")
-    if resolution == DECISION_APPROVED:
-        scope = SCOPE_TASK if scope == SCOPE_TASK else SCOPE_ONCE
-    else:
-        scope = None
-    cur = conn.execute(
-        "UPDATE task_decisions SET status = ?, resolved_at = ?, resolution_note = ?, scope = ? "
-        "WHERE id = ? AND status = ?",
-        (resolution, utcnow(), redact_text(note or "")[:400] or None, scope,
-         decision_id, DECISION_PENDING))
-    if cur.rowcount <= 0:
-        return None
-    return get_decision(conn, decision_id)
 
 
 def _decision_dict(r: sqlite3.Row) -> dict[str, Any]:

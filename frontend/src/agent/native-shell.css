@@ -140,15 +140,16 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
-  height: 36px;
+  height: 32px;
   margin-bottom: 1px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   padding: 0 34px 0 10px;
   cursor: default;
-  color: var(--gray-200);
-  transition: background-color var(--duration-fast) var(--ease-out);
+  color: var(--gray-300);
+  transition: background-color var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
 .native-task-row:hover {
+  color: var(--gray-100);
   background: var(--hover);
 }
 .native-task-row[data-selected="true"] {
@@ -170,7 +171,7 @@
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  font-weight: 450;
+  font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -190,15 +191,9 @@
   background: var(--gray-100);
   animation: native-pulse 1.4s var(--ease-in-out) infinite;
 }
-/* An approval waiting on the user is a Working task, not a state of its own:
- * the mark is ink, held still. No yellow. */
-.native-task-row[data-state="decision"] .native-task-mark {
-  display: block;
-  background: var(--gray-100);
-}
 .native-task-row[data-state="attention"] .native-task-mark {
   display: block;
-  background: var(--danger);
+  background: var(--warn);
 }
 
 /* Hover must not move anything: meta hides, the More control fades in over
@@ -376,9 +371,17 @@
 .native-titlebar[data-traffic-lights="true"] {
   padding-left: 76px;
 }
-.native-titlebar-title {
+.native-titlebar-center {
+  display: flex;
   min-width: 0;
   flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  -webkit-app-region: drag;
+}
+.native-titlebar-title {
+  min-width: 0;
   overflow: hidden;
   color: var(--gray-300);
   font-size: var(--text-sm);
@@ -427,7 +430,6 @@
 }
 /* One shape for every state: a dot and a quiet label. Colour lives in the
    dot only (v1.19) — a red sentence in the title bar read as an error page. */
-.native-titlebar-state[data-state="decision"] { color: var(--gray-300); }
 .native-state-dot {
   width: 6px;
   height: 6px;
@@ -435,8 +437,7 @@
   border-radius: 999px;
   background: var(--gray-500);
 }
-.native-state-dot[data-state="decision"] { background: var(--gray-100); }
-.native-state-dot[data-state="attention"] { background: var(--danger); }
+.native-state-dot[data-state="attention"] { background: var(--warn); }
 
 .native-task-area {
   position: relative;
@@ -457,23 +458,6 @@
 
 /* ---------- Detail rows (v2.0: under the Result, in the document) ---------- */
 
-.agent-artifact-row {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 6px;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--gray-400);
-  text-align: left;
-  transition: background-color var(--duration-fast) var(--ease-out);
-}
-.agent-artifact-row:hover { background: var(--hover); color: var(--gray-100); }
-.agent-artifact-row-main { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
-.agent-artifact-row-main strong { overflow: hidden; color: var(--gray-100); font-size: var(--text-sm); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.agent-artifact-row-main small { overflow: hidden; color: var(--gray-500); font-size: var(--text-2xs); text-overflow: ellipsis; white-space: nowrap; }
 
 .agent-artifact-document { padding: 14px 16px 40px; color: var(--gray-200); font-size: var(--text-sm); line-height: 1.55; }
 .agent-artifact-document > header { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
@@ -572,6 +556,27 @@
 .native-settings-list > li { display: flex; align-items: flex-start; gap: 12px; padding: 12px 2px; border-bottom: 1px solid var(--edge); }
 .native-settings-list > li[data-active="true"] { background: color-mix(in srgb, var(--panel) 60%, transparent); }
 .native-settings-empty { color: var(--gray-500); font-size: var(--text-sm); }
+/* v2.1 — the safety floor is a statement in General, not a pane of controls. */
+.native-settings-note {
+  margin-top: 28px;
+}
+.native-settings-note-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--gray-200);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.native-settings-note-head svg { color: var(--gray-500); }
+.native-settings-note p {
+  max-width: 38rem;
+  margin: 0;
+  color: var(--gray-400);
+  font-size: var(--text-sm);
+  line-height: 1.65;
+}
 /* v1.15 — provider rows wrap cleanly at narrow widths: the action group
    drops below the identity instead of squeezing CJK hints into orphans. */
 .native-settings-actions { display: flex; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 16rem; }

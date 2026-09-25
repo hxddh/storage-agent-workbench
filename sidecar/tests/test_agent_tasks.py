@@ -1,14 +1,15 @@
 """Product-level Agent Task tests.
 
-The task command center cannot depend on the browser's live run store: a
-Decision is a first-class durable row (v0.94), so it must still be visible
-after reload/restart, and a later Agent Work Result must supersede older
-pending decisions — durably, not by re-parsing the latest message.
+v2.1 (native agent): nothing pauses a Task for a Decision any more. Decision
+rows written by earlier versions stay readable as history, never block a task,
+and restart recovery withdraws any left pending.
 """
 
 import sqlite3
+import time
 
 from app import config
+from app.task_runtime import recovery
 from app.task_runtime import store as task_store
 
 
@@ -22,64 +23,62 @@ def _task(client, title: str):
     return client.post("/sessions", json={"title": title, "goal": "inspect storage"}).json()
 
 
-def _gated_proposal(title="Import access-log evidence"):
-    return {
-        "action_type": "plan_access_log_import",
-        "title": title,
-        "reason": "This operation downloads bounded evidence files.",
-        "requires_confirmation": True,
-        "confidence": "high",
-        "source_run_ids": [],
-    }
+def _legacy_pending_decision(conn, task_id) -> str:
+    """A pending approval row exactly as v1.11–v2.0 wrote it."""
+    conn.execute(
+        "INSERT INTO task_decisions (id, task_id, execution_id, work_result_id, action_type, "
+        "title, reason, proposal_json_sanitized, status, created_at, kind) "
+        "VALUES ('dec-legacy', ?, NULL, NULL, 'import_access_log', 'Import 4 access log files', "
+        "'bounded', '{\"impact\": {\"file_count\": 4}}', 'pending', datetime('now'), 'approval')",
+        (task_id,))
+    return "dec-legacy"
 
 
-def _open_approval(conn, task_id):
-    return task_store.open_approval(
-        conn, task_id, None, "import_access_log", "Import 4 access log files", "bounded",
-        {"tool": "import_evidence", "impact": {"gate": "cloud_download", "file_count": 4,
-                                               "total_bytes": 2048, "bucket": "acme-logs"}})
-
-
-def test_agent_task_projection_persists_current_decision(client):
-    task = _task(client, "Review bounded evidence import")
+def test_a_legacy_pending_decision_never_blocks_the_task(client):
+    task = _task(client, "Legacy approval row")
     with _db() as conn:
-        _open_approval(conn, task["id"])
+        task_store.ensure_task(conn, task["id"], task["title"], task["goal"])
+        _legacy_pending_decision(conn, task["id"])
+        assert task_store.derive_task_status(conn, task["id"]) == task_store.TASK_READY
         conn.commit()
 
     rows = client.get("/agent-tasks").json()
     projected = next(row for row in rows if row["id"] == task["id"])
-    assert projected["requires_decision"] is True
-
-    # The decision is a durable object, listable in its own right, with the
-    # impact the tool projected when it raised it.
+    assert "requires_decision" not in projected
+    state = client.get(f"/agent-tasks/{task['id']}/state").json()
+    assert "pending_decisions" not in state
+    assert state["status"] == "ready"
+    # History stays readable.
     decisions = client.get(f"/agent-tasks/{task['id']}/decisions").json()["decisions"]
-    assert len(decisions) == 1
-    assert decisions[0]["status"] == "pending"
-    assert decisions[0]["action_type"] == "import_access_log"
-    assert decisions[0]["kind"] == "approval"
-    assert decisions[0]["impact"]["file_count"] == 4
+    assert [d["id"] for d in decisions] == ["dec-legacy"]
 
 
-def test_agent_task_projection_only_uses_latest_request(client):
-    task = _task(client, "Decision superseded by later request")
+def test_there_is_no_route_that_resolves_a_decision(client):
+    task = _task(client, "No resolve route")
     with _db() as conn:
-        first = _open_approval(conn, task["id"])
-        # A later request of the same type supersedes the pending decision —
-        # durably, in the rows themselves.
-        second = _open_approval(conn, task["id"])
+        _legacy_pending_decision(conn, task["id"])
         conn.commit()
+    r = client.post(f"/agent-tasks/{task['id']}/decisions/dec-legacy/resolve",
+                    json={"resolution": "approved"})
+    assert r.status_code in (404, 405)
+    assert client.get("/settings/approval-policy").status_code == 404
 
-    rows = client.get("/agent-tasks").json()
-    projected = next(row for row in rows if row["id"] == task["id"])
-    assert projected["requires_decision"] is True
-    decisions = {d["id"]: d["status"] for d in
-                 client.get(f"/agent-tasks/{task['id']}/decisions").json()["decisions"]}
-    assert decisions == {first["id"]: "superseded", second["id"]: "pending"}
+
+def test_restart_recovery_withdraws_pending_decisions(client):
+    task = _task(client, "Withdraw on restart")
+    with _db() as conn:
+        _legacy_pending_decision(conn, task["id"])
+        conn.commit()
+    recovery.reconcile_interrupted_executions()
+    with _db() as conn:
+        row = conn.execute("SELECT status, resolution_note FROM task_decisions "
+                           "WHERE id = 'dec-legacy'").fetchone()
+    assert row["status"] == "superseded"
+    assert "v2.1" in row["resolution_note"]
 
 
 def test_model_prose_never_becomes_a_decision(client, monkeypatch):
-    """A next step the model WRITES is just prose — only a gated tool raises a
-    Decision (v1.11). No 'Decision required' appears out of nowhere."""
+    """A next step the model WRITES is just prose — nothing becomes a Decision."""
     from app.agent_runtime import session_agent
     task = _task(client, "Read-only follow-up suggestion")
     client.post("/model-providers", json={
@@ -91,7 +90,6 @@ def test_model_prose_never_becomes_a_decision(client, monkeypatch):
         "tool_activity": []})
     execution = client.post(f"/agent-tasks/{task['id']}/executions",
                             json={"direction": "why 403?"}).json()["execution"]
-    import time
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         row = client.get(f"/agent-tasks/{task['id']}/executions/{execution['id']}").json()
@@ -99,46 +97,4 @@ def test_model_prose_never_becomes_a_decision(client, monkeypatch):
             break
         time.sleep(0.05)
     assert row["status"] == "completed"
-    rows = client.get("/agent-tasks").json()
-    projected = next(row for row in rows if row["id"] == task["id"])
-    assert projected["requires_decision"] is False
     assert client.get(f"/agent-tasks/{task['id']}/decisions").json()["decisions"] == []
-
-
-def test_agent_task_search_keeps_durable_decision_state(client):
-    task = _task(client, "Evidence approval task")
-    with _db() as conn:
-        _open_approval(conn, task["id"])
-        conn.commit()
-
-    rows = client.get("/agent-tasks", params={"q": "Evidence approval"}).json()
-    assert len(rows) == 1
-    assert rows[0]["id"] == task["id"]
-    assert rows[0]["requires_decision"] is True
-
-
-def test_resolving_a_decision_clears_the_block_and_records_the_call(client):
-    task = _task(client, "Approve the import")
-    with _db() as conn:
-        decision = _open_approval(conn, task["id"])
-        conn.commit()
-    dec_id = decision["id"]
-
-    r = client.post(f"/agent-tasks/{task['id']}/decisions/{dec_id}/resolve",
-                    json={"resolution": "approved"})
-    assert r.status_code == 200
-    body = r.json()
-    assert body["decision"]["status"] == "approved"
-    assert body["decision"]["scope"] == "once"
-    assert body["decision"]["resolved_at"]
-    # Approval wakes the tool that raised it; there is no hand-over dialog.
-    assert body["prepared"] is None
-
-    rows = client.get("/agent-tasks").json()
-    projected = next(row for row in rows if row["id"] == task["id"])
-    assert projected["requires_decision"] is False
-
-    # Resolving twice is a conflict, not a silent overwrite.
-    again = client.post(f"/agent-tasks/{task['id']}/decisions/{dec_id}/resolve",
-                        json={"resolution": "declined"})
-    assert again.status_code == 409

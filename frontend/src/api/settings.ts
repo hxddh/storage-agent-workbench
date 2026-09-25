@@ -2,25 +2,11 @@ import { request } from "./client";
 
 /**
  * Settings and the modern native-agent extensions: the local price-table
- * engine API, the approval policy the runtime enforces (v1.12), the
- * instructions-file status (v1.12), the secret-vault status, user skills,
+ * engine API, the instructions-file status (v1.12), the secret-vault status, user skills,
  * observability export, and the opt-in read-only MCP bridge.
  */
 
-// --- v1.12: approval policy · instructions file ---
-
-/** How `runtime.request_approval` treats a gated tool. Enforced server-side only. */
-export type ApprovalPolicy = "ask" | "allow_session" | "allow_always";
-
-export interface ApprovalPolicyInfo {
-  policy: ApprovalPolicy;
-  gated_tools: { name: string; action_types: string[]; why: string }[];
-}
-
-export const getApprovalPolicy = () => request<ApprovalPolicyInfo>("/settings/approval-policy");
-
-export const putApprovalPolicy = (policy: ApprovalPolicy) =>
-  request<ApprovalPolicyInfo>("/settings/approval-policy", { method: "PUT", body: JSON.stringify({ policy }) });
+// --- v1.12: instructions file ---
 
 /** The AGENTS.md-style instructions file in the data directory. */
 export interface InstructionsStatus {

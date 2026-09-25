@@ -1,31 +1,13 @@
 /**
  * The turn model (v1.11, Codex parity).
  *
- * A turn is: user message → [commentary segment | tool rows | approval]* →
- * answer. Live, the items are built from the durable event stream; after the
+ * A turn is: Direction → [commentary segment | tool rows | steer]* → answer.
+ * Live, the items are built from the durable event stream; after the
  * execution settles the persisted message's `turn_items` + `tool_activity` +
- * `content` reproduce the same list. Both feed ONE renderer.
+ * `content` reproduce the same list. Both feed ONE renderer. (v2.1: nothing
+ * pauses a turn for approval, and the model keeps no plan.)
  */
-import type { ApprovalGrantPolicy, DecisionImpact, TaskDecision } from "../api";
-import type { PlanStep, TaskMessage, ToolActivity, TurnItemRef } from "../types";
-
-export type ApprovalStatus = "pending" | "approved" | "declined" | "superseded" | "granted";
-
-export type ApprovalItem = {
-  kind: "approval";
-  decision_id: string;
-  action_type: string;
-  title: string | null;
-  reason: string | null;
-  impact: DecisionImpact | null;
-  status: ApprovalStatus;
-  scope?: "once" | "task" | null;
-  /** Why a `granted` approval never asked (v1.12 approval policy). */
-  policy?: ApprovalGrantPolicy | null;
-};
-
-/** The plan the model owns (v1.12): ONE item per turn, updated in place. */
-export type PlanItem = { kind: "plan"; steps: PlanStep[] };
+import type { TaskMessage, ToolActivity, TurnItemRef } from "../types";
 
 /** The runtime compacted the replayed context at this point (v1.12). */
 export type CompactedItem = { kind: "compacted"; before_tokens: number | null; after_tokens: number | null };
@@ -37,18 +19,15 @@ export type SteerItem = { kind: "steer"; text: string };
 export type TurnItem =
   | { kind: "message"; text: string; live?: boolean }
   | { kind: "tool"; record: ToolActivity }
-  | ApprovalItem
-  | PlanItem
   | CompactedItem
   | SteerItem;
 
 export type LiveTurn = {
   items: TurnItem[];
   answer: string | null;
-  waiting: boolean;
 };
 
-export const EMPTY_TURN: LiveTurn = { items: [], answer: null, waiting: false };
+export const EMPTY_TURN: LiveTurn = { items: [], answer: null };
 
 /** Resolve a streamed tool record against the rows already shown: a
  * "started" row appends, its completed record resolves it in place. */
@@ -70,8 +49,7 @@ export function mergeTool(list: ToolActivity[], rec: ToolActivity): ToolActivity
 }
 
 function lastLiveIndex(items: TurnItem[]): number {
-  // The open segment is the last LIVE message; tool rows or an approval may
-  // sit after it when their events landed before the segment closed.
+  // The open segment is the last LIVE message; tool rows may sit after it when their events landed before the segment closed.
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
     if (item.kind === "message") return item.live ? i : -1;
@@ -127,47 +105,6 @@ export function applyTool(turn: LiveTurn, rec: ToolActivity): LiveTurn {
   return { ...turn, items: [...turn.items, { kind: "tool", record: rec }] };
 }
 
-export function openApproval(
-  turn: LiveTurn,
-  payload: { decision_id: string; action_type: string; title: string | null; reason: string | null; impact: DecisionImpact | null },
-): LiveTurn {
-  if (turn.items.some((item) => item.kind === "approval" && item.decision_id === payload.decision_id)) return turn;
-  return {
-    ...turn,
-    waiting: true,
-    items: [...turn.items, { kind: "approval", ...payload, status: "pending" }],
-  };
-}
-
-export function grantApproval(
-  turn: LiveTurn,
-  payload: { decision_id: string; action_type: string; title: string | null; policy?: ApprovalGrantPolicy | null },
-): LiveTurn {
-  if (turn.items.some((item) => item.kind === "approval" && item.decision_id === payload.decision_id)) return turn;
-  const { policy = null, ...rest } = payload;
-  return {
-    ...turn,
-    items: [...turn.items, {
-      kind: "approval", ...rest, reason: null, impact: null, status: "granted",
-      scope: policy === "task" || policy == null ? "task" : null, policy,
-    }],
-  };
-}
-
-/** `plan.updated` (v1.12): the FIRST call in a turn places ONE plan item at
- * the current position; every later call rewrites that item in place. */
-export function applyPlan(turn: LiveTurn, steps: PlanStep[]): LiveTurn {
-  const bounded = steps.slice(0, 12).map((step) => ({
-    text: String(step.text ?? ""),
-    status: step.status === "completed" || step.status === "in_progress" ? step.status : "pending" as const,
-  }));
-  const i = turn.items.findIndex((item) => item.kind === "plan");
-  const items = turn.items.slice();
-  if (i >= 0) items[i] = { kind: "plan", steps: bounded };
-  else items.push({ kind: "plan", steps: bounded });
-  return { ...turn, items };
-}
-
 /** `context.compacted` (v1.12): one quiet marker at the current position —
  * the top of the turn when the runtime compacted before its model loop. */
 export function applyCompacted(
@@ -187,63 +124,21 @@ export function applySteer(turn: LiveTurn, text: string): LiveTurn {
   return { ...turn, items: [...turn.items, { kind: "steer", text: trimmed }] };
 }
 
-export function resolveApproval(
-  turn: LiveTurn,
-  payload: { decision_id: string; resolution: string; scope?: "once" | "task" | null },
-): LiveTurn {
-  const status: ApprovalStatus = payload.resolution === "approved" ? "approved"
-    : payload.resolution === "superseded" ? "superseded" : "declined";
-  let changed = false;
-  const items = turn.items.map((item) => {
-    if (item.kind !== "approval" || item.decision_id !== payload.decision_id) return item;
-    changed = true;
-    return { ...item, status, scope: payload.scope ?? item.scope ?? null };
-  });
-  const waiting = items.some((item) => item.kind === "approval" && item.status === "pending");
-  return changed || waiting !== turn.waiting ? { ...turn, items, waiting } : turn;
-}
-
-export function applyStatus(turn: LiveTurn, status: string): LiveTurn {
-  if (status === "waiting") return turn.waiting ? turn : { ...turn, waiting: true };
-  if (status === "running" && turn.waiting) return { ...turn, waiting: false };
-  return turn;
-}
-
-function approvalFromDecision(decision: TaskDecision): ApprovalItem {
-  return {
-    kind: "approval",
-    decision_id: decision.id,
-    action_type: decision.action_type,
-    title: decision.title,
-    reason: decision.reason,
-    impact: decision.impact ?? null,
-    status: decision.status,
-    scope: decision.scope ?? null,
-  };
-}
-
 /**
  * The durable projection: the persisted message's ordered `turn_items` with
  * tool references resolved against `tool_activity`. A pre-1.11 row (no items)
- * renders its tool rows as one group before the answer. A pending inline
- * approval renders at the tool row that raised it.
+ * renders its tool rows as one group before the answer.
  */
-export function turnItemsOf(
-  message: Pick<TaskMessage, "turn_items" | "tool_activity">,
-  pendingDecisions: TaskDecision[] = [],
-): TurnItem[] {
+export function turnItemsOf(message: Pick<TaskMessage, "turn_items" | "tool_activity">): TurnItem[] {
   const activity = message.tool_activity ?? [];
   const refs: TurnItemRef[] = message.turn_items ?? [];
   const byId = new Map<string, ToolActivity>();
   for (const record of activity) if (record.id) byId.set(record.id, record);
-  const pendingById = new Map(pendingDecisions.filter((d) => d.status === "pending").map((d) => [d.id, d]));
   const items: TurnItem[] = [];
   const seen = new Set<string>();
   const pushTool = (record: ToolActivity) => {
     items.push({ kind: "tool", record });
     if (record.id) seen.add(record.id);
-    const decision = record.decision_id ? pendingById.get(record.decision_id) : undefined;
-    if (decision) items.push(approvalFromDecision(decision));
   };
   for (const ref of refs) {
     if (ref.kind === "message") {
@@ -251,10 +146,6 @@ export function turnItemsOf(
     } else if (ref.kind === "tool") {
       const record = byId.get(ref.id);
       if (record && !seen.has(ref.id)) pushTool(record);
-    } else if (ref.kind === "plan") {
-      if (Array.isArray(ref.steps) && ref.steps.length && !items.some((item) => item.kind === "plan")) {
-        items.push({ kind: "plan", steps: ref.steps });
-      }
     } else if (ref.kind === "compacted") {
       items.push({ kind: "compacted", before_tokens: ref.before_tokens ?? null, after_tokens: ref.after_tokens ?? null });
     } else if (ref.kind === "steer") {
@@ -272,22 +163,11 @@ export function turnItemsOf(
   return items;
 }
 
-/** Pending approvals the document did not place at a tool row. */
-export function unplacedApprovals(placed: TurnItem[][], pendingDecisions: TaskDecision[]): ApprovalItem[] {
-  const shown = new Set<string>();
-  for (const items of placed) for (const item of items) if (item.kind === "approval") shown.add(item.decision_id);
-  return pendingDecisions
-    .filter((d) => d.status === "pending" && !shown.has(d.id))
-    .map(approvalFromDecision);
-}
-
 /** Split a turn's items into renderable segments: consecutive tool rows fold
- * into ONE worked group; commentary and approvals stay in order. */
+ * into ONE worked group; commentary stays in order. */
 export type TurnSegment =
   | { kind: "commentary"; text: string; live: boolean }
   | { kind: "worked"; records: ToolActivity[] }
-  | ApprovalItem
-  | PlanItem
   | CompactedItem
   | SteerItem;
 

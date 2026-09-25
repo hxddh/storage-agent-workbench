@@ -30,3 +30,16 @@ export function previousDayKey(dayKey: number): number {
   d.setDate(d.getDate() - 1);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
+
+/** When a Result was recorded (v2.1): relative for the last week, then the
+ * calendar date — "38w ago" says less than "Jan 1". */
+export function resultWhen(iso: string, t: TFunc, lang: "en" | "zh"): string {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return "";
+  if (Date.now() - ms < 604_800_000) return timeAgo(iso, t);
+  const d = new Date(ms);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : "en-US", {
+    month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }),
+  }).format(d);
+}

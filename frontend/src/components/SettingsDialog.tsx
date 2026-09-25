@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ModelProvidersPanel } from "../settings/ModelProvidersPane";
 import { CloudProvidersPanel } from "../settings/CloudProvidersPane";
 import { NativeAgentPanel } from "./NativeAgentPanel";
-import { SafetyPane } from "../settings/SafetyPane";
 import { useI18n, LANGS, type Lang } from "../i18n";
 import { useTheme, type Theme } from "../theme";
 import { getVaultStatus } from "../api";
@@ -12,7 +11,7 @@ import { Icon, type IconName } from "./icons";
 
 const LANGUAGE_KEY = "saw.lang";
 
-type Section = "general" | "model" | "storage" | "agent" | "safety";
+type Section = "general" | "model" | "storage" | "agent";
 
 function VaultWarning() {
   const { t } = useI18n();
@@ -93,7 +92,6 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
     { id: "model", label: t("prov.tabModel"), icon: "chip" },
     { id: "storage", label: t("prov.tabCloud"), icon: "storage" },
     { id: "agent", label: t("settings.agent"), icon: "tool" },
-    { id: "safety", label: t("settings.safetyTitle"), icon: "shield" },
   ];
 
   const selectLanguage = (next: Lang) => {
@@ -135,7 +133,6 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
               </button>
             ))}
           </div>
-          <div className="mt-auto px-2 text-2xs leading-relaxed text-gray-500">{t("settings.footer")}</div>
         </nav>
 
         <div className="relative flex min-w-0 flex-1 flex-col">
@@ -157,18 +154,19 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                 <Row label={<span id="seg-lang-label">{t("settings.language")}</span>}>
                   <Segmented labelId="seg-lang-label" options={LANGS} value={lang} onChange={(value) => selectLanguage(value as Lang)} />
                 </Row>
+                {/* v2.1 — nothing asks for approval; the floor is a statement. */}
+                <div className="native-settings-note" data-testid="settings-safety">
+                  <div className="native-settings-note-head">
+                    <Icon name="shield" size={14} />
+                    {t("settings.safetyTitle")}
+                  </div>
+                  <p>{t("settings.safety")}</p>
+                </div>
               </section>
             ) : null}
             {section === "model" ? <ModelProvidersPanel /> : null}
             {section === "storage" ? <CloudProvidersPanel /> : null}
             {section === "agent" ? <NativeAgentPanel /> : null}
-            {section === "safety" ? (
-              <section>
-                <SectionHeading title={t("settings.safetyTitle")} />
-                <p className="max-w-[40rem] text-sm leading-relaxed text-gray-300">{t("settings.safety")}</p>
-                <SafetyPane />
-              </section>
-            ) : null}
           </div>
         </div>
       </div>

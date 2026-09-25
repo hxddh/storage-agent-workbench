@@ -2,34 +2,26 @@ import { useEffect, useState } from "react";
 import {
   getTaskRecord,
   getTaskReport,
-  listRemediationPlans,
-  listTaskArtifacts,
   listTaskExecutions,
-  type RemediationPlan,
-  type TaskArtifact,
   type TaskExecution,
 } from "../api";
 import type { TaskRecord } from "../types";
 import type { ArtifactSelection } from "./model";
 
-const BASELINE_TYPES = new Set(["baseline", "drift_report"]);
-
 export type ArtifactsProjection = {
   detail: TaskRecord | null;
   /** The task's durable Executions (`task_executions`), newest first (v1.12). */
   executions: TaskExecution[];
-  plans: RemediationPlan[];
-  baselines: TaskArtifact[];
   report: string | null;
   reportLoading: boolean;
   error: string | null;
 };
 
 /**
- * Load what the Artifacts panel lists for the active task: the task detail
- * (findings, attached files), the durable Executions, remediation plans, and
- * the baseline / drift artifacts. The Report body is read only when its document
- * is open. `reloadKey` re-reads everything (the shell bumps it when an
+ * Load what the detail rows list for the active task: the task detail
+ * (findings, attached files) and the durable Executions. The Report body is
+ * read only when its row is open. (v2.1: Remediation Plans and Baselines &
+ * Drift have no rows — the Agent narrates them in the answer.) `reloadKey` re-reads everything (the shell bumps it when an
  * execution settles). Nothing here is an application page.
  */
 export function useAgentTaskProjection(
@@ -40,8 +32,6 @@ export function useAgentTaskProjection(
 ): ArtifactsProjection {
   const [detail, setDetail] = useState<TaskRecord | null>(null);
   const [executions, setExecutions] = useState<TaskExecution[]>([]);
-  const [plans, setPlans] = useState<RemediationPlan[]>([]);
-  const [baselines, setBaselines] = useState<TaskArtifact[]>([]);
   const [report, setReport] = useState<string | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,8 +39,6 @@ export function useAgentTaskProjection(
   useEffect(() => {
     setDetail(null);
     setExecutions([]);
-    setPlans([]);
-    setBaselines([]);
     setReport(null);
     setReportLoading(false);
     setError(null);
@@ -66,17 +54,6 @@ export function useAgentTaskProjection(
     void listTaskExecutions(taskId)
       .then((next) => { if (!cancelled) setExecutions(next.executions ?? []); })
       .catch(() => { if (!cancelled) setExecutions([]); });
-    // Engine outputs are optional: a task without plans or baselines simply
-    // lists none, and an unavailable endpoint stays an empty section.
-    void listRemediationPlans(taskId)
-      .then((next) => { if (!cancelled) setPlans(next.plans ?? []); })
-      .catch(() => { if (!cancelled) setPlans([]); });
-    void listTaskArtifacts(taskId)
-      .then((next) => {
-        if (cancelled) return;
-        setBaselines((next.artifacts ?? []).filter((artifact) => BASELINE_TYPES.has(artifact.artifact_type)));
-      })
-      .catch(() => { if (!cancelled) setBaselines([]); });
     return () => { cancelled = true; };
   }, [taskId, open, reloadKey]);
 
@@ -97,5 +74,5 @@ export function useAgentTaskProjection(
     return () => { cancelled = true; };
   }, [taskId, wantsReport, reloadKey]);
 
-  return { detail, executions, plans, baselines, report, reportLoading, error };
+  return { detail, executions, report, reportLoading, error };
 }
