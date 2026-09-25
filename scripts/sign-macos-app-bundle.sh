@@ -66,12 +66,29 @@ if command -v hdiutil >/dev/null 2>&1; then
   ln -s /Applications "$STAGING/Applications"
   [ -n "$OLD_DMG" ] && rm -f "$OLD_DMG"
   echo "==> Rebuilding DMG from sealed app: $DMG_DIR/$DMG_NAME"
-  hdiutil create -volname "$VOL_NAME" -srcfolder "$STAGING" -ov -format UDZO \
-    "$DMG_DIR/$DMG_NAME" >/dev/null
+  # hdiutil on hosted macOS runners intermittently fails with "Resource busy"
+  # while diskimages-helper still holds the image Tauri just built (v2.2.0's
+  # first release run died here). Detach any stale volume of the same name and
+  # retry with backoff; a real failure still fails after the last attempt.
+  hdiutil_retry() {
+    local attempt=1 delay=5
+    while true; do
+      if "$@"; then return 0; fi
+      if [ "$attempt" -ge 5 ]; then return 1; fi
+      echo "    hdiutil busy (attempt $attempt); retrying in ${delay}s"
+      hdiutil detach "/Volumes/$VOL_NAME" -force >/dev/null 2>&1 || true
+      sleep "$delay"
+      attempt=$((attempt + 1))
+      delay=$((delay * 2))
+    done
+  }
+  hdiutil_retry hdiutil create -volname "$VOL_NAME" -srcfolder "$STAGING" -ov -format UDZO \
+    "$DMG_DIR/$DMG_NAME" >/dev/null || fail "hdiutil create failed after retries"
   rm -rf "$STAGING"
   # Verify the app inside the freshly built DMG seals correctly too.
   MNT="$(mktemp -d)"
-  hdiutil attach "$DMG_DIR/$DMG_NAME" -nobrowse -mountpoint "$MNT" >/dev/null
+  hdiutil_retry hdiutil attach "$DMG_DIR/$DMG_NAME" -nobrowse -mountpoint "$MNT" >/dev/null \
+    || fail "hdiutil attach failed after retries"
   DAPP="$(ls -d "$MNT"/*.app 2>/dev/null | head -1 || true)"
   if [ -n "$DAPP" ]; then
     codesign --verify --deep --strict "$DAPP" || { hdiutil detach "$MNT" >/dev/null 2>&1 || true; fail "DMG app seal verify failed"; }
