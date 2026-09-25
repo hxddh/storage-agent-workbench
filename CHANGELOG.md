@@ -23,6 +23,7 @@ _Document-native window — the Task reads as a document, not a message exchange
 ### Fixed
 
 - Tool rows no longer repeat their target; approval scope is localized with human sizes; provenance previews name the tool once; "Jump to latest" is opaque; the model chip icon is a chip, not a moon.
+- A Direction delegated to an idle task no longer paints twice (live heading + queued row) during the instant its execution is `queued` before the supervisor starts it.
 
 ## [1.18.0] - 2026-09-24
 

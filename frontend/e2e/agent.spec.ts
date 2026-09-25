@@ -211,9 +211,20 @@ test.describe("a real agent turn", () => {
           message: "the app must reopen the Task it was on",
         })
         .toContain("first question about acme-logs");
-      const txt = await task(page).evaluate((el) => el.textContent ?? "");
-      expect(txt).toContain("second question about acme-logs");
-      expect(txt).toContain("BucketOwnerEnforced");
+      // The second turn's Direction and Work Result become durable together
+      // when its execution finishes (`_finish`), which can land just after the
+      // live answer streamed. A reload inside that window first paints the
+      // durable first turn, then the settled-execution reload brings in the
+      // second; wait for that convergence instead of reading one frame.
+      await expect
+        .poll(async () => {
+          const txt = await task(page).evaluate((el) => el.textContent ?? "");
+          return txt.includes("second question about acme-logs") && txt.includes("BucketOwnerEnforced");
+        }, {
+          timeout: 20_000,
+          message: "both exchanges must be durable after a reload",
+        })
+        .toBe(true);
     } finally {
       await cleanup();
     }

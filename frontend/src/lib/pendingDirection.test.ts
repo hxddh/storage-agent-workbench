@@ -3,6 +3,7 @@ import {
   isCurrentPersistedDirection,
   isCurrentPersistedWorkResult,
   pendingMatchesPersistedDirection,
+  visibleQueuedExecutions,
 } from "./pendingDirection";
 
 const user = (content: string) => ({ kind: "message", role: "user", content });
@@ -99,5 +100,23 @@ describe("isCurrentPersistedWorkResult", () => {
       [user("scan logs"), run, triage],
       "scan logs",
     )).toBe(false);
+  });
+});
+
+describe("visibleQueuedExecutions", () => {
+  const q = (direction: string) => ({ id: direction, direction });
+
+  it("hides the queue head that is the live Direction of an idle task", () => {
+    expect(visibleQueuedExecutions([q("scan logs")], "scan logs", false)).toEqual([]);
+  });
+
+  it("keeps a Direction genuinely queued behind a running execution", () => {
+    expect(visibleQueuedExecutions([q("scan logs")], "scan logs", true)).toEqual([q("scan logs")]);
+  });
+
+  it("keeps queued work that is not the live Direction", () => {
+    expect(visibleQueuedExecutions([q("review policy")], "scan logs", false)).toEqual([q("review policy")]);
+    expect(visibleQueuedExecutions([q("scan logs"), q("review policy")], "scan logs", false)).toEqual([q("review policy")]);
+    expect(visibleQueuedExecutions([q("scan logs")], null, false)).toEqual([q("scan logs")]);
   });
 });

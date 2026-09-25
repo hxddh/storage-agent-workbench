@@ -17,6 +17,7 @@ import {
   isCurrentPersistedDirection,
   isCurrentPersistedWorkResult,
   pendingMatchesPersistedDirection,
+  visibleQueuedExecutions,
 } from "../lib/pendingDirection";
 import { TaskBanners } from "./TaskBanners";
 import { TaskComposerHost, useComposerActions, useTaskComposer } from "./TaskComposerHost";
@@ -218,7 +219,11 @@ export function AgentTask({
       showResume={showResume}
       lastExecution={lastExec}
       onResume={(executionId) => void runner.resume(executionId)}
-      queued={taskRuntime?.queued_executions ?? []}
+      queued={visibleQueuedExecutions(
+        taskRuntime?.queued_executions ?? [],
+        pending,
+        Boolean(taskRuntime?.active_execution),
+      )}
       onCancelQueued={(executionId) => void cancelQueued(executionId)}
       onEditQueued={(executionId, direction) => void editQueued(executionId, direction)}
     />
