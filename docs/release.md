@@ -1,6 +1,6 @@
 # Release
 
-> **Current process baseline: Storage Agent v2.0.0.**
+> **Current process baseline: Storage Agent v2.1.0.**
 >
 > A release is a build of one exact verified source SHA. Release notes become historical records after publication; they do not override the current architecture contracts in `docs/README.md`, `product.md`, `architecture.md`, or `CLAUDE.md`.
 
@@ -47,8 +47,9 @@ For every release candidate, `release-smoke-test.md` is the product acceptance c
 - one Delegate / Steer / Stop control path;
 - real Execution rather than synthetic Agent chrome;
 - durable Work Results;
-- explicit Waiting-for-approval state raised inline by the gated tool;
-- the Artifacts panel (Evidence / Reports / Plans / Baselines / Execution detail);
+- no approval pause and no plan card: the one data-moving tool (`import_evidence`) runs inside its server-side bounds and Stop ends it;
+- automatic continuation of interrupted work after a restart (manual Resume only when no model is usable);
+- the result-first Task with detail rows under the Result (Evidence / Report / Execution detail);
 - real per-task in-flight state across task switching;
 - current safety/secret boundaries.
 
@@ -70,7 +71,7 @@ The workflow creates/targets the matching `vX.Y.Z` release/tag according to `.gi
 
 Platform jobs run the repository's version-stamping script before build so Tauri/Cargo/Sidecar/frontend package metadata reflects the release version without requiring a version-only source commit.
 
-The GitHub tag and public asset names keep the release-branch spelling (`v2.0.0`). Bundle metadata is canonical semver (`2.0.0`): leading zeros in numeric components are stripped because Tauri and Cargo reject `1.02.0`.
+The GitHub tag and public asset names keep the release-branch spelling (`v2.1.0`). Bundle metadata is canonical semver (`2.1.0`): leading zeros in numeric components are stripped because Tauri and Cargo reject `1.02.0`.
 
 Do not treat the frontend development package version as the authoritative public release version when the release workflow stamps it from the release branch/tag.
 

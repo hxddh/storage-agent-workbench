@@ -1,8 +1,8 @@
 # Security
 
-> **Storage Agent v2.0.0 security contract.** v2.0 adds one model-facing tool, `record_conclusion`, on the v1.18 floor: it executes nothing, reads nothing, is budget-exempt, and every string it carries (answer, finding titles/details, next steps) is bounded, redacted and chain-of-thought-stripped before it is persisted (migration 031) or streamed; next steps prefill the Composer and never submit themselves. No new gate. (v1.19 was a UI/UE release with no new tools, gates or migration.) Same floor as v1.13.0, tightened: v1.18 removes the last HTTP routes that could move data without a Decision (`/evidence-imports` plan/confirm/run) or start engine work outside an Execution (`POST /runs` and its message/events/upload routes), and a read never submits work. No new tools, no new gates, no migration (head stays **030**). v1.17 was a Codex-window UI/UE release. v1.13 executes the stateless MCP allowlist through the S3 layer (same scope/redaction/bounds, `run_tool`-recorded), fixes the OTel export column, stamps `waiting` executions `interrupted` on restart (pending Decisions survive), rejects unknown execution kinds, chains compaction, redacts Composer history, and covers plural secret keys — same floor, no new capabilities except the honest MCP dispatch. v1.11 moves the confirmation boundary INSIDE the turn: the gated `import_evidence` tool plans, opens a durable Decision, and blocks until the user allows or denies — the same plan → confirm → run path, the same bounds, the same audit rows; no model prose can raise or satisfy it. Otherwise unchanged from v0.96.0; v1.10 adds a bounded runtime title step (Direction + Work Result text only, redacted, never tool payloads) and a per-provider reasoning effort (ordinary config, not a secret) on the same floor; v1.03 keeps the v1.02 window and adds gated extensions — local models, user skills, MCP, observability, OS shell — same safety floor.
+> **Storage Agent v2.1.0 security contract.** v2.1 (Native agent) replaces the approval boundary with hard server-side bounds: there is no approval, no Decision, no approval policy and no plan tool. `import_evidence` runs inside the Execution only from an evidence source the task's survey discovered, clamped to ≤ 500 files / 256 MiB per call, refused with nothing downloaded without 1 GiB of disk headroom, audited as `approved_by=agent`, and stopped by Stop; `survey_account` never exceeds its 500-bucket hard cap and reports coverage. Storage stays read-only; no tool gains write access; no migration. v2.0 adds one model-facing tool, `record_conclusion`, on the v1.18 floor: it executes nothing, reads nothing, is budget-exempt, and every string it carries (answer, finding titles/details, next steps) is bounded, redacted and chain-of-thought-stripped before it is persisted (migration 031) or streamed; next steps prefill the Composer and never submit themselves. (v1.19 was a UI/UE release with no new tools, gates or migration.) Same floor as v1.13.0, tightened: v1.18 removes the last HTTP routes that could move data without a Decision (`/evidence-imports` plan/confirm/run) or start engine work outside an Execution (`POST /runs` and its message/events/upload routes), and a read never submits work. No new tools, no new gates, no migration (head stays **030**). v1.17 was a Codex-window UI/UE release. v1.13 executes the stateless MCP allowlist through the S3 layer (same scope/redaction/bounds, `run_tool`-recorded), fixes the OTel export column, stamps `waiting` executions `interrupted` on restart (pending Decisions survive), rejects unknown execution kinds, chains compaction, redacts Composer history, and covers plural secret keys — same floor, no new capabilities except the honest MCP dispatch. v1.11–v2.0 held a confirmation boundary INSIDE the turn (the gated `import_evidence` tool opened a durable Decision and blocked until the user allowed or denied); v2.1 removed it in favour of the bounds above. Otherwise unchanged from v0.96.0; v1.10 adds a bounded runtime title step (Direction + Work Result text only, redacted, never tool payloads) and a per-provider reasoning effort (ordinary config, not a secret) on the same floor; v1.03 keeps the v1.02 window and adds gated extensions — local models, user skills, MCP, observability, OS shell — same safety floor.
 >
-> Security is part of the Agent Task product model, not a secondary implementation detail. Read-only autonomy is allowed only inside explicit, bounded, sanitized capabilities. Data movement and materially large/full scans cross a real **approval** boundary inside the Execution.
+> Security is part of the Agent Task product model, not a secondary implementation detail. Read-only autonomy is allowed only inside explicit, bounded, sanitized capabilities. Since v2.1 there is no approval step: data movement and materially large/full scans run inside hard server-side bounds the model cannot widen, and Stop ends them.
 
 ## 1. Security model at a glance
 
@@ -31,7 +31,7 @@ Core guarantees:
 - storage operations exposed to the Agent are read-only;
 - no generic shell/raw subprocess/raw boto3/unrestricted filesystem capability is exposed;
 - provider bucket/prefix scope is enforced server-side;
-- cloud data movement is confirmation-gated;
+- cloud data movement is bounded server-side (discovered source only, ≤ 500 files / 256 MiB per call, disk headroom, audited, stoppable);
 - model context and persisted execution/evidence are bounded and sanitized;
 - raw analytical rows remain in local deterministic analysis paths;
 - external Tool data is treated as untrusted data, not instructions;
@@ -146,21 +146,22 @@ Prefix matching is path-boundary aware. An allowed prefix `logs` may admit `logs
 
 Never rely on frontend filtering or model instruction to enforce provider scope.
 
-## 8. Read-only autonomy vs approval
+## 8. Read-only autonomy and server-side bounds (no approval)
 
-Read-only investigation can run without approval for every individual call, provided each Tool's bounds are satisfied.
+Read-only investigation runs autonomously, provided each Tool's bounds are satisfied.
 
-A real confirmation boundary is required before operations that materially move or scan cloud data, including the managed Evidence Import flow and any future operation explicitly classified as gated.
+Since v2.1 data-moving or materially large/full-scan operations also run without approval — inside hard server-side bounds instead of a confirmation. The Sidecar is authoritative; neither the model nor a prose recommendation can widen a bound:
 
-The UI presents this state as **Waiting for approval** with an inline approval card, but the Sidecar remains authoritative. A visual button or Agent-generated recommendation cannot bypass server-side confirmation state.
+- `import_evidence` (`agent_runtime/import_tools.py`) imports only from an evidence source the task's account survey discovered; each call is clamped to at most 500 files / 256 MiB (`AGENT_MAX_FILES` / `AGENT_MAX_BYTES`) and the result says when coverage is partial; the call is refused with nothing downloaded when the data directory would keep less than 1 GiB free; the plan is confirmed and audited as `approved_by="agent"` (`approval_events` + `audit_logs`); the tool checks Stop before downloading, and Stop ends the Execution;
+- `survey_account` runs up to its 500-bucket hard cap and reports coverage (`truncated`).
 
-Since v1.11 the boundary is raised by the gated tool itself: `import_evidence` plans the bounded download (a read-only listing), opens a pending `task_decisions` row (`kind=approval`) carrying the projected impact, and the raising execution is `waiting` while the tool thread blocks. Resolution is persisted with an audit trail before anything moves: `approved` runs the same confirm → run path (the `approval_events` row and `evidence_import.*` audit rows are written by that path), `declined` returns a structured refusal to the model, and a Stop while waiting withdraws the request as `declined`. `scope=task` records an explicit user grant; later calls of the same `action_type` in that Task are recorded as already-approved Decisions rather than silently skipped. A Sidecar restart stamps a `waiting` execution `interrupted` (v1.13) — its tool thread died with the process, so no worker remains to continue the gated action; the pending Decision row itself survives untouched, and Resume starts a new execution that re-plans and re-raises it. A later Allow never settles an execution whose action never ran. The durable execution event log stores structured, sanitized, bounded progress only: never secrets, raw analytical rows, or chain-of-thought.
+There is no approval card, no approval policy, and no Decision raised or resolved. `runtime.request_approval` and the resolve route are gone; `task_decisions` rows are read-only history, and restart recovery withdraws any left pending (`superseded`). The durable execution event log stores structured, sanitized, bounded progress only: never secrets, raw analytical rows, or chain-of-thought.
 
-**Approval policy (v1.12).** The user chooses once, in Settings → Safety, how gated calls are answered: `ask` (default), `allow_session` (auto-approved for the lifetime of this Sidecar process — held in memory only, a restart falls back to `ask`), or `allow_always` (auto-approved for this data directory — stored in `app_settings`, ordinary configuration, never a secret). The policy is consulted in exactly one place, `runtime.request_approval`, so no tool can grow its own bypass. An auto-approval is still a durable already-approved Decision row (`scope = session | always`) and an `approval.granted` event carrying `policy`; the transcript and audit trail show what was allowed and why. A policy can only answer a gate that exists: it cannot create a tool, widen a provider scope, raise a bound, or make a read-only tool write.
+(History: v1.11–v2.0 raised an inline Decision from the gated tool and blocked the execution `waiting` until Allow / Allow for this task / Deny; v1.12 added an approval policy. Both were removed in v2.1.)
 
 A plan step is not execution and must not perform hidden downloads or mutation.
 
-Remediation Plans, Verify Executions, and scheduled revisits are also read-only toward the cloud. A plan contains pasteable JSON for the operator's console; Storage Agent never applies it. Verify re-reads configuration with existing read-only tools. A revisit that needs confirmation-gated work opens a pending Decision and waits — it never auto-resolves. At most one pending Decision exists per `(task, action_type)`.
+Remediation Plans, Verify Executions, and scheduled revisits are also read-only toward the cloud. A plan contains pasteable JSON for the operator's console; Storage Agent never applies it. Verify re-reads configuration with existing read-only tools. A revisit runs inside the same bounds as any other Execution; nothing it does opens a Decision.
 
 ## 9. Bounded object reads
 
@@ -191,22 +192,22 @@ Larger model context windows must not increase these security-floor byte caps.
 
 ## 10. Large/full scan rules
 
-Large/full scans must be explicitly bounded or gated.
+Large/full scans must be explicitly bounded.
 
 Current safety rule:
 
 - bounded read-only samples/pages may run autonomously;
-- materially large scans require explicit limits such as object count/prefix and, where classified by the workflow, an explicit user Decision;
-- a true full-bucket scan requires explicit confirmation;
-- (v1.12) an account survey above the default 100-bucket cap is a gated call: `survey_account(max_buckets > 100)` raises `action_type = survey_account_large` through the same `request_approval` path as data movement, with the projected impact (`provider`, `buckets`, `estimated_calls`); Deny returns a refusal and nothing is enumerated; a call not attached to a durable execution is clamped to the default cap, never widened.
+- materially large scans require explicit server-side limits such as object count/prefix;
+- no tool performs an unbounded full-bucket scan;
+- an account survey defaults to 100 buckets and never exceeds its 500-bucket hard cap (larger requests are clamped); since v2.1 it runs up to that cap without asking (the v1.12–v2.0 `survey_account_large` gate is gone) and its `truncated` flag reports coverage.
 
 Bounds must be reported. Silent truncation is not acceptable evidence.
 
 ## 11. Managed Evidence Import
 
-Managed Evidence Import is the primary cloud data-movement workflow and remains:
+Managed Evidence Import is the primary cloud data-movement workflow. Since v2.1 it is:
 
-> **plan → approval (inline Decision) → confirmed execution**
+> **plan → bounded, agent-confirmed, audited execution**
 
 ### Source restriction
 
@@ -216,8 +217,8 @@ Import reads only evidence destinations discovered/persisted through supported a
 
 Current hard workflow bounds include:
 
-- `max_files`: default **1000**, hard cap **5000**;
-- `max_bytes`: default **1 GiB**, hard cap **5 GiB**;
+- per Agent call (v2.1, `import_evidence`): at most **500** files and **256 MiB**, clamped whatever the model asks; refused with nothing downloaded when the data directory would keep less than **1 GiB** free;
+- import service ceilings beneath that: `max_files` default **1000**, hard cap **5000**; `max_bytes` default **1 GiB**, hard cap **5 GiB**;
 - access-log imports require a time range;
 - listing is restricted to the discovered evidence destination prefix;
 - selected files/bytes are visible in the plan;
@@ -233,9 +234,9 @@ Current hard workflow bounds include:
 
 ### Confirmation/audit
 
-A plan downloads nothing. Confirmation is persisted/audited. Execution without the required confirmation is forbidden.
+A plan downloads nothing. Confirmation is persisted/audited — since v2.1 the Agent's own bounded plan is confirmed as `approved_by="agent"`. Execution without a persisted confirmation is forbidden.
 
-The gated `import_evidence` tool is the **only** caller of the plan → confirm → run service (v1.18). The former HTTP routes `POST /evidence-imports/plan`, `/{id}/confirm` and `/{id}/run` let a local client move data with no `task_decisions` row, no `approval.opened` event and no approval-policy check; they are removed, and `test_no_http_route_moves_data` pins that no mutating `/evidence-imports` route exists. Likewise no HTTP route creates, messages or streams a deterministic run (`test_no_http_route_creates_or_starts_a_run`).
+The bounded `import_evidence` tool is the **only** caller of the plan → confirm → run service (v1.18). The former HTTP routes `POST /evidence-imports/plan`, `/{id}/confirm` and `/{id}/run` let a local client move data outside an Execution and outside its bounds; they are removed, and `test_no_http_route_moves_data` pins that no mutating `/evidence-imports` route exists. Likewise no HTTP route creates, messages or streams a deterministic run (`test_no_http_route_creates_or_starts_a_run`).
 
 ## 12. Account discovery and configuration review
 
@@ -248,7 +249,7 @@ Current account-survey bounds:
 - optional include/exclude filters;
 - truncation is explicit.
 
-Discovery may identify configured evidence destinations but must not automatically download inventory/access-log content. Evidence movement remains a separate confirmed workflow.
+Discovery may identify configured evidence destinations but must not automatically download inventory/access-log content. Evidence movement remains a separate bounded, audited workflow (`import_evidence`).
 
 Provider capability gaps are distinct from access-denied failures and from a successfully absent configuration.
 
@@ -351,7 +352,7 @@ Record sanitized evidence of security-relevant execution, including as applicabl
 - sanitized Tool inputs/outputs;
 - deterministic analysis SQL + bound parameters where the system executes SQL internally;
 - data import planning/execution;
-- approval/Decision events;
+- evidence-import confirmations (`approved_by=agent` since v2.1; pre-2.1 approval/Decision events stay as history);
 - report generation;
 - memory edits/resolution;
 - important safety failures/gaps.
@@ -362,11 +363,11 @@ If audit persistence is incomplete, surface an audit gap rather than asserting a
 
 ## 20. Next steps, plans, and instructions
 
-The Agent emits no structured next-action proposals and there is no action-prepare endpoint (removed in v1.12). Next steps are asked for in prose; the only gated actions are tool calls the user approves inline (or the approval policy answers, §8).
+The Agent emits no structured next-action proposals and there is no action-prepare endpoint (removed in v1.12). Next steps are the conclusion's `next_steps` (they prefill the Composer, never submit) or prose; nothing waits for approval (§8).
 
-The model's plan (`update_plan`, v1.12) is a bounded list of ≤ 12 short steps with a status — a checklist the model keeps for the user, not a plan the runtime executes. Steps are redacted and chain-of-thought-stripped; the tool never dispatches anything and never appears as a tool row.
+The model keeps no plan since v2.1: the v1.12 `update_plan` checklist tool was removed, and pre-2.1 `plan` items are dropped on read.
 
-`AGENTS.md` (v1.12) is standing guidance the user keeps in the data directory (or at `STORAGE_AGENT_INSTRUCTIONS`). It is Markdown only: bounded to 8 000 characters, redacted, never executed, injected after the skills catalog and beneath the system safety rules, which it cannot override. It cannot add a tool, widen a scope, or approve a gate. The UI reports only its status, never its text.
+`AGENTS.md` (v1.12) is standing guidance the user keeps in the data directory (or at `STORAGE_AGENT_INSTRUCTIONS`). It is Markdown only: bounded to 8 000 characters, redacted, never executed, injected after the skills catalog and beneath the system safety rules, which it cannot override. It cannot add a tool, widen a scope, or raise a bound. The UI reports only its status, never its text.
 
 The deterministic summary/triage engines still normalise `next_actions` internally for their own findings; destructive/mutating action identifiers are rejected/sanitized there and nothing dispatches on them.
 
@@ -402,7 +403,7 @@ Execution transparency means:
 - measured execution metadata;
 - durable Work Results;
 - Evidence and provenance;
-- explicit gaps/Decisions.
+- explicit gaps.
 
 It does not mean storing private reasoning tokens or inventing a fake plan to make the Agent look transparent.
 
@@ -438,10 +439,10 @@ A PR that changes any of the following must update tests and this document in th
 - provider scope enforcement;
 - Tool trust/bounds;
 - object preview/range/list caps;
-- Evidence Import bounds/confirmation;
+- Evidence Import bounds (source, file/byte clamp, disk headroom, audit);
 - redaction/streaming behavior;
 - raw-data-to-model boundary;
-- Decision semantics;
+- survey caps and the absence of an approval path (a PR that re-adds one must re-document it here);
 - storage mutation capability.
 
 If the change also alters the product-visible contract, update `product.md` and `architecture.md`. If persistence/API changes, update `data-model.md` / `api.md`.

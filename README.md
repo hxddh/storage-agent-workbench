@@ -1,8 +1,8 @@
 # Storage Agent
 
-**Current release: v2.0.0**
+**Current release: v2.1.0**
 
-Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. Give it a storage goal or problem; it investigates with real read-only tools, remains steerable while it works, stops at explicit confirmation boundaries, and produces durable results backed by reviewable execution and evidence.
+Storage Agent is a local-first desktop Agent for object storage and S3-compatible systems. Give it a storage goal or problem; it investigates with real read-only tools, remains steerable and stoppable while it works, keeps its one data-moving tool inside hard server-side bounds, and produces durable results backed by reviewable execution and evidence.
 
 The product is organized around one invariant:
 
@@ -10,7 +10,7 @@ The product is organized around one invariant:
 
 Canonical work model:
 
-> **Direction → Execution → Decision (when required) → Work Result → Artifact**
+> **Direction → Execution → Work Result → Artifact**
 
 Storage Agent is not a chatbot wrapped around a storage console, and it is not a page-per-backend-table admin application.
 
@@ -36,15 +36,15 @@ User input is durable task direction: the objective, correction, constraint, or 
 
 ### Execution
 
-Execution is real runtime/tool activity. Storage Agent shows actual progress and sanitized tool detail; it does not invent plans, workers, terminals, browsers, worktrees, or sub-agents that the runtime does not implement.
+Execution is real runtime/tool activity. Storage Agent shows actual progress and sanitized tool detail — each tool row reads as what the Agent did (*Checked bucket*); it does not invent plans, workers, terminals, browsers, worktrees, or sub-agents that the runtime does not implement.
 
-### Waiting for approval
+### Bounded, not paused
 
-Read-only investigation proceeds autonomously. The one operation that moves cloud data — the `import_evidence` tool — plans a bounded download and pauses the Execution at an inline approval card (**Allow · Allow for this task · Deny**) before anything moves.
+Nothing pauses the Execution for approval (v2.1). Read-only investigation proceeds autonomously. The one operation that moves cloud data — the `import_evidence` tool — runs inside the turn within hard server-side bounds: only from an evidence source the account survey discovered, at most 500 files / 256 MiB per call, refused without 1 GiB of free disk, audited, and ended by **Stop**. If the Sidecar restarts mid-work, the interrupted work continues on its own; **Resume** appears only when it cannot.
 
 ### Work Result and Review
 
-A Task opens on its **Result**: the conclusion the Agent recorded (the answer, findings by severity, next steps you can put in the Composer), then the full answer as Markdown — the durable **Work Result** — with Evidence, the Report, Execution detail, Plans and Baselines as rows that expand in place (⌘I). Below it, the **Work log** keeps every turn: your Direction, the model's short commentary, one *Worked for …* group of real tool rows.
+A Task opens on its **Result**: one meta line (when · evidence · gaps · tool calls), the conclusion the Agent recorded (the answer, findings by severity, next steps you can put in the Composer), then the full answer as Markdown — the durable **Work Result** — with Evidence, the Report and Execution detail as rows that expand in place (⌘I). Below it, the **Work log** keeps every turn: your Direction, the model's short commentary, one *Worked for …* group of real tool rows.
 
 ## Storage capabilities
 
@@ -57,7 +57,7 @@ Storage Agent can currently:
 - inspect versions, multipart state, object lock, ACLs, tags, attributes, conditional/range behavior, and bounded content previews where safe;
 - analyze uploaded access logs and inventory locally with DuckDB;
 - run deterministic cost/lifecycle simulation, draft a Remediation Plan, capture baselines, and report Drift **when the Agent invokes those engines** — they are not Settings or Review destinations;
-- plan and confirm bounded cloud Evidence Import;
+- import bounded cloud Evidence (discovered source, ≤ 500 files / 256 MiB per call, audited);
 - triage supported storage errors deterministically, including without a configured model provider;
 - preserve task memory, findings, execution history, evidence references, and turn metrics;
 - generate durable Markdown Report artifacts.
@@ -72,7 +72,7 @@ Storage Agent deliberately has a narrower action surface than a general-purpose 
 - **Read-only storage capabilities:** no destructive/mutating S3 tool is shipped.
 - **No generic shell/arbitrary subprocess:** Agent capabilities are typed and whitelisted.
 - **Bounded analysis:** object listings, previews, scans, evidence imports, and model context are explicitly bounded.
-- **Confirmation for data movement:** managed cloud Evidence Import and other gated operations require an explicit user decision.
+- **Hard bounds on data movement:** managed cloud Evidence Import runs only from a discovered source, clamped to 500 files / 256 MiB per call, refused without disk headroom, audited, and stoppable; account surveys never exceed 500 buckets and report coverage.
 - **Evidence truth:** persisted tool/evidence records are sanitized; missing evidence remains a gap rather than being guessed.
 - **No chain-of-thought persistence/exposure.**
 
@@ -124,7 +124,7 @@ The repository protects the Agent Task architecture with executable tests and re
 - Agent ownership and legacy-architecture regression tests.
 - Documentation-contract tests so normative docs cannot silently drift back to retired product semantics.
 - Python Sidecar tests and packaged-Sidecar smoke.
-- Real-Sidecar Playwright E2E for delegation, execution, steering, stopping, decisions, task switching/concurrency, Evidence/Report Review, persistence, localization, accessibility, contrast, and secret sanitization.
+- Real-Sidecar Playwright E2E for delegation, execution, steering, stopping, bounded evidence import, automatic continuation, task switching/concurrency, Evidence/Report Review, persistence, localization, accessibility, contrast, and secret sanitization.
 - Real-state visual-review captures.
 - macOS Apple Silicon, Linux x64, and Windows x64 desktop build/runtime verification.
 

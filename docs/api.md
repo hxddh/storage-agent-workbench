@@ -1,20 +1,20 @@
 # Sidecar API
 
-> **Storage Agent v2.0.0 API reference.** (v2.0 adds the `conclusion.recorded` event and a `conclusion` on assistant messages and Work Results — migration 031. v1.18 removes the `/runs` submit/message/events/upload routes and the `/evidence-imports` plan/confirm/run routes.) One protocol: the durable Execution
+> **Storage Agent v2.1.0 API reference.** (v2.1 removes the approval surface: the approval-policy settings route, the decision resolve route, `pending_decisions` from task state and `task.status`, `requires_decision` from the task list, and the `approval.*` / `decision.resolved` / `plan.updated` events; Decisions are read-only history. v2.0 adds the `conclusion.recorded` event and a `conclusion` on assistant messages and Work Results — migration 031. v1.18 removes the `/runs` submit/message/events/upload routes and the `/evidence-imports` plan/confirm/run routes.) One protocol: the durable Execution
 > API under `/agent-tasks` is the ONLY way work is submitted, followed, steered,
 > stopped, and resumed. The pre-v0.94 message/turn endpoints under `/sessions`
 > (`POST …/messages`, `POST …/messages/stream`, `POST …/turns/{id}/cancel`,
 > `GET …/turn`, `POST …/actions/prepare`) are removed. The execution stream is
-> push-driven (no Sidecar poll loop) and carries `task.status`, `plan.updated`
-> and `context.compacted`. New in v1.13: per-execution JSON event pages
+> push-driven (no Sidecar poll loop) and carries `task.status`,
+> `conclusion.recorded` and `context.compacted`. New in v1.13: per-execution JSON event pages
 > (`GET .../executions/{eid}/events-page`), strict execution `kind` (unknown
 > kinds are 422), OTel span projection on the export, real MCP dispatch
 > (`POST /mcp/tools/call` executes), and `GET /mcp/client/status`.
-> Migration **031** (v2.0; v1.13–v1.19 added none). Engine endpoints such as
+> Migration **031** (v2.0; v1.13–v1.19 and v2.1 added none). Engine endpoints such as
 > `/settings/price-table` and `/evidence-imports` remain; they are not product
 destinations.
 >
-> The public product model is Agent Task / Direction / Execution / Decision / Work Result / Artifact. Many HTTP paths intentionally retain historical `session`/`run` compatibility names. Do not mirror those path names into new product information architecture.
+> The public product model is Agent Task / Direction / Execution / Work Result / Artifact (Decision is read-only history since v2.1). Many HTTP paths intentionally retain historical `session`/`run` compatibility names. Do not mirror those path names into new product information architecture.
 
 The Python Sidecar binds to localhost on a port selected by the Tauri launcher. In development it defaults to `http://127.0.0.1:8765` unless `VITE_SIDECAR_URL` overrides the frontend target.
 
@@ -48,17 +48,12 @@ Query:
 
 The endpoint adapts durable `sessions` rows into product-level Task summaries and adds:
 
-- `requires_decision` — read from the first-class durable `task_decisions` table (v0.94), never re-derived from message text;
-- `task_status` — the durable task lifecycle (`ready` / `working` / `needs_decision` / `needs_attention` / `archived`);
+- `task_status` — the durable task lifecycle (`ready` / `working` / `needs_attention` / `archived`; `needs_decision` is never derived since v2.1 and survives only as a legacy value);
 - `active_execution_id` — the durable execution currently queued or running, if any.
 
-Important semantics:
+The lookup is batched for the task list. v2.1 dropped `requires_decision`: nothing raises a Decision any more.
 
-- the lookup is batched for the task list;
-- a newer Work Result durably supersedes older pending decisions;
-- live browser execution can outrank an older durable Decision while work is actively running.
-
-This endpoint exists specifically so global Task state remains truthful after reload/restart without making the browser reconstruct durable Decision state from every full Task document.
+This endpoint exists specifically so global Task state remains truthful after reload/restart without making the browser reconstruct durable state from every full Task document.
 
 ## Agent Task runtime API (v0.94)
 
@@ -73,14 +68,14 @@ GET  /agent-tasks/{task_id}/executions
 GET  /agent-tasks/{task_id}/executions/{execution_id}
 GET  /agent-tasks/{task_id}/executions/{execution_id}/events   (SSE)
 GET  /agent-tasks/{task_id}/executions/{execution_id}/events-page   (JSON, v1.13)
+PATCH /agent-tasks/{task_id}/executions/{execution_id}   (queued only, v1.14)
 POST /agent-tasks/{task_id}/executions/{execution_id}/stop
 POST /agent-tasks/{task_id}/executions/{execution_id}/resume
 POST /agent-tasks/{task_id}/verify
 POST /agent-tasks/{task_id}/compact
 POST /agent-tasks/{task_id}/steer
 GET  /agent-tasks/{task_id}/events
-GET  /agent-tasks/{task_id}/decisions
-POST /agent-tasks/{task_id}/decisions/{decision_id}/resolve
+GET  /agent-tasks/{task_id}/decisions   (read-only history)
 GET  /agent-tasks/{task_id}/work-results
 GET  /agent-tasks/{task_id}/artifacts
 GET  /agent-tasks/{task_id}/provenance
@@ -91,18 +86,18 @@ GET  /agent-tasks/{task_id}/revisit
 PUT  /agent-tasks/{task_id}/revisit
 ```
 
-- `state` returns everything a client needs to (re)attach after reload, task switch, or Sidecar restart: durable status, active execution + last event sequence, `queued_executions`, `pending_decisions` (each with projected `impact`), context version.
+- `state` returns everything a client needs to (re)attach after reload, task switch, or Sidecar restart: durable status, active execution + last event sequence, `last_execution`, `queued_executions`, context version (`pending_decisions` was removed in v2.1).
 - `POST executions` delegates a Direction. `kind` is `direction` (default), `verify`, or `revisit` — any other value is 422 (v1.13: unknown kinds are a client bug, never silently downgraded). Idempotent on `(task, turn_id)` via a unique index — a duplicate submit attaches (`created: false`) instead of re-running. A submission while another execution runs is QUEUED durably and runs after it.
 - `PATCH .../executions/{eid}` (v1.14) rewrites a QUEUED execution's Direction — queued work is editable, not just cancellable. 404 when unknown; 409 once it left the queue (steer it instead).
 - `POST .../verify` submits a Verify Execution through that same path when a Remediation Plan exists (`kind=verify`). 404 when the Task has no plan.
-- `GET/PUT .../revisit` reads or sets the optional per-task revisit interval. Due revisits are submitted by startup/periodic maintenance (and app-open task-list catch-up) via `runtime.submit(kind=revisit)`, never a second runner. Catch-up Directions are labelled. Confirmation-gated work stays pending.
-- The `events` SSE streams the execution's append-only structured event log; every durable frame carries `id: <seq>` and the stream resumes from `?after=<seq>`. Frame vocabulary: `execution.status`, `tool.started`, `tool.completed` (since v1.12 with `started_at` / `finished_at` / `duration_ms` when the tool path stamped them), `message.completed` (a closed commentary segment, or the answer when `final: true`), `plan.updated` (`{steps}` — the model's `update_plan` tool, v1.12), `conclusion.recorded` (`{answer, findings[{title, severity, detail?}], next_steps[]}` — the model's `record_conclusion` tool, v2.0; the last one of an execution is the Work Result's conclusion), `approval.opened`, `approval.granted` (with `policy: task | session | always`, v1.12), `decision.resolved`, `steer.received`, `steer.applied`, `context.compacted` (`{before_tokens, after_tokens, summary_chars}`, v1.12), `work_result.recorded`, `artifact.recorded`, `context.updated`, `task.titled`, `task.status` (`{status, active_execution_id, queued, pending_decisions, last_execution}` whenever the task's derived state or queue changes, v1.12 — a follower needs no `/state` poll), `execution.events_truncated`, transient `delta`, terminal `end`. Frontend recovery is this sequence reconnect only. Since v1.12 the Sidecar follower is woken by the in-process hub (no SQLite poll loop); an idle stream sends a heartbeat comment every 15 s.
+- `GET/PUT .../revisit` reads or sets the optional per-task revisit interval. Due revisits are submitted by the Sidecar's own revisit clock and at startup via `runtime.submit(kind=revisit)` — never by a read, never a second runner. Catch-up Directions are labelled. Revisits are read-only.
+- The `events` SSE streams the execution's append-only structured event log; every durable frame carries `id: <seq>` and the stream resumes from `?after=<seq>`. Frame vocabulary: `execution.status`, `tool.started`, `tool.completed` (since v1.12 with `started_at` / `finished_at` / `duration_ms` when the tool path stamped them), `message.completed` (a closed commentary segment, or the answer when `final: true`), `conclusion.recorded` (`{answer, findings[{title, severity, detail?}], next_steps[]}` — the model's `record_conclusion` tool, v2.0; the last one of an execution is the Work Result's conclusion), `steer.received`, `steer.applied`, `context.compacted` (`{before_tokens, after_tokens, summary_chars}`, v1.12), `work_result.recorded`, `artifact.recorded`, `context.updated`, `task.titled`, `task.status` (`{status, active_execution_id, queued, last_execution}` whenever the task's derived state or queue changes, v1.12 — a follower needs no `/state` poll), `execution.events_truncated`, transient `delta`, terminal `end`. Frontend recovery is this sequence reconnect only. Since v1.12 the Sidecar follower is woken by the in-process hub (no SQLite poll loop); an idle stream sends a heartbeat comment every 15 s. Since v2.1 the runtime no longer emits `plan.updated`, `approval.opened`, `approval.granted` or `decision.resolved`; logs written before v2.1 may still contain them and clients ignore them.
 - `POST .../compact` (v1.12) runs the context compaction step on demand for a task with no live execution: one tool-less model call summarises the replayed turns into a bounded, redacted continuation summary stored on the typed context (`task_context_versions.summary_sanitized`), and `context.compacted` is appended to the task's event log with an empty `execution_id`; the next execution re-emits it on its own stream (and starts its turn with the `compacted` item) so the transcript shows the marker where work resumed. Returns `{compacted, before_tokens, after_tokens, summary_chars}` or `{compacted: false, reason}`; 409 while an execution is active; 422 without a model. The runtime runs the same step automatically before an execution's model loop when the last turn's reported input usage crossed 80 % of the model's context window.
-- `steer` acts ON the current execution: the text is injected into the running model loop at its next tool boundary; a steer the loop could no longer take is carried into an automatic follow-up execution. Since v1.14 a steer raised while an approval is open lands on the waiting execution itself (delivered at the next tool boundary after the decision resolves, or carried forward on decline) — it is never silently re-submitted as a queued follow-up. 409 only when nothing is executing at all.
+- `steer` acts ON the current execution: the text is injected into the running model loop at its next tool boundary; a steer the loop could no longer take is carried into an automatic follow-up execution. The target is the running (else queued) execution; it is never silently re-submitted as a queued follow-up. (v1.14–v2.0: a steer raised while an approval was open lands on the waiting execution; since v2.1 nothing waits.) 409 only when nothing is executing at all.
 - `stop` cancels durably; the partial Work Result persists with `stopped: true`.
-- `resume` turns an `interrupted` / `failed` / `cancelled` execution into a NEW execution carrying the same Direction (history is never rewritten). A cancelled resume is labelled `kind=retry` with a `[retry]` note (v1.13), not `[resume]`.
+- `resume` turns an `interrupted` / `failed` / `cancelled` execution into a NEW execution carrying the same Direction (history is never rewritten). A cancelled resume is labelled `kind=retry` with a `[retry]` note (v1.13), not `[resume]`. Since v2.1 the Sidecar calls the same `runtime.resume` itself after a restart: each execution the restart stamped `interrupted` gets one `kind=resume` continuation (`[resume]` note), never for an execution that was itself such a continuation, and none while no model is usable — the client only needs this route when that was not possible.
 - `GET .../executions/{eid}/events-page` (v1.13) pages ONE execution's durable events as JSON (`after`/`limit`, same global sequence numbers as the SSE). Execution detail reads here instead of scanning the whole task log.
-- The gated `import_evidence` tool opens a Decision (`kind=approval`) from inside the running execution and leaves it `waiting`; `decisions/{id}/resolve` (`approved` | `declined`, optional `scope: once | task`) records the call durably and wakes the tool: approval runs the bounded, audited import server-side and the same execution continues with its result; decline returns a structured refusal to the model. `prepared` in the response is always `null`.
+- `decisions` lists the task's Decisions as **read-only history** (pre-2.1 approvals, each with its projected `impact`). v2.1 removed the decision resolve route and `runtime.request_approval`: `import_evidence` runs inside the Execution without a Decision, bounded server-side (see Managed Evidence Import). Restart recovery withdraws any Decision still pending (`superseded`, note "withdrawn: approvals were removed in v2.1").
 - `context` returns the latest TYPED, versioned Storage Task Context (machine state derived from durable rows — recovery never replays messages). The same snapshot is injected into the Agent prompt's stable half.
 - `GET .../provenance` is a **read-only projection** of existing `session_findings`, `tool_calls`, `task_artifacts`, and `runs`. It returns the latest cost / inventory / access-log / drift analysis documents plus per-finding evidence chains (tool, time, coverage, Review target). A missing link is `gap: "no_direct_evidence"` — never a fabricated source. No new tables.
 
@@ -216,7 +211,7 @@ GET  /sessions/{session_id}/error-triage
 ```
 
 - report generation/fetch produces a durable Markdown Artifact;
-- `POST …/actions/prepare` is removed in v1.12 (there are no next-action proposals; the only gated actions are tool calls approved inline);
+- `POST …/actions/prepare` is removed in v1.12 (there are no next-action proposals);
 - dataset upload attaches local evidence to the Task for bounded local analysis;
 - error-triage cases can be associated with the Task.
 
@@ -241,7 +236,7 @@ Per-turn metrics additionally carry `budget_tokens` / `repeat_calls_avoided` whe
 
 The only stream is the execution event stream (`GET /agent-tasks/{id}/executions/{eid}/events`, above). The legacy `delta`/`tool`/`done`/`error` vocabulary and the `legacy_frames` translation are gone (v1.12).
 
-Persisted message grounding and `turn_items` survive reload and are not only transient SSE state. `turn_items` are the ordered items the turn produced before its answer: `message` (commentary), `tool` (a reference to the `tool_activity` record by id), `plan` (`{steps}` — one per turn, at the position of the first `update_plan` call, holding the latest plan, v1.12), a leading `compacted` (`{before_tokens, after_tokens}` when the runtime compacted the context before this turn, v1.12), and `steer` (`{text}` — a redacted Steer the running model loop received at that point, v1.18; the live counterpart is the `steer.applied` event, never a tool row). `proposed_actions` is no longer projected.
+Persisted message grounding and `turn_items` survive reload and are not only transient SSE state. `turn_items` are the ordered items the turn produced before its answer: `message` (commentary), `tool` (a reference to the `tool_activity` record by id), a leading `compacted` (`{before_tokens, after_tokens}` when the runtime compacted the context before this turn, v1.12), and `steer` (`{text}` — a redacted Steer the running model loop received at that point, v1.18; the live counterpart is the `steer.applied` event, never a tool row). `proposed_actions` is no longer projected. The v1.12 `plan` item was removed in v2.1; stored pre-2.1 `plan` items are dropped on read in `GET /sessions/{id}` messages.
 
 Since v2.0 an assistant message also carries `conclusion` — `{answer, findings[{title, severity: high|medium|low|info, detail?}], next_steps[]}` recorded by the model's `record_conclusion` tool (bounded, redacted), or `null` when none was recorded. `GET /agent-tasks/{task_id}/work-results` returns the same `conclusion` on each Work Result. A `null` conclusion is honest: clients show the answer alone and never derive a head from prose.
 
@@ -289,7 +284,7 @@ GET  /evidence-imports/{import_id}
 GET  /evidence-imports/{import_id}/files
 ```
 
-Cloud data movement (`evidence/import_service`: plan → confirm → run) is reachable **only** through the gated `import_evidence` tool inside a running Execution: the tool plans, `runtime.request_approval` opens a durable Decision (`approval.opened`, execution `waiting`) or the approval policy answers it (recorded as an approved Decision + `approval.granted {policy}`), and only then does the import run. v1.18 removed `POST /evidence-imports/plan`, `/{id}/confirm` and `/{id}/run`, which moved data with no Decision row, no event and no policy check. A plan downloads nothing; the Sidecar remains authoritative for bounds/state.
+Cloud data movement (`evidence/import_service`: plan → confirm → run) is reachable **only** through the `import_evidence` tool inside a running Execution (`agent_runtime/import_tools.py`). Since v2.1 there is no Decision: the tool plans, the plan is confirmed and audited as `approved_by="agent"` (`approval_events` + `audit_logs`), and the import runs — inside hard server-side bounds: the source must be an evidence source the task's account survey discovered; each call is clamped to at most 500 files / 256 MiB (`AGENT_MAX_FILES` / `AGENT_MAX_BYTES`) and the result says when coverage is partial; the call is refused with nothing downloaded when the data directory would keep less than 1 GiB free; Stop is checked before downloading. v1.18 removed `POST /evidence-imports/plan`, `/{id}/confirm` and `/{id}/run`. A plan downloads nothing; the Sidecar remains authoritative for bounds/state.
 
 ## Error triage
 
@@ -311,17 +306,15 @@ Current settings API includes secret-vault health/status endpoints as implemente
 GET  /settings/secret-vault
 GET  /settings/price-table
 PUT  /settings/price-table
-GET  /settings/approval-policy
-PUT  /settings/approval-policy
 GET  /settings/instructions
 ```
 
-- `approval-policy` (v1.12) reads/sets how gated tools get their answer: `ask` (default — every gated call raises a Decision and the Execution waits), `allow_session` (auto-approved for this Sidecar process; a restart falls back to `ask`), `allow_always` (auto-approved for this data directory; stored in `app_settings`). The response lists the `gated_tools` a policy can answer (`import_evidence` → `import_inventory` / `import_access_log`; `survey_account` → `survey_account_large`). Enforced only in `runtime.request_approval`; every auto-approval is still a durable, already-approved Decision plus an `approval.granted` event with `policy`.
+- The v1.12 approval-policy route was removed in v2.1 (there is no approval to answer).
 - `instructions` (v1.12) reports whether an `AGENTS.md` instructions file is loaded (`{loaded, path, chars, truncated, error}`) — from `STORAGE_AGENT_DATA_DIR/AGENTS.md` or the `STORAGE_AGENT_INSTRUCTIONS` path. The text itself is never an API payload; it is injected, bounded (8 000 chars) and redacted, into the stable half of the Agent prompt.
 
 The price table is ordinary local configuration used by the cost simulator: per-storage-class GB-month rates plus request/retrieval rates. It ships as an example schedule. Dollar simulation remains a gap until `confirmed` is true. The table is not a secret store and must never contain credentials. **Settings UI does not edit it** — if the Agent needs prices it asks in the Task or reports a gap.
 
-There is no product autonomy toggle: read-only Agent investigation is the default capability model, while confirmation-gated operations stop at explicit Decisions.
+There is no product autonomy toggle: read-only Agent investigation is the default capability model, and the one data-moving tool runs inside hard server-side bounds (v2.1) rather than stopping for a Decision.
 
 ## Skills
 
@@ -352,7 +345,8 @@ Per-task export includes the durable `execution_events` log (with
 a derived `spans` projection (v1.13): one parent span per execution and one
 child span per event, with deterministic `trace_id`/`span_id` and a W3C
 `traceparent` per span, importable into Jaeger/Tempo. Span ids are derived,
-not stored (no migration). The global export lists recent tasks/executions
+not stored (no migration). Since v2.1 the span event vocabulary includes
+`conclusion.recorded` and no approval, plan or decision events. The global export lists recent tasks/executions
 and sanitized provider presence. All are auth-gated and capped
 (`MAX_EVENTS=500`, `MAX_TOOL_CALLS=200`).
 
