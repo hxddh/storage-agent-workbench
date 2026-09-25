@@ -16,13 +16,13 @@ import { AgentTaskNavigation } from "./agent/AgentTaskNavigation";
 import { useNavigationCopy } from "./agent/navigationCopy";
 import { DEFAULT_TASK_NAV_WIDTH, clampTaskNavigationWidth, type AgentTaskSummary, type TaskActions, type TaskEditRequest } from "./agent/navigationModel";
 import { AgentShell } from "./agent/AgentShell";
-import { toggleAgentArtifacts } from "./agent/commands";
+import { toggleAgentArtifacts, useInspectorOpen } from "./agent/commands";
 import { ActiveTaskContext } from "./agent/activeTask";
 import { listAgentTasks } from "./agent/taskApi";
 import { agentTaskState } from "./agent/taskState";
 import { notifyNative, setNativeWindowTitle, useNativeShell, type MenuCommand } from "./hooks/useNativeAgent";
 import { hasNativeTrafficLights, openExternal } from "./config";
-import { Icon } from "./components/icons";
+import { IconButton } from "./components/ui";
 
 const NAV_WIDTH_KEY = "saw.railWidth";
 const NAV_COLLAPSED_KEY = "saw.railCollapsed";
@@ -39,8 +39,10 @@ function storedNavigationWidth(): number {
   return Number.isFinite(raw) && raw > 0 ? clampTaskNavigationWidth(raw) : DEFAULT_TASK_NAV_WIDTH;
 }
 
-/** Window title row over the document: the task name and its real state.
- * Find (⌘F) and the palette (⌘K) are keyboard — Codex-quiet chrome. */
+/** Window title row over the document (v3.0): window controls at the start,
+ * the task name and its real state centred as one group, the inspector
+ * toggle at the end, and one hairline of activity while work runs. Find
+ * (⌘F) and the palette (⌘K) stay keyboard. */
 function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: {
   task: AgentTaskSummary | null;
   sidebarOpen: boolean;
@@ -51,39 +53,49 @@ function TitleBar({ task, sidebarOpen, trafficLights, onToggleSidebar, onNew }: 
   const copy = useNavigationCopy();
   const { t } = useI18n();
   const run = useLiveTask(task?.id ?? null);
+  const inspectorOpen = useInspectorOpen();
   const state = task ? agentTaskState(run, true, task.task_status) : "idle";
   const stateLabel = state in copy.state ? copy.state[state as keyof typeof copy.state] : "";
   const title = task ? (task.title || t("common.untitled")) : copy.appTitle;
+  const working = state === "working" || state === "uploading";
 
   useEffect(() => {
     void setNativeWindowTitle(task ? `${title} — ${copy.appTitle}` : copy.appTitle);
   }, [task, title, copy.appTitle]);
 
   return (
-    <header className="native-titlebar" data-traffic-lights={trafficLights && !sidebarOpen ? "true" : "false"} data-tauri-drag-region>
-      {!sidebarOpen ? (
-        <>
-          <button type="button" onClick={onToggleSidebar} aria-label={copy.expand} title={copy.expand} data-testid="task-navigation-toggle" className="native-icon-button">
-            <Icon name="sidebar" />
-          </button>
-          <button type="button" onClick={onNew} aria-label={copy.newTask} title={copy.newTask} className="native-icon-button">
-            <Icon name="compose" />
-          </button>
-        </>
-      ) : null}
-      {/* v2.1 — the state rides with the name, centred as one group, instead
-          of sitting alone at the far edge of the window. */}
+    <header className="native-titlebar" data-task={task ? "true" : "false"} data-traffic-lights={trafficLights && !sidebarOpen ? "true" : "false"} data-tauri-drag-region>
+      <div className="native-titlebar-start">
+        {!sidebarOpen ? (
+          <>
+            <IconButton icon="sidebar" label={copy.expand} onClick={onToggleSidebar} data-testid="task-navigation-toggle" />
+            <IconButton icon="compose" label={copy.newTask} onClick={onNew} />
+          </>
+        ) : null}
+      </div>
       <span className="native-titlebar-center" data-tauri-drag-region>
-        <span className="native-titlebar-title" data-task={task ? "true" : "false"} data-tauri-drag-region>{title}</span>
+        <span className="native-titlebar-title" data-task={task ? "true" : "false"} title={title} data-tauri-drag-region>{title}</span>
         {stateLabel ? (
           <span className="native-titlebar-state" data-state={state} data-testid="titlebar-state">
-            {state === "working" || state === "uploading"
+            {working
               ? <span className="working-mark" style={{ width: 6, height: 6 }} aria-hidden />
               : <span className="native-state-dot" data-state={state} aria-hidden />}
             {stateLabel}
           </span>
         ) : null}
       </span>
+      <div className="native-titlebar-end">
+        {task ? (
+          <IconButton
+            icon="panelRight"
+            label={copy.inspector}
+            aria-pressed={inspectorOpen}
+            onClick={() => toggleAgentArtifacts()}
+            data-testid="titlebar-inspector"
+          />
+        ) : null}
+      </div>
+      {working ? <div className="native-titlebar-progress ui-activity" aria-hidden data-testid="titlebar-progress" /> : null}
     </header>
   );
 }

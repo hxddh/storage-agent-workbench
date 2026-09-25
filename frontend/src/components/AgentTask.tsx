@@ -20,9 +20,17 @@ import {
   visibleQueuedExecutions,
 } from "../lib/pendingDirection";
 import { TaskBanners } from "./TaskBanners";
+import { useTaskDetails } from "../agent/taskDetails";
+import { Icon, type IconName } from "./icons";
 import { TaskComposerHost, useComposerActions, useTaskComposer } from "./TaskComposerHost";
 import { TaskDocument, lastWorkResult, useTaskItems } from "./TaskDocument";
 import { useTaskCopy } from "./taskCopy";
+
+const STARTERS: { key: "access" | "survey" | "logs"; icon: IconName }[] = [
+  { key: "access", icon: "shield" },
+  { key: "survey", icon: "storage" },
+  { key: "logs", icon: "table" },
+];
 
 export type AgentTaskProps = {
   taskId: string | null;
@@ -158,6 +166,9 @@ export function AgentTask({
   const loadingTask = Boolean(taskId) && detail?.id !== taskId && !loadError;
   const isEmpty = items.length === 0 && !pending && !loadError && !loadingTask;
   const lastResult = useMemo(() => lastWorkResult(items), [items]);
+  // v3.0 — the inspector (in the shell) offers the Report only with a Result.
+  const { setHasResult } = useTaskDetails();
+  useEffect(() => { setHasResult(Boolean(lastResult)); }, [lastResult, setHasResult]);
 
   const lastExec = taskRuntime?.last_execution;
   const offline = sidecarStatus === "disconnected" || sidecarStatus === "error";
@@ -265,9 +276,27 @@ export function AgentTask({
       ) : isEmpty ? (
         <div className="native-start" data-testid="task-start">
           <div className="native-start-inner">
-            <p className="native-start-greeting">{pickStartGreeting(lang)}</p>
+            <h1 className="native-start-greeting">{pickStartGreeting(lang)}</h1>
+            <p className="native-start-sub">{t("start.sub")}</p>
             {composerNode}
-            <div className="mt-4 space-y-2">{banners}</div>
+            <div className="native-start-banners empty:hidden">{banners}</div>
+            {/* v3.0 — three real starting points. A card only fills the
+                Composer; the user still reads and sends it. */}
+            <div className="native-starters" role="group" aria-label={t("start.starters")}>
+              {STARTERS.map((starter) => (
+                <button
+                  key={starter.key}
+                  type="button"
+                  className="native-starter"
+                  data-testid="start-starter"
+                  onClick={() => { composer.setText(t(`start.${starter.key}.ask`)); composer.focus(); }}
+                >
+                  <span className="native-starter-icon" aria-hidden><Icon name={starter.icon} size={16} /></span>
+                  <span className="native-starter-title">{t(`start.${starter.key}.title`)}</span>
+                  <span className="native-starter-body">{t(`start.${starter.key}.body`)}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       ) : (

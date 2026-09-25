@@ -90,7 +90,7 @@ export function TaskBanners({
           <p>{copy.resumeBody}</p>
           <div className="native-banner-actions">
             <Button data-testid="task-resume-action" variant="default" size="sm" onClick={() => onResume(lastExecution.id)}>
-              <Icon name="play" size={12} />
+              <Icon name="play" size={14} />
               {copy.resumeAction}
             </Button>
             <Button data-testid="task-resume-settings" variant="ghost" size="sm" onClick={onOpenSettings}>

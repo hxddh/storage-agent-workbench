@@ -7,15 +7,19 @@ import { resultWhen } from "../lib/time";
 import { Markdown } from "./Markdown";
 import { severityLabel } from "./SeverityMark";
 import { Icon } from "./icons";
+import { Badge, SectionLabel, type Tone } from "./ui";
+
+const SEVERITY_TONE: Record<string, Tone> = { high: "danger", medium: "warn", low: "neutral", info: "outline" };
 
 function FindingRow({ finding }: { finding: ConclusionFinding }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const label = severityLabel(finding.severity, t);
+  // v3.0 — severity is a labelled badge (colour carries it, the word says
+  // it), the title is the row; detail opens in place.
   const head = (
     <>
-      <span className="result-finding-dot" data-severity={finding.severity} aria-hidden />
-      <span className="sr-only">{label}: </span>
+      <Badge tone={SEVERITY_TONE[finding.severity] ?? "neutral"} className="result-finding-badge" data-severity={finding.severity}>{label}</Badge>
       <span className="result-finding-title">{finding.title}</span>
     </>
   );
@@ -24,7 +28,7 @@ function FindingRow({ finding }: { finding: ConclusionFinding }) {
       {finding.detail ? (
         <button type="button" className="result-finding-head" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
           {head}
-          <span className="result-finding-chevron" aria-hidden><Icon name="chevron" size={11} /></span>
+          <span className="result-finding-chevron" aria-hidden><Icon name="chevron" size={14} /></span>
         </button>
       ) : (
         <div className="result-finding-head">{head}</div>
@@ -53,7 +57,7 @@ export function ConclusionView({
       <p className="result-answer" data-testid="result-answer">{conclusion.answer}</p>
       {conclusion.findings.length > 0 ? (
         <div className="result-block">
-          <h3 className="result-label">{t("result.findings")}</h3>
+          <SectionLabel count={conclusion.findings.length}>{t("result.findings")}</SectionLabel>
           <ul className="result-findings" data-testid="result-findings">
             {conclusion.findings.map((finding, index) => <FindingRow key={index} finding={finding} />)}
           </ul>
@@ -61,7 +65,7 @@ export function ConclusionView({
       ) : null}
       {conclusion.next_steps.length > 0 ? (
         <div className="result-block">
-          <h3 className="result-label">{t("result.nextSteps")}</h3>
+          <SectionLabel>{t("result.nextSteps")}</SectionLabel>
           <ul className="result-next-steps" data-testid="result-next-steps">
             {conclusion.next_steps.map((step, index) => (
               <li key={index}>
@@ -73,8 +77,8 @@ export function ConclusionView({
                   title={t("result.askNext")}
                   data-testid="result-next-step"
                 >
-                  <span className="result-next-step-mark" aria-hidden><Icon name="arrowRight" size={12} /></span>
                   <span className="result-next-step-text">{step}</span>
+                  <span className="result-next-step-mark" aria-hidden><Icon name="arrowRight" size={14} /></span>
                 </button>
               </li>
             ))}
@@ -90,7 +94,7 @@ function CopyResult({ text }: { text: string }) {
   const { copied, copy } = useCopy(1200);
   return (
     <button type="button" className="native-ghost-action" onClick={() => copy(text)} aria-label={t("common.copy")} data-testid="copy-work-result">
-      <Icon name={copied ? "check" : "copy"} size={12} />
+      <Icon name={copied ? "check" : "copy"} size={14} />
       {copied ? t("common.copied") : t("common.copy")}
     </button>
   );
@@ -137,7 +141,7 @@ export const TaskResult = memo(function TaskResult({
           Direction it answers heads that turn in the Work log; here it is a
           hover hint, not a second copy of the words. */}
       <header className="task-result-head" title={direction ?? undefined}>
-        <span className="task-result-kicker">{t("result.kicker")}</span>
+        <Badge tone="accent" className="task-result-kicker">{t("result.kicker")}</Badge>
         {when ? <span className="task-result-meta" title={message.created_at}>{when}</span> : null}
         {grounding.length ? (
           <span className="task-result-meta" data-testid="result-grounding">{grounding.join(" · ")}</span>
@@ -146,7 +150,7 @@ export const TaskResult = memo(function TaskResult({
       {conclusion ? <ConclusionView conclusion={conclusion} onNextStep={onNextStep} /> : null}
       {text.trim() ? (
         <article className="turn-agent" data-testid="work-result" data-work-result="true" data-streaming="false" aria-label={t("turn.answerLabel")}>
-          {conclusion ? <h3 className="result-label">{t("result.fullAnswer")}</h3> : null}
+          {conclusion ? <div className="result-full-label"><SectionLabel>{t("result.fullAnswer")}</SectionLabel></div> : null}
           <div className="turn-answer" data-testid="turn-answer">
             <Markdown text={text} />
           </div>

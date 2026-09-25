@@ -4,10 +4,10 @@ import type { ArtifactKind, ArtifactSelection } from "./model";
 import type { ArtifactsProjection } from "./useAgentTaskProjection";
 
 /**
- * v2.0 — the Task's durable outputs (Evidence · Report · Execution) live IN
- * the document, under the Result, as rows that
- * expand in place. The shell owns which row is open and what the rows list;
- * the document renders them. There is no side panel.
+ * v3.0 — the Task's durable outputs (Evidence · Report · Execution): a quiet
+ * bar under the Result names them, and the inspector on the right opens
+ * them. The shell owns which one is open and what exists; the document
+ * reports whether it has a Result (the Report needs one).
  */
 export type TaskDetailsState = {
   taskId: string | null;
@@ -18,6 +18,9 @@ export type TaskDetailsState = {
   open: (kind: ArtifactKind, id?: string | null) => void;
   back: () => void;
   close: () => void;
+  /** The document has a Work Result (so the task has a Report). */
+  hasResult: boolean;
+  setHasResult: (value: boolean) => void;
 };
 
 const EMPTY_PROJECTION: ArtifactsProjection = {
@@ -32,6 +35,8 @@ export const TaskDetailsContext = createContext<TaskDetailsState>({
   open: () => undefined,
   back: () => undefined,
   close: () => undefined,
+  hasResult: false,
+  setHasResult: () => undefined,
 });
 
 export function useTaskDetails(): TaskDetailsState {

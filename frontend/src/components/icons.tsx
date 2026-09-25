@@ -1,4 +1,6 @@
-/** One optical icon set for the native window. 16px, 1.6 stroke, rounded joins. */
+/** One optical icon set (v3.0): drawn on a 24 grid, rendered at 16 (chrome and
+ * controls) or 14 (dense rows), one 1.5 stroke, rounded joins. Emphasis marks
+ * (a check, a cross) may use 1.75 — nothing heavier, nothing thinner. */
 
 const PATHS: Record<string, string> = {
   sidebar: "M3.5 5.5A2 2 0 0 1 5.5 3.5h13a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z|M9.5 3.5v17",
@@ -30,11 +32,21 @@ const PATHS: Record<string, string> = {
   table: "M3 5h18v14H3z|M3 10h18|M9 10v9",
   storage: "M12 8c4.97 0 9-1.34 9-3s-4.03-3-9-3-9 1.34-9 3 4.03 3 9 3z|M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5|M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3",
   sun: "M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z|M12 1v2|M12 21v2|M4.2 4.2l1.4 1.4|M18.4 18.4l1.4 1.4|M1 12h2|M21 12h2|M4.2 19.8l1.4-1.4|M18.4 5.6l1.4-1.4",
+  // v3.0 additions: the inspector, work, evidence and report glyphs.
+  panelRight: "M3.5 5.5A2 2 0 0 1 5.5 3.5h13a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z|M14.5 3.5v17",
+  clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z|M12 7v5l3 2",
+  activity: "M3 12h4l3-8 4 16 3-8h4",
+  layers: "M12 3 3 8l9 5 9-5z|M3 13l9 5 9-5",
+  list: "M9 6h11|M9 12h11|M9 18h11|M4.5 6h.01|M4.5 12h.01|M4.5 18h.01",
+  report: "M7 3.5h7l4.5 4.5v11A1.5 1.5 0 0 1 17 20.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z|M14 3.5V8h4.5|M9 13h6|M9 16.5h4",
+  evidence: "M12 3 4.5 6v5.8c0 4.8 3.2 7.7 7.5 9.2 4.3-1.5 7.5-4.4 7.5-9.2V6z|M12 8.5v4|M12 15.5h.01",
+  corner: "M9 10l-5 5 5 5|M20 4v7a4 4 0 0 1-4 4H4",
+  external: "M14 4h6v6|M20 4l-9 9|M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
 };
 
 export type IconName = keyof typeof PATHS;
 
-export function Icon({ name, size = 16, stroke = 1.6, className }: { name: IconName; size?: number; stroke?: number; className?: string }) {
+export function Icon({ name, size = 16, stroke = 1.5, className }: { name: IconName; size?: number; stroke?: number; className?: string }) {
   const d = PATHS[name] ?? "";
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={stroke} strokeLinecap="round" strokeLinejoin="round" aria-hidden className={className}>

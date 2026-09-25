@@ -6,6 +6,7 @@ import { I18nProvider } from "./i18n";
 import { ThemeProvider, applyTheme, initialTheme } from "./theme";
 import { ToastProvider } from "./components/Toast";
 import "./index.css";
+import "./agent/native-components.css";
 import "./agent/native-shell.css";
 import "./agent/native-document.css";
 

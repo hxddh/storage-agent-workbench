@@ -17,7 +17,7 @@ export function TriageCard({ c }: { c: TriageCase }) {
   return (
     <div className="turn-agent" data-testid="agent-triage-artifact">
       <div className="mb-2 flex items-center gap-2 text-xs text-gray-500">
-        <Icon name="alert" size={13} />
+        <Icon name="alert" size={14} />
         <span>{copy.title}</span>
       </div>
       <div className="text-prose text-gray-100">{c.summary}</div>

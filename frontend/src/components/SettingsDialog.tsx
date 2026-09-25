@@ -128,7 +128,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
                   section === item.id ? "bg-elevated text-gray-100" : "text-gray-300 hover:bg-hover hover:text-gray-100"
                 }`}
               >
-                <Icon name={item.icon} size={15} className="text-gray-500" />
+                <Icon name={item.icon} size={16} className="text-gray-500" />
                 {item.label}
               </button>
             ))}
@@ -141,7 +141,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
             aria-label={t("common.close")}
             className="native-icon-button absolute right-3 top-3"
           >
-            <Icon name="close" size={15} />
+            <Icon name="close" size={16} />
           </button>
           <div className="min-h-0 flex-1 overflow-auto px-8 py-7">
             <VaultWarning />

@@ -272,7 +272,7 @@ export function Composer({
             </span>
           ) : (
             <button type="button" className="native-round ml-auto" style={{ width: 24, height: 24 }} onClick={onClearAttachment} aria-label={copy.attachRemove} title={copy.attachRemove}>
-              <Icon name="close" size={12} />
+              <Icon name="close" size={14} />
             </button>
           )}
         </div>
@@ -305,7 +305,7 @@ export function Composer({
               className="native-mention-item"
               onMouseDown={(e) => { e.preventDefault(); completeMention(f.filename); }}
             >
-              <Icon name="file" size={12} />
+              <Icon name="file" size={14} />
               <span>{f.filename}</span>
             </button>
           ))}
@@ -402,7 +402,7 @@ export function Composer({
           title={t("attach.button")}
           className="native-round"
         >
-          <Icon name="plus" size={18} />
+          <Icon name="paperclip" size={16} />
         </button>
 
         <ModelChip onOpenSettings={onOpenSettings} refreshKey={modelRefreshKey} disabled={busy} />
@@ -430,7 +430,7 @@ export function Composer({
                 data-primary={fileWhileBusy || text.trim() ? "true" : "false"}
                 data-testid={fileWhileBusy ? "composer-delegate-queued" : "composer-steer"}
               >
-                <Icon name="arrowUp" size={16} stroke={2} />
+                <Icon name="arrowUp" size={16} stroke={1.75} />
               </button>
               <button type="button" onClick={onStop} aria-label={copy.stop} title={`${copy.stop} ${MOD}. · Esc`} className="native-round" data-primary={text.trim() ? "false" : "true"}>
                 <Icon name="stop" size={14} stroke={0} className="fill-current" />
@@ -446,7 +446,7 @@ export function Composer({
               className="native-round"
               data-primary="true"
             >
-              {uploading ? <span className="skeleton h-3 w-3 rounded-full" aria-hidden /> : <Icon name="arrowUp" size={16} stroke={2} />}
+              {uploading ? <span className="skeleton h-3 w-3 rounded-full" aria-hidden /> : <Icon name="arrowUp" size={16} stroke={1.75} />}
             </button>
           )}
         </div>

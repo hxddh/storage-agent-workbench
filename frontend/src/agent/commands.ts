@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import type { ArtifactKind } from "./model";
 
 /** Commands the Task document, the window menu and the keyboard send to the
@@ -48,4 +49,24 @@ export function openAgentExecution(executionId: string): void {
 
 export function closeAgentReview(): void {
   closeAgentArtifacts();
+}
+
+// v3.0 — whether the inspector is open, for the title bar's toggle. The shell
+// owns the state; this only mirrors it so chrome outside the shell can show
+// a pressed control without a second source of truth.
+let inspectorOpen = false;
+const inspectorListeners = new Set<() => void>();
+
+export function publishInspectorOpen(open: boolean): void {
+  if (inspectorOpen === open) return;
+  inspectorOpen = open;
+  for (const listener of inspectorListeners) listener();
+}
+
+export function useInspectorOpen(): boolean {
+  return useSyncExternalStore(
+    (listener) => { inspectorListeners.add(listener); return () => inspectorListeners.delete(listener); },
+    () => inspectorOpen,
+    () => false,
+  );
 }

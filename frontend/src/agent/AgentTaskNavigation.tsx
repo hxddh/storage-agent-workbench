@@ -12,6 +12,8 @@ import {
 } from "./navigationModel";
 import { agentTaskState } from "./taskState";
 import { Icon } from "../components/icons";
+import { Kbd } from "../components/ui";
+import { MOD } from "../shortcuts";
 
 // v1.14 — relative time and day keys live in lib/time (shared with the
 // Artifacts panel and Execution detail); this module keeps the grouping.
@@ -138,7 +140,7 @@ function TaskRow({ task, activeTaskId, menuId, renamingId, confirmId, onSelectTa
           <div>{copy.deleteConfirm}</div>
           <div className="mt-2 flex justify-end gap-1.5">
             <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmId(null); }} className="rounded-md px-2.5 py-1 text-xs text-gray-300 hover:bg-hover hover:text-gray-100">{copy.cancel}</button>
-            <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmId(null); actions.onDelete(task); }} className="rounded-md bg-danger px-2.5 py-1 text-xs font-medium text-accent-fg">{copy.delete}</button>
+            <button type="button" onClick={(event) => { event.stopPropagation(); setConfirmId(null); actions.onDelete(task); }} className="rounded-md bg-danger px-2.5 py-1 text-xs font-medium text-white">{copy.delete}</button>
           </div>
         </div>
       ) : null}
@@ -179,7 +181,12 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
     return () => window.clearInterval(timer);
   }, []);
 
-  const visible = tasks.filter((task) => task.status !== "archived");
+  // v3.0 — the list filters in place as the user types; ⌘K stays the full
+  // palette. Matching is case-insensitive on the title.
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const all = tasks.filter((task) => task.status !== "archived");
+  const visible = needle ? all.filter((task) => (task.title || "").toLowerCase().includes(needle)) : all;
   visible.sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
   const groups = dayGroups(visible, lang);
 
@@ -252,11 +259,29 @@ export function AgentTaskNavigation({ tasks, activeTaskId, onSelectTask, onNew, 
         <button type="button" onClick={onNew} className="native-sidebar-new" data-testid="task-navigation-new">
           <Icon name="compose" />
           <span>{copy.newTask}</span>
+          <Kbd keys={[MOD, "N"]} />
         </button>
 
+        {all.length > 0 ? (
+          <label className="native-sidebar-search">
+            <Icon name="search" size={14} />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Escape" && query) { event.stopPropagation(); setQuery(""); } }}
+              placeholder={copy.search}
+              aria-label={copy.search}
+              data-testid="task-navigation-search"
+            />
+          </label>
+        ) : null}
+
         <nav ref={listRef} className="native-task-list" aria-label={copy.tasks} role="listbox" onKeyDown={onListKeyDown}>
-          {visible.length === 0 ? (
-            <p className="native-empty-list" data-testid="task-nav-empty">{copy.noTasks} {copy.noTasksHint}</p>
+          {all.length === 0 ? (
+            <p className="native-empty-list" data-testid="task-nav-empty"><strong>{copy.noTasks}</strong>{copy.noTasksHint}</p>
+          ) : visible.length === 0 ? (
+            <p className="native-empty-list" data-testid="task-nav-no-match">{copy.noMatches}</p>
           ) : (
             groups.map((group) => (
               <div key={group.key} className="native-task-group" role="group" aria-label={group.label} data-testid="task-group" data-group={group.key}>

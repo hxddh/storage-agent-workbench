@@ -102,13 +102,14 @@ for (const theme of THEMES) {
       await shoot(page, "03-execution", theme, lang);
     });
 
-    test("Details expand in place under the Result", async ({ page }) => {
+    test("Details open in the inspector beside the Result", async ({ page }) => {
       const title = `Artifact review ${theme} ${lang}`;
       seedTask(2, title, "short", true);
       await openAgent(page, theme, lang);
       await openTask(page, title);
       await page.getByTestId("task-detail-toggle-report").click();
-      await expect(page.getByTestId("task-detail-report")).toHaveAttribute("data-open", "true");
+      await expect(page.getByTestId("task-inspector")).toHaveAttribute("data-kind", "report");
+      await expect(page.getByTestId("task-detail-report")).toBeVisible();
       await expect(page.getByTestId("agent-composer")).toBeVisible();
       await shoot(page, "04-artifacts", theme, lang);
     });

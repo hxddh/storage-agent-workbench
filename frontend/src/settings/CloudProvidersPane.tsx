@@ -235,7 +235,7 @@ export function CloudProvidersPanel() {
           </div>
 
           <button type="button" onClick={() => setAdvanced((value) => !value)} className="native-settings-advanced" aria-expanded={advanced}>
-            <Icon name="chevron" size={11} className={advanced ? "rotate-90" : ""} />
+            <Icon name="chevron" size={14} className={advanced ? "rotate-90" : ""} />
             {t("prov.advanced")}
           </button>
 
@@ -318,7 +318,7 @@ export function CloudProvidersPanel() {
                 </>
               ) : (
                 <Button size="sm" variant="ghost" onClick={() => { setError(null); setConfirmId(provider.id); }} aria-label={`${t("prov.delete")} ${provider.name}`}>
-                  <Icon name="x" size={13} />
+                  <Icon name="x" size={14} />
                 </Button>
               )}
             </div>

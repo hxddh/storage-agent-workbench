@@ -228,7 +228,7 @@ export function CommandPalette({
                 onClick={() => command.run()}
                 className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-[background-color] duration-fast ${index === sel ? "bg-hover ring-1 ring-inset ring-edge" : ""}`}
               >
-                <Icon name={command.icon} size={15} className={index === sel ? "text-gray-100" : "text-gray-500"} />
+                <Icon name={command.icon} size={16} className={index === sel ? "text-gray-100" : "text-gray-500"} />
                 <span className="min-w-0 flex-1 truncate text-sm text-gray-100">{command.label}</span>
                 {command.hint ? <Keys hint={command.hint} /> : null}
               </button>

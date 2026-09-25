@@ -125,7 +125,7 @@ export function NativeAgentPanel() {
             <p className="mt-1 text-xs leading-relaxed text-gray-500">{t("prov.skillsHint")}</p>
           </div>
           <Button onClick={() => void openFolder()} data-testid="skills-open-folder">
-            <Icon name="file" size={13} /> {copy.openFolder}
+            <Icon name="file" size={14} /> {copy.openFolder}
           </Button>
         </div>
         {skillsLoading ? (
@@ -162,7 +162,7 @@ export function NativeAgentPanel() {
             ) : null}
           </div>
           <Button onClick={() => void openInstructions()} data-testid="instructions-open">
-            <Icon name="file" size={13} /> {t("settings.instructionsOpen")}
+            <Icon name="file" size={14} /> {t("settings.instructionsOpen")}
           </Button>
         </div>
       </section>
@@ -196,7 +196,7 @@ export function NativeAgentPanel() {
                 <div className="flex items-center gap-2">
                   <code className="native-settings-code">{MCP_ENV}</code>
                   <button type="button" className="native-ghost-action" onClick={copyEnv} aria-label={t("common.copy")} data-testid="mcp-copy-env">
-                    <Icon name="copy" size={13} /> {t("common.copy")}
+                    <Icon name="copy" size={14} /> {t("common.copy")}
                   </button>
                 </div>
               </div>

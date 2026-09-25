@@ -5,13 +5,15 @@ import { TaskDetailsContext, type TaskDetailsState } from "./taskDetails";
 import { useAgentTaskProjection } from "./useAgentTaskProjection";
 import { useTaskProvenance } from "../hooks/useTaskProvenance";
 import { useLiveTask } from "../liveTasks";
+import { publishInspectorOpen } from "./commands";
+import { TaskInspector } from "../components/TaskDetails";
+import { useDismissOnEscape } from "../hooks/useDismissOnEscape";
 
 /**
- * The active task environment: one Task document. v2.0 — the durable outputs
- * are not a side panel any more; the shell owns which of them is expanded
- * (the document renders them under the Result) and publishes the one command
- * target the menu, the keyboard and the document use. No header, no strip,
- * no second presentation mode.
+ * The active task environment (v3.0): one Task document and, when an output
+ * is open, the inspector beside it. The shell owns which output is open and
+ * publishes the one command target the menu, the keyboard, the title bar and
+ * the document use. No header, no strip, no second presentation mode.
  */
 export function AgentShell({
   taskContent,
@@ -23,6 +25,7 @@ export function AgentShell({
   const [state, dispatch] = useReducer(agentShellReducer, taskId, (id) => initialAgentShellState(id));
   const run = useLiveTask(taskId ?? "");
   const [reloadKey, setReloadKey] = useState(0);
+  const [hasResult, setHasResult] = useState(false);
   const expanded = state.artifactsOpen && Boolean(taskId);
   // The rows list what exists, so they load with the task, not on demand.
   const projection = useAgentTaskProjection(taskId, Boolean(taskId), expanded ? state.selection : null, reloadKey);
@@ -38,6 +41,10 @@ export function AgentShell({
   }, [run.busy]);
 
   useEffect(() => publishAgentCommands((command) => dispatch(command)), []);
+  useEffect(() => { publishInspectorOpen(expanded); }, [expanded]);
+  useEffect(() => () => publishInspectorOpen(false), []);
+  // Esc closes the inspector when it is the topmost thing open.
+  useDismissOnEscape(expanded, () => dispatch({ type: "artifacts.close" }));
 
   const details = useMemo<TaskDetailsState>(() => ({
     taskId,
@@ -47,7 +54,9 @@ export function AgentShell({
     open: (kind, id) => dispatch({ type: "artifacts.open", kind, id: id ?? null }),
     back: () => dispatch({ type: "artifacts.back" }),
     close: () => dispatch({ type: "artifacts.close" }),
-  }), [taskId, expanded, state.selection, projection, provenance]);
+    hasResult,
+    setHasResult,
+  }), [taskId, expanded, state.selection, projection, provenance, hasResult]);
 
   return (
     <div
@@ -59,6 +68,7 @@ export function AgentShell({
         <section className="agent-task-content" data-testid="agent-task-content" data-empty={taskId ? "false" : "true"}>
           {taskContent}
         </section>
+        {expanded ? <TaskInspector hasResult={hasResult} /> : null}
       </TaskDetailsContext.Provider>
     </div>
   );
