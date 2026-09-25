@@ -77,14 +77,18 @@ test.describe("a multi-turn task", () => {
     await expect(page.getByText(/error triage/i).first()).toBeVisible({ timeout: 20_000 });
     await paste(page, "<Error><Code>NoSuchBucket</Code><Message>Not found</Message></Error>");
     await expect(task(page).getByText(/NoSuchBucket/).first()).toBeVisible({ timeout: 20_000 });
+    // v2.0 — work in progress renders at the TOP of the Task, above the Work
+    // log; chronological order is the Work log's contract once it settles.
+    await expect(page.getByTestId("task-live")).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.getByTestId("task-log").getByText(/NoSuchBucket/).first()).toBeVisible({ timeout: 20_000 });
 
-    // Read the rendered order out of the THREAD, not out of document.body: the
+    // Read the rendered order out of the WORK LOG, not out of document.body: the
     // rail lists every session by title, so a body-wide indexOf matches the
     // sidebar and the assertion passes no matter what the thread does. And out
     // of textContent, not innerText — innerText is layout-dependent and Chrome
     // truncates it inside a tall scroll container, which reads as "the card is
     // missing" for a card that is right there in the DOM.
-    const order = await task(page).evaluate((el) => {
+    const order = await page.getByTestId("task-log").evaluate((el) => {
       const txt = el.textContent ?? "";
       return { first: txt.indexOf("AccessDenied"), second: txt.indexOf("NoSuchBucket") };
     });
