@@ -24,8 +24,8 @@ A user must be able to recognize and use the v1.09 product model without reading
 ### Start and task navigation
 
 - [ ] The product identity is **Storage Agent** in the window/release-facing UI.
-- [ ] A fresh install exposes one greeting line and a **Composer** in the middle band — not a wizard, hero heading, or suggestion cards.
-- [ ] The window is sidebar · title bar · document. There is no activity bar, status bar, or Details/inspector column.
+- [ ] A fresh install exposes the greeting (the page's one heading), one sub line, a **Composer**, and three starters (v3.0) — not a wizard. A starter only fills the Composer; nothing is sent until the user delegates.
+- [ ] The window is sidebar · title bar · document, plus the side pane only while an output is open (v3.0). There is no activity bar, status bar, or permanent inspector column.
 - [ ] The Composer shows the active model as a chip backed by the real provider list; switching it activates that provider.
 - [ ] The Composer does not paint a persistent keyboard legend (`⏎ Delegate` / `⇧⏎`).
 - [ ] Global navigation is a single chronological Agent Task title list in the sidebar; collapsing it moves the toggle and New task into the title bar.
@@ -38,7 +38,7 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] There is exactly one primary Agent composer/control.
 - [ ] At rest it represents **Delegate**.
 - [ ] During active execution it exposes real **Steer** and **Stop** behavior for the same Task.
-- [ ] Expanding a detail row does not create another Agent input.
+- [ ] Opening the side pane does not create another Agent input.
 - [ ] ⌘K / Ctrl+K opens a command overlay over the Task; it is not a new destination.
 - [ ] Dark and light themes are both first-class; switching language does not change product semantics.
 
@@ -59,9 +59,9 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] **Stop** cancels the active turn promptly (including a queued Direction).
 - [ ] A stopped execution leaves a truthful durable partial/stopped result/state as implemented and the Task becomes controllable again.
 - [ ] A `needs_attention` Task whose last Execution is interrupted/failed and could not continue automatically exposes **Resume** in a quiet note (no card fill; Resume is a default button beside **Open Settings**; its copy says the Agent could not continue on its own and that completed calls are not started over); Resume follows the new execution event stream.
-- [ ] Settings contains model, storage credentials, language, and theme as a centered dialog (General · Model Providers · Cloud Providers · Skills & bridges; General states the read-only safety floor including the 500 files / 256 MiB import bound) — no Safety section, no approval policy, not a storage price table.
+- [ ] Settings contains model, storage credentials, language, and theme as a centered dialog (General · Model Providers · Cloud Providers · Skills & bridges; General states the read-only safety floor as three points: vault, read-only storage, and imports bounded to 500 files / 256 MiB per call) — no Safety section, no approval policy, not a storage price table.
 - [ ] Composer has no `/checkup` `/cost` `/drift` SKU menu. Typing `/` is ordinary text.
-- [ ] There is no task header destination and no Overview / revisit / Verify painted chrome. The title bar centres name + state as one group; Find (⌘F) and the palette (⌘K) are keyboard.
+- [ ] There is no task header destination and no Overview / revisit / Verify painted chrome. The title bar centres name + state as one group between the sidebar toggle and the side-pane toggle; Find (⌘F) and the palette (⌘K) are keyboard. The palette lists Recent tasks and Actions only (no engine catalog).
 - [ ] Cost-review numbers in a Work Result are labelled estimates with coverage, or explicit gaps when inventory/price table is missing.
 - [ ] Cost / inventory / Drift / access-log figures render from runtime artifacts with coverage and Estimate; unconfirmed prices withhold the cost axis; missing series are gap states, never interpolated.
 - [ ] A finding with a provenance chain opens Evidence anchored to that finding; a missing chain is labelled, not implied.
@@ -87,13 +87,13 @@ A user must be able to recognize and use the v1.09 product model without reading
 - [ ] Kill the Sidecar during a running Execution and relaunch: the interrupted work continues on its own as a new execution (`kind=resume`) without a click; the Direction in the document reads exactly as the user wrote it (no `[resume]` note), and the continuation does not repeat calls that already completed.
 - [ ] If that continuation is itself interrupted, it is not continued again (no crash loop); with no usable model the Task shows **Needs attention** and the manual **Resume** banner.
 
-### Result and detail rows (v2.0)
+### Result and side pane (v2.0; side pane v3.0)
 
-- [ ] A Task opens at its top, on the latest **Result**: one meta line (*Result · when · Evidence n · Gaps n · Tool calls n*), then, after an investigative Direction, the recorded conclusion (the answer as a lead paragraph, findings most severe first, next steps as a list of asks).
+- [ ] A Task opens at its top, on the latest **Result**: an accent *Result* badge and one meta line (*when · Evidence n · Gaps n · Tool calls n*), then, after an investigative Direction, the recorded conclusion (the answer at 20px, findings most severe first with severity badges, next steps as suggestion cards).
 - [ ] A next step fills the Composer and is not sent until the user delegates it.
-- [ ] Evidence / Report / Execution detail are **rows under the Result** that expand in place (⌘I) with a short reveal (none under reduced motion); there are no Plans / Baselines rows and no side panel opens.
-- [ ] The one Composer remains logically owned by the active Task while a detail row is open, and stays docked: opening a row reveals it inside the document scroller without moving the window.
-- [ ] A one-Direction Task has no Work log: its commentary and *Worked for …* line sit under the Result above the detail rows. While a newer Direction works, the previous Result stays in place.
+- [ ] Evidence / Report / Execution are buttons in the outputs bar under the Result (each only when something is behind it) and open in **one side pane** on the right (⌘I or the title-bar toggle) with a tab per output; the close button, Esc and ⌘I close it; dragging its left edge resizes it (352–880px, double-click resets, the width survives reload); below ~1100px it overlays the document. There are no Plans / Baselines entries and no overlay dialog.
+- [ ] The one Composer remains logically owned by the active Task while the side pane is open, and stays docked: opening the pane never moves the window or the Composer. Execution detail opens inside the pane with one Back.
+- [ ] A one-Direction Task has no Work log: its commentary and *Worked for …* line sit under the Result above the outputs bar. While a newer Direction works, the previous Result stays in place.
 - [ ] Execution detail shows no empty *no findings* section and no kind label for an ordinary Direction.
 - [ ] Evidence/Execution details display persisted sanitized truth.
 - [ ] Markdown Report is a durable Task Artifact and survives reload.
@@ -170,11 +170,11 @@ Use synthetic/local test data and non-sensitive test providers where available.
 ## G. UI quality and accessibility smoke
 
 - [ ] Light and dark themes preserve readable text contrast.
-- [ ] Keyboard access works for Task navigation, shortcuts, detail rows, and the one Composer without firing task-navigation keys while editing text.
+- [ ] Keyboard access works for Task navigation, shortcuts, the side pane, and the one Composer without firing task-navigation keys while editing text.
 - [ ] Focus is contained/restored correctly for overlays.
 - [ ] English and Chinese UI preserve the same product semantics and states.
 - [ ] Narrow-window layout remains usable.
-- [ ] The real-state visual-review artifact covers at least Delegate, Working+Steer, a bounded evidence import tool row, the Result (conclusion · full answer), the Work log turn (commentary · Worked for …), the detail rows, task navigation, runtime failure, narrow layout, and Chinese localization.
+- [ ] The real-state visual-review artifact covers at least Delegate, Working+Steer, a bounded evidence import tool row, the Result (conclusion · full answer), the Work log turn (commentary · Worked for …), the side pane, task navigation, runtime failure, narrow layout, and Chinese localization.
 
 ## H. Anti-regression checks
 
@@ -182,7 +182,7 @@ The candidate must **not** reintroduce an older application model through docume
 
 - [ ] The Agent Task remains the primary application object.
 - [ ] No second Agent input exists.
-- [ ] The detail rows remain contextual to the Task.
+- [ ] The side pane remains contextual to the Task.
 - [ ] Persistence/API compatibility names do not become product navigation.
 - [ ] No fake multi-agent/worktree/terminal/browser/plan UI exists, and no approval card or approval policy returns.
 - [ ] Current architecture/legacy/documentation contract tests pass.

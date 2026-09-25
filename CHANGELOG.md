@@ -10,6 +10,27 @@ follow semantic versioning once it reaches 1.0.
 
 - **macOS release packaging** — `scripts/sign-macos-app-bundle.sh` retries `hdiutil create` / `attach` with backoff (detaching a stale volume between attempts): hosted macOS runners intermittently answer "Resource busy" while `diskimages-helper` still holds the image Tauri just built.
 
+## [3.0.0] - 2026-09-25
+
+_Design system v3 / Refined native — a full UI redesign on an unchanged runtime. Frontend only; no Sidecar, API, security-floor or migration change (head stays **031**)._ See `docs/releases/3.0.0.md`.
+
+### Changed
+
+- **Design system v3** — a five-step type scale (11 label · 13 UI · 15 reading · 20 conclusion · 28 page title, `--text-2xs … --text-2xl`); a calibrated cool-neutral ladder where every text step clears AA on `--hover`; **one restrained indigo accent** (`--accent`, `--accent-text`, `--accent-dim`, `--accent-fg`) for the primary action, selection, focus, links and live progress, replacing the v1.09–v2.2 ink primary; status stays a separate palette; a 4px spacing grid, three radii (6 / 10 / 14), two shadows (`--shadow-elev`, `--shadow-pop`), 16px icons at 1.5 stroke, motion 120 / 200 / 280ms honouring `prefers-reduced-motion`; sheets rise without fading.
+- **Component library v3** — `components/ui.tsx` (Button primary / secondary / ghost / selected / danger, IconButton, Kbd, Badge, StatusDot, SectionLabel, Segmented, Field / TextInput / Select), styled only in `agent/native-components.css` (`ui-*`).
+- **Side pane** — an outputs bar under the Result (Evidence · Report · Execution, with counts, only when something is behind them) opens one resizable (352–880px, double-click resets, width remembered per device), closable (close, Esc, ⌘I) side pane with tabs; Execution detail opens inside it with Back; below ~1100px it overlays the document. Replaces the v2.0 detail rows that expanded in place.
+- **Window** — sidebar: raised *New task* with key caps, in-place title search (Esc clears), accent-tinted selection; title bar: sidebar toggle · centred name + state pill · side-pane toggle, with a progress hairline while working.
+- **Empty start** — the greeting as the page's one `<h1>`, one sub line, the Composer, and three starters (diagnose access · survey the account · analyze an access log) that only fill the Composer.
+- **Result** — accent *Result* badge + meta; the answer at 20px; findings with severity badges; next steps as suggestion cards that fill the Composer; the full answer under a section label. Live work: pulsing status dot + live elapsed timer. Composer: docked bordered card with an accent focus ring, paperclip attach, *Set up a model…* when no model is configured.
+- **Figures** — full-width cards with a Chart/Table toggle, y-axis ticks, dashed gridlines and a baseline, rounded data-ends, gaps between stacked segments, a hover tooltip per column, legends for ≥ 2 series; categorical palette `--viz-1…6` validated for CVD and normal vision in both themes.
+- **Command palette** — Recent (up to 8 tasks at rest) · Actions, one fuzzy ranking with matched letters marked, a key-hint footer; combobox/listbox semantics.
+- **Settings** — compact preference panes; the safety floor in General reads as three points (vault · read-only · imports bounded to 500 files / 256 MiB per call, audited, Stop ends work).
+
+### Removed
+
+- The palette's engine catalog (*Ask the Agent to…*, v1.16).
+- Detail rows that expanded in place under the Result (now the side pane).
+
 ## [2.2.0] - 2026-09-25
 
 _Native agent depth — every tool from the first step, Directions durable from the start, continuations that pick up where they stopped, real progress on long work. No migration (head stays **031**)._ See `docs/releases/2.2.0.md`.
