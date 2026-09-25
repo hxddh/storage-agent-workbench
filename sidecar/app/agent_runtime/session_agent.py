@@ -40,8 +40,8 @@ from .guardrails import strip_chain_of_thought, strip_chain_of_thought_stream
 
 # FLOORS for the deterministic-summary items shown to the model; the effective
 # cap is _elastic_memory_cap (scales with the window, ceiling _MEM_RECALL_CEIL).
-from .limits import (_MAX_PARALLEL_TOOLS, _MAX_TURNS, _MODEL_TIMEOUT_S, seed_unlocked_groups)
-from .prompt import (INSTRUCTIONS, _build_prompt)
+from .limits import (_MAX_PARALLEL_TOOLS, _MAX_TURNS, _MODEL_TIMEOUT_S, all_tool_groups, seed_unlocked_groups, tools_gated)
+from .prompt import (INSTRUCTIONS, INSTRUCTIONS_GATED, _build_prompt)
 from .usage import (_PROMPT_CACHE_RETENTION, _endpoint_key, _stash_extra_usage)
 from .finalize import (_FINALIZE_FALLBACK, _answer_cap, _finalize_agent_and_prompt, _finalize_contract)
 from .guards import (_build_load_tools, _build_tools, _install_tool_gating, _install_tool_output_budget, _install_tool_timeouts, _install_untrusted_envelope, _make_input_filter, _make_tool_not_found_formatter, _strip_schema_titles)
@@ -167,8 +167,12 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     # would leak its HTTP pool, since stream_events_for's close never runs).
     if clients is None:
         clients = []
-    unlocked = seed_unlocked_groups(spec.get("conn"), spec.get("session_id"),
-                                    bool(spec.get("attachments")))
+    # v2.2: every group is open unless the model's window is too small to carry
+    # every schema; only then does the grouped load_tools disclosure apply.
+    gated = tools_gated(creds.get("model"), creds.get("context_window"))
+    unlocked = (seed_unlocked_groups(spec.get("conn"), spec.get("session_id"),
+                                     bool(spec.get("attachments")))
+                if gated else all_tool_groups())
     tools = _build_tools(spec.get("conn"), function_tool, activity,
                          spec.get("session_id"), spec.get("turn_id"),
                          spec.get("cancel_event"), model=creds.get("model"),
@@ -179,11 +183,13 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     # is seeded from what this session has actually needed before (and from the
     # plain fact that a file is attached), so a continuing investigation does not
     # re-pay the unlock round-trip every turn.
-    tools.append(_build_load_tools(function_tool, unlocked, activity))
-    _install_tool_gating(tools, unlocked)
+    if gated:
+        tools.append(_build_load_tools(function_tool, unlocked, activity))
+        _install_tool_gating(tools, unlocked)
     _strip_schema_titles(tools)
     _install_tool_timeouts(tools)
     spec["unlocked_groups"] = unlocked
+    spec["tools_gated"] = gated
     # Envelope first (inner), budget second (outer): the budget's runtime status
     # notes bypass the envelope, real payloads are wrapped, and the budget
     # counts the enveloped length it actually hands the model.
@@ -205,7 +211,7 @@ def _start_streamed_run(spec: dict[str, Any], clients: list[Any] | None = None):
     # follow-ups are detected by _is_tool_call_sequence_error and remembered in
     # _NO_PARALLEL_ENDPOINTS. It uses a per-run client so concurrent sessions
     # don't race on SDK globals.
-    agent = _make_agent(creds, tools, INSTRUCTIONS, clients)
+    agent = _make_agent(creds, tools, INSTRUCTIONS_GATED if gated else INSTRUCTIONS, clients)
     # Compact already-consumed tool results before each model call (v0.57.0).
     # Measured: 81% of the turn's tool-output cost is re-sending output the agent
     # read several steps ago. RunConfig.call_model_input_filter is the SDK's own
@@ -396,4 +402,4 @@ def build_stream(
 
 __all__ = ["SESSION_LOOP", "SteerQueue", "build_session_context", "render_context_text",
            "answer", "build_stream", "stream_events_for", "SESSION_SAFETY_RULES",
-           "INSTRUCTIONS", "FINALIZE_INSTRUCTIONS"]
+           "INSTRUCTIONS", "INSTRUCTIONS_GATED", "FINALIZE_INSTRUCTIONS"]

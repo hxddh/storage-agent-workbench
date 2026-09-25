@@ -13,7 +13,7 @@
  */
 import { useMemo, useRef } from "react";
 import { deriveTaskTitle } from "../lib/taskTitle";
-import type { Conclusion } from "../types";
+import type { Conclusion, ToolProgress } from "../types";
 import {
   ApiError,
   createTaskExecution,
@@ -45,6 +45,7 @@ import {
   applyDelta,
   applySteer,
   applyTool,
+  applyToolProgress,
   completeMessage,
   mergeTool,
   type LiveTurn,
@@ -105,6 +106,8 @@ export function liveHandlers(id: string) {
     // The compaction marker (+ the meter's new figure) and the task's derived
     // status straight from the stream.
     onSteerApplied: (payload: { text: string }) => reduce((turn) => applySteer(turn, payload.text)),
+    onToolProgress: (payload: { id: string; progress: ToolProgress }) =>
+      reduce((turn) => applyToolProgress(turn, payload.id, payload.progress)),
     onContextCompacted: (payload: Parameters<typeof applyCompacted>[1] & { summary_chars?: number }) =>
       patchLiveTask(id, (s: LiveTask) => {
         const next = applyCompacted(liveTurnOf(s), payload);

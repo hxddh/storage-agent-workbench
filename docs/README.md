@@ -1,7 +1,17 @@
 # Documentation
 
-> **Current architecture baseline: Storage Agent v2.1.0** (`v2.1.0`).
-> **v2.1.0 is the Native agent** (`docs/releases/2.1.0.md`): nothing pauses an
+> **Current architecture baseline: Storage Agent v2.2.0** (`v2.2.0`).
+> **v2.2.0 is Native agent depth** (`docs/releases/2.2.0.md`): every tool is
+> callable from the first step (the `load_tools` group gate remains only for
+> context windows ≤ 16k tokens); the Direction is durable from the moment its
+> execution starts (`direction.recorded`); a resume/retry keeps the Direction
+> as written and hands the model a bounded digest of calls already completed;
+> survey and evidence import report real counts as a durable, throttled
+> `tool.progress` event (a hairline meter on the running tool row); Stop ends
+> an import between files. A one-Direction Task has no Work log, the latest
+> Result stays while a newer Direction works, and opening a detail row never
+> moves the window. No migration (head stays **031**).
+> **v2.1.0 was the Native agent** (`docs/releases/2.1.0.md`): nothing pauses an
 > Execution for approval and the model keeps no plan. `import_evidence` runs in
 > the turn inside hard server-side bounds (a survey-discovered source, ≤ 500
 > files / 256 MiB per call, 1 GiB disk headroom, audited `approved_by=agent`,
@@ -53,7 +63,7 @@
 > context compaction (`context.compacted`, ⌘K Compact context), `AGENTS.md`
 > instructions, Execution detail from the durable log, wall-clock *Worked
 > for …*, and the frontend split into document / runner / api modules.
-> Migration head was **030** through v1.19.0 (v1.13.0–v1.19.0 add no migration; v2.0.0 appends **031**; v2.1.0 adds none).
+> Migration head was **030** through v1.19.0 (v1.13.0–v1.19.0 add no migration; v2.0.0 appends **031**; v2.1.0 and v2.2.0 add none).
 > **v1.14.0 is interaction truth and content craft.** Steering reaches waiting
 > executions, queued Directions edit until they run, Execution detail shows
 > measured usage, figures and evidence read localized, times read relative,
@@ -126,7 +136,7 @@ Historical compatibility vocabulary such as `session`, `run`, `session_message`,
 - [`api.md`](api.md) — localhost Sidecar API; distinguishes product-level `/agent-tasks` projection from compatibility `/sessions` APIs.
 - [`data-model.md`](data-model.md) — SQLite/DuckDB/files, migrations through 031, and product-to-persistence mapping.
 - [`tools.md`](tools.md) — actual Agent-accessible capability classes and safety bounds.
-- [`roadmap.md`](roadmap.md) — next direction after **v2.1.0 — Native agent**. Delivered history lives in `releases/`.
+- [`roadmap.md`](roadmap.md) — next direction after **v2.2.0 — Native agent depth**. Delivered history lives in `releases/`.
 - [`install.md`](install.md) — installation and local data behavior.
 - [`packaging.md`](packaging.md) — Sidecar/Tauri packaging topology.
 - [`release.md`](release.md) — release workflow and support matrix.

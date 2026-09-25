@@ -162,6 +162,10 @@ button.result-finding-head:hover .result-finding-title { color: var(--gray-100);
   margin-top: 24px;
   border-top: 1px solid var(--edge);
 }
+/* v2.2 — a one-Direction Task: the turn's work (commentary, the collapsed
+   "Worked for …" line) sits just above the detail rows, not in a Work log. */
+.task-result-work { margin-top: 24px; }
+.task-result-work + .task-details { margin-top: 12px; }
 .task-detail { border-bottom: 1px solid var(--edge); }
 .task-detail-head {
   display: flex;
@@ -463,6 +467,26 @@ button.result-finding-head:hover .result-finding-title { color: var(--gray-100);
   white-space: nowrap;
 }
 .native-tool-row[data-failed="true"] .native-tool-result { color: var(--gray-300); }
+/* v2.2 — a long call's real progress: counts in the note, and one hairline
+   meter under the row (ink on the edge colour; no status colour, no motion
+   beyond the width easing, which reduced motion removes). */
+.native-tool-progress { color: var(--gray-300); max-width: 50%; }
+.native-tool-meter {
+  height: 2px;
+  margin: 0 6px 3px 22px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: var(--edge);
+}
+.native-tool-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--gray-300);
+  transition: width var(--duration-base, 180ms) var(--ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .native-tool-meter > span { transition: none; }
+}
 .native-tool-ms {
   flex: none;
   font-variant-numeric: tabular-nums;
@@ -553,6 +577,19 @@ button.result-finding-head:hover .result-finding-title { color: var(--gray-100);
 .native-banner[data-tone="warn"]::before { background: var(--warn); }
 .native-banner p { margin: 6px 0 0; color: var(--gray-400); font-size: var(--text-xs); line-height: 1.6; }
 .native-banner-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+/* v2.2 — a quiet banner is a note in the document, not a card: no fill, no
+   border, the status dot, one line of copy and its actions inline. Used for
+   work that is waiting on the user but is not an error (Resume). */
+.native-banner[data-quiet="true"] {
+  border: 0;
+  border-bottom: 1px solid var(--edge);
+  border-radius: 0;
+  background: transparent;
+  padding: 2px 0 12px 18px;
+}
+.native-banner[data-quiet="true"]::before { top: 9px; left: 2px; width: 6px; height: 6px; }
+.native-banner[data-quiet="true"] p { margin-top: 2px; }
+.native-banner[data-quiet="true"] .native-banner-actions { margin-top: 8px; }
 
 .native-queued { opacity: 0.85; }
 

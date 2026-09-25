@@ -18,6 +18,7 @@ response model.
 """
 from __future__ import annotations
 
+import itertools
 import json
 import threading
 import time
@@ -56,11 +57,30 @@ def text_turn(text: str, chunk_size: int = 24) -> list[bytes]:
     ]
 
 
+_CALL_IDS = itertools.count(1)
+
+
 def tool_turn(name: str, arguments: dict) -> list[bytes]:
-    """A single function call."""
+    """A single function call. Each scripted call gets its own id: the SDK
+    refuses a completed call id reused for a different invocation (v2.2 —
+    scripts with several tool turns hit that)."""
+    call_id = f"call_fake_{next(_CALL_IDS)}"
     return [
         _chunk({"role": "assistant", "tool_calls": [{
-            "index": 0, "id": "call_fake_1", "type": "function",
+            "index": 0, "id": call_id, "type": "function",
+            "function": {"name": name, "arguments": json.dumps(arguments)},
+        }]}),
+        _chunk({}, "tool_calls"),
+    ]
+
+
+def commentary_tool_turn(text: str, name: str, arguments: dict) -> list[bytes]:
+    """Commentary the model writes, then a function call, in ONE response."""
+    call_id = f"call_fake_{next(_CALL_IDS)}"
+    return [
+        _chunk({"role": "assistant", "content": text}),
+        _chunk({"tool_calls": [{
+            "index": 0, "id": call_id, "type": "function",
             "function": {"name": name, "arguments": json.dumps(arguments)},
         }]}),
         _chunk({}, "tool_calls"),

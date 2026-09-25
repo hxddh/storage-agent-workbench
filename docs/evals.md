@@ -24,11 +24,12 @@ Judgment the harness does not automate: whether the *right* domain was routed, w
 
 ```sh
 cd sidecar && pytest tests/test_v113_eval_golden.py -q
+cd sidecar && pytest tests/test_v220_streamed_agent.py -q   # streamed-path runtime contracts (v2.2)
 ```
 
 ## Adding a case
 
 1. If the behaviour is deterministic (gap shape, redaction, grounding derivation), add a unit golden here.
-2. If it needs a turn, fake `SESSION_LOOP` (see `tests/turns.py` + the turn goldens) — never a live model.
+2. If it needs a turn, fake `SESSION_LOOP` (see `tests/turns.py` + the turn goldens) — never a live model. A runtime contract (what the model loop sees, emits or persists) belongs on the **streamed path** instead: the real OpenAI Agents SDK run against the local fake OpenAI-compatible endpoint `tests/fake_model.py`, as in `test_v220_streamed_agent.py` (v2.2 — tool disclosure, `direction.recorded`, continuation digest, `tool.progress`, Stop between files; the v2.0 conclusion, v2.1 recovery, v1.12 compaction-before-the-loop and prose-never-a-Decision contracts moved there too). `SESSION_LOOP` stays for persistence/unit tests.
 3. If it needs S3, use the `FakeS3` pattern from `test_account_discovery.py` — never live cloud.
 4. Name the rubric line the case pins, in the test docstring.

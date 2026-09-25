@@ -90,7 +90,7 @@ def test_a_survey_above_the_default_cap_runs_bounded_without_a_decision(client, 
     execution, handle = _running_execution(task["id"])
     seen: dict = {}
 
-    def fake_execute_run(conn, body, turn_id, dedup_key, cancel_event=None):
+    def fake_execute_run(conn, body, turn_id, dedup_key, cancel_event=None, on_progress=None):
         seen["max_buckets"] = body.max_buckets
         raise RuntimeError("stop here — the bound is what this test checks")
 
@@ -241,44 +241,32 @@ def test_compact_endpoint_is_idle_only_and_needs_a_model(client, monkeypatch):
 
 
 def test_runtime_compacts_before_the_model_loop_when_the_window_is_full(client, monkeypatch):
-    from app.agent_runtime import compaction, session_agent
-    _add_model_provider(client)
+    # v2.2 — on the streamed path (fake endpoint): the prompt asserted is the
+    # one the model really received.
+    from app.agent_runtime import compaction
+    from tests.fake_model import FakeModel, text_turn
     task = _task(client)
     _seed_turns(client, task["id"], 2)
-    # Make the declared window small enough that the last turn (2000 tokens) fills it.
-    from app.agent_runtime import agent_service
-    real = agent_service.get_model_credentials
-
-    def small_window(conn):
-        creds = real(conn)
-        creds["context_window"] = 2400
-        return creds
-
-    monkeypatch.setattr("app.task_runtime.runtime.get_model_credentials", small_window)
     monkeypatch.setattr(compaction, "COMPACT_STEP",
                         lambda creds, msgs, prior: "Summary: two turns; acme-logs public.")
-    seen_ctx: dict = {}
-
-    def fake_loop(spec):
-        seen_ctx["prompt"] = spec["prompt"]
-        return {"answer": "Continuing.", "skills_used": [], "skills_offered": [],
-                "evidence_used": [], "evidence_gaps": [], "tool_activity": [],
-                "turn_items": [{"kind": "message", "text": "ok"}]}
-
-    monkeypatch.setattr(session_agent, "SESSION_LOOP", fake_loop)
-    ex = client.post(f"/agent-tasks/{task['id']}/executions",
-                     json={"direction": "keep going"}).json()["execution"]
-    assert _wait_settled(client, task["id"], ex["id"])["status"] == "completed"
+    with FakeModel([text_turn("Continuing.")]) as model:
+        # A declared window small enough that the last turn (2000 tokens) fills it.
+        client.post("/model-providers", json={
+            "name": "fake", "provider_type": "openai-compatible", "base_url": model.base_url,
+            "model": "fake-model", "api_key": "not-a-real-key", "context_window": 2400})
+        ex = client.post(f"/agent-tasks/{task['id']}/executions",
+                         json={"direction": "keep going"}).json()["execution"]
+        assert _wait_settled(client, task["id"], ex["id"])["status"] == "completed"
+    prompt = json.dumps(model.requests[0]["messages"])
     events = client.get(f"/agent-tasks/{task['id']}/events").json()["events"]
     ev = [e for e in events if e["event_type"] == "context.compacted"]
     assert len(ev) == 1 and ev[0]["execution_id"] == ex["id"]
     assert ev[0]["payload"]["before_tokens"] == 2000
-    assert "Summary: two turns; acme-logs public." in seen_ctx["prompt"]
-    assert "question 0 about acme-logs" not in seen_ctx["prompt"]
+    assert "Summary: two turns; acme-logs public." in prompt
+    assert "question 0 about acme-logs" not in prompt
     msg = [m for m in _messages(client, task["id"]) if m["role"] == "assistant"][-1]
     assert msg["turn_items"][0] == {"kind": "compacted", "before_tokens": 2000,
                                     "after_tokens": ev[0]["payload"]["after_tokens"]}
-    assert msg["turn_items"][1] == {"kind": "message", "text": "ok"}
 
 
 def test_on_demand_compaction_is_carried_by_the_next_execution_once(client, monkeypatch):

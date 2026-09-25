@@ -82,13 +82,19 @@ export function TaskBanners({
         </div>
       ) : null}
       {showResume && lastExecution ? (
-        <div data-testid="task-resume" className="native-banner" data-tone="warn">
+        // v2.2 — a quiet note, not a card: the work waits on the user but
+        // nothing failed. Settings sits beside Resume because the usual reason
+        // it could not continue on its own is that no model was usable.
+        <div data-testid="task-resume" className="native-banner" data-tone="warn" data-quiet="true">
           <span className="font-medium text-gray-100">{copy.resumeTitle}</span>
           <p>{copy.resumeBody}</p>
           <div className="native-banner-actions">
-            <Button data-testid="task-resume-action" variant="primary" size="sm" onClick={() => onResume(lastExecution.id)}>
+            <Button data-testid="task-resume-action" variant="default" size="sm" onClick={() => onResume(lastExecution.id)}>
               <Icon name="play" size={12} />
               {copy.resumeAction}
+            </Button>
+            <Button data-testid="task-resume-settings" variant="ghost" size="sm" onClick={onOpenSettings}>
+              {t("common.openSettings")}
             </Button>
           </div>
         </div>

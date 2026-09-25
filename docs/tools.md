@@ -1,6 +1,6 @@
 # Agent tools and capability contract
 
-> **Storage Agent v2.1.0.** Tool surface unchanged from v1.02.0 except for gated `GET /skills`, `GET /.*export/otel` (now with derived spans), `GET /mcp.*` + executing `POST /mcp/tools/call`, local-model provider types, `record_conclusion` (v2.0), and — v2.1 — no approval gate and no `update_plan`: `import_evidence` is bounded server-side instead of gated, and `survey_account` runs to its 500-bucket hard cap without asking. Agent-accessible capabilities are explicit, typed, whitelisted, bounded, sanitized, and read-only except for the one bounded data-movement tool documented below.
+> **Storage Agent v2.2.0.** Since v2.2 every tool is callable from the first step (the grouped `load_tools` disclosure applies only to context windows ≤ 16k tokens), `survey_account` and `import_evidence` report real counts as durable `tool.progress` events, and Stop ends an import between files. Tool surface otherwise unchanged from v1.02.0 except for gated `GET /skills`, `GET /.*export/otel` (now with derived spans), `GET /mcp.*` + executing `POST /mcp/tools/call`, local-model provider types, `record_conclusion` (v2.0), and — v2.1 — no approval gate and no `update_plan`: `import_evidence` is bounded server-side instead of gated, and `survey_account` runs to its 500-bucket hard cap without asking. Agent-accessible capabilities are explicit, typed, whitelisted, bounded, sanitized, and read-only except for the one bounded data-movement tool documented below.
 
 This document describes capability classes available to the one model-driven Agent runtime plus deterministic compute it can invoke. It is not a promise that every internal S3 helper is a public Agent tool or HTTP route.
 
@@ -188,6 +188,8 @@ The result is persisted and sanitized; raw object rows/bodies are not sent to th
 
 `max_buckets` (optional, 1–500) raises the per-survey bucket cap for large accounts: default 100 when not given, hard cap 500 (larger values are clamped). Since v2.1 a larger survey runs without asking — the v1.12–v2.0 `survey_account_large` gate is gone — and the result's `truncated` flag reports whether buckets were left out.
 
+While the survey runs (v2.2), the engine (`runs/account_discovery_run._probe_buckets`) reports each finished bucket through `app/progress.py`, keyed by its run id; `survey_account` binds that key to its tool call only while the call waits (`_execute_run(on_progress=...)`), and the runtime writes a durable, throttled `tool.progress` event (`unit: "buckets"`; at most one per call per second plus the final one, ≤ 120 per call). Counts only — never a percentage from time, never row data. The running tool row reads *120 of 500 buckets* with a hairline meter.
+
 ### `review_bucket_config`
 
 Runs the deterministic bucket-review engine as Agent-invoked Execution and returns bounded sanitized result context.
@@ -260,8 +262,8 @@ Group `evidence_import`. Args: `source_type` (`inventory` | `access_log`), `buck
 1. validates the target against an evidence source DISCOVERED by the task's account survey (never an arbitrary bucket/key) and plans the bounded download (read-only listing) through `app.evidence.import_service`;
 2. clamps the plan to at most 500 files / 256 MiB per call (`AGENT_MAX_FILES` / `AGENT_MAX_BYTES`), whatever the model asked for; the result says when coverage is partial;
 3. refuses with nothing downloaded when the data directory would keep less than 1 GiB free;
-4. checks Stop before downloading (Stop ends the Execution; the storage side stays read-only);
-5. confirms and runs the import through the confirm → run path, audited as `approved_by="agent"` (`approval_events` + `audit_logs`), starts the deterministic analysis, links the run, indexes the `evidence_import` Artifact, and returns a bounded status line (files, bytes) to the model. It shows as an ordinary tool row.
+4. checks Stop before downloading and, since v2.2, before each file (`managed_import.download_and_combine(on_file=..., cancel_event=...)` raises `ImportStopped`; the tool answers "status: stopped — … nothing was kept"). Stop ends the Execution; the storage side stays read-only;
+5. confirms and runs the import through the confirm → run path, audited as `approved_by="agent"` (`approval_events` + `audit_logs`), starts the deterministic analysis, links the run, indexes the `evidence_import` Artifact, and returns a bounded status line (files, bytes) to the model. It shows as an ordinary tool row; while files download, each finished file is a durable `tool.progress` event (`unit: "files"`, same throttle as the survey).
 
 The workflow is:
 
@@ -387,6 +389,10 @@ Storage/object/config/file content is untrusted external data, including text th
 The Agent runtime must keep external Tool data inside the untrusted-data envelope implemented in `agent_runtime/session_agent.py` (historical module name) and defang nested marker text so untrusted data cannot escape the boundary.
 
 First-party skill guidance and runtime control/status notes have separate trust semantics.
+
+## Tool disclosure (v0.55; small windows only since v2.2)
+
+Every tool is callable from the first step. `limits.tools_gated(model, explicit_window)` decides, from the resolved context window, whether the v0.55 progressive tool-group gate applies: only when the window is ≤ 16,384 tokens (`_GATED_WINDOW_MAX`). Otherwise all groups are open, `load_tools` is **not registered**, and the instructions (`prompt.INSTRUCTIONS`) say every tool is callable from the first step. A small-window model gets `prompt.INSTRUCTIONS_GATED` (the group catalog) and the grouped `load_tools(group)` disclosure; a call to a tool in a locked group is answered with the group to load. The runtime decides which applies, never the model. Gating is a context-size measure, not a safety bound: every tool keeps its own bounds either way.
 
 ## Per-turn budgets
 

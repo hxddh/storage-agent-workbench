@@ -3,6 +3,7 @@ import { useCopy } from "../hooks/useCopy";
 import { openExternal, tauriInvoke } from "../config";
 import { useI18n } from "../i18n";
 import { highlight, TOK_CLASS } from "../lib/highlight";
+import { revealInScroller } from "../lib/scroll";
 
 /** Dependency-free, safe markdown renderer for Agent Work Results and artifacts. */
 const MarkdownBlocks = memo(function MarkdownBlocks({ text }: { text: string }) {
@@ -40,7 +41,7 @@ function Outline({ entries }: { entries: Array<{ id: string; text: string; level
               href={`#${e.id}`}
               onClick={(event) => {
                 event.preventDefault();
-                document.getElementById(e.id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                revealInScroller(document.getElementById(e.id), "start");
               }}
               className="text-xs text-gray-500 transition-colors hover:text-accent-soft"
             >

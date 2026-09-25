@@ -36,7 +36,7 @@ import threading
 import time
 from typing import Any
 
-from .. import audit, config
+from .. import audit, config, progress
 from ..agent_runtime import compaction, conclusion_tools, session_agent
 from ..agent_runtime.agent_service import AgentUnavailable, get_model_credentials
 from ..db import connect
@@ -47,7 +47,7 @@ from ..security.redaction import redact_text
 from ..sessions import summary_builder
 from . import context as task_context
 from . import titling
-from . import hub, store
+from . import continuation, hub, store
 
 _CONTEXT_MESSAGES = session_agent._MAX_MESSAGES_CEIL
 
@@ -60,7 +60,8 @@ class LiveExecution:
     """In-process handle for one running execution (signals only — all durable
     state lives in the store)."""
 
-    __slots__ = ("execution_id", "task_id", "cancel_event", "steer_queue", "done_event")
+    __slots__ = ("execution_id", "task_id", "cancel_event", "steer_queue", "done_event",
+                 "direction_message_id")
 
     def __init__(self, execution_id: str, task_id: str) -> None:
         self.execution_id = execution_id
@@ -68,6 +69,9 @@ class LiveExecution:
         self.cancel_event = threading.Event()
         self.steer_queue = session_agent.SteerQueue()
         self.done_event = threading.Event()
+        # v2.2 — the Direction's session_messages row, written when the
+        # execution starts; _finish answers under it instead of writing it.
+        self.direction_message_id: str | None = None
 
 
 _lock = threading.RLock()
@@ -216,16 +220,16 @@ def resume(conn: sqlite3.Connection, execution_id: str) -> dict[str, Any]:
     if execution["status"] not in (store.EXEC_INTERRUPTED, store.EXEC_FAILED,
                                    store.EXEC_CANCELLED):
         raise ValueError("only an interrupted, failed, or cancelled execution can be resumed")
-    direction = (execution["direction"] or "").strip()
+    direction = continuation.clean_direction(execution["direction"]).strip()
     was = execution["status"]
     # A user-cancelled direction is an explicit "I don't want this" — resuming
     # it is a RETRY the user asked for, not a recovery of lost work. The kind
     # and note say so, so history never reads a cancelled turn as interrupted.
     tag = "retry" if was == store.EXEC_CANCELLED else "resume"
-    note = (f"\n\n[{tag}] The previous execution of this direction was "
-            f"{was} before it could finish. Continue from what the "
-            "task has already established; do not start over.")
-    return submit(conn, execution["task_id"], direction + note,
+    # v2.2 — the stored Direction stays the user's words; the continuation
+    # note and the digest of completed calls reach only the model
+    # (continuation.prompt_direction, at run time).
+    return submit(conn, execution["task_id"], direction,
                   kind=tag, resumed_from=execution_id)
 
 
@@ -292,6 +296,7 @@ def _run_execution(execution: dict[str, Any]) -> None:
 
     conn = connect()
     wloop = asyncio.new_event_loop()
+    progress_sink = None
     try:
         # Claim atomically: only a still-queued row runs (stop() may have
         # cancelled it between the scan and now).
@@ -315,6 +320,14 @@ def _run_execution(execution: dict[str, Any]) -> None:
         recent = sessions_repo.list_messages(conn, task_id, limit=_CONTEXT_MESSAGES)
         attachments = sds_repo.list_pending_for_session(conn, task_id)
         creds = get_model_credentials(conn)  # raises AgentUnavailable
+        # v2.2 — the Direction is durable from the moment work starts: a reload
+        # mid-run (or mid-finish) reads it from the document, never only from
+        # the live stream. `recent` was read above, so the prompt does not
+        # carry it twice; the model's copy adds any continuation note.
+        handle.direction_message_id = _record_direction(conn, execution)
+        direction = continuation.prompt_direction(conn, execution)
+        progress_sink = _progress_sink(exec_id, task_id)
+        progress.attach_task(task_id, progress_sink)
 
         # v1.12 — compaction: when the last model call filled 80 % of the
         # window, summarise-and-continue BEFORE this execution's model loop.
@@ -346,7 +359,7 @@ def _run_execution(execution: dict[str, Any]) -> None:
         if session_agent.SESSION_LOOP is not session_agent._streamed_session_loop:
             t0 = time.monotonic()
             contract = session_agent.answer(
-                dict(row), summary, recent, execution["direction"] or "", creds,
+                dict(row), summary, recent, direction, creds,
                 conn, execution["turn_id"], attachments=attachments,
                 cancel_event=handle.cancel_event)
             for rec in contract.get("tool_activity") or []:
@@ -369,7 +382,7 @@ def _run_execution(execution: dict[str, Any]) -> None:
             try:
                 result, activity, skill_names, finalize, _, budget = \
                     session_agent.build_stream(
-                        dict(row), summary, recent, execution["direction"] or "",
+                        dict(row), summary, recent, direction,
                         creds, conn, execution["turn_id"], attachments=attachments,
                         cancel_event=handle.cancel_event, clients=clients,
                         steer_queue=handle.steer_queue)
@@ -410,6 +423,8 @@ def _run_execution(execution: dict[str, Any]) -> None:
     except Exception as exc:  # noqa: BLE001
         _fail(conn, exec_id, task_id, _safe_err(exc))
     finally:
+        if progress_sink is not None:
+            progress.detach_task(task_id, progress_sink)
         handle.done_event.set()
         hub.mark_done(exec_id)
         with _lock:
@@ -434,6 +449,104 @@ def _run_execution(execution: dict[str, Any]) -> None:
             wloop.close()
         except Exception:  # noqa: BLE001
             pass
+
+
+# v2.2 — `tool.progress` is durable (a reconnect replays it) but throttled: at
+# most one event per call per second, plus the last one, and never more than
+# _PROGRESS_MAX_EVENTS per call — a 500-bucket survey writes tens, not 500.
+_PROGRESS_MIN_INTERVAL_S = 1.0
+_PROGRESS_MAX_EVENTS = 120
+
+
+def _progress_sink(exec_id: str, task_id: str):
+    state: dict[str, tuple[float, int]] = {}
+    lock = threading.Lock()
+
+    def sink(call_id: str, tool: str, done: int, total: int, unit: str) -> None:
+        now = time.monotonic()
+        with lock:
+            last_at, count = state.get(call_id, (0.0, 0))
+            final = total > 0 and done >= total
+            if count >= _PROGRESS_MAX_EVENTS or (
+                    not final and now - last_at < _PROGRESS_MIN_INTERVAL_S):
+                return
+            state[call_id] = (now, count + 1)
+        # Engines report from their own threads: a private connection.
+        pconn = connect()
+        try:
+            store.append_event(pconn, exec_id, task_id, "tool.progress", {
+                "id": call_id, "tool": tool, "done": max(0, int(done)),
+                "total": max(0, int(total)), "unit": str(unit)[:16]})
+        finally:
+            pconn.close()
+    return sink
+
+
+def _record_direction(conn: sqlite3.Connection, execution: dict[str, Any]) -> str:
+    """Write the Direction's user row as the execution starts (v2.2).
+
+    A continuation whose original Direction is still the task's latest message
+    answers under that same row — the document keeps one heading in the user's
+    words, never a second copy or a runtime note."""
+    exec_id, task_id = execution["id"], execution["task_id"]
+    source = execution.get("resumed_from")
+    if execution.get("kind") in continuation.CONTINUATION_KINDS and source:
+        mid = _recorded_direction(conn, source)
+        if mid and _is_latest_message(conn, task_id, mid):
+            store.append_event(conn, exec_id, task_id, "direction.recorded",
+                               {"message_id": mid, "continued": True})
+            return mid
+    mid = sessions_repo.add_message(conn, task_id, "user",
+                                    continuation.clean_direction(execution["direction"]))
+    store.append_event(conn, exec_id, task_id, "direction.recorded", {"message_id": mid})
+    return mid
+
+
+def _withdraw_unanswered_direction(conn: sqlite3.Connection, exec_id: str, task_id: str) -> None:
+    """A FAILED execution takes back the Direction row it wrote at start when
+    nothing answered it (v2.2): the failure banner and the Execution row keep
+    the words, and a retry from the Composer does not leave the same heading
+    twice. A continuation's reused row belongs to the interrupted chain (its
+    Resume answers under it) and is left alone; stop and interruption keep
+    theirs. Best-effort — a failure path must not fail again."""
+    try:
+        row = conn.execute(
+            "SELECT payload_json_sanitized FROM execution_events WHERE execution_id = ? "
+            "AND event_type = 'direction.recorded' ORDER BY seq LIMIT 1", (exec_id,)).fetchone()
+        if row is None:
+            return
+        import json
+        payload = json.loads(row[0] or "{}")
+        mid = str(payload.get("message_id") or "")
+        if not mid or payload.get("continued") or not _is_latest_message(conn, task_id, mid):
+            return
+        conn.execute("DELETE FROM session_messages WHERE id = ? AND session_id = ? AND role = 'user'",
+                     (mid, task_id))
+        store.append_event(conn, exec_id, task_id, "direction.withdrawn",
+                           {"message_id": mid}, commit=False)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _recorded_direction(conn: sqlite3.Connection, execution_id: str) -> str | None:
+    row = conn.execute(
+        "SELECT payload_json_sanitized FROM execution_events WHERE execution_id = ? "
+        "AND event_type = 'direction.recorded' ORDER BY seq LIMIT 1",
+        (execution_id,)).fetchone()
+    if row is None:
+        return None
+    import json
+    try:
+        return str(json.loads(row[0] or "{}").get("message_id") or "") or None
+    except ValueError:
+        return None
+
+
+def _is_latest_message(conn: sqlite3.Connection, task_id: str, message_id: str) -> bool:
+    row = conn.execute(
+        "SELECT id FROM session_messages WHERE session_id = ? "
+        "ORDER BY created_at DESC, rowid DESC LIMIT 1", (task_id,)).fetchone()
+    return row is not None and row[0] == message_id
 
 
 _MAX_SEGMENT_EVENT_TEXT = 3600
@@ -479,6 +592,7 @@ def _persist_tool_event(conn: sqlite3.Connection, exec_id: str, task_id: str,
 
 
 def _fail(conn: sqlite3.Connection, exec_id: str, task_id: str, error: str) -> None:
+    _withdraw_unanswered_direction(conn, exec_id, task_id)
     store.set_execution_status(conn, exec_id, store.EXEC_FAILED, error=error)
     store.refresh_task_status(conn, task_id)  # task.status precedes the terminal frame
     store.append_event(conn, exec_id, task_id, "execution.status",
@@ -501,7 +615,9 @@ def _finish(conn: sqlite3.Connection, execution: dict[str, Any], handle: LiveExe
     }
     cut_short = data.get("budget_stopped_on") or ("finalize" if data.get("cut_short") else None)
 
-    sessions_repo.add_message(conn, task_id, "user", execution["direction"] or "")
+    if handle.direction_message_id is None:
+        sessions_repo.add_message(conn, task_id, "user",
+                                  continuation.clean_direction(execution["direction"]))
     for steer_text in handle.steer_queue.delivered:
         sessions_repo.add_message(conn, task_id, "user", f"[steer] {steer_text}")
     conclusion = conclusion_tools.bounded(data.get("conclusion"))

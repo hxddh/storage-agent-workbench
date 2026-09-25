@@ -5,6 +5,7 @@ import { SeverityMark, confidenceLabel } from "../components/SeverityMark";
 import { useI18n } from "../i18n";
 import { useAgentCopy } from "./agentCopy";
 import type { TaskProvenance } from "../viz/types";
+import { revealInScroller } from "../lib/scroll";
 
 function EmptyLine({ children }: { children: ReactNode }) {
   return <p className="agent-empty-line">{children}</p>;
@@ -27,7 +28,7 @@ export function EvidenceReview({
   useEffect(() => {
     if (!selectedFindingId) return;
     const node = document.getElementById(`finding-${selectedFindingId}`);
-    node?.scrollIntoView({ block: "center", behavior: "smooth" });
+    revealInScroller(node, "center");
   }, [selectedFindingId, findings.length]);
 
   if (!detail) {

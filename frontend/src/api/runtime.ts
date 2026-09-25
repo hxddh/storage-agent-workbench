@@ -1,6 +1,6 @@
 import { sidecarBaseUrl } from "../config";
 import { authHeaders, errorDetail, request } from "./client";
-import type { Conclusion, ExecutionMetrics, ToolActivity } from "../types";
+import type { Conclusion, ExecutionMetrics, ToolActivity, ToolProgress } from "../types";
 import { asConclusion } from "../lib/conclusion";
 
 /**
@@ -181,6 +181,8 @@ export interface LiveEventHandlers {
    * never a tool row. */
   onSteerApplied?: (payload: { text: string }) => void;
   onContextCompacted?: (payload: ContextCompactedPayload) => void;
+  /** A long call reported progress (v2.2 `tool.progress`). */
+  onToolProgress?: (payload: { id: string; progress: ToolProgress }) => void;
 }
 
 /** The durable event stream dropped before a terminal status. Reconnect with
@@ -229,6 +231,14 @@ export function dispatchDurableEvent(
 ): { terminal: true; status: string; payload: Record<string, any> } | null {
   if (type === "tool.started") on.onTool(toolFromEvent(payload, "started", seenAt));
   else if (type === "tool.completed") on.onTool(toolFromEvent(payload, "completed", seenAt));
+  else if (type === "tool.progress") {
+    const id = typeof payload.id === "string" ? payload.id : "";
+    const done = Number(payload.done);
+    const total = Number(payload.total);
+    if (id && Number.isFinite(done) && Number.isFinite(total) && total > 0) {
+      on.onToolProgress?.({ id, progress: { done: Math.min(done, total), total, unit: String(payload.unit ?? "") } });
+    }
+  }
   else if (type === "steer.applied")
     on.onSteerApplied?.({ text: String(payload.text ?? "") });
   else if (type === "message.completed")

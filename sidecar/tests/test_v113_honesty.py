@@ -168,7 +168,12 @@ def test_resume_of_cancelled_is_labelled_retry(client):
         assert store.get_execution(conn, execution["id"])["status"] == store.EXEC_CANCELLED
         nxt = runtime.resume(conn, execution["id"])
         assert nxt["kind"] == "retry"
-        assert "[retry]" in (nxt["direction"] or "")
+        # v2.2: the stored Direction stays the user's words; the [retry] note
+        # reaches only the model's copy.
+        assert nxt["direction"] == "to cancel"
+        from app.task_runtime import continuation
+        assert "[retry]" in continuation.prompt_direction(conn, nxt)
+        assert "cancelled" in continuation.prompt_direction(conn, nxt)
     finally:
         conn.close()
     # Join the worker resume() just started: otherwise it outlives this test

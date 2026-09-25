@@ -67,7 +67,6 @@ async function review(page: Page, label: string, opts: FakeS3Options): Promise<{
     })).json()) as { id: string }).id;
 
     model = await startFakeModel([
-      toolTurn("load_tools", { group: "bucket_config" }),
       toolTurn("review_bucket_config", { provider_id: pid, bucket: "acme-logs" }),
       textTurn("I have reviewed the bucket; the details are above."),
     ]);

@@ -56,7 +56,8 @@ test("a recorded conclusion leads the Task, survives a reload, and its next step
     await expect(findings.first()).toHaveAttribute("data-severity", "high");
     await expect(result.getByTestId("turn-answer")).toContainText("grants s3:GetObject but not s3:ListBucket");
     // The conclusion is runtime structure, never a tool row.
-    const log = page.getByTestId("task-log");
+    // v2.2 — one Direction: its work sits under the Result, not in a log.
+    const log = page.getByTestId("task-result-work");
     const group = log.getByTestId("worked-group").last();
     if ((await group.getAttribute("data-expanded")) === "false") await group.getByTestId("execution-head").click();
     await expect(group.getByTestId("worked-row")).toHaveCount(1);

@@ -86,6 +86,10 @@ class LimitExceeded(ImportError_):
     """Raised when a download would exceed the confirmed file/byte budget."""
 
 
+class ImportStopped(ImportError_):
+    """Raised when the user stopped the execution mid-download (v2.2)."""
+
+
 @dataclass
 class Plan:
     source_type: str
@@ -640,6 +644,8 @@ def download_and_combine(
     max_files: int,
     max_bytes: int,
     dest_dir: Path,
+    on_file: "Any" = None,
+    cancel_event: "Any" = None,
 ) -> tuple[Path, int]:
     """Download the confirmed evidence files and combine into ONE local file.
 
@@ -659,13 +665,21 @@ def download_and_combine(
     try:
         parts: list[Path] = []
         total = 0
+        if on_file is not None:
+            on_file(0, len(files), "files")
         for i, f in enumerate(files):
+            # v2.2 — Stop is the brake: checked between files, so a stopped
+            # import ends within one file's download.
+            if cancel_event is not None and cancel_event.is_set():
+                raise ImportStopped("the execution was stopped during the download")
             remaining = max_bytes - total
             if remaining <= 0:
                 raise LimitExceeded("byte budget exhausted")
             part = parts_dir / f"part_{i:05d}"
             total += _stream_object_to_file(client, source_bucket, f["object_key"], part, remaining)
             parts.append(part)
+            if on_file is not None:
+                on_file(i + 1, len(files), "files")
 
         if source_type == "inventory":
             combined = _combine_inventory(parts, (fmt or "csv"), schema, dest_dir)

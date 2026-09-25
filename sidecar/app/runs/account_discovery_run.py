@@ -18,6 +18,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import sqlite3
+import threading
 import time
 from collections import Counter
 from typing import Any
@@ -109,7 +110,8 @@ def _replay(probe: dict[str, Any], which: str) -> dict[str, Any]:
     return probe[which]
 
 
-def _probe_buckets(provider_id: str, names: list[str]) -> dict[str, dict[str, Any]]:
+def _probe_buckets(provider_id: str, names: list[str],
+                   run_id: str | None = None) -> dict[str, dict[str, Any]]:
     """Run every bucket's read-only probes in a bounded pool, keyed by name.
 
     ONLY network work happens here. Each worker opens its OWN sqlite connection
@@ -121,7 +123,19 @@ def _probe_buckets(provider_id: str, names: list[str]) -> dict[str, dict[str, An
     """
     from concurrent.futures import ThreadPoolExecutor
 
+    from .. import progress
     from ..db import connect
+
+    # v2.2 — live progress: one report per finished bucket, keyed by the run
+    # (the survey tool binds that key to its own call row).
+    finished = [0]
+    finished_lock = threading.Lock()
+
+    def _done_one() -> None:
+        with finished_lock:
+            finished[0] += 1
+            done = finished[0]
+        progress.report(run_id, done, len(names), "buckets")
 
     def _one(name: str) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -149,8 +163,10 @@ def _probe_buckets(provider_id: str, names: list[str]) -> dict[str, dict[str, An
             out["evidence_ms"] = int((time.monotonic() - started) * 1000)
         finally:
             wconn.close()
+            _done_one()
         return out
 
+    progress.report(run_id, 0, len(names), "buckets")
     if len(names) <= 1:
         return {n: _one(n) for n in names}
     with ThreadPoolExecutor(max_workers=min(_PROBE_WORKERS, len(names))) as pool:
@@ -336,7 +352,7 @@ def _body(conn: sqlite3.Connection, run_id: str, run: dict[str, Any]) -> str:
         truncated=truncated, list_status=list_status, summary={},
     )
 
-    probes = _probe_buckets(provider_id, selected)
+    probes = _probe_buckets(provider_id, selected, run_id)
 
     per_bucket: list[dict[str, Any]] = []
     for name in selected:

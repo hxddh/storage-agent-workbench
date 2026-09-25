@@ -172,7 +172,8 @@ def confirm(conn: sqlite3.Connection, import_id: str,
     return repo.get(conn, import_id)  # type: ignore[return-value]
 
 
-def run(conn: sqlite3.Connection, import_id: str, task_id: str | None = None) -> dict[str, Any]:
+def run(conn: sqlite3.Connection, import_id: str, task_id: str | None = None,
+        on_file: Any = None, cancel_event: Any = None) -> dict[str, Any]:
     """Download the confirmed files (bounded), persist the dataset, index the
     Artifact, and hand off to the deterministic analysis. Raises
     ImportServiceError; the import row is left ``failed`` on any error."""
@@ -213,6 +214,7 @@ def run(conn: sqlite3.Connection, import_id: str, task_id: str | None = None) ->
             conn, data["provider_id"], source_type, data["source_bucket"],
             data.get("format"), data.get("fmt_schema"),
             files, data["max_files"], data["max_bytes"], dest_dir,
+            on_file=on_file, cancel_event=cancel_event,
         )
     except Exception as exc:  # noqa: BLE001 - any download/combine failure is sanitized + surfaced
         repo.set_status(conn, import_id, "failed")

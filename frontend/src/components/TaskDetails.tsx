@@ -9,6 +9,7 @@ import type { ArtifactKind } from "../agent/model";
 import { useTaskDetails } from "../agent/taskDetails";
 import { ExecutionDetail } from "./ExecutionDetail";
 import { Icon } from "./icons";
+import { revealInScroller } from "../lib/scroll";
 
 /** The first line of the Direction, bounded, as an execution's name. */
 function executionTitle(execution: TaskExecution): string {
@@ -34,7 +35,7 @@ function DetailRow({
   const ref = useRef<HTMLDivElement | null>(null);
   // Opened from elsewhere (a tool row, a provenance mark, ⌘I): bring it into view.
   useEffect(() => {
-    if (open) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (open) revealInScroller(ref.current, "nearest");
   }, [open]);
   return (
     <div ref={ref} className="task-detail" data-testid={`task-detail-${kind}`} data-open={open ? "true" : "false"}>
@@ -118,7 +119,7 @@ export function TaskDetails({ hasResult }: { hasResult: boolean }) {
                 <span className="agent-run-status" data-status={execution.status} aria-hidden />
                 <span className="agent-run-main">
                   <strong>{executionTitle(execution) || c.execution.kinds[execution.kind] || execution.kind}</strong>
-                  <small>{[c.execution.statuses[execution.status] ?? execution.status, c.execution.kinds[execution.kind] ?? null].filter(Boolean).join(" · ")} · {when(execution.created_at)}</small>
+                  <small>{[c.execution.statuses[execution.status] ?? execution.status, execution.kind !== "direction" ? c.execution.kinds[execution.kind] ?? null : null].filter(Boolean).join(" · ")} · {when(execution.created_at)}</small>
                 </span>
               </button>
             ))}

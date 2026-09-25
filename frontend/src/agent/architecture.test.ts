@@ -1006,7 +1006,7 @@ describe("v1.14.0 interaction truth and content craft", () => {
   it("gives every heading a unique anchor, an outline for two sections, and tables a size with copy", () => {
     const md = source("../components/Markdown.tsx");
     expect(md).toContain("uniqueHeadingId");
-    expect(md).toContain("scrollIntoView");
+    expect(md).toContain("revealInScroller(");
     expect(md).toContain("heads.length < 2");
     expect(md).toContain('data-testid="table-size"');
     expect(md).toContain('data-testid="table-copy"');
